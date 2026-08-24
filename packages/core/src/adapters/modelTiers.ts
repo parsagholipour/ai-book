@@ -1,5 +1,41 @@
 import type { AppConfig } from "../config.js";
-import type { ImageModelSelection, ModelTier, TextModelSelection } from "../schemas/book.js";
+import type {
+  CreateProjectInput,
+  ImageModelSelection,
+  ModelTier,
+  TextModelSelection
+} from "../schemas/book.js";
+
+/**
+ * Which tier a book runs — and is priced — at.
+ *
+ * `mediaSettings.modelTier` and nothing else. It is the field the selections
+ * below route on, it is typed and validated, and it is what `billing.ts`'s
+ * provider-cost table and tier price keys read — pricing off
+ * `mediaSettings.mobile.qualityPreset` instead, as `billing.ts` used to, meant a
+ * project that set the tier directly got premium models for free, because that
+ * echo is only ever written by the app. One answer, not two that happen to
+ * agree.
+ *
+ * No tier recorded is `balanced`, which is the honest answer rather than a
+ * default: a book from before tier routing runs the legacy single model, and
+ * balanced is what the unsuffixed price keys have always meant.
+ *
+ * It lives here rather than in `billing.ts` because a tier is not a price. Two
+ * of its callers are the worker's `generation/tuning.ts` and
+ * `generation/qualitySettings.ts`, which spend no credits and ask only which
+ * models a book runs; both are `vi.mock`ed modules, so reaching this through the
+ * barrel pulled puppeteer, sharp and `node:fs` into their mock factories for one
+ * property lookup — and a suite that bare-factory-mocks `@book-maker/core` left
+ * it `undefined` inside the real module. Hence `@book-maker/core/modelTiers`,
+ * which this file earns by having no runtime imports at all: keep it that way.
+ *
+ * `modelTierFromMediaSettings` (`billing.ts`) is the twin for callers holding a
+ * raw `mediaSettings` JSON column. It stays there because parsing one needs zod.
+ */
+export function modelTierForInput(input: CreateProjectInput): ModelTier {
+  return input.mediaSettings.modelTier ?? "balanced";
+}
 
 /**
  * Generation purposes that are mechanical (structured review, judging,
@@ -27,7 +63,8 @@ export const MECHANICAL_TEXT_PURPOSES: ReadonlySet<string> = new Set([
   "critique-plan",
   "verify-page-claims",
   "audit-page-style",
-  "critique-page-map"
+  "critique-page-map",
+  "dedupe-page-beats"
 ]);
 
 export type ModelTierTextSelections = {

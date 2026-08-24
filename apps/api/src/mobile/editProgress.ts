@@ -1,7 +1,7 @@
 import type { MobileProjectStatusDto, ProjectStatusResult } from "./dto.js";
 import { compilePhrase } from "./generationProgress.js";
 import { jsonRecord } from "./support.js";
-import type { StructuralPageAction } from "@book-maker/core";
+import { skipsFinalReview, type StructuralPageAction } from "@book-maker/core";
 
 /**
  * Live progress for an edit to a finished book, the way `generationProgress`
@@ -192,9 +192,15 @@ function fromRebuild(compile: StatusJob, finished: StatusJob | undefined): EditP
  * for a change the reader made themselves. Those never ran an edit job, so an
  * older completed one sitting in the job list is somebody else's history and
  * must not be dressed up as the steps this rebuild just walked.
+ *
+ * Asked through `skipsFinalReview` rather than by spelling the key here. The
+ * flag has one name in `packages/core/src/jobScope.ts` and three readers, and a
+ * reader holding its own copy of the string is a rename that compiles: the
+ * table there stays exhaustive while this card quietly reads a key nobody
+ * writes and starts dressing every reader edit in somebody else's steps.
  */
 function editBehindRebuild(status: ProjectStatusResult, compile: StatusJob): StatusJob | undefined {
-  if (jsonRecord(compile.payload).skipFinalReview === true) {
+  if (skipsFinalReview(compile.payload)) {
     return undefined;
   }
   return status.project.jobs.find((job) => isRebuildableEditJob(job) && job.status === "COMPLETED");

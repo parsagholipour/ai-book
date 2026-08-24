@@ -172,10 +172,12 @@ beforeEach(() => {
   mocks.generatePageDraft.mockResolvedValue({ title: "Draft", markdown: "Draft text.", summary: "Draft summary." });
   mocks.reviewAndSaveGeneratedPage.mockImplementation(
     async ({ draft }: { draft: { index: number } }) => ({
-      index: draft.index,
-      title: `Page ${draft.index}`,
-      markdown: "Saved.",
-      summary: `Saved ${draft.index}.`
+      page: {
+        index: draft.index,
+        title: `Page ${draft.index}`,
+        markdown: "Saved.",
+        summary: `Saved ${draft.index}.`
+      }
     })
   );
   mocks.invalidateProjectExports.mockResolvedValue(undefined);

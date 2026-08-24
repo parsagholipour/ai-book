@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { isCancellationError } from "../adapters/retry.js";
 import type { TextModelAdapter } from "../adapters/types.js";
-import { modelTierForInput } from "../billing.js";
+import { modelTierForInput } from "../adapters/modelTiers.js";
 import type { CreateProjectInput, PageDraft } from "../schemas/book.js";
 import type { ModelTier } from "../schemas/mediaSettings.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";

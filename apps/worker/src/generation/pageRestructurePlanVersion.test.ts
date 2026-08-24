@@ -77,6 +77,23 @@ describe("the plan version a structural shift writes", () => {
     expect(result.outcome).toBe("applied");
   });
 
+  it("stamps native and moved legacy renders from the complete snapshot before reindexing", async () => {
+    const tx = transaction();
+    mocks.prisma.$transaction.mockImplementation(async (run: (client: typeof tx) => Promise<unknown>) => run(tx));
+
+    await applyStructuralPageChange(options);
+
+    expect(tx.imageAsset.update).toHaveBeenCalledWith({
+      where: { id: "page-3-legacy-render" },
+      data: { metadata: { model: "legacy", legacyGeneratedPageId: "page-3" } }
+    });
+    expect(tx.imageAsset.update).toHaveBeenCalledWith({
+      where: { id: "page-1-hero-moved-to-page-3" },
+      data: { metadata: { legacyGeneratedPageId: "page-1" } }
+    });
+    expect(mocks.order.indexOf("image.update")).toBeLessThan(mocks.order.indexOf("applyPageOrder"));
+  });
+
   it("replays the whole shift when another writer commits that number first", async () => {
     const tx = transaction();
     mocks.prisma.$transaction.mockImplementation(async (run: (client: typeof tx) => Promise<unknown>) => run(tx));
@@ -139,7 +156,28 @@ const planVersionConflict = () =>
     meta: { modelName: "PlanVersion", target: ["projectId", "version"] }
   });
 
-const pages = [1, 2, 3].map((index) => ({ id: `page-${index}`, index, chapterId: "chapter-1" }));
+const pages = [1, 2, 3].map((index) => ({
+  id: `page-${index}`,
+  index,
+  chapterId: "chapter-1",
+  images:
+    index === 3
+      ? [
+          {
+            id: "page-3-legacy-render",
+            type: "SCENE_ILLUSTRATION",
+            path: "https://api.example/assets/images/project-1/page-3.png",
+            metadata: { model: "legacy" }
+          },
+          {
+            id: "page-1-hero-moved-to-page-3",
+            type: "SCENE_ILLUSTRATION",
+            path: "https://api.example/assets/images/project-1/page-1.webp",
+            metadata: {}
+          }
+        ]
+      : []
+}));
 const deletePageTwo: StructuralPagePlan = {
   action: "delete",
   insertAfterIndex: 0,
@@ -216,6 +254,7 @@ function transaction() {
       updateMany: track("page.updateMany", { count: 0 })
     },
     pageEditSnapshot: { findMany: track("snapshot.findMany", []) },
+    imageAsset: { update: track("image.update", {}) },
     archivedPageEditSnapshot: { createMany: track("archive.createMany", { count: 0 }) },
     chapter: {
       findMany: track("chapter.findMany", [{ id: "chapter-1", index: 1, targetPages: 3 }]),

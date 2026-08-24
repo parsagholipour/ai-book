@@ -3,10 +3,24 @@
 Generates full books from a short brief: plan → chapters → pages → illustrations → PDF/EPUB.
 A Flutter app and a React console both talk to one Fastify API; a BullMQ worker does the generation.
 
+## Agent skills
+
+### Issue tracker
+
+Issues and specs are tracked as local Markdown under `.scratch/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Triage uses the default five-role label vocabulary. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Domain documentation uses a multi-context layout. See `docs/agents/domain.md`.
+
 ## Commands
 
 ```bash
-pnpm check          # typecheck + lint + file-size budget + all tests. Run this before saying you're done.
+pnpm check          # typecheck + lint + file-size budget + script and workspace tests. Run before saying you're done.
                     # Every gate runs even when an earlier one fails, so one run reports the whole state.
 pnpm check:mobile   # flutter analyze + flutter test. NOT part of `pnpm check` — run it if you touched apps/mobile.
 pnpm typecheck      # tsc --noEmit across all workspaces
@@ -209,6 +223,8 @@ code in that area, however obvious the rule looks.
 - **Every apply fork stays EDITING until its recompile publishes, and the page map is why.** → apps/worker/src/handlers/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
 - **A page's long-range memory stops at the page being drafted, because a retry redrafts into a finished book.** → apps/worker/src/generation/CLAUDE.md
 - **A repair the provider refuses is written down, or it is paid for again on every page.** → apps/worker/src/generation/CLAUDE.md
+- **A brief repair's durable chapter write waits for the page to keep a draft it briefed.** → apps/worker/src/generation/CLAUDE.md
+- **A fence that cannot be read has a third answer, and it settles nothing.** → apps/worker/src/handlers/CLAUDE.md
 - **The hole set is a query, and the `LIMIT` is what the backoff protects.** → apps/worker/src/generation/CLAUDE.md + packages/db/CLAUDE.md
 - **A cancellation raised inside a tool escapes the tool loop; only a tool *failure* becomes a tool result.** → packages/core/src/adapters/CLAUDE.md
 - **A page's independent loads fan out, and which failure comes back is decided rather than raced.** → apps/worker/src/handlers/CLAUDE.md
@@ -234,6 +250,7 @@ code in that area, however obvious the rule looks.
 
 - **The edit chat gets one clarifying question per request, and it is enforced three times.** → apps/api/src/mobile/CLAUDE.md
 - **Moving and removing a picture are free, and neither is a page edit.** → apps/api/src/mobile/CLAUDE.md + apps/worker/src/generation/CLAUDE.md + apps/worker/src/handlers/CLAUDE.md
+- **And a status poll may read which fork an apply took, because the kind is written before the job exists.** → apps/api/src/mobile/CLAUDE.md
 - **A question declares how many of its answers count, and the picker follows.** → packages/core/CLAUDE.md
 - **An alias is how the model spelled a plan field, never a weaker claim on it, so a candidate's aliases are canonicalised before it merges onto the fallback — and an answer the field's own schema refuses is dropped under every spelling, canonical included.** → packages/core/CLAUDE.md
 - **The Sources list at the end of a book is not page text.** → apps/api/src/mobile/CLAUDE.md
@@ -288,6 +305,7 @@ code in that area, however obvious the rule looks.
 - **A create tells the link writer it is new, and only the read is allowed to believe it.** → apps/api/src/mobile/CLAUDE.md
 - **A route's declared statuses are what its own handler can reach in the shared ladder, never the ladder's full set of rungs.** → apps/api/src/mobile/CLAUDE.md
 - **A module kept light enough to survive a mock has to be light in both directions.** → packages/core/CLAUDE.md + packages/db/CLAUDE.md
+- **The dependency is on the barrel too, and the barrel is the dangerous half.** → apps/web/CLAUDE.md
 
 ### Compiling, rendering and exports
 
@@ -302,10 +320,12 @@ code in that area, however obvious the rule looks.
 - **A book only earns the word "Chapter" by being long enough to need it.** → packages/core/src/generation/CLAUDE.md
 - **The page map is measured from the published PDF's own bytes, and measuring must move nothing.** → packages/core/src/generation/CLAUDE.md
 - **A publication may replace the page map; it may never refuse to publish over it.** → apps/worker/src/generation/CLAUDE.md
+- **A compile that stands down leaves no verdict about prose it no longer speaks for.** → apps/worker/src/handlers/CLAUDE.md
 - **The coverless title sheet is capped at exactly one page, and it clips from the tail.** → packages/core/src/generation/CLAUDE.md
 - **Every renumber parks before it lands, because neither unique index is deferrable.** → packages/db/CLAUDE.md
 - **A page renumber carries the page map with it; only a sheet that would lose its page clears it.** → apps/worker/src/generation/CLAUDE.md + packages/db/CLAUDE.md
 - **A moved page's old chapter rides the same stamp as its old index.** → apps/worker/src/generation/CLAUDE.md
+- **A compare-and-swap over a JSON column is staked on the document the row stores, never on what that document parses to.** → apps/worker/src/generation/CLAUDE.md
 - **A page that goes away takes its semantic memory with it, because nothing else will.** → apps/worker/src/generation/CLAUDE.md + packages/db/CLAUDE.md
 - **One arm of a hybrid retrieval must not be able to settle the other, and an arm nobody engaged is not a survivor.** → packages/db/CLAUDE.md
 - **A structural delete parks the page's older Undo history outside the Page cascade.** → apps/worker/src/generation/CLAUDE.md + packages/db/CLAUDE.md + apps/api/src/mobile/CLAUDE.md

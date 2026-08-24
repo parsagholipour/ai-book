@@ -17,6 +17,7 @@ export const QUALITY_FEATURE_IDS = [
   "styleExcerpts",
   "styleAuditor",
   "pageMapCritic",
+  "beatDedup",
   "writerTools",
   "bestOfPolish",
   "planThinkingBoost",
@@ -34,6 +35,10 @@ export const QUALITY_FEATURE_DEFAULTS: QualityFeatureSettings = {
   styleExcerpts: ["ultra", "premium", "balanced", "fast"],
   styleAuditor: ["ultra", "premium", "balanced"],
   pageMapCritic: ["ultra", "premium"],
+  // All tiers: detection is deterministic and free, and the one bounded
+  // rewrite call runs only when a collision was actually found — cheaper on
+  // every tier than the rewrites a drafted collision burns downstream.
+  beatDedup: ["ultra", "premium", "balanced", "fast"],
   writerTools: ["ultra"],
   bestOfPolish: ["ultra"],
   planThinkingBoost: ["ultra", "premium"],
@@ -74,6 +79,11 @@ export const QUALITY_FEATURES: Array<{
     id: "pageMapCritic",
     label: "Page-map critic",
     summary: "One cheap mechanical call after the page map. Merges beat patches instead of regenerating the map."
+  },
+  {
+    id: "beatDedup",
+    label: "Page-beat dedup",
+    summary: "Deterministic near-duplicate beat detection over the page map; one cheap rewrite call only when a collision is found."
   },
   {
     id: "writerTools",

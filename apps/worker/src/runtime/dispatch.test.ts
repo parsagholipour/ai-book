@@ -20,12 +20,14 @@ const mocks = vi.hoisted(() => {
       imageAsset: { count: vi.fn() },
       generationJob: {
         findUnique: vi.fn(),
+        findFirst: vi.fn(),
         findMany: vi.fn(),
         create: vi.fn(),
         update: vi.fn(),
         updateMany: vi.fn(),
         count: vi.fn()
-      }
+      },
+      bookEditOperation: { findFirst: vi.fn() }
     },
     // Mutable holder so each test can shape the resolved project input.
     input: {} as Record<string, unknown>
@@ -42,6 +44,7 @@ vi.mock("../generation/projectInput.js", () => ({ inputForPlanVersion: () => moc
 
 import {
   canEnqueueProjectWork,
+  compilePublicationPolicyFromPayload,
   dispatchBackoffMs,
   dispatchWorkerGenerationJob,
   enqueueNextPageIfReady,
@@ -51,7 +54,6 @@ import {
   maybeEnqueueCover,
   parallelPageWaveSize,
   redeliverWorkerGenerationJob,
-  reconcileStrandedGeneration,
   reconcileUndispatchedWorkerJobs,
   workerJobNameForType
 } from "./dispatch.js";
@@ -110,7 +112,9 @@ beforeEach(() => {
   mocks.prisma.page.findMany.mockResolvedValue([]);
   mocks.prisma.imageAsset.count.mockResolvedValue(0);
   mocks.prisma.generationJob.findMany.mockResolvedValue([]);
+  mocks.prisma.generationJob.findFirst.mockResolvedValue(null);
   mocks.prisma.generationJob.count.mockResolvedValue(0);
+  mocks.prisma.bookEditOperation.findFirst.mockResolvedValue(null);
   mocks.prisma.generationJob.findUnique.mockResolvedValue(null);
   mocks.prisma.generationJob.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
     ...generationRow(),
@@ -610,45 +614,6 @@ describe("enqueueNextPageIfReady", () => {
   });
 });
 
-describe("reconcileStrandedGeneration", () => {
-  it("replays the fan-in for a GENERATING project with no open jobs", async () => {
-    // The crash shape: the worker died between marking the last page COMPLETED
-    // and calling maybeCompileAfterCompletedJob, so every row is terminal and
-    // nothing will ever enqueue the compile.
-    mocks.prisma.project.findMany.mockResolvedValue([{ id: "project-1", currentPlanId: "plan-1" }]);
-    mocks.prisma.project.findUnique.mockResolvedValue({ status: "GENERATING", contentRevision: 4 });
-    mocks.prisma.page.findMany.mockResolvedValue([
-      { id: "page-1", index: 1, status: "COMPLETED", markdown: "One.", revision: 1 },
-      { id: "page-2", index: 2, status: "COMPLETED", markdown: "Two.", revision: 1 }
-    ]);
-    mocks.prisma.imageAsset.count.mockResolvedValue(1);
-    mocks.prisma.generationJob.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
-      generationRow({ id: "gj-compile", type: data.type as string, payload: data.payload as Record<string, unknown> })
-    );
-
-    await reconcileStrandedGeneration();
-
-    expect(mocks.prisma.project.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          status: "GENERATING",
-          jobs: { none: { status: { in: ["QUEUED", "ACTIVE"] } } }
-        })
-      })
-    );
-    const created = mocks.prisma.generationJob.create.mock.calls.map(
-      (call) => (call[0] as { data: { type: string } }).data.type
-    );
-    expect(created).toContain("COMPILE_EXPORT");
-  });
-
-  it("does nothing when no project is stranded", async () => {
-    await reconcileStrandedGeneration();
-
-    expect(mocks.prisma.generationJob.create).not.toHaveBeenCalled();
-  });
-});
-
 describe("maybeEnqueueCompile", () => {
   const completedPages = [
     { id: "page-1", index: 1, status: "COMPLETED", markdown: "One.", revision: 1 },
@@ -710,7 +675,9 @@ describe("maybeEnqueueCompile", () => {
       exportPublicationProjectStatus: "GENERATING"
     });
     expect(compile.contentRevision).toBe(7);
-    expect(compile.dedupeKey).toMatch(/^compile-export:project-1:plan-1:[0-9a-f]{24}$/);
+    expect(compile.dedupeKey).toMatch(
+      /^compile-export:project-1:plan-1:revision-7:policy-r1v0sgoo:pages-[0-9a-f]{24}$/
+    );
     // Promoted out of the payload beside `contentRevision`, so the API can read
     // the compile that owns the book's quality verdict with one indexed lookup
     // rather than sifting it out of however many recent jobs it happens to hold.
@@ -742,6 +709,82 @@ describe("maybeEnqueueCompile", () => {
     expect(compile.ownsQualityVerdict).toBe(false);
   });
 
+  it.each([
+    [
+      "outcome",
+      { skipFinalReview: true, markdownRecompileWithoutVerdict: true, exportPublicationProjectStatus: "EDITING" },
+      { skipFinalReview: true, markdownRecompileWithoutVerdict: true, exportPublicationProjectStatus: "EDITING" }
+    ],
+    [
+      "presentation",
+      {
+        skipFinalReview: true,
+        presentationOnlyRecompile: true,
+        presentationRecompileFallbackStatus: "REVIEW_REQUIRED",
+        exportPublicationProjectStatus: "EDITING"
+      },
+      {
+        skipFinalReview: true,
+        presentationOnlyRecompile: true,
+        presentationRecompileFallbackStatus: "REVIEW_REQUIRED",
+        exportPublicationProjectStatus: "EDITING"
+      }
+    ],
+    [
+      "detached repair",
+      {
+        skipFinalReview: true,
+        detachedFromProjectLifecycle: true,
+        exportRepairFormat: "epub",
+        exportPublicationProjectStatus: "REVIEW_REQUIRED"
+      },
+      {
+        skipFinalReview: true,
+        detachedFromProjectLifecycle: true,
+        exportRepairFormat: "epub",
+        exportPublicationProjectStatus: "REVIEW_REQUIRED"
+      }
+    ]
+  ])("round-trips the complete %s publication policy", async (_kind, source, expected) => {
+    mocks.prisma.imageAsset.count.mockResolvedValue(1);
+    mocks.prisma.project.findUnique.mockResolvedValue({ status: "GENERATING", contentRevision: 7 });
+
+    await maybeEnqueueCompile("project-1", "plan-1", compilePublicationPolicyFromPayload(source));
+
+    const compile = expectCreatedJobOfType("COMPILE_EXPORT");
+    expect(compile.payload).toEqual({ planId: "plan-1", contentRevision: 7, ...expected });
+    expect(compile.ownsQualityVerdict).toBe(false);
+  });
+
+  it("inherits the latest current-revision policy when image fan-in has no explicit options", async () => {
+    mocks.prisma.imageAsset.count.mockResolvedValue(1);
+    mocks.prisma.project.findUnique.mockResolvedValue({ status: "GENERATING", contentRevision: 7 });
+    mocks.prisma.generationJob.findMany.mockImplementation(
+      async ({ where }: { where: { status?: unknown } }) => where.status
+        ? []
+        : [{
+            contentRevision: 7,
+            payload: {
+              skipFinalReview: true,
+              detachedFromProjectLifecycle: true,
+              exportRepairFormat: "pdf",
+              exportPublicationProjectStatus: "COMPLETE"
+            }
+          }]
+    );
+
+    await maybeEnqueueCompile("project-1", "plan-1");
+
+    expect(expectCreatedJobOfType("COMPILE_EXPORT").payload).toEqual({
+      planId: "plan-1",
+      contentRevision: 7,
+      skipFinalReview: true,
+      detachedFromProjectLifecycle: true,
+      exportRepairFormat: "pdf",
+      exportPublicationProjectStatus: "COMPLETE"
+    });
+  });
+
   it("counts a FAILED_QA page that kept a draft as terminal", async () => {
     // One stubborn page must not hold the export hostage; the final review
     // pass repairs it after compile is queued.
@@ -766,6 +809,14 @@ describe("maybeEnqueueCompile", () => {
       mocks.prisma.imageAsset.count.mockResolvedValue(1);
       mocks.prisma.generationJob.findMany.mockResolvedValue([]);
       countsByType({ [type]: 1 });
+      if (type === "COMPILE_EXPORT") {
+        mocks.prisma.generationJob.findMany.mockResolvedValue([
+          {
+            contentRevision: 0,
+            payload: { exportPublicationProjectStatus: "GENERATING" }
+          }
+        ]);
+      }
 
       await maybeEnqueueCompile("project-1", "plan-1");
 
@@ -791,13 +842,18 @@ describe("maybeEnqueueCompile", () => {
     // compile is already coming" left the edit with no recompile at all.
     mocks.prisma.imageAsset.count.mockResolvedValue(1);
     mocks.prisma.project.findUnique.mockResolvedValue({ status: "EDITING", contentRevision: 7 });
-    mocks.prisma.generationJob.count.mockImplementation(
-      async ({ where }: { where: { type: string; OR?: Array<{ contentRevision: number | null }> } }) => {
-        if (where.type !== "COMPILE_EXPORT") return 0;
+    mocks.prisma.generationJob.findMany.mockResolvedValue([
+      {
         // The in-flight repair compiles revision 6; the edit has moved to 7.
-        return (where.OR ?? []).some((clause) => clause.contentRevision === 6) ? 1 : 0;
+        contentRevision: 6,
+        payload: {
+          skipFinalReview: true,
+          detachedFromProjectLifecycle: true,
+          exportRepairFormat: "pdf",
+          exportPublicationProjectStatus: "COMPLETE"
+        }
       }
-    );
+    ]);
 
     expect(await maybeEnqueueCompile("project-1", "plan-1", { skipFinalReview: true })).toBe("compile");
 
@@ -808,12 +864,18 @@ describe("maybeEnqueueCompile", () => {
   it("does not double-compile while one is in flight for the same manuscript", async () => {
     mocks.prisma.imageAsset.count.mockResolvedValue(1);
     mocks.prisma.project.findUnique.mockResolvedValue({ status: "GENERATING", contentRevision: 7 });
-    countsByType({ COMPILE_EXPORT: 1 });
+    mocks.prisma.generationJob.findMany.mockResolvedValue([
+      {
+        contentRevision: 7,
+        payload: { exportPublicationProjectStatus: "GENERATING" }
+      }
+    ]);
 
     expect(await maybeEnqueueCompile("project-1", "plan-1")).toBe("compile");
 
     expect(mocks.prisma.generationJob.create).not.toHaveBeenCalled();
   });
+
 });
 
 describe("maybeCompileAfterCompletedJob", () => {

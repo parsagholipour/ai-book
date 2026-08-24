@@ -291,6 +291,20 @@ describe("writePreparedEmbedding degraded fallback", () => {
 
   const refused = { vectorLiteral: null, error: "content filter rejected the summary" };
 
+  it("keeps a prepared vector write on the supplied publication client", async () => {
+    const client = { $executeRawUnsafe: vi.fn(async () => 1) };
+
+    const outcome = await writePreparedEmbedding(
+      { projectId: "project-1", scope: "page:12", sourceId: "p-x", text: "Page X summary." },
+      { vectorLiteral: "[0.5]", error: null },
+      client as never
+    );
+
+    expect(outcome).toBe("stored");
+    expect(client.$executeRawUnsafe).toHaveBeenCalledTimes(1);
+    expect(mocks.prisma.$executeRawUnsafe).not.toHaveBeenCalled();
+  });
+
   /**
    * `"same-page"` reaches the fallback as well as the vector upsert: a
    * `page:<index>` scope names a position, `repointPageEmbeddings` hands

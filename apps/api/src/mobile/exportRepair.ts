@@ -100,8 +100,8 @@ const EXPORT_REPAIR_DISPATCH_BUDGET_MS = 2_000;
 /**
  * The dedupe key for a repair.
  *
- * It is deliberately *not* `queueUserEditExportRecompile`'s
- * `…:content-{revision}` key. Sharing that shape reads as "collapse with the
+ * It is deliberately *not* `queueUserEditExportRecompile`'s normalized
+ * revision-and-policy intent key. Sharing that key reads as "collapse with the
  * edit's recompile" and does that correctly only while the edit's job is still
  * live: `enqueueGenerationJob` returns any existing row for a key and only
  * re-dispatches one that is still QUEUED, so once that row goes COMPLETED or

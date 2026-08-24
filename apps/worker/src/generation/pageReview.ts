@@ -1,8 +1,6 @@
-import { formatQualityFailure, parseChapterBrief, styleExcerptsForPage } from "./bookHelpers.js";
-import { enqueueWorkerJob } from "../runtime/dispatch.js";
+import { formatQualityFailure, styleExcerptsForPage } from "./bookHelpers.js";
 import { updateJobProgress } from "../runtime/jobLifecycle.js";
 import { type IndexedPageDraft } from "../runtime/jobTypes.js";
-import { uniqueStrings } from "../runtime/serialization.js";
 import { loadContinuityNotes, loadResearchNotesForGeneration } from "./generationContext.js";
 import {
   enrichPageQualityReport,
@@ -16,11 +14,21 @@ import { updateEntityStateFromPage } from "./entityState.js";
 import { retrieveSemanticResearchNotes } from "./researchMemory.js";
 import { loadQualityContext } from "./qualitySettings.js";
 import {
-  MAX_PAGE_QA_CANDIDATES,
-  MAX_PAGE_QA_REWRITE_ATTEMPTS,
-  MAX_PAGE_REVISE_RESTARTS,
-  PAGE_QA_RECOVERY_CANDIDATE
-} from "./tuning.js";
+  GeneratedPagePublicationClaimLostError,
+  loadGeneratedPagePublicationSnapshot,
+  publishStagedGeneratedPage,
+  settledGeneratedPageContext,
+  stageGeneratedPageAndBrief
+} from "./pagePublication.js";
+import { MAX_PAGE_REVISE_RESTARTS, pageQaCandidatesFor, pageQaRewriteAttemptsFor } from "./tuning.js";
+import {
+  pageRevisionMessage,
+  pageRewriteReport,
+  recoveryRevisionForLoop,
+  repairPageBriefForRecovery,
+  shouldRepairPageBriefForRecovery,
+  type RepairedPageBrief
+} from "./pageReviewRecovery.js";
 import {
   styleAuditedScoreBeats,
   type BookGenerationStrategy,
@@ -37,7 +45,7 @@ import {
   type StyleAuditedScore,
   type TextModelAdapter
 } from "@book-maker/core";
-import { pageScope, Prisma, prisma } from "@book-maker/db";
+import { pageScope } from "@book-maker/db";
 
 /**
  * Page quality review loop: score a draft, revise it, and save the best candidate.
@@ -68,6 +76,27 @@ export type PageQualityLoopOutcome = {
   revision: number;
   /** Total candidates/attempts consumed, whichever draft was kept. */
   attempts: number;
+  /**
+   * This chapter's brief with the page's brief repair merged in, present only
+   * when the page kept a draft that repair briefed — the same condition the
+   * durable `Chapter.productionBrief` write is taken on, decided once below.
+   *
+   * A caller that briefs the chapter's *other* pages from one copy of the brief
+   * (the book passes, whose `ChapterSetup.brief` is one object per chapter; the
+   * compile's repair pass, which parses one per chapter) rebinds its copy to
+   * this and so hands the chapter's later pages the assignment this page
+   * actually delivered. A caller drafting one page per job has nobody to tell
+   * and ignores it. Absent is the safe answer either way: the caller keeps the
+   * brief it had, which is what the row keeps too.
+   */
+  repairedChapterBrief?: ChapterBrief | undefined;
+  /**
+   * The durable half of a kept brief repair, present only when the caller asked
+   * to publish it with its own page write. The function accepts that caller's
+   * transaction client, keeping the CAS implementation behind this narrow
+   * seam rather than exposing chapter-row details here.
+   */
+  pendingBriefRepair?: NonNullable<RepairedPageBrief["persist"]> | undefined;
 };
 
 /**
@@ -76,11 +105,15 @@ export type PageQualityLoopOutcome = {
  * rewrite and the final-QA repair in compile-export.
  *
  * The counting base is the caller's: the page loops count *candidates* from
- * the original draft (`maxCandidates` = MAX_PAGE_QA_CANDIDATES), while final
+ * the original draft (`maxCandidates` = `pageQaCandidatesFor`), while final
  * QA counts *attempts* from the first rewrite — one later — which is why it
  * passes `recoveryRevision: PAGE_QA_RECOVERY_CANDIDATE - 1`. Both enter
  * recovery mode at the third rewrite; collapsing the two numbers into one
- * constant silently delays that by a rewrite.
+ * constant silently delays that by a rewrite. Whatever the caller asks for,
+ * `recoveryRevisionForLoop` fits it to this loop's tier-scaled budget — down to
+ * the last candidate for a budget that would never reach it, but never onto a
+ * loop's first rewrite, and `undefined` for a loop that has no recovery at
+ * all.
  *
  * **The style audit is the loop's, not the caller's.** Every caller used to
  * hand-assemble the same triple — a `styleExcerpts` array, a
@@ -106,6 +139,7 @@ export async function runPageQualityLoop(options: {
   pageBrief?: PageProductionBeat | undefined;
   chapterPageStart?: number | undefined;
   chapterPageEnd?: number | undefined;
+  /** The gate on the brief repair's durable write; see the take below the loop. */
   chapterId?: string | null | undefined;
   pageIndex: number;
   draft: PageDraft;
@@ -119,8 +153,24 @@ export async function runPageQualityLoop(options: {
   generationJobId?: string | undefined;
   maxCandidates: number;
   recoveryRevision?: number | undefined;
-  /** Page loops repair a drifted page brief at the recovery candidate; final QA does not. */
+  /**
+   * Repair a conflicting page brief at the recovery candidate. Both the page
+   * loops and the final-QA repair set this: a page whose brief collides with
+   * a beat the book already covered fails review the same way on every
+   * rewrite, so re-executing the brief unchanged spends the whole budget on
+   * the one complaint a rewrite cannot answer. It buys **one** repair per
+   * page however long the budget is — see the latch at the call site — and its
+   * durable half is spent later still, only on a page that keeps a draft the
+   * repair briefed.
+   */
   repairBrief?: boolean | undefined;
+  /**
+   * Leave a kept repair staged for a caller that owns the corresponding page
+   * publication. Direct loop callers default to the established standalone
+   * CAS; `reviewAndSaveGeneratedPage` opts in so the page and chapter move in
+   * one transaction.
+   */
+  deferBriefRepairPersistence?: boolean | undefined;
   reviseContext: string;
   reviseProgress?: number | undefined;
   /**
@@ -144,13 +194,24 @@ export async function runPageQualityLoop(options: {
    */
   userRequest?: string | undefined;
   retrieveResearch?: ((draft: PageDraft, report: PageQualityReport) => Promise<string[]>) | undefined;
-  /** Per-rewrite progress reporting, in the caller's own style. */
-  onRewrite?: ((revision: number) => Promise<void>) | undefined;
   /**
-   * Optional ownership fence. The loop itself writes nothing, but a brief
-   * repair does — see `repairPageBriefForRecovery`.
+   * Per-rewrite progress reporting, in the caller's own style. The loop hands
+   * over the recovery index it resolved as well as the revision it is about to
+   * spend, because the two callers that render a message from it used to derive
+   * that index themselves — `pageQaRecoveryRevision(pageQaCandidatesFor(input))`
+   * at each call site — from an input that says nothing about `userRequest`.
+   * A loop pinned to a reader's own edit opts out of recovery entirely (below),
+   * so those call sites were one `onRewrite` away from telling an operator
+   * "Quality recovery rewrite page 12" about a loop that will never write a
+   * replacement page. The number the message reads has to be the number the
+   * rewrites were briefed against, and one derivation is the only way to say so.
    */
-  assertOwnership?: (() => Promise<void>) | undefined;
+  onRewrite?: ((revision: number, recoveryRevision: number | undefined) => Promise<void>) | undefined;
+  /**
+   * Optional ownership fence. A standalone kept repair is fenced here; a
+   * deferred one is fenced by the caller's combined publication phase.
+   */
+  assertOwnership?: () => Promise<void>;
 }): Promise<PageQualityLoopOutcome> {
   const styleExcerpts = options.styleExcerpts ?? [];
   const auditApprovedRevision = revisedDraftStyleAuditor({
@@ -172,19 +233,77 @@ export async function runPageQualityLoop(options: {
   // copy would hand the page's seat to a rewrite on scores from two scales.
   let report = await auditApproved(draft, options.report);
   let pageBrief = options.pageBrief;
+  /**
+   * The loop's own, because a brief repair replaces it. The caller's object is
+   * never written to: a book pass hands the same `ChapterSetup.brief` to every
+   * page of a chapter, so a repair written through it would brief that
+   * chapter's remaining pages against an assignment nothing had yet decided
+   * this page would keep — see `repairPageBriefForRecovery`.
+   */
+  let chapterBrief = options.chapterBrief;
+  // Spent by the *attempt*, and at most once per page — see the loop below.
+  let briefRepairSpent = false;
+  /**
+   * The brief repair, held back until the page keeps a draft that was briefed
+   * against it — both the durable write and the merged brief the caller's own
+   * copy may become. See the take below the loop.
+   */
+  let deferredBriefRepair: {
+    fromRevision: number;
+    chapterBrief: ChapterBrief | undefined;
+    persist: RepairedPageBrief["persist"];
+  } | null = null;
   let revision = 1;
   let best: DraftCandidate = { draft, revision, report };
+  // Fitted to this loop's budget at both ends, and `undefined` for a loop that
+  // has no recovery at all — `recoveryRevisionForLoop` owns both answers, and
+  // it is what `onRewrite` is handed, so a progress message cannot disagree
+  // with the rewrite it is announcing about which mode this loop is in.
+  const recoveryRevision = recoveryRevisionForLoop({
+    maxCandidates: options.maxCandidates,
+    ...(options.recoveryRevision !== undefined ? { requested: options.recoveryRevision } : {}),
+    ...(options.userRequest ? { userRequest: options.userRequest } : {})
+  });
 
   while (!report.approved && revision < options.maxCandidates) {
     const nextRevision = revision + 1;
-    await options.onRewrite?.(nextRevision);
-    if (options.repairBrief && shouldRepairPageBriefForRecovery(nextRevision, report, pageBrief)) {
-      pageBrief = await repairPageBriefForRecovery({
+    await options.onRewrite?.(nextRevision, recoveryRevision);
+    if (
+      options.repairBrief &&
+      !briefRepairSpent &&
+      shouldRepairPageBriefForRecovery(nextRevision, report, pageBrief, recoveryRevision)
+    ) {
+      // One repair per page, and the latch is the only thing making it one.
+      // `shouldRepairPageBriefForRecovery` asks about the *report*, and the
+      // report is why this page is still in the loop: a reviewer answering
+      // `repetitionOk: false` — the commonest way a page reaches recovery —
+      // answers it the same way on every rewrite left, so the predicate alone
+      // reads "repair from the recovery candidate onwards". On an ultra book
+      // that is `finalQaRevisionsFor` 10 against a recovery fitted to 3:
+      // rewrites 3 through 10 each spent a `repairPageBrief` planner call
+      // nothing budgeted and, wherever a `chapterId` is supplied, wrote a
+      // *different* beat into `Chapter.productionBrief` behind it — eight
+      // model calls and eight durable chapter rewrites for one page, on a
+      // compile repairing fifteen, with every other page of that chapter
+      // reading the last one back. Nor is repetition a cheaper version of the
+      // idea: the repair exists to hand the *remaining* rewrites a fresh
+      // assignment, so re-running it on that assignment's own rejection asks
+      // the planner to disown the beat it wrote one rewrite ago.
+      //
+      // Closed before the call, so a repair the provider refuses spends it
+      // too: `embeddingRepair.ts`'s bargain at loop scale — a refusal not
+      // written down is paid for again — and the page that draws a refusal is
+      // exactly the page whose reviewer keeps flagging the same thing, so a
+      // latch conditioned on the repair *working* would never close in the
+      // case it was added for. A rewrite that could not be re-briefed still
+      // carries the recovery instruction, which is the move that changes it.
+      briefRepairSpent = true;
+      const repair = await repairPageBriefForRecovery({
         strategy: options.strategy,
         input: options.input,
         plan: options.plan,
         chapter: options.chapter,
-        chapterBrief: options.chapterBrief,
+        chapterBrief,
         chapterPageStart: options.chapterPageStart,
         chapterPageEnd: options.chapterPageEnd,
         chapterId: options.chapterId,
@@ -199,6 +318,11 @@ export async function runPageQualityLoop(options: {
         context: options.reviseContext,
         ...(options.assertOwnership ? { assertOwnership: options.assertOwnership } : {})
       });
+      // The rebind is the whole of the repair's in-memory reach: this loop's
+      // remaining rewrites and reviews, and nothing the caller holds.
+      pageBrief = repair.beat;
+      chapterBrief = repair.chapterBrief;
+      deferredBriefRepair = { fromRevision: nextRevision, chapterBrief: repair.chapterBrief, persist: repair.persist };
     }
     draft = await revisePageDraftWithRestart({
       strategy: options.strategy,
@@ -209,7 +333,7 @@ export async function runPageQualityLoop(options: {
         input: options.input,
         plan: options.plan,
         chapter: options.chapter,
-        chapterBrief: options.chapterBrief,
+        chapterBrief,
         pageBrief,
         chapterPageStart: options.chapterPageStart,
         chapterPageEnd: options.chapterPageEnd,
@@ -218,7 +342,7 @@ export async function runPageQualityLoop(options: {
         report: pageRewriteReport(
           keepUserRequestApplied(report, options.userRequest),
           nextRevision,
-          options.recoveryRevision ?? PAGE_QA_RECOVERY_CANDIDATE
+          recoveryRevision
         ),
         previousPages: options.previousPages,
         ...(options.nextPages && options.nextPages.length > 0 ? { nextPages: options.nextPages } : {}),
@@ -233,7 +357,7 @@ export async function runPageQualityLoop(options: {
       input: options.input,
       plan: options.plan,
       chapter: options.chapter,
-      chapterBrief: options.chapterBrief,
+      chapterBrief,
       pageBrief,
       chapterPageStart: options.chapterPageStart,
       chapterPageEnd: options.chapterPageEnd,
@@ -249,10 +373,80 @@ export async function runPageQualityLoop(options: {
     best = bestDraftCandidate(best, { draft, revision, report });
   }
 
-  if (report.approved) {
-    return { approved: true, draft, report, revision, attempts: revision };
+  // ---- The repaired brief, taken only if the page kept a draft it briefed. ----
+  //
+  // `repairPageBriefForRecovery` re-plans the beat and hands the write back
+  // rather than making it, because the rewrite that beat briefs has not been
+  // judged yet and the write outlives this whole loop:
+  // `Chapter.productionBrief` is what every later drafting job — a
+  // continuation, a page regeneration, a replan — reads back as
+  // `previousChapterPageBriefs`. Committed at the repair, a rejected rewrite
+  // left the chapter permanently claiming a beat the shipped page never
+  // delivers, and later pages then steered away from material the book still
+  // contains. The last attempt is where that is ordinary rather than rare:
+  // `finalQaRevisionsFor` is 3 on both fast and balanced and
+  // `pageQaRecoveryRevision(3, 3)` is 3, so recovery lands on the final rewrite
+  // and exactly one candidate is ever briefed against the repair. Nor could the
+  // page save take it back — the chapter row committed under its own earlier
+  // assertion, so a stand-down between the two leaves the brief changed and the
+  // page unchanged.
+  //
+  // The same take decides the **merged brief** this loop hands back, for a
+  // caller that briefs the chapter's other pages from one copy of it: the book
+  // passes reuse one `ChapterSetup.brief` per chapter, and the final-QA repair
+  // parses one per chapter. That copy and the row have to agree about whether
+  // the repair was earned — agreeing by construction is what one condition
+  // buys, and it is the whole reason `repairPageBriefForRecovery` writes into
+  // nobody's object on the way past.
+  //
+  // *Kept*, not *approved*: a page that fails QA still ships its best draft,
+  // and a chapter describing the assignment that draft was written to is right
+  // for the same reason an approved one is. The test is the keeper's candidate
+  // number against the rewrite the repair briefed — every candidate from that
+  // one on was written against the fresh beat — and a keeper below it means the
+  // page is shipping prose from before the repair, so the beat goes no further
+  // than this loop's own memory. The latch above is spent either way: the call
+  // was paid for, and a page whose reviewer keeps blaming its brief is exactly
+  // the page that would buy a second planner call on the strength of the first
+  // one's answer having been thrown away.
+  const keptRevision = report.approved ? revision : best.revision;
+  const keptBriefRepair =
+    deferredBriefRepair && keptRevision >= deferredBriefRepair.fromRevision ? deferredBriefRepair : null;
+  const pendingBriefRepair = keptBriefRepair?.persist ?? undefined;
+  // A loop caller that does not own the page's durable publication keeps the
+  // established standalone CAS. The explicit fence stays immediately before
+  // it, a whole page of provider work after the repair's stand-down assertion.
+  // A caller that *does* own publication takes both later — see the page/brief
+  // transaction in `reviewAndSaveGeneratedPage`.
+  let standaloneBriefRepairWritten = false;
+  if (pendingBriefRepair && !options.deferBriefRepairPersistence) {
+    await options.assertOwnership?.();
+    standaloneBriefRepairWritten = (await pendingBriefRepair()) === "written";
   }
-  return { approved: false, draft: best.draft, report: best.report, revision: best.revision, attempts: revision };
+  const mayCarryBriefRepair = options.deferBriefRepairPersistence
+    ? pendingBriefRepair !== undefined || keptBriefRepair !== null
+    : pendingBriefRepair
+      ? standaloneBriefRepairWritten
+      : keptBriefRepair !== null;
+  const carried = mayCarryBriefRepair && keptBriefRepair?.chapterBrief
+    ? { repairedChapterBrief: keptBriefRepair.chapterBrief }
+    : {};
+  const pending = pendingBriefRepair && options.deferBriefRepairPersistence
+    ? { pendingBriefRepair }
+    : {};
+
+  if (report.approved) {
+    return { approved: true, draft, report, revision, attempts: revision, ...carried, ...pending };
+  }
+  return {
+    approved: false,
+    draft: best.draft,
+    report: best.report,
+    revision: best.revision,
+    attempts: revision,
+    ...carried,
+    ...pending
+  };
 }
 
 /**
@@ -285,6 +479,23 @@ function keepUserRequestApplied(report: PageQualityReport, userRequest: string |
   }
   return { ...report, requiredRevisions: [instruction, ...report.requiredRevisions] };
 }
+
+/**
+ * What one drafted page leaves behind for the pages after it.
+ *
+ * `page` is the saved keeper as the next pages read it back.
+ * `repairedChapterBrief` is this chapter's brief with the page's brief repair
+ * merged in, and it is present only when the page kept a draft that repair
+ * briefed — see the take in `runPageQualityLoop`. A caller that briefs a
+ * chapter's pages from one copy of its brief (the book passes, one
+ * `ChapterSetup.brief` per chapter) rebinds that copy to it, so the chapter's
+ * remaining pages are told what this page actually delivered; a caller drafting
+ * a page into a finished book has nobody to tell and ignores it.
+ */
+export type SavedGeneratedPage = {
+  page: PriorPageContext;
+  repairedChapterBrief?: ChapterBrief | undefined;
+};
 
 /**
  * Reviews a drafted page, saves the keeper, and publishes everything the *next*
@@ -335,6 +546,13 @@ export async function reviewAndSaveGeneratedPage(options: {
    */
   illustrate?: boolean | undefined;
   /**
+   * Chapter/batch resume regenerates the whole unit containing the first
+   * missing page. Its already-settled prefix must therefore accept the new
+   * unit draft instead of treating this call as a redelivery of the old one.
+   * Ordinary per-page redeliveries leave this false and remain idempotent.
+   */
+  settledPageToReplace?: (PriorPageContext & { imagePrompt: string | null }) | undefined;
+  /**
    * Optional ownership fence for callers whose writes follow a durable lease.
    *
    * Called before the page upsert, and again before the semantic tail — see the
@@ -343,8 +561,24 @@ export async function reviewAndSaveGeneratedPage(options: {
    * it publishes anything, and the handler that owns the lease decides what that
    * means for the book. Callers with no lease pass nothing and are unchanged.
    */
-  assertOwnership?: (() => Promise<void>) | undefined;
-}): Promise<PriorPageContext> {
+  assertOwnership?: () => Promise<void>;
+}): Promise<SavedGeneratedPage> {
+  // Pin optimistic ownership before any review/rewrite provider call. A retry
+  // of an already-settled page replays nothing, while a row that changes under
+  // the paid work makes the publication claim below miss instead of letting an
+  // older delivery overwrite the winner.
+  const existingPage = await loadGeneratedPagePublicationSnapshot(options.projectId, options.draft.index);
+  const settledPage = settledGeneratedPageContext(existingPage, options.draft.index);
+  const replacesExpectedSettledPage =
+    settledPage !== undefined &&
+    options.settledPageToReplace?.index === settledPage.index &&
+    options.settledPageToReplace.title === settledPage.title &&
+    options.settledPageToReplace.markdown === settledPage.markdown &&
+    options.settledPageToReplace.summary === settledPage.summary &&
+    options.settledPageToReplace.imagePrompt === existingPage?.imagePrompt;
+  if (settledPage && !replacesExpectedSettledPage) {
+    return { page: settledPage };
+  }
   const pageBrief = options.chapterBrief?.pages.find((brief) => brief.pageIndex === options.draft.index);
   // Whole book on purpose: this reviews a draft against the facts the book
   // currently holds, and a page inserted into finished prose (the caller that
@@ -415,8 +649,12 @@ export async function reviewAndSaveGeneratedPage(options: {
     continuityNotes,
     textModel: options.providers.text,
     generationJobId: options.generationJobId,
-    maxCandidates: MAX_PAGE_QA_CANDIDATES,
+    maxCandidates: pageQaCandidatesFor(options.input),
     repairBrief: true,
+    // This function owns the page write, so it also owns when the accepted
+    // chapter repair becomes durable. The loop returns the CAS for the
+    // transaction below instead of committing it ahead of the page fence.
+    deferBriefRepairPersistence: true,
     reviseContext: `Page ${options.draft.index}`,
     quality,
     ...(styleExcerpts.length > 0 ? { styleExcerpts } : {}),
@@ -431,9 +669,14 @@ export async function reviewAndSaveGeneratedPage(options: {
             })
         }
       : {}),
-    onRewrite: (nextRevision) =>
+    onRewrite: (nextRevision, recoveryRevision) =>
       updateJobProgress(options.generationJobId, {
-        message: pageRevisionMessage(options.draft.index, nextRevision, MAX_PAGE_QA_REWRITE_ATTEMPTS)
+        message: pageRevisionMessage(
+          options.draft.index,
+          nextRevision,
+          pageQaRewriteAttemptsFor(options.input),
+          recoveryRevision
+        )
       }),
     ...(options.assertOwnership ? { assertOwnership: options.assertOwnership } : {})
   });
@@ -448,40 +691,34 @@ export async function reviewAndSaveGeneratedPage(options: {
     });
   }
 
-  const pageStatus = qualityReport.approved ? "COMPLETED" : "FAILED_QA";
+  const pageStatus = qualityReport.approved ? "GENERATING" : "FAILED_QA";
   const assertOwnership = options.assertOwnership;
   await assertOwnership?.();
-  const page = await prisma.page.upsert({
-    where: { projectId_index: { projectId: options.projectId, index: options.draft.index } },
-    create: {
-      projectId: options.projectId,
-      chapterId: options.chapterId,
+  const page = await stageGeneratedPageAndBrief({
+    projectId: options.projectId,
+    chapterId: options.chapterId,
+    pageIndex: options.draft.index,
+    draft,
+    revision,
+    qualityReport,
+    status: pageStatus,
+    pendingBriefRepair: outcome.pendingBriefRepair,
+    existingPage,
+    ...(assertOwnership ? { assertOwnership } : {})
+  });
+
+  // The page, and the chapter brief the pass may now brief this chapter's other
+  // pages from. The repair reaches it only through the loop's own take — the
+  // caller's brief was never written to — so a page that shipped its pre-repair
+  // prose leaves the chapter exactly as it found it.
+  const savedContext: SavedGeneratedPage = {
+    page: {
       index: options.draft.index,
       title: draft.title,
       markdown: draft.markdown,
-      summary: draft.summary,
-      imagePrompt: draft.imagePrompt ?? null,
-      status: pageStatus,
-      revision,
-      qualityReport: qualityReport as Prisma.InputJsonValue
+      summary: draft.summary
     },
-    update: {
-      chapterId: options.chapterId,
-      title: draft.title,
-      markdown: draft.markdown,
-      summary: draft.summary,
-      imagePrompt: draft.imagePrompt ?? null,
-      status: pageStatus,
-      revision,
-      qualityReport: qualityReport as Prisma.InputJsonValue
-    }
-  });
-
-  const savedContext: PriorPageContext = {
-    index: options.draft.index,
-    title: draft.title,
-    markdown: draft.markdown,
-    summary: draft.summary
+    ...(outcome.repairedChapterBrief ? { repairedChapterBrief: outcome.repairedChapterBrief } : {})
   };
 
   // Nothing semantic is even *computed* for a delivery that has already lost the
@@ -521,30 +758,55 @@ export async function reviewAndSaveGeneratedPage(options: {
   // ---- Publish: one verified claim, and then only writes. ----
   await assertOwnership?.();
 
+  if (!qualityReport.approved) {
+    // Skip continuity notes, embeddings, and illustration for a flagged page;
+    // the final review rewrites it and the repaired version feeds those steps.
+    if (keeperExtract) {
+      await persistStoryExtract({
+        projectId: options.projectId,
+        pageIndex: options.draft.index,
+        plan: options.plan,
+        extract: keeperExtract
+      });
+    }
+    return savedContext;
+  }
+
+  const willIllustrate =
+    options.illustrate !== false &&
+    Boolean(draft.imagePrompt) &&
+    options.strategy.shouldIllustratePage(options.input, options.plan, options.draft.index);
+  const publication = await publishStagedGeneratedPage({
+    projectId: options.projectId,
+    planId: options.planId,
+    pageIndex: options.draft.index,
+    draft,
+    stagedPage: page,
+    willIllustrate,
+    continuityTags: ["page", String(options.draft.index), options.strategy.id]
+  });
+  // A declined enqueue leaves this staged keeper authoritative and retryable,
+  // so later pages may still use the prose that is durable on its row. A lost
+  // completion claim is different: this delivery's prose and repaired brief
+  // have been superseded and may not escape into the caller's generation
+  // context. Give a lease-backed caller's domain-specific stand-down error the
+  // first chance to win, then stand the caller down. A direct pass has to
+  // restart from durable chapter state as well as the winning page; returning
+  // the page alone could still carry a brief that disagrees with its winner.
+  if (publication === "enqueue-declined") {
+    return savedContext;
+  }
+  if (publication === "superseded") {
+    await assertOwnership?.();
+    throw new GeneratedPagePublicationClaimLostError(options.draft.index);
+  }
+
   if (keeperExtract) {
     await persistStoryExtract({
       projectId: options.projectId,
       pageIndex: options.draft.index,
       plan: options.plan,
       extract: keeperExtract
-    });
-  }
-
-  if (!qualityReport.approved) {
-    // Skip continuity notes, embeddings, and illustration for a flagged page;
-    // the final review rewrites it and the repaired version feeds those steps.
-    return savedContext;
-  }
-
-  if (draft.continuityNotes.length > 0) {
-    await prisma.continuityNote.createMany({
-      data: draft.continuityNotes.map((body) => ({
-        projectId: options.projectId,
-        pageId: page.id,
-        scope: pageScope(options.draft.index),
-        body,
-        tags: ["page", String(options.draft.index), options.strategy.id]
-      }))
     });
   }
 
@@ -558,15 +820,6 @@ export async function reviewAndSaveGeneratedPage(options: {
         preparedEmbedding
       );
     }
-  }
-
-  if (options.illustrate !== false && draft.imagePrompt && options.strategy.shouldIllustratePage(options.input, options.plan, options.draft.index)) {
-    await enqueueWorkerJob({
-      projectId: options.projectId,
-      type: "GENERATE_IMAGE",
-      payload: { pageId: page.id, planId: options.planId, prompt: draft.imagePrompt },
-      dedupeKey: `generate-image:${page.id}:${options.planId}:${page.revision}`
-    });
   }
 
   return savedContext;
@@ -621,172 +874,4 @@ async function retrievedResearchForRevise(
     console.warn("Failed-claim research retrieve skipped", error);
     return {};
   }
-}
-
-export function pageRevisionMessage(pageIndex: number, revision: number, maxRewriteAttempts: number): string {
-  const phase = revision >= PAGE_QA_RECOVERY_CANDIDATE ? "Quality recovery rewrite" : "Revising";
-  const rewriteAttempt = Math.max(1, revision - 1);
-  return `${phase} page ${pageIndex} (rewrite ${rewriteAttempt}/${maxRewriteAttempts})`;
-}
-
-export function pageRewriteReport(
-  report: PageQualityReport,
-  revision: number,
-  recoveryRevision = PAGE_QA_RECOVERY_CANDIDATE
-): PageQualityReport {
-  if (revision < recoveryRevision) {
-    return report;
-  }
-
-  const recoveryInstructions = [
-    `Previous rewrite attempts still failed QA; produce a complete replacement page for attempt ${revision}.`,
-    "Use the rejected page only as diagnostic context, not as prose to preserve.",
-    "Do not relax quality: satisfy the page brief, advance beyond prior pages, avoid repetition, and keep the page reader-ready."
-  ];
-
-  return {
-    ...report,
-    issues: [...report.issues, "Earlier generated replacements for this page were still rejected by QA."],
-    requiredRevisions: [...report.requiredRevisions, ...recoveryInstructions],
-    notes: [report.notes, "Quality recovery mode: make a structural replacement rather than a light edit."]
-      .filter(Boolean)
-      .join(" ")
-  };
-}
-
-export function shouldRepairPageBriefForRecovery(
-  revision: number,
-  report: PageQualityReport,
-  pageBrief: PageProductionBeat | undefined
-): pageBrief is PageProductionBeat {
-  if (!pageBrief || revision < PAGE_QA_RECOVERY_CANDIDATE) {
-    return false;
-  }
-
-  if (!report.checks.repetitionOk || !report.checks.progressionOk) {
-    return true;
-  }
-
-  const feedback = [...report.issues, ...report.requiredRevisions, report.notes].join(" ").toLowerCase();
-  return /brief|assignment|repeat|repetition|already covered|same (argument|beat|point|scene)|stalled|does not progress|new distinct|fresh angle/.test(
-    feedback
-  );
-}
-
-export async function repairPageBriefForRecovery(options: {
-  strategy: BookGenerationStrategy;
-  input: CreateProjectInput;
-  plan: BookPlan;
-  chapter?: ChapterPlan | undefined;
-  chapterBrief?: ChapterBrief | undefined;
-  chapterPageStart?: number | undefined;
-  chapterPageEnd?: number | undefined;
-  chapterId?: string | null | undefined;
-  pageBrief: PageProductionBeat;
-  pageIndex: number;
-  draft: PageDraft;
-  qualityReport: PageQualityReport;
-  previousPages: PriorPageContext[];
-  continuityNotes: string[];
-  textModel: TextModelAdapter;
-  generationJobId?: string | undefined;
-  context: string;
-  /** Ownership fence for the persisted repair; see the call site below. */
-  assertOwnership?: (() => Promise<void>) | undefined;
-}): Promise<PageProductionBeat> {
-  await updateJobProgress(options.generationJobId, {
-    message: `${options.context} brief conflict detected; repairing page brief before recovery rewrite.`
-  });
-
-  const repaired = await options.strategy.repairPageBrief({
-    input: options.input,
-    plan: options.plan,
-    chapter: options.chapter,
-    chapterBrief: options.chapterBrief,
-    pageBrief: options.pageBrief,
-    chapterPageStart: options.chapterPageStart,
-    chapterPageEnd: options.chapterPageEnd,
-    pageIndex: options.pageIndex,
-    draft: options.draft,
-    report: options.qualityReport,
-    previousPages: options.previousPages,
-    continuityNotes: options.continuityNotes,
-    textModel: options.textModel
-  });
-
-  // Local mutation for the rest of *this* page's own loop: the remaining
-  // rewrite/review calls below pass `options.chapterBrief` straight through,
-  // and they need to see the repaired beat regardless of what a concurrent
-  // sibling page does to the persisted row.
-  replacePageBriefInChapterBrief(options.chapterBrief, repaired);
-
-  if (options.chapterId) {
-    // The one write on the *drafting* side of the page save, and it is read back
-    // by every other page in the chapter, so it is fenced for the same reason
-    // the semantic tail is: the repair above is a model call, and a delivery
-    // that lost the book across it must not leave its opinion of the chapter's
-    // beats behind. The in-memory replacement above stays either way — it only
-    // steers this page's own remaining rewrites, which nobody else can see.
-    await options.assertOwnership?.();
-    await casUpdateChapterProductionBrief(options.chapterId, repaired);
-  }
-
-  return repaired;
-}
-
-const CHAPTER_BRIEF_CAS_ATTEMPTS = 3;
-
-/**
- * Chapters in the same wave can have several pages hit brief-repair recovery
- * concurrently (one job per page). A blind `chapter.update` here would let
- * whichever write lands second silently discard the first page's repair, so
- * this merges the repaired beat into a freshly-read row and writes it back
- * conditioned on the row still holding the state just read — retrying against
- * the winner's brief on a miss, the same compare-and-swap shape used for
- * per-entity continuity state in entityState.ts.
- */
-async function casUpdateChapterProductionBrief(chapterId: string, repaired: PageProductionBeat): Promise<void> {
-  let current = await prisma.chapter.findUnique({ where: { id: chapterId }, select: { productionBrief: true } });
-  for (let attempt = 0; attempt < CHAPTER_BRIEF_CAS_ATTEMPTS; attempt += 1) {
-    const currentBrief = parseChapterBrief(current?.productionBrief);
-    if (!currentBrief) {
-      return;
-    }
-    // A shallow copy, not `currentBrief` itself: `replacePageBriefInChapterBrief`
-    // mutates whatever object it's given, and `currentBrief` still has to serve
-    // as the untouched "expected previous state" for the CAS below.
-    const updated = replacePageBriefInChapterBrief({ ...currentBrief }, repaired);
-    if (!updated) {
-      return;
-    }
-    const claimed = await prisma.chapter.updateMany({
-      where: { id: chapterId, productionBrief: { equals: currentBrief as unknown as Prisma.InputJsonValue } },
-      data: { productionBrief: updated as Prisma.InputJsonValue }
-    });
-    if (claimed.count === 1) {
-      return;
-    }
-    current = await prisma.chapter.findUnique({ where: { id: chapterId }, select: { productionBrief: true } });
-  }
-  console.warn(`Chapter production brief update for ${chapterId} lost the CAS race ${CHAPTER_BRIEF_CAS_ATTEMPTS} times in a row`);
-}
-
-export function replacePageBriefInChapterBrief(
-  chapterBrief: ChapterBrief | undefined,
-  repaired: PageProductionBeat
-): ChapterBrief | undefined {
-  if (!chapterBrief) {
-    return undefined;
-  }
-
-  const replaced = chapterBrief.pages.some((page) => page.pageIndex === repaired.pageIndex);
-  const updated: ChapterBrief = {
-    ...chapterBrief,
-    pages: replaced
-      ? chapterBrief.pages.map((page) => (page.pageIndex === repaired.pageIndex ? repaired : page))
-      : [...chapterBrief.pages, repaired].sort((a, b) => a.pageIndex - b.pageIndex),
-    continuityFocus: uniqueStrings([...chapterBrief.continuityFocus, ...repaired.requiredContinuity]).slice(0, 20)
-  };
-  Object.assign(chapterBrief, updated);
-  return updated;
 }

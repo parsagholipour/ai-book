@@ -166,6 +166,44 @@ export class FakeTextModelAdapter implements TextModelAdapter {
       };
     }
 
+    if (options.purpose === "dedupe-page-beats") {
+      // The only mechanical purpose without a canned answer fell through to
+      // `{}`, which parses (the patch array defaults) but answers a request
+      // that named specific pages with a rewrite for none of them. The rewrite
+      // reads the same tables one variant along, so it can neither restate the
+      // beat it replaces nor arrive as N copies of itself — which is what a
+      // rewrite pass measures its own output for.
+      //
+      // `requiredContinuity` comes back off the flagged page itself: a real
+      // model is asked which of those entries the fresh assignment still needs,
+      // and answering "all of them" is the one answer a table lookup can give
+      // honestly. It is also the only thing that measures the round trip —
+      // returning a hand-written line would pass whatever the payload was
+      // called.
+      //
+      // `imageMoment` is the same round trip with the opposite answer: the fresh
+      // moment is the rewrite's own, because a moment written for the beat being
+      // replaced is the bug the field was added for — but it is returned *only*
+      // for a page whose payload carried one, since a page the map left
+      // unillustrated must not be given a picture by this pass. Both halves are
+      // measurable only because the presence of the response key is decided by
+      // the payload key: rename either end alone and every illustrated page's
+      // rewrite is refused instead.
+      return {
+        beatPatches: extractFlaggedPages(options).map((flagged) => {
+          const rewrite = dryRunPageBeat(flagged.pageIndex, 1);
+          return {
+            pageIndex: flagged.pageIndex,
+            purpose: rewrite.purpose,
+            beat: rewrite.beat,
+            endingPressure: rewrite.endingPressure,
+            requiredContinuity: flagged.requiredContinuity,
+            ...(flagged.imageMoment ? { imageMoment: rewrite.imageMoment } : {})
+          };
+        })
+      };
+    }
+
     if (options.purpose === "detect-language") {
       return fakeLanguageDetection(options);
     }
@@ -194,15 +232,7 @@ export class FakeTextModelAdapter implements TextModelAdapter {
         summary: "A deterministic chapter brief for local dry runs.",
         pages: Array.from({ length: pageRange.end - pageRange.start + 1 }, (_, index) => {
           const pageIndex = pageRange.start + index;
-          return {
-            pageIndex,
-            chapterIndex,
-            purpose: `Advance the dry-run book through event ${pageIndex}.`,
-            beat: `The central subject faces a concrete turn involving ${dryRunDetail(pageIndex)}.`,
-            requiredContinuity: [`Keep the central subject consistent on page ${pageIndex}.`],
-            endingPressure: `Leave a clear reason for page ${pageIndex + 1} to exist.`,
-            imageMoment: `A readable scene focused on ${dryRunDetail(pageIndex)}.`
-          };
+          return { pageIndex, chapterIndex, ...dryRunPageBeat(pageIndex) };
         }),
         continuityFocus: ["Keep page details distinct across the dry run."]
       };
@@ -216,11 +246,7 @@ export class FakeTextModelAdapter implements TextModelAdapter {
           return {
             pageIndex,
             chapterIndex: extractChapterIndexForPageMap(options, pageIndex),
-            purpose: `Advance the dry-run book through mapped event ${pageIndex}.`,
-            beat: `The page map assigns ${dryRunDetail(pageIndex)} as the concrete turn for page ${pageIndex}.`,
-            requiredContinuity: [`Preserve mapped detail ${dryRunDetail(pageIndex)}.`],
-            endingPressure: `Carry page ${pageIndex}'s consequence forward.`,
-            imageMoment: `A mapped illustration moment focused on ${dryRunDetail(pageIndex)}.`
+            ...dryRunPageBeat(pageIndex)
           };
         })
       };
@@ -606,20 +632,201 @@ function extractTargetPages(options: GenerateJsonOptions<unknown>): number {
   return 1;
 }
 
+/**
+ * The pages a beat-dedup request flagged, in the order it named them, each with
+ * the continuity the map requires of it today and the visual moment it is
+ * illustrated from. They arrive grouped by chapter (`dedupePageBeats`,
+ * `generation/pageBeatDedup.ts`), so the flat list is what the answer is keyed
+ * on and the grouping is ignored. A page whose payload carries no entries is
+ * answered with none, which is what that pass reads as "nothing to sort out"
+ * rather than as a silence it has to drop the rewrite for; a page whose payload
+ * carries no `imageMoment` is answered with no moment at all, which is the only
+ * way that pass will leave an unillustrated page unillustrated.
+ */
+function extractFlaggedPages(
+  options: GenerateJsonOptions<unknown>
+): { pageIndex: number; requiredContinuity: string[]; imageMoment?: string }[] {
+  const chapters = extractUserPayload(options).chapters;
+  if (!Array.isArray(chapters)) {
+    return [];
+  }
+  return chapters.flatMap((chapter) => {
+    const flagged = objectRecord(chapter)?.flaggedPages;
+    if (!Array.isArray(flagged)) {
+      return [];
+    }
+    return flagged.flatMap((page) => {
+      const record = objectRecord(page);
+      if (typeof record?.pageIndex !== "number") {
+        return [];
+      }
+      const continuity = record.requiredContinuity;
+      // The payload omits the key for a page the map left unillustrated, so
+      // absent here is the answer rather than a missing one.
+      const imageMoment = typeof record.imageMoment === "string" ? record.imageMoment.trim() : "";
+      return [
+        {
+          pageIndex: record.pageIndex,
+          requiredContinuity: Array.isArray(continuity)
+            ? continuity.filter((line): line is string => typeof line === "string")
+            : [],
+          ...(imageMoment ? { imageMoment } : {})
+        }
+      ];
+    });
+  });
+}
+
+function objectRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+}
+
+/**
+ * The dry-run page map's vocabulary: the five rotating tables below, of 7, 9,
+ * 10, 11 and 13 entries, lengths chosen to share no common factor. Two pages
+ * therefore first agree on even two of the five 63 pages apart, and on three of
+ * them 630 pages apart, which is longer than any book anyone dry-runs.
+ *
+ * That spread is a correctness property of `MOCK_AI` runs rather than
+ * decoration. `beatDedup` (`generation/qualityGates.ts`) is on for **every**
+ * effort tier, and `findDuplicatePageBeats` (`generation/pageBeatDedup.ts`)
+ * scores `purpose + beat` with the same token overlap rule the page reviewer
+ * uses. The beats here used to be one sentence apiece with the page number and
+ * one rotating noun interpolated into them — and the shared tokenizer drops
+ * anything under three characters, so the page number was not a difference at
+ * all: an 8-page dry run produced seven findings, one for every page after the
+ * first, every one of them naming page 1. The documented default way to work
+ * (`MOCK_AI=true`) paid for a rewrite call on every book and then drafted every
+ * page against a bogus "Stay distinct from page 1" note.
+ *
+ * Keep new scaffolding out of the two frames below. Shared wording is what both
+ * ratios divide by, and there is no floor here to hide under: these beats are
+ * long enough to clear `MIN_BEAT_SHINGLES` and `MIN_BEAT_KEYWORDS`, so they are
+ * always measured.
+ */
+const DRY_RUN_MOVES = [
+  "Unlock a question about",
+  "Settle an argument over",
+  "Risk a safe routine on",
+  "Weigh the cost of",
+  "Hand a wary newcomer",
+  "Abandon a plan built on",
+  "Repair what was broken by"
+];
+
+const DRY_RUN_FIGURES = [
+  "the night clerk",
+  "a retired coach",
+  "the youngest cousin",
+  "a rival buyer",
+  "the site manager",
+  "an off-duty medic",
+  "the shop owner",
+  "a visiting auditor",
+  "the last tenant"
+];
+
+const DRY_RUN_SETTINGS = [
+  "In the flooded stairwell",
+  "Halfway through a night shift",
+  "In the emptied market",
+  "Under a borrowed roof",
+  "At the harvest weighing",
+  "Outside a shuttered clinic",
+  "On the earliest ferry",
+  "In an archive basement",
+  "Across a frozen yard",
+  "Between two closed meetings",
+  "At the quarry edge",
+  "Through a wall of rehearsal noise",
+  "Behind a rented van"
+];
+
+const DRY_RUN_DETAILS = [
+  "a brass key",
+  "a rain-dark window",
+  "a folded letter",
+  "a cracked stair",
+  "a blue cup",
+  "a quiet bell",
+  "a chalk mark",
+  "a locked drawer",
+  "a warm lamp",
+  "a silver thread"
+];
+
+const DRY_RUN_CONSEQUENCES = [
+  "a debt comes due",
+  "an ally takes notes",
+  "one exit closes",
+  "a supervisor demands names",
+  "a promise turns official",
+  "a storm resets everything",
+  "a second copy surfaces",
+  "money moves overnight",
+  "a witness recants",
+  "a deadline arrives early",
+  "an old friend refuses"
+];
+
+type DryRunPageBeat = {
+  purpose: string;
+  beat: string;
+  requiredContinuity: string[];
+  endingPressure: string;
+  imageMoment: string;
+};
+
+/**
+ * One page's production assignment, in the shape both brief producers emit —
+ * the whole-book page map and the per-chapter brief, which is the one a dry run
+ * over 24 pages actually takes (`generateChunkedPageMap`). `variant` 1 is the
+ * beat-dedup rewrite: each table is stepped by its own amount, so a rewrite
+ * reproduces some page's assignment only where all five steps line up at once,
+ * and the nearest page that happens for is 28,255 pages along.
+ */
+function dryRunPageBeat(pageIndex: number, variant = 0): DryRunPageBeat {
+  const move = rotate(DRY_RUN_MOVES, pageIndex + 3 * variant);
+  const figure = rotate(DRY_RUN_FIGURES, pageIndex + 4 * variant);
+  const detail = dryRunDetail(pageIndex + 5 * variant);
+  const setting = rotate(DRY_RUN_SETTINGS, pageIndex + 6 * variant);
+  const consequence = rotate(DRY_RUN_CONSEQUENCES, pageIndex + 7 * variant);
+  return {
+    purpose: `${move} ${detail}.`,
+    beat: `${setting}, ${figure} reckons with ${detail}, so ${consequence}.`,
+    requiredContinuity: [`Keep ${figure} and ${detail} consistent after page ${pageIndex}.`],
+    endingPressure: `Page ${pageIndex} hands the next page one thing: ${consequence}.`,
+    imageMoment: `${setting}, drawn tight on ${figure} beside ${detail}.`
+  };
+}
+
+/**
+ * The entry a 1-based `pageIndex` lands on, wrapping in both directions.
+ *
+ * JavaScript's `%` keeps the sign of its left operand, so `pageIndex` 0 indexed
+ * `table[-1]` and answered `undefined` — and the non-null assertion that used to
+ * stand here suppressed the compiler where the mistake could still have been
+ * seen, so `undefined` was interpolated instead: `dryRunPageBeat(0)` produced
+ * the purpose "undefined a brass key.", and a dry run shipped the string
+ * "undefined" into the fake page map, the beat-dedup rewrite branch and every
+ * MOCK_AI book drafted off them. Nothing in the signature said the argument had
+ * to be 1-based and `dryRunPageBeat` offsets it by `5 * variant` from three call
+ * sites, so the modulo is made euclidean rather than the callers audited: every
+ * integer now names a real entry. The assertion goes with it, leaving one way
+ * past the lookup — a table with no entries, which is a mistake at the table and
+ * throws there rather than five string interpolations downstream.
+ */
+function rotate<T>(table: readonly T[], pageIndex: number): T {
+  const slot = (((pageIndex - 1) % table.length) + table.length) % table.length;
+  const entry = table[slot];
+  if (entry === undefined) {
+    throw new Error("Dry-run rotation table is empty.");
+  }
+  return entry;
+}
+
 function dryRunDetail(pageIndex: number): string {
-  const details = [
-    "a brass key",
-    "a rain-dark window",
-    "a folded letter",
-    "a cracked stair",
-    "a blue cup",
-    "a quiet bell",
-    "a chalk mark",
-    "a locked drawer",
-    "a warm lamp",
-    "a silver thread"
-  ];
-  return details[(pageIndex - 1) % details.length]!;
+  return rotate(DRY_RUN_DETAILS, pageIndex);
 }
 
 function dryRunMarkdown(pageIndex: number, detail: string): string {
@@ -660,5 +867,6 @@ function dryRunMarkdown(pageIndex: number, detail: string): string {
       "The page ends on the first step after that tilt, with the old path no longer available."
     ]
   ];
-  return variants[(pageIndex - 1) % variants.length]!.join("\n");
+  // Same rotation, same reason the assertion is gone from it.
+  return rotate(variants, pageIndex).join("\n");
 }

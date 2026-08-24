@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ChapterBrief, PageProductionBeat, PageQualityReport } from "@book-maker/core";
+import type { PageQualityReport } from "@book-maker/core";
 
 const mocks = vi.hoisted(() => ({
   prisma: {
-    page: { upsert: vi.fn() },
+    $transaction: vi.fn(),
+    page: { findUnique: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
     continuityNote: { createMany: vi.fn() },
     chapter: { findUnique: vi.fn(), updateMany: vi.fn() }
   },
@@ -120,12 +121,14 @@ vi.mock("./bookHelpers.js", async () => {
 });
 
 import {
-  repairPageBriefForRecovery,
   reviewAndSaveGeneratedPage,
   revisePageDraftWithRestart,
   runPageQualityLoop
 } from "./pageReview.js";
-import { MAX_PAGE_QA_CANDIDATES } from "./tuning.js";
+import { pageQaCandidatesFor } from "./tuning.js";
+
+/** The candidate budget the fixtures run under: no tier recorded is balanced. */
+const BALANCED_CANDIDATES = pageQaCandidatesFor({ mediaSettings: {} } as never);
 
 const report = (score: number, overrides: Partial<PageQualityReport> = {}): PageQualityReport =>
   ({
@@ -197,7 +200,7 @@ describe("runPageQualityLoop style audit", () => {
       previousPages: [],
       continuityNotes: [],
       textModel: {} as never,
-      maxCandidates: MAX_PAGE_QA_CANDIDATES,
+      maxCandidates: BALANCED_CANDIDATES,
       reviseContext: "Page 4",
       quality: qualityGates("styleAuditor"),
       styleExcerpts: excerpts,
@@ -311,111 +314,6 @@ describe("runPageQualityLoop style audit", () => {
   });
 });
 
-describe("repairPageBriefForRecovery", () => {
-  const chapterBriefFixture = (): ChapterBrief =>
-    ({
-      chapterIndex: 1,
-      pages: [
-        { pageIndex: 5, requiredContinuity: [] },
-        { pageIndex: 6, requiredContinuity: [] }
-      ],
-      continuityFocus: []
-    }) as unknown as ChapterBrief;
-
-  const repairedBeat = (): PageProductionBeat =>
-    ({ pageIndex: 6, requiredContinuity: ["fresh angle"] }) as unknown as PageProductionBeat;
-
-  const strategy = { repairPageBrief: vi.fn() };
-
-  const callOptions = () =>
-    ({
-      strategy,
-      input: {},
-      plan: {},
-      chapterBrief: chapterBriefFixture(),
-      chapterId: "chapter-1",
-      pageBrief: { pageIndex: 6, requiredContinuity: [] },
-      pageIndex: 6,
-      draft: draftNamed("Six"),
-      qualityReport: report(40),
-      previousPages: [],
-      continuityNotes: [],
-      textModel: {},
-      context: "Page 6"
-    }) as never;
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    strategy.repairPageBrief.mockResolvedValue(repairedBeat());
-  });
-
-  it("merges the repair into a freshly-read chapter brief and writes it back conditionally", async () => {
-    mocks.prisma.chapter.findUnique.mockResolvedValue({ productionBrief: chapterBriefFixture() });
-    mocks.prisma.chapter.updateMany.mockResolvedValue({ count: 1 });
-
-    await repairPageBriefForRecovery(callOptions());
-
-    expect(mocks.prisma.chapter.updateMany).toHaveBeenCalledTimes(1);
-    expect(mocks.prisma.chapter.updateMany).toHaveBeenCalledWith({
-      where: { id: "chapter-1", productionBrief: { equals: chapterBriefFixture() } },
-      data: { productionBrief: expect.objectContaining({ pages: expect.arrayContaining([repairedBeat()]) }) }
-    });
-  });
-
-  it("retries against the winner's brief instead of clobbering it when a concurrent repair lands first", async () => {
-    // A sibling page's repair (for page 7) committed between our read and our
-    // write: the CAS misses, and the retry must fold page 6's repair onto the
-    // *winner's* brief — including page 7's repair — not overwrite it.
-    const staleBrief = chapterBriefFixture();
-    const winnerBrief: ChapterBrief = {
-      ...staleBrief,
-      pages: [...staleBrief.pages, { pageIndex: 7, requiredContinuity: ["sibling repair"] } as never]
-    };
-    mocks.prisma.chapter.findUnique
-      .mockResolvedValueOnce({ productionBrief: staleBrief })
-      .mockResolvedValueOnce({ productionBrief: winnerBrief });
-    mocks.prisma.chapter.updateMany.mockResolvedValueOnce({ count: 0 }).mockResolvedValueOnce({ count: 1 });
-
-    await repairPageBriefForRecovery(callOptions());
-
-    expect(mocks.prisma.chapter.updateMany).toHaveBeenCalledTimes(2);
-    const secondCall = mocks.prisma.chapter.updateMany.mock.calls[1]![0] as {
-      where: { productionBrief: { equals: ChapterBrief } };
-      data: { productionBrief: ChapterBrief };
-    };
-    expect(secondCall.where.productionBrief.equals).toBe(winnerBrief);
-    expect(secondCall.data.productionBrief.pages.map((page) => page.pageIndex)).toEqual([5, 6, 7]);
-  });
-
-  it("does not persist the repaired brief when ownership went during the repair call", async () => {
-    // The one write on the drafting side of the page save, and the chapter's
-    // other pages read it back — so a delivery that lost the book across the
-    // repair call must not leave its opinion of the beats behind.
-    mocks.prisma.chapter.findUnique.mockResolvedValue({ productionBrief: chapterBriefFixture() });
-    const assertOwnership = vi.fn().mockRejectedValue(new Error("lost its durable lease"));
-
-    await expect(repairPageBriefForRecovery({ ...(callOptions() as object), assertOwnership } as never)).rejects.toThrow(
-      "lost its durable lease"
-    );
-
-    expect(strategy.repairPageBrief).toHaveBeenCalledTimes(1);
-    expect(mocks.prisma.chapter.updateMany).not.toHaveBeenCalled();
-  });
-
-  it("gives up and logs rather than looping forever when every attempt loses the race", async () => {
-    mocks.prisma.chapter.findUnique.mockResolvedValue({ productionBrief: chapterBriefFixture() });
-    mocks.prisma.chapter.updateMany.mockResolvedValue({ count: 0 });
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-
-    const result = await repairPageBriefForRecovery(callOptions());
-
-    expect(result).toEqual(repairedBeat());
-    expect(mocks.prisma.chapter.updateMany).toHaveBeenCalledTimes(3);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("lost the CAS race"));
-    warn.mockRestore();
-  });
-});
-
 describe("revisePageDraftWithRestart", () => {
   const strategyWith = (revise: ReturnType<typeof vi.fn>) => ({ revisePageDraft: revise }) as never;
 
@@ -493,24 +391,38 @@ describe("reviewAndSaveGeneratedPage", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.prisma.$transaction.mockImplementation(
+      async (run: (tx: typeof mocks.prisma) => Promise<unknown>) => run(mocks.prisma)
+    );
     mocks.loadContinuityNotes.mockResolvedValue([]);
-    mocks.prisma.page.upsert.mockResolvedValue({ id: "page-row-1", revision: 1 });
+    mocks.prisma.page.findUnique.mockResolvedValue(null);
+    mocks.prisma.page.create.mockResolvedValue({ id: "page-row-1", revision: 1 });
+    mocks.prisma.page.updateMany.mockResolvedValue({ count: 1 });
+    mocks.enqueueWorkerJob.mockResolvedValue({ id: "image-job" });
     strategy.shouldIllustratePage.mockReturnValue(false);
     mocks.keeperStoryExtractForSave.mockResolvedValue(storyExtract);
     mocks.prepareEmbedding.mockResolvedValue(preparedVector);
   });
 
-  it("saves an approved first draft as COMPLETED at revision 1", async () => {
+  it("stages and completes an approved first draft at revision 1", async () => {
     strategy.reviewPageDraft.mockResolvedValue(report(90, { approved: true }));
 
     const context = await reviewAndSaveGeneratedPage(baseOptions());
 
     expect(strategy.revisePageDraft).not.toHaveBeenCalled();
-    expect(mocks.prisma.page.upsert).toHaveBeenCalledWith(
+    expect(mocks.prisma.page.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        projectId: "project-1",
+        index: 3,
+        status: "GENERATING",
+        revision: 1,
+        title: "First"
+      })
+    });
+    expect(mocks.prisma.page.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { projectId_index: { projectId: "project-1", index: 3 } },
-        create: expect.objectContaining({ status: "COMPLETED", revision: 1, title: "First" }),
-        update: expect.objectContaining({ status: "COMPLETED", revision: 1, title: "First" })
+        where: expect.objectContaining({ id: "page-row-1", status: "GENERATING", revision: 1 }),
+        data: expect.objectContaining({ status: "COMPLETED" })
       })
     );
     expect(mocks.prepareEmbedding).toHaveBeenCalledWith("First summary.", expect.anything());
@@ -518,40 +430,9 @@ describe("reviewAndSaveGeneratedPage", () => {
       { projectId: "project-1", scope: "page:3", sourceId: "page-row-1", text: "First summary." },
       preparedVector
     );
-    expect(context).toEqual({ index: 3, title: "First", markdown: "First text.", summary: "First summary." });
-  });
-
-  it("records continuity notes and queues the illustration for an approved page", async () => {
-    strategy.reviewPageDraft.mockResolvedValue(report(90, { approved: true }));
-    strategy.shouldIllustratePage.mockReturnValue(true);
-    mocks.prisma.page.upsert.mockResolvedValue({ id: "page-row-1", revision: 2 });
-    const options = baseOptions() as {
-      draft: ReturnType<typeof draftNamed> & { index: number; imagePrompt?: string }
-    };
-    options.draft.imagePrompt = "A robin on a branch";
-    options.draft.continuityNotes = ["The robin is named Pip."];
-
-    await reviewAndSaveGeneratedPage(options as never);
-
-    expect(mocks.prisma.continuityNote.createMany).toHaveBeenCalledWith({
-      data: [
-        expect.objectContaining({
-          projectId: "project-1",
-          pageId: "page-row-1",
-          scope: "page:3",
-          body: "The robin is named Pip.",
-          tags: ["page", "3", "test-strategy"]
-        })
-      ]
-    });
-    expect(mocks.updateEntityStateFromPage).toHaveBeenCalledWith("project-1", 3, ["The robin is named Pip."]);
-    expect(mocks.enqueueWorkerJob).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "GENERATE_IMAGE",
-        payload: { pageId: "page-row-1", planId: "plan-1", prompt: "A robin on a branch" },
-        dedupeKey: "generate-image:page-row-1:plan-1:2"
-      })
-    );
+    expect(context.page).toEqual({ index: 3, title: "First", markdown: "First text.", summary: "First summary." });
+    // Nothing repaired its brief, so the caller's copy of the chapter is left alone.
+    expect(context.repairedChapterBrief).toBeUndefined();
   });
 
   it("keeps the best draft, not the last, when no rewrite is approved", async () => {
@@ -567,10 +448,10 @@ describe("reviewAndSaveGeneratedPage", () => {
 
     const context = await reviewAndSaveGeneratedPage(baseOptions());
 
-    expect(strategy.reviewPageDraft).toHaveBeenCalledTimes(MAX_PAGE_QA_CANDIDATES);
-    expect(mocks.prisma.page.upsert).toHaveBeenCalledWith(
+    expect(strategy.reviewPageDraft).toHaveBeenCalledTimes(BALANCED_CANDIDATES);
+    expect(mocks.prisma.page.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        create: expect.objectContaining({
+        data: expect.objectContaining({
           status: "FAILED_QA",
           revision: 2,
           title: "Rewrite 2",
@@ -585,7 +466,7 @@ describe("reviewAndSaveGeneratedPage", () => {
     // A flagged page still publishes its story delta: the final review rewrites
     // the page and needs the state the keeper actually left behind.
     expect(mocks.persistStoryExtract).toHaveBeenCalledTimes(1);
-    expect(context).toMatchObject({ index: 3, title: "Rewrite 2" });
+    expect(context.page).toMatchObject({ index: 3, title: "Rewrite 2" });
   });
 
   /** The book's opening pages, which is what a style lock is. */
@@ -596,7 +477,7 @@ describe("reviewAndSaveGeneratedPage", () => {
   const continuationWindow = [anchorPage(23, "late-voice"), anchorPage(24, "later-voice")];
 
   const savedReport = () =>
-    (mocks.prisma.page.upsert.mock.calls[0]![0] as { create: { qualityReport: Record<string, unknown> } }).create
+    (mocks.prisma.page.create.mock.calls[0]![0] as { data: { qualityReport: Record<string, unknown> } }).data
       .qualityReport;
 
   /** The style lock the loop's first rewrite was anchored to. */
@@ -677,7 +558,9 @@ describe("reviewAndSaveGeneratedPage", () => {
 
     // Auditor gate on, excerpts gate off: nothing is even loaded to pin.
     vi.clearAllMocks();
-    mocks.prisma.page.upsert.mockResolvedValue({ id: "page-row-1", revision: 1 });
+    mocks.prisma.page.findUnique.mockResolvedValue(null);
+    mocks.prisma.page.create.mockResolvedValue({ id: "page-row-1", revision: 1 });
+    mocks.prisma.page.updateMany.mockResolvedValue({ count: 1 });
     mocks.enrichPageQualityReport.mockImplementation(stubbedEnrichment);
     mocks.qualityEnabled.mockImplementation((feature: string) => feature === "styleAuditor");
     withStyleLock();
@@ -706,8 +589,8 @@ describe("reviewAndSaveGeneratedPage", () => {
 
     await reviewAndSaveGeneratedPage(baseOptions());
 
-    expect(mocks.prisma.page.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ create: expect.objectContaining({ status: "FAILED_QA" }) })
+    expect(mocks.prisma.page.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "FAILED_QA" }) })
     );
     expect(savedReport()).toMatchObject({ score: 85, stylePenalty: 30 });
     expect(savedReport().issues).toContain("Register drifts into lecture mode.");
@@ -754,7 +637,7 @@ describe("reviewAndSaveGeneratedPage ownership fence", () => {
 
   const storyExtract = { storyDelta: { facts: ["The robin flew."] }, contradictions: [] };
 
-  const fencedOptions = (assertOwnership: () => Promise<void>) =>
+  const fencedOptions = (assertOwnership: () => Promise<void>, overrides: Record<string, unknown> = {}) =>
     ({
       projectId: "project-1",
       planId: "plan-1",
@@ -766,8 +649,45 @@ describe("reviewAndSaveGeneratedPage ownership fence", () => {
       chapterId: null,
       previousPages: [],
       generationJobId: "gj-1",
-      assertOwnership
+      assertOwnership,
+      ...overrides
     }) as never;
+
+  const recoveryBeat = (beat: string) => ({
+    pageIndex: 3,
+    chapterIndex: 1,
+    purpose: beat,
+    beat,
+    requiredContinuity: [] as string[],
+    endingPressure: ""
+  });
+
+  const keptBriefRepairOptions = (assertOwnership: () => Promise<void>) => {
+    const originalBeat = recoveryBeat("Repeat the opening");
+    const repairedBeat = recoveryBeat("Reveal the hidden stair");
+    const chapterBrief = {
+      chapterIndex: 1,
+      title: "The stair",
+      summary: "A hidden route opens.",
+      continuityFocus: [] as string[],
+      pages: [originalBeat]
+    };
+    const rejected = report(40, { checks: { repetitionOk: false, progressionOk: true } as never });
+    strategy.reviewPageDraft
+      // Initial review, then both ordinary rewrites: all still blame the brief.
+      .mockResolvedValueOnce(rejected)
+      .mockResolvedValueOnce(rejected)
+      .mockResolvedValueOnce(rejected)
+      // Balanced recovery is candidate four; this is the kept repaired draft.
+      .mockResolvedValueOnce(report(90, { approved: true }));
+    strategy.revisePageDraft.mockResolvedValue(draftNamed("Recovered"));
+    strategy.repairPageBrief.mockResolvedValue(repairedBeat);
+    return {
+      options: fencedOptions(assertOwnership, { chapterId: "chapter-1", chapterBrief }),
+      chapterBrief,
+      repairedBeat
+    };
+  };
 
   /** Every write the page save publishes for later pages to read back. */
   const expectNothingPublished = () => {
@@ -791,8 +711,14 @@ describe("reviewAndSaveGeneratedPage ownership fence", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.prisma.$transaction.mockImplementation(
+      async (run: (tx: typeof mocks.prisma) => Promise<unknown>) => run(mocks.prisma)
+    );
     mocks.loadContinuityNotes.mockResolvedValue([]);
-    mocks.prisma.page.upsert.mockResolvedValue({ id: "page-row-1", revision: 1 });
+    mocks.prisma.page.findUnique.mockResolvedValue(null);
+    mocks.prisma.page.create.mockResolvedValue({ id: "page-row-1", revision: 1 });
+    mocks.prisma.page.updateMany.mockResolvedValue({ count: 1 });
+    mocks.enqueueWorkerJob.mockResolvedValue({ id: "image-job" });
     strategy.shouldIllustratePage.mockReturnValue(true);
     strategy.reviewPageDraft.mockResolvedValue(report(90, { approved: true }));
     mocks.keeperStoryExtractForSave.mockResolvedValue(storyExtract);
@@ -804,7 +730,7 @@ describe("reviewAndSaveGeneratedPage ownership fence", () => {
 
     await reviewAndSaveGeneratedPage(fencedOptions(fence));
 
-    // Before the page upsert, before the provider calls, and before the writes.
+    // Before the page stage, before the provider calls, and before the writes.
     expect(fence).toHaveBeenCalledTimes(3);
     expect(mocks.persistStoryExtract).toHaveBeenCalledWith(expect.objectContaining({ extract: storyExtract }));
     expect(mocks.prisma.continuityNote.createMany).toHaveBeenCalledTimes(1);
@@ -813,14 +739,14 @@ describe("reviewAndSaveGeneratedPage ownership fence", () => {
     expect(mocks.enqueueWorkerJob).toHaveBeenCalledTimes(1);
   });
 
-  it("spends no provider call and publishes nothing when ownership goes right after the page upsert", async () => {
-    // Lost before the story extract: the barrier after the upsert is what stops
+  it("spends no provider call and publishes nothing when ownership goes right after the page stage", async () => {
+    // Lost before the story extract: the barrier after the stage is what stops
     // a delivery that no longer owns the book paying for state it may not write.
     const fence = fenceLostAfter(1);
 
     await expect(reviewAndSaveGeneratedPage(fencedOptions(fence))).rejects.toThrow("lost its durable lease");
 
-    expect(mocks.prisma.page.upsert).toHaveBeenCalledTimes(1);
+    expect(mocks.prisma.page.create).toHaveBeenCalledTimes(1);
     expect(mocks.keeperStoryExtractForSave).not.toHaveBeenCalled();
     expect(mocks.prepareEmbedding).not.toHaveBeenCalled();
     expectNothingPublished();
@@ -838,13 +764,109 @@ describe("reviewAndSaveGeneratedPage ownership fence", () => {
     expectNothingPublished();
   });
 
-  it("does not even save the page when ownership is already gone before the upsert", async () => {
+  it("does not even save the page when ownership is already gone before the stage", async () => {
     const fence = fenceLostAfter(0);
 
     await expect(reviewAndSaveGeneratedPage(fencedOptions(fence))).rejects.toThrow("lost its durable lease");
 
-    expect(mocks.prisma.page.upsert).not.toHaveBeenCalled();
+    expect(mocks.prisma.page.create).not.toHaveBeenCalled();
     expect(mocks.keeperStoryExtractForSave).not.toHaveBeenCalled();
+    expectNothingPublished();
+  });
+
+  it("keeps both the repaired chapter brief and page behind the publication fence", async () => {
+    // This is the old split-write window. The repair's post-model stand-down
+    // succeeds, then a replacement takes the structural lease before the page
+    // publication barrier. Previously the loop had already committed the
+    // chapter CAS here, leaving its repaired assignment durable while this
+    // delivery's page never landed.
+    const fence = fenceLostAfter(1);
+    const { options } = keptBriefRepairOptions(fence);
+
+    await expect(reviewAndSaveGeneratedPage(options)).rejects.toThrow("lost its durable lease");
+
+    expect(strategy.repairPageBrief).toHaveBeenCalledTimes(1);
+    expect(fence).toHaveBeenCalledTimes(2);
+    expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
+    expect(mocks.prisma.page.create).not.toHaveBeenCalled();
+    expect(mocks.prisma.chapter.findUnique).not.toHaveBeenCalled();
+    expect(mocks.prisma.chapter.updateMany).not.toHaveBeenCalled();
+    expectNothingPublished();
+  });
+
+  it("publishes a kept page and its repaired chapter brief on one transaction client", async () => {
+    const fence = fenceLostAfter(Number.POSITIVE_INFINITY);
+    const { options, chapterBrief, repairedBeat } = keptBriefRepairOptions(fence);
+    const tx = {
+      page: { create: vi.fn().mockResolvedValue({ id: "page-row-1", revision: 4 }) },
+      chapter: {
+        findUnique: vi.fn().mockResolvedValue({ productionBrief: chapterBrief }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 })
+      }
+    };
+    mocks.prisma.$transaction.mockImplementationOnce(
+      async (run: (client: typeof tx) => Promise<unknown>) => run(tx)
+    );
+
+    const saved = await reviewAndSaveGeneratedPage(options);
+
+    expect(saved.repairedChapterBrief?.pages).toEqual([repairedBeat]);
+    expect(tx.page.create).toHaveBeenCalledTimes(1);
+    expect(tx.chapter.findUnique).toHaveBeenCalledTimes(1);
+    expect(tx.chapter.updateMany).toHaveBeenCalledTimes(1);
+    expect(tx.page.create.mock.invocationCallOrder[0]!).toBeLessThan(
+      tx.chapter.findUnique.mock.invocationCallOrder[0]!
+    );
+    // Neither half escapes onto the root client around the transaction.
+    expect(mocks.prisma.page.create).not.toHaveBeenCalled();
+    expect(mocks.prisma.chapter.findUnique).not.toHaveBeenCalled();
+    expect(mocks.prisma.chapter.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("rolls the kept page back when the repaired brief loses every transaction CAS", async () => {
+    const fence = fenceLostAfter(Number.POSITIVE_INFINITY);
+    const { options, chapterBrief } = keptBriefRepairOptions(fence);
+    const movingBrief = (label: string) => ({ ...chapterBrief, continuityFocus: [label] });
+    let stagedPage: Record<string, unknown> | null = null;
+    let durablePage: Record<string, unknown> | null = null;
+    const tx = {
+      page: {
+        create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          stagedPage = data;
+          return { id: "page-row-1", revision: 4 };
+        })
+      },
+      chapter: {
+        findUnique: vi
+          .fn()
+          .mockResolvedValueOnce({ productionBrief: movingBrief("Sibling A") })
+          .mockResolvedValueOnce({ productionBrief: movingBrief("Sibling B") })
+          .mockResolvedValueOnce({ productionBrief: movingBrief("Sibling C") }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 })
+      }
+    };
+    mocks.prisma.$transaction.mockImplementationOnce(
+      async (run: (client: typeof tx) => Promise<unknown>) => {
+        const result = await run(tx);
+        durablePage = stagedPage;
+        return result;
+      }
+    );
+
+    const save = reviewAndSaveGeneratedPage(options);
+
+    await expect(save).rejects.toMatchObject({
+      name: "ChapterBriefPublicationRejectedError",
+      chapterId: "chapter-1",
+      outcome: "lost-race"
+    });
+    expect(tx.page.create).toHaveBeenCalledTimes(1);
+    expect(tx.chapter.updateMany).toHaveBeenCalledTimes(3);
+    expect(durablePage).toBeNull();
+    // Rejection means there is no returned `repairedChapterBrief` for a caller
+    // to adopt, and neither half escaped through the root client.
+    expect(mocks.prisma.page.create).not.toHaveBeenCalled();
+    expect(mocks.prisma.chapter.updateMany).not.toHaveBeenCalled();
     expectNothingPublished();
   });
 });

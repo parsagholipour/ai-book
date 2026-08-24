@@ -302,7 +302,7 @@ export async function continueBook(job: Job) {
           generationJobId,
           illustrate: false
         });
-        previousPages.push(saved);
+        previousPages.push(saved.page);
         drafted += 1;
       }
       if (chapter) {

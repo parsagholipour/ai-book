@@ -26,6 +26,205 @@ Note the two predicates that decide this — `jobOwnsProjectLifecycle` in `runti
 and `ownsProjectStatus` in `compileExport.ts` — are both module-private. You cannot import and
 reuse them; read them and add your branch alongside the others.
 
+**A fence that cannot be read has a third answer, and it settles nothing.** The export repair's
+ownership fence asks Postgres two or three times per repaired page across the minutes a long book
+takes: advisory `exportPublicationSuperseded` reads around provider work, then a no-op
+`Project.contentRevision` CAS as the first statement of the page/brief publication transaction. A
+brief repair's `chapter` read and CAS ask Postgres again. A throw
+from any of them is not an `ExportRepairSupersededError`, so it travelled straight out of the catch
+written to keep this compile away from `markFailed` — and `compile-export` is not in
+`DERIVATIVE_GENERATION_JOBS`, so BullMQ retries nothing: one pool hiccup marked a finished, fully
+paid book FAILED and refunded `FULL_BOOK_GENERATION`. Standing down instead is not the fix either.
+Only three compiles reach this fence at all, and one holds EDITING while another holds GENERATING.
+Their immediate handoffs must not guess over an unanswered `SELECT`; the delayed
+`reconcileStrandedGeneration` sweep reaches both statuses only after its grace period and after every
+job is terminal, while `ensureExportRepairQueued` covers COMPLETE and REVIEW_REQUIRED.
+`compileExportFence.ts` therefore
+retries the read a bounded number of times and then raises `ExportRepairFenceUnreadableError`,
+which stops the repair without settling the compile: the handler re-reads the manuscript and falls
+through to its own supersede read and to `publishCompiledExports`' compare-and-set, both of which
+bind. That successful re-read becomes the handler's manuscript for the deterministic report,
+Markdown compilation and format render; otherwise pages already repaired before the failed fence
+would be durable in Postgres but absent from files published under that same revision. The chapter
+sweep and first whole-book verdict are not re-run: their page-scoped findings survive only for
+unchanged pages, and their unscoped book-wide findings survive only when no page changed, matching
+the superseded stand-down's withdrawal semantics. The truncated-pass warning records the incomplete
+repair separately, while a distinct `FINAL_QA_REPAIR_INCOMPLETE` error finding keeps the exported
+best-effort book in REVIEW_REQUIRED without preserving a stale content complaint or buying another
+model review; any durable FAILED_QA pages are its page links. Assuming
+"not superseded" would not let a loser publish — publication claims on
+`contentRevision` — but it would keep the pass rewriting page rows over a reader's paid edit, which
+is the harm the fence is actually for. The transaction CAS is the binding page fence: a paid edit
+that commits after the preceding read makes it miss, and both page branches plus any accepted brief
+repair roll back and take the same superseded stand-down. If the re-read fails too, that failure settles the compile —
+a compile that cannot reach the database has earned `markFailed` — but it travels *composed*, or the
+fence's evidence dies with it: `markFailed` writes `error.message` and nothing else onto the row, so
+a driver error thrown in place of the fence's marked a fully written, fully paid book FAILED with no
+record that its repair had stopped, and none of what stopped it. `manuscriptUnreadableAfterFence`
+raises an `ExportManuscriptUnreadableError` instead, whose message says how much of the repair had
+finished and then keeps the driver's own words, whose `cause` is the fence error, and which copies
+that progress, `barriersCleared` and the read the fence gave up on into own *enumerable* fields — the
+only form that survives `serializeError` and the JSON of `processJob`'s `job.failed` line, since a
+nested `Error` renders as `{}`. A `StopRequestedError` from that read is handed back untouched. **And
+a pass that stops early says so**, because the book it ships is indistinguishable from a repaired one:
+`recordTruncatedRepairPass` files the structured warning every sibling stand-down files, plus a
+run-log line in the same `.jsonl` as the provider calls of the pass that stopped — job progress is no
+use here, since `markCompleted` overwrites it moments later. It records how far the pass got, and it
+is called after the manuscript re-read, so a compile that cannot re-read settles on the composed
+failure instead of filing a note about a pass it will not finish, two of whose numbers are measured
+against a manuscript it never got back. **How far it got is counted in pages, by the pass.** The
+fence's own tally is barriers, and it is asked twice per repaired page and *three* times for any page that
+reaches a brief repair (`repairPagesFromFinalQa` at the loop top and before its writes,
+`repairPageBriefForRecovery` after the planner call; the brief CAS shares the write fence), so the arithmetic that
+number invited was wrong by exactly the pages that took the expensive route. `repairPagesFromFinalQa`
+counts the pages it saw through to their writes — a page it could not fix included, since that page
+spent its whole budget and saved its best draft — and stamps `TruncatedRepairProgress` onto the fence
+error on its way out, at the throw, where the count is still what it was when the database went quiet.
+**Both halves of that fraction are pages the book has.** The targets are a union of indexes — the
+FAILED_QA ones, every error-severity deterministic finding's `affectedPageIndexes`, and the verdict's
+own, bounded only by the book's highest index — so the pass resolves them to rows before it walks
+them, and the denominator is that resolved list. Counting the raw indexes named a target the pass
+could never reach and made it look one page less finished for each, which is the same arithmetic
+error `barriersCleared` was demoted for; a verdict resolving to no rows at all is no pass, and
+returns nothing rather than buying the caller a second `runFinalBookQa` over an unrewritten book.
+`barriersCleared` stays as evidence about the fence: it is exact, and it is the only number that exists
+when a fence goes dark before anything has been written.
+
+**A final-QA rewrite never ships with the generated picture of the keeper it replaced.** The repair
+prepares its story extract and embedding before opening a transaction, then claims both the queued
+`contentRevision` and the exact page snapshot it reviewed. One transaction stages an illustrated
+keeper as GENERATING, retires only system-owned assets for the old keeper, creates the tokened
+`GENERATE_IMAGE` row, re-reads that exact job id and verifies its project, type, page, plan, prompt and
+keeper token, then compare-and-swaps the staged page fields and version to terminal. Those are three
+ordered statements but one durable commit: a crash before terminalization rolls back the page, asset
+retirement, job and brief together, so no committed GENERATING page can wait for a callback that will
+never come. A failed Redis dispatch happens after the commit and leaves the durable QUEUED row for
+reconciliation. The compile itself stands down whenever it created a
+replacement, and the image job's normal fan-in queues the export after no image jobs remain open.
+`compileExport` repeats that open-image-job gate before any QA or render work because a Bull
+redelivery bypasses fan-in: a crash after the atomic commit but before dispatch/stand-down has a
+terminal keeper and a QUEUED replacement row, and may not render merely because the page is terminal.
+That entry gate is only a cheap preflight. `publishCompiledExports` repeats the count after taking
+the same project/content-revision lock that repair publication takes as its first statement, before
+the compile-job claim, artifact renames, or project status write. The lock makes the final answer
+ordered: a sibling cannot commit a replacement job between that count and publication.
+Its after-completion readiness check covers the inverse race where the image finished while the
+redelivered compile row was still ACTIVE and therefore could not queue its own successor. That
+callback names the completed compile as its predecessor: dispatch appends one fixed successor
+identity derived from that durable row id, preserving its attempt scope, so the terminal row cannot
+consume the enqueue while duplicate callbacks still collapse onto one successor. The stranded
+sweep recovers the same predecessor from the latest unpublished current-revision compile, so its
+replay races the callback on the same key rather than creating a second row. The callback is a
+latency optimization, not the only owner: `reconcileStrandedGeneration` includes
+EDITING as well as GENERATING projects once their grace period has passed and no job remains open,
+so a transient callback failure is replayed durably instead of stranding an edited book. Every
+compile completion that makes this handoff returns
+`lifecycleSettlement: "defer-to-successor"`: `markCompleted` still terminalizes the predecessor
+row, which is what releases successor dedupe/fan-in, but leaves the shared `GenerationAttempt` and
+`BookEditOperation` open. The successor preserves both ids and is the only compile allowed to settle
+them; otherwise the predecessor's ordinary success path marks the attempt SUCCEEDED and the edit
+APPLIED before a replacement image can fail, and the later failure cannot refund the already-settled
+attempt. The completed row's handoff message preserves that choice across a stalled Bull redelivery,
+where the in-memory `JobCompletion` no longer exists. Ordinary publishing compiles keep the default
+settlement. Every handoff carries
+`CompilePublicationPolicy`: review/no-verdict flags, expected publication status,
+presentation fallback, and detached repair format/lifecycle. A page/image fan-in without explicit
+options recovers that policy from the latest compile for the current content revision, so a free
+presentation reprint or detached repair cannot silently turn into an outcome-owning full-QA pass.
+If that revision has no compile row yet — an image edit that returned waiting because
+GENERATE_IMAGE jobs were still open — it recovers from the latest APPLIED edit, the same mapping
+`strandedCompileRecoveryPolicy` uses, so the wait cannot upgrade skip-review into full QA.
+Presentation edits created before their compile intent became transactional have one narrower
+legacy recovery door: when the current EDITING revision has neither a compile nor an APPLIED edit,
+the immediately preceding revision's presentation compile supplies both the non-owning policy and
+its exact COMPLETE/REVIEW_REQUIRED fallback. An unrelated or unfinished predecessor supplies
+neither; an unknown EDITING state therefore stays untouched instead of being guessed into full QA
+or COMPLETE.
+For the first presentation change, the narrower historical signature is a presentation preference
+on the project plus a completed, verdict-owning compile for exactly the preceding revision. Its
+stored verdict supplies the old settled status; when that legacy report is unreadable, recovery
+uses REVIEW_REQUIRED rather than claiming COMPLETE. The new compile is presentation-owned either
+way, so it neither runs full QA nor replaces the manuscript's quality verdict.
+The shared core policy module also materializes those fields into the payload and builds the durable
+dedupe identity from `contentRevision` plus the complete normalized policy (and, for worker fan-in,
+the page-revision fingerprint). An open compile suppresses only the same normalized policy; the same
+pages queued for a presentation fallback, a detached format, or no-verdict publication are different
+intents, while an exact retry remains idempotent.
+Manual/operation-suffixed assets are never retired. A retry or sibling compile loses the original
+page-version claim before it can reuse a terminal dedupe row; a reader edit loses the project claim.
+Story delta, continuity notes, entity state and embedding writes live in
+`compileExportRepairSemantics.ts`: one transaction starts with the same `contentRevision` fence, locks
+the exact repaired keeper, and only then writes every memory row. There is no provider call inside it,
+and an ownership miss writes none of the semantic tail.
+
+**A compile that stands down leaves no verdict about prose it no longer speaks for.**
+There are four ways out of `compileExport.ts` with nothing published — the repair losing the
+manuscript mid-page, the compile's own supersede read before the render,
+`publishCompiledExports`' compare-and-set answering somebody else, and open `GENERATE_IMAGE` jobs
+at the top of the handler — and for a while only the first of them corrected the report. The two
+late doors run *below* `recordCompileQualityReport`, so the row already holds the pass's findings
+by the time they decide to stand down, and nothing is coming to replace them: the compile that
+supersedes this one may own no verdict at all (a `MARKDOWN_RECOMPILE_WITHOUT_VERDICT` image edit)
+or report `finalReviewRan: false` (an edit's own recompile), so `loadProjectQualityReport` kept
+serving a `blocked` card about the page the reader had just paid to replace — a deterministic error
+being the one finding that survives every gate in `buildManuscriptQualityReport`. The image-job
+gate used to retract the column to `DbNull` instead, which is how a first attempt with no findings
+could grade `passed` over a previous `blocked` card: standing down with an empty in-memory set is
+the same claim. A compile that has not measured yet just requeues. Every newly stored report carries
+worker-private provenance — `finalReviewRan` plus page index, revision and a title/prose digest — so
+a redelivery can reconstruct `StandDownFindings` against the exact reviewed keepers without storing
+a second manuscript. It must never pass the current pages it loaded as that historical snapshot:
+a sibling repair can replace a keeper and open its image job under the same `contentRevision` before
+the redelivery reads either. A legacy or unreadable report with no such proof retracts; none of these
+doors re-runs deterministic or model QA over prose this attempt did not review. All four now go through `standDownForNewerExport`,
+which takes the compile's `StandDownFindings` and *is* the thing that settles them: it withdraws every finding
+naming a page the book no longer holds in that form and writes what is left of them. Filtering at
+one door is a property somebody has to remember; filtering inside the only door is one that cannot
+be forgotten. The findings are carried rather than the report because
+`buildManuscriptQualityReport` is a grader — once it has answered there is no way back to the pages
+each finding was about — and they are *withheld* rather than re-measured, because a fresh sweep
+over the reader's manuscript would invent a `PAGE_COUNT_MISMATCH` the moment their edit added a
+page. **A finding whose subject is the manuscript is scored against the whole book**, not kept by
+default, and there are two shapes of it. One names no page — a final-QA complaint naming no page
+number, the chapter sweep's empty `affectedPageIndexes`, `MISSING_PAGES`. The other names a page it
+is not about: `UNPAID_PROMISE` carries the book's last page because that is where a promise gets
+paid off, and read as a location that anchor was unfalsifiable, since a truncated repair moves a
+prefix of the book and never reaches the last page — so a compile whose own repair had rewritten
+(and possibly paid off) the promise stood down complaining about it. Both survive only a book
+nothing has moved in, and the code is what tells the second apart, spelled once beside the producer
+that stamps the signpost. Nothing here can tell a cosmetic edit from a paid rewrite, and the
+publishing path answers the same question by re-running `runFinalBookQa` over the repaired pages,
+which a stand-down cannot do — re-folding the promises over the reader's rows instead is the
+`PAGE_COUNT_MISMATCH` mistake in another column, so the fold stays on the pages this compile read.
+**A withdrawal that leaves nothing behind is not a pass.** An empty report is a claim, not a
+silence: no findings grades `passed`, score 100 — "Quality checks passed" — so the filter written to
+take a `blocked` card off a page the reader had just paid to replace could write that sentence over
+the compile's own `blocked` instead, which is the one direction a stand-down may never move a row.
+It is the reachable shape rather than an exotic one: a book whose only finding is the deterministic
+error on the page the reader edited has exactly one finding to withhold. So an all-withheld
+withdrawal is the same fact as a manuscript nobody could re-read — this compile has no claim to
+make — and takes the same door below. A same-delivery compile that *measured* nothing keeps its pass,
+and the asymmetry is the point: that report is already on the row at the two late doors, so writing
+it again upgrades nothing. A redelivery keeps that prior measured clean pass when its durable
+fingerprints still match every current page; movement makes the old clean grade unproven and retracts
+it rather than throwing away or asserting a verdict on guesswork.
+`withheldEveryFindingItMeasured` is where the two are told apart, and it asks about the findings
+rather than about the report, because a grade cannot say which of the two produced it.
+**And a read that cannot answer is a third thing to say.** The manuscript re-read the withdrawal
+rests on is taken *outside* the best-effort write and on the fence's own retry budget, because a
+read decides what to write and only the write itself may be dropped: folded inside it, one timeout
+against the same unhealthy pool cancelled the whole write, leaving the unfiltered `blocked` card
+standing at the two late doors and no verdict at all at the early one. A compile that still cannot
+measure **retracts** — `recordCompileQualityReport(…, null)` clears `qualityReport` with
+`Prisma.DbNull`, and `loadProjectQualityReport` selects `not: DbNull`, so the book falls back to the
+last verdict measured against a manuscript that existed. Not the stale snapshot, and not an empty
+report either: no findings grades `passed`, which tells the reader a book nobody re-measured is fine.
+Both of that function's writes are best-effort for the same reason the repair's catch existed:
+a P2025 from a retired `GenerationJob` row travelling out of a stand-down would mark a finished,
+fully paid book FAILED. A `StopRequestedError` still escapes, and so does everything else — the
+`recordTruncatedRepairPass` note above is guarded inside itself for exactly that reason, since a
+trace filed on a path that may not fail must not be the thing that fails it.
+
 ## Page generation
 
 - **A page's independent loads fan out, and which failure comes back is decided rather than raced.**
@@ -52,6 +251,26 @@ reuse them; read them and add your branch alongside the others.
   after it stays serial on real dependencies — both retrievals want that vector, and the repair pass
   writes the very embedding rows the retrieval then reads, so overlapping them would have a page read
   the memory it is in the middle of backfilling.
+- **Every illustrated keeper is published in three fenced steps.** `generatePage` first claims the
+  page's loaded `updatedAt` version, then commits the keeper content (and any earned chapter-brief repair)
+  while the page remains GENERATING,
+  then creates the image job, then exposes COMPLETED with a status-only compare-and-swap on that exact
+  content. This ordering means neither a failed brief CAS can leak a picture job nor a sibling compile
+  can observe a terminal page before its job exists. The job's versioned `keeperToken` is a digest of
+  the project id, stable page id and page fields the image depicts; it is part of the dedupe key, and
+  `generateImage` checks it before provider work, after rendering and under the asset-publication row
+  lock. Content-only tokens already in the queue remain a read-only migration alias, but no producer
+  may mint one. Tokenless jobs already in the queue must prove the matching durable `GenerationJob`
+  and that the page version strictly predates its creation (equality is ambiguous at millisecond
+  precision); a replacement stage advances that
+  version even when its new enqueue fails. Keep those checks, the row-version transitions, stable
+  page-id filenames and ownership-scoped asset deletion together: they make an overlapping retry
+  stand down instead of overwriting a newer keeper's prose, image row, failure marker, manual asset,
+  or bytes, including across a structural reindex.
+  Completion and page-owned continuity notes are one transaction. After it, the story, entity and
+  embedding helpers are best-effort and rethrow only `StopRequestedError` (which is unrecoverable);
+  the sole retryable tail is deduped next-page fan-out. A same-plan COMPLETED redelivery therefore
+  replays that fan-out only — it never reclaims or redrafts the terminal page.
 - **Whether the writer tools run at all is decided by what this handler loaded, not by what the book
   is.** `shouldSkipWriterTools` (`packages/core/src/generation/writerTools.ts`) is there to keep a
   tool loop off a page with nothing to look up: on an empty story state and no research notes,
@@ -233,8 +452,9 @@ reason, and a null answer refuses the whole move rather than half-applying it.
   still **rethrow** the lost-lease error after a *completion* wait that answers `abandoned`: that
   wait means nobody finished the shift, so `markFailed` settles it the way it settles any other
   drafting failure, with the refund, the FAILED row and the book out of EDITING. Returning there
-  instead would leave the project in the state no sweep reaches, over a wait that had already given
-  up. The three waits *after* the export tail ignore the answer on purpose: the recompile is queued
+  instead would leave the project in the state the stranded sweep cannot reach while this shared
+  durable row remains ACTIVE, over a wait that had already given up. The three waits *after* the
+  export tail ignore the answer on purpose: the recompile is queued
   by then, so all that is missing is the lease's own completion write, and the next delivery
   replays that tail idempotently.
 - **A delivered edit outlives a recompile it could not queue.** `maybeEnqueueCompile` is the last
@@ -249,8 +469,10 @@ reason, and a null answer refuses the whole move rather than half-applying it.
   `replayAppliedRestructure`, where the operation is APPLIED before the job even starts. The
   recovery is the same for all three: a project left COMPLETE with its files missing is exactly
   what `ensureExportRepairQueued` rebuilds. **EDITING is the state to avoid** once nothing is coming
-  to leave it: no sweep reaches it and the repair lane refuses it — which is why all four forks
-  restore a settled status on `not-ready`, the one dispatch outcome with no compile behind it.
+  to leave it: `reconcileStrandedGeneration` can recover it only after its grace period and after
+  every job is terminal, while the repair lane refuses it. All four forks therefore restore a
+  settled status on `not-ready`, the one dispatch outcome that already proves no immediate compile
+  is behind it.
 - **The status a fork restores rides the payload, because the enqueue is what takes it away.** It is
   COMPLETE for almost every book and REVIEW_REQUIRED for the ones the reader still has to look at,
   and nothing on this side can tell them apart: `queueChatRestructurePages` writes
@@ -286,8 +508,9 @@ reason, and a null answer refuses the whole move rather than half-applying it.
   unconditional `update` then lifted a finished book into EDITING, and the forks that follow it
   write nothing and queue nothing: the shift's claim answering `completed` or `settled` on a
   skipped row, and a waited lease that was already complete, all returned with the book stranded
-  in a state no sweep reaches. `releaseProjectEditingClaim` hands `preEditProjectStatus` back on
-  exactly those forks, and only when the count says this delivery is what moved the book — a
+  until the delayed EDITING sweep's grace period elapsed. `releaseProjectEditingClaim` preserves
+  the immediate handoff by putting `preEditProjectStatus` back on exactly those forks, and only
+  when the count says this delivery is what moved the book — a
   `false` count means the project was already EDITING, which is the owning fork's window and has
   to be left standing.
 - **An edit that settles itself as a delivered no-op has to refund itself too.** `restructurePages`

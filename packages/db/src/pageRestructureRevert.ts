@@ -10,6 +10,7 @@ import {
   repointedPageMapUpdate,
   type PageOrderEntry
 } from "./pageOrdering.ts";
+import { stampLegacyGeneratedIllustrationOwnership } from "./pageIllustrationOwnership.ts";
 
 /**
  * Putting a book's shape back exactly as it was.
@@ -39,7 +40,15 @@ export async function revertStructuralPageChange(
   // one thing neither carries is where those pages sit *now* — which is the
   // half the map has to be re-pointed from.
   const [currentPages, project, archivedSnapshots] = await Promise.all([
-    tx.page.findMany({ where: { projectId }, select: { id: true, index: true, chapterId: true } }),
+    tx.page.findMany({
+      where: { projectId },
+      select: {
+        id: true,
+        index: true,
+        chapterId: true,
+        images: { select: { id: true, type: true, path: true, metadata: true } }
+      }
+    }),
     tx.project.findUnique({
       where: { id: projectId },
       select: { pdfPageMap: true, currentPlanId: true, targetPages: true }
@@ -115,6 +124,12 @@ export async function revertStructuralPageChange(
       moves.set(current, entry.index);
     }
   }
+
+  // Undo and rollback reindex the same rows as the forward structural path.
+  // Resolve numeric legacy filenames while the complete current ordering is
+  // still beside stable page ids; after applyPageOrder, an inherited number is
+  // no longer evidence of which page produced a render.
+  await stampLegacyGeneratedIllustrationOwnership(tx, projectId, currentPages);
 
   // A legacy page-scoped note has only the index that was current when it was
   // written. It may already name another page after an edit from an older

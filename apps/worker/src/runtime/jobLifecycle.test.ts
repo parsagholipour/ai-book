@@ -582,6 +582,88 @@ describe("job lifecycle ownership", () => {
     expect(mocks.markGenerationAttemptSucceeded).not.toHaveBeenCalled();
   });
 
+  it("terminalizes a compile handoff but lets its same-attempt successor settle success", async () => {
+    mocks.generationJobFindUnique.mockResolvedValue({
+      steps: [],
+      status: "ACTIVE",
+      message: "Compiling",
+      qualityReport: null
+    });
+    const scope = { attemptId: "attempt-1", operationId: "operation-1" };
+
+    await expect(
+      markCompleted(job("compile-export", { generationJobId: "compile-predecessor", ...scope }), "defer-to-successor")
+    ).resolves.toBe(true);
+
+    expect(mocks.generationJobUpdateMany).toHaveBeenCalledWith({
+      where: { id: "compile-predecessor", status: { in: ["QUEUED", "ACTIVE"] } },
+      data: expect.objectContaining({ status: "COMPLETED" })
+    });
+    expect(mocks.markGenerationAttemptSucceeded).not.toHaveBeenCalled();
+    expect(mocks.bookEditOperationUpdateMany).not.toHaveBeenCalled();
+
+    const predecessorCompletion = mocks.generationJobUpdateMany.mock.calls.find(
+      ([query]) => query.data.status === "COMPLETED"
+    )?.[0];
+    mocks.generationJobFindUnique.mockResolvedValue({
+      steps: [],
+      status: "COMPLETED",
+      message: predecessorCompletion?.data.message,
+      qualityReport: null
+    });
+    await markCompleted(job("compile-export", { generationJobId: "compile-predecessor", ...scope }));
+    expect(mocks.markGenerationAttemptSucceeded).not.toHaveBeenCalled();
+    expect(mocks.bookEditOperationUpdateMany).not.toHaveBeenCalled();
+
+    mocks.generationJobFindUnique.mockResolvedValue({
+      steps: [],
+      status: "ACTIVE",
+      message: "Compiling",
+      qualityReport: null
+    });
+    await expect(
+      markCompleted(job("compile-export", { generationJobId: "compile-successor", ...scope }))
+    ).resolves.toBe(true);
+
+    expect(mocks.markGenerationAttemptSucceeded).toHaveBeenCalledTimes(1);
+    expect(mocks.markGenerationAttemptSucceeded).toHaveBeenCalledWith("attempt-1");
+    expect(mocks.bookEditOperationUpdateMany).toHaveBeenCalledWith({
+      where: { id: "operation-1", status: { in: ["QUEUED", "ACTIVE"] } },
+      data: { status: "APPLIED", appliedAt: expect.any(Date) }
+    });
+  });
+
+  it("leaves a compile handoff attempt open for its same-attempt successor to fail and refund", async () => {
+    mocks.generationJobFindUnique.mockResolvedValue({
+      steps: [],
+      status: "ACTIVE",
+      message: "Compiling",
+      qualityReport: null
+    });
+    const scope = { attemptId: "attempt-1", operationId: "operation-1" };
+
+    await markCompleted(
+      job("compile-export", { generationJobId: "compile-predecessor", ...scope }),
+      "defer-to-successor"
+    );
+    await markFailed(
+      job("compile-export", { generationJobId: "compile-successor", ...scope }),
+      new Error("successor image failed")
+    );
+
+    expect(mocks.markGenerationAttemptSucceeded).not.toHaveBeenCalled();
+    expect(mocks.failGenerationAttempt).toHaveBeenCalledWith("attempt-1", "successor image failed");
+    expect(mocks.bookEditOperationUpdateMany).toHaveBeenCalledWith({
+      where: { id: "operation-1", status: { in: ["QUEUED", "ACTIVE"] } },
+      data: {
+        status: "FAILED",
+        error: "successor image failed",
+        structuralLeaseToken: null,
+        structuralLeaseExpiresAt: null
+      }
+    });
+  });
+
   it("replays attempt and edit settlement after publication already committed COMPLETED", async () => {
     mocks.generationJobFindUnique.mockResolvedValue({
       steps: [],

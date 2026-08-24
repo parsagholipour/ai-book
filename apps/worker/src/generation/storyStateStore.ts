@@ -19,6 +19,8 @@ const STORY_STATE_CAS_ATTEMPTS = 8;
 
 export { rebuildStoryStateFromPages };
 
+type StoryDeltaWriteClient = Pick<Prisma.TransactionClient, "page" | "project">;
+
 export async function loadProjectStoryState(projectId: string, seedPromises: readonly string[] = []): Promise<StoryState> {
   try {
     const project = await prisma.project.findUnique({
@@ -62,13 +64,13 @@ export async function persistPageStoryDelta(options: {
   pageIndex: number;
   delta: StoryDelta;
   seedPromises: readonly string[];
-}): Promise<StoryState | null> {
+}, client: StoryDeltaWriteClient = prisma): Promise<StoryState | null> {
   try {
-    await prisma.page.updateMany({
+    await client.page.updateMany({
       where: { projectId: options.projectId, index: options.pageIndex },
       data: { storyDelta: options.delta as Prisma.InputJsonValue }
     });
-    return await applyPersistedPageStoryDelta(options);
+    return await applyPersistedPageStoryDelta(options, client);
   } catch (error) {
     if (isStopRequestedError(error)) {
       throw error;
@@ -83,10 +85,10 @@ async function applyPersistedPageStoryDelta(options: {
   pageIndex: number;
   delta: StoryDelta;
   seedPromises: readonly string[];
-}): Promise<StoryState | null> {
+}, client: StoryDeltaWriteClient): Promise<StoryState | null> {
   let expected: unknown = undefined;
   for (let attempt = 0; attempt < STORY_STATE_CAS_ATTEMPTS; attempt += 1) {
-    const project = await prisma.project.findUnique({
+    const project = await client.project.findUnique({
       where: { id: options.projectId },
       select: { storyState: true }
     });
@@ -99,7 +101,7 @@ async function applyPersistedPageStoryDelta(options: {
         ? seedStoryStateFromPromises(options.seedPromises)
         : parseStoryState(expected);
     const next = applyStoryDelta(current, options.delta, options.pageIndex);
-    const claimed = await casWriteProjectStoryState(options.projectId, expected, next);
+    const claimed = await casWriteProjectStoryState(options.projectId, expected, next, client);
     if (claimed === 1) {
       return next;
     }
@@ -107,7 +109,11 @@ async function applyPersistedPageStoryDelta(options: {
   console.warn(
     `Story state persist for ${options.projectId} lost the CAS race ${STORY_STATE_CAS_ATTEMPTS} times; falling back to index-order rebuild`
   );
-  return await rebuildProjectStoryState(options.projectId, options.seedPromises);
+  // A transaction-scoped publication cannot fall through to the global client:
+  // that would commit memory outside the page/revision claim it belongs to.
+  // The caller may rebuild later; this best-effort incremental fold simply
+  // declines after the same bounded CAS budget.
+  return client === prisma ? await rebuildProjectStoryState(options.projectId, options.seedPromises) : null;
 }
 
 export async function rebuildProjectStoryState(
@@ -152,9 +158,10 @@ function storyStateCasEquals(expected: unknown) {
 async function casWriteProjectStoryState(
   projectId: string,
   expected: unknown,
-  next: StoryState
+  next: StoryState,
+  client: StoryDeltaWriteClient = prisma
 ): Promise<number> {
-  const claimed = await prisma.project.updateMany({
+  const claimed = await client.project.updateMany({
     where: {
       id: projectId,
       storyState: storyStateCasEquals(expected)

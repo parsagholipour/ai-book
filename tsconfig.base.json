@@ -7,6 +7,13 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
+    // Pinned rather than left to the default: `scripts/check-core-subpaths.mjs` reads it. Off,
+    // `import { type X } from "y"` is erased whole and `y` is never resolved — which is what lets
+    // packages/core's narrow subpath exports be served to a container whose
+    // `packages/core/node_modules` is empty. On, the same statement emits `import {} from "y"` and
+    // resolves y at runtime. Flip it and that gate fails rather than going quietly green; the fix is
+    // to spell those imports statement-level `import type`, not to widen anything.
+    "verbatimModuleSyntax": false,
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,

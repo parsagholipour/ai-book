@@ -117,6 +117,7 @@ describe("RoutingTextModelAdapter", () => {
         "../generation/claimVerifier.ts",
         "../generation/styleAuditor.ts",
         "../generation/pageMapCritic.ts",
+        "../generation/pageBeatDedup.ts",
         "../ingestion/manuscriptImport.ts"
       ].map((path) =>
         readFile(new URL(path, import.meta.url), "utf8")

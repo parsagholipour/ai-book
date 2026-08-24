@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { type EmbeddingAdapter } from "@book-maker/core";
-import { degradeRetrievalArm, prisma } from "@book-maker/db";
+import { degradeRetrievalArm, Prisma, prisma } from "@book-maker/db";
 import { config } from "../runtime/config.js";
 import { isStopRequestedError } from "../runtime/jobTypes.js";
 
@@ -84,6 +84,7 @@ export async function prepareEmbedding(text: string, embedding: EmbeddingAdapter
  * nor a repair, so it must be charged as neither.
  */
 export type EmbeddingWriteOutcome = "stored" | "degraded" | "superseded";
+type EmbeddingWriteClient = Pick<Prisma.TransactionClient, "$executeRawUnsafe">;
 
 /**
  * What the upsert below may do to a `(projectId, scope)` row that already
@@ -172,7 +173,8 @@ const SAME_PAGE_ROW_PREDICATE = `"Embedding"."sourceId" = EXCLUDED."sourceId" OR
  */
 export async function writePreparedEmbedding(
   target: EmbeddingWriteTarget,
-  prepared: PreparedEmbedding
+  prepared: PreparedEmbedding,
+  client: EmbeddingWriteClient = prisma
 ): Promise<EmbeddingWriteOutcome> {
   if (prepared.vectorLiteral) {
     // A `DO UPDATE ... WHERE` rather than a separate read because the check and
@@ -184,7 +186,7 @@ export async function writePreparedEmbedding(
        WHERE ${SAME_PAGE_ROW_PREDICATE}`
         : "";
     try {
-      const written = await prisma.$executeRawUnsafe(
+      const written = await client.$executeRawUnsafe(
         `INSERT INTO "Embedding" ("id", "projectId", "scope", "sourceId", "text", "vector", "metadata")
        VALUES ($1, $2, $3, $4, $5, $6::vector, $7::jsonb)
        ON CONFLICT ("projectId", "scope") DO UPDATE SET
@@ -207,11 +209,11 @@ export async function writePreparedEmbedding(
       if (isStopRequestedError(error)) {
         throw error;
       }
-      await createDegradedEmbedding(target, embeddingErrorMessage(error));
+      await createDegradedEmbedding(target, embeddingErrorMessage(error), client);
       return "degraded";
     }
   }
-  await createDegradedEmbedding(target, prepared.error ?? "Unknown embedding error");
+  await createDegradedEmbedding(target, prepared.error ?? "Unknown embedding error", client);
   return "degraded";
 }
 
@@ -250,9 +252,13 @@ function embeddingErrorMessage(error: unknown): string {
  * the rows matched — 0 when a guard refused — and raises, because the two
  * callers settle a failed write differently.
  */
-function upsertVectorlessEmbedding(row: EmbeddingWriteTarget, metadata: Record<string, unknown>): Promise<number> {
+function upsertVectorlessEmbedding(
+  row: EmbeddingWriteTarget,
+  metadata: Record<string, unknown>,
+  client: EmbeddingWriteClient = prisma
+): Promise<number> {
   const samePageGuard = row.conflict === "same-page" ? ` AND (${SAME_PAGE_ROW_PREDICATE})` : "";
-  return prisma.$executeRawUnsafe(
+  return client.$executeRawUnsafe(
     `INSERT INTO "Embedding" ("id", "projectId", "scope", "sourceId", "text", "metadata")
      VALUES ($1, $2, $3, $4, $5, $6::jsonb)
      ON CONFLICT ("projectId", "scope") DO UPDATE SET
@@ -306,9 +312,13 @@ export function recordFailedEmbeddingRepair(
  * *those* would refuse the row a structurally inserted page inherited and leave
  * the stale summary standing.
  */
-async function createDegradedEmbedding(row: EmbeddingWriteTarget, error: string): Promise<void> {
+async function createDegradedEmbedding(
+  row: EmbeddingWriteTarget,
+  error: string,
+  client: EmbeddingWriteClient = prisma
+): Promise<void> {
   try {
-    await upsertVectorlessEmbedding(row, { vectorStored: false, error });
+    await upsertVectorlessEmbedding(row, { vectorStored: false, error }, client);
   } catch (writeError) {
     degradeRetrievalArm<undefined>({
       arm: "Degraded embedding write",

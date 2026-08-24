@@ -61,8 +61,8 @@ describe("mobile export repair queueing", () => {
         projectId: "project-a",
         type: "COMPILE_EXPORT",
         contentRevision: 7,
-        // A repair key, not the edit recompile's `…:content-7`, which is spent
-        // as soon as that job settles.
+        // A repair key, not the edit recompile's normalized revision/policy
+        // intent, which is spent as soon as that job settles.
         dedupeKey: expect.stringContaining("compile-export:project-a:plan-1:repair-7-"),
         // Load-bearing: without it the worker treats a failed repair as the
         // book failing, marks a COMPLETE project FAILED and refunds the reader's
@@ -128,7 +128,7 @@ describe("mobile export repair queueing", () => {
       // Nothing is running: the edit's recompile for revision 7 already ended.
       mockPrisma.generationJob.findFirst.mockResolvedValue(null);
       const queued = fakeDedupingQueue();
-      const editKey = "compile-export:project-a:plan-1:content-7";
+      const editKey = "compile-export:project-a:plan-1:revision-7:policy-r1v0seoo";
       queued.set(editKey, { id: "job-edit", status: settledStatus, dedupeKey: editKey });
       const app = await buildMobileApp();
 
@@ -438,7 +438,7 @@ describe("mobile export repair queueing", () => {
   });
 
   it("bounds a failed repair to the rest of its window, not forever", async () => {
-    // Operationally the important property: unlike the content-revision key it
+    // Operationally the important property: unlike the non-windowed compile-intent key it
     // replaced, a spent repair key expires. A repair that fails blocks further
     // attempts only until the window rolls, and the window is wall-clock
     // aligned rather than measured from the attempt — so the wait is anywhere

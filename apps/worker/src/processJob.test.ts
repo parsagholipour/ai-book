@@ -160,6 +160,20 @@ describe("processWorkerJob completion", () => {
     expect(afterJobCompleted).toHaveBeenCalled();
   });
 
+  it("passes a compile successor handoff through the durable completion seam", async () => {
+    const afterJobCompleted = vi.fn();
+    mocks.compileExport.mockResolvedValue({
+      lifecycleSettlement: "defer-to-successor",
+      afterJobCompleted
+    });
+    const compileJob = job("compile-export", { attemptId: "attempt-1", operationId: "operation-1" });
+
+    await processWorkerJob(compileJob);
+
+    expect(mocks.markCompleted).toHaveBeenCalledWith(compileJob, "defer-to-successor");
+    expect(afterJobCompleted).toHaveBeenCalled();
+  });
+
   it("keeps a published export successful when character fan-out enqueue fails", async () => {
     const enqueueCharacters = vi.fn().mockRejectedValue(new Error("queue unavailable"));
     mocks.compileExport.mockResolvedValue({ afterJobCompleted: enqueueCharacters });

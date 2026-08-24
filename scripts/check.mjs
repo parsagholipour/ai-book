@@ -23,6 +23,19 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
  * `requires` names a file that must exist for the gate to mean anything. A gate
  * whose file is missing is SKIPPED, not failed — `check-gotcha-index.mjs` is
  * landing separately and an absent script must not turn the whole gate red.
+ *
+ * That is a landing-order concession, not the default. `sizes`, `subpaths` and
+ * `subpath-tests` declare no `requires` on purpose: they enforce invariants that
+ * were previously enforced by nothing, so a deleted script must not read as a
+ * pass — `--only subpaths` going green on an empty `scripts/` directory is the
+ * exact false green this runner exists to remove. Drop the `requires` from
+ * `gotchas` too once nothing is mid-landing.
+ *
+ * The cost of that choice is that a missing script and a real violation both
+ * exit 1, which `missingScript` below is what separates: a node-run gate whose
+ * script is absent fails with `script missing: <path>` in the summary instead of
+ * a bare `exit 1` over Node's MODULE_NOT_FOUND stack. Loud, red, and not
+ * mistakable for a regression in the thing being gated.
  */
 const GATES = [
   {
@@ -49,6 +62,18 @@ const GATES = [
     command: "node",
     args: ["scripts/check-gotcha-index.mjs"],
     requires: "scripts/check-gotcha-index.mjs"
+  },
+  {
+    name: "subpaths",
+    description: "packages/core subpath exports stay runtime-empty, and consumers stay on them",
+    command: "node",
+    args: ["scripts/check-core-subpaths.mjs"]
+  },
+  {
+    name: "subpath-tests",
+    description: "node:test coverage for the packages/core subpath checker",
+    command: "node",
+    args: ["--test", "scripts/check-core-subpaths.test.mjs"]
   },
   {
     name: "test",
@@ -113,6 +138,20 @@ function isMissing(gate) {
   return Boolean(gate.requires) && !existsSync(join(ROOT, gate.requires));
 }
 
+/**
+ * The script a node-run gate would execute, when it is not there. Spawning it
+ * anyway exits 1 on a MODULE_NOT_FOUND stack that the summary flattens to
+ * `exit 1` — the same line a real violation prints. This turns that into its own
+ * sentence without letting the gate pass, which is the whole trade-off in the
+ * comment above GATES.
+ */
+function missingScript(gate) {
+  if (gate.command !== "node" || gate.requires) return null;
+  const script = gate.args.find((arg) => !arg.startsWith("-"));
+  if (!script || existsSync(join(ROOT, script))) return null;
+  return script;
+}
+
 function runGate(gate) {
   return new Promise((resolve) => {
     const startedAt = Date.now();
@@ -120,6 +159,18 @@ function runGate(gate) {
     if (isMissing(gate)) {
       console.log(`\n=== ${gate.name} — skipped (${gate.requires} not present) ===`);
       resolve({ name: gate.name, status: "skipped", durationMs: 0, note: `${gate.requires} not present` });
+      return;
+    }
+
+    const absent = missingScript(gate);
+    if (absent) {
+      console.error(`\n=== ${gate.name} — FAILED: ${absent} is not present ===`);
+      console.error(
+        `This gate did not run, so nothing it gates was checked — ${gate.description}. That is a ` +
+          "failure rather than a skip on purpose: a deleted enforcement script must not read as a " +
+          "pass. Restore the script, or remove the gate from scripts/check.mjs deliberately."
+      );
+      resolve({ name: gate.name, status: "failed", durationMs: 0, note: `script missing: ${absent}` });
       return;
     }
 
@@ -200,7 +251,12 @@ async function main() {
 
   if (options.list) {
     for (const gate of GATES) {
-      const state = isMissing(gate) ? " (skipped: script not present)" : "";
+      const absent = missingScript(gate);
+      const state = isMissing(gate)
+        ? " (skipped: script not present)"
+        : absent
+          ? ` (FAILS: ${absent} not present)`
+          : "";
       console.log(`${gate.name.padEnd(10)} ${[gate.command, ...gate.args].join(" ")}${state}`);
     }
     return;

@@ -122,7 +122,7 @@ export async function processWorkerJob(job: Job): Promise<void> {
             throw new Error(`Unknown worker job: ${job.name}`);
         }
         try {
-          completed = await markCompleted(job);
+          completed = await markCompleted(job, completion?.lifecycleSettlement);
         } catch (error) {
           if (!completion?.durableCompletionCommitted) {
             throw error;

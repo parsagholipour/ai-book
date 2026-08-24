@@ -1,3 +1,4 @@
+import { modelTierForInput } from "./adapters/modelTiers.js";
 import { type CreditPricing, creditPricing } from "./creditPricing.js";
 import { coverArtSourceFor } from "./generation/coverSource.js";
 import { interiorIllustrationSlotCount } from "./generation/illustrationSlots.js";
@@ -100,24 +101,14 @@ export function providerCostAssumptionsForInput(input: CreateProjectInput): Prov
 }
 
 /**
- * Which tier a book is *priced* at.
+ * {@link modelTierForInput} for callers holding a raw `mediaSettings` JSON
+ * column.
  *
- * `mediaSettings.modelTier` and nothing else. It is the field that actually
- * routes the models (`adapters/modelTiers.ts`), it is typed and validated, and
- * it is what the provider-cost table above already reads — pricing off
- * `mediaSettings.mobile.qualityPreset` instead, as this file used to, meant a
- * project that set the tier directly got premium models for free, because that
- * echo is only ever written by the app.
- *
- * No tier recorded is `balanced`, which is the honest answer rather than a
- * default: a book from before tier routing runs the legacy single model, and
- * balanced is what the unsuffixed price keys have always meant.
+ * Its twin lives in `adapters/modelTiers.ts`, beside the routing the tier field
+ * actually drives; this half stays here because parsing an unvalidated column
+ * needs zod and that module is kept free of every runtime import. Both answer
+ * `balanced` for a book with no tier recorded, for the reason given there.
  */
-export function modelTierForInput(input: CreateProjectInput): ModelTier {
-  return input.mediaSettings.modelTier ?? "balanced";
-}
-
-/** {@link modelTierForInput} for callers holding a raw `mediaSettings` JSON column. */
 export function modelTierFromMediaSettings(mediaSettings: unknown): ModelTier {
   const parsed = modelTierSchema.safeParse(jsonRecord(mediaSettings).modelTier);
   return parsed.success ? parsed.data : "balanced";

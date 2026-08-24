@@ -1,12 +1,14 @@
+// Both subpaths, not the barrel: this module is `vi.mock`ed, and every runtime
+// symbol it wants already lives in a leaf. Through `@book-maker/core` the two
+// lookups below dragged puppeteer, sharp, openai and md-to-pdf in behind them.
+import { modelTierForInput } from "@book-maker/core/modelTiers";
 import {
-  modelTierForInput,
   parseQualityFeatureSettings,
   qualityFeatureEnabled,
-  type CreateProjectInput,
   type QualityFeatureId,
-  type QualityFeatureSettings,
-  type TextModelAdapter
-} from "@book-maker/core";
+  type QualityFeatureSettings
+} from "@book-maker/core/qualityGates";
+import type { CreateProjectInput, TextModelAdapter } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 
 export async function loadQualitySettings(): Promise<QualityFeatureSettings> {

@@ -24,8 +24,9 @@ don't flip the generator setting to make the root convention true.
 
 **Import `@book-maker/db/billing`, never a module behind it.** The API suites mock the facade with
 `vi.mock("@book-maker/db/billing")`; a deep import silently escapes that mock and the test stops
-covering you. The package's `exports` map names only whole facades — `.`, `./billing` and
-`./libraryMentions` — and nothing behind one, to keep that honest.
+covering you. The package's `exports` map names only whole facades — `.`, `./billing`,
+`./libraryMentions` and `./pageIllustrationOwnership` — and nothing behind one, to keep that
+honest.
 
 `./libraryMentions` is a subpath for the opposite reason: it holds no client at all (its Prisma
 import is types only), and both apps import it. The mobile API suites mock `@book-maker/db`
@@ -39,6 +40,12 @@ Prisma import is half the reason; the other half is that the strip helpers come 
 `@book-maker/core/libraryMentions` and not the core barrel. A suite that mocks core with a bare
 factory takes the barrel down whole, and this module would go with it — the same breakage the
 subpath exists to avoid, aimed at the other package. → packages/core/CLAUDE.md
+
+`./pageIllustrationOwnership` follows the same boundary and is likewise **not re-exported from
+the main DB entry**. The worker and the DB restructure compensation share its ownership rules,
+while worker suites may replace both `@book-maker/db` and `@book-maker/core` with bare factories.
+Its Prisma dependency is types only and its record guard is local, so importing the subpath loads
+neither package barrel at runtime.
 
 ## Adding a priced operation
 

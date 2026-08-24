@@ -11,6 +11,24 @@ This is also where a compile decides whether it is allowed to *publish* what it 
 the subtlest thing the worker does. A compile can take minutes, and the project it started against
 may have been edited in the meantime.
 
+## Illustrated page publication
+
+- **The keeper, its generated asset, and terminal status share one ownership protocol.**
+  `pagePublication.ts` is the common seam for the direct page handler and whole-book generation:
+  keeper prose is staged under an optimistic `updatedAt` claim while the page is non-terminal, a
+  tokened `GenerationJob` is made durable with no database transaction held across that queue call,
+  and only then does an exact content/version claim expose `COMPLETED` together with page-owned
+  continuity notes. A replacement stage retires only assets carrying the previous keeper's token or
+  reserved legacy system path in the same transaction as the prose change; same-keeper renders and
+  operation-suffixed manual assets survive. Before structural reindexing, numeric legacy filenames
+  are resolved against the complete pre-edit index-to-page-id snapshot, even when attached to a
+  different page; a missing source receives a durable migration sentinel, so neither cleanup path
+  can later adopt the moved asset when its destination inherits that number. Whole-book retries keep
+  accepted page ids stable so a job already made durable can prove the same keeper or stand down
+  against its replacement. Pages
+  the strategy does not illustrate remain terminal in the manuscript transaction and never acquire
+  an artificial image dependency.
+
 ## Structural page edits
 
 - **A structural shift and every write after it belong to one durable, expiring delivery lease.**
@@ -42,6 +60,54 @@ may have been edited in the meantime.
   loop is fenced for the same reason: `casUpdateChapterProductionBrief` is read back by every other
   page in the chapter, and it too sits behind a model call. The hook stays optional, so the callers
   with no lease (the book passes, `continueBook`) are unchanged.
+  **A brief repair's durable chapter write waits for the page to keep a draft it briefed.** It is the one durable
+  write a review loop makes, and it was committed at the repair — before the single rewrite it
+  briefs had been reviewed. On fast and balanced `finalQaRevisionsFor` is 3 and
+  `pageQaRecoveryRevision(3, 3)` is 3, so recovery lands on the loop's **last** attempt: a rejected
+  rewrite left `bestDraftCandidate` keeping the pre-repair draft, the page shipped FAILED_QA with
+  its original prose, and the chapter row permanently claimed that page's assignment was the new
+  beat — read back by every later `continueBook`, page regeneration and replan as
+  `previousChapterPageBriefs`, steering them away from material the book still contains. The page
+  fence could not take it back either, since the chapter committed under its own earlier assertion.
+  `repairPageBriefForRecovery` (`pageReviewRecovery.ts`) therefore returns
+  `{ beat, chapterBrief, persist }`: the beat and the merged brief steer this page's remaining
+  rewrites in memory, and `runPageQualityLoop` takes `persist` only when the candidate it keeps was
+  briefed against it — *kept*, not *approved*, because a FAILED_QA page still ships its best draft. The fence is asked for that reason at the repair as a
+  stand-down — above the early return, because every page that paid for the repair's model call has
+  a rewrite budget worth fencing, including one with no `chapterId` and nothing to stage — and then
+  again by the owner that takes `persist`, a page's worth of provider calls later, as the write's own.
+  A caller that owns the page save defers that take and runs the page write plus the brief CAS on one
+  transaction client behind that one fence. On that combined path, `written` is the only successful
+  CAS outcome: `no-stored-brief`, `unclaimable`, and retry exhaustion all throw inside the transaction,
+  rolling the staged page back before a repaired brief can be returned or carried. A standalone loop
+  caller keeps the established immediate best-effort CAS and may inspect its diagnostic outcome without
+  retrying the paid planner and page work. So it is two asks wherever there is something to persist and
+  one for a page there is not, never none.
+  The once-per-page latch is still spent on the *call*, so a repair whose write is never taken is
+  not re-attempted for free.
+  **And every copy in memory waits with it, because the callers share one.**
+  `repairPageBriefForRecovery` used to `Object.assign` the merge onto the `ChapterBrief` it was
+  handed, so the page's remaining rewrites read the fresh beat — a write into whichever object the
+  caller passed, at the moment the planner call returned and with nothing yet decided. Every caller
+  that briefs a *chapter* from one brief therefore took the repair too: `bookPasses.ts` hands the
+  single `ChapterSetup.brief` to every page of a chapter at all three of its passes, and
+  `compileExportRepair.ts` parses one brief per chapter and briefs that chapter's other flagged
+  pages from it — the carry is deliberate, but only for a repair somebody kept. The page-local edit
+  became a chapter-wide one and rebuilt through memory the defect the deferred write had just
+  removed through the row: page 10's post-repair rewrite rejected, `persist` correctly skipped, page
+  10 shipping its pre-repair prose — and pages 11..N drafted and reviewed against a chapter claiming
+  page 10 covers a beat page 10 never delivered, silent about the one it did, disagreeing with the
+  row it was parsed from. Fixed once at the compile's call site with a per-page copy, it was still
+  live on the generation path, which is what says the fix belongs at the seam. So the repair writes
+  into **nothing** it is handed: it returns the merge, `runPageQualityLoop` rebinds its own
+  `chapterBrief` to it for this page's remaining rewrites, and the same take that spends `persist`
+  is what puts it on the outcome as `repairedChapterBrief`. A caller that shares a brief adopts that
+  — `adoptRepairedChapterBrief` onto the `ChapterSetup`, `chapterBriefs.set` onto the per-chapter
+  parse — and a caller drafting one page per job ignores it. One condition for the row and for every
+  copy, so none of them can claim a repair another refused, and a caller that forgets keeps the
+  brief it had rather than a beat nothing delivered. `replacePageBriefInChapterBrief` is **pure**
+  for the same reason: the write-through was invisible at a call site, which is how a cache took a
+  repair nothing had decided was earned. Acceptance is the gate, not the repair.
   **And every wait on that lease ends.**   `waitForStructuralPageLease` and
   `waitForStructuralPageLeaseCompletion` polled forever, and neither state they poll for is
   promised. `structuralLeaseCompletedAt` is the *owner's* write, so a delivery whose lease expired
@@ -132,6 +198,24 @@ may have been edited in the meantime.
   move — nulling it instead dropped `hasCoverPage` off the status DTO on every applied delete, and
   the app numbered the cover as page 1 against a footer that prints nothing on it. A blank column
   and a stub already stored are left untouched for the same reason.
+- **A compare-and-swap over a JSON column is staked on the document the row stores, never on what
+  that document parses to.** `chapterBriefSchema` is a `z.preprocess`, so its parse is not an
+  identity: it renames `visualMoment`/`imagePrompt` to `imageMoment`, `.default([])`s
+  `requiredContinuity` and `continuityFocus`, and strips every key it does not name. Staking
+  `where: { productionBrief: { equals: … } }` on the *parse* therefore named a document the column
+  had never held, and matched zero rows on every attempt, forever, for that row — three
+  `updateMany` plus three `findUnique` and a "lost the CAS race" line, per repaired page, keeping
+  nothing. No writer in the tree today stores a non-canonical brief (both go through
+  `chapterBriefSchema.parse` first), which is exactly why it was invisible: a claim that holds only
+  for values the writer itself normalised is not a claim about the row. `readStoredChapterBrief`
+  hands back the raw JSON beside its parse; the merge runs on the parse and the predicate names the
+  document. Document equality is *finer* than brief equality — two spellings can parse alike, one
+  document cannot parse two ways — so the race property is strengthened rather than traded away,
+  and the first repair to land canonicalises the row.
+  **And a miss the row did not move under is a different fault from a lost race.** Both used to
+  print the same line and pay the same three attempts. Re-reading after a miss tells them apart: a
+  row that moved is a sibling's repair, so retry; a row that did not is a predicate that cannot
+  match, so give up on the first miss and say so in words nobody will confuse with contention.
 - **A page that goes away takes its semantic memory with it, because nothing else will.**
   `Embedding` cascades on `Project`, not on `Page` — `sourceId` is a plain string with no foreign
   key — so a deleted page's `page:<index>` rows outlived it, and the renumber in that same
@@ -443,10 +527,10 @@ to draw.
   makes declining the status write safe — and the standing-down compile is exactly what used to
   break it. `maybeEnqueueCompile` refuses to queue while any `COMPILE_EXPORT` is QUEUED or ACTIVE,
   and a repair in flight *is* one, so a chat edit landing on top of one deleted the exports, bumped
-  the revision, queued nothing, and left the book EDITING for good: no sweep looks at EDITING
-  (`reconcileStrandedGeneration` only takes GENERATING) and `ensureExportRepairQueued` only at
-  COMPLETE and REVIEW_REQUIRED, so the auto-repair lane could not reach the state its own repair
-  had caused. That count is now revision-aware — a compile carrying a superseded revision will
+  the revision, queued nothing, and left the book EDITING until delayed recovery:
+  `reconcileStrandedGeneration` now takes both EDITING and GENERATING after its grace period, while
+  `ensureExportRepairQueued` takes COMPLETE and REVIEW_REQUIRED. Immediate handoff is still needed
+  to avoid that delay. The count is revision-aware — a compile carrying a superseded revision will
   publish nothing, so it may not stand in for one that will — and `applyBookEdit` asks
   `maybeEnqueueCompile` what it did, restoring COMPLETE on `"not-ready"` rather than trusting that
   *something* was queued. Manual edits never had the hole: `queueUserEditExportRecompile` always

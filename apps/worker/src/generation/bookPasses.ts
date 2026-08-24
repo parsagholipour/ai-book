@@ -8,21 +8,30 @@ import {
   priorPageContextsFromStored,
   rebuildChapterSetupsFromStored,
   reportAcceptedWholeBookDraft,
-  resetBookForDirectGeneration
+  resetBookForDirectGeneration,
+  type StoredResumePage
 } from "./bookState.js";
 import { ensureCharacterReferenceAssets } from "./characterReferences.js";
-import { enqueueWorkerJob, maybeEnqueueCompile, maybeEnqueueCover } from "../runtime/dispatch.js";
+import { maybeEnqueueCompile, maybeEnqueueCover } from "../runtime/dispatch.js";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
 import { type ChapterSetup, type IndexedPageDraft } from "../runtime/jobTypes.js";
 import { range } from "../runtime/serialization.js";
 import { chapterSetupsForPlan, reviewWholeBookDraftPages, styleExcerptsForPage } from "./bookHelpers.js";
 import { chapterSetupForPage, loadContinuityNotes, loadResearchNotesForGeneration } from "./generationContext.js";
-import { reviewAndSaveGeneratedPage } from "./pageReview.js";
+import { reviewAndSaveGeneratedPage, type SavedGeneratedPage } from "./pageReview.js";
 import { persistKeeperStoryDelta, type QualityGateContext } from "./qualityEnrichment.js";
 import { loadQualityContext } from "./qualitySettings.js";
 import { polishPageWithQualityGates } from "./qualityDrafting.js";
+import {
+  GeneratedPagePublicationClaimLostError,
+  publishStagedGeneratedPage,
+  stageGeneratedPageWithClient,
+  type GeneratedPagePublicationSnapshot,
+  type StagedGeneratedPage
+} from "./pagePublication.js";
 import { storeEmbedding, strategyUsesSemanticMemory } from "./embeddingWrites.js";
 import { updateEntityStateFromPage } from "./entityState.js";
+import type { DirectResumeState } from "./directGenerationResume.js";
 import {
   type BookGenerationStrategy,
   type BookPlan,
@@ -38,6 +47,44 @@ import { pageScope, Prisma, prisma, PAGE_SCOPE_PREFIX } from "@book-maker/db";
  * The book-level generation passes (chapter-whole, batch window, draft-then-polish,
  * whole-book) that produce page drafts for a plan.
  */
+
+/**
+ * Take a page's *accepted* brief repair onto the setup every other page of that
+ * chapter is briefed from.
+ *
+ * All three passes here hand one `ChapterSetup.brief` to every page of a
+ * chapter, which is why this matters at all: a page that reaches quality
+ * recovery buys a re-planned beat, and the chapter's remaining pages have to be
+ * told what that page now covers or they are briefed to write around an
+ * assignment nothing delivered. `reviewAndSaveGeneratedPage` answers with the
+ * merged brief only for a page that kept a draft the repair briefed — the same
+ * condition `Chapter.productionBrief` moves on — so this rebinding cannot claim
+ * a repair the row refused. The repair used to arrive by the brief object being
+ * mutated underneath these passes, which said nothing about acceptance and
+ * happened at the moment the planner call returned; see
+ * `repairPageBriefForRecovery`.
+ */
+function adoptRepairedChapterBrief(setup: ChapterSetup | undefined, saved: SavedGeneratedPage): void {
+  if (setup && saved.repairedChapterBrief) {
+    setup.brief = saved.repairedChapterBrief;
+  }
+}
+
+function settledPageToReplaceForResume(
+  resumeState: DirectResumeState,
+  pages: StoredResumePage[],
+  resumeFromPage: number,
+  pageIndex: number
+): StoredResumePage | undefined {
+  if (
+    resumeState.kind !== "resume" ||
+    pageIndex < resumeFromPage ||
+    pageIndex >= resumeState.firstMissingPageIndex
+  ) {
+    return undefined;
+  }
+  return pages.find((page) => page.index === pageIndex);
+}
 
 export async function generateBookChapterWholePass(options: {
   projectId: string;
@@ -143,6 +190,12 @@ export async function generateBookChapterWholePass(options: {
     });
 
     for (const pageDraft of draft.pages) {
+      const settledPageToReplace = settledPageToReplaceForResume(
+        resumeState,
+        resumeContext.pages,
+        resumeFromPage,
+        pageDraft.index
+      );
       const saved = await reviewAndSaveGeneratedPage({
         projectId: options.projectId,
         planId: options.planId,
@@ -157,9 +210,11 @@ export async function generateBookChapterWholePass(options: {
         chapterPageStart: setup.startPage,
         chapterPageEnd: setup.endPage,
         previousPages,
-        generationJobId: options.generationJobId
+        generationJobId: options.generationJobId,
+        ...(settledPageToReplace ? { settledPageToReplace } : {})
       });
-      previousPages.push(saved);
+      previousPages.push(saved.page);
+      adoptRepairedChapterBrief(setup, saved);
     }
   }
 
@@ -299,6 +354,12 @@ export async function generateBookBatchWindow(options: {
       }
 
       const setup = chapterSetupForPage(chapterSetups, pageIndex);
+      const settledPageToReplace = settledPageToReplaceForResume(
+        resumeState,
+        resumeContext.pages,
+        resumeFromPage,
+        pageIndex
+      );
       const saved = await reviewAndSaveGeneratedPage({
         projectId: options.projectId,
         planId: options.planId,
@@ -313,9 +374,11 @@ export async function generateBookBatchWindow(options: {
         chapterPageStart: setup?.startPage,
         chapterPageEnd: setup?.endPage,
         previousPages,
-        generationJobId: options.generationJobId
+        generationJobId: options.generationJobId,
+        ...(settledPageToReplace ? { settledPageToReplace } : {})
       });
-      previousPages.push(saved);
+      previousPages.push(saved.page);
+      adoptRepairedChapterBrief(setup, saved);
     }
   }
 
@@ -552,7 +615,8 @@ export async function generateBookDraftThenPolish(options: {
       previousPages,
       generationJobId: options.generationJobId
     });
-    previousPages.push(saved);
+    previousPages.push(saved.page);
+    adoptRepairedChapterBrief(setup, saved);
   }
 
   await advanceJobStep(options.generationJobId, "enqueue", 90, "Queueing export");
@@ -608,9 +672,37 @@ export async function generateBookWholePass(options: {
 
   await advanceJobStep(options.generationJobId, "setup", 70, `Saving ${reviewedPages.length} generated pages`);
   const chapterRanges = effective.chapterSetups;
-  const savedPages =   await prisma.$transaction(async (tx) => {
-    await tx.imageAsset.deleteMany({ where: { projectId: options.projectId } });
-    await tx.page.deleteMany({ where: { projectId: options.projectId } });
+  const savedPages = await prisma.$transaction(async (tx) => {
+    const existingPages = await tx.page.findMany({
+      where: { projectId: options.projectId },
+      select: {
+        id: true,
+        index: true,
+        status: true,
+        title: true,
+        markdown: true,
+        summary: true,
+        imagePrompt: true,
+        revision: true,
+        updatedAt: true
+      }
+    });
+    const acceptedPageIndexes = new Set(reviewedPages.map((page) => page.draft.index));
+    const removedPageIds = existingPages
+      .filter((page) => !acceptedPageIndexes.has(page.index))
+      .map((page) => page.id);
+    // A Bull retry keeps stable ids for accepted page indexes. Tokened jobs
+    // already made durable by an earlier delivery can then either continue to
+    // own an identical keeper or stand down against its replacement, instead
+    // of failing because a wholesale delete made their page disappear.
+    if (removedPageIds.length > 0) {
+      await tx.imageAsset.deleteMany({ where: { projectId: options.projectId, pageId: { in: removedPageIds } } });
+      await tx.page.deleteMany({ where: { id: { in: removedPageIds } } });
+    }
+    // Cover/reference assets are rebuilt for the accepted whole-book plan.
+    // Page-owned assets are retired by keeper identity in the shared staging
+    // helper, which preserves both same-keeper renders and manual assets.
+    await tx.imageAsset.deleteMany({ where: { projectId: options.projectId, pageId: null } });
     await tx.chapter.deleteMany({ where: { projectId: options.projectId } });
     await tx.continuityNote.deleteMany({ where: { projectId: options.projectId } });
     await tx.embedding.deleteMany({ where: { projectId: options.projectId, scope: { startsWith: PAGE_SCOPE_PREFIX } } });
@@ -636,37 +728,44 @@ export async function generateBookWholePass(options: {
       chapterIds.set(setup.chapter.index, chapter.id);
     }
 
-    const pages: Array<{ id: string; index: number; summary: string; imagePrompt: string | null; revision: number }> = [];
+    const pages: Array<StagedGeneratedPage & {
+      index: number;
+      draft: (typeof reviewedPages)[number]["draft"];
+      willIllustrate: boolean;
+    }> = [];
     const continuityNotes: Array<{ pageId: string; scope: string; body: string; tags: string[] }> = [];
+    const existingPagesByIndex = new Map(existingPages.map((page) => [page.index, page]));
     for (const reviewedPage of reviewedPages) {
       const pageDraft = reviewedPage.draft;
       const chapterIndex = chapterRanges.find(
         (setup) => pageDraft.index >= setup.startPage && pageDraft.index <= setup.endPage
       )?.chapter.index;
-      const page = await tx.page.create({
-        data: {
-          projectId: options.projectId,
-          chapterId: chapterIndex ? chapterIds.get(chapterIndex) ?? null : null,
-          index: pageDraft.index,
-          title: pageDraft.title,
-          markdown: pageDraft.markdown,
-          summary: pageDraft.summary,
-          imagePrompt: pageDraft.imagePrompt ?? null,
-          status: "COMPLETED",
-          revision: reviewedPage.revision,
-          qualityReport: reviewedPage.qualityReport as Prisma.InputJsonValue
-        }
+      const willIllustrate =
+        Boolean(pageDraft.imagePrompt) &&
+        options.strategy.shouldIllustratePage(effective.input, effective.plan, pageDraft.index);
+      const stagedPage = await stageGeneratedPageWithClient(tx, {
+        projectId: options.projectId,
+        chapterId: chapterIndex ? chapterIds.get(chapterIndex) ?? null : null,
+        pageIndex: pageDraft.index,
+        draft: pageDraft,
+        revision: reviewedPage.revision,
+        qualityReport: reviewedPage.qualityReport,
+        status: willIllustrate ? "GENERATING" : "COMPLETED",
+        existingPage: (existingPagesByIndex.get(pageDraft.index) as GeneratedPagePublicationSnapshot | undefined) ?? null
       });
       pages.push({
-        id: page.id,
-        index: page.index,
-        summary: page.summary,
-        imagePrompt: page.imagePrompt,
-        revision: page.revision
+        ...stagedPage,
+        index: pageDraft.index,
+        draft: pageDraft,
+        willIllustrate
       });
-      for (const body of pageDraft.continuityNotes) {
+      // Illustrated pages publish their notes in the exact-keeper completion
+      // transaction after their durable job exists. Pages needing no image are
+      // already terminal here, so their notes remain part of this manuscript
+      // replacement transaction just as before.
+      for (const body of willIllustrate ? [] : pageDraft.continuityNotes) {
         continuityNotes.push({
-          pageId: page.id,
+          pageId: stagedPage.id,
           scope: pageScope(pageDraft.index),
           body,
           tags: ["page", String(pageDraft.index), "whole-book"]
@@ -682,6 +781,43 @@ export async function generateBookWholePass(options: {
 
     return pages;
   });
+
+  await advanceJobStep(options.generationJobId, "enqueue", 88, "Queueing images and export");
+  // A tolerated whole-book page count changes the plan snapshot image workers
+  // read. Publish it before any of those tokened jobs can start.
+  await persistAcceptedWholeBookTarget({
+    projectId: options.projectId,
+    planId: options.planId,
+    input: effective.input,
+    plan: effective.plan,
+    draft
+  });
+  for (const page of savedPages) {
+    if (!page.willIllustrate) {
+      continue;
+    }
+    const publication = await publishStagedGeneratedPage({
+      projectId: options.projectId,
+      planId: options.planId,
+      pageIndex: page.index,
+      draft: page.draft,
+      stagedPage: page,
+      willIllustrate: true,
+      continuityTags: ["page", String(page.index), "whole-book"]
+    });
+    // Declined project ownership leaves this exact page non-terminal. Never
+    // run stale semantic tails or compile over it; a durable old token will
+    // make the same keeper check and stand down.
+    if (publication === "enqueue-declined") {
+      return;
+    }
+    if (publication === "superseded") {
+      // A version-preserving structural move can be the only failed predicate.
+      // The whole-book job must retry against that new ordering instead of
+      // becoming terminal while its staged stable page remains GENERATING.
+      throw new GeneratedPagePublicationClaimLostError(page.index);
+    }
+  }
 
   let currentState = seedStoryStateFromPromises(effective.plan.promises ?? []);
   for (const reviewedPage of reviewedPages) {
@@ -706,7 +842,7 @@ export async function generateBookWholePass(options: {
   if (strategyUsesSemanticMemory(options.strategy)) {
     for (const page of savedPages) {
       await storeEmbedding(
-        { projectId: options.projectId, scope: pageScope(page.index), sourceId: page.id, text: page.summary },
+        { projectId: options.projectId, scope: pageScope(page.index), sourceId: page.id, text: page.draft.summary },
         options.providers.embedding
       );
     }
@@ -715,14 +851,6 @@ export async function generateBookWholePass(options: {
     }
   }
 
-  await advanceJobStep(options.generationJobId, "enqueue", 88, "Queueing images and export");
-  await persistAcceptedWholeBookTarget({
-    projectId: options.projectId,
-    planId: options.planId,
-    input: effective.input,
-    plan: effective.plan,
-    draft
-  });
   await ensureCharacterReferenceAssets({
     projectId: options.projectId,
     planId: options.planId,
@@ -733,16 +861,6 @@ export async function generateBookWholePass(options: {
     generationJobId: options.generationJobId
   });
   await maybeEnqueueCover(options.projectId, options.planId, effective.input);
-  for (const page of savedPages) {
-    if (page.imagePrompt && options.strategy.shouldIllustratePage(effective.input, effective.plan, page.index)) {
-      await enqueueWorkerJob({
-        projectId: options.projectId,
-        type: "GENERATE_IMAGE",
-        payload: { pageId: page.id, planId: options.planId, prompt: page.imagePrompt },
-        dedupeKey: `generate-image:${page.id}:${options.planId}:${page.revision}`
-      });
-    }
-  }
 
   await maybeEnqueueCompile(options.projectId, options.planId);
 }

@@ -76,6 +76,12 @@ import { persistKeeperStoryDelta } from "../generation/qualityEnrichment.js";
 import { loadProjectStoryState, rebuildProjectStoryState } from "../generation/storyStateStore.js";
 import { applyBookEdit } from "./applyBookEdit.js";
 import { StopRequestedError } from "../runtime/jobTypes.js";
+import {
+  compilePolicyPayload,
+  DETACHED_FROM_PROJECT_LIFECYCLE,
+  EXPORT_REPAIR_FORMAT,
+  type CompilePublicationPolicy
+} from "@book-maker/core";
 
 const page = (index: number, markdown: string) => ({
   id: `page-${index}`,
@@ -227,8 +233,9 @@ describe("applyBookEdit in exact mode", () => {
       })
     );
 
-    // Nothing else moves a project out of EDITING, and the exports are already
-    // deleted — so leaving it there is a book no sweep and no route can reach.
+    // No immediate callback remains to move the project out of EDITING, and
+    // the exports are already deleted. The delayed stranded sweep can recover
+    // it, but this handler already knows it should return to the repair lane.
     expect(mocks.prisma.project.updateMany).toHaveBeenCalledWith({
       where: { id: "project-1", status: "EDITING" },
       data: { status: "COMPLETE" }
@@ -506,8 +513,18 @@ describe("applyBookEdit in exact mode", () => {
     // Detached: the failed edit's settlement must not cancel the rebuild, and
     // the rebuild's own failure must not fail or refund the book.
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", {
+      review: { skipFinalReview: true, withoutQualityVerdict: false },
+      expectedProjectStatus: null,
+      ownership: { kind: "detached", repairFormat: "pdf" }
+    });
+    const policy = mocks.maybeEnqueueCompile.mock.calls[0]![2] as CompilePublicationPolicy;
+    // This is the payload the real compile handler receives. In particular it
+    // carries the requested format that its detached-path preflight requires,
+    // rather than reaching the handler as an un-runnable generic detach.
+    expect(compilePolicyPayload(policy, "EDITING")).toMatchObject({
       skipFinalReview: true,
-      detached: true
+      [DETACHED_FROM_PROJECT_LIFECYCLE]: true,
+      [EXPORT_REPAIR_FORMAT]: "pdf"
     });
   });
 
@@ -540,8 +557,9 @@ describe("applyBookEdit in exact mode", () => {
 
     expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", {
-      skipFinalReview: true,
-      detached: true
+      review: { skipFinalReview: true, withoutQualityVerdict: false },
+      expectedProjectStatus: null,
+      ownership: { kind: "detached", repairFormat: "pdf" }
     });
   });
 

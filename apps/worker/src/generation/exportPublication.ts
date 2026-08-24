@@ -17,6 +17,7 @@ import { randomUUID } from "node:crypto";
 import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { characterPreparationDedupeKey } from "./characterPreparation.js";
+import { payloadWithExportPublicationEvidence } from "./exportPublicationEvidence.js";
 
 /**
  * Publishing a compiled book, and the one race it exists for.
@@ -109,6 +110,8 @@ export type PendingExportPaths = {
 
 export type ExportPublicationResult = {
   published: boolean;
+  /** Publication claim matched, but a page/cover image job still owns fan-in. */
+  blockedByOpenImageJobs: boolean;
   /** Optional derivative row committed with the export, ready for Redis dispatch. */
   characterPreparationJobId: string | null;
 };
@@ -660,6 +663,7 @@ export async function publishCompiledExports(options: {
   let publicationStarted = false;
   let restoredInsideTransaction = false;
   let published: boolean;
+  let blockedByOpenImageJobs = false;
   let characterPreparationJobId: string | null = null;
   try {
     published = await prisma.$transaction(
@@ -681,10 +685,34 @@ export async function publishCompiledExports(options: {
           return false;
         }
 
+        // The project lock orders this count against final-QA repair
+        // publication, whose first statement takes the same lock. A preflight
+        // count cannot do that: independent READ COMMITTED snapshots can see
+        // zero jobs and then the sibling's repaired page. Here either the
+        // repair committed first and its durable job blocks the renames, or
+        // this publication won first and the repair waits until these files
+        // describe the manuscript that existed before it.
+        const openImageJobs = await tx.generationJob.count({
+          where: {
+            projectId: options.projectId,
+            type: "GENERATE_IMAGE",
+            status: { in: ["QUEUED", "ACTIVE"] }
+          }
+        });
+        if (openImageJobs > 0) {
+          blockedByOpenImageJobs = true;
+          return false;
+        }
+
         // Bind the filesystem move to the durable ACTIVE row. Marking it
         // COMPLETED in this transaction closes both race directions: a stop
         // that won already makes this claim miss, while a stop that follows the
         // commit sees no open row to fail or refund.
+        const publicationJob = await tx.generationJob.findUnique({
+          where: { id: options.generationJobId },
+          select: { payload: true }
+        });
+        const publicationCommittedAt = new Date();
         const jobClaim = await tx.generationJob.updateMany({
           where: {
             id: options.generationJobId,
@@ -698,7 +726,11 @@ export async function publishCompiledExports(options: {
             status: "COMPLETED",
             progress: 100,
             message: "Export published",
-            finishedAt: new Date()
+            finishedAt: publicationCommittedAt,
+            payload: payloadWithExportPublicationEvidence(
+              publicationJob?.payload,
+              publicationCommittedAt
+            ) as Prisma.InputJsonValue
           }
         });
         if (jobClaim.count !== 1) {
@@ -792,6 +824,7 @@ export async function publishCompiledExports(options: {
   }
   return {
     published,
+    blockedByOpenImageJobs,
     characterPreparationJobId: published ? characterPreparationJobId : null
   };
 }

@@ -5,15 +5,54 @@ found only by listing this directory.
 
 ## Checks (wired into `pnpm check`)
 
-- `check.mjs` — the gate runner. Runs typecheck, lint, the size budget, the gotcha index and all
-  tests **unconditionally**, reports every failure rather than stopping at the first, and exits
-  nonzero if any gate failed.
+- `check.mjs` — the gate runner. Runs typecheck, lint, the size budget, the gotcha index, the core
+  subpath closure, its `node:test` suite and every workspace's Vitest suite **unconditionally**,
+  reports every failure rather than stopping at the first, and exits nonzero if any gate failed.
+  `--only <gate>` runs one; `--list` names all seven (`subpath-tests` is the checker unit suite).
+  **A gate whose script is gone fails; it does not skip.** `requires` on a gate turns an absent
+  script into a SKIP, and only `gotchas` carries it — that was a landing-order concession for a
+  script arriving in a separate change, and it should come off once nothing is mid-landing. Every
+  other script-backed gate enforces something that used to be enforced by nothing, so going green
+  on a deleted script is the false green this runner exists to remove. What that costs — a missing
+  script and a real violation both exiting 1 — is paid back by `missingScript`: a node-run gate
+  with no `requires` whose script is absent is failed *before* it is spawned, and the summary says
+  `script missing: <path>` where a violation says `exit 1`. Read the summary line, not just the
+  colour.
 - `check-file-sizes.mjs` — fails when a `.ts`/`.tsx`/`.dart` file passes 900 lines. The
   `GRANDFATHERED` map holds explicit ceilings for files that were already over. **Those entries are
   debts, not permissions** — split along a real seam instead of raising a number. The script prints
   a `note:` when a listed file drops back under the default so the entry can be deleted.
 - `check-gotcha-index.mjs` — asserts the invariant index in the root `CLAUDE.md` and the
   directory-scoped `CLAUDE.md` files still agree.
+- `check-core-subpaths.mjs` — one invariant checked from both ends. **Producer side**: every narrow
+  subpath in `packages/core/package.json`'s `exports` map has an **empty** transitive runtime
+  closure — following value imports only, it reaches no module and no package. **Consumer side**:
+  every value import of `@book-maker/core` from a workspace whose container installs it *without*
+  core's dependencies names one of those subpaths. The web dev container installs `@book-maker/web`
+  alone, so `packages/core/node_modules` is empty there and vite serves those modules out of
+  bind-mounted source — a value import breaks that container at request time and nothing else, on a
+  host with a full install. Neither half stands alone: the producer side's file list comes off the
+  `exports` map, which by construction never holds `.`, so the barrel — the one import that actually
+  breaks the container, and a declared `workspace:*` dependency of `apps/web` — is invisible to it;
+  the consumer side needs the producer side's list to know what a file is allowed to name instead.
+  Both lists are derived, never copied: the subpaths from `package.json`, the consumers from the
+  `DEV_PNPM_FILTER`s in `docker-compose.yml` (no `...` tail means the project installs alone). A
+  fifth subpath, or a second narrowly-installed service, is covered the moment it lands. **So is
+  the definition of an erased import**: a named import whose every specifier is inline `type` is
+  free only while `verbatimModuleSyntax` is off, so the script reads that option out of the tsconfig
+  governing each tree it walks (`extends` followed nearest-wins) rather than assuming it. Turn it on
+  and `import { type X } from "y"` emits `import {} from "y"`; the gate then counts it, names the
+  setting in the failure, and points at the statement-level `import type` spelling. A tsconfig it
+  cannot read fails for the same reason an unreadable filter does. On a green run it prints which
+  statements are erased *only* by that option — one today, `packages/core/src/jobSteps.ts:1` — so
+  the assumption is in the output rather than in a comment. `tsconfig.base.json` pins the option to
+  `false` beside a note pointing back here; the pin is the signpost and the gate is the enforcement.
+  String and no-substitution template specifiers resolve normally; computed `import()`/`require()`
+  arguments in a producer closure are unresolved runtime edges and fail closed instead of
+  disappearing from the walk. On the consumer side, only a computed expression whose own literal
+  pieces can construct `@book-maker/core` or a relative path into `packages/core/src` fails; an
+  unrelated local/plugin expression is outside this gate, and identifiers are not constant-traced.
+  See `packages/core/CLAUDE.md` and `apps/web/CLAUDE.md`.
 
 ## Render harnesses
 

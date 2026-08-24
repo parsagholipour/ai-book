@@ -1,5 +1,6 @@
 import { nextPlanVersion, planInputSnapshot } from "./bookHelpers.js";
 import { acquireStructuralPageLeaseTx } from "./structuralPageLease.js";
+import { stampLegacyGeneratedIllustrationOwnership } from "@book-maker/db/pageIllustrationOwnership";
 import {
   bookPlanSchema,
   jsonRecord,
@@ -37,7 +38,9 @@ import {
  * manuscript whose page count does not match its plan snapshot, which is the
  * state `runDeterministicManuscriptChecks` calls `PAGE_COUNT_MISMATCH` and
  * `maybeEnqueueCompile` refuses to compile — so a crash in the middle leaves a
- * book that cannot rebuild its own exports and that no sweep reaches.
+ * book that cannot rebuild its own exports. The delayed stranded sweep can
+ * revisit it, but reaches the same `not-ready` answer; atomicity is what keeps
+ * that unrecoverable intermediate state from committing.
  *
  * The last statement writes the stamp onto `BookEditOperation.classifier`. That
  * ordering *is* the redelivery fence: the stamp cannot exist without the shift
@@ -195,7 +198,12 @@ export async function applyStructuralPageChange(
     const pagesBefore = await tx.page.findMany({
       where: { projectId },
       orderBy: { index: "asc" },
-      select: { id: true, index: true, chapterId: true }
+      select: {
+        id: true,
+        index: true,
+        chapterId: true,
+        images: { select: { id: true, type: true, path: true, metadata: true } }
+      }
     });
     const reconciliation = reconcileStructuralPagePlan(options.plan, pagesBefore);
     if (!reconciliation.ok) {
@@ -276,6 +284,13 @@ export async function applyStructuralPageChange(
     // retired at the first structural change instead of being attributed to a
     // different page.
     await discardLegacyPageContinuityNotes(tx, projectId);
+
+    // A reserved numeric filename names this pre-edit index. Preserve the
+    // stable Page ownership before insert/delete/move changes that number, so
+    // a later keeper replacement can retire the old generated render without
+    // mistaking a user-moved hero (whose filename names another source page)
+    // for system-owned output of this page.
+    await stampLegacyGeneratedIllustrationOwnership(tx, projectId, pagesBefore);
 
     if (plan.action === "insert") {
       await shiftPageIndexes(tx, projectId, { afterIndex: plan.insertAfterIndex, delta: plan.newPageIndexes.length });

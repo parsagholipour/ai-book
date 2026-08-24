@@ -22,8 +22,11 @@ import { dbScopeMocks } from "../../testing/dbScopeMocks.js";
 
 export const mocks = {
   prisma: {
-    page: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
+    $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(mocks.prisma)),
+    page: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+    imageAsset: { findMany: vi.fn(), deleteMany: vi.fn() },
     planVersion: { findUnique: vi.fn() },
+    chapter: { findUnique: vi.fn(), updateMany: vi.fn() },
     continuityNote: { findMany: vi.fn(), createMany: vi.fn() }
   },
   // `beforePageIndex` is optional *here* only so a stand-in can show what an
@@ -32,6 +35,8 @@ export const mocks = {
     async (_options: { beforePageIndex?: number; excludePageIndexes: number[] }) => [] as string[]
   ),
   reviewPageDraft: vi.fn(),
+  repairPageBrief: vi.fn(),
+  parseChapterBrief: vi.fn((_value?: unknown): unknown => undefined),
   generatePageDraft: vi.fn(),
   revisePageDraft: vi.fn(),
   enqueueNextPageIfReady: vi.fn(),
@@ -108,14 +113,15 @@ export const projectInputModuleMock = () => ({ inputForPlanVersion: mocks.inputF
  */
 export const bookHelpersModuleMock = (actual: typeof import("../../generation/bookHelpers.js")) => ({
   formatQualityFailure: () => "",
-  getProjectOrThrow: async () => ({ id: "project-1" }),
+  getProjectOrThrow: async () => ({ id: "project-1", currentPlanId: "plan-1" }),
   loadStyleLockPages: actual.loadStyleLockPages,
   styleExcerptsForPage: actual.styleExcerptsForPage,
-  parseChapterBrief: () => undefined,
+  parseChapterBrief: mocks.parseChapterBrief,
   strategyForInput: () => ({
     generatePageDraft: mocks.generatePageDraft,
     reviewPageDraft: mocks.reviewPageDraft,
     revisePageDraft: mocks.revisePageDraft,
+    repairPageBrief: mocks.repairPageBrief,
     shouldIllustratePage: (...args: unknown[]) =>
       (mocks.strategyOverrides.shouldIllustratePage as (...args: unknown[]) => boolean)(...args)
   }),
@@ -126,12 +132,20 @@ export const bookHelpersModuleMock = (actual: typeof import("../../generation/bo
  * Three candidates keep the test loop short; the real ceiling only changes how
  * many rewrites run, not which draft is kept. The review loop itself is the
  * real `runPageQualityLoop` — only the strategy underneath is mocked.
+ *
+ * Shrunken budgets *over* the real module, not instead of it. Everything in
+ * `tuning.ts` is a pure function of its arguments, so anything this does not
+ * deliberately shrink — `pageQaRecoveryRevision`, which the loop reads for
+ * every rewrite — should be the real one. Hand-listing the exports instead
+ * failed both suites with "No export is defined on the mock" the first time one
+ * was added, rather than with anything about the code under test.
  */
-export const tuningModuleMock = () => ({
-  MAX_PAGE_QA_CANDIDATES: 3,
-  MAX_PAGE_QA_REWRITE_ATTEMPTS: 2,
-  MAX_PAGE_REVISE_RESTARTS: 1,
-  PAGE_QA_RECOVERY_CANDIDATE: 4
+export const tuningModuleMock = (actual: typeof import("../../generation/tuning.js")) => ({
+  ...actual,
+  pageQaCandidatesFor: () => 3,
+  pageQaRewriteAttemptsFor: () => 2,
+  finalQaRevisionsFor: () => 2,
+  MAX_PAGE_REVISE_RESTARTS: 1
 });
 
 export const qualitySettingsModuleMock = () => ({
@@ -216,6 +230,9 @@ export function emptyStoryState() {
  */
 export function resetGeneratePageMocks() {
   vi.clearAllMocks();
+  mocks.prisma.$transaction.mockImplementation(
+    async (run: (tx: typeof mocks.prisma) => Promise<unknown>) => run(mocks.prisma)
+  );
   mocks.loadEntityStateLines.mockResolvedValue([]);
   mocks.loadProjectStoryState.mockResolvedValue({
     promises: [],
@@ -227,12 +244,23 @@ export function resetGeneratePageMocks() {
     id: "page-1",
     index: 1,
     chapterId: null,
-    chapter: null
+    chapter: null,
+    status: "PENDING",
+    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    title: "First",
+    markdown: "First text.",
+    summary: "First summary.",
+    imagePrompt: null,
+    revision: 1
   });
   mocks.prisma.planVersion.findUnique.mockResolvedValue({ id: "plan-1", inputSnapshot: {}, planningPackage: {} });
   mocks.prisma.page.findMany.mockResolvedValue([]);
+  mocks.prisma.imageAsset.findMany.mockResolvedValue([]);
   mocks.prisma.page.findFirst.mockResolvedValue(null);
   mocks.prisma.continuityNote.findMany.mockResolvedValue([]);
+  mocks.prisma.chapter.findUnique.mockResolvedValue(null);
+  mocks.prisma.chapter.updateMany.mockResolvedValue({ count: 1 });
+  mocks.parseChapterBrief.mockReturnValue(undefined);
   mocks.loadContinuityNotes.mockResolvedValue([]);
   mocks.loadResearchNotesForGeneration.mockResolvedValue([]);
   mocks.embedSemanticQuery.mockResolvedValue(undefined);
@@ -243,6 +271,8 @@ export function resetGeneratePageMocks() {
   // than leaking one test's stand-in retrieval into the next.
   mocks.retrieveSemanticPageMemory.mockImplementation(async () => []);
   mocks.prisma.page.update.mockResolvedValue({});
+  mocks.prisma.page.updateMany.mockResolvedValue({ count: 1 });
+  mocks.enqueueWorkerJob.mockResolvedValue({ id: "image-job" });
   mocks.strategyOverrides.shouldIllustratePage = () => false;
   mocks.inputForPlanVersion.mockReturnValue({ mediaSettings: {} });
   mocks.generateBestOfPageDrafts.mockImplementation(

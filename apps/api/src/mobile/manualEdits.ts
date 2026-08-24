@@ -23,10 +23,11 @@ import {
 import { jsonInputValue, jsonRecord } from "./support.js";
 import { rebuildStoryStateAfterUndo } from "./rebuildStoryState.js";
 import {
+  compilePolicyPayload,
+  compilePublicationDedupeKey,
+  compilePublicationPolicyFromPayload,
   exportProvenancePaths,
   EXPORT_PUBLICATION_PROJECT_STATUS,
-  PRESENTATION_ONLY_RECOMPILE,
-  PRESENTATION_RECOMPILE_FALLBACK_STATUS,
   bookPlanSchema,
   parseStructuralApplication,
   type StructuralApplication
@@ -256,19 +257,15 @@ export async function replayManualBookEdit(
  * the compile job restores COMPLETE when it finishes. skipFinalReview keeps
  * the compile QA pass from rewriting text the user chose deliberately.
  *
- * `presentationOnly` says the manuscript itself did not move — a Sources toggle
- * or a chapter-heading restyle, never an edit to `Page.markdown`. Only the
- * verdict cares: with no final review this compile's report is the
- * deterministic checks alone, and for a reprint of unchanged prose that is a
- * *worse* statement than the one the last real QA pass made, not a newer one.
- * A manual edit or an undo leaves it off, because those do rewrite pages and
- * their fresh report has to replace findings about text that is gone.
+ * Presentation-only recompiles do not use this helper: their preference write
+ * and compile row must share the transaction in `presentationEdits.ts` so a
+ * crash cannot commit one without the other.
  */
 export async function queueUserEditExportRecompile(
   projectId: string,
   planId: string,
   fallbackStatus: "COMPLETE" | "REVIEW_REQUIRED" = "COMPLETE",
-  options: { presentationOnly?: boolean; contentRevision?: number } = {}
+  options: { contentRevision?: number } = {}
 ): Promise<void> {
   const project = options.contentRevision === undefined
     ? await prisma.project.update({
@@ -277,23 +274,26 @@ export async function queueUserEditExportRecompile(
         select: { contentRevision: true }
       })
     : { contentRevision: options.contentRevision };
+  const policy = compilePublicationPolicyFromPayload({
+    skipFinalReview: true,
+    [EXPORT_PUBLICATION_PROJECT_STATUS]: "EDITING"
+  });
   try {
     await enqueueGenerationJob({
       projectId,
       type: "COMPILE_EXPORT",
-      dedupeKey: `compile-export:${projectId}:${planId}:content-${project.contentRevision}`,
+      dedupeKey: compilePublicationDedupeKey({
+        projectId,
+        planId,
+        contentRevision: project.contentRevision,
+        policy,
+        projectStatus: "EDITING"
+      }),
       contentRevision: project.contentRevision,
       payload: {
         planId,
-        skipFinalReview: true,
         contentRevision: project.contentRevision,
-        [EXPORT_PUBLICATION_PROJECT_STATUS]: "EDITING",
-        ...(options.presentationOnly
-          ? {
-              [PRESENTATION_ONLY_RECOMPILE]: true,
-              [PRESENTATION_RECOMPILE_FALLBACK_STATUS]: fallbackStatus
-            }
-          : {})
+        ...compilePolicyPayload(policy, "EDITING")
       }
     });
   } catch {

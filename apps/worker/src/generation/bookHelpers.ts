@@ -194,6 +194,44 @@ export async function loadPagesForExport(projectId: string): Promise<ExportPageF
   });
 }
 
+/**
+ * The manuscript as text, for a reader that only has to tell two versions of it
+ * apart.
+ *
+ * `pagesTheCompileNoLongerSpeaksFor` (`handlers/compileExportStandDown.ts`)
+ * compares four scalars per page and took the whole of `loadPagesForExport` to
+ * get them: every page's body, plus an `images` and a `chapter` join per row.
+ * On a 300-page book that is the entire book and two relation joins, issued at
+ * the one moment the compile which superseded this one is trying to publish
+ * against the same database — for a `Set<number>` of moved indexes.
+ *
+ * The body is not the part to drop. `markdown` is *compared*, not tested for
+ * emptiness: `revision` catches a rewrite that produced identical text, and the
+ * text catches a writer that did not touch the counter, and a stand-down needs
+ * both. What it never reads is the illustrations, the chapter row, or the
+ * status and summary columns.
+ *
+ * It lives beside the shared loader rather than replacing it, because the two
+ * other callers need what it drops: `repairPagesFromFinalQa` returns
+ * `loadPagesForExport`'s answer as the manuscript the render is built from, and
+ * `markdownPages` reads `page.images[0]` off every row of it. Narrowing the
+ * shared one would take the pictures out of the book.
+ */
+export type PageTextSnapshot = {
+  index: number;
+  title: string;
+  markdown: string;
+  revision: number;
+};
+
+export async function loadPageTextSnapshot(projectId: string): Promise<PageTextSnapshot[]> {
+  return prisma.page.findMany({
+    where: { projectId },
+    orderBy: { index: "asc" },
+    select: { index: true, title: true, markdown: true, revision: true }
+  });
+}
+
 export function toPriorPageContext(page: { index: number; title: string; markdown: string; summary: string }): PriorPageContext {
   return {
     index: page.index,

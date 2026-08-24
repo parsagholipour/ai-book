@@ -9,15 +9,83 @@ specifier `@book-maker/core`, and the barrel is the default — add to `src/inde
 reaching past it.
 
 **A module kept light enough to survive a mock has to be light in both directions.**
-The `exports` map has one narrow entry beside `.`, and it exists to be un-mockable.
-`./libraryMentions` is imported by `packages/db/src/libraryMentions.ts` and by nothing else. That db
-module is itself a subpath so it survives a wholesale `vi.mock("@book-maker/db")`; taking the strip
-helpers off this barrel quietly handed it a *second* mock surface, because a
-suite that mocks core with a bare factory replaces the whole barrel — adapters, prompts, PDF — and
-`generationDescription` then throws `stripBoundLibraryMentionMarkers is not a function`. What closes that
-is a specifier `vi.mock("@book-maker/core")` does not name. `packages/db/src/libraryMentions.test.ts`
-pins it with exactly that mock at the top of the file. A second entry has to earn itself the same
-way: a true leaf on the other end, and a test that fails without it.
+The `exports` map has four narrow entries beside `.`, and each one is a module a consumer must be
+able to take without the barrel. `./libraryMentions` is imported by
+`packages/db/src/libraryMentions.ts` and by nothing else. That db module is itself a subpath so it
+survives a wholesale `vi.mock("@book-maker/db")`; taking the strip helpers off this barrel quietly
+handed it a *second* mock surface, because a suite that mocks core with a bare factory replaces the
+whole barrel — adapters, prompts, PDF — and `generationDescription` then throws
+`stripBoundLibraryMentionMarkers is not a function`. What closes that is a specifier
+`vi.mock("@book-maker/core")` does not name. `packages/db/src/libraryMentions.test.ts` pins it with
+exactly that mock at the top of the file. `./qualityGates` is the other direction:
+`apps/web` reads `QUALITY_FEATURE_IDS` and `QUALITY_EFFORT_TIERS` off it for the console's quality
+screen, and the barrel would pull puppeteer, sharp and `node:fs` into a Vite browser build. Its
+only import is a `type`, so nothing of it survives to runtime but the two arrays — and that is load
+bearing twice over, because the web container installs *only* `@book-maker/web` and leaves
+`packages/core/node_modules` empty (→ apps/web/CLAUDE.md). Vite serves this module out of the
+bind-mounted source with no dependency of core's resolvable, which works precisely because the
+transformed module has no import statement left in it: `mediaSettings.ts` one level down imports
+zod, and a runtime import here would reach it. `./modelTiers` is
+the same shape one step further: both of its own imports are statement-level `import type` as well,
+and `./libraryMentions` carries no import statement at all — so those three measure the same, a
+runtime closure of zero modules and zero packages. It carries `modelTierForInput`, which used to live in `billing.ts` — a pricing module
+whose closure is twelve files and zod. The worker's `generation/tuning.ts` and
+`generation/qualitySettings.ts` ask only which models a book runs, spend no credits, and are both
+`vi.mock`ed with `vi.importActual`, so taking that one property lookup off the barrel dragged
+puppeteer, sharp and `node:fs` into their mock factories — and a suite mocking core with a bare
+factory would have left `modelTierForInput` undefined *inside the real module*, blowing up in
+`pageQaRewriteAttemptsFor` rather than in the code under test. Moving the accessor was the price of
+the subpath, and it is the right home anyway: a tier is what routes the models, not what prices
+them. `./jobSteps` is the fourth, and the one a consumer had been asking for by name: the console's
+fallback step labels in `apps/web/src/jobsDisplay.ts` were a second per-job-type table kept by hand
+— the last one in the repo — because the authored `JOB_STEP_TEMPLATES` lives here and the barrel is
+refused there. It measures like the rest and for the same reason: its single import names
+`GenerationJobType` inline-`type`, so the statement is erased, and `jobDispatch.ts` beneath it
+carries no import at all. What crosses is the whole record rather than two arrays, and the console
+takes only each template's `label` — the `key` is worker vocabulary the mobile serializers
+translate, so it has no business in a display table. A fifth entry has to earn itself the same way:
+a true leaf on the other end, and a consumer that breaks without it.
+
+That empty closure is a gate now, not a habit. `scripts/check-core-subpaths.mjs` — the `subpaths`
+gate in `pnpm check`, or `pnpm check --only subpaths` on its own — takes every entry in the
+`exports` map except `.`, follows **value** imports transitively, and fails if any subpath reaches a
+single module or package. Erased at build time and therefore free: statement-level `import type` /
+`export type`, and a named import whose every specifier is inline `type`. Everything else counts,
+including side-effect imports, `export * from`, `import()` and `require()`. The list comes off
+`package.json` rather than a copy in the script, so a fifth entry is covered the moment it lands —
+a hand-written list would be the same prose problem one level up. The failure names the subpath,
+quotes the import with its line, and spells out the web container, because that is the only place
+the breakage shows: on the host every test, `pnpm check` and `vite build` stay green.
+
+**That second erasure rule is true of a compiler option, so the option is read rather than
+believed.** `import { type X } from "y"` is elided whole only while `verbatimModuleSyntax` is off;
+turn it on and the same statement emits `import {} from "y"`, which resolves `y` at runtime.
+`jobSteps.ts` is spelled exactly that way, so flipping the option — a routine modernization for a
+repo already writing `.js` specifiers — would have left it reaching `jobDispatch.ts` while the gate
+went on printing "runtime closure empty": the gate's own false green, one level up. It now reads the
+option from the tsconfig governing whichever tree it walks, `extends` followed nearest-wins, and
+when the option is on it counts inline `type` as surviving and says in the failure which setting
+changed the rule. `tsconfig.base.json` pins it to `false` with a note pointing at the script — the
+pin is the signpost, the gate is the enforcement, and a green run prints the statements that are
+free *only* because of it, so nobody has to take the comment's word for it. Prefer statement-level
+`import type` in a subpath entry module either way: it is the spelling that survives the flip.
+
+**Proving the safe imports safe says nothing about which import was written**, so the same script
+checks the rule from the consumer end too. Its file list is the `exports` map, which by construction
+never contains `.` — and `.` is the entry that breaks the container, because `@book-maker/core` is a
+declared `workspace:*` dependency of `apps/web`: `import { jobNames } from "@book-maker/core"` — the
+job-step labels `apps/web/CLAUDE.md` invites — typechecks, bundles and passes every test on the
+host, and 500s in the web container at request time on an unresolvable `puppeteer`. So the second
+half walks every source file of each *narrowly installed* workspace and fails a value import of the
+barrel, of a subpath the `exports` map does not declare, or of a relative path into
+`packages/core/src`. A type-only import of the barrel passes, by the same erasure rule as above.
+Which workspaces those are is derived from `docker-compose.yml`, never named in the script: a
+`DEV_PNPM_FILTER` with a `...` tail installs the project *and its dependencies*, so `api` and
+`worker` are core's own business, while a filter without one installs that project alone and is
+exposed exactly as `apps/web` is. A filter naming no workspace is reported rather than skipped, for
+the same reason an unreadable `exports` entry is. The two halves also answer each other: the fix the
+consumer failure recommends is to add a subpath export, and the producer half is what then proves
+the new entry is empty enough to be worth adding.
 
 ## What lives where
 

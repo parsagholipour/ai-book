@@ -25,6 +25,10 @@ vi.mock(
   "../generation/embeddingWrites.js",
   async () => (await import("./testing/compileExportMocks.js")).embeddingWritesModuleMock()
 );
+vi.mock(
+  "../generation/entityState.js",
+  async () => (await import("./testing/compileExportMocks.js")).entityStateModuleMock()
+);
 vi.mock("./characters.js", async () => (await import("./testing/compileExportMocks.js")).charactersModuleMock());
 vi.mock(
   "../generation/bookHelpers.js",
@@ -70,7 +74,10 @@ import {
   runBoundedChapterQualityReview
 } from "./compileExport.js";
 import { repairPagesFromFinalQa } from "./compileExportRepair.js";
-import { MAX_FINAL_QA_REVISIONS_PER_PAGE } from "../generation/tuning.js";
+import { finalQaRevisionsFor } from "../generation/tuning.js";
+
+/** The revision budget the fixtures run under: no tier recorded is balanced. */
+const BALANCED_FINAL_QA_REVISIONS = finalQaRevisionsFor({ mediaSettings: {} } as never);
 import { StopRequestedError } from "../runtime/jobTypes.js";
 import { mocks } from "./testing/compileExportMocks.js";
 
@@ -113,7 +120,12 @@ const finalQa = (repairPageIndexes: number[]): FinalBookQa =>
 describe("repairPagesFromFinalQa", () => {
   // Sequential-pages so the repaired-page embedding write is exercised; other
   // modes skip it because nothing ever reads their embeddings.
-  const strategy = { executionMode: "sequential-pages", reviewPageDraft: vi.fn(), revisePageDraft: vi.fn() };
+  const strategy = {
+    executionMode: "sequential-pages",
+    reviewPageDraft: vi.fn(),
+    revisePageDraft: vi.fn(),
+    repairPageBrief: vi.fn()
+  };
 
   const baseOptions = (overrides: Record<string, unknown> = {}) =>
     ({
@@ -149,8 +161,10 @@ describe("repairPagesFromFinalQa", () => {
     // clearAllMocks keeps implementations, so a previous test's verdict would
     // otherwise carry into the next one.
     mocks.auditPageStyle.mockResolvedValue({ styleOk: true, styleIssues: [] });
+    mocks.keeperStoryExtractForSave.mockResolvedValue(null);
     mocks.prisma.continuityNote.findMany.mockResolvedValue([]);
     mocks.pageReportFromFinalQa.mockReturnValue(report(30));
+    mocks.parseChapterBrief.mockReturnValue(undefined);
     mocks.loadPagesForExport.mockResolvedValue([exportPage(1), exportPage(2)]);
     mocks.prisma.page.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
       ...exportPage(2),
@@ -171,7 +185,7 @@ describe("repairPagesFromFinalQa", () => {
 
     expect(mocks.prisma.page.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: "page-2" },
+        where: expect.objectContaining({ id: "page-2" }),
         data: expect.objectContaining({
           title: "Repaired",
           status: "COMPLETED",
@@ -189,13 +203,14 @@ describe("repairPagesFromFinalQa", () => {
         })
       ]
     });
-    expect(mocks.storeEmbedding).toHaveBeenCalledWith(
+    expect(mocks.writePreparedEmbedding).toHaveBeenCalledWith(
       { projectId: "project-1", scope: "page:2", sourceId: "page-2", text: "Repaired summary." },
+      expect.anything(),
       expect.anything()
     );
     expect(mocks.loadPagesForExport).toHaveBeenCalledWith("project-1");
     expect(result).toHaveLength(2);
-    expect(mocks.persistKeeperStoryDelta).toHaveBeenCalledWith(
+    expect(mocks.keeperStoryExtractForSave).toHaveBeenCalledWith(
       expect.objectContaining({ pageIndex: 2, keeperWasRevised: true, previousExtract: null })
     );
   });
@@ -229,8 +244,15 @@ describe("repairPagesFromFinalQa", () => {
     expect(mocks.pageReportFromFinalQa).toHaveBeenCalledWith(expect.anything(), 3, 3);
   });
 
-  it("skips flagged indexes that have no page row", async () => {
-    await repairPagesFromFinalQa(baseOptions({ finalQa: finalQa([7]) }));
+  it("skips flagged indexes that have no page row, and reports no pass at all", async () => {
+    // The pass resolves its targets to rows before it walks them, so an index
+    // the manuscript does not hold is not a page it stopped short of — it is
+    // not one of its pages. A verdict naming only those answers `undefined`,
+    // the same as a verdict that flagged nothing, and the caller spends no
+    // second `runFinalBookQa` grading a manuscript no page of which was
+    // rewritten. The count a truncated pass reports is the same list, which is
+    // what keeps its denominator reachable.
+    await expect(repairPagesFromFinalQa(baseOptions({ finalQa: finalQa([7]) }))).resolves.toBeUndefined();
 
     expect(mocks.revisePageDraftWithRestart).not.toHaveBeenCalled();
     expect(mocks.prisma.page.update).not.toHaveBeenCalled();
@@ -249,21 +271,23 @@ describe("repairPagesFromFinalQa", () => {
 
     await repairPagesFromFinalQa(baseOptions());
 
-    expect(strategy.reviewPageDraft).toHaveBeenCalledTimes(MAX_FINAL_QA_REVISIONS_PER_PAGE);
+    expect(strategy.reviewPageDraft).toHaveBeenCalledTimes(BALANCED_FINAL_QA_REVISIONS);
     expect(mocks.prisma.page.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: "page-2" },
+        where: expect.objectContaining({ id: "page-2" }),
         data: expect.objectContaining({
           title: "Rewrite 2",
           status: "FAILED_QA",
-          revision: { increment: MAX_FINAL_QA_REVISIONS_PER_PAGE },
+          revision: { increment: BALANCED_FINAL_QA_REVISIONS },
           qualityReport: expect.objectContaining({ score: 70 })
         })
       })
     );
-    // A flagged page skips embedding until a repair actually lands.
-    expect(mocks.storeEmbedding).not.toHaveBeenCalled();
-    expect(mocks.persistKeeperStoryDelta).toHaveBeenCalledWith(
+    // A flagged page skips embedding until a repair actually lands — the call
+    // as well as the write, since the two are now separate statements.
+    expect(mocks.prepareEmbedding).not.toHaveBeenCalled();
+    expect(mocks.writePreparedEmbedding).not.toHaveBeenCalled();
+    expect(mocks.keeperStoryExtractForSave).toHaveBeenCalledWith(
       expect.objectContaining({ pageIndex: 2, keeperWasRevised: true })
     );
   });
@@ -275,10 +299,11 @@ describe("repairPagesFromFinalQa", () => {
 
     await repairPagesFromFinalQa(baseOptions());
 
-    // Loop rewrites are attempts 2..6. This loop counts attempts from the
+    // Loop rewrites are attempts 2..N. This loop counts attempts from the
     // first rewrite — one later than the page loops count candidates — so the
     // recovery escalation must land on attempt PAGE_QA_RECOVERY_CANDIDATE - 1
-    // (the third rewrite), not one rewrite later.
+    // (the third rewrite), not one rewrite later. On balanced that is also
+    // the budget's final attempt, which the loop's clamp guarantees exists.
     const escalated = strategy.revisePageDraft.mock.calls.map((call) =>
       (call[0] as { report: { issues: string[] } }).report.issues.includes(
         "Earlier generated replacements for this page were still rejected by QA."
@@ -286,11 +311,234 @@ describe("repairPagesFromFinalQa", () => {
     );
     expect(escalated).toEqual([
       false, // attempt 2
-      true, // attempt 3 = PAGE_QA_RECOVERY_CANDIDATE - 1
-      true,
-      true,
-      true
+      true // attempt 3 = PAGE_QA_RECOVERY_CANDIDATE - 1
     ]);
+  });
+
+  /**
+   * The brief repair is the one write in this pass that outlives the compile,
+   * and a compile has no lease of its own — so the fence is the caller's to
+   * supply and supplying it is what buys the durable write. These three pin
+   * both halves of that bargain and the answer when the bargain breaks
+   * mid-pass.
+   */
+  describe("durable brief repair", () => {
+    /** A flagged page whose reviewer keeps blaming its brief. */
+    const collidingBriefPages = () => {
+      const pages = [exportPage(1), exportPage(2, { chapter: { id: "chapter-a", index: 1 } as never })];
+      mocks.parseChapterBrief.mockImplementation(() => ({
+        chapterIndex: 1,
+        title: "One",
+        summary: "S",
+        continuityFocus: [],
+        pages: [{ pageIndex: 2, purpose: "Repeat", beat: "Repeat", requiredContinuity: [], endingPressure: "" }]
+      }));
+      mocks.revisePageDraftWithRestart.mockResolvedValue(draftNamed("Rewrite"));
+      strategy.revisePageDraft.mockResolvedValue(draftNamed("Rewrite"));
+      // `repetitionOk: false` puts the loop into brief repair at its recovery attempt.
+      strategy.reviewPageDraft.mockResolvedValue({
+        ...report(40),
+        checks: { repetitionOk: false, progressionOk: true }
+      });
+      strategy.repairPageBrief.mockResolvedValue({
+        pageIndex: 2,
+        purpose: "Fresh",
+        beat: "Fresh",
+        requiredContinuity: [],
+        endingPressure: ""
+      });
+      mocks.prisma.chapter.findUnique.mockResolvedValue({
+        productionBrief: {
+          chapterIndex: 1,
+          title: "One",
+          summary: "S",
+          continuityFocus: [],
+          pages: [{ pageIndex: 2, purpose: "Repeat", beat: "Repeat", requiredContinuity: [], endingPressure: "" }]
+        }
+      });
+      mocks.prisma.chapter.updateMany.mockResolvedValue({ count: 1 });
+      return pages;
+    };
+
+    it("persists the repaired beat once the page keeps the rewrite it briefed", async () => {
+      // The beat this pass paid a model call to fix is read back by every later
+      // drafting job instead of being thrown away at the end of the compile — but
+      // only for a page that shipped prose written to it, so the reviewer blames
+      // the brief until the repair lands and accepts the rewrite after it. A
+      // rejected one is `pageReviewRecovery.test.ts`'s case.
+      const pages = collidingBriefPages();
+      const blamed = { ...report(40), checks: { repetitionOk: false, progressionOk: true } };
+      strategy.reviewPageDraft.mockResolvedValueOnce(blamed).mockResolvedValueOnce(blamed).mockResolvedValue(report(85, true));
+
+      await repairPagesFromFinalQa(
+        baseOptions({ pages, finalQa: finalQa([2]), assertOwnership: async () => {} })
+      );
+
+      expect(strategy.repairPageBrief).toHaveBeenCalled();
+      expect(mocks.prisma.chapter.updateMany).toHaveBeenCalled();
+      expect(savedPageData().map((data) => data.status)).toEqual(["COMPLETED"]);
+      // Page + repaired brief publish together; the exact-keeper semantic
+      // tail takes its own guarded transaction so a later reader edit cannot
+      // inherit stale memory from this repair.
+      expect(mocks.prisma.$transaction).toHaveBeenCalledTimes(2);
+    });
+
+    it("keeps the repair in memory when the caller supplied no fence", async () => {
+      // A compile with no `contentRevision` cannot honestly claim the book, so
+      // it gets no fence — and with no fence this pass passes no `chapterId`,
+      // which is the whole gate on the persisted write.
+      const pages = collidingBriefPages();
+
+      await repairPagesFromFinalQa(baseOptions({ pages, finalQa: finalQa([2]) }));
+
+      expect(strategy.repairPageBrief).toHaveBeenCalled();
+      expect(mocks.prisma.chapter.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("writes nothing durable once the fence says the book moved on", async () => {
+      // The fence is asked immediately before the compare-and-swap, so a
+      // manuscript that moved across the repair's own model call does not get
+      // this compile's opinion of its beats. It is the brief repair's own call
+      // that loses the book here, rather than the fence refusing from the
+      // start, because that is the boundary this test is about.
+      const pages = collidingBriefPages();
+      const superseded = new Error("superseded");
+      let lost = false;
+      strategy.repairPageBrief.mockImplementation(async () => {
+        lost = true;
+        return { pageIndex: 2, purpose: "Fresh", beat: "Fresh", requiredContinuity: [], endingPressure: "" };
+      });
+
+      await expect(
+        repairPagesFromFinalQa(
+          baseOptions({
+            pages,
+            finalQa: finalQa([2]),
+            assertOwnership: async () => {
+              if (lost) {
+                throw superseded;
+              }
+            }
+          })
+        )
+      ).rejects.toBe(superseded);
+
+      expect(strategy.repairPageBrief).toHaveBeenCalled();
+      expect(mocks.prisma.chapter.updateMany).not.toHaveBeenCalled();
+    });
+
+  });
+
+  /**
+   * The fence covers the pass's own writes, not only the chapter brief it was
+   * first threaded into.
+   *
+   * A compile holds a `pages` snapshot taken minutes earlier and the reader can
+   * chat-edit a finished book the whole time it works, so "the reviewer approved
+   * this rewrite" and "the page in the database is still the one I read" are two
+   * different questions. Threaded only into `runPageQualityLoop`, the fence
+   * reached `repairPageBriefForRecovery` and nothing else — so a page whose loop
+   * approved before its third rewrite never asked at all, and the pass wrote
+   * over a rewrite the reader had just paid for.
+   */
+  describe("page writes under the ownership fence", () => {
+    /** A pass that loses the book the instant its first repaired page lands. */
+    const approvedRepairOfTwoPages = () => {
+      mocks.revisePageDraftWithRestart.mockResolvedValue(draftNamed("Repaired"));
+      strategy.reviewPageDraft.mockResolvedValue(report(85, true));
+      const pages = [exportPage(1), exportPage(2)];
+      mocks.prisma.page.update.mockImplementation(
+        async ({ where, data }: { where: { id: string }; data: object }) => ({
+          ...pages.find((page) => page.id === where.id),
+          ...data
+        })
+      );
+      return pages;
+    };
+
+    it("makes none of a page's writes once the book moved across its model calls", async () => {
+      // The barrier sits after the keeper extract and the embedding call and
+      // before every write, so a page whose review finished under one manuscript
+      // and whose save would land under another publishes nothing: not the row,
+      // not the story delta, not the notes, not the vector.
+      const pages = approvedRepairOfTwoPages();
+      mocks.revisePageDraftWithRestart.mockResolvedValue({
+        ...draftNamed("Repaired"),
+        continuityNotes: ["Pip stays."]
+      });
+      mocks.keeperStoryExtractForSave.mockResolvedValue({ storyDelta: {} });
+      const superseded = new Error("superseded");
+      let asked = 0;
+
+      await expect(
+        repairPagesFromFinalQa(
+          baseOptions({
+            pages,
+            finalQa: finalQa([2]),
+            // Answers the loop's entry barrier, refuses the publish one.
+            assertOwnership: async () => {
+              asked += 1;
+              if (asked > 1) {
+                throw superseded;
+              }
+            }
+          })
+        )
+      ).rejects.toBe(superseded);
+
+      // The calls were spent — that is the point of spending them before the
+      // barrier — and not one of the writes behind them ran.
+      expect(mocks.keeperStoryExtractForSave).toHaveBeenCalled();
+      expect(mocks.prepareEmbedding).toHaveBeenCalled();
+      expect(mocks.prisma.page.update).not.toHaveBeenCalled();
+      expect(mocks.persistStoryExtract).not.toHaveBeenCalled();
+      expect(mocks.prisma.continuityNote.createMany).not.toHaveBeenCalled();
+      expect(mocks.writePreparedEmbedding).not.toHaveBeenCalled();
+    });
+
+    it("fences the flagged page's write too, which is the branch with no chapter write in it", async () => {
+      // A page the repair could not fix keeps its best draft as FAILED_QA, and
+      // that update is a write over the reader's prose exactly like the approved
+      // one. It is also the branch that reaches no `repairPageBriefForRecovery`
+      // at all when the reviewer never blames the brief, so the original fence
+      // could not have covered it.
+      const pages = approvedRepairOfTwoPages();
+      strategy.reviewPageDraft.mockResolvedValue(report(40));
+      strategy.revisePageDraft.mockResolvedValue(draftNamed("Rewrite"));
+      const superseded = new Error("superseded");
+      let asked = 0;
+
+      await expect(
+        repairPagesFromFinalQa(
+          baseOptions({
+            pages,
+            finalQa: finalQa([2]),
+            assertOwnership: async () => {
+              asked += 1;
+              if (asked > 1) {
+                throw superseded;
+              }
+            }
+          })
+        )
+      ).rejects.toBe(superseded);
+
+      expect(strategy.reviewPageDraft).toHaveBeenCalled();
+      expect(mocks.prisma.page.update).not.toHaveBeenCalled();
+    });
+
+    it("still writes every page when the caller supplied no fence", async () => {
+      // The pass's job is to repair and save; a compile that can answer for
+      // nothing — a hand-requeued row with no `contentRevision` — writes its
+      // pages the way every compile did before the fence existed, and declines
+      // only the chapter brief.
+      const pages = approvedRepairOfTwoPages();
+
+      await repairPagesFromFinalQa(baseOptions({ pages, finalQa: finalQa([1, 2]) }));
+
+      expect(mocks.prisma.page.update.mock.calls.map((call) => (call[0] as { where: { id: string } }).where.id))
+        .toEqual(["page-1", "page-2"]);
+    });
   });
 
   it("gates on the compile's own quality context and loads none of its own", async () => {

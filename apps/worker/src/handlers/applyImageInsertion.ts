@@ -563,7 +563,8 @@ async function applyAssetReplacementInTx(
  * The applyBookEdit success tail: queue the recompile, and on `not-ready` (or an
  * enqueue outage) hand the book to the on-demand export repair lane — COMPLETE
  * with missing files is exactly the state the app's status stream rebuilds,
- * while EDITING is a state no sweep and no route can reach.
+ * while leaving EDITING would discard this handler's immediate handoff and
+ * wait for the delayed stranded-generation sweep's grace period.
  *
  * `withoutQualityVerdict`, because the appended image line moved the markdown
  * without touching prose: the model-QA findings the book earned still describe
@@ -661,4 +662,3 @@ export {
   markdownWithRemovedImage,
   markdownWithReplacedImage
 } from "../generation/imageMarkdown.js";
-

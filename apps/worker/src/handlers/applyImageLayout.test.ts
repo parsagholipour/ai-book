@@ -288,7 +288,10 @@ describe("applyImageLayout", () => {
 
     expect(mocks.tx.imageAsset.update).toHaveBeenCalledWith({
       where: { id: "asset-1" },
-      data: { pageId: "page-2" }
+      data: {
+        pageId: "page-2",
+        metadata: { legacyGeneratedPageId: "page-1" }
+      }
     });
     expect(mocks.tx.page.update).toHaveBeenCalledWith({
       where: { id: "page-1" },
@@ -334,7 +337,10 @@ describe("applyImageLayout", () => {
     });
     expect(mocks.tx.imageAsset.update).toHaveBeenCalledWith({
       where: { id: "asset-moved" },
-      data: { pageId: "page-2" }
+      data: {
+        pageId: "page-2",
+        metadata: { legacyGeneratedPageId: "page-1" }
+      }
     });
     expect(mocks.tx.page.update).toHaveBeenCalledWith({
       where: { id: "page-2" },

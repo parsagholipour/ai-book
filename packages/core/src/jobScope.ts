@@ -1,3 +1,5 @@
+import { type GenerationJobType } from "./jobDispatch.js";
+
 /**
  * Jobs that produce optional experiences from an existing book rather than
  * changing the book itself. Their durable rows own their lifecycle; they must
@@ -6,12 +8,12 @@
  * The allowlist is intentionally narrow. An unknown future job defaults to the
  * book lifecycle until its independent owner and failure handling are explicit.
  */
-export const DERIVATIVE_GENERATION_JOBS = {
+export const DERIVATIVE_GENERATION_JOBS = Object.freeze({
   PREPARE_CHARACTER_CANDIDATES: "prepare-character-candidates",
   BUILD_CHARACTER_PERSONA: "build-character-persona",
   GENERATE_AUDIOBOOK: "generate-audiobook",
   GENERATE_CHARACTER_PORTRAIT: "generate-character-portrait"
-} as const;
+} as const);
 
 export type DerivativeGenerationJobType = keyof typeof DERIVATIVE_GENERATION_JOBS;
 export type DerivativeWorkerJobName = (typeof DERIVATIVE_GENERATION_JOBS)[DerivativeGenerationJobType];
@@ -240,4 +242,141 @@ export function jobOwnsQualityVerdict(type: string, payload: unknown): boolean {
     payloadOwnsProjectOutcome(payload) &&
     !isMarkdownRecompileWithoutVerdict(payload)
   );
+}
+
+/**
+ * Payload flag for a compile that skips the final quality review — and with it
+ * the repair pass that review drives, which `compileExport.ts` hands *every*
+ * FAILED_QA page in the book rather than only the pages the review named.
+ *
+ * Set by every edit's own recompile, every presentation reprint and every
+ * detached export repair; `compileExport.ts` reads it off `job.data` to decide.
+ * Named here because the read side asks the same question of a row that has not
+ * run yet — see `openJobRewritesPages`.
+ */
+export const SKIP_FINAL_REVIEW = "skipFinalReview";
+
+export function skipsFinalReview(payload: unknown): boolean {
+  return payloadFlag(payload, SKIP_FINAL_REVIEW);
+}
+
+/**
+ * When an *open* row of a job type can still rewrite a page the project already
+ * holds — the prose in `Page.markdown`, or the QA verdict `Page.status` carries
+ * for it.
+ *
+ * `never` is a claim about a queued or running row, not about the handler's
+ * whole reach: `generate-image` writes `Page.imageFailureReason` and
+ * `generate-audiobook` reads every page's markdown, and both are `never`
+ * because neither can change what a page says or whether it passed.
+ */
+export type PageRewriteScope = "never" | "always" | "unless_final_review_skipped";
+
+/**
+ * Which job types can still rewrite the book's pages, exhaustively over
+ * `GenerationJobType`.
+ *
+ * The reader of this table is a status poll: a page that ran out of QA budget
+ * keeps its best draft and does ship, so it counts as a page of the book — but
+ * only once nothing is going to redraft it (`isBookPage` in
+ * `apps/api/src/projectPageCounts.ts`). Project status alone cannot answer that,
+ * because three forks draft pages in a status that reads as settled:
+ * `restructurePages` and `replanBook` set the project EDITING and then draft
+ * through `reviewAndSaveGeneratedPage`, and `continueBook` sets it COMPLETE and
+ * then queues its recompile. A poll landing inside any of those windows used to
+ * count a page that was still being written.
+ *
+ * A `Record` rather than an array so a new entry in `jobNames` is a compile
+ * error until someone answers the question for it — the shape `JOB_STEP_TEMPLATES`
+ * uses one file over, and for the same reason: this project's hand-maintained
+ * per-job-type lists have drifted every time they were allowed to.
+ *
+ * Answer for the *open row*, not for the handler's happiest path. `import-book`
+ * only ever creates pages and `generate-book` usually fans out rather than
+ * drafting inline, but both write `Page.markdown` themselves, and an answer that
+ * holds only while nothing goes wrong is the failure this table exists to stop.
+ */
+export const JOB_PAGE_REWRITE_SCOPE: Readonly<Record<GenerationJobType, PageRewriteScope>> = Object.freeze({
+  /** Writes a plan. The pages it will produce do not exist yet. */
+  PLAN_BOOK: "never",
+  REVISE_PLAN: "never",
+  /** Creates the page rows and, in the direct modes, drafts them inline. */
+  GENERATE_BOOK: "always",
+  /** One page, drafted and reviewed — including the FAILED_QA it may settle as. */
+  GENERATE_PAGE: "always",
+  /** Renders an illustration; the only page column it touches is `imageFailureReason`. */
+  GENERATE_IMAGE: "never",
+  /**
+   * Two jobs wearing one name. The compile that ends a generation or applies a
+   * structural edit runs the final-QA repair over every FAILED_QA page; an
+   * edit's own recompile, a presentation reprint and an export repair carry
+   * `skipFinalReview` and rewrite nothing.
+   */
+  COMPILE_EXPORT: "unless_final_review_skipped",
+  /**
+   * Every fork of it — a page rewrite, a structural insert's drafting, an exact
+   * replacement, and the three that only move a picture about. The fork is
+   * decided by the operation's `kind`, which is on the `BookEditOperation` row
+   * rather than this job's payload, so at this granularity the answer can only
+   * be yes: the finer one is a read of that row, and this package is the leaf
+   * that cannot make it. `EDIT_OPERATION_PAGE_REWRITE_SCOPE` in
+   * `apps/api/src/projectPageCounts.ts` answers it there, and it *narrows* this
+   * rather than replacing it — a caller that never asks gets the conservative
+   * answer, which is what makes the coarse one safe to keep.
+   */
+  APPLY_BOOK_EDIT: "always",
+  /** Replaces the plan and redrafts the pages it changed. */
+  REPLAN_BOOK: "always",
+  /** Reads pages to propose characters; writes none of them. */
+  PREPARE_CHARACTER_CANDIDATES: "never",
+  BUILD_CHARACTER_PERSONA: "never",
+  /** Writes the manuscript's pages. */
+  IMPORT_BOOK: "always",
+  /** Drafts the new chapters' pages through the same review loop. */
+  CONTINUE_BOOK: "always",
+  /** Narrates a finished book. Failing one must not even touch the book. */
+  GENERATE_AUDIOBOOK: "never",
+  /** Account-scoped: it has no project, let alone a page. */
+  GENERATE_CHARACTER_PORTRAIT: "never"
+});
+
+/**
+ * The job types worth reading at all — everything the table above does not
+ * answer `never` for. Derived rather than spelled a second time, so the `where`
+ * a caller builds from it cannot fall behind the table.
+ *
+ * `readonly`, and frozen so the compiler is not the only thing saying so. This
+ * is one array for the life of the process and it is handed to a Prisma `where`
+ * that decides which open jobs a status poll asks about, so a consumer that
+ * sorted it in place or spliced a type out of it would change what *every*
+ * later poll asks — and a poll that has stopped asking about `GENERATE_PAGE`
+ * answers "nothing is going to rewrite this page" while the page is being
+ * written, which is the skew the table exists to prevent. Callers copy it into
+ * the query rather than handing this object over, which is also why the frozen
+ * array never reaches anything that might normalise its arguments in place.
+ */
+export const PAGE_REWRITING_JOB_TYPES: readonly GenerationJobType[] = Object.freeze(
+  (Object.entries(JOB_PAGE_REWRITE_SCOPE) as Array<[GenerationJobType, PageRewriteScope]>).flatMap(
+    ([type, scope]) => (scope === "never" ? [] : [type])
+  )
+);
+
+/** The same table as a lookup, so an inherited property cannot answer for a type. */
+const pageRewriteScopeByType = new Map<string, PageRewriteScope>(Object.entries(JOB_PAGE_REWRITE_SCOPE));
+
+/**
+ * Whether this open `GenerationJob` row can still rewrite one of the book's
+ * pages. The type decides, except where a payload flag takes the work away —
+ * `skipFinalReview` on a compile, which is the difference between the pass that
+ * repairs every kept draft and a reprint that touches none of them.
+ *
+ * An unknown type answers false: this is a read-side question about work that
+ * is *going* to happen, and a type nothing dispatches is not going to happen.
+ */
+export function openJobRewritesPages(type: string, payload: unknown): boolean {
+  const scope = pageRewriteScopeByType.get(type);
+  if (scope === undefined || scope === "never") {
+    return false;
+  }
+  return scope === "always" || !skipsFinalReview(payload);
 }

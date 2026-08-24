@@ -4,6 +4,14 @@ import { kidsReadingGuidanceForInput } from "../prompting/readingLevel.js";
 import type { CreateProjectInput, PageDraft, PageQualityReport } from "../schemas/book.js";
 import { isImportedManuscript } from "../schemas/mediaSettings.js";
 import type { FinalQaPage, ReviewPageOptions } from "./pages.js";
+import {
+  keywordsFromTokens,
+  overlapKeywords,
+  overlapShingles,
+  overlapTokens,
+  sharedRatio,
+  shinglesFromTokens
+} from "./pageOverlap.js";
 import { PAGE_PROMPT_LEAK_PATTERNS, containsPromptLeak } from "./promptLeak.js";
 import {
   countReadableWords,
@@ -17,7 +25,9 @@ import {
  * The deterministic local-QA block: model-free page and manuscript checks and
  * the pattern tables they read a page against. Split out of pages.ts, which
  * re-exports the public pieces so `@book-maker/core` is unchanged; the prose
- * measurement every check here counts with is `proseShape.ts` next door.
+ * measurement every check here counts with is `proseShape.ts` next door, and
+ * the overlap measurement the repetition gate shares with the plan-time beat
+ * dedup is `pageOverlap.ts`.
  */
 
 export type LocalPageReviewOptions = Omit<ReviewPageOptions, "textModel">;
@@ -129,15 +139,41 @@ export function runLocalPageQualityChecks(options: ReviewPageOptions): PageQuali
     issues.push(`Page title repeats adjacent page ${adjacentPage.index}.`);
   }
 
-  const repeatedPage = options.previousPages.slice(-5).find((page) => {
-    const bodySimilarity = similarity(currentBody, page.markdown);
-    const summarySimilarity = similarity(options.draft.summary, page.summary);
-    const lexicalOverlap = keywordOverlap(options.draft.summary, page.summary);
-    return bodySimilarity >= 0.82 || summarySimilarity >= 0.72 || lexicalOverlap >= 0.78;
-  });
-  if (repeatedPage) {
-    checks.repetitionOk = false;
-    issues.push(`Page repeats or substantially overlaps the beat from page ${repeatedPage.index}.`);
+  // The draft is one text scored against five, so its three sets are built here
+  // rather than inside the loop — the whole reason the overlap rule below is
+  // spelled over sets — and each predecessor's summary, which both halves of
+  // that rule read, is tokenized once inside it with both its sets derived from
+  // those tokens. Scoring per pair instead put the draft body through five full
+  // shingle passes, its summary through ten and every predecessor's through two,
+  // on a function that runs for every draft candidate of every page and again
+  // for every page of `runLocalFinalQa`: thousands of redundant tokenizations of
+  // a finished book, all of them on the worker's own thread.
+  //
+  // **They are built inside the predecessor guard, because hoisting them out of
+  // the loop also hoists them out of the loop's short circuit.** `.find` over an
+  // empty list never calls its callback, so a page with nothing behind it used
+  // to tokenize nothing at all; unhoisted work is skipped for free, hoisted work
+  // is not. Left bare, every such call paid a full trigram pass over the whole
+  // page body and two more over the summary and then read none of the three —
+  // and "nothing behind it" is page 1 of every book, the one page best-of drafts
+  // several candidates of, plus every `reviewPageDraftLocally` the bulk
+  // strategies make with no `previousPages` at all.
+  const recentPages = options.previousPages.slice(-5);
+  if (recentPages.length > 0) {
+    const draftBodyShingles = overlapShingles(currentBody);
+    const draftSummaryShingles = overlapShingles(options.draft.summary);
+    const draftSummaryKeywords = overlapKeywords(options.draft.summary);
+    const repeatedPage = recentPages.find((page) => {
+      const summaryTokens = overlapTokens(page.summary);
+      const bodySimilarity = sharedRatio(draftBodyShingles, overlapShingles(page.markdown));
+      const summarySimilarity = sharedRatio(draftSummaryShingles, shinglesFromTokens(summaryTokens));
+      const lexicalOverlap = sharedKeywordRatio(draftSummaryKeywords, keywordsFromTokens(summaryTokens));
+      return bodySimilarity >= 0.82 || summarySimilarity >= 0.72 || lexicalOverlap >= 0.78;
+    });
+    if (repeatedPage) {
+      checks.repetitionOk = false;
+      issues.push(`Page repeats or substantially overlaps the beat from page ${repeatedPage.index}.`);
+    }
   }
 
   const kidsGuidance = kidsReadingGuidanceForInput(options.input);
@@ -299,7 +335,6 @@ export function hasDuplicatePagePrefix(pageIndex: number, title: string): boolea
   return pattern.test(title);
 }
 
-
 // Every class in this file that names an apostrophe names both: provider prose
 // writes the typographic U+2019 far more often than the ASCII one, and a class
 // that keeps only `'` splits "don’t" into a word and a dropped fragment while
@@ -313,50 +348,27 @@ function normalizeTitle(title: string): string {
     .trim();
 }
 
-function similarity(first: string, second: string): number {
-  const firstShingles = shingles(tokenize(first), 3);
-  const secondShingles = shingles(tokenize(second), 3);
-  if (firstShingles.size === 0 || secondShingles.size === 0) {
+/**
+ * Below this many distinct keywords a text is too short for the ratio to mean
+ * anything: the denominator is the shorter side, so a four-keyword text that
+ * happens to share three of them with a paragraph scores 0.75 without the two
+ * saying remotely the same thing.
+ */
+const MIN_OVERLAP_KEYWORDS = 4;
+
+/**
+ * {@link sharedRatio} under that floor — the lexical half of the rule, kept
+ * apart from the shingle half because only it has one. Thresholds stay with
+ * each caller (`pageOverlap.ts` is the measurement): `pageBeatDedupDetect.ts`
+ * spells its own floors instead, because a beat is one or two sentences where
+ * a summary is a paragraph, so it needs a higher bar than this to mean the
+ * same thing.
+ */
+function sharedKeywordRatio(first: Set<string>, second: Set<string>): number {
+  if (first.size < MIN_OVERLAP_KEYWORDS || second.size < MIN_OVERLAP_KEYWORDS) {
     return 0;
   }
-  let shared = 0;
-  for (const shingle of firstShingles) {
-    if (secondShingles.has(shingle)) {
-      shared += 1;
-    }
-  }
-  return shared / Math.min(firstShingles.size, secondShingles.size);
-}
-
-function keywordOverlap(first: string, second: string): number {
-  const firstKeywords = new Set(tokenize(first).filter((token) => !SUMMARY_STOP_WORDS.has(token)));
-  const secondKeywords = new Set(tokenize(second).filter((token) => !SUMMARY_STOP_WORDS.has(token)));
-  if (firstKeywords.size < 4 || secondKeywords.size < 4) {
-    return 0;
-  }
-  let shared = 0;
-  for (const keyword of firstKeywords) {
-    if (secondKeywords.has(keyword)) {
-      shared += 1;
-    }
-  }
-  return shared / Math.min(firstKeywords.size, secondKeywords.size);
-}
-
-function shingles(tokens: string[], size: number): Set<string> {
-  const output = new Set<string>();
-  for (let index = 0; index <= tokens.length - size; index += 1) {
-    output.add(tokens.slice(index, index + size).join(" "));
-  }
-  return output;
-}
-
-function tokenize(text: string): string[] {
-  return text
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s'’]/gu, " ")
-    .split(/\s+/)
-    .filter((token) => token.length > 2);
+  return sharedRatio(first, second);
 }
 
 function hasFormulaicProofLeap(text: string): boolean {
@@ -381,7 +393,7 @@ function hasFormulaicContrastOveruse(text: string): boolean {
 }
 
 function hasFormulaicAdjacentContrast(text: string): boolean {
-  const sentences = splitSentences(text).filter((sentence) => tokenize(sentence).length >= 4);
+  const sentences = splitSentences(text).filter((sentence) => overlapTokens(sentence).length >= 4);
   for (let index = 0; index < sentences.length - 1; index += 1) {
     const current = sentences[index]!;
     const next = sentences[index + 1]!;
@@ -661,7 +673,6 @@ const OWN_UNIT_LINE_PATTERN =
 const LEADING_MARKDOWN_DECORATION_PATTERN = /^[\s#*_~`>+-]+/;
 const ATX_HEADING_LINE_PATTERN = /^\s{0,3}#{1,6}(?:\s|$)/;
 
-
 function hasVagueEnding(draft: PageDraft): boolean {
   // Collapsed for the same reason the phrase tables above are: these are
   // literal-space patterns, and "into the\nunknown" is the shape a page ends
@@ -679,7 +690,6 @@ function hasVagueEnding(draft: PageDraft): boolean {
   const hasResolutionSignal = RESOLUTION_PATTERNS.some((pattern) => pattern.test(endingText));
   return hasVagueSignal && !hasResolutionSignal;
 }
-
 
 const PLACEHOLDER_PATTERNS = [
   /approved premise/i,
@@ -800,29 +810,3 @@ const RESOLUTION_PATTERNS = [
   /\bopened\b/i,
   /\bclosed\b/i
 ];
-
-const SUMMARY_STOP_WORDS = new Set([
-  "about",
-  "after",
-  "again",
-  "before",
-  "between",
-  "into",
-  "through",
-  "with",
-  "without",
-  "from",
-  "that",
-  "this",
-  "what",
-  "when",
-  "where",
-  "while",
-  "they",
-  "them",
-  "their",
-  "page",
-  "jack",
-  "chapter",
-  "story"
-]);

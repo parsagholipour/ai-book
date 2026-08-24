@@ -119,6 +119,32 @@ describe("storyStateStore", () => {
     expect(state?.facts.map((fact) => fact.text)).toEqual(["It is raining.", "Ada packed."]);
   });
 
+  it("keeps the page delta and project fold on a supplied publication client", async () => {
+    const client = {
+      page: { updateMany: vi.fn(async () => ({ count: 1 })) },
+      project: {
+        findUnique: vi.fn(async () => ({ storyState: null })),
+        updateMany: vi.fn(async () => ({ count: 1 }))
+      }
+    };
+
+    await persistPageStoryDelta(
+      {
+        projectId: "project-1",
+        pageIndex: 2,
+        delta: emptyDelta({ factsAdded: ["Ada packed."] }),
+        seedPromises: []
+      },
+      client as never
+    );
+
+    expect(client.page.updateMany).toHaveBeenCalledTimes(1);
+    expect(client.project.findUnique).toHaveBeenCalledTimes(1);
+    expect(client.project.updateMany).toHaveBeenCalledTimes(1);
+    expect(mocks.prisma.page.updateMany).not.toHaveBeenCalled();
+    expect(mocks.prisma.project.updateMany).not.toHaveBeenCalled();
+  });
+
   it("retries the project CAS when a sibling page wins the write", async () => {
     mocks.prisma.page.updateMany.mockResolvedValue({ count: 1 });
     mocks.prisma.project.findUnique

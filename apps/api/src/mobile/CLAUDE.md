@@ -351,6 +351,19 @@ reported as surviving, which is the escape a rollback-capable mock could not sim
   (`apps/worker/src/handlers/applyImageLayout.ts`) with no generation at all. Routing them as page
   rewrites is the expensive mistake this exists to stop — the router prompt says so in as many
   words, and the plan stage demotes both to `answer` because a book with no pages has no pictures.
+  **And a status poll may read which fork an apply took, because the kind is written before the
+  job exists.** `createOpenBookEditOperation` (`editOperationClaims.ts`) inserts the row with its
+  `kind` and only then opens the transaction that enqueues, all four `APPLY_BOOK_EDIT` sites follow
+  that order and put `operationId` on the payload, and nothing anywhere updates `kind` — so the
+  value a poll reads mid-flight is the value `applyBookEdit` will fork on. That is what lets
+  `projectPageCounts.ts` answer "is a page rewrite owed" at the granularity the truth lives at:
+  `JOB_PAGE_REWRITE_SCOPE` in `packages/core` must say `always` for `APPLY_BOOK_EDIT`, because the
+  leaf cannot make a database read, and a picture move is an apply that rewrites nothing. Left
+  coarse, a reader moving a picture watched a delivered 200-page book count down to 197/200 and its
+  Pages step re-open for the length of a free edit, then snap back — and a stalled operation row
+  held it there. The refinement only ever *narrows* the coarse answer, and every unknown it meets —
+  no `operationId`, a missing row, a kind this build does not know — answers "owed", because
+  under-reporting a finished book is the failure it exists to stop.
   **Positioning inside a page is markdown-only, and that is forced rather than chosen**:
   `compileBookMarkdown` prints a page's `ImageAsset` hero above the prose *always*, and a
   chat-added picture has no `ImageAsset` row at all — `applyImageInsertion` writes a file and a
@@ -445,7 +458,7 @@ edit instead.
   delete the file mid-charge and answer 404 with the reader's credits gone. The entitlement is per
   project and idempotent, so nothing was double-charged and a retry did deliver, but the first unlock
   still settled against nothing. What it queues is a **repair**, and it must
-  not borrow the edit recompile's `…:content-{rev}` dedupe key: `enqueueGenerationJob` returns any
+  not borrow the edit recompile's normalized revision-and-policy dedupe key: `enqueueGenerationJob` returns any
   existing row for a key and only re-dispatches one still QUEUED, so the moment that row goes
   COMPLETED or FAILED the key is spent and every later repair for that revision enqueues *nothing*.
   An edit deletes the exports *before* queueing its recompile, so a recompile that failed would
@@ -515,7 +528,7 @@ edit instead.
   For operations: a repair that *fails* does block the next one, but only for the rest of its window
   — the window is wall-clock aligned rather than measured from the attempt, so the wait is anywhere
   from a moment to five minutes and never longer. That expiry is the whole difference from the
-  content-revision key it replaced, which went terminal and stayed there. The symptom to look for is
+  non-windowed compile-intent key it replaced, which went terminal and stayed there. The symptom to look for is
   a `GenerationJob` whose `dedupeKey` contains `repair-` sitting FAILED while the project's exports
   are missing; it re-attempts on its own. Note the app gives up watching first: its budget is two
   minutes against a window of up to five, so a book can stop saying "preparing" before the next
@@ -585,7 +598,16 @@ of the same manuscript can have fixed.
   turns any unresolved request into a whole-book `page_rewrite`, and that is what once quoted 960
   credits to rewrite twelve pages that would have recompiled the identical heading.
   `applyPresentationPreference` (`apps/api/src/mobile/presentationEdits.ts`) is the shared mechanism
-  for both: one `mediaSettings` field plus a recompile, no `BookEditOperation`, no ledger entry.
+  for both: one `mediaSettings` field plus a recompile, no `BookEditOperation`, no ledger entry. The
+  preference/EDITING/revision update and the undispatched `COMPILE_EXPORT` row are one database
+  transaction; only after it commits does the API push that row to BullMQ. A crash in the handoff
+  therefore leaves the durable row for `reconcileUndispatchedGenerationJobs`, never a committed
+  presentation revision with no policy source for worker recovery. **Free does not mean
+  lifecycle-free:** when another project job is open, `routes/projectChat.ts` saves either
+  presentation request through `busyEditReply` and resumes it after that owner settles. Letting it
+  pass the busy gate makes its transaction meet an ordinary edit's `EDITING` with no presentation
+  predecessor to supply the settled-status fallback; guessing one would let the reprint steal that
+  edit's lifecycle and quality policy.
 - **A verified exact replacement is free, and the verification is what makes it safe.**
   `locallyPatchedPage` was always model-free, but the choice between it and a two-model-call page
   rewrite was made per page *at apply time* and never reached pricing, so a `local_patch` was billed

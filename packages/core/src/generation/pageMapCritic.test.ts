@@ -100,6 +100,14 @@ const briefs: ChapterBrief[] = [
   }
 ];
 
+/** The same map with one page carrying continuity written for the assignment it has. */
+function briefsWithContinuity(pageIndex: number, lines: string[]): ChapterBrief[] {
+  return briefs.map((brief) => ({
+    ...brief,
+    pages: brief.pages.map((page) => (page.pageIndex === pageIndex ? { ...page, requiredContinuity: lines } : page))
+  }));
+}
+
 /** The last page of the book `briefs` describes. Passed in, never inferred. */
 const lastPageIndex = 5;
 
@@ -304,6 +312,183 @@ describe("mergePageMapCriticPatch", () => {
     const merged = mergePageMapCriticPatch(briefs, { ...emptyPatch, missingEndingPressure: [2] }, lastPageIndex);
 
     expect(merged[0]?.pages[1]?.endingPressure).toBe("Ask why she delayed.");
+  });
+
+  it("appends a critic patch's continuity to what the page already carried", () => {
+    const carrying = briefsWithContinuity(2, ["Ada still owes the ferryman."]);
+
+    const merged = mergePageMapCriticPatch(
+      carrying,
+      { ...emptyPatch, beatPatches: [{ pageIndex: 2, requiredContinuity: ["Name the lantern."] }] },
+      lastPageIndex
+    );
+
+    // A critic note is written about a page that keeps its assignment, so the
+    // entries that assignment came with are still true of it.
+    expect(merged[0]?.pages[1]?.requiredContinuity).toEqual(["Ada still owes the ferryman.", "Name the lantern."]);
+  });
+
+  it("replaces it for a patch that says it rewrote the whole assignment", () => {
+    const carrying = briefsWithContinuity(2, ["Ada still owes the ferryman."]);
+
+    const merged = mergePageMapCriticPatch(
+      carrying,
+      {
+        ...emptyPatch,
+        beatPatches: [
+          {
+            pageIndex: 2,
+            purpose: "Ada counts the fare",
+            beat: "Ada counts coins on the jetty.",
+            endingPressure: "The ferry leaves without her.",
+            requiredContinuity: ["Stay distinct from page 1, which already covers: Establish Ada Ada packs the lantern."],
+            replaceRequiredContinuity: true
+          }
+        ]
+      },
+      lastPageIndex
+    );
+
+    // The ferryman line was written for the beat this patch replaced. Left
+    // beside the new one it is the drafter told to go back to the assignment
+    // the rewrite was paid to leave — `pageBeatDedup.ts` is the only caller
+    // that sets the flag, and only for a page a model actually rewrote.
+    expect(merged[0]?.pages[1]?.requiredContinuity).toEqual([
+      "Stay distinct from page 1, which already covers: Establish Ada Ada packs the lantern."
+    ]);
+  });
+
+  it("keeps the page's own continuity when a replacement names none", () => {
+    const carrying = briefsWithContinuity(2, ["Ada still owes the ferryman."]);
+
+    const merged = mergePageMapCriticPatch(
+      carrying,
+      { ...emptyPatch, beatPatches: [{ pageIndex: 2, replaceRequiredContinuity: true }] },
+      lastPageIndex
+    );
+
+    // A patch carrying the flag and no lines forgot the field rather than
+    // cleared it; a page with no continuity at all is not something any caller
+    // asks for.
+    expect(merged[0]?.pages[1]?.requiredContinuity).toEqual(["Ada still owes the ferryman."]);
+  });
+
+  it("redraws a page's visual moment for a patch that rewrote its whole assignment", () => {
+    const illustrated = briefs.map((brief) => ({
+      ...brief,
+      pages: brief.pages.map((page) =>
+        page.pageIndex === 2 ? { ...page, imageMoment: "Ada's lantern on the packed trunk." } : page
+      )
+    }));
+
+    const merged = mergePageMapCriticPatch(
+      illustrated,
+      {
+        ...emptyPatch,
+        beatPatches: [
+          {
+            pageIndex: 2,
+            purpose: "Ada counts the fare",
+            beat: "Ada counts coins on the jetty.",
+            endingPressure: "The ferry leaves without her.",
+            imageMoment: "Coins counted twice on a wet jetty rail."
+          }
+        ]
+      },
+      lastPageIndex
+    );
+
+    // `...page` is spread first, so a field nothing after it names survives a
+    // whole-assignment rewrite verbatim — and this one is what both the drafting
+    // prompt and the interior-illustration prompt draw the page's picture from.
+    expect(merged[0]?.pages[1]?.imageMoment).toBe("Coins counted twice on a wet jetty rail.");
+  });
+
+  it("leaves the page's own visual moment alone when a patch names none", () => {
+    const illustrated = briefs.map((brief) => ({
+      ...brief,
+      pages: brief.pages.map((page) =>
+        page.pageIndex === 2 ? { ...page, imageMoment: "Ada's lantern on the packed trunk." } : page
+      )
+    }));
+
+    const merged = mergePageMapCriticPatch(
+      illustrated,
+      { ...emptyPatch, beatPatches: [{ pageIndex: 2, requiredContinuity: ["Name the lantern."] }] },
+      lastPageIndex
+    );
+
+    // A critic note is not a reassignment, and the field is composer-only —
+    // absent from `pageMapCriticPatchSchema` — so no critic patch can redraw a
+    // page it merely annotated, and an unillustrated page stays unillustrated.
+    expect(merged[0]?.pages[1]?.imageMoment).toBe("Ada's lantern on the packed trunk.");
+    expect(merged[0]?.pages[0]?.imageMoment).toBeUndefined();
+  });
+
+  it("leaves a chapter's continuityFocus alone for a patch that adds no notes to it", () => {
+    // `ChapterBrief.continuityFocus` has no cap of its own, so these are entries
+    // the map's own producers wrote and the drafter has always been given.
+    const crowded = briefs.map((brief) => ({
+      ...brief,
+      continuityFocus: Array.from({ length: 25 }, (_, index) => `Mapped constraint ${index + 1}.`)
+    }));
+
+    const merged = mergePageMapCriticPatch(
+      crowded,
+      { ...emptyPatch, beatPatches: [{ pageIndex: 2, purpose: "Ada decides to leave" }] },
+      lastPageIndex
+    );
+
+    // The cap belongs to the notes this merge appends, not to the merge. Applied
+    // unconditionally it fired on `beatDedupPatch`'s patches too — which carry no
+    // notes at all — and `beatDedup` defaults to every effort tier while
+    // `pageMapCritic` is ultra/premium, so one collision anywhere in a fast or
+    // balanced book's map silently deleted the 21st constraint onward from every
+    // chapter of it.
+    expect(merged[0]?.continuityFocus).toHaveLength(25);
+    expect(merged[0]?.continuityFocus.at(-1)).toBe("Mapped constraint 25.");
+  });
+
+  it("hands that list back as a copy rather than the brief's own array", () => {
+    const mapped = briefs.map((brief) => ({ ...brief, continuityFocus: ["Keep the ferryman's name."] }));
+
+    // `beatDedup` runs on every effort tier and composes a patch with both note
+    // lists empty, so this is now the common path through the merge — and a
+    // no-notes answer that returns the caller's array makes the merged brief's
+    // `continuityFocus` the *input* brief's, on every chapter of every book. Any
+    // later `push` — a brief repair's, a fallback path's — would then write
+    // through to the map as it stood before the pass.
+    const merged = mergePageMapCriticPatch(mapped, emptyPatch, lastPageIndex);
+
+    expect(merged[0]?.continuityFocus).toEqual(["Keep the ferryman's name."]);
+    expect(merged[0]?.continuityFocus).not.toBe(mapped[0]!.continuityFocus);
+    merged[0]!.continuityFocus.push("Appended by a later pass.");
+    expect(mapped[0]!.continuityFocus).toEqual(["Keep the ferryman's name."]);
+  });
+
+  it("still caps what its own notes grow that list to", () => {
+    const nearlyFull = briefs.map((brief) => ({
+      ...brief,
+      continuityFocus: Array.from({ length: 19 }, (_, index) => `Mapped constraint ${index + 1}.`)
+    }));
+
+    const merged = mergePageMapCriticPatch(
+      nearlyFull,
+      {
+        ...emptyPatch,
+        unscheduledPromises: ["The lantern will be lit.", "The ferryman is paid."],
+        duplicatePurposeWarnings: ["Pages 1 and 2 shared a purpose."]
+      },
+      lastPageIndex
+    );
+
+    // The whole brief is serialized into every page's drafting prompt, and these
+    // notes are written for the *book*, so a critic with a long promise list
+    // grows every chapter of it at once. That budget is still enforced by the
+    // thing spending it: three notes onto nineteen entries is twenty-two, cut to
+    // twenty.
+    expect(merged[0]?.continuityFocus).toHaveLength(20);
+    expect(merged[0]?.continuityFocus.at(-1)).toBe("Schedule payoff: The lantern will be lit.");
   });
 
   it("does not end the book on a page the map merely stopped at", () => {

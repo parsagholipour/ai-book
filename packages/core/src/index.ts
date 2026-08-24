@@ -48,6 +48,7 @@ export * from "./generation/qualityGates.js";
 export * from "./generation/claimVerifier.js";
 export * from "./generation/styleAuditor.js";
 export * from "./generation/pageMapCritic.js";
+export * from "./generation/pageBeatDedup.js";
 export * from "./generation/writerTools.js";
 export * from "./generation/pages.js";
 export * from "./generation/bestOf.js";
@@ -94,6 +95,7 @@ export * from "./audiobook/mp3.js";
 export * from "./audiobook/voices.js";
 export * from "./jobSteps.js";
 export * from "./jobScope.js";
+export * from "./compilePublicationPolicy.js";
 export * from "./jobDispatch.js";
 // The record coercion every workspace reaches for. Only these two names leave
 // the package — the rest of `schemas/jsonCoercion.js` stays internal.

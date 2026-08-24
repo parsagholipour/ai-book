@@ -60,7 +60,10 @@ vi.mock("../generation/bookHelpers.js", async () => {
   );
   return (await import("./testing/generatePageMocks.js")).bookHelpersModuleMock(actual);
 });
-vi.mock("../generation/tuning.js", async () => (await import("./testing/generatePageMocks.js")).tuningModuleMock());
+vi.mock("../generation/tuning.js", async () => {
+  const actual = await vi.importActual<typeof import("../generation/tuning.js")>("../generation/tuning.js");
+  return (await import("./testing/generatePageMocks.js")).tuningModuleMock(actual);
+});
 vi.mock(
   "../generation/qualitySettings.js",
   async () => (await import("./testing/generatePageMocks.js")).qualitySettingsModuleMock()

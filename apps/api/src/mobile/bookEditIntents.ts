@@ -708,10 +708,12 @@ export async function busyEditReply(options: {
     }),
     clarification: "busy"
   };
+  const resumesWithoutProposal =
+    options.intent.kind === "back_matter" || options.intent.kind === "chapter_heading";
   return createAssistantChatMessage({
     projectId: options.projectId,
     parentId: options.parentMessageId,
-    content: pendingState.proposalId
+    content: pendingState.proposalId || resumesWithoutProposal
       ? "This book is still being worked on, so I saved that request. Say “apply it” once the current job finishes and I’ll run it. You can keep asking questions in the meantime."
       : "This book is still being worked on, so I saved that request. Say “apply it” once the current job finishes and I’ll set it up for you to confirm. You can keep asking questions in the meantime.",
     metadata: {
@@ -848,5 +850,3 @@ export {
   pagesMatchingQuotedText,
   planSummaryForClassifier
 } from "./bookEditScope.js";
-
-

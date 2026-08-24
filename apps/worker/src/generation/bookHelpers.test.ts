@@ -18,7 +18,7 @@ vi.mock("../runtime/jobLifecycle.js", () => ({ updateJobProgress: vi.fn() }));
 // The final-QA verdict rules this file used to cover moved out with the code:
 // they are pure text and live in `finalQaPageTargets.test.ts`, which needs no
 // module mocks at all.
-import { styleExcerptsForPage } from "./bookHelpers.js";
+import { loadPageTextSnapshot, styleExcerptsForPage } from "./bookHelpers.js";
 
 const input = { mediaSettings: {} } as CreateProjectInput;
 
@@ -85,5 +85,29 @@ describe("styleExcerptsForPage", () => {
     expect(mocks.prisma.page.findMany).not.toHaveBeenCalled();
     expect(excerpts[0]).toContain("opening-voice");
     expect(excerpts[1]).toContain("second-voice");
+  });
+});
+
+describe("loadPageTextSnapshot", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.prisma.page.findMany.mockResolvedValue([]);
+  });
+
+  it("asks for the four columns a stand-down compares and nothing else", async () => {
+    // The whole reason it exists beside `loadPagesForExport`. Its one caller
+    // derives a set of moved page indexes, and it used to derive it from the
+    // export set: every page's body plus an `images` and a `chapter` join per
+    // row, on a 300-page book, issued while the compile that superseded this one
+    // is rendering and publishing against the same database. `markdown` stays —
+    // it is compared, not tested for emptiness, and it is what catches a writer
+    // that rewrote a page without touching its `revision`.
+    await loadPageTextSnapshot("project-1");
+
+    expect(mocks.prisma.page.findMany).toHaveBeenCalledWith({
+      where: { projectId: "project-1" },
+      orderBy: { index: "asc" },
+      select: { index: true, title: true, markdown: true, revision: true }
+    });
   });
 });

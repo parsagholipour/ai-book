@@ -50,6 +50,23 @@ describe("updateEntityStateFromPage", () => {
     });
   });
 
+  it("uses the supplied publication client for every entity read and CAS", async () => {
+    const client = {
+      character: {
+        findMany: vi.fn(async () => [{ id: "char-1", name: "Ada", state: null }]),
+        findUnique: vi.fn(),
+        updateMany: vi.fn(async () => ({ count: 1 }))
+      },
+      location: { findMany: vi.fn(async () => []), findUnique: vi.fn(), updateMany: vi.fn() }
+    };
+
+    await updateEntityStateFromPage("project-1", 10, ["Ada picks up the lantern."], client as never);
+
+    expect(client.character.updateMany).toHaveBeenCalledTimes(1);
+    expect(mocks.prisma.character.findMany).not.toHaveBeenCalled();
+    expect(mocks.prisma.character.updateMany).not.toHaveBeenCalled();
+  });
+
   it("retries against the winning write instead of losing a concurrent page's note", async () => {
     // Page 11's job (a sibling in the same parallel wave) committed its own
     // note between our read and our write: the CAS misses, and the retry must

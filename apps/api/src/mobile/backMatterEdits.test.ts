@@ -17,13 +17,22 @@ import {
   jobRecord,
   mockAccessTokens,
   mockPrisma,
+  openJobRow,
   projectRecord,
   resetMobileHarness,
   teardownMobileHarness
 } from "./testing/mobileApiHarness.js";
 
 describe("mobile back matter edits", () => {
-  beforeEach(resetMobileHarness);
+  beforeEach(() => {
+    resetMobileHarness();
+    mockPrisma.project.update.mockResolvedValue({
+      contentRevision: 1,
+      currentPlanId: "plan-1",
+      mediaSettings: defaultMediaSettings(),
+      status: "COMPLETE"
+    });
+  });
   afterEach(teardownMobileHarness);
 
   it("removes the compiled sources list as a free preference plus a recompile", async () => {
@@ -76,6 +85,85 @@ describe("mobile back matter edits", () => {
           // must not become the book's verdict and erase its model QA findings.
           [PRESENTATION_ONLY_RECOMPILE]: true
         })
+      })
+    );
+    await app.close();
+  });
+
+  it("saves the Sources toggle behind an active ordinary book edit", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "COMPLETE",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord(),
+        pages: generatedPages(),
+        research: [{ title: "Sleep research", url: "https://example.com/sleep", summary: "Background." }]
+      })
+    );
+    mockPrisma.generationJob.findMany.mockResolvedValueOnce([
+      openJobRow({ operationId: "ordinary-edit", intentKind: "page_rewrite" })
+    ]);
+    // The ordinary edit moved the live row to EDITING after the route loaded
+    // its project snapshot. Entering the presentation transaction here would
+    // have no presentation predecessor from which to recover a fallback.
+    mockPrisma.project.update.mockResolvedValueOnce({
+      contentRevision: 8,
+      currentPlanId: "plan-1",
+      mediaSettings: defaultMediaSettings(),
+      status: "EDITING"
+    });
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Remove the sources at the end of the book" }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.operation).toBeNull();
+    expect(body.reply.content).toContain("saved that request");
+    expect(body.reply.content).toContain("I’ll run it");
+    expect(body.reply.metadata).toMatchObject({
+      blockedByActiveJob: true,
+      pendingEdit: {
+        request: "Remove the sources at the end of the book",
+        clarification: "busy"
+      }
+    });
+    expect(mockPrisma.project.update).not.toHaveBeenCalled();
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+
+    // Once the ordinary owner settles, the existing pending-edit flow routes
+    // the saved presentation request again and starts its own compile policy.
+    mockPrisma.project.update.mockReset();
+    mockPrisma.project.update.mockResolvedValue({
+      contentRevision: 9,
+      currentPlanId: "plan-1",
+      mediaSettings: defaultMediaSettings(),
+      status: "COMPLETE"
+    });
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(
+      jobRecord({ id: "job-presentation", type: "COMPILE_EXPORT" })
+    );
+    const resumed = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "apply it" }
+    });
+
+    expect(resumed.statusCode).toBe(200);
+    expect(resumed.json().reply.content).toMatch(/removed the sources list/i);
+    expect(mockPrisma.project.update).toHaveBeenCalled();
+    expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "COMPILE_EXPORT",
+        payload: expect.objectContaining({ [PRESENTATION_ONLY_RECOMPILE]: true })
       })
     );
     await app.close();

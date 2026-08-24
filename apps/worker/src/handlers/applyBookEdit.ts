@@ -14,7 +14,10 @@ import { loadQualityContext } from "../generation/qualitySettings.js";
 import { loadProjectStoryState, rebuildProjectStoryState } from "../generation/storyStateStore.js";
 import {
   bookPlanSchema,
+  compilePublicationPolicyFromPayload,
   createProviders,
+  DETACHED_FROM_PROJECT_LIFECYCLE,
+  EXPORT_REPAIR_FORMAT,
   hasExactMatch,
   jsonPayloadToRecord,
   type ExactReplacement,
@@ -343,7 +346,15 @@ export async function applyBookEdit(job: Job) {
           where: { id: projectId },
           data: { contentRevision: { increment: 1 } }
         });
-        await maybeEnqueueCompile(projectId, effectivePlanVersion.id, { skipFinalReview: true, detached: true });
+        await maybeEnqueueCompile(
+          projectId,
+          effectivePlanVersion.id,
+          compilePublicationPolicyFromPayload({
+            skipFinalReview: true,
+            [DETACHED_FROM_PROJECT_LIFECYCLE]: true,
+            [EXPORT_REPAIR_FORMAT]: "pdf"
+          })
+        );
       } catch (cleanupError) {
         console.error(
           `Failed to queue the export rebuild for half-applied edit ${operationId} on project ${projectId}:`,
@@ -406,9 +417,8 @@ export async function applyBookEdit(job: Job) {
     // The compile is the only thing that takes this project back out of
     // EDITING, and the exports are already deleted — so a fan-in that declines
     // to queue one, with nothing in flight to call it again, would leave the
-    // book unreadable and undownloadable for good: no sweep looks at EDITING,
-    // and `ensureExportRepairQueued` refuses a project that is not COMPLETE or
-    // REVIEW_REQUIRED. Handing it back to that repair lane is the recovery —
+    // book unreadable until delayed EDITING reconciliation. Handing it back to
+    // `ensureExportRepairQueued` immediately avoids that grace-period delay —
     // COMPLETE with missing files is precisely the state the app's status
     // stream already knows how to rebuild.
     await prisma.project

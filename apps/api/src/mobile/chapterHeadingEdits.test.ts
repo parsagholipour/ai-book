@@ -8,7 +8,7 @@ vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMoc
 import { PRESENTATION_ONLY_RECOMPILE } from "@book-maker/core";
 import { reserveCredits } from "@book-maker/db/billing";
 
-import { enqueueGenerationJob } from "../queue.js";
+import { dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
 import {
   approvedPlanRecord,
   bearer,
@@ -17,13 +17,23 @@ import {
   jobRecord,
   mockAccessTokens,
   mockPrisma,
+  openJobRow,
   projectRecord,
   resetMobileHarness,
   teardownMobileHarness
 } from "./testing/mobileApiHarness.js";
+import { mockTransactions } from "./testing/mobileApiMocks.js";
 
 describe("mobile chapter heading edits", () => {
-  beforeEach(resetMobileHarness);
+  beforeEach(() => {
+    resetMobileHarness();
+    mockPrisma.project.update.mockResolvedValue({
+      contentRevision: 1,
+      currentPlanId: "plan-1",
+      mediaSettings: projectRecord().mediaSettings,
+      status: "COMPLETE"
+    });
+  });
   afterEach(teardownMobileHarness);
 
   const completeProject = (mediaSettings?: Record<string, unknown>) =>
@@ -78,9 +88,110 @@ describe("mobile chapter heading edits", () => {
           planId: "plan-1",
           skipFinalReview: true,
           [PRESENTATION_ONLY_RECOMPILE]: true
-        })
+        }),
+        transaction: expect.anything(),
+        dispatch: false
       })
     );
+    expect(vi.mocked(dispatchGenerationJob)).toHaveBeenCalledWith("job-compile");
+    expect(mockTransactions()).toHaveLength(1);
+    expect(mockTransactions()[0]).toMatchObject({
+      rolledBack: false,
+      writes: [
+        { model: "project", operation: "update", index: 0 },
+        { model: "project", operation: "update", index: 1 }
+      ]
+    });
+    await app.close();
+  });
+
+  it("saves the chapter-heading toggle behind an active ordinary book edit", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(completeProject());
+    mockPrisma.generationJob.findMany.mockResolvedValueOnce([
+      openJobRow({ operationId: "ordinary-edit", intentKind: "page_rewrite" })
+    ]);
+    mockPrisma.project.update.mockResolvedValueOnce({
+      contentRevision: 8,
+      currentPlanId: "plan-1",
+      mediaSettings: projectRecord().mediaSettings,
+      status: "EDITING"
+    });
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: 'Use only the title instead of "Chapter x"' }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.operation).toBeNull();
+    expect(body.reply.content).toContain("saved that request");
+    expect(body.reply.content).toContain("I’ll run it");
+    expect(body.reply.metadata).toMatchObject({
+      blockedByActiveJob: true,
+      pendingEdit: {
+        request: 'Use only the title instead of "Chapter x"',
+        clarification: "busy"
+      }
+    });
+    expect(mockPrisma.project.update).not.toHaveBeenCalled();
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("commits the compile intent before dispatch, so a handoff crash is recoverable", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(completeProject());
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(
+      jobRecord({ id: "job-durable-compile", type: "COMPILE_EXPORT" })
+    );
+    vi.mocked(dispatchGenerationJob).mockRejectedValueOnce(new Error("process crashed before Redis handoff"));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: 'Use only the title instead of "Chapter x"' }
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(mockTransactions()).toHaveLength(1);
+    expect(mockTransactions()[0]!.rolledBack).toBe(false);
+    expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transaction: expect.anything(),
+        dispatch: false,
+        dedupeKey: expect.stringContaining("revision-1:policy-r1v0seopc")
+      })
+    );
+    expect(vi.mocked(enqueueGenerationJob).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(dispatchGenerationJob).mock.invocationCallOrder[0]!
+    );
+    await app.close();
+  });
+
+  it("rolls the preference back when its durable compile row cannot be written", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(completeProject());
+    vi.mocked(enqueueGenerationJob).mockRejectedValueOnce(new Error("database unavailable"));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: 'Use only the title instead of "Chapter x"' }
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(mockTransactions()).toHaveLength(1);
+    expect(mockTransactions()[0]!.rolledBack).toBe(true);
+    expect(vi.mocked(dispatchGenerationJob)).not.toHaveBeenCalled();
     await app.close();
   });
 

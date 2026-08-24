@@ -153,7 +153,25 @@ services:
       VITE_API_BASE_URL: http://localhost:4001
       DEV_WATCH_POLLING: "true"
       CHOKIDAR_USEPOLLING: "true"
-      DEV_PNPM_FILTER: "@book-maker/web..."
+      # No `...` suffix, unlike api and worker: those run core's source through
+      # node and need its dependencies installed, but web only *bundles* it.
+      # `@book-maker/core` is a workspace dependency here for its narrow subpath
+      # exports — `scripts/check-core-subpaths.mjs` prints the current list, and
+      # every one of them is a module whose runtime closure is empty — so pnpm
+      # still links `apps/web/node_modules/@book-maker/core` and vite resolves
+      # them straight out of the bind-mounted source, with no import statement
+      # left to resolve. That gate is what keeps this filter safe, from both
+      # ends: it fails a subpath that grows a runtime import, and it fails an
+      # import of the barrel from here. Adding the suffix selects packages/core
+      # as a project to install *for*, which drags puppeteer, sharp, openai and
+      # md-to-pdf into this container to compile a few const arrays down to a
+      # handful of strings: 437 packages instead of 263.
+      #
+      # It is also a dev server and nothing else: `pnpm typecheck` and `pnpm
+      # build` cannot run in here, because tsc follows the subpath types into
+      # core's zod and packages/core/node_modules is empty. Run those on the
+      # host. See apps/web/CLAUDE.md.
+      DEV_PNPM_FILTER: "@book-maker/web"
       DEV_DEPS_PACKAGE: "vite"
     restart: unless-stopped
     develop:

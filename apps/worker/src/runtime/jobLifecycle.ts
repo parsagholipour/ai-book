@@ -28,8 +28,9 @@ import {
   completeAllJobSteps,
   failActiveJobStep
 } from "./jobProgress.js";
+import { completedJobLifecycle } from "./jobCompletion.js";
 import { staleGenerationTargetReason } from "./staleJobGuard.js";
-import { STOPPED_JOB_ERROR, STOPPED_JOB_MESSAGE } from "./jobTypes.js";
+import { STOPPED_JOB_ERROR, STOPPED_JOB_MESSAGE, type JobLifecycleSettlement } from "./jobTypes.js";
 import { errorMessage, jsonPayloadToRecord } from "./serialization.js";
 
 /**
@@ -225,7 +226,7 @@ export async function cancelStaleGenerationJob(job: Job, reason: string): Promis
   });
 }
 
-export async function markCompleted(job: Job): Promise<boolean> {
+export async function markCompleted(job: Job, lifecycleSettlement: JobLifecycleSettlement = "settle"): Promise<boolean> {
   const generationJobId = job.data.generationJobId as string | undefined;
   if (!generationJobId) {
     return true;
@@ -237,21 +238,14 @@ export async function markCompleted(job: Job): Promise<boolean> {
     select: { qualityReport: true, message: true, status: true }
   });
   const qualityState = jsonPayloadToRecord(existing?.qualityReport).state;
-  const completionMessage =
-    qualityState === "blocked"
-      ? existing?.message ?? "Review required before export"
-      : qualityState === "review_recommended"
-        ? "Export complete; review recommended. See the saved quality report for affected pages."
-        : qualityState === "passed"
-          ? "Export complete. Quality checks passed."
-          : "Completed";
+  const completion = completedJobLifecycle(lifecycleSettlement, existing, qualityState);
   // Conditional: a stop or settlement that reached the row between the
   // assertJobNotStopped read above and this write wins. Claiming success over
   // it would deliver a run whose charge was just refunded.
   if (existing?.status !== "COMPLETED") {
     const completed = await prisma.generationJob.updateMany({
       where: { id: generationJobId, status: { in: ["QUEUED", "ACTIVE"] } },
-      data: { status: "COMPLETED", finishedAt: new Date(), message: completionMessage, progress: 100 }
+      data: { status: "COMPLETED", finishedAt: new Date(), message: completion.message, progress: 100 }
     });
     if (completed.count !== 1) {
       return false;
@@ -263,13 +257,12 @@ export async function markCompleted(job: Job): Promise<boolean> {
     // and leave both the files and their charge alone.
     await prisma.generationJob.update({
       where: { id: generationJobId },
-      data: { message: completionMessage, progress: 100 }
+      data: { message: completion.message, progress: 100 }
     });
   }
+  if (completion.lifecycleSettlement === "defer-to-successor") return true;
   const attemptId = generationAttemptIdFromJob(job);
-  if (attemptId && attemptCompletesWithJob(job.name)) {
-    await markGenerationAttemptSucceeded(attemptId);
-  }
+  if (attemptId && attemptCompletesWithJob(job.name)) await markGenerationAttemptSucceeded(attemptId);
   await markEditOperationCompleted(job);
   return true;
 }

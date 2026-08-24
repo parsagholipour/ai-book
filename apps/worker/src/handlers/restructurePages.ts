@@ -168,9 +168,9 @@ export async function restructurePages(job: Job, operation: { id: string; status
   // this edit between that statement and this one and put the book back down as
   // it found it. An unconditional write there lifted a finished book into
   // EDITING and then returned — no shift, no drafting, no compile behind it —
-  // and EDITING with no job is terminal, since `reconcileStrandedGeneration`
-  // takes only GENERATING and `ensureExportRepairQueued` only
-  // COMPLETE/REVIEW_REQUIRED.
+  // and leaves EDITING with no immediate handoff. Delayed
+  // `reconcileStrandedGeneration` now covers EDITING as well as GENERATING;
+  // `ensureExportRepairQueued` covers settled COMPLETE/REVIEW_REQUIRED books.
   claimedEditing = await claimProjectEditing(projectId);
   await advanceJobStep(generationJobId, "prepare", 15, "Reading the book's pages");
 
@@ -607,9 +607,11 @@ async function claimProjectEditing(projectId: string): Promise<boolean> {
  * A delivery that finds the edit already owned and already finished — the lease
  * completed, the operation settled — writes no pages, invalidates no exports
  * and queues no compile, so its own EDITING write is the last thing standing
- * between the book and the status the winner had just restored. EDITING with no
- * job coming is the state no sweep reaches, which is why `queueRestructureCompile`
- * closes the same window on `not-ready` and why this closes it here.
+ * between the book and the status the winner had just restored. The delayed
+ * stranded-generation sweep can recover EDITING once every job is terminal,
+ * but that grace-period fallback is not this no-op delivery's immediate
+ * handoff; `queueRestructureCompile` closes the same window on `not-ready`, and
+ * this closes it here.
  *
  * Conditional on the project still being EDITING, and swallowed on failure for
  * the reason that dispatch swallows its own: this runs for an edit another
@@ -651,8 +653,10 @@ async function releaseProjectEditingClaim(
  * at the PDF this manuscript describes", and the manuscript had just moved. So
  * the status is left where every other apply fork leaves it and restored here on
  * the one outcome where no compile will write it: a dispatch that queued nothing
- * and has nothing in flight to call it back. EDITING with no job is still the
- * state no sweep can reach.
+ * and has nothing in flight to call it back. The delayed stranded-generation
+ * sweep can eventually replay that state, but this tail already knows no
+ * immediate handoff exists and should not make the reader wait for its grace
+ * period.
  *
  * What it is restored *to* is the caller's to say, and comes off the payload
  * rather than off the project: a book that came in REVIEW_REQUIRED is handed

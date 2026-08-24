@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   prisma: {
     project: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
-    generationJob: { updateMany: vi.fn(), findFirst: vi.fn(), upsert: vi.fn() },
+    generationJob: { count: vi.fn(), updateMany: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn(), upsert: vi.fn() },
     generationAttempt: { updateMany: vi.fn(), findUnique: vi.fn() },
     bookEditOperation: { updateMany: vi.fn(), findUnique: vi.fn() },
     voiceCharacter: { count: vi.fn() },
@@ -107,7 +107,9 @@ beforeEach(() => {
     mocks.events.push("claim job");
     return { count: 1 };
   });
+  mocks.prisma.generationJob.count.mockResolvedValue(0);
   mocks.prisma.generationJob.findFirst.mockResolvedValue(null);
+  mocks.prisma.generationJob.findUnique.mockResolvedValue({ payload: { planId: "plan-1", contentRevision: 7 } });
   mocks.prisma.generationJob.upsert.mockResolvedValue({ id: "character-job-1", status: "QUEUED" });
   mocks.prisma.generationAttempt.updateMany.mockImplementation(async () => {
     mocks.events.push("settle attempt");
@@ -300,8 +302,21 @@ describe("publishCompiledExports", () => {
         status: "ACTIVE",
         contentRevision: 7
       },
-      data: expect.objectContaining({ status: "COMPLETED", progress: 100 })
+      data: expect.objectContaining({
+        status: "COMPLETED",
+        progress: 100,
+        payload: expect.objectContaining({
+          planId: "plan-1",
+          contentRevision: 7,
+          exportPublicationCommittedAt: expect.any(String)
+        })
+      })
     });
+    const publicationWrite = mocks.prisma.generationJob.updateMany.mock.calls[0]?.[0].data as {
+      finishedAt: Date;
+      payload: { exportPublicationCommittedAt: string };
+    };
+    expect(publicationWrite.payload.exportPublicationCommittedAt).toBe(publicationWrite.finishedAt.toISOString());
     expect(mocks.prisma.project.update).toHaveBeenCalledWith({
       where: { id: "project-1" },
       data: { status: "COMPLETE" }
@@ -320,7 +335,11 @@ describe("publishCompiledExports", () => {
       characterPreparation: { planId: "plan-1", attemptId: "attempt-1" }
     });
 
-    expect(result).toEqual({ published: true, characterPreparationJobId: "character-job-1" });
+    expect(result).toEqual({
+      published: true,
+      blockedByOpenImageJobs: false,
+      characterPreparationJobId: "character-job-1"
+    });
     expect(mocks.prisma.generationAttempt.updateMany).toHaveBeenCalledWith({
       where: { id: "attempt-1", projectId: "project-1", status: { in: ["QUEUED", "ACTIVE"] } },
       data: {
@@ -359,7 +378,11 @@ describe("publishCompiledExports", () => {
         generationAttemptId: "attempt-1",
         characterPreparation: { planId: "plan-1", attemptId: "attempt-1" }
       })
-    ).resolves.toEqual({ published: true, characterPreparationJobId: null });
+    ).resolves.toEqual({
+      published: true,
+      blockedByOpenImageJobs: false,
+      characterPreparationJobId: null
+    });
 
     expect(mocks.prisma.generationJob.findFirst).not.toHaveBeenCalled();
     expect(mocks.prisma.generationJob.upsert).not.toHaveBeenCalled();
@@ -373,7 +396,11 @@ describe("publishCompiledExports", () => {
         generationAttemptId: "attempt-1",
         characterPreparation: { planId: "plan-1", attemptId: "attempt-1" }
       })
-    ).resolves.toEqual({ published: true, characterPreparationJobId: "character-job-open" });
+    ).resolves.toEqual({
+      published: true,
+      blockedByOpenImageJobs: false,
+      characterPreparationJobId: "character-job-open"
+    });
 
     expect(mocks.prisma.generationJob.upsert).not.toHaveBeenCalled();
   });
@@ -583,6 +610,25 @@ describe("publishCompiledExports", () => {
     mocks.prisma.project.updateMany.mockResolvedValue({ count: 0 });
 
     await expect(publish()).resolves.toBe(false);
+    expect(mocks.rename).not.toHaveBeenCalled();
+  });
+
+  it("publishes nothing when a sibling repair committed an open image job before the locked boundary", async () => {
+    // A preflight can already have observed zero. The project claim is the
+    // ordering point: final-QA publication takes the same row lock before it
+    // commits the repaired page and this durable job, so this count sees the
+    // winner rather than an unrelated earlier snapshot.
+    mocks.prisma.generationJob.count.mockResolvedValueOnce(1);
+
+    await expect(publishResult()).resolves.toEqual({
+      published: false,
+      blockedByOpenImageJobs: true,
+      characterPreparationJobId: null
+    });
+
+    expect(mocks.prisma.project.updateMany).toHaveBeenCalled();
+    expect(mocks.prisma.generationJob.updateMany).not.toHaveBeenCalled();
+    expect(mocks.prisma.project.update).not.toHaveBeenCalled();
     expect(mocks.rename).not.toHaveBeenCalled();
   });
 

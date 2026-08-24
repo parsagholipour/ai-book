@@ -6,7 +6,11 @@ import {
   markdownWithPrependedImage,
   markdownWithRemovedImage
 } from "./imageMarkdown.js";
-import { assetsImagePathFrom, markdownLabels } from "@book-maker/core";
+import {
+  LEGACY_GENERATED_ILLUSTRATION_PAGE_ID_KEY,
+  isLegacyGeneratedPageIllustrationPath
+} from "./pageIllustrationOwnership.js";
+import { assetsImagePathFrom, jsonRecord, markdownLabels } from "@book-maker/core";
 import { Prisma } from "@book-maker/db";
 
 /**
@@ -118,7 +122,7 @@ export async function applyLayoutBatchInTx(
   const edits = new Map<string, PageEdit>();
   const previousAssets: PreviousAssetRecord[] = [];
   const demotedAssets: DemotedAssetRecord[] = [];
-  const assetOps: Array<{ id: string; pageId: string | null }> = [];
+  const assetOps: Array<{ id: string; pageId: string | null; metadata?: Prisma.InputJsonValue }> = [];
   let skipped = 0;
   let alreadyPositioned = 0;
 
@@ -211,7 +215,10 @@ export async function applyLayoutBatchInTx(
     });
   }
   for (const op of assetOps) {
-    await tx.imageAsset.update({ where: { id: op.id }, data: { pageId: op.pageId } });
+    await tx.imageAsset.update({
+      where: { id: op.id },
+      data: { pageId: op.pageId, ...(op.metadata ? { metadata: op.metadata } : {}) }
+    });
   }
 
   return {
@@ -230,7 +237,7 @@ type SourceOutcome =
   | {
       previousAssets: PreviousAssetRecord[];
       demotedAssets: DemotedAssetRecord[];
-      assetOps: Array<{ id: string; pageId: string | null }>;
+      assetOps: Array<{ id: string; pageId: string | null; metadata?: Prisma.InputJsonValue }>;
     };
 
 const NOTHING: SourceOutcome = { previousAssets: [], demotedAssets: [], assetOps: [] };
@@ -330,7 +337,7 @@ async function applyAssetSource(
 
   const previousAssets: PreviousAssetRecord[] = [];
   const demotedAssets: DemotedAssetRecord[] = [];
-  const assetOps: Array<{ id: string; pageId: string | null }> = [];
+  const assetOps: Array<{ id: string; pageId: string | null; metadata?: Prisma.InputJsonValue }> = [];
 
   if (destEdit) {
     // The destination's own hero, if it has one, is demoted to an inline line
@@ -365,10 +372,40 @@ async function applyAssetSource(
   }
 
   previousAssets.push(previousAssetRecord(live, sourceEdit, destEdit));
-  assetOps.push({ id: live.id, pageId: destEdit ? destEdit.before.id : null });
+  assetOps.push({
+    id: live.id,
+    pageId: destEdit ? destEdit.before.id : null,
+    ...(destEdit ? legacyOwnershipStampForMove(live, sourceEdit, options.projectId) : {})
+  });
   sourceEdit.imagePrompt = null;
   sourceEdit.touched = true;
   return { previousAssets, demotedAssets, assetOps };
+}
+
+/**
+ * A numeric legacy hero must carry its stable source Page before its `pageId`
+ * is reassigned. Otherwise a later reindex can make the preserved filename
+ * look native to the destination and let its next keeper sweep delete it.
+ */
+function legacyOwnershipStampForMove(
+  asset: { path: string; metadata: unknown },
+  sourceEdit: PageEdit,
+  projectId: string
+): { metadata?: Prisma.InputJsonValue } {
+  if (!isLegacyGeneratedPageIllustrationPath(asset.path, projectId, sourceEdit.before.index)) {
+    return {};
+  }
+  const metadata = jsonRecord(asset.metadata);
+  const recordedPageId = metadata[LEGACY_GENERATED_ILLUSTRATION_PAGE_ID_KEY];
+  if (typeof recordedPageId === "string" && recordedPageId.length > 0) {
+    return {};
+  }
+  return {
+    metadata: {
+      ...metadata,
+      [LEGACY_GENERATED_ILLUSTRATION_PAGE_ID_KEY]: sourceEdit.before.id
+    } as Prisma.InputJsonValue
+  };
 }
 
 function previousAssetRecord(

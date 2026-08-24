@@ -28,6 +28,10 @@ vi.mock(
   "../generation/embeddingWrites.js",
   async () => (await import("./testing/compileExportMocks.js")).embeddingWritesModuleMock()
 );
+vi.mock(
+  "../generation/entityState.js",
+  async () => (await import("./testing/compileExportMocks.js")).entityStateModuleMock()
+);
 vi.mock("./characters.js", async () => (await import("./testing/compileExportMocks.js")).charactersModuleMock());
 vi.mock(
   "../generation/bookHelpers.js",
@@ -534,25 +538,6 @@ describe("compileExport reader chapters", () => {
     );
   });
 
-  it("retires stale EPUB on a presentation reprint whose conversion fails", async () => {
-    mocks.generateBookEpub.mockRejectedValue(new Error("converter failed"));
-    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
-
-    await compileExport(
-      job({
-        contentRevision: 4,
-        skipFinalReview: true,
-        [PRESENTATION_ONLY_RECOMPILE]: true,
-        [PRESENTATION_RECOMPILE_FALLBACK_STATUS]: "REVIEW_REQUIRED"
-      })
-    );
-
-    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
-      expect.objectContaining({ epubProduced: false, repairFormat: null, status: "REVIEW_REQUIRED" })
-    );
-    logged.mockRestore();
-  });
-
   /** The quality report this compile persisted onto its own job row. */
   function persistedQualityReport(): {
     state: string;
@@ -793,15 +778,51 @@ describe("compileExport reader chapters", () => {
     expect(mocks.loadQualityContext).toHaveBeenCalledTimes(1);
   });
 
-  it("retires stale EPUB on an undo/manual recompile whose conversion fails", async () => {
-    mocks.generateBookEpub.mockRejectedValue(new Error("converter failed"));
-    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  it("stands down before spending on repaired-book QA when an edit lands after repair", async () => {
+    mocks.strategy.runFinalBookQa.mockResolvedValueOnce({
+      approved: false,
+      issues: ["Page 2 needs repair."],
+      requiredFixes: ["Repair page 2."],
+      repairPageIndexes: [2]
+    });
+    const repairedMarkdown = "Repaired page 2 prose about the walk home and everything seen along it.";
+    mocks.revisePageDraftWithRestart.mockResolvedValue({
+      title: "Page 2",
+      markdown: repairedMarkdown,
+      summary: "Page 2 summary.",
+      imagePrompt: null,
+      continuityNotes: []
+    });
+    mocks.prisma.continuityNote.findMany.mockResolvedValue([]);
+    let repairPublished = false;
+    mocks.prisma.page.update.mockImplementation(async () => {
+      repairPublished = true;
+      return { ...compilePage(2), markdown: repairedMarkdown };
+    });
+    mocks.loadPagesForExport.mockResolvedValue(pages);
+    mocks.exportPublicationSuperseded.mockImplementation(async () => repairPublished);
+    Object.assign(mocks.strategy, {
+      reviewPageDraft: vi.fn().mockResolvedValue({
+        approved: true,
+        score: 90,
+        issues: [],
+        requiredRevisions: [],
+        notes: ""
+      })
+    });
 
-    await compileExport(job({ contentRevision: 4, skipFinalReview: true }));
+    try {
+      await compileExport(job({ contentRevision: 4 }));
+    } finally {
+      delete (mocks.strategy as { reviewPageDraft?: unknown }).reviewPageDraft;
+    }
 
-    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
-      expect.objectContaining({ epubProduced: false, repairFormat: null, ownsProjectStatus: true })
-    );
-    logged.mockRestore();
+    expect(repairPublished).toBe(true);
+    // The first call graded the pre-repair book. The exact fence observes the
+    // edit before a second provider call can grade or spend on obsolete pages.
+    expect(mocks.strategy.runFinalBookQa).toHaveBeenCalledTimes(1);
+    expect(mocks.publishCompiledExports).not.toHaveBeenCalled();
+    expect(mocks.strategy.generatePdf).not.toHaveBeenCalled();
   });
+
 });

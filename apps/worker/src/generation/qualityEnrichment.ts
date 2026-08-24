@@ -22,6 +22,7 @@ import {
 import { loadProjectStoryState, persistPageStoryDelta, rebuildStoryStateFromPages } from "./storyStateStore.js";
 import { loadQualityContext } from "./qualitySettings.js";
 import { isStopRequestedError } from "../runtime/jobTypes.js";
+import type { Prisma } from "@book-maker/db";
 
 export type EnrichedPageReview = {
   report: PageQualityReport;
@@ -291,13 +292,15 @@ export async function persistStoryExtract(options: {
   pageIndex: number;
   plan: BookPlan;
   extract: StoryExtractResult;
+  client?: Pick<Prisma.TransactionClient, "page" | "project"> | undefined;
 }): Promise<StoryState | null> {
-  return persistPageStoryDelta({
+  const write = {
     projectId: options.projectId,
     pageIndex: options.pageIndex,
     delta: options.extract.storyDelta,
     seedPromises: options.plan.promises ?? []
-  });
+  };
+  return options.client ? persistPageStoryDelta(write, options.client) : persistPageStoryDelta(write);
 }
 
 export async function persistKeeperStoryDelta(options: KeeperStoryDeltaOptions): Promise<StoryState | null> {

@@ -42,6 +42,7 @@ export function entityStateRecord(value: unknown): EntityState | null {
 }
 
 const ENTITY_STATE_CAS_ATTEMPTS = 3;
+type EntityStateWriteClient = Pick<Prisma.TransactionClient, "character" | "location">;
 
 /**
  * Folds a saved page's continuity notes into per-character/location state so
@@ -55,14 +56,19 @@ const ENTITY_STATE_CAS_ATTEMPTS = 3;
  * on its own `state` column: read, compute, write conditioned on the row still
  * holding the state just read, and retry against the winner's state on a miss.
  */
-export async function updateEntityStateFromPage(projectId: string, pageIndex: number, continuityNotes: string[]) {
+export async function updateEntityStateFromPage(
+  projectId: string,
+  pageIndex: number,
+  continuityNotes: string[],
+  client: EntityStateWriteClient = prisma
+) {
   if (continuityNotes.length === 0) {
     return;
   }
   try {
     const [characters, locations] = await Promise.all([
-      prisma.character.findMany({ where: { projectId } }),
-      prisma.location.findMany({ where: { projectId } })
+      client.character.findMany({ where: { projectId } }),
+      client.location.findMany({ where: { projectId } })
     ]);
 
     const foldedNotes = continuityNotes.map((note) => foldCharacterName(note));
@@ -77,9 +83,9 @@ export async function updateEntityStateFromPage(projectId: string, pageIndex: nu
         continue;
       }
       await casUpdateEntityState({
-        read: () => prisma.character.findUnique({ where: { id: character.id }, select: { state: true } }),
+        read: () => client.character.findUnique({ where: { id: character.id }, select: { state: true } }),
         write: (id, expectedState, data) =>
-          prisma.character.updateMany({ where: { id, state: { equals: expectedState } }, data }),
+          client.character.updateMany({ where: { id, state: { equals: expectedState } }, data }),
         id: character.id,
         initialState: character.state,
         pageIndex,
@@ -93,9 +99,9 @@ export async function updateEntityStateFromPage(projectId: string, pageIndex: nu
         continue;
       }
       await casUpdateEntityState({
-        read: () => prisma.location.findUnique({ where: { id: location.id }, select: { state: true } }),
+        read: () => client.location.findUnique({ where: { id: location.id }, select: { state: true } }),
         write: (id, expectedState, data) =>
-          prisma.location.updateMany({ where: { id, state: { equals: expectedState } }, data }),
+          client.location.updateMany({ where: { id, state: { equals: expectedState } }, data }),
         id: location.id,
         initialState: location.state,
         pageIndex,

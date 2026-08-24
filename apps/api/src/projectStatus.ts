@@ -17,6 +17,10 @@ import { canRecoverGenerationJob } from "./mobile/generationRecovery.js";
 // audiobook, a few image retries or a repair loop pushed its own verdict out of
 // the window and rendered a blank quality card.
 import { loadProjectQualityReport } from "./mobile/qualityVerdict.js";
+// How many pages of this book are written — the one read of its pages, and the
+// question of whether anything open is still going to redraft one. Split out
+// whole: the poll reports the number, `projectPageCounts.ts` decides it.
+import { countBookPages, pageRewriteScope, readProjectPageRows } from "./projectPageCounts.js";
 import { loadProjectCostSummary } from "./projectCosts.js";
 import type { GenerationJobType } from "./queue.js";
 
@@ -102,12 +106,14 @@ export async function buildProjectStatus(projectId: string) {
     return null;
   }
 
-  const completePages = await prisma.page.count({ where: { projectId, status: "COMPLETED" } });
+  // Every page number this status reports is counted off this one read — the
+  // complete count, the blocked pages and the reviewed ones, so no pair of them
+  // can contradict each other. It is a raw statement because the predicate has
+  // to know whether a page holds prose without carrying the prose, and the
+  // counting rule it feeds is `countBookPages` below; both live in
+  // `projectPageCounts.ts`, with the skew that taught them.
+  const pages = await readProjectPageRows(projectId);
   const failedJobs = await prisma.generationJob.count({ where: { projectId, status: "FAILED" } });
-  const pages = await prisma.page.findMany({
-    where: { projectId },
-    select: { id: true, index: true, status: true, revision: true, qualityReport: true }
-  });
   const pageIndexById = new Map(pages.map((page) => [page.id, page.index]));
   const resumeContext: ResumeContext = {
     currentPlanId: project.currentPlanId,
@@ -150,14 +156,23 @@ export async function buildProjectStatus(projectId: string) {
       })
     : [];
 
-  const [openImageJobs, compileJobs] = await Promise.all([
+  const [openImageJobs, compileJobs, rewriteScope] = await Promise.all([
     prisma.generationJob.count({
       where: { projectId, type: "GENERATE_IMAGE", status: { in: ["QUEUED", "ACTIVE"] } }
     }),
     prisma.generationJob.count({
       where: { projectId, type: "COMPILE_EXPORT", status: { in: ["QUEUED", "ACTIVE", "COMPLETED"] } }
-    })
+    }),
+    // A page that exhausted its QA budget keeps its best draft and still ships
+    // in the export, so once nothing is going to rewrite it, it counts as a page
+    // of the book — a finished, readable 200-page book must not report 197/200.
+    // Whether anything still will is the pipeline's question rather than the
+    // page's, and it is asked here, in the fan-out, because a book still being
+    // written answers it from its status alone: the poll that runs every few
+    // seconds through a generation sends no read for it.
+    pageRewriteScope(projectId, project.status)
   ]);
+  const completePages = countBookPages(pages, rewriteScope);
   const visibleImageCount = await prisma.imageAsset.count({
     where: { projectId, type: { notIn: ["CHARACTER_REFERENCE", "CHARACTER_PROFILE"] } }
   });
@@ -204,6 +219,12 @@ export async function buildProjectStatus(projectId: string) {
 
     return {
       ...job,
+      // This mapper is the shared public boundary for the operator's ordinary
+      // status response and its SSE stream. Compile rows retain exact page
+      // fingerprints so the worker can settle a redelivery safely, but those
+      // fingerprints are worker-private and must never ride the public job
+      // DTO. Keep the durable report untouched and preserve every public field.
+      qualityReport: publicGenerationJobQualityReport(job.qualityReport),
       steps: parseJobSteps(job.steps),
       tokens: tokensByJobId.get(job.id) ?? emptyTokenUsage(),
       providerDurationMs: providerDurationMsByJobId.get(job.id) ?? null,
@@ -232,12 +253,21 @@ export async function buildProjectStatus(projectId: string) {
       tokens: projectTokens,
       cost,
       quality: {
-        reviewedPages: pages.filter((page) => page.qualityReport !== null).length,
+        reviewedPages: pages.filter((page) => page.hasQualityReport).length,
         repairedPages: pages.filter((page) => page.revision > 1).length,
         blockedPages: pages.filter((page) => page.status === "FAILED_QA").length
       }
     }
   };
+}
+
+function publicGenerationJobQualityReport(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return value;
+  }
+  const report = { ...(value as Record<string, unknown>) };
+  delete report._standDownProvenance;
+  return report;
 }
 
 export function normalizeProjectQuality(value: unknown): ProjectQualityStatus {

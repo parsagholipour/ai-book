@@ -4,7 +4,8 @@
  * Split out of `restructurePages.test.ts` because it is one question asked of
  * every fork: the success path leaves the book EDITING for its recompile, and
  * every path that walks away without one has to hand it back the settled status
- * it came in with. EDITING with no job is the state no sweep reaches.
+ * it came in with. Delayed reconciliation can revisit EDITING with no job, but
+ * these forks already know the immediate handoff is absent.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Job } from "bullmq";
@@ -242,8 +243,8 @@ describe("restructurePages project status", () => {
 
   it("takes the book out of EDITING when the dispatch queues nothing at all", async () => {
     // The one outcome with no compile coming to write the status: EDITING with
-    // no job is the state no sweep reaches, while COMPLETE with its files gone
-    // is precisely what ensureExportRepairQueued rebuilds.
+    // no job would wait for delayed reconciliation, while COMPLETE with its
+    // files gone is precisely what ensureExportRepairQueued rebuilds now.
     mocks.maybeEnqueueCompile.mockResolvedValue("not-ready");
 
     await restructurePages(insertJob(), { id: "op-1", status: "QUEUED", classifier: {} });
@@ -306,10 +307,9 @@ describe("restructurePages project status", () => {
     // refusal — the operation APPLIED, the book back down as COMPLETE. The
     // write then lifted a finished book into EDITING, the shift's own claim
     // answered `completed`, and the delivery returned with nothing behind it to
-    // lower the status again. EDITING with no job is terminal: it is neither
-    // what `reconcileStrandedGeneration` sweeps (GENERATING) nor what
-    // `ensureExportRepairQueued` rebuilds (COMPLETE/REVIEW_REQUIRED), so the
-    // book said "preparing" forever.
+    // lower the status again. EDITING with no job has no immediate handoff;
+    // delayed reconciliation now recovers it after the grace period, while
+    // `ensureExportRepairQueued` rebuilds settled COMPLETE/REVIEW_REQUIRED.
     mocks.projectRow.status = "COMPLETE";
     mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({
       id: "op-1",

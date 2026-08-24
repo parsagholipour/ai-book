@@ -5,7 +5,10 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./libraryMentions": "./src/generation/libraryMentions.ts"
+    "./jobSteps": "./src/jobSteps.ts",
+    "./libraryMentions": "./src/generation/libraryMentions.ts",
+    "./modelTiers": "./src/adapters/modelTiers.ts",
+    "./qualityGates": "./src/generation/qualityGates.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",

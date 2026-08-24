@@ -1,13 +1,14 @@
 ---
 name: add-job-type
-description: Use when adding, renaming, or removing a BullMQ job type — a new `enum JobType` value in schema.prisma, a new file under apps/worker/src/handlers/, a new `case` in the `switch (job.name)` in apps/worker/src/processJob.ts, or a change to `jobNames` in packages/core/src/jobDispatch.ts. One job type is mirrored across a dozen lists that mostly do not typecheck against each other: `DERIVATIVE_GENERATION_JOBS`, `jobOwnsQualityVerdict`, `NETWORK_RETRYABLE_JOB_NAMES`, `canRecoverGenerationJob`, `JOB_STEP_LABELS` in apps/web, and the JobType→CreditOperation `CASE` in the admin SQL — plus the two that the compiler now does check, `JOB_STEP_TEMPLATES` and `WORKER_FANOUT_JOB_TYPES`. Reach for this on "add a job", "the worker throws Unknown worker job", "the progress bar is empty for my new job", "why didn't my job get retried", or "my job marked the book FAILED".
+description: Use when adding, renaming, or removing a BullMQ job type — a new `enum JobType` value in schema.prisma, a new file under apps/worker/src/handlers/, a new `case` in the `switch (job.name)` in apps/worker/src/processJob.ts, or a change to `jobNames` in packages/core/src/jobDispatch.ts. One job type is mirrored across eleven lists that mostly do not typecheck against each other: `DERIVATIVE_GENERATION_JOBS`, `jobOwnsQualityVerdict`, `NETWORK_RETRYABLE_JOB_NAMES`, `canRecoverGenerationJob`, and the JobType→CreditOperation `CASE` in the admin SQL — plus the three that the compiler now does check, `JOB_STEP_TEMPLATES`, `JOB_PAGE_REWRITE_SCOPE` and `WORKER_FANOUT_JOB_TYPES`. Reach for this on "add a job", "the worker throws Unknown worker job", "the progress bar is empty for my new job", "why didn't my job get retried", or "my job marked the book FAILED".
 ---
 
 # Adding, renaming, or removing a job type
 
 A job type is one name spread across the Prisma enum, the worker's dispatch switch, several
-policy sets in `packages/core`, and a handful of API/web display mirrors. The compiler catches
-about a third of that. This is the ordered footprint and the part that fails silently.
+policy sets in `packages/core`, and a handful of API display mirrors. The compiler catches about
+half of it now — the tables typed against `GenerationJobType` — and none of the `Set`s, the
+hand-written unions or the SQL. This is the ordered footprint and the part that fails silently.
 
 Reasoning for the queue design lives in [`apps/worker/CLAUDE.md`](../../../apps/worker/CLAUDE.md);
 the failure/settlement rules that decide half the questions below live in
@@ -16,8 +17,8 @@ the failure/settlement rules that decide half the questions below live in
 
 ## Before checking whether the mirrors below still exist
 
-Three of these duplications are being collapsed in a parallel change, and they are landing at
-different times:
+Three of these duplications were collapsed in a parallel change, and they landed at different
+times:
 
 - `enqueueWorkerJob`'s hand-written literal unions in `apps/worker/src/runtime/dispatch.ts` —
   **already repaired.** It now takes `type: WorkerFanoutJobType`, derived from
@@ -29,8 +30,10 @@ different times:
   `apps/api/src/mobile/schemas.ts`) are gone: all three now import the leaf module
   `apps/api/src/generationJobTypes.ts`. `mobile/schemas.ts` re-exports them under the old names.
 - `JOB_STEP_TEMPLATES` now lives in `packages/core/src/jobSteps.ts` as an exhaustive
-  `Record<GenerationJobType, readonly JobStepTemplate[]>`. `apps/web` still keeps its own copy —
-  see step 12 for why it could not be derived.
+  `Record<GenerationJobType, readonly JobStepTemplate[]>`, and the console's copy of it is **gone
+  too**: `packages/core/package.json` exports `./jobSteps` as a narrow subpath and
+  `apps/web/src/jobsDisplay.ts` derives its fallback labels from that record. All three of these
+  have now landed, so this section is history rather than a warning — but keep grepping.
 
 This skill is written against the repaired shape. **Grep for each symbol before editing it** — if
 it no longer exists where this says, the repair landed and the single derived definition is the
@@ -51,7 +54,7 @@ the other and nothing warns you when you pick wrong:
 | `packages/core/src/jobSteps.ts` `JOB_STEP_TEMPLATES` | SCREAMING (`runtime/jobProgress.ts` translates) |
 | `jobDispatch.ts` `NETWORK_RETRYABLE_JOB_NAMES`, `retryJobOptions` | kebab |
 | `jobScope.ts` `DERIVATIVE_GENERATION_JOBS` | both (keys SCREAMING, values kebab) |
-| `apps/web/src/jobsDisplay.ts` `JOB_STEP_LABELS` | SCREAMING |
+| `jobScope.ts` `JOB_PAGE_REWRITE_SCOPE`, `PAGE_REWRITING_JOB_TYPES` | SCREAMING |
 | `mobile/schemas.ts` job-type lists, `generationRecovery.ts` | SCREAMING |
 | `admin/operationEconomics.ts` SQL `CASE j.type::text` | SCREAMING |
 
@@ -96,7 +99,12 @@ simply never see the row, and you must arrange its own failure settlement — se
    `NETWORK_RETRYABLE_JOB_NAMES`, a `*_RECOVERY_ATTEMPTS` const, and a branch in
    `retryJobOptions`.
 3. `packages/core/src/jobScope.ts` — `DERIVATIVE_GENERATION_JOBS` if decision 2 said yes;
-   `jobOwnsQualityVerdict` if decision 4 said the job reports a verdict.
+   `jobOwnsQualityVerdict` if decision 4 said the job reports a verdict; and
+   `JOB_PAGE_REWRITE_SCOPE`, which is exhaustive and so will not compile until you answer it.
+   Answer it for a *queued or running row* of this type, not for the handler's happiest path —
+   `never` is a claim that nothing this row does can change what a page says or whether it passed
+   QA, and a status poll counts pages on that answer (`PAGE_REWRITING_JOB_TYPES` is derived from
+   it, so there is no second list to update).
 4. `apps/worker/src/handlers/<name>.ts` — the handler, exporting
    `export async function myJob(job: Job)`. Handlers may import from `generation/`, `providers/`
    and `runtime/`; they must not import `runtime/queue.ts` (importing it opens Redis). Provider
@@ -107,10 +115,12 @@ simply never see the row, and you must arrange its own failure settlement — se
    Return a `JobCompletion` only if you need `afterJobCompleted` or
    `durableCompletionCommitted`.
 6. `packages/core/src/jobSteps.ts` — `JOB_STEP_TEMPLATES`, **keyed by `GenerationJobType`**
-   (SCREAMING). The app and the console render these labels. The record is exhaustive, so a missing
-   entry is a compile error. `apps/worker/src/runtime/jobProgress.ts` needs no edit: its
-   `buildStepTemplate` translates the kebab job name through `generationJobTypeForWorkerName` and
-   still returns `[]` for an unknown name.
+   (SCREAMING). The app and the console render these labels, and the console derives its fallback
+   labels straight from this record through the `./jobSteps` subpath export, so `apps/web` needs no
+   edit of its own. The record is exhaustive, so a missing entry is a compile error.
+   `apps/worker/src/runtime/jobProgress.ts` needs no edit either: its `buildStepTemplate` translates
+   the kebab job name through `generationJobTypeForWorkerName` and still returns `[]` for an
+   unknown name.
 7. `apps/worker/src/runtime/dispatch.ts` — `WORKER_FANOUT_JOB_TYPES`, but **only if the worker
    itself fans out to this job**. A job the API starts must stay out of that list; the narrowing is
    the point. Never call `queue.add` directly: the durable row is written first and
@@ -131,9 +141,7 @@ simply never see the row, and you must arrange its own failure settlement — se
     `CreditOperation`. An unmapped type falls through to the unbilled buckets rather than being
     attributed by guess, so omitting it understates nothing but leaves the job's provider spend
     permanently in "unbilled".
-12. `apps/web/src/jobsDisplay.ts` — `JOB_STEP_LABELS`, **SCREAMING-keyed**. Pure fallback labels
-    for rows with no server steps.
-13. Also check, if the job can be stopped or can fail a book: `BOOK_RUN_JOB_TYPES` in
+12. Also check, if the job can be stopped or can fail a book: `BOOK_RUN_JOB_TYPES` in
     `apps/api/src/queue.ts` (the API's own settlement path), and
     `failureMessageForJob` in `apps/api/src/mobile/projectSerializers.ts`.
 
@@ -146,16 +154,17 @@ simply never see the row, and you must arrange its own failure settlement — se
 - `WORKER_FANOUT_JOB_TYPES` — its `satisfies readonly GenerationJobType[]` fails on a renamed or
   removed `jobNames` entry rather than silently enqueueing a job the dispatch switch cannot name.
   (This is also why `{ type: "GENERATE_BOOK", name: "generate-page" }` is no longer expressible.)
-- `JOB_STEP_TEMPLATES` in `packages/core/src/jobSteps.ts` — `Record<GenerationJobType, …>`.
+- `JOB_STEP_TEMPLATES` in `packages/core/src/jobSteps.ts` — `Record<GenerationJobType, …>`, and
+  since `apps/web/src/jobsDisplay.ts` derives the console's fallback labels from it, the one entry
+  the compiler demands is the only entry there is. This used to be the loudest silent mirror on the
+  list below.
+- `JOB_PAGE_REWRITE_SCOPE` in `packages/core/src/jobScope.ts` — `Record<GenerationJobType,
+  PageRewriteScope>`, so a new type must say whether an open row of it can still rewrite a page
+  before anything compiles.
 
 **Nothing catches (all of these are `Record<string, …>`, a `Set<string>`, or SQL):**
 - A missing `case` in `processJob.ts` — runtime `Unknown worker job: <name>`, the job fails and
   (unless derivative) fails the book.
-- A missing `JOB_STEP_LABELS` entry in `apps/web/src/jobsDisplay.ts` — silent empty steps in the
-  console. This is the last hand-kept mirror of the step table: `apps/web` cannot import
-  `@book-maker/core` (no dependency, `rootDir` refuses a relative import, and core's single barrel
-  pulls puppeteer and sharp into a browser bundle), so it needs a `workspace:*` dep plus a
-  `"./jobSteps"` subpath export before it can be derived.
 - A missing `NETWORK_RETRYABLE_JOB_NAMES` entry — no retry, ever, silently.
 - A missing `DERIVATIVE_GENERATION_JOBS` entry — the job's failure flips the project FAILED and
   refunds the book's `GENERATE_BOOK` charge. Loudest wrong outcome on this list.

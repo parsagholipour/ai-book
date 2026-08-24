@@ -75,7 +75,7 @@ export type ExportPageForRepair = {
   imagePrompt: string | null;
   revision: number;
   status: string;
-  chapter?: { index: number; productionBrief: unknown } | null;
+  chapter?: { id: string; index: number; productionBrief: unknown } | null;
   images: Array<{ path: string }>;
 };
 
@@ -96,6 +96,8 @@ export type WorkerImageAsset = {
   metadata: unknown;
 };
 
+export type JobLifecycleSettlement = "settle" | "defer-to-successor";
+
 /** Returned by a handler that needs work to run after the job is marked complete. */
 export type JobCompletion = {
   /**
@@ -104,5 +106,10 @@ export type JobCompletion = {
    * must not make Bull report that already-delivered work as failed.
    */
   durableCompletionCommitted?: boolean;
+  /**
+   * Terminalize this durable job without settling its shared attempt or edit.
+   * The successor preserves that scope and owns its eventual success/failure.
+   */
+  lifecycleSettlement?: JobLifecycleSettlement;
   afterJobCompleted?: () => Promise<void>;
 };
