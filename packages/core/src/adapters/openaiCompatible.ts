@@ -14,7 +14,11 @@ import {
   parseSchemaWithContext,
   throwWithProviderUsage
 } from "./json.js";
-import { generateWithToolsViaOpenAi, toOpenAiChatMessages } from "./openaiToolCalling.js";
+import {
+  generateWithToolsViaOpenAi,
+  openAiRequestOptions,
+  toOpenAiChatMessages
+} from "./openaiToolCalling.js";
 
 const PROVIDER_LABEL = "OpenAICompatible";
 const PROVIDER_ID = "openai-compatible";
@@ -60,7 +64,7 @@ export class OpenAICompatibleTextAdapter implements TextModelAdapter {
       messages: toOpenAiChatMessages(options.messages),
       temperature: options.temperature ?? null,
       ...maxTokensParam(options.maxTokens)
-    });
+    }, openAiRequestOptions(options));
 
     const text = response.choices[0]?.message?.content ?? "";
     const usage = usageFromOpenAiCompatible(response.usage);
@@ -100,7 +104,7 @@ export class OpenAICompatibleTextAdapter implements TextModelAdapter {
       temperature: options.temperature ?? null,
       ...maxTokensParam(options.maxTokens),
       response_format: { type: "json_object" }
-    });
+    }, openAiRequestOptions(options));
 
     const text = response.choices[0]?.message?.content ?? "{}";
     const usage = usageFromOpenAiCompatible(response.usage);
@@ -119,7 +123,7 @@ export class OpenAICompatibleTextAdapter implements TextModelAdapter {
       ...maxTokensParam(options.maxTokens),
       stream: true,
       stream_options: { include_usage: true }
-    } as never);
+    } as never, openAiRequestOptions(options));
 
     let text = "";
     let usage: Usage | undefined;
@@ -156,7 +160,7 @@ export class OpenAICompatibleTextAdapter implements TextModelAdapter {
       response_format: { type: "json_object" },
       stream: true,
       stream_options: { include_usage: true }
-    } as never);
+    } as never, openAiRequestOptions(options));
 
     let text = "";
     let usage: Usage | undefined;
@@ -208,7 +212,7 @@ export class OpenAICompatibleTextAdapter implements TextModelAdapter {
       temperature: options.temperature ?? null,
       ...maxTokensParam(options.maxTokens),
       stream: true
-    });
+    }, openAiRequestOptions(options));
 
     for await (const chunk of stream) {
       const content = chunk.choices[0]?.delta?.content;

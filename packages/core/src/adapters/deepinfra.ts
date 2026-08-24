@@ -9,7 +9,7 @@ import type {
   ToolCallsResult,
   Usage
 } from "./types.js";
-import { generateWithToolsViaOpenAi } from "./openaiToolCalling.js";
+import { generateWithToolsViaOpenAi, openAiRequestOptions } from "./openaiToolCalling.js";
 import {
   parseJsonObject,
   parseSchemaWithContext,
@@ -65,7 +65,7 @@ export class DeepInfraAdapter implements TextModelAdapter {
       temperature: options.temperature,
       max_tokens: options.maxTokens,
       ...deepInfraReasoningConfig(this.thinkingEnabled, this.thinkingEffort)
-    } as never);
+    } as never, openAiRequestOptions(options));
 
     const text = response.choices[0]?.message?.content ?? "";
     const usage = usageFromDeepInfra(response.usage);
@@ -107,7 +107,7 @@ export class DeepInfraAdapter implements TextModelAdapter {
       max_tokens: options.maxTokens,
       response_format: { type: "json_object" },
       ...deepInfraReasoningConfig(this.thinkingEnabled, this.thinkingEffort)
-    } as never);
+    } as never, openAiRequestOptions(options));
 
     const text = response.choices[0]?.message?.content ?? "{}";
     const usage = usageFromDeepInfra(response.usage);
@@ -123,7 +123,7 @@ export class DeepInfraAdapter implements TextModelAdapter {
       stream: true,
       stream_options: { include_usage: true },
       ...deepInfraReasoningConfig(this.thinkingEnabled, this.thinkingEffort)
-    } as never);
+    } as never, openAiRequestOptions(options));
 
     let text = "";
     let usage: Usage | undefined;
@@ -161,7 +161,7 @@ export class DeepInfraAdapter implements TextModelAdapter {
       stream: true,
       stream_options: { include_usage: true },
       ...deepInfraReasoningConfig(this.thinkingEnabled, this.thinkingEffort)
-    } as never);
+    } as never, openAiRequestOptions(options));
 
     let text = "";
     let usage: Usage | undefined;
@@ -215,7 +215,7 @@ export class DeepInfraAdapter implements TextModelAdapter {
       stream: true,
       stream_options: { include_usage: true },
       ...deepInfraReasoningConfig(this.thinkingEnabled, this.thinkingEffort)
-    } as never);
+    } as never, openAiRequestOptions(options));
 
     for await (const chunk of stream) {
       const content = chunk.choices[0]?.delta?.content;

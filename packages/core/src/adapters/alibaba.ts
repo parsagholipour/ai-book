@@ -14,7 +14,7 @@ import type {
   ToolCallsResult,
   Usage
 } from "./types.js";
-import { generateWithToolsViaOpenAi } from "./openaiToolCalling.js";
+import { generateWithToolsViaOpenAi, openAiRequestOptions } from "./openaiToolCalling.js";
 import {
   AdapterJsonParseError as AlibabaJsonParseError,
   AdapterJsonValidationError as AlibabaJsonValidationError,
@@ -69,7 +69,7 @@ export class AlibabaTextAdapter implements TextModelAdapter {
       messages: options.messages,
       temperature: options.temperature,
       max_tokens: options.maxTokens
-    } as never);
+    } as never, openAiRequestOptions(options));
 
     const usage = usageFromOpenAiCompatible(response.usage);
     return {
@@ -108,7 +108,7 @@ export class AlibabaTextAdapter implements TextModelAdapter {
       temperature: options.temperature,
       max_tokens: options.maxTokens,
       response_format: { type: "json_object" }
-    } as never);
+    } as never, openAiRequestOptions(options));
 
     const text = response.choices[0]?.message?.content ?? "{}";
     const usage = usageFromOpenAiCompatible(response.usage);
@@ -123,7 +123,7 @@ export class AlibabaTextAdapter implements TextModelAdapter {
       max_tokens: options.maxTokens,
       stream: true,
       stream_options: { include_usage: true }
-    } as never);
+    } as never, openAiRequestOptions(options));
 
     let text = "";
     let usage: Usage | undefined;
@@ -160,7 +160,7 @@ export class AlibabaTextAdapter implements TextModelAdapter {
       response_format: { type: "json_object" },
       stream: true,
       stream_options: { include_usage: true }
-    } as never);
+    } as never, openAiRequestOptions(options));
 
     let text = "";
     let usage: Usage | undefined;
@@ -213,7 +213,7 @@ export class AlibabaTextAdapter implements TextModelAdapter {
       max_tokens: options.maxTokens,
       stream: true,
       stream_options: { include_usage: true }
-    } as never);
+    } as never, openAiRequestOptions(options));
 
     for await (const chunk of stream) {
       const content = chunk.choices[0]?.delta?.content;

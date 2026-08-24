@@ -21,7 +21,10 @@ to `PROVIDER_RETRY_AFTER_CEILING_MS`; a longer cooldown is a daily cap rather th
 so it is reported as unrecoverable and every layer gives up at once instead of spending its whole
 budget failing the same way.
 
-Stop-abort signalling is currently wired into the DeepSeek and Gemini adapters only.
+Stop-abort signalling is wired into every provider HTTP text adapter. OpenAI-wire adapters pass
+the signal as the SDK's per-request option via `openAiRequestOptions`; Gemini passes it as
+`abortSignal` in the request config. Every request path on those adapters must preserve it,
+including streamed JSON and tool calls; adapters with no HTTP client ignore it.
 
 - **A cancellation raised inside a tool escapes the tool loop; only a tool *failure* becomes a tool
   result.** `runToolLoop`'s whole point is that a tool blowing up is recoverable — the throw comes
