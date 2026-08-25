@@ -20,7 +20,7 @@ import {
 } from "@book-maker/core";
 import { type BookEditIntentKind } from "../bookEditIntent.js";
 import { type ProjectForChat } from "./projectChat.js";
-import { inputSnapshotFromProject } from "./projectSerializers.js";
+import { inputSnapshotFromProject } from "./projectSummarySerializers.js";
 
 export function bookEditCreditCost(
   kind: BookEditIntentKind,

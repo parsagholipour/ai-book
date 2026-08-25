@@ -17,7 +17,8 @@ import {
 import { canUndoBookEdit, hasBookEditUndoRecord } from "./manualEdits.js";
 import { findOpenProposalId } from "./pendingEditState.js";
 import { currentActionForEditOperation } from "./editOperationCopy.js";
-import { normalizeJobStatus, serializePlan } from "./projectSerializers.js";
+import { serializePlan } from "./projectArtifactSerializers.js";
+import { normalizeJobStatus } from "./projectStatusSerializers.js";
 import { MODEL_PAGE_NUMBERING, numberingForProject, type ReaderPageNumbering } from "../bookPageNumbering.js";
 import { generationRecoveryQuote } from "./generationRetryQuote.js";
 import { clipText, jsonInputValue, jsonValue } from "./support.js";

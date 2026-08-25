@@ -1,6 +1,7 @@
 import { ensureExportRepairQueued, ensureExportRepairQueuedFor, missingExportFormat } from "../exportRepair.js";
 import { requireMobileAuth, sendMobileError, sendProjectNotFound } from "../httpErrors.js";
-import { imageContentType, isLiveProjectStatus, loadSerializedProjectStatus, mobileAssetFilenameFromPath } from "../projectSerializers.js";
+import { imageContentType, mobileAssetFilenameFromPath } from "../projectArtifactSerializers.js";
+import { isLiveProjectStatus, loadSerializedProjectStatus } from "../projectStatusSerializers.js";
 import { assetParamsSchema, idParamsSchema, mobileAuthError } from "../schemas.js";
 import { prisma } from "@book-maker/db";
 import { readFile } from "node:fs/promises";

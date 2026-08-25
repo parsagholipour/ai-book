@@ -10,7 +10,7 @@ import {
   type MobilePageCountSource
 } from "../mobileCreation.js";
 import { type ProjectQualityStatus } from "../projectStatus.js";
-import { type ProjectExportFormat } from "../routes/projects.js";
+import { type ProjectExportFormat } from "../routes/projectExports.js";
 import {
   mobileBookTypeSchema,
   mobileCreationBuildBodySchema,

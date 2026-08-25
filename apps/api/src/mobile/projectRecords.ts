@@ -20,7 +20,7 @@ import {
   type MobileProjectRecord
 } from "./dto.js";
 import { type ProjectForChat } from "./projectChat.js";
-import { planOperation } from "./projectSerializers.js";
+import { planOperation } from "./projectStatusSerializers.js";
 import {
   MOBILE_AUTO_BOOK_TYPE_SETTINGS,
   MOBILE_BOOK_TYPE_SETTINGS,

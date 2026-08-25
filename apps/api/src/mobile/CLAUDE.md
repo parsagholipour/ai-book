@@ -24,8 +24,10 @@ covers the attachment upload routes. Moving to `register` would break that.
 
 ## Serializers are the API contract
 
-`projectSerializers.ts` decides what the app sees. Provider names, model ids, raw queue state and
-internal error text stay out of mobile responses; the `serialize*` functions there and
+The three `project*Serializers.ts` modules decide what the app sees: summary/detail metadata,
+status/progress/recovery, and plan/image/asset/export artifacts. `projectSerializers.ts` is only a
+compatibility façade. Provider names, model ids, raw queue state and internal error text stay out
+of mobile responses; the `serialize*` functions in the owning modules and
 `sanitizePublicChatMetadata` in `projectChat.ts` enforce that. Widen them deliberately, not by
 spreading a row. Note the leak guard rejects any wire key containing "model", which is why the app
 reads a `qualityPreset` rather than a `modelTier`.
@@ -382,7 +384,7 @@ whole set through `listReplaceableBookImages` and pins it as `imageLayout.target
 re-resolves *those* one by one and never re-runs the scope query, so a picture added between the
 card and the tap is not swept into an edit the reader never saw. A layout edit that finds
 nothing writes `classifier.layoutMissing` with a reason: the worker cannot write a chat message,
-so `layoutSkipSummary` in `mobile/projectSerializers.ts` is where the queued reply's promise gets
+so `layoutSkipSummary` in `mobile/editOperationCopy.ts` is where the queued reply's promise gets
 corrected, and no Undo is offered for those rows — they write no snapshot, so the shared undo
 predicate below refuses them where `undoLastBookEdit` would otherwise revert the *previous*
 edit instead.
@@ -533,7 +535,7 @@ edit instead.
   ACTIVE Continue differently; repeated Stop then sees no newly claimable work in either branch.
   **Not failing the project is not the same as not being reported as its failure**, and the reading
   side has to ask too. A FAILED repair row is still a FAILED row, so it reached `failureMessage` in
-  `mobile/projectSerializers.ts` — the app's `hasFailure`, which is `BookStage.needsAttention` — and
+  `mobile/projectStatusSerializers.ts` — the app's `hasFailure`, which is `BookStage.needsAttention` — and
   painted `generationProgress`'s finish step red on a COMPLETE book, permanently and with nothing the
   reader could do. Worse, `canRecoverGenerationJob` accepted it, so `/resume` (either route) would
   requeue it *and set the project GENERATING*, which the flag then stops anything moving back out of.
@@ -561,7 +563,7 @@ not a scan.** `GenerationJob.ownsQualityVerdict` is written from type + payload 
 born — `jobOwnsQualityVerdict` in `packages/core/src/jobScope.ts`, applied in
 `enqueueGenerationJob` and `enqueueWorkerJob` beside the `contentRevision` those two already
 promote — and `loadProjectQualityReport` (`apps/api/src/mobile/qualityVerdict.ts`) is the one rule
-both `projectStatus.ts` and `mobile/projectSerializers.ts` read through: newest owning compile
+both `projectStatus.ts` and `mobile/projectSummarySerializers.ts` read through: newest owning compile
 that *has* reported. That last clause closes the detail serializer's older habit of showing
 "pending" for as long as any compile was in flight — the column is set at creation, so a queued
 or running compile owns a verdict it has not written and must not blank the card.

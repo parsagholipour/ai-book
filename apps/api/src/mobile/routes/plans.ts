@@ -23,11 +23,11 @@ import { queueInitialMobilePlan } from "../projectRecords.js";
 import {
   LIVE_PROJECT_STATUSES,
   canRecoverGenerationJob,
-  inputSnapshotFromProject,
   isPlanningRecoveryJob,
-  planOperation,
   recoveryPayload
-} from "../projectSerializers.js";
+} from "../generationRecovery.js";
+import { planOperation } from "../projectStatusSerializers.js";
+import { inputSnapshotFromProject } from "../projectSummarySerializers.js";
 import {
   emptyMobilePlanBodySchema,
   generationFailureJobTypes,

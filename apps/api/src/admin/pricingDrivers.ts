@@ -36,7 +36,7 @@ import {
   tierPriceKey
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
-import { inputSnapshotFromProject } from "../mobile/projectSerializers.js";
+import { inputSnapshotFromProject } from "../mobile/projectSummarySerializers.js";
 import { SETTLED_CHARGE, SETTLED_REFUND, netSettledCredits, round2, type AdminWindow } from "./metrics.js";
 
 /** Quantities only for the keys that are prices — see `PLAN_ALLOWANCE_KEYS`. */

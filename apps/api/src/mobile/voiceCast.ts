@@ -1,6 +1,6 @@
 import { libraryCharacterPortraitUrl } from "./characterSerializer.js";
 import { type MobileVoiceCharacterDto, type MobileVoiceCharacterStatus } from "./dto.js";
-import { serializeImage } from "./projectSerializers.js";
+import { serializeImage } from "./projectArtifactSerializers.js";
 import {
   buildRealtimeBookCastInstructions,
   reinforceRealtimeCharacterRoleplay,

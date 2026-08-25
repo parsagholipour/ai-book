@@ -1,7 +1,7 @@
 import { type MobileProjectCreateResponseDto, type MobileProjectRecord } from "../dto.js";
 import { hitTieredLimit, requireMobileAuth, sendMobileError, sendProjectNotFound } from "../httpErrors.js";
 import { buildMobileCreateProjectInput, createMobileProjectRecord } from "../projectRecords.js";
-import { serializeProjectDetail, serializeProjectSummary } from "../projectSerializers.js";
+import { serializeProjectDetail, serializeProjectSummary } from "../projectSummarySerializers.js";
 import { idParamsSchema, mobileAuthError, mobileProjectCreateBodySchema, mobileProjectCreateOpenApiBody } from "../schemas.js";
 import { prisma } from "@book-maker/db";
 import type { FastifyInstance } from "fastify";

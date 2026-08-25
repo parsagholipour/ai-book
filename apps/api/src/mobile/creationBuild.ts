@@ -40,7 +40,8 @@ import {
   presetsWithResolvedPageCount,
   resolveMobilePageCount
 } from "./projectRecords.js";
-import { inputSnapshotFromProject, planOperation, serializeProjectDetail } from "./projectSerializers.js";
+import { planOperation } from "./projectStatusSerializers.js";
+import { inputSnapshotFromProject, serializeProjectDetail } from "./projectSummarySerializers.js";
 import {
   mobilePageCountRecommendationAiSchema
 } from "./schemas.js";

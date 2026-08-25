@@ -670,7 +670,7 @@ export async function queueChatContinueBook(options: {
  * filtered out along with the repairs. The exclusion is therefore made in
  * JavaScript, over the rows themselves, through the same
  * `isDetachedFromProjectLifecycle` predicate every other reader of these rows
- * uses — `queue.ts`, `projectSerializers.ts`, `generationProgress.ts`,
+ * uses — `queue.ts`, `projectStatusSerializers.ts`, `generationProgress.ts`,
  * `generationRecovery.ts`.
  *
  * **One query, because the answer is about one moment.** This used to count the
