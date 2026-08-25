@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   GenerationModelRoutingSection,
   generationModelRoutingClaim,
+  readGenerationModelOptions,
   rebaseGenerationModelRouting
 } from "./GenerationModelRouting.js";
 import type { GenerationTextModelOption, GenerationTextModelRouting } from "@book-maker/core/generationTextModelRouting";
@@ -36,8 +37,16 @@ describe("GenerationModelRoutingSection", () => {
     expect(markup).toContain('aria-label="Fast judgments Effort"');
     expect(markup).not.toContain('aria-label="Premium Writer Effort"');
     expect(markup).not.toContain("Saved provider credentials are unavailable.");
+    expect(markup).toContain("Input $0.66–$1.32 · output $1.98–$3.96 / 1M tokens");
     expect(markup.match(/<select/g)).toHaveLength(14);
     expect(markup.match(/disabled=""/g)?.length).toBeGreaterThanOrEqual(14);
+  });
+
+  it("accepts valid rate-card costs and rejects malformed costs from the API", () => {
+    expect(readGenerationModelOptions(catalog())).not.toBeNull();
+    expect(readGenerationModelOptions([
+      { provider: "gemini", model: "gemini-pro", label: "Gemini Pro", costs: [{ inputPerMillion: -1, outputPerMillion: 2 }] }
+    ])).toBeNull();
   });
 
   it("keeps an unavailable saved choice visible as a disabled warning", () => {
@@ -121,6 +130,10 @@ function catalog(): GenerationTextModelOption[] {
       provider: "deepseek",
       model: "deepseek-pro",
       label: "DeepSeek Pro",
+      costs: [
+        { inputPerMillion: 0.66, outputPerMillion: 1.98, label: "Off-peak" },
+        { inputPerMillion: 1.32, outputPerMillion: 3.96, label: "Peak" }
+      ],
       thinkingEfforts: [
         { value: "none", label: "Off", default: true },
         { value: "high", label: "High" }
@@ -130,6 +143,7 @@ function catalog(): GenerationTextModelOption[] {
       provider: "deepseek",
       model: "deepseek-fast",
       label: "DeepSeek Fast",
+      costs: [{ inputPerMillion: 0.22, outputPerMillion: 0.66 }],
       thinkingEfforts: [
         { value: "none", label: "Off", default: true },
         { value: "high", label: "High" }

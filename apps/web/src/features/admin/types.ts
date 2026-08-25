@@ -123,6 +123,45 @@ export type AdminOperationEconomics = {
   unbilled: UnbilledSpend[];
 };
 
+export type AdminGeneratedBookSummary = {
+  id: string;
+  title: string;
+  ownerEmail: string;
+  pageCount: number;
+  imageCount: number;
+  completedAt: string;
+  grossCredits: number;
+  refundedCredits: number;
+  netCredits: number;
+  revenueUsd: number;
+  providerCostUsd: number;
+  marginUsd: number;
+  marginPercent: number | null;
+};
+
+export type AdminGeneratedBookList = {
+  books: AdminGeneratedBookSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type AdminGeneratedBookDetail = {
+  bookId: string;
+  chargeCount: number;
+  refundCount: number;
+  grossCredits: number;
+  refundedCredits: number;
+  netCredits: number;
+  revenueUsd: number;
+  providerCostUsd: number;
+  marginUsd: number;
+  marginPercent: number | null;
+  totals: CostUsage;
+  byKind: Array<CostUsage & { kind: CostKind }>;
+  purposes: OperationCost[];
+};
+
 export type AdminUserRow = {
   id: string;
   email: string;

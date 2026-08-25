@@ -147,6 +147,9 @@ describe("text model provider selection", () => {
       ]
     });
     expect(options).toContainEqual(
+      expect.objectContaining({ provider: "alibaba", model: "qwen3.7-plus", thinking: true })
+    );
+    expect(options).toContainEqual(
       expect.objectContaining({ provider: "alibaba", model: "qwen3.5-plus", thinking: true })
     );
     expect(options).toContainEqual(
@@ -164,6 +167,10 @@ describe("text model provider selection", () => {
       { value: "high", label: "High" },
       { value: "xhigh", label: "Extra high" },
       { value: "max", label: "Max" }
+    ]);
+    expect(generationTextModelOptions(testConfig({})).find((option) => option.model === "gpt-5.6-luna")?.costs).toEqual([
+      expect.objectContaining({ inputPerMillion: 0.2, outputPerMillion: 1.2 }),
+      expect.objectContaining({ inputPerMillion: 0.4, outputPerMillion: 1.8 })
     ]);
     const geminiFlashThinkingEfforts = [
       { value: "minimal", label: "Minimal" },

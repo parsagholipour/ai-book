@@ -1,4 +1,5 @@
 import type { AppConfig } from "../config.js";
+import type { TextGenerationCostRate } from "../costs.js";
 import type {
   ModelTier,
   TextModelSelection,
@@ -27,6 +28,7 @@ export type GenerationTextModelRouting = {
 
 export type GenerationTextModelOption = TextModelSelection & {
   label: string;
+  costs?: TextGenerationCostRate[] | undefined;
   preview?: boolean | undefined;
   thinking?: boolean | undefined;
   thinkingEfforts?: Array<{

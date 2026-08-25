@@ -51,7 +51,8 @@ export function GenerationModelRoutingSection({
       <p className="muted">
         These provider/model choices control all writer, judgment, and inline decision calls, including calls for
         existing projects. Each successful save affects calls started afterward; in-flight retries keep the model
-        they started with, and a provider failure is reported instead of silently switching to another model.
+        they started with, and a provider failure is reported instead of silently switching to another model. Costs
+        are provider USD per 1M tokens; ranges cover long-context or peak/off-peak rate bands.
       </p>
       <div className="quality-model-fast">
         <ModelSelectionField
@@ -138,11 +139,16 @@ export function ModelSelectionField({
               value={generationTextModelOptionKey(choice)}
               disabled={unavailable && choice === choices[0]}
             >
-              {choice.label}
+              {choice.label}{modelCostSuffix(choice.costs)}
             </option>
           ))}
         </select>
       </label>
+      {option?.costs !== undefined ? (
+        <span className={`quality-model-cost${option.costs.length === 0 ? " is-unpriced" : ""}`}>
+          {option.costs.length > 0 ? modelCostSummary(option.costs) : "Rate-card pricing unavailable"}
+        </span>
+      ) : null}
       {unavailable ? (
         <span className="quality-model-warning" role="status">
           <AlertTriangle size={14} aria-hidden /> Saved provider credentials are unavailable.
@@ -236,13 +242,29 @@ export function readGenerationModelOptions(value: unknown): GenerationTextModelO
     const candidate = record(entry);
     if (!selection || !candidate || typeof candidate.label !== "string") return null;
     const efforts = candidate.thinkingEfforts;
+    const costs = candidate.costs;
     if (
       efforts !== undefined &&
       (!Array.isArray(efforts) || efforts.some((effort) => !validEffortEntry(effort)))
     ) return null;
+    if (costs !== undefined && (!Array.isArray(costs) || costs.some((cost) => !validCostEntry(cost)))) return null;
     options.push({
       ...selection,
       label: candidate.label,
+      ...(Array.isArray(costs)
+        ? {
+            costs: costs.map((cost) => {
+              const rate = cost as Record<string, number | string | undefined>;
+              return {
+                inputPerMillion: rate.inputPerMillion as number,
+                outputPerMillion: rate.outputPerMillion as number,
+                ...(typeof rate.cacheHitPerMillion === "number" ? { cacheHitPerMillion: rate.cacheHitPerMillion } : {}),
+                ...(typeof rate.cacheWritePerMillion === "number" ? { cacheWritePerMillion: rate.cacheWritePerMillion } : {}),
+                ...(typeof rate.label === "string" ? { label: rate.label } : {})
+              };
+            })
+          }
+        : {}),
       ...(candidate.preview === true ? { preview: true } : {}),
       ...(candidate.thinking === true ? { thinking: true } : {}),
       ...(Array.isArray(efforts)
@@ -274,6 +296,26 @@ function readTextModelSelection(value: unknown): TextModelSelection | null {
 function validEffortEntry(value: unknown): value is { value: string; label: string; default?: unknown } {
   const candidate = record(value);
   return Boolean(candidate && typeof candidate.value === "string" && typeof candidate.label === "string");
+}
+
+function validCostEntry(value: unknown): boolean {
+  const candidate = record(value);
+  return Boolean(
+    candidate &&
+    nonNegativeFinite(candidate.inputPerMillion) &&
+    nonNegativeFinite(candidate.outputPerMillion) &&
+    optionalNonNegativeFinite(candidate.cacheHitPerMillion) &&
+    optionalNonNegativeFinite(candidate.cacheWritePerMillion) &&
+    (candidate.label === undefined || typeof candidate.label === "string")
+  );
+}
+
+function nonNegativeFinite(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function optionalNonNegativeFinite(value: unknown): boolean {
+  return value === undefined || nonNegativeFinite(value);
 }
 
 function cloneTier(tier: GenerationTextModelRouting[ModelTier]) {
@@ -323,6 +365,34 @@ function optionForSelection(options: GenerationTextModelOption[], selection: Tex
 
 function defaultEffort(option: GenerationTextModelOption): TextModelThinkingEffort {
   return option.thinkingEfforts?.find((effort) => effort.default)?.value ?? option.thinkingEfforts?.[0]?.value ?? "none";
+}
+
+function modelCostSuffix(costs: GenerationTextModelOption["costs"]): string {
+  return costs && costs.length > 0 ? ` — ${modelCostSummary(costs)}` : "";
+}
+
+function modelCostSummary(costs: NonNullable<GenerationTextModelOption["costs"]>): string {
+  const inputs = costs.map((cost) => cost.inputPerMillion);
+  const outputs = costs.map((cost) => cost.outputPerMillion);
+  if (inputs.every((cost) => cost === 0) && outputs.every((cost) => cost === 0)) {
+    return "No marginal API cost";
+  }
+  return `Input ${costRange(inputs)} · output ${costRange(outputs)} / 1M tokens`;
+}
+
+function costRange(costs: number[]): string {
+  const min = Math.min(...costs);
+  const max = Math.max(...costs);
+  return min === max ? formatUsd(min) : `${formatUsd(min)}–${formatUsd(max)}`;
+}
+
+function formatUsd(value: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 3
+  }).format(value);
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {

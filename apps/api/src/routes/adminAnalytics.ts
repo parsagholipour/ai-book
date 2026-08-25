@@ -12,11 +12,17 @@ import { type FastifyPluginAsync, type FastifyReply } from "fastify";
 import { z } from "zod";
 import { markOperatorRequest } from "../requestAuth.js";
 import { loadAdminCostBreakdown } from "../admin/costBreakdown.js";
+import { listGeneratedBooks, loadGeneratedBookDetail } from "../admin/generatedBooks.js";
 import { loadAdminProjectDetail, loadAdminUserDetail, listAdminUsers } from "../admin/inspection.js";
 import { loadAdminOverview, resolveWindow } from "../admin/metrics.js";
 import { loadOperationEconomics } from "../admin/operationEconomics.js";
 
 const windowQuerySchema = z.object({ days: z.coerce.number().int().min(1).max(365).default(30) });
+
+const generatedBookListQuerySchema = windowQuerySchema.extend({
+  limit: z.coerce.number().int().min(1).max(100).default(25),
+  offset: z.coerce.number().int().min(0).default(0)
+});
 
 const userListQuerySchema = z.object({
   query: z.string().trim().max(200).optional(),
@@ -30,6 +36,15 @@ const idParamsSchema = z.object({ id: z.string().min(1) });
 const windowQueryOpenApi = {
   type: "object",
   properties: { days: { type: "integer", minimum: 1, maximum: 365, default: 30 } }
+} as const;
+
+const generatedBookListQueryOpenApi = {
+  type: "object",
+  properties: {
+    days: { type: "integer", minimum: 1, maximum: 365, default: 30 },
+    limit: { type: "integer", minimum: 1, maximum: 100, default: 25 },
+    offset: { type: "integer", minimum: 0, default: 0 }
+  }
 } as const;
 
 const userListQueryOpenApi = {
@@ -81,6 +96,33 @@ export const adminAnalyticsRoutes: FastifyPluginAsync = async (fastify) => {
       return loadOperationEconomics(resolveWindow(parsed.data.days));
     }
   );
+
+  fastify.get(
+    "/api/admin/operations/books",
+    { attachValidation: true, schema: { tags: ["admin"], querystring: generatedBookListQueryOpenApi } },
+    async (request, reply) => {
+      await markOperatorRequest(request);
+      const parsed = generatedBookListQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        return sendInvalid(reply, parsed.error);
+      }
+      return listGeneratedBooks({
+        window: resolveWindow(parsed.data.days),
+        limit: parsed.data.limit,
+        offset: parsed.data.offset
+      });
+    }
+  );
+
+  fastify.get("/api/admin/operations/books/:id", { schema: { tags: ["admin"] } }, async (request, reply) => {
+    await markOperatorRequest(request);
+    const { id } = idParamsSchema.parse(request.params);
+    const detail = await loadGeneratedBookDetail(id);
+    if (!detail) {
+      return reply.code(404).send({ error: "Completed book not found" });
+    }
+    return detail;
+  });
 
   fastify.get(
     "/api/admin/users",

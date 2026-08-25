@@ -10,6 +10,7 @@ import { browserPoolStatus, closeSharedBrowser, loadConfig } from "@book-maker/c
 import { loadCreditPricing, prisma } from "@book-maker/db";
 import { sweepExpiredCreationAttachments } from "./attachmentStorage.js";
 import { registerAuth } from "./auth.js";
+import { CORS_OPTIONS } from "./cors.js";
 import { createGooglePlayVerifierFromConfig } from "./googlePlayBilling.js";
 import { runSubscriptionRenewalSweep } from "./subscriptionRenewal.js";
 import { createMailerFromConfig } from "./mailer.js";
@@ -144,7 +145,7 @@ await reconcileQueue();
 const queueReconcileTimer = setInterval(() => void reconcileQueue(), 5_000);
 queueReconcileTimer.unref();
 
-await app.register(cors, { origin: true, credentials: true });
+await app.register(cors, CORS_OPTIONS);
 await registerAuth(app, config);
 await app.register(swagger, {
   openapi: {

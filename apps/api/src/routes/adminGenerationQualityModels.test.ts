@@ -53,7 +53,12 @@ describe("admin generation model routing", () => {
 
     const catalogResponse = await app.inject({ method: "GET", url: "/api/admin/generation-quality" });
     const catalog = (catalogResponse.json() as {
-      modelOptions: Array<{ provider: string; model: string; thinkingEfforts?: Array<{ value: string }> }>;
+      modelOptions: Array<{
+        provider: string;
+        model: string;
+        thinkingEfforts?: Array<{ value: string }>;
+        costs?: Array<{ inputPerMillion: number; outputPerMillion: number }>;
+      }>;
     }).modelOptions;
     expect(catalog.filter((option) => option.provider === "openai").map((option) => option.model)).toEqual([
       "gpt-5.6-sol",
@@ -62,6 +67,10 @@ describe("admin generation model routing", () => {
     ]);
     expect(catalog.find((option) => option.model === "gpt-5.6-sol")?.thinkingEfforts?.map((effort) => effort.value))
       .toEqual(["none", "low", "medium", "high", "xhigh", "max"]);
+    expect(catalog.find((option) => option.model === "gpt-5.6-luna")?.costs).toEqual([
+      expect.objectContaining({ inputPerMillion: 0.2, outputPerMillion: 1.2 }),
+      expect.objectContaining({ inputPerMillion: 0.4, outputPerMillion: 1.8 })
+    ]);
 
     const save = await app.inject({
       method: "PATCH",

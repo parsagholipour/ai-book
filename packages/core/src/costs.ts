@@ -35,6 +35,11 @@ type TextRate = {
   cacheWritePerMillion?: number;
 };
 
+/** Token prices shown by operator routing controls, in the same units used by settlement. */
+export type TextGenerationCostRate = TextRate & {
+  label?: string;
+};
+
 type TieredTextRate = {
   thresholdPromptTokens: number;
   belowOrEqual: TextRate;
@@ -177,6 +182,34 @@ const ALIBABA_TEXT_RATES = new Map<string, TextRate | TieredTextRate>([
       inputPerMillion: 2,
       outputPerMillion: 6,
       cacheHitPerMillion: 0.25
+    }
+  ],
+  [
+    "qwen3.7-plus",
+    {
+      thresholdPromptTokens: 256_000,
+      belowOrEqual: {
+        inputPerMillion: 0.4,
+        outputPerMillion: 1.6
+      },
+      above: {
+        inputPerMillion: 1.2,
+        outputPerMillion: 4.8
+      }
+    }
+  ],
+  [
+    "qwen3.7-plus-2026-05-26",
+    {
+      thresholdPromptTokens: 256_000,
+      belowOrEqual: {
+        inputPerMillion: 0.4,
+        outputPerMillion: 1.6
+      },
+      above: {
+        inputPerMillion: 1.2,
+        outputPerMillion: 4.8
+      }
     }
   ],
   [
@@ -462,6 +495,34 @@ export function calculateTextGenerationCost(log: ProviderCostLog): number | null
   return roundCost(cost);
 }
 
+/**
+ * Returns every rate band that can apply to a model. Keeping this projection in
+ * the accounting module prevents the routing UI from growing a second rate card.
+ */
+export function textGenerationCostRates(input: {
+  provider?: string | null;
+  model?: string | null;
+}): TextGenerationCostRate[] {
+  const rateCard = resolveTextRateCard(normalizeProvider(input.provider), normalizeModel(input.model));
+  if (!rateCard) {
+    return [];
+  }
+  if ("offPeak" in rateCard) {
+    return [
+      { ...rateCard.offPeak, label: "Off-peak" },
+      { ...rateCard.peak, label: "Peak" }
+    ];
+  }
+  if ("thresholdPromptTokens" in rateCard) {
+    const threshold = compactTokenCount(rateCard.thresholdPromptTokens);
+    return [
+      { ...rateCard.belowOrEqual, label: `Up to ${threshold} prompt tokens` },
+      { ...rateCard.above, label: `Over ${threshold} prompt tokens` }
+    ];
+  }
+  return [{ ...rateCard }];
+}
+
 export function calculateImageGenerationCost(input: {
   provider?: string | null;
   model?: string | null;
@@ -588,13 +649,27 @@ function resolveTextRate(
   promptTokens: number | null,
   billedAt: Date
 ): TextRate | null {
+  const rateCard = resolveTextRateCard(provider, model);
+  if (!rateCard) {
+    return null;
+  }
+  if ("offPeak" in rateCard) {
+    return pickPeakOffPeak(rateCard, billedAt);
+  }
+  return resolveRateForPromptTokens(rateCard, promptTokens);
+}
+
+function resolveTextRateCard(
+  provider: string | null,
+  model: string | null
+): TextRate | TieredTextRate | PeakOffPeakRate | null {
   if (!provider || !model) {
     return null;
   }
 
   if (provider === "deepseek") {
     if (model === "deepseek-v4-pro" || model.startsWith("deepseek-v4-pro-")) {
-      return pickPeakOffPeak(DEEPSEEK_V4_PRO_RATES, billedAt);
+      return DEEPSEEK_V4_PRO_RATES;
     }
     if (
       model === "deepseek-v4-flash" ||
@@ -602,7 +677,7 @@ function resolveTextRate(
       model === "deepseek-chat" ||
       model === "deepseek-reasoner"
     ) {
-      return pickPeakOffPeak(DEEPSEEK_V4_FLASH_RATES, billedAt);
+      return DEEPSEEK_V4_FLASH_RATES;
     }
     return null;
   }
@@ -621,11 +696,11 @@ function resolveTextRate(
   }
 
   if (provider === "alibaba" || provider === "qwen") {
-    return resolveRateForPromptTokens(ALIBABA_TEXT_RATES.get(model), promptTokens);
+    return ALIBABA_TEXT_RATES.get(model) ?? null;
   }
 
   if (provider === "openai") {
-    return resolveRateForPromptTokens(OPENAI_TEXT_RATES.get(model), promptTokens);
+    return OPENAI_TEXT_RATES.get(model) ?? null;
   }
 
   if (provider === "openai-compatible" || provider === "local") {
@@ -637,7 +712,7 @@ function resolveTextRate(
     return null;
   }
 
-  return resolveRateForPromptTokens(GEMINI_TEXT_RATES.get(model), promptTokens);
+  return GEMINI_TEXT_RATES.get(model) ?? null;
 }
 
 function isDeepInfraV4ProModel(model: string): boolean {
@@ -698,6 +773,10 @@ function resolveRateForPromptTokens(
   }
 
   return rate;
+}
+
+function compactTokenCount(tokens: number): string {
+  return tokens % 1000 === 0 ? `${tokens / 1000}K` : String(tokens);
 }
 
 function isTextProviderLog(log: ProviderCostLog): boolean {

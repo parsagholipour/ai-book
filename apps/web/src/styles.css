@@ -2249,6 +2249,14 @@ figcaption {
   opacity: 0.6;
 }
 
+.generated-books {
+  transition: opacity 120ms ease;
+}
+
+.generated-books.is-stale {
+  opacity: 0.6;
+}
+
 .admin-filter-row {
   display: flex;
   align-items: center;
@@ -2466,6 +2474,16 @@ figcaption {
   align-items: center;
   color: #65706b;
   font-size: 12px;
+}
+
+.quality-model-cost {
+  color: #52615a;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.quality-model-cost.is-unpriced {
+  color: #8a6650;
 }
 
 .quality-model-warning {
@@ -2844,6 +2862,14 @@ figcaption {
   font-size: 0.83rem;
 }
 
+.generated-book-list-error,
+.generated-book-detail-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 /* Cost breakdown: an operation row and the model rows it opens onto */
 
 .cost-expander {
@@ -2875,6 +2901,60 @@ figcaption {
 
 .cost-indent {
   padding-left: 21px;
+}
+
+.generated-book-detail-row > td {
+  padding: 16px 20px;
+}
+
+.generated-book-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.generated-book-economics {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.generated-book-kind-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.generated-book-kind-total {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid #e5e0d5;
+  border-radius: 8px;
+  background: #fffdf8;
+}
+
+.generated-book-warning {
+  margin-top: 0;
+}
+
+.generated-book-purpose-title {
+  align-items: baseline;
+  margin-top: 2px;
+}
+
+.generated-book-purpose-title h4 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.generated-book-cost-scroll {
+  margin-top: -6px;
+}
+
+@media (max-width: 620px) {
+  .generated-book-kind-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* A caveat that belongs to one operation, spanning the row it qualifies. Never

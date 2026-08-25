@@ -3,6 +3,8 @@ import { apiGet, apiPatch } from "../../api.js";
 import { readError } from "../shared/formatters.js";
 import type {
   AdminCostBreakdown,
+  AdminGeneratedBookDetail,
+  AdminGeneratedBookList,
   AdminOperationEconomics,
   AdminOverview,
   AdminProjectDetail,
@@ -58,6 +60,59 @@ export function useAdminCosts(days: number) {
 
 export function useAdminOperations(days: number) {
   return useResource<AdminOperationEconomics>(`/api/admin/operations?days=${days}`);
+}
+
+export function useAdminGeneratedBooks(options: { days: number; limit: number; offset: number }) {
+  const params = new URLSearchParams({
+    days: String(options.days),
+    limit: String(options.limit),
+    offset: String(options.offset)
+  });
+  return useResource<AdminGeneratedBookList>(`/api/admin/operations/books?${params.toString()}`);
+}
+
+/**
+ * Detail is keyed rather than stale-held: keeping book A's economics visible
+ * while book B loads would put the right dollars under the wrong title.
+ */
+export function useAdminGeneratedBookDetail(bookId: string | null) {
+  const [data, setData] = useState<AdminGeneratedBookDetail | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    setData(null);
+    setError(null);
+    if (!bookId) {
+      setLoading(false);
+      return;
+    }
+
+    let active = true;
+    setLoading(true);
+    void apiGet<AdminGeneratedBookDetail>(`/api/admin/operations/books/${encodeURIComponent(bookId)}`)
+      .then((detail) => {
+        if (active) {
+          setData(detail);
+        }
+      })
+      .catch((loadError: unknown) => {
+        if (active) {
+          setError(readError(loadError));
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [bookId, reloadKey]);
+
+  return { data, error, loading, reload: () => setReloadKey((key) => key + 1) };
 }
 
 export function useAdminUsers(options: { query: string; sort: AdminUserSort; limit: number; offset: number }) {

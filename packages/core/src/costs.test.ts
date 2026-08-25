@@ -3,7 +3,8 @@ import {
   calculateImageGenerationCost,
   calculateProjectCostSummary,
   estimateSpeechCostUsd,
-  calculateTextGenerationCost
+  calculateTextGenerationCost,
+  textGenerationCostRates
 } from "./costs.js";
 
 describe("provider cost calculation", () => {
@@ -41,6 +42,18 @@ describe("provider cost calculation", () => {
         billedAt: weekendDuringPeakHours
       })
     ).toBe(1.5862);
+  });
+
+  it("projects every applicable text rate band for model-routing comparisons", () => {
+    expect(textGenerationCostRates({ provider: "deepseek", model: "deepseek-v4-pro" })).toEqual([
+      { inputPerMillion: 0.66, outputPerMillion: 1.98, cacheHitPerMillion: 0.022, label: "Off-peak" },
+      { inputPerMillion: 1.32, outputPerMillion: 3.96, cacheHitPerMillion: 0.044, label: "Peak" }
+    ]);
+    expect(textGenerationCostRates({ provider: "openai", model: "gpt-5.6-luna" })).toEqual([
+      expect.objectContaining({ inputPerMillion: 0.2, outputPerMillion: 1.2, label: "Up to 272K prompt tokens" }),
+      expect.objectContaining({ inputPerMillion: 0.4, outputPerMillion: 1.8, label: "Over 272K prompt tokens" })
+    ]);
+    expect(textGenerationCostRates({ provider: "deepinfra", model: "unknown" })).toEqual([]);
   });
 
   it("treats DeepSeek peak windows as [01:00, 04:00) and [06:00, 10:00) UTC on weekdays", () => {
@@ -194,6 +207,12 @@ describe("provider cost calculation", () => {
       promptTokens: 100_000,
       outputTokens: 50_000
     });
+    const qwen37Cost = calculateTextGenerationCost({
+      provider: "alibaba",
+      model: "qwen3.7-plus",
+      promptTokens: 100_000,
+      outputTokens: 50_000
+    });
     const qwen35Cost = calculateTextGenerationCost({
       provider: "alibaba",
       model: "qwen3.5-plus",
@@ -209,6 +228,7 @@ describe("provider cost calculation", () => {
     });
 
     expect(plusCost).toBe(0.1);
+    expect(qwen37Cost).toBe(0.12);
     expect(qwen35Cost).toBe(0.21);
     expect(qwen38MaxCost).toBe(0.225);
   });

@@ -1,4 +1,5 @@
 import type { AppConfig } from "../config.js";
+import { textGenerationCostRates } from "../costs.js";
 import { alibabaImageModelOptions, alibabaTextModelOptions } from "./alibabaModels.js";
 import { deepInfraTextModelOptions, normalizeDeepInfraTextModel } from "./deepinfraModels.js";
 import { geminiImageModelOptions } from "./geminiModels.js";
@@ -175,6 +176,7 @@ export function generationTextModelOptions(config: AppConfig): GenerationTextMod
       provider: "deepinfra",
       model: config.DEEPINFRA_FAST_MODEL,
       label: `DeepInfra Fast (${config.DEEPINFRA_FAST_MODEL})`,
+      costs: textGenerationCostRates({ provider: "deepinfra", model: config.DEEPINFRA_FAST_MODEL }),
       thinking: true,
       thinkingEfforts: [
         { value: "none", label: "Off", default: true },
@@ -192,23 +194,27 @@ export function generationTextModelOptions(config: AppConfig): GenerationTextMod
 }
 
 function generationCatalogOption(option: TextModelOption): GenerationTextModelOption {
+  const priced = {
+    ...option,
+    costs: textGenerationCostRates(option)
+  } satisfies GenerationTextModelOption;
   // The Premium/Ultra writer budget was fixed before model routing became
   // editable. Keep it catalog-owned so switching away and back cannot lose it.
   if (option.provider === "gemini" && option.model === "gemini-2.5-pro") {
-    return { ...option, thinkingBudget: 2048 };
+    return { ...priced, thinkingBudget: 2048 };
   }
   // 0 disables thinking; keep it catalog-owned so switching away and back
   // cannot lose it. Compiled defaults spell this leaf with 0.
   if (option.provider === "gemini" && option.model === "gemini-2.5-flash-lite") {
-    return { ...option, thinkingBudget: 0 };
+    return { ...priced, thinkingBudget: 0 };
   }
   // A fixed "thinking on" flag distinguishes catalog variants sharing one
   // provider/model identity (Gemini Flash versus Flash No Thinking). Discrete
   // effort models express the same choice through their default effort.
   if (option.thinking && !option.thinkingEfforts?.length && option.thinkingBudget === undefined) {
-    return { ...option, thinkingEnabled: true };
+    return { ...priced, thinkingEnabled: true };
   }
-  return { ...option };
+  return priced;
 }
 
 export function textProviderConfigured(config: AppConfig, provider: TextModelSelection["provider"]): boolean {

@@ -1,6 +1,7 @@
 import { Fragment, useState } from "react";
 import { AlertTriangle, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 import { SegmentedControl } from "../shared/SegmentedControl.js";
+import { GeneratedBooksSection } from "./GeneratedBooksSection.js";
 import { compactCount, count, duration, percent, usd, usdFine } from "./format.js";
 import { useAdminOperations } from "./useAdminData.js";
 import type { AdminOperationEconomics, CostUsage, ModelCost, OperationEconomics, UnbilledSpend } from "./types.js";
@@ -55,12 +56,14 @@ export function OperationsScreen() {
       ) : (
         <OperationsBody data={operations.data} days={days} />
       )}
+      <GeneratedBooksSection key={days} days={days} />
+      {operations.data ? <UnbilledSection unbilled={operations.data.unbilled} /> : null}
     </div>
   );
 }
 
 function OperationsBody(props: { data: AdminOperationEconomics; days: number }) {
-  const { totals, operations, unbilled } = props.data;
+  const { totals, operations } = props.data;
   const windowLabel = `last ${props.days} days`;
 
   return (
@@ -111,7 +114,6 @@ function OperationsBody(props: { data: AdminOperationEconomics; days: number }) 
       </div>
 
       <OperationsTable operations={operations} windowLabel={windowLabel} />
-      <UnbilledSection unbilled={unbilled} />
     </>
   );
 }
