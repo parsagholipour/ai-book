@@ -62,8 +62,15 @@ export async function replayAppliedRestructure(
       tx.project.findUnique({ where: { id: projectId }, select: { currentPlanId: true } }),
       tx.bookEditOperation.findUnique({ where: { id: operationId }, select: { publicationRevision: true } })
     ]);
-    if (!project?.currentPlanId || operation?.publicationRevision == null) {
-      throw new Error("Applied structural edit lost its publication target");
+    if (!project?.currentPlanId) {
+      console.error(
+        `Cannot replay APPLIED page restructure ${operationId} for project ${projectId}: no plan version is available`
+      );
+      await restoreEditProjectStatus(tx, projectId, operationId, fallbackStatus).catch(() => undefined);
+      return null;
+    }
+    if (operation?.publicationRevision == null) {
+      throw new Error("Applied structural edit lost its publication revision");
     }
     await invalidateProjectExports(projectId);
     return { planVersionId: project.currentPlanId, publicationRevision: operation.publicationRevision };

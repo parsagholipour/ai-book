@@ -345,6 +345,7 @@ describe("applyImageInsertion", () => {
 
   it("restores the stamped status when an APPLIED redelivery has no plan to compile", async () => {
     mocks.getProjectOrThrow.mockResolvedValue({ ...baseProject, currentPlanId: null, status: "EDITING" });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     await applyImageInsertion(
       job({ planId: undefined, [PRE_EDIT_PROJECT_STATUS]: "REVIEW_REQUIRED" }),
@@ -356,6 +357,10 @@ describe("applyImageInsertion", () => {
     expect(mocks.restoreEditProjectStatus).toHaveBeenCalledWith(
       mocks.tx, "project-1", "op-1", "REVIEW_REQUIRED"
     );
+    expect(logged).toHaveBeenCalledWith(
+      "Cannot replay APPLIED image insertion op-1 for project project-1: no plan version is available"
+    );
+    logged.mockRestore();
   });
 
   it("replays the compile tail when the ACTIVE claim finds the operation APPLIED", async () => {

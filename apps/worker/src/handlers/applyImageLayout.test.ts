@@ -893,4 +893,26 @@ describe("applyImageLayout with no imageLayout on the payload", () => {
       withoutQualityVerdict: true
     });
   });
+
+  it("logs and restores the stamped status when an APPLIED replay has no plan to compile", async () => {
+    mocks.getProjectOrThrow.mockResolvedValue({ id: "project-1", currentPlanId: null });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(
+      applyImageLayout(
+        job({ planId: undefined, imageLayout: undefined, [PRE_EDIT_PROJECT_STATUS]: "REVIEW_REQUIRED" }),
+        { status: "APPLIED", classifier: {} }
+      )
+    ).resolves.toBeUndefined();
+
+    expect(mocks.invalidateProjectExports).not.toHaveBeenCalled();
+    expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
+    expect(mocks.restoreEditProjectStatus).toHaveBeenCalledWith(
+      mocks.tx, "project-1", "op-1", "REVIEW_REQUIRED", "APPLIED"
+    );
+    expect(logged).toHaveBeenCalledWith(
+      "Cannot replay APPLIED image layout op-1 for project project-1: no plan version is available"
+    );
+    logged.mockRestore();
+  });
 });

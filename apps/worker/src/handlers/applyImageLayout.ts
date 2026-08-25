@@ -402,6 +402,9 @@ async function replayAppliedLayout(
   const project = await getProjectOrThrow(projectId);
   const compilePlanId = planId ?? project.currentPlanId;
   if (!compilePlanId) {
+    console.error(
+      `Cannot replay APPLIED image layout ${operationId} for project ${projectId}: no plan version is available`
+    );
     await restoreLayoutStatus(projectId, operationId, fallbackStatus);
     return;
   }

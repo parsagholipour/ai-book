@@ -448,6 +448,9 @@ async function replayAppliedInsertion(
   const project = await getProjectOrThrow(projectId);
   const compilePlanId = planId ?? project.currentPlanId;
   if (!compilePlanId) {
+    console.error(
+      `Cannot replay APPLIED image insertion ${operationId} for project ${projectId}: no plan version is available`
+    );
     await restoreInsertionStatus(projectId, operationId, fallbackStatus);
     return;
   }

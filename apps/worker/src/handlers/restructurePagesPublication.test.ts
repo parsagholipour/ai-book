@@ -93,6 +93,36 @@ describe("APPLIED structural publication replay", () => {
     expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
   });
 
+  it("logs and restores the stamped status when an APPLIED replay has no current plan", async () => {
+    mocks.tx.project.findUnique.mockResolvedValue({ currentPlanId: null });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(
+      replayAppliedRestructure("project-1", "op-1", "owner-2", "REVIEW_REQUIRED")
+    ).resolves.toBeUndefined();
+
+    expect(mocks.invalidateProjectExports).not.toHaveBeenCalled();
+    expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
+    expect(mocks.restoreEditProjectStatus).toHaveBeenCalledWith(
+      mocks.tx, "project-1", "op-1", "REVIEW_REQUIRED"
+    );
+    expect(logged).toHaveBeenCalledWith(
+      "Cannot replay APPLIED page restructure op-1 for project project-1: no plan version is available"
+    );
+    logged.mockRestore();
+  });
+
+  it("still rejects a missing publication revision", async () => {
+    mocks.tx.bookEditOperation.findUnique.mockResolvedValue({ publicationRevision: null });
+
+    await expect(
+      replayAppliedRestructure("project-1", "op-1", "owner-2", "COMPLETE")
+    ).rejects.toThrow("Applied structural edit lost its publication revision");
+
+    expect(mocks.invalidateProjectExports).not.toHaveBeenCalled();
+    expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
+  });
+
   it("restores only through the stamped operation when no compile can be queued", async () => {
     mocks.maybeEnqueueCompile.mockRejectedValue(new Error("queue unavailable"));
     vi.spyOn(console, "error").mockImplementation(() => undefined);
