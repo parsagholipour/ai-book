@@ -9,6 +9,7 @@ import { applyChapterHeadingEdit } from "./chapterHeadingEdits.js";
 import { affectedPagesForIntent, continuationNewPageCount, exactReplacementFromMessage } from "./bookEditScope.js";
 import { exactReplacementPreviewCard, planExactReplacement } from "./exactReplacementPreview.js";
 import { type MobileBookEditOperationRecord, type MobileProjectChatMessageRecord, type MobileProjectChatMessageResponseDto } from "./dto.js";
+import { type ProposedChatEdit } from "./chatEditOptions.js";
 import {
   createOpenBookEditOperation,
   hasOpenProjectWork,
@@ -352,17 +353,11 @@ export async function handleProjectChatIntent(options: {
  * are reserved. The proposal is stored in message metadata so Apply (API or
  * chat confirmation) can execute it without re-routing.
  */
-export async function proposeBookEdit(options: {
-  project: ProjectForChat;
-  userMessageId: string;
-  message: string;
-  intent: BookEditIntent;
+export async function proposeBookEdit(options: ProposedChatEdit & {
   /** The originally requested change when `message` also carries a follow-up. */
   pendingRequest?: string | undefined;
   /** The one clarifying question was already asked; never ask a second. */
   clarifyExhausted?: boolean | undefined;
-  /** Mentioned character sheets; stored on the pending state, never the card. */
-  characterContext?: string | undefined;
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: null }> {
   const { project, userMessageId, message } = options;
   let intent = options.intent;

@@ -19,11 +19,11 @@ import {
 import { bookEditCreditCost } from "./bookEditPricing.js";
 import { type MobileBookEditOperationRecord, type MobileProjectChatMessageRecord } from "./dto.js";
 import { settledStatusBeforeEdit } from "./editProjectStatus.js";
+import { type ProposedChatEdit, type QueuedChatEdit } from "./chatEditOptions.js";
 import {
   chatPagesForProject,
   createAssistantChatMessage,
-  imageLimitChatMessage,
-  type ProjectForChat
+  imageLimitChatMessage
 } from "./projectChat.js";
 import { jsonInputValue } from "./support.js";
 import { imageMarkdownRe, PRE_EDIT_PROJECT_STATUS, resolveBookImageAsset } from "@book-maker/core";
@@ -132,13 +132,8 @@ async function projectAlreadyIllustrated(projectId: string): Promise<boolean> {
  * live illustration it swaps out — built-in or chat-added — or, with nothing
  * to swap, answers rather than proposing.
  */
-export async function proposeAddImageEdit(options: {
-  project: ProjectForChat;
-  userMessageId: string;
-  message: string;
-  intent: BookEditIntent;
+export async function proposeAddImageEdit(options: ProposedChatEdit & {
   proposalId: string;
-  characterContext?: string | undefined;
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: null }> {
   const { project, userMessageId, message, intent, proposalId } = options;
   const imageEdit = intent.imageEdit ?? { subject: "a scene from this book" };
@@ -224,17 +219,10 @@ export async function proposeAddImageEdit(options: {
   return { reply, operation: null };
 }
 
-export async function queueChatAddImage(options: {
-  userId: string;
-  project: ProjectForChat;
-  userMessageId: string;
-  message: string;
-  intent: BookEditIntent;
-  executionCommandId?: string | undefined;
-  /** What the proposal card showed; the recomputed cost may never exceed it. */
-  quotedCredits?: number | undefined;
-  characterContext?: string | undefined;
-}): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
+export async function queueChatAddImage(options: QueuedChatEdit): Promise<{
+  reply: MobileProjectChatMessageRecord;
+  operation: MobileBookEditOperationRecord | null;
+}> {
   const { userId, project, userMessageId, message, intent } = options;
   const imageEdit = intent.imageEdit ?? { subject: "a scene from this book" };
   // Re-resolved from the live book, never read off the card: an edit or an

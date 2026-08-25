@@ -19,6 +19,7 @@ import { planExactReplacement } from "./exactReplacementPreview.js";
 import { type MobileBookEditOperationRecord, type MobileProjectChatMessageRecord } from "./dto.js";
 import { settledStatusBeforeEdit } from "./editProjectStatus.js";
 import { createAssistantChatMessage, insufficientCreditsChatMessage, type ProjectForChat } from "./projectChat.js";
+import { type QueuedChatEdit } from "./chatEditOptions.js";
 import { fingerprintGenerationRequest, jsonInputValue } from "./support.js";
 import {
   bookPlanSchema,
@@ -345,21 +346,10 @@ export async function queueChatPlanRevision(options: {
   return { reply, operation: { ...updated, assistantMessageId: reply.id } };
 }
 
-export async function queueChatBookEdit(options: {
-  userId: string;
-  project: ProjectForChat;
-  userMessageId: string;
-  message: string;
-  intent: BookEditIntent;
-  executionCommandId?: string | undefined;
-  /**
-   * What the proposal card showed. The recomputed cost may never exceed it: a
-   * changed book re-proposes at the new price instead of silently charging
-   * more than the user confirmed.
-   */
-  quotedCredits?: number | undefined;
-  characterContext?: string | undefined;
-}): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
+export async function queueChatBookEdit(options: QueuedChatEdit): Promise<{
+  reply: MobileProjectChatMessageRecord;
+  operation: MobileBookEditOperationRecord | null;
+}> {
   const { userId, project, userMessageId, message, intent } = options;
   if (intent.kind === "book_replan") {
     return queueChatBookReplanCopy(options);
@@ -545,16 +535,10 @@ export async function queueChatBookEdit(options: {
  * voice and appended after the last page. Zero existing pages are affected —
  * the credited page count is the number of pages the continuation will add.
  */
-export async function queueChatContinueBook(options: {
-  userId: string;
-  project: ProjectForChat;
-  userMessageId: string;
-  message: string;
-  intent: BookEditIntent;
-  executionCommandId?: string | undefined;
-  quotedCredits?: number | undefined;
-  characterContext?: string | undefined;
-}): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
+export async function queueChatContinueBook(options: QueuedChatEdit): Promise<{
+  reply: MobileProjectChatMessageRecord;
+  operation: MobileBookEditOperationRecord | null;
+}> {
   const { userId, project, userMessageId, message, intent } = options;
   const chapterCount = Math.min(8, Math.max(1, intent.continuation?.chapterCount ?? 1));
   const newPageCount = continuationNewPageCount(intent, project);

@@ -23,6 +23,7 @@ import {
 import { bookEditCreditCost, operationKindForIntent } from "./bookEditPricing.js";
 import { type MobileBookEditOperationRecord, type MobileProjectChatMessageRecord } from "./dto.js";
 import { settledStatusBeforeEdit } from "./editProjectStatus.js";
+import { type ProposedChatEdit, type QueuedChatEdit } from "./chatEditOptions.js";
 import { chatPagesForProject, createAssistantChatMessage, type ProjectForChat } from "./projectChat.js";
 import { jsonInputValue } from "./support.js";
 import { PRE_EDIT_PROJECT_STATUS } from "@book-maker/core";
@@ -34,13 +35,8 @@ import { PRE_EDIT_PROJECT_STATUS } from "@book-maker/core";
  * remove. Nothing is generated or charged; the card is the confirm, and for a
  * bulk remove the *count* on that card is the confirmation that matters.
  */
-export async function proposeImageLayoutEdit(options: {
-  project: ProjectForChat;
-  userMessageId: string;
-  message: string;
-  intent: BookEditIntent;
+export async function proposeImageLayoutEdit(options: ProposedChatEdit & {
   proposalId: string;
-  characterContext?: string | undefined;
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: null }> {
   const { project, userMessageId, message, intent, proposalId } = options;
   const action = intent.kind === "move_image" ? ("move" as const) : ("remove" as const);
@@ -133,15 +129,10 @@ export async function proposeImageLayoutEdit(options: {
   return { reply, operation: null };
 }
 
-export async function queueChatImageLayout(options: {
-  userId: string;
-  project: ProjectForChat;
-  userMessageId: string;
-  message: string;
-  intent: BookEditIntent;
-  executionCommandId?: string | undefined;
-  characterContext?: string | undefined;
-}): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
+export async function queueChatImageLayout(options: QueuedChatEdit): Promise<{
+  reply: MobileProjectChatMessageRecord;
+  operation: MobileBookEditOperationRecord | null;
+}> {
   const { userId, project, userMessageId, message, intent } = options;
   const action = intent.kind === "move_image" ? ("move" as const) : ("remove" as const);
   const layout = intent.imageLayout ?? { action };

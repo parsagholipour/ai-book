@@ -5,6 +5,7 @@ import { busyEditReply, operationQueuedMessage, proposeBookEdit } from "./bookEd
 import { bookEditCreditCost } from "./bookEditPricing.js";
 import { type MobileBookEditOperationRecord, type MobileProjectChatMessageRecord } from "./dto.js";
 import { settledStatusBeforeEdit } from "./editProjectStatus.js";
+import { type QueuedChatEdit } from "./chatEditOptions.js";
 import { createOpenBookEditOperation, replayClaimedChatOperation } from "./editOperationClaims.js";
 import { queueAttemptChatOperation } from "./editOperations.js";
 import { createAssistantChatMessage, type ProjectForChat } from "./projectChat.js";
@@ -22,16 +23,10 @@ import { PRE_EDIT_PROJECT_STATUS, resolveStructuralPageEdit } from "@book-maker/
  * set and is settled as "I couldn't find the pages that edit targeted any more"
  * — for pages it was about to create.
  */
-export async function queueChatRestructurePages(options: {
-  userId: string;
-  project: ProjectForChat;
-  userMessageId: string;
-  message: string;
-  intent: BookEditIntent;
-  executionCommandId?: string | undefined;
-  quotedCredits?: number | undefined;
-  characterContext?: string | undefined;
-}): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
+export async function queueChatRestructurePages(options: QueuedChatEdit): Promise<{
+  reply: MobileProjectChatMessageRecord;
+  operation: MobileBookEditOperationRecord | null;
+}> {
   const { userId, project, userMessageId, message, intent } = options;
   // **The stored edit is the confirmation, so an Apply without one has nothing
   // to execute.** `structuralEditFromMetadata` drops a stored edit it cannot

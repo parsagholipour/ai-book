@@ -1,11 +1,10 @@
-import { type BookEditIntent } from "../bookEditIntent.js";
 import { requestWithCharacterContext } from "./bookEditCopy.js";
 import { busyEditReply, proposeBookEdit } from "./bookEditIntents.js";
 import { bookEditCreditCost } from "./bookEditPricing.js";
 import { type MobileBookEditOperationRecord, type MobileProjectChatMessageRecord, type MobileProjectRecord } from "./dto.js";
 import { createOpenBookEditOperation, replayClaimedChatOperation } from "./editOperationClaims.js";
 import { queueAttemptChatOperation } from "./editOperations.js";
-import { type ProjectForChat } from "./projectChat.js";
+import { type QueuedChatEdit } from "./chatEditOptions.js";
 import { attachReplanCopyToCreationSession, createReplanProjectCopy } from "./projectRecords.js";
 import { cleanTargetLanguage, jsonInputValue, languageDisplayName } from "./support.js";
 import { enqueueGenerationJob } from "../queue.js";
@@ -20,17 +19,10 @@ import { enqueueGenerationJob } from "../queue.js";
  * every other queue function in that file edits the project it was given.
  */
 
-export async function queueChatBookReplanCopy(options: {
-  userId: string;
-  project: ProjectForChat;
-  userMessageId: string;
-  message: string;
-  intent: BookEditIntent;
-  executionCommandId?: string | undefined;
-  /** What the proposal card showed; the recomputed cost may never exceed it. */
-  quotedCredits?: number | undefined;
-  characterContext?: string | undefined;
-}): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
+export async function queueChatBookReplanCopy(options: QueuedChatEdit): Promise<{
+  reply: MobileProjectChatMessageRecord;
+  operation: MobileBookEditOperationRecord | null;
+}> {
   const { userId, project, userMessageId, message, intent } = options;
   // Same settings the proposal was quoted from, or the user approves one price
   // and is charged another.
