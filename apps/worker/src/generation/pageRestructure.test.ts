@@ -323,11 +323,12 @@ describe("applying a structural page change", () => {
     expect(mocks.order.at(-1)).toBe("bookEditOperation.update");
   });
 
-  it("claims the operation row before it reads the stamp, and before anything it fences", async () => {
-    await apply(plan({ action: "insert", insertAfterIndex: 4, newPageIndexes: [5, 6], totalPages: 6 }));
-
-    expect(mocks.order[0]).toBe("bookEditOperation.updateMany");
-    expect(mocks.order[1]).toBe("bookEditOperation.findUnique");
+  it("locks Project before the operation lease and every structural write", async () => {
+    const { tx } = await apply(plan({ action: "insert", insertAfterIndex: 4, newPageIndexes: [5, 6], totalPages: 6 }));
+    expect(mocks.order[0]).toBe("project.update");
+    expect(mocks.order[1]).toBe("bookEditOperation.updateMany");
+    expect(mocks.order[2]).toBe("bookEditOperation.findUnique");
+    expect(tx.project.update).toHaveBeenNthCalledWith(1, { where: { id: "project-1" }, data: { contentRevision: { increment: 0 } } });
     expect(mocks.order.indexOf("bookEditOperation.findUnique")).toBeLessThan(
       mocks.order.indexOf("shiftPageIndexes")
     );
@@ -364,7 +365,7 @@ describe("applying a structural page change", () => {
     expect(mocks.repointPageEmbeddings).not.toHaveBeenCalled();
     expect(tx.page.createMany).not.toHaveBeenCalled();
     expect(tx.planVersion.create).not.toHaveBeenCalled();
-    expect(tx.project.update).not.toHaveBeenCalled();
+    expect(tx.project.update).toHaveBeenCalledTimes(1);
     expect(tx.bookEditOperation.update).not.toHaveBeenCalled();
     expect(appliedBy(result).insertedPageIds).toEqual(["new-1", "new-2"]);
     expect(warn).toHaveBeenCalledWith(
@@ -582,7 +583,7 @@ describe("holding the plan to the book the claim actually finds", () => {
     expect(mocks.deletePageEmbeddings).not.toHaveBeenCalled();
     expect(tx.page.deleteMany).not.toHaveBeenCalled();
     expect(tx.planVersion.create).not.toHaveBeenCalled();
-    expect(tx.project.update).not.toHaveBeenCalled();
+    expect(tx.project.update).toHaveBeenCalledTimes(1);
     expect(tx.bookEditOperation.update).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith(
       expect.any(String),

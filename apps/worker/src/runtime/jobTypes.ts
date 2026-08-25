@@ -42,6 +42,22 @@ export function isUnownedStructuralDeliveryError(error: unknown): boolean {
 }
 
 /**
+ * A text-edit redelivery waited for a live lease without ever owning it. The
+ * shared durable job still belongs to the delivery doing the rewrite, so this
+ * invocation may neither complete nor fail it.
+ */
+export class UnownedTextEditDeliveryError extends Error {
+  constructor() {
+    super("Text edit wait gave up without owning the delivery");
+    this.name = "UnownedTextEditDeliveryError";
+  }
+}
+
+export function isUnownedTextEditDeliveryError(error: unknown): boolean {
+  return error instanceof UnownedTextEditDeliveryError;
+}
+
+/**
  * Drafting failed and the revert did not put the book back, so the shifted
  * manuscript is still there with its stamp. `processJob` must not `markFailed`:
  * that would refund the ACTIVE operation, clear its lease and restore COMPLETE

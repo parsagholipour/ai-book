@@ -215,11 +215,15 @@ code in that area, however obvious the rule looks.
 - **An edit the reader has already undone is terminal for every delivery of it.** → apps/worker/src/handlers/CLAUDE.md
 - **A settlement merges onto the classifier it re-reads under its own row lock, never the copy the delivery carried in.** → apps/worker/src/handlers/CLAUDE.md
 - **A delivered edit outlives a recompile it could not queue.** → apps/worker/src/handlers/CLAUDE.md
-- **The status a fork restores rides the payload, because the enqueue is what takes it away.** → apps/worker/src/handlers/CLAUDE.md
+- **The status every apply fork restores rides the payload, because the enqueue is what takes it away.** → apps/worker/src/handlers/CLAUDE.md
+- **A stopped continuation restores only while its durable job is still QUEUED.** → apps/api/src/mobile/CLAUDE.md
 - **An edit that settles itself as a delivered no-op has to refund itself too.** → apps/worker/src/handlers/CLAUDE.md
 - **A delivered no-op is APPLIED too, and the redelivery tail is not idempotent for it.** → apps/worker/src/handlers/CLAUDE.md
+- **An exact text edit that skips every target has no publication tail.** → apps/worker/src/handlers/CLAUDE.md
 - **An insert that delivers fewer pages than it billed refunds the difference, and the count that drives both is the one drafting actually wrote.** → apps/worker/src/handlers/CLAUDE.md + packages/db/CLAUDE.md
 - **Only the post-APPLIED window is that handler's to flip.** → apps/worker/src/handlers/CLAUDE.md
+- **EDITING is a shared state; an edit publication owns it by operation and revision, never by status alone.** → apps/worker/src/handlers/CLAUDE.md
+- **Project is the root of the edit lock order.** → apps/worker/src/handlers/CLAUDE.md
 - **Every apply fork stays EDITING until its recompile publishes, and the page map is why.** → apps/worker/src/handlers/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
 - **A page's long-range memory stops at the page being drafted, because a retry redrafts into a finished book.** → apps/worker/src/generation/CLAUDE.md
 - **A repair the provider refuses is written down, or it is paid for again on every page.** → apps/worker/src/generation/CLAUDE.md

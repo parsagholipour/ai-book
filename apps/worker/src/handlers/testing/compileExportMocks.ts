@@ -26,6 +26,9 @@ export const mocks = {
   prisma: {
     $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(mocks.prisma)),
     planVersion: { findUnique: vi.fn() },
+    // Legacy unstamped EDITING compiles have no applied edit owner to recover.
+    // Suites that exercise operation-owned publication stage a matching row.
+    bookEditOperation: { findFirst: vi.fn(async (): Promise<{ id: string } | null> => null) },
     // `updateMany` is the revision CAS taken inside a repaired page's
     // publication transaction. A successful claim is the ordinary default;
     // interleaving suites stage `{ count: 0 }` for a paid edit that committed

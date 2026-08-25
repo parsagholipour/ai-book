@@ -18,7 +18,9 @@ const mocks = vi.hoisted(() => ({
   },
   getProjectOrThrow: vi.fn(),
   invalidateProjectExports: vi.fn(),
-  maybeEnqueueCompile: vi.fn()
+  maybeEnqueueCompile: vi.fn(),
+  claimAppliedEditPublication: vi.fn(async () => true),
+  restoreEditProjectStatus: vi.fn(async () => true)
 }));
 
 vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma, Prisma: {} }));
@@ -28,8 +30,13 @@ vi.mock("../generation/bookHelpers.js", () => ({
   getProjectOrThrow: mocks.getProjectOrThrow,
   invalidateProjectExports: mocks.invalidateProjectExports
 }));
+vi.mock("../generation/editProjectStatus.js", () => ({
+  claimAppliedEditPublication: mocks.claimAppliedEditPublication,
+  restoreEditProjectStatus: mocks.restoreEditProjectStatus
+}));
 
 import { applyImageLayout } from "./applyImageLayout.js";
+import { PRE_EDIT_PROJECT_STATUS } from "@book-maker/core";
 
 const sourcePage = {
   id: "page-1",
@@ -98,12 +105,14 @@ beforeEach(() => {
   mocks.tx.page.findMany.mockImplementation(async ({ where }: { where: { id: { in: string[] } } }) =>
     where.id.in.map((id) => txPages.get(id)).filter(Boolean)
   );
-  mocks.tx.project.update.mockResolvedValue({});
+  mocks.tx.project.update.mockResolvedValue({ contentRevision: 8 });
   mocks.tx.project.findUnique.mockResolvedValue({ language: "en" });
   mocks.tx.pageEditSnapshot.create.mockResolvedValue({ id: "snap-1" });
   mocks.tx.imageAsset.update.mockResolvedValue({});
   mocks.getProjectOrThrow.mockResolvedValue({ id: "project-1", currentPlanId: "plan-1" });
   mocks.maybeEnqueueCompile.mockResolvedValue("compile");
+  mocks.claimAppliedEditPublication.mockResolvedValue(true);
+  mocks.restoreEditProjectStatus.mockResolvedValue(true);
 });
 
 describe("applyImageLayout", () => {
@@ -124,6 +133,10 @@ describe("applyImageLayout", () => {
         }
       }),
       { status: "QUEUED", classifier: {} }
+    );
+
+    expect(mocks.tx.project.update.mock.invocationCallOrder[0]!).toBeLessThan(
+      mocks.tx.bookEditOperation.updateMany.mock.invocationCallOrder[0]!
     );
 
     expect(mocks.tx.page.update).toHaveBeenCalledWith({
@@ -169,6 +182,38 @@ describe("applyImageLayout", () => {
     });
   });
 
+  it("replays the settled APPLIED tail when a concurrent delivery wins the final claim", async () => {
+    mocks.prisma.page.findFirst.mockResolvedValue({ ...sourcePage });
+    mocks.tx.bookEditOperation.updateMany.mockResolvedValue({ count: 0 });
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({ id: "op-1", status: "APPLIED", classifier: {} });
+    mocks.maybeEnqueueCompile.mockResolvedValue("waiting");
+
+    await applyImageLayout(
+      job({
+        [PRE_EDIT_PROJECT_STATUS]: "REVIEW_REQUIRED",
+        intentKind: "remove_image",
+        imageLayout: { action: "remove", sources: [{ pageIndex: 1, replaceMarker: "chat-image-op-old" }] }
+      }),
+      { status: "QUEUED", classifier: {} }
+    );
+
+    // The loser must never run the layout batch or bump the manuscript, but it
+    // still owes the APPLIED winner's idempotent handoff. A waiting compile owns
+    // publication, so the project remains EDITING rather than being restored.
+    expect(mocks.tx.page.update).not.toHaveBeenCalled();
+    expect(mocks.tx.project.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: { contentRevision: { increment: 1 } } })
+    );
+    expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", {
+      skipFinalReview: true,
+      withoutQualityVerdict: true
+    });
+    expect(mocks.claimAppliedEditPublication).toHaveBeenCalledWith(
+      mocks.tx, "project-1", "op-1", "REVIEW_REQUIRED"
+    );
+  });
+
   it("skips without appending when the marker is gone at delivery", async () => {
     mocks.prisma.page.findFirst.mockResolvedValue(null);
 
@@ -179,9 +224,9 @@ describe("applyImageLayout", () => {
       { status: "QUEUED", classifier: {} }
     );
 
-    expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
+    expect(mocks.prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(mocks.tx.page.update).not.toHaveBeenCalled();
-    expect(mocks.prisma.bookEditOperation.update).toHaveBeenCalledWith(
+    expect(mocks.tx.bookEditOperation.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           status: "APPLIED",
@@ -207,8 +252,10 @@ describe("applyImageLayout", () => {
     );
 
     expect(mocks.tx.page.update).not.toHaveBeenCalled();
-    expect(mocks.tx.project.update).not.toHaveBeenCalled();
-    expect(mocks.prisma.bookEditOperation.update).toHaveBeenCalledWith(
+    expect(mocks.tx.project.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: { contentRevision: { increment: 1 } } })
+    );
+    expect(mocks.tx.bookEditOperation.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           status: "APPLIED",
@@ -236,7 +283,7 @@ describe("applyImageLayout", () => {
 
     expect(mocks.tx.page.update).not.toHaveBeenCalled();
     expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
-    expect(mocks.prisma.bookEditOperation.update).toHaveBeenCalledWith(
+    expect(mocks.tx.bookEditOperation.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ classifier: expect.objectContaining({ layoutMissing: true }) })
       })
@@ -244,20 +291,22 @@ describe("applyImageLayout", () => {
   });
 
   it("restores REVIEW_REQUIRED when a skipped layout edit never compiled", async () => {
-    mocks.prisma.project.findUnique.mockResolvedValue({ status: "REVIEW_REQUIRED", currentPlanId: "plan-1" });
+    // The row is already EDITING before the worker starts, so only the payload
+    // stamp can distinguish this from a formerly COMPLETE book.
+    mocks.prisma.project.findUnique.mockResolvedValue({ status: "EDITING", currentPlanId: "plan-1" });
     mocks.prisma.page.findFirst.mockResolvedValue(null);
 
     await applyImageLayout(
       job({
+        [PRE_EDIT_PROJECT_STATUS]: "REVIEW_REQUIRED",
         imageLayout: { action: "remove", sources: [{ pageIndex: 1, replaceMarker: "chat-image-op-old" }] }
       }),
       { status: "QUEUED", classifier: {} }
     );
 
-    expect(mocks.prisma.project.updateMany).toHaveBeenCalledWith({
-      where: { id: "project-1", status: "EDITING" },
-      data: { status: "REVIEW_REQUIRED" }
-    });
+    expect(mocks.restoreEditProjectStatus).toHaveBeenCalledWith(
+      mocks.tx, "project-1", "op-1", "REVIEW_REQUIRED", "ACTIVE"
+    );
   });
 
   it("reassigns a generation ImageAsset onto an empty dest page", async () => {
@@ -441,7 +490,7 @@ describe("applyImageLayout", () => {
 
     expect(mocks.tx.imageAsset.update).not.toHaveBeenCalled();
     expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
-    expect(mocks.prisma.bookEditOperation.update).toHaveBeenCalledWith(
+    expect(mocks.tx.bookEditOperation.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ classifier: expect.objectContaining({ layoutMissing: true }) })
       })
@@ -462,7 +511,7 @@ describe("applyImageLayout", () => {
       { status: "QUEUED", classifier: {} }
     );
 
-    expect(mocks.prisma.bookEditOperation.update).toHaveBeenCalledWith(
+    expect(mocks.tx.bookEditOperation.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           classifier: expect.objectContaining({ layoutMissing: true, layoutSkippedReason: "already_positioned" })
@@ -670,7 +719,7 @@ describe("applyImageLayout", () => {
 
     expect(mocks.tx.page.update).not.toHaveBeenCalled();
     expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
-    expect(mocks.prisma.bookEditOperation.update).toHaveBeenCalledWith(
+    expect(mocks.tx.bookEditOperation.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           classifier: expect.objectContaining({ layoutSkippedReason: "already_positioned" })
@@ -804,15 +853,18 @@ describe("applyImageLayout with no imageLayout on the payload", () => {
   it("settles as a delivered no-op when neither copy carries a request", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
-    await applyImageLayout(job({ imageLayout: undefined }), { status: "QUEUED", classifier: { kind: "move_image" } });
+    await applyImageLayout(
+      job({ imageLayout: undefined, [PRE_EDIT_PROJECT_STATUS]: "REVIEW_REQUIRED" }),
+      { status: "QUEUED", classifier: { kind: "move_image" } }
+    );
 
     // The same settlement a vanished picture gets: APPLIED with nothing done and
     // the book put back where it was found. Throwing would fail a finished book
     // over a request no retry could find, and a move is free, so there is
     // nothing to hand back.
     expect(mocks.prisma.page.findFirst).not.toHaveBeenCalled();
-    expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
-    expect(mocks.prisma.bookEditOperation.update).toHaveBeenCalledWith(
+    expect(mocks.prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(mocks.tx.bookEditOperation.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           status: "APPLIED",
@@ -821,10 +873,9 @@ describe("applyImageLayout with no imageLayout on the payload", () => {
         })
       })
     );
-    expect(mocks.prisma.project.updateMany).toHaveBeenCalledWith({
-      where: { id: "project-1", status: "EDITING" },
-      data: { status: "COMPLETE" }
-    });
+    expect(mocks.restoreEditProjectStatus).toHaveBeenCalledWith(
+      mocks.tx, "project-1", "op-1", "REVIEW_REQUIRED", "ACTIVE"
+    );
     expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
     expect(logged).toHaveBeenCalled();
     logged.mockRestore();

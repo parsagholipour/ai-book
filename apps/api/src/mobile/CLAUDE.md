@@ -364,6 +364,10 @@ reported as surviving, which is the escape a rollback-capable mock could not sim
   held it there. The refinement only ever *narrows* the coarse answer, and every unknown it meets —
   no `operationId`, a missing row, a kind this build does not know — answers "owed", because
   under-reporting a finished book is the failure it exists to stop.
+  All four enqueue sites also stamp `PRE_EDIT_PROJECT_STATUS` from that same pre-transaction
+  project row before changing it to EDITING. The worker cannot reconstruct COMPLETE versus
+  REVIEW_REQUIRED after commit, so text rewrite, image insertion, image layout and restructure
+  payloads all carry the settled status their own no-op/failure exits may restore.
   **Positioning inside a page is markdown-only, and that is forced rather than chosen**:
   `compileBookMarkdown` prints a page's `ImageAsset` hero above the prose *always*, and a
   chat-added picture has no `ImageAsset` row at all — `applyImageInsertion` writes a file and a
@@ -515,6 +519,18 @@ edit instead.
   finished while real in-flight work is GENERATING or EDITING — so an unstarted edit or a narration
   stopped on a finished book leaves it finished too, and nothing that should fail a run stopped
   failing it. The operator console draws Stop for any QUEUED or ACTIVE job, which a repair is.
+  **A stopped continuation restores only while its durable job is still QUEUED.** Enqueue moves the
+  settled book to EDITING before the worker sees it, so QUEUED proves that transition is the only
+  mutation and the payload's pre-edit status is safe to restore. ACTIVE cannot identify a phase:
+  `continueBook` may still be outlining, or it may already have atomically installed its extended
+  plan and chapters and partially drafted the appended pages, including page-owned semantic state.
+  The API does not own enough of that handler's snapshot to compensate it safely, so Stop leaves an
+  ACTIVE continuation's project FAILED even though Apply can restore after its publication lease is
+  revoked. That FAILED status is the barrier that prevents a partial append reading as delivered if
+  the worker's best-effort rollback is interrupted. APPLIED remains a different durable fact: Stop
+  excludes that job from terminalization and refund so its idempotent publication handoff can finish.
+  Keep the APPLIED query on the full pre-edit job set even though the immediate-restore filter treats
+  ACTIVE Continue differently; repeated Stop then sees no newly claimable work in either branch.
   **Not failing the project is not the same as not being reported as its failure**, and the reading
   side has to ask too. A FAILED repair row is still a FAILED row, so it reached `failureMessage` in
   `mobile/projectSerializers.ts` — the app's `hasFailure`, which is `BookStage.needsAttention` — and

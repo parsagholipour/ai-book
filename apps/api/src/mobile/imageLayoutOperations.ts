@@ -22,8 +22,10 @@ import {
 } from "./bookEditIntents.js";
 import { bookEditCreditCost, operationKindForIntent } from "./bookEditPricing.js";
 import { type MobileBookEditOperationRecord, type MobileProjectChatMessageRecord } from "./dto.js";
+import { settledStatusBeforeEdit } from "./editProjectStatus.js";
 import { chatPagesForProject, createAssistantChatMessage, type ProjectForChat } from "./projectChat.js";
 import { jsonInputValue } from "./support.js";
+import { PRE_EDIT_PROJECT_STATUS } from "@book-maker/core";
 
 /**
  * proposeBookEdit's move_image / remove_image branch. The pictures are resolved
@@ -248,6 +250,7 @@ export async function queueChatImageLayout(options: {
           request: requestWithCharacterContext(message, options.characterContext),
           affectedPageIndexes: affected,
           intentKind: resolvedIntent.kind,
+          [PRE_EDIT_PROJECT_STATUS]: settledStatusBeforeEdit(project.status),
           imageLayout: {
             action,
             sources: live.map((entry) => ({

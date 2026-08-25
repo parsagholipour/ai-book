@@ -1,4 +1,4 @@
-import { type GenerationJobType } from "./jobDispatch.js";
+import { generationJobTypeForWorkerName, type GenerationJobType } from "./jobDispatch.js";
 
 /**
  * Jobs that produce optional experiences from an existing book rather than
@@ -151,10 +151,10 @@ export function presentationRecompileFallbackStatus(payload: unknown): SettledPr
  * Apply writes `status: "EDITING"` in the same committed transaction as the
  * `GenerationJob` row, so by the time the handler runs the project can only
  * answer EDITING — before its own EDITING write as much as after it, and on a
- * redelivery the first delivery deliberately left it there too. A handler that
- * settles the book itself (a delivered no-op, a recompile it could not queue)
- * therefore had no way to tell a finished book from one the reader still has
- * open quality findings on, and put both down as COMPLETE.
+ * redelivery the first delivery deliberately left it there too. Every worker
+ * fork and the shared failed/stopped lifecycle exits therefore use this stamp
+ * whenever they settle the project themselves: a delivered no-op or a
+ * recompile they could not queue must not turn an in-review book COMPLETE.
  *
  * COMPLETE when the key is absent, which is what a job enqueued before this
  * existed means and what almost every book is.
@@ -163,6 +163,32 @@ export const PRE_EDIT_PROJECT_STATUS = "preEditProjectStatus";
 
 export function preEditProjectStatus(payload: unknown): SettledProjectStatus {
   return settledStatusFromPayload(payload, PRE_EDIT_PROJECT_STATUS);
+}
+
+/**
+ * Jobs that temporarily take an already-settled book into EDITING and must put
+ * it back when their own work exits without publishing.
+ *
+ * Operation linkage cannot answer this question: REPLAN_BOOK and the
+ * GENERATE_BOOK it starts carry the replan operation too, but they own the
+ * lifecycle of a brand-new copy with no settled status to restore. Unknown
+ * future jobs therefore default to generation ownership until explicitly
+ * classified here.
+ */
+export const PRE_EDIT_STATUS_RESTORING_JOB_TYPES = Object.freeze([
+  "APPLY_BOOK_EDIT",
+  "CONTINUE_BOOK"
+] as const satisfies readonly GenerationJobType[]);
+
+const preEditStatusRestoringGenerationJobTypes = new Set<string>(PRE_EDIT_STATUS_RESTORING_JOB_TYPES);
+
+export function generationJobRestoresPreEditProjectStatus(type: string): boolean {
+  return preEditStatusRestoringGenerationJobTypes.has(type);
+}
+
+export function workerJobRestoresPreEditProjectStatus(name: string): boolean {
+  const type = generationJobTypeForWorkerName(name);
+  return type !== null && generationJobRestoresPreEditProjectStatus(type);
 }
 
 /** The one artifact a detached export repair was asked to replace. */

@@ -28,7 +28,9 @@ const mocks = vi.hoisted(() => ({
   mkdir: vi.fn(),
   writeFile: vi.fn(),
   unlink: vi.fn(),
-  stat: vi.fn()
+  stat: vi.fn(),
+  claimAppliedEditPublication: vi.fn(async () => true),
+  restoreEditProjectStatus: vi.fn(async () => true)
 }));
 
 vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma, Prisma: {} }));
@@ -51,6 +53,7 @@ vi.mock("../generation/bookHelpers.js", () => ({
   imageGenerationMetadata: vi.fn(),
   imageStorageMetadata: vi.fn()
 }));
+vi.mock("../generation/editProjectStatus.js", () => ({ claimAppliedEditPublication: mocks.claimAppliedEditPublication, restoreEditProjectStatus: mocks.restoreEditProjectStatus }));
 // The real module, so the handler exercises the one shared ownership trio
 // (`resolveLibraryPortraitSeed`) and sheet matcher instead of local copies.
 vi.mock("../generation/characterReferences.js", async () => {
@@ -80,8 +83,9 @@ vi.mock("@book-maker/core", async () => {
   };
 });
 
-import { applyImageInsertion, insertionFromClassifier } from "./applyImageInsertion.js";
+import { applyImageInsertion } from "./applyImageInsertion.js";
 import { StopRequestedError } from "../runtime/jobTypes.js";
+import { PRE_EDIT_PROJECT_STATUS } from "@book-maker/core";
 
 const plan = {
   illustrationPlan: { globalStyle: "Soft watercolor.", pageRules: ["Keep the dragon green.", "No embedded text."] },
@@ -160,7 +164,9 @@ beforeEach(() => {
     })
   );
   mocks.tx.pageEditSnapshot.create.mockResolvedValue({ id: "snap-1" });
-  mocks.tx.project.update.mockResolvedValue({});
+  mocks.tx.project.update.mockResolvedValue({ contentRevision: 8 });
+  mocks.claimAppliedEditPublication.mockResolvedValue(true);
+  mocks.restoreEditProjectStatus.mockResolvedValue(true);
   mocks.getProjectOrThrow.mockResolvedValue({ ...baseProject });
   mocks.maybeEnqueueCompile.mockResolvedValue("compile");
   mocks.generateImageBytes.mockResolvedValue({
@@ -204,7 +210,12 @@ describe("applyImageInsertion", () => {
     // The APPLIED claim gates the page write.
     expect(mocks.tx.bookEditOperation.updateMany).toHaveBeenCalledWith({
       where: { id: "op-1", status: { in: ["QUEUED", "ACTIVE"] } },
-      data: expect.objectContaining({ status: "APPLIED", affectedPageIndexes: [5] })
+      data: { automaticRetryCount: { increment: 0 } }
+    });
+    expect(mocks.tx.project.update.mock.invocationCallOrder[0]!).toBeLessThan(mocks.tx.bookEditOperation.updateMany.mock.invocationCallOrder[0]!);
+    expect(mocks.tx.bookEditOperation.update).toHaveBeenCalledWith({
+      where: { id: "op-1" },
+      data: expect.objectContaining({ status: "APPLIED", publicationRevision: 8, affectedPageIndexes: [5] })
     });
     expect(mocks.tx.page.update).toHaveBeenCalledWith({
       where: { id: "page-5" },
@@ -227,7 +238,8 @@ describe("applyImageInsertion", () => {
     // refund an image that is durably on the page.
     expect(mocks.tx.project.update).toHaveBeenCalledWith({
       where: { id: "project-1" },
-      data: { contentRevision: { increment: 1 } }
+      data: { contentRevision: { increment: 1 } },
+      select: { contentRevision: true }
     });
     expect(mocks.prisma.project.update).not.toHaveBeenCalledWith({
       where: { id: "project-1" },
@@ -256,7 +268,7 @@ describe("applyImageInsertion", () => {
       where: { projectId: "project-1" },
       orderBy: { index: "desc" }
     });
-    expect(mocks.tx.bookEditOperation.updateMany).toHaveBeenCalledWith(
+    expect(mocks.tx.bookEditOperation.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ affectedPageIndexes: [9] }) })
     );
   });
@@ -305,11 +317,45 @@ describe("applyImageInsertion", () => {
     // manuscript.
     expect(mocks.generateImageBytes).not.toHaveBeenCalled();
     expect(mocks.prisma.bookEditOperation.updateMany).not.toHaveBeenCalled();
-    expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
+    expect(mocks.prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(mocks.prisma.project.update).not.toHaveBeenCalled();
     // The idempotent success tail is rebuilt from what the page already says.
     expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", COMPILE_OPTIONS);
+  });
+
+  it("claims the EDITING publication window before replaying APPLIED exports from a settled project", async () => {
+    await applyImageInsertion(job(), operation("APPLIED"));
+
+    expect(mocks.claimAppliedEditPublication).toHaveBeenCalledWith(mocks.tx, "project-1", "op-1", "COMPLETE");
+    expect(mocks.claimAppliedEditPublication.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.invalidateProjectExports.mock.invocationCallOrder[0]!
+    );
+  });
+
+  it("does not invalidate APPLIED insertion exports when a FAILED or newer project state rejects the claim", async () => {
+    mocks.claimAppliedEditPublication.mockResolvedValueOnce(false);
+
+    await applyImageInsertion(job(), operation("APPLIED"));
+
+    expect(mocks.claimAppliedEditPublication).toHaveBeenCalledWith(mocks.tx, "project-1", "op-1", "COMPLETE");
+    expect(mocks.invalidateProjectExports).not.toHaveBeenCalled();
+    expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
+  });
+
+  it("restores the stamped status when an APPLIED redelivery has no plan to compile", async () => {
+    mocks.getProjectOrThrow.mockResolvedValue({ ...baseProject, currentPlanId: null, status: "EDITING" });
+
+    await applyImageInsertion(
+      job({ planId: undefined, [PRE_EDIT_PROJECT_STATUS]: "REVIEW_REQUIRED" }),
+      operation("APPLIED")
+    );
+
+    expect(mocks.invalidateProjectExports).not.toHaveBeenCalled();
+    expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
+    expect(mocks.restoreEditProjectStatus).toHaveBeenCalledWith(
+      mocks.tx, "project-1", "op-1", "REVIEW_REQUIRED"
+    );
   });
 
   it("replays the compile tail when the ACTIVE claim finds the operation APPLIED", async () => {
@@ -321,7 +367,7 @@ describe("applyImageInsertion", () => {
     await applyImageInsertion(job(), operation());
 
     expect(mocks.generateImageBytes).not.toHaveBeenCalled();
-    expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
+    expect(mocks.prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(mocks.prisma.project.update).not.toHaveBeenCalled();
     expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", COMPILE_OPTIONS);
@@ -376,21 +422,27 @@ describe("applyImageInsertion", () => {
     expect(secondLine).toContain(secondPath.split("/").pop());
   });
 
-  it("writes nothing and keeps the winner's file when the claim was lost to an APPLIED settle", async () => {
+  it("replays the settled APPLIED tail when a concurrent delivery wins the final claim", async () => {
     mocks.tx.bookEditOperation.updateMany.mockResolvedValue({ count: 0 });
     mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({ id: "op-1", status: "APPLIED" });
+    mocks.maybeEnqueueCompile.mockResolvedValue("not-ready");
 
-    await applyImageInsertion(job(), operation());
+    await applyImageInsertion(job({ [PRE_EDIT_PROJECT_STATUS]: "REVIEW_REQUIRED" }), operation());
 
-    // The loser of the claim appends nothing and rebuilds nothing — whatever
-    // the winner decided stands, and nothing is deleted near an APPLIED
-    // operation's published image.
+    // Both deliveries passed the ACTIVE fence and wrote EDITING, but only the
+    // winner mutated the manuscript. The loser must replay the idempotent tail
+    // so a winner that already restored the settled status cannot be followed
+    // by this delivery stranding the project in EDITING.
     expect(mocks.tx.page.update).not.toHaveBeenCalled();
     expect(mocks.tx.pageEditSnapshot.create).not.toHaveBeenCalled();
-    expect(mocks.invalidateProjectExports).not.toHaveBeenCalled();
-    expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
+    expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", COMPILE_OPTIONS);
+    expect(mocks.restoreEditProjectStatus).toHaveBeenCalledWith(
+      mocks.tx, "project-1", "op-1", "REVIEW_REQUIRED"
+    );
+    // Nothing is deleted near an APPLIED operation's published image.
     expect(mocks.unlink).not.toHaveBeenCalled();
-    expect(mocks.tx.project.update).not.toHaveBeenCalled();
+    expect(mocks.tx.project.update).toHaveBeenCalledTimes(1);
   });
 
   it("removes its orphaned file when the claim was lost to a cancellation", async () => {
@@ -496,7 +548,9 @@ describe("applyImageInsertion", () => {
       data: { markdown: `Intro.\n\n${appendedLine()}\n\nOutro.`, revision: { increment: 1 } }
     });
     // A swap is not a "swap became add": no classifier note.
-    expect(mocks.tx.bookEditOperation.update).not.toHaveBeenCalled();
+    expect(mocks.tx.bookEditOperation.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ classifier: expect.anything() }) })
+    );
   });
 
   it("appends and records the swap-became-add when the old marker is already gone", async () => {
@@ -558,7 +612,6 @@ describe("applyImageInsertion", () => {
         revision: illustratedPage.revision + 1
       })
     );
-
     await applyImageInsertion(
       job({
         request: "change the first image to more aggressive",
@@ -645,27 +698,54 @@ describe("applyImageInsertion", () => {
   it("hands the book back to the repair lane when no recompile was queued", async () => {
     mocks.maybeEnqueueCompile.mockResolvedValue("not-ready");
 
-    await applyImageInsertion(job(), operation());
+    await applyImageInsertion(job({ [PRE_EDIT_PROJECT_STATUS]: "REVIEW_REQUIRED" }), operation());
 
-    expect(mocks.prisma.project.updateMany).toHaveBeenCalledWith({
-      where: { id: "project-1", status: "EDITING" },
-      data: { status: "COMPLETE" }
-    });
+    expect(mocks.restoreEditProjectStatus).toHaveBeenCalledWith(
+      mocks.tx, "project-1", "op-1", "REVIEW_REQUIRED"
+    );
   });
 
   it("hands the applied insertion to the repair lane when the export enqueue fails", async () => {
     mocks.maybeEnqueueCompile.mockRejectedValue(new Error("queue unavailable"));
     const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
-    await expect(applyImageInsertion(job(), operation())).resolves.toBeUndefined();
+    await expect(
+      applyImageInsertion(job({ [PRE_EDIT_PROJECT_STATUS]: "REVIEW_REQUIRED" }), operation())
+    ).resolves.toBeUndefined();
 
-    expect(mocks.prisma.project.updateMany).toHaveBeenCalledWith({
-      where: { id: "project-1", status: "EDITING" },
-      data: { status: "COMPLETE" }
-    });
+    expect(mocks.restoreEditProjectStatus).toHaveBeenCalledWith(
+      mocks.tx, "project-1", "op-1", "REVIEW_REQUIRED"
+    );
     expect(logged).toHaveBeenCalled();
     logged.mockRestore();
   });
+
+  it("preserves the stamped status when an APPLIED redelivery cannot queue its compile tail", async () => {
+    mocks.maybeEnqueueCompile.mockResolvedValue("not-ready");
+
+    await applyImageInsertion(
+      job({ [PRE_EDIT_PROJECT_STATUS]: "REVIEW_REQUIRED" }),
+      operation("APPLIED")
+    );
+
+    expect(mocks.claimAppliedEditPublication).toHaveBeenCalledWith(
+      mocks.tx, "project-1", "op-1", "REVIEW_REQUIRED"
+    );
+    expect(mocks.restoreEditProjectStatus).toHaveBeenCalledWith(
+      mocks.tx, "project-1", "op-1", "REVIEW_REQUIRED"
+    );
+  });
+
+  it.each(["compile", "waiting"])(
+    "leaves the project EDITING while a %s insertion compile handoff is on its way",
+    async (outcome) => {
+      mocks.maybeEnqueueCompile.mockResolvedValue(outcome);
+
+      await applyImageInsertion(job({ [PRE_EDIT_PROJECT_STATUS]: "REVIEW_REQUIRED" }), operation());
+
+      expect(mocks.prisma.project.updateMany).not.toHaveBeenCalled();
+    }
+  );
 
   it("composes the prompt from the subject, references, style, and continuity rules", async () => {
     await applyImageInsertion(job(), operation());
@@ -789,20 +869,6 @@ describe("applyImageInsertion with no imageInsertion on the payload", () => {
       data: { markdown: `The dragon sleeps.\n\n${appendedLine()}`, revision: { increment: 1 } }
     });
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", COMPILE_OPTIONS);
-  });
-
-  it("keeps a replacement a replacement", () => {
-    // `chat-image-<operationId>` is the marker the earlier insertion wrote and
-    // the one the API's own re-resolution rebuilds; reading the stored `replace`
-    // any other way would append and leave the reader with two pictures.
-    expect(
-      insertionFromClassifier({
-        imageEdit: { subject: "a dragon", placement: "page", pageIndex: 2, replace: { operationId: "op-old" } }
-      })
-    ).toEqual({ subject: "a dragon", placement: "page", targetPageIndex: 2, replaceMarker: "chat-image-op-old" });
-    expect(
-      insertionFromClassifier({ imageEdit: { subject: "a fox", replace: { operationId: "", assetId: "asset-1" } } })
-    ).toMatchObject({ replaceAssetId: "asset-1" });
   });
 
   it("fails the edit when neither copy names a subject", async () => {

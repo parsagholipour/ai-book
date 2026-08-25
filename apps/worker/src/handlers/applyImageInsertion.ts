@@ -14,6 +14,10 @@ import {
   markdownWithAppendedImage,
   markdownWithReplacedImage
 } from "../generation/imageMarkdown.js";
+import {
+  claimAppliedEditPublication,
+  restoreEditProjectStatus
+} from "../generation/editProjectStatus.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
@@ -27,9 +31,11 @@ import {
   markdownLabels,
   matchLibraryCharacter,
   optimizeImageForStorage,
+  preEditProjectStatus,
   publicAssetUrl,
   type BookPlan,
-  type ImageAdapter
+  type ImageAdapter,
+  type SettledProjectStatus
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { Job } from "bullmq";
@@ -124,9 +130,12 @@ export async function applyImageInsertion(job: Job, operation: { status: string;
     imageInsertion?: ImageInsertionPayload;
   };
   const generationJobId = job.data.generationJobId as string | undefined;
+  // Read once: the project has already been committed as EDITING, including on
+  // redelivery. The payload stamp is the only surviving settled status.
+  const fallbackStatus = preEditProjectStatus(job.data);
 
   if (operation.status === "APPLIED") {
-    await replayAppliedInsertion(projectId, planId);
+    await replayAppliedInsertion(projectId, operationId, planId, fallbackStatus);
     return;
   }
 
@@ -142,7 +151,7 @@ export async function applyImageInsertion(job: Job, operation: { status: string;
     if (settled?.status === "APPLIED") {
       // A previous delivery committed the append and crashed before its durable
       // COMPLETED write; the page already holds this operation's image line.
-      await replayAppliedInsertion(projectId, planId);
+      await replayAppliedInsertion(projectId, operationId, planId, fallbackStatus);
     }
     // CANCELED (or deleted): another actor settled this operation; whatever it
     // decided stands.
@@ -288,9 +297,13 @@ export async function applyImageInsertion(job: Job, operation: { status: string;
   let applied: boolean;
   try {
     applied = await prisma.$transaction(async (tx) => {
+      await tx.project.update({
+        where: { id: projectId },
+        data: { contentRevision: { increment: 0 } }
+      });
       const claimed = await tx.bookEditOperation.updateMany({
         where: { id: operationId, status: { in: ["QUEUED", "ACTIVE"] } },
-        data: { status: "APPLIED", affectedPageIndexes: [targetPage.index], appliedAt: new Date() }
+        data: { automaticRetryCount: { increment: 0 } }
       });
       if (claimed.count !== 1) {
         return false;
@@ -369,7 +382,20 @@ export async function applyImageInsertion(job: Job, operation: { status: string;
       // append and this bump used to reach markFailed, which refunds the
       // charge and the free-tier image slot while the image is durably on the
       // page.
-      await tx.project.update({ where: { id: projectId }, data: { contentRevision: { increment: 1 } } });
+      const published = await tx.project.update({
+        where: { id: projectId },
+        data: { contentRevision: { increment: 1 } },
+        select: { contentRevision: true }
+      });
+      await tx.bookEditOperation.update({
+        where: { id: operationId },
+        data: {
+          status: "APPLIED",
+          publicationRevision: published.contentRevision,
+          affectedPageIndexes: [targetPage.index],
+          appliedAt: new Date()
+        }
+      });
       return true;
     });
   } catch (error) {
@@ -379,13 +405,16 @@ export async function applyImageInsertion(job: Job, operation: { status: string;
     throw error;
   }
   if (!applied) {
-    // Another delivery settled this operation; whatever it decided stands.
-    // This delivery's file is an orphan and is cleaned up — unless the
-    // operation is APPLIED, where nothing may be deleted near the published
-    // image (the same-name overwrite is gone with unique filenames, but the
-    // guard stays).
+    // Another delivery settled this operation after both deliveries passed the
+    // ACTIVE fence. This delivery has already written EDITING, so an APPLIED
+    // winner's idempotent export/status tail must be replayed: the winner may
+    // have restored the stamped status before this loser wrote EDITING.
     const settled = await prisma.bookEditOperation.findUnique({ where: { id: operationId } });
-    if (settled?.status !== "APPLIED") {
+    if (settled?.status === "APPLIED") {
+      await replayAppliedInsertion(projectId, operationId, planId, fallbackStatus);
+    } else {
+      // CANCELED (or any non-APPLIED outcome) stands. This delivery's unique
+      // file is unreferenced because it lost the mutation claim.
       await removeInsertionImage(imagePath);
     }
     return;
@@ -401,7 +430,7 @@ export async function applyImageInsertion(job: Job, operation: { status: string;
   } catch {
     // Progress display only — even a stop request may not fail a spent charge.
   }
-  await refreshExports(projectId, planVersion.id);
+  await refreshExports(projectId, planVersion.id, operationId, fallbackStatus);
 }
 
 /**
@@ -411,23 +440,41 @@ export async function applyImageInsertion(job: Job, operation: { status: string;
  * replayed; bumping contentRevision again would order a second compile of a
  * manuscript the appending transaction already versioned.
  *
- * The plan lookup here can still throw after the append is durable — the one
- * accepted residual failure window on this path, matching the text edit's own
- * post-commit lookups.
+ * If the plan disappeared after the append became durable, there is nothing to
+ * compile. Restore the queue-time settled status instead of sending a paid,
+ * already-applied image through failure settlement.
  */
-async function replayAppliedInsertion(projectId: string, planId: string | undefined): Promise<void> {
+async function replayAppliedInsertion(
+  projectId: string,
+  operationId: string,
+  planId: string | undefined,
+  fallbackStatus: SettledProjectStatus
+): Promise<void> {
   const project = await getProjectOrThrow(projectId);
   const compilePlanId = planId ?? project.currentPlanId;
   if (!compilePlanId) {
-    throw new Error("Current plan not found");
+    await restoreInsertionStatus(projectId, operationId, fallbackStatus);
+    return;
   }
-  await refreshExports(projectId, compilePlanId);
+  await refreshExports(projectId, compilePlanId, operationId, fallbackStatus);
 }
 
 /** The shared success tail: rebuild the exports from what the page now says. */
-async function refreshExports(projectId: string, planVersionId: string): Promise<void> {
-  await invalidateProjectExports(projectId);
-  await finishWithCompile(projectId, planVersionId);
+async function refreshExports(
+  projectId: string,
+  planVersionId: string,
+  operationId: string,
+  fallbackStatus: SettledProjectStatus
+): Promise<void> {
+  const claimed = await prisma.$transaction(async (tx) => {
+    if (!(await claimAppliedEditPublication(tx, projectId, operationId, fallbackStatus))) {
+      return false;
+    }
+    await invalidateProjectExports(projectId);
+    return true;
+  });
+  if (!claimed) return;
+  await finishWithCompile(projectId, planVersionId, operationId, fallbackStatus);
 }
 
 /** Best-effort: an orphaned image file is storage noise, never a failure. */
@@ -446,7 +493,7 @@ type InsertionTransaction = {
   };
   bookEditOperation: {
     findUnique: (args: { where: { id: string }; select: { classifier: true } }) => Promise<{ classifier: unknown } | null>;
-    update: (args: { where: { id: string }; data: { classifier: Record<string, unknown> } }) => Promise<unknown>;
+    update: (args: { where: { id: string }; data: Record<string, unknown> }) => Promise<unknown>;
   };
   page: {
     update: (args: {
@@ -465,7 +512,11 @@ type InsertionTransaction = {
     create: (args: { data: Record<string, unknown> }) => Promise<unknown>;
   };
   project: {
-    update: (args: { where: { id: string }; data: { contentRevision: { increment: number } } }) => Promise<unknown>;
+    update: (args: {
+      where: { id: string };
+      data: { contentRevision: { increment: number } };
+      select: { contentRevision: true };
+    }) => Promise<{ contentRevision: number }>;
   };
 };
 
@@ -552,17 +603,27 @@ async function applyAssetReplacementInTx(
       revisionAfter: saved.revision
     }
   });
-  await tx.project.update({
+  const published = await tx.project.update({
     where: { id: options.projectId },
-    data: { contentRevision: { increment: 1 } }
+    data: { contentRevision: { increment: 1 } },
+    select: { contentRevision: true }
+  });
+  await tx.bookEditOperation.update({
+    where: { id: options.operationId },
+    data: {
+      status: "APPLIED",
+      publicationRevision: published.contentRevision,
+      affectedPageIndexes: [options.current.index],
+      appliedAt: new Date()
+    }
   });
   return true;
 }
 
 /**
  * The applyBookEdit success tail: queue the recompile, and on `not-ready` (or an
- * enqueue outage) hand the book to the on-demand export repair lane — COMPLETE
- * with missing files is exactly the state the app's status stream rebuilds,
+ * enqueue outage) hand the book to the on-demand export repair lane — a settled
+ * status with missing files is exactly the state the app's status stream rebuilds,
  * while leaving EDITING would discard this handler's immediate handoff and
  * wait for the delayed stranded-generation sweep's grace period.
  *
@@ -571,7 +632,12 @@ async function applyAssetReplacementInTx(
  * every page, and this recompile's deterministic-only report must not replace
  * them.
  */
-async function finishWithCompile(projectId: string, planVersionId: string): Promise<void> {
+async function finishWithCompile(
+  projectId: string,
+  planVersionId: string,
+  operationId: string,
+  fallbackStatus: SettledProjectStatus
+): Promise<void> {
   let dispatched: Awaited<ReturnType<typeof maybeEnqueueCompile>>;
   try {
     dispatched = await maybeEnqueueCompile(projectId, planVersionId, {
@@ -583,10 +649,18 @@ async function finishWithCompile(projectId: string, planVersionId: string): Prom
     dispatched = "not-ready";
   }
   if (dispatched === "not-ready") {
-    await prisma.project
-      .updateMany({ where: { id: projectId, status: "EDITING" }, data: { status: "COMPLETE" } })
-      .catch(() => undefined);
+    await restoreInsertionStatus(projectId, operationId, fallbackStatus);
   }
+}
+
+async function restoreInsertionStatus(
+  projectId: string,
+  operationId: string,
+  fallbackStatus: SettledProjectStatus
+): Promise<void> {
+  await prisma
+    .$transaction((tx) => restoreEditProjectStatus(tx, projectId, operationId, fallbackStatus))
+    .catch(() => undefined);
 }
 
 /**

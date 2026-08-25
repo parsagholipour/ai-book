@@ -6,6 +6,7 @@ import {
   isStopRequestedError,
   isStructuralRollbackRedeliveryError,
   isUnownedStructuralDeliveryError,
+  isUnownedTextEditDeliveryError,
   type JobCompletion,
 } from "./runtime/jobTypes.js";
 import {
@@ -162,6 +163,13 @@ export async function processWorkerJob(job: Job): Promise<void> {
           // A waiter that never acquired the lease. Completing would block the
           // owner's later markFailed; failing would refund a live insert.
           await runLogger.append("job.unowned_structural_delivery", { error: serializeError(error) });
+          throw new UnrecoverableError(errorMessage(error));
+        }
+
+        if (isUnownedTextEditDeliveryError(error)) {
+          // Same ownership answer as the structural waiter: the live delivery
+          // owns the shared job and its charge, so this loser settles neither.
+          await runLogger.append("job.unowned_text_edit_delivery", { error: serializeError(error) });
           throw new UnrecoverableError(errorMessage(error));
         }
 

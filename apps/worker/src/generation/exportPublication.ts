@@ -13,6 +13,7 @@ import {
   type ExportProvenanceFormat
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
+import { claimAppliedEditPublication } from "./editProjectStatus.js";
 import { randomUUID } from "node:crypto";
 import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -682,6 +683,46 @@ export async function publishCompiledExports(options: {
           data: { contentRevision: { increment: 0 } }
         });
         if (projectClaim.count !== 1) {
+          return false;
+        }
+
+        // Stop takes every open GenerationJob lock before it touches a linked
+        // BookEditOperation. Claim this compile row in the same order before
+        // the edit-publication fence below; terminalization still happens only
+        // after every publication precondition passes.
+        const publicationJobLock = await tx.generationJob.updateMany({
+          where: {
+            id: options.generationJobId,
+            projectId: options.projectId,
+            type: "COMPILE_EXPORT",
+            status: "ACTIVE",
+            ...(generationAttemptId ? { attemptId: generationAttemptId } : {}),
+            ...(options.contentRevision === null ? {} : { contentRevision: options.contentRevision })
+          },
+          data: { dispatchAttempts: { increment: 0 } }
+        });
+        if (publicationJobLock.count !== 1) {
+          return false;
+        }
+
+        // An edit moves EDITING first and its revision last. The revision CAS
+        // above therefore cannot distinguish this edit's render from a newer
+        // edit or presentation lifecycle that has only just opened. Bind an
+        // edit compile to the APPLIED operation/revision generation too; the
+        // current compile row is allowed because it is the handoff being
+        // published, while any other later lifecycle makes this render stand
+        // down before touching files or status.
+        if (
+          editOperationId &&
+          options.expectedProjectStatus === "EDITING" &&
+          !(await claimAppliedEditPublication(
+            tx,
+            options.projectId,
+            editOperationId,
+            "COMPLETE",
+            [options.generationJobId]
+          ))
+        ) {
           return false;
         }
 

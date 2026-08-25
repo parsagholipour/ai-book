@@ -15,6 +15,7 @@ import {
 import { loadQualityContext } from "../generation/qualitySettings.js";
 import { rebuildProjectStoryState, rebuildStoryStateFromPages } from "../generation/storyStateStore.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
+import { appliedEditPublicationOwnerId } from "../generation/editProjectStatus.js";
 import {
   ExportRepairIllustrationDeferredError,
   repairPagesFromFinalQa
@@ -77,11 +78,9 @@ import { Job } from "bullmq";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
-
 /**
  * `compile-export` job: final QA over the manuscript, then Markdown/PDF/EPUB output.
  */
-
 export async function compileExport(job: Job): Promise<JobCompletion> {
   const { projectId, planId } = job.data as { projectId: string; planId: string };
   const policy = compilePublicationPolicyFromPayload(job.data);
@@ -122,7 +121,7 @@ export async function compileExport(job: Job): Promise<JobCompletion> {
   const presentationOnly = policy.ownership.kind === "presentation";
   const ownsOutcome = policy.ownership.kind === "outcome";
   const generationAttemptId = ownsOutcome && typeof job.data.attemptId === "string" ? job.data.attemptId : null;
-  const editOperationId = ownsOutcome ? editOperationIdFromJob(job) : null;
+  const payloadEditOperationId = ownsOutcome ? editOperationIdFromJob(job) : null;
   // Character discovery follows every charged compile of the manuscript — the
   // generation's own and an edit's recompile alike, since an edit is charged
   // work whose prose is new and a book whose detection was never run must still
@@ -175,6 +174,9 @@ export async function compileExport(job: Job): Promise<JobCompletion> {
     return { lifecycleSettlement: "defer-to-successor", afterJobCompleted: requeueCompile };
   }
   const expectedProjectStatus = normalizedCompilePublicationPolicy(policy, project.status).expectedProjectStatus;
+  const editOperationId = payloadEditOperationId ?? (ownsOutcome && expectedProjectStatus === "EDITING" && queuedContentRevision !== null
+    ? await appliedEditPublicationOwnerId(prisma, projectId, queuedContentRevision)
+    : null);
   let plan = bookPlanSchema.parse(planVersion.planningPackage);
   let input = inputForPlanVersion(project, planVersion.inputSnapshot);
   let pages: ExportPageForRepair[] = project.pages;

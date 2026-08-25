@@ -6,6 +6,7 @@ vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js"))
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
 import { reserveCredits } from "@book-maker/db/billing";
+import { PRE_EDIT_PROJECT_STATUS } from "@book-maker/core";
 
 import { PROPOSAL_GATED_EDIT_KINDS } from "../bookEditIntent.js";
 import { enqueueGenerationJob } from "../queue.js";
@@ -177,6 +178,7 @@ describe("chat image insertion", () => {
         type: "APPLY_BOOK_EDIT",
         payload: expect.objectContaining({
           intentKind: "add_image",
+          [PRE_EDIT_PROJECT_STATUS]: "COMPLETE",
           affectedPageIndexes: [2],
           imageInsertion: { subject: "a dragon", placement: "end_of_book", targetPageIndex: 2 },
           planId: "plan-1",
@@ -186,6 +188,21 @@ describe("chat image insertion", () => {
     );
     // Paid tier (no quota object): no illustrated-book slot is touched.
     expect(mockBilling.consumeIllustratedBookUse).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("stamps REVIEW_REQUIRED on an image insertion before enqueue changes the project status", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(completeProject({ status: "REVIEW_REQUIRED" }));
+    vi.mocked(enqueueGenerationJob).mockResolvedValue(jobRecord({ id: "job-image", type: "APPLY_BOOK_EDIT" }));
+    const app = await buildMobileApp(withRouter());
+
+    const proposal = await sendChat(app, "Add a photo of a dragon at the end of the book");
+    await applyProposal(app, proposal.json().reply.metadata.editProposal.id);
+
+    expect(vi.mocked(enqueueGenerationJob).mock.calls.at(-1)?.[0].payload[PRE_EDIT_PROJECT_STATUS]).toBe(
+      "REVIEW_REQUIRED"
+    );
     await app.close();
   });
 

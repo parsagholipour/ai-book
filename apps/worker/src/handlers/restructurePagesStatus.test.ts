@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
   // The tests that start it settled are not reading a pre-edit status off it —
   // that rides the payload — they are modelling the one thing that can put a
   // book back down mid-delivery, which is another delivery of the same edit.
-  projectRow: { id: "project-1", currentPlanId: "plan-1", status: "EDITING", targetPages: 6 },
+  projectRow: { id: "project-1", currentPlanId: "plan-1", status: "EDITING", targetPages: 6, contentRevision: 7 },
   prisma: {
     bookEditOperation: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     project: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
@@ -37,6 +37,8 @@ const mocks = vi.hoisted(() => ({
   completeStructuralPageLease: vi.fn(),
   markStructuralPageLeaseApplied: vi.fn(),
   renewStructuralPageLeaseTx: vi.fn(),
+  claimAppliedEditPublication: vi.fn(),
+  restoreEditProjectStatus: vi.fn(),
   reviewAndSaveGeneratedPage: vi.fn(),
   generatePageDraft: vi.fn(),
   maybeEnqueueCompile: vi.fn(),
@@ -65,7 +67,12 @@ vi.mock("../generation/structuralPageLease.js", () => ({
   markStructuralPageLeaseApplied: mocks.markStructuralPageLeaseApplied,
   renewStructuralPageLeaseTx: mocks.renewStructuralPageLeaseTx,
   releaseStructuralPageLease: vi.fn(),
+  StructuralPageLeaseLostError: class StructuralPageLeaseLostError extends Error {},
   isStructuralPageLeaseLostError: () => false
+}));
+vi.mock("../generation/editProjectStatus.js", () => ({
+  claimAppliedEditPublication: mocks.claimAppliedEditPublication,
+  restoreEditProjectStatus: mocks.restoreEditProjectStatus
 }));
 vi.mock("../generation/pageReview.js", () => ({
   reviewAndSaveGeneratedPage: mocks.reviewAndSaveGeneratedPage
@@ -170,7 +177,9 @@ describe("restructurePages project status", () => {
       run(mocks.prisma)
     );
     mocks.prisma.bookEditOperation.updateMany.mockResolvedValue({ count: 1 });
-    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({ id: "op-1", status: "ACTIVE", classifier: {} });
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({
+      id: "op-1", status: "ACTIVE", classifier: {}, publicationRevision: 7
+    });
     mocks.prisma.planVersion.findUnique.mockResolvedValue({
       id: "plan-1",
       inputSnapshot: {},
@@ -195,12 +204,18 @@ describe("restructurePages project status", () => {
         where: { id: "op-1" },
         data: { status: "APPLIED", affectedPageIndexes, appliedAt: new Date() }
       });
-      return true;
+      return 8;
     });
     mocks.renewStructuralPageLeaseTx.mockResolvedValue({
       status: "ACTIVE",
       classifier: { structuralApplication: application() }
     });
+    mocks.claimAppliedEditPublication.mockResolvedValue(true);
+    mocks.restoreEditProjectStatus.mockImplementation(
+      async (tx, projectId, _operationId, fallbackStatus) => tx.project.updateMany({
+        where: { id: projectId, status: "EDITING" }, data: { status: fallbackStatus }
+      }).then((result: { count: number }) => result.count === 1)
+    );
     mocks.generatePageDraft.mockResolvedValue({ title: "New", markdown: "Body.", summary: "S.", continuityNotes: [] });
     mocks.reviewAndSaveGeneratedPage.mockResolvedValue({ index: 4, title: "New", markdown: "Body.", summary: "S." });
     mocks.maybeEnqueueCompile.mockResolvedValue("compile");

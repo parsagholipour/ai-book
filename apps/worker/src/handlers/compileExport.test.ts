@@ -73,6 +73,7 @@ import { compileExport } from "./compileExport.js";
 import { readerChapterCachePath, writeCachedReaderChapters } from "../generation/readerChapterCache.js";
 import {
   DETACHED_FROM_PROJECT_LIFECYCLE,
+  EXPORT_PUBLICATION_PROJECT_STATUS,
   EXPORT_REPAIR_FORMAT,
   PRESENTATION_ONLY_RECOMPILE,
   PRESENTATION_RECOMPILE_FALLBACK_STATUS,
@@ -503,6 +504,26 @@ describe("compileExport reader chapters", () => {
         editOperationId: "operation-1",
         characterPreparation: { planId: "plan-1", attemptId: "attempt-1" }
       })
+    );
+  });
+
+  it("recovers the exact stamped owner for an edit compile whose payload carries no operation id", async () => {
+    mocks.prisma.bookEditOperation.findFirst.mockResolvedValueOnce({ id: "operation-structural" });
+
+    await compileExport(
+      job({
+        contentRevision: 4,
+        [EXPORT_PUBLICATION_PROJECT_STATUS]: "EDITING"
+      })
+    );
+
+    expect(mocks.prisma.bookEditOperation.findFirst).toHaveBeenCalledWith({
+      where: { projectId: "project-1", status: "APPLIED", publicationRevision: 4 },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: { id: true }
+    });
+    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
+      expect.objectContaining({ editOperationId: "operation-structural" })
     );
   });
 

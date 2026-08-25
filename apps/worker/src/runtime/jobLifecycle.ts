@@ -6,10 +6,12 @@ import {
   isRecoverableNetworkError,
   parseStructuralApplication,
   payloadOwnsProjectOutcome,
+  preEditProjectStatus,
   presentationRecompileFallbackStatus,
   shouldBypassConfiguredRetries as retryPolicyShouldBypass,
   shouldRecoverJobAttempt as retryPolicyShouldRecover,
-  workerJobOwnsFailureLifecycle
+  workerJobOwnsFailureLifecycle,
+  workerJobRestoresPreEditProjectStatus
 } from "@book-maker/core";
 import { Prisma, planRevisionRetryDelayMs, prisma } from "@book-maker/db";
 import {
@@ -339,11 +341,7 @@ export async function markFailed(job: Job, error: unknown) {
         return;
       }
     }
-    if (projectId) {
-      await prisma.project
-        .updateMany({ where: { id: projectId, status: "EDITING" }, data: { status: "COMPLETE" } })
-        .catch(() => ({ count: 0 }));
-    }
+    if (projectId) await settleProjectAfterOperationExit(job, projectId);
     return;
   }
   if (projectId && job.name === "revise-plan") {
@@ -683,8 +681,9 @@ export async function markStopped(job: Job) {
     await failCharacterPortraitForJob(job, STOPPED_JOB_ERROR);
     return;
   }
-  // A stopped edit settles like a failed one: refund the operation's own
-  // ledger entry, never the project's book charge — the book is still there.
+  // Operation settlement is separate from project settlement: Apply and
+  // Continue put an existing book back, while a replan operation owns the new
+  // copy's generation lifecycle and therefore fails that copy.
   const editOperationId = editOperationIdFromJob(job);
   if (editOperationId) {
     await failEditOperation(editOperationId, STOPPED_JOB_ERROR, { refund: !attemptId });
@@ -693,11 +692,7 @@ export async function markStopped(job: Job) {
         return;
       }
     }
-    if (projectId) {
-      await prisma.project
-        .updateMany({ where: { id: projectId, status: "EDITING" }, data: { status: "COMPLETE" } })
-        .catch(() => ({ count: 0 }));
-    }
+    if (projectId) await settleProjectAfterOperationExit(job, projectId);
     return;
   }
   if (projectId && job.name === "revise-plan") {
@@ -751,6 +746,18 @@ async function restorePresentationRecompileStatus(job: Job, projectId: string): 
     .catch(() => ({ count: 0 }));
 }
 
+/** Restore settled edit work; operation-linked generation instead fails its new project. */
+async function settleProjectAfterOperationExit(job: Job, projectId: string): Promise<void> {
+  if (workerJobRestoresPreEditProjectStatus(job.name)) {
+    await prisma.project
+      .updateMany({ where: { id: projectId, status: "EDITING" }, data: { status: preEditProjectStatus(job.data) } })
+      .catch(() => ({ count: 0 }));
+    return;
+  }
+  if (jobOwnsProjectLifecycle(job)) {
+    await prisma.project.update({ where: { id: projectId }, data: { status: "FAILED" } }).catch(() => undefined);
+  }
+}
 export async function refundFailedProjectCredits(job: Job, projectId: string, reason: string): Promise<void> {
   if (generationAttemptIdFromJob(job)) {
     return;

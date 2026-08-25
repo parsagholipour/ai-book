@@ -42,7 +42,9 @@ may have been edited in the meantime.
   same unexpired token fences the page save, the APPLIED write, the refusal's own settlement
   (`settleSkippedStructuralPageLeaseTx` — reached *after* a refund the heartbeat has to carry the
   lease through, or expiry lets a replacement start shifting while the stale settle calls its live
-  edit a delivered no-op), and the **first statement** of rollback.
+  edit a delivered no-op), and the first **operation-row** statement of rollback. Transactions that
+  also touch Project take the Project row first, matching Stop; operation-only page writes still
+  begin with the lease CAS.
   `structuralLeaseCompletedAt` is written only after the export tail, so a waiter cannot mark the
   shared durable job complete under a winner still running. Lease comparison uses Postgres time:
   an expired zombie may neither renew itself nor publish or revert after its replacement owns the
@@ -390,6 +392,11 @@ never reaches a retrieval.
   the provider would not embed. That rethrow is what carries a stop out of `storeEmbedding`, and
   out of the prepare block in `pageReview.ts` beside `keeperStoryExtractForSave`, which swallows
   every failure but this one.
+  **A caught SQL error still aborts its PostgreSQL transaction.** A caller that includes this
+  best-effort write in a larger manuscript transaction must isolate it with
+  `runBestEffortPageMemoryWrite`: the savepoint keeps the caller's ownership lock and successful
+  atomic commit, while `ROLLBACK TO SAVEPOINT` makes the surrounding transaction committable again
+  when both the vector write and its degraded fallback were refused.
   **And the placeholder it leaves describes the page as it is now.** That write was `DO NOTHING`,
   so a second failure under a scope already holding a placeholder wrote nothing at all and the row
   kept the *previous* draft's summary — a chat edit rewrites page 12, its embedding fails again,

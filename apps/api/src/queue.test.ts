@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   projectUpdateMany: vi.fn(),
   audiobookUpdateMany: vi.fn(),
   bookEditOperationFindUnique: vi.fn(),
+  bookEditOperationFindMany: vi.fn(),
   bookEditOperationUpdateMany: vi.fn(),
   refundCreditLedgerEntry: vi.fn(),
   refundLatestProjectOperationCredits: vi.fn(),
@@ -53,6 +54,7 @@ vi.mock("@book-maker/db", () => ({
     audiobook: { updateMany: mocks.audiobookUpdateMany },
     bookEditOperation: {
       findUnique: mocks.bookEditOperationFindUnique,
+      findMany: mocks.bookEditOperationFindMany,
       updateMany: mocks.bookEditOperationUpdateMany
     }
   }
@@ -63,7 +65,11 @@ vi.mock("@book-maker/db/billing", () => ({
   failGenerationAttempt: mocks.failGenerationAttempt
 }));
 
-import { DETACHED_FROM_PROJECT_LIFECYCLE, PRESENTATION_ONLY_RECOMPILE } from "@book-maker/core";
+import {
+  DETACHED_FROM_PROJECT_LIFECYCLE,
+  PRE_EDIT_PROJECT_STATUS,
+  PRESENTATION_ONLY_RECOMPILE
+} from "@book-maker/core";
 import {
   dispatchGenerationJob,
   enqueueGenerationJob,
@@ -264,9 +270,15 @@ describe("stopping a run", () => {
     mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) =>
       callback({
         project: { update: mocks.projectUpdate, updateMany: mocks.projectUpdateMany },
-        generationJob: { findMany: mocks.findMany, updateMany: mocks.updateMany }
+        generationJob: { findMany: mocks.findMany, updateMany: mocks.updateMany },
+        bookEditOperation: {
+          findMany: mocks.bookEditOperationFindMany,
+          updateMany: mocks.bookEditOperationUpdateMany
+        }
       })
     );
+    mocks.bookEditOperationFindMany.mockResolvedValue([]);
+    mocks.bookEditOperationUpdateMany.mockResolvedValue({ count: 0 });
     mocks.refundCreditLedgerEntry.mockResolvedValue({});
     mocks.refundLatestProjectOperationCredits.mockResolvedValue({});
     mocks.failGenerationAttempt.mockResolvedValue(undefined);
@@ -362,11 +374,13 @@ describe("stopping a run", () => {
     expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
   });
 
-  it("does not refund anything when a stop cancels no open jobs", async () => {
+  it("keeps repeated stops with no open jobs idempotent", async () => {
     mocks.findMany.mockResolvedValue([]);
 
-    await stopProjectGenerationJobs("project-1");
+    const first = await stopProjectGenerationJobs("project-1");
+    const repeated = await stopProjectGenerationJobs("project-1");
 
+    expect([first.stoppedJobs, repeated.stoppedJobs]).toEqual([0, 0]);
     expect(mocks.failGenerationAttempt).not.toHaveBeenCalled();
     expect(mocks.refundCreditLedgerEntry).not.toHaveBeenCalled();
     expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
@@ -488,15 +502,7 @@ describe("stopping a run", () => {
     expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
   });
 
-  it("fails an EDITING project when an in-flight chat image insertion is stopped", async () => {
-    // Accepted outcome, documented on purpose (design D3): a user Stop lands
-    // here while the worker holds the book EDITING for the image edit, and
-    // EDITING is not in SETTLED_PROJECT_STATUSES — so the project is written
-    // FAILED, exactly as stopping a text edit is today. The worker's
-    // EDITING→COMPLETE restore is only promised for worker-internal failures,
-    // never for a user-initiated stop. What must hold is the settlement: the
-    // charge refunds through the attempt (which also hands back any
-    // metadata.imageQuota slot), never through the legacy charge walk.
+  it("restores a stopped edit to its queue-time REVIEW_REQUIRED status", async () => {
     mocks.projectUpdate.mockResolvedValue({ status: "EDITING" });
     mocks.findMany.mockResolvedValue([
       {
@@ -511,9 +517,191 @@ describe("stopping a run", () => {
           affectedPageIndexes: [11],
           imageInsertion: { subject: "a dragon", placement: "end_of_book", targetPageIndex: 11 },
           planId: "plan-1",
-          billingLedgerEntryId: "entry-image"
+          billingLedgerEntryId: "entry-image",
+          [PRE_EDIT_PROJECT_STATUS]: "REVIEW_REQUIRED"
         },
         attemptId: "attempt-image"
+      }
+    ]);
+
+    await stopProjectGenerationJobs("project-1");
+
+    expect(mocks.projectUpdateMany).toHaveBeenCalledWith({
+      where: { id: "project-1", status: "EDITING" },
+      data: { status: "REVIEW_REQUIRED" }
+    });
+    expect(mocks.failGenerationAttempt.mock.calls).toEqual([["attempt-image", "Stopped by user", "CANCELED"]]);
+    expect(mocks.refundCreditLedgerEntry).not.toHaveBeenCalled();
+    expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
+  });
+
+  it("revokes every linked edit lease before the stop transaction can expose a restored project", async () => {
+    const operationRows = [
+      {
+        id: "op-text",
+        generationJobId: "job-text",
+        status: "ACTIVE",
+        structuralLeaseToken: "text-owner",
+        structuralLeaseExpiresAt: new Date("2099-01-01T00:03:00.000Z"),
+        structuralLeaseCompletedAt: null
+      },
+      {
+        id: "op-structural",
+        generationJobId: "job-structural",
+        status: "ACTIVE",
+        structuralLeaseToken: "structural-owner",
+        structuralLeaseExpiresAt: new Date("2099-01-01T00:03:00.000Z"),
+        structuralLeaseCompletedAt: null
+      },
+      {
+        id: "op-continue",
+        generationJobId: "job-continue",
+        status: "ACTIVE",
+        structuralLeaseToken: "legacy-owner",
+        structuralLeaseExpiresAt: new Date("2099-01-01T00:03:00.000Z"),
+        structuralLeaseCompletedAt: null
+      }
+    ];
+    let afterStopCommit:
+      | { renewedOperationIds: string[]; publicationWrites: string[]; contentRevision: number; operationRows: typeof operationRows }
+      | undefined;
+
+    mocks.projectUpdate.mockResolvedValue({ status: "EDITING" });
+    mocks.findMany.mockResolvedValue([
+      {
+        id: "job-text",
+        bullJobId: null,
+        status: "ACTIVE",
+        type: "APPLY_BOOK_EDIT",
+        payload: { operationId: "op-text", [PRE_EDIT_PROJECT_STATUS]: "COMPLETE" }
+      },
+      {
+        id: "job-structural",
+        bullJobId: null,
+        status: "ACTIVE",
+        type: "APPLY_BOOK_EDIT",
+        // A modern relation must still revoke the operation when a repaired
+        // payload no longer carries its legacy operationId copy.
+        payload: { [PRE_EDIT_PROJECT_STATUS]: "COMPLETE" }
+      },
+      {
+        id: "job-continue",
+        bullJobId: null,
+        status: "ACTIVE",
+        type: "CONTINUE_BOOK",
+        payload: { operationId: "op-continue", [PRE_EDIT_PROJECT_STATUS]: "COMPLETE" }
+      }
+    ]);
+    mocks.bookEditOperationUpdateMany.mockImplementation(
+      async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+        const branches = Array.isArray(where.OR) ? (where.OR as Array<Record<string, unknown>>) : [where];
+        const operationIds = new Set(
+          branches.flatMap((branch) => {
+            const id = branch.id as { in?: string[] } | undefined;
+            return id?.in ?? [];
+          })
+        );
+        const generationJobIds = new Set(
+          branches.flatMap((branch) => {
+            const generationJobId = branch.generationJobId as { in?: string[] } | undefined;
+            return generationJobId?.in ?? [];
+          })
+        );
+        let count = 0;
+        for (const operation of operationRows) {
+          const linked = operationIds.has(operation.id) || generationJobIds.has(operation.generationJobId);
+          if (linked && (operation.status === "QUEUED" || operation.status === "ACTIVE")) {
+            Object.assign(operation, data);
+            count += 1;
+          }
+        }
+        return { count };
+      }
+    );
+    mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
+      const result = await callback({
+        project: { update: mocks.projectUpdate, updateMany: mocks.projectUpdateMany },
+        generationJob: { findMany: mocks.findMany, updateMany: mocks.updateMany },
+        bookEditOperation: {
+          findMany: mocks.bookEditOperationFindMany,
+          updateMany: mocks.bookEditOperationUpdateMany
+        }
+      });
+
+      // This is the first instant a provider-paused worker can resume after
+      // the Stop transaction releases its Project/Job/Operation locks. Both
+      // text and structural assertions use these historical structuralLease*
+      // fields and require ACTIVE/APPLIED plus the still-live token.
+      const renewedOperationIds = operationRows
+        .filter(
+          (operation) =>
+            (operation.status === "ACTIVE" || operation.status === "APPLIED") &&
+            operation.structuralLeaseToken !== null &&
+            operation.structuralLeaseExpiresAt !== null &&
+            operation.structuralLeaseExpiresAt.getTime() > Date.now() &&
+            operation.structuralLeaseCompletedAt === null
+        )
+        .map((operation) => operation.id);
+      afterStopCommit = {
+        renewedOperationIds,
+        publicationWrites: renewedOperationIds.length > 0 ? ["Page", "PageEditSnapshot", "Embedding"] : [],
+        // A real page/snapshot/memory publication is conditional on that
+        // assertion; model the only visible project-side effect here.
+        contentRevision: 7 + (renewedOperationIds.length > 0 ? 1 : 0),
+        operationRows: operationRows.map((operation) => ({ ...operation }))
+      };
+      return result;
+    });
+
+    await stopProjectGenerationJobs("project-1");
+
+    expect(afterStopCommit).toEqual({
+      renewedOperationIds: [],
+      publicationWrites: [],
+      contentRevision: 7,
+      operationRows: operationRows.map((operation) => ({
+        ...operation,
+        status: "CANCELED",
+        structuralLeaseToken: null,
+        structuralLeaseExpiresAt: null,
+        error: "Stopped by user"
+      }))
+    });
+    expect(mocks.bookEditOperationUpdateMany).toHaveBeenCalledWith({
+      where: {
+        status: { in: ["QUEUED", "ACTIVE"] },
+        OR: [
+          { generationJobId: { in: ["job-text", "job-structural", "job-continue"] } },
+          { id: { in: ["op-text", "op-continue"] } }
+        ]
+      },
+      data: {
+        status: "CANCELED",
+        error: "Stopped by user",
+        structuralLeaseToken: null,
+        structuralLeaseExpiresAt: null
+      }
+    });
+    expect(mocks.projectUpdate.mock.invocationCallOrder[0]!).toBeLessThan(
+      mocks.updateMany.mock.invocationCallOrder[0]!
+    );
+    expect(mocks.updateMany.mock.invocationCallOrder[0]!).toBeLessThan(
+      mocks.bookEditOperationUpdateMany.mock.invocationCallOrder[0]!
+    );
+    expect(mocks.bookEditOperationUpdateMany.mock.invocationCallOrder[0]!).toBeLessThan(
+      mocks.projectUpdateMany.mock.invocationCallOrder[0]!
+    );
+  });
+
+  it("fails a stopped replan copy even though its generation job carries an operation", async () => {
+    mocks.projectUpdate.mockResolvedValue({ status: "EDITING" });
+    mocks.findMany.mockResolvedValue([
+      {
+        id: "job-replan",
+        bullJobId: null,
+        status: "ACTIVE",
+        type: "REPLAN_BOOK",
+        payload: { operationId: "op-replan", sourceProjectId: "project-source" }
       }
     ]);
 
@@ -523,9 +711,6 @@ describe("stopping a run", () => {
       where: { id: "project-1", status: { notIn: ["COMPLETE", "REVIEW_REQUIRED"] } },
       data: { status: "FAILED" }
     });
-    expect(mocks.failGenerationAttempt.mock.calls).toEqual([["attempt-image", "Stopped by user", "CANCELED"]]);
-    expect(mocks.refundCreditLedgerEntry).not.toHaveBeenCalled();
-    expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
   });
 
   it("cannot fail a project that is already finished", async () => {
@@ -587,7 +772,52 @@ describe("stopping a run", () => {
     expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
   });
 
+  it("lets a replan copy outrank Apply, Continue, and presentation restores in a mixed stop", async () => {
+    mocks.projectUpdate.mockResolvedValue({ status: "EDITING" });
+    mocks.findMany.mockResolvedValue([
+      {
+        id: "job-apply",
+        bullJobId: null,
+        status: "ACTIVE",
+        type: "APPLY_BOOK_EDIT",
+        payload: { operationId: "op-apply", [PRE_EDIT_PROJECT_STATUS]: "REVIEW_REQUIRED" }
+      },
+      {
+        id: "job-continue",
+        bullJobId: null,
+        status: "ACTIVE",
+        type: "CONTINUE_BOOK",
+        payload: { operationId: "op-1", [PRE_EDIT_PROJECT_STATUS]: "REVIEW_REQUIRED" }
+      },
+      {
+        id: "job-presentation",
+        bullJobId: null,
+        status: "QUEUED",
+        type: "COMPILE_EXPORT",
+        payload: {
+          [PRESENTATION_ONLY_RECOMPILE]: true,
+          presentationRecompileFallbackStatus: "REVIEW_REQUIRED"
+        }
+      },
+      {
+        id: "job-replan",
+        bullJobId: null,
+        status: "ACTIVE",
+        type: "REPLAN_BOOK",
+        payload: { operationId: "op-replan", sourceProjectId: "project-source" }
+      }
+    ]);
+
+    await stopProjectGenerationJobs("project-1");
+
+    expect(mocks.projectUpdateMany).toHaveBeenCalledWith({
+      where: { id: "project-1", status: { notIn: ["COMPLETE", "REVIEW_REQUIRED"] } },
+      data: { status: "FAILED" }
+    });
+  });
+
   it("settles a legacy edit job against its operation's charge and closes the operation", async () => {
+    mocks.projectUpdate.mockResolvedValue({ status: "EDITING" });
     mocks.findMany.mockResolvedValue([
       {
         id: "job-edit",
@@ -606,9 +836,21 @@ describe("stopping a run", () => {
     // Never the plan walk: the edit's planId must not route the refund to the
     // book's FULL_BOOK_GENERATION entry.
     expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
+    expect(mocks.projectUpdateMany).toHaveBeenCalledWith({
+      where: { id: "project-1", status: "EDITING" },
+      data: { status: "COMPLETE" }
+    });
     expect(mocks.bookEditOperationUpdateMany).toHaveBeenCalledWith({
-      where: { id: { in: ["op-1"] }, status: { in: ["QUEUED", "ACTIVE"] } },
-      data: { status: "CANCELED", error: "Stopped by user" }
+      where: {
+        status: { in: ["QUEUED", "ACTIVE"] },
+        OR: [{ generationJobId: { in: ["job-edit"] } }, { id: { in: ["op-1"] } }]
+      },
+      data: {
+        status: "CANCELED",
+        error: "Stopped by user",
+        structuralLeaseToken: null,
+        structuralLeaseExpiresAt: null
+      }
     });
   });
 });

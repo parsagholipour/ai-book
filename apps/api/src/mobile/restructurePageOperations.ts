@@ -4,6 +4,7 @@ import { requestWithCharacterContext } from "./bookEditCopy.js";
 import { busyEditReply, operationQueuedMessage, proposeBookEdit } from "./bookEditIntents.js";
 import { bookEditCreditCost } from "./bookEditPricing.js";
 import { type MobileBookEditOperationRecord, type MobileProjectChatMessageRecord } from "./dto.js";
+import { settledStatusBeforeEdit } from "./editProjectStatus.js";
 import { createOpenBookEditOperation, replayClaimedChatOperation } from "./editOperationClaims.js";
 import { queueAttemptChatOperation } from "./editOperations.js";
 import { createAssistantChatMessage, type ProjectForChat } from "./projectChat.js";
@@ -146,7 +147,7 @@ export async function queueChatRestructurePages(options: {
           // settles the book itself on a delivered no-op and on a recompile it
           // could not queue, and by then nothing on the project still says
           // whether the reader had quality findings open.
-          [PRE_EDIT_PROJECT_STATUS]: project.status === "REVIEW_REQUIRED" ? "REVIEW_REQUIRED" : "COMPLETE",
+          [PRE_EDIT_PROJECT_STATUS]: settledStatusBeforeEdit(project.status),
           ...(project.currentPlanId ? { planId: project.currentPlanId } : {}),
           ...(ledgerEntry ? { billingLedgerEntryId: ledgerEntry.id } : {})
         }

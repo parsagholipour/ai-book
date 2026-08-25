@@ -356,6 +356,20 @@ describe("maybeEnqueueCompile publication-policy identity", () => {
     );
   });
 
+  it("never retargets an operation-owned publication tail to a newer revision", async () => {
+    mocks.prisma.project.findUnique.mockResolvedValue({ status: "EDITING", contentRevision: 8 });
+
+    await expect(
+      maybeEnqueueCompile("project-1", "plan-1", undefined, {
+        contentRevision: 7,
+        requireContentRevisionMatch: true
+      })
+    ).resolves.toBe("settled");
+
+    expect(mocks.prisma.generationJob.create).not.toHaveBeenCalled();
+    expect(mocks.prisma.page.findMany).not.toHaveBeenCalled();
+  });
+
   it.each([
     [
       "presentation",

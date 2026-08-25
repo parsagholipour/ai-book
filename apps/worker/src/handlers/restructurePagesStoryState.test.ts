@@ -159,6 +159,27 @@ describe("restructurePages rollback story state", () => {
   });
 
   it.each(["insert", "delete", "move"] as const)(
+    "stamps the publication owner for a successful structural %s",
+    async (action) => {
+      mocks.application = structuralApplication(action);
+      mocks.markStructuralPageLeaseApplied.mockResolvedValue(true);
+      mocks.completeStructuralPageLease.mockResolvedValue(true);
+
+      await expect(
+        restructurePages(requestFor(action), { id: "op-1", status: "QUEUED", classifier: {} })
+      ).resolves.toBeUndefined();
+
+      expect(mocks.markStructuralPageLeaseApplied).toHaveBeenCalledWith({
+        projectId: "project-1",
+        operationId: "op-1",
+        ownerToken: expect.any(String),
+        affectedPageIndexes: expect.any(Array)
+      });
+      expect(mocks.revertStructuralPageChange).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(["insert", "delete", "move"] as const)(
     "restores story state after a %s rollback that follows a successful forward rebuild",
     async (action) => {
       mocks.application = structuralApplication(action);

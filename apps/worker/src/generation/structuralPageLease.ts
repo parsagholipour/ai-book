@@ -233,32 +233,70 @@ export async function renewStructuralPageLease(operationId: string, ownerToken: 
   return rows.length === 1;
 }
 
-/** Atomically fences the operation's delivered verdict with the current lease. */
+class StructuralPageLeaseSettlementMissError extends Error {
+  constructor() {
+    super("Structural page edit lost its lease before publication settlement");
+    this.name = "StructuralPageLeaseSettlementMissError";
+  }
+}
+
+/**
+ * Atomically fences the delivered verdict and the exact manuscript revision
+ * it owns with the current lease.
+ *
+ * Project is locked first, matching export publication and stop. If the lease
+ * CAS then misses, throwing rolls the revision bump back too: an APPLIED
+ * operation without a revision cannot be recovered as a compile owner, while a
+ * revision bump without its owner would leave the same publication generation
+ * permanently anonymous.
+ */
 export async function markStructuralPageLeaseApplied(options: {
+  projectId: string;
   operationId: string;
   ownerToken: string;
   affectedPageIndexes: number[];
-}): Promise<boolean> {
+}): Promise<number | null> {
   const pgIndexes = `{${options.affectedPageIndexes.join(",")}}`;
-  const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(
-    `UPDATE "BookEditOperation"
-       SET "status" = 'APPLIED',
-           "affectedPageIndexes" = $4::integer[],
-           "appliedAt" = CURRENT_TIMESTAMP,
-           "structuralLeaseExpiresAt" = CURRENT_TIMESTAMP + ($3::double precision * INTERVAL '1 millisecond'),
-           "updatedAt" = CURRENT_TIMESTAMP
-     WHERE "id" = $1
-       AND "structuralLeaseToken" = $2
-       AND "structuralLeaseExpiresAt" > CURRENT_TIMESTAMP
-       AND "structuralLeaseCompletedAt" IS NULL
-       AND "status" = 'ACTIVE'
-     RETURNING "id"`,
-    options.operationId,
-    options.ownerToken,
-    STRUCTURAL_PAGE_LEASE_MS,
-    pgIndexes
-  );
-  return rows.length === 1;
+  let publicationRevision: number | null = null;
+  try {
+    await prisma.$transaction(async (tx) => {
+      const published = await tx.project.update({
+        where: { id: options.projectId },
+        data: { contentRevision: { increment: 1 } },
+        select: { contentRevision: true }
+      });
+      const rows = await tx.$queryRawUnsafe<{ id: string }[]>(
+        `UPDATE "BookEditOperation"
+           SET "status" = 'APPLIED',
+               "publicationRevision" = $5,
+               "affectedPageIndexes" = $4::integer[],
+               "appliedAt" = CURRENT_TIMESTAMP,
+               "structuralLeaseExpiresAt" = CURRENT_TIMESTAMP + ($3::double precision * INTERVAL '1 millisecond'),
+               "updatedAt" = CURRENT_TIMESTAMP
+         WHERE "id" = $1
+           AND "projectId" = $6
+           AND "structuralLeaseToken" = $2
+           AND "structuralLeaseExpiresAt" > CURRENT_TIMESTAMP
+           AND "structuralLeaseCompletedAt" IS NULL
+           AND "status" = 'ACTIVE'
+         RETURNING "id"`,
+        options.operationId,
+        options.ownerToken,
+        STRUCTURAL_PAGE_LEASE_MS,
+        pgIndexes,
+        published.contentRevision,
+        options.projectId
+      );
+      if (rows.length !== 1) {
+        throw new StructuralPageLeaseSettlementMissError();
+      }
+      publicationRevision = published.contentRevision;
+    }, PAGE_RESTRUCTURE_TRANSACTION_OPTIONS);
+    return publicationRevision;
+  } catch (error) {
+    if (error instanceof StructuralPageLeaseSettlementMissError) return null;
+    throw error;
+  }
 }
 
 /**
@@ -355,9 +393,9 @@ export async function completeStructuralPageLease(operationId: string, ownerToke
 }
 
 /**
- * The rollback transaction calls this first. Its returned row proves the lease
- * is both this delivery's and still live, and the UPDATE holds that proof locked
- * until the whole revert commits.
+ * The rollback transaction calls this immediately after its Project root lock.
+ * Its returned row proves the lease is both this delivery's and still live,
+ * and the UPDATE holds that proof locked until the whole revert commits.
  */
 export async function renewStructuralPageLeaseTx(
   tx: Prisma.TransactionClient,

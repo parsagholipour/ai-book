@@ -1,5 +1,9 @@
 import { getProjectOrThrow, invalidateProjectExports } from "../generation/bookHelpers.js";
 import {
+  claimAppliedEditPublication,
+  restoreEditProjectStatus
+} from "../generation/editProjectStatus.js";
+import {
   applyLayoutBatchInTx,
   LayoutUnwritableError,
   type LayoutDestRef,
@@ -9,7 +13,7 @@ import {
 } from "../generation/imageLayoutPlan.js";
 import { maybeEnqueueCompile } from "../runtime/dispatch.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
-import { jsonRecord } from "@book-maker/core";
+import { jsonRecord, preEditProjectStatus, type SettledProjectStatus } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { Job } from "bullmq";
 
@@ -128,9 +132,12 @@ export async function applyImageLayout(job: Job, operation: { status: string; cl
     imageLayout?: ImageLayoutPayload;
   };
   const generationJobId = job.data.generationJobId as string | undefined;
+  // Read once from the queue-time stamp. The project row already says EDITING
+  // before either a first delivery or an APPLIED redelivery reaches this fork.
+  const fallbackStatus = preEditProjectStatus(job.data);
 
   if (operation.status === "APPLIED") {
-    await replayAppliedLayout(projectId, planId, operation.classifier);
+    await replayAppliedLayout(projectId, operationId, planId, operation.classifier, fallbackStatus);
     return;
   }
 
@@ -141,15 +148,14 @@ export async function applyImageLayout(job: Job, operation: { status: string; cl
   if (activated.count === 0) {
     const settled = await prisma.bookEditOperation.findUnique({ where: { id: operationId } });
     if (settled?.status === "APPLIED") {
-      await replayAppliedLayout(projectId, planId, settled.classifier);
+      await replayAppliedLayout(projectId, operationId, planId, settled.classifier, fallbackStatus);
     }
     return;
   }
   const prior = await prisma.project.findUnique({
     where: { id: projectId },
-    select: { status: true, currentPlanId: true }
+    select: { currentPlanId: true }
   });
-  const fallbackStatus = prior?.status === "REVIEW_REQUIRED" ? "REVIEW_REQUIRED" : "COMPLETE";
   await prisma.project.update({ where: { id: projectId }, data: { status: "EDITING" } });
   await advanceJobStep(generationJobId, "prepare", 20, "Preparing the illustration change");
 
@@ -186,9 +192,13 @@ export async function applyImageLayout(job: Job, operation: { status: string; cl
   let skipReason: LayoutSkipReason | null = null;
   try {
     applied = await prisma.$transaction(async (tx) => {
+      await tx.project.update({
+        where: { id: projectId },
+        data: { contentRevision: { increment: 0 } }
+      });
       const claimed = await tx.bookEditOperation.updateMany({
         where: { id: operationId, status: { in: ["QUEUED", "ACTIVE"] } },
-        data: { status: "APPLIED", appliedAt: new Date() }
+        data: { automaticRetryCount: { increment: 0 } }
       });
       if (claimed.count !== 1) {
         return false;
@@ -210,9 +220,17 @@ export async function applyImageLayout(job: Job, operation: { status: string; cl
         where: { id: operationId },
         select: { classifier: true }
       });
+      const published = await tx.project.update({
+        where: { id: projectId },
+        data: { contentRevision: { increment: 1 } },
+        select: { contentRevision: true }
+      });
       await tx.bookEditOperation.update({
         where: { id: operationId },
         data: {
+          status: "APPLIED",
+          publicationRevision: published.contentRevision,
+          appliedAt: new Date(),
           // Written from the flush rather than guessed before it: a target that
           // had already gone must not leave its page claimed as edited.
           affectedPageIndexes: batch.writtenPageIndexes,
@@ -224,7 +242,6 @@ export async function applyImageLayout(job: Job, operation: { status: string; cl
           }
         }
       });
-      await tx.project.update({ where: { id: projectId }, data: { contentRevision: { increment: 1 } } });
       return true;
     });
   } catch (error) {
@@ -244,6 +261,16 @@ export async function applyImageLayout(job: Job, operation: { status: string; cl
     return;
   }
   if (!applied) {
+    // Both deliveries may have passed the ACTIVE fence and written EDITING
+    // before one wins the transactional APPLIED claim. Replay that winner's
+    // idempotent export/status tail so this loser cannot overwrite an earlier
+    // fallback restoration and leave the project stranded in EDITING.
+    const settled = await prisma.bookEditOperation.findUnique({ where: { id: operationId } });
+    if (settled?.status === "APPLIED") {
+      await replayAppliedLayout(projectId, operationId, planId, settled.classifier, fallbackStatus);
+    }
+    // CANCELED (or any non-APPLIED outcome) belongs to the actor that settled
+    // it; this delivery must neither mutate pages nor change that settlement.
     return;
   }
   try {
@@ -253,12 +280,10 @@ export async function applyImageLayout(job: Job, operation: { status: string; cl
   }
   const compilePlanId = planId ?? prior?.currentPlanId;
   if (!compilePlanId) {
-    await prisma.project
-      .updateMany({ where: { id: projectId, status: "EDITING" }, data: { status: fallbackStatus } })
-      .catch(() => undefined);
+    await restoreLayoutStatus(projectId, operationId, fallbackStatus);
     return;
   }
-  await refreshExports(projectId, compilePlanId, fallbackStatus);
+  await refreshExports(projectId, compilePlanId, operationId, fallbackStatus);
 }
 
 function snapshotStepLabel(sources: ResolvedLayoutSource[]): string {
@@ -328,56 +353,77 @@ async function resolveLayoutDest(projectId: string, dest: LayoutDestRef | undefi
 async function markLayoutSkipped(
   projectId: string,
   operationId: string,
-  fallbackStatus: "COMPLETE" | "REVIEW_REQUIRED",
+  fallbackStatus: SettledProjectStatus,
   reason: LayoutSkipReason = "missing"
 ): Promise<void> {
-  const row = await prisma.bookEditOperation.findUnique({
-    where: { id: operationId },
-    select: { classifier: true }
-  });
-  await prisma.bookEditOperation.update({
-    where: { id: operationId },
-    data: {
-      status: "APPLIED",
-      appliedAt: new Date(),
-      affectedPageIndexes: [],
-      classifier: {
-        ...(row && typeof row.classifier === "object" && row.classifier !== null ? row.classifier : {}),
-        layoutMissing: true,
-        layoutSkippedReason: reason
+  await prisma.$transaction(async (tx) => {
+    const restored = await restoreEditProjectStatus(
+      tx,
+      projectId,
+      operationId,
+      fallbackStatus,
+      "ACTIVE"
+    );
+    if (!restored) return;
+    const row = await tx.bookEditOperation.findUnique({
+      where: { id: operationId },
+      select: { classifier: true }
+    });
+    await tx.bookEditOperation.update({
+      where: { id: operationId },
+      data: {
+        status: "APPLIED",
+        appliedAt: new Date(),
+        affectedPageIndexes: [],
+        classifier: {
+          ...(row && typeof row.classifier === "object" && row.classifier !== null ? row.classifier : {}),
+          layoutMissing: true,
+          layoutSkippedReason: reason
+        }
       }
-    }
-  });
-  await prisma.project.updateMany({
-    where: { id: projectId, status: "EDITING" },
-    data: { status: fallbackStatus }
+    });
   });
 }
 
-async function replayAppliedLayout(projectId: string, planId: string | undefined, classifier: unknown): Promise<void> {
+async function replayAppliedLayout(
+  projectId: string,
+  operationId: string,
+  planId: string | undefined,
+  classifier: unknown,
+  fallbackStatus: SettledProjectStatus
+): Promise<void> {
   if (
     classifier &&
     typeof classifier === "object" &&
     classifier !== null &&
     (classifier as { layoutMissing?: unknown }).layoutMissing === true
   ) {
+    await restoreLayoutStatus(projectId, operationId, fallbackStatus, "APPLIED_NOOP");
     return;
   }
   const project = await getProjectOrThrow(projectId);
   const compilePlanId = planId ?? project.currentPlanId;
   if (!compilePlanId) {
+    await restoreLayoutStatus(projectId, operationId, fallbackStatus);
     return;
   }
-  const fallbackStatus = project.status === "REVIEW_REQUIRED" ? "REVIEW_REQUIRED" : "COMPLETE";
-  await refreshExports(projectId, compilePlanId, fallbackStatus);
+  await refreshExports(projectId, compilePlanId, operationId, fallbackStatus);
 }
 
 async function refreshExports(
   projectId: string,
   planVersionId: string,
-  fallbackStatus: "COMPLETE" | "REVIEW_REQUIRED"
+  operationId: string,
+  fallbackStatus: SettledProjectStatus
 ): Promise<void> {
-  await invalidateProjectExports(projectId);
+  const claimed = await prisma.$transaction(async (tx) => {
+    if (!(await claimAppliedEditPublication(tx, projectId, operationId, fallbackStatus))) {
+      return false;
+    }
+    await invalidateProjectExports(projectId);
+    return true;
+  });
+  if (!claimed) return;
   let dispatched: Awaited<ReturnType<typeof maybeEnqueueCompile>>;
   try {
     dispatched = await maybeEnqueueCompile(projectId, planVersionId, {
@@ -389,8 +435,17 @@ async function refreshExports(
     dispatched = "not-ready";
   }
   if (dispatched === "not-ready") {
-    await prisma.project
-      .updateMany({ where: { id: projectId, status: "EDITING" }, data: { status: fallbackStatus } })
-      .catch(() => undefined);
+    await restoreLayoutStatus(projectId, operationId, fallbackStatus);
   }
+}
+
+async function restoreLayoutStatus(
+  projectId: string,
+  operationId: string,
+  fallbackStatus: SettledProjectStatus,
+  phase: "APPLIED" | "APPLIED_NOOP" = "APPLIED"
+): Promise<void> {
+  await prisma
+    .$transaction((tx) => restoreEditProjectStatus(tx, projectId, operationId, fallbackStatus, phase))
+    .catch(() => undefined);
 }

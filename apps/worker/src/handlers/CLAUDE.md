@@ -325,6 +325,54 @@ prefix, since `new URL(path).pathname` is then `/api/assets/images/…`. That re
 (`packages/core/src/generation/bookImageAssets.ts`) is shared with `editChanges.ts` for the same
 reason, and a null answer refuses the whole move rather than half-applying it.
 
+## Text page edits
+
+- **A text rewrite and every manuscript write after it belong to one durable, expiring delivery lease.**
+  `ACTIVE` is a lifecycle state, not an owner: matching `ACTIVE` let a stalled Bull delivery and
+  its replacement both snapshot and rewrite the same pages, then each mark the operation APPLIED
+  and increment `contentRevision`. `applyBookEdit` now gives each invocation a fresh token and
+  claims the operation with the database-time lease first introduced for structural edits (the
+  column names are historical; the operation kinds are disjoint). A live owner makes the loser
+  wait through the export handoff; expiry lets a real crash replacement take over. The heartbeat
+  spans provider calls, and the first operation-row statement of every snapshot, page-publication,
+  status, invalidation and final APPLIED/revision transaction renews and locks that token. A
+  transaction that also touches Project locks Project before that statement. A paused zombie
+  can therefore finish a model call but publish nothing after its replacement owns the row.
+  Snapshot `revisionAfter` is the durable per-page resume stamp: page content, its after-snapshot,
+  continuity notes, story delta and embedding commit together under the lease, so takeover skips
+  exactly the pages already delivered rather than applying the request to their rewritten prose a
+  second time. The two best-effort memory helpers each run in their own SQL savepoint inside that
+  transaction. This is not just error handling: both helpers catch their statement errors, but
+  PostgreSQL still marks the transaction aborted, so without `ROLLBACK TO SAVEPOINT` its commit
+  rolls the page and resume stamp back too. Separate savepoints let either optional row degrade
+  without poisoning the other, while keeping the operation-row lock held — moving the writes to a
+  later transaction would open a crash gap and let an expired zombie race takeover memory. Lease
+  completion comes only after the compile handoff; a waiter may neither return into `markCompleted`
+  under a live owner nor fall through to `markFailed` and refund it. Once that handoff is durable,
+  completion is bookkeeping: a returned `false` is still ownership evidence and takes the explicit
+  completion wait, but a thrown database/transport error has an unknown write outcome and is logged
+  without failing the delivered edit. The APPLIED row remains the replay fence, so an overlapping or
+  future delivery can safely repeat the idempotent export tail and reconcile the completion marker.
+  Publication ownership rejection is a different terminal answer: once a newer project lifecycle,
+  manuscript revision or operation supersedes an already-APPLIED tail, that tail touches neither the
+  project nor its exports, completes only its still-owned lease and returns so the durable job can
+  become COMPLETED. Only a lease assertion lost to a live owner keeps the no-settlement stand-down.
+- **An exact text edit that skips every target has no publication tail.** A partial exact replacement
+  is still a real manuscript edit: its untouched snapshots are deleted, `skippedPageIndexes` is
+  recorded for the operation card, and its changed pages take the ordinary export invalidation,
+  `contentRevision` and compile path. But when the literal has disappeared from *every* target,
+  `updatedPageIndexes` is empty and that same tail is destructive work for a manuscript that did not
+  move. The delivery therefore settles under its existing text lease instead: it proves ownership,
+  calls `refundSkippedEditOperation` before the APPLIED claim (so a refund failure leaves ACTIVE for
+  normal failure settlement), then one transaction CASes the still-live token to APPLIED/completed,
+  merges `classifier.textExactSkipped: true` and `skippedPageIndexes` onto the classifier returned by
+  that lock-taking statement, deletes all unused snapshots, and restores the stamped pre-edit project
+  status. The marker is text-specific — never `structuralSkipped`, whose kind and redelivery tail are
+  different — and both the first operation read and the APPLIED-tail row-lock read recognize it.
+  A sequential delivery therefore never claims the text publication tail; a concurrent loser sees
+  the completed lease (or waits for it after losing the post-refund CAS), so neither delivery repeats
+  the refund, invalidates exports, advances `contentRevision`, or queues a compile.
+
 ## Structural page edits
 
 - **Every fork out of `applyBookEdit` — structural and both image ones — is decided by the operation's `kind`, never by the payload.**
@@ -395,8 +443,9 @@ reason, and a null answer refuses the whole move rather than half-applying it.
   (`apps/worker/src/generation/CLAUDE.md`), and the reason the lease columns live outside
   `classifier` at all. Both writes stay in the one transaction, so the marker still cannot land
   before the write that takes the book out of EDITING.
-- **The stamp proves the shift; the durable lease owns everything after it.** The transaction's
-  database-time CAS is the first statement, so one delivery shifts and receives the expiring token.
+- **The stamp proves the shift; the durable lease owns everything after it.** The transaction locks
+  Project first, then its database-time operation CAS gives one delivery the expiring token, so one
+  delivery shifts and every cancellation path follows the same order.
   A concurrent `already-applied` loser waits instead of falling through: returning immediately
   would mark the shared `GenerationJob` COMPLETED under the winner, while drafting would give both
   deliveries the same inserted page ids. If the owner crashes, expiry lets the waiting redelivery
@@ -473,7 +522,7 @@ reason, and a null answer refuses the whole move rather than half-applying it.
   every job is terminal, while the repair lane refuses it. All four forks therefore restore a
   settled status on `not-ready`, the one dispatch outcome that already proves no immediate compile
   is behind it.
-- **The status a fork restores rides the payload, because the enqueue is what takes it away.** It is
+- **The status every apply fork restores rides the payload, because the enqueue is what takes it away.** It is
   COMPLETE for almost every book and REVIEW_REQUIRED for the ones the reader still has to look at,
   and nothing on this side can tell them apart: `queueChatRestructurePages` writes
   `status: "EDITING"` in the same committed transaction as the `GenerationJob` row, so the project
@@ -482,13 +531,15 @@ reason, and a null answer refuses the whole move rather than half-applying it.
   read one line *earlier* only relocated the dead code, and a book with open quality findings still
   came out of any restructure looking finished. A redelivery has it worse still, because the first
   delivery leaves EDITING on purpose, so `replayAppliedRestructure`'s own read was never a pre-edit
-  status either. The Apply now stamps `PRE_EDIT_PROJECT_STATUS` (`packages/core/src/jobScope.ts`,
-  beside the presentation reprint's own fallback key) onto the payload from the row it is about to
-  move, `preEditProjectStatus(job.data)` reads it back once at the top of the handler, and that one
-  value reaches every path that settles the book itself: the skipped-edit no-op, the `not-ready`
-  restore, and the replay's. A job with no key means COMPLETE, which is what every row enqueued
-  before it meant. It is a *fallback*, never a publish: the success path still leaves the project
-  EDITING for the recompile, which earns its own verdict and writes the status itself.
+  status either. All four Apply enqueue sites now stamp `PRE_EDIT_PROJECT_STATUS`
+  (`packages/core/src/jobScope.ts`, beside the presentation reprint's own fallback key) onto the
+  payload from the row each transaction is about to move. Text, insertion, layout and restructure
+  read `preEditProjectStatus(job.data)` once in their own fork and thread it through every path that
+  settles the book itself: skipped-edit no-ops, missing-plan exits, `not-ready`/failed compile
+  handoffs and APPLIED replays. `runtime/jobLifecycle.ts` uses the same stamp for failed and stopped
+  edit exits. A job with no key means COMPLETE, which is what every row enqueued before it meant. It
+  is a *fallback*, never a publish: queued or waiting recompiles keep the project EDITING until the
+  compile earns its own verdict and writes the status itself.
 - **Every apply fork stays EDITING until its recompile publishes, and the page map is why.**
   `restructurePages.ts` used to retire EDITING before invalidating the exports, so that the outcome
   of a lost enqueue was already the state the repair lane rebuilds. But EDITING is not only a
@@ -570,6 +621,35 @@ reason, and a null answer refuses the whole move rather than half-applying it.
   claims `status: "APPLIED"` and deliberately does not claim ACTIVE: a drafting failure — the
   ordinary one — leaves the operation ACTIVE, and `markFailed` settles exactly that row through
   the attempt and `failEditOperation`. Widening the claim takes the row out from under the refund.
+- **EDITING is a shared state; an edit publication owns it by operation and revision, never by
+  status alone.** A delayed APPLIED delivery can meet EDITING from a newer edit before that edit
+  advances `contentRevision`, and a presentation reprint can open the same state without changing
+  manuscript revision at all. `BookEditOperation.publicationRevision` is written with APPLIED and
+  the project revision in the mutation transaction. `editProjectStatus.ts` then locks Project
+  first (the export-publication/stop order), locks the named operation, and accepts a claim or
+  restore only when its phase and revision still match and neither a later operation nor a later
+  project job exists. The operation's own apply job is exempt; a compile additionally exempts its
+  own durable row. Exact-text and layout no-ops use the ACTIVE owner for first-delivery settlement
+  and their APPLIED no-op marker for replay, since they deliberately have no publication revision.
+  Compile publication repeats the operation/revision fence under its project lock, because a newer
+  enqueue can start after the handler's claim and before a minutes-long render publishes.
+  **An APPLIED structural replay never creates a second revision.** Its mutation transaction already
+  incremented `Project.contentRevision` and stamped that exact value on the operation; repeating the
+  increment made the replacement compile anonymous, so owner inference could not bind it back to the
+  edit. The replay claims that original operation/revision under the structural lease, invalidates only
+  while the claim still owns the lifecycle, and requires compile dispatch to match the stamped revision.
+  A newer revision or lifecycle makes the stale tail stand down without touching files or status.
+  **A null publication stamp is legacy evidence only while its apply job is still open.** Migration
+  000059 and `editProjectStatus.ts` adopt the current project revision only for an APPLIED mutation
+  whose own project-scoped `APPLY_BOOK_EDIT` row remains QUEUED/ACTIVE, with no later operation or
+  project job. No-op, rolled-back and undone classifiers are excluded. The migration covers rows
+  already in that crash window; the locked runtime check covers an old worker crossing the migration
+  during a rolling deploy. Every other historical null stays ambiguous and owns nothing.
+  **Project is the root of the edit lock order.** Any transaction that can lock both Project and
+  BookEditOperation takes Project first; a publication that also locks its durable GenerationJob
+  takes Project, then GenerationJob, then BookEditOperation. Stop uses that same order before it
+  revokes an ACTIVE lease. Operation-only snapshot/page writes may still begin with their lease CAS,
+  because they never wait for Project while holding it.
 
 ## Covers and portraits
 

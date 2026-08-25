@@ -16,11 +16,11 @@ import {
   type StructuralPageLeaseWait
 } from "../generation/structuralPageLease.js";
 import { draftInsertedPages } from "./restructurePagesDrafting.js";
+import { queueRestructureCompile, replayAppliedRestructure } from "./restructurePagesPublication.js";
 import { redeliverUnrevertedStructuralEdit } from "./restructurePagesRedelivery.js";
 import { settleSkippedRestructure } from "./restructurePagesSettlement.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
-import { maybeEnqueueCompile } from "../runtime/dispatch.js";
 import { advanceJobStep, refundUnwrittenEditPages } from "../runtime/jobLifecycle.js";
 import { UnownedStructuralDeliveryError } from "../runtime/jobTypes.js";
 import { errorMessage } from "../runtime/serialization.js";
@@ -342,6 +342,7 @@ export async function restructurePages(job: Job, operation: { id: string; status
 
   const heartbeat = startStructuralPageLeaseHeartbeat(operationId, ownerToken);
   const activePlanVersionId = application.newPlanVersionId ?? planVersion.id;
+  let publicationRevision: number | null = null;
   try {
     const activePlanVersion = await prisma.planVersion.findUnique({ where: { id: activePlanVersionId } });
     const activeInput = activePlanVersion
@@ -389,13 +390,13 @@ export async function restructurePages(job: Job, operation: { id: string; status
       writtenPages: draftedPageIds.length,
       reason: `Structural edit wrote ${draftedPageIds.length} of ${application.insertedPageIds.length} paid pages`
     });
-    if (
-      !(await markStructuralPageLeaseApplied({
-        operationId,
-        ownerToken,
-        affectedPageIndexes: savedIndexes.map((page) => page.index)
-      }))
-    ) {
+    publicationRevision = await markStructuralPageLeaseApplied({
+      projectId,
+      operationId,
+      ownerToken,
+      affectedPageIndexes: savedIndexes.map((page) => page.index)
+    });
+    if (publicationRevision === null) {
       throw new Error("Structural page edit lost ownership before settlement");
     }
     // Left EDITING on purpose, the way the text and image forks leave it: the
@@ -405,10 +406,6 @@ export async function restructurePages(job: Job, operation: { id: string; status
     // here refused the `pdfPageMap` the shift had just re-pointed — the reader's
     // next "page 12" fell back to a model index while printed page 12 was still
     // on screen, which is the fallback the re-point exists to prevent.
-    await prisma.project.update({
-      where: { id: projectId },
-      data: { contentRevision: { increment: 1 } }
-    });
     await invalidateProjectExports(projectId);
   } catch (error) {
     if (isStructuralPageLeaseLostError(error)) {
@@ -465,8 +462,17 @@ export async function restructurePages(job: Job, operation: { id: string; status
   }
 
   // Outside the rollback on purpose — see `queueRestructureCompile`.
+  if (publicationRevision === null) {
+    throw new Error("Applied structural edit lost its publication revision");
+  }
   try {
-    await queueRestructureCompile(projectId, activePlanVersionId, fallbackStatus);
+    await queueRestructureCompile(
+      projectId,
+      activePlanVersionId,
+      operationId,
+      publicationRevision,
+      fallbackStatus
+    );
     await heartbeat.assertHeld();
     if (!(await completeStructuralPageLease(operationId, ownerToken))) {
       await waitForStructuralPageLeaseCompletion(operationId);
@@ -569,12 +575,18 @@ async function finishOwnedStructuralTail(
   fallbackStatus: SettledProjectStatus
 ): Promise<void> {
   const heartbeat = startStructuralPageLeaseHeartbeat(operationId, ownerToken);
+  let publicationTailFinished = false;
   try {
-    await replayAppliedRestructure(projectId, fallbackStatus);
+    await replayAppliedRestructure(projectId, operationId, ownerToken, fallbackStatus);
+    publicationTailFinished = true;
     await heartbeat.assertHeld();
     if (!(await completeStructuralPageLease(operationId, ownerToken))) {
       await waitForStructuralPageLeaseCompletion(operationId);
     }
+  } catch (error) {
+    if (!isStructuralPageLeaseLostError(error)) throw error;
+    const completed = await waitForStructuralPageLeaseCompletion(operationId);
+    if (!publicationTailFinished && completed === "abandoned") throw error;
   } finally {
     await heartbeat.stop();
   }
@@ -632,59 +644,6 @@ async function releaseProjectEditingClaim(
 }
 
 /**
- * Queues the recompile, hands an enqueue outage to the export repair lane rather
- * than to the rollback, and takes the project out of EDITING when nothing is
- * coming to do it.
- *
- * By the time this runs the pages are shifted, the operation is APPLIED and the
- * old exports are already deleted, so there is nothing here a failure should
- * undo — and undoing it is exactly what a Redis blip used to do from inside the
- * try above: the throw reached the rollback, put the reader's new pages back,
- * flipped a delivered operation FAILED, and then `markFailed` marked a book that
- * was COMPLETE a moment earlier FAILED. The reader watched their pages vanish
- * from a book that now needed attention, over a queue hiccup that cost the edit
- * nothing. `applyBookEdit` and `applyImageInsertion` swallow the same call for
- * the same reason.
- *
- * And, like those two, this fork now has a `not-ready` branch of its own. It
- * used to retire EDITING *before* invalidating the exports, on the grounds that
- * COMPLETE with missing files is what `ensureExportRepairQueued` rebuilds — but
- * COMPLETE is also what `bookPageMapForProject` reads as "the reader is looking
- * at the PDF this manuscript describes", and the manuscript had just moved. So
- * the status is left where every other apply fork leaves it and restored here on
- * the one outcome where no compile will write it: a dispatch that queued nothing
- * and has nothing in flight to call it back. The delayed stranded-generation
- * sweep can eventually replay that state, but this tail already knows no
- * immediate handoff exists and should not make the reader wait for its grace
- * period.
- *
- * What it is restored *to* is the caller's to say, and comes off the payload
- * rather than off the project: a book that came in REVIEW_REQUIRED is handed
- * back to the repair lane still asking for attention, not quietly finished.
- */
-async function queueRestructureCompile(
-  projectId: string,
-  planVersionId: string,
-  fallbackStatus: SettledProjectStatus
-): Promise<void> {
-  let dispatched: Awaited<ReturnType<typeof maybeEnqueueCompile>>;
-  try {
-    // No `skipFinalReview`: a structural change is the one edit where the
-    // chapter-transition review earns its cost, and it is what `continueBook`
-    // does for the same reason.
-    dispatched = await maybeEnqueueCompile(projectId, planVersionId);
-  } catch (error) {
-    console.error(`Failed to enqueue the export refresh for restructured project ${projectId}:`, error);
-    dispatched = "not-ready";
-  }
-  if (dispatched === "not-ready") {
-    await prisma.project
-      .updateMany({ where: { id: projectId, status: "EDITING" }, data: { status: fallbackStatus } })
-      .catch(() => undefined);
-  }
-}
-
-/**
  * Puts the book back exactly as it was, so a retry starts from the original
  * shape rather than compounding a half-applied one — and takes the redelivery
  * fence down with it.
@@ -715,8 +674,15 @@ async function rollbackStructuralChange(
   application: StructuralApplication
 ): Promise<{ currentPlanId: string | null } | null> {
   return prisma.$transaction(async (tx) => {
-    // First statement: a stale delivery cannot revert the winner's pages. The
-    // conditional UPDATE also renews and locks the lease through the revert.
+    // Project is the root lock shared with Stop. Claim it before the operation
+    // lease so cancellation and rollback cannot wait on each other in reverse.
+    await tx.project.update({
+      where: { id: projectId },
+      data: { contentRevision: { increment: 0 } }
+    });
+    // First operation-row statement: a stale delivery cannot revert the
+    // winner's pages. The conditional UPDATE also renews and locks the lease
+    // through the revert.
     const owned = await renewStructuralPageLeaseTx(tx, operationId, ownerToken);
     if (!owned) return null;
     const reverted = await revertStructuralPageChange(tx, projectId, application);
@@ -798,32 +764,4 @@ async function stampDescribesBook(projectId: string, application: StructuralAppl
     });
   }
   return remaining > 0;
-}
-
-/**
- * The idempotent tail a redelivery of a finished restructure may re-run: the
- * exports, and nothing that could apply the edit a second time.
- *
- * The enqueue is swallowed here for the same reason as on the success path, and
- * the stakes are higher: this runs for an operation that is already APPLIED, so
- * a throw is a settled, paid, delivered edit failing its own second delivery —
- * `markFailed` would mark the finished book FAILED over a queue outage that the
- * repair lane picks up on its own.
- *
- * It moves the project the same way the success path does, for the same reason:
- * this deletes the exports and bumps the manuscript past the map measured from
- * them, so the window that follows is the one EDITING describes, and
- * `queueRestructureCompile` is what closes it either way.
- */
-async function replayAppliedRestructure(projectId: string, fallbackStatus: SettledProjectStatus): Promise<void> {
-  const project = await getProjectOrThrow(projectId);
-  if (!project.currentPlanId) {
-    throw new Error("Current plan not found");
-  }
-  await prisma.project.update({
-    where: { id: projectId },
-    data: { status: "EDITING", contentRevision: { increment: 1 } }
-  });
-  await invalidateProjectExports(projectId);
-  await queueRestructureCompile(projectId, project.currentPlanId, fallbackStatus);
 }

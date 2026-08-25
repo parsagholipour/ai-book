@@ -95,6 +95,12 @@ export async function settleSkippedRestructure(options: {
     if (!(await stillOwnsSkippedRestructure(heartbeat, operationId, projectId))) return false;
     await refundSkippedEditOperation(options.job, `Structural edit skipped: ${reason}`);
     const settled = await prisma.$transaction(async (tx) => {
+      // Stop owns Project before it revokes an edit lease. Keep the same root
+      // lock here before the conditional operation settlement below.
+      await tx.project.update({
+        where: { id: projectId },
+        data: { contentRevision: { increment: 0 } }
+      });
       const owned = await settleSkippedStructuralPageLeaseTx(tx, operationId, ownerToken);
       if (!owned) return false;
       await tx.bookEditOperation.update({

@@ -8,8 +8,10 @@ import {
   JOB_PAGE_REWRITE_SCOPE,
   PAGE_REWRITING_JOB_TYPES,
   PRE_EDIT_PROJECT_STATUS,
+  PRE_EDIT_STATUS_RESTORING_JOB_TYPES,
   SKIP_FINAL_REVIEW,
   generationJobControlsProjectStatus,
+  generationJobRestoresPreEditProjectStatus,
   isDerivativeGenerationJobType,
   isDerivativeWorkerJobName,
   jobOwnsQualityVerdict,
@@ -17,7 +19,8 @@ import {
   payloadOwnsProjectOutcome,
   preEditProjectStatus,
   workerJobControlsProjectStatus,
-  workerJobOwnsFailureLifecycle
+  workerJobOwnsFailureLifecycle,
+  workerJobRestoresPreEditProjectStatus
 } from "./jobScope.js";
 
 /**
@@ -147,6 +150,24 @@ describe("preEditProjectStatus", () => {
     expect(preEditProjectStatus({ operationId: "op-1" })).toBe("COMPLETE");
     expect(preEditProjectStatus({ [PRE_EDIT_PROJECT_STATUS]: "EDITING" })).toBe("COMPLETE");
     expect(preEditProjectStatus(null)).toBe("COMPLETE");
+  });
+});
+
+describe("pre-edit status restoration scope", () => {
+  it("keeps the durable and worker predicates on one canonical job table", () => {
+    for (const type of PRE_EDIT_STATUS_RESTORING_JOB_TYPES) {
+      expect(generationJobRestoresPreEditProjectStatus(type)).toBe(true);
+      expect(workerJobRestoresPreEditProjectStatus(jobNames[type])).toBe(true);
+    }
+  });
+
+  it("restores Apply and Continue, but not operation-linked replan generation", () => {
+    expect(generationJobRestoresPreEditProjectStatus("APPLY_BOOK_EDIT")).toBe(true);
+    expect(generationJobRestoresPreEditProjectStatus("CONTINUE_BOOK")).toBe(true);
+    expect(generationJobRestoresPreEditProjectStatus("REPLAN_BOOK")).toBe(false);
+    expect(generationJobRestoresPreEditProjectStatus("GENERATE_BOOK")).toBe(false);
+    expect(workerJobRestoresPreEditProjectStatus("replan-book")).toBe(false);
+    expect(workerJobRestoresPreEditProjectStatus("generate-book")).toBe(false);
   });
 });
 

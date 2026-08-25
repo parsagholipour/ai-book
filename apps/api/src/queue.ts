@@ -7,12 +7,14 @@ import {
   bookGenerationChargeFromPayloads,
   dispatchBackoffMs,
   generationJobOwnsFailureLifecycle,
+  generationJobRestoresPreEditProjectStatus,
   isPresentationOnlyRecompile,
   jobNames,
   payloadOwnsProjectOutcome,
   jobOwnsQualityVerdict,
   jsonPayloadToRecord,
   loadConfig,
+  preEditProjectStatus,
   presentationRecompileFallbackStatus,
   retryJobOptions,
   type GenerationJobType
@@ -318,8 +320,34 @@ export async function stopProjectGenerationJobs(projectId: string) {
       where: { projectId, status: { in: ["QUEUED", "ACTIVE"] } },
       select: { id: true, bullJobId: true, status: true, type: true, payload: true, attemptId: true }
     });
-    const stopped = [] as typeof candidates;
+    // Take every candidate job lock before touching an edit operation. The
+    // zero increment is only a row claim; terminalization waits until the
+    // linked operation answers whether Stop still owns this work.
+    const lockedCandidates = [] as typeof candidates;
     for (const candidate of candidates) {
+      const locked = await tx.generationJob.updateMany({
+        where: { id: candidate.id, status: { in: ["QUEUED", "ACTIVE"] } },
+        data: { dispatchAttempts: { increment: 0 } }
+      });
+      if (locked.count === 1) {
+        lockedCandidates.push(candidate);
+      }
+    }
+
+    // Project -> GenerationJob -> BookEditOperation is the publication lock
+    // order. Revoke the linked operation while those first two claims are
+    // still held, before restoring the project or committing: a provider-
+    // paused Apply may resume immediately after this transaction, and both its
+    // text and structural publication assertions accept only a live operation
+    // lease. `generationJobId` is the durable linkage; payload ids keep jobs
+    // created before that relation (and replan-copy operations owned by the
+    // source project) on the same atomic path.
+    const appliedEditHandoffJobIds = await cancelEditOperationsForStoppedJobsTx(tx, lockedCandidates);
+    const stopped = [] as typeof candidates;
+    for (const candidate of lockedCandidates) {
+      if (appliedEditHandoffJobIds.has(candidate.id)) {
+        continue;
+      }
       const claimed = await tx.generationJob.updateMany({
         where: { id: candidate.id, status: { in: ["QUEUED", "ACTIVE"] } },
         data: {
@@ -334,20 +362,49 @@ export async function stopProjectGenerationJobs(projectId: string) {
       }
     }
 
-    // The status write is guarded on the *status*, never on what was stopped
-    // (see SETTLED_PROJECT_STATUSES above): a stop that claims zero rows is
-    // routinely a stranded project — GENERATING with its jobs long gone — and
-    // Stop is the one lever the user has to move it back to a retryable
-    // FAILED. The single exception is a free presentation reprint caught
-    // mid-flight with nothing owning stopped alongside it: its EDITING belongs
-    // to a settled book, so it goes back to the settled status it was born
-    // under rather than to FAILED.
-    const owningStopped = stopped.some((job) => generationJobOwnsFailureLifecycle(job.type, job.payload));
-    const presentation = stopped.find((job) => isPresentationOnlyRecompile(job.payload));
-    if (!owningStopped && presentation && project.status === "EDITING") {
+    // Outcome precedence is deliberate and independent of query order. A real
+    // generation run still owns FAILED even when stopped beside derivative or
+    // edit rows. Without one, an edit restores its queue-time settled status;
+    // REVIEW_REQUIRED wins if inconsistent legacy rows are ever stopped
+    // together, preserving the more cautious verdict. A presentation-only
+    // reprint is the final restore case. Anything else — including a stop that
+    // claims zero rows — keeps the stranded-project fallback to FAILED.
+    const stoppedRestorableEdits = stopped.filter((job) => restoresPreEditProjectStatusOnStop(job));
+    const stoppedRestorableEditIds = new Set(stoppedRestorableEdits.map((job) => job.id));
+    const owningGenerationStopped = stopped.some(
+      (job) =>
+        !stoppedRestorableEditIds.has(job.id) && generationJobOwnsFailureLifecycle(job.type, job.payload)
+    );
+    const presentationJobs = stopped.filter((job) => isPresentationOnlyRecompile(job.payload));
+    if (owningGenerationStopped) {
+      await tx.project.updateMany({
+        where: { id: projectId, status: { notIn: [...SETTLED_PROJECT_STATUSES] } },
+        data: { status: "FAILED" }
+      });
+    } else if (appliedEditHandoffJobIds.size > 0) {
+      // APPLIED is the edit handler's durable publication fence. Its job is
+      // still ACTIVE only because processJob has not completed the idempotent
+      // compile/status tail yet; leave both that job and its EDITING project
+      // to the handler instead of restoring and refunding delivered work.
+    } else if (stoppedRestorableEdits.length > 0 && project.status === "EDITING") {
+      const restoredStatus = stoppedRestorableEdits.some(
+        (job) => preEditProjectStatus(job.payload) === "REVIEW_REQUIRED"
+      )
+        ? "REVIEW_REQUIRED"
+        : "COMPLETE";
       await tx.project.updateMany({
         where: { id: projectId, status: "EDITING" },
-        data: { status: presentationRecompileFallbackStatus(presentation.payload) }
+        data: { status: restoredStatus }
+      });
+    } else if (presentationJobs.length > 0 && project.status === "EDITING") {
+      const restoredStatus = presentationJobs.some(
+        (job) => presentationRecompileFallbackStatus(job.payload) === "REVIEW_REQUIRED"
+      )
+        ? "REVIEW_REQUIRED"
+        : "COMPLETE";
+      await tx.project.updateMany({
+        where: { id: projectId, status: "EDITING" },
+        data: { status: restoredStatus }
       });
     } else {
       await tx.project.updateMany({
@@ -427,6 +484,22 @@ export async function stopProjectGenerationJobs(projectId: string) {
     activeJobs: openJobs.filter((job) => job.status === "ACTIVE").length,
     removedQueueJobs
   };
+}
+
+/**
+ * Apply can restore as soon as Stop has atomically revoked its publication
+ * lease. Continue has no equivalent API-side compensation: once its durable
+ * row is ACTIVE, the worker may already have installed the extended plan,
+ * chapters, pages, and semantic tail. Keep that project FAILED until the
+ * worker's continuation rollback has durably completed. A QUEUED continuation
+ * has not reached the worker, so its enqueue-time EDITING transition is the
+ * only state to undo and the stamped settled status is safe to restore.
+ */
+function restoresPreEditProjectStatusOnStop(job: { type: string; status: string }): boolean {
+  return (
+    generationJobRestoresPreEditProjectStatus(job.type) &&
+    (job.type !== "CONTINUE_BOOK" || job.status === "QUEUED")
+  );
 }
 
 const BOOK_RUN_JOB_TYPES = new Set(["GENERATE_BOOK", "GENERATE_PAGE", "GENERATE_IMAGE", "COMPILE_EXPORT"]);
@@ -515,18 +588,71 @@ async function closeDerivativeRowsForStoppedJobs(
       data: { status: "FAILED", error: STOPPED_JOB_ERROR }
     });
   }
-  const operationIds = [
-    ...new Set(openJobs.flatMap((job) => {
+}
+
+async function cancelEditOperationsForStoppedJobsTx(
+  tx: Prisma.TransactionClient,
+  stoppedJobs: ReadonlyArray<{ id: string; type: string; payload: unknown }>
+): Promise<Set<string>> {
+  if (stoppedJobs.length === 0) {
+    return new Set();
+  }
+  const generationJobIds = stoppedJobs.map((job) => job.id);
+  const legacyOperationIds = [
+    ...new Set(stoppedJobs.flatMap((job) => {
       const operationId = legacyOperationId(jsonPayloadToRecord(job.payload));
       return operationId ? [operationId] : [];
     }))
   ];
-  if (operationIds.length > 0) {
-    await prisma.bookEditOperation.updateMany({
-      where: { id: { in: operationIds }, status: { in: ["QUEUED", "ACTIVE"] } },
-      data: { status: "CANCELED", error: STOPPED_JOB_ERROR }
-    });
+  await tx.bookEditOperation.updateMany({
+    where: {
+      status: { in: ["QUEUED", "ACTIVE"] },
+      OR: [
+        { generationJobId: { in: generationJobIds } },
+        ...(legacyOperationIds.length > 0 ? [{ id: { in: legacyOperationIds } }] : [])
+      ]
+    },
+    data: {
+      status: "CANCELED",
+      error: STOPPED_JOB_ERROR,
+      structuralLeaseToken: null,
+      structuralLeaseExpiresAt: null
+    }
+  });
+
+  const restorableJobs = stoppedJobs.filter((job) => generationJobRestoresPreEditProjectStatus(job.type));
+  if (restorableJobs.length === 0) {
+    return new Set();
   }
+  const restorableJobIds = restorableJobs.map((job) => job.id);
+  const restorableLegacyOperationIds = [
+    ...new Set(restorableJobs.flatMap((job) => {
+      const operationId = legacyOperationId(jsonPayloadToRecord(job.payload));
+      return operationId ? [operationId] : [];
+    }))
+  ];
+  const appliedOperations = await tx.bookEditOperation.findMany({
+    where: {
+      status: "APPLIED",
+      OR: [
+        { generationJobId: { in: restorableJobIds } },
+        ...(restorableLegacyOperationIds.length > 0 ? [{ id: { in: restorableLegacyOperationIds } }] : [])
+      ]
+    },
+    select: { id: true, generationJobId: true }
+  });
+  const appliedGenerationJobIds = new Set(
+    appliedOperations.flatMap((operation) => operation.generationJobId ? [operation.generationJobId] : [])
+  );
+  const appliedOperationIds = new Set(appliedOperations.map((operation) => operation.id));
+  return new Set(
+    restorableJobs.flatMap((job) => {
+      const legacyId = legacyOperationId(jsonPayloadToRecord(job.payload));
+      return appliedGenerationJobIds.has(job.id) || (legacyId !== null && appliedOperationIds.has(legacyId))
+        ? [job.id]
+        : [];
+    })
+  );
 }
 
 function legacyOperationId(payload: Record<string, unknown>): string | null {

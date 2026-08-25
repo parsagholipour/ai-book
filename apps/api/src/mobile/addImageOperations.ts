@@ -18,6 +18,7 @@ import {
 } from "./bookEditIntents.js";
 import { bookEditCreditCost } from "./bookEditPricing.js";
 import { type MobileBookEditOperationRecord, type MobileProjectChatMessageRecord } from "./dto.js";
+import { settledStatusBeforeEdit } from "./editProjectStatus.js";
 import {
   chatPagesForProject,
   createAssistantChatMessage,
@@ -25,7 +26,7 @@ import {
   type ProjectForChat
 } from "./projectChat.js";
 import { jsonInputValue } from "./support.js";
-import { imageMarkdownRe, resolveBookImageAsset } from "@book-maker/core";
+import { imageMarkdownRe, PRE_EDIT_PROJECT_STATUS, resolveBookImageAsset } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { GenerationQuotaExceededError, getImageQuota } from "@book-maker/db/billing";
 
@@ -371,6 +372,7 @@ export async function queueChatAddImage(options: {
             request: requestWithCharacterContext(message, options.characterContext),
             affectedPageIndexes: [target],
             intentKind: "add_image",
+            [PRE_EDIT_PROJECT_STATUS]: settledStatusBeforeEdit(project.status),
             imageInsertion: {
               subject: resolvedEdit.subject,
               placement: resolved.placement,

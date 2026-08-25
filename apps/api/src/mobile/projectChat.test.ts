@@ -6,6 +6,7 @@ vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js"))
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
 import { reserveCredits } from "@book-maker/db/billing";
+import { PRE_EDIT_PROJECT_STATUS } from "@book-maker/core";
 
 import { enqueueGenerationJob } from "../queue.js";
 import { serializeProjectChatMessage, stripCreditAnnouncement } from "./projectChat.js";
@@ -521,9 +522,43 @@ describe("mobile project chat", () => {
         type: "APPLY_BOOK_EDIT",
         payload: expect.objectContaining({
           affectedPageIndexes: [1, 2],
-          intentKind: "page_rewrite"
+          intentKind: "page_rewrite",
+          [PRE_EDIT_PROJECT_STATUS]: "COMPLETE"
         })
       })
+    );
+    await app.close();
+  });
+
+  it("stamps REVIEW_REQUIRED on a text edit before enqueue changes the project status", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "REVIEW_REQUIRED",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord(),
+        pages: generatedPages()
+      })
+    );
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-edit", type: "APPLY_BOOK_EDIT" }));
+    const app = await buildMobileApp();
+
+    const proposal = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Make the whole book warmer and simpler." }
+    });
+    await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/proposals/apply",
+      headers: bearer("token-a"),
+      payload: { proposalId: proposal.json().reply.metadata.editProposal.id }
+    });
+
+    expect(vi.mocked(enqueueGenerationJob).mock.calls.at(-1)?.[0].payload[PRE_EDIT_PROJECT_STATUS]).toBe(
+      "REVIEW_REQUIRED"
     );
     await app.close();
   });
@@ -691,12 +726,12 @@ describe("mobile project chat", () => {
     await app.close();
   });
 
-  it("proposes a book continuation and queues CONTINUE_BOOK after confirmation", async () => {
+  it("queues a REVIEW_REQUIRED continuation with its pre-edit project status", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.project.findFirst.mockResolvedValue(
       projectRecord({
         id: "project-1",
-        status: "COMPLETE",
+        status: "REVIEW_REQUIRED",
         currentPlanId: "plan-1",
         currentPlan: approvedPlanRecord(),
         pages: generatedPages()
@@ -745,7 +780,12 @@ describe("mobile project chat", () => {
       expect.objectContaining({
         projectId: "project-1",
         type: "CONTINUE_BOOK",
-        payload: expect.objectContaining({ chapterCount: 2, newPageCount: 10, planId: "plan-1" })
+        payload: expect.objectContaining({
+          chapterCount: 2,
+          newPageCount: 10,
+          planId: "plan-1",
+          [PRE_EDIT_PROJECT_STATUS]: "REVIEW_REQUIRED"
+        })
       })
     );
     await app.close();

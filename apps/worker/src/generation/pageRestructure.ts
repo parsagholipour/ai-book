@@ -147,8 +147,17 @@ export async function applyStructuralPageChange(
   const { projectId } = options;
 
   const shift = async (tx: Prisma.TransactionClient) => {
+    // Project is the root lock for every edit transaction that can later touch
+    // both Project and BookEditOperation. Stop holds Project before it revokes
+    // the operation lease; taking the lease first here inverted that order and
+    // let cancellation deadlock against a structural publication.
+    await tx.project.update({
+      where: { id: projectId },
+      data: { contentRevision: { increment: 0 } }
+    });
+
     // --- The claim, and it is the redelivery fence -------------------------
-    // First statement on purpose: one database-time CAS both takes the row lock
+    // First operation-row statement on purpose: one database-time CAS both takes the row lock
     // and installs this delivery's expiring owner token. The old ACTIVE update
     // fenced only the index shift — ACTIVE matched ACTIVE, so its transaction
     // loser received the winner's stamp and then drafted, settled and rolled

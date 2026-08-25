@@ -6,6 +6,7 @@ vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js"))
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
 import { reserveCredits } from "@book-maker/db/billing";
+import { PRE_EDIT_PROJECT_STATUS } from "@book-maker/core";
 
 import { enqueueGenerationJob } from "../queue.js";
 import { applyProposal, completeProject, sendChat } from "./testing/addImageChatSupport.js";
@@ -308,6 +309,7 @@ describe("chat image layout", () => {
         type: "APPLY_BOOK_EDIT",
         payload: expect.objectContaining({
           intentKind: "remove_image",
+          [PRE_EDIT_PROJECT_STATUS]: "COMPLETE",
           imageLayout: {
             action: "remove",
             sources: [{ pageIndex: 1, replaceAssetId: "asset-1" }]
@@ -317,6 +319,23 @@ describe("chat image layout", () => {
     );
     expect(vi.mocked(reserveCredits)).toHaveBeenCalledWith(expect.objectContaining({ amountCredits: 0 }));
     expect(mockBilling.consumeIllustratedBookUse).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("stamps REVIEW_REQUIRED on an image layout edit before enqueue changes the project status", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(completeProject({ status: "REVIEW_REQUIRED" }));
+    mockPrisma.bookEditOperation.findMany.mockResolvedValue([]);
+    mockPrisma.imageAsset.findMany.mockResolvedValue([{ id: "asset-1", page: { index: 1 } }]);
+    mockPrisma.imageAsset.findFirst.mockResolvedValue({ id: "asset-1", page: { index: 1 } });
+    const app = await buildMobileApp(withLayoutRouter());
+
+    const proposal = await sendChat(app, "Remove the picture on page 1");
+    await applyProposal(app, proposal.json().reply.metadata.editProposal.id);
+
+    expect(vi.mocked(enqueueGenerationJob).mock.calls.at(-1)?.[0].payload[PRE_EDIT_PROJECT_STATUS]).toBe(
+      "REVIEW_REQUIRED"
+    );
     await app.close();
   });
 

@@ -43,6 +43,7 @@ const application = {
 
 const tx = () => ({
   $queryRawUnsafe: vi.fn(),
+  project: { update: vi.fn() },
   bookEditOperation: {
     findUnique: vi.fn(),
     update: vi.fn()
@@ -115,21 +116,63 @@ describe("structural page delivery lease", () => {
   });
 
   it("does not let an expired zombie renew or publish after another delivery takes over", async () => {
-    mocks.prisma.$queryRawUnsafe.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    mocks.prisma.$queryRawUnsafe.mockResolvedValueOnce([]);
+    const client = tx();
+    client.project.update.mockResolvedValue({ contentRevision: 8 });
+    client.$queryRawUnsafe.mockResolvedValue([]);
+    mocks.prisma.$transaction.mockImplementation(async (run: (client: unknown) => Promise<unknown>) => run(client));
 
     await expect(renewStructuralPageLease("op-1", "old-owner")).resolves.toBe(false);
     await expect(
       markStructuralPageLeaseApplied({
+        projectId: "project-1",
         operationId: "op-1",
         ownerToken: "old-owner",
         affectedPageIndexes: [4, 5]
       })
-    ).resolves.toBe(false);
+    ).resolves.toBeNull();
 
     const renewalSql = mocks.prisma.$queryRawUnsafe.mock.calls[0]![0] as string;
-    const publishSql = mocks.prisma.$queryRawUnsafe.mock.calls[1]![0] as string;
+    const publishSql = client.$queryRawUnsafe.mock.calls[0]![0] as string;
     expect(renewalSql).toContain('"structuralLeaseExpiresAt" > CURRENT_TIMESTAMP');
     expect(publishSql).toContain('"structuralLeaseToken" = $2');
+    expect(client.project.update).toHaveBeenCalledWith({
+      where: { id: "project-1" },
+      data: { contentRevision: { increment: 1 } },
+      select: { contentRevision: true }
+    });
+  });
+
+  it("stamps the exact post-mutation revision in the same transaction as APPLIED", async () => {
+    const client = tx();
+    client.project.update.mockResolvedValue({ contentRevision: 12 });
+    client.$queryRawUnsafe.mockResolvedValue([{ id: "op-1" }]);
+    mocks.prisma.$transaction.mockImplementation(async (run: (client: unknown) => Promise<unknown>) => run(client));
+
+    await expect(
+      markStructuralPageLeaseApplied({
+        projectId: "project-1",
+        operationId: "op-1",
+        ownerToken: "owner",
+        affectedPageIndexes: [2, 3]
+      })
+    ).resolves.toBe(12);
+
+    const [sql, operationId, ownerToken, leaseMs, indexes, publicationRevision, projectId] =
+      client.$queryRawUnsafe.mock.calls[0]!;
+    expect(sql).toContain('"publicationRevision" = $5');
+    expect(sql).toContain('"projectId" = $6');
+    expect([operationId, ownerToken, leaseMs, indexes, publicationRevision, projectId]).toEqual([
+      "op-1",
+      "owner",
+      STRUCTURAL_PAGE_LEASE_MS,
+      "{2,3}",
+      12,
+      "project-1"
+    ]);
+    expect(client.project.update.mock.invocationCallOrder[0]!).toBeLessThan(
+      client.$queryRawUnsafe.mock.invocationCallOrder[0]!
+    );
   });
 
   it("renews the matching live owner", async () => {

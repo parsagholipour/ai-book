@@ -17,9 +17,15 @@ import { type PendingEditState, type StructuralCardPlan } from "./pendingEditSta
 import { billingOperationForIntent, bookEditCreditCost, operationKindForIntent } from "./bookEditPricing.js";
 import { planExactReplacement } from "./exactReplacementPreview.js";
 import { type MobileBookEditOperationRecord, type MobileProjectChatMessageRecord } from "./dto.js";
+import { settledStatusBeforeEdit } from "./editProjectStatus.js";
 import { createAssistantChatMessage, insufficientCreditsChatMessage, type ProjectForChat } from "./projectChat.js";
 import { errorMessage, fingerprintGenerationRequest, jsonInputValue } from "./support.js";
-import { bookPlanSchema, creditCostForOperation, isDetachedFromProjectLifecycle } from "@book-maker/core";
+import {
+  bookPlanSchema,
+  creditCostForOperation,
+  isDetachedFromProjectLifecycle,
+  PRE_EDIT_PROJECT_STATUS
+} from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { randomUUID } from "node:crypto";
 import {
@@ -569,6 +575,10 @@ export async function queueChatBookEdit(options: {
           request: requestWithCharacterContext(message, options.characterContext),
           affectedPageIndexes,
           intentKind: intent.kind,
+          // The enqueue transaction takes the project out of this settled
+          // state before the worker can read it. Every apply fork carries the
+          // value it must restore if no compile accepts the handoff.
+          [PRE_EDIT_PROJECT_STATUS]: settledStatusBeforeEdit(project.status),
           // Absent means what it has always meant: the whole request covers
           // every page. Present, it only narrows what a named page is told,
           // and a page with no entry still gets the request. The sheets are
@@ -684,6 +694,7 @@ export async function queueChatContinueBook(options: {
           request: requestWithCharacterContext(message, options.characterContext),
           chapterCount,
           newPageCount,
+          [PRE_EDIT_PROJECT_STATUS]: settledStatusBeforeEdit(project.status),
           ...(project.currentPlanId ? { planId: project.currentPlanId } : {}),
           ...(ledgerEntry ? { billingLedgerEntryId: ledgerEntry.id } : {})
         }

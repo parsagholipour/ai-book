@@ -69,6 +69,7 @@ import {
   refundUnwrittenEditPages,
   staleGenerationJobReason
 } from "./jobLifecycle.js";
+import { PRE_EDIT_PROJECT_STATUS } from "@book-maker/core";
 
 describe("job lifecycle ownership", () => {
   beforeEach(() => {
@@ -421,6 +422,45 @@ describe("job lifecycle ownership", () => {
     expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
   });
 
+  it("restores a failed edit to the status stamped before enqueue", async () => {
+    await markFailed(
+      job("apply-book-edit", {
+        operationId: "op-1",
+        [PRE_EDIT_PROJECT_STATUS]: "REVIEW_REQUIRED"
+      }),
+      new Error("edit failed")
+    );
+
+    expect(mocks.projectUpdateMany).toHaveBeenCalledWith({
+      where: { id: "project-1", status: "EDITING" },
+      data: { status: "REVIEW_REQUIRED" }
+    });
+  });
+
+  it("restores a stopped edit to the status stamped before enqueue", async () => {
+    await markStopped(
+      job("apply-book-edit", {
+        operationId: "op-1",
+        [PRE_EDIT_PROJECT_STATUS]: "REVIEW_REQUIRED"
+      })
+    );
+
+    expect(mocks.projectUpdateMany).toHaveBeenCalledWith({
+      where: { id: "project-1", status: "EDITING" },
+      data: { status: "REVIEW_REQUIRED" }
+    });
+  });
+
+  it("fails a stopped replan copy instead of restoring a status it never had", async () => {
+    await markStopped(job("replan-book", { operationId: "op-replan" }));
+
+    expect(mocks.projectUpdate).toHaveBeenCalledWith({
+      where: { id: "project-1" },
+      data: { status: "FAILED" }
+    });
+    expect(mocks.projectUpdateMany).not.toHaveBeenCalled();
+  });
+
   it("treats a CANCELED durable row as stale so refunded work never runs", async () => {
     mocks.projectFindUnique.mockResolvedValue({ currentPlanId: "plan-1", contentRevision: 0 });
     mocks.generationJobFindUnique.mockResolvedValue({
@@ -580,6 +620,32 @@ describe("job lifecycle ownership", () => {
 
     await expect(markCompleted(job("compile-export", { attemptId: "attempt-1" }))).resolves.toBe(false);
     expect(mocks.markGenerationAttemptSucceeded).not.toHaveBeenCalled();
+  });
+
+  it("terminalizes an APPLIED text-edit tail without rewriting its operation verdict", async () => {
+    mocks.generationJobFindUnique.mockResolvedValue({
+      steps: [],
+      status: "ACTIVE",
+      message: "Refreshing exports",
+      qualityReport: null
+    });
+
+    await expect(
+      markCompleted(
+        job("apply-book-edit", {
+          generationJobId: "job-old",
+          operationId: "op-old",
+          attemptId: "attempt-old"
+        })
+      )
+    ).resolves.toBe(true);
+
+    expect(mocks.generationJobUpdateMany).toHaveBeenCalledWith({
+      where: { id: "job-old", status: { in: ["QUEUED", "ACTIVE"] } },
+      data: expect.objectContaining({ status: "COMPLETED", progress: 100 })
+    });
+    expect(mocks.markGenerationAttemptSucceeded).toHaveBeenCalledWith("attempt-old");
+    expect(mocks.bookEditOperationUpdateMany).not.toHaveBeenCalled();
   });
 
   it("terminalizes a compile handoff but lets its same-attempt successor settle success", async () => {

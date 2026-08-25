@@ -1,14 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Job } from "bullmq";
 
-const mocks = vi.hoisted(() => ({
+const mocks = vi.hoisted(() => {
+  const project = { update: vi.fn(), updateMany: vi.fn() };
+  const page = { findMany: vi.fn(), update: vi.fn() };
+  const pageEditSnapshot = { findMany: vi.fn(), create: vi.fn(), update: vi.fn(), deleteMany: vi.fn() };
+  const continuityNote = { createMany: vi.fn() };
+  return ({
   prisma: {
-    bookEditOperation: { findUnique: vi.fn(), update: vi.fn() },
-    project: { update: vi.fn(), updateMany: vi.fn() },
+    $transaction: vi.fn(),
+    bookEditOperation: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+    project,
     planVersion: { findUnique: vi.fn() },
-    page: { findMany: vi.fn(), update: vi.fn() },
-    pageEditSnapshot: { create: vi.fn(), update: vi.fn(), deleteMany: vi.fn() },
-    continuityNote: { createMany: vi.fn() }
+    page,
+    pageEditSnapshot,
+    continuityNote
+  },
+  tx: {
+    bookEditOperation: { update: vi.fn() },
+    project,
+    page,
+    pageEditSnapshot,
+    continuityNote,
+    $executeRawUnsafe: vi.fn()
   },
   rewritePageForUserRequest: vi.fn(),
   loadQualityContext: vi.fn(async () => ({
@@ -19,10 +33,32 @@ const mocks = vi.hoisted(() => ({
   maybeEnqueueCompile: vi.fn(),
   storeEmbedding: vi.fn(),
   invalidateProjectExports: vi.fn(),
+  getProjectOrThrow: vi.fn(),
   applyImageInsertion: vi.fn(),
   applyImageLayout: vi.fn(),
-  restructurePages: vi.fn()
-}));
+  restructurePages: vi.fn(),
+  assertTextEditLeaseTx: vi.fn(async (_tx: unknown, _operationId: string, _ownerToken: string) => ({
+    status: "ACTIVE",
+    classifier: {}
+  })),
+  completeTextEditLease: vi.fn(async () => true),
+  waitForTextEditLease: vi.fn(
+    async (): Promise<
+      | { outcome: "acquired"; phase: "draft" | "tail" }
+      | { outcome: "completed" }
+      | { outcome: "settled" }
+      | { outcome: "abandoned" }
+    > => ({ outcome: "acquired", phase: "draft" })
+  ),
+  waitForTextEditLeaseCompletion: vi.fn(async () => "completed" as const),
+  heartbeatAssertHeld: vi.fn(async () => undefined),
+  heartbeatStop: vi.fn(async () => undefined),
+  claimAppliedEditPublication: vi.fn(async () => true),
+  restoreEditProjectStatus: vi.fn(async () => true),
+  keeperStoryExtractForSave: vi.fn(async () => null),
+  persistStoryExtract: vi.fn(async () => null)
+  });
+});
 
 vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma, Prisma: {} }));
 vi.mock("../runtime/dispatch.js", () => ({ maybeEnqueueCompile: mocks.maybeEnqueueCompile }));
@@ -36,7 +72,7 @@ vi.mock("../generation/embeddingWrites.js", () => ({
 }));
 vi.mock("../generation/projectInput.js", () => ({ inputForPlanVersion: () => ({}) }));
 vi.mock("../generation/bookHelpers.js", () => ({
-  getProjectOrThrow: async () => ({ id: "project-1", currentPlanId: "plan-1" }),
+  getProjectOrThrow: mocks.getProjectOrThrow,
   invalidateProjectExports: mocks.invalidateProjectExports,
   loadStyleLockPages: async () => [],
   strategyForInput: () => ({})
@@ -52,17 +88,19 @@ vi.mock("../generation/storyStateStore.js", () => ({
   rebuildProjectStoryState: vi.fn(),
   loadProjectStoryState: vi.fn(async () => ({ promises: [], facts: [], entities: {}, unanswered: [] }))
 }));
-vi.mock("../generation/qualityEnrichment.js", async () => {
-  const actual = await vi.importActual<typeof import("../generation/qualityEnrichment.js")>(
-    "../generation/qualityEnrichment.js"
-  );
-  // The real factory rather than an `undefined` stub. Nothing in this suite
-  // reaches it — `rewritePageForUserRequest`, the one caller behind the
-  // partially-mocked `replanBook.js` below, is itself mocked here, and its
-  // style audit is measured in `replanBook.test.ts`. Keeping the real one means
-  // un-mocking that caller does not silently ship an inert auditor.
-  return { ...actual, persistKeeperStoryDelta: vi.fn() };
-});
+vi.mock("../generation/qualityEnrichment.js", () => ({
+  keeperStoryExtractForSave: mocks.keeperStoryExtractForSave,
+  persistStoryExtract: mocks.persistStoryExtract
+}));
+vi.mock("../generation/textEditLease.js", () => ({
+  assertTextEditLeaseTx: mocks.assertTextEditLeaseTx,
+  completeTextEditLease: mocks.completeTextEditLease,
+  isTextEditLeaseLostError: (error: unknown) => error instanceof Error && error.name === "StructuralPageLeaseLostError",
+  startTextEditLeaseHeartbeat: () => ({ assertHeld: mocks.heartbeatAssertHeld, stop: mocks.heartbeatStop }),
+  waitForTextEditLease: mocks.waitForTextEditLease,
+  waitForTextEditLeaseCompletion: mocks.waitForTextEditLeaseCompletion
+}));
+vi.mock("../generation/editProjectStatus.js", () => ({ claimAppliedEditPublication: mocks.claimAppliedEditPublication, restoreEditProjectStatus: mocks.restoreEditProjectStatus }));
 vi.mock("./replanBook.js", async () => {
   const actual = await import("./replanBook.js");
   return { locallyPatchedPage: actual.locallyPatchedPage, rewritePageForUserRequest: mocks.rewritePageForUserRequest };
@@ -72,7 +110,7 @@ vi.mock("@book-maker/core", async () => {
   return { ...actual, bookPlanSchema: { parse: () => ({}) }, createProviders: () => ({}) };
 });
 
-import { persistKeeperStoryDelta } from "../generation/qualityEnrichment.js";
+import { keeperStoryExtractForSave } from "../generation/qualityEnrichment.js";
 import { loadProjectStoryState, rebuildProjectStoryState } from "../generation/storyStateStore.js";
 import { applyBookEdit } from "./applyBookEdit.js";
 import { StopRequestedError } from "../runtime/jobTypes.js";
@@ -80,6 +118,7 @@ import {
   compilePolicyPayload,
   DETACHED_FROM_PROJECT_LIFECYCLE,
   EXPORT_REPAIR_FORMAT,
+  PRE_EDIT_PROJECT_STATUS,
   type CompilePublicationPolicy
 } from "@book-maker/core";
 
@@ -101,13 +140,34 @@ describe("applyBookEdit in exact mode", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({ id: "op-1" });
+    mocks.prisma.bookEditOperation.updateMany.mockResolvedValue({ count: 1 });
+    mocks.getProjectOrThrow.mockResolvedValue({ id: "project-1", currentPlanId: "plan-1" });
     mocks.prisma.planVersion.findUnique.mockResolvedValue({ id: "plan-1", inputSnapshot: {}, planningPackage: {} });
-    mocks.prisma.pageEditSnapshot.create.mockImplementation(async () => ({ id: "snap-1" }));
+    mocks.prisma.pageEditSnapshot.findMany.mockResolvedValue([]);
+    mocks.prisma.pageEditSnapshot.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+      ...data,
+      id: `snap-${String(data.pageId)}`,
+      revisionAfter: null
+    }));
     mocks.prisma.page.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
       ...data,
       revision: 2
     }));
+    mocks.prisma.$transaction.mockImplementation(async (callback: (tx: typeof mocks.tx) => Promise<unknown>) =>
+      callback(mocks.tx)
+    );
     mocks.prisma.project.updateMany.mockResolvedValue({ count: 1 });
+    mocks.tx.project.update.mockResolvedValue({ contentRevision: 8 });
+    mocks.waitForTextEditLease.mockResolvedValue({ outcome: "acquired", phase: "draft" });
+    mocks.waitForTextEditLeaseCompletion.mockResolvedValue("completed");
+    mocks.completeTextEditLease.mockResolvedValue(true);
+    mocks.assertTextEditLeaseTx.mockResolvedValue({ status: "ACTIVE", classifier: {} });
+    mocks.heartbeatAssertHeld.mockResolvedValue(undefined);
+    mocks.heartbeatStop.mockResolvedValue(undefined);
+    mocks.keeperStoryExtractForSave.mockResolvedValue(null);
+    mocks.persistStoryExtract.mockResolvedValue(null);
+    mocks.claimAppliedEditPublication.mockResolvedValue(true);
+    mocks.restoreEditProjectStatus.mockResolvedValue(true);
   });
   afterEach(() => vi.clearAllMocks());
 
@@ -129,6 +189,17 @@ describe("applyBookEdit in exact mode", () => {
     expect(mocks.rewritePageForUserRequest).not.toHaveBeenCalled();
     expect(mocks.prisma.page.update).toHaveBeenCalledTimes(2);
     expect(mocks.prisma.page.update.mock.calls[0]?.[0].data.markdown).toBe("Fly runs.");
+    // APPLIED is what sends a redelivery past the rewrite, so the fence and
+    // the revision its compile publishes must commit together.
+    expect(mocks.prisma.$transaction).toHaveBeenCalled();
+    expect(mocks.tx.bookEditOperation.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "APPLIED" }) })
+    );
+    expect(mocks.tx.project.update).toHaveBeenCalledWith({
+      where: { id: "project-1" },
+      data: { contentRevision: { increment: 1 } },
+      select: { contentRevision: true }
+    });
     // A mechanical edit must not drag the compile's whole-book QA repair pass
     // behind it - that would rewrite prose nobody asked to change.
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", { skipFinalReview: true });
@@ -154,23 +225,30 @@ describe("applyBookEdit in exact mode", () => {
     // what was approved - and it was quoted at zero credits.
     expect(mocks.rewritePageForUserRequest).not.toHaveBeenCalled();
     expect(mocks.prisma.page.update).toHaveBeenCalledTimes(1);
-    expect(mocks.prisma.bookEditOperation.update).toHaveBeenCalledWith(
+    expect(mocks.tx.bookEditOperation.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ affectedPageIndexes: [1] }) })
     );
     // Undo names every snapshot it restores, so the untouched page must not keep one.
     expect(mocks.prisma.pageEditSnapshot.deleteMany).toHaveBeenCalledWith({
       where: { operationId: "op-1", pageIndex: { in: [2] } }
     });
-    expect(persistKeeperStoryDelta).toHaveBeenCalledTimes(1);
-    expect(persistKeeperStoryDelta).toHaveBeenCalledWith(expect.objectContaining({ pageIndex: 1 }));
+    expect(keeperStoryExtractForSave).toHaveBeenCalledTimes(1);
+    expect(keeperStoryExtractForSave).toHaveBeenCalledWith(expect.objectContaining({ pageIndex: 1 }));
     // The queued reply promised page 2, so the operation records the skip for
     // the serializer to surface — silence here left the transcript claiming an
     // edit that never happened.
-    expect(mocks.prisma.bookEditOperation.update).toHaveBeenCalledWith(
+    expect(mocks.tx.bookEditOperation.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ classifier: expect.objectContaining({ skippedPageIndexes: [2] }) })
       })
     );
+    expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
+    expect(mocks.tx.project.update).toHaveBeenCalledWith({
+      where: { id: "project-1" },
+      data: { contentRevision: { increment: 1 } },
+      select: { contentRevision: true }
+    });
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", { skipFinalReview: true });
   });
 
   it("skips the guaranteed-null plan lookup when the payload carries no planId", async () => {
@@ -229,17 +307,17 @@ describe("applyBookEdit in exact mode", () => {
         affectedPageIndexes: [1],
         planId: "plan-1",
         exactReplacement: { from: "rabbit", to: "fly", preserveCase: true },
-        mode: "exact"
+        mode: "exact",
+        [PRE_EDIT_PROJECT_STATUS]: "REVIEW_REQUIRED"
       })
     );
 
     // No immediate callback remains to move the project out of EDITING, and
     // the exports are already deleted. The delayed stranded sweep can recover
     // it, but this handler already knows it should return to the repair lane.
-    expect(mocks.prisma.project.updateMany).toHaveBeenCalledWith({
-      where: { id: "project-1", status: "EDITING" },
-      data: { status: "COMPLETE" }
-    });
+    expect(mocks.restoreEditProjectStatus).toHaveBeenCalledWith(
+      mocks.tx, "project-1", "op-1", "REVIEW_REQUIRED"
+    );
   });
 
   it("hands the applied edit to the repair lane when export enqueue fails", async () => {
@@ -256,22 +334,22 @@ describe("applyBookEdit in exact mode", () => {
           affectedPageIndexes: [1],
           planId: "plan-1",
           exactReplacement: { from: "rabbit", to: "fly", preserveCase: true },
-          mode: "exact"
+          mode: "exact",
+          [PRE_EDIT_PROJECT_STATUS]: "REVIEW_REQUIRED"
         })
       )
     ).resolves.toBeUndefined();
 
-    expect(mocks.prisma.project.updateMany).toHaveBeenCalledWith({
-      where: { id: "project-1", status: "EDITING" },
-      data: { status: "COMPLETE" }
-    });
+    expect(mocks.restoreEditProjectStatus).toHaveBeenCalledWith(
+      mocks.tx, "project-1", "op-1", "REVIEW_REQUIRED"
+    );
     expect(logged).toHaveBeenCalled();
     logged.mockRestore();
   });
 
-  it("leaves the project EDITING while a compile is on its way", async () => {
+  it.each(["compile", "waiting"])("leaves the project EDITING while a %s compile handoff is on its way", async (outcome) => {
     mocks.prisma.page.findMany.mockResolvedValue([page(1, "Rabbit runs.")]);
-    mocks.maybeEnqueueCompile.mockResolvedValue("compile");
+    mocks.maybeEnqueueCompile.mockResolvedValue(outcome);
 
     await applyBookEdit(
       job({
@@ -314,7 +392,7 @@ describe("applyBookEdit in exact mode", () => {
     // The rewrite was reviewed per page with the user's request in context;
     // the recompile never re-runs the whole-book QA pass for an edit.
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", { skipFinalReview: true });
-    expect(persistKeeperStoryDelta).toHaveBeenCalledWith(
+    expect(keeperStoryExtractForSave).toHaveBeenCalledWith(
       expect.objectContaining({
         pageIndex: 1,
         previousExtract: null,
@@ -355,7 +433,7 @@ describe("applyBookEdit in exact mode", () => {
     const quality = await mocks.loadQualityContext.mock.results[0]!.value;
     const handedTo = [
       ...mocks.rewritePageForUserRequest.mock.calls.map((call) => call[0].quality),
-      ...vi.mocked(persistKeeperStoryDelta).mock.calls.map((call) => (call[0] as { quality?: unknown }).quality)
+      ...vi.mocked(keeperStoryExtractForSave).mock.calls.map((call) => (call[0] as { quality?: unknown }).quality)
     ];
     expect(handedTo).toHaveLength(6);
     for (const handed of handedTo) {
@@ -465,7 +543,7 @@ describe("applyBookEdit in exact mode", () => {
         storyDeltaBefore
       })
     });
-    expect(persistKeeperStoryDelta).toHaveBeenCalledWith(
+    expect(keeperStoryExtractForSave).toHaveBeenCalledWith(
       expect.objectContaining({
         projectId: "project-1",
         pageIndex: 1,
@@ -501,15 +579,15 @@ describe("applyBookEdit in exact mode", () => {
       )
     ).rejects.toThrow("model outage");
 
-    // Page 1 already holds the edit while book.pdf still holds the pre-edit
-    // text: the failure path must invalidate the exports, bump the revision
-    // and queue the recompile itself, or the restored COMPLETE book keeps
-    // valid-looking exports of text the pages no longer say.
+    // Half-applied pages require a revision bump and detached export rebuild.
     expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
     expect(mocks.prisma.project.update).toHaveBeenCalledWith({
       where: { id: "project-1" },
       data: { contentRevision: { increment: 1 } }
     });
+    const projectOrderFor = (increment: number) => mocks.prisma.project.update.mock.invocationCallOrder[mocks.prisma.project.update.mock.calls.findIndex((call) => (call[0] as { data?: { contentRevision?: { increment?: number } } }).data?.contentRevision?.increment === increment)]!;
+    expect(projectOrderFor(0)).toBeLessThan(mocks.assertTextEditLeaseTx.mock.invocationCallOrder.at(-1)!);
+    expect(mocks.assertTextEditLeaseTx.mock.invocationCallOrder.at(-1)!).toBeLessThan(projectOrderFor(1));
     // Detached: the failed edit's settlement must not cancel the rebuild, and
     // the rebuild's own failure must not fail or refund the book.
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", {
@@ -817,4 +895,5 @@ describe("applyBookEdit in exact mode", () => {
       .find((data) => data.markdown === "Rewritten.");
     expect(savedPage).toMatchObject({ status: "FAILED_QA" });
   });
+
 });

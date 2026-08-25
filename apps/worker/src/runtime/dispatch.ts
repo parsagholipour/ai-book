@@ -409,23 +409,26 @@ export type CompileDispatchOutcome =
   | "waiting"
   /** Nothing is coming: the saved pages are not a publishable book. */
   | "not-ready"
-  /** The project is gone or FAILED; its status is not this function's to move. */
+  /** The project is gone, FAILED, or outside an explicitly required revision. */
   | "settled";
 
 export async function maybeEnqueueCompile(
   projectId: string,
   planId: string,
   options?: LegacyCompileOptions | CompilePublicationPolicy,
-  optionsScope?: { contentRevision: number | null; completedPredecessorId?: string }
+  optionsScope?: { contentRevision: number | null; completedPredecessorId?: string; requireContentRevisionMatch?: boolean }
 ): Promise<CompileDispatchOutcome> {
   const [project, planVersion] = await Promise.all([
     prisma.project.findUnique({ where: { id: projectId } }),
     prisma.planVersion.findUnique({ where: { id: planId } })
   ]);
-  if (!project) {
+  if (!project || project.status === "FAILED") {
     return "settled";
   }
-  if (project.status === "FAILED") {
+  // A publication-tail replay is not generic fan-in. Its APPLIED operation
+  // already owns one exact revision, so retargeting its compile options to a
+  // newer manuscript would give stale work that newer revision's identity.
+  if (optionsScope?.requireContentRevisionMatch && optionsScope.contentRevision !== project.contentRevision) {
     return "settled";
   }
   // A completion hook may carry the exact policy of an earlier compile while

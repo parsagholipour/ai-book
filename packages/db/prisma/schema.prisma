@@ -859,6 +859,9 @@ model BookEditOperation {
   createdAt           DateTime                @default(now())
   updatedAt           DateTime                @updatedAt
   appliedAt           DateTime?
+  /// Project.contentRevision this operation published when it became APPLIED.
+  /// The worker uses it with operation order to fence delayed publication tails.
+  publicationRevision Int?
 
   project           Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
   generationJob     GenerationJob?       @relation(fields: [generationJobId], references: [id], onDelete: SetNull)

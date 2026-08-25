@@ -86,6 +86,13 @@ describe("settleSkippedRestructure", () => {
       where: { id: "project-1" },
       data: { status: "COMPLETE" }
     });
+    expect(mocks.prisma.project.update).toHaveBeenNthCalledWith(1, {
+      where: { id: "project-1" },
+      data: { contentRevision: { increment: 0 } }
+    });
+    expect(mocks.prisma.project.update.mock.invocationCallOrder[0]!).toBeLessThan(
+      mocks.settleSkippedStructuralPageLeaseTx.mock.invocationCallOrder[0]!
+    );
     expect(mocks.stopHeartbeat).toHaveBeenCalled();
   });
 
@@ -133,7 +140,11 @@ describe("settleSkippedRestructure", () => {
 
     expect(mocks.refundSkippedEditOperation).toHaveBeenCalledTimes(1);
     expect(mocks.prisma.bookEditOperation.update).not.toHaveBeenCalled();
-    expect(mocks.prisma.project.update).not.toHaveBeenCalled();
+    expect(mocks.prisma.project.update).toHaveBeenCalledTimes(1);
+    expect(mocks.prisma.project.update).toHaveBeenCalledWith({
+      where: { id: "project-1" },
+      data: { contentRevision: { increment: 0 } }
+    });
   });
 
   it("hands a database failure on the barrier to the failure path instead of standing down", async () => {

@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   completeStructuralPageLease: vi.fn(),
   markStructuralPageLeaseApplied: vi.fn(),
   renewStructuralPageLeaseTx: vi.fn(),
+  claimAppliedEditPublication: vi.fn(),
   reviewAndSaveGeneratedPage: vi.fn(),
   invalidateProjectExports: vi.fn(),
   maybeEnqueueCompile: vi.fn(),
@@ -49,7 +50,12 @@ vi.mock("../generation/structuralPageLease.js", () => ({
   markStructuralPageLeaseApplied: mocks.markStructuralPageLeaseApplied,
   renewStructuralPageLeaseTx: mocks.renewStructuralPageLeaseTx,
   releaseStructuralPageLease: vi.fn(),
+  StructuralPageLeaseLostError: class StructuralPageLeaseLostError extends Error {},
   isStructuralPageLeaseLostError: () => false
+}));
+vi.mock("../generation/editProjectStatus.js", () => ({
+  claimAppliedEditPublication: mocks.claimAppliedEditPublication,
+  restoreEditProjectStatus: vi.fn()
 }));
 vi.mock("../generation/pageReview.js", () => ({ reviewAndSaveGeneratedPage: mocks.reviewAndSaveGeneratedPage }));
 vi.mock("../generation/bookHelpers.js", () => ({
@@ -145,7 +151,9 @@ describe("restructurePages after an undo", () => {
     vi.clearAllMocks();
     mocks.prisma.$transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(mocks.prisma));
     mocks.prisma.bookEditOperation.updateMany.mockResolvedValue({ count: 1 });
-    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({ id: "op-1", status: "ACTIVE", classifier: {} });
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({
+      id: "op-1", status: "ACTIVE", classifier: {}, publicationRevision: 7
+    });
     mocks.prisma.project.findUnique.mockResolvedValue({ id: "project-1", currentPlanId: "plan-1" });
     mocks.prisma.project.update.mockResolvedValue({ id: "project-1" });
     mocks.prisma.project.updateMany.mockResolvedValue({ count: 1 });
@@ -154,6 +162,8 @@ describe("restructurePages after an undo", () => {
     mocks.prisma.page.count.mockResolvedValue(0);
     mocks.waitForStructuralPageLease.mockResolvedValue({ outcome: "acquired", phase: "tail", application: null });
     mocks.completeStructuralPageLease.mockResolvedValue(true);
+    mocks.claimAppliedEditPublication.mockResolvedValue(true);
+    mocks.renewStructuralPageLeaseTx.mockResolvedValue({ status: "APPLIED", classifier: {} });
     mocks.maybeEnqueueCompile.mockResolvedValue("compile");
   });
 
@@ -231,6 +241,9 @@ describe("restructurePages after an undo", () => {
     });
 
     expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", undefined, {
+      contentRevision: 7,
+      requireContentRevisionMatch: true
+    });
   });
 });

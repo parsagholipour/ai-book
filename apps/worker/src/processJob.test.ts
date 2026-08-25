@@ -58,7 +58,8 @@ import { processWorkerJob } from "./processJob.js";
 import {
   StopRequestedError,
   StructuralRollbackRedeliveryError,
-  UnownedStructuralDeliveryError
+  UnownedStructuralDeliveryError,
+  UnownedTextEditDeliveryError
 } from "./runtime/jobTypes.js";
 
 function job(name: string, data: Record<string, unknown> = {}): Job {
@@ -129,6 +130,17 @@ describe("processWorkerJob ordering", () => {
 });
 
 describe("processWorkerJob completion", () => {
+  it("completes a terminally superseded APPLIED text-edit tail", async () => {
+    const editJob = job("apply-book-edit", { operationId: "op-old" });
+
+    await expect(processWorkerJob(editJob)).resolves.toBeUndefined();
+
+    expect(mocks.applyBookEdit).toHaveBeenCalledWith(editJob);
+    expect(mocks.markCompleted).toHaveBeenCalledWith(editJob, undefined);
+    expect(mocks.markFailed).not.toHaveBeenCalled();
+    expect(mocks.markStopped).not.toHaveBeenCalled();
+  });
+
   it("never converts a post-completion failure into a failed, refunded run", async () => {
     // This exact shape used to flip a COMPLETED job to FAILED, refund the
     // finished book, and mark the project FAILED.
@@ -251,6 +263,22 @@ describe("processWorkerJob failure routing", () => {
     expect(mocks.markStopped).not.toHaveBeenCalled();
     expect(mocks.runLoggerAppend).toHaveBeenCalledWith(
       "job.unowned_structural_delivery",
+      expect.objectContaining({ error: expect.anything() })
+    );
+  });
+
+  it("does not complete or fail a text-edit waiter that never owned the delivery", async () => {
+    // This is the live-owner answer, distinct from terminal lifecycle
+    // supersession after an APPLIED-tail delivery acquired its own lease.
+    mocks.applyBookEdit.mockRejectedValue(new UnownedTextEditDeliveryError());
+
+    await expect(processWorkerJob(job("apply-book-edit"))).rejects.toBeInstanceOf(UnrecoverableError);
+
+    expect(mocks.markCompleted).not.toHaveBeenCalled();
+    expect(mocks.markFailed).not.toHaveBeenCalled();
+    expect(mocks.markStopped).not.toHaveBeenCalled();
+    expect(mocks.runLoggerAppend).toHaveBeenCalledWith(
+      "job.unowned_text_edit_delivery",
       expect.objectContaining({ error: expect.anything() })
     );
   });

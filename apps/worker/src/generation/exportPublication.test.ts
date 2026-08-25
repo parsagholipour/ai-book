@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
     project: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     generationJob: { count: vi.fn(), updateMany: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn(), upsert: vi.fn() },
     generationAttempt: { updateMany: vi.fn(), findUnique: vi.fn() },
-    bookEditOperation: { updateMany: vi.fn(), findUnique: vi.fn() },
+    bookEditOperation: { updateMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn() },
     voiceCharacter: { count: vi.fn() },
     $transaction: vi.fn()
   },
@@ -121,6 +121,7 @@ beforeEach(() => {
     return { count: 1 };
   });
   mocks.prisma.bookEditOperation.findUnique.mockResolvedValue(null);
+  mocks.prisma.bookEditOperation.findFirst.mockResolvedValue(null);
   mocks.prisma.voiceCharacter.count.mockResolvedValue(0);
   mocks.rename.mockImplementation(async (_from: string, to: string) => {
     mocks.events.push(`rename ${stable(to)}`);
@@ -312,7 +313,10 @@ describe("publishCompiledExports", () => {
         })
       })
     });
-    const publicationWrite = mocks.prisma.generationJob.updateMany.mock.calls[0]?.[0].data as {
+    const publicationCall = mocks.prisma.generationJob.updateMany.mock.calls.find(
+      (call) => (call[0] as { data?: { status?: string } }).data?.status === "COMPLETED"
+    );
+    const publicationWrite = publicationCall?.[0].data as {
       finishedAt: Date;
       payload: { exportPublicationCommittedAt: string };
     };
@@ -460,6 +464,7 @@ describe("publishCompiledExports", () => {
     expect(mocks.events).toEqual([
       "claim",
       "claim job",
+      "claim job",
       "record .book-token.pdf.provenance.json",
       "record .book-token.epub.provenance.json",
       "rename /books/project-1/.book-superseded.md",
@@ -551,6 +556,7 @@ describe("publishCompiledExports", () => {
     expect(mocks.events).toEqual([
       "claim",
       "claim job",
+      "claim job",
       "record .book-token.pdf.provenance.json",
       "record .book-token.epub.provenance.json",
       "rename /books/project-1/book.md -> /books/project-1/.book-superseded.md",
@@ -581,6 +587,7 @@ describe("publishCompiledExports", () => {
     await expect(publish()).rejects.toThrow("ENOSPC");
     expect(mocks.events).toEqual([
       "claim",
+      "claim job",
       "claim job",
       "record .book-token.pdf.provenance.json",
       "record .book-token.epub.provenance.json",
@@ -613,6 +620,87 @@ describe("publishCompiledExports", () => {
     expect(mocks.rename).not.toHaveBeenCalled();
   });
 
+  it("refuses an older edit compile when a newer edit begins at the same revision", async () => {
+    const appliedAt = new Date("2026-08-25T10:00:00.000Z");
+    mocks.prisma.project.findUnique.mockResolvedValue({ contentRevision: 7 });
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({
+      id: "operation-old",
+      projectId: "project-1",
+      generationJobId: "apply-old",
+      status: "APPLIED",
+      createdAt: new Date("2026-08-25T09:59:00.000Z"),
+      appliedAt,
+      publicationRevision: 7
+    });
+    // The new operation has opened EDITING but has not mutated the manuscript,
+    // so the revision CAS alone still matches the old compile.
+    mocks.prisma.bookEditOperation.findFirst.mockResolvedValue({ id: "operation-new" });
+
+    await expect(
+      publishResult({
+        expectedProjectStatus: "EDITING",
+        editOperationId: "operation-old"
+      })
+    ).resolves.toEqual({
+      published: false,
+      blockedByOpenImageJobs: false,
+      characterPreparationJobId: null
+    });
+
+    expect(mocks.prisma.bookEditOperation.findFirst).toHaveBeenCalledWith({
+      where: {
+        projectId: "project-1",
+        OR: [
+          { createdAt: { gt: new Date("2026-08-25T09:59:00.000Z") } },
+          { createdAt: new Date("2026-08-25T09:59:00.000Z"), id: { gt: "operation-old" } }
+        ]
+      },
+      select: { id: true }
+    });
+    expect(mocks.prisma.generationJob.updateMany).toHaveBeenCalledTimes(1);
+    expect(mocks.prisma.generationJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { dispatchAttempts: { increment: 0 } } })
+    );
+    expect(mocks.prisma.project.update).not.toHaveBeenCalled();
+    expect(mocks.rename).not.toHaveBeenCalled();
+  });
+
+  it("lets the stamped edit owner publish and settle its own revision", async () => {
+    mocks.prisma.project.findUnique.mockResolvedValue({ contentRevision: 7 });
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({
+      id: "operation-current",
+      projectId: "project-1",
+      generationJobId: "apply-current",
+      status: "APPLIED",
+      createdAt: new Date("2026-08-25T10:01:00.000Z"),
+      appliedAt: new Date("2026-08-25T10:02:00.000Z"),
+      publicationRevision: 7
+    });
+
+    await expect(
+      publishResult({
+        expectedProjectStatus: "EDITING",
+        editOperationId: "operation-current"
+      })
+    ).resolves.toEqual({
+      published: true,
+      blockedByOpenImageJobs: false,
+      characterPreparationJobId: null
+    });
+
+    expect(mocks.prisma.generationJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ id: "job-1", status: "ACTIVE" }) })
+    );
+    expect(mocks.prisma.generationJob.updateMany.mock.invocationCallOrder[0]!).toBeLessThan(
+      mocks.prisma.bookEditOperation.updateMany.mock.invocationCallOrder[0]!
+    );
+    expect(mocks.prisma.project.update).toHaveBeenCalledWith({
+      where: { id: "project-1" },
+      data: { status: "COMPLETE" }
+    });
+    expect(publishedMoves()).toHaveLength(3);
+  });
+
   it("publishes nothing when a sibling repair committed an open image job before the locked boundary", async () => {
     // A preflight can already have observed zero. The project claim is the
     // ordering point: final-QA publication takes the same row lock before it
@@ -627,7 +715,10 @@ describe("publishCompiledExports", () => {
     });
 
     expect(mocks.prisma.project.updateMany).toHaveBeenCalled();
-    expect(mocks.prisma.generationJob.updateMany).not.toHaveBeenCalled();
+    expect(mocks.prisma.generationJob.updateMany).toHaveBeenCalledTimes(1);
+    expect(mocks.prisma.generationJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { dispatchAttempts: { increment: 0 } } })
+    );
     expect(mocks.prisma.project.update).not.toHaveBeenCalled();
     expect(mocks.rename).not.toHaveBeenCalled();
   });
