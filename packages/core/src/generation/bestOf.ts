@@ -123,15 +123,40 @@ const FIRST_PAGE_CANDIDATES_BY_TIER: Record<ModelTier, number> = {
  * draft prompt *and* into the review that scores it — so a weak opening is not
  * one bad page, it is the voice the rest of the book is written to and audited
  * against, copied forward long before anything downstream can notice.
- *
- * The gate is the model tier, not the ultra-only `bestOfPolish` flag; callers
- * combine the two with `Math.max`, never by multiplying.
  */
 export function firstPageCandidateCount(input: CreateProjectInput, pageIndex: number): number {
   if (pageIndex !== 1) {
     return 1;
   }
   return FIRST_PAGE_CANDIDATES_BY_TIER[modelTierForInput(input)];
+}
+
+/**
+ * Combines the two independent doors into best-of page generation.
+ *
+ * The operator door is the `bestOfPolish` quality gate — compiled default
+ * ultra, but whatever tiers an operator has checked — opened only as wide as
+ * the project's `draftCandidates` through {@link bestOfCandidateCount}. With
+ * the gate off, that configured count does not affect page generation.
+ *
+ * The opening-page door is {@link firstPageCandidateCount}, decided by the
+ * model tier alone with no flag to set. Fast's opening-page count is one, so a
+ * fast book reaches best-of only through the operator door.
+ *
+ * These doors compose with `Math.max`, never multiplication: enabling the
+ * operator gate cannot multiply the tier's opening-page spend. Both inputs to
+ * the maximum are already constrained to the existing one-to-three candidate
+ * bounds, so the composed result stays within those bounds too.
+ */
+export function pageCandidateCount(
+  input: CreateProjectInput,
+  pageIndex: number,
+  bestOfPolishEnabled: boolean
+): number {
+  return Math.max(
+    bestOfPolishEnabled ? bestOfCandidateCount(input) : 1,
+    firstPageCandidateCount(input, pageIndex)
+  );
 }
 
 /**

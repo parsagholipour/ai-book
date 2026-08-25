@@ -41,13 +41,12 @@ import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
 import { isStopRequestedError } from "../runtime/jobTypes.js";
 import { nextPageVersion } from "../generation/pageIllustrationOwnership.js";
 import {
-  bestOfCandidateCount,
   bookPlanSchema,
   createProviders,
-  firstPageCandidateCount,
   formatStoryStateLines,
   generateBestOfPageDrafts,
   generatePageDraftWithWriterTools,
+  pageCandidateCount,
   type PriorPageContext
 } from "@book-maker/core";
 import { pageScope, prisma } from "@book-maker/db";
@@ -220,15 +219,7 @@ export async function generatePage(job: Job) {
     quality
   });
 
-  // Sequential drafting uses the same `bestOfPolish` gate as polish
-  // (`polishPageWithQualityGates`). Operator `draftCandidates` only applies
-  // when that gate is on. Page 1 is the exception: it best-ofs by tier
-  // (`firstPageCandidateCount`), and `Math.max` keeps the two gates from
-  // multiplying on ultra.
-  const candidateCount = Math.max(
-    quality.enabled("bestOfPolish") ? bestOfCandidateCount(input) : 1,
-    firstPageCandidateCount(input, page.index)
-  );
+  const candidateCount = pageCandidateCount(input, page.index, quality.enabled("bestOfPolish"));
   await advanceJobStep(
     generationJobId,
     "draft",

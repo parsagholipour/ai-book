@@ -14,10 +14,11 @@ import {
   bestOfCandidateTemperatures,
   firstPageCandidateCount,
   generateBestOfPageDrafts,
+  pageCandidateCount,
   type BestOfDraftBase
 } from "./bestOf.js";
 
-function inputForTier(modelTier?: ModelTier): CreateProjectInput {
+function inputForTier(modelTier?: ModelTier, draftCandidates?: number): CreateProjectInput {
   return {
     prompt: "A story about Jack.",
     category: "STORY",
@@ -32,7 +33,8 @@ function inputForTier(modelTier?: ModelTier): CreateProjectInput {
       coverTemplate: "auto",
       finalReview: true,
       toneProfile: "neutral" as const,
-      ...(modelTier ? { modelTier } : {})
+      ...(modelTier ? { modelTier } : {}),
+      ...(draftCandidates === undefined ? {} : { draftCandidates })
     }
   };
 }
@@ -69,6 +71,42 @@ describe("firstPageCandidateCount", () => {
     expect(firstPageCandidateCount(inputForTier(), 1)).toBe(EXPECTED_FIRST_PAGE_CANDIDATES.balanced);
     expect(firstPageCandidateCount(inputForTier(), 2)).toBe(1);
   });
+});
+
+describe("pageCandidateCount", () => {
+  const pageCases = [
+    { label: "page 1", pageIndex: 1 },
+    { label: "a later page", pageIndex: 2 }
+  ] as const;
+  const gateCases = [
+    { label: "gate disabled", enabled: false },
+    { label: "gate enabled", enabled: true }
+  ] as const;
+  const configuredCandidateCounts = [undefined, 1, 2, 3] as const;
+
+  for (const tier of MODEL_TIERS) {
+    for (const pageCase of pageCases) {
+      for (const gateCase of gateCases) {
+        for (const draftCandidates of configuredCandidateCounts) {
+          const configuredLabel = draftCandidates === undefined ? "unset" : String(draftCandidates);
+
+          it(`${tier}, ${pageCase.label}, ${gateCase.label}, draftCandidates ${configuredLabel}`, () => {
+            const tierCount = pageCase.pageIndex === 1 ? EXPECTED_FIRST_PAGE_CANDIDATES[tier] : 1;
+            const enabledPolishCount = gateCase.enabled ? (draftCandidates ?? 1) : 1;
+            const result = pageCandidateCount(
+              inputForTier(tier, draftCandidates),
+              pageCase.pageIndex,
+              gateCase.enabled
+            );
+
+            expect(result).toBe(Math.max(tierCount, enabledPolishCount));
+            expect(result).toBeGreaterThanOrEqual(1);
+            expect(result).toBeLessThanOrEqual(3);
+          });
+        }
+      }
+    }
+  }
 });
 
 /**
