@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../shared/media/photo_picker.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import 'character_crop_screen.dart';
@@ -51,7 +52,7 @@ Future<CharacterPhotoAction?> showCharacterPhotoActions(BuildContext context) {
 Future<Uint8List?> pickAndCropCharacterPhoto(
   BuildContext context, {
   required CharacterPhotoAction action,
-  @visibleForTesting Future<XFile?> Function(ImageSource source)? pickerOverride,
+  required PhotoPicker photoPicker,
 }) async {
   final source = action == CharacterPhotoAction.camera
       ? ImageSource.camera
@@ -65,7 +66,10 @@ Future<Uint8List?> pickAndCropCharacterPhoto(
   while (true) {
     XFile? picked;
     try {
-      picked = await (pickerOverride ?? _pickImage)(source);
+      picked = await photoPicker.pickImage(
+        source: source,
+        purpose: PhotoPickerPurpose.characterCropSource,
+      );
     } catch (_) {
       messenger.showAppSnackBar(
         SnackBar(
@@ -90,13 +94,4 @@ Future<Uint8List?> pickAndCropCharacterPhoto(
     if (outcome is Uint8List) return outcome;
     if (outcome != CharacterCropOutcome.chooseAnother) return null;
   }
-}
-
-Future<XFile?> _pickImage(ImageSource source) {
-  return ImagePicker().pickImage(
-    source: source,
-    maxWidth: 2400,
-    maxHeight: 2400,
-    imageQuality: 92,
-  );
 }

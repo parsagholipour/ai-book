@@ -1,8 +1,12 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:tomeza/features/projects/presentation/creation_chat_controller.dart';
 import 'package:tomeza/features/projects/presentation/creation_chat_screen.dart';
+import 'package:tomeza/shared/media/photo_picker.dart';
 import 'creation_chat_fakes.dart';
 import 'creation_chat_harness.dart';
 
@@ -107,6 +111,97 @@ void main() {
 
     await tester.teardownScreen();
   });
+
+  testWidgets('a picked chat photo is read and handed to attachment upload', (
+    tester,
+  ) async {
+    final creation = ScriptedCreationRepository();
+    final picker = _RecordingPhotoPicker(
+      result: XFile.fromData(
+        Uint8List.fromList([4, 5, 6]),
+        path: 'idea.jpg',
+        mimeType: 'image/jpeg',
+      ),
+    );
+    await tester.pumpWidget(
+      app(creation: creation, startFresh: true, photoPicker: picker),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Attach a photo, document, or notes'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Photo library'));
+    await tester.pumpAndSettle();
+
+    expect(picker.calls, [
+      (source: ImageSource.gallery, purpose: PhotoPickerPurpose.chatAttachment),
+    ]);
+    expect(creation.uploadedAttachments.values.single.name, 'idea.jpg');
+    expect(creation.uploadedAttachments.values.single.kind, 'photo');
+    expect(creation.uploadedAttachments.values.single.sizeBytes, 3);
+    expect(find.text('Ready to send'), findsOneWidget);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('cancelling a chat photo pick leaves attachments unchanged', (
+    tester,
+  ) async {
+    final creation = ScriptedCreationRepository();
+    final picker = _RecordingPhotoPicker();
+    await tester.pumpWidget(
+      app(creation: creation, startFresh: true, photoPicker: picker),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Attach a photo, document, or notes'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Photo library'));
+    await tester.pumpAndSettle();
+
+    expect(creation.uploadCount, 0);
+    expect(find.text('Ready to send'), findsNothing);
+    expect(find.text('Could not open your photos.'), findsNothing);
+
+    await tester.teardownScreen();
+  });
+
+  for (final testCase
+      in <({String action, ImageSource source, String message})>[
+        (
+          action: 'Photo library',
+          source: ImageSource.gallery,
+          message: 'Could not open your photos.',
+        ),
+        (
+          action: 'Take a photo',
+          source: ImageSource.camera,
+          message: 'Could not open the camera.',
+        ),
+      ]) {
+    testWidgets(
+      '${testCase.source.name} chat picker errors keep specific copy',
+      (tester) async {
+        final creation = ScriptedCreationRepository();
+        final picker = _RecordingPhotoPicker(error: StateError('unavailable'));
+        await tester.pumpWidget(
+          app(creation: creation, startFresh: true, photoPicker: picker),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byTooltip('Attach a photo, document, or notes'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(testCase.action));
+        await tester.pumpAndSettle();
+
+        expect(find.text(testCase.message), findsOneWidget);
+        expect(picker.calls.single.source, testCase.source);
+        expect(creation.uploadCount, 0);
+
+        await tester.teardownScreen();
+      },
+    );
+  }
 
   testWidgets('failed uploads offer retry and removal', (tester) async {
     final creation = ScriptedCreationRepository()
@@ -218,4 +313,24 @@ void main() {
 
     await tester.teardownScreen();
   });
+}
+
+typedef _PhotoPickerCall = ({ImageSource source, PhotoPickerPurpose purpose});
+
+final class _RecordingPhotoPicker implements PhotoPicker {
+  _RecordingPhotoPicker({this.result, this.error});
+
+  final XFile? result;
+  final Object? error;
+  final calls = <_PhotoPickerCall>[];
+
+  @override
+  Future<XFile?> pickImage({
+    required ImageSource source,
+    required PhotoPickerPurpose purpose,
+  }) async {
+    calls.add((source: source, purpose: purpose));
+    if (error case final error?) throw error;
+    return result;
+  }
 }

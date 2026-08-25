@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/api/api_client.dart';
 import '../../../shared/api/api_error.dart';
+import '../../../shared/media/photo_picker.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
@@ -120,7 +121,11 @@ class _CharacterProfileScreenState
     if (_busy) return;
     final action = await showCharacterPhotoActions(context);
     if (action == null || !mounted) return;
-    final cropped = await pickAndCropCharacterPhoto(context, action: action);
+    final cropped = await pickAndCropCharacterPhoto(
+      context,
+      action: action,
+      photoPicker: ref.read(photoPickerProvider),
+    );
     if (cropped == null || !mounted) return;
 
     final messenger = ScaffoldMessenger.of(context);

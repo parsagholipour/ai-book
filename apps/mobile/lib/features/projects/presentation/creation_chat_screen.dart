@@ -17,6 +17,7 @@ import '../../../app/config/app_config.dart';
 import '../../../app/theme/app_theme.dart';
 import '../../../shared/api/api_client.dart';
 import '../../../shared/api/api_error.dart';
+import '../../../shared/media/photo_picker.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/authed_network_image.dart';
 import '../../../shared/ui/easy_drawer_open.dart';

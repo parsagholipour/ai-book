@@ -13,6 +13,7 @@ import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/creation_chat_screen.dart';
 import 'package:tomeza/features/projects/presentation/book_screen.dart';
 import 'package:tomeza/shared/api/api_client.dart';
+import 'package:tomeza/shared/media/photo_picker.dart';
 
 // Shared scaffolding for the creation-chat suites: the widget under test,
 // its provider overrides, and the fixtures every case builds on.
@@ -58,6 +59,7 @@ Widget app({
   String? draftId,
   bool startFresh = false,
   CreationPrefsStore? prefs,
+  PhotoPicker? photoPicker,
 }) {
   return ProviderScope(
     overrides: [
@@ -73,6 +75,8 @@ Widget app({
       creationPrefsStoreProvider.overrideWithValue(
         prefs ?? MemoryCreationPrefsStore(),
       ),
+      if (photoPicker != null)
+        photoPickerProvider.overrideWithValue(photoPicker),
     ],
     child: MaterialApp(
       theme: buildTomezaLightTheme(),

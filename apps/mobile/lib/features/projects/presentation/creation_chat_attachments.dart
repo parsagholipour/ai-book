@@ -79,12 +79,12 @@ extension _CreationChatAttachments on _CreationChatScreenState {
 
   Future<void> _pickPhoto(ImageSource source) async {
     try {
-      final picked = await ImagePicker().pickImage(
-        source: source,
-        maxWidth: 2048,
-        maxHeight: 2048,
-        imageQuality: 85,
-      );
+      final picked = await ref
+          .read(photoPickerProvider)
+          .pickImage(
+            source: source,
+            purpose: PhotoPickerPurpose.chatAttachment,
+          );
       if (picked == null || !mounted) return;
       final bytes = await picked.readAsBytes();
       await ref
