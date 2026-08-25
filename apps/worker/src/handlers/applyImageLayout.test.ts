@@ -106,7 +106,7 @@ beforeEach(() => {
     where.id.in.map((id) => txPages.get(id)).filter(Boolean)
   );
   mocks.tx.project.update.mockResolvedValue({ contentRevision: 8 });
-  mocks.tx.project.findUnique.mockResolvedValue({ language: "en" });
+  mocks.tx.project.findUnique.mockResolvedValue({ language: "en", currentPlanId: "plan-1" });
   mocks.tx.pageEditSnapshot.create.mockResolvedValue({ id: "snap-1" });
   mocks.tx.imageAsset.update.mockResolvedValue({});
   mocks.getProjectOrThrow.mockResolvedValue({ id: "project-1", currentPlanId: "plan-1" });
@@ -894,8 +894,18 @@ describe("applyImageLayout with no imageLayout on the payload", () => {
     });
   });
 
+  it("does not invalidate or enqueue when the APPLIED layout claim is stale", async () => {
+    mocks.claimAppliedEditPublication.mockResolvedValue(false);
+
+    await applyImageLayout(job({ imageLayout: undefined }), { status: "APPLIED", classifier: {} });
+
+    expect(mocks.invalidateProjectExports).not.toHaveBeenCalled();
+    expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
+    expect(mocks.restoreEditProjectStatus).not.toHaveBeenCalled();
+  });
+
   it("logs and restores the stamped status when an APPLIED replay has no plan to compile", async () => {
-    mocks.getProjectOrThrow.mockResolvedValue({ id: "project-1", currentPlanId: null });
+    mocks.tx.project.findUnique.mockResolvedValue({ language: "en", currentPlanId: null });
     const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     await expect(
@@ -907,8 +917,11 @@ describe("applyImageLayout with no imageLayout on the payload", () => {
 
     expect(mocks.invalidateProjectExports).not.toHaveBeenCalled();
     expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
+    expect(mocks.claimAppliedEditPublication.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.tx.project.findUnique.mock.invocationCallOrder[0]!
+    );
     expect(mocks.restoreEditProjectStatus).toHaveBeenCalledWith(
-      mocks.tx, "project-1", "op-1", "REVIEW_REQUIRED", "APPLIED"
+      mocks.tx, "project-1", "op-1", "REVIEW_REQUIRED"
     );
     expect(logged).toHaveBeenCalledWith(
       "Cannot replay APPLIED image layout op-1 for project project-1: no plan version is available"

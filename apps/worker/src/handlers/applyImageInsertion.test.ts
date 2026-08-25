@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
     bookEditOperation: { updateMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     page: { findUnique: vi.fn(), update: vi.fn() },
     pageEditSnapshot: { create: vi.fn() },
-    project: { update: vi.fn() },
+    project: { update: vi.fn(), findUnique: vi.fn() },
     imageAsset: { findUnique: vi.fn(), update: vi.fn() }
   },
   getProjectOrThrow: vi.fn(),
@@ -165,6 +165,7 @@ beforeEach(() => {
   );
   mocks.tx.pageEditSnapshot.create.mockResolvedValue({ id: "snap-1" });
   mocks.tx.project.update.mockResolvedValue({ contentRevision: 8 });
+  mocks.tx.project.findUnique.mockResolvedValue({ currentPlanId: "plan-1" });
   mocks.claimAppliedEditPublication.mockResolvedValue(true);
   mocks.restoreEditProjectStatus.mockResolvedValue(true);
   mocks.getProjectOrThrow.mockResolvedValue({ ...baseProject });
@@ -344,7 +345,7 @@ describe("applyImageInsertion", () => {
   });
 
   it("restores the stamped status when an APPLIED redelivery has no plan to compile", async () => {
-    mocks.getProjectOrThrow.mockResolvedValue({ ...baseProject, currentPlanId: null, status: "EDITING" });
+    mocks.tx.project.findUnique.mockResolvedValue({ currentPlanId: null });
     const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     await applyImageInsertion(
@@ -354,6 +355,9 @@ describe("applyImageInsertion", () => {
 
     expect(mocks.invalidateProjectExports).not.toHaveBeenCalled();
     expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
+    expect(mocks.claimAppliedEditPublication.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.tx.project.findUnique.mock.invocationCallOrder[0]!
+    );
     expect(mocks.restoreEditProjectStatus).toHaveBeenCalledWith(
       mocks.tx, "project-1", "op-1", "REVIEW_REQUIRED"
     );

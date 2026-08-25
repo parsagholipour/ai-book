@@ -1,4 +1,4 @@
-import { getProjectOrThrow, invalidateProjectExports, strategyForInput } from "../generation/bookHelpers.js";
+import { getProjectOrThrow, strategyForInput } from "../generation/bookHelpers.js";
 import {
   characterReferencePromptInstruction,
   imageAssetPlanId,
@@ -14,10 +14,7 @@ import {
   markdownWithAppendedImage,
   markdownWithReplacedImage
 } from "../generation/imageMarkdown.js";
-import {
-  claimAppliedEditPublication,
-  restoreEditProjectStatus
-} from "../generation/editProjectStatus.js";
+import { publishAppliedEditTail } from "../generation/appliedEditPublication.js";
 import { claimEditOperationForDelivery } from "../generation/editOperationDelivery.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
@@ -410,7 +407,7 @@ export async function applyImageInsertion(job: ApplyBookEditJob, operation: { st
   // Nothing after the committed append may throw: any failure past this point
   // reaches markFailed, refunding the charge and the quota slot for an image
   // that is durably on the page. Progress is cosmetic, the export invalidation
-  // swallows per-file errors, and finishWithCompile catches its own enqueue
+  // swallows per-file errors, and the publication tail catches its own enqueue
   // failures.
   try {
     await advanceJobStep(generationJobId, "export", 85, "Refreshing exports");
@@ -437,34 +434,30 @@ async function replayAppliedInsertion(
   planId: string | undefined,
   fallbackStatus: SettledProjectStatus
 ): Promise<void> {
-  const project = await getProjectOrThrow(projectId);
-  const compilePlanId = planId ?? project.currentPlanId;
-  if (!compilePlanId) {
-    console.error(
-      `Cannot replay APPLIED image insertion ${operationId} for project ${projectId}: no plan version is available`
-    );
-    await restoreInsertionStatus(projectId, operationId, fallbackStatus);
-    return;
-  }
-  await refreshExports(projectId, compilePlanId, operationId, fallbackStatus);
+  await refreshExports(projectId, planId, operationId, fallbackStatus);
 }
 
 /** The shared success tail: rebuild the exports from what the page now says. */
 async function refreshExports(
   projectId: string,
-  planVersionId: string,
+  planVersionId: string | undefined,
   operationId: string,
   fallbackStatus: SettledProjectStatus
 ): Promise<void> {
-  const claimed = await prisma.$transaction(async (tx) => {
-    if (!(await claimAppliedEditPublication(tx, projectId, operationId, fallbackStatus))) {
-      return false;
-    }
-    await invalidateProjectExports(projectId);
-    return true;
+  await publishAppliedEditTail({
+    projectId,
+    operationId,
+    fallbackStatus,
+    planVersionId,
+    missingPlanMessage:
+      `Cannot replay APPLIED image insertion ${operationId} for project ${projectId}: no plan version is available`,
+    enqueueFailureMessage: `Failed to enqueue the export refresh for illustrated project ${projectId}:`,
+    enqueue: ({ planVersionId: compilePlanVersionId }) =>
+      maybeEnqueueCompile(projectId, compilePlanVersionId, {
+        skipFinalReview: true,
+        withoutQualityVerdict: true
+      })
   });
-  if (!claimed) return;
-  await finishWithCompile(projectId, planVersionId, operationId, fallbackStatus);
 }
 
 /** Best-effort: an orphaned image file is storage noise, never a failure. */
@@ -608,49 +601,6 @@ async function applyAssetReplacementInTx(
     }
   });
   return true;
-}
-
-/**
- * The applyBookEdit success tail: queue the recompile, and on `not-ready` (or an
- * enqueue outage) hand the book to the on-demand export repair lane — a settled
- * status with missing files is exactly the state the app's status stream rebuilds,
- * while leaving EDITING would discard this handler's immediate handoff and
- * wait for the delayed stranded-generation sweep's grace period.
- *
- * `withoutQualityVerdict`, because the appended image line moved the markdown
- * without touching prose: the model-QA findings the book earned still describe
- * every page, and this recompile's deterministic-only report must not replace
- * them.
- */
-async function finishWithCompile(
-  projectId: string,
-  planVersionId: string,
-  operationId: string,
-  fallbackStatus: SettledProjectStatus
-): Promise<void> {
-  let dispatched: Awaited<ReturnType<typeof maybeEnqueueCompile>>;
-  try {
-    dispatched = await maybeEnqueueCompile(projectId, planVersionId, {
-      skipFinalReview: true,
-      withoutQualityVerdict: true
-    });
-  } catch (error) {
-    console.error(`Failed to enqueue the export refresh for illustrated project ${projectId}:`, error);
-    dispatched = "not-ready";
-  }
-  if (dispatched === "not-ready") {
-    await restoreInsertionStatus(projectId, operationId, fallbackStatus);
-  }
-}
-
-async function restoreInsertionStatus(
-  projectId: string,
-  operationId: string,
-  fallbackStatus: SettledProjectStatus
-): Promise<void> {
-  await prisma
-    .$transaction((tx) => restoreEditProjectStatus(tx, projectId, operationId, fallbackStatus))
-    .catch(() => undefined);
 }
 
 /**

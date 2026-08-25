@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Job } from "bullmq";
+import { PRE_EDIT_PROJECT_STATUS } from "@book-maker/core";
 
 const mocks = vi.hoisted(() => ({
   prisma: {
@@ -110,6 +111,7 @@ const job = (data: Record<string, unknown> = {}) =>
       planId: "plan-base",
       chapterCount: 1,
       newPageCount: 2,
+      [PRE_EDIT_PROJECT_STATUS]: "COMPLETE",
       ...data
     }
   }) as unknown as Job;
@@ -130,6 +132,18 @@ function mockTransactions() {
 
 function trailingPage(index: number) {
   return { index, title: `Page ${index}`, markdown: "Text.", summary: `Summary ${index}.` };
+}
+
+function projectUpdateData(): Array<Record<string, unknown>> {
+  return [...mocks.prisma.project.update.mock.calls, ...mocks.tx.project.update.mock.calls].map(
+    (call) => (call[0] as { data: Record<string, unknown> }).data
+  );
+}
+
+function revisionIncrementWrites(): Array<Record<string, unknown>> {
+  return projectUpdateData().filter(
+    (data) => (data.contentRevision as { increment?: number } | undefined)?.increment === 1
+  );
 }
 
 beforeEach(() => {
@@ -266,6 +280,53 @@ describe("continueBook redelivery fence", () => {
     expect(mocks.generateJsonWithRetry).not.toHaveBeenCalled();
     expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
     expect(mocks.prisma.bookEditOperation.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("continueBook completion lifecycle", () => {
+  it.each(["COMPLETE", "REVIEW_REQUIRED"] as const)(
+    "restores a %s origin and defers export compilation until after durable completion",
+    async (origin) => {
+      const completion = await continueBook(job({ [PRE_EDIT_PROJECT_STATUS]: origin }));
+
+      expect(projectUpdateData()).toContainEqual({
+        status: origin,
+        contentRevision: { increment: 1 }
+      });
+      expect(revisionIncrementWrites()).toHaveLength(1);
+      expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
+      expect(completion.afterJobCompleted).toEqual(expect.any(Function));
+
+      await completion.afterJobCompleted?.();
+
+      expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
+      expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-new");
+    }
+  );
+
+  it("does not roll back an applied continuation when the post-completion enqueue fails", async () => {
+    mocks.maybeEnqueueCompile.mockRejectedValue(new Error("queue unavailable"));
+
+    const completion = await continueBook(job());
+
+    await expect(completion.afterJobCompleted?.()).rejects.toThrow("queue unavailable");
+    expect(mocks.tx.page.deleteMany).not.toHaveBeenCalled();
+    expect(mocks.tx.chapter.deleteMany).not.toHaveBeenCalled();
+    expect(mocks.prisma.bookEditOperation.updateMany).not.toHaveBeenCalled();
+    expect(revisionIncrementWrites()).toHaveLength(1);
+  });
+
+  it("replays APPLIED delivery without appending or incrementing the revision again", async () => {
+    await continueBook(job({ [PRE_EDIT_PROJECT_STATUS]: "REVIEW_REQUIRED" }));
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({ id: "op-1", status: "APPLIED" });
+    mocks.getProjectOrThrow.mockResolvedValue({ ...baseProject, currentPlanId: "plan-new" });
+
+    const replay = await continueBook(job({ [PRE_EDIT_PROJECT_STATUS]: "REVIEW_REQUIRED" }));
+
+    expect(mocks.tx.page.createMany).toHaveBeenCalledTimes(1);
+    expect(revisionIncrementWrites()).toHaveLength(1);
+    expect(projectUpdateData()).toContainEqual({ status: "REVIEW_REQUIRED" });
+    expect(replay.afterJobCompleted).toEqual(expect.any(Function));
   });
 });
 

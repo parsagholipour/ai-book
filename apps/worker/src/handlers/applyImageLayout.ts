@@ -1,8 +1,5 @@
-import { getProjectOrThrow, invalidateProjectExports } from "../generation/bookHelpers.js";
-import {
-  claimAppliedEditPublication,
-  restoreEditProjectStatus
-} from "../generation/editProjectStatus.js";
+import { publishAppliedEditTail } from "../generation/appliedEditPublication.js";
+import { restoreEditProjectStatus } from "../generation/editProjectStatus.js";
 import { claimEditOperationForDelivery } from "../generation/editOperationDelivery.js";
 import {
   applyLayoutBatchInTx,
@@ -392,45 +389,29 @@ async function replayAppliedLayout(
     await restoreLayoutStatus(projectId, operationId, fallbackStatus, "APPLIED_NOOP");
     return;
   }
-  const project = await getProjectOrThrow(projectId);
-  const compilePlanId = planId ?? project.currentPlanId;
-  if (!compilePlanId) {
-    console.error(
-      `Cannot replay APPLIED image layout ${operationId} for project ${projectId}: no plan version is available`
-    );
-    await restoreLayoutStatus(projectId, operationId, fallbackStatus);
-    return;
-  }
-  await refreshExports(projectId, compilePlanId, operationId, fallbackStatus);
+  await refreshExports(projectId, planId, operationId, fallbackStatus);
 }
 
 async function refreshExports(
   projectId: string,
-  planVersionId: string,
+  planVersionId: string | undefined,
   operationId: string,
   fallbackStatus: SettledProjectStatus
 ): Promise<void> {
-  const claimed = await prisma.$transaction(async (tx) => {
-    if (!(await claimAppliedEditPublication(tx, projectId, operationId, fallbackStatus))) {
-      return false;
-    }
-    await invalidateProjectExports(projectId);
-    return true;
+  await publishAppliedEditTail({
+    projectId,
+    operationId,
+    fallbackStatus,
+    planVersionId,
+    missingPlanMessage:
+      `Cannot replay APPLIED image layout ${operationId} for project ${projectId}: no plan version is available`,
+    enqueueFailureMessage: `Failed to enqueue the export refresh for layout-edited project ${projectId}:`,
+    enqueue: ({ planVersionId: compilePlanVersionId }) =>
+      maybeEnqueueCompile(projectId, compilePlanVersionId, {
+        skipFinalReview: true,
+        withoutQualityVerdict: true
+      })
   });
-  if (!claimed) return;
-  let dispatched: Awaited<ReturnType<typeof maybeEnqueueCompile>>;
-  try {
-    dispatched = await maybeEnqueueCompile(projectId, planVersionId, {
-      skipFinalReview: true,
-      withoutQualityVerdict: true
-    });
-  } catch (error) {
-    console.error(`Failed to enqueue the export refresh for layout-edited project ${projectId}:`, error);
-    dispatched = "not-ready";
-  }
-  if (dispatched === "not-ready") {
-    await restoreLayoutStatus(projectId, operationId, fallbackStatus);
-  }
 }
 
 async function restoreLayoutStatus(

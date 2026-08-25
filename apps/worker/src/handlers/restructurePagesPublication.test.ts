@@ -35,7 +35,7 @@ vi.mock("../generation/structuralPageLease.js", () => ({
 }));
 vi.mock("../runtime/dispatch.js", () => ({ maybeEnqueueCompile: mocks.maybeEnqueueCompile }));
 
-import { queueRestructureCompile, replayAppliedRestructure } from "./restructurePagesPublication.js";
+import { replayAppliedRestructure } from "./restructurePagesPublication.js";
 
 describe("APPLIED structural publication replay", () => {
   beforeEach(() => {
@@ -68,6 +68,10 @@ describe("APPLIED structural publication replay", () => {
         contentRevision: 8,
         requireContentRevisionMatch: true
       });
+      expect(mocks.prisma.$transaction).toHaveBeenCalledWith(
+        expect.any(Function),
+        { timeout: 30_000, maxWait: 10_000 }
+      );
     }
   );
 
@@ -127,7 +131,7 @@ describe("APPLIED structural publication replay", () => {
     mocks.maybeEnqueueCompile.mockRejectedValue(new Error("queue unavailable"));
     vi.spyOn(console, "error").mockImplementation(() => undefined);
 
-    await queueRestructureCompile("project-1", "plan-8", "op-1", 8, "REVIEW_REQUIRED");
+    await replayAppliedRestructure("project-1", "op-1", "owner-2", "REVIEW_REQUIRED");
 
     expect(mocks.restoreEditProjectStatus).toHaveBeenCalledWith(
       mocks.tx, "project-1", "op-1", "REVIEW_REQUIRED"
