@@ -203,23 +203,6 @@ export async function dispatchGenerationJob(generationJobId: string) {
   }
 }
 
-/**
- * Compensation for a charged enqueue that failed after its transaction
- * committed. A QUEUED row without a bullJobId is exactly what the reconcilers
- * re-publish, so a refund taken while the row survives pays back work that
- * still runs. Flipping it to CANCELED atomically takes it away from both
- * reconcilers; the conditional match is what makes "provably dead" true even
- * when a reconciler races this call. Returns false when the row was already
- * dispatched or claimed — then the work will run and the charge must stand.
- */
-export async function cancelUndispatchedGenerationJob(generationJobId: string, reason: string): Promise<boolean> {
-  const result = await prisma.generationJob.updateMany({
-    where: { id: generationJobId, status: "QUEUED", bullJobId: null },
-    data: { status: "CANCELED", finishedAt: new Date(), message: "Canceled", error: reason }
-  });
-  return result.count === 1;
-}
-
 export async function reconcileUndispatchedGenerationJobs(limit = 50): Promise<number> {
   const jobs = await prisma.generationJob.findMany({
     where: {

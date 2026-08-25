@@ -10,7 +10,7 @@ import { EXPORT_REPAIR_FORMAT } from "@book-maker/core";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { cancelUndispatchedGenerationJob, dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
+import { dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
 import { exportRepairDedupeKey } from "./exportRepair.js";
 // The races these surfaces can lose — two callers, or a compile publishing
 // underneath the decision — are `exportRepairPublicationRace.test.ts`.
@@ -585,14 +585,10 @@ describe("mobile export repair queueing", () => {
       // Giving up on the wait is not giving up on the repair. The row stays
       // QUEUED with no bullJobId, which is exactly what
       // `reconcileUndispatchedGenerationJobs` republishes once Redis is back.
-      // Cancelling it would take the book's only route back to having a PDF away
-      // from both reconcilers and from the next `ensureExportRepairQueued`.
       expect(queued.size).toBe(1);
       const [row] = [...queued.values()];
       expect(row?.status).toBe("QUEUED");
       expect(row?.dedupeKey).toContain("repair-7-");
-      expect(vi.mocked(cancelUndispatchedGenerationJob)).not.toHaveBeenCalled();
-
       // The abandoned hand-off settles whenever Redis comes back — long after
       // the request it was started for. `withTimeout` attached its handler
       // before the race, so that must not surface as an unhandled rejection.

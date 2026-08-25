@@ -48,8 +48,9 @@ what stops a deterministic-only report erasing the book's real quality verdict.
 **Charged edit?** Then it needs an entry in `PROPOSAL_GATED_EDIT_KINDS` (see step 3), a cost in
 `bookEditCreditCost` and a `CreditOperation` in `billingOperationForIntent` /
 `operationKindForIntent` (`apps/api/src/mobile/bookEditPricing.ts`), a proposal card, and a queue
-function in `apps/api/src/mobile/editOperations.ts` built on `withChargedEnqueue`. Use the
-`add-priced-operation` skill for the money half.
+function built on `queueAttemptChatOperation` (`apps/api/src/mobile/editOperations.ts`). That
+helper keeps the charge, durable job and edit state in one `startGenerationAttempt` transaction,
+then dispatches after commit. Use the `add-priced-operation` skill for the money half.
 
 **Answer-only?** Then it never reaches the edit machinery at all.
 

@@ -1,6 +1,6 @@
 ---
 name: add-priced-operation
-description: Use when charging credits for something new, or changing what an existing operation costs — a new value in `enum CreditOperation`, a new key in `DEFAULT_CREDIT_COSTS`, a new tier rate beside `TIER_PRICED_KEYS`, or any route that calls `reserveCredits` / `startGenerationAttempt` / `commitReservedCredits` / `refundCreditLedgerEntry`. Covers the reserve→commit→refund loop that every failure path has to close, the exhaustive `CREDIT_PRICING_LIMITS` record the compiler checks, the `withChargedEnqueue` skeleton in apps/api/src/mobile/editOperations.ts, the operator pricing dashboard, and the Dart mirror `estimateProjectCredits` that has no server quote route behind it. Reach for it on "how much should this cost", "add a credit price", "make X free", "the user was charged but the job failed", "double charge", or "why is this showing up as unbilled spend".
+description: Use when charging credits for something new, or changing what an existing operation costs — a new value in `enum CreditOperation`, a new key in `DEFAULT_CREDIT_COSTS`, a new tier rate beside `TIER_PRICED_KEYS`, or any route that calls `reserveCredits` / `startGenerationAttempt` / `commitReservedCredits` / `refundCreditLedgerEntry`. Covers the reserve→commit→refund loop that every failure path has to close, the exhaustive `CREDIT_PRICING_LIMITS` record the compiler checks, the transactional `startGenerationAttempt` + durable-job pattern, the operator pricing dashboard, and the Dart mirror `estimateProjectCredits` that has no server quote route behind it. Reach for it on "how much should this cost", "add a credit price", "make X free", "the user was charged but the job failed", "double charge", or "why is this showing up as unbilled spend".
 ---
 
 # Pricing a new operation, or changing what one costs
@@ -62,20 +62,30 @@ Two entry points, and they are not interchangeable:
   anything that queues durable work. It claims a semantic command by
   `commandKey` + `requestFingerprint` *before* money moves, then commits the reservation and the
   domain rows in one serializable transaction, and returns `{ attempt, replayed }`. `replayed`
-  is what makes a double-tap free. No queue or network call belongs inside its `create` callback;
-  dispatch after it returns. It also carries `imageQuotaLimit`, which is how a free-tier
+  is what makes a double-tap free. Write the durable job row inside its `create` callback, but keep
+  Redis and other network dispatch outside; dispatch after it returns. It also carries
+  `imageQuotaLimit`, which is how a free-tier
   illustrated-book slot is stamped onto the reservation so the refund path hands it back without
   knowing about quotas.
 - **`reserveCredits`** (`packages/db/src/billingLedger.ts`) — the lower-level hold, keyed by
   `idempotencyKey`. Returns `null` when the price is zero. Pair with `commitReservedCredits(id)`
   on success and `refundCreditLedgerEntry(id, reason)` on every failure.
 
-For a charged operation that ends in an enqueue, do not hand-roll this: use `withChargedEnqueue`
-in `apps/api/src/mobile/editOperations.ts`. It exists so "every failure path refunds" is enforced
-by the shape of the code. Its compensation ordering is the safety property — a refund happens only
-after `cancelUndispatchedGenerationJob` provably claimed the row, because a job that already
-dispatched *will* run and its charge must stand. Your `run` callback must call
-`registerQueuedJob(jobId)` the moment a durable job row exists, or the catch cannot reach it.
+For a charged operation that creates durable work, make the attempt transaction the skeleton:
+
+1. Call `startGenerationAttempt` with a semantic `commandKey`, a fingerprint of every input that
+   changes the work, and the quoted price. Reusing a key with the same fingerprint replays the
+   committed attempt; reusing it for different work is a conflict.
+2. Inside `create`, write the domain state and call `enqueueGenerationJob` with
+   `transaction: tx`, `dispatch: false` and `attemptId`. Return that job as `primaryJobId`. A throw
+   here rolls the reservation, spend, domain writes, attempt and durable job row back together.
+3. After `startGenerationAttempt` returns, call `dispatchGenerationJob(primaryJobId)`. A dispatch
+   failure leaves the committed `QUEUED` row for `reconcileUndispatchedGenerationJobs`; it is late,
+   not dead, so keep the charge and do not mark committed domain work failed.
+
+Chat edits already package this as `queueAttemptChatOperation` in
+`apps/api/src/mobile/editOperations.ts`. For a smaller end-to-end example, follow
+`queueChargedPlanRevision` in `apps/api/src/mobile/planRevisionOperations.ts`.
 
 ## Step 3 — the surfaces that display it
 
@@ -105,9 +115,8 @@ Do not mark this done until every row has a named function or a stated reason it
 | --- | --- | --- |
 | Validation / precondition rejects after reserve | `refundCreditLedgerEntry`, or the reserve never ran | reserve is the *last* thing before the durable write |
 | Insufficient credits | `reserveCredits` throws `InsufficientCreditsError`; nothing to refund | route answers 402 without a ledger row |
-| Domain transaction rolls back | `startGenerationAttempt`'s serializable transaction | no attempt row, no ledger row |
-| Enqueue fails before the job row exists | `withChargedEnqueue` catch → `refundCreditLedgerEntry` | `registerQueuedJob` was never called |
-| Enqueue fails after the job row exists | `cancelUndispatchedGenerationJob` first, refund only if it claimed the row | a dispatched job keeps its charge, by design |
+| Durable job or domain write fails inside `create` | `startGenerationAttempt`'s transaction rolls back | no attempt, ledger or job row commits |
+| Dispatch fails after the attempt commits | nobody; the charge stands | the `QUEUED` row remains eligible for `reconcileUndispatchedGenerationJobs` |
 | Worker handler throws | `markFailed` → `refundFailedProjectCredits` (`apps/worker/src/runtime/jobLifecycle.ts`) | the job must own the project lifecycle, or refund on its own row |
 | User stops the run | `markStopped` in the worker **and** `stopProjectGenerationJobs` in `apps/api/src/queue.ts` | both implementations exist; check which one runs for your job |
 | Watchdog / render timeout | same as worker failure | `compile-export` has no BullMQ retry, so one timeout is terminal |

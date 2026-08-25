@@ -655,7 +655,6 @@ export function billingModuleMock() {
 }
 
 export const mockQueue = {
-  cancelUndispatchedGenerationJob: vi.fn(),
   dispatchGenerationJob: vi.fn(),
   enqueueGenerationJob: vi.fn(),
   enqueueOrRequeueGenerationJob: vi.fn(),

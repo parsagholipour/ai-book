@@ -1,7 +1,7 @@
 import { MODEL_PAGE_NUMBERING, numberingForProject, type ReaderPageNumbering } from "../bookPageNumbering.js";
 import { pageInstructionsWithCharacterContext, requestWithCharacterContext } from "./bookEditCopy.js";
 import { type BookEditIntent } from "../bookEditIntent.js";
-import { cancelUndispatchedGenerationJob, dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
+import { dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
 import { createOpenBookEditOperation, replayClaimedChatOperation } from "./editOperationClaims.js";
 import {
   affectedPagesForIntent,
@@ -30,8 +30,6 @@ import { Prisma, prisma } from "@book-maker/db";
 import { randomUUID } from "node:crypto";
 import {
   InsufficientCreditsError,
-  commitReservedCredits,
-  refundCreditLedgerEntry,
   startGenerationAttempt,
   type CreditLedgerEntryRecord
 } from "@book-maker/db/billing";
@@ -60,71 +58,6 @@ import { queueChatRestructurePages } from "./restructurePageOperations.js";
 // A book_replan forks a second project rather than editing this one, so its
 // queue function lives next door too.
 import { queueChatBookReplanCopy } from "./replanCopyOperations.js";
-
-/**
- * The one reserve → commit → enqueue → compensate skeleton every charged edit
- * runs through, so "every failure path refunds" is enforced by the shape of
- * the code rather than by reviewers noticing.
- *
- * The compensation ordering is the safety property, taken from the plan
- * revision path: once a GenerationJob row exists, it is reachable by both
- * reconcilers, so a refund is only safe after `cancelUndispatchedGenerationJob`
- * provably claimed the row. A job that was already dispatched (or that a
- * reconciler claimed first) will run, and the charge must stand — the failure
- * is logged instead of refunded. `run` must call `registerQueuedJob` the
- * moment a durable job row exists so this catch can reach it.
- */
-export async function withChargedEnqueue<T>(options: {
-  reserve: () => Promise<CreditLedgerEntryRecord | null>;
-  refundReason: string;
-  run: (context: {
-    spend: CreditLedgerEntryRecord | null;
-    registerQueuedJob: (jobId: string) => void;
-  }) => Promise<T>;
-  /**
-   * Domain compensation beyond the refund (restore a project status, fail a
-   * replan copy). Runs only when the queued work is provably dead — when the
-   * job survived, the work is still coming and the domain state it needs must
-   * stay put.
-   */
-  onFailureWhenDead?: ((context: { jobWasQueued: boolean }) => Promise<void>) | undefined;
-}): Promise<T> {
-  let reservation: CreditLedgerEntryRecord | null = null;
-  let spend: CreditLedgerEntryRecord | null = null;
-  let queuedJobId: string | null = null;
-  try {
-    reservation = await options.reserve();
-    spend = reservation ? await commitReservedCredits(reservation.id) : null;
-    return await options.run({
-      spend,
-      registerQueuedJob: (jobId) => {
-        queuedJobId = jobId;
-      }
-    });
-  } catch (error) {
-    const jobProvablyDead = queuedJobId
-      ? await cancelUndispatchedGenerationJob(queuedJobId, options.refundReason).catch(() => false)
-      : true;
-    if (jobProvablyDead && options.onFailureWhenDead) {
-      try {
-        await options.onFailureWhenDead({ jobWasQueued: queuedJobId !== null });
-      } catch {
-        // Compensation is best-effort; the refund decision below still runs.
-      }
-    }
-    const entryToRefund = spend ?? reservation;
-    if (entryToRefund && jobProvablyDead) {
-      await refundCreditLedgerEntry(entryToRefund.id, options.refundReason);
-    } else if (entryToRefund) {
-      console.error("Charged enqueue compensation kept the charge: the queued job could not be canceled", {
-        generationJobId: queuedJobId,
-        ledgerEntryId: entryToRefund.id,
-        reason: options.refundReason
-      });
-    }
-    throw error;
-  }
-}
 
 /**
  * The resume payload for a credits-blocked edit: the same pendingEdit +

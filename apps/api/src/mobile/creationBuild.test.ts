@@ -7,7 +7,7 @@ vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMoc
 
 import { refundCreditLedgerEntry, reserveCredits } from "@book-maker/db/billing";
 
-import { cancelUndispatchedGenerationJob, dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
+import { dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
 import {
   bearer,
   buildMobileApp,
@@ -138,13 +138,12 @@ describe("mobile creation build and outputs", () => {
     });
 
     expect(response.statusCode).toBeGreaterThanOrEqual(500);
-    expect(vi.mocked(cancelUndispatchedGenerationJob)).not.toHaveBeenCalled();
     expect(vi.mocked(refundCreditLedgerEntry)).not.toHaveBeenCalled();
     expect(mockPrisma.project.delete).not.toHaveBeenCalled();
     await app.close();
   });
 
-  it("keeps the charge when the queued job cannot be proven dead", async () => {
+  it("keeps the charge when dispatch may have reached Redis", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     const payload = creationPayload();
     mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(creationDraftRecord({ id: "draft-1", payload }));
@@ -157,8 +156,6 @@ describe("mobile creation build and outputs", () => {
     vi.mocked(reserveCredits).mockResolvedValueOnce({ id: "ledger-plan", status: "RESERVED" } as never);
     vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-plan" }));
     vi.mocked(dispatchGenerationJob).mockRejectedValueOnce(new Error("row update lost after queue.add"));
-    // The row was already claimed: the work will run, so the charge stands.
-    vi.mocked(cancelUndispatchedGenerationJob).mockResolvedValueOnce(false);
     const app = await buildMobileApp({ advisorEnrichment: false });
 
     const response = await app.inject({
