@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../projects/presentation/project_chat_screen.dart';
@@ -162,9 +163,8 @@ Future<String?> _promptForInstruction(
   BuildContext context,
   ReaderSelection selection,
 ) {
-  return showModalBottomSheet<String>(
-    context: context,
-    isScrollControlled: true,
+  return showAppBottomSheet<String>(
+    context,
     builder: (_) => ReaderInstructionSheet(
       excerpt: selection.excerpt,
       placement: selection.placementLabel,
@@ -176,9 +176,8 @@ Future<({String from, String to})?> _promptForReplacement(
   BuildContext context,
   ReaderSelection selection,
 ) {
-  return showModalBottomSheet<({String from, String to})>(
-    context: context,
-    isScrollControlled: true,
+  return showAppBottomSheet<({String from, String to})>(
+    context,
     builder: (_) => ReaderReplacementSheet(
       excerpt: selection.excerpt,
       placement: selection.placementLabel,

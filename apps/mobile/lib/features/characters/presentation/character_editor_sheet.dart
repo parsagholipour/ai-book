@@ -22,10 +22,8 @@ Future<LibraryCharacter?> showCharacterEditorSheet(
   BuildContext context, {
   LibraryCharacter? character,
 }) {
-  return showModalBottomSheet<LibraryCharacter>(
-    context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
+  return showAppBottomSheet<LibraryCharacter>(
+    context,
     builder: (_) => _CharacterEditorSheet(character: character),
   );
 }

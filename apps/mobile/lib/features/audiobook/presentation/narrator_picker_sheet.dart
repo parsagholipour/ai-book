@@ -32,10 +32,8 @@ Future<bool> showNarratorPickerSheet(
   required bool replacing,
   required Future<String?> Function(String voice) onConfirm,
 }) async {
-  final started = await showModalBottomSheet<bool>(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
+  final started = await showAppBottomSheet<bool>(
+    context,
     builder: (_) => _NarratorPickerSheet(
       projectId: projectId,
       pageCount: pageCount,

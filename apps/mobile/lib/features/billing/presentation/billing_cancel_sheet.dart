@@ -19,10 +19,8 @@ Future<void> showCancelSubscriptionSheet(
   required MobileBilling billing,
   String? projectId,
 }) {
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
+  return showAppBottomSheet<void>(
+    context,
     builder: (context) =>
         _CancelSubscriptionSheet(billing: billing, projectId: projectId),
   );

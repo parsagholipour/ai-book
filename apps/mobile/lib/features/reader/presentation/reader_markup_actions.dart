@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
 import '../data/reader_pdf_page_text.dart';
@@ -156,10 +157,8 @@ class ReaderMarkupActions {
     String initial = '',
     String? excerpt,
   }) {
-    return showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
+    return showAppBottomSheet<String>(
+      context,
       builder: (_) =>
           ReaderNoteSheet(title: title, initial: initial, excerpt: excerpt),
     );
@@ -321,10 +320,8 @@ class ReaderMarkupActions {
   // -------------------------------------------------------------------- sheets
 
   void showIndex() {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
+    showAppBottomSheet<void>(
+      context,
       builder: (sheetContext) => ListenableBuilder(
         listenable: controller,
         builder: (_, _) => ReaderAnnotationsSheet(
@@ -348,10 +345,8 @@ class ReaderMarkupActions {
   }
 
   void showAppearance() {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
+    showAppBottomSheet<void>(
+      context,
       // Rebuilt from the controller so the page behind the sheet changes as the
       // tint is chosen, which is the only way to choose one.
       builder: (_) => ListenableBuilder(

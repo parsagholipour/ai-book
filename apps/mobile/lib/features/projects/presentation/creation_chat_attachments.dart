@@ -4,65 +4,60 @@ part of 'creation_chat_screen.dart';
 // and retries remain owned by CreationChatController.
 extension _CreationChatAttachments on _CreationChatScreenState {
   Future<void> _openAttachMenu(CreationChatState state) async {
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.photo_library_outlined),
-                title: const Text('Photo library'),
-                subtitle: const Text('Use a photo as inspiration or notes'),
-                onTap: () => Navigator.of(sheetContext).pop('gallery'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.photo_camera_outlined),
-                title: const Text('Take a photo'),
-                onTap: () => Navigator.of(sheetContext).pop('camera'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.description_outlined),
-                title: const Text('Document'),
-                subtitle: const Text('PDF, Word, EPUB, text, or Markdown'),
-                onTap: () => Navigator.of(sheetContext).pop('document'),
-              ),
-              ListTile(
-                leading: Icon(
-                  state.hasSourceNotes
-                      ? Icons.sticky_note_2
-                      : Icons.sticky_note_2_outlined,
-                ),
-                title: const Text('Paste text notes'),
-                subtitle: state.hasSourceNotes
-                    ? const Text('Source notes added')
-                    : null,
-                onTap: () => Navigator.of(sheetContext).pop('notes'),
-              ),
-              ListTile(
-                key: const ValueKey('attach-characters'),
-                leading: const Icon(Icons.people_outline),
-                title: const Text('My characters'),
-                subtitle: const Text(
-                  'Reusable characters you can @-mention in any book',
-                ),
-                onTap: () => Navigator.of(sheetContext).pop('characters'),
-              ),
-              const Divider(height: 1),
-              ListTile(
-                key: const ValueKey('attach-import-book'),
-                leading: const Icon(Icons.auto_stories_outlined),
-                title: const Text('Import a finished manuscript'),
-                subtitle: const Text(
-                  'Bring your own book in to improve or continue it',
-                ),
-                onTap: () => Navigator.of(sheetContext).pop('import'),
-              ),
-            ],
+    final action = await showAppActionSheet<String>(
+      context,
+      builder: (sheetContext) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.photo_library_outlined),
+            title: const Text('Photo library'),
+            subtitle: const Text('Use a photo as inspiration or notes'),
+            onTap: () => Navigator.of(sheetContext).pop('gallery'),
           ),
-        ),
+          ListTile(
+            leading: const Icon(Icons.photo_camera_outlined),
+            title: const Text('Take a photo'),
+            onTap: () => Navigator.of(sheetContext).pop('camera'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.description_outlined),
+            title: const Text('Document'),
+            subtitle: const Text('PDF, Word, EPUB, text, or Markdown'),
+            onTap: () => Navigator.of(sheetContext).pop('document'),
+          ),
+          ListTile(
+            leading: Icon(
+              state.hasSourceNotes
+                  ? Icons.sticky_note_2
+                  : Icons.sticky_note_2_outlined,
+            ),
+            title: const Text('Paste text notes'),
+            subtitle: state.hasSourceNotes
+                ? const Text('Source notes added')
+                : null,
+            onTap: () => Navigator.of(sheetContext).pop('notes'),
+          ),
+          ListTile(
+            key: const ValueKey('attach-characters'),
+            leading: const Icon(Icons.people_outline),
+            title: const Text('My characters'),
+            subtitle: const Text(
+              'Reusable characters you can @-mention in any book',
+            ),
+            onTap: () => Navigator.of(sheetContext).pop('characters'),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            key: const ValueKey('attach-import-book'),
+            leading: const Icon(Icons.auto_stories_outlined),
+            title: const Text('Import a finished manuscript'),
+            subtitle: const Text(
+              'Bring your own book in to improve or continue it',
+            ),
+            onTap: () => Navigator.of(sheetContext).pop('import'),
+          ),
+        ],
       ),
     );
     if (!mounted || action == null) return;

@@ -48,10 +48,8 @@ Future<BillingPurchaseSuccess?> showBillingPaywall(
   String? message,
   PaywallCreditsNeeded? creditsNeeded,
 }) async {
-  final outcome = await showModalBottomSheet<_PaywallOutcome>(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
+  final outcome = await showAppBottomSheet<_PaywallOutcome>(
+    context,
     builder: (sheetContext) => BillingPaywall(
       projectId: projectId,
       title: title,

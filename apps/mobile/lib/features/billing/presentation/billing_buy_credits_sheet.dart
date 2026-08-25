@@ -28,11 +28,8 @@ Future<BillingPurchaseSuccess?> showBuyCreditsSheet(
   int? shortfall,
   VoidCallback? onSeePlans,
 }) async {
-  final success = await showModalBottomSheet<BillingPurchaseSuccess>(
-    context: context,
-    showDragHandle: true,
-    useSafeArea: true,
-    isScrollControlled: true,
+  final success = await showAppBottomSheet<BillingPurchaseSuccess>(
+    context,
     builder: (sheetContext) => BuyCreditsSheet(
       projectId: projectId,
       shortfall: shortfall,

@@ -602,36 +602,34 @@ class _ChatTileState extends ConsumerState<_ChatTile> {
   }
 
   void _showOptions(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: const Text('Rename'),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                _showRenameDialog(context);
-              },
+    showAppActionSheet<void>(
+      context,
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.edit_outlined),
+            title: const Text('Rename'),
+            onTap: () {
+              Navigator.of(ctx).pop();
+              _showRenameDialog(context);
+            },
+          ),
+          ListTile(
+            leading: Icon(
+              Icons.delete_outline,
+              color: Theme.of(context).colorScheme.error,
             ),
-            ListTile(
-              leading: Icon(
-                Icons.delete_outline,
-                color: Theme.of(context).colorScheme.error,
-              ),
-              title: Text(
-                'Delete',
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                _confirmDelete(context);
-              },
+            title: Text(
+              'Delete',
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
-          ],
-        ),
+            onTap: () {
+              Navigator.of(ctx).pop();
+              _confirmDelete(context);
+            },
+          ),
+        ],
       ),
     );
   }

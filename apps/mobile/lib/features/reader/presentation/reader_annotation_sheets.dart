@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/ui/app_components.dart';
 import '../domain/reader_annotation.dart';
 import '../domain/reader_models.dart';
 import 'reader_annotation_painter.dart';
@@ -111,10 +112,8 @@ Future<ReaderAnnotationCommand?> showReaderAnnotationSheet({
   bool bookActionsEnabled = true,
   bool hasCoverPage = false,
 }) {
-  return showModalBottomSheet<ReaderAnnotationCommand>(
-    context: context,
-    showDragHandle: true,
-    isScrollControlled: true,
+  return showAppBottomSheet<ReaderAnnotationCommand>(
+    context,
     builder: (sheetContext) => ReaderAnnotationSheet(
       annotation: annotation,
       palette: palette,

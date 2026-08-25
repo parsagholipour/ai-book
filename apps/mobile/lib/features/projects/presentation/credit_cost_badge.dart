@@ -91,11 +91,8 @@ Future<void> showCreditCostSheet(
   required int credits,
   CreditCostKind kind = CreditCostKind.charged,
 }) {
-  return showModalBottomSheet<void>(
-    context: context,
-    showDragHandle: true,
-    useSafeArea: true,
-    isScrollControlled: true,
+  return showAppBottomSheet<void>(
+    context,
     builder: (_) => CreditCostSheet(credits: credits, kind: kind),
   );
 }

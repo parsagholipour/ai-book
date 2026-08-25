@@ -8,11 +8,8 @@ part of 'creation_chat_screen.dart';
 extension _CreationChatSheets on _CreationChatScreenState {
   Future<void> openSourceNotesSheet(CreationChatState state) async {
     final controller = TextEditingController(text: state.sourceNotes);
-    final saved = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      useSafeArea: true,
+    final saved = await showAppBottomSheet<String>(
+      context,
       builder: (_) => _SourceNotesSheet(controller: controller),
     );
     controller.dispose();
@@ -34,13 +31,8 @@ extension _CreationChatSheets on _CreationChatScreenState {
 
   Future<void> openAdvancedSheet() async {
     final controller = ref.read(creationChatControllerProvider.notifier);
-    // useSafeArea: a scroll-controlled sheet may grow to full height, and
-    // without it the drag handle disappears up into the status bar.
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      useSafeArea: true,
+    await showAppBottomSheet<void>(
+      context,
       builder: (_) => _AdvancedSheet(controller: controller),
     );
   }
@@ -51,11 +43,8 @@ extension _CreationChatSheets on _CreationChatScreenState {
       optionalDetails: state.optionalDetails,
       brief: state.brief,
     );
-    final saved = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      useSafeArea: true,
+    final saved = await showAppBottomSheet<String>(
+      context,
       builder: (_) => _TitleSheet(
         initial: working ?? '',
         suggestions: state.titleSuggestions,

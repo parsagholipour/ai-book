@@ -25,10 +25,8 @@ Future<void> showCharacterCastSheet({
   required String projectId,
   int? pageIndex,
 }) {
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
+  return showAppBottomSheet<void>(
+    context,
     builder: (context) =>
         _CharacterCastSheet(projectId: projectId, pageIndex: pageIndex),
   );

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import 'character_crop_screen.dart';
 
@@ -14,30 +15,27 @@ enum CharacterPhotoAction { gallery, camera }
 /// Removing lives on the picture itself now — every retained version has its
 /// own delete — so this is only ever "where should the new one come from".
 Future<CharacterPhotoAction?> showCharacterPhotoActions(BuildContext context) {
-  return showModalBottomSheet<CharacterPhotoAction>(
-    context: context,
-    showDragHandle: true,
+  return showAppActionSheet<CharacterPhotoAction>(
+    context,
     builder: (sheetContext) {
-      return SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              key: const ValueKey('character-photo-gallery'),
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('Photo library'),
-              onTap: () =>
-                  Navigator.of(sheetContext).pop(CharacterPhotoAction.gallery),
-            ),
-            ListTile(
-              key: const ValueKey('character-photo-camera'),
-              leading: const Icon(Icons.photo_camera_outlined),
-              title: const Text('Take a photo'),
-              onTap: () =>
-                  Navigator.of(sheetContext).pop(CharacterPhotoAction.camera),
-            ),
-          ],
-        ),
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            key: const ValueKey('character-photo-gallery'),
+            leading: const Icon(Icons.photo_library_outlined),
+            title: const Text('Photo library'),
+            onTap: () =>
+                Navigator.of(sheetContext).pop(CharacterPhotoAction.gallery),
+          ),
+          ListTile(
+            key: const ValueKey('character-photo-camera'),
+            leading: const Icon(Icons.photo_camera_outlined),
+            title: const Text('Take a photo'),
+            onTap: () =>
+                Navigator.of(sheetContext).pop(CharacterPhotoAction.camera),
+          ),
+        ],
       );
     },
   );

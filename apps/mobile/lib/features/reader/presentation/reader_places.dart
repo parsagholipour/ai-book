@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/haptics.dart';
 import '../domain/reader_models.dart';
 import 'reader_bookmarks_sheet.dart';
@@ -39,10 +40,8 @@ class ReaderPlaces {
   final bool hasCoverPage;
 
   void showContents() {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
+    showAppBottomSheet<void>(
+      context,
       builder: (sheetContext) => ReaderOutlineSheet(
         entries: outline,
         currentPage: state.lastPage,
@@ -56,10 +55,8 @@ class ReaderPlaces {
   }
 
   void showBookmarks() {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
+    showAppBottomSheet<void>(
+      context,
       builder: (sheetContext) => ReaderBookmarksSheet(
         state: state,
         currentRevision: currentRevision,

@@ -98,9 +98,8 @@ extension _CreationChatPlanActions on _CreationChatScreenState {
       targetPages: pages,
       creditCosts: creditCosts,
     );
-    return showModalBottomSheet<_PageCountSelection>(
-      context: context,
-      isScrollControlled: true,
+    return showAppBottomSheet<_PageCountSelection>(
+      context,
       builder: (context) => _PageCountPromptSheet(
         preflight: preflight,
         estimateCredits: estimateCredits,
