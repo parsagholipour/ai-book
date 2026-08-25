@@ -1,13 +1,13 @@
 import { MAX_APPEARANCE_LENGTH } from "@book-maker/core";
 import type { LibraryMentionTargetKind } from "@book-maker/db";
 import { z } from "zod";
-import { REQUEST_ID_MAX_LENGTH, REQUEST_ID_MIN_LENGTH, requestIdSchema } from "./schemas.js";
+import { requestIdSchema, toOpenApiRequestBody } from "./schemas.js";
 
 /**
  * Bodies for the library-character routes — both groups, `routes/characters.ts`
  * and `routes/characterImages.ts` — split out of `schemas.ts` for the file-size
- * budget. The OpenAPI fragments beside each Zod schema feed Fastify's docs and
- * must move together with them.
+ * budget. Fastify's OpenAPI bodies are generated from the input side of these
+ * Zod schemas.
  */
 
 export const LIBRARY_CHARACTER_LIMIT_PER_USER = 100;
@@ -55,8 +55,8 @@ export const LIBRARY_CHARACTER_FIELDS_MAX = 12;
 export const LIBRARY_CHARACTER_MENTION_ENTRIES_MAX = LIBRARY_CHARACTER_LIMIT_PER_USER;
 /**
  * The two halves of one optional profile row — "Age" / "9". Named for the same
- * reason every other bound here is: they are spelled on both sides of the door,
- * and the JSON-schema side is the half that runs first.
+ * reason every other bound here is: both runtime validation and the generated
+ * request contract read these schemas.
  */
 export const LIBRARY_CHARACTER_FIELD_KEY_MAX = 40;
 export const LIBRARY_CHARACTER_FIELD_VALUE_MAX = 300;
@@ -255,20 +255,19 @@ export const libraryMentionTargetArms = {
  * first `23514` reaches a reader: the rule is a property of the table, and the
  * table already holds the two kinds it is about.
  *
- * **Going live is not this file's change, it is five landing together.** A
+ * **Going live is not this file's change, it is four landing together.** A
  * route that accepts a kind has to (1) put a `targetKind` in the write bodies'
- * Zod schemas and (2) in the JSON-schema twins beside them — the repo pairs one
- * with every documented body, and there is none here because there is no body
- * — (3) name the new kind in `REPLACED_MENTION_KINDS` so the write clears the
- * rows it inserts, (4) stop `replaceLibraryMentions` deriving
+ * Zod schemas, which generate the documented request contract, (2) name the
+ * new kind in `REPLACED_MENTION_KINDS` so the write clears the rows it inserts,
+ * (3) stop `replaceLibraryMentions` deriving
  * `targetCharacterId` from `targetId`, which is true of CHARACTER alone, and
- * (5) add the join that gives the new kind a name in `libraryMentionInclude`
+ * (4) add the join that gives the new kind a name in `libraryMentionInclude`
  * (`packages/db/src/libraryMentions.ts`), or `generationDescription` goes on
- * stripping every marker in a description that holds one. Only step 3 has a
+ * stripping every marker in a description that holds one. Only step 2 has a
  * tripwire of its own — `libraryMentionLinks.test.ts` fails the moment a second
- * kind joins that list. Step 5 deliberately has none: `libraryMentionTargetName`
+ * kind joins that list. Step 4 deliberately has none: `libraryMentionTargetName`
  * answers LOCATION and OTHER with `null` on purpose, so a join that never lands
- * is a marker nothing can name rather than a build failure. Until all five land
+ * is a marker nothing can name rather than a build failure. Until all four land
  * `characterSchemas.test.ts` is the only thing holding this shape still, which
  * is the last debt that change settles.
  */
@@ -302,73 +301,6 @@ export type LibraryMentionTargetOf<Kind extends LibraryMentionTargetKind> = Extr
   { targetKind: Kind }
 >;
 
-/**
- * The documented spelling of a mention target, shared by both write bodies.
- *
- * These two routes declare a `body` and set `attachValidation: true`, so ajv's
- * rejection is attached to the request rather than thrown and the Zod schema
- * beside it is what answers: this fragment is the coercion ajv still applies to
- * everything it lets through, and the contract `/docs` publishes, rather than
- * the gate. The parity it asks for is unchanged and only its reason moved. A
- * bound spelled here and not in the Zod schema now refuses nothing at all,
- * because the parse that answers never learned about it; one spelled there and
- * not here is a refusal no client was told to expect. Either way the number has
- * to move on both sides at once.
- */
-const libraryTargetIdOpenApi = {
-  type: "string",
-  minLength: 1,
-  maxLength: LIBRARY_TARGET_ID_MAX
-} as const;
-
-const characterFieldOpenApi = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    key: { type: "string", minLength: 1, maxLength: LIBRARY_CHARACTER_FIELD_KEY_MAX },
-    value: { type: "string", minLength: 1, maxLength: LIBRARY_CHARACTER_FIELD_VALUE_MAX }
-  },
-  required: ["key", "value"]
-} as const;
-
-export const mobileCharacterCreateOpenApiBody = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    name: { type: "string", minLength: 1, maxLength: LIBRARY_CHARACTER_NAME_MAX },
-    description: { type: "string", maxLength: LIBRARY_CHARACTER_DESCRIPTION_MAX },
-    appearance: { type: "string", maxLength: LIBRARY_CHARACTER_APPEARANCE_MAX },
-    fields: { type: "array", items: characterFieldOpenApi, maxItems: LIBRARY_CHARACTER_FIELDS_MAX },
-    mentionedCharacterIds: {
-      type: "array",
-      items: libraryTargetIdOpenApi,
-      maxItems: LIBRARY_CHARACTER_MENTION_ENTRIES_MAX
-    }
-  },
-  required: ["name"]
-} as const;
-
-export const mobileCharacterUpdateOpenApiBody = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    name: { type: "string", minLength: 1, maxLength: LIBRARY_CHARACTER_NAME_MAX },
-    description: { type: "string", maxLength: LIBRARY_CHARACTER_DESCRIPTION_MAX },
-    appearance: { type: "string", maxLength: LIBRARY_CHARACTER_APPEARANCE_MAX },
-    fields: { type: "array", items: characterFieldOpenApi, maxItems: LIBRARY_CHARACTER_FIELDS_MAX },
-    mentionedCharacterIds: {
-      type: "array",
-      items: libraryTargetIdOpenApi,
-      maxItems: LIBRARY_CHARACTER_MENTION_ENTRIES_MAX
-    },
-    dismissSuggestion: { type: "boolean" }
-  }
-} as const;
-
-export const mobileCharacterPortraitOpenApiBody = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    requestId: { type: "string", minLength: REQUEST_ID_MIN_LENGTH, maxLength: REQUEST_ID_MAX_LENGTH }
-  }
-} as const;
+export const mobileCharacterCreateOpenApiBody = toOpenApiRequestBody(mobileCharacterCreateBodySchema);
+export const mobileCharacterUpdateOpenApiBody = toOpenApiRequestBody(mobileCharacterUpdateBodySchema);
+export const mobileCharacterPortraitOpenApiBody = toOpenApiRequestBody(mobileCharacterPortraitBodySchema);

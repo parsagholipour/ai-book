@@ -197,34 +197,18 @@ describe("the arc's coverage of the table", () => {
   });
 });
 
-/**
- * The JSON-schema twins beside these bodies are **not documentation**.
- * `POST /api/mobile/characters` and `PATCH /api/mobile/characters/:id` declare
- * `body:` and set `attachValidation: true`, so ajv's rejection is attached to
- * the request rather than thrown and the handler's Zod parse is what answers —
- * measured by injection: a 64-character mention id reaches the handler (404
- * `CHARACTER_NOT_FOUND`), and a 65-character one now reaches it too and is
- * refused by the route's own 400 `VALIDATION_ERROR` rather than by ajv's
- * `body/mentionedCharacterIds/0 must NOT have more than 64 characters`. The
- * fragment is still what coerces everything ajv does let through, and still the
- * contract `/docs` publishes against.
- *
- * So a bound spelled on one side and not the other is still two gates that
- * disagree: one only here refuses nothing, because the parse that answers never
- * learned about it, and one only in the Zod schema is a refusal no client was
- * told to expect. Nothing else in the repo compares them:
- * `schemaParity.test.ts` deliberately checks only which keys exist and which
- * are required, which is the half that rots when a *field* is added rather than
- * when a *number* moves.
- */
+/** The generated contract is structural; these tests pin the rules clients rely on. */
 
 type JsonBound = {
   type?: string;
+  additionalProperties?: boolean;
+  default?: unknown;
   minLength?: number;
   maxLength?: number;
   maxItems?: number;
   items?: JsonBound;
   properties?: Record<string, JsonBound>;
+  required?: string[];
 };
 
 const documentedProperties = (body: unknown): Record<string, JsonBound> =>
@@ -274,15 +258,24 @@ describe("the documented character bodies and the Zod schemas behind them", () =
     expect(accepted.safeParse(ids(LIBRARY_TARGET_ID_MAX + 1)).success).toBe(false);
   });
 
-  it("gives both bodies the same object for it rather than two equal ones", () => {
-    // Equality would still let one of them be edited alone; identity is what
-    // makes the create and update doors one door.
-    expect(mobileCharacterCreateOpenApiBody.properties.mentionedCharacterIds.items).toBe(
-      mobileCharacterUpdateOpenApiBody.properties.mentionedCharacterIds.items
-    );
-    expect(mobileCharacterCreateOpenApiBody.properties.fields.items).toBe(
-      mobileCharacterUpdateOpenApiBody.properties.fields.items
-    );
+  it.each(writeBodies)("$route: keeps both the body and profile rows strict", ({ documented }) => {
+    const body = documented as JsonBound;
+    const profileRow = bound(documented, "fields").items;
+
+    expect(body.additionalProperties).toBe(false);
+    expect(profileRow?.additionalProperties).toBe(false);
+    expect(profileRow?.required).toEqual(["key", "value"]);
+  });
+
+  it("publishes create defaults without making those fields required", () => {
+    const body = mobileCharacterCreateOpenApiBody as JsonBound;
+    const properties = documentedProperties(body);
+
+    expect(body.required).toEqual(["name"]);
+    expect(properties.description?.default).toBe("");
+    expect(properties.appearance?.default).toBe("");
+    expect(properties.fields?.default).toEqual([]);
+    expect(properties.mentionedCharacterIds?.default).toEqual([]);
   });
 
   it.each(writeBodies)("$route: bounds a profile row where Zod bounds it", ({ documented, accepted }) => {
@@ -356,10 +349,7 @@ describe("the documented character bodies and the Zod schemas behind them", () =
   });
 
   it("documents the portrait idempotency key with the bounds requestIdSchema keeps", () => {
-    // This one is a twin across files — the Zod schema lives in `schemas.ts`
-    // and only the fragment is here — which is the drift that is hardest to
-    // see when reading either file on its own.
-    expect(mobileCharacterPortraitOpenApiBody.properties.requestId).toEqual({
+    expect(bound(mobileCharacterPortraitOpenApiBody, "requestId")).toEqual({
       type: "string",
       minLength: REQUEST_ID_MIN_LENGTH,
       maxLength: REQUEST_ID_MAX_LENGTH

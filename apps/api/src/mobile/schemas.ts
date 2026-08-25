@@ -15,9 +15,23 @@ import { PROJECT_PROMPT_MAX_LENGTH, type CreateProjectInput, type ModelTier, typ
 import { z } from "zod";
 
 /**
- * Zod request schemas, OpenAPI body fragments, and the product/preset tables
+ * Zod request schemas, generated OpenAPI body schemas, and the product/preset tables
  * that define what the mobile API accepts.
  */
+
+export function toOpenApiRequestBody<Schema extends z.ZodType>(
+  schema: Schema
+): z.core.JSONSchema.ObjectSchema {
+  const body = z.toJSONSchema(schema, { io: "input", target: "openapi-3.0" });
+  if (body.type !== "object") {
+    throw new TypeError("A request body schema must describe an object.");
+  }
+  // Fastify/Ajv rejects defaults at a schema root in strict mode. A root
+  // default cannot supply an absent HTTP body anyway; property defaults stay.
+  delete body.default;
+  delete body.$schema;
+  return body as z.core.JSONSchema.ObjectSchema;
+}
 
 export const mobileBookTypeSchema = z.enum(["lead_magnet", "workbook", "short_story"]);
 
@@ -54,12 +68,7 @@ export const creationMutationQuerySchema = z.object({
   expectedRevision: z.coerce.number().int().positive().optional()
 });
 
-/**
- * The idempotency key a priced write may carry, said once. Every documented
- * body below restates it, and on the routes that do not set `attachValidation`
- * that restatement is what ajv enforces — so the two spellings are one number
- * or they are two different gates.
- */
+/** The idempotency key a priced write may carry, shared by every request schema. */
 export const REQUEST_ID_MIN_LENGTH = 8;
 export const REQUEST_ID_MAX_LENGTH = 64;
 export const requestIdSchema = z.string().trim().min(REQUEST_ID_MIN_LENGTH).max(REQUEST_ID_MAX_LENGTH);
@@ -72,15 +81,7 @@ export const generationRetryBodySchema = z
   .object({ requestId: requestIdSchema, retryToken: z.string().trim().min(16).max(128) })
   .strict();
 
-export const mobileGenerationRetryOpenApiBody = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    requestId: { type: "string", minLength: REQUEST_ID_MIN_LENGTH, maxLength: REQUEST_ID_MAX_LENGTH },
-    retryToken: { type: "string", minLength: 16, maxLength: 128 }
-  },
-  required: ["requestId", "retryToken"]
-} as const;
+export const mobileGenerationRetryOpenApiBody = toOpenApiRequestBody(generationRetryBodySchema);
 
 export const mobileAssetFilenameSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,180}$/);
 
@@ -295,7 +296,7 @@ export const mobileProjectChatBranchBodySchema = z
   .strict();
 
 export const mobileCreationBranchBodySchema = mobileProjectChatBranchBodySchema.extend({
-  expectedRevision: z.number().int().positive().optional()
+  expectedRevision: z.number().int().min(1).optional()
 });
 
 export const mobileManualBookEditBodySchema = z
@@ -329,7 +330,7 @@ export const mobileCreationMessageBodySchema = z
     sourceNotes: z.string().trim().max(12000).optional(),
     optionalDetails: mobileCreationOptionalDetailsSchema.optional(),
     requestId: requestIdSchema.optional(),
-    expectedRevision: z.number().int().positive().optional(),
+    expectedRevision: z.number().int().min(1).optional(),
     // When set, the message replaces a prior user message as a new branch.
     editMessageId: z.string().trim().min(1).max(64).optional(),
     // When set, the message is a reply quoting an earlier turn of either role.
@@ -362,7 +363,7 @@ export const mobileCreationBuildBodySchema = z
     optionalDetails: mobileCreationOptionalDetailsSchema.optional(),
     language: z.string().trim().min(2).max(40).optional(),
     requestId: requestIdSchema.optional(),
-    expectedRevision: z.number().int().positive().optional()
+    expectedRevision: z.number().int().min(1).optional()
   })
   .strict();
 
@@ -511,221 +512,20 @@ export const mobileAuthError = {
   required: ["error"]
 } as const;
 
-export const mobileProjectCreateOpenApiBody = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    bookType: { type: "string", enum: mobileBookTypeSchema.options },
-    bookTypeChoice: { type: "string", enum: mobileBookTypeChoiceSchema.options },
-    title: { type: "string", minLength: 2, maxLength: 160 },
-    authorName: { type: "string", minLength: 1, maxLength: 120 },
-    prompt: { type: "string", minLength: 10, maxLength: 5000 },
-    lengthPreset: { type: "string", enum: mobileLengthPresetSchema.options, default: "standard" },
-    qualityPreset: { type: "string", enum: mobileQualityPresetSchema.options, default: "balanced" },
-    imagesEnabled: {
-      type: "boolean",
-      default: true,
-      deprecated: true,
-      description: "Compatibility aggregate. Prefer coverEnabled and illustrationsEnabled."
-    },
-    coverEnabled: {
-      type: "boolean",
-      default: true,
-      description: "Generate the cover artwork with a model. False still gives the book a cover, picked from the bundled design catalog for free."
-    },
-    illustrationsEnabled: { type: "boolean", default: true },
-    pageCountMode: { type: "string", enum: mobilePageCountModeSchema.options, default: "auto" },
-    targetPages: { type: "integer", minimum: 1, maximum: 600 },
-    pageCountSource: { type: "string", enum: mobilePageCountSourceSchema.options },
-    language: { type: "string", minLength: 2, maxLength: 40, default: "en" },
-    creationBrief: { type: "object" },
-    creationPayload: { type: "object" },
-    advisor: { type: "object" }
-  },
-  required: ["bookType", "prompt"]
-} as const;
-
-export const mobileAudiobookStartOpenApiBody = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    voice: { type: "string", minLength: 1, maxLength: 60 },
-    replace: { type: "boolean" },
-    requestId: { type: "string", minLength: REQUEST_ID_MIN_LENGTH, maxLength: REQUEST_ID_MAX_LENGTH }
-  },
-  required: ["voice"]
-} as const;
-
-export const mobilePlanApprovalOpenApiBody = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    // Idempotency key: send one and retries replay instead of re-charging.
-    requestId: { type: "string", minLength: REQUEST_ID_MIN_LENGTH, maxLength: REQUEST_ID_MAX_LENGTH },
-    disableIllustrations: {
-      type: "boolean",
-      description:
-        "Generate this book without interior illustrations. An explicit reader choice, offered when the free monthly illustrated-book budget is spent."
-    }
-  }
-} as const;
-
-export const mobileOperationRetryOpenApiBody = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    requestId: { type: "string", minLength: REQUEST_ID_MIN_LENGTH, maxLength: REQUEST_ID_MAX_LENGTH },
-    retryToken: { type: "string", minLength: 16, maxLength: 128 }
-  },
-  required: ["requestId", "retryToken"]
-} as const;
-
-export const mobilePlanRevisionOpenApiBody = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    message: { type: "string", minLength: 1, maxLength: 5000 },
-    requestId: { type: "string", minLength: REQUEST_ID_MIN_LENGTH, maxLength: REQUEST_ID_MAX_LENGTH },
-    respondedQuestionPrompts: {
-      type: "array",
-      maxItems: 40,
-      items: { type: "string", minLength: 1, maxLength: 1000 }
-    }
-  },
-  required: ["message"]
-} as const;
-
-export const mobileProjectChatMessageOpenApiBody = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    message: { type: "string", minLength: 1, maxLength: 5000 },
-    editMessageId: { type: "string", minLength: 1, maxLength: 128 },
-    replyToMessageId: { type: "string", minLength: 1, maxLength: 128 },
-    mentionedCharacterIds: { type: "array", items: { type: "string", minLength: 1, maxLength: 64 }, maxItems: 10 },
-    readerContext: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        pageIndex: { type: "integer", minimum: 1, maximum: 10000 },
-        pdfPage: { type: "integer", minimum: 1, maximum: 20000 },
-        contentRevision: { type: "integer", minimum: 0 },
-        pdfDigest: { type: "string", minLength: 1, maxLength: 128 }
-      }
-    },
-    requestId: { type: "string", minLength: REQUEST_ID_MIN_LENGTH, maxLength: REQUEST_ID_MAX_LENGTH }
-  },
-  required: ["message"]
-} as const;
-
-export const mobileProjectChatBranchOpenApiBody = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    messageId: { type: "string", minLength: 1, maxLength: 128 },
-    direction: { type: "string", enum: ["previous", "next"] }
-  },
-  required: ["messageId", "direction"]
-} as const;
-
-export const mobileCreationBranchOpenApiBody = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    messageId: { type: "string", minLength: 1, maxLength: 128 },
-    direction: { type: "string", enum: ["previous", "next"] },
-    expectedRevision: { type: "integer", minimum: 1 }
-  },
-  required: ["messageId", "direction"]
-} as const;
-
-export const mobileCreationSessionStartOpenApiBody = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    message: { type: "string", minLength: 1, maxLength: 4000 },
-    presets: { type: "object" },
-    sourceNotes: { type: "string", maxLength: 12000 },
-    optionalDetails: { type: "object" },
-    mentionedCharacterIds: { type: "array", items: { type: "string", minLength: 1, maxLength: 64 }, maxItems: 10 },
-    requestId: { type: "string", minLength: REQUEST_ID_MIN_LENGTH, maxLength: REQUEST_ID_MAX_LENGTH }
-  }
-} as const;
-
-export const mobileCreationMessageOpenApiBody = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    message: { type: "string", maxLength: 4000 },
-    attachmentIds: { type: "array", items: { type: "string", minLength: 1, maxLength: 64 }, maxItems: 6 },
-    mentionedCharacterIds: { type: "array", items: { type: "string", minLength: 1, maxLength: 64 }, maxItems: 10 },
-    presets: { type: "object" },
-    sourceNotes: { type: "string", maxLength: 12000 },
-    optionalDetails: { type: "object" },
-    requestId: { type: "string", minLength: REQUEST_ID_MIN_LENGTH, maxLength: REQUEST_ID_MAX_LENGTH },
-    expectedRevision: { type: "integer", minimum: 1 },
-    editMessageId: { type: "string", minLength: 1, maxLength: 64 },
-    replyToMessageId: { type: "string", minLength: 1, maxLength: 64 },
-    skippedQuestion: { type: "boolean" }
-  }
-} as const;
-
-export const mobileCreationBuildOpenApiBody = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    presets: { type: "object" },
-    sourceNotes: { type: "string", maxLength: 12000 },
-    optionalDetails: { type: "object" },
-    language: { type: "string", minLength: 2, maxLength: 40 },
-    requestId: { type: "string", minLength: REQUEST_ID_MIN_LENGTH, maxLength: REQUEST_ID_MAX_LENGTH },
-    expectedRevision: { type: "integer", minimum: 1 }
-  }
-} as const;
-
-export const mobileEditProposalActionOpenApiBody = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    proposalId: { type: "string", format: "uuid" },
-    requestId: { type: "string", minLength: REQUEST_ID_MIN_LENGTH, maxLength: REQUEST_ID_MAX_LENGTH }
-  },
-  required: ["proposalId"]
-} as const;
-
-export const mobileChatUndoOpenApiBody = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    requestId: { type: "string", minLength: REQUEST_ID_MIN_LENGTH, maxLength: REQUEST_ID_MAX_LENGTH }
-  }
-} as const;
-
-export const mobileManualBookEditOpenApiBody = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    pages: {
-      type: "array",
-      minItems: 1,
-      maxItems: 200,
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          id: { type: "string", minLength: 1, maxLength: 128 },
-          title: { type: "string", minLength: 1, maxLength: 300 },
-          markdown: { type: "string", minLength: 1, maxLength: 60000 },
-          baseRevision: { type: "integer", minimum: 1 }
-        },
-        required: ["id", "title", "markdown", "baseRevision"]
-      }
-    },
-    savedExportMessageId: { type: "string", minLength: 1, maxLength: 128 },
-    requestId: { type: "string", minLength: REQUEST_ID_MIN_LENGTH, maxLength: REQUEST_ID_MAX_LENGTH }
-  },
-  required: ["pages"]
-} as const;
+export const mobileProjectCreateOpenApiBody = toOpenApiRequestBody(mobileProjectCreateBodySchema);
+export const mobileAudiobookStartOpenApiBody = toOpenApiRequestBody(mobileAudiobookStartBodySchema);
+export const mobilePlanApprovalOpenApiBody = toOpenApiRequestBody(mobilePlanApprovalBodySchema);
+export const mobileOperationRetryOpenApiBody = toOpenApiRequestBody(operationRetryBodySchema);
+export const mobilePlanRevisionOpenApiBody = toOpenApiRequestBody(mobilePlanRevisionBodySchema);
+export const mobileProjectChatMessageOpenApiBody = toOpenApiRequestBody(mobileProjectChatMessageBodySchema);
+export const mobileProjectChatBranchOpenApiBody = toOpenApiRequestBody(mobileProjectChatBranchBodySchema);
+export const mobileCreationBranchOpenApiBody = toOpenApiRequestBody(mobileCreationBranchBodySchema);
+export const mobileCreationSessionStartOpenApiBody = toOpenApiRequestBody(mobileCreationSessionStartBodySchema);
+export const mobileCreationMessageOpenApiBody = toOpenApiRequestBody(mobileCreationMessageBodySchema);
+export const mobileCreationBuildOpenApiBody = toOpenApiRequestBody(mobileCreationBuildBodySchema);
+export const mobileEditProposalActionOpenApiBody = toOpenApiRequestBody(mobileEditProposalActionBodySchema);
+export const mobileChatUndoOpenApiBody = toOpenApiRequestBody(mobileChatUndoBodySchema);
+export const mobileManualBookEditOpenApiBody = toOpenApiRequestBody(mobileManualBookEditBodySchema);
 
 export const voiceCharacterParamsSchema = z.object({
   id: z.string().min(1),
@@ -771,33 +571,5 @@ export const mobileVoiceCallProgressBodySchema = z
   })
   .strict();
 
-export const mobileVoiceCallStartOpenApiBody = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    pageIndex: { type: "integer", minimum: 0, maximum: 5000 }
-  }
-} as const;
-
-export const mobileVoiceCallProgressOpenApiBody = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    elapsedSeconds: { type: "integer", minimum: 0 },
-    reason: { type: "string", minLength: 1, maxLength: 60 },
-    messages: {
-      type: "array",
-      maxItems: 60,
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          speaker: { type: "string", enum: ["caller", "character"] },
-          text: { type: "string", minLength: 1, maxLength: 2000 }
-        },
-        required: ["speaker", "text"]
-      }
-    }
-  },
-  required: ["elapsedSeconds"]
-} as const;
+export const mobileVoiceCallStartOpenApiBody = toOpenApiRequestBody(mobileVoiceCallStartBodySchema);
+export const mobileVoiceCallProgressOpenApiBody = toOpenApiRequestBody(mobileVoiceCallProgressBodySchema);
