@@ -1,4 +1,5 @@
 import { extractRepairPageIndexesFromText } from "./finalQaPageTargets.js";
+import { uniqueStrings } from "@book-maker/core/collections";
 import type { FinalBookQa, ManuscriptQualityIssue } from "@book-maker/core";
 
 const REVIEW_ELLIPSIS = "\n…\n";
@@ -82,7 +83,7 @@ export function qualityIssuesFromFinalQa(
   lastPage: number
 ): ManuscriptQualityIssue[] {
   const source = finalQa.approved ? finalQa.requiredFixes : [...finalQa.issues, ...finalQa.requiredFixes];
-  const messages = [...new Set(source.map((value) => value.trim()).filter(Boolean))];
+  const messages = uniqueStrings(source);
   if (messages.length === 0) {
     return [];
   }

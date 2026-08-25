@@ -2,6 +2,7 @@ import type { Job } from "bullmq";
 import {
   BOOK_GENERATION_CHARGE_LOOKBACK,
   bookGenerationChargeFromPayloads,
+  errorMessage,
   isPresentationOnlyRecompile,
   isRecoverableNetworkError,
   parseStructuralApplication,
@@ -33,7 +34,7 @@ import {
 import { completedJobLifecycle } from "./jobCompletion.js";
 import { staleGenerationTargetReason } from "./staleJobGuard.js";
 import { STOPPED_JOB_ERROR, STOPPED_JOB_MESSAGE, type JobLifecycleSettlement } from "./jobTypes.js";
-import { errorMessage, jsonPayloadToRecord } from "./serialization.js";
+import { jsonPayloadToRecord } from "./serialization.js";
 
 /**
  * GenerationJob lifecycle: the status transitions (active / completed / failed
@@ -285,7 +286,7 @@ export async function markFailed(job: Job, error: unknown) {
         status: "FAILED",
         finishedAt: new Date(),
         message: "Failed",
-        error: error instanceof Error ? error.message : "Unknown error"
+        error: errorMessage(error)
       }
     });
     if (failed.count !== 1) {

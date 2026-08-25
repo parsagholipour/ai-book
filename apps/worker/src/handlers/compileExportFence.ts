@@ -1,9 +1,10 @@
 import { pagesTheCompileNoLongerSpeaksFor, readWithRetry } from "./compileExportStandDown.js";
+import { errorMessage } from "@book-maker/core";
 import { bestEffortPass } from "../generation/bestEffortPass.js";
 import { exportPublicationSuperseded } from "../generation/exportPublication.js";
 import { createRunLogger } from "../providers/runLogging.js";
 import { isStopRequestedError, type ExportPageForRepair } from "../runtime/jobTypes.js";
-import { errorMessage, serializeError } from "../runtime/serialization.js";
+import { serializeError } from "../runtime/serialization.js";
 import type { Prisma } from "@book-maker/db";
 import type { Job } from "bullmq";
 

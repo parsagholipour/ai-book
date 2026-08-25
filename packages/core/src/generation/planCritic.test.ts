@@ -39,7 +39,7 @@ describe("mergePlanCriticPatch", () => {
   it("adds unique promises and records repeated-beat warnings", () => {
     const plan = { ...samplePlan(), promises: ["The lantern will be lit."] };
     const merged = mergePlanCriticPatch(plan, {
-      promisesToAdd: ["The lantern will be lit.", "Ada crosses the river."],
+      promisesToAdd: ["The lantern will be lit.", " the LANTERN will be lit. ", "Ada crosses the river."],
       chapterMergeNotes: [],
       reorderNotes: ["Keep the river before the return home."],
       repeatedBeatWarnings: ["Do not restage the chapel scene."]

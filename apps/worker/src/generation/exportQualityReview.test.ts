@@ -29,8 +29,9 @@ describe("the export quality formatter's dependencies", () => {
     const runtimeImports = sources.flatMap((source) =>
       [...source.matchAll(/^import\s+(?!type\b)[\s\S]*?from\s+"([^"]+)";$/gm)].map((match) => match[1])
     );
-    // Type imports are erased, so `@book-maker/core` is not in this list.
-    expect(runtimeImports).toEqual(["./finalQaPageTargets.js"]);
+    // The collection helper's narrow core subpath has an empty runtime closure;
+    // the core barrel remains a type-only import and is erased.
+    expect(runtimeImports).toEqual(["./finalQaPageTargets.js", "@book-maker/core/collections"]);
   });
 
   it("leaves the repair's page targets one exported name", async () => {

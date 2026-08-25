@@ -4,7 +4,7 @@ import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
 import { dispatchWorkerGenerationJob, enqueueWorkerJob } from "../runtime/dispatch.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
-import { jsonInputValue, jsonPayloadToRecord, safePathPart } from "../runtime/serialization.js";
+import { jsonInputValue, jsonPayloadToRecord } from "../runtime/serialization.js";
 import {
   characterReferencePromptInstruction,
   imageAssetPlanId,
@@ -22,6 +22,7 @@ import {
   normalizeVoiceProfile,
   optimizeImageForStorage,
   publicAssetUrl,
+  safePathPart,
   type BookGenerationStrategy,
   type BookPlan,
   type CreateProjectInput,

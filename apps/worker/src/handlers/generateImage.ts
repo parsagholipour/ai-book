@@ -4,7 +4,7 @@ import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
 import { isStopRequestedError } from "../runtime/jobTypes.js";
-import { errorMessage, jsonPayloadToRecord, safePathPart } from "../runtime/serialization.js";
+import { jsonPayloadToRecord } from "../runtime/serialization.js";
 import {
   characterReferencePromptInstruction,
   ensureCharacterReferenceAssets,
@@ -19,9 +19,11 @@ import {
 import {
   bookPlanSchema,
   createProviders,
+  errorMessage,
   isDiagramFriendlyBookCategory,
   optimizeImageForStorage,
-  publicAssetUrl
+  publicAssetUrl,
+  safePathPart
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { Job } from "bullmq";

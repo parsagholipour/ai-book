@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
+import { uniqueStrings } from "../collections.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 
 export const pageClaimVerificationSchema = z.object({
@@ -72,8 +73,4 @@ export async function verifyPageClaims(options: {
   const parsed = pageClaimVerificationSchema.parse(result.data);
   const groundedOk = parsed.groundedOk && parsed.unsupportedClaims.length === 0;
   return { groundedOk, unsupportedClaims: parsed.unsupportedClaims };
-}
-
-function uniqueStrings(values: string[]): string[] {
-  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }

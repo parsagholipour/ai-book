@@ -1,7 +1,7 @@
 import { config } from "../runtime/config.js";
 import { updateJobProgress } from "../runtime/jobLifecycle.js";
 import { type WorkerImageAsset } from "../runtime/jobTypes.js";
-import { safeJsonStringify, safePathPart } from "../runtime/serialization.js";
+import { safeJsonStringify } from "../runtime/serialization.js";
 import {
   buildCharacterReferencePrompt,
   characterReferenceSeedInstruction,
@@ -12,6 +12,7 @@ import {
   matchLibraryCharacter,
   optimizeImageForStorage,
   publicAssetUrl,
+  safePathPart,
   selectCharacterReferenceAssets,
   shouldGenerateCharacterReferences,
   shouldUseCharacterReferenceImages,

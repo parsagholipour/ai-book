@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { uniqueStrings } from "../collections.js";
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
 
 export const voiceAgeBandSchema = z.enum(["child", "teen", "young_adult", "adult", "elder"]);
@@ -347,10 +348,6 @@ export function voiceProfilePortraitCue(profile: VoiceProfile | undefined): stri
 function inferAccentNotes(text: string): string | undefined {
   const explicit = text.match(/\b(?:accent|dialect|speaks with|voice sounds)\b[^.]{0,80}/i)?.[0]?.trim();
   return explicit || undefined;
-}
-
-export function uniqueStrings(values: string[]): string[] {
-  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
 function characterKey(name: string): string {

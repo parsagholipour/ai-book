@@ -263,10 +263,6 @@ export function sampleExcerptsFromInput(input: CreateProjectInput): string[] {
     : [];
 }
 
-export function range(start: number, end: number): number[] {
-  return Array.from({ length: end - start + 1 }, (_, index) => start + index);
-}
-
 /**
  * What a page prompt needs to know to talk about the book's opening: the book,
  * the plan that may have committed to a hook, and which page is being written.

@@ -15,10 +15,6 @@ export function jsonValue(value: unknown): MobileJsonValue {
   return JSON.parse(JSON.stringify(value)) as MobileJsonValue;
 }
 
-export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Unknown error";
-}
-
 export function hashString(value: string): string {
   return createHash("sha256").update(value).digest("hex").slice(0, 24);
 }

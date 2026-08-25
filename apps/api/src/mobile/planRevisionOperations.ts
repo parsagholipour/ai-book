@@ -1,8 +1,8 @@
 import { dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
 import { createOpenBookEditOperation } from "./editOperationClaims.js";
 import { type MobileBookEditOperationRecord } from "./dto.js";
-import { errorMessage, fingerprintGenerationRequest, hashString, jsonInputValue, jsonRecord } from "./support.js";
-import { creditCostForOperation } from "@book-maker/core";
+import { fingerprintGenerationRequest, hashString, jsonInputValue, jsonRecord } from "./support.js";
+import { creditCostForOperation, errorMessage } from "@book-maker/core";
 import { PLAN_REVISION_AUTOMATIC_RETRY_LIMIT, Prisma, prisma } from "@book-maker/db";
 import {
   GenerationAttemptConflictError,

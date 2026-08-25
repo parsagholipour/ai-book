@@ -1,4 +1,5 @@
 import type { JsonResult, ResearchAdapter, TextModelAdapter } from "../adapters/types.js";
+import { uniqueStrings } from "../collections.js";
 import { targetLanguageGenerationGuidance, targetLanguagePayload } from "../prompting/language.js";
 import { kidsReadingGuidanceLines, kidsReadingGuidancePayload } from "../prompting/readingLevel.js";
 import {
@@ -481,7 +482,7 @@ export async function expandChapterResearch(options: ExpandChapterResearchOption
     ),
     ...options.plan.researchQueries
   ];
-  const uniqueQueries = [...new Set(queries.map((query) => query.trim()).filter(Boolean))].slice(0, cap);
+  const uniqueQueries = uniqueStrings(queries).slice(0, cap);
   const results = await Promise.allSettled(
     uniqueQueries.map((query) => options.research.search({ query, purpose: "chapter-research" }))
   );

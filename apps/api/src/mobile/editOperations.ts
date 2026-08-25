@@ -19,10 +19,11 @@ import { planExactReplacement } from "./exactReplacementPreview.js";
 import { type MobileBookEditOperationRecord, type MobileProjectChatMessageRecord } from "./dto.js";
 import { settledStatusBeforeEdit } from "./editProjectStatus.js";
 import { createAssistantChatMessage, insufficientCreditsChatMessage, type ProjectForChat } from "./projectChat.js";
-import { errorMessage, fingerprintGenerationRequest, jsonInputValue } from "./support.js";
+import { fingerprintGenerationRequest, jsonInputValue } from "./support.js";
 import {
   bookPlanSchema,
   creditCostForOperation,
+  errorMessage,
   isDetachedFromProjectLifecycle,
   PRE_EDIT_PROJECT_STATUS
 } from "@book-maker/core";

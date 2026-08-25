@@ -8,6 +8,7 @@ import {
   chapterHeadingStylePreference,
   coverArtSourceFor,
   dispatchBackoffMs,
+  errorMessage,
   includeSourcesPreference,
   isDetachedFromProjectLifecycle,
   jobOwnsQualityVerdict,
@@ -28,7 +29,7 @@ import { inputForPlanVersion } from "../generation/projectInput.js";
 import { exportPublicationCommittedAt } from "../generation/exportPublicationEvidence.js";
 import { config } from "./config.js";
 import { queue } from "./queue.js";
-import { errorMessage, jsonPayloadToRecord } from "./serialization.js";
+import { jsonPayloadToRecord } from "./serialization.js";
 import { currentGenerationAttemptId } from "./generationAttemptContext.js";
 import {
   compileIdentityAfterCompletion,

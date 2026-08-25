@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
 import { mapWithConcurrency } from "../concurrency.js";
+import { range } from "../collections.js";
 import { CONTINUITY_NOTE_PROMPT_LIMITS, continuityNotesForPrompt } from "../context/contextPack.js";
 import {
   targetLanguageGenerationGuidance,
@@ -36,7 +37,6 @@ import {
   openingContractForRange,
   pageScopePayload,
   plannerToneRules,
-  range,
   stringArrayField,
   stringField,
   styleGuidancePayload,

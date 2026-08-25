@@ -75,7 +75,7 @@ carries `@book-maker/core: workspace:*`, which buys `@book-maker/core/qualityGat
 `@book-maker/core` in the same breath. Nothing in the toolchain tells them apart: `import
 { jobNames } from "@book-maker/core"` — the obvious way to stop hand-copying the job-step labels
 below — typechecks, bundles under `vite build` and passes vitest on the host, then fails in this
-container at request time, on a `puppeteer` that is not installed there. Proving the three subpaths
+container at request time, on a `puppeteer` that is not installed there. Proving the narrow subpaths
 runtime-empty does not cover that, because the gate's file list is the `exports` map and `.` is
 never in it. So the same script also walks this workspace's own source and fails any **value**
 import of the barrel, of a subpath core does not export, or of a relative path into
@@ -103,7 +103,8 @@ the server, check here:
   refuses that import here rather than leaving it to the container.
 - **Plan questions.** `PlanQuestionStepper` must obey `answerKind` the same way the app's pickers
   do, and a joined multi-answer is kept in `QuestionResponse.picked` so it is not mistaken for a
-  typed custom answer.
+  typed custom answer. Option normalization takes case-sensitive `uniqueStrings` through core's
+  zero-dependency `./collections` subpath; never replace that with a barrel import.
 - **Pricing.** The `/pricing` screen edits the operator-editable price table; the shapes come from
   `packages/core/src/creditPricing.ts`. Anything projecting revenue must iterate `CREDIT_PRICE_KEYS`
   rather than every key, or it invents income from the free tier's *limit* keys.

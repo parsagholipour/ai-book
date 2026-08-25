@@ -9,7 +9,7 @@ specifier `@book-maker/core`, and the barrel is the default — add to `src/inde
 reaching past it.
 
 **A module kept light enough to survive a mock has to be light in both directions.**
-The `exports` map has four narrow entries beside `.`, and each one is a module a consumer must be
+The `exports` map has five narrow entries beside `.`, and each one is a module a consumer must be
 able to take without the barrel. `./libraryMentions` is imported by
 `packages/db/src/libraryMentions.ts` and by nothing else. That db module is itself a subpath so it
 survives a wholesale `vi.mock("@book-maker/db")`; taking the strip helpers off this barrel quietly
@@ -43,8 +43,12 @@ refused there. It measures like the rest and for the same reason: its single imp
 `GenerationJobType` inline-`type`, so the statement is erased, and `jobDispatch.ts` beneath it
 carries no import at all. What crosses is the whole record rather than two arrays, and the console
 takes only each template's `label` — the `key` is worker vocabulary the mobile serializers
-translate, so it has no business in a display table. A fifth entry has to earn itself the same way:
-a true leaf on the other end, and a consumer that breaks without it.
+translate, so it has no business in a display table. `./collections` is the fifth: the console's
+plan-question normalizer needs the same trim/drop/order-preserving string uniqueness as core and
+the worker, but the console may not import the barrel. It has no imports of its own, and stays
+narrowly about collection construction (`uniqueStrings` and inclusive `range`) rather than
+becoming a general utilities drawer. A sixth entry has to earn itself the same way: a true leaf on
+the other end, and a consumer that breaks without it.
 
 That empty closure is a gate now, not a habit. `scripts/check-core-subpaths.mjs` — the `subpaths`
 gate in `pnpm check`, or `pnpm check --only subpaths` on its own — takes every entry in the
@@ -52,7 +56,7 @@ gate in `pnpm check`, or `pnpm check --only subpaths` on its own — takes every
 single module or package. Erased at build time and therefore free: statement-level `import type` /
 `export type`, and a named import whose every specifier is inline `type`. Everything else counts,
 including side-effect imports, `export * from`, `import()` and `require()`. The list comes off
-`package.json` rather than a copy in the script, so a fifth entry is covered the moment it lands —
+`package.json` rather than a copy in the script, so a new entry is covered the moment it lands —
 a hand-written list would be the same prose problem one level up. The failure names the subpath,
 quotes the import with its line, and spells out the web container, because that is the only place
 the breakage shows: on the host every test, `pnpm check` and `vite build` stay green.

@@ -6,6 +6,7 @@ import {
   STOPPED_JOB_MESSAGE,
   bookGenerationChargeFromPayloads,
   dispatchBackoffMs,
+  errorMessage,
   generationJobOwnsFailureLifecycle,
   generationJobRestoresPreEditProjectStatus,
   isPresentationOnlyRecompile,
@@ -190,7 +191,7 @@ export async function dispatchGenerationJob(generationJobId: string) {
       projectId: generationJob.projectId,
       type: generationJob.type,
       dispatchAttempt: attempts,
-      error: error instanceof Error ? error.message : "Unknown error"
+      error: errorMessage(error)
     });
     return prisma.generationJob.update({
       where: { id: generationJob.id },

@@ -5,32 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 // stubbed to keep this suite off Prisma's generated client.
 vi.mock("@book-maker/db", () => ({ Prisma: {} }));
 
-import { cleanOptionalText, cleanTargetLanguage, range, safeJsonStringify, safePathPart, uniqueStrings } from "./serialization.js";
-
-describe("safePathPart", () => {
-  it("passes ASCII identifiers through untouched", () => {
-    expect(safePathPart("clx1234abcd")).toBe("clx1234abcd");
-    expect(safePathPart("generate-image")).toBe("generate-image");
-    expect(safePathPart("book.pdf")).toBe("book.pdf");
-  });
-
-  it("substitutes anything outside the safe set", () => {
-    expect(safePathPart("../etc/passwd")).toBe(".._etc_passwd");
-    expect(safePathPart("a b/c")).toBe("a_b_c");
-  });
-
-  it("caps a segment at 120 characters", () => {
-    expect(safePathPart("a".repeat(200))).toHaveLength(120);
-  });
-
-  it("collapses a wholly non-ASCII value to one name", () => {
-    // Pinned because it is a trap, not a feature: two different Persian names
-    // are indistinguishable after this, which is why `characterSlug` hashes
-    // such a name itself instead of handing it here.
-    expect(safePathPart("بهرام")).toBe(safePathPart("کیوان"));
-    expect(safePathPart("")).toBe("unknown");
-  });
-});
+import { cleanOptionalText, cleanTargetLanguage, safeJsonStringify } from "./serialization.js";
 
 describe("safeJsonStringify", () => {
   it("survives a cycle, a bigint and a buffer", () => {
@@ -63,12 +38,4 @@ describe("text helpers", () => {
     expect(cleanOptionalText(null)).toBeUndefined();
   });
 
-  it("trims, drops blanks and de-duplicates", () => {
-    expect(uniqueStrings([" a", "a ", "", "  ", "b"])).toEqual(["a", "b"]);
-  });
-
-  it("builds an inclusive range", () => {
-    expect(range(2, 5)).toEqual([2, 3, 4, 5]);
-    expect(range(3, 3)).toEqual([3]);
-  });
 });

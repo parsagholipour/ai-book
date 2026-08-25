@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { unsupportedGenerateWithTools } from "../adapters/fake.js";
 import type { TextModelAdapter } from "../adapters/types.js";
+import { range } from "../collections.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
 import {
@@ -18,7 +19,6 @@ import {
   missingStyleLockIndexes,
   pagesForStyleExcerpts,
   pinStyleExcerpts,
-  range,
   sampleExcerptsFromInput,
   type PriorPageContext
 } from "./pagesShared.js";

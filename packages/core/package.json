@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./collections": "./src/collections.ts",
     "./jobSteps": "./src/jobSteps.ts",
     "./libraryMentions": "./src/generation/libraryMentions.ts",
     "./modelTiers": "./src/adapters/modelTiers.ts",

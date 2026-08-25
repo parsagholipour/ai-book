@@ -57,7 +57,6 @@ vi.mock("./projectChat.js", () => ({
 vi.mock("./projectRecords.js", () => ({ createReplanProjectCopy: vi.fn() }));
 vi.mock("./support.js", () => ({
   cleanTargetLanguage: vi.fn(),
-  errorMessage: (error: unknown) => (error instanceof Error ? error.message : "Unknown error"),
   hashString: (value: string) => value,
   isPrismaUniqueConflict: () => false,
   jsonInputValue: (value: unknown) => value,
@@ -65,6 +64,7 @@ vi.mock("./support.js", () => ({
 }));
 vi.mock("@book-maker/core", () => ({
   creditCostForOperation: () => 25,
+  errorMessage: vi.fn(),
   // bookEditMessage.ts builds a RegExp from each of these at module load —
   // it is reached through editOperations.ts's own bookPageNumbering.js import,
   // which the addImageOperations.js mock below does not cut. Only their regex

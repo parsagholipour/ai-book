@@ -1,4 +1,4 @@
-import { loadConfig, type JobStep } from "@book-maker/core";
+import { loadConfig, safePathPart, type JobStep } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -569,10 +569,6 @@ function recordField(value: Record<string, unknown> | null, key: string): Record
 function stringField(value: Record<string, unknown> | null, key: string): string | null {
   const field = value?.[key];
   return typeof field === "string" && field.trim() ? field.trim() : null;
-}
-
-function safePathPart(value: string): string {
-  return value.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "unknown";
 }
 
 export function buildPipelineSteps(input: {

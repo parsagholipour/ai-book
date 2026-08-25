@@ -24,10 +24,10 @@ import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
 import { advanceJobStep, refundUnwrittenEditPages } from "../runtime/jobLifecycle.js";
 import { UnownedStructuralDeliveryError } from "../runtime/jobTypes.js";
-import { errorMessage } from "../runtime/serialization.js";
 import {
   bookPlanSchema,
   createProviders,
+  errorMessage,
   jsonRecord,
   parseStructuralApplication,
   preEditProjectStatus,

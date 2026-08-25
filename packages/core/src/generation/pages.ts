@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { ImageAdapter, ImageFallbackMetadata, TextModelAdapter } from "../adapters/types.js";
 import { isDiagramFriendlyBookCategory } from "../categories.js";
+import { range } from "../collections.js";
 import { CONTINUITY_NOTE_PROMPT_LIMITS, continuityNotesForPrompt } from "../context/contextPack.js";
 import {
   targetLanguageGenerationGuidance,
@@ -29,7 +30,6 @@ import {
   isRecord,
   numberField,
   openingContractFields,
-  range,
   stringArrayField,
   stringField,
   styleGuidancePayload,

@@ -99,7 +99,6 @@ vi.mock("../runtime/jobLifecycle.js", () => ({
   refundSkippedEditOperation: mocks.refundSkippedEditOperation,
   refundUnwrittenEditPages: mocks.refundUnwrittenEditPages
 }));
-vi.mock("../runtime/serialization.js", () => ({ errorMessage: (error: unknown) => String(error) }));
 vi.mock("@book-maker/core", async () => {
   const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
   return { ...actual, bookPlanSchema: { parse: () => ({ chapters: [], promises: [] }) }, createProviders: () => ({}) };

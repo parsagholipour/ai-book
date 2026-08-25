@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
+import { uniqueStrings } from "../collections.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
 import {
@@ -11,7 +12,6 @@ import {
   inferVoiceProfileFromCharacter,
   normalizeVoiceProfile,
   refineVoiceProfileWithPageSamples,
-  uniqueStrings,
   voiceProfilePortraitCue,
   voiceProfileSchema,
   type VoiceCharacterPageSample,

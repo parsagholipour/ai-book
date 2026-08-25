@@ -77,6 +77,25 @@ describe("FallbackImageAdapter", () => {
     } satisfies Partial<ImageGenerationFallbackError>);
     expect(events.map((event) => event.event)).toEqual(["fallback.start", "fallback.error"]);
   });
+
+  it("uses its record-based fallback for empty serialized messages", async () => {
+    const adapter = new FallbackImageAdapter({
+      primary: {
+        provider: "gemini",
+        model: "gemini-2.5-flash-image",
+        adapter: new FailingImageAdapter("")
+      },
+      fallback: {
+        provider: "alibaba",
+        model: "qwen-image-2.0",
+        adapter: new FailingImageAdapter("")
+      }
+    });
+
+    await expect(adapter.generateImage({ prompt: "paint a tiny house" })).rejects.toThrow(
+      "Primary error: Unknown error. Fallback error: Unknown error."
+    );
+  });
 });
 
 class StaticImageAdapter implements ImageAdapter {

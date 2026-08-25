@@ -111,6 +111,7 @@ export function planInputForStrategy(inputSnapshot: unknown, project: ProjectStr
   });
 }
 
+/** Human-facing asset name: collapse unsafe runs to `-`, trim them, and fall back to `asset`. */
 export function safePathPart(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 120) || "asset";
 }

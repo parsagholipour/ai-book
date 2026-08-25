@@ -6,10 +6,10 @@ import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
 import { maybeEnqueueCompile } from "../runtime/dispatch.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
-import { errorMessage } from "../runtime/serialization.js";
 import {
   analyzeManuscriptStyle,
   createProviders,
+  errorMessage,
   parseManuscript,
   segmentManuscript,
   synthesizeImportedBookPlan,

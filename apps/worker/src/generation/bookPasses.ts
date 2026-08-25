@@ -15,7 +15,6 @@ import { ensureCharacterReferenceAssets } from "./characterReferences.js";
 import { maybeEnqueueCompile, maybeEnqueueCover } from "../runtime/dispatch.js";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
 import { type ChapterSetup, type IndexedPageDraft } from "../runtime/jobTypes.js";
-import { range } from "../runtime/serialization.js";
 import { chapterSetupsForPlan, reviewWholeBookDraftPages, styleExcerptsForPage } from "./bookHelpers.js";
 import { chapterSetupForPage, loadContinuityNotes, loadResearchNotesForGeneration } from "./generationContext.js";
 import { reviewAndSaveGeneratedPage, type SavedGeneratedPage } from "./pageReview.js";
@@ -36,6 +35,7 @@ import {
   type BookGenerationStrategy,
   type BookPlan,
   type CreateProjectInput,
+  range,
   type PriorPageContext,
   type ProviderSet,
   type WholeBookPageDraft,

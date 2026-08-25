@@ -26,8 +26,14 @@ import { config } from "../runtime/config.js";
 import { maybeEnqueueCompile } from "../runtime/dispatch.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import { isStopRequestedError } from "../runtime/jobTypes.js";
-import { errorMessage } from "../runtime/serialization.js";
-import { bookPlanSchema, createProviders, generateJsonWithRetry, type BookPlan, type TextModelAdapter } from "@book-maker/core";
+import {
+  bookPlanSchema,
+  createProviders,
+  errorMessage,
+  generateJsonWithRetry,
+  type BookPlan,
+  type TextModelAdapter
+} from "@book-maker/core";
 import { pageScope, prisma } from "@book-maker/db";
 import { Job } from "bullmq";
 

@@ -5,7 +5,7 @@ import { chapterSetupForPage } from "./generationContext.js";
 import { applyPlanThinkingBoost, loadQualityContext } from "./qualitySettings.js";
 import { updateJobProgress } from "../runtime/jobLifecycle.js";
 import { type ChapterSetup } from "../runtime/jobTypes.js";
-import { jsonInputValue, range } from "../runtime/serialization.js";
+import { jsonInputValue } from "../runtime/serialization.js";
 import {
   beatDedupPatch,
   chapterBriefSchema,
@@ -15,6 +15,7 @@ import {
   mapWithConcurrency,
   mergePageMapCriticPatch,
   normalizePlanPageTargets,
+  range,
   type BookGenerationStrategy,
   type BookPlan,
   type ChapterBrief,

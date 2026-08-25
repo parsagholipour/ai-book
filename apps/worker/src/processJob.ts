@@ -1,4 +1,5 @@
 import { UnrecoverableError, type Job } from "bullmq";
+import { errorMessage } from "@book-maker/core";
 import { maybeCompileAfterCompletedJob } from "./runtime/dispatch.js";
 import { createRunLogger, providerConfigSnapshot } from "./providers/runLogging.js";
 import {
@@ -22,10 +23,7 @@ import {
   shouldRecoverJobAttempt,
   staleGenerationJobReason
 } from "./runtime/jobLifecycle.js";
-import {
-  errorMessage,
-  serializeError
-} from "./runtime/serialization.js";
+import { serializeError } from "./runtime/serialization.js";
 import { runWithGenerationAttempt } from "./runtime/generationAttemptContext.js";
 import { applyBookEdit } from "./handlers/applyBookEdit.js";
 import { buildCharacterPersona, prepareCharacterCandidates } from "./handlers/characters.js";

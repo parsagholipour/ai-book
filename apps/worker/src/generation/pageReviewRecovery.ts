@@ -1,12 +1,11 @@
 import { parseChapterBrief } from "./bookHelpers.js";
 import { updateJobProgress } from "../runtime/jobLifecycle.js";
-import { uniqueStrings } from "../runtime/serialization.js";
 import { PAGE_QA_RECOVERY_CANDIDATE, pageQaRecoveryRevision } from "./tuning.js";
 // The chapter brief's prompt budget, taken from the module that already spends
 // it rather than spelled a second time here. Through the barrel, which a worker
 // module may take whole — core's narrow subpaths are gated on an empty runtime
 // closure (`scripts/check-core-subpaths.mjs`) and this needs no such entry.
-import { CHAPTER_CONTINUITY_FOCUS_LIMIT } from "@book-maker/core";
+import { CHAPTER_CONTINUITY_FOCUS_LIMIT, uniqueStrings } from "@book-maker/core";
 import type {
   BookGenerationStrategy,
   BookPlan,

@@ -110,7 +110,6 @@ vi.mock("../runtime/jobLifecycle.js", () => ({
   refundSkippedEditOperation: mocks.refundSkippedEditOperation,
   refundUnwrittenEditPages: mocks.refundUnwrittenEditPages
 }));
-vi.mock("../runtime/serialization.js", () => ({ errorMessage: (error: unknown) => String(error) }));
 vi.mock("@book-maker/core", async () => {
   // The resolver, the stamp parser and the request reader stay real: they are
   // what the fence is made of, and a mocked fence tests nothing.

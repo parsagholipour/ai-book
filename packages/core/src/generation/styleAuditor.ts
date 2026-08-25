@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
+import { uniqueStrings } from "../collections.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 
 export const pageStyleAuditSchema = z.object({
@@ -139,8 +140,4 @@ export async function auditPageStyle(options: {
     styleOk: parsed.styleOk && parsed.styleIssues.length === 0,
     styleIssues: parsed.styleIssues
   };
-}
-
-function uniqueStrings(values: string[]): string[] {
-  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }

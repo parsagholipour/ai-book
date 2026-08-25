@@ -1,3 +1,4 @@
+import { uniqueStrings } from "@book-maker/core/collections";
 import { firstString, firstStringArray } from "../shared/formatters.js";
 
 export type NormalizedPlanQuestion = {
@@ -88,7 +89,7 @@ export function makeNormalizedPlanQuestion(
   allowCustom: boolean,
   answerKind?: unknown
 ): NormalizedPlanQuestion {
-  const distinctOptions = [...new Set(options.map((option) => option.trim()).filter(Boolean))];
+  const distinctOptions = uniqueStrings(options);
   // Fewer than two options is open whatever the plan says: one option is
   // neither a choice nor a set to combine.
   const kind: NormalizedPlanQuestion["answerKind"] =

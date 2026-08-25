@@ -53,6 +53,9 @@ vi.mock("@book-maker/core", () => ({
   libraryCharactersFromMediaSettings: mocks.libraryCharactersFromMediaSettings,
   matchLibraryCharacter: mocks.matchLibraryCharacter,
   libraryCharacterDiskPath: mocks.libraryCharacterDiskPath,
+  // `characterSlug` calls this only after reducing the value to `[a-z0-9-]`,
+  // so the machine-path policy is an identity function on this suite's seam.
+  safePathPart: (value: string) => value,
   // The real fold lives in @book-maker/core and is tested there; this stand-in
   // keeps only the two properties the slug leans on — equivalent spellings of
   // one name fold together, and different names do not.
