@@ -2,6 +2,8 @@ import { type AuthFailure } from "../mobileAuth.js";
 import { InMemoryRateLimiter, identityRateLimitKey, sendRateLimitError } from "../rateLimit.js";
 import { authenticateMobileBearer, sendMobileAuthFailure, type MobileAuthContext } from "../requestAuth.js";
 import {
+  GenerationAttemptConflictError,
+  GenerationQuotaExceededError,
   InsufficientCreditsError,
   ensureProjectExportEntitlementOrSpend,
   hasActiveSubscriptionEntitlement
@@ -296,6 +298,39 @@ export function sendImageLimitReached(
       }
     }
   });
+}
+
+/**
+ * The shared part of a generation-attempt catch ladder.
+ *
+ * Route-specific errors must be handled before this function. In particular,
+ * some plan routes deliberately translate `GenerationAttemptConflictError` to
+ * older, route-specific wire codes, and the resume and portrait routes have
+ * local conflict classes whose answers take precedence over this fallback.
+ *
+ * The quota rung is intentionally present for every caller even when it cannot
+ * currently be reached. Audiobook attempts do not pass `imageQuotaLimit` to
+ * `startGenerationAttempt`, so they cannot throw `GenerationQuotaExceededError`;
+ * sharing the complete ladder there is harmless and prevents the copies from
+ * drifting when generation-attempt failures evolve.
+ *
+ * Returns whether it answered so callers can rethrow unknown errors and retain
+ * Fastify's logging and 500 handling.
+ */
+export function sendGenerationAttemptError(reply: FastifyReply, error: unknown): boolean {
+  if (error instanceof GenerationQuotaExceededError) {
+    sendImageLimitReached(reply, error.claim);
+    return true;
+  }
+  if (error instanceof InsufficientCreditsError) {
+    sendInsufficientCredits(reply, error);
+    return true;
+  }
+  if (error instanceof GenerationAttemptConflictError) {
+    sendMobileError(reply, 409, error.code, error.message);
+    return true;
+  }
+  return false;
 }
 
 export async function ensureExportEntitlementForDownload(

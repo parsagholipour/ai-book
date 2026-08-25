@@ -3,9 +3,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@book-maker/db", async () => (await import("./testing/mobileApiMocks.js")).dbModuleMock());
 vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApiMocks.js")).billingModuleMock());
 
-import Fastify, { type FastifyInstance } from "fastify";
+import {
+  GenerationAttemptConflictError,
+  GenerationQuotaExceededError,
+  InsufficientCreditsError
+} from "@book-maker/db/billing";
+import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { connect } from "node:net";
-import { sendUnreadableBodyError } from "./httpErrors.js";
+import { sendGenerationAttemptError, sendUnreadableBodyError } from "./httpErrors.js";
 import { mobileAuthError } from "./schemas.js";
 
 /**
@@ -309,6 +314,102 @@ describe("an error that is not the body", () => {
     });
   });
 });
+
+describe("sendGenerationAttemptError", () => {
+  const resetsAt = new Date("2026-08-25T00:00:00.000Z");
+
+  it("answers an exhausted image quota", () => {
+    const { reply, response } = recordingReply();
+
+    expect(
+      sendGenerationAttemptError(
+        reply,
+        new GenerationQuotaExceededError({
+          allowed: false,
+          used: 3,
+          limit: 3,
+          periodKey: "free:2026-08",
+          resetsAt
+        })
+      )
+    ).toBe(true);
+    expect(response).toEqual({
+      statusCode: 403,
+      body: {
+        error: {
+          code: "IMAGE_LIMIT_REACHED",
+          message: "Free plans include 3 illustrated books a month. Upgrade for unlimited, or turn visuals off.",
+          imageQuota: { used: 3, limit: 3, resetsAt: resetsAt.toISOString() }
+        }
+      }
+    });
+  });
+
+  it("answers insufficient credits with the actionable balance", () => {
+    const { reply, response } = recordingReply();
+
+    expect(
+      sendGenerationAttemptError(
+        reply,
+        new InsufficientCreditsError({ requiredCredits: 45, availableCredits: 12, reservedCredits: 3 })
+      )
+    ).toBe(true);
+    expect(response).toEqual({
+      statusCode: 402,
+      body: {
+        error: {
+          code: "INSUFFICIENT_CREDITS",
+          message: "You need more credits for this action.",
+          requiredCredits: 45,
+          availableCredits: 12,
+          reservedCredits: 3
+        }
+      }
+    });
+  });
+
+  it("answers an attempt conflict with its shipped wire code", () => {
+    const { reply, response } = recordingReply();
+
+    expect(
+      sendGenerationAttemptError(reply, new GenerationAttemptConflictError("That command has different settings."))
+    ).toBe(true);
+    expect(response).toEqual({
+      statusCode: 409,
+      body: {
+        error: {
+          code: "GENERATION_COMMAND_CONFLICT",
+          message: "That command has different settings."
+        }
+      }
+    });
+  });
+
+  it("leaves unknown errors for the caller to rethrow", () => {
+    const { reply, response } = recordingReply();
+
+    expect(sendGenerationAttemptError(reply, new Error("database unavailable"))).toBe(false);
+    expect(response).toEqual({ statusCode: null, body: null });
+  });
+});
+
+function recordingReply(): {
+  reply: FastifyReply;
+  response: { statusCode: number | null; body: unknown };
+} {
+  const response: { statusCode: number | null; body: unknown } = { statusCode: null, body: null };
+  const reply = {
+    code(statusCode: number) {
+      response.statusCode = statusCode;
+      return this;
+    },
+    send(body: unknown) {
+      response.body = body;
+      return this;
+    }
+  } as FastifyReply;
+  return { reply, response };
+}
 
 async function waitFor(condition: () => boolean, timeoutMs = 3000): Promise<void> {
   const deadline = Date.now() + timeoutMs;

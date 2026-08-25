@@ -1,10 +1,6 @@
 import { creditCostForOperation, CREATION_ATTACHMENT_MAX_BYTES } from "@book-maker/core";
 import { prisma, type LibraryCharacterModel } from "@book-maker/db";
-import {
-  GenerationAttemptConflictError,
-  InsufficientCreditsError,
-  startGenerationAttempt
-} from "@book-maker/db/billing";
+import { startGenerationAttempt } from "@book-maker/db/billing";
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import { contentRestrictedError, enforceContentRestrictions } from "../../contentRestrictions.js";
@@ -51,7 +47,7 @@ import {
   hitTieredLimit,
   insufficientCreditsError,
   requireMobileAuth,
-  sendInsufficientCredits,
+  sendGenerationAttemptError,
   sendMobileError,
   sendUnreadableBodyError
 } from "../httpErrors.js";
@@ -784,19 +780,11 @@ export async function registerMobileCharacterImageRoutes(
           }
         });
       } catch (error) {
-        if (error instanceof InsufficientCreditsError) {
-          return sendInsufficientCredits(reply, error);
-        }
         if (error instanceof PortraitInProgressError) {
           return sendPortraitInProgress(reply);
         }
-        if (error instanceof GenerationAttemptConflictError) {
-          // A backstop rather than a lane the reader can be put in: both values
-          // this is raised on ride the command key above, so a start that would
-          // conflict is a start under a key nothing has used. It stays because
-          // the throw belongs to `startGenerationAttempt` rather than to this
-          // route, and a 500 is the wrong way to learn that it moved.
-          return sendMobileError(reply, 409, error.code, error.message);
+        if (sendGenerationAttemptError(reply, error)) {
+          return;
         }
         throw error;
       }

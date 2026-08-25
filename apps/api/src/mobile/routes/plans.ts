@@ -11,7 +11,7 @@ import { retryPlanRevisionOperation } from "../planRevisionRetries.js";
 import {
   hitTieredLimit,
   requireMobileAuth,
-  sendImageLimitReached,
+  sendGenerationAttemptError,
   sendInsufficientCredits,
   sendMobileError
 } from "../httpErrors.js";
@@ -45,7 +45,6 @@ import { createProjectSchema, estimateFullBookCreditCost } from "@book-maker/cor
 import { Prisma, prisma } from "@book-maker/db";
 import {
   GenerationAttemptConflictError,
-  GenerationQuotaExceededError,
   InsufficientCreditsError,
   getImageQuota,
   startGenerationAttempt
@@ -181,11 +180,11 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
         );
         return reply.code(202).send(planOperation("revision_queued", plan.projectId, id, job, "Revising your book plan."));
       } catch (error) {
-        if (error instanceof InsufficientCreditsError) {
-          return sendInsufficientCredits(reply, error);
-        }
         if (error instanceof GenerationAttemptConflictError) {
           return sendMobileError(reply, 409, "EDIT_IN_PROGRESS", error.message);
+        }
+        if (sendGenerationAttemptError(reply, error)) {
+          return;
         }
         throw error;
       }
@@ -217,11 +216,11 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
         log: request.log
       });
     } catch (error) {
-      if (error instanceof InsufficientCreditsError) {
-        return sendInsufficientCredits(reply, error);
-      }
       if (error instanceof GenerationAttemptConflictError) {
         return sendMobileError(reply, 409, "RETRY_NOT_AVAILABLE", error.message);
+      }
+      if (sendGenerationAttemptError(reply, error)) {
+        return;
       }
       throw error;
     }
@@ -412,14 +411,8 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
         }
         return reply.code(202).send(planOperation("generation_queued", plan.projectId, id, job, "Starting full book generation."));
       } catch (error) {
-        if (error instanceof GenerationQuotaExceededError) {
-          return sendImageLimitReached(reply, error.claim);
-        }
-        if (error instanceof InsufficientCreditsError) {
-          return sendInsufficientCredits(reply, error);
-        }
-        if (error instanceof GenerationAttemptConflictError) {
-          return sendMobileError(reply, 409, error.code, error.message);
+        if (sendGenerationAttemptError(reply, error)) {
+          return;
         }
         throw error;
       }
@@ -609,15 +602,6 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
           }
         });
       } catch (error) {
-        if (error instanceof GenerationQuotaExceededError) {
-          return sendImageLimitReached(reply, error.claim);
-        }
-        if (error instanceof InsufficientCreditsError) {
-          return sendInsufficientCredits(reply, error);
-        }
-        if (error instanceof GenerationAttemptConflictError) {
-          return sendMobileError(reply, 409, error.code, error.message);
-        }
         if (error instanceof ResumeAlreadyLiveError) {
           return sendMobileError(
             reply,
@@ -625,6 +609,9 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
             "RECOVERY_NOT_AVAILABLE",
             "This book is already being worked on. Give it a moment and check again."
           );
+        }
+        if (sendGenerationAttemptError(reply, error)) {
+          return;
         }
         throw error;
       }

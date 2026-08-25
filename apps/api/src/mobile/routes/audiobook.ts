@@ -1,10 +1,6 @@
 import { estimateAudiobookCreditCost, isAudiobookNarratorVoice } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
-import {
-  GenerationAttemptConflictError,
-  InsufficientCreditsError,
-  startGenerationAttempt
-} from "@book-maker/db/billing";
+import { GenerationAttemptConflictError, startGenerationAttempt } from "@book-maker/db/billing";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -12,7 +8,7 @@ import { dispatchGenerationJob, enqueueGenerationJob } from "../../queue.js";
 import { ensureVoiceSample } from "../audiobookSamples.js";
 import { serializeAudiobook, serializeNarratorVoices } from "../audiobookSerializer.js";
 import type { MobileAudiobookDto, MobileNarratorVoiceDto } from "../dto.js";
-import { hitTieredLimit, requireMobileAuth, sendInsufficientCredits, sendMobileError } from "../httpErrors.js";
+import { hitTieredLimit, requireMobileAuth, sendGenerationAttemptError, sendMobileError } from "../httpErrors.js";
 import type { MobileRouteContext } from "../routeContext.js";
 import { fingerprintGenerationRequest } from "../support.js";
 import {
@@ -277,11 +273,8 @@ export async function registerMobileAudiobookRoutes(fastify: FastifyInstance, co
           audiobook: queued ? serializeAudiobook(queued, project.contentRevision) : null
         });
       } catch (error) {
-        if (error instanceof InsufficientCreditsError) {
-          return sendInsufficientCredits(reply, error);
-        }
-        if (error instanceof GenerationAttemptConflictError) {
-          return sendMobileError(reply, 409, error.code, error.message);
+        if (sendGenerationAttemptError(reply, error)) {
+          return;
         }
         throw error;
       }
