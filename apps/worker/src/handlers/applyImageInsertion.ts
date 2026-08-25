@@ -18,6 +18,7 @@ import {
   claimAppliedEditPublication,
   restoreEditProjectStatus
 } from "../generation/editProjectStatus.js";
+import { claimEditOperationForDelivery } from "../generation/editOperationDelivery.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
@@ -139,20 +140,14 @@ export async function applyImageInsertion(job: Job, operation: { status: string;
     return;
   }
 
-  // Conditional, so a stalled redelivery can never regress APPLIED back to
-  // ACTIVE or revive a CANCELED operation. FAILED must still re-activate: the
-  // paid /resume retry lane reuses the FAILED operation row.
-  const activated = await prisma.bookEditOperation.updateMany({
-    where: { id: operationId, status: { notIn: ["APPLIED", "CANCELED"] } },
-    data: { status: "ACTIVE" }
-  });
-  if (activated.count === 0) {
-    const settled = await prisma.bookEditOperation.findUnique({ where: { id: operationId } });
-    if (settled?.status === "APPLIED") {
-      // A previous delivery committed the append and crashed before its durable
-      // COMPLETED write; the page already holds this operation's image line.
-      await replayAppliedInsertion(projectId, operationId, planId, fallbackStatus);
-    }
+  const delivery = await claimEditOperationForDelivery(operationId);
+  if (delivery.outcome === "replay") {
+    // A previous delivery committed the append and crashed before its durable
+    // COMPLETED write; the page already holds this operation's image line.
+    await replayAppliedInsertion(projectId, operationId, planId, fallbackStatus);
+    return;
+  }
+  if (delivery.outcome === "settled") {
     // CANCELED (or deleted): another actor settled this operation; whatever it
     // decided stands.
     return;

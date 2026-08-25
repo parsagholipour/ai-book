@@ -1,4 +1,5 @@
 import { getProjectOrThrow, invalidateProjectExports, strategyForInput } from "../generation/bookHelpers.js";
+import { claimEditOperationForDelivery } from "../generation/editOperationDelivery.js";
 import { applyStructuralPageChange } from "../generation/pageRestructure.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import {
@@ -117,25 +118,8 @@ export async function restructurePages(job: Job, operation: { id: string; status
     );
     return;
   }
-  // A pre-flight, not a fence, and the same shape `applyImageInsertion` opens
-  // with. `markEditOperationActive` has usually moved this row already — QUEUED
-  // only, so this is also what re-activates a FAILED one: `apply-book-edit` has
-  // no BullMQ attempt budget (`retryJobOptions`), and the two resume doors that
-  // do bring it back — the mobile paid retry and the operator requeue — replay
-  // the payload against the FAILED operation row without resetting it. What the
-  // count is really for is standing down before any of the work below when
-  // another actor settled the operation between the entry check and here. It
-  // cannot fence a *concurrent*
-  // delivery — ACTIVE matches ACTIVE, so both would win it — and the fence that
-  // can is the claim inside the shift's own transaction, which is the only place
-  // "has the shift landed" can be asked and answered without a window between.
-  const activated = await prisma.bookEditOperation.updateMany({
-    where: { id: operationId, status: { notIn: ["APPLIED", "CANCELED"] } },
-    data: { status: "ACTIVE" }
-  });
-  // One read for both questions the two separate ones used to ask: what another
-  // actor settled the row as, and what the classifier holds.
-  const stored = await prisma.bookEditOperation.findUnique({ where: { id: operationId } });
+  const delivery = await claimEditOperationForDelivery(operationId);
+  const stored = delivery.stored;
   // The same question of the fresher row: the copy checked above was read
   // before the claim, and an undo runs only against APPLIED — the status the
   // claim skips — so this read is the first thing that can see one that landed
@@ -143,21 +127,20 @@ export async function restructurePages(job: Job, operation: { id: string; status
   if (structuralEditWasUndone(stored?.classifier)) {
     return;
   }
-  if (activated.count === 0) {
-    if (stored?.status === "APPLIED") {
-      if (typeof jsonRecord(stored.classifier).structuralSkipped !== "string") {
-        await resumeClaimedStructuralDelivery(
-          await waitForStructuralPageLease(operationId, ownerToken),
-          projectId,
-          operationId,
-          ownerToken,
-          fallbackStatus,
-          claimedEditing
-        );
-      }
+  if (delivery.outcome === "replay") {
+    if (typeof jsonRecord(delivery.stored.classifier).structuralSkipped !== "string") {
+      await resumeClaimedStructuralDelivery(
+        await waitForStructuralPageLease(operationId, ownerToken),
+        projectId,
+        operationId,
+        ownerToken,
+        fallbackStatus,
+        claimedEditing
+      );
     }
     return;
   }
+  if (delivery.outcome === "settled") return;
   // Conditional, and the count is the question every abandoning path below has
   // to ask: did *this* delivery take the book out of a settled status? For an
   // ordinary delivery no — the Apply wrote EDITING in the same committed

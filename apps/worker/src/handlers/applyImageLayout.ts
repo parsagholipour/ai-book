@@ -3,6 +3,7 @@ import {
   claimAppliedEditPublication,
   restoreEditProjectStatus
 } from "../generation/editProjectStatus.js";
+import { claimEditOperationForDelivery } from "../generation/editOperationDelivery.js";
 import {
   applyLayoutBatchInTx,
   LayoutUnwritableError,
@@ -141,15 +142,12 @@ export async function applyImageLayout(job: Job, operation: { status: string; cl
     return;
   }
 
-  const activated = await prisma.bookEditOperation.updateMany({
-    where: { id: operationId, status: { notIn: ["APPLIED", "CANCELED"] } },
-    data: { status: "ACTIVE" }
-  });
-  if (activated.count === 0) {
-    const settled = await prisma.bookEditOperation.findUnique({ where: { id: operationId } });
-    if (settled?.status === "APPLIED") {
-      await replayAppliedLayout(projectId, operationId, planId, settled.classifier, fallbackStatus);
-    }
+  const delivery = await claimEditOperationForDelivery(operationId);
+  if (delivery.outcome === "replay") {
+    await replayAppliedLayout(projectId, operationId, planId, delivery.stored.classifier, fallbackStatus);
+    return;
+  }
+  if (delivery.outcome === "settled") {
     return;
   }
   const prior = await prisma.project.findUnique({
