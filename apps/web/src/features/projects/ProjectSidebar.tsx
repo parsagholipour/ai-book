@@ -8,7 +8,7 @@ import {
   RefreshCcw,
   Sparkles
 } from "lucide-react";
-import type { Project, TextModelThinkingEffort } from "../../api.js";
+import type { Project } from "../../api.js";
 import { formatProjectCost, formatUsd } from "../shared/formatters.js";
 import {
   AUDIENCE_AGE_RANGE_OPTIONS,
@@ -21,17 +21,10 @@ import {
   imageModelKey,
   imageModelLabel,
   imageModelSelectionFromKey,
-  textModelKey,
-  textModelLabel,
-  textModelSelectionWithEffort,
-  textModelSupportsEffort,
-  textModelThinkingEffortValue,
-  textModelSelectionFromKey,
   toneProfileFromValue,
   type DraftProject,
   type GenerationStrategyOption,
-  type ImageModelOption,
-  type TextModelOption
+  type ImageModelOption
 } from "./draft.js";
 import {
   formatProjectAiModels,
@@ -52,11 +45,9 @@ export function ProjectSidebar(props: {
   setDraft: Dispatch<SetStateAction<DraftProject>>;
   projects: Project[];
   selectedId: string | null;
-  textModelOptions: TextModelOption[];
   imageModelOptions: ImageModelOption[];
   strategyOptions: GenerationStrategyOption[];
   selectedStrategy: GenerationStrategyOption | undefined;
-  selectedTextModel: TextModelOption;
   selectedImageModel: ImageModelOption;
   showImageModelControls: boolean;
   createProjectBusy: boolean;
@@ -209,47 +200,6 @@ export function ProjectSidebar(props: {
             </p>
           ) : null}
         </label>
-        <label>
-          AI model
-          <select
-            value={textModelKey(props.selectedTextModel)}
-            onChange={(event) =>
-              props.setDraft({
-                ...props.draft,
-                textModel: textModelSelectionFromKey(event.target.value, props.textModelOptions)
-              })
-            }
-          >
-            {props.textModelOptions.map((option) => (
-              <option key={textModelKey(option)} value={textModelKey(option)}>
-                {textModelLabel(option)}
-              </option>
-            ))}
-          </select>
-        </label>
-        {textModelSupportsEffort(props.selectedTextModel) ? (
-          <label>
-            Thinking
-            <select
-              value={textModelThinkingEffortValue(props.draft.textModel, props.selectedTextModel)}
-              onChange={(event) =>
-                props.setDraft({
-                  ...props.draft,
-                  textModel: textModelSelectionWithEffort(
-                    props.selectedTextModel,
-                    event.target.value as TextModelThinkingEffort
-                  )
-                })
-              }
-            >
-              {props.selectedTextModel.thinkingEfforts.map((effort) => (
-                <option key={effort.value} value={effort.value}>
-                  {effort.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
         <label>
           Tone
           <select
@@ -462,7 +412,7 @@ export function ProjectSidebar(props: {
               <small className="project-cost-summary">{formatProjectCost(project.cost)}</small>
             </div>
             <small className="project-model-summary">
-              {formatProjectAiModels(project, props.textModelOptions, props.imageModelOptions)}
+              {formatProjectAiModels(project, props.imageModelOptions)}
             </small>
           </button>
         ))}

@@ -267,12 +267,13 @@ function textProvider(value: unknown): value is TextModelSelection["provider"] {
     value === "deepinfra" ||
     value === "gemini" ||
     value === "alibaba" ||
+    value === "openai" ||
     value === "openai-compatible"
   );
 }
 
 function thinkingEfforts(): ReadonlySet<unknown> {
-  return new Set(["none", "minimal", "low", "medium", "high", "max"]);
+  return new Set(["none", "minimal", "low", "medium", "high", "xhigh", "max"]);
 }
 
 function cloneSelection(selection: TextModelSelection): TextModelSelection {

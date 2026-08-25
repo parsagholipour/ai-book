@@ -680,6 +680,7 @@ export const mockProjectStatus = {
       promptTokens: 0,
       outputTokens: 0,
       cacheHitTokens: 0,
+      cacheWriteTokens: 0,
       provisionalPromptTokens: 0,
       provisionalOutputTokens: 0,
       inFlightCalls: 0

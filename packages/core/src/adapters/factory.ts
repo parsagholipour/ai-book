@@ -5,7 +5,9 @@ import { geminiImageModelOptions } from "./geminiModels.js";
 import { AlibabaImageAdapter, AlibabaTextAdapter } from "./alibaba.js";
 import { DeepInfraAdapter } from "./deepinfra.js";
 import { DeepSeekAdapter } from "./deepseek.js";
+import { OpenAITextAdapter } from "./openai.js";
 import { OpenAICompatibleTextAdapter } from "./openaiCompatible.js";
+import { openAITextModelOptions } from "./openaiModels.js";
 import { FakeEmbeddingAdapter, FakeImageAdapter, FakeResearchAdapter, FakeSpeechAdapter, FakeTextModelAdapter } from "./fake.js";
 import { GeminiEmbeddingAdapter, GeminiImageAdapter, GeminiResearchAdapter, GeminiTextAdapter } from "./gemini.js";
 import { GeminiSpeechAdapter } from "./geminiSpeech.js";
@@ -23,12 +25,11 @@ import type {
 import {
   MECHANICAL_TEXT_PURPOSES,
   modelTierImageSelection,
-  modelTierTextSelections,
+  modelTierForInput,
   planThinkingBudgetForTier,
   ULTRA_PAGE_MAP_THINKING_BUDGET
 } from "./modelTiers.js";
 import { RoutingTextModelAdapter } from "./textRouting.js";
-import { FallbackTextModelAdapter } from "./textFallback.js";
 import {
   compiledGenerationTextModelRouting,
   generationTextModelOptionKey,
@@ -78,7 +79,7 @@ export type ImageModelProviderOption = ImageModelSelection & {
 };
 export type ImageModelOption = ImageModelProviderOption;
 
-const GEMINI_35_FLASH_THINKING_EFFORTS: TextModelThinkingEffortOption[] = [
+const GEMINI_FLASH_THINKING_LEVEL_EFFORTS: TextModelThinkingEffortOption[] = [
   { value: "minimal", label: "Minimal" },
   { value: "low", label: "Low" },
   { value: "medium", label: "Medium", default: true },
@@ -88,10 +89,17 @@ const GEMINI_35_FLASH_THINKING_EFFORTS: TextModelThinkingEffortOption[] = [
 const GEMINI_MAIN_TEXT_MODEL_OPTIONS: TextModelOption[] = [
   {
     provider: "gemini",
+    model: "gemini-3.7-flash",
+    label: "Gemini 3.7 Flash",
+    thinking: true,
+    thinkingEfforts: GEMINI_FLASH_THINKING_LEVEL_EFFORTS
+  },
+  {
+    provider: "gemini",
     model: "gemini-3.5-flash",
     label: "Gemini 3.5 Flash",
     thinking: true,
-    thinkingEfforts: GEMINI_35_FLASH_THINKING_EFFORTS
+    thinkingEfforts: GEMINI_FLASH_THINKING_LEVEL_EFFORTS
   },
   {
     provider: "gemini",
@@ -151,6 +159,7 @@ export function textModelOptions(config: AppConfig): TextModelOption[] {
     ...deepSeekModelOptions(config),
     ...deepInfraModelOptions(config),
     ...alibabaTextModelOptions(config.ALIBABA_TEXT_MODEL),
+    ...openAITextModelOptions(),
     ...GEMINI_MAIN_TEXT_MODEL_OPTIONS,
     ...localTextModelOptions(config)
   ];
@@ -215,6 +224,9 @@ export function textProviderConfigured(config: AppConfig, provider: TextModelSel
   if (provider === "alibaba") {
     return Boolean(config.ALIBABA_API_KEY?.trim());
   }
+  if (provider === "openai") {
+    return Boolean(config.OPENAI_API_KEY?.trim());
+  }
   return Boolean(config.LOCAL_TEXT_BASE_URL && config.LOCAL_TEXT_MODEL);
 }
 
@@ -267,7 +279,7 @@ export function imageModelOptions(config: AppConfig): ImageModelProviderOption[]
 export type ResolvedTextModelSelections = {
   prose: TextModelSelection;
   mechanical: TextModelSelection;
-  /** Set only when the selections came from a quality tier (not an explicit model choice). */
+  /** Set for project generation so live Quality-tab routing can bind by tier. */
   tier?: ModelTier;
 };
 
@@ -275,22 +287,13 @@ export function resolveTextModelSelections(
   config: AppConfig,
   input?: CreateProjectInput
 ): ResolvedTextModelSelections {
-  const explicit = input?.mediaSettings.textModel;
-  if (explicit) {
-    return { prose: explicit, mechanical: explicit };
-  }
-  const tier = input?.mediaSettings.modelTier;
-  if (tier) {
-    // Keep the historical object shape when its providers are available;
-    // compiled routing adds only the provider-unavailable fallback.
-    const historical = modelTierTextSelections(tier, config);
-    const compiled = compiledGenerationTextModelRouting(config, generationTextModelOptions(config));
-    const selected = compiled[tier];
-    const historicalAvailable = textProviderConfigured(config, historical.prose.provider) &&
-      textProviderConfigured(config, historical.mechanical.provider);
-    return historicalAvailable
-      ? { ...historical, tier }
-      : { prose: selected.writer, mechanical: selected.judgment, tier };
+  if (input) {
+    // The worker replaces this delegate with the live revision router, but the
+    // delegate must still be constructible. A stale project-level model (or a
+    // removed credential for it) must not veto the operator-controlled route.
+    const tier = modelTierForInput(input);
+    const selected = compiledGenerationTextModelRouting(config, generationTextModelOptions(config))[tier];
+    return { prose: selected.writer, mechanical: selected.judgment, tier };
   }
   const legacy: TextModelSelection = { provider: "deepseek", model: config.DEEPSEEK_MODEL };
   return { prose: legacy, mechanical: legacy };
@@ -367,10 +370,10 @@ export function createSpeechAdapter(
 }
 
 export function createRoutedTextModel(config: AppConfig, selections: ResolvedTextModelSelections): TextModelAdapter {
-  const prose = createTierTextAdapter(config, selections.prose, selections.tier, "writer");
+  const prose = createTextModelAdapter(config, selections.prose);
   const mechanical = sameTextSelection(selections.prose, selections.mechanical)
     ? prose
-    : createTierTextAdapter(config, selections.mechanical, selections.tier, "judgment");
+    : createTextModelAdapter(config, selections.mechanical);
   const purposeOverrides = purposeOverrideAdapters(config, selections);
   if (purposeOverrides.size === 0 && mechanical === prose) {
     return prose;
@@ -399,14 +402,14 @@ function purposeOverrideAdapters(
   if (!sameTextSelection(selections.prose, planSelection)) {
     overrides.set("plan-book", {
       selection: planSelection,
-      adapter: createTierTextAdapter(config, planSelection, tier, "writer")
+      adapter: createTextModelAdapter(config, planSelection)
     });
   }
   const mapSelection = elevatedThinkingSelection(selections.mechanical, tier, "generate-page-map", catalog);
   if (!sameTextSelection(selections.mechanical, mapSelection)) {
     overrides.set("generate-page-map", {
       selection: mapSelection,
-      adapter: createTierTextAdapter(config, mapSelection, tier, "judgment")
+      adapter: createTextModelAdapter(config, mapSelection)
     });
   }
   return overrides;
@@ -461,7 +464,7 @@ function elevatedSupportedEffort(
   base: TextModelThinkingEffort | undefined,
   target: TextModelThinkingEffort
 ): TextModelThinkingEffort | undefined {
-  const order: readonly TextModelThinkingEffort[] = ["none", "minimal", "low", "medium", "high", "max"];
+  const order: readonly TextModelThinkingEffort[] = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
   const baseRank = base ? order.indexOf(base) : 0;
   const targetRank = order.indexOf(target);
   const desiredRank = Math.max(baseRank, targetRank);
@@ -478,38 +481,6 @@ function elevatedSupportedEffort(
   return base;
 }
 
-function createTierTextAdapter(
-  config: AppConfig,
-  selection: TextModelSelection,
-  tier: ModelTier | undefined,
-  role: GenerationTextModelRole
-): TextModelAdapter {
-  const adapter = createTextModelAdapter(config, selection);
-  // Only tier-derived Gemini selections get a cross-provider fallback;
-  // explicit operator choices keep exact single-model behavior.
-  if (!tier || selection.provider !== "gemini" || !config.DEEPSEEK_API_KEY) {
-    return adapter;
-  }
-  const fallbackSelection = modelTierTextFallbackSelectionForRole(role, config);
-  return new FallbackTextModelAdapter({
-    primary: { selection, adapter },
-    fallback: {
-      selection: fallbackSelection,
-      adapter: () => createTextModelAdapter(config, fallbackSelection)
-    },
-    shouldFallback: isTextProviderFallbackError
-  });
-}
-
-export function modelTierTextFallbackSelectionForRole(
-  role: GenerationTextModelRole,
-  config: AppConfig
-): TextModelSelection {
-  return role === "judgment"
-    ? { provider: "deepseek", model: config.DEEPSEEK_FAST_MODEL, thinkingEnabled: false }
-    : { provider: "deepseek", model: config.DEEPSEEK_MODEL };
-}
-
 function sameTextSelection(a: TextModelSelection, b: TextModelSelection): boolean {
   return (
     a.provider === b.provider &&
@@ -518,59 +489,6 @@ function sameTextSelection(a: TextModelSelection, b: TextModelSelection): boolea
     a.thinkingEnabled === b.thinkingEnabled &&
     a.thinkingEffort === b.thinkingEffort
   );
-}
-
-export function isTextProviderFallbackError(error: unknown): boolean {
-  if (isStopOrAbortError(error)) {
-    return false;
-  }
-
-  const descriptors = fallbackErrorDescriptors(error);
-  return descriptors.some(({ status, code, message }) => {
-    if (status !== undefined && (status === 408 || status === 409 || status === 429 || status >= 500)) {
-      return true;
-    }
-    if (code && /^(?:ECONN|EHOST|ENET|ETIMEDOUT|EAI_AGAIN|UND_ERR_)/i.test(code)) {
-      return true;
-    }
-    return /(?:rate.?limit|quota|capacity|overload|temporar(?:y|ily)|unavailable|timeout|timed out|fetch failed|network|connection reset|socket)/i.test(
-      message
-    );
-  });
-}
-
-function isStopOrAbortError(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-  const name = error.name.toLowerCase();
-  const message = error.message.toLowerCase();
-  return name.includes("abort") || name.includes("stoprequested") || message.includes("stop requested") || message.includes("aborted");
-}
-
-function fallbackErrorDescriptors(value: unknown, seen = new WeakSet<object>(), depth = 0): Array<{
-  status?: number;
-  code?: string;
-  message: string;
-}> {
-  if (!value || typeof value !== "object" || depth > 5 || seen.has(value)) {
-    return [];
-  }
-  seen.add(value);
-  const record = value as Record<string, unknown>;
-  const rawStatus = record.status ?? record.statusCode;
-  const status = typeof rawStatus === "number" ? rawStatus : typeof rawStatus === "string" ? Number(rawStatus) : undefined;
-  const descriptor: { status?: number; code?: string; message: string } = {
-    ...(typeof status === "number" && Number.isFinite(status) ? { status } : {}),
-    ...(typeof record.code === "string" ? { code: record.code } : {}),
-    message: [record.name, record.message, record.type].filter((part): part is string => typeof part === "string").join(" ")
-  };
-  return [
-    descriptor,
-    ...fallbackErrorDescriptors(record.cause, seen, depth + 1),
-    ...fallbackErrorDescriptors(record.error, seen, depth + 1),
-    ...fallbackErrorDescriptors(record.response, seen, depth + 1)
-  ];
 }
 
 export function createTextModelAdapter(config: AppConfig, selection: TextModelSelection): TextModelAdapter {
@@ -588,6 +506,14 @@ export function createTextModelAdapter(config: AppConfig, selection: TextModelSe
       apiKey: config.ALIBABA_API_KEY,
       apiHost: config.ALIBABA_API_HOST,
       textModel: selection.model
+    });
+  }
+  if (selection.provider === "openai") {
+    return new OpenAITextAdapter({
+      apiKey: config.OPENAI_API_KEY,
+      model: selection.model,
+      thinkingEnabled: selection.thinkingEnabled,
+      thinkingEffort: selection.thinkingEffort
     });
   }
   if (selection.provider === "openai-compatible") {
@@ -673,7 +599,7 @@ export class LiveGenerationTextModelAdapter implements TextModelAdapter {
     const key = `${tier}:${role}:${textModelSelectionKey(selection)}`;
     let adapter = this.adapters.get(key);
     if (!adapter) {
-      adapter = this.createBoundAdapter(selection, role, tier);
+      adapter = this.createBoundAdapter(selection, role);
       this.adapters.set(key, adapter);
     }
     return { adapter, selection };
@@ -701,8 +627,7 @@ export class LiveGenerationTextModelAdapter implements TextModelAdapter {
 
   private createBoundAdapter(
     selection: TextModelSelection,
-    role: GenerationTextModelRole,
-    tier: ModelTier
+    role: GenerationTextModelRole
   ): TextModelAdapter {
     if (this.options.createAdapter) {
       return this.options.createAdapter(selection, role);
@@ -710,7 +635,7 @@ export class LiveGenerationTextModelAdapter implements TextModelAdapter {
     if (this.config.MOCK_AI) {
       return new FakeTextModelAdapter();
     }
-    return createTierTextAdapter(this.config, selection, tier, role);
+    return createTextModelAdapter(this.config, selection);
   }
 }
 

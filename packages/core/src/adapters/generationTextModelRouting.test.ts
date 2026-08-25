@@ -6,9 +6,9 @@ import { unsupportedGenerateWithTools } from "./fake.js";
 import {
   LiveGenerationTextModelAdapter,
   elevatedThinkingSelection,
-  generationTextModelOptions,
-  modelTierTextFallbackSelectionForRole
+  generationTextModelOptions
 } from "./factory.js";
+import { GeminiTextAdapter } from "./gemini.js";
 import {
   compiledGenerationTextModelRouting,
   generationTextModelOptionKey,
@@ -114,6 +114,21 @@ describe("generation text model routing", () => {
     ).toEqual({ provider: "alibaba", model: "qwen-plus" });
   });
 
+  it("does not install an unconfigured cross-provider fallback behind a saved selection", async () => {
+    const routing = routingWithBalancedWriter("balanced-writer");
+    routing.premium.writer = {
+      provider: "gemini",
+      model: "gemini-2.5-pro",
+      thinkingBudget: 2048
+    };
+    const live = new LiveGenerationTextModelAdapter(testConfig({}), {
+      tier: "premium",
+      loadRouting: async () => routing
+    });
+
+    expect((await live.bindForCall("generate-page")).adapter).toBeInstanceOf(GeminiTextAdapter);
+  });
+
   it("lets consecutive calls see revisions while a repair retry stays bound", async () => {
     const config = testConfig({});
     let routing = routingWithBalancedWriter("writer-one");
@@ -205,18 +220,6 @@ describe("generation text model routing", () => {
     ).not.toThrow();
   });
 
-  it("chooses Gemini failover by Writer versus Judgment role", () => {
-    const config = testConfig({});
-    expect(modelTierTextFallbackSelectionForRole("writer", config)).toEqual({
-      provider: "deepseek",
-      model: "deepseek-v4-pro"
-    });
-    expect(modelTierTextFallbackSelectionForRole("judgment", config)).toEqual({
-      provider: "deepseek",
-      model: "deepseek-v4-flash",
-      thinkingEnabled: false
-    });
-  });
 });
 
 class RevisionAdapter implements TextModelAdapter {

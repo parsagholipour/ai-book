@@ -44,14 +44,14 @@ export type GenerationModelsPatch = z.infer<typeof generationModelsPatchSchema>;
 const selectionProperties = {
   provider: {
     type: "string",
-    enum: ["deepseek", "deepinfra", "gemini", "alibaba", "openai-compatible"]
+    enum: ["deepseek", "deepinfra", "gemini", "alibaba", "openai", "openai-compatible"]
   },
   model: { type: "string", minLength: 1, maxLength: 120 },
   thinkingBudget: { type: "integer", minimum: -1, maximum: 32768 },
   thinkingEnabled: { type: "boolean" },
   thinkingEffort: {
     type: "string",
-    enum: ["none", "minimal", "low", "medium", "high", "max"]
+    enum: ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
   }
 } as const;
 

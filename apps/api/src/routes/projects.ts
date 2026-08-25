@@ -269,7 +269,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
         ? prisma.providerCallLog.groupBy({
             by: ["projectId"],
             where: { projectId: { in: projectIds } },
-            _sum: { promptTokens: true, outputTokens: true, cacheHitTokens: true }
+            _sum: { promptTokens: true, outputTokens: true, cacheHitTokens: true, cacheWriteTokens: true }
           })
         : Promise.resolve([]),
       loadProjectCostSummaries(projectIds)
@@ -311,7 +311,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     const [tokenLogs, cost] = await Promise.all([
       prisma.providerCallLog.aggregate({
         where: { projectId: id },
-        _sum: { promptTokens: true, outputTokens: true, cacheHitTokens: true }
+        _sum: { promptTokens: true, outputTokens: true, cacheHitTokens: true, cacheWriteTokens: true }
       }),
       loadProjectCostSummary(id)
     ]);

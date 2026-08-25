@@ -43,7 +43,6 @@ export function ConsoleScreen(props: { auth: ReturnType<typeof useAuth> }) {
     selectedId: data.selectedId,
     selectedDetails: data.selectedDetails,
     draft: projectDraft.draft,
-    textModelOptions: projectDraft.textModelOptions,
     setSelectedId: data.setSelectedId,
     setError: data.setError,
     refreshAll: data.refreshAll,
@@ -113,11 +112,9 @@ export function ConsoleScreen(props: { auth: ReturnType<typeof useAuth> }) {
         setDraft={projectDraft.setDraft}
         projects={data.projects}
         selectedId={data.selectedId}
-        textModelOptions={projectDraft.textModelOptions}
         imageModelOptions={projectDraft.imageModelOptions}
         strategyOptions={projectDraft.strategyOptions}
         selectedStrategy={projectDraft.selectedStrategy}
-        selectedTextModel={projectDraft.selectedTextModel}
         selectedImageModel={projectDraft.selectedImageModel}
         showImageModelControls={projectDraft.showImageModelControls}
         createProjectBusy={createProjectBusy}

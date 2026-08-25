@@ -3,10 +3,7 @@ import type {
   ImageModelSelection,
   Project,
   ProjectInputSnapshot,
-  RuntimeInfo,
-  TextModelSelection,
-  TextModelThinkingEffort,
-  TextModelThinkingEffortOption
+  RuntimeInfo
 } from "../../api.js";
 import { firstString, formatUsd } from "../shared/formatters.js";
 
@@ -43,7 +40,6 @@ export type DraftProject = {
   subcategory: string;
   customSubcategory: string;
   generationStrategy: string;
-  textModel: TextModelSelection;
   imageModel: ImageModelSelection;
   coverTemplate: CoverTemplateId;
   audienceAgeRange: AudienceAgeRange;
@@ -59,20 +55,12 @@ export type DraftProject = {
 };
 
 export type GenerationStrategyOption = RuntimeInfo["generationStrategies"][number];
-export type TextModelOption = RuntimeInfo["textModelOptions"][number];
 export type ImageModelOption = RuntimeInfo["imageModelOptions"][number];
 
 export const CUSTOM_SUBCATEGORY_VALUE = "__custom";
 export const DEFAULT_GENERATION_STRATEGY_ID = "auto";
 export const DEFAULT_TONE_PROFILE: ToneProfile = "neutral";
-export const DEFAULT_TEXT_MODEL: TextModelSelection = { provider: "deepseek", model: "deepseek-v4-pro" };
-export const DEFAULT_FAST_TEXT_MODEL: TextModelSelection = { provider: "deepseek", model: "deepseek-v4-flash" };
 export const DEFAULT_IMAGE_MODEL: ImageModelSelection = { provider: "gemini", model: "gemini-2.5-flash-image" };
-export const DEFAULT_TEXT_MODEL_THINKING_EFFORT_OPTIONS: TextModelThinkingEffortOption[] = [
-  { value: "none", label: "Off", default: true },
-  { value: "high", label: "High" },
-  { value: "max", label: "Max" }
-];
 
 export const CATEGORY_OPTIONS: Array<{ value: ProjectCategory; label: string }> = [
   { value: "KIDS", label: "Kids' books" },
@@ -273,20 +261,6 @@ export const DEFAULT_GENERATION_STRATEGIES: GenerationStrategyOption[] = [
   }
 ];
 
-export const DEFAULT_TEXT_MODEL_OPTIONS: TextModelOption[] = [
-  {
-    ...DEFAULT_TEXT_MODEL,
-    label: `DeepSeek (${DEFAULT_TEXT_MODEL.model})`,
-    thinking: true,
-    thinkingEfforts: DEFAULT_TEXT_MODEL_THINKING_EFFORT_OPTIONS
-  },
-  {
-    ...DEFAULT_FAST_TEXT_MODEL,
-    label: `DeepSeek Fast (${DEFAULT_FAST_TEXT_MODEL.model})`,
-    thinking: true,
-    thinkingEfforts: DEFAULT_TEXT_MODEL_THINKING_EFFORT_OPTIONS
-  }
-];
 export const DEFAULT_IMAGE_MODEL_OPTIONS: ImageModelOption[] = [
   {
     provider: DEFAULT_IMAGE_MODEL.provider,
@@ -321,7 +295,6 @@ export const initialDraft: DraftProject = {
   subcategory: "",
   customSubcategory: "",
   generationStrategy: DEFAULT_GENERATION_STRATEGY_ID,
-  textModel: DEFAULT_TEXT_MODEL,
   imageModel: DEFAULT_IMAGE_MODEL,
   coverTemplate: "auto",
   audienceAgeRange: "4-6",
@@ -335,10 +308,9 @@ export const initialDraft: DraftProject = {
   draftCandidates: 1
 };
 
-export function projectInputFromDraft(draft: DraftProject, textModelOptions: TextModelOption[]) {
+export function projectInputFromDraft(draft: DraftProject) {
   const selectedSubcategory =
     draft.subcategory === CUSTOM_SUBCATEGORY_VALUE ? draft.customSubcategory.trim() : draft.subcategory.trim();
-  const textModel = resolveTextModelOption(textModelOptions, draft.textModel);
 
   return {
     title: draft.title.trim() || undefined,
@@ -360,7 +332,6 @@ export function projectInputFromDraft(draft: DraftProject, textModelOptions: Tex
       imageModel: imageModelSelectionFromOption(draft.imageModel),
       finalReview: draft.finalReview,
       generationStrategy: draft.generationStrategy,
-      textModel: textModelSelectionFromOption(textModel, draft.textModel),
       ...(draft.category === "KIDS" ? { audienceAgeRange: draft.audienceAgeRange } : {}),
       toneProfile: draft.toneProfile,
       ...(draft.draftCandidates > 1 ? { draftCandidates: draft.draftCandidates } : {})
@@ -387,7 +358,6 @@ export function draftFromSavedInputs(project: Project): DraftProject {
     subcategory: subcategory.subcategory,
     customSubcategory: subcategory.customSubcategory,
     generationStrategy: firstString(mediaSettings.generationStrategy, DEFAULT_GENERATION_STRATEGY_ID),
-    textModel: textModelSelectionFromValue(mediaSettings.textModel),
     imageModel: imageModelSelectionFromValue(mediaSettings.imageModel),
     coverTemplate: coverTemplateFromValue(firstString(mediaSettings.coverTemplate, initialDraft.coverTemplate)),
     targetPages: clampInt(
@@ -483,40 +453,6 @@ export function toneProfileFromValue(value: string): ToneProfile {
     : DEFAULT_TONE_PROFILE;
 }
 
-export function textModelSelectionFromValue(value: unknown): TextModelSelection {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return DEFAULT_TEXT_MODEL;
-  }
-  const record = value as Record<string, unknown>;
-  const provider = record.provider;
-  const model = record.model;
-  if (isTextModelProvider(provider) && typeof model === "string" && model.trim()) {
-    const thinkingBudget = record.thinkingBudget;
-    const thinkingEnabled = record.thinkingEnabled;
-    const thinkingEffort = textModelThinkingEffortFromValue(record.thinkingEffort);
-    return {
-      provider,
-      model: model.trim(),
-      ...(typeof thinkingBudget === "number" && Number.isFinite(thinkingBudget)
-        ? { thinkingBudget: Math.trunc(thinkingBudget) }
-        : {}),
-      ...(typeof thinkingEnabled === "boolean" ? { thinkingEnabled } : {}),
-      ...(thinkingEffort ? { thinkingEffort } : {})
-    };
-  }
-  return DEFAULT_TEXT_MODEL;
-}
-
-function isTextModelProvider(provider: unknown): provider is TextModelSelection["provider"] {
-  return (
-    provider === "deepseek" ||
-    provider === "deepinfra" ||
-    provider === "gemini" ||
-    provider === "alibaba" ||
-    provider === "openai-compatible"
-  );
-}
-
 export function imageModelSelectionFromValue(value: unknown): ImageModelSelection {
   if (typeof value === "string" && value.trim()) {
     return { provider: "gemini", model: value.trim().replace(/^models\//, "") };
@@ -533,76 +469,11 @@ export function imageModelSelectionFromValue(value: unknown): ImageModelSelectio
   return DEFAULT_IMAGE_MODEL;
 }
 
-export function textModelSelectionFromOption(
-  option: TextModelSelection | TextModelOption,
-  selection?: TextModelSelection
-): TextModelSelection {
-  const baseSelection: TextModelSelection = {
-    provider: option.provider,
-    model: option.model,
-    ...(typeof option.thinkingBudget === "number" ? { thinkingBudget: option.thinkingBudget } : {}),
-    ...(typeof option.thinkingEnabled === "boolean" ? { thinkingEnabled: option.thinkingEnabled } : {}),
-    ...(option.thinkingEffort ? { thinkingEffort: option.thinkingEffort } : {})
-  };
-  return textModelSupportsEffort(option)
-    ? textModelSelectionWithEffort(baseSelection, textModelThinkingEffortValue(selection ?? option, option))
-    : baseSelection;
-}
-
-export function textModelSupportsEffort(
-  option: TextModelSelection | TextModelOption
-): option is TextModelOption & { thinkingEfforts: TextModelThinkingEffortOption[] } {
-  const efforts = (option as { thinkingEfforts?: unknown }).thinkingEfforts;
-  return Array.isArray(efforts) && efforts.length > 0;
-}
-
-export function textModelThinkingEffortValue(
-  selection: TextModelSelection,
-  option: TextModelOption
-): TextModelThinkingEffort {
-  const efforts = textModelSupportsEffort(option) ? option.thinkingEfforts : [];
-  const noneEffort = efforts.find((effort) => effort.value === "none")?.value;
-  const selectedEffort = textModelThinkingEffortFromValue(selection.thinkingEffort);
-  if (selectedEffort && efforts.some((effort) => effort.value === selectedEffort)) {
-    return selectedEffort;
-  }
-  if (selection.thinkingEnabled === true) {
-    return enabledDefaultThinkingEffort(efforts) ?? noneEffort ?? efforts[0]?.value ?? "none";
-  }
-  if (selection.thinkingEnabled === false) {
-    return noneEffort ?? efforts[0]?.value ?? "none";
-  }
-  return defaultThinkingEffort(efforts) ?? noneEffort ?? efforts[0]?.value ?? "none";
-}
-
-export function textModelSelectionWithEffort(
-  selection: TextModelSelection,
-  effort: TextModelThinkingEffort
-): TextModelSelection {
-  return {
-    provider: selection.provider,
-    model: selection.model,
-    ...(typeof selection.thinkingBudget === "number" ? { thinkingBudget: selection.thinkingBudget } : {}),
-    thinkingEnabled: effort !== "none",
-    thinkingEffort: effort
-  };
-}
-
 export function imageModelSelectionFromOption(option: ImageModelSelection): ImageModelSelection {
   return {
     provider: option.provider,
     model: option.model
   };
-}
-
-export function textModelSelectionFromKey(key: string, options: TextModelOption[]): TextModelSelection {
-  const option =
-    options.find((candidate) => textModelKey(candidate) === key) ?? options[0] ?? DEFAULT_TEXT_MODEL_OPTIONS[0]!;
-  return textModelSelectionFromOption(option);
-}
-
-export function resolveTextModelOption(options: TextModelOption[], selection: TextModelSelection): TextModelOption {
-  return options.find((option) => sameTextModel(option, selection)) ?? options[0] ?? DEFAULT_TEXT_MODEL_OPTIONS[0]!;
 }
 
 export function imageModelSelectionFromKey(key: string, options: ImageModelOption[]): ImageModelSelection {
@@ -619,30 +490,8 @@ export function imageModelLabel(option: ImageModelOption): string {
   return option.costUsd === undefined ? option.label : `${option.label} — ${formatUsd(option.costUsd)}/image`;
 }
 
-export function textModelLabel(option: TextModelOption): string {
-  return option.thinking && !textModelSupportsEffort(option) ? `${option.label} (Thinking)` : option.label;
-}
-
-export function sameTextModel(first: TextModelSelection, second: TextModelSelection): boolean {
-  const sameBase =
-    first.provider === second.provider &&
-    first.model === second.model &&
-    first.thinkingBudget === second.thinkingBudget;
-  if (!sameBase) {
-    return false;
-  }
-  if (textModelSupportsEffort(first) || textModelSupportsEffort(second)) {
-    return true;
-  }
-  return first.thinkingEnabled === second.thinkingEnabled && first.thinkingEffort === second.thinkingEffort;
-}
-
 export function sameImageModel(first: ImageModelSelection, second: ImageModelSelection): boolean {
   return first.provider === second.provider && first.model === second.model;
-}
-
-export function textModelKey(selection: TextModelSelection): string {
-  return `${selection.provider}:${selection.model}:${selection.thinkingBudget ?? "default"}`;
 }
 
 export function imageModelKey(selection: ImageModelSelection): string {
@@ -710,25 +559,4 @@ function clampInt(value: number, min: number, max: number): number {
 
 function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
-}
-
-function textModelThinkingEffortFromValue(value: unknown): TextModelThinkingEffort | undefined {
-  return value === "none" ||
-    value === "minimal" ||
-    value === "low" ||
-    value === "medium" ||
-    value === "high" ||
-    value === "max"
-    ? value
-    : undefined;
-}
-
-function defaultThinkingEffort(efforts: TextModelThinkingEffortOption[]): TextModelThinkingEffort | undefined {
-  return efforts.find((effort) => effort.default)?.value;
-}
-
-function enabledDefaultThinkingEffort(efforts: TextModelThinkingEffortOption[]): TextModelThinkingEffort | undefined {
-  return efforts.find((effort) => effort.value !== "none" && effort.default)?.value ??
-    efforts.find((effort) => effort.value === "high")?.value ??
-    efforts.find((effort) => effort.value !== "none")?.value;
 }

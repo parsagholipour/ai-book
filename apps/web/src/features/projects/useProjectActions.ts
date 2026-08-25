@@ -10,7 +10,7 @@ import {
   projectStopActionKey,
   voiceCharacterActionKey
 } from "./actionKeys.js";
-import { projectInputFromDraft, type DraftProject, type TextModelOption } from "./draft.js";
+import { projectInputFromDraft, type DraftProject } from "./draft.js";
 
 type RunBusyAction = (key: string, action: () => Promise<void>) => Promise<void>;
 
@@ -18,7 +18,6 @@ export function useProjectActions(args: {
   selectedId: string | null;
   selectedDetails: ProjectDetails | null;
   draft: DraftProject;
-  textModelOptions: TextModelOption[];
   setSelectedId: (projectId: string | null) => void;
   setError: (error: string | null) => void;
   refreshAll: () => Promise<void>;
@@ -30,7 +29,7 @@ export function useProjectActions(args: {
     await args.runBusyAction(CREATE_PROJECT_ACTION_KEY, async () => {
       args.setError(null);
       try {
-        const project = await apiPost<Project>("/api/projects", projectInputFromDraft(args.draft, args.textModelOptions));
+        const project = await apiPost<Project>("/api/projects", projectInputFromDraft(args.draft));
         await apiPost(`/api/projects/${project.id}/plan`);
         await args.refreshAll();
         args.setSelectedId(project.id);
@@ -45,7 +44,7 @@ export function useProjectActions(args: {
     if (!projectId) return;
     await args.runBusyAction(projectPlanActionKey(projectId), async () => {
       try {
-        await apiPost(`/api/projects/${projectId}/plan`, projectInputFromDraft(args.draft, args.textModelOptions));
+        await apiPost(`/api/projects/${projectId}/plan`, projectInputFromDraft(args.draft));
         await args.refreshProject(projectId);
       } catch (planError) {
         args.setError(readError(planError));

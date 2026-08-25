@@ -34,6 +34,12 @@ const BASE_ALIBABA_TEXT_MODEL_OPTIONS: AlibabaTextModelOption[] = [
   },
   {
     provider: "alibaba",
+    model: "qwen3.8-max",
+    label: "Qwen 3.8 Max",
+    thinking: true
+  },
+  {
+    provider: "alibaba",
     model: "qwen3-max",
     label: "Qwen 3 Max",
     thinking: true

@@ -334,6 +334,7 @@ function accumulateUsage(total: Usage, next: Usage | undefined): void {
   total.promptTokens = addTokens(total.promptTokens, next.promptTokens);
   total.outputTokens = addTokens(total.outputTokens, next.outputTokens);
   total.cacheHitTokens = addTokens(total.cacheHitTokens, next.cacheHitTokens);
+  total.cacheWriteTokens = addTokens(total.cacheWriteTokens, next.cacheWriteTokens);
 }
 
 function addTokens(current: number | undefined, extra: number | undefined): number | undefined {

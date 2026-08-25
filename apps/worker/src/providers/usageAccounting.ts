@@ -28,9 +28,10 @@ export async function recordProviderUsage(options: {
   const exactPromptTokens = finiteTokenCount(options.usage?.promptTokens);
   const exactOutputTokens = finiteTokenCount(options.usage?.outputTokens);
   const cacheHitTokens = finiteTokenCount(options.usage?.cacheHitTokens);
+  const cacheWriteTokens = finiteTokenCount(options.usage?.cacheWriteTokens);
   const promptTokens = exactPromptTokens ?? finiteTokenCount(options.fallbackPromptTokens ?? undefined);
   const outputTokens = exactOutputTokens ?? finiteTokenCount(options.fallbackOutputTokens ?? undefined);
-  if (promptTokens === null && outputTokens === null && cacheHitTokens === null) {
+  if (promptTokens === null && outputTokens === null && cacheHitTokens === null && cacheWriteTokens === null) {
     if (options.liveUsageId) {
       await markLiveTextUsageFailed(options.liveUsageId, { durationMs: options.durationMs });
     }
@@ -46,7 +47,8 @@ export async function recordProviderUsage(options: {
         model: options.model,
         promptTokens,
         outputTokens,
-        cacheHitTokens
+        cacheHitTokens,
+        cacheWriteTokens
       });
   const metadata = {
     operation: options.operation,
@@ -67,6 +69,7 @@ export async function recordProviderUsage(options: {
       promptTokens,
       outputTokens,
       cacheHitTokens,
+      cacheWriteTokens,
       costHint,
       durationMs: options.durationMs,
       metadata
@@ -137,6 +140,7 @@ export async function beginLiveTextUsage(options: {
         promptTokens,
         outputTokens: 0,
         cacheHitTokens: null,
+        cacheWriteTokens: null,
         costHint: null,
         durationMs: null,
         metadata: {
@@ -266,7 +270,12 @@ export function isUsage(value: unknown): value is Usage {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return false;
   }
-  return "promptTokens" in value || "outputTokens" in value || "cacheHitTokens" in value;
+  return (
+    "promptTokens" in value ||
+    "outputTokens" in value ||
+    "cacheHitTokens" in value ||
+    "cacheWriteTokens" in value
+  );
 }
 
 export async function recordProviderImageCost(options: {
@@ -295,6 +304,7 @@ export async function recordProviderImageCost(options: {
         promptTokens: null,
         outputTokens: null,
         cacheHitTokens: null,
+        cacheWriteTokens: null,
         costHint: options.costHint,
         durationMs: options.durationMs,
         metadata: jsonInputValue({
@@ -343,6 +353,7 @@ export async function recordProviderAudioCost(options: {
         promptTokens: null,
         outputTokens: null,
         cacheHitTokens: null,
+        cacheWriteTokens: null,
         costHint: options.costHint,
         durationMs: options.durationMs,
         metadata: jsonInputValue({

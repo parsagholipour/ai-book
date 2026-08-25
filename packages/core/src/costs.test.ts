@@ -10,16 +10,71 @@ describe("provider cost calculation", () => {
   it("accounts for OpenAI narration at $0.00025 per audio second", () => {
     expect(estimateSpeechCostUsd({ provider: "openai_tts", audioMs: 60_000 })).toBe(0.015);
   });
-  it("calculates DeepSeek text cost with cache-hit pricing", () => {
-    const cost = calculateTextGenerationCost({
-      provider: "deepseek",
-      model: "deepseek-v4-pro",
+
+  it("calculates DeepSeek V4 text cost at official peak and off-peak rates", () => {
+    const tokens = {
+      provider: "deepseek" as const,
       promptTokens: 1_000_000,
       cacheHitTokens: 100_000,
       outputTokens: 500_000
-    });
+    };
+    const weekdayOffPeak = "2026-08-24T12:00:00.000Z";
+    const weekdayPeak = "2026-08-24T07:00:00.000Z";
+    const weekendDuringPeakHours = "2026-08-22T07:00:00.000Z";
 
-    expect(cost).toBe(0.826863);
+    expect(
+      calculateTextGenerationCost({ ...tokens, model: "deepseek-v4-pro", billedAt: weekdayOffPeak })
+    ).toBe(1.5862);
+    expect(
+      calculateTextGenerationCost({ ...tokens, model: "deepseek-v4-pro", billedAt: weekdayPeak })
+    ).toBe(3.1724);
+    expect(
+      calculateTextGenerationCost({ ...tokens, model: "deepseek-v4-flash", billedAt: weekdayOffPeak })
+    ).toBe(0.5287);
+    expect(
+      calculateTextGenerationCost({ ...tokens, model: "deepseek-v4-flash", billedAt: weekdayPeak })
+    ).toBe(1.0574);
+    expect(
+      calculateTextGenerationCost({
+        ...tokens,
+        model: "deepseek-v4-pro",
+        billedAt: weekendDuringPeakHours
+      })
+    ).toBe(1.5862);
+  });
+
+  it("treats DeepSeek peak windows as [01:00, 04:00) and [06:00, 10:00) UTC on weekdays", () => {
+    const flashMiss = {
+      provider: "deepseek" as const,
+      model: "deepseek-v4-flash",
+      promptTokens: 1_000_000,
+      outputTokens: 0
+    };
+
+    expect(calculateTextGenerationCost({ ...flashMiss, billedAt: "2026-08-24T00:59:59.000Z" })).toBe(0.22);
+    expect(calculateTextGenerationCost({ ...flashMiss, billedAt: "2026-08-24T01:00:00.000Z" })).toBe(0.44);
+    expect(calculateTextGenerationCost({ ...flashMiss, billedAt: "2026-08-24T03:59:59.000Z" })).toBe(0.44);
+    expect(calculateTextGenerationCost({ ...flashMiss, billedAt: "2026-08-24T04:00:00.000Z" })).toBe(0.22);
+    expect(calculateTextGenerationCost({ ...flashMiss, billedAt: "2026-08-24T05:59:59.000Z" })).toBe(0.22);
+    expect(calculateTextGenerationCost({ ...flashMiss, billedAt: "2026-08-24T06:00:00.000Z" })).toBe(0.44);
+    expect(calculateTextGenerationCost({ ...flashMiss, billedAt: "2026-08-24T09:59:59.000Z" })).toBe(0.44);
+    expect(calculateTextGenerationCost({ ...flashMiss, billedAt: "2026-08-24T10:00:00.000Z" })).toBe(0.22);
+  });
+
+  it("replays unhinted DeepSeek logs against the call's createdAt peak window", () => {
+    const summary = calculateProjectCostSummary([
+      {
+        provider: "deepseek",
+        model: "deepseek-v4-pro",
+        promptTokens: 1_000_000,
+        outputTokens: 0,
+        costHint: null,
+        createdAt: "2026-08-24T07:00:00.000Z",
+        metadata: { operation: "text.generateText" }
+      }
+    ]);
+
+    expect(summary.textUsd).toBe(1.32);
   });
 
   it("calculates DeepInfra DeepSeek text cost with cache-hit pricing", () => {
@@ -61,6 +116,34 @@ describe("provider cost calculation", () => {
     expect(legacyAliasCost).toBe(0.175);
   });
 
+  it("calculates GPT-5.6 family text cost across short and long context", () => {
+    const sol = calculateTextGenerationCost({
+      provider: "openai",
+      model: "gpt-5.6-sol",
+      promptTokens: 200_000,
+      cacheHitTokens: 20_000,
+      cacheWriteTokens: 40_000,
+      outputTokens: 10_000
+    });
+    const terraLong = calculateTextGenerationCost({
+      provider: "openai",
+      model: "gpt-5.6-terra",
+      promptTokens: 272_001,
+      outputTokens: 10_000
+    });
+    const luna = calculateTextGenerationCost({
+      provider: "openai",
+      model: "gpt-5.6-luna",
+      promptTokens: 100_000,
+      cacheHitTokens: 10_000,
+      outputTokens: 10_000
+    });
+
+    expect(sol).toBe(0.968);
+    expect(terraLong).toBe(1.268004);
+    expect(luna).toBe(0.0302);
+  });
+
   it("uses selected Gemini text model pricing tiers", () => {
     const shortPromptCost = calculateTextGenerationCost({
       provider: "gemini",
@@ -78,6 +161,18 @@ describe("provider cost calculation", () => {
 
     expect(shortPromptCost).toBe(0.3275);
     expect(longPromptCost).toBe(0.650003);
+  });
+
+  it("calculates Gemini 3.7 Flash text cost", () => {
+    const cost = calculateTextGenerationCost({
+      provider: "gemini",
+      model: "gemini-3.7-flash",
+      promptTokens: 100_000,
+      cacheHitTokens: 20_000,
+      outputTokens: 10_000
+    });
+
+    expect(cost).toBe(0.099);
   });
 
   it("calculates Gemini 3 Flash preview text cost", () => {
@@ -105,9 +200,17 @@ describe("provider cost calculation", () => {
       promptTokens: 300_000,
       outputTokens: 20_000
     });
+    const qwen38MaxCost = calculateTextGenerationCost({
+      provider: "alibaba",
+      model: "qwen3.8-max",
+      promptTokens: 100_000,
+      cacheHitTokens: 20_000,
+      outputTokens: 10_000
+    });
 
     expect(plusCost).toBe(0.1);
     expect(qwen35Cost).toBe(0.21);
+    expect(qwen38MaxCost).toBe(0.225);
   });
 
   it("prices supported Gemini image models from asset metadata", () => {

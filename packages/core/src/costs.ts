@@ -5,7 +5,11 @@ export type ProviderCostLog = {
   promptTokens?: number | null;
   outputTokens?: number | null;
   cacheHitTokens?: number | null;
+  cacheWriteTokens?: number | null;
   costHint?: number | null;
+  /** When the call was billed; DeepSeek peak hours are UTC weekdays. */
+  billedAt?: Date | string | number | null;
+  createdAt?: Date | string | number | null;
   metadata?: unknown;
 };
 
@@ -28,6 +32,7 @@ type TextRate = {
   inputPerMillion: number;
   outputPerMillion: number;
   cacheHitPerMillion?: number;
+  cacheWritePerMillion?: number;
 };
 
 type TieredTextRate = {
@@ -41,6 +46,14 @@ const COST_PRECISION = 1_000_000;
 const DEFAULT_IMAGE_SIZE_TIER = "1k";
 
 const GEMINI_TEXT_RATES = new Map<string, TextRate | TieredTextRate>([
+  [
+    "gemini-3.7-flash",
+    {
+      inputPerMillion: 0.75,
+      outputPerMillion: 3.75,
+      cacheHitPerMillion: 0.075
+    }
+  ],
   [
     "gemini-3.5-flash",
     {
@@ -115,7 +128,57 @@ const GEMINI_TEXT_RATES = new Map<string, TextRate | TieredTextRate>([
   ]
 ]);
 
+const OPENAI_TEXT_RATES = new Map<string, TieredTextRate>([
+  [
+    "gpt-5.6-sol",
+    {
+      thresholdPromptTokens: 272_000,
+      belowOrEqual: {
+        inputPerMillion: 4,
+        outputPerMillion: 20,
+        cacheHitPerMillion: 0.4,
+        cacheWritePerMillion: 5
+      },
+      above: { inputPerMillion: 8, outputPerMillion: 30, cacheHitPerMillion: 0.8, cacheWritePerMillion: 10 }
+    }
+  ],
+  [
+    "gpt-5.6-terra",
+    {
+      thresholdPromptTokens: 272_000,
+      belowOrEqual: {
+        inputPerMillion: 2,
+        outputPerMillion: 12,
+        cacheHitPerMillion: 0.2,
+        cacheWritePerMillion: 2.5
+      },
+      above: { inputPerMillion: 4, outputPerMillion: 18, cacheHitPerMillion: 0.4, cacheWritePerMillion: 5 }
+    }
+  ],
+  [
+    "gpt-5.6-luna",
+    {
+      thresholdPromptTokens: 272_000,
+      belowOrEqual: {
+        inputPerMillion: 0.2,
+        outputPerMillion: 1.2,
+        cacheHitPerMillion: 0.02,
+        cacheWritePerMillion: 0.25
+      },
+      above: { inputPerMillion: 0.4, outputPerMillion: 1.8, cacheHitPerMillion: 0.04, cacheWritePerMillion: 0.5 }
+    }
+  ]
+]);
+
 const ALIBABA_TEXT_RATES = new Map<string, TextRate | TieredTextRate>([
+  [
+    "qwen3.8-max",
+    {
+      inputPerMillion: 2,
+      outputPerMillion: 6,
+      cacheHitPerMillion: 0.25
+    }
+  ],
   [
     "qwen3.5-plus",
     {
@@ -279,16 +342,21 @@ const ALIBABA_TEXT_RATES = new Map<string, TextRate | TieredTextRate>([
   ]
 ]);
 
-const DEEPSEEK_V4_FLASH_RATE: TextRate = {
-  inputPerMillion: 0.14,
-  outputPerMillion: 0.28,
-  cacheHitPerMillion: 0.0028
+type PeakOffPeakRate = {
+  offPeak: TextRate;
+  peak: TextRate;
 };
 
-const DEEPSEEK_V4_PRO_RATE: TextRate = {
-  inputPerMillion: 0.435,
-  outputPerMillion: 0.87,
-  cacheHitPerMillion: 0.003625
+// Official DeepSeek V4 card as of 2026-08-16. Off-peak is half of peak.
+// Peak: 01:00–04:00 and 06:00–10:00 UTC, Monday–Friday.
+const DEEPSEEK_V4_FLASH_RATES: PeakOffPeakRate = {
+  offPeak: { inputPerMillion: 0.22, outputPerMillion: 0.66, cacheHitPerMillion: 0.007 },
+  peak: { inputPerMillion: 0.44, outputPerMillion: 1.32, cacheHitPerMillion: 0.014 }
+};
+
+const DEEPSEEK_V4_PRO_RATES: PeakOffPeakRate = {
+  offPeak: { inputPerMillion: 0.66, outputPerMillion: 1.98, cacheHitPerMillion: 0.022 },
+  peak: { inputPerMillion: 1.32, outputPerMillion: 3.96, cacheHitPerMillion: 0.044 }
 };
 
 const DEEPINFRA_V4_FLASH_RATE: TextRate = {
@@ -372,7 +440,7 @@ export function calculateTextGenerationCost(log: ProviderCostLog): number | null
 
   const provider = normalizeProvider(log.provider);
   const model = normalizeModel(log.model);
-  const rate = resolveTextRate(provider, model, finiteTokenCount(log.promptTokens));
+  const rate = resolveTextRate(provider, model, finiteTokenCount(log.promptTokens), resolveBilledAt(log));
   if (!rate) {
     return null;
   }
@@ -380,10 +448,15 @@ export function calculateTextGenerationCost(log: ProviderCostLog): number | null
   const promptTokens = finiteTokenCount(log.promptTokens) ?? 0;
   const outputTokens = finiteTokenCount(log.outputTokens) ?? 0;
   const cacheHitTokens = Math.min(finiteTokenCount(log.cacheHitTokens) ?? 0, promptTokens);
-  const cacheMissTokens = Math.max(0, promptTokens - cacheHitTokens);
+  const cacheWriteTokens = Math.min(
+    finiteTokenCount(log.cacheWriteTokens) ?? 0,
+    Math.max(0, promptTokens - cacheHitTokens)
+  );
+  const ordinaryInputTokens = Math.max(0, promptTokens - cacheHitTokens - cacheWriteTokens);
   const cost =
-    (cacheMissTokens / TOKENS_PER_MILLION) * rate.inputPerMillion +
+    (ordinaryInputTokens / TOKENS_PER_MILLION) * rate.inputPerMillion +
     (cacheHitTokens / TOKENS_PER_MILLION) * (rate.cacheHitPerMillion ?? rate.inputPerMillion) +
+    (cacheWriteTokens / TOKENS_PER_MILLION) * (rate.cacheWritePerMillion ?? rate.inputPerMillion) +
     (outputTokens / TOKENS_PER_MILLION) * rate.outputPerMillion;
 
   return roundCost(cost);
@@ -509,17 +582,19 @@ export function calculateProjectCostSummary(
   };
 }
 
-function resolveTextRate(provider: string | null, model: string | null, promptTokens: number | null): TextRate | null {
+function resolveTextRate(
+  provider: string | null,
+  model: string | null,
+  promptTokens: number | null,
+  billedAt: Date
+): TextRate | null {
   if (!provider || !model) {
     return null;
   }
 
   if (provider === "deepseek") {
-    if (
-      model === "deepseek-v4-pro" ||
-      model.startsWith("deepseek-v4-pro-")
-    ) {
-      return DEEPSEEK_V4_PRO_RATE;
+    if (model === "deepseek-v4-pro" || model.startsWith("deepseek-v4-pro-")) {
+      return pickPeakOffPeak(DEEPSEEK_V4_PRO_RATES, billedAt);
     }
     if (
       model === "deepseek-v4-flash" ||
@@ -527,7 +602,7 @@ function resolveTextRate(provider: string | null, model: string | null, promptTo
       model === "deepseek-chat" ||
       model === "deepseek-reasoner"
     ) {
-      return DEEPSEEK_V4_FLASH_RATE;
+      return pickPeakOffPeak(DEEPSEEK_V4_FLASH_RATES, billedAt);
     }
     return null;
   }
@@ -547,6 +622,10 @@ function resolveTextRate(provider: string | null, model: string | null, promptTo
 
   if (provider === "alibaba" || provider === "qwen") {
     return resolveRateForPromptTokens(ALIBABA_TEXT_RATES.get(model), promptTokens);
+  }
+
+  if (provider === "openai") {
+    return resolveRateForPromptTokens(OPENAI_TEXT_RATES.get(model), promptTokens);
   }
 
   if (provider === "openai-compatible" || provider === "local") {
@@ -571,6 +650,39 @@ function isDeepInfraV4FlashModel(model: string): boolean {
 
 function isDeepInfraMistralSmallModel(model: string): boolean {
   return model === "mistralai/mistral-small-3.2-24b-instruct-2506" || model === "mistral-small-latest";
+}
+
+function pickPeakOffPeak(rate: PeakOffPeakRate, billedAt: Date): TextRate {
+  return isDeepSeekPeakUtc(billedAt) ? rate.peak : rate.offPeak;
+}
+
+/** Peak hours: 01:00–04:00 and 06:00–10:00 UTC, Monday–Friday. */
+function isDeepSeekPeakUtc(at: Date): boolean {
+  const weekday = at.getUTCDay();
+  if (weekday === 0 || weekday === 6) {
+    return false;
+  }
+  const hour = at.getUTCHours();
+  return (hour >= 1 && hour < 4) || (hour >= 6 && hour < 10);
+}
+
+function resolveBilledAt(log: ProviderCostLog): Date {
+  return parseTimestamp(log.billedAt) ?? parseTimestamp(log.createdAt) ?? new Date();
+}
+
+function parseTimestamp(value: Date | string | number | null | undefined): Date | null {
+  if (value instanceof Date) {
+    return Number.isFinite(value.getTime()) ? value : null;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const parsed = new Date(value);
+    return Number.isFinite(parsed.getTime()) ? parsed : null;
+  }
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = new Date(value);
+    return Number.isFinite(parsed.getTime()) ? parsed : null;
+  }
+  return null;
 }
 
 function resolveRateForPromptTokens(
@@ -603,6 +715,7 @@ function isTextProviderLog(log: ProviderCostLog): boolean {
     finiteTokenCount(log.promptTokens) !== null ||
     finiteTokenCount(log.outputTokens) !== null ||
     finiteTokenCount(log.cacheHitTokens) !== null ||
+    finiteTokenCount(log.cacheWriteTokens) !== null ||
     finiteCost(log.costHint) !== null
   );
 }

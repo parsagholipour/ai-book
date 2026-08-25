@@ -18,6 +18,7 @@ describe("admin generation model routing", () => {
       DEEPINFRA_API_KEY: "deepinfra-test-key",
       GEMINI_API_KEY: "gemini-test-key",
       ALIBABA_API_KEY: "alibaba-test-key",
+      OPENAI_API_KEY: "openai-test-key",
       MOCK_AI: "false"
     });
     mockRequireOperatorActor.mockResolvedValue({ kind: "operator", userId: "local-admin" });
@@ -42,6 +43,41 @@ describe("admin generation model routing", () => {
     const create = createdSettings(0);
     expect(create.models).toMatchObject({ balanced: { writer: { thinkingEffort: "high" } } });
     expect(create.planCritic).toEqual(QUALITY_FEATURE_DEFAULTS.planCritic);
+    await app.close();
+  });
+
+  it("offers and saves every GPT-5.6 family model with OpenAI reasoning effort", async () => {
+    mockStoredRevision(null);
+    const app = Fastify({ logger: false });
+    await app.register(adminGenerationQualityRoutes);
+
+    const catalogResponse = await app.inject({ method: "GET", url: "/api/admin/generation-quality" });
+    const catalog = (catalogResponse.json() as {
+      modelOptions: Array<{ provider: string; model: string; thinkingEfforts?: Array<{ value: string }> }>;
+    }).modelOptions;
+    expect(catalog.filter((option) => option.provider === "openai").map((option) => option.model)).toEqual([
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna"
+    ]);
+    expect(catalog.find((option) => option.model === "gpt-5.6-sol")?.thinkingEfforts?.map((effort) => effort.value))
+      .toEqual(["none", "low", "medium", "high", "xhigh", "max"]);
+
+    const save = await app.inject({
+      method: "PATCH",
+      url: "/api/admin/generation-quality",
+      payload: {
+        models: {
+          premium: { writer: { provider: "openai", model: "gpt-5.6-sol", thinkingEffort: "xhigh" } }
+        }
+      }
+    });
+    expect(save.statusCode).toBe(200);
+    expect(save.json()).toMatchObject({
+      models: {
+        premium: { writer: { provider: "openai", model: "gpt-5.6-sol", thinkingEffort: "xhigh" } }
+      }
+    });
     await app.close();
   });
 
@@ -152,7 +188,7 @@ describe("admin generation model routing", () => {
   });
 });
 
-function mockStoredRevision(current: { version: number; settings?: unknown }): void {
+function mockStoredRevision(current: { version: number; settings?: unknown } | null): void {
   mockPrisma.generationQualityRevision.findFirst.mockResolvedValue(current);
   mockPrisma.generationQualityRevision.create.mockImplementation(echoCreatedRevision);
 }

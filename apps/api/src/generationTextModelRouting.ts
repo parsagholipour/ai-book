@@ -22,13 +22,13 @@ export function createLiveFastJudgmentsTextModel(config: AppConfig): TextModelAd
         return resolveGenerationTextModelRouting(row?.settings, compiled);
       } catch (error) {
         // This helper is used below route composition, where no request logger
-        // is available. Keep the fallback visible in the process log anyway.
+        // is available. Report the read failure before failing closed: using
+        // compiled defaults here would silently override the Quality tab.
         console.warn("generation text routing settings read failed", {
-          event: "generation_text_routing.settings_fallback",
-          source: "compiled-defaults",
+          event: "generation_text_routing.settings_read_failed",
           error: error instanceof Error ? { name: error.name, message: error.message } : String(error)
         });
-        return compiled;
+        throw error;
       }
     }
   });

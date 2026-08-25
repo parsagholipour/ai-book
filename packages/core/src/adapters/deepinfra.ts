@@ -21,7 +21,7 @@ export type DeepInfraAdapterOptions = {
   thinkingEffort?: ThinkingEffort | undefined;
 };
 
-type ThinkingEffort = "none" | "minimal" | "low" | "medium" | "high" | "max";
+type ThinkingEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 type DeepInfraReasoningEffort = "low" | "medium" | "high";
 
 export class DeepInfraAdapter extends OpenAIChatCompletionsTextAdapter {

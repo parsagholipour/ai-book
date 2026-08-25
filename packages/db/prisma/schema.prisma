@@ -1382,6 +1382,7 @@ model ProviderCallLog {
   promptTokens    Int?
   outputTokens    Int?
   cacheHitTokens  Int?
+  cacheWriteTokens Int?
   costHint        Float?
   durationMs      Int?
   metadata        Json

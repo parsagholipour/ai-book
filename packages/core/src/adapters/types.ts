@@ -60,6 +60,7 @@ export type Usage = {
   promptTokens?: number | undefined;
   outputTokens?: number | undefined;
   cacheHitTokens?: number | undefined;
+  cacheWriteTokens?: number | undefined;
 };
 
 export type TextResult = {

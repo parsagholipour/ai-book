@@ -8,7 +8,7 @@ import { prisma } from "@book-maker/db";
 import { config } from "../runtime/config.js";
 import type { RunLogger } from "./runLogging.js";
 
-/** Loads the latest quality-revision routing; a read failure uses compiled defaults. */
+/** Loads the latest quality revision; a read failure stops rather than changing models. */
 export function loadLiveGenerationTextRouting(logger: RunLogger): () => Promise<GenerationTextModelRouting> {
   const compiled = compiledGenerationTextModelRouting(config, generationTextModelOptions(config));
   return () =>
@@ -23,8 +23,7 @@ export function loadLiveGenerationTextRouting(logger: RunLogger): () => Promise<
       },
       log: (error) =>
         logger
-          .append("text.routing.settings_fallback", {
-            source: "compiled-defaults",
+          .append("text.routing.settings_read_failed", {
             error: error instanceof Error ? { name: error.name, message: error.message } : { message: String(error) }
           })
           .then(() => undefined)
@@ -40,6 +39,6 @@ export async function loadGenerationTextRoutingSnapshot(options: {
     return resolveGenerationTextModelRouting(await options.load(), options.compiled);
   } catch (error) {
     await options.log(error).catch(() => undefined);
-    return options.compiled;
+    throw error;
   }
 }

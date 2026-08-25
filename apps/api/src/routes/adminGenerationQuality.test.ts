@@ -64,6 +64,7 @@ describe("admin generation quality settings", () => {
     process.env.DEEPINFRA_API_KEY = "deepinfra-test-key";
     process.env.GEMINI_API_KEY = "gemini-test-key";
     process.env.ALIBABA_API_KEY = "alibaba-test-key";
+    process.env.OPENAI_API_KEY = "openai-test-key";
     process.env.MOCK_AI = "false";
     mockRequireOperatorActor.mockResolvedValue({ kind: "operator", userId: "local-admin" });
     mockPrisma.$transaction.mockImplementation(
@@ -145,7 +146,7 @@ describe("admin generation quality settings", () => {
     });
     const body = response.json() as { modelOptions: Array<{ provider: string }> };
     expect(new Set(body.modelOptions.map((option) => option.provider))).toEqual(
-      new Set(["deepseek", "deepinfra", "gemini", "alibaba"])
+      new Set(["deepseek", "deepinfra", "gemini", "alibaba", "openai"])
     );
     await app.close();
   });

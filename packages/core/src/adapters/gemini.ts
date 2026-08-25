@@ -272,7 +272,7 @@ function geminiThinkingLevel(
   thinkingEnabled: boolean | undefined,
   thinkingEffort: TextModelThinkingEffort | undefined
 ): ThinkingLevel | undefined {
-  if (!isGemini35FlashTextModel(model)) {
+  if (!usesGeminiThinkingLevel(model)) {
     return undefined;
   }
   if (thinkingEffort === "minimal" || thinkingEffort === "none") {
@@ -284,7 +284,7 @@ function geminiThinkingLevel(
   if (thinkingEffort === "medium") {
     return ThinkingLevel.MEDIUM;
   }
-  if (thinkingEffort === "high" || thinkingEffort === "max") {
+  if (thinkingEffort === "high" || thinkingEffort === "xhigh" || thinkingEffort === "max") {
     return ThinkingLevel.HIGH;
   }
   if (thinkingEnabled === false) {
@@ -296,8 +296,9 @@ function geminiThinkingLevel(
   return undefined;
 }
 
-function isGemini35FlashTextModel(model: string): boolean {
-  return model.trim().replace(/^models\//, "").toLowerCase().startsWith("gemini-3.5-flash");
+function usesGeminiThinkingLevel(model: string): boolean {
+  const normalized = model.trim().replace(/^models\//, "").toLowerCase();
+  return normalized.startsWith("gemini-3.5-flash") || normalized.startsWith("gemini-3.7-flash");
 }
 
 function geminiPromptFromMessages(messages: ChatMessage[], extraSystemLines: string[] = []) {

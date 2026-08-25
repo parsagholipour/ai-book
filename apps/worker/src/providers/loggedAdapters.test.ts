@@ -140,7 +140,7 @@ describe("imageFallbackSelection", () => {
 });
 
 describe("liveGenerationTextModel", () => {
-  it("returns the factory-provided delegate when MOCK_AI, no tier, or an explicit text model is set", () => {
+  it("returns the factory-provided delegate only outside a real project generation", () => {
     const delegate = new FakeTextModelAdapter();
     const logger = silentLogger();
     const previousMockAi = config.MOCK_AI;
@@ -151,22 +151,43 @@ describe("liveGenerationTextModel", () => {
       config.MOCK_AI = previousMockAi;
     }
     expect(liveGenerationTextModel(delegate, undefined, logger)).toBe(delegate);
-    expect(liveGenerationTextModel(delegate, tierProjectInput("fast", { provider: "deepseek", model: "deepseek-writer" }), logger)).toBe(
-      delegate
-    );
   });
 
-  it("returns the live factory adapter when a quality tier is in force", () => {
+  it("uses live Quality-tab routing for tiered, explicit-model, and legacy project inputs", () => {
     const delegate = new FakeTextModelAdapter();
     expect(liveGenerationTextModel(delegate, tierProjectInput("fast"), silentLogger())).toBeInstanceOf(
+      LiveGenerationTextModelAdapter
+    );
+    expect(
+      liveGenerationTextModel(
+        delegate,
+        tierProjectInput("fast", { provider: "deepseek", model: "deepseek-writer" }),
+        silentLogger()
+      )
+    ).toBeInstanceOf(LiveGenerationTextModelAdapter);
+    expect(liveGenerationTextModel(delegate, legacyProjectInput(), silentLogger())).toBeInstanceOf(
       LiveGenerationTextModelAdapter
     );
   });
 });
 
+function legacyProjectInput() {
+  return createProjectSchema.parse({
+    prompt: "A legacy project created before quality tiers were stored.",
+    mediaSettings: {
+      fullIllustrations: true,
+      illustrationCadence: "template-driven",
+      includeCover: true,
+      coverTemplate: "auto",
+      finalReview: true,
+      toneProfile: "neutral"
+    }
+  });
+}
+
 function tierProjectInput(
   modelTier: "fast" | "balanced" | "premium" | "ultra",
-  textModel?: { provider: "deepseek" | "deepinfra" | "gemini" | "alibaba"; model: string }
+  textModel?: { provider: "deepseek" | "deepinfra" | "gemini" | "alibaba" | "openai"; model: string }
 ) {
   return createProjectSchema.parse({
     prompt: "A practical book about choosing the right generation model for long-form writing.",

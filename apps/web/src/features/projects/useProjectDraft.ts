@@ -3,15 +3,11 @@ import type { Project, RuntimeInfo } from "../../api.js";
 import {
   DEFAULT_GENERATION_STRATEGIES,
   DEFAULT_IMAGE_MODEL_OPTIONS,
-  DEFAULT_TEXT_MODEL_OPTIONS,
   draftFromSavedInputs,
   imageModelSelectionFromOption,
   initialDraft,
   resolveImageModelOption,
-  resolveTextModelOption,
   sameImageModel,
-  sameTextModel,
-  textModelSelectionFromOption,
   type DraftProject
 } from "./draft.js";
 
@@ -19,10 +15,6 @@ export function useProjectDraft(args: { runtime: RuntimeInfo | null; selectedPro
   const [draft, setDraft] = useState<DraftProject>(initialDraft);
   const hydratedDraftSourceRef = useRef<string | null>(null);
 
-  const textModelOptions = useMemo(
-    () => (args.runtime?.textModelOptions?.length ? args.runtime.textModelOptions : DEFAULT_TEXT_MODEL_OPTIONS),
-    [args.runtime?.textModelOptions]
-  );
   const imageModelOptions = useMemo(
     () => (args.runtime?.imageModelOptions?.length ? args.runtime.imageModelOptions : DEFAULT_IMAGE_MODEL_OPTIONS),
     [args.runtime?.imageModelOptions]
@@ -51,18 +43,6 @@ export function useProjectDraft(args: { runtime: RuntimeInfo | null; selectedPro
   }, [args.selectedProject]);
 
   useEffect(() => {
-    const fallback = textModelOptions[0];
-    if (!fallback) {
-      return;
-    }
-    setDraft((current) =>
-      textModelOptions.some((option) => sameTextModel(option, current.textModel))
-        ? current
-        : { ...current, textModel: textModelSelectionFromOption(fallback) }
-    );
-  }, [textModelOptions]);
-
-  useEffect(() => {
     const fallback = imageModelOptions[0];
     if (!fallback) {
       return;
@@ -76,18 +56,15 @@ export function useProjectDraft(args: { runtime: RuntimeInfo | null; selectedPro
 
   const selectedStrategy =
     strategyOptions.find((strategy) => strategy.id === draft.generationStrategy) ?? strategyOptions[0];
-  const selectedTextModel = resolveTextModelOption(textModelOptions, draft.textModel);
   const selectedImageModel = resolveImageModelOption(imageModelOptions, draft.imageModel);
   const showImageModelControls = draft.fullIllustrations || draft.coverArtSource === "ai";
 
   return {
     draft,
     setDraft,
-    textModelOptions,
     imageModelOptions,
     strategyOptions,
     selectedStrategy,
-    selectedTextModel,
     selectedImageModel,
     showImageModelControls
   };

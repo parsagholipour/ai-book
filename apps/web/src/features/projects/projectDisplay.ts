@@ -3,24 +3,16 @@ import { formatStrategyLabel } from "./draft.js";
 import {
   DEFAULT_GENERATION_STRATEGY_ID,
   DEFAULT_IMAGE_MODEL,
-  DEFAULT_TEXT_MODEL,
   DEFAULT_TONE_PROFILE,
   TONE_PROFILE_OPTIONS,
   imageModelSelectionFromOption,
   imageModelSelectionFromValue,
   resolveGenerationStrategy,
   sameImageModel,
-  sameTextModel,
-  textModelSupportsEffort,
-  textModelLabel,
-  textModelThinkingEffortValue,
-  textModelSelectionFromOption,
   resolveCoverArtSource,
-  textModelSelectionFromValue,
   toneProfileFromValue,
   type GenerationStrategyOption,
-  type ImageModelOption,
-  type TextModelOption
+  type ImageModelOption
 } from "./draft.js";
 
 export type ProjectHoverState = {
@@ -53,29 +45,13 @@ export function projectToneLabel(project: Project): string {
 
 export function formatProjectAiModels(
   project: Project,
-  textModelOptions: TextModelOption[],
   imageModelOptions: ImageModelOption[]
 ): string {
-  const labels = [`Text ${projectTextModelLabel(project, textModelOptions)}`];
+  const labels = ["Text Quality routing"];
   if (projectUsesImageModel(project)) {
     labels.push(`Image ${projectImageModelLabel(project, imageModelOptions)}`);
   }
   return labels.join(" · ");
-}
-
-export function projectTextModelLabel(project: Project, options: TextModelOption[]): string {
-  const mediaSettings = projectSavedMediaSettings(project);
-  const selection = mediaSettings.textModel
-    ? textModelSelectionFromValue(mediaSettings.textModel)
-    : options[0]
-      ? textModelSelectionFromOption(options[0])
-      : DEFAULT_TEXT_MODEL;
-  const option = options.find((candidate) => sameTextModel(candidate, selection));
-  if (option && textModelSupportsEffort(option)) {
-    const effort = textModelThinkingEffortValue(selection, option);
-    return effort === "none" ? option.label : `${option.label} (${thinkingEffortLabel(effort)} Effort)`;
-  }
-  return option ? textModelLabel(option) : modelSelectionLabel(selection);
 }
 
 export function projectImageModelLabel(project: Project, options: ImageModelOption[]): string {
@@ -110,7 +86,10 @@ export function projectSavedMediaSettings(project: Project): NonNullable<Project
 export function modelSelectionLabel(selection: TextModelSelection | ImageModelSelection): string {
   if (
     "thinkingEffort" in selection &&
-    (selection.provider === "deepseek" || selection.provider === "deepinfra" || selection.provider === "gemini") &&
+    (selection.provider === "deepseek" ||
+      selection.provider === "deepinfra" ||
+      selection.provider === "gemini" ||
+      selection.provider === "openai") &&
     selection.thinkingEffort
   ) {
     if (selection.thinkingEffort === "none") {
@@ -132,6 +111,7 @@ export function modelSelectionLabel(selection: TextModelSelection | ImageModelSe
 }
 
 function thinkingEffortLabel(effort: NonNullable<TextModelSelection["thinkingEffort"]>): string {
+  if (effort === "xhigh") return "Extra High";
   return effort.charAt(0).toUpperCase() + effort.slice(1);
 }
 
@@ -144,6 +124,9 @@ export function modelProviderLabel(provider: TextModelSelection["provider"] | Im
   }
   if (provider === "gemini") {
     return "Gemini";
+  }
+  if (provider === "openai") {
+    return "OpenAI";
   }
   if (provider === "openai-compatible") {
     return "Local";

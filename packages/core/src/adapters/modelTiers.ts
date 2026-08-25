@@ -1,25 +1,23 @@
-import type { AppConfig } from "../config.js";
 import type {
   CreateProjectInput,
   ImageModelSelection,
-  ModelTier,
-  TextModelSelection
+  ModelTier
 } from "../schemas/book.js";
 
 /**
  * Which tier a book runs — and is priced — at.
  *
- * `mediaSettings.modelTier` and nothing else. It is the field the selections
- * below route on, it is typed and validated, and it is what `billing.ts`'s
+ * `mediaSettings.modelTier` and nothing else. It is the field live Quality-tab
+ * text routing and the image selection below route on, it is typed and
+ * validated, and it is what `billing.ts`'s
  * provider-cost table and tier price keys read — pricing off
  * `mediaSettings.mobile.qualityPreset` instead, as `billing.ts` used to, meant a
  * project that set the tier directly got premium models for free, because that
  * echo is only ever written by the app. One answer, not two that happen to
  * agree.
  *
- * No tier recorded is `balanced`, which is the honest answer rather than a
- * default: a book from before tier routing runs the legacy single model, and
- * balanced is what the unsuffixed price keys have always meant.
+ * No tier recorded is `balanced`, so projects created before tier routing join
+ * the same operator-controlled balanced route as current projects.
  *
  * It lives here rather than in `billing.ts` because a tier is not a price. Two
  * of its callers are the worker's `generation/tuning.ts` and
@@ -67,55 +65,12 @@ export const MECHANICAL_TEXT_PURPOSES: ReadonlySet<string> = new Set([
   "dedupe-page-beats"
 ]);
 
-export type ModelTierTextSelections = {
-  prose: TextModelSelection;
-  mechanical: TextModelSelection;
-};
-
-const PREMIUM_PROSE_MODEL = "gemini-2.5-pro";
-// gemini-2.5-pro cannot fully disable thinking; bound the budget so thinking
-// tokens (billed as output) stay a small fraction of prose cost.
-const PREMIUM_PROSE_THINKING_BUDGET = 2048;
 export const PREMIUM_PLAN_THINKING_BUDGET = 4096;
 export const ULTRA_PLAN_THINKING_BUDGET = 8192;
 export const ULTRA_PAGE_MAP_THINKING_BUDGET = 1024;
-const PREMIUM_MECHANICAL_MODEL = "gemini-2.5-flash";
 const PREMIUM_IMAGE_MODEL = "gemini-3.1-flash-image";
 export const PREMIUM_COVER_IMAGE_MODEL = "gemini-3-pro-image";
 export const PREMIUM_FALLBACK_IMAGE_MODEL = "qwen-image-2.0-pro";
-
-export function modelTierTextSelections(tier: ModelTier, config: AppConfig): ModelTierTextSelections {
-  if (tier === "fast") {
-    const selection: TextModelSelection = {
-      provider: "deepseek",
-      model: config.DEEPSEEK_FAST_MODEL,
-      thinkingEnabled: false
-    };
-    return { prose: selection, mechanical: selection };
-  }
-  if (tier === "premium" || tier === "ultra") {
-    return {
-      prose: {
-        provider: "gemini",
-        model: PREMIUM_PROSE_MODEL,
-        thinkingBudget: PREMIUM_PROSE_THINKING_BUDGET
-      },
-      mechanical: {
-        provider: "gemini",
-        model: PREMIUM_MECHANICAL_MODEL,
-        thinkingBudget: 0
-      }
-    };
-  }
-  return {
-    prose: { provider: "deepseek", model: config.DEEPSEEK_MODEL },
-    mechanical: {
-      provider: "deepseek",
-      model: config.DEEPSEEK_FAST_MODEL,
-      thinkingEnabled: false
-    }
-  };
-}
 
 export function modelTierImageSelection(tier: ModelTier): ImageModelSelection | undefined {
   if (tier === "premium" || tier === "ultra") {
@@ -132,15 +87,4 @@ export function planThinkingBudgetForTier(tier: ModelTier): number | undefined {
     return PREMIUM_PLAN_THINKING_BUDGET;
   }
   return undefined;
-}
-
-/**
- * DeepSeek counterpart used when a tier-selected Gemini model fails
- * persistently, so a premium book never dies mid-run on a provider outage.
- */
-export function modelTierTextFallbackSelection(primary: TextModelSelection, config: AppConfig): TextModelSelection {
-  const mechanical = primary.model === PREMIUM_MECHANICAL_MODEL;
-  return mechanical
-    ? { provider: "deepseek", model: config.DEEPSEEK_FAST_MODEL, thinkingEnabled: false }
-    : { provider: "deepseek", model: config.DEEPSEEK_MODEL };
 }

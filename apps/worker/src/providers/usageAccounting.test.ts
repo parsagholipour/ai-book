@@ -61,6 +61,54 @@ describe("recordProviderUsage", () => {
     expect(data.metadata).toMatchObject({ liveStatus: "settled", provisional: false });
   });
 
+  it("prices DeepSeek V4 at the official off-peak rate when settling outside peak hours", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-24T12:00:00.000Z"));
+    try {
+      await recordProviderUsage({
+        ...baseCall,
+        provider: "deepseek",
+        model: "deepseek-v4-pro",
+        usage: { promptTokens: 1_000_000, cacheHitTokens: 100_000, outputTokens: 500_000 }
+      });
+      expect(createdData().costHint).toBe(1.5862);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("prices DeepSeek V4 at the official peak rate during UTC weekday peak hours", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-24T07:00:00.000Z"));
+    try {
+      await recordProviderUsage({
+        ...baseCall,
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        usage: { promptTokens: 1_000_000, outputTokens: 0 }
+      });
+      expect(createdData().costHint).toBe(0.44);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("persists and prices OpenAI cache-write tokens at their write rate", async () => {
+    await recordProviderUsage({
+      ...baseCall,
+      provider: "openai",
+      model: "gpt-5.6-sol",
+      usage: {
+        promptTokens: 200_000,
+        outputTokens: 10_000,
+        cacheHitTokens: 20_000,
+        cacheWriteTokens: 40_000
+      }
+    });
+
+    expect(createdData()).toMatchObject({ cacheWriteTokens: 40_000, costHint: 0.968 });
+  });
+
   it("leaves costHint null on estimated tokens, so provisional rows never read as spend", async () => {
     await recordProviderUsage({ ...baseCall, usage: undefined, fallbackPromptTokens: 500, fallbackOutputTokens: 200 });
 
@@ -269,6 +317,7 @@ describe("pure helpers", () => {
   it("recognizes usage-shaped objects", () => {
     expect(isUsage({ promptTokens: 1 })).toBe(true);
     expect(isUsage({ cacheHitTokens: 1 })).toBe(true);
+    expect(isUsage({ cacheWriteTokens: 1 })).toBe(true);
     expect(isUsage({})).toBe(false);
     expect(isUsage([1])).toBe(false);
     expect(isUsage(null)).toBe(false);

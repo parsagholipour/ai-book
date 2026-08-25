@@ -9,7 +9,9 @@ type ProviderCostRow = {
   promptTokens: number | null;
   outputTokens: number | null;
   cacheHitTokens: number | null;
+  cacheWriteTokens: number | null;
   costHint: number | null;
+  createdAt: Date;
   metadata: unknown;
 };
 
@@ -71,7 +73,9 @@ const providerCostSelect = {
   promptTokens: true,
   outputTokens: true,
   cacheHitTokens: true,
+  cacheWriteTokens: true,
   costHint: true,
+  createdAt: true,
   metadata: true
 } as const;
 

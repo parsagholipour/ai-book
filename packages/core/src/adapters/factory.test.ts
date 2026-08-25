@@ -6,12 +6,14 @@ import { DeepInfraAdapter } from "./deepinfra.js";
 import { DeepSeekAdapter } from "./deepseek.js";
 import { FakeTextModelAdapter } from "./fake.js";
 import { GeminiTextAdapter } from "./gemini.js";
+import { OpenAITextAdapter } from "./openai.js";
 import {
   createLiveGenerationTextModel,
   createProviders,
+  createRoutedTextModel,
+  createTextModelAdapter,
   generationTextModelOptions,
   imageModelOptions,
-  isTextProviderFallbackError,
   LiveGenerationTextModelAdapter,
   resolveImageModelSelection,
   resolveTextModelSelection,
@@ -38,22 +40,22 @@ describe("text model provider selection", () => {
     ).toHaveLength(1);
   });
 
-  it("uses the selected text provider adapter", () => {
+  it("constructs every selected text provider adapter", () => {
     const config = testConfig({});
-    const deepseekInput = projectInput({ provider: "deepseek", model: "deepseek-writer" });
-    const deepInfraInput = projectInput({ provider: "deepinfra", model: "deepseek-ai/DeepSeek-V4-Pro" });
-    const geminiInput = projectInput({ provider: "gemini", model: "gemini-3.5-flash" });
-    const alibabaInput = projectInput({ provider: "alibaba", model: "qwen-plus" });
-
-    expect(resolveTextModelSelection(config, deepseekInput)).toEqual({
-      provider: "deepseek",
-      model: "deepseek-writer"
-    });
-    expect(createProviders(config, deepseekInput).text).toBeInstanceOf(DeepSeekAdapter);
-    expect(createProviders(config, deepInfraInput).text).toBeInstanceOf(DeepInfraAdapter);
-    expect(createProviders(config, geminiInput).text).toBeInstanceOf(GeminiTextAdapter);
-    expect(createProviders(config, alibabaInput).text).toBeInstanceOf(AlibabaTextAdapter);
-    expect((createProviders(config, projectInput({ provider: "deepinfra", model: "mistral-small-latest" })).text as any).model).toBe(
+    expect(createTextModelAdapter(config, { provider: "deepseek", model: "deepseek-writer" })).toBeInstanceOf(DeepSeekAdapter);
+    expect(createTextModelAdapter(config, { provider: "deepinfra", model: "deepseek-ai/DeepSeek-V4-Pro" })).toBeInstanceOf(
+      DeepInfraAdapter
+    );
+    expect(createTextModelAdapter(config, { provider: "gemini", model: "gemini-3.5-flash" })).toBeInstanceOf(
+      GeminiTextAdapter
+    );
+    expect(createTextModelAdapter(config, { provider: "alibaba", model: "qwen-plus" })).toBeInstanceOf(
+      AlibabaTextAdapter
+    );
+    expect(createTextModelAdapter(config, { provider: "openai", model: "gpt-5.6-sol" })).toBeInstanceOf(
+      OpenAITextAdapter
+    );
+    expect((createTextModelAdapter(config, { provider: "deepinfra", model: "mistral-small-latest" }) as any).model).toBe(
       "mistralai/Mistral-Small-3.2-24B-Instruct-2506"
     );
   });
@@ -119,6 +121,7 @@ describe("text model provider selection", () => {
     const options = textModelOptions(testConfig({ DEEPSEEK_MODEL: "deepseek-v4-pro" }));
     const deepseekOptions = options.filter((option) => option.provider === "deepseek");
     const deepseekFast = deepseekOptions.find((option) => option.model === "deepseek-v4-flash");
+    const gemini37Flash = options.find((option) => option.provider === "gemini" && option.model === "gemini-3.7-flash");
     const gemini35Flash = options.find((option) => option.provider === "gemini" && option.model === "gemini-3.5-flash");
 
     expect(deepseekOptions).toHaveLength(2);
@@ -146,17 +149,41 @@ describe("text model provider selection", () => {
     expect(options).toContainEqual(
       expect.objectContaining({ provider: "alibaba", model: "qwen3.5-plus", thinking: true })
     );
+    expect(options).toContainEqual(
+      expect.objectContaining({ provider: "alibaba", model: "qwen3.8-max", thinking: true })
+    );
+    expect(options.filter((option) => option.provider === "openai")).toEqual([
+      expect.objectContaining({ provider: "openai", model: "gpt-5.6-sol", label: "GPT-5.6 Sol" }),
+      expect.objectContaining({ provider: "openai", model: "gpt-5.6-terra", label: "GPT-5.6 Terra" }),
+      expect.objectContaining({ provider: "openai", model: "gpt-5.6-luna", label: "GPT-5.6 Luna" })
+    ]);
+    expect(options.find((option) => option.provider === "openai")?.thinkingEfforts).toEqual([
+      { value: "none", label: "Off" },
+      { value: "low", label: "Low" },
+      { value: "medium", label: "Medium", default: true },
+      { value: "high", label: "High" },
+      { value: "xhigh", label: "Extra high" },
+      { value: "max", label: "Max" }
+    ]);
+    const geminiFlashThinkingEfforts = [
+      { value: "minimal", label: "Minimal" },
+      { value: "low", label: "Low" },
+      { value: "medium", label: "Medium", default: true },
+      { value: "high", label: "High" }
+    ];
+    expect(gemini37Flash).toMatchObject({
+      provider: "gemini",
+      model: "gemini-3.7-flash",
+      label: "Gemini 3.7 Flash",
+      thinking: true,
+      thinkingEfforts: geminiFlashThinkingEfforts
+    });
     expect(gemini35Flash).toMatchObject({
       provider: "gemini",
       model: "gemini-3.5-flash",
       label: "Gemini 3.5 Flash",
       thinking: true,
-      thinkingEfforts: [
-        { value: "minimal", label: "Minimal" },
-        { value: "low", label: "Low" },
-        { value: "medium", label: "Medium", default: true },
-        { value: "high", label: "High" }
-      ]
+      thinkingEfforts: geminiFlashThinkingEfforts
     });
     expect(options).toContainEqual(
       expect.objectContaining({ provider: "gemini", model: "gemini-2.5-flash", thinking: true })
@@ -237,15 +264,16 @@ describe("text model provider selection", () => {
     expect(createProviders(config).text).toBeInstanceOf(DeepSeekAdapter);
   });
 
-  it("lets an explicit text model selection override the tier", () => {
-    const config = testConfig({});
-    const input = tierProjectInput("premium", { provider: "deepseek", model: "deepseek-writer" });
+  it("ignores legacy project model pins when resolving the construction delegate", () => {
+    const config = testConfig({ GEMINI_API_KEY: "" });
+    const input = tierProjectInput("premium", { provider: "gemini", model: "gemini-retired" });
 
     expect(resolveTextModelSelections(config, input)).toEqual({
-      prose: { provider: "deepseek", model: "deepseek-writer" },
-      mechanical: { provider: "deepseek", model: "deepseek-writer" }
+      prose: { provider: "deepseek", model: "deepseek-v4-pro" },
+      mechanical: { provider: "deepseek", model: "deepseek-v4-flash", thinkingEnabled: false },
+      tier: "premium"
     });
-    expect(createProviders(config, input).text).toBeInstanceOf(DeepSeekAdapter);
+    expect(() => createRoutedTextModel(config, resolveTextModelSelections(config, input))).not.toThrow();
   });
 
   it("keeps legacy inputs without a tier on the single default model", () => {
@@ -261,15 +289,6 @@ describe("text model provider selection", () => {
     const providers = createProviders(testConfig({ MOCK_AI: "true" }), tierProjectInput("premium"));
 
     expect(providers.text).toBeInstanceOf(FakeTextModelAdapter);
-  });
-
-  it("bounds tier fallback policy to transient provider failures", () => {
-    expect(isTextProviderFallbackError(Object.assign(new Error("quota exhausted"), { status: 429 }))).toBe(true);
-    expect(isTextProviderFallbackError({ message: "request failed", cause: { code: "ECONNRESET" } })).toBe(true);
-    expect(isTextProviderFallbackError(Object.assign(new Error("upstream unavailable"), { status: 503 }))).toBe(true);
-    expect(isTextProviderFallbackError(new Error("Gemini JSON validation failed for plan-book"))).toBe(false);
-    expect(isTextProviderFallbackError(Object.assign(new Error("bad request"), { status: 400 }))).toBe(false);
-    expect(isTextProviderFallbackError(Object.assign(new Error("aborted"), { status: 503 }))).toBe(false);
   });
 
   it("uses selected image model and exposes configured image options", () => {
@@ -323,13 +342,14 @@ function testConfig(overrides: NodeJS.ProcessEnv) {
     DEEPINFRA_API_KEY: "deepinfra-key",
     GEMINI_API_KEY: "gemini-key",
     ALIBABA_API_KEY: "alibaba-key",
+    OPENAI_API_KEY: "openai-key",
     MOCK_AI: "false",
     ...overrides
   });
 }
 
 function projectInput(
-  textModel: { provider: "deepseek" | "deepinfra" | "gemini" | "alibaba"; model: string },
+  textModel: { provider: "deepseek" | "deepinfra" | "gemini" | "alibaba" | "openai"; model: string },
   imageModel?: { provider: "gemini" | "alibaba"; model: string }
 ) {
   return createProjectSchema.parse({
@@ -350,7 +370,7 @@ function projectInput(
 
 function tierProjectInput(
   modelTier: "fast" | "balanced" | "premium" | "ultra",
-  textModel?: { provider: "deepseek" | "deepinfra" | "gemini" | "alibaba"; model: string }
+  textModel?: { provider: "deepseek" | "deepinfra" | "gemini" | "alibaba" | "openai"; model: string }
 ) {
   return createProjectSchema.parse({
     prompt: "A practical book about choosing the right generation model for long-form writing.",

@@ -19,7 +19,7 @@ export type DeepSeekAdapterOptions = {
   thinkingEffort?: ThinkingEffort | undefined;
 };
 
-type ThinkingEffort = "none" | "minimal" | "low" | "medium" | "high" | "max";
+type ThinkingEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 type DeepSeekReasoningEffort = "high" | "max";
 
 export class DeepSeekAdapter extends OpenAIChatCompletionsTextAdapter {

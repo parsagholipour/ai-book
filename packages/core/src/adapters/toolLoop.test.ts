@@ -32,7 +32,7 @@ function scriptedModel(turns: ScriptedTurn[]): TextModelAdapter & { calls: Gener
           name: call.name,
           arguments: call.arguments
         })),
-        usage: { promptTokens: 10, outputTokens: 5 }
+        usage: { promptTokens: 10, outputTokens: 5, cacheHitTokens: 2, cacheWriteTokens: 3 }
       };
     },
     generateText: () => Promise.reject(new Error("not used")),
@@ -78,7 +78,12 @@ describe("runToolLoop", () => {
     const roles = model.calls[1]!.messages.map((message) => message.role);
     expect(roles).toEqual(["user", "assistant", "tool"]);
     expect(model.calls[1]!.messages[2]!.content).toContain("echoed");
-    expect(result.usage).toEqual({ promptTokens: 20, outputTokens: 10 });
+    expect(result.usage).toEqual({
+      promptTokens: 20,
+      outputTokens: 10,
+      cacheHitTokens: 4,
+      cacheWriteTokens: 6
+    });
   });
 
   it("finishes on plain text when no finish tool is configured", async () => {

@@ -40,10 +40,10 @@ including streamed JSON and tool calls; adapters with no HTTP client ignore it.
   holds with `isStopRequestedError` in `prepareEmbedding`, `writePreparedEmbedding` and
   `degradeRetrievalArm`'s `rethrowIf`. **Identity, not prose**: the older `isStopOrAbortError`
   reads message text too, which is right where a false positive only *suppresses* something — a
-  retry not taken in `isSpeechProviderFallbackError`, a fallback provider not tried in
-  `isTextProviderFallbackError`, an error that still surfaces as the failure it is — and wrong
-  here, where it would promote a recoverable failure to a fatal one. This one loop is shared by the
-  worker's writer tools and by the API's two chat loops, so a provider or HTTP client whose message
+  retry not taken or a speech fallback provider not tried, while the error still surfaces as the
+  failure it is — and wrong here, where it would promote a recoverable failure to a fatal one. This
+  one loop is shared by the worker's writer tools and by the API's two chat loops, so a provider or
+  HTTP client whose message
   merely says "request aborted" would have ended a chat turn the model could have worked around.
   Narrowing costs the worker nothing: `LoggingEmbeddingAdapter.embed` runs `assertJobNotStopped` on
   its way out, so a cancellation reaching a tool is already a `StopRequestedError` when it is

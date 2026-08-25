@@ -37,7 +37,7 @@ export function toOpenAiChatMessages(messages: ChatMessage[]): OpenAiChatMessage
           type: "function" as const,
           function: {
             name: call.name,
-            arguments: serializeToolArguments(call.arguments)
+            arguments: serializeOpenAiToolArguments(call.arguments)
           }
         }))
       };
@@ -81,7 +81,7 @@ export function toolCallsFromOpenAiMessage(message: unknown): ToolCall[] {
     calls.push({
       id: typeof call.id === "string" && call.id ? call.id : `call_${index}`,
       name,
-      arguments: parseToolArguments(call.function?.arguments)
+      arguments: parseOpenAiToolArguments(call.function?.arguments)
     });
   }
   return calls;
@@ -92,8 +92,8 @@ export function toolCallsFromOpenAiMessage(message: unknown): ToolCall[] {
  * under a marker key so the tool loop can surface a validation error the
  * model can react to, instead of crashing the turn.
  */
-function parseToolArguments(raw: unknown): unknown {
-  if (raw !== undefined && typeof raw !== "string") {
+export function parseOpenAiToolArguments(raw: unknown): unknown {
+  if (raw !== undefined && raw !== null && typeof raw !== "string") {
     return raw;
   }
   if (!raw || !raw.trim()) {
@@ -106,7 +106,7 @@ function parseToolArguments(raw: unknown): unknown {
   }
 }
 
-function serializeToolArguments(args: unknown): string {
+export function serializeOpenAiToolArguments(args: unknown): string {
   if (args && typeof args === "object" && "__unparsedArguments" in (args as Record<string, unknown>)) {
     return String((args as Record<string, unknown>).__unparsedArguments);
   }

@@ -27,6 +27,8 @@ export * from "./adapters/deepseek.js";
 export * from "./adapters/deepinfraModels.js";
 export * from "./adapters/deepinfra.js";
 export * from "./adapters/openaiCompatible.js";
+export * from "./adapters/openaiModels.js";
+export * from "./adapters/openai.js";
 export * from "./adapters/retry.js";
 export * from "./adapters/imageFallback.js";
 export * from "./adapters/modelTiers.js";

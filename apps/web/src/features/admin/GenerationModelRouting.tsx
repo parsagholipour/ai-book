@@ -49,8 +49,9 @@ export function GenerationModelRoutingSection({
         <h3>Model routing</h3>
       </div>
       <p className="muted">
-        Each successful save affects model calls started afterward. A call already running, including its retries,
-        keeps the model it started with.
+        These provider/model choices control all writer, judgment, and inline decision calls, including calls for
+        existing projects. Each successful save affects calls started afterward; in-flight retries keep the model
+        they started with, and a provider failure is reported instead of silently switching to another model.
       </p>
       <div className="quality-model-fast">
         <ModelSelectionField

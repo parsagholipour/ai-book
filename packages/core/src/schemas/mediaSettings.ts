@@ -76,10 +76,10 @@ export const subcategorySchema = z.preprocess(
   z.string().max(80).optional()
 );
 export const bookGenerationStrategySelectionSchema = z.enum(["auto", ...BOOK_GENERATION_STRATEGY_IDS]);
-export const textModelThinkingEffortSchema = z.enum(["none", "minimal", "low", "medium", "high", "max"]);
+export const textModelThinkingEffortSchema = z.enum(["none", "minimal", "low", "medium", "high", "xhigh", "max"]);
 export const modelTierSchema = z.enum(["fast", "balanced", "premium", "ultra"]);
 export const textModelSelectionSchema = z.object({
-  provider: z.enum(["deepseek", "deepinfra", "gemini", "alibaba", "openai-compatible"]),
+  provider: z.enum(["deepseek", "deepinfra", "gemini", "alibaba", "openai", "openai-compatible"]),
   model: z.string().min(1).max(120),
   thinkingBudget: z.number().int().min(-1).max(32768).optional(),
   thinkingEnabled: z.boolean().optional(),
@@ -145,9 +145,9 @@ export const mediaSettingsSchema = z.object({
   generationStrategy: bookGenerationStrategySelectionSchema.optional(),
   textModel: textModelSelectionSchema.optional(),
   /**
-   * Quality tier that routes prose vs mechanical generation phases to
-   * different models. Explicit textModel/imageModel selections take
-   * precedence; unset keeps the legacy single-model behavior.
+   * Quality tier used by the live operator-controlled text route. `textModel`
+   * is retained only so older snapshots remain readable; it does not override
+   * Quality-tab routing. Explicit imageModel selections still take precedence.
    */
   modelTier: modelTierSchema.optional(),
   audienceAgeRange: audienceAgeRangeSchema.optional(),

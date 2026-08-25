@@ -44,6 +44,7 @@ export type TokenUsage = {
   promptTokens: number;
   outputTokens: number;
   cacheHitTokens: number;
+  cacheWriteTokens: number;
   provisionalPromptTokens: number;
   provisionalOutputTokens: number;
   inFlightCalls: number;
@@ -54,6 +55,7 @@ type ProviderTokenLogRow = {
   promptTokens: number | null;
   outputTokens: number | null;
   cacheHitTokens: number | null;
+  cacheWriteTokens: number | null;
   durationMs: number | null;
   metadata: unknown;
 };
@@ -186,6 +188,7 @@ export async function buildProjectStatus(projectId: string) {
         promptTokens: true,
         outputTokens: true,
         cacheHitTokens: true,
+        cacheWriteTokens: true,
         durationMs: true,
         metadata: true
       }
@@ -314,6 +317,7 @@ export function normalizeTokenUsage(input?: Partial<Record<keyof TokenUsage, num
     promptTokens: finiteTokenValue(input?.promptTokens),
     outputTokens: finiteTokenValue(input?.outputTokens),
     cacheHitTokens: finiteTokenValue(input?.cacheHitTokens),
+    cacheWriteTokens: finiteTokenValue(input?.cacheWriteTokens),
     provisionalPromptTokens: finiteTokenValue(input?.provisionalPromptTokens),
     provisionalOutputTokens: finiteTokenValue(input?.provisionalOutputTokens),
     inFlightCalls: finiteTokenValue(input?.inFlightCalls)
@@ -340,6 +344,7 @@ function summarizeTokenLogs(rows: ProviderTokenLogRow[]): TokenUsage {
     totals.promptTokens += promptTokens;
     totals.outputTokens += outputTokens;
     totals.cacheHitTokens += finiteTokenValue(row.cacheHitTokens);
+    totals.cacheWriteTokens += finiteTokenValue(row.cacheWriteTokens);
     if (metadata.promptTokensEstimated) {
       totals.provisionalPromptTokens += promptTokens;
     }

@@ -6,6 +6,7 @@ import {
   FallbackImageAdapter,
   GeminiImageAdapter,
   isPremiumProject,
+  modelTierForInput,
   PREMIUM_COVER_IMAGE_MODEL,
   PREMIUM_FALLBACK_IMAGE_MODEL,
   RoutingTextModelAdapter,
@@ -122,18 +123,17 @@ function loggedTextModel(input?: CreateProjectInput | undefined): LoggedTextMode
   return { provider: selection.provider, model: selection.model };
 }
 
-/** Adds per-call revision routing only where tier routing is actually in force. */
+/** Makes the Quality tab authoritative for every project writer/judgment call. */
 export function liveGenerationTextModel(
   delegate: TextModelAdapter,
   input: CreateProjectInput | undefined,
   logger: RunLogger
 ): TextModelAdapter {
-  const tier = input?.mediaSettings.modelTier;
-  if (config.MOCK_AI || !tier || input.mediaSettings.textModel) {
+  if (config.MOCK_AI || !input) {
     return delegate;
   }
   return createLiveGenerationTextModel(config, {
-    tier,
+    tier: modelTierForInput(input),
     loadRouting: loadLiveGenerationTextRouting(logger)
   });
 }

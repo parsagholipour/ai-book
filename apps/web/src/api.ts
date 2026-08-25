@@ -64,6 +64,7 @@ export type TokenUsage = {
   promptTokens?: number | null;
   outputTokens?: number | null;
   cacheHitTokens?: number | null;
+  cacheWriteTokens?: number | null;
   provisionalPromptTokens?: number | null;
   provisionalOutputTokens?: number | null;
   inFlightCalls?: number | null;
@@ -121,14 +122,14 @@ export type ProjectInputSnapshot = {
 };
 
 export type TextModelSelection = {
-  provider: "deepseek" | "deepinfra" | "gemini" | "alibaba" | "openai-compatible";
+  provider: "deepseek" | "deepinfra" | "gemini" | "alibaba" | "openai" | "openai-compatible";
   model: string;
   thinkingBudget?: number;
   thinkingEnabled?: boolean;
   thinkingEffort?: TextModelThinkingEffort;
 };
 
-export type TextModelThinkingEffort = "none" | "minimal" | "low" | "medium" | "high" | "max";
+export type TextModelThinkingEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 export type TextModelThinkingEffortOption = {
   value: TextModelThinkingEffort;
