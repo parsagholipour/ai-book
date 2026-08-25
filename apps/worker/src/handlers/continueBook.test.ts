@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
     $transaction: vi.fn()
   },
   tx: {
+    bookEditOperation: { update: vi.fn() },
     page: { deleteMany: vi.fn(), createMany: vi.fn() },
     chapter: { deleteMany: vi.fn(), create: vi.fn() },
     embedding: { deleteMany: vi.fn() },
@@ -231,7 +232,7 @@ describe("continueBook redelivery fence", () => {
       data: Array<{ index: number }>;
     };
     expect(createdPages.data.map((page) => page.index)).toEqual([11, 12]);
-    expect(mocks.prisma.bookEditOperation.update).toHaveBeenCalledWith(
+    expect(mocks.tx.bookEditOperation.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: "APPLIED", affectedPageIndexes: [11, 12] }) })
     );
   });
@@ -268,18 +269,24 @@ describe("continueBook redelivery fence", () => {
     mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({ id: "op-1", status: "APPLIED" });
     mocks.getProjectOrThrow.mockResolvedValue({ ...baseProject, currentPlanId: "plan-new" });
 
-    await continueBook(job());
+    const completion = await continueBook(job({ [PRE_EDIT_PROJECT_STATUS]: "REVIEW_REQUIRED" }));
 
     expect(mocks.prisma.project.update).toHaveBeenCalledWith({
       where: { id: "project-1" },
-      data: { status: "COMPLETE", contentRevision: { increment: 1 } }
+      data: { status: "REVIEW_REQUIRED" }
     });
-    expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-new");
+    expect(revisionIncrementWrites()).toHaveLength(0);
+    expect(mocks.invalidateProjectExports).not.toHaveBeenCalled();
+    expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
     // Nothing is outlined, appended, or re-marked ACTIVE.
     expect(mocks.generateJsonWithRetry).not.toHaveBeenCalled();
     expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
     expect(mocks.prisma.bookEditOperation.update).not.toHaveBeenCalled();
+
+    await completion.afterJobCompleted?.();
+
+    expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-new");
   });
 });
 
@@ -313,6 +320,18 @@ describe("continueBook completion lifecycle", () => {
     expect(mocks.tx.page.deleteMany).not.toHaveBeenCalled();
     expect(mocks.tx.chapter.deleteMany).not.toHaveBeenCalled();
     expect(mocks.prisma.bookEditOperation.updateMany).not.toHaveBeenCalled();
+    expect(mocks.tx.bookEditOperation.update).toHaveBeenCalledWith({
+      where: { id: "op-1" },
+      data: {
+        status: "APPLIED",
+        affectedPageIndexes: [11, 12],
+        appliedAt: expect.any(Date)
+      }
+    });
+    expect(mocks.tx.project.update).toHaveBeenCalledWith({
+      where: { id: "project-1" },
+      data: { status: "COMPLETE", contentRevision: { increment: 1 } }
+    });
     expect(revisionIncrementWrites()).toHaveLength(1);
   });
 
@@ -331,38 +350,12 @@ describe("continueBook completion lifecycle", () => {
 });
 
 describe("continueBook compensation", () => {
-  it("moves an APPLIED operation to FAILED when the append is rolled back", async () => {
-    // The failure lands after the operation was marked APPLIED (the export
-    // refresh); the compensation deletes the appended pages, so an operation
-    // left APPLIED would name pages the book no longer contains.
-    mocks.invalidateProjectExports.mockRejectedValue(new Error("disk gone"));
-
-    await expect(continueBook(job())).rejects.toThrow("disk gone");
-
-    // The rollback ran…
-    expect(mocks.tx.page.deleteMany).toHaveBeenCalledWith({
-      where: { projectId: "project-1", index: { gt: 10 } }
-    });
-    expect(mocks.tx.planVersion.delete).toHaveBeenCalledWith({ where: { id: "plan-new" } });
-    // …and the operation's verdict follows the rollback, guarded on APPLIED so
-    // the normal QUEUED/ACTIVE settlement (and its refund gate) is untouched.
-    expect(mocks.prisma.bookEditOperation.updateMany).toHaveBeenCalledWith({
-      where: { id: "op-1", status: "APPLIED" },
-      data: { status: "FAILED", error: "disk gone", affectedPageIndexes: [] }
-    });
-  });
-
   it("does not flip an operation that never reached APPLIED", async () => {
     mocks.reviewAndSaveGeneratedPage.mockRejectedValue(new Error("model outage"));
 
     await expect(continueBook(job())).rejects.toThrow("model outage");
 
-    // The guarded updateMany may run, but only against the APPLIED status —
-    // an ACTIVE operation stays claimable by failEditOperation, whose claim is
-    // what gates the legacy (attempt-less) refund path.
-    for (const call of mocks.prisma.bookEditOperation.updateMany.mock.calls) {
-      expect((call[0] as { where: { status: string } }).where.status).toBe("APPLIED");
-    }
+    expect(mocks.prisma.bookEditOperation.updateMany).not.toHaveBeenCalled();
   });
 });
 

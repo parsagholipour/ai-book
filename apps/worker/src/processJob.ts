@@ -132,7 +132,7 @@ async function processValidatedWorkerJob(job: AnyWorkerJob, runLogger: RunLogger
             await importBook(job);
             break;
           case "continue-book":
-            await continueBook(job);
+            completion = await continueBook(job);
             break;
           case "generate-audiobook":
             await generateAudiobook(job);

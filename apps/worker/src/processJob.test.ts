@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   runLoggerAppend: vi.fn(),
   planBook: vi.fn(),
   compileExport: vi.fn(),
+  continueBook: vi.fn(),
   generatePage: vi.fn(),
   applyBookEdit: vi.fn()
 }));
@@ -47,7 +48,7 @@ vi.mock("./providers/runLogging.js", () => ({
 vi.mock("./handlers/applyBookEdit.js", () => ({ applyBookEdit: mocks.applyBookEdit }));
 vi.mock("./handlers/characters.js", () => ({ buildCharacterPersona: vi.fn(), prepareCharacterCandidates: vi.fn() }));
 vi.mock("./handlers/compileExport.js", () => ({ compileExport: mocks.compileExport }));
-vi.mock("./handlers/continueBook.js", () => ({ continueBook: vi.fn() }));
+vi.mock("./handlers/continueBook.js", () => ({ continueBook: mocks.continueBook }));
 vi.mock("./handlers/generateAudiobook.js", () => ({ generateAudiobook: vi.fn() }));
 vi.mock("./handlers/characterPortrait.js", () => ({ generateCharacterPortrait: vi.fn() }));
 vi.mock("./handlers/generateBook.js", () => ({ generateBook: vi.fn() }));
@@ -71,6 +72,8 @@ function job(name: string, data: Record<string, unknown> = {}): Job {
       ? { pageId: "page-1" }
       : name === "apply-book-edit"
         ? { operationId: "operation-1", request: "Edit this", affectedPageIndexes: [1] }
+        : name === "continue-book"
+          ? { operationId: "operation-1", request: "Continue this" }
         : {};
   return {
     id: "bull-1",
@@ -102,6 +105,7 @@ beforeEach(() => {
   });
   mocks.planBook.mockResolvedValue(undefined);
   mocks.compileExport.mockResolvedValue({});
+  mocks.continueBook.mockResolvedValue({});
   mocks.maybeCompileAfterCompletedJob.mockResolvedValue(undefined);
 });
 
@@ -206,6 +210,24 @@ describe("processWorkerJob completion", () => {
 
     expect(mocks.markCompleted).toHaveBeenCalled();
     expect(enqueueCharacters).toHaveBeenCalled();
+    expect(mocks.markFailed).not.toHaveBeenCalled();
+    expect(mocks.runLoggerAppend).toHaveBeenCalledWith(
+      "job.follow_up_failed",
+      expect.objectContaining({ error: expect.anything() })
+    );
+    logged.mockRestore();
+  });
+
+  it("keeps a delivered continuation successful when its export enqueue follow-up fails", async () => {
+    const enqueueExport = vi.fn().mockRejectedValue(new Error("queue unavailable"));
+    mocks.continueBook.mockResolvedValue({ afterJobCompleted: enqueueExport });
+    const continuationJob = job("continue-book");
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(processWorkerJob(continuationJob)).resolves.toBeUndefined();
+
+    expect(mocks.markCompleted).toHaveBeenCalledWith(continuationJob, undefined);
+    expect(enqueueExport).toHaveBeenCalled();
     expect(mocks.markFailed).not.toHaveBeenCalled();
     expect(mocks.runLoggerAppend).toHaveBeenCalledWith(
       "job.follow_up_failed",

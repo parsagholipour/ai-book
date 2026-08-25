@@ -25,12 +25,12 @@ import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
 import { maybeEnqueueCompile } from "../runtime/dispatch.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
-import { isStopRequestedError } from "../runtime/jobTypes.js";
+import { isStopRequestedError, type JobCompletion } from "../runtime/jobTypes.js";
 import {
   bookPlanSchema,
   createProviders,
-  errorMessage,
   generateJsonWithRetry,
+  preEditProjectStatus,
   type BookPlan,
   type TextModelAdapter
 } from "@book-maker/core";
@@ -41,8 +41,9 @@ import type { ContinueBookJob } from "../runtime/jobPayloads.js";
  * `continue-book` job: outline and write additional chapters onto a finished book.
  */
 
-export async function continueBook(job: ContinueBookJob) {
+export async function continueBook(job: ContinueBookJob): Promise<JobCompletion> {
   const { projectId, operationId, request, planId, generationJobId } = job.data;
+  const settledStatus = preEditProjectStatus(job.data);
   const chapterCount = Math.min(8, Math.max(1, Math.floor(Number(job.data.chapterCount) || 1)));
   const requestedPageCount = Math.max(chapterCount, Math.floor(Number(job.data.newPageCount) || chapterCount * 5));
 
@@ -62,11 +63,9 @@ export async function continueBook(job: ContinueBookJob) {
     }
     await prisma.project.update({
       where: { id: projectId },
-      data: { status: "COMPLETE", contentRevision: { increment: 1 } }
+      data: { status: settledStatus }
     });
-    await invalidateProjectExports(projectId);
-    await maybeEnqueueCompile(projectId, appliedProject.currentPlanId);
-    return;
+    return continuationExportFollowUp(projectId, appliedProject.currentPlanId);
   }
   await prisma.bookEditOperation.update({ where: { id: operationId }, data: { status: "ACTIVE" } });
   await prisma.project.update({ where: { id: projectId }, data: { status: "EDITING" } });
@@ -311,17 +310,20 @@ export async function continueBook(job: ContinueBookJob) {
     }
 
     await advanceJobStep(generationJobId, "save", 82, "Saving chapters");
-    await prisma.bookEditOperation.update({
-      where: { id: operationId },
-      data: { status: "APPLIED", affectedPageIndexes: newPageIndexes, appliedAt: new Date() }
-    });
-    await prisma.project.update({
-      where: { id: projectId },
-      data: { status: "COMPLETE", contentRevision: { increment: 1 } }
-    });
     await advanceJobStep(generationJobId, "export", 90, "Refreshing exports");
-    await invalidateProjectExports(projectId);
-    await maybeEnqueueCompile(projectId, newPlanVersion.id);
+    // APPLIED is the durable delivery fence. Commit it with the revision bump
+    // so a redelivery can trust that this continuation was already counted and
+    // must only replay the export tail.
+    await prisma.$transaction(async (tx) => {
+      await tx.bookEditOperation.update({
+        where: { id: operationId },
+        data: { status: "APPLIED", affectedPageIndexes: newPageIndexes, appliedAt: new Date() }
+      });
+      await tx.project.update({
+        where: { id: projectId },
+        data: { status: settledStatus, contentRevision: { increment: 1 } }
+      });
+    });
   } catch (error) {
     // Roll the append back so a retry starts from the original book state.
     await prisma
@@ -341,23 +343,23 @@ export async function continueBook(job: ContinueBookJob) {
       .catch((cleanupError) => {
         console.error(`Continuation cleanup failed for project ${projectId}`, cleanupError);
       });
-    // The failure may land after the operation was marked APPLIED (the export
-    // refresh above), and the compensation just deleted the pages that verdict
-    // names. `failEditOperation` on the failure path only claims QUEUED/ACTIVE
-    // rows, so without this the operation stayed APPLIED forever, reporting a
-    // continuation the book does not contain. Guarded on APPLIED so the normal
-    // QUEUED/ACTIVE settlement — whose claim is what gates the legacy refund —
-    // is left untouched, and refunds stay with the attempt settlement.
-    await prisma.bookEditOperation
-      .updateMany({
-        where: { id: operationId, status: "APPLIED" },
-        data: { status: "FAILED", error: errorMessage(error), affectedPageIndexes: [] }
-      })
-      .catch((flipError) => {
-        console.error(`Failed to mark rolled-back continuation ${operationId} FAILED`, flipError);
-      });
     throw error;
   }
+
+  // Export invalidation and compile dispatch happen only after processJob has
+  // marked the durable generation row COMPLETED and settled its attempt/edit.
+  // A follow-up outage is logged there without rolling back delivered pages or
+  // refunding the continuation; redelivery and export repair can replay it.
+  return continuationExportFollowUp(projectId, newPlanVersion.id);
+}
+
+function continuationExportFollowUp(projectId: string, planId: string): JobCompletion {
+  return {
+    afterJobCompleted: async () => {
+      await invalidateProjectExports(projectId);
+      await maybeEnqueueCompile(projectId, planId);
+    }
+  };
 }
 
 export async function continuationOutlineWithModel(options: {
