@@ -2,25 +2,17 @@ import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import OpenAI from "openai";
 import type {
-  GenerateJsonOptions,
   GenerateTextOptions,
-  GenerateWithToolsOptions,
   ImageAdapter,
   ImageRequest,
   ImageResult,
-  JsonResult,
-  TextModelAdapter,
-  TextResult,
-  ToolCallsResult,
   Usage
 } from "./types.js";
-import { generateWithToolsViaOpenAi, openAiRequestOptions } from "./openaiToolCalling.js";
+import { OpenAIChatCompletionsTextAdapter } from "./openAiChatCompletionsText.js";
+import { toOpenAiChatMessages } from "./openaiToolCalling.js";
 import {
   AdapterJsonParseError as AlibabaJsonParseError,
-  AdapterJsonValidationError as AlibabaJsonValidationError,
-  parseJsonObject as parseAdapterJsonObject,
-  parseSchemaWithContext as parseAdapterSchemaWithContext,
-  throwWithProviderUsage
+  AdapterJsonValidationError as AlibabaJsonValidationError
 } from "./json.js";
 import {
   DEFAULT_ALIBABA_API_HOST,
@@ -43,194 +35,49 @@ export type AlibabaAdapterOptions = {
 
 type QwenImageContentPart = { image: string } | { text: string };
 
-export class AlibabaTextAdapter implements TextModelAdapter {
-  private readonly client: OpenAI;
-  private readonly model: string;
-
+export class AlibabaTextAdapter extends OpenAIChatCompletionsTextAdapter {
   constructor(options: AlibabaAdapterOptions) {
     if (!options.apiKey) {
       throw new Error("ALIBABA_API_KEY is required for Qwen text generation.");
     }
 
-    this.model = normalizeAlibabaModel(options.textModel, DEFAULT_ALIBABA_TEXT_MODEL);
-    this.client = new OpenAI({
-      apiKey: options.apiKey,
-      baseURL: alibabaCompatibleBaseURL(options.apiHost)
+    const model = normalizeAlibabaModel(options.textModel, DEFAULT_ALIBABA_TEXT_MODEL);
+    super({
+      client: new OpenAI({
+        apiKey: options.apiKey,
+        baseURL: alibabaCompatibleBaseURL(options.apiHost)
+      }),
+      model,
+      provider: "alibaba",
+      providerLabel: "Alibaba Qwen",
+      requestParameters: standardRequestParameters,
+      reasoningParameters: noReasoningParameters,
+      convertMessages: toOpenAiChatMessages,
+      usageFromResponse: usageFromOpenAiCompatible,
+      includeUsageInTextStream: true
     });
-  }
-
-  async generateText(options: GenerateTextOptions): Promise<TextResult> {
-    if (options.onOutputTextChunk) {
-      return this.generateTextStreaming(options);
-    }
-
-    const response = await this.client.chat.completions.create({
-      model: this.model,
-      messages: options.messages,
-      temperature: options.temperature,
-      max_tokens: options.maxTokens
-    } as never, openAiRequestOptions(options));
-
-    const usage = usageFromOpenAiCompatible(response.usage);
-    return {
-      text: response.choices[0]?.message?.content ?? "",
-      model: this.model,
-      provider: "alibaba",
-      ...(usage ? { usage } : {})
-    };
-  }
-
-  async generateWithTools(options: GenerateWithToolsOptions): Promise<ToolCallsResult> {
-    return generateWithToolsViaOpenAi({
-      client: this.client,
-      model: this.model,
-      provider: "alibaba",
-      options,
-      usageFromResponse: usageFromOpenAiCompatible
-    });
-  }
-
-  async generateJson<T>(options: GenerateJsonOptions<T>): Promise<JsonResult<T>> {
-    if (options.onOutputTextChunk) {
-      return this.generateJsonStreaming(options);
-    }
-
-    const response = await this.client.chat.completions.create({
-      model: this.model,
-      messages: [
-        {
-          role: "system",
-          content:
-            "Return only valid JSON. Do not wrap the JSON in Markdown. Do not include commentary outside the JSON object."
-        },
-        ...options.messages
-      ],
-      temperature: options.temperature,
-      max_tokens: options.maxTokens,
-      response_format: { type: "json_object" }
-    } as never, openAiRequestOptions(options));
-
-    const text = response.choices[0]?.message?.content ?? "{}";
-    const usage = usageFromOpenAiCompatible(response.usage);
-    return this.parseJsonResult(options, text, usage);
-  }
-
-  private async generateTextStreaming(options: GenerateTextOptions): Promise<TextResult> {
-    const stream: any = await this.client.chat.completions.create({
-      model: this.model,
-      messages: options.messages,
-      temperature: options.temperature,
-      max_tokens: options.maxTokens,
-      stream: true,
-      stream_options: { include_usage: true }
-    } as never, openAiRequestOptions(options));
-
-    let text = "";
-    let usage: Usage | undefined;
-    for await (const chunk of stream) {
-      const content = chunk.choices[0]?.delta?.content;
-      if (content) {
-        text += content;
-        await options.onOutputTextChunk?.(content);
-      }
-      usage = usageFromOpenAiCompatible(chunk.usage) ?? usage;
-    }
-
-    return {
-      text,
-      model: this.model,
-      provider: "alibaba",
-      ...(usage ? { usage } : {})
-    };
-  }
-
-  private async generateJsonStreaming<T>(options: GenerateJsonOptions<T>): Promise<JsonResult<T>> {
-    const stream: any = await this.client.chat.completions.create({
-      model: this.model,
-      messages: [
-        {
-          role: "system",
-          content:
-            "Return only valid JSON. Do not wrap the JSON in Markdown. Do not include commentary outside the JSON object."
-        },
-        ...options.messages
-      ],
-      temperature: options.temperature,
-      max_tokens: options.maxTokens,
-      response_format: { type: "json_object" },
-      stream: true,
-      stream_options: { include_usage: true }
-    } as never, openAiRequestOptions(options));
-
-    let text = "";
-    let usage: Usage | undefined;
-    for await (const chunk of stream) {
-      const content = chunk.choices[0]?.delta?.content;
-      if (content) {
-        text += content;
-        await options.onOutputTextChunk?.(content);
-      }
-      usage = usageFromOpenAiCompatible(chunk.usage) ?? usage;
-    }
-
-    return this.parseJsonResult(options, text || "{}", usage);
-  }
-
-  private parseJsonResult<T>(options: GenerateJsonOptions<T>, text: string, usage: Usage | undefined): JsonResult<T> {
-    let parsedObject: unknown;
-    try {
-      parsedObject = parseJsonObject(text);
-    } catch (error) {
-      throwWithProviderUsage(error, { provider: "alibaba", model: this.model, usage });
-    }
-    if (options.purpose === "generate-chapter-brief") {
-      return {
-        data: parsedObject as T,
-        text,
-        model: this.model,
-        provider: "alibaba",
-        ...(usage ? { usage } : {})
-      };
-    }
-    try {
-      return {
-        data: parseSchemaWithContext(options.schema, parsedObject, options.purpose, text),
-        text,
-        model: this.model,
-        provider: "alibaba",
-        ...(usage ? { usage } : {})
-      };
-    } catch (error) {
-      throwWithProviderUsage(error, { provider: "alibaba", model: this.model, usage });
-    }
-  }
-
-  async *streamText(options: GenerateTextOptions): AsyncGenerator<string> {
-    const stream: any = await this.client.chat.completions.create({
-      model: this.model,
-      messages: options.messages,
-      temperature: options.temperature,
-      max_tokens: options.maxTokens,
-      stream: true,
-      stream_options: { include_usage: true }
-    } as never, openAiRequestOptions(options));
-
-    for await (const chunk of stream) {
-      const content = chunk.choices[0]?.delta?.content;
-      if (content) {
-        yield content;
-      }
-    }
   }
 }
 
-function usageFromOpenAiCompatible(usage: { prompt_tokens?: number; completion_tokens?: number } | null | undefined): Usage | undefined {
-  if (!usage) {
+function standardRequestParameters(options: GenerateTextOptions): Record<string, unknown> {
+  return {
+    temperature: options.temperature,
+    max_tokens: options.maxTokens
+  };
+}
+
+function noReasoningParameters(): Record<string, unknown> {
+  return {};
+}
+
+function usageFromOpenAiCompatible(usage: unknown): Usage | undefined {
+  if (!usage || typeof usage !== "object") {
     return undefined;
   }
+  const record = usage as { prompt_tokens?: number; completion_tokens?: number };
   return {
-    promptTokens: usage.prompt_tokens,
-    outputTokens: usage.completion_tokens
+    promptTokens: record.prompt_tokens,
+    outputTokens: record.completion_tokens
   };
 }
 
@@ -403,19 +250,6 @@ export class AlibabaImageAdapter implements ImageAdapter {
     });
     return parseAlibabaHttpResponse(response);
   }
-}
-
-function parseJsonObject(text: string): unknown {
-  return parseAdapterJsonObject(text, "Alibaba Qwen");
-}
-
-function parseSchemaWithContext<T>(
-  schema: GenerateJsonOptions<T>["schema"],
-  value: unknown,
-  purpose: string | undefined,
-  rawText: string
-): T {
-  return parseAdapterSchemaWithContext("Alibaba Qwen", schema, value, purpose, rawText);
 }
 
 function alibabaCompatibleBaseURL(apiHost: string | undefined): string {
