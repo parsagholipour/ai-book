@@ -178,7 +178,7 @@ export const mobileSafetyRoutes: FastifyPluginAsync<SafetyRouteOptions> = async 
     if (!auth) {
       return;
     }
-    if (!hitAuthenticatedLimit(reportLimiter, request, reply, auth.user.id, "report-project")) {
+    if (!hitAuthenticatedLimit(reportLimiter, reply, auth.user.id, "report-project")) {
       return;
     }
 
@@ -235,7 +235,7 @@ export const mobileSafetyRoutes: FastifyPluginAsync<SafetyRouteOptions> = async 
     if (!auth) {
       return;
     }
-    if (!hitAuthenticatedLimit(reportLimiter, request, reply, auth.user.id, "report-asset")) {
+    if (!hitAuthenticatedLimit(reportLimiter, reply, auth.user.id, "report-asset")) {
       return;
     }
 
@@ -298,7 +298,7 @@ export const mobileSafetyRoutes: FastifyPluginAsync<SafetyRouteOptions> = async 
     if (!auth) {
       return;
     }
-    if (!hitAuthenticatedLimit(projectDeletionLimiter, request, reply, auth.user.id, "delete-project")) {
+    if (!hitAuthenticatedLimit(projectDeletionLimiter, reply, auth.user.id, "delete-project")) {
       return;
     }
 
@@ -335,7 +335,7 @@ export const mobileSafetyRoutes: FastifyPluginAsync<SafetyRouteOptions> = async 
     if (!auth) {
       return;
     }
-    if (!hitAuthenticatedLimit(accountPrivacyLimiter, request, reply, auth.user.id, "account-deletion-request")) {
+    if (!hitAuthenticatedLimit(accountPrivacyLimiter, reply, auth.user.id, "account-deletion-request")) {
       return;
     }
 
@@ -466,7 +466,6 @@ async function requireOperatorAuth(request: FastifyRequest, _reply: FastifyReply
 
 function hitAuthenticatedLimit(
   limiter: InMemoryRateLimiter,
-  _request: FastifyRequest,
   reply: FastifyReply,
   userId: string,
   action: string

@@ -203,6 +203,10 @@ export async function publishStagedGeneratedPage(options: {
   continuityTags: string[];
 }): Promise<GeneratedPagePublicationResult> {
   if (options.willIllustrate) {
+    const prompt = options.draft.imagePrompt;
+    if (!prompt) {
+      throw new Error("Illustrated page publication requires an image prompt");
+    }
     const keeperToken = pageIllustrationKeeperToken({
       projectId: options.projectId,
       pageId: options.stagedPage.id,
@@ -215,7 +219,7 @@ export async function publishStagedGeneratedPage(options: {
       payload: {
         pageId: options.stagedPage.id,
         planId: options.planId,
-        prompt: options.draft.imagePrompt,
+        prompt,
         keeperToken
       },
       dedupeKey: `generate-image:${options.stagedPage.id}:${options.planId}:${options.stagedPage.revision}:${keeperToken}`

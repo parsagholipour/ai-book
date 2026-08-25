@@ -29,7 +29,6 @@ export async function requireMobileAuth(request: FastifyRequest, reply: FastifyR
 
 export function hitAuthenticatedLimit(
   limiter: InMemoryRateLimiter,
-  _request: FastifyRequest,
   reply: FastifyReply,
   userId: string,
   action: string
@@ -74,7 +73,6 @@ async function isSubscriberForRateLimit(userId: string): Promise<boolean> {
  */
 export async function hitTieredLimit(
   limiter: InMemoryRateLimiter,
-  _request: FastifyRequest,
   reply: FastifyReply,
   userId: string,
   action: string

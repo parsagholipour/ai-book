@@ -82,7 +82,7 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
       if (!auth) {
         return;
       }
-      if (!(await hitTieredLimit(generationLimiter, request, reply, auth.user.id, "plan"))) {
+      if (!(await hitTieredLimit(generationLimiter, reply, auth.user.id, "plan"))) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);
@@ -143,7 +143,7 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
       if (!auth) {
         return;
       }
-      if (!(await hitTieredLimit(generationLimiter, request, reply, auth.user.id, "revise-plan"))) {
+      if (!(await hitTieredLimit(generationLimiter, reply, auth.user.id, "revise-plan"))) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);

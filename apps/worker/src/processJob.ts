@@ -1,7 +1,7 @@
-import { UnrecoverableError, type Job } from "bullmq";
+import { UnrecoverableError } from "bullmq";
 import { errorMessage } from "@book-maker/core";
 import { maybeCompileAfterCompletedJob } from "./runtime/dispatch.js";
-import { createRunLogger, providerConfigSnapshot } from "./providers/runLogging.js";
+import { createRunLogger, providerConfigSnapshot, type RunLogger } from "./providers/runLogging.js";
 import {
   STOPPED_JOB_ERROR,
   isStopRequestedError,
@@ -17,6 +17,7 @@ import {
   markActive,
   markCompleted,
   markFailed,
+  markMalformedJobFailed,
   markRecovering,
   markStopped,
   shouldBypassConfiguredRetries,
@@ -37,21 +38,43 @@ import { generatePage } from "./handlers/generatePage.js";
 import { importBook } from "./handlers/importBook.js";
 import { planBook, revisePlan } from "./handlers/planning.js";
 import { replanBook } from "./handlers/replanBook.js";
+import {
+  parseWorkerJob,
+  workerJobStringField,
+  type AnyWorkerJob,
+  type RawWorkerJob
+} from "./runtime/jobPayloads.js";
 
-export async function processWorkerJob(job: Job): Promise<void> {
-  await runWithGenerationAttempt(
-    typeof job.data.attemptId === "string" ? job.data.attemptId : null,
-    async () => {
-      const runLogger = createRunLogger(job);
-      await runLogger.append("job.start", {
-        payload: job.data,
-        attemptsMade: job.attemptsMade,
-        opts: job.opts,
-        providerConfig: providerConfigSnapshot()
-      });
-      let completion: JobCompletion | undefined;
-      let completed = false;
-      try {
+export async function processWorkerJob(rawJob: RawWorkerJob): Promise<void> {
+  await runWithGenerationAttempt(workerJobStringField(rawJob, "attemptId") ?? null, async () => {
+    let job: AnyWorkerJob;
+    try {
+      job = parseWorkerJob(rawJob);
+    } catch (error) {
+      // Validation is part of processing rather than Worker construction so a
+      // malformed delivery follows the same failed-row/Bull settlement path as
+      // a handler error. No lifecycle claim or handler has run at this point.
+      const runLogger = createRunLogger(rawJob);
+      await runLogger.append("job.failed", { error: serializeError(error), payload: rawJob.data });
+      await markMalformedJobFailed(rawJob, error);
+      throw new UnrecoverableError(errorMessage(error));
+    }
+
+    const runLogger = createRunLogger(job);
+    await runLogger.append("job.start", {
+      payload: job.data,
+      attemptsMade: job.attemptsMade,
+      opts: job.opts,
+      providerConfig: providerConfigSnapshot()
+    });
+    await processValidatedWorkerJob(job, runLogger);
+  });
+}
+
+async function processValidatedWorkerJob(job: AnyWorkerJob, runLogger: RunLogger): Promise<void> {
+  let completion: JobCompletion | undefined;
+  let completed = false;
+  try {
         // The stale check runs before the row is claimed. A CANCELED row is a
         // settled, refunded verdict; flipping it ACTIVE first (as the old
         // entry point did) overwrote the status this check reads and let
@@ -118,7 +141,7 @@ export async function processWorkerJob(job: Job): Promise<void> {
             await generateCharacterPortrait(job);
             break;
           default:
-            throw new Error(`Unknown worker job: ${job.name}`);
+            unreachableWorkerJob(job);
         }
         try {
           completed = await markCompleted(job, completion?.lifecycleSettlement);
@@ -151,7 +174,7 @@ export async function processWorkerJob(job: Job): Promise<void> {
           throw new UnrecoverableError(STOPPED_JOB_ERROR);
         }
 
-        if (await hasStoppedGenerationJob(job.data.generationJobId as string | undefined)) {
+        if (await hasStoppedGenerationJob(job.data.generationJobId)) {
           await runLogger.append("job.stopped", { interruptedError: serializeError(error) });
           await markStopped(job);
           throw new UnrecoverableError(STOPPED_JOB_ERROR);
@@ -215,6 +238,8 @@ export async function processWorkerJob(job: Job): Promise<void> {
           .append("job.follow_up_failed", { error: serializeError(error) })
           .catch(() => undefined);
       }
-    }
-  );
+}
+
+function unreachableWorkerJob(job: never): never {
+  throw new Error(`Validated worker job has no handler: ${String(job)}`);
 }

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   markActive: vi.fn(),
   markCompleted: vi.fn(),
   markFailed: vi.fn(),
+  markMalformedJobFailed: vi.fn(),
   markRecovering: vi.fn(),
   markStopped: vi.fn(),
   hasStoppedGenerationJob: vi.fn(),
@@ -29,6 +30,7 @@ vi.mock("./runtime/jobLifecycle.js", () => ({
   markActive: mocks.markActive,
   markCompleted: mocks.markCompleted,
   markFailed: mocks.markFailed,
+  markMalformedJobFailed: mocks.markMalformedJobFailed,
   markRecovering: mocks.markRecovering,
   markStopped: mocks.markStopped,
   shouldBypassConfiguredRetries: mocks.shouldBypassConfiguredRetries,
@@ -47,6 +49,7 @@ vi.mock("./handlers/characters.js", () => ({ buildCharacterPersona: vi.fn(), pre
 vi.mock("./handlers/compileExport.js", () => ({ compileExport: mocks.compileExport }));
 vi.mock("./handlers/continueBook.js", () => ({ continueBook: vi.fn() }));
 vi.mock("./handlers/generateAudiobook.js", () => ({ generateAudiobook: vi.fn() }));
+vi.mock("./handlers/characterPortrait.js", () => ({ generateCharacterPortrait: vi.fn() }));
 vi.mock("./handlers/generateBook.js", () => ({ generateBook: vi.fn() }));
 vi.mock("./handlers/generateImage.js", () => ({ generateImage: vi.fn() }));
 vi.mock("./handlers/generatePage.js", () => ({ generatePage: mocks.generatePage }));
@@ -63,10 +66,16 @@ import {
 } from "./runtime/jobTypes.js";
 
 function job(name: string, data: Record<string, unknown> = {}): Job {
+  const nameSpecific =
+    name === "generate-page"
+      ? { pageId: "page-1" }
+      : name === "apply-book-edit"
+        ? { operationId: "operation-1", request: "Edit this", affectedPageIndexes: [1] }
+        : {};
   return {
     id: "bull-1",
     name,
-    data: { projectId: "project-1", planId: "plan-1", generationJobId: "gj-1", ...data },
+    data: { projectId: "project-1", planId: "plan-1", generationJobId: "gj-1", ...nameSpecific, ...data },
     attemptsMade: 0,
     opts: { attempts: 1 }
   } as unknown as Job;
@@ -233,6 +242,17 @@ describe("processWorkerJob completion", () => {
 });
 
 describe("processWorkerJob failure routing", () => {
+  it("settles malformed data before lifecycle claims or handler side effects", async () => {
+    const malformed = job("generate-page", { pageId: undefined });
+
+    await expect(processWorkerJob(malformed)).rejects.toThrow(/pageId/);
+
+    expect(mocks.markMalformedJobFailed).toHaveBeenCalledWith(malformed, expect.any(Error));
+    expect(mocks.staleGenerationJobReason).not.toHaveBeenCalled();
+    expect(mocks.markActive).not.toHaveBeenCalled();
+    expect(mocks.generatePage).not.toHaveBeenCalled();
+  });
+
   it("settles a handler failure through markFailed and rethrows", async () => {
     mocks.generatePage.mockRejectedValue(new Error("provider outage"));
 

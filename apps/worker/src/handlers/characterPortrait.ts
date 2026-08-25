@@ -16,7 +16,7 @@ import {
 } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { generationDescription, libraryMentionInclude } from "@book-maker/db/libraryMentions";
-import { Job } from "bullmq";
+import type { GenerateCharacterPortraitJob } from "../runtime/jobPayloads.js";
 import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
@@ -30,13 +30,8 @@ import { dirname } from "node:path";
  * the attempt boundary plus the `failCharacterPortraitForJob` branch in
  * jobLifecycle.ts, which flips the character row to FAILED.
  */
-export async function generateCharacterPortrait(job: Job): Promise<void> {
-  const generationJobId = job.data.generationJobId as string | undefined;
-  const libraryCharacterId = job.data.libraryCharacterId as string | undefined;
-  const userId = job.data.userId as string | undefined;
-  if (!libraryCharacterId || !userId) {
-    throw new Error("Character portrait job payload is missing libraryCharacterId or userId.");
-  }
+export async function generateCharacterPortrait(job: GenerateCharacterPortraitJob): Promise<void> {
+  const { generationJobId, libraryCharacterId, userId } = job.data;
 
   const character = await prisma.libraryCharacter.findFirst({
     where: { id: libraryCharacterId, userId },

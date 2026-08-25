@@ -24,7 +24,7 @@ import { applyPlanThinkingBoost, loadQualityContext } from "../generation/qualit
 import { seedProjectStoryState } from "../generation/storyStateStore.js";
 import { bookPlanSchema, createProviders, critiquePlan, mergePlanCriticPatch, mediaSettingsRowWriteback } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
-import { Job } from "bullmq";
+import type { PlanBookJob, RevisePlanJob } from "../runtime/jobPayloads.js";
 
 /**
  * `plan-book` and `revise-plan` jobs: research a brief and turn it into a BookPlan.
@@ -35,9 +35,8 @@ function researchSourceIdentity(source: { query: string; title: string; url?: st
   return [source.query, source.title, source.url ?? ""].join("\0");
 }
 
-export async function planBook(job: Job): Promise<JobCompletion> {
-  const { projectId, inputSnapshot } = job.data as { projectId: string; inputSnapshot?: unknown };
-  const generationJobId = job.data.generationJobId as string | undefined;
+export async function planBook(job: PlanBookJob): Promise<JobCompletion> {
+  const { projectId, inputSnapshot, generationJobId } = job.data;
   const project = await getProjectOrThrow(projectId);
   const input = inputFromSnapshot(inputSnapshot) ?? inputFromProject(project);
   const strategy = strategyForInput(input);
@@ -175,13 +174,10 @@ export async function planBook(job: Job): Promise<JobCompletion> {
   };
 }
 
-export async function revisePlan(job: Job) {
-  const { projectId, planId, message } = job.data as { projectId: string; planId: string; message: string };
-  const generationJobId = job.data.generationJobId as string | undefined;
+export async function revisePlan(job: RevisePlanJob) {
+  const { projectId, planId, message, generationJobId } = job.data;
   const operationId = editOperationIdFromJob(job);
-  const respondedQuestionPrompts = Array.isArray(job.data.respondedQuestionPrompts)
-    ? (job.data.respondedQuestionPrompts as unknown[]).filter((prompt): prompt is string => typeof prompt === "string")
-    : undefined;
+  const respondedQuestionPrompts = job.data.respondedQuestionPrompts;
   const planVersion = await prisma.planVersion.findUnique({ where: { id: planId }, include: { project: true } });
   if (!planVersion) {
     throw new Error("Plan not found");
@@ -203,7 +199,7 @@ export async function revisePlan(job: Job) {
       where: { id: operationId },
       select: { generationJobId: true, ledgerEntryId: true, status: true, classifier: true }
     });
-    const billingLedgerEntryId = typeof job.data.billingLedgerEntryId === "string" ? job.data.billingLedgerEntryId : null;
+    const billingLedgerEntryId = job.data.billingLedgerEntryId ?? null;
     const operationClassifier = jsonPayloadToRecord(operation?.classifier);
     const warning = planRevisionConsistencyWarning({
       durableGenerationJobId: generationJobId,

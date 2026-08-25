@@ -56,7 +56,7 @@ export async function registerMobileProjectRoutes(fastify: FastifyInstance, cont
       if (!auth) {
         return;
       }
-      if (!(await hitTieredLimit(generationLimiter, request, reply, auth.user.id, "create-project"))) {
+      if (!(await hitTieredLimit(generationLimiter, reply, auth.user.id, "create-project"))) {
         return;
       }
 

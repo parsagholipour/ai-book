@@ -9,8 +9,8 @@ import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
 import { maybeEnqueueCompile } from "../runtime/dispatch.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
-import { applyImageInsertion, type ImageInsertionPayload } from "./applyImageInsertion.js";
-import { applyImageLayout, type ImageLayoutPayload } from "./applyImageLayout.js";
+import { applyImageInsertion } from "./applyImageInsertion.js";
+import { applyImageLayout } from "./applyImageLayout.js";
 import { restructurePages } from "./restructurePages.js";
 import { locallyPatchedPage, rewritePageForUserRequest } from "./replanBook.js";
 import {
@@ -43,12 +43,10 @@ import {
   hasExactMatch,
   jsonPayloadToRecord,
   preEditProjectStatus,
-  type ExactReplacement,
-  type SettledProjectStatus,
-  type StructuralPageEdit
+  type SettledProjectStatus
 } from "@book-maker/core";
 import { pageScope, Prisma, prisma } from "@book-maker/db";
-import { Job } from "bullmq";
+import type { ApplyBookEditJob } from "../runtime/jobPayloads.js";
 import { randomUUID } from "node:crypto";
 
 /**
@@ -65,7 +63,7 @@ function applyStepProgress(pagesDone: number, total: number): number {
   return 40 + Math.round((pagesDone / Math.max(total, 1)) * 35);
 }
 
-export async function applyBookEdit(job: Job) {
+export async function applyBookEdit(job: ApplyBookEditJob) {
   const {
     projectId,
     operationId,
@@ -74,50 +72,9 @@ export async function applyBookEdit(job: Job) {
     planId,
     exactReplacement,
     mode,
-    perPageInstructions
-  } = job.data as {
-    projectId: string;
-    operationId: string;
-    request: string;
-    affectedPageIndexes: number[];
-    planId?: string;
-    exactReplacement?: ExactReplacement;
-    /**
-     * `"exact"` means the API verified every page in scope contains the literal
-     * text and quoted the edit at no charge on that basis. Falling back to a
-     * model rewrite here would spend a book's worth of tokens on an edit nobody
-     * paid for, so a page that no longer matches is skipped instead.
-     */
-    mode?: "exact";
-    /**
-     * A different instruction for particular pages, when the reader asked for
-     * different things on each ("make page 3 funnier and page 7 shorter").
-     * Absent — the ordinary case — every page gets the whole request, and a
-     * page with no entry does too, so this can only ever narrow what one page
-     * is told rather than drop an edit that was charged for.
-     *
-     * An entry *replaces* `request` for its page, so the API composes the
-     * @-mentioned characters' sheets onto each instruction the same way it
-     * composes them onto `request` — use the string as it arrives.
-     */
-    perPageInstructions?: { pageIndex: number; instruction: string }[];
-    /**
-     * Insert, delete or reorder pages. Read by `restructurePages` rather than
-     * here — the fork below is decided by the operation's `kind`, because this
-     * field is the copy that can go missing.
-     */
-    structuralEdit?: StructuralPageEdit;
-    /**
-     * Render one illustration. Read by `applyImageInsertion`, and optional for
-     * the same reason `structuralEdit` is: the fork below is decided by the
-     * operation's `kind`, so a payload rebuilt without this key still arrives
-     * and the handler reads the request back off the classifier.
-     */
-    imageInsertion?: ImageInsertionPayload;
-    /** Move or remove existing illustrations. Read by `applyImageLayout`, same rule. */
-    imageLayout?: ImageLayoutPayload;
-  };
-  const generationJobId = job.data.generationJobId as string | undefined;
+    perPageInstructions,
+    generationJobId
+  } = job.data;
   const operation = await prisma.bookEditOperation.findUnique({ where: { id: operationId } });
   if (!operation) {
     throw new Error("Book edit operation not found");

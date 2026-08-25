@@ -50,15 +50,14 @@ import {
   type PriorPageContext
 } from "@book-maker/core";
 import { pageScope, prisma } from "@book-maker/db";
-import { Job } from "bullmq";
+import type { GeneratePageJob } from "../runtime/jobPayloads.js";
 
 /**
  * `generate-page` job: draft, review and save a single page.
  */
 
-export async function generatePage(job: Job) {
-  const { projectId, pageId, planId } = job.data as { projectId: string; pageId: string; planId: string };
-  const generationJobId = job.data.generationJobId as string | undefined;
+export async function generatePage(job: GeneratePageJob) {
+  const { projectId, pageId, planId, generationJobId } = job.data;
   const [project, page, planVersion] = await Promise.all([
     getProjectOrThrow(projectId),
     prisma.page.findUnique({ where: { id: pageId }, include: { chapter: true } }),

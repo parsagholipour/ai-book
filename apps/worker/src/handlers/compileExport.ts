@@ -74,25 +74,21 @@ import {
   type TextModelAdapter
 } from "@book-maker/core";
 import { prisma, researchCitationsForExport } from "@book-maker/db";
-import { Job } from "bullmq";
+import type { CompileExportJob } from "../runtime/jobPayloads.js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 /**
  * `compile-export` job: final QA over the manuscript, then Markdown/PDF/EPUB output.
  */
-export async function compileExport(job: Job): Promise<JobCompletion> {
-  const { projectId, planId } = job.data as { projectId: string; planId: string };
+export async function compileExport(job: CompileExportJob): Promise<JobCompletion> {
+  const { projectId, planId, generationJobId } = job.data;
   const policy = compilePublicationPolicyFromPayload(job.data);
-  const generationJobId = job.data.generationJobId as string | undefined;
-  if (!generationJobId) {
-    throw new Error("Export publication requires a durable generation job");
-  }
   // The manuscript this compile was queued for. Every enqueue site records it
   // — the run's own fan-in, an edit's recompile and an export repair — and
   // nothing downstream may be published under a different one; see
   // `generation/exportPublication.ts`.
-  const queuedContentRevision = typeof job.data.contentRevision === "number" ? job.data.contentRevision : null;
+  const queuedContentRevision = job.data.contentRevision ?? null;
   const requeueCompile = async (): Promise<void> => {
     // The image that blocked this compile can finish after a newer edit has
     // changed the manuscript. Scope this policy to the revision that earned it;
@@ -120,7 +116,7 @@ export async function compileExport(job: Job): Promise<JobCompletion> {
   const detachedRepair = policy.ownership.kind === "detached";
   const presentationOnly = policy.ownership.kind === "presentation";
   const ownsOutcome = policy.ownership.kind === "outcome";
-  const generationAttemptId = ownsOutcome && typeof job.data.attemptId === "string" ? job.data.attemptId : null;
+  const generationAttemptId = ownsOutcome ? job.data.attemptId ?? null : null;
   const payloadEditOperationId = ownsOutcome ? editOperationIdFromJob(job) : null;
   // Character discovery follows every charged compile of the manuscript — the
   // generation's own and an edit's recompile alike, since an edit is charged

@@ -64,7 +64,7 @@ export async function registerMobileCreationDraftRoutes(fastify: FastifyInstance
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(draftLimiter, request, reply, auth.user.id, "creation-draft")) {
+      if (!hitAuthenticatedLimit(draftLimiter, reply, auth.user.id, "creation-draft")) {
         return;
       }
       const parsed = mobileCreationDraftPayloadSchema.safeParse(request.body);
@@ -93,7 +93,7 @@ export async function registerMobileCreationDraftRoutes(fastify: FastifyInstance
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(draftLimiter, request, reply, auth.user.id, "creation-draft")) {
+      if (!hitAuthenticatedLimit(draftLimiter, reply, auth.user.id, "creation-draft")) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);
@@ -145,7 +145,7 @@ export async function registerMobileCreationDraftRoutes(fastify: FastifyInstance
       if (!auth) {
         return;
       }
-      if (!(await hitTieredLimit(advisorLimiter, request, reply, auth.user.id, "book-advisor"))) {
+      if (!(await hitTieredLimit(advisorLimiter, reply, auth.user.id, "book-advisor"))) {
         return;
       }
       const parsed = mobileBookAdvisorBodySchema.safeParse(request.body);
@@ -168,7 +168,7 @@ export async function registerMobileCreationDraftRoutes(fastify: FastifyInstance
       if (!auth) {
         return;
       }
-      if (!(await hitTieredLimit(generationLimiter, request, reply, auth.user.id, "creation-finalize"))) {
+      if (!(await hitTieredLimit(generationLimiter, reply, auth.user.id, "creation-finalize"))) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);

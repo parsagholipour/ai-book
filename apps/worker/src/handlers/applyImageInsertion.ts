@@ -39,7 +39,7 @@ import {
   type SettledProjectStatus
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
-import { Job } from "bullmq";
+import type { ApplyBookEditJob } from "../runtime/jobPayloads.js";
 import { randomUUID } from "node:crypto";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -121,16 +121,8 @@ export function insertionFromClassifier(classifier: unknown): ImageInsertionPayl
   };
 }
 
-export async function applyImageInsertion(job: Job, operation: { status: string; classifier: unknown }) {
-  const { projectId, operationId, request, planId, imageInsertion } = job.data as {
-    projectId: string;
-    operationId: string;
-    request: string;
-    planId?: string;
-    /** Optional: the fork that routes a job here tests the operation's `kind`, not this field. */
-    imageInsertion?: ImageInsertionPayload;
-  };
-  const generationJobId = job.data.generationJobId as string | undefined;
+export async function applyImageInsertion(job: ApplyBookEditJob, operation: { status: string; classifier: unknown }) {
+  const { projectId, operationId, request, planId, imageInsertion, generationJobId } = job.data;
   // Read once: the project has already been committed as EDITING, including on
   // redelivery. The payload stamp is the only surviving settled status.
   const fallbackStatus = preEditProjectStatus(job.data);

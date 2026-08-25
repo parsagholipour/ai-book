@@ -82,7 +82,7 @@ export function characterWriteLane<Result>(
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(options.limiter, request, reply, auth.user.id, options.actionKey)) {
+      if (!hitAuthenticatedLimit(options.limiter, reply, auth.user.id, options.actionKey)) {
         return;
       }
       if (options.timingRequired) {

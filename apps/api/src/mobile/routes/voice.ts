@@ -145,7 +145,7 @@ export async function registerMobileVoiceRoutes(fastify: FastifyInstance, contex
       // either failed validation or answered "not yet", and charging a budget
       // for an answer that did no work is what let one first-time call burn a
       // whole hour of attempts.
-      if (!hitAuthenticatedLimit(voiceCallLimiter, request, reply, auth.user.id, "voice-call")) {
+      if (!hitAuthenticatedLimit(voiceCallLimiter, reply, auth.user.id, "voice-call")) {
         return;
       }
 
@@ -231,7 +231,7 @@ export async function registerMobileVoiceRoutes(fastify: FastifyInstance, contex
       // The one mutating voice route that had no limiter: each hit costs a few
       // DB round-trips and possibly a billing call, and a real call heartbeats
       // only every few seconds. The draft budget is far above that.
-      if (!hitAuthenticatedLimit(draftLimiter, request, reply, auth.user.id, "voice-call-heartbeat")) {
+      if (!hitAuthenticatedLimit(draftLimiter, reply, auth.user.id, "voice-call-heartbeat")) {
         return;
       }
       const { callId } = voiceCallParamsSchema.parse(request.params);
@@ -272,7 +272,7 @@ export async function registerMobileVoiceRoutes(fastify: FastifyInstance, contex
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(draftLimiter, request, reply, auth.user.id, "voice-call-end")) {
+      if (!hitAuthenticatedLimit(draftLimiter, reply, auth.user.id, "voice-call-end")) {
         return;
       }
       const { callId } = voiceCallParamsSchema.parse(request.params);

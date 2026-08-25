@@ -198,7 +198,7 @@ describe("enqueueWorkerJob", () => {
         projectId: "project-1",
         type: "GENERATE_IMAGE",
         dedupeKey: "page-image:page-1",
-        payload: { pageId: "page-1" }
+        payload: { pageId: "page-1", planId: "plan-1", prompt: "A moonlit harbor" }
       })
     );
 
@@ -222,14 +222,14 @@ describe("enqueueWorkerJob", () => {
     await enqueueWorkerJob({
       projectId: "project-1",
       type: "GENERATE_PAGE",
-      payload: {}
+      payload: { pageId: "page-1", planId: "plan-1" }
     });
 
     mocks.prisma.project.findUnique.mockResolvedValue(null);
     await enqueueWorkerJob({
       projectId: "project-2",
       type: "GENERATE_PAGE",
-      payload: {}
+      payload: { pageId: "page-2", planId: "plan-1" }
     });
 
     expect(mocks.prisma.generationJob.create).not.toHaveBeenCalled();
@@ -245,7 +245,7 @@ describe("enqueueWorkerJob", () => {
     const result = await enqueueWorkerJob({
       projectId: "project-1",
       type: "GENERATE_PAGE",
-      payload: {},
+      payload: { pageId: "page-1", planId: "plan-1" },
       dedupeKey: "dk-1"
     });
 
@@ -262,7 +262,7 @@ describe("enqueueWorkerJob", () => {
     const second = await enqueueWorkerJob({
       projectId: "project-1",
       type: "GENERATE_PAGE",
-      payload: {},
+      payload: { pageId: "page-1", planId: "plan-1" },
       dedupeKey: "dk-1"
     });
 
@@ -282,7 +282,7 @@ describe("enqueueWorkerJob", () => {
     const result = await enqueueWorkerJob({
       projectId: "project-1",
       type: "GENERATE_PAGE",
-      payload: {},
+      payload: { pageId: "page-1", planId: "plan-1" },
       dedupeKey: "dk-1"
     });
 
@@ -299,7 +299,7 @@ describe("enqueueWorkerJob", () => {
     await enqueueWorkerJob({
       projectId: "project-1",
       type: "GENERATE_PAGE",
-      payload: {}
+      payload: { pageId: "page-1", planId: "plan-1" }
     });
 
     expect(mocks.prisma.generationJob.update).toHaveBeenCalledWith(

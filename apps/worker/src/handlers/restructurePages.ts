@@ -34,11 +34,10 @@ import {
   resolveStructuralPageEdit,
   structuralEditFromClassifier,
   type SettledProjectStatus,
-  type StructuralApplication,
-  type StructuralPageEdit
+  type StructuralApplication
 } from "@book-maker/core";
 import { PAGE_RESTRUCTURE_TRANSACTION_OPTIONS, Prisma, prisma, revertStructuralPageChange } from "@book-maker/db";
-import type { Job } from "bullmq";
+import type { ApplyBookEditJob } from "../runtime/jobPayloads.js";
 import { randomUUID } from "node:crypto";
 
 /**
@@ -54,23 +53,8 @@ import { randomUUID } from "node:crypto";
  * transaction, a redelivery fence and a rollback that the text path does not.
  */
 
-type RestructurePagesPayload = {
-  projectId: string;
-  operationId: string;
-  request: string;
-  planId?: string;
-  /**
-   * Optional because the fork that routes a job here is `applyBookEdit`'s test
-   * of the operation's `kind`, not a test of this field — so a payload rebuilt
-   * without it still arrives, and the classifier is where the request is read
-   * back from.
-   */
-  structuralEdit?: StructuralPageEdit;
-};
-
-export async function restructurePages(job: Job, operation: { id: string; status: string; classifier: unknown }) {
-  const { projectId, operationId, request, planId, structuralEdit } = job.data as RestructurePagesPayload;
-  const generationJobId = job.data.generationJobId as string | undefined;
+export async function restructurePages(job: ApplyBookEditJob, operation: { id: string; status: string; classifier: unknown }) {
+  const { projectId, operationId, request, planId, structuralEdit, generationJobId } = job.data;
   // Never job.id/generationJobId: a stalled Bull delivery and its replacement
   // share both. This token identifies one invocation of this handler.
   const ownerToken = randomUUID();
@@ -531,7 +515,7 @@ async function resumeClaimedStructuralDelivery(
  * writes nothing, the same as the early `undoneAt` branches.
  */
 async function settleRefusedRestructure(options: {
-  job: Job;
+  job: ApplyBookEditJob;
   projectId: string;
   operationId: string;
   ownerToken: string;

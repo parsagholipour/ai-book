@@ -116,7 +116,7 @@ export const mobileImportRoutes: FastifyPluginAsync<MobileImportRoutesOptions> =
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(importLimiter, request, reply, auth.user.id, "book-import")) {
+      if (!hitAuthenticatedLimit(importLimiter, reply, auth.user.id, "book-import")) {
         return;
       }
       const query = importQuerySchema.safeParse(request.query);

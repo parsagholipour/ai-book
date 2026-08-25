@@ -34,25 +34,16 @@ import {
   type ProviderSet
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
-import { Job } from "bullmq";
+import type { ReplanBookJob } from "../runtime/jobPayloads.js";
 
 /**
  * `replan-book` job: replace a project's plan and regenerate affected pages.
  */
 
-export async function replanBook(job: Job) {
+export async function replanBook(job: ReplanBookJob) {
   const { projectId, operationId, request, planId, sourceProjectId, sourcePlanId, targetLanguage, targetPages } =
-    job.data as {
-      projectId: string;
-      operationId: string;
-      request: string;
-      planId?: string;
-      sourceProjectId?: string;
-      sourcePlanId?: string | null;
-      targetLanguage?: string | null;
-      targetPages?: number | null;
-    };
-  const generationJobId = job.data.generationJobId as string | undefined;
+    job.data;
+  const { generationJobId } = job.data;
   await prisma.bookEditOperation.update({ where: { id: operationId }, data: { status: "ACTIVE" } });
   await prisma.project.update({ where: { id: projectId }, data: { status: "EDITING" } });
   await advanceJobStep(generationJobId, "revise", 30, "Rebuilding book plan");

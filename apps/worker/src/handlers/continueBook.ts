@@ -35,20 +35,14 @@ import {
   type TextModelAdapter
 } from "@book-maker/core";
 import { pageScope, prisma } from "@book-maker/db";
-import { Job } from "bullmq";
+import type { ContinueBookJob } from "../runtime/jobPayloads.js";
 
 /**
  * `continue-book` job: outline and write additional chapters onto a finished book.
  */
 
-export async function continueBook(job: Job) {
-  const { projectId, operationId, request, planId } = job.data as {
-    projectId: string;
-    operationId: string;
-    request: string;
-    planId?: string;
-  };
-  const generationJobId = job.data.generationJobId as string | undefined;
+export async function continueBook(job: ContinueBookJob) {
+  const { projectId, operationId, request, planId, generationJobId } = job.data;
   const chapterCount = Math.min(8, Math.max(1, Math.floor(Number(job.data.chapterCount) || 1)));
   const requestedPageCount = Math.max(chapterCount, Math.floor(Number(job.data.newPageCount) || chapterCount * 5));
 

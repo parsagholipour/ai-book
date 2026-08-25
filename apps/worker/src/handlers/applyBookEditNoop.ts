@@ -6,7 +6,7 @@ import { restoreEditProjectStatus } from "../generation/editProjectStatus.js";
 import { refundSkippedEditOperation } from "../runtime/jobLifecycle.js";
 import { jsonPayloadToRecord, type SettledProjectStatus } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
-import type { Job } from "bullmq";
+import type { ApplyBookEditJob } from "../runtime/jobPayloads.js";
 
 /** Text-specific proof that an exact replacement delivered no page changes. */
 export const TEXT_EXACT_SKIPPED_MARKER = "textExactSkipped";
@@ -29,7 +29,7 @@ export function textExactEditWasSkipped(classifier: unknown): boolean {
  * enter the publication tail.
  */
 export async function settleSkippedExactTextEdit(options: {
-  job: Job;
+  job: ApplyBookEditJob;
   projectId: string;
   operationId: string;
   ownerToken: string;

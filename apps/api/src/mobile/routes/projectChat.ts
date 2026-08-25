@@ -98,7 +98,7 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(draftLimiter, request, reply, auth.user.id, "project-chat")) {
+      if (!hitAuthenticatedLimit(draftLimiter, reply, auth.user.id, "project-chat")) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);
@@ -417,7 +417,7 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(draftLimiter, request, reply, auth.user.id, "project-chat")) {
+      if (!hitAuthenticatedLimit(draftLimiter, reply, auth.user.id, "project-chat")) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);
@@ -452,7 +452,7 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(draftLimiter, request, reply, auth.user.id, "project-chat")) {
+      if (!hitAuthenticatedLimit(draftLimiter, reply, auth.user.id, "project-chat")) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);
@@ -487,7 +487,7 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(draftLimiter, request, reply, auth.user.id, "project-chat")) {
+      if (!hitAuthenticatedLimit(draftLimiter, reply, auth.user.id, "project-chat")) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);

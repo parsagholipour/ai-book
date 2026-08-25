@@ -1,4 +1,3 @@
-import type { Job } from "bullmq";
 import { randomUUID } from "node:crypto";
 import {
   AlibabaImageAdapter,
@@ -57,6 +56,7 @@ import {
   settleLiveTextUsageEstimate,
   withLiveOutputTracking
 } from "./usageAccounting.js";
+import type { WorkerRuntimeJob } from "../runtime/jobPayloads.js";
 
 /**
  * Logging decorators around the provider adapters from `@book-maker/core`.
@@ -72,14 +72,13 @@ type LoggedTextModel = {
 };
 
 export function createLoggedProviders(
-  job: Job,
+  job: WorkerRuntimeJob,
   providers: ProviderSet,
   input?: CreateProjectInput | undefined,
   options?: { imageSelection?: ImageModelSelection | undefined }
 ): ProviderSet {
   const logger = createRunLogger(job);
-  const generationJobId = job.data.generationJobId as string | undefined;
-  const projectId = job.data.projectId as string | undefined;
+  const { generationJobId, projectId } = job.data;
   const textModel = loggedTextModel(input);
   return {
     text: new LoggingTextModelAdapter(providers.text, logger, generationJobId, projectId, textModel),
@@ -90,13 +89,13 @@ export function createLoggedProviders(
   };
 }
 
-export function createLoggedSpeechAdapter(job: Job, speech: SpeechAdapter): SpeechAdapter {
+export function createLoggedSpeechAdapter(job: WorkerRuntimeJob, speech: SpeechAdapter): SpeechAdapter {
   const logger = createRunLogger(job);
   return new LoggingSpeechAdapter(
     speech,
     logger,
-    job.data.generationJobId as string | undefined,
-    job.data.projectId as string | undefined
+    job.data.generationJobId,
+    job.data.projectId
   );
 }
 

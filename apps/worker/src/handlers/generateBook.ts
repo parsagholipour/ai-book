@@ -25,16 +25,15 @@ import {
   type ProviderSet
 } from "@book-maker/core";
 import { Prisma, prisma, PAGE_SCOPE_PREFIX } from "@book-maker/db";
-import { Job } from "bullmq";
+import type { GenerateBookJob } from "../runtime/jobPayloads.js";
 
 /**
  * `generate-book` job: pick an execution strategy for a plan, set up chapters and
  * pages, and either fan out per-page jobs or run a direct in-process generation.
  */
 
-export async function generateBook(job: Job) {
-  const { projectId, planId } = job.data as { projectId: string; planId: string };
-  const generationJobId = job.data.generationJobId as string | undefined;
+export async function generateBook(job: GenerateBookJob) {
+  const { projectId, planId, generationJobId } = job.data;
   const project = await getProjectOrThrow(projectId);
   const planVersion = await prisma.planVersion.findUnique({ where: { id: planId } });
   if (!planVersion) {

@@ -29,7 +29,7 @@ import {
 import { coverDesignArtwork } from "../generation/coverArtwork.js";
 import { isStopRequestedError } from "../runtime/jobTypes.js";
 import { prisma } from "@book-maker/db";
-import { Job } from "bullmq";
+import type { GenerateImageJob } from "../runtime/jobPayloads.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -38,12 +38,8 @@ import { join } from "node:path";
  * keep illustrated casts visually consistent.
  */
 
-export async function generateCover(job: Job) {
-  const { projectId, planId } = job.data as {
-    projectId: string;
-    planId: string;
-  };
-  const generationJobId = job.data.generationJobId as string | undefined;
+export async function generateCover(job: GenerateImageJob) {
+  const { projectId, planId, generationJobId } = job.data;
   const [project, planVersion] = await Promise.all([
     getProjectOrThrow(projectId),
     prisma.planVersion.findUnique({ where: { id: planId } })

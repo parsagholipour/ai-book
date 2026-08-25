@@ -274,7 +274,7 @@ export async function registerMobileCharacterImageRoutes(
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(context.draftLimiter, request, reply, auth.user.id, "character-write")) {
+      if (!hitAuthenticatedLimit(context.draftLimiter, reply, auth.user.id, "character-write")) {
         return;
       }
       const params = characterImageParamsSchema.safeParse(request.params);
@@ -364,7 +364,7 @@ export async function registerMobileCharacterImageRoutes(
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(context.draftLimiter, request, reply, auth.user.id, "character-write")) {
+      if (!hitAuthenticatedLimit(context.draftLimiter, reply, auth.user.id, "character-write")) {
         return;
       }
       const params = characterImageParamsSchema.safeParse(request.params);
@@ -464,7 +464,7 @@ export async function registerMobileCharacterImageRoutes(
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(context.attachmentLimiter, request, reply, auth.user.id, "character-photo-upload")) {
+      if (!hitAuthenticatedLimit(context.attachmentLimiter, reply, auth.user.id, "character-photo-upload")) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);
@@ -666,7 +666,7 @@ export async function registerMobileCharacterImageRoutes(
       if (!auth) {
         return;
       }
-      if (!(await hitTieredLimit(context.generationLimiter, request, reply, auth.user.id, "character-portrait"))) {
+      if (!(await hitTieredLimit(context.generationLimiter, reply, auth.user.id, "character-portrait"))) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);

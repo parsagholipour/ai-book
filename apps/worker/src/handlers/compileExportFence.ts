@@ -6,7 +6,7 @@ import { createRunLogger } from "../providers/runLogging.js";
 import { isStopRequestedError, type ExportPageForRepair } from "../runtime/jobTypes.js";
 import { serializeError } from "../runtime/serialization.js";
 import type { Prisma } from "@book-maker/db";
-import type { Job } from "bullmq";
+import type { CompileExportJob } from "../runtime/jobPayloads.js";
 
 /**
  * The fence a compile's final-QA repair is held to, the three things it can
@@ -424,7 +424,7 @@ export function exportRepairOwnershipFence(
  * through `bestEffortPass`.
  */
 export async function recordTruncatedRepairPass(options: {
-  job: Job;
+  job: CompileExportJob;
   projectId: string;
   generationJobId: string;
   error: ExportRepairFenceUnreadableError;

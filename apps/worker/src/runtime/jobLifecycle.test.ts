@@ -63,6 +63,7 @@ import {
   markActive,
   markCompleted,
   markFailed,
+  markMalformedJobFailed,
   markRecovering,
   markStopped,
   refundSkippedEditOperation,
@@ -105,6 +106,25 @@ describe("job lifecycle ownership", () => {
     );
     expect(mocks.projectUpdate).not.toHaveBeenCalled();
     expect(mocks.audiobookUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("uses Bull's durable id to fail a payload that cannot expose generationJobId", async () => {
+    await markMalformedJobFailed(
+      {
+        id: "durable-job-1",
+        name: "generate-page",
+        data: { projectId: "project-1", planId: "plan-1" }
+      } as never,
+      new Error("Invalid payload: generationJobId is required")
+    );
+
+    expect(mocks.generationJobUpdateMany).toHaveBeenCalledWith({
+      where: { id: "durable-job-1", status: { notIn: ["COMPLETED", "CANCELED"] } },
+      data: expect.objectContaining({
+        status: "FAILED",
+        error: "Invalid payload: generationJobId is required"
+      })
+    });
   });
 
   it("fails and refunds an audiobook without changing the book", async () => {

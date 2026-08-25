@@ -52,7 +52,7 @@ export async function registerMobileCreationAttachmentRoutes(
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(attachmentLimiter, request, reply, auth.user.id, "creation-attachment-upload")) {
+      if (!hitAuthenticatedLimit(attachmentLimiter, reply, auth.user.id, "creation-attachment-upload")) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);

@@ -25,7 +25,7 @@ import {
   type AudiobookChapterPlan
 } from "./generateAudiobookSupport.js";
 import { prisma } from "@book-maker/db";
-import { Job } from "bullmq";
+import type { GenerateAudiobookJob } from "../runtime/jobPayloads.js";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createLoggedSpeechAdapter } from "../providers/loggedAdapters.js";
@@ -48,10 +48,8 @@ import {
  * their final names.
  */
 
-export async function generateAudiobook(job: Job) {
-  const projectId = job.data.projectId as string;
-  const audiobookId = job.data.audiobookId as string;
-  const generationJobId = job.data.generationJobId as string | undefined;
+export async function generateAudiobook(job: GenerateAudiobookJob) {
+  const { projectId, audiobookId, generationJobId } = job.data;
 
   const audiobook = await prisma.audiobook.findUnique({
     where: { id: audiobookId },
@@ -358,7 +356,7 @@ async function persistOpenAISelection(options: {
 }
 
 async function narrateAllChapters(options: {
-  job: Job;
+  job: GenerateAudiobookJob;
   generationJobId: string | undefined;
   narrations: ChapterNarration[];
   audiobookId: string;

@@ -26,7 +26,7 @@ import {
   safePathPart
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
-import { Job } from "bullmq";
+import type { GenerateImageJob } from "../runtime/jobPayloads.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -51,20 +51,13 @@ type LegacyIllustrationOwnership = {
 
 type IllustrationOwnership = TokenIllustrationOwnership | LegacyIllustrationOwnership;
 
-export async function generateImage(job: Job) {
-  if (jsonPayloadToRecord(job.data).assetType === "COVER") {
+export async function generateImage(job: GenerateImageJob) {
+  if (job.data.assetType === "COVER") {
     await generateCover(job);
     return;
   }
 
-  const { projectId, pageId, planId, prompt, keeperToken } = job.data as {
-    projectId: string;
-    pageId: string;
-    planId: string;
-    prompt: string;
-    keeperToken?: string | undefined;
-  };
-  const generationJobId = job.data.generationJobId as string | undefined;
+  const { projectId, pageId, planId, prompt, keeperToken, generationJobId } = job.data;
   const [project, page, planVersion] = await Promise.all([
     getProjectOrThrow(projectId),
     prisma.page.findUnique({ where: { id: pageId } }),

@@ -81,7 +81,6 @@ describe("characterWriteLane", () => {
     expect(order).toEqual(["auth", "limit", "handler"]);
     expect(dependencies.hitAuthenticatedLimit).toHaveBeenCalledWith(
       limiter,
-      request,
       reply,
       "user-a",
       "character-write"
@@ -122,7 +121,6 @@ describe("characterWriteLane", () => {
     await expect(route(request, reply)).resolves.toBeUndefined();
     expect(dependencies.hitAuthenticatedLimit).toHaveBeenLastCalledWith(
       limiter,
-      request,
       reply,
       "user-a",
       "character-delete"

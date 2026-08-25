@@ -16,7 +16,7 @@ import {
   type ManuscriptImportFormat
 } from "@book-maker/core";
 import { pageScope, Prisma, prisma } from "@book-maker/db";
-import { Job } from "bullmq";
+import type { ImportBookJob } from "../runtime/jobPayloads.js";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -24,11 +24,9 @@ import { join } from "node:path";
  * `import-book` job: parse an uploaded manuscript into chapters, pages and a plan.
  */
 
-export async function importBook(job: Job) {
-  const { projectId, importId } = job.data as { projectId: string; importId: string };
-  const generationJobId = job.data.generationJobId as string | undefined;
-  const payloadLanguage =
-    typeof job.data.language === "string" && job.data.language.trim() ? job.data.language.trim() : null;
+export async function importBook(job: ImportBookJob) {
+  const { projectId, importId, generationJobId } = job.data;
+  const payloadLanguage = job.data.language?.trim() || null;
   const bookImport = await prisma.bookImport.findUnique({ where: { id: importId } });
   if (!bookImport) {
     throw new Error("Book import not found");

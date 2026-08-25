@@ -118,7 +118,7 @@ export async function registerMobileAudiobookRoutes(fastify: FastifyInstance, co
       }
       // Returns true when the request is allowed through, false once it has
       // already sent the rate-limit response.
-      if (!(await hitTieredLimit(context.generationLimiter, request, reply, auth.user.id, "narrate this book"))) {
+      if (!(await hitTieredLimit(context.generationLimiter, reply, auth.user.id, "narrate this book"))) {
         return;
       }
 

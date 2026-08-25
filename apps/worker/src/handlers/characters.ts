@@ -30,7 +30,10 @@ import {
   type VoiceCharacterCandidate
 } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
-import { Job } from "bullmq";
+import type {
+  BuildCharacterPersonaJob,
+  PrepareCharacterCandidatesJob
+} from "../runtime/jobPayloads.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -104,9 +107,8 @@ export async function maybeEnqueueCharacterCandidatePreparation(
   });
 }
 
-export async function prepareCharacterCandidates(job: Job) {
-  const { projectId, planId } = job.data as { projectId: string; planId: string };
-  const generationJobId = job.data.generationJobId as string | undefined;
+export async function prepareCharacterCandidates(job: PrepareCharacterCandidatesJob) {
+  const { projectId, planId, generationJobId } = job.data;
   const [project, planVersion, existingCharacters] = await Promise.all([
     getProjectOrThrow(projectId),
     prisma.planVersion.findUnique({ where: { id: planId } }),
@@ -171,9 +173,8 @@ export async function prepareCharacterCandidates(job: Job) {
   });
 }
 
-export async function buildCharacterPersona(job: Job) {
-  const { projectId, voiceCharacterId } = job.data as { projectId: string; voiceCharacterId: string };
-  const generationJobId = job.data.generationJobId as string | undefined;
+export async function buildCharacterPersona(job: BuildCharacterPersonaJob) {
+  const { projectId, voiceCharacterId, generationJobId } = job.data;
   const voiceCharacter = await prisma.voiceCharacter.findUnique({
     where: { id: voiceCharacterId },
     include: { project: { include: { currentPlan: true } } }

@@ -110,7 +110,7 @@ export async function registerMobileBookRoutes(fastify: FastifyInstance, context
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(draftLimiter, request, reply, auth.user.id, "manual-edit")) {
+      if (!hitAuthenticatedLimit(draftLimiter, reply, auth.user.id, "manual-edit")) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);

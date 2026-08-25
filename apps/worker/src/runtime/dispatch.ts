@@ -1,4 +1,4 @@
-import { Job, type JobsOptions } from "bullmq";
+import type { JobsOptions } from "bullmq";
 import { createHash } from "node:crypto";
 import {
   compilePolicyPayload,
@@ -35,6 +35,10 @@ import {
   compileIdentityAfterCompletion,
   recoveredCompileSuccessorIdentity
 } from "./compileSuccessor.js";
+import type {
+  EnqueuePayloadForType,
+  WorkerRuntimeJob
+} from "./jobPayloads.js";
 
 /**
  * Queue dispatch and generation fan-out.
@@ -76,14 +80,18 @@ const WORKER_FANOUT_JOB_TYPES = [
 
 export type WorkerFanoutJobType = (typeof WORKER_FANOUT_JOB_TYPES)[number];
 
-export async function enqueueWorkerJob(options: {
-  projectId: string;
-  type: WorkerFanoutJobType;
-  payload: Record<string, unknown>;
-  dedupeKey?: string | undefined;
-  contentRevision?: number | undefined;
-  attemptIdOverride?: string | null;
-}) {
+type EnqueueWorkerJobOptions = {
+  [Type in WorkerFanoutJobType]: {
+    projectId: string;
+    type: Type;
+    payload: EnqueuePayloadForType<Type>;
+    dedupeKey?: string | undefined;
+    contentRevision?: number | undefined;
+    attemptIdOverride?: string | null;
+  };
+}[WorkerFanoutJobType];
+
+export async function enqueueWorkerJob(options: EnqueueWorkerJobOptions) {
   if (!(await canEnqueueProjectWork(options.projectId))) {
     return;
   }
@@ -174,7 +182,7 @@ export async function dispatchWorkerGenerationJob(generationJobId: string) {
       {
         ...payload,
         // Absent rather than null for account-level jobs (character portraits):
-        // every payload read is `as string | undefined` behind a falsy guard.
+        // their schema intentionally has no projectId.
         ...(generationJob.projectId ? { projectId: generationJob.projectId } : {}),
         generationJobId: generationJob.id,
         ...(generationJob.attemptId ? { attemptId: generationJob.attemptId } : {})
@@ -885,12 +893,11 @@ export async function reconcileStrandedGeneration(limit = 20): Promise<number> {
   return projects.length;
 }
 
-export async function maybeCompileAfterCompletedJob(job: Job) {
+export async function maybeCompileAfterCompletedJob(job: WorkerRuntimeJob) {
   if (job.name !== "generate-page" && job.name !== "generate-image") {
     return;
   }
-  const projectId = job.data.projectId as string | undefined;
-  const planId = job.data.planId as string | undefined;
+  const { projectId, planId } = job.data;
   if (!projectId || !planId) {
     return;
   }

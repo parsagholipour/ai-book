@@ -16,7 +16,7 @@ import { maybeEnqueueCompile } from "../runtime/dispatch.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import { jsonRecord, preEditProjectStatus, type SettledProjectStatus } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
-import { Job } from "bullmq";
+import type { ApplyBookEditJob } from "../runtime/jobPayloads.js";
 
 /**
  * The `apply-book-edit` layout fork: move or remove existing illustrations with
@@ -124,15 +124,8 @@ class LayoutUnavailableError extends Error {
   }
 }
 
-export async function applyImageLayout(job: Job, operation: { status: string; classifier: unknown }) {
-  const { projectId, operationId, planId, imageLayout } = job.data as {
-    projectId: string;
-    operationId: string;
-    planId?: string;
-    /** Optional: the fork that routes a job here tests the operation's `kind`, not this field. */
-    imageLayout?: ImageLayoutPayload;
-  };
-  const generationJobId = job.data.generationJobId as string | undefined;
+export async function applyImageLayout(job: ApplyBookEditJob, operation: { status: string; classifier: unknown }) {
+  const { projectId, operationId, planId, imageLayout, generationJobId } = job.data;
   // Read once from the queue-time stamp. The project row already says EDITING
   // before either a first delivery or an APPLIED redelivery reaches this fork.
   const fallbackStatus = preEditProjectStatus(job.data);

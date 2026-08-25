@@ -1,15 +1,19 @@
-import type { Job } from "bullmq";
 import { appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
   isRecoverableNetworkError,
   providerRetryAfterMs,
+  safePathPart,
   type GenerateTextOptions,
   type ImageAdapter
 } from "@book-maker/core";
 import { updateJobProgress } from "../runtime/jobLifecycle.js";
-import { safeJsonStringify, safePathPart, serializeError } from "../runtime/serialization.js";
+import { safeJsonStringify, serializeError } from "../runtime/serialization.js";
 import { config } from "../runtime/config.js";
+import {
+  workerJobStringField,
+  type RawWorkerJob
+} from "../runtime/jobPayloads.js";
 
 /**
  * Per-job run logs and the retry/reporting policy around provider calls.
@@ -34,9 +38,9 @@ export type LoggedImageAttempt = {
   model: string;
 };
 
-export function createRunLogger(job: Job): RunLogger {
-  const projectId = (job.data.projectId as string | undefined) ?? "_unknown-project";
-  const generationJobId = job.data.generationJobId as string | undefined;
+export function createRunLogger(job: RawWorkerJob): RunLogger {
+  const projectId = workerJobStringField(job, "projectId") ?? "_unknown-project";
+  const generationJobId = workerJobStringField(job, "generationJobId");
   const runId = generationJobId ?? `bull-${job.id ?? "unknown"}`;
   const logDir = join(config.BOOK_STORAGE_DIR, projectId, "runs");
   const filePath = join(logDir, `${safePathPart(runId)}-${safePathPart(job.name)}.jsonl`);

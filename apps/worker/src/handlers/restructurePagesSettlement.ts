@@ -6,7 +6,7 @@ import {
 import { refundSkippedEditOperation } from "../runtime/jobLifecycle.js";
 import { jsonRecord, type SettledProjectStatus } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
-import type { Job } from "bullmq";
+import type { ApplyBookEditJob } from "../runtime/jobPayloads.js";
 
 /**
  * Settles a structural edit that is going to apply nothing: refunded, marked,
@@ -80,7 +80,7 @@ import type { Job } from "bullmq";
  * lost the row writes nothing further either.
  */
 export async function settleSkippedRestructure(options: {
-  job: Job;
+  job: ApplyBookEditJob;
   projectId: string;
   operationId: string;
   ownerToken: string;

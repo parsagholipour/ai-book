@@ -1,4 +1,3 @@
-import type { Job } from "bullmq";
 import {
   BOOK_GENERATION_CHARGE_LOOKBACK,
   bookGenerationChargeFromPayloads,
@@ -11,6 +10,7 @@ import {
   presentationRecompileFallbackStatus,
   shouldBypassConfiguredRetries as retryPolicyShouldBypass,
   shouldRecoverJobAttempt as retryPolicyShouldRecover,
+  workerJobNameForType,
   workerJobOwnsFailureLifecycle,
   workerJobRestoresPreEditProjectStatus
 } from "@book-maker/core";
@@ -35,6 +35,12 @@ import { completedJobLifecycle } from "./jobCompletion.js";
 import { staleGenerationTargetReason } from "./staleJobGuard.js";
 import { STOPPED_JOB_ERROR, STOPPED_JOB_MESSAGE, type JobLifecycleSettlement } from "./jobTypes.js";
 import { jsonPayloadToRecord } from "./serialization.js";
+import {
+  parseWorkerJob,
+  workerJobStringField,
+  type RawWorkerJob,
+  type WorkerRuntimeJob
+} from "./jobPayloads.js";
 
 /**
  * GenerationJob lifecycle: the status transitions (active / completed / failed
@@ -62,11 +68,8 @@ export {
  * verdicts — one delivered and paid for, one refunded — that a redelivered
  * Bull job must never resurrect, so the claim refuses them and returns false.
  */
-export async function markActive(job: Job): Promise<boolean> {
-  const generationJobId = job.data.generationJobId as string | undefined;
-  if (!generationJobId) {
-    return true;
-  }
+export async function markActive(job: WorkerRuntimeJob): Promise<boolean> {
+  const { generationJobId } = job.data;
   await assertJobNotStopped(generationJobId);
   const steps = buildStepTemplate(job.name);
   const claimed = await prisma.generationJob.updateMany({
@@ -90,12 +93,8 @@ export async function markActive(job: Job): Promise<boolean> {
   return true;
 }
 
-export async function staleGenerationJobReason(job: Job): Promise<string | null> {
-  const generationJobId = job.data.generationJobId as string | undefined;
-  const payloadProjectId = job.data.projectId as string | undefined;
-  if (!generationJobId) {
-    return null;
-  }
+export async function staleGenerationJobReason(job: WorkerRuntimeJob): Promise<string | null> {
+  const { generationJobId, projectId: payloadProjectId } = job.data;
   const generationJob = await prisma.generationJob.findUnique({
     where: { id: generationJobId },
     select: { projectId: true, type: true, contentRevision: true, status: true, attemptId: true }
@@ -141,7 +140,7 @@ export async function staleGenerationJobReason(job: Job): Promise<string | null>
   if (!project) {
     return "The target project no longer exists.";
   }
-  const planId = typeof job.data.planId === "string" ? job.data.planId : null;
+  const planId = job.data.planId ?? null;
   // A structural shift replaces its own plan before its delivery settles; the
   // operation linkage and exact stamp pair prove this mismatch is that shift.
   const operationId = editOperationIdFromJob(job);
@@ -161,7 +160,7 @@ export async function staleGenerationJobReason(job: Job): Promise<string | null>
     (structuralOperation.status === "ACTIVE" || structuralOperation.status === "APPLIED") &&
     structuralApplication?.basePlanVersionId === planId &&
     structuralApplication?.newPlanVersionId === project.currentPlanId;
-  const pageId = typeof job.data.pageId === "string" ? job.data.pageId : null;
+  const pageId = job.data.pageId ?? null;
   const page = pageId
     ? await prisma.page.findUnique({ where: { id: pageId }, select: { projectId: true } })
     : null;
@@ -179,22 +178,20 @@ export async function staleGenerationJobReason(job: Job): Promise<string | null>
   });
 }
 
-export async function cancelStaleGenerationJob(job: Job, reason: string): Promise<void> {
-  const generationJobId = job.data.generationJobId as string | undefined;
-  if (generationJobId) {
-    // Only an open row takes the CANCELED verdict. A row that is already
-    // FAILED keeps its own story — a user stop's markers must survive this —
-    // while the attempt settlement below is idempotent either way.
-    await prisma.generationJob.updateMany({
-      where: { id: generationJobId, status: { in: ["QUEUED", "ACTIVE"] } },
-      data: {
-        status: "CANCELED",
-        finishedAt: new Date(),
-        message: "Canceled because newer book state exists",
-        error: reason
-      }
-    });
-  }
+export async function cancelStaleGenerationJob(job: WorkerRuntimeJob, reason: string): Promise<void> {
+  const { generationJobId } = job.data;
+  // Only an open row takes the CANCELED verdict. A row that is already
+  // FAILED keeps its own story — a user stop's markers must survive this —
+  // while the attempt settlement below is idempotent either way.
+  await prisma.generationJob.updateMany({
+    where: { id: generationJobId, status: { in: ["QUEUED", "ACTIVE"] } },
+    data: {
+      status: "CANCELED",
+      finishedAt: new Date(),
+      message: "Canceled because newer book state exists",
+      error: reason
+    }
+  });
   const attemptId = generationAttemptIdFromJob(job);
   if (attemptId) {
     await failGenerationAttempt(attemptId, reason, "CANCELED").catch((error) => {
@@ -205,7 +202,7 @@ export async function cancelStaleGenerationJob(job: Job, reason: string): Promis
   // was charged for is never going to finish, so its own payload entry comes
   // back (idempotent). A stale *child* proves nothing — a completed run can
   // leave a straggler behind — so children never touch the charge.
-  if (!attemptId && job.name === "generate-book" && typeof job.data.billingLedgerEntryId === "string") {
+  if (!attemptId && job.name === "generate-book" && job.data.billingLedgerEntryId) {
     await refundCreditLedgerEntry(job.data.billingLedgerEntryId, reason).catch((error) => {
       console.error(`Failed to refund stale-cancelled generation for job ${generationJobId ?? "?"}`, error);
     });
@@ -229,11 +226,8 @@ export async function cancelStaleGenerationJob(job: Job, reason: string): Promis
   });
 }
 
-export async function markCompleted(job: Job, lifecycleSettlement: JobLifecycleSettlement = "settle"): Promise<boolean> {
-  const generationJobId = job.data.generationJobId as string | undefined;
-  if (!generationJobId) {
-    return true;
-  }
+export async function markCompleted(job: WorkerRuntimeJob, lifecycleSettlement: JobLifecycleSettlement = "settle"): Promise<boolean> {
+  const { generationJobId } = job.data;
   await assertJobNotStopped(generationJobId);
   await completeAllJobSteps(generationJobId);
   const existing = await prisma.generationJob.findUnique({
@@ -270,9 +264,8 @@ export async function markCompleted(job: Job, lifecycleSettlement: JobLifecycleS
   return true;
 }
 
-export async function markFailed(job: Job, error: unknown) {
-  const generationJobId = job.data.generationJobId as string | undefined;
-  const projectId = job.data.projectId as string | undefined;
+export async function markFailed(job: WorkerRuntimeJob, error: unknown) {
+  const { generationJobId, projectId } = job.data;
   const editOperationId = editOperationIdFromJob(job);
   const attemptId = generationAttemptIdFromJob(job);
   if (generationJobId) {
@@ -379,18 +372,76 @@ export async function markFailed(job: Job, error: unknown) {
 }
 
 /**
+ * The validation-failure variant of `markFailed`.
+ *
+ * A malformed payload cannot be presented as a `WorkerRuntimeJob`, but Bull's
+ * job id is the durable GenerationJob id at every dispatch site. Use that
+ * recoverable identity to leave the row in the ordinary FAILED settlement
+ * instead of letting validation escape the processor and strand it ACTIVE.
+ */
+export async function markMalformedJobFailed(job: RawWorkerJob, error: unknown): Promise<void> {
+  const generationJobId = workerJobStringField(job, "generationJobId") ??
+    (typeof job.id === "string" && job.id ? job.id : undefined);
+  if (!generationJobId) return;
+
+  const durable = await prisma.generationJob.findUnique({
+    where: { id: generationJobId },
+    select: { projectId: true, type: true, payload: true, attemptId: true }
+  });
+  if (durable) {
+    let recoveredJob: WorkerRuntimeJob | undefined;
+    try {
+      job.name = workerJobNameForType(durable.type);
+      job.data = {
+        ...jsonPayloadToRecord(durable.payload),
+        ...(durable.projectId ? { projectId: durable.projectId } : {}),
+        generationJobId,
+        ...(durable.attemptId ? { attemptId: durable.attemptId } : {})
+      };
+      recoveredJob = parseWorkerJob(job);
+    } catch {
+      // The durable payload is malformed too (or its old type is no longer
+      // dispatchable). Fall through to the identities Bull and the row can
+      // still prove.
+    }
+    if (recoveredJob) {
+      await markFailed(recoveredJob, error);
+      return;
+    }
+  }
+
+  const failed = await prisma.generationJob.updateMany({
+    where: { id: generationJobId, status: { notIn: ["COMPLETED", "CANCELED"] } },
+    data: {
+      status: "FAILED",
+      finishedAt: new Date(),
+      message: "Failed",
+      error: errorMessage(error)
+    }
+  });
+  if (failed.count !== 1) return;
+  await failActiveJobStep(generationJobId);
+
+  const attemptId = durable?.attemptId ?? workerJobStringField(job, "attemptId");
+  if (attemptId) {
+    await failGenerationAttempt(attemptId, errorMessage(error)).catch((settlementError) => {
+      console.error(`Failed to settle malformed generation attempt ${attemptId}`, settlementError);
+    });
+    await stopSiblingJobsForSettledAttempt(attemptId);
+  }
+}
+
+/**
  * A failed or stopped import hands back the free tier's monthly slot the
  * upload claimed. The claim rides the job payload (`importQuota`) precisely so
  * this needs no lookup — and it is absent for subscribers, whose imports
  * claim nothing.
  */
-async function releaseImportQuotaForJob(job: Job): Promise<void> {
-  const quota = job.data.importQuota as { userId?: unknown; periodKey?: unknown } | undefined;
-  if (!quota || typeof quota.userId !== "string" || typeof quota.periodKey !== "string") {
-    return;
-  }
-  await releaseManuscriptImportUse(quota.userId, quota.periodKey).catch((error: unknown) => {
-    console.error(`Failed to release import slot for user ${quota.userId}`, error);
+async function releaseImportQuotaForJob(job: WorkerRuntimeJob): Promise<void> {
+  const { importQuota } = job.data;
+  if (!importQuota) return;
+  await releaseManuscriptImportUse(importQuota.userId, importQuota.periodKey).catch((error: unknown) => {
+    console.error(`Failed to release import slot for user ${importQuota.userId}`, error);
   });
 }
 
@@ -401,10 +452,8 @@ async function releaseImportQuotaForJob(job: Job): Promise<void> {
  * project's latest charge, which would otherwise claw back an unrelated
  * generation.
  */
-async function failAudiobookForJob(job: Job, reason: string): Promise<void> {
-  const audiobookId = typeof job.data.audiobookId === "string" ? job.data.audiobookId : undefined;
-  const ledgerEntryId = typeof job.data.billingLedgerEntryId === "string" ? job.data.billingLedgerEntryId : undefined;
-  const projectId = job.data.projectId as string | undefined;
+async function failAudiobookForJob(job: WorkerRuntimeJob, reason: string): Promise<void> {
+  const { audiobookId, billingLedgerEntryId: ledgerEntryId, projectId } = job.data;
 
   const attemptId = generationAttemptIdFromJob(job);
   if (attemptId) {
@@ -432,9 +481,8 @@ async function failAudiobookForJob(job: Job, reason: string): Promise<void> {
  * settlement above; the ledger-entry fallback covers a payload that somehow
  * carries no attempt, mirroring the audiobook path.
  */
-async function failCharacterPortraitForJob(job: Job, reason: string): Promise<void> {
-  const libraryCharacterId = typeof job.data.libraryCharacterId === "string" ? job.data.libraryCharacterId : undefined;
-  const ledgerEntryId = typeof job.data.billingLedgerEntryId === "string" ? job.data.billingLedgerEntryId : undefined;
+async function failCharacterPortraitForJob(job: WorkerRuntimeJob, reason: string): Promise<void> {
+  const { libraryCharacterId, billingLedgerEntryId: ledgerEntryId } = job.data;
   if (!generationAttemptIdFromJob(job) && ledgerEntryId) {
     await refundCreditLedgerEntry(ledgerEntryId, reason).catch((error) => {
       console.error(`Failed to refund character portrait ${libraryCharacterId ?? "?"}`, error);
@@ -456,9 +504,8 @@ async function failCharacterPortraitForJob(job: Job, reason: string): Promise<vo
  * `FULL_BOOK_GENERATION`, which a plan-only project has never paid, so without
  * this branch a dead plan kept the money.
  */
-async function refundPlanGenerationForJob(job: Job, reason: string): Promise<void> {
-  const projectId = job.data.projectId as string | undefined;
-  const ledgerEntryId = typeof job.data.billingLedgerEntryId === "string" ? job.data.billingLedgerEntryId : undefined;
+async function refundPlanGenerationForJob(job: WorkerRuntimeJob, reason: string): Promise<void> {
+  const { projectId, billingLedgerEntryId: ledgerEntryId } = job.data;
   if (generationAttemptIdFromJob(job)) {
     return;
   }
@@ -473,7 +520,7 @@ async function refundPlanGenerationForJob(job: Job, reason: string): Promise<voi
   }
 }
 
-export async function markEditOperationActive(job: Job): Promise<void> {
+export async function markEditOperationActive(job: WorkerRuntimeJob): Promise<void> {
   const editOperationId = editOperationIdFromJob(job);
   if (!editOperationId) {
     return;
@@ -483,7 +530,7 @@ export async function markEditOperationActive(job: Job): Promise<void> {
     .catch(() => ({ count: 0 }));
 }
 
-export async function markEditOperationCompleted(job: Job): Promise<void> {
+export async function markEditOperationCompleted(job: WorkerRuntimeJob): Promise<void> {
   const editOperationId = editOperationIdFromJob(job);
   if (!editOperationId) {
     return;
@@ -554,7 +601,7 @@ export async function failEditOperation(
  * claiming the operation APPLIED for the same reason — the throw then finds the
  * row still ACTIVE, which is what `failEditOperation` claims.
  */
-export async function refundSkippedEditOperation(job: Job, reason: string): Promise<void> {
+export async function refundSkippedEditOperation(job: WorkerRuntimeJob, reason: string): Promise<void> {
   const attemptId = generationAttemptIdFromJob(job);
   if (attemptId) {
     await failGenerationAttempt(attemptId, reason, "CANCELED");
@@ -602,7 +649,7 @@ export async function refundSkippedEditOperation(job: Job, reason: string): Prom
  * replay-safe while still allowing a later full failure to top it up.
  */
 export async function refundUnwrittenEditPages(
-  job: Job,
+  job: WorkerRuntimeJob,
   options: { billedPages: number; writtenPages: number; reason: string }
 ): Promise<void> {
   const missing = options.billedPages - options.writtenPages;
@@ -641,14 +688,13 @@ export async function refundUnwrittenEditPages(
   });
 }
 
-export function editOperationIdFromJob(job: Job): string | null {
+export function editOperationIdFromJob(job: WorkerRuntimeJob): string | null {
   const value = job.data.operationId ?? job.data.editOperationId ?? job.data.replanOperationId;
-  return typeof value === "string" && value.trim() ? value : null;
+  return value ?? null;
 }
 
-export async function markStopped(job: Job) {
-  const generationJobId = job.data.generationJobId as string | undefined;
-  const projectId = job.data.projectId as string | undefined;
+export async function markStopped(job: WorkerRuntimeJob) {
+  const { generationJobId, projectId } = job.data;
   const attemptId = generationAttemptIdFromJob(job);
   if (generationJobId) {
     // Conditional for the same reason as markFailed: a COMPLETED row is a run
@@ -729,12 +775,12 @@ export async function markStopped(job: Job) {
  * rebuild of a missing export, say. A detached job that fails records that on its
  * own row and leaves the project and its credits alone.
  */
-function jobOwnsProjectLifecycle(job: Job): boolean {
+function jobOwnsProjectLifecycle(job: WorkerRuntimeJob): boolean {
   return workerJobOwnsFailureLifecycle(job.name, job.data);
 }
 
-async function restorePresentationRecompileStatus(job: Job, projectId: string): Promise<void> {
-  const contentRevision = typeof job.data.contentRevision === "number" ? job.data.contentRevision : undefined;
+async function restorePresentationRecompileStatus(job: WorkerRuntimeJob, projectId: string): Promise<void> {
+  const { contentRevision } = job.data;
   await prisma.project
     .updateMany({
       where: {
@@ -748,7 +794,7 @@ async function restorePresentationRecompileStatus(job: Job, projectId: string): 
 }
 
 /** Restore settled edit work; operation-linked generation instead fails its new project. */
-async function settleProjectAfterOperationExit(job: Job, projectId: string): Promise<void> {
+async function settleProjectAfterOperationExit(job: WorkerRuntimeJob, projectId: string): Promise<void> {
   if (workerJobRestoresPreEditProjectStatus(job.name)) {
     await prisma.project
       .updateMany({ where: { id: projectId, status: "EDITING" }, data: { status: preEditProjectStatus(job.data) } })
@@ -759,7 +805,7 @@ async function settleProjectAfterOperationExit(job: Job, projectId: string): Pro
     await prisma.project.update({ where: { id: projectId }, data: { status: "FAILED" } }).catch(() => undefined);
   }
 }
-export async function refundFailedProjectCredits(job: Job, projectId: string, reason: string): Promise<void> {
+export async function refundFailedProjectCredits(job: WorkerRuntimeJob, projectId: string, reason: string): Promise<void> {
   if (generationAttemptIdFromJob(job)) {
     return;
   }
@@ -779,9 +825,8 @@ export async function refundFailedProjectCredits(job: Job, projectId: string, re
   }
 }
 
-function generationAttemptIdFromJob(job: Job): string | null {
-  const attemptId = job.data.attemptId;
-  return typeof attemptId === "string" && attemptId ? attemptId : null;
+function generationAttemptIdFromJob(job: WorkerRuntimeJob): string | null {
+  return job.data.attemptId ?? null;
 }
 
 /**
@@ -828,13 +873,13 @@ function attemptCompletesWithJob(jobName: string): boolean {
  * charge through the latest-charge fallback, which is why resolution comes
  * first.
  */
-async function bookGenerationLedgerEntryId(job: Job, projectId: string): Promise<string | null> {
+async function bookGenerationLedgerEntryId(job: WorkerRuntimeJob, projectId: string): Promise<string | null> {
   const own = job.data.billingLedgerEntryId;
-  if (typeof own === "string" && own) {
+  if (own) {
     return own;
   }
   const planId = job.data.planId;
-  if (typeof planId !== "string" || !planId) {
+  if (!planId) {
     return null;
   }
   const rows = await prisma.generationJob.findMany({
@@ -846,9 +891,8 @@ async function bookGenerationLedgerEntryId(job: Job, projectId: string): Promise
   return bookGenerationChargeFromPayloads(rows, planId);
 }
 
-export async function markRecovering(job: Job, error: unknown) {
-  const generationJobId = job.data.generationJobId as string | undefined;
-  const projectId = job.data.projectId as string | undefined;
+export async function markRecovering(job: WorkerRuntimeJob, error: unknown) {
+  const { generationJobId, projectId } = job.data;
   const nextAttempt = job.attemptsMade + 2;
   const maxAttempts = jobMaxAttempts(job);
   const message = `Network interruption during ${job.name}; retrying (${nextAttempt}/${maxAttempts}). ${errorMessage(error)}`;
@@ -876,7 +920,7 @@ export async function markRecovering(job: Job, error: unknown) {
   }
 }
 
-export function shouldRecoverJobAttempt(job: Job, error: unknown): boolean {
+export function shouldRecoverJobAttempt(job: WorkerRuntimeJob, error: unknown): boolean {
   return retryPolicyShouldRecover({
     jobName: job.name,
     attemptsMade: job.attemptsMade,
@@ -885,7 +929,7 @@ export function shouldRecoverJobAttempt(job: Job, error: unknown): boolean {
   });
 }
 
-export function shouldBypassConfiguredRetries(job: Job, error: unknown): boolean {
+export function shouldBypassConfiguredRetries(job: WorkerRuntimeJob, error: unknown): boolean {
   return retryPolicyShouldBypass({
     jobName: job.name,
     attemptsMade: job.attemptsMade,
@@ -894,7 +938,7 @@ export function shouldBypassConfiguredRetries(job: Job, error: unknown): boolean
   });
 }
 
-export function jobMaxAttempts(job: Job): number {
+export function jobMaxAttempts(job: WorkerRuntimeJob): number {
   const attempts = job.opts.attempts;
   return typeof attempts === "number" && Number.isFinite(attempts) && attempts > 0 ? attempts : 1;
 }

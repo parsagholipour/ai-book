@@ -111,7 +111,7 @@ export async function registerMobileAccountRoutes(fastify: FastifyInstance, cont
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(billingVerificationLimiter, request, reply, auth.user.id, "billing-verify")) {
+      if (!hitAuthenticatedLimit(billingVerificationLimiter, reply, auth.user.id, "billing-verify")) {
         return;
       }
       const parsed = mobileGooglePlayVerificationBodySchema.safeParse(request.body);
@@ -178,7 +178,7 @@ export async function registerMobileAccountRoutes(fastify: FastifyInstance, cont
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(billingVerificationLimiter, request, reply, auth.user.id, "billing-refresh")) {
+      if (!hitAuthenticatedLimit(billingVerificationLimiter, reply, auth.user.id, "billing-refresh")) {
         return;
       }
       const subscription = await prisma.subscriptionState.findFirst({
@@ -221,7 +221,7 @@ export async function registerMobileAccountRoutes(fastify: FastifyInstance, cont
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(billingVerificationLimiter, request, reply, auth.user.id, "billing-cancel")) {
+      if (!hitAuthenticatedLimit(billingVerificationLimiter, reply, auth.user.id, "billing-cancel")) {
         return;
       }
       if (!canCancelInApp) {

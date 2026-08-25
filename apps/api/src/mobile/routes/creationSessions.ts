@@ -188,7 +188,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(draftLimiter, request, reply, auth.user.id, "creation-session-start")) {
+      if (!hitAuthenticatedLimit(draftLimiter, reply, auth.user.id, "creation-session-start")) {
         return;
       }
       const parsedBody = mobileCreationSessionStartBodySchema.safeParse(request.body ?? {});
@@ -322,7 +322,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       if (!auth) {
         return;
       }
-      if (!(await hitTieredLimit(advisorLimiter, request, reply, auth.user.id, "creation-session-message"))) {
+      if (!(await hitTieredLimit(advisorLimiter, reply, auth.user.id, "creation-session-message"))) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);
@@ -528,7 +528,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(draftLimiter, request, reply, auth.user.id, "creation-branch-switch")) {
+      if (!hitAuthenticatedLimit(draftLimiter, reply, auth.user.id, "creation-branch-switch")) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);
@@ -672,7 +672,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       if (!auth) {
         return;
       }
-      if (!(await hitTieredLimit(advisorLimiter, request, reply, auth.user.id, "creation-session-preflight"))) {
+      if (!(await hitTieredLimit(advisorLimiter, reply, auth.user.id, "creation-session-preflight"))) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);
@@ -722,7 +722,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       if (!auth) {
         return;
       }
-      if (!(await hitTieredLimit(generationLimiter, request, reply, auth.user.id, "creation-session-build"))) {
+      if (!(await hitTieredLimit(generationLimiter, reply, auth.user.id, "creation-session-build"))) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);
