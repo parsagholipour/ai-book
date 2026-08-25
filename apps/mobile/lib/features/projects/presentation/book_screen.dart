@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,6 +7,7 @@ import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
+import '../../../shared/ui/polling_state_mixin.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
 import '../../reader/data/reader_repository.dart';
@@ -42,9 +41,9 @@ class BookScreen extends ConsumerStatefulWidget {
   ConsumerState<BookScreen> createState() => _BookScreenState();
 }
 
-class _BookScreenState extends ConsumerState<BookScreen> {
+class _BookScreenState extends ConsumerState<BookScreen>
+    with PollingStateMixin<BookScreen> {
   final _revisionController = TextEditingController();
-  Timer? _pollTimer;
   String? _busyAction;
   bool _celebrated = false;
   bool _notifiedFailure = false;
@@ -68,7 +67,6 @@ class _BookScreenState extends ConsumerState<BookScreen> {
   @override
   void dispose() {
     _statusSubscription?.close();
-    _pollTimer?.cancel();
     _revisionController.dispose();
     super.dispose();
   }
@@ -193,12 +191,11 @@ class _BookScreenState extends ConsumerState<BookScreen> {
     _announceCompletion(statusValue);
     final live = statusValue.value?.isLive ?? false;
     if (live) {
-      _pollTimer ??= Timer.periodic(const Duration(seconds: 4), (_) {
+      startPolling(const Duration(seconds: 4), () {
         _refreshDetails();
       });
-    } else if (_pollTimer != null) {
-      _pollTimer?.cancel();
-      _pollTimer = null;
+    } else if (isPolling) {
+      stopPolling();
       // One last refresh so the page reflects the finished book.
       _refreshDetails();
     }

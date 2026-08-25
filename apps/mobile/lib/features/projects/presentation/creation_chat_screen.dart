@@ -25,6 +25,7 @@ import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../../shared/ui/motion.dart';
+import '../../../shared/ui/polling_state_mixin.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
 import '../../billing/presentation/billing_paywall.dart';
@@ -106,6 +107,7 @@ class CreationChatScreen extends ConsumerStatefulWidget {
 
 class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     with
+        PollingStateMixin<CreationChatScreen>,
         _OutputChatSend,
         _CreationComposerContext,
         _CreationChatResume,
@@ -165,7 +167,6 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
 
   @override
   void dispose() {
-    _planRefreshTimer?.cancel();
     _stickScrollTimer?.cancel();
     _detachMentionListener();
     _composerController.dispose();
@@ -190,8 +191,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
   }
 
   void _resetLocalConversationState() {
-    _planRefreshTimer?.cancel();
-    _planRefreshTimer = null;
+    stopPolling();
     _resetMentions();
     _composerController.clear();
     _revisionController.clear();

@@ -19,9 +19,10 @@ part of 'creation_chat_screen.dart';
 // A mixin rather than plain helpers because these need `setState`, `ref` and
 // `mounted`.
 
-mixin _LiveOutputRefresh on ConsumerState<CreationChatScreen> {
-  Timer? _planRefreshTimer;
-
+mixin _LiveOutputRefresh
+    on
+        ConsumerState<CreationChatScreen>,
+        PollingStateMixin<CreationChatScreen> {
   /// The project `_wasLive` is remembering, so switching outputs cannot inherit
   /// the previous one's edge and fire a completion refresh for a book the
   /// screen is no longer showing.
@@ -62,8 +63,7 @@ mixin _LiveOutputRefresh on ConsumerState<CreationChatScreen> {
     }
     if (!_wasLive) return;
     _wasLive = false;
-    _planRefreshTimer?.cancel();
-    _planRefreshTimer = null;
+    stopPolling();
     // The stream closes the moment the book settles, so this is the only
     // notice the screen gets that the plan, the pages and the exports are
     // there to be read. The outputs sync is what moves the plan's chosen
@@ -81,7 +81,7 @@ mixin _LiveOutputRefresh on ConsumerState<CreationChatScreen> {
   /// Kept callable directly by the actions that *start* work, so the first
   /// refresh does not wait for a status tick to arrive.
   void _startPlanPoll() {
-    _planRefreshTimer ??= Timer.periodic(const Duration(seconds: 4), (_) {
+    startPolling(const Duration(seconds: 4), () {
       final id = _activeProjectId(ref.read(creationChatControllerProvider));
       if (id == null) return;
       if (ref.read(projectDetailProvider(id)).isLoading) return;
@@ -91,8 +91,7 @@ mixin _LiveOutputRefresh on ConsumerState<CreationChatScreen> {
 
   void _stopPollingWhenSettled(MobileProjectDetail project) {
     if (project.status == 'failed') {
-      _planRefreshTimer?.cancel();
-      _planRefreshTimer = null;
+      stopPolling();
       return;
     }
     if (project.status == 'planning' ||
@@ -107,8 +106,7 @@ mixin _LiveOutputRefresh on ConsumerState<CreationChatScreen> {
         _pendingRevisionPlanKey == settledPlanKey &&
         project.status != 'failed';
     if (stillWaitingForRevisedPlan) return;
-    _planRefreshTimer?.cancel();
-    _planRefreshTimer = null;
+    stopPolling();
     if (_planBusyAction == 'revise') {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _planBusyAction == 'revise') {
@@ -141,8 +139,7 @@ mixin _LiveOutputRefresh on ConsumerState<CreationChatScreen> {
         _pendingRevisionPlanKey = null;
         _pendingRevisionOperationId = null;
       });
-      _planRefreshTimer?.cancel();
-      _planRefreshTimer = null;
+      stopPolling();
     });
   }
 }

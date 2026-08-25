@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,6 +6,7 @@ import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
+import '../../../shared/ui/polling_state_mixin.dart';
 import '../data/voice_repository.dart';
 import '../data/voice_disclosure_store.dart';
 import '../domain/voice_models.dart';
@@ -43,15 +42,8 @@ class _CharacterCastSheet extends ConsumerStatefulWidget {
       _CharacterCastSheetState();
 }
 
-class _CharacterCastSheetState extends ConsumerState<_CharacterCastSheet> {
-  Timer? _poll;
-
-  @override
-  void dispose() {
-    _poll?.cancel();
-    super.dispose();
-  }
-
+class _CharacterCastSheetState extends ConsumerState<_CharacterCastSheet>
+    with PollingStateMixin<_CharacterCastSheet> {
   /// A character being prepared becomes callable on its own within seconds.
   /// Polling keeps the list honest without asking the user to pull to refresh.
   void _pollWhilePreparing(VoiceCast cast) {
@@ -59,11 +51,10 @@ class _CharacterCastSheetState extends ConsumerState<_CharacterCastSheet> {
       (character) => character.status == VoiceCharacterStatus.preparing,
     );
     if (!preparing) {
-      _poll?.cancel();
-      _poll = null;
+      stopPolling();
       return;
     }
-    _poll ??= Timer.periodic(const Duration(seconds: 4), (_) {
+    startPolling(const Duration(seconds: 4), () {
       ref.invalidate(voiceCastProvider(widget.projectId));
     });
   }

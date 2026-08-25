@@ -1,10 +1,9 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../shared/ui/app_components.dart';
+import '../../../shared/ui/polling_state_mixin.dart';
 import '../../billing/data/billing_repository.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
@@ -73,18 +72,12 @@ class ExportRefreshBudget {
   bool recordAttempt() => ++_attempts >= maxAttempts;
 }
 
-class _SavedExportCardState extends ConsumerState<SavedExportCard> {
+class _SavedExportCardState extends ConsumerState<SavedExportCard>
+    with PollingStateMixin<SavedExportCard> {
   String? _busyAction;
-  Timer? _exportRefreshTimer;
   final ExportRefreshBudget _exportRefresh = ExportRefreshBudget();
 
   String get _projectId => widget.message.projectId;
-
-  @override
-  void dispose() {
-    _exportRefreshTimer?.cancel();
-    super.dispose();
-  }
 
   /// The SSE connection ends once the project settles. The shared provider
   /// keeps polling a missing PDF, but EPUB is best-effort and intentionally
@@ -112,7 +105,7 @@ class _SavedExportCardState extends ConsumerState<SavedExportCard> {
       _stopExportRefresh();
       return;
     }
-    _exportRefreshTimer ??= Timer.periodic(const Duration(seconds: 4), (_) {
+    startPolling(const Duration(seconds: 4), () {
       if (_exportRefresh.recordAttempt()) {
         _stopExportRefresh();
       }
@@ -121,8 +114,7 @@ class _SavedExportCardState extends ConsumerState<SavedExportCard> {
   }
 
   void _stopExportRefresh() {
-    _exportRefreshTimer?.cancel();
-    _exportRefreshTimer = null;
+    stopPolling();
   }
 
   Future<void> _download(MobileExportAvailability export) async {
