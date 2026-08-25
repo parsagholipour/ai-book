@@ -1,6 +1,12 @@
 import { z, type ZodType } from "zod";
 import { AdapterJsonValidationError } from "../adapters/json.js";
-import type { ChatMessage, GenerateJsonOptions, JsonResult, TextModelAdapter } from "../adapters/types.js";
+import {
+  bindTextModelCall,
+  type ChatMessage,
+  type GenerateJsonOptions,
+  type JsonResult,
+  type TextModelAdapter
+} from "../adapters/types.js";
 
 export type GenerateJsonWithRetryOptions<T> = GenerateJsonOptions<T> & {
   /** Additional model calls after a repairable parse/schema failure. Bounded to two. */
@@ -26,10 +32,14 @@ export async function generateJsonWithRetry<T>(
   const { repairAttempts: requestedRepairAttempts, ...generateOptions } = options;
   const repairAttempts = Math.max(0, Math.min(2, Math.floor(requestedRepairAttempts ?? 1)));
   let nextOptions: GenerateJsonOptions<T> = generateOptions;
+  // A schema-repair attempt belongs to the call that produced the invalid
+  // JSON. Resolve a live route once so an operator save between attempts does
+  // not silently hand the repair to another model.
+  const bound = await bindTextModelCall(textModel, generateOptions.purpose);
 
   for (let attempt = 0; ; attempt += 1) {
     try {
-      return await textModel.generateJson(nextOptions);
+      return await bound.adapter.generateJson(nextOptions);
     } catch (error) {
       if (attempt >= repairAttempts || !isRepairableJsonError(error)) {
         throw error;

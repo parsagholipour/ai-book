@@ -1,4 +1,5 @@
 import type { ZodType } from "zod";
+import type { TextModelSelection } from "../schemas/book.js";
 
 /** A tool invocation requested by the model during a generateWithTools call. */
 export type ToolCall = {
@@ -80,11 +81,25 @@ export type ToolCallsResult = TextResult & {
   toolCalls: ToolCall[];
 };
 
+export type BoundTextModelCall = {
+  adapter: TextModelAdapter;
+  selection?: TextModelSelection | undefined;
+};
+
 export interface TextModelAdapter {
   generateText(options: GenerateTextOptions): Promise<TextResult>;
   generateJson<T>(options: GenerateJsonOptions<T>): Promise<JsonResult<T>>;
   streamText(options: GenerateTextOptions): AsyncGenerator<string>;
   generateWithTools(options: GenerateWithToolsOptions): Promise<ToolCallsResult>;
+  /** Resolve a live router once so every retry of this logical call stays pinned. */
+  bindForCall?(purpose: string | undefined): Promise<BoundTextModelCall>;
+}
+
+export async function bindTextModelCall(
+  adapter: TextModelAdapter,
+  purpose: string | undefined
+): Promise<BoundTextModelCall> {
+  return adapter.bindForCall ? adapter.bindForCall(purpose) : { adapter };
 }
 
 export type ResearchQuery = {

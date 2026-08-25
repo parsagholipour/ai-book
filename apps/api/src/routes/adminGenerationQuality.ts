@@ -4,12 +4,27 @@ import {
   QUALITY_FEATURE_DEFAULTS,
   QUALITY_FEATURE_IDS,
   QUALITY_FEATURES,
+  compiledGenerationTextModelRouting,
+  generationTextModelOptions,
+  loadConfig,
   parseQualityFeatureSettings,
+  resolveGenerationTextModelRouting,
+  type GenerationTextModelOption,
+  type GenerationTextModelRouting,
   type QualityFeatureSettings
 } from "@book-maker/core";
 import { prisma, type Prisma } from "@book-maker/db";
 import { z } from "zod";
 import { requireOperatorActor } from "../requestAuth.js";
+import {
+  GenerationModelSelectionError,
+  generationModelsPatchOpenApi,
+  generationModelsPatchSchema,
+  mergeGenerationModelPatch,
+  resetGenerationModels,
+  unknownGenerationModelPaths,
+  type GenerationModelsPatch
+} from "./adminGenerationQualityModels.js";
 
 /**
  * Derived from `QUALITY_EFFORT_TIERS`, for the reason the feature ids below are.
@@ -100,17 +115,18 @@ const NOTE_MAX_LENGTH = 500;
  * blank once trimmed is not one: it stores as `null`, which is the empty body
  * wearing a hat. Zod trims before this runs, so the claim test is the value.
  */
-const EMPTY_PATCH_ERROR = "Name at least one generation-quality feature, or a note, to save.";
+const EMPTY_PATCH_ERROR = "Name at least one generation-quality feature, model role, or a note, to save.";
 
 const patchGenerationQualitySchema = qualitySettingsBodySchema
   .extend({
+    models: generationModelsPatchSchema.optional(),
     note: z.string().trim().max(NOTE_MAX_LENGTH).optional()
   })
   .strict()
   // `[]` is a claim like any other — it is how a feature is switched off — so
   // this is the same presence test the merge makes, never a truthiness one.
   .refine(
-    (body) => Boolean(body.note) || QUALITY_FEATURE_IDS.some((id) => body[id] !== undefined),
+    (body) => Boolean(body.note) || body.models !== undefined || QUALITY_FEATURE_IDS.some((id) => body[id] !== undefined),
     { message: EMPTY_PATCH_ERROR }
   );
 
@@ -153,6 +169,7 @@ const patchGenerationQualityOpenApi = {
         { type: "array", items: { type: "string", enum: [...QUALITY_EFFORT_TIERS] } }
       ])
     ),
+    models: generationModelsPatchOpenApi,
     note: { type: "string", maxLength: NOTE_MAX_LENGTH }
   }
 } as const;
@@ -242,9 +259,13 @@ function unknownBodyKeys(body: unknown, allowed: ReadonlySet<string>): string[] 
  * this point, so a mobile bearer is refused as an actor before it can learn
  * anything from body validation.
  */
-function refuseUnknownBodyKeys(allowed: ReadonlySet<string>, message: string) {
+function refuseUnknownBodyKeys(
+  allowed: ReadonlySet<string>,
+  message: string,
+  nestedUnknown: (body: unknown) => string[] = () => []
+) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    const unknown = unknownBodyKeys(request.body, allowed);
+    const unknown = [...unknownBodyKeys(request.body, allowed), ...nestedUnknown(request.body)];
     if (unknown.length === 0) {
       return;
     }
@@ -269,6 +290,9 @@ type GenerationQualityRecord = {
 };
 
 export const adminGenerationQualityRoutes: FastifyPluginAsync = async (fastify) => {
+  const appConfig = loadConfig();
+  const modelOptions = generationTextModelOptions(appConfig);
+  const compiledModels = compiledGenerationTextModelRouting(appConfig, modelOptions);
   fastify.get("/api/admin/generation-quality", {
     onRequest: requireGenerationQualityOperator,
     schema: { tags: ["admin"] }
@@ -276,7 +300,7 @@ export const adminGenerationQualityRoutes: FastifyPluginAsync = async (fastify) 
     const current = (await prisma.generationQualityRevision.findFirst({
       orderBy: { version: "desc" }
     })) as GenerationQualityRecord | null;
-    return serializeGenerationQuality(current);
+    return serializeGenerationQuality(current, compiledModels, modelOptions);
   });
 
   fastify.patch(
@@ -284,7 +308,7 @@ export const adminGenerationQualityRoutes: FastifyPluginAsync = async (fastify) 
     {
       attachValidation: true,
       onRequest: requireGenerationQualityOperator,
-      preValidation: refuseUnknownBodyKeys(PATCH_BODY_KEYS, UNKNOWN_FEATURE_ERROR),
+      preValidation: refuseUnknownBodyKeys(PATCH_BODY_KEYS, UNKNOWN_FEATURE_ERROR, unknownGenerationModelPaths),
       schema: { tags: ["admin"], body: patchGenerationQualityOpenApi }
     },
     async (request, reply) => {
@@ -292,14 +316,18 @@ export const adminGenerationQualityRoutes: FastifyPluginAsync = async (fastify) 
       if (!parsed.success) {
         return reply.code(400).send({ error: patchRejectionMessage(parsed.error.issues) });
       }
-      const { note, ...assignments } = parsed.data;
+      const { note, models, ...assignments } = parsed.data;
       return withRevisionConflictReply(request, reply, async () => {
-        const record = await appendGenerationQualityRevision(request.log, assignments, note);
+        const record = await appendGenerationQualityRevision(request.log, assignments, note, {
+          ...(models ? { models } : {}),
+          compiledModels,
+          modelOptions
+        });
         request.log.info(
           { event: "generation_quality.updated", version: record.version },
           "Generation quality settings updated"
         );
-        return serializeGenerationQuality(record);
+        return serializeGenerationQuality(record, compiledModels, modelOptions);
       });
     }
   );
@@ -321,13 +349,43 @@ export const adminGenerationQualityRoutes: FastifyPluginAsync = async (fastify) 
         const record = await appendGenerationQualityRevision(
           request.log,
           cloneDefaults(),
-          parsed.data.note?.trim() || "Reset to compiled defaults"
+          parsed.data.note?.trim() || "Reset to compiled defaults",
+          { compiledModels, modelOptions }
         );
         request.log.info(
           { event: "generation_quality.reset", version: record.version },
           "Generation quality settings reset to compiled defaults"
         );
-        return serializeGenerationQuality(record);
+        return serializeGenerationQuality(record, compiledModels, modelOptions);
+      });
+    }
+  );
+
+  fastify.post(
+    "/api/admin/generation-quality/models/reset",
+    {
+      attachValidation: true,
+      onRequest: requireGenerationQualityOperator,
+      preValidation: refuseUnknownBodyKeys(RESET_BODY_KEYS, UNKNOWN_RESET_FIELD_ERROR),
+      schema: { tags: ["admin"], body: resetGenerationQualityOpenApi }
+    },
+    async (request, reply) => {
+      const parsed = resetGenerationQualitySchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "Send an optional note." });
+      }
+      return withRevisionConflictReply(request, reply, async () => {
+        const record = await appendGenerationQualityRevision(
+          request.log,
+          {},
+          parsed.data.note?.trim() || "Reset model routing to compiled defaults",
+          { resetModels: true, compiledModels, modelOptions }
+        );
+        request.log.info(
+          { event: "generation_quality.models_reset", version: record.version },
+          "Generation text model routing reset to compiled defaults"
+        );
+        return serializeGenerationQuality(record, compiledModels, modelOptions);
       });
     }
   );
@@ -511,7 +569,13 @@ class GenerationQualityVersionConflictError extends Error {
 async function appendGenerationQualityRevision(
   log: FastifyBaseLogger,
   assignments: QualityFeatureAssignments,
-  note: string | undefined
+  note: string | undefined,
+  modelChange: {
+    models?: GenerationModelsPatch | undefined;
+    resetModels?: boolean | undefined;
+    compiledModels: GenerationTextModelRouting;
+    modelOptions: readonly GenerationTextModelOption[];
+  }
 ): Promise<GenerationQualityRecord> {
   for (let attempt = 0; ; attempt += 1) {
     // Re-read per attempt, and merge per attempt: the base is what makes the
@@ -522,10 +586,21 @@ async function appendGenerationQualityRevision(
     });
     const baseVersion = current?.version ?? 0;
     try {
+      const settings = mergeQualityFeatureSettings(current?.settings, assignments);
+      if (modelChange.models) {
+        settings.models = mergeGenerationModelPatch(
+          current?.settings,
+          modelChange.models,
+          modelChange.compiledModels,
+          modelChange.modelOptions
+        );
+      } else if (modelChange.resetModels) {
+        settings.models = resetGenerationModels(current?.settings, modelChange.compiledModels);
+      }
       return (await prisma.generationQualityRevision.create({
         data: {
           version: baseVersion + 1,
-          settings: mergeQualityFeatureSettings(current?.settings, assignments),
+          settings,
           note: note?.trim() || null,
           updatedBy: "operator-console"
         }
@@ -569,6 +644,9 @@ async function withRevisionConflictReply<T>(
   try {
     return await run();
   } catch (error) {
+    if (error instanceof GenerationModelSelectionError) {
+      return reply.code(400).send({ error: error.message });
+    }
     if (error instanceof GenerationQualityVersionConflictError) {
       request.log.warn(
         { event: "generation_quality.save_conflict", currentVersion: error.currentVersion },
@@ -594,7 +672,7 @@ async function withRevisionConflictReply<T>(
 function mergeQualityFeatureSettings(
   stored: unknown,
   assignments: QualityFeatureAssignments
-): Prisma.InputJsonObject {
+): Record<string, Prisma.InputJsonValue> {
   const settings = isJsonObject(stored) ? { ...stored } : {};
   for (const id of QUALITY_FEATURE_IDS) {
     // `[]` is a real assignment — it is how a feature is switched off — so the
@@ -606,7 +684,7 @@ function mergeQualityFeatureSettings(
       settings[id] = [...QUALITY_FEATURE_DEFAULTS[id]];
     }
   }
-  return settings as Prisma.InputJsonObject;
+  return settings as Record<string, Prisma.InputJsonValue>;
 }
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {
@@ -621,10 +699,16 @@ function cloneDefaults(): QualityFeatureSettings {
   return settings;
 }
 
-function serializeGenerationQuality(record: GenerationQualityRecord | null) {
+function serializeGenerationQuality(
+  record: GenerationQualityRecord | null,
+  compiledModels: GenerationTextModelRouting,
+  modelOptions: readonly GenerationTextModelOption[]
+) {
   return {
     version: record?.version ?? 0,
     settings: serializeQualityFeatureSettings(record?.settings),
+    models: resolveGenerationTextModelRouting(record?.settings, compiledModels),
+    modelOptions,
     usingCompiledDefaults: record == null,
     features: QUALITY_FEATURES,
     note: record?.note ?? null,

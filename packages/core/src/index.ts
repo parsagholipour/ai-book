@@ -30,6 +30,7 @@ export * from "./adapters/openaiCompatible.js";
 export * from "./adapters/retry.js";
 export * from "./adapters/imageFallback.js";
 export * from "./adapters/modelTiers.js";
+export * from "./adapters/generationTextModelRouting.js";
 export * from "./adapters/textRouting.js";
 export * from "./adapters/textFallback.js";
 export * from "./adapters/geminiModels.js";

@@ -1,0 +1,182 @@
+import Fastify from "fastify";
+import { QUALITY_FEATURE_DEFAULTS } from "@book-maker/core";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { adminGenerationQualityRoutes } from "./adminGenerationQuality.js";
+
+const mockPrisma = vi.hoisted(() => ({
+  generationQualityRevision: { findFirst: vi.fn(), create: vi.fn() }
+}));
+const mockRequireOperatorActor = vi.hoisted(() => vi.fn());
+vi.mock("@book-maker/db", () => ({ prisma: mockPrisma }));
+vi.mock("../requestAuth.js", () => ({ requireOperatorActor: mockRequireOperatorActor }));
+
+describe("admin generation model routing", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    Object.assign(process.env, {
+      DEEPSEEK_API_KEY: "deepseek-test-key",
+      DEEPINFRA_API_KEY: "deepinfra-test-key",
+      GEMINI_API_KEY: "gemini-test-key",
+      ALIBABA_API_KEY: "alibaba-test-key",
+      MOCK_AI: "false"
+    });
+    mockRequireOperatorActor.mockResolvedValue({ kind: "operator", userId: "local-admin" });
+  });
+
+  it("merges one model-role leaf and validates its discrete effort", async () => {
+    mockStoredRevision({ version: 5, settings: { ...QUALITY_FEATURE_DEFAULTS } });
+    const app = Fastify({ logger: false });
+    await app.register(adminGenerationQualityRoutes);
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/api/admin/generation-quality",
+      payload: {
+        models: { balanced: { writer: { provider: "deepseek", model: "deepseek-v4-pro", thinkingEffort: "high" } } }
+      }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      version: 6,
+      models: { balanced: { writer: { provider: "deepseek", model: "deepseek-v4-pro", thinkingEffort: "high" } } }
+    });
+    const create = createdSettings(0);
+    expect(create.models).toMatchObject({ balanced: { writer: { thinkingEffort: "high" } } });
+    expect(create.planCritic).toEqual(QUALITY_FEATURE_DEFAULTS.planCritic);
+    await app.close();
+  });
+
+  it("refuses unknown roles, non-catalog models, unsupported efforts, and unavailable providers", async () => {
+    mockStoredRevision({ version: 2, settings: { ...QUALITY_FEATURE_DEFAULTS } });
+    const app = Fastify({ logger: false });
+    await app.register(adminGenerationQualityRoutes);
+    const payloads = [
+      { models: { balanced: { reviewer: { provider: "deepseek", model: "deepseek-v4-pro" } } } },
+      { models: { balanced: { writer: { provider: "deepseek", model: "invented-model" } } } },
+      { models: { balanced: { writer: { provider: "alibaba", model: "qwen-plus", thinkingEffort: "high" } } } }
+    ];
+    const responses = await Promise.all(payloads.map((payload) => app.inject({
+      method: "PATCH",
+      url: "/api/admin/generation-quality",
+      payload
+    })));
+    expect(responses.map((response) => response.statusCode)).toEqual([400, 400, 400]);
+    expect((responses[0]!.json() as { error: string }).error).toContain("models.balanced.reviewer");
+    expect((responses[1]!.json() as { error: string }).error).toContain("not a configured catalog model");
+    expect((responses[2]!.json() as { error: string }).error).toContain("not supported");
+    await app.close();
+
+    process.env.GEMINI_API_KEY = "";
+    const withoutGemini = Fastify({ logger: false });
+    await withoutGemini.register(adminGenerationQualityRoutes);
+    const unavailable = await withoutGemini.inject({
+      method: "PATCH",
+      url: "/api/admin/generation-quality",
+      payload: { models: { premium: { writer: { provider: "gemini", model: "gemini-2.5-pro" } } } }
+    });
+    expect(unavailable.statusCode).toBe(400);
+    expect((unavailable.json() as { error: string }).error).toContain("not a configured catalog model");
+    expect(mockPrisma.generationQualityRevision.create).not.toHaveBeenCalled();
+    await withoutGemini.close();
+  });
+
+  it("keeps models on a gate reset and keeps gates on a model reset", async () => {
+    const savedModels = {
+      fastJudgments: { provider: "alibaba", model: "qwen-flash" },
+      balanced: {
+        writer: { provider: "alibaba", model: "qwen-plus" },
+        futureReviewer: { provider: "alibaba", model: "qwen3-max" }
+      },
+      futureTier: { writer: { provider: "alibaba", model: "qwen3.5-plus" } }
+    };
+    mockStoredRevision({
+      version: 8,
+      settings: { ...QUALITY_FEATURE_DEFAULTS, styleAuditor: [], models: savedModels }
+    });
+    const app = Fastify({ logger: false });
+    await app.register(adminGenerationQualityRoutes);
+    const gates = await app.inject({ method: "POST", url: "/api/admin/generation-quality/reset", payload: {} });
+    expect(gates.statusCode).toBe(200);
+    expect(createdSettings(0).models).toEqual(savedModels);
+    expect(createdSettings(0).styleAuditor).toEqual(QUALITY_FEATURE_DEFAULTS.styleAuditor);
+
+    mockPrisma.generationQualityRevision.create.mockClear();
+    const models = await app.inject({
+      method: "POST",
+      url: "/api/admin/generation-quality/models/reset",
+      payload: { note: "restore routing" }
+    });
+    expect(models.statusCode).toBe(200);
+    expect(createdSettings(0).styleAuditor).toEqual([]);
+    expect(createdSettings(0).models).toMatchObject({
+      fastJudgments: { provider: "deepseek", model: "deepseek-v4-flash" },
+      premium: { writer: { provider: "gemini", model: "gemini-2.5-pro" } },
+      balanced: { futureReviewer: savedModels.balanced.futureReviewer },
+      futureTier: savedModels.futureTier
+    });
+    await app.close();
+  });
+
+  it("re-merges different role leaves after a concurrent revision wins", async () => {
+    const winner = {
+      ...QUALITY_FEATURE_DEFAULTS,
+      models: { balanced: { judgment: { provider: "alibaba", model: "qwen-plus" } } }
+    };
+    mockPrisma.generationQualityRevision.findFirst
+      .mockResolvedValueOnce({ version: 7, settings: { ...QUALITY_FEATURE_DEFAULTS } })
+      .mockResolvedValueOnce({ version: 8, settings: winner });
+    mockPrisma.generationQualityRevision.create
+      .mockRejectedValueOnce(versionAlreadyTaken())
+      .mockImplementation(echoCreatedRevision);
+    const app = Fastify({ logger: false });
+    await app.register(adminGenerationQualityRoutes);
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/api/admin/generation-quality",
+      payload: {
+        models: { premium: { writer: { provider: "deepseek", model: "deepseek-v4-pro", thinkingEffort: "high" } } }
+      }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      version: 9,
+      models: {
+        balanced: { judgment: { provider: "alibaba", model: "qwen-plus" } },
+        premium: { writer: { provider: "deepseek", model: "deepseek-v4-pro", thinkingEffort: "high" } }
+      }
+    });
+    expect(createdSettings(1).models).toMatchObject({
+      balanced: { judgment: { provider: "alibaba", model: "qwen-plus" } },
+      premium: { writer: { provider: "deepseek", model: "deepseek-v4-pro", thinkingEffort: "high" } }
+    });
+    await app.close();
+  });
+});
+
+function mockStoredRevision(current: { version: number; settings?: unknown }): void {
+  mockPrisma.generationQualityRevision.findFirst.mockResolvedValue(current);
+  mockPrisma.generationQualityRevision.create.mockImplementation(echoCreatedRevision);
+}
+
+async function echoCreatedRevision({ data }: { data: Record<string, unknown> }) {
+  return {
+    id: "quality-next",
+    note: null,
+    updatedBy: "operator-console",
+    createdAt: new Date("2026-08-23T09:00:00.000Z"),
+    ...data
+  };
+}
+
+function createdSettings(call: number): Record<string, unknown> {
+  const createCall = mockPrisma.generationQualityRevision.create.mock.calls[call];
+  if (!createCall) {
+    throw new Error(`Expected generation quality revision create call ${call}`);
+  }
+  return (createCall[0] as {
+    data: { settings: Record<string, unknown> };
+  }).data.settings;
+}
+
+function versionAlreadyTaken(): Error {
+  return Object.assign(new Error("Unique constraint failed on version"), { code: "P2002" });
+}

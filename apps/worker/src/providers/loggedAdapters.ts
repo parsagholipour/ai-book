@@ -9,6 +9,8 @@ import {
   PREMIUM_COVER_IMAGE_MODEL,
   PREMIUM_FALLBACK_IMAGE_MODEL,
   RoutingTextModelAdapter,
+  bindTextModelCall,
+  createLiveGenerationTextModel,
   resolveImageModelSelection,
   resolveTextModelSelection,
   withRecoverableNetworkRetry,
@@ -57,6 +59,7 @@ import {
   withLiveOutputTracking
 } from "./usageAccounting.js";
 import type { WorkerRuntimeJob } from "../runtime/jobPayloads.js";
+import { loadLiveGenerationTextRouting } from "./generationTextRouting.js";
 
 /**
  * Logging decorators around the provider adapters from `@book-maker/core`.
@@ -80,8 +83,9 @@ export function createLoggedProviders(
   const logger = createRunLogger(job);
   const { generationJobId, projectId } = job.data;
   const textModel = loggedTextModel(input);
+  const liveTextModel = liveGenerationTextModel(providers.text, input, logger);
   return {
-    text: new LoggingTextModelAdapter(providers.text, logger, generationJobId, projectId, textModel),
+    text: new LoggingTextModelAdapter(liveTextModel, logger, generationJobId, projectId, textModel),
     research: new LoggingResearchAdapter(providers.research, logger, generationJobId),
     image: createLoggedImageAdapter(providers.image, logger, generationJobId, input, options?.imageSelection),
     embedding: new LoggingEmbeddingAdapter(providers.embedding, logger, generationJobId),
@@ -116,6 +120,22 @@ function loggedTextModel(input?: CreateProjectInput | undefined): LoggedTextMode
   }
   const selection = resolveTextModelSelection(config, input);
   return { provider: selection.provider, model: selection.model };
+}
+
+/** Adds per-call revision routing only where tier routing is actually in force. */
+export function liveGenerationTextModel(
+  delegate: TextModelAdapter,
+  input: CreateProjectInput | undefined,
+  logger: RunLogger
+): TextModelAdapter {
+  const tier = input?.mediaSettings.modelTier;
+  if (config.MOCK_AI || !tier || input.mediaSettings.textModel) {
+    return delegate;
+  }
+  return createLiveGenerationTextModel(config, {
+    tier,
+    loadRouting: loadLiveGenerationTextRouting(logger)
+  });
 }
 
 function createLoggedImageAdapter(
@@ -203,12 +223,38 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
     }
   }
 
+  async bindForCall(purpose: string | undefined) {
+    const bound = await this.boundDelegate(purpose);
+    return {
+      adapter: new LoggingTextModelAdapter(
+        bound.adapter,
+        this.logger,
+        this.generationJobId,
+        this.projectId,
+        bound.textModel
+      ),
+      ...(bound.selection ? { selection: bound.selection } : {})
+    };
+  }
+
   private textModelForPurpose(purpose: string | undefined): LoggedTextModel {
     if (this.delegate instanceof RoutingTextModelAdapter) {
       const selection = this.delegate.selectionForPurpose(purpose);
       return { provider: selection.provider, model: selection.model };
     }
     return this.textModel;
+  }
+
+  private async boundDelegate(purpose: string | undefined) {
+    const bound = await bindTextModelCall(this.delegate, purpose);
+    const selected = bound.selection;
+    return {
+      adapter: bound.adapter,
+      ...(selected ? { selection: selected } : {}),
+      textModel: selected
+        ? { provider: selected.provider, model: selected.model }
+        : this.textModelForPurpose(purpose)
+    };
   }
 
   /**
@@ -253,9 +299,14 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
   }
 
   async generateText(options: GenerateTextOptions) {
+    const bound = await this.boundDelegate(options.purpose);
     const callId = randomUUID();
-    const requestAt = await this.logger.append("text.generateText.request", { callId, request: logTextRequest(options) });
-    const textModel = this.textModelForPurpose(options.purpose);
+    const textModel = bound.textModel;
+    const requestAt = await this.logger.append("text.generateText.request", {
+      callId,
+      model: textModel,
+      request: logTextRequest(options)
+    });
     const liveUsage = await beginLiveTextUsage({
       projectId: options.projectId ?? this.projectId,
       generationJobId: this.generationJobId,
@@ -281,7 +332,7 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
       await assertJobNotStopped(this.generationJobId);
       const result = await this.withStopAbort(monitoredOptions, (abortableOptions) =>
         withRecoverableNetworkRetry(
-          () => this.delegate.generateText(abortableOptions),
+          () => bound.adapter.generateText(abortableOptions),
           providerRetryOptions(this.logger, this.generationJobId, "text.generateText", options.purpose, abortableOptions.signal)
         )
       );
@@ -314,9 +365,14 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
   }
 
   async generateJson<T>(options: GenerateJsonOptions<T>) {
+    const bound = await this.boundDelegate(options.purpose);
     const callId = randomUUID();
-    const requestAt = await this.logger.append("text.generateJson.request", { callId, request: logTextRequest(options) });
-    const textModel = this.textModelForPurpose(options.purpose);
+    const textModel = bound.textModel;
+    const requestAt = await this.logger.append("text.generateJson.request", {
+      callId,
+      model: textModel,
+      request: logTextRequest(options)
+    });
     const liveUsage = await beginLiveTextUsage({
       projectId: options.projectId ?? this.projectId,
       generationJobId: this.generationJobId,
@@ -342,7 +398,7 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
       await assertJobNotStopped(this.generationJobId);
       const result = await this.withStopAbort(monitoredOptions, (abortableOptions) =>
         withRecoverableNetworkRetry(
-          () => this.delegate.generateJson(abortableOptions),
+          () => bound.adapter.generateJson(abortableOptions),
           providerRetryOptions(this.logger, this.generationJobId, "text.generateJson", options.purpose, abortableOptions.signal)
         )
       );
@@ -388,12 +444,14 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
   }
 
   async generateWithTools(options: GenerateWithToolsOptions) {
+    const bound = await this.boundDelegate(options.purpose);
     const callId = randomUUID();
+    const textModel = bound.textModel;
     const requestAt = await this.logger.append("text.generateWithTools.request", {
       callId,
+      model: textModel,
       request: { ...logTextRequest(options), tools: options.tools.map((tool) => tool.name) }
     });
-    const textModel = this.textModelForPurpose(options.purpose);
     const liveUsage = await beginLiveTextUsage({
       projectId: options.projectId ?? this.projectId,
       generationJobId: this.generationJobId,
@@ -409,7 +467,7 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
       await assertJobNotStopped(this.generationJobId);
       const result = await this.withStopAbort(options, (abortableOptions) =>
         withRecoverableNetworkRetry(
-          () => this.delegate.generateWithTools(abortableOptions),
+          () => bound.adapter.generateWithTools(abortableOptions),
           providerRetryOptions(this.logger, this.generationJobId, "text.generateWithTools", options.purpose, abortableOptions.signal)
         )
       );
@@ -455,9 +513,14 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
   }
 
   async *streamText(options: GenerateTextOptions) {
+    const bound = await this.boundDelegate(options.purpose);
     const callId = randomUUID();
-    const requestAt = await this.logger.append("text.streamText.request", { callId, request: logTextRequest(options) });
-    const textModel = this.textModelForPurpose(options.purpose);
+    const textModel = bound.textModel;
+    const requestAt = await this.logger.append("text.streamText.request", {
+      callId,
+      model: textModel,
+      request: logTextRequest(options)
+    });
     const liveUsage = await beginLiveTextUsage({
       projectId: options.projectId ?? this.projectId,
       generationJobId: this.generationJobId,
@@ -474,7 +537,7 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
     let lastLiveOutputUpdateAt = 0;
     try {
       await assertJobNotStopped(this.generationJobId);
-      for await (const chunk of this.delegate.streamText(options)) {
+      for await (const chunk of bound.adapter.streamText(options)) {
         await assertJobNotStopped(this.generationJobId);
         chunkCount += 1;
         characterCount += chunk.length;

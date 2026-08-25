@@ -1,13 +1,14 @@
 import { parseJsonObject } from "./json.js";
 import { isCancellationError } from "./retry.js";
-import type {
-  ChatMessage,
-  TextModelAdapter,
-  ToolCall,
-  ToolCallsResult,
-  ToolChoice,
-  ToolDefinition,
-  Usage
+import {
+  bindTextModelCall,
+  type ChatMessage,
+  type TextModelAdapter,
+  type ToolCall,
+  type ToolCallsResult,
+  type ToolChoice,
+  type ToolDefinition,
+  type Usage
 } from "./types.js";
 
 /**
@@ -135,8 +136,12 @@ export async function runToolLoop<TFinish = string>(options: ToolLoopOptions<TFi
   const state = () => ({ messages, toolEvents, usage, model, provider });
 
   for (let modelCall = 1; modelCall <= maxModelCalls; modelCall += 1) {
+    // Middleware may retry `invoke`; bind before handing it over so those
+    // retries keep one model. The next tool-loop turn is a new logical call and
+    // intentionally resolves the newest revision again.
+    const bound = await bindTextModelCall(options.textModel, options.purpose);
     const invoke = () =>
-      options.textModel.generateWithTools({
+      bound.adapter.generateWithTools({
         messages,
         tools: toolDefinitions,
         ...(options.toolChoice !== undefined ? { toolChoice: options.toolChoice } : {}),

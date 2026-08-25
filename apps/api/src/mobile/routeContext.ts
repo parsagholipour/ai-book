@@ -19,9 +19,7 @@ import {
 } from "./schemas.js";
 import {
   createCharacterPhotoVisionAdapter,
-  createFastRoutingTextModel,
   createFileDigestAdapter,
-  createLanguageDetectionTextModel,
   createResearchAdapter,
   createVoiceProvider,
   ingestCreationAttachment,
@@ -35,6 +33,7 @@ import {
   type ResearchAdapter,
   type TextModelAdapter
 } from "@book-maker/core";
+import { createLiveFastJudgmentsTextModel } from "../generationTextModelRouting.js";
 
 /**
  * Shared setup for every mobile route group: config, rate limiters, the Google
@@ -117,7 +116,7 @@ export function createMobileRouteContext(options: MobileProjectRoutesOptions): M
       return options.routingTextModel;
     }
     try {
-      return createFastRoutingTextModel(appConfig);
+      return createLiveFastJudgmentsTextModel(appConfig);
     } catch {
       return undefined;
     }
@@ -174,7 +173,7 @@ export function createMobileRouteContext(options: MobileProjectRoutesOptions): M
       ? undefined
       : options.advisorEnrichment ??
         ((payload: MobileCreationDraftPayload, base: MobileBookAdvisorResponse) =>
-          enrichAdvisorWithAi(createLanguageDetectionTextModel(appConfig), payload, base));
+          enrichAdvisorWithAi(createLiveFastJudgmentsTextModel(appConfig), payload, base));
   const creationEnrichment =
     options.creationEnrichment === false
       ? undefined
@@ -182,7 +181,7 @@ export function createMobileRouteContext(options: MobileProjectRoutesOptions): M
         ((request: MobileCreationTurnRequest, base: MobileCreationTurn) =>
           enrichCreationTurnWithSearch(
             {
-              textModel: createLanguageDetectionTextModel(appConfig),
+              textModel: createLiveFastJudgmentsTextModel(appConfig),
               research: options.creationResearch ?? (() => createResearchAdapter(appConfig)),
               searchTimeoutMs: options.creationSearchTimeoutMs
             },

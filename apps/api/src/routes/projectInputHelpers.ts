@@ -1,6 +1,5 @@
 import {
   buildMarginEstimate,
-  createLanguageDetectionTextModel,
   createProjectSchema,
   detectPromptLanguage,
   estimateFullBookCreditCost,
@@ -15,6 +14,7 @@ import {
 import { createHash } from "node:crypto";
 import type { Prisma } from "@book-maker/db";
 import type { ProjectActor } from "../requestAuth.js";
+import { createLiveFastJudgmentsTextModel } from "../generationTextModelRouting.js";
 
 /**
  * Project-input helpers for the operator routes: ownership `where` clauses,
@@ -161,7 +161,7 @@ export async function inputWithDetectedLanguage(
   try {
     return {
       ...input,
-      language: await detectPromptLanguage(createLanguageDetectionTextModel(appConfig), input.prompt)
+      language: await detectPromptLanguage(createLiveFastJudgmentsTextModel(appConfig), input.prompt)
     };
   } catch {
     return { ...input, language: fallbackLanguage };

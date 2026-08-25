@@ -8,6 +8,19 @@ import {
 import { apiGet, apiPatch, apiPost } from "../../api.js";
 import { Button } from "../shared/Button.js";
 import { labelCase, readError } from "../shared/formatters.js";
+import type {
+  GenerationTextModelOption,
+  GenerationTextModelRouting
+} from "@book-maker/core/generationTextModelRouting";
+import {
+  GenerationModelRoutingSection,
+  cloneGenerationModelRouting,
+  generationModelRoutingClaim,
+  readGenerationModelOptions,
+  readGenerationModelRouting,
+  rebaseGenerationModelRouting,
+  type GenerationModelRoutingPatch
+} from "./GenerationModelRouting.js";
 
 /** An id core describes, or one only the server knows about yet — see `featureRows`. */
 type ServerFeatureId = QualityFeatureId | (string & {});
@@ -39,7 +52,8 @@ type QualitySettings = Record<QualityFeatureId, ServerEffortTier[]> &
  * features rather than under a key of its own.
  */
 type QualitySavePatch = {
-  [feature: string]: ServerEffortTier[] | string | undefined;
+  [feature: string]: ServerEffortTier[] | GenerationModelRoutingPatch | string | undefined;
+  models?: GenerationModelRoutingPatch;
   note?: string;
 };
 
@@ -52,6 +66,8 @@ type QualityFeature = {
 export type GenerationQuality = {
   version: number;
   settings: QualitySettings;
+  models: GenerationTextModelRouting;
+  modelOptions: GenerationTextModelOption[];
   usingCompiledDefaults: boolean;
   features: QualityFeature[];
   note: string | null;
@@ -70,8 +86,9 @@ const TIER_LABELS: Record<QualityEffortTier, string> = {
 export function GenerationQualityScreen() {
   const [state, setState] = useState<GenerationQuality | null>(null);
   const [draft, setDraft] = useState<QualitySettings | null>(null);
+  const [modelDraft, setModelDraft] = useState<GenerationTextModelRouting | null>(null);
   const [note, setNote] = useState("");
-  const [busyAction, setBusyAction] = useState<"save" | "reset" | null>(null);
+  const [busyAction, setBusyAction] = useState<"save" | "gates-reset" | "models-reset" | null>(null);
   const busyRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
@@ -81,6 +98,7 @@ export function GenerationQualityScreen() {
       .then((value) => {
         setState(value);
         setDraft(cloneSettings(value.settings));
+        setModelDraft(cloneGenerationModelRouting(value.models));
       })
       .catch((loadError) => setError(readError(loadError)));
   }, []);
@@ -88,11 +106,11 @@ export function GenerationQualityScreen() {
   const rows = useMemo(() => (state ? featureRows(state) : []), [state]);
 
   const claim = useMemo(() => {
-    if (!state || !draft) {
+    if (!state || !draft || !modelDraft) {
       return null;
     }
-    return qualitySaveClaim(state.settings, draft, note);
-  }, [draft, note, state]);
+    return qualitySaveClaim(state.settings, draft, note, state.models, modelDraft);
+  }, [draft, modelDraft, note, state]);
 
   function toggle(feature: ServerFeatureId, tier: ServerEffortTier) {
     // State does not commit until React finishes the current interaction. The
@@ -115,7 +133,7 @@ export function GenerationQualityScreen() {
   async function save() {
     // `state` and `draft` are what a non-null claim is built from; naming them
     // here is what lets the conflict path below rebase against them.
-    if (!claim || !state || !draft || !beginRequest("save")) {
+    if (!claim || !state || !draft || !modelDraft || !beginRequest("save")) {
       return;
     }
     try {
@@ -126,6 +144,7 @@ export function GenerationQualityScreen() {
       // the next save claiming their change back out.
       setState(value);
       setDraft(cloneSettings(value.settings));
+      setModelDraft(cloneGenerationModelRouting(value.models));
       setNote("");
       setError(null);
       setSaved(`Saved as generation quality version ${value.version}.`);
@@ -138,12 +157,14 @@ export function GenerationQualityScreen() {
         error: saveError,
         loaded: state,
         draft,
+        modelDraft,
         note,
         reload: () => apiGet<GenerationQuality>("/api/admin/generation-quality")
       });
       if (recovery.kind === "rebase") {
         setState(recovery.state);
         setDraft(recovery.draft);
+        setModelDraft(recovery.modelDraft);
       }
       setError(recovery.error);
     } finally {
@@ -151,29 +172,33 @@ export function GenerationQualityScreen() {
     }
   }
 
-  async function resetToDefaults() {
-    if (!beginRequest("reset")) {
+  async function resetQuality(kind: "gates" | "models") {
+    if (!beginRequest(kind === "gates" ? "gates-reset" : "models-reset")) {
       return;
     }
     try {
-      const value = await apiPost<GenerationQuality>(
-        "/api/admin/generation-quality/reset",
-        note.trim() ? { note: note.trim() } : {}
-      );
+      const path =
+        kind === "gates" ? "/api/admin/generation-quality/reset" : "/api/admin/generation-quality/models/reset";
+      const value = await apiPost<GenerationQuality>(path, note.trim() ? { note: note.trim() } : {});
       setState(value);
       setDraft(cloneSettings(value.settings));
+      setModelDraft(cloneGenerationModelRouting(value.models));
       setNote("");
       setError(null);
-      setSaved(`Reset to compiled defaults as version ${value.version}.`);
+      setSaved(
+        kind === "gates"
+          ? `Reset to compiled defaults as version ${value.version}.`
+          : `Reset model routing as version ${value.version}.`
+      );
     } catch (resetError) {
-      setError(qualityResetFailure(resetError));
+      setError(qualityResetFailure(resetError, kind === "gates" ? "Reset quality gates" : "Reset model routing"));
       setSaved(null);
     } finally {
       endRequest();
     }
   }
 
-  function beginRequest(action: "save" | "reset"): boolean {
+  function beginRequest(action: "save" | "gates-reset" | "models-reset"): boolean {
     if (busyRef.current) {
       return false;
     }
@@ -193,12 +218,22 @@ export function GenerationQualityScreen() {
     <div className="admin-page">
       {error ? <div className="error-banner">{error}</div> : null}
       {saved ? <div className="pricing-saved">{saved}</div> : null}
-      {!state || !draft ? (
+      {!state || !draft || !modelDraft ? (
         <div className="empty-state">
           <Loader2 className="spin" size={20} aria-hidden /> Loading quality gates…
         </div>
       ) : (
-        <div className="admin-columns-2">
+        <div className="quality-admin-layout">
+          <GenerationModelRoutingSection
+            models={modelDraft}
+            options={state.modelOptions}
+            disabled={busy}
+            onChange={(models) => {
+              if (busyRef.current) return;
+              setModelDraft(models);
+              setSaved(null);
+            }}
+          />
           <section className="work-section safety-settings-card">
             <div className="section-title">
               <Sparkles size={18} aria-hidden />
@@ -245,7 +280,7 @@ export function GenerationQualityScreen() {
                 : state.updatedAt
                   ? ` · ${new Date(state.updatedAt).toLocaleString()}`
                   : ""}
-              . Changes apply to the next in-flight page immediately.
+              . Successful saves affect calls started afterward; running calls and their retries keep their original model.
             </p>
             {state.note ? (
               <p className="muted">
@@ -283,12 +318,23 @@ export function GenerationQualityScreen() {
               variant="secondary"
               fullWidth
               disabled={busy}
-              loading={busyAction === "reset"}
+              loading={busyAction === "gates-reset"}
               loadingLabel="Resetting quality gates…"
               startIcon={<RotateCcw />}
-              onClick={() => void resetToDefaults()}
+              onClick={() => void resetQuality("gates")}
             >
-              Reset to defaults
+              Reset quality gates
+            </Button>
+            <Button
+              variant="secondary"
+              fullWidth
+              disabled={busy}
+              loading={busyAction === "models-reset"}
+              loadingLabel="Resetting model routing…"
+              startIcon={<RotateCcw />}
+              onClick={() => void resetQuality("models")}
+            >
+              Reset model routing
             </Button>
           </section>
         </div>
@@ -332,7 +378,9 @@ export function GenerationQualityScreen() {
 export function qualitySaveClaim(
   stored: QualitySettings,
   draft: QualitySettings,
-  note: string
+  note: string,
+  storedModels: GenerationTextModelRouting,
+  draftModels: GenerationTextModelRouting
 ): QualitySavePatch | null {
   const trimmed = note.trim();
   const moved: QualitySavePatch = {};
@@ -342,6 +390,8 @@ export function qualitySaveClaim(
       moved[id] = [...assigned];
     }
   }
+  const models = generationModelRoutingClaim(storedModels, draftModels);
+  if (models) moved.models = models;
   if (Object.keys(moved).length === 0 && !trimmed) {
     return null;
   }
@@ -365,7 +415,13 @@ function sameAssignment(assigned: ServerEffortTier[], stored: ServerEffortTier[]
  */
 export type QualitySaveRecovery =
   | { kind: "report"; error: string }
-  | { kind: "rebase"; state: GenerationQuality; draft: QualitySettings; error: string };
+  | {
+      kind: "rebase";
+      state: GenerationQuality;
+      draft: QualitySettings;
+      modelDraft: GenerationTextModelRouting;
+      error: string;
+    };
 
 /**
  * What this screen does with a save the server refused.
@@ -411,6 +467,7 @@ export async function recoverQualitySave(input: {
   error: unknown;
   loaded: GenerationQuality;
   draft: QualitySettings;
+  modelDraft: GenerationTextModelRouting;
   note: string;
   reload: () => Promise<GenerationQuality>;
 }): Promise<QualitySaveRecovery> {
@@ -437,18 +494,24 @@ export async function recoverQualitySave(input: {
       return unmoved;
     }
     const rebased = rebaseQualityDraft(head.settings, input.loaded.settings, input.draft);
+    const rebasedModels = rebaseGenerationModelRouting(
+      head.models,
+      input.loaded.models,
+      input.modelDraft
+    );
     const described = new Map(featureRows(head).map((row) => [row.id, row.label]));
     return {
       kind: "rebase",
       state: head,
       draft: rebased.settings,
+      modelDraft: rebasedModels,
       error: qualityConflictNotice({
         version: head.version,
         reloaded: true,
         movedUnderneath: rebased.movedUnderneath.map((id) => described.get(id) ?? id),
         // Asked rather than assumed: the winner may have stored the very box this
         // operator was claiming, which leaves nothing to press Save for.
-        stillClaiming: qualitySaveClaim(head.settings, rebased.settings, input.note) !== null
+        stillClaiming: qualitySaveClaim(head.settings, rebased.settings, input.note, head.models, rebasedModels) !== null
       })
     };
   } catch {
@@ -515,12 +578,16 @@ export function readQualityHead(value: unknown): GenerationQuality | null {
   const version = value.version;
   const settings = readQualitySettings(value.settings);
   const features = readFeatureCopy(value.features);
-  if (typeof version !== "number" || !Number.isFinite(version) || !settings || !features) {
+  const models = readGenerationModelRouting(value.models);
+  const modelOptions = readGenerationModelOptions(value.modelOptions);
+  if (typeof version !== "number" || !Number.isFinite(version) || !settings || !features || !models || !modelOptions) {
     return null;
   }
   return {
     version,
     settings,
+    models,
+    modelOptions,
     usingCompiledDefaults: value.usingCompiledDefaults === true,
     features,
     note: readNullableText(value.note),
@@ -693,8 +760,10 @@ const RESET_CONFLICT_NOTICE =
   "Press Reset to defaults again to reset the revision they stored.";
 
 /** The reset lane's whole recovery: the same detection, a different remedy. */
-export function qualityResetFailure(error: unknown): string {
-  return qualitySaveConflict(error) ? RESET_CONFLICT_NOTICE : readError(error);
+export function qualityResetFailure(error: unknown, action = "Reset quality gates"): string {
+  return qualitySaveConflict(error)
+    ? RESET_CONFLICT_NOTICE.replace("Reset to defaults", action)
+    : readError(error);
 }
 
 /**

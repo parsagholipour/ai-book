@@ -9,7 +9,8 @@
     "./jobSteps": "./src/jobSteps.ts",
     "./libraryMentions": "./src/generation/libraryMentions.ts",
     "./modelTiers": "./src/adapters/modelTiers.ts",
-    "./qualityGates": "./src/generation/qualityGates.ts"
+    "./qualityGates": "./src/generation/qualityGates.ts",
+    "./generationTextModelRouting": "./src/adapters/generationTextModelRouting.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",

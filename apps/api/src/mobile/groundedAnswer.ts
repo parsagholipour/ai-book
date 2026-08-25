@@ -7,7 +7,7 @@ import {
 } from "./projectChat.js";
 import { type MobileProjectChatMessageRecord } from "./dto.js";
 import { clipText } from "./support.js";
-import { withRecoverableNetworkRetry, type TextModelAdapter } from "@book-maker/core";
+import { bindTextModelCall, withRecoverableNetworkRetry, type TextModelAdapter } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 
 /**
@@ -114,8 +114,9 @@ export async function generateGroundedProjectAnswer(
     };
     // One quick retry for transient network failures; a blown time budget is
     // not retried, so the request cannot hang the chat turn indefinitely.
+    const bound = await bindTextModelCall(textModel, answerRequest.purpose);
     const result = await withRecoverableNetworkRetry(
-      () => withTimeout(textModel.generateText(answerRequest), GROUNDED_ANSWER_CALL_BUDGET_MS, "Grounded answer"),
+      () => withTimeout(bound.adapter.generateText(answerRequest), GROUNDED_ANSWER_CALL_BUDGET_MS, "Grounded answer"),
       { attempts: 2, delayMs: 500 }
     );
     return clipText(result.text.trim(), 2400) || fallback;

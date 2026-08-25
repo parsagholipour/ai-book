@@ -7,16 +7,18 @@ import { DeepSeekAdapter } from "./deepseek.js";
 import { FakeTextModelAdapter } from "./fake.js";
 import { GeminiTextAdapter } from "./gemini.js";
 import {
-  createFastRoutingTextModel,
-  createLanguageDetectionTextModel,
+  createLiveGenerationTextModel,
   createProviders,
+  generationTextModelOptions,
   imageModelOptions,
   isTextProviderFallbackError,
+  LiveGenerationTextModelAdapter,
   resolveImageModelSelection,
   resolveTextModelSelection,
   resolveTextModelSelections,
   textModelOptions
 } from "./factory.js";
+import { compiledGenerationTextModelRouting } from "./generationTextModelRouting.js";
 import { RoutingTextModelAdapter } from "./textRouting.js";
 
 describe("text model provider selection", () => {
@@ -62,28 +64,21 @@ describe("text model provider selection", () => {
     expect(providers.text).toBeInstanceOf(FakeTextModelAdapter);
   });
 
-  it("uses the lightest available text adapter for language detection", () => {
-    expect(createLanguageDetectionTextModel(testConfig({}))).toBeInstanceOf(DeepSeekAdapter);
-    expect(createLanguageDetectionTextModel(testConfig({ DEEPSEEK_API_KEY: "" }))).toBeInstanceOf(DeepInfraAdapter);
+  it("binds live fast judgments to the lightest available catalog adapter", async () => {
+    expect(await boundFastJudgmentsAdapter({})).toBeInstanceOf(DeepSeekAdapter);
+    expect(await boundFastJudgmentsAdapter({ DEEPSEEK_API_KEY: "" })).toBeInstanceOf(DeepInfraAdapter);
     expect(
-      createLanguageDetectionTextModel(testConfig({ DEEPSEEK_API_KEY: "", DEEPINFRA_API_KEY: "" }))
+      await boundFastJudgmentsAdapter({ DEEPSEEK_API_KEY: "", DEEPINFRA_API_KEY: "" })
     ).toBeInstanceOf(GeminiTextAdapter);
     expect(
-      createLanguageDetectionTextModel(testConfig({ DEEPSEEK_API_KEY: "", DEEPINFRA_API_KEY: "", GEMINI_API_KEY: "", ALIBABA_API_KEY: "alibaba-key" }))
+      await boundFastJudgmentsAdapter({
+        DEEPSEEK_API_KEY: "",
+        DEEPINFRA_API_KEY: "",
+        GEMINI_API_KEY: "",
+        ALIBABA_API_KEY: "alibaba-key"
+      })
     ).toBeInstanceOf(AlibabaTextAdapter);
-    expect(createLanguageDetectionTextModel(testConfig({ MOCK_AI: "true" }))).toBeInstanceOf(FakeTextModelAdapter);
-  });
-
-  it("uses the same lightest available text adapter for fast routing", () => {
-    expect(createFastRoutingTextModel(testConfig({}))).toBeInstanceOf(DeepSeekAdapter);
-    expect(createFastRoutingTextModel(testConfig({ DEEPSEEK_API_KEY: "" }))).toBeInstanceOf(DeepInfraAdapter);
-    expect(
-      createFastRoutingTextModel(testConfig({ DEEPSEEK_API_KEY: "", DEEPINFRA_API_KEY: "" }))
-    ).toBeInstanceOf(GeminiTextAdapter);
-    expect(
-      createFastRoutingTextModel(testConfig({ DEEPSEEK_API_KEY: "", DEEPINFRA_API_KEY: "", GEMINI_API_KEY: "", ALIBABA_API_KEY: "alibaba-key" }))
-    ).toBeInstanceOf(AlibabaTextAdapter);
-    expect(createFastRoutingTextModel(testConfig({ MOCK_AI: "true" }))).toBeInstanceOf(FakeTextModelAdapter);
+    expect(await boundFastJudgmentsAdapter({ MOCK_AI: "true" })).toBeInstanceOf(FakeTextModelAdapter);
   });
 
   it("exposes DeepInfra effort options only when configured", () => {
@@ -177,6 +172,15 @@ describe("text model provider selection", () => {
     expect(options.find((option) => option.provider === "gemini" && option.model === "gemini-2.5-flash-lite")).not.toHaveProperty(
       "thinking"
     );
+    expect(
+      generationTextModelOptions(testConfig({})).find(
+        (option) => option.provider === "gemini" && option.model === "gemini-2.5-flash-lite"
+      )
+    ).toMatchObject({
+      provider: "gemini",
+      model: "gemini-2.5-flash-lite",
+      thinkingBudget: 0
+    });
   });
 
   it("maps quality tiers to prose/mechanical/image model selections", () => {
@@ -300,6 +304,18 @@ describe("text model provider selection", () => {
     expect(createProviders(config, alibabaInput).image).toBeInstanceOf(AlibabaImageAdapter);
   });
 });
+
+async function boundFastJudgmentsAdapter(overrides: NodeJS.ProcessEnv) {
+  const config = testConfig(overrides);
+  const live = createLiveGenerationTextModel(config, {
+    fastJudgments: true,
+    loadRouting: async () => compiledGenerationTextModelRouting(config, generationTextModelOptions(config))
+  });
+  if (!(live instanceof LiveGenerationTextModelAdapter)) {
+    throw new Error("expected LiveGenerationTextModelAdapter");
+  }
+  return (await live.bindForCall(undefined)).adapter;
+}
 
 function testConfig(overrides: NodeJS.ProcessEnv) {
   return loadConfig({

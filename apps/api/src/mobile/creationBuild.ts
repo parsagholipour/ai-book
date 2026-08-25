@@ -47,7 +47,6 @@ import {
 } from "./schemas.js";
 import { fingerprintGenerationRequest, hashString, jsonInputValue, jsonRecord, promiseWithTimeout } from "./support.js";
 import {
-  createFastRoutingTextModel,
   creditCostForOperation,
   foldCharacterName,
   generateJsonWithRetry,
@@ -55,6 +54,7 @@ import {
   libraryMentionTokenEndsAt,
   libraryCharacterRelativeFile,
 } from "@book-maker/core";
+import { createLiveFastJudgmentsTextModel } from "../generationTextModelRouting.js";
 import { linearizeCreationMessages } from "../creationChatTree.js";
 import { fieldsFromJson as characterFieldsFromJson } from "./characterSerializer.js";
 import { prisma } from "@book-maker/db";
@@ -407,7 +407,7 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
   ): Promise<MobilePageCountRecommendationDto[]> {
     const fallback = deterministicPageCountRecommendations(payload, advisor);
     try {
-      const textModel = createFastRoutingTextModel(appConfig);
+      const textModel = createLiveFastJudgmentsTextModel(appConfig);
       const result = await promiseWithTimeout(
         generateJsonWithRetry(textModel, {
           purpose: "mobile-page-count-preflight",

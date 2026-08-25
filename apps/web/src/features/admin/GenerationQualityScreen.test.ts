@@ -18,40 +18,21 @@ import {
   toggleQualityTier,
   type GenerationQuality
 } from "./GenerationQualityScreen.js";
-
-/**
- * The twelfth feature: an id the server knows about and wrote no copy for.
- *
- * `settings` is what the API builds from known ids plus compatible future ids,
- * so it is the only key set a save may be missing a row for; `features` is a
- * separate hand-maintained array in core. This is the whole reason the screen
- * keys off the first and not the second — and the reason it takes the known ids
- * from core rather than restating them, which is what makes the base map below
- * impossible to leave a known key out of.
- */
-function responseWith(...undescribedIds: string[]): GenerationQuality {
-  const settings = {} as GenerationQuality["settings"];
-  for (const id of QUALITY_FEATURE_IDS) {
-    settings[id] = [];
-  }
-  settings.planCritic = ["ultra", "premium"];
-  for (const id of undescribedIds) {
-    settings[id] = [];
-  }
-  return {
-    version: 3,
-    settings,
-    usingCompiledDefaults: false,
-    features: [{ id: "planCritic", label: "Plan critic", summary: "One cheap call per book." }],
-    note: null,
-    updatedBy: null,
-    updatedAt: null
-  };
-}
+import { cloneGenerationModelRouting } from "./GenerationModelRouting.js";
+import { generationQualityResponse as responseWith } from "./generationQualityTestFixtures.js";
 
 /** What the screen holds as its draft: the response's own map, cloned. */
 function draftOf(state: GenerationQuality): GenerationQuality["settings"] {
   return JSON.parse(JSON.stringify(state.settings)) as GenerationQuality["settings"];
+}
+
+function claimFrom(
+  state: Pick<GenerationQuality, "settings" | "models">,
+  draft: GenerationQuality["settings"],
+  note: string,
+  draftModels: GenerationQuality["models"] = state.models
+) {
+  return qualitySaveClaim(state.settings, draft, note, state.models, draftModels);
 }
 
 /**
@@ -177,7 +158,8 @@ describe("quality form request boundary", () => {
         await route.fulfill({ json: loaded });
       } else if (
         path === "/api/admin/generation-quality" ||
-        path === "/api/admin/generation-quality/reset"
+        path === "/api/admin/generation-quality/reset" ||
+        path === "/api/admin/generation-quality/models/reset"
       ) {
         const requestBoundary = pending;
         if (!requestBoundary) {
@@ -204,14 +186,14 @@ describe("quality form request boundary", () => {
       const premium = tiers.getByRole("checkbox", { name: "Premium" });
       const note = page.getByLabel("Change note");
       const save = page.getByRole("button", { name: "Save setting" });
-      const reset = page.getByRole("button", { name: "Reset to defaults" });
+      const reset = page.getByRole("button", { name: "Reset quality gates" });
       await premium.uncheck();
       await note.fill("keep this draft");
 
       const refusedSave = armMutation();
       await save.click();
       await refusedSave.started;
-      const controls = page.locator(".admin-page input, .admin-page button");
+      const controls = page.locator(".admin-page input, .admin-page select, .admin-page button");
       expect(await controls.evaluateAll((nodes) => nodes.every((node) => node.matches(":disabled"))))
         .toBe(true);
       await premium.click({ force: true });
@@ -284,7 +266,7 @@ describe("qualitySaveClaim", () => {
 
     // The save the server documents and no client could produce: the button
     // used to read the settings map only, so this note was dropped in silence.
-    expect(qualitySaveClaim(state.settings, draftOf(state), "  gates stand  ")).toEqual({
+    expect(claimFrom(state, draftOf(state), "  gates stand  ")).toEqual({
       note: "gates stand"
     });
   });
@@ -292,13 +274,13 @@ describe("qualitySaveClaim", () => {
   it("stays inert for a note that is blank once trimmed", () => {
     const state = responseWith();
 
-    expect(qualitySaveClaim(state.settings, draftOf(state), " \t\n ")).toBeNull();
+    expect(claimFrom(state, draftOf(state), " \t\n ")).toBeNull();
   });
 
   it("stays inert for a form nobody touched", () => {
     const state = responseWith();
 
-    expect(qualitySaveClaim(state.settings, draftOf(state), "")).toBeNull();
+    expect(claimFrom(state, draftOf(state), "")).toBeNull();
   });
 
   it("posts the moved feature alone, and no note, when nothing was typed", () => {
@@ -306,7 +288,7 @@ describe("qualitySaveClaim", () => {
     const draft = draftOf(state);
     draft.planCritic = ["ultra"];
 
-    const claim = qualitySaveClaim(state.settings, draft, "");
+    const claim = qualitySaveClaim(state.settings, draft, "", state.models, state.models);
 
     // Not the eleven-key map this used to send: every feature nobody touched is
     // absent, so the server's merge leaves it as whoever saved last stored it.
@@ -320,7 +302,7 @@ describe("qualitySaveClaim", () => {
     const draft = draftOf(state);
     draft.planCritic = [];
 
-    const claim = qualitySaveClaim(state.settings, draft, "");
+    const claim = qualitySaveClaim(state.settings, draft, "", state.models, state.models);
 
     // Presence, the way the server decides it — a truthiness test here would
     // drop the one claim an operator most needs to make.
@@ -337,7 +319,7 @@ describe("qualitySaveClaim", () => {
     const draftOfB = draftOf(loadedByB);
     draftOfB.styleExcerpts = [];
 
-    const claim = qualitySaveClaim(loadedByB.settings, draftOfB, "");
+    const claim = qualitySaveClaim(loadedByB.settings, draftOfB, "", loadedByB.models, loadedByB.models);
 
     expect(Object.keys(claim ?? {})).toEqual(["styleExcerpts"]);
     expect(claim?.styleExcerpts).toEqual([]);
@@ -356,7 +338,7 @@ describe("qualitySaveClaim", () => {
     const draft = draftOf(state);
     draft.planCritic = [];
 
-    const claim = qualitySaveClaim(state.settings, draft, "  turning the critic off  ");
+    const claim = qualitySaveClaim(state.settings, draft, "  turning the critic off  ", state.models, state.models);
 
     expect(claim?.planCritic).toEqual([]);
     expect(claim?.note).toBe("turning the critic off");
@@ -367,7 +349,7 @@ describe("qualitySaveClaim", () => {
     const draft = draftOf(state);
     draft.planCritic = ["premium", "ultra"];
 
-    expect(qualitySaveClaim(state.settings, draft, "")).not.toBeNull();
+    expect(claimFrom(state, draft, "")).not.toBeNull();
   });
 
   it("carries a toggled-back box with the order the toggling left it in", () => {
@@ -378,7 +360,7 @@ describe("qualitySaveClaim", () => {
     // is given rather than deciding what an equal list is.
     draft.planCritic = ["premium", "ultra"];
 
-    expect(qualitySaveClaim(state.settings, draft, "")).toEqual({
+    expect(claimFrom(state, draft, "")).toEqual({
       planCritic: ["premium", "ultra"]
     });
   });
@@ -392,8 +374,8 @@ describe("qualitySaveClaim", () => {
     // own no-op from a value two versions stale — so the gesture rides the note.
     draft.planCritic = ["ultra", "premium"];
 
-    expect(qualitySaveClaim(state.settings, draft, "")).toBeNull();
-    expect(qualitySaveClaim(state.settings, draft, "  had another look  ")).toEqual({
+    expect(claimFrom(state, draft, "")).toBeNull();
+    expect(claimFrom(state, draft, "  had another look  ")).toEqual({
       note: "had another look"
     });
   });
@@ -404,7 +386,7 @@ describe("qualitySaveClaim", () => {
     // saved note is echoed from `state.note` beside the new version instead.
     const saved: GenerationQuality = { ...responseWith(), version: 4, note: "gates stand" };
 
-    expect(qualitySaveClaim(saved.settings, draftOf(saved), "")).toBeNull();
+    expect(claimFrom(saved, draftOf(saved), "")).toBeNull();
   });
 
   it("diffs the next save against the revision the last one came back with", () => {
@@ -416,10 +398,21 @@ describe("qualitySaveClaim", () => {
     answered.settings.planCritic = [];
     const draft = draftOf(answered);
 
-    expect(qualitySaveClaim(answered.settings, draft, "")).toBeNull();
+    expect(claimFrom(answered, draft, "")).toBeNull();
 
     draft.styleAuditor = ["fast"];
-    expect(qualitySaveClaim(answered.settings, draft, "")).toEqual({ styleAuditor: ["fast"] });
+    expect(claimFrom(answered, draft, "")).toEqual({ styleAuditor: ["fast"] });
+  });
+
+  it("claims a model-only draft even when no quality gate moved", () => {
+    const state = responseWith();
+    const draft = draftOf(state);
+    const models = cloneGenerationModelRouting(state.models);
+    models.balanced.writer = { ...models.balanced.writer, thinkingEffort: "high" };
+
+    expect(claimFrom(state, draft, "", models)).toEqual({
+      models: { balanced: { writer: { thinkingEffort: "high" } } }
+    });
   });
 });
 
@@ -578,11 +571,11 @@ describe("rebaseQualityDraft", () => {
     // The point of rebasing rather than reloading: pressing Save again posts the
     // same partial body, which the server lays over A's revision — so both
     // operators keep their work, exactly as the optional feature keys intend.
-    const refused = qualitySaveClaim(loadedByB.settings, draftOfB, "");
+    const refused = claimFrom(loadedByB, draftOfB, "");
     const rebased = rebaseQualityDraft(head, loadedByB.settings, draftOfB);
 
-    expect(qualitySaveClaim(head, rebased.settings, "")).toEqual(refused);
-    expect(mergeLikeServer(head, qualitySaveClaim(head, rebased.settings, "")).planCritic).toEqual(
+    expect(claimFrom({ settings: head, models: loadedByB.models }, rebased.settings, "")).toEqual(refused);
+    expect(mergeLikeServer(head, claimFrom({ settings: head, models: loadedByB.models }, rebased.settings, "")).planCritic).toEqual(
       []
     );
   });
@@ -594,7 +587,7 @@ describe("rebaseQualityDraft", () => {
     const rebased = rebaseQualityDraft(head, loadedByB.settings, draftOfB);
 
     expect(rebased.settings.styleExcerpts).toEqual([]);
-    expect(qualitySaveClaim(head, rebased.settings, "")).toBeNull();
+    expect(claimFrom({ settings: head, models: loadedByB.models }, rebased.settings, "")).toBeNull();
   });
 
   it("seats a gate this console never loaded without calling it someone's edit", () => {
@@ -618,7 +611,7 @@ describe("rebaseQualityDraft", () => {
     const rebased = rebaseQualityDraft(head, loaded.settings, draft);
 
     expect(rebased.settings.styleExcerpts).toEqual([]);
-    expect(qualitySaveClaim(head, rebased.settings, "")).toEqual({ styleExcerpts: [] });
+    expect(claimFrom({ settings: head, models: loaded.models }, rebased.settings, "")).toEqual({ styleExcerpts: [] });
     expect(rebased.movedUnderneath).not.toContain("styleExcerpts");
   });
 
@@ -632,7 +625,7 @@ describe("rebaseQualityDraft", () => {
     const rebased = rebaseQualityDraft(head, loaded.settings, draft);
 
     expect(Object.hasOwn(rebased.settings, "styleExcerpts")).toBe(false);
-    expect(qualitySaveClaim(head, rebased.settings, "")).toBeNull();
+    expect(claimFrom({ settings: head, models: loaded.models }, rebased.settings, "")).toBeNull();
   });
 });
 
@@ -712,7 +705,7 @@ describe("recoverQualitySave", () => {
     loaded.settings.styleExcerpts = ["ultra", "premium"];
     const draft = draftOf(loaded);
     draft.styleExcerpts = [];
-    return { loaded, draft, claim: qualitySaveClaim(loaded.settings, draft, "") };
+    return { loaded, draft, claim: claimFrom(loaded, draft, "") };
   }
 
   /** Operator A got the number first, and unchecked a different gate with it. */
@@ -728,6 +721,7 @@ describe("recoverQualitySave", () => {
       error: conflictError(7),
       loaded,
       draft,
+      modelDraft: loaded.models,
       note: "",
       reload: () => Promise.resolve(head)
     });
@@ -742,7 +736,7 @@ describe("recoverQualitySave", () => {
     expect(recovery.state.version).toBe(8);
     // ...and pressing Save now posts the identical partial body, which merges
     // onto version 8 rather than reverting it. That is the whole recovery.
-    expect(qualitySaveClaim(recovery.state.settings, recovery.draft, "")).toEqual(claim);
+    expect(claimFrom(recovery.state, recovery.draft, "", recovery.modelDraft)).toEqual(claim);
     expect(recovery.error).toContain("version 8");
     expect(recovery.error).toContain("Plan critic");
     expect(recovery.error).toContain("press Save setting");
@@ -760,6 +754,7 @@ describe("recoverQualitySave", () => {
       error: conflictError(7),
       loaded,
       draft,
+      modelDraft: loaded.models,
       note: "",
       reload: () => Promise.resolve(head)
     });
@@ -774,6 +769,7 @@ describe("recoverQualitySave", () => {
       error: conflictError(7),
       loaded,
       draft,
+      modelDraft: loaded.models,
       note: "",
       reload: () => Promise.reject(new Error("Failed to fetch"))
     });
@@ -800,6 +796,7 @@ describe("recoverQualitySave", () => {
       error: conflictError(7),
       loaded,
       draft,
+      modelDraft: loaded.models,
       note: "",
       reload: () => Promise.resolve(withoutHalf(storedByA(loaded), "settings"))
     });
@@ -813,7 +810,7 @@ describe("recoverQualitySave", () => {
     expect(recovery.error).toContain("out of date");
     expect(recovery.error).toContain("press Save setting");
     // And the boxes are still theirs to press it with.
-    expect(qualitySaveClaim(loaded.settings, draft, "")).toEqual(claim);
+    expect(claimFrom(loaded, draft, "")).toEqual(claim);
   });
 
   it("still banners the refusal when the reload answers without features", async () => {
@@ -823,13 +820,14 @@ describe("recoverQualitySave", () => {
       error: conflictError(7),
       loaded,
       draft,
+      modelDraft: loaded.models,
       note: "",
       reload: () => Promise.resolve(withoutHalf(storedByA(loaded), "features"))
     });
 
     expect(recovery.kind).toBe("report");
     expect(recovery.error).toContain("out of date");
-    expect(qualitySaveClaim(loaded.settings, draft, "")).toEqual(claim);
+    expect(claimFrom(loaded, draft, "")).toEqual(claim);
   });
 
   it("refuses a head whose tier list is not a list, rather than seating the wreckage", async () => {
@@ -841,6 +839,7 @@ describe("recoverQualitySave", () => {
       error: conflictError(7),
       loaded,
       draft,
+      modelDraft: loaded.models,
       note: "",
       reload: () => Promise.resolve(shredded as unknown as GenerationQuality)
     });
@@ -862,6 +861,7 @@ describe("recoverQualitySave", () => {
       ),
       loaded,
       draft,
+      modelDraft: loaded.models,
       note: "x".repeat(501),
       reload: () => {
         reloads += 1;
@@ -884,7 +884,7 @@ describe("qualityResetFailure", () => {
     // draft to keep.
     const notice = qualityResetFailure(conflictError(7));
 
-    expect(notice).toContain("Press Reset to defaults again");
+    expect(notice).toContain("Press Reset quality gates again");
     expect(notice).not.toContain("Re-send your change to merge it onto");
   });
 

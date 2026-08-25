@@ -60,6 +60,11 @@ function settingsOf(
 describe("admin generation quality settings", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    process.env.DEEPSEEK_API_KEY = "deepseek-test-key";
+    process.env.DEEPINFRA_API_KEY = "deepinfra-test-key";
+    process.env.GEMINI_API_KEY = "gemini-test-key";
+    process.env.ALIBABA_API_KEY = "alibaba-test-key";
+    process.env.MOCK_AI = "false";
     mockRequireOperatorActor.mockResolvedValue({ kind: "operator", userId: "local-admin" });
     mockPrisma.$transaction.mockImplementation(
       async (operation: (tx: typeof mockPrisma) => Promise<unknown>) => operation(mockPrisma)
@@ -125,8 +130,23 @@ describe("admin generation quality settings", () => {
     expect(response.json()).toMatchObject({
       version: 0,
       usingCompiledDefaults: true,
-      settings: QUALITY_FEATURE_DEFAULTS
+      settings: QUALITY_FEATURE_DEFAULTS,
+      models: {
+        fastJudgments: { provider: "deepseek", model: "deepseek-v4-flash", thinkingEnabled: false },
+        balanced: {
+          writer: { provider: "deepseek", model: "deepseek-v4-pro" },
+          judgment: { provider: "deepseek", model: "deepseek-v4-flash", thinkingEnabled: false }
+        },
+        premium: {
+          writer: { provider: "gemini", model: "gemini-2.5-pro", thinkingBudget: 2048 },
+          judgment: { provider: "gemini", model: "gemini-2.5-flash", thinkingBudget: 0 }
+        }
+      }
     });
+    const body = response.json() as { modelOptions: Array<{ provider: string }> };
+    expect(new Set(body.modelOptions.map((option) => option.provider))).toEqual(
+      new Set(["deepseek", "deepinfra", "gemini", "alibaba"])
+    );
     await app.close();
   });
 

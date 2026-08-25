@@ -10,10 +10,34 @@ import { FakeEmbeddingAdapter, FakeImageAdapter, FakeResearchAdapter, FakeSpeech
 import { GeminiEmbeddingAdapter, GeminiImageAdapter, GeminiResearchAdapter, GeminiTextAdapter } from "./gemini.js";
 import { GeminiSpeechAdapter } from "./geminiSpeech.js";
 import { OpenAISpeechAdapter } from "./openaiSpeech.js";
-import type { EmbeddingAdapter, ImageAdapter, ResearchAdapter, SpeechAdapter, TextModelAdapter } from "./types.js";
-import { modelTierImageSelection, modelTierTextFallbackSelection, modelTierTextSelections, planThinkingBudgetForTier, ULTRA_PAGE_MAP_THINKING_BUDGET } from "./modelTiers.js";
+import type {
+  EmbeddingAdapter,
+  GenerateJsonOptions,
+  GenerateTextOptions,
+  GenerateWithToolsOptions,
+  ImageAdapter,
+  ResearchAdapter,
+  SpeechAdapter,
+  TextModelAdapter
+} from "./types.js";
+import {
+  MECHANICAL_TEXT_PURPOSES,
+  modelTierImageSelection,
+  modelTierTextSelections,
+  planThinkingBudgetForTier,
+  ULTRA_PAGE_MAP_THINKING_BUDGET
+} from "./modelTiers.js";
 import { RoutingTextModelAdapter } from "./textRouting.js";
 import { FallbackTextModelAdapter } from "./textFallback.js";
+import {
+  compiledGenerationTextModelRouting,
+  generationTextModelOptionKey,
+  routingSelection,
+  textModelSelectionKey,
+  type GenerationTextModelOption,
+  type GenerationTextModelRole,
+  type GenerationTextModelRouting
+} from "./generationTextModelRouting.js";
 import type {
   CreateProjectInput,
   ImageModelSelection,
@@ -132,6 +156,68 @@ export function textModelOptions(config: AppConfig): TextModelOption[] {
   ];
 }
 
+/** Configured-only catalog used by the live generation routing controls. */
+export function generationTextModelOptions(config: AppConfig): GenerationTextModelOption[] {
+  const base = textModelOptions(config)
+    .filter((option) => textProviderConfigured(config, option.provider))
+    .map((option) => generationCatalogOption(option));
+  if (config.DEEPINFRA_API_KEY) {
+    const fast: GenerationTextModelOption = {
+      provider: "deepinfra",
+      model: config.DEEPINFRA_FAST_MODEL,
+      label: `DeepInfra Fast (${config.DEEPINFRA_FAST_MODEL})`,
+      thinking: true,
+      thinkingEfforts: [
+        { value: "none", label: "Off", default: true },
+        { value: "low", label: "Low" },
+        { value: "medium", label: "Medium" },
+        { value: "high", label: "High" }
+      ]
+    };
+    if (!base.some((option) => generationTextModelOptionKey(option) === generationTextModelOptionKey(fast))) {
+      const firstNonDeepSeek = base.findIndex((option) => option.provider !== "deepseek");
+      base.splice(firstNonDeepSeek < 0 ? base.length : firstNonDeepSeek, 0, fast);
+    }
+  }
+  return base;
+}
+
+function generationCatalogOption(option: TextModelOption): GenerationTextModelOption {
+  // The Premium/Ultra writer budget was fixed before model routing became
+  // editable. Keep it catalog-owned so switching away and back cannot lose it.
+  if (option.provider === "gemini" && option.model === "gemini-2.5-pro") {
+    return { ...option, thinkingBudget: 2048 };
+  }
+  // 0 disables thinking; keep it catalog-owned so switching away and back
+  // cannot lose it. Compiled defaults spell this leaf with 0.
+  if (option.provider === "gemini" && option.model === "gemini-2.5-flash-lite") {
+    return { ...option, thinkingBudget: 0 };
+  }
+  // A fixed "thinking on" flag distinguishes catalog variants sharing one
+  // provider/model identity (Gemini Flash versus Flash No Thinking). Discrete
+  // effort models express the same choice through their default effort.
+  if (option.thinking && !option.thinkingEfforts?.length && option.thinkingBudget === undefined) {
+    return { ...option, thinkingEnabled: true };
+  }
+  return { ...option };
+}
+
+export function textProviderConfigured(config: AppConfig, provider: TextModelSelection["provider"]): boolean {
+  if (provider === "deepseek") {
+    return Boolean(config.DEEPSEEK_API_KEY?.trim());
+  }
+  if (provider === "deepinfra") {
+    return Boolean(config.DEEPINFRA_API_KEY?.trim());
+  }
+  if (provider === "gemini") {
+    return Boolean(config.GEMINI_API_KEY?.trim());
+  }
+  if (provider === "alibaba") {
+    return Boolean(config.ALIBABA_API_KEY?.trim());
+  }
+  return Boolean(config.LOCAL_TEXT_BASE_URL && config.LOCAL_TEXT_MODEL);
+}
+
 function deepSeekModelOptions(config: AppConfig): TextModelOption[] {
   const options: TextModelOption[] = [
     {
@@ -185,14 +271,26 @@ export type ResolvedTextModelSelections = {
   tier?: ModelTier;
 };
 
-export function resolveTextModelSelections(config: AppConfig, input?: CreateProjectInput): ResolvedTextModelSelections {
+export function resolveTextModelSelections(
+  config: AppConfig,
+  input?: CreateProjectInput
+): ResolvedTextModelSelections {
   const explicit = input?.mediaSettings.textModel;
   if (explicit) {
     return { prose: explicit, mechanical: explicit };
   }
   const tier = input?.mediaSettings.modelTier;
   if (tier) {
-    return { ...modelTierTextSelections(tier, config), tier };
+    // Keep the historical object shape when its providers are available;
+    // compiled routing adds only the provider-unavailable fallback.
+    const historical = modelTierTextSelections(tier, config);
+    const compiled = compiledGenerationTextModelRouting(config, generationTextModelOptions(config));
+    const selected = compiled[tier];
+    const historicalAvailable = textProviderConfigured(config, historical.prose.provider) &&
+      textProviderConfigured(config, historical.mechanical.provider);
+    return historicalAvailable
+      ? { ...historical, tier }
+      : { prose: selected.writer, mechanical: selected.judgment, tier };
   }
   const legacy: TextModelSelection = { provider: "deepseek", model: config.DEEPSEEK_MODEL };
   return { prose: legacy, mechanical: legacy };
@@ -222,7 +320,10 @@ export function createResearchAdapter(config: AppConfig): ResearchAdapter {
   });
 }
 
-export function createProviders(config: AppConfig, input?: CreateProjectInput): ProviderSet {
+export function createProviders(
+  config: AppConfig,
+  input?: CreateProjectInput
+): ProviderSet {
   if (config.MOCK_AI) {
     return {
       text: new FakeTextModelAdapter(input),
@@ -265,53 +366,11 @@ export function createSpeechAdapter(
   });
 }
 
-export function createFastRoutingTextModel(config: AppConfig): TextModelAdapter {
-  if (config.MOCK_AI) {
-    return new FakeTextModelAdapter();
-  }
-  if (config.DEEPSEEK_API_KEY) {
-    return new DeepSeekAdapter({
-      apiKey: config.DEEPSEEK_API_KEY,
-      baseURL: config.DEEPSEEK_BASE_URL,
-      model: config.DEEPSEEK_FAST_MODEL,
-      thinkingEnabled: false
-    });
-  }
-  if (config.DEEPINFRA_API_KEY) {
-    return new DeepInfraAdapter({
-      apiKey: config.DEEPINFRA_API_KEY,
-      baseURL: config.DEEPINFRA_BASE_URL,
-      model: config.DEEPINFRA_FAST_MODEL,
-      thinkingEnabled: false
-    });
-  }
-  if (config.GEMINI_API_KEY) {
-    return new GeminiTextAdapter({
-      apiKey: config.GEMINI_API_KEY,
-      textModel: "gemini-2.5-flash-lite",
-      thinkingBudget: 0
-    });
-  }
-  if (config.ALIBABA_API_KEY) {
-    return new AlibabaTextAdapter({
-      apiKey: config.ALIBABA_API_KEY,
-      apiHost: config.ALIBABA_API_HOST,
-      textModel: "qwen-flash"
-    });
-  }
-
-  throw new Error("A text model API key is required for prompt language detection when MOCK_AI=false.");
-}
-
-export function createLanguageDetectionTextModel(config: AppConfig): TextModelAdapter {
-  return createFastRoutingTextModel(config);
-}
-
-function createRoutedTextModel(config: AppConfig, selections: ResolvedTextModelSelections): TextModelAdapter {
-  const prose = createTierTextAdapter(config, selections.prose, selections.tier);
+export function createRoutedTextModel(config: AppConfig, selections: ResolvedTextModelSelections): TextModelAdapter {
+  const prose = createTierTextAdapter(config, selections.prose, selections.tier, "writer");
   const mechanical = sameTextSelection(selections.prose, selections.mechanical)
     ? prose
-    : createTierTextAdapter(config, selections.mechanical, selections.tier);
+    : createTierTextAdapter(config, selections.mechanical, selections.tier, "judgment");
   const purposeOverrides = purposeOverrideAdapters(config, selections);
   if (purposeOverrides.size === 0 && mechanical === prose) {
     return prose;
@@ -335,31 +394,95 @@ function purposeOverrideAdapters(
   if (!tier) {
     return overrides;
   }
-  const planBudget = planThinkingBudgetForTier(tier);
-  if (planBudget !== undefined && selections.prose.thinkingBudget !== planBudget) {
-    const planSelection: TextModelSelection = { ...selections.prose, thinkingBudget: planBudget };
+  const catalog = generationTextModelOptions(config);
+  const planSelection = elevatedThinkingSelection(selections.prose, tier, "plan-book", catalog);
+  if (!sameTextSelection(selections.prose, planSelection)) {
     overrides.set("plan-book", {
       selection: planSelection,
-      adapter: createTierTextAdapter(config, planSelection, tier)
+      adapter: createTierTextAdapter(config, planSelection, tier, "writer")
     });
   }
-  if (tier === "ultra" && selections.mechanical.provider === "gemini") {
-    const mapSelection: TextModelSelection = {
-      ...selections.mechanical,
-      thinkingBudget: ULTRA_PAGE_MAP_THINKING_BUDGET
-    };
+  const mapSelection = elevatedThinkingSelection(selections.mechanical, tier, "generate-page-map", catalog);
+  if (!sameTextSelection(selections.mechanical, mapSelection)) {
     overrides.set("generate-page-map", {
       selection: mapSelection,
-      adapter: createTierTextAdapter(config, mapSelection, tier)
+      adapter: createTierTextAdapter(config, mapSelection, tier, "judgment")
     });
   }
   return overrides;
 }
 
+export function elevatedThinkingSelection(
+  base: TextModelSelection,
+  tier: ModelTier,
+  purpose: string | undefined,
+  options: readonly GenerationTextModelOption[]
+): TextModelSelection {
+  const isPlan = purpose === "plan-book";
+  const isUltraMap = tier === "ultra" && purpose === "generate-page-map";
+  if ((tier !== "premium" && tier !== "ultra") || (!isPlan && !isUltraMap)) {
+    return base;
+  }
+
+  // Gemini 2.5 uses numeric budgets. Preserve the established boosts only for
+  // a selection already using that capability; adding a budget to a discrete-
+  // effort model makes the SDK send a parameter that model does not support.
+  if (base.provider === "gemini" && typeof base.thinkingBudget === "number") {
+    const thinkingBudget = isUltraMap
+      ? ULTRA_PAGE_MAP_THINKING_BUDGET
+      : planThinkingBudgetForTier(tier);
+    return thinkingBudget === undefined || thinkingBudget === base.thinkingBudget
+      ? base
+      : { ...base, thinkingBudget };
+  }
+
+  const option = generationOptionForSelection(options, base);
+  const efforts = option?.thinkingEfforts;
+  if (!efforts?.length) {
+    return base;
+  }
+  const baseEffort = base.thinkingEffort ?? efforts.find((effort) => effort.default)?.value;
+  const target = tier === "ultra" ? "max" : "high";
+  const elevated = elevatedSupportedEffort(efforts.map((effort) => effort.value), baseEffort, target);
+  return elevated && elevated !== base.thinkingEffort ? { ...base, thinkingEffort: elevated } : base;
+}
+
+function generationOptionForSelection(
+  options: readonly GenerationTextModelOption[],
+  selection: TextModelSelection
+): GenerationTextModelOption | undefined {
+  const exactKey = generationTextModelOptionKey(selection);
+  return options.find((option) => generationTextModelOptionKey(option) === exactKey) ??
+    options.find((option) => option.provider === selection.provider && option.model === selection.model);
+}
+
+function elevatedSupportedEffort(
+  supported: readonly TextModelThinkingEffort[],
+  base: TextModelThinkingEffort | undefined,
+  target: TextModelThinkingEffort
+): TextModelThinkingEffort | undefined {
+  const order: readonly TextModelThinkingEffort[] = ["none", "minimal", "low", "medium", "high", "max"];
+  const baseRank = base ? order.indexOf(base) : 0;
+  const targetRank = order.indexOf(target);
+  const desiredRank = Math.max(baseRank, targetRank);
+  let selected: TextModelThinkingEffort | undefined;
+  for (const effort of supported) {
+    const rank = order.indexOf(effort);
+    if (rank <= desiredRank && (!selected || rank > order.indexOf(selected))) {
+      selected = effort;
+    }
+  }
+  if (selected && order.indexOf(selected) >= baseRank) {
+    return selected;
+  }
+  return base;
+}
+
 function createTierTextAdapter(
   config: AppConfig,
   selection: TextModelSelection,
-  tier: ModelTier | undefined
+  tier: ModelTier | undefined,
+  role: GenerationTextModelRole
 ): TextModelAdapter {
   const adapter = createTextModelAdapter(config, selection);
   // Only tier-derived Gemini selections get a cross-provider fallback;
@@ -367,7 +490,7 @@ function createTierTextAdapter(
   if (!tier || selection.provider !== "gemini" || !config.DEEPSEEK_API_KEY) {
     return adapter;
   }
-  const fallbackSelection = modelTierTextFallbackSelection(selection, config);
+  const fallbackSelection = modelTierTextFallbackSelectionForRole(role, config);
   return new FallbackTextModelAdapter({
     primary: { selection, adapter },
     fallback: {
@@ -376,6 +499,15 @@ function createTierTextAdapter(
     },
     shouldFallback: isTextProviderFallbackError
   });
+}
+
+export function modelTierTextFallbackSelectionForRole(
+  role: GenerationTextModelRole,
+  config: AppConfig
+): TextModelSelection {
+  return role === "judgment"
+    ? { provider: "deepseek", model: config.DEEPSEEK_FAST_MODEL, thinkingEnabled: false }
+    : { provider: "deepseek", model: config.DEEPSEEK_MODEL };
 }
 
 function sameTextSelection(a: TextModelSelection, b: TextModelSelection): boolean {
@@ -441,7 +573,7 @@ function fallbackErrorDescriptors(value: unknown, seen = new WeakSet<object>(), 
   ];
 }
 
-function createTextModelAdapter(config: AppConfig, selection: TextModelSelection): TextModelAdapter {
+export function createTextModelAdapter(config: AppConfig, selection: TextModelSelection): TextModelAdapter {
   if (selection.provider === "gemini") {
     return new GeminiTextAdapter({
       apiKey: config.GEMINI_API_KEY,
@@ -483,6 +615,103 @@ function createTextModelAdapter(config: AppConfig, selection: TextModelSelection
     thinkingEnabled: selection.thinkingEnabled,
     thinkingEffort: selection.thinkingEffort
   });
+}
+
+export type LiveGenerationTextModelOptions = {
+  loadRouting: () => Promise<GenerationTextModelRouting>;
+  tier?: ModelTier | undefined;
+  fastJudgments?: boolean | undefined;
+  /** Test seam; production uses the provider/fallback construction above. */
+  createAdapter?: ((selection: TextModelSelection, role: GenerationTextModelRole) => TextModelAdapter) | undefined;
+};
+
+export function createLiveGenerationTextModel(
+  config: AppConfig,
+  options: LiveGenerationTextModelOptions
+): TextModelAdapter {
+  return new LiveGenerationTextModelAdapter(config, options);
+}
+
+/**
+ * Resolves routing at each logical call boundary and caches only the concrete
+ * adapters it constructs. `bindForCall` is consumed by retry wrappers so their
+ * attempts keep this exact selection even if a revision lands mid-call.
+ */
+export class LiveGenerationTextModelAdapter implements TextModelAdapter {
+  private readonly adapters = new Map<string, TextModelAdapter>();
+  private readonly catalog: GenerationTextModelOption[];
+  private purposeOverridesEnabled = true;
+
+  constructor(
+    private readonly config: AppConfig,
+    private readonly options: LiveGenerationTextModelOptions
+  ) {
+    this.catalog = generationTextModelOptions(config);
+    if (!config.MOCK_AI && this.catalog.length === 0) {
+      throw new Error("A text model API key is required when MOCK_AI=false.");
+    }
+  }
+
+  setPurposeOverridesEnabled(enabled: boolean): void {
+    this.purposeOverridesEnabled = enabled;
+  }
+
+  async bindForCall(purpose: string | undefined) {
+    const routing = await this.options.loadRouting();
+    const tier = this.options.tier ?? "fast";
+    const role: GenerationTextModelRole = this.options.fastJudgments
+      ? "judgment"
+      : purpose && MECHANICAL_TEXT_PURPOSES.has(purpose)
+        ? "judgment"
+        : "writer";
+    const base = this.options.fastJudgments
+      ? routing.fastJudgments
+      : routingSelection(routing, tier, role);
+    const selection = this.purposeOverridesEnabled
+      ? elevatedThinkingSelection(base, tier, purpose, this.catalog)
+      : base;
+    const key = `${tier}:${role}:${textModelSelectionKey(selection)}`;
+    let adapter = this.adapters.get(key);
+    if (!adapter) {
+      adapter = this.createBoundAdapter(selection, role, tier);
+      this.adapters.set(key, adapter);
+    }
+    return { adapter, selection };
+  }
+
+  async generateText(options: GenerateTextOptions) {
+    const bound = await this.bindForCall(options.purpose);
+    return bound.adapter.generateText(options);
+  }
+
+  async generateJson<T>(options: GenerateJsonOptions<T>) {
+    const bound = await this.bindForCall(options.purpose);
+    return bound.adapter.generateJson(options);
+  }
+
+  async *streamText(options: GenerateTextOptions) {
+    const bound = await this.bindForCall(options.purpose);
+    yield* bound.adapter.streamText(options);
+  }
+
+  async generateWithTools(options: GenerateWithToolsOptions) {
+    const bound = await this.bindForCall(options.purpose);
+    return bound.adapter.generateWithTools(options);
+  }
+
+  private createBoundAdapter(
+    selection: TextModelSelection,
+    role: GenerationTextModelRole,
+    tier: ModelTier
+  ): TextModelAdapter {
+    if (this.options.createAdapter) {
+      return this.options.createAdapter(selection, role);
+    }
+    if (this.config.MOCK_AI) {
+      return new FakeTextModelAdapter();
+    }
+    return createTierTextAdapter(this.config, selection, tier, role);
+  }
 }
 
 function createImageModelAdapter(config: AppConfig, selection: ImageModelSelection): ImageAdapter {
