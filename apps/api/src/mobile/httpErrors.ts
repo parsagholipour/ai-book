@@ -102,6 +102,16 @@ export function sendMobileError(reply: FastifyReply, statusCode: number, code: s
   });
 }
 
+/** The one answer every mobile route gives when its project lookup misses. */
+export function sendProjectNotFound(reply: FastifyReply): FastifyReply {
+  return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+}
+
+/** The one answer every mobile route gives when its edit-operation lookup misses. */
+export function sendOperationNotFound(reply: FastifyReply): FastifyReply {
+  return sendMobileError(reply, 404, "OPERATION_NOT_FOUND", "That edit was not found.");
+}
+
 /**
  * A body Fastify could not read at all, answered in the shape every other
  * refusal on these routes arrives in.

@@ -15,7 +15,7 @@ import {
   queueChatBookEdit,
   queueChatPlanRevision
 } from "./editOperations.js";
-import { sendMobileError } from "./httpErrors.js";
+import { sendMobileError, sendProjectNotFound } from "./httpErrors.js";
 import { undoLastBookEdit } from "./manualEdits.js";
 import {
   activeProjectChatLeafId,
@@ -73,7 +73,7 @@ export async function applyOrCancelEditProposal(options: {
   // not own the project would hand them another reader's transcript.
   const project = await loadProjectForChat(userId, projectId);
   if (!project) {
-    return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+    return sendProjectNotFound(reply);
   }
   if (requestId) {
     const replay = await replayProjectChatRequest(projectId, requestId);

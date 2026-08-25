@@ -1,7 +1,12 @@
 // Straight from the module that owns them rather than through the re-export in
 // routes/projects.ts, which is already over its size budget.
 import { readProjectExportArtifact, sanitizeDownloadFilename } from "../../routes/projectExports.js";
-import { ensureExportEntitlementForDownload, requireMobileAuth, sendMobileError } from "../httpErrors.js";
+import {
+  ensureExportEntitlementForDownload,
+  requireMobileAuth,
+  sendMobileError,
+  sendProjectNotFound
+} from "../httpErrors.js";
 import { ensureExportRepairQueued } from "../exportRepair.js";
 import { idParamsSchema, mobileAuthError } from "../schemas.js";
 import { prisma } from "@book-maker/db";
@@ -111,7 +116,7 @@ export async function registerMobileExportRoutes(fastify: FastifyInstance, conte
         select: { title: true, status: true, currentPlanId: true, contentRevision: true }
       });
       if (!project) {
-        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+        return sendProjectNotFound(reply);
       }
       // REVIEW_REQUIRED no longer refuses the download: the compile always
       // produces the best available book, and the flagged issues travel on the
@@ -148,7 +153,7 @@ export async function registerMobileExportRoutes(fastify: FastifyInstance, conte
         select: { title: true, status: true, currentPlanId: true, contentRevision: true }
       });
       if (!project) {
-        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+        return sendProjectNotFound(reply);
       }
       const epub = await readProjectExportArtifact(appConfig, id, "epub", project);
       if (!epub) {

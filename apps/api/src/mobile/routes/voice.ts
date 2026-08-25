@@ -4,7 +4,13 @@ import {
   type MobileVoiceCallSessionDto,
   type MobileVoiceCastDto
 } from "../dto.js";
-import { hitAuthenticatedLimit, requireMobileAuth, sendInsufficientCredits, sendMobileError } from "../httpErrors.js";
+import {
+  hitAuthenticatedLimit,
+  requireMobileAuth,
+  sendInsufficientCredits,
+  sendMobileError,
+  sendProjectNotFound
+} from "../httpErrors.js";
 import {
   idParamsSchema,
   mobileAuthError,
@@ -65,7 +71,7 @@ export async function registerMobileVoiceRoutes(fastify: FastifyInstance, contex
         select: { id: true, status: true }
       });
       if (!project) {
-        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+        return sendProjectNotFound(reply);
       }
 
       const [characters, balance] = await Promise.all([

@@ -8,7 +8,13 @@ import { dispatchGenerationJob, enqueueGenerationJob } from "../../queue.js";
 import { ensureVoiceSample } from "../audiobookSamples.js";
 import { serializeAudiobook, serializeNarratorVoices } from "../audiobookSerializer.js";
 import type { MobileAudiobookDto, MobileNarratorVoiceDto } from "../dto.js";
-import { hitTieredLimit, requireMobileAuth, sendGenerationAttemptError, sendMobileError } from "../httpErrors.js";
+import {
+  hitTieredLimit,
+  requireMobileAuth,
+  sendGenerationAttemptError,
+  sendMobileError,
+  sendProjectNotFound
+} from "../httpErrors.js";
 import type { MobileRouteContext } from "../routeContext.js";
 import { fingerprintGenerationRequest } from "../support.js";
 import {
@@ -84,7 +90,7 @@ export async function registerMobileAudiobookRoutes(fastify: FastifyInstance, co
         select: { id: true, contentRevision: true }
       });
       if (!project) {
-        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+        return sendProjectNotFound(reply);
       }
       const audiobook = await loadAudiobook(id);
       if (!audiobook) {
@@ -121,7 +127,7 @@ export async function registerMobileAudiobookRoutes(fastify: FastifyInstance, co
         select: { id: true, status: true, contentRevision: true }
       });
       if (!project) {
-        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+        return sendProjectNotFound(reply);
       }
       if (project.status !== "COMPLETE") {
         return sendMobileError(reply, 409, "BOOK_NOT_READY", "Finish the book before narrating it.");

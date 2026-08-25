@@ -16,6 +16,7 @@ import {
   type OperatorAuthContext
 } from "./requestAuth.js";
 import { deleteProjectStorage } from "./projectStorage.js";
+import { sendProjectNotFound } from "./mobile/httpErrors.js";
 import {
   InMemoryRateLimiter,
   identityRateLimitKey,
@@ -201,7 +202,7 @@ export const mobileSafetyRoutes: FastifyPluginAsync<SafetyRouteOptions> = async 
       }
     });
     if (!project) {
-      return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+      return sendProjectNotFound(reply);
     }
 
     const report = (await prisma.moderationReport.create({
@@ -307,7 +308,7 @@ export const mobileSafetyRoutes: FastifyPluginAsync<SafetyRouteOptions> = async 
       select: { id: true }
     });
     if (!project) {
-      return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+      return sendProjectNotFound(reply);
     }
 
     let stoppedJobs: Awaited<ReturnType<typeof stopProjectGenerationJobs>> | null = null;

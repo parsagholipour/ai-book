@@ -1,7 +1,13 @@
 import { type MobileEditableBookDto, type MobileManualBookEditResponseDto } from "../dto.js";
 import { loadEditChanges } from "../editChanges.js";
 import { hasOpenProjectWork } from "../editOperations.js";
-import { hitAuthenticatedLimit, requireMobileAuth, sendMobileError } from "../httpErrors.js";
+import {
+  hitAuthenticatedLimit,
+  requireMobileAuth,
+  sendMobileError,
+  sendOperationNotFound,
+  sendProjectNotFound
+} from "../httpErrors.js";
 import { applyManualBookEdit, manualEditInfoFromMessage, replayManualBookEdit } from "../manualEdits.js";
 import { loadProjectChatResponse, serializeBookEditOperation, serializeProjectChatMessage } from "../projectChat.js";
 import {
@@ -45,7 +51,7 @@ export async function registerMobileBookRoutes(fastify: FastifyInstance, context
         }
       });
       if (!project) {
-        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+        return sendProjectNotFound(reply);
       }
       // EDITING covers the export recompile after a save; the book text
       // itself is still fully readable and editable then.
@@ -79,11 +85,11 @@ export async function registerMobileBookRoutes(fastify: FastifyInstance, context
         select: { id: true }
       });
       if (!project) {
-        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+        return sendProjectNotFound(reply);
       }
       const changes = await loadEditChanges(id, operationId);
       if (!changes) {
-        return sendMobileError(reply, 404, "OPERATION_NOT_FOUND", "That edit was not found.");
+        return sendOperationNotFound(reply);
       }
       return { changes };
     }
@@ -118,7 +124,7 @@ export async function registerMobileBookRoutes(fastify: FastifyInstance, context
         select: { id: true, status: true, currentPlanId: true }
       });
       if (!project) {
-        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+        return sendProjectNotFound(reply);
       }
       if (parsed.data.requestId) {
         const replay = await replayManualBookEdit(id, parsed.data.requestId);

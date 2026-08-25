@@ -37,6 +37,11 @@ export class CharacterDeleteClaimLostError extends Error {
   }
 }
 
+/** The one answer a direct library-character lookup gives when it misses. */
+export function sendCharacterNotFound(reply: FastifyReply): FastifyReply {
+  return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
+}
+
 /**
  * The one answer both write paths give when the row moved under them.
  *

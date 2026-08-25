@@ -35,7 +35,11 @@ import {
   readLibraryCharacterFile,
   resolveCharacterPhotoMimeType
 } from "../characterStorage.js";
-import { sendCharacterImageChanged, sendPortraitInProgress } from "../characterWriteConflicts.js";
+import {
+  sendCharacterImageChanged,
+  sendCharacterNotFound,
+  sendPortraitInProgress
+} from "../characterWriteConflicts.js";
 import type {
   MobileLibraryCharacterDto,
   MobileLibraryCharacterImageDto,
@@ -218,7 +222,7 @@ export async function registerMobileCharacterImageRoutes(
       const { id } = idParamsSchema.parse(request.params);
       const character = await ownedCharacter(id, auth.user.id);
       if (!character) {
-        return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
+        return sendCharacterNotFound(reply);
       }
       const images = await characterImageStrip(character, auth.user.id);
       return { images } satisfies MobileLibraryCharacterImageListDto;
@@ -275,11 +279,11 @@ export async function registerMobileCharacterImageRoutes(
       }
       const params = characterImageParamsSchema.safeParse(request.params);
       if (!params.success) {
-        return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
+        return sendCharacterNotFound(reply);
       }
       const character = await ownedCharacter(params.data.id, auth.user.id);
       if (!character) {
-        return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
+        return sendCharacterNotFound(reply);
       }
       const image = await ownedCharacterImage(character.id, params.data.imageId, auth.user.id);
       if (!image) {
@@ -330,7 +334,7 @@ export async function registerMobileCharacterImageRoutes(
         return sendPortraitInProgress(reply);
       }
       if (written === "gone") {
-        return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
+        return sendCharacterNotFound(reply);
       }
       if (written === "moved") {
         // Someone else moved a pointer while this promote was deciding. The
@@ -341,7 +345,7 @@ export async function registerMobileCharacterImageRoutes(
 
       const payload = await characterWithImages(character.id, auth.user.id);
       if (!payload) {
-        return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
+        return sendCharacterNotFound(reply);
       }
       return payload;
     }
@@ -365,11 +369,11 @@ export async function registerMobileCharacterImageRoutes(
       }
       const params = characterImageParamsSchema.safeParse(request.params);
       if (!params.success) {
-        return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
+        return sendCharacterNotFound(reply);
       }
       const character = await ownedCharacter(params.data.id, auth.user.id);
       if (!character) {
-        return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
+        return sendCharacterNotFound(reply);
       }
       const image = await ownedCharacterImage(character.id, params.data.imageId, auth.user.id);
       if (!image) {
@@ -420,7 +424,7 @@ export async function registerMobileCharacterImageRoutes(
           return sendPortraitInProgress(reply);
         }
         if (cleared === "gone") {
-          return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
+          return sendCharacterNotFound(reply);
         }
         if (cleared === "moved") {
           // The file is deliberately still on disk: this delete decided which
@@ -437,7 +441,7 @@ export async function registerMobileCharacterImageRoutes(
 
       const payload = await characterWithImages(character.id, auth.user.id);
       if (!payload) {
-        return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
+        return sendCharacterNotFound(reply);
       }
       return payload;
     }
@@ -484,7 +488,7 @@ export async function registerMobileCharacterImageRoutes(
       // writes, which is also the only copy that describes them.
       const character = await ownedCharacter(id, auth.user.id);
       if (!character) {
-        return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
+        return sendCharacterNotFound(reply);
       }
       let optimized;
       try {
@@ -520,7 +524,7 @@ export async function registerMobileCharacterImageRoutes(
         reading
       });
       if (stored === "character-gone") {
-        return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
+        return sendCharacterNotFound(reply);
       }
 
       await pruneCharacterImages(appConfig.IMAGE_STORAGE_DIR, auth.user.id, character.id);
@@ -540,7 +544,7 @@ export async function registerMobileCharacterImageRoutes(
         // nothing can name. "Its own delete has already taken its files" was
         // true only of the files that existed when it looked.
         await deleteLibraryCharacterFile(appConfig.IMAGE_STORAGE_DIR, auth.user.id, stored.fileName);
-        return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
+        return sendCharacterNotFound(reply);
       }
       return {
         character: serializeLibraryCharacter(
@@ -568,7 +572,7 @@ export async function registerMobileCharacterImageRoutes(
       const { id } = idParamsSchema.parse(request.params);
       const character = await ownedCharacterWithMentions(id, auth.user.id);
       if (!character) {
-        return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
+        return sendCharacterNotFound(reply);
       }
       // Now a pointer clear and nothing else. It used to unlink the file and
       // drop an adopted reference with it, on the grounds that the reader had
@@ -594,7 +598,7 @@ export async function registerMobileCharacterImageRoutes(
           return null;
         });
       if (!updated) {
-        return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
+        return sendCharacterNotFound(reply);
       }
       return {
         character: serializeLibraryCharacter({
@@ -677,7 +681,7 @@ export async function registerMobileCharacterImageRoutes(
       // anyway, because the claim moves the very status the app is waiting on.
       const character = await ownedCharacter(id, auth.user.id);
       if (!character) {
-        return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
+        return sendCharacterNotFound(reply);
       }
       if (PORTRAIT_OPEN_STATUSES.includes(character.portraitStatus as (typeof PORTRAIT_OPEN_STATUSES)[number])) {
         return sendPortraitInProgress(reply);
@@ -813,7 +817,7 @@ export async function registerMobileCharacterImageRoutes(
         // built from it would tell the app no portrait is being drawn. The
         // charge is not stranded either — the handler throws on a character
         // that is gone, and a failed attempt is refunded.
-        return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
+        return sendCharacterNotFound(reply);
       }
       return reply.code(202).send({
         character: serializeLibraryCharacter(current) satisfies MobileLibraryCharacterDto,

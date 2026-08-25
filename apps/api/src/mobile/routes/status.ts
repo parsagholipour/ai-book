@@ -1,5 +1,5 @@
 import { ensureExportRepairQueued, ensureExportRepairQueuedFor, missingExportFormat } from "../exportRepair.js";
-import { requireMobileAuth, sendMobileError } from "../httpErrors.js";
+import { requireMobileAuth, sendMobileError, sendProjectNotFound } from "../httpErrors.js";
 import { imageContentType, isLiveProjectStatus, loadSerializedProjectStatus, mobileAssetFilenameFromPath } from "../projectSerializers.js";
 import { assetParamsSchema, idParamsSchema, mobileAuthError } from "../schemas.js";
 import { prisma } from "@book-maker/db";
@@ -29,11 +29,11 @@ export async function registerMobileStatusRoutes(fastify: FastifyInstance, conte
         select: { id: true, status: true, currentPlanId: true, contentRevision: true }
       });
       if (!project) {
-        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+        return sendProjectNotFound(reply);
       }
       const status = await loadSerializedProjectStatus(id, appConfig, auth.user.id);
       if (!status) {
-        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+        return sendProjectNotFound(reply);
       }
       // The download routes queue a repair when they find nothing to send, but
       // no surface ever reaches them while the file is missing: the card's
@@ -71,7 +71,7 @@ export async function registerMobileStatusRoutes(fastify: FastifyInstance, conte
         select: { id: true }
       });
       if (!project) {
-        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+        return sendProjectNotFound(reply);
       }
 
       reply.hijack();

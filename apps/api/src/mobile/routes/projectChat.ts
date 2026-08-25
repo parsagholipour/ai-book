@@ -18,7 +18,7 @@ import {
 import { type MobileProjectChatMessageRecord, type MobileProjectChatMessageResponseDto } from "../dto.js";
 import { hasOpenProjectWork } from "../editOperations.js";
 import { resolvePendingEditTurn } from "../pendingEditTurn.js";
-import { hitAuthenticatedLimit, requireMobileAuth, sendMobileError } from "../httpErrors.js";
+import { hitAuthenticatedLimit, requireMobileAuth, sendMobileError, sendProjectNotFound } from "../httpErrors.js";
 import { undoLastBookEdit } from "../manualEdits.js";
 import {
   activeProjectChatLeafId,
@@ -76,7 +76,7 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
       const { id } = idParamsSchema.parse(request.params);
       const project = await prisma.project.findFirst({ where: { id, userId: auth.user.id }, select: { id: true } });
       if (!project) {
-        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+        return sendProjectNotFound(reply);
       }
       const query = projectChatQuerySchema.parse(request.query);
       return loadProjectChatResponse(id, query);
@@ -112,7 +112,7 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
 
       const project = await loadProjectForChat(auth.user.id, id);
       if (!project) {
-        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+        return sendProjectNotFound(reply);
       }
 
       if (parsed.data.requestId) {
@@ -500,7 +500,7 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
       // does not own the project would hand them another reader's transcript.
       const project = await loadProjectForChat(auth.user.id, id);
       if (!project) {
-        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+        return sendProjectNotFound(reply);
       }
       if (parsed.data.requestId) {
         const replay = await replayProjectChatRequest(id, parsed.data.requestId);
@@ -583,7 +583,7 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
       }
       const project = await prisma.project.findFirst({ where: { id, userId: auth.user.id }, select: { id: true } });
       if (!project) {
-        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+        return sendProjectNotFound(reply);
       }
 
       const switched = await switchProjectChatBranch({

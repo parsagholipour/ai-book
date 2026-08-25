@@ -1,5 +1,5 @@
 import { type MobileProjectCreateResponseDto, type MobileProjectRecord } from "../dto.js";
-import { hitTieredLimit, requireMobileAuth, sendMobileError } from "../httpErrors.js";
+import { hitTieredLimit, requireMobileAuth, sendMobileError, sendProjectNotFound } from "../httpErrors.js";
 import { buildMobileCreateProjectInput, createMobileProjectRecord } from "../projectRecords.js";
 import { serializeProjectDetail, serializeProjectSummary } from "../projectSerializers.js";
 import { idParamsSchema, mobileAuthError, mobileProjectCreateBodySchema, mobileProjectCreateOpenApiBody } from "../schemas.js";
@@ -117,7 +117,7 @@ export async function registerMobileProjectRoutes(fastify: FastifyInstance, cont
         }
       })) as MobileProjectRecord | null;
       if (!project) {
-        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+        return sendProjectNotFound(reply);
       }
       return { project: await serializeProjectDetail(project, appConfig, auth.user.id) };
     }

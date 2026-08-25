@@ -13,7 +13,9 @@ import {
   requireMobileAuth,
   sendGenerationAttemptError,
   sendInsufficientCredits,
-  sendMobileError
+  sendMobileError,
+  sendOperationNotFound,
+  sendProjectNotFound
 } from "../httpErrors.js";
 import { serializeBookEditOperation } from "../projectChat.js";
 import { isValidGenerationRetryToken } from "../generationRetryQuote.js";
@@ -108,7 +110,7 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
         }
       });
       if (!project) {
-        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+        return sendProjectNotFound(reply);
       }
       if (!(await enforceContentRestrictions(reply, project.prompt))) {
         return;
@@ -225,7 +227,7 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
       throw error;
     }
     if (result.kind === "not_found") {
-      return sendMobileError(reply, 404, "OPERATION_NOT_FOUND", "Plan revision operation not found.");
+      return sendOperationNotFound(reply);
     }
     if (result.kind === "conflict") {
       return sendMobileError(reply, 409, "RETRY_NOT_AVAILABLE", result.reason);
@@ -449,7 +451,7 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
         include: { currentPlan: true }
       });
       if (!project) {
-        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+        return sendProjectNotFound(reply);
       }
 
       const failedJobs = await prisma.generationJob.findMany({

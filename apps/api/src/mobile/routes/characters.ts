@@ -38,6 +38,7 @@ import {
   type CharacterTransactionOptions,
   claimCharacterRow,
   sendCharacterEditConflict,
+  sendCharacterNotFound,
   sendCharacterWriteBusy,
   sendCharacterWriteError,
   sendPortraitInProgress
@@ -402,7 +403,7 @@ export async function registerMobileCharacterRoutes(
         copyrightRestrictionsEnabled()
       ]);
       if (!character) {
-        return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
+        return sendCharacterNotFound(reply);
       }
       // What the two reads above left of the client budget. Null is a window
       // too small for a claim and a rewrite to commit in, and the honest answer
@@ -617,7 +618,7 @@ export async function registerMobileCharacterRoutes(
       const { id } = idParamsSchema.parse(request.params);
       const character = await ownedCharacter(id, auth.user.id);
       if (!character) {
-        return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
+        return sendCharacterNotFound(reply);
       }
       // The conditional claim is the real guard, and it carries both halves:
       // the worker owns the row while a portrait is in flight and must find it
@@ -764,7 +765,7 @@ export async function registerMobileCharacterRoutes(
             if (retry.found) {
               return sendCharacterEditConflict(reply);
             }
-            return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
+            return sendCharacterNotFound(reply);
           }
           retainedFiles = retry.files;
         }
