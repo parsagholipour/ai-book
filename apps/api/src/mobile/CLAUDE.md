@@ -851,8 +851,10 @@ the write binds has to be one all three of them can still find.
   Sized against the ceiling alone it still opened the full 15 s behind them. Those two are now one
   `Promise.all` — neither needs the other, and two waits for a pool connection is exactly what the
   budget is spent on under the pressure it was written for. **The clock itself starts before
-  `requireMobileAuth`, on every route that asks the function anything**: the session lookup is a
-  `MobileSession` query, a pool acquisition under that same pressure, so a lane started after it
+  `requireMobileAuth`, on every route that asks the function anything**: `characterWriteLane.ts`
+  starts timed lanes before it calls the auth guard and exposes both elapsed time and fresh
+  transaction options to the route body. The session lookup is a `MobileSession` query, a pool
+  acquisition under that same pressure, so a lane started after it
   reported `elapsedMs ≈ 0` for seconds it had already spent and opened the full ceiling behind
   them. Reading the per-transaction ceiling as a per-request one is what put the 503 past the
   budget it was chosen to fit inside.
@@ -882,13 +884,14 @@ the write binds has to be one all three of them can still find.
   creation did need is the *answer*: a `P2028` there used to fall through as a 500 for a character
   the reader typed correctly, so `isTransactionTimeout` is checked on that path too, above the
   `P2002` name-clash branch — a clash is something they have to fix and a timeout is not.
-  **And it is checked there because there is one ladder, not three.** `sendCharacterWriteError`
-  (`characterWriteConflicts.ts`) is every answer a failed character write gives, in one order —
-  refusal, mention error, timeout, conflict, `P2002` — and it returns whether it answered so each
-  catch rethrows what it does not recognise. Three catches spelling out one list had drifted in
-  every direction three copies allow: create knew the timeout rung and not the conflict one, delete
-  neither the refusal nor the mention one, and only patch asked `namesMentionPrimaryKey` whether its
-  `P2002` really named the library's own unique. The rung that matters next is the mention one —
+  **And it is checked there because there is one ladder and one catch, not three.**
+  `sendCharacterWriteError` (`characterWriteConflicts.ts`) is every answer a failed character
+  write gives, in one order — refusal, mention error, timeout, conflict, `P2002` — and
+  `characterWriteLane.ts` calls it around the route body, returning when it answered and rethrowing
+  what it does not recognise. The three old catches had drifted in every direction three copies
+  allow: create knew the timeout rung and not the conflict one, delete neither the refusal nor the
+  mention one, and only patch asked `namesMentionPrimaryKey` whether its `P2002` really named the
+  library's own unique. The rung that matters next is the mention one —
   LOCATION and OTHER share `LibraryMention` with the cast (`REPLACED_MENTION_KINDS`), so a refusal
   taught to one catch would have answered 500 from the other two. The ladder imports the pure
   timeout/conflict classifiers from `characterWriteBudget.ts` and the Prisma/driver traversal plus
