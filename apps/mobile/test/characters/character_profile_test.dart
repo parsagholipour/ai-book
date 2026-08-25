@@ -5,6 +5,7 @@ import 'package:tomeza/features/characters/data/characters_repository.dart';
 import 'package:tomeza/features/characters/domain/character_image_models.dart';
 import 'package:tomeza/features/characters/domain/character_models.dart';
 import 'package:tomeza/features/characters/presentation/character_profile_screen.dart';
+import 'package:tomeza/shared/api/api_client.dart';
 
 import 'character_test_support.dart';
 
@@ -38,7 +39,12 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [charactersRepositoryProvider.overrideWithValue(repository)],
+        overrides: [
+          apiAuthHeadersProvider.overrideWith(
+            (ref) async => const <String, String>{},
+          ),
+          charactersRepositoryProvider.overrideWithValue(repository),
+        ],
         child: MaterialApp(home: CharacterProfileScreen(characterId: saved.id)),
       ),
     );

@@ -271,7 +271,4 @@ class FakeCharactersRepository implements CharactersRepository {
     portraitRequests.add(requestId);
     return (character: _character, creditsCharged: 45);
   }
-
-  @override
-  Future<Map<String, String>> assetHeaders() async => const {};
 }

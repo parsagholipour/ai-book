@@ -6,6 +6,7 @@ import 'package:tomeza/features/voice/data/voice_repository.dart';
 import 'package:tomeza/features/voice/data/voice_disclosure_store.dart';
 import 'package:tomeza/features/voice/domain/voice_models.dart';
 import 'package:tomeza/features/voice/presentation/character_cast_sheet.dart';
+import 'package:tomeza/shared/api/api_client.dart';
 
 VoiceCharacter character({
   String id = 'character-1',
@@ -92,7 +93,12 @@ class MemoryVoiceDisclosureStore implements VoiceDisclosureStore {
 Future<void> pumpCastSheet(WidgetTester tester, FakeVoiceRepository repository) async {
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [voiceRepositoryProvider.overrideWithValue(repository)],
+      overrides: [
+        apiAuthHeadersProvider.overrideWith(
+          (ref) async => const <String, String>{},
+        ),
+        voiceRepositoryProvider.overrideWithValue(repository),
+      ],
       child: MaterialApp(
         home: Builder(
           builder: (context) => Scaffold(

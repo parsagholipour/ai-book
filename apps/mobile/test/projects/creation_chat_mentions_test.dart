@@ -35,9 +35,6 @@ class FakeCharactersRepository implements CharactersRepository {
   }
 
   @override
-  Future<Map<String, String>> assetHeaders() async => const {};
-
-  @override
   dynamic noSuchMethod(Invocation invocation) {
     throw UnimplementedError('Not used in this test.');
   }

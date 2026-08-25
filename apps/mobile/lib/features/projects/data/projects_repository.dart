@@ -148,8 +148,6 @@ abstract interface class ProjectsRepository {
     required String projectId,
     required MobileExportAvailability export,
   });
-
-  Future<Map<String, String>> assetHeaders();
 }
 
 class MobileProjectsRepository implements ProjectsRepository {
@@ -579,11 +577,6 @@ class MobileProjectsRepository implements ProjectsRepository {
     );
     return ExportOpenOutcome.sharedFallback;
   }
-
-  @override
-  Future<Map<String, String>> assetHeaders() {
-    return apiClient.authHeaders();
-  }
 }
 
 /// Refuses bytes the response positively ties to an *older* compile.
@@ -691,11 +684,6 @@ final editChangesProvider = FutureProvider.autoDispose
             projectId: target.projectId,
             operationId: target.operationId,
           );
-    });
-
-final projectAssetHeadersProvider =
-    FutureProvider.autoDispose<Map<String, String>>((ref) {
-      return ref.watch(projectsRepositoryProvider).assetHeaders();
     });
 
 String _safeLocalFilename(String filename, String format) {

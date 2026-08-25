@@ -26,6 +26,7 @@ import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/creation_chat_screen.dart';
 import 'package:tomeza/features/projects/presentation/book_plan_review.dart';
 import 'package:tomeza/features/projects/presentation/book_screen_body.dart';
+import 'package:tomeza/shared/api/api_client.dart';
 
 void main() {
   testWidgets('key mobile surfaces render at increased text scale', (
@@ -175,6 +176,9 @@ void main() {
       ProviderScope(
         key: UniqueKey(),
         overrides: [
+          apiAuthHeadersProvider.overrideWith(
+            (ref) async => const <String, String>{},
+          ),
           charactersRepositoryProvider.overrideWithValue(
             _FakeCharactersRepository(),
           ),
@@ -242,9 +246,6 @@ class _FakeCharactersRepository implements CharactersRepository {
         createdAt: DateTime.utc(2026, 8, 2),
       ),
   ];
-
-  @override
-  Future<Map<String, String>> assetHeaders() async => const {};
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

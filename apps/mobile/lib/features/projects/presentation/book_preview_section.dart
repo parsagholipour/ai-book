@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../app/config/app_config.dart';
 import '../../../shared/ui/app_components.dart';
-import '../data/projects_repository.dart';
+import '../../../shared/ui/authed_network_image.dart';
 import '../domain/project_models.dart';
 
 // What has actually been written so far — pages and visuals as they land —
@@ -165,31 +163,24 @@ class _IllustrationLostNote extends StatelessWidget {
   }
 }
 
-class _AuthenticatedProjectImage extends ConsumerWidget {
+class _AuthenticatedProjectImage extends StatelessWidget {
   const _AuthenticatedProjectImage({required this.image});
 
   final MobileProjectImage image;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final headersValue = ref.watch(projectAssetHeadersProvider);
-    final config = ref.watch(appConfigProvider);
-    final uri = config.apiBaseUrl.resolve(image.url).toString();
+  Widget build(BuildContext context) {
     return AspectRatio(
       aspectRatio: image.role == 'cover' ? 3 / 4 : 16 / 9,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
-        child: headersValue.when(
-          data: (headers) => Image.network(
-            uri,
-            headers: headers,
-            fit: BoxFit.cover,
-            semanticLabel: image.altText,
-            errorBuilder: (context, error, stackTrace) =>
-                _ImageUnavailable(label: image.altText),
-          ),
-          loading: () => _ImageLoading(label: image.altText),
-          error: (error, stackTrace) => _ImageUnavailable(label: image.altText),
+        child: AuthedNetworkImage(
+          url: image.url,
+          cacheBuster: null,
+          fit: BoxFit.cover,
+          semanticLabel: image.altText,
+          loadingPlaceholder: _ImageLoading(label: image.altText),
+          errorPlaceholder: _ImageUnavailable(label: image.altText),
         ),
       ),
     );

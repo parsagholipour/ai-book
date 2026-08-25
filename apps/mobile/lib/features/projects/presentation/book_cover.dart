@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../app/config/app_config.dart';
+import '../../../shared/ui/authed_network_image.dart';
 import '../../../shared/ui/motion.dart';
-import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
 
 /// Standard proportions of a printed trade paperback. Every cover in the app
@@ -16,7 +14,7 @@ const double kBookCoverAspectRatio = 2 / 3;
 /// finishes — which is most of a book's life — it renders a designed
 /// placeholder built from the title rather than a grey box, so the library
 /// always reads as a shelf of books the user made.
-class BookCover extends ConsumerWidget {
+class BookCover extends StatelessWidget {
   const BookCover({
     required this.title,
     required this.seed,
@@ -47,7 +45,7 @@ class BookCover extends ConsumerWidget {
   final double borderRadius;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final radius = BorderRadius.circular(borderRadius);
     final cover = AspectRatio(
       aspectRatio: kBookCoverAspectRatio,
@@ -112,7 +110,7 @@ class BookCover extends ConsumerWidget {
   }
 }
 
-class _CoverArtwork extends ConsumerWidget {
+class _CoverArtwork extends StatelessWidget {
   const _CoverArtwork({
     required this.title,
     required this.seed,
@@ -128,7 +126,7 @@ class _CoverArtwork extends ConsumerWidget {
   final List<Color>? palette;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final cover = image;
     final placeholder = _PlaceholderCover(
       title: title,
@@ -140,30 +138,15 @@ class _CoverArtwork extends ConsumerWidget {
       return placeholder;
     }
 
-    final headers = ref.watch(projectAssetHeadersProvider);
-    final config = ref.watch(appConfigProvider);
-    final uri = config.apiBaseUrl.resolve(cover.url).toString();
-
-    return headers.when(
-      // The placeholder stays visible underneath while the art loads, so a
-      // slow network shows a book rather than an empty frame.
-      data: (value) => Image.network(
-        uri,
-        headers: value,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) => placeholder,
-        frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-          if (wasSynchronouslyLoaded || frame != null) {
-            return AnimatedSwitcher(
-              duration: AppMotion.medium,
-              child: KeyedSubtree(key: const ValueKey('art'), child: child),
-            );
-          }
-          return placeholder;
-        },
-      ),
-      loading: () => placeholder,
-      error: (error, stackTrace) => placeholder,
+    // The placeholder stays visible underneath while the art loads, so a slow
+    // network shows a book rather than an empty frame.
+    return AuthedNetworkImage(
+      url: cover.url,
+      cacheBuster: null,
+      fit: BoxFit.cover,
+      loadingPlaceholder: placeholder,
+      errorPlaceholder: placeholder,
+      transitionDuration: AppMotion.medium,
     );
   }
 }

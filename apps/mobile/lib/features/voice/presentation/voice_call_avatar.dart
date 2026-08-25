@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../app/config/app_config.dart';
+import '../../../shared/ui/authed_network_image.dart';
 import '../../../shared/ui/motion.dart';
 import '../../characters/presentation/character_network_image.dart';
-import '../../projects/data/projects_repository.dart';
 import '../domain/voice_models.dart';
 
 /// The character's face, with a ring that breathes while they are talking.
@@ -106,35 +104,31 @@ class _VoiceCallAvatarState extends State<VoiceCallAvatar>
 ///
 /// Two different pictures can answer here and they come from different routes:
 /// the cast image this book drew (a project asset) and, until that exists, the
-/// saved character's own portrait (a character asset). Each carries its own
-/// auth headers, which is why the library one goes through
-/// [CharacterNetworkImage] rather than being folded into the branch below.
-class _AvatarFace extends ConsumerWidget {
+/// saved character's own portrait (a character asset). The library one keeps
+/// going through [CharacterNetworkImage] so its immutable URL and retained-
+/// picture behavior remain explicit.
+class _AvatarFace extends StatelessWidget {
   const _AvatarFace({required this.character, required this.diameter});
 
   final VoiceCharacter character;
   final double diameter;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final image = character.image;
     final initials = _Initials(name: character.name);
     final standIn = character.standInPortraitUrl;
 
     Widget face = initials;
     if (image != null) {
-      final headers = ref.watch(projectAssetHeadersProvider).value;
-      if (headers != null) {
-        final uri = ref.watch(appConfigProvider).apiBaseUrl.resolve(image.url).toString();
-        face = Image.network(
-          uri,
-          headers: headers,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) => initials,
-          frameBuilder: (context, child, frame, wasSynchronouslyLoaded) =>
-              wasSynchronouslyLoaded || frame != null ? child : initials,
-        );
-      }
+      face = AuthedNetworkImage(
+        url: image.url,
+        cacheBuster: null,
+        fit: BoxFit.cover,
+        logicalDecodeWidth: diameter,
+        loadingPlaceholder: initials,
+        errorPlaceholder: initials,
+      );
     } else if (standIn != null) {
       face = CharacterNetworkImage(
         url: standIn,

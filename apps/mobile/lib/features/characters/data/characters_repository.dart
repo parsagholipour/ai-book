@@ -75,10 +75,6 @@ abstract interface class CharactersRepository {
     required String id,
     String? requestId,
   });
-
-  /// Auth headers for [LibraryCharacter.photoUrl]/[LibraryCharacter.portraitUrl]
-  /// images, which are served behind the mobile bearer token.
-  Future<Map<String, String>> assetHeaders();
 }
 
 class MobileCharactersRepository implements CharactersRepository {
@@ -212,11 +208,6 @@ class MobileCharactersRepository implements CharactersRepository {
     );
   }
 
-  @override
-  Future<Map<String, String>> assetHeaders() {
-    return apiClient.authHeaders();
-  }
-
   LibraryCharacter _characterFrom(Map<String, dynamic> data) {
     return LibraryCharacter.fromJson(data['character'] as Map<String, dynamic>);
   }
@@ -244,13 +235,6 @@ final charactersRepositoryProvider = Provider<CharactersRepository>((ref) {
 final charactersProvider = FutureProvider.autoDispose<CharacterLibrary>((ref) {
   return ref.watch(charactersRepositoryProvider).list();
 });
-
-/// Auth headers for the character image routes, resolved once per watcher the
-/// same way `projectAssetHeadersProvider` does for project assets.
-final characterAssetHeadersProvider =
-    FutureProvider.autoDispose<Map<String, String>>((ref) {
-      return ref.watch(charactersRepositoryProvider).assetHeaders();
-    });
 
 /// One character's retained pictures.
 ///

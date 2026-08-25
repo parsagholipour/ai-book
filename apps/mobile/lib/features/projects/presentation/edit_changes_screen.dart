@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../app/config/app_config.dart';
 import '../../../shared/ui/app_components.dart';
+import '../../../shared/ui/authed_network_image.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/zoomable_image_viewer.dart';
 import '../data/projects_repository.dart';
@@ -470,7 +470,7 @@ class _SwapFrame extends StatelessWidget {
   }
 }
 
-class _AuthenticatedSwapImage extends ConsumerWidget {
+class _AuthenticatedSwapImage extends StatelessWidget {
   const _AuthenticatedSwapImage({
     required this.url,
     required this.label,
@@ -484,21 +484,15 @@ class _AuthenticatedSwapImage extends ConsumerWidget {
   final Widget? errorPlaceholder;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final headersValue = ref.watch(projectAssetHeadersProvider);
-    final config = ref.watch(appConfigProvider);
-    final uri = config.apiBaseUrl.resolve(url).toString();
+  Widget build(BuildContext context) {
     final broken = errorPlaceholder ?? _SwapPlaceholder(label: label);
-    return headersValue.when(
-      data: (headers) => Image.network(
-        uri,
-        headers: headers,
-        fit: fit,
-        semanticLabel: label,
-        errorBuilder: (context, error, stackTrace) => broken,
-      ),
-      loading: () => broken,
-      error: (error, stackTrace) => broken,
+    return AuthedNetworkImage(
+      url: url,
+      cacheBuster: null,
+      fit: fit,
+      semanticLabel: label,
+      loadingPlaceholder: broken,
+      errorPlaceholder: broken,
     );
   }
 }

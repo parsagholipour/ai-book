@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/features/characters/data/characters_repository.dart';
 import 'package:tomeza/features/characters/presentation/character_image_viewer.dart';
+import 'package:tomeza/shared/api/api_client.dart';
 
 import 'character_test_support.dart';
 
@@ -23,6 +24,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          apiAuthHeadersProvider.overrideWith(
+            (ref) async => const <String, String>{},
+          ),
           charactersRepositoryProvider.overrideWithValue(
             FakeCharactersRepository(testCharacter(), images: images),
           ),

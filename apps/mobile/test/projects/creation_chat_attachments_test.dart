@@ -48,8 +48,8 @@ void main() {
     tester,
   ) async {
     final creation = ScriptedCreationRepository();
-    // The transcript photo falls back to the server copy, which needs asset
-    // headers; the scripted projects repository keeps that request offline.
+    // The transcript photo falls back to the authenticated server copy; the
+    // shared harness supplies offline asset headers for that image.
     await tester.pumpWidget(
       app(
         creation: creation,

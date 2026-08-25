@@ -5,6 +5,7 @@ import 'package:tomeza/app/config/app_config.dart';
 import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/edit_changes_screen.dart';
+import 'package:tomeza/shared/api/api_client.dart';
 import 'package:tomeza/shared/ui/zoomable_image_viewer.dart';
 
 const _target = (projectId: 'project-1', operationId: 'operation-1');
@@ -69,7 +70,7 @@ Widget _app(MobileEditChanges? changes) {
   return ProviderScope(
     overrides: [
       appConfigProvider.overrideWithValue(_testConfig),
-      projectAssetHeadersProvider.overrideWith(
+      apiAuthHeadersProvider.overrideWith(
         (ref) async => const <String, String>{},
       ),
       editChangesProvider(_target).overrideWith(

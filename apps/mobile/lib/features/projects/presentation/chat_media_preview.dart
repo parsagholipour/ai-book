@@ -9,7 +9,6 @@ import '../../../app/config/app_config.dart';
 import '../../../shared/api/api_client.dart';
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
-import '../data/projects_repository.dart';
 
 /// Fullscreen photo preview with pinch-zoom and a close control.
 Future<void> showChatImagePreview({
@@ -105,7 +104,7 @@ Future<String?> _resolveAttachmentPath({
   required String? remoteUrl,
 }) {
   if (remoteUrl == null || remoteUrl.isEmpty) return null;
-  final headers = ref.read(projectAssetHeadersProvider).value;
+  final headers = ref.read(apiAuthHeadersProvider).value;
   if (headers == null) return null;
   final config = ref.read(appConfigProvider);
   return (

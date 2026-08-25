@@ -91,11 +91,6 @@ class SlowPlanRepository implements ProjectsRepository {
   }
 
   @override
-  Future<Map<String, String>> assetHeaders() async {
-    return const {};
-  }
-
-  @override
   Future<MobileProjectChat> getProjectChat(
     String id, {
     String? beforeMessageId,

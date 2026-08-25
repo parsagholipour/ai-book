@@ -3,9 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/app/config/app_config.dart';
 import 'package:tomeza/features/account/presentation/account_screen.dart';
-import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/book_screen_body.dart';
+import 'package:tomeza/shared/api/api_client.dart';
 
 void main() {
   testWidgets('generated preview exposes AI disclosure and report actions', (
@@ -18,7 +18,7 @@ void main() {
       ProviderScope(
         overrides: [
           appConfigProvider.overrideWithValue(testConfig),
-          projectAssetHeadersProvider.overrideWith(
+          apiAuthHeadersProvider.overrideWith(
             (ref) async => const <String, String>{},
           ),
         ],

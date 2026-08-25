@@ -479,22 +479,19 @@ class _PendingAttachmentChip extends ConsumerWidget {
     }
     final remoteUrl = attachment.attachment?.url;
     if (attachment.isPhoto && remoteUrl != null) {
-      final headers = ref.watch(projectAssetHeadersProvider).value;
-      final config = ref.watch(appConfigProvider);
-      if (headers != null) {
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(6),
-          child: Image.network(
-            config.apiBaseUrl.resolve(remoteUrl).toString(),
-            headers: headers,
-            width: 32,
-            height: 32,
-            fit: BoxFit.cover,
-            errorBuilder: (_, _, _) =>
-                const Icon(Icons.photo_outlined, size: 20),
-          ),
-        );
-      }
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: AuthedNetworkImage(
+          url: remoteUrl,
+          cacheBuster: null,
+          width: 32,
+          height: 32,
+          fit: BoxFit.cover,
+          logicalDecodeWidth: 32,
+          loadingPlaceholder: const Icon(Icons.photo_outlined, size: 20),
+          errorPlaceholder: const Icon(Icons.photo_outlined, size: 20),
+        ),
+      );
     }
     return Icon(
       attachment.isPhoto ? Icons.photo_outlined : Icons.description_outlined,

@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../app/config/app_config.dart';
-import '../data/characters_repository.dart';
+import '../../../shared/ui/authed_network_image.dart';
 import '../domain/character_models.dart';
 
 /// The character's face at [radius]: the finished portrait, else the uploaded
@@ -11,7 +9,7 @@ import '../domain/character_models.dart';
 /// Character images are served behind the mobile bearer token, so they load
 /// with explicit auth headers rather than as plain network images, the same
 /// way the voice call avatar does.
-class CharacterAvatar extends ConsumerWidget {
+class CharacterAvatar extends StatelessWidget {
   const CharacterAvatar({
     required this.character,
     this.radius = 24,
@@ -22,36 +20,23 @@ class CharacterAvatar extends ConsumerWidget {
   final double radius;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final initials = _InitialsFace(initials: character.initials, radius: radius);
 
     Widget face = initials;
     final imageUrl = character.displayImageUrl;
     if (imageUrl != null) {
-      final headers = ref.watch(characterAssetHeadersProvider).value;
-      if (headers != null) {
-        final base = ref.watch(appConfigProvider).apiBaseUrl;
-        // The photo and portrait are always served from the same two URLs, so
-        // updatedAt busts the image cache when either is replaced.
-        final uri = base
-            .resolve(imageUrl)
-            .replace(
-              queryParameters: {
-                'v': character.updatedAt.millisecondsSinceEpoch.toString(),
-              },
-            )
-            .toString();
-        face = Image.network(
-          uri,
-          headers: headers,
-          fit: BoxFit.cover,
-          semanticLabel: character.name,
-          errorBuilder: (context, error, stackTrace) => initials,
-          frameBuilder: (context, child, frame, wasSynchronouslyLoaded) =>
-              wasSynchronouslyLoaded || frame != null ? child : initials,
-        );
-      }
+      // The photo and portrait are always served from the same two URLs, so
+      // updatedAt busts the image cache when either is replaced.
+      face = AuthedNetworkImage(
+        url: imageUrl,
+        cacheBuster: character.updatedAt.millisecondsSinceEpoch.toString(),
+        fit: BoxFit.cover,
+        semanticLabel: character.name,
+        loadingPlaceholder: initials,
+        errorPlaceholder: initials,
+      );
     }
 
     if (character.portraitStatus.isBusy) {

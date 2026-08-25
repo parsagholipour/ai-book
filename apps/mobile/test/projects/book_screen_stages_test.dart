@@ -3,9 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/app/config/app_config.dart';
 import 'package:tomeza/features/billing/domain/billing_models.dart';
-import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/book_screen_body.dart';
+import 'package:tomeza/shared/api/api_client.dart';
 
 // The plan and the progress used to be separate screens. These pin the thing
 // that replaced them: one page whose shape follows the book's own state.
@@ -177,7 +177,7 @@ Widget _app(Widget child) {
   return ProviderScope(
     overrides: [
       appConfigProvider.overrideWithValue(_testConfig),
-      projectAssetHeadersProvider.overrideWith(
+      apiAuthHeadersProvider.overrideWith(
         (ref) async => const <String, String>{},
       ),
     ],

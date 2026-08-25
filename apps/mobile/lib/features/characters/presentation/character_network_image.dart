@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../app/config/app_config.dart';
+import '../../../shared/ui/authed_network_image.dart';
 import '../../../shared/ui/motion.dart';
-import '../data/characters_repository.dart';
 
 /// One retained picture, fetched with the mobile bearer token.
 ///
@@ -15,7 +13,7 @@ import '../data/characters_repository.dart';
 /// retained pictures, each up to 1600px, and every one of them decodes to
 /// several megabytes of RGBA — a strip of full-size decodes walks straight into
 /// Flutter's image cache ceiling and starts evicting the pictures it just drew.
-class CharacterNetworkImage extends ConsumerWidget {
+class CharacterNetworkImage extends StatelessWidget {
   const CharacterNetworkImage({
     required this.url,
     this.fit = BoxFit.cover,
@@ -36,33 +34,18 @@ class CharacterNetworkImage extends ConsumerWidget {
   final Widget? errorPlaceholder;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final waiting = placeholder ?? const _PictureShimmer();
     final broken = errorPlaceholder ?? const _BrokenPicture();
-
-    final headers = ref.watch(characterAssetHeadersProvider).value;
-    if (headers == null) {
-      return waiting;
-    }
-    final uri = ref.watch(appConfigProvider).apiBaseUrl.resolve(url).toString();
-    final ratio = MediaQuery.devicePixelRatioOf(context);
-    final cacheWidth = decodeWidth == null
-        ? null
-        : (decodeWidth! * ratio).round();
-
-    return Image.network(
-      uri,
-      headers: headers,
+    return AuthedNetworkImage(
+      url: url,
+      cacheBuster: null,
       fit: fit,
-      cacheWidth: cacheWidth,
+      logicalDecodeWidth: decodeWidth,
       semanticLabel: semanticLabel,
-      errorBuilder: (context, error, stackTrace) => broken,
-      frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-        if (wasSynchronouslyLoaded || frame != null) {
-          return AnimatedSwitcher(duration: AppMotion.medium, child: child);
-        }
-        return waiting;
-      },
+      loadingPlaceholder: waiting,
+      errorPlaceholder: broken,
+      transitionDuration: AppMotion.medium,
     );
   }
 }

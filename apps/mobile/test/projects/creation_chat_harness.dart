@@ -12,6 +12,7 @@ import 'package:tomeza/features/projects/domain/creation_models.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/creation_chat_screen.dart';
 import 'package:tomeza/features/projects/presentation/book_screen.dart';
+import 'package:tomeza/shared/api/api_client.dart';
 
 // Shared scaffolding for the creation-chat suites: the widget under test,
 // its provider overrides, and the fixtures every case builds on.
@@ -60,6 +61,9 @@ Widget app({
 }) {
   return ProviderScope(
     overrides: [
+      apiAuthHeadersProvider.overrideWith(
+        (ref) async => const <String, String>{},
+      ),
       creationRepositoryProvider.overrideWithValue(creation),
       if (projects != null)
         projectsRepositoryProvider.overrideWithValue(projects),
@@ -115,6 +119,9 @@ Widget routerApp({
 
   return ProviderScope(
     overrides: [
+      apiAuthHeadersProvider.overrideWith(
+        (ref) async => const <String, String>{},
+      ),
       creationRepositoryProvider.overrideWithValue(creation),
       projectsRepositoryProvider.overrideWithValue(projects),
       billingRepositoryProvider.overrideWithValue(FakeBillingRepository()),

@@ -755,7 +755,7 @@ class _MessageAttachmentChip extends ConsumerWidget {
     if (url == null) {
       return _expiredPhotoChip(context);
     }
-    final headersValue = ref.watch(projectAssetHeadersProvider);
+    final headersValue = ref.watch(apiAuthHeadersProvider);
     final config = ref.watch(appConfigProvider);
     final uri = config.apiBaseUrl.resolve(url).toString();
     return headersValue.when(

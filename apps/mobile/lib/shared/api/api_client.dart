@@ -30,6 +30,15 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   );
 });
 
+/// Bearer headers for API-owned assets that Flutter loads outside [Dio].
+///
+/// Keeping this beside [apiClientProvider] means image authorization does not
+/// have to be forwarded through every feature repository that happens to own
+/// an authenticated image URL.
+final apiAuthHeadersProvider = FutureProvider.autoDispose(
+  (ref) => ref.watch(apiClientProvider).authHeaders(),
+);
+
 /// Receive timeout for endpoints whose response waits on a full LLM turn
 /// (creation chat, project chat, build preflight). The global 20s default
 /// would misreport a slow-but-healthy model reply as a network error.
