@@ -842,7 +842,8 @@ the write binds has to be one all three of them can still find.
   **A ceiling on one transaction is not a ceiling on a request: the delete runs its lane twice,
   and the patch pays for two reads before it opens one.** The delete
   runs its lane twice — claim, then a stale-claim retry — so the pair shares
-  `CHARACTER_WRITE_CLIENT_BUDGET_MS` through `characterRetryTransactionOptions(elapsedMs)`, which
+  `CHARACTER_WRITE_CLIENT_BUDGET_MS` through `characterRetryTransactionOptions(elapsedMs)`
+  (`characterWriteBudget.ts`), which
   hands the retry what the first attempt left rather than a second full window. `PATCH /:id` opens
   one transaction and asks that same function what is left, because what it spends first comes out
   of the same 20 s: `characterClaimSubject` and `copyrightRestrictionsEnabled()`, the latter read
@@ -889,7 +890,11 @@ the write binds has to be one all three of them can still find.
   neither the refusal nor the mention one, and only patch asked `namesMentionPrimaryKey` whether its
   `P2002` really named the library's own unique. The rung that matters next is the mention one —
   LOCATION and OTHER share `LibraryMention` with the cast (`REPLACED_MENTION_KINDS`), so a refusal
-  taught to one catch would have answered 500 from the other two.
+  taught to one catch would have answered 500 from the other two. The ladder imports the pure
+  timeout/conflict classifiers from `characterWriteBudget.ts` and the Prisma/driver traversal plus
+  LibraryMention predicates from `libraryMentionConstraintErrors.ts`; row locks and moved/lost-claim
+  errors live separately in `characterRowClaims.ts`, so neither `libraryMentionRewrites.ts` nor
+  `characterPhotoWrites.ts` reaches through the response module.
 - **A wire code owns one sentence, and it lives with the code rather than at the call site.** The
   app snackbars `error.message` verbatim, so a reader who meets one wall from three gestures is
   told three different things about one state — which is what `PORTRAIT_IN_PROGRESS` had become:
@@ -1044,7 +1049,8 @@ the write binds has to be one all three of them can still find.
   `LibraryCharacter`, so any 23503 naming it *is* a character that went away, while
   `LibraryCharacter_userId_fkey` stays a 500. Note the shape this reads: on Prisma 7.8 with
   `@prisma/adapter-pg` the SQLSTATE arrives under `meta.driverAdapterError.cause`, and every rung
-  that needs it reads one `constraintErrorText` — this module's single record of where an adapter
+  that needs it reads one `constraintErrorText` (`libraryMentionConstraintErrors.ts`) — the single
+  record of where an adapter
   puts a SQLSTATE, which `characterPhotoWrites.ts` borrows for its own deleted-character rung
   rather than keeping a second copy. It was three copies of that traversal, and one of them was
   not a copy: `namesMentionCheckConstraint` read `meta.code` and `meta.column_name` and never

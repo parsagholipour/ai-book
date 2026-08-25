@@ -7,11 +7,11 @@ import {
 } from "./characterImageStore.js";
 import type { CharacterPhotoReading } from "./characterPhotoVision.js";
 import { deleteLibraryCharacterFile } from "./characterStorage.js";
-// The traversal, not the answer: `characterWriteConflicts.ts` owns where a
+// The traversal, not the answer: `libraryMentionConstraintErrors.ts` owns where a
 // driver reports a SQLSTATE, and this file owns which constraint it cares
 // about. Nothing that module imports reaches back here, and the one route group
 // that calls both already loads them together.
-import { constraintErrorText } from "./characterWriteConflicts.js";
+import { constraintErrorText } from "./libraryMentionConstraintErrors.js";
 
 /**
  * Everything `PUT /:id/photo` writes once the reading is back, and the one race

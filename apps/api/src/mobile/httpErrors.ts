@@ -213,19 +213,12 @@ function isUnreadableRequestBody(error: FastifyError, request: FastifyRequest): 
  * A mention write refusing something the request asked for, on its way to the
  * one ladder that answers it.
  *
- * **It lives here because it is a leaf, and because it was the makings of a
- * boot failure where it used to live.** `libraryMentionRewrites.ts` defines
- * helpers that throw it and imports `claimCharacterRows` from
- * `characterWriteConflicts.ts`, which imported this class back — a cycle that
- * held only while neither module touched the other's binding while it was
- * being evaluated. The first top-level use of either name — a `Record` keyed by
- * error class, a `class X extends LibraryMentionError`, a `satisfies` over
- * `claimCharacterRows` — makes whichever module ESM evaluates second throw
- * `ReferenceError: Cannot access 'LibraryMentionError' before initialization`,
- * at API boot rather than under a test. This module imports neither of them and
- * never will: it is where `sendMobileError` lives, which is what every rung of
- * that ladder ends in. `libraryMentionRewrites.ts` re-exports the name, so
- * nothing that imports it from there has to know it moved.
+ * It lives in this leaf because `libraryMentionRewrites.ts` throws it while the
+ * character response ladder catches it. Row claims now live in their own leaf,
+ * so the thrower and response modules never import through each other. This
+ * module imports neither implementation and never will: it is also where
+ * `sendMobileError`, the endpoint of every response rung, lives.
+ * `libraryMentionRewrites.ts` keeps its established re-export.
  */
 export class LibraryMentionError extends Error {
   constructor(

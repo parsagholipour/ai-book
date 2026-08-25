@@ -14,7 +14,7 @@ import {
   teardownMobileHarness
 } from "./testing/mobileApiHarness.js";
 import { mockTransactions, rawStatementsMatching, survivingWrites } from "./testing/mobileApiMocks.js";
-import { CHARACTER_MENTION_TRANSACTION_OPTIONS } from "./characterWriteConflicts.js";
+import { CHARACTER_MENTION_TRANSACTION_OPTIONS } from "./characterWriteBudget.js";
 
 /**
  * What a refused character write leaves behind.

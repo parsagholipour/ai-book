@@ -701,7 +701,7 @@ export function projectStatusModuleMock() {
  * declarations, so `vi.resetAllMocks()` restores them and a suite that has
  * never heard of this function still renames a character correctly; that is
  * deliberate, because the alternative made forgetting it fail from inside
- * `characterWriteConflicts.ts` with a `TypeError` naming no fixture at all, and
+ * `characterRowClaims.ts` with a `TypeError` naming no fixture at all, and
  * through a route it failed as a bare 500 that no assertion could tell from a
  * real one. What is left for that half is a test that overrode a default and
  * wants it back without resetting everything else it has built.

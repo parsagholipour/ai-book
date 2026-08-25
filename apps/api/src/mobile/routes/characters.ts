@@ -34,9 +34,13 @@ import {
   CharacterDeleteClaimLostError,
   CharacterRowMovedError,
   characterClaimSubject,
+  claimCharacterRow
+} from "../characterRowClaims.js";
+import {
   characterRetryTransactionOptions,
-  type CharacterTransactionOptions,
-  claimCharacterRow,
+  type CharacterTransactionOptions
+} from "../characterWriteBudget.js";
+import {
   sendCharacterEditConflict,
   sendCharacterNotFound,
   sendCharacterWriteBusy,
@@ -53,7 +57,7 @@ import {
  * descriptions that mention it back. That is what makes this a lane rather than
  * a CRUD file — a write here claims its own row and, on a rename or a delete,
  * up to 99 others, all inside one client budget
- * (`characterWriteConflicts.ts`). The pictures live in `routes/characterImages.ts`
+ * (`characterRowClaims.ts` and `characterWriteBudget.ts`). The pictures live in `routes/characterImages.ts`
  * and share nothing with it but the row they hang off; the one priced character
  * route is over there too.
  *

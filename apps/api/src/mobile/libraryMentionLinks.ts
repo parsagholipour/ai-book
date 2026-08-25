@@ -444,7 +444,7 @@ function droppedMentionTargets(
  * `deleteMany` plus a `createMany` regardless, two statements against
  * `LibraryMention` inside the transaction that holds the character's row lock.
  * That pair is also the exact shape `namesMentionPrimaryKey`
- * (`characterWriteConflicts.ts`) exists to translate: two writes of one
+ * (`libraryMentionConstraintErrors.ts`) exists to translate: two writes of one
  * character that the row claim does not serialize collide on
  * `[sourceCharacterId, targetKind, targetId]`, the loser's delete removing
  * nothing and its insert landing on rows that are already there — surfacing to

@@ -9,6 +9,7 @@ import {
   bearer,
   buildMobileApp,
   mockAccessTokens,
+  MockPrismaKnownRequestError,
   mockPrisma,
   resetMobileHarness,
   teardownMobileHarness
@@ -17,15 +18,17 @@ import {
   CHARACTER_MENTION_TRANSACTION_OPTIONS,
   CHARACTER_RETRY_FLOOR_MS,
   CHARACTER_WRITE_CLIENT_BUDGET_MS,
-  characterRetryTransactionOptions
-} from "./characterWriteConflicts.js";
+  characterRetryTransactionOptions,
+  isRetryableTransactionConflict,
+  isTransactionTimeout
+} from "./characterWriteBudget.js";
 
 /**
  * How long a character write is allowed to take, and who is still listening.
  *
  * Split from `characterWriteConflicts.test.ts`, which is about *what* a write
- * answers when a rename lands under it. This is the other axis of the same
- * module: `CHARACTER_MENTION_TRANSACTION_OPTIONS` is a lock window over up to
+ * answers when a rename lands under it. This module owns how long the write is
+ * allowed to take: `CHARACTER_MENTION_TRANSACTION_OPTIONS` is a lock window over up to
  * 99 sibling rows, `CHARACTER_WRITE_CLIENT_BUDGET_MS` is the wall clock the
  * whole request has to answer inside, and `characterRetryTransactionOptions`
  * rations the second against the first. The two stories share no assertion and
@@ -84,6 +87,30 @@ function findCharactersById(rows: Array<{ id: string }>) {
     async ({ where }: { where: { id?: string } }) => (where.id ? (byId.get(where.id) ?? null) : null)
   );
 }
+
+describe("character transaction failure classification", () => {
+  it("lets an exact serialization conflict win over quoted timeout prose", () => {
+    const wrapped = new Error("could not serialize access due to concurrent update (transaction already closed)");
+    const pooled = new MockPrismaKnownRequestError("Timed out fetching a connection: transaction already closed", {
+      code: "P2024"
+    });
+
+    expect(isRetryableTransactionConflict(wrapped)).toBe(true);
+    expect([wrapped, pooled].map(isTransactionTimeout)).toEqual([false, false]);
+  });
+
+  it("recognizes exact and codeless timeout shapes without guessing from another code", () => {
+    expect(isTransactionTimeout(new MockPrismaKnownRequestError("Transaction already closed", { code: "P2028" }))).toBe(
+      true
+    );
+    expect(isTransactionTimeout(new Error("Transaction already closed: it is no longer valid."))).toBe(true);
+    expect(
+      isTransactionTimeout(
+        new MockPrismaKnownRequestError("Timed out fetching a connection: transaction already closed", { code: "P2024" })
+      )
+    ).toBe(false);
+  });
+});
 
 describe("what a character write has left of the client budget", () => {
   beforeEach(() => {

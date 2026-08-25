@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { claimCharacterRows } from "./characterWriteConflicts.js";
+import { claimCharacterRows } from "./characterRowClaims.js";
 import { resetMobileHarness, teardownMobileHarness } from "./testing/mobileApiHarness.js";
 import { mockPrisma } from "./testing/mobileApiMocks.js";
 

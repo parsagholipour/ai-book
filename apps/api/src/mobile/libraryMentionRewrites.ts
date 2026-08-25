@@ -2,7 +2,7 @@ import { rewriteLibraryMention, stripLibraryMentionMarkers } from "@book-maker/c
 import { Prisma } from "@book-maker/db";
 import { incomingLibraryMentionOrder, libraryMentionOrderArgs } from "@book-maker/db/libraryMentions";
 import { LIBRARY_CHARACTER_DESCRIPTION_MAX } from "./characterSchemas.js";
-import { CharacterRowMovedError, claimCharacterRows } from "./characterWriteConflicts.js";
+import { CharacterRowMovedError, claimCharacterRows } from "./characterRowClaims.js";
 import { LibraryMentionError } from "./httpErrors.js";
 import { claimingNames } from "./libraryMentionRows.js";
 
@@ -22,17 +22,11 @@ import { claimingNames } from "./libraryMentionRows.js";
 type CharacterTransaction = Prisma.TransactionClient;
 
 /**
- * Thrown here, defined one module over, and re-exported so no caller has to
- * know which.
- *
- * The class sits in `httpErrors.ts` because this module and
- * `characterWriteConflicts.ts` import each other: the conflict ladder needs the
- * class to answer it, and the helpers below need `claimCharacterRows` to write
- * anything. That cycle survived only while neither module read the other's
- * binding during evaluation, and the first top-level use of either name turns
- * it into a `ReferenceError` at boot — see the class's own docblock. Every
- * refusal this file raises is still `LibraryMentionError`, and every importer
- * still reaches it from here.
+ * Thrown here, defined in the leaf `httpErrors.ts`, and re-exported for the
+ * existing thrower-facing import. The response ladder imports the class from
+ * that leaf while this module imports row claims directly from
+ * `characterRowClaims.ts`, so neither implementation reaches through the other
+ * and no evaluation cycle is formed.
  */
 export { LibraryMentionError } from "./httpErrors.js";
 
@@ -130,17 +124,15 @@ async function incomingMentionSources(
  * **A claim is not this lock, and the difference is invisible in the claim.**
  * Postgres escalates an `UPDATE` to `FOR UPDATE` only when a key column's value
  * actually *moves* — `heap_update` compares the old tuple against the new one,
- * so naming the column in the `SET` list is not enough. Both claims in
- * `characterWriteConflicts.ts` are deliberate no-ops for reasons of their own:
- * `claimCharacterRow` writes the row's own name back, `claimCharacterRows`
- * writes its own `userId` back. A no-op write of a key column takes
- * `FOR NO KEY UPDATE`, which is the exact mode `FOR KEY SHARE` exists not to
- * conflict with — and `FOR KEY SHARE` is what an FK insert takes on the row it
- * references. So the claim holds the row against everyone who would *write* it
- * and against nobody who merely comes to *point at* it. Measured on Postgres
- * 16: hold `SET name = name` or `SET "userId" = "userId"` open and a concurrent
- * `LibraryMention` insert naming that row goes straight through; hold
- * `SET name = 'Anita'` or the statement below and it waits.
+ * so naming the column in the `SET` list is not enough. `claimCharacterRow`
+ * writes the row's own name back, while the batched `claimCharacterRows` now
+ * takes `SELECT … FOR NO KEY UPDATE`; both deliberately hold the weaker mode.
+ * `FOR NO KEY UPDATE` is the exact mode `FOR KEY SHARE` exists not to conflict
+ * with, and `FOR KEY SHARE` is what an FK insert takes on the referenced row.
+ * So either claim holds a row against writers and not against somebody merely
+ * coming to point at it. Measured on Postgres 16: hold `SET name = name` or
+ * `FOR NO KEY UPDATE` open and a concurrent LibraryMention insert goes straight
+ * through; hold `SET name = 'Anita'` or the statement below and it waits.
  *
  * Raw, because Prisma has no `FOR UPDATE` and the only Prisma write that takes
  * one is a write that changes the row — the one thing a lock must not do here,

@@ -14,11 +14,6 @@ import {
   resetMobileHarness,
   teardownMobileHarness
 } from "./testing/mobileApiHarness.js";
-import {
-  isRetryableTransactionConflict,
-  isTransactionTimeout,
-  namesMentionCharacterForeignKey
-} from "./characterWriteConflicts.js";
 import { LibraryMentionError } from "./httpErrors.js";
 import { LibraryMentionError as reExportedMentionError } from "./libraryMentionRewrites.js";
 
@@ -33,8 +28,8 @@ import { LibraryMentionError as reExportedMentionError } from "./libraryMentionR
  *
  * Its own suite because `characters.test.ts` is at its size budget, and because
  * these are all one story — the one `characterWriteConflicts.ts` tells about
- * *what* a write answers. The module's other axis, how long it is allowed to
- * take and who is still listening when it answers, is
+ * *what* a write answers. How long it is allowed to take and who is still
+ * listening when it answers belongs to
  * `characterWriteBudget.test.ts`: no assertion is shared between them, and the
  * record factories are.
  */
@@ -642,18 +637,6 @@ describe("the database rungs of the character write ladder", () => {
       expect(response.json().error.message).not.toContain("fkey");
     }
 
-    // And not every foreign key in the schema: `LibraryCharacter_userId_fkey`
-    // is the account cascading out from under the insert, and "a mentioned
-    // character is no longer in your library" is a sentence about somebody
-    // else's row, so that one keeps falling through to the 500 it has always
-    // been. Both FKs *on* the mention table point at `LibraryCharacter`, which
-    // is what makes the narrow test sufficient rather than merely safe.
-    const shapes = [
-      foreignKeyViolation("LibraryMention", "LibraryMention_sourceCharacterId_fkey"),
-      foreignKeyViolation("LibraryCharacter", "LibraryCharacter_userId_fkey"),
-      new Error("nothing to do with foreign keys")
-    ];
-    expect(shapes.map(namesMentionCharacterForeignKey)).toEqual([true, false, false]);
   });
 
   it("tells a serialization failure that quotes the timeout apart from the timeout", async () => {
@@ -662,20 +645,10 @@ describe("the database rungs of the character write ladder", () => {
     // out a window which already closed — the reader re-sends nothing while the
     // edit they have to reopen goes stale. So the conflict predicate is asked
     // first and wins: its tests are exact, and this rung has only a sentence.
-    // The exact code still settles a real timeout, and the codeless shapes the
-    // fallback was written for still reach it; what no longer does is an error
-    // carrying a code of its own, which has already named itself.
+    // The classifier's exact and fallback shapes are pinned directly in
+    // `characterWriteBudget.test.ts`; this is the response ladder preserving
+    // their precedence on a real character write.
     const wrapped = new Error("could not serialize access due to concurrent update (transaction already closed)");
-    const pooled = new MockPrismaKnownRequestError("Timed out fetching a connection: transaction already closed", {
-      code: "P2024"
-    });
-    expect(isRetryableTransactionConflict(wrapped)).toBe(true);
-    expect([wrapped, pooled].map(isTransactionTimeout)).toEqual([false, false]);
-    expect(isTransactionTimeout(new MockPrismaKnownRequestError("Transaction already closed", { code: "P2028" }))).toBe(
-      true
-    );
-    expect(isTransactionTimeout(new Error("Transaction already closed: it is no longer valid."))).toBe(true);
-
     mockPrisma.libraryMention.createMany.mockRejectedValue(wrapped);
     const response = await createKnowingBram();
 

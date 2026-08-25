@@ -12,7 +12,7 @@ import {
 import { replaceLibraryMentions } from "./libraryMentionLinks.js";
 import { LibraryMentionError } from "./httpErrors.js";
 import { incomingLibraryMentionOrder, libraryMentionInclude } from "@book-maker/db/libraryMentions";
-import { CharacterRowMovedError } from "./characterWriteConflicts.js";
+import { CharacterRowMovedError } from "./characterRowClaims.js";
 import {
   characterClaimReturns,
   claimedCharacterRows,
