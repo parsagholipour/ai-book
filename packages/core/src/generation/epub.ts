@@ -31,9 +31,6 @@ function epubCss(profile: ScriptProfile): string {
       ? `Georgia, "Times New Roman", serif`
       : `"Vazirmatn", "Noto Naskh Arabic", "Noto Serif", serif`;
   return `
-html, body {
-  direction: ${profile.direction};
-}
 body {
   font-family: ${stack};
   line-height: ${profile.lineHeight};
@@ -43,7 +40,7 @@ body {
 h1, h2, h3 { font-family: ${stack}; page-break-after: avoid; }
 img { max-width: 100%; height: auto; display: block; margin: 1em auto; }
 hr { border: none; border-top: 1px solid #d7d7d7; margin: 1.5em 0; }
-pre, code { direction: ltr; unicode-bidi: isolate; text-align: left; }
+pre, code { text-align: left; }
 ${profile.hasItalic ? "" : "em, i, cite, blockquote { font-style: normal; }\nem, i { font-weight: 600; }\n"}`;
 }
 
@@ -70,6 +67,13 @@ type EpubChapter = {
   title: string;
   fileName: string;
   xhtml: string;
+  inNavigation: boolean;
+};
+
+type EpubSourceChapter = {
+  title: string;
+  markdown: string;
+  kind: "frontmatter" | "section";
 };
 
 type EpubImage = {
@@ -88,19 +92,35 @@ export async function generateBookEpub(markdown: string, options: GenerateBookEp
   const localizedMarkdown = await packageLocalImages(markdown, options, images);
   const chapters = splitIntoChapters(localizedMarkdown, options.title);
   const profile = scriptProfileForLanguage(options.language);
-  const renderedChapters: EpubChapter[] = [];
-  for (const [index, chapter] of chapters.entries()) {
-    renderedChapters.push({
+  const chapterBodies = await Promise.all(chapters.map((chapter) => renderMarkdownToXhtml(chapter.markdown)));
+  const fragmentFiles = fragmentFileMap(
+    chapterBodies.map((xhtml, index) => ({ fileName: `chapter-${index + 1}.xhtml`, xhtml }))
+  );
+  const renderedChapters: EpubChapter[] = chapters.map((chapter, index) => {
+    const fileName = `chapter-${index + 1}.xhtml`;
+    const body = rewriteCrossDocumentFragmentLinks(
+      stripPrintContentsDetails(chapterBodies[index]!),
+      fileName,
+      fragmentFiles
+    );
+    return {
       id: `chapter-${index + 1}`,
       title: chapter.title,
-      fileName: `chapter-${index + 1}.xhtml`,
-      xhtml: chapterXhtml(chapter.title, await renderMarkdownToXhtml(chapter.markdown), profile)
-    });
-  }
+      fileName,
+      xhtml: chapterXhtml(chapter.title, body, profile),
+      inNavigation: chapter.kind === "section"
+    };
+  });
 
   const bookId = `urn:uuid:${randomUUID()}`;
   const language = normalizeEpubLanguage(options.language);
   const coverImage = [...images.values()][0];
+  const navigationChapters = renderedChapters.filter((chapter) => chapter.inNavigation);
+  const visibleContentsFile = fragmentFiles.get("book-contents-title");
+  const navInSpine = visibleContentsFile === undefined && navigationChapters.length > 1;
+  const tocLandmarkTarget = visibleContentsFile
+    ? `${visibleContentsFile}#book-contents-title`
+    : "nav.xhtml";
 
   const zip = new JSZip();
   zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
@@ -114,7 +134,26 @@ export async function generateBookEpub(markdown: string, options: GenerateBookEp
 </container>`
   );
   zip.file("OEBPS/styles.css", epubCss(profile));
-  zip.file("OEBPS/nav.xhtml", navXhtml(options.title, renderedChapters, profile, markdownLabels(options.language).contentsHeading));
+  zip.file(
+    "OEBPS/nav.xhtml",
+    navXhtml(
+      options.title,
+      navigationChapters,
+      profile,
+      markdownLabels(options.language).contentsHeading,
+      tocLandmarkTarget
+    )
+  );
+  zip.file(
+    "OEBPS/toc.ncx",
+    tocNcx({
+      bookId,
+      title: options.title,
+      author: options.author,
+      chapters: navigationChapters,
+      language
+    })
+  );
   for (const chapter of renderedChapters) {
     zip.file(`OEBPS/${chapter.fileName}`, chapter.xhtml);
   }
@@ -135,7 +174,8 @@ export async function generateBookEpub(markdown: string, options: GenerateBookEp
       chapters: renderedChapters,
       images: [...images.values()],
       coverImageId: coverImage?.id,
-      direction: profile.direction
+      direction: profile.direction,
+      navInSpine
     })
   );
 
@@ -229,10 +269,14 @@ async function packageLocalImages(
   });
 }
 
-function splitIntoChapters(markdown: string, bookTitle: string): Array<{ title: string; markdown: string }> {
+function splitIntoChapters(markdown: string, bookTitle: string): EpubSourceChapter[] {
   const lines = markdown.split("\n");
-  const chapters: Array<{ title: string; lines: string[] }> = [];
-  let current: { title: string; lines: string[] } = { title: bookTitle, lines: [] };
+  const chapters: Array<{ title: string; lines: string[]; kind: EpubSourceChapter["kind"] }> = [];
+  let current: { title: string; lines: string[]; kind: EpubSourceChapter["kind"] } = {
+    title: bookTitle,
+    lines: [],
+    kind: "frontmatter"
+  };
   let inCodeFence = false;
 
   for (const line of lines) {
@@ -241,10 +285,11 @@ function splitIntoChapters(markdown: string, bookTitle: string): Array<{ title: 
     }
     const heading = !inCodeFence ? line.match(/^##\s+(.+)$/) : null;
     if (heading) {
+      const opener = takeTrailingChapterOpener(current.lines);
       if (current.lines.some((existing) => existing.trim().length > 0)) {
         chapters.push(current);
       }
-      current = { title: heading[1]!.trim(), lines: [line] };
+      current = { title: heading[1]!.trim(), lines: [...opener, line], kind: "section" };
       continue;
     }
     current.lines.push(line);
@@ -253,9 +298,27 @@ function splitIntoChapters(markdown: string, bookTitle: string): Array<{ title: 
     chapters.push(current);
   }
   if (chapters.length === 0) {
-    chapters.push({ title: bookTitle, lines: lines });
+    chapters.push({ title: bookTitle, lines: lines, kind: "section" });
+  } else if (!chapters.some((chapter) => chapter.kind === "section")) {
+    chapters[0]!.kind = "section";
   }
-  return chapters.map((chapter) => ({ title: chapter.title, markdown: chapter.lines.join("\n") }));
+  return chapters.map((chapter) => ({
+    title: chapter.title,
+    markdown: chapter.lines.join("\n"),
+    kind: chapter.kind
+  }));
+}
+
+/** Keeps a compiler-authored chapter destination with the heading it opens. */
+function takeTrailingChapterOpener(lines: string[]): string[] {
+  let anchorIndex = lines.length - 1;
+  while (anchorIndex >= 0 && lines[anchorIndex]!.trim().length === 0) {
+    anchorIndex -= 1;
+  }
+  if (!/^<a\s+id=(["'])chapter-[a-z0-9-]+\1><\/a>$/i.test(lines[anchorIndex]?.trim() ?? "")) {
+    return [];
+  }
+  return lines.splice(anchorIndex);
 }
 
 async function renderMarkdownToXhtml(markdown: string): Promise<string> {
@@ -270,8 +333,44 @@ async function renderMarkdownToXhtml(markdown: string): Promise<string> {
 /** Self-closes void elements so the output parses as XHTML. */
 function toXhtml(html: string): string {
   return html
+    .replace(/<(pre|code)\b(?![^>]*\bdir\s*=)([^>]*)>/gi, '<$1 dir="ltr"$2>')
     .replace(/<(img|br|hr|input|meta|link)((?:[^>"']|"[^"]*"|'[^']*')*?)\s*\/?>/gi, "<$1$2 />")
     .replace(/&nbsp;/g, "&#160;");
+}
+
+function fragmentFileMap(chapters: Array<{ fileName: string; xhtml: string }>): Map<string, string> {
+  const files = new Map<string, string>();
+  for (const chapter of chapters) {
+    for (const match of chapter.xhtml.matchAll(/\bid\s*=\s*(["'])([^"']+)\1/gi)) {
+      const fragment = match[2];
+      if (fragment && !files.has(fragment)) {
+        files.set(fragment, chapter.fileName);
+      }
+    }
+  }
+  return files;
+}
+
+/** Reflowable EPUBs have no stable print-page number, so their Contents must not claim one. */
+function stripPrintContentsDetails(xhtml: string): string {
+  return xhtml.replace(
+    /\s*<span\b[^>]*\bclass=(["'])[^"']*\bbook-contents__(?:leader|page)\b[^"']*\1[^>]*>[\s\S]*?<\/span>/gi,
+    ""
+  );
+}
+
+/** Fragment-only links stop resolving when their destination moves into another content document. */
+function rewriteCrossDocumentFragmentLinks(
+  xhtml: string,
+  currentFileName: string,
+  fragmentFiles: ReadonlyMap<string, string>
+): string {
+  return xhtml.replace(/\bhref=(["'])#([^"']+)\1/gi, (attribute, quote: string, fragment: string) => {
+    const targetFile = fragmentFiles.get(fragment);
+    return targetFile && targetFile !== currentFileName
+      ? `href=${quote}${targetFile}#${fragment}${quote}`
+      : attribute;
+  });
 }
 
 /** EPUB 3 requires `xml:lang`; `dir` is legal on a content document's root. */
@@ -300,7 +399,8 @@ function navXhtml(
   bookTitle: string,
   chapters: EpubChapter[],
   profile: ScriptProfile,
-  contentsHeading: string
+  contentsHeading: string,
+  tocLandmarkTarget: string
 ): string {
   const items = chapters
     .map((chapter) => `      <li><a href="${chapter.fileName}">${escapeXml(chapter.title)}</a></li>`)
@@ -310,6 +410,7 @@ function navXhtml(
 ${htmlOpenTag(profile)}
 <head>
   <title>${escapeXml(bookTitle)}</title>
+  <link rel="stylesheet" type="text/css" href="styles.css" />
 </head>
 <body>
   <nav epub:type="toc" id="toc">
@@ -318,8 +419,44 @@ ${htmlOpenTag(profile)}
 ${items}
     </ol>
   </nav>
+  <nav epub:type="landmarks" hidden="hidden">
+    <ol>
+      <li><a epub:type="toc" href="${escapeXml(tocLandmarkTarget)}">${escapeXml(contentsHeading)}</a></li>
+    </ol>
+  </nav>
 </body>
 </html>`;
+}
+
+function tocNcx(options: {
+  bookId: string;
+  title: string;
+  author: string | undefined;
+  chapters: EpubChapter[];
+  language: string;
+}): string {
+  const navPoints = options.chapters
+    .map(
+      (chapter, index) => `    <navPoint id="navpoint-${index + 1}" playOrder="${index + 1}">
+      <navLabel><text>${escapeXml(chapter.title)}</text></navLabel>
+      <content src="${chapter.fileName}"/>
+    </navPoint>`
+    )
+    .join("\n");
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1" xml:lang="${escapeXml(options.language)}">
+  <head>
+    <meta name="dtb:uid" content="${escapeXml(options.bookId)}"/>
+    <meta name="dtb:depth" content="1"/>
+    <meta name="dtb:totalPageCount" content="0"/>
+    <meta name="dtb:maxPageNumber" content="0"/>
+  </head>
+  <docTitle><text>${escapeXml(options.title)}</text></docTitle>
+  ${options.author ? `<docAuthor><text>${escapeXml(options.author)}</text></docAuthor>` : ""}
+  <navMap>
+${navPoints}
+  </navMap>
+</ncx>`;
 }
 
 function contentOpf(options: {
@@ -331,9 +468,11 @@ function contentOpf(options: {
   images: EpubImage[];
   coverImageId: string | undefined;
   direction: "ltr" | "rtl";
+  navInSpine: boolean;
 }): string {
   const manifestItems = [
     `    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>`,
+    `    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>`,
     `    <item id="css" href="styles.css" media-type="text/css"/>`,
     ...options.chapters.map(
       (chapter) => `    <item id="${chapter.id}" href="${chapter.fileName}" media-type="application/xhtml+xml"/>`
@@ -345,7 +484,12 @@ function contentOpf(options: {
         }/>`
     )
   ].join("\n");
-  const spineItems = options.chapters.map((chapter) => `    <itemref idref="${chapter.id}"/>`).join("\n");
+  const spineIds = options.chapters.map((chapter) => chapter.id);
+  if (options.navInSpine) {
+    const firstSection = options.chapters.findIndex((chapter) => chapter.inNavigation);
+    spineIds.splice(firstSection < 0 ? 0 : firstSection, 0, "nav");
+  }
+  const spineItems = spineIds.map((id) => `    <itemref idref="${id}"/>`).join("\n");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id">
@@ -359,7 +503,7 @@ function contentOpf(options: {
   <manifest>
 ${manifestItems}
   </manifest>
-  <spine${options.direction === "rtl" ? ` page-progression-direction="rtl"` : ""}>
+  <spine toc="ncx"${options.direction === "rtl" ? ` page-progression-direction="rtl"` : ""}>
 ${spineItems}
   </spine>
 </package>`;

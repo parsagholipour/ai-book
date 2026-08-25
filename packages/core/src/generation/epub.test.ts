@@ -77,6 +77,42 @@ describe("generateBookEpub", () => {
     expect(opf).toContain('properties="cover-image"');
   });
 
+  it("provides Kindle chapter navigation in both EPUB 3 and NCX formats", async () => {
+    const zip = await buildSampleEpub();
+
+    const nav = await zip.file("OEBPS/nav.xhtml")!.async("string");
+    const ncx = await zip.file("OEBPS/toc.ncx")!.async("string");
+    const opf = await zip.file("OEBPS/content.opf")!.async("string");
+
+    for (const [title, target] of [
+      ["Chapter One: Springs", "chapter-2.xhtml"],
+      ["Chapter Two: Gears", "chapter-3.xhtml"]
+    ]) {
+      expect(nav).toContain(`<a href="${target}">${title}</a>`);
+      expect(ncx).toContain(`<navLabel><text>${title}</text></navLabel>`);
+      expect(ncx).toContain(`<content src="${target}"/>`);
+    }
+    expect(opf).toContain(
+      '<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>'
+    );
+    expect(opf).toContain('<spine toc="ncx">');
+  });
+
+  it("places a visible Kindle Contents page after front matter when the manuscript has none", async () => {
+    const zip = await buildSampleEpub();
+
+    const nav = await zip.file("OEBPS/nav.xhtml")!.async("string");
+    expect(nav).toContain('<link rel="stylesheet" type="text/css" href="styles.css" />');
+    expect(nav).toContain('<nav epub:type="landmarks" hidden="hidden">');
+    expect(nav).toContain('<a epub:type="toc" href="nav.xhtml">Contents</a>');
+    expect(nav).not.toContain('href="chapter-1.xhtml"');
+
+    const opf = await zip.file("OEBPS/content.opf")!.async("string");
+    expect(opf).toMatch(
+      /<spine toc="ncx">\s*<itemref idref="chapter-1"\/>\s*<itemref idref="nav"\/>\s*<itemref idref="chapter-2"\/>/
+    );
+  });
+
   it("splits chapters on level-2 headings and lists them in the nav", async () => {
     const zip = await buildSampleEpub();
 
@@ -90,6 +126,66 @@ describe("generateBookEpub", () => {
     expect(chapterOne).toContain("The first chapter text.");
     const chapterTwo = await zip.file("OEBPS/chapter-3.xhtml")!.async("string");
     expect(chapterTwo).toContain("The second chapter text.");
+  });
+
+  it("keeps a compiled Contents page valid after splitting its chapters into files", async () => {
+    const markdown = [
+      '<section class="book-title-page">',
+      "  <h1>Major Wars</h1>",
+      "</section>",
+      '<section class="book-contents" aria-labelledby="book-contents-title">',
+      '  <h2 id="book-contents-title">Contents</h2>',
+      '  <a class="book-contents__link" href="#chapter-1">',
+      '    <span class="book-contents__name">First War</span>',
+      '    <span class="book-contents__leader" aria-hidden="true"></span>',
+      '    <span class="book-contents__page">1</span>',
+      "  </a>",
+      '  <a class="book-contents__link" href="#chapter-2">',
+      '    <span class="book-contents__name">Second War</span>',
+      '    <span class="book-contents__leader" aria-hidden="true"></span>',
+      '    <span class="book-contents__page">19</span>',
+      "  </a>",
+      "</section>",
+      '<a id="chapter-1"></a>',
+      "",
+      "## Chapter 1: First War",
+      "",
+      "First chapter prose.",
+      "",
+      '<a id="chapter-2"></a>',
+      "",
+      "## Chapter 2: Second War",
+      "",
+      "Second chapter prose."
+    ].join("\n");
+    const zip = await JSZip.loadAsync(
+      await generateBookEpub(markdown, {
+        title: "Major Wars",
+        language: "en",
+        imageStorageDir,
+        publicApiUrl: "http://localhost:4001"
+      })
+    );
+
+    const contents = await zip.file("OEBPS/chapter-1.xhtml")!.async("string");
+    expect(contents).toContain('href="chapter-2.xhtml#chapter-1"');
+    expect(contents).toContain('href="chapter-3.xhtml#chapter-2"');
+    expect(contents).not.toContain('href="#chapter-');
+    expect(contents).not.toContain("book-contents__leader");
+    expect(contents).not.toContain("book-contents__page");
+
+    const nav = await zip.file("OEBPS/nav.xhtml")!.async("string");
+    expect(nav).toContain(
+      '<a epub:type="toc" href="chapter-1.xhtml#book-contents-title">Contents</a>'
+    );
+    const opf = await zip.file("OEBPS/content.opf")!.async("string");
+    expect(opf).not.toContain('<itemref idref="nav"/>');
+
+    const chapterOne = await zip.file("OEBPS/chapter-2.xhtml")!.async("string");
+    expect(chapterOne).toContain('<a id="chapter-1"></a>');
+    expect(contents).not.toContain('<a id="chapter-1"></a>');
+    const chapterTwo = await zip.file("OEBPS/chapter-3.xhtml")!.async("string");
+    expect(chapterTwo).toContain('<a id="chapter-2"></a>');
   });
 
   it("carries a compiled title page into the front matter as XHTML", async () => {
@@ -323,28 +419,33 @@ describe("generateBookEpub", () => {
   it("gives a Persian book a real language code, RTL pagination and a localized nav", async () => {
     // "Persian" is seven letters, so the old BCP-47 regex rejected it and every
     // such book shipped <dc:language>en</dc:language>.
-    const bytes = await generateBookEpub("## \u0641\u0635\u0644 \u06cc\u06a9\n\n\u0627\u06cc\u0646 \u06cc\u06a9 \u0622\u0632\u0645\u0627\u06cc\u0634 \u0627\u0633\u062a.", {
-      title: "\u06a9\u062a\u0627\u0628 \u0645\u0627\u0647",
-      language: "Persian",
-      imageStorageDir,
-      publicApiUrl: "http://localhost:4001"
-    });
+    const bytes = await generateBookEpub(
+      "## \u0641\u0635\u0644 \u06cc\u06a9\n\n\u0627\u06cc\u0646 \u06cc\u06a9 \u0622\u0632\u0645\u0627\u06cc\u0634 \u0627\u0633\u062a.\n\n```\nconst answer = 42;\n```",
+      {
+        title: "\u06a9\u062a\u0627\u0628 \u0645\u0627\u0647",
+        language: "Persian",
+        imageStorageDir,
+        publicApiUrl: "http://localhost:4001"
+      }
+    );
     const zip = await JSZip.loadAsync(bytes);
 
     const opf = await zip.file("OEBPS/content.opf")!.async("string");
     expect(opf).toContain("<dc:language>fa</dc:language>");
     // The one thing a reading system cannot infer from CSS.
-    expect(opf).toContain('<spine page-progression-direction="rtl">');
+    expect(opf).toContain('<spine toc="ncx" page-progression-direction="rtl">');
 
     const chapter = await zip.file("OEBPS/chapter-1.xhtml")!.async("string");
     expect(chapter).toContain('xml:lang="fa"');
     expect(chapter).toContain('dir="rtl"');
+    expect(chapter).toContain('<pre dir="ltr"><code dir="ltr">');
 
     const nav = await zip.file("OEBPS/nav.xhtml")!.async("string");
     expect(nav).toContain("<h1>\u0641\u0647\u0631\u0633\u062a</h1>");
 
     const css = await zip.file("OEBPS/styles.css")!.async("string");
-    expect(css).toContain("direction: rtl");
+    expect(css).not.toContain("direction:");
+    expect(css).not.toContain("unicode-bidi:");
     // No italic face exists, so Chrome must not be allowed to fake one.
     expect(css).toContain("font-style: normal");
   });
@@ -372,6 +473,14 @@ describe("generateBookEpub", () => {
     const chapter = await zip.file("OEBPS/chapter-1.xhtml")!.async("string");
     expect(chapter).toContain("Just one paragraph of text.");
     expect(zip.file("OEBPS/chapter-2.xhtml")).toBeNull();
+
+    const nav = await zip.file("OEBPS/nav.xhtml")!.async("string");
+    expect(nav).toContain('<li><a href="chapter-1.xhtml">Tiny Book</a></li>');
+    const ncx = await zip.file("OEBPS/toc.ncx")!.async("string");
+    expect(ncx).toContain("<navLabel><text>Tiny Book</text></navLabel>");
+    expect(ncx).toContain('<content src="chapter-1.xhtml"/>');
+    const opf = await zip.file("OEBPS/content.opf")!.async("string");
+    expect(opf).not.toContain('<itemref idref="nav"/>');
   });
 });
 
