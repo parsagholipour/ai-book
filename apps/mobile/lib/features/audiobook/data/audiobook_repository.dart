@@ -26,8 +26,7 @@ class HttpAudiobookRepository implements AudiobookRepository {
 
   @override
   Future<List<NarratorVoice>> listVoices() async {
-    final response = await apiClient.getJson('/api/mobile/audiobook/voices');
-    final data = response.data as Map<String, dynamic>;
+    final data = await apiClient.getMap('/api/mobile/audiobook/voices');
     return (data['voices'] as List<dynamic>? ?? const [])
         .whereType<Map<String, dynamic>>()
         .map(NarratorVoice.fromJson)
@@ -37,10 +36,10 @@ class HttpAudiobookRepository implements AudiobookRepository {
   @override
   Future<MobileAudiobook?> fetch(String projectId) async {
     try {
-      final response = await apiClient.getJson(
+      final data = await apiClient.getMap(
         '/api/mobile/projects/$projectId/audiobook',
       );
-      final audiobook = (response.data as Map<String, dynamic>)['audiobook'];
+      final audiobook = data['audiobook'];
       return audiobook is Map<String, dynamic>
           ? MobileAudiobook.fromJson(audiobook)
           : null;
@@ -60,7 +59,7 @@ class HttpAudiobookRepository implements AudiobookRepository {
     bool replace = false,
     String? requestId,
   }) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/projects/$projectId/audiobook',
       data: {
         'voice': voice,
@@ -68,7 +67,7 @@ class HttpAudiobookRepository implements AudiobookRepository {
         'requestId': ?requestId,
       },
     );
-    final audiobook = (response.data as Map<String, dynamic>)['audiobook'];
+    final audiobook = data['audiobook'];
     return audiobook is Map<String, dynamic>
         ? MobileAudiobook.fromJson(audiobook)
         : null;

@@ -108,8 +108,7 @@ class MobileCreationRepository implements CreationRepository {
 
   @override
   Future<List<MobileChatSession>> listSessions() async {
-    final response = await apiClient.getJson('/api/mobile/creation-sessions');
-    final data = response.data as Map<String, dynamic>;
+    final data = await apiClient.getMap('/api/mobile/creation-sessions');
     final list = data['sessions'] as List<dynamic>;
     final sessions = list
         .cast<Map<String, dynamic>>()
@@ -123,10 +122,7 @@ class MobileCreationRepository implements CreationRepository {
 
   @override
   Future<MobileCreationDraft?> getActiveDraft() async {
-    final response = await apiClient.getJson(
-      '/api/mobile/creation-drafts/active',
-    );
-    final data = response.data as Map<String, dynamic>;
+    final data = await apiClient.getMap('/api/mobile/creation-drafts/active');
     final draft = data['draft'];
     return draft == null
         ? null
@@ -137,11 +133,11 @@ class MobileCreationRepository implements CreationRepository {
   Future<MobileCreationDraft> createDraft(
     MobileCreationDraftPayload payload,
   ) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/creation-drafts',
       data: payload.toJson(),
     );
-    return _draftFromResponse(response.data as Map<String, dynamic>);
+    return _draftFromResponse(data);
   }
 
   @override
@@ -160,12 +156,11 @@ class MobileCreationRepository implements CreationRepository {
   Future<MobileBookAdvisorResponse> adviseBook(
     MobileCreationDraftPayload payload,
   ) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/book-advisor',
       data: payload.toJson(),
       receiveTimeout: llmReceiveTimeout,
     );
-    final data = response.data as Map<String, dynamic>;
     return MobileBookAdvisorResponse.fromJson(
       data['advisor'] as Map<String, dynamic>,
     );
@@ -173,35 +168,27 @@ class MobileCreationRepository implements CreationRepository {
 
   @override
   Future<MobileCreationFinalizeResponse> finalizeDraft(String id) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/creation-drafts/$id/create-project',
       data: const <String, dynamic>{},
     );
-    return MobileCreationFinalizeResponse.fromJson(
-      response.data as Map<String, dynamic>,
-    );
+    return MobileCreationFinalizeResponse.fromJson(data);
   }
 
   @override
   Future<MobileCreationConversationResponse> resumeConversation() async {
-    final response = await apiClient.getJson(
-      '/api/mobile/creation-sessions/active',
-    );
-    return MobileCreationConversationResponse.fromJson(
-      response.data as Map<String, dynamic>,
-    );
+    final data = await apiClient.getMap('/api/mobile/creation-sessions/active');
+    return MobileCreationConversationResponse.fromJson(data);
   }
 
   @override
   Future<MobileCreationConversationResponse> resumeConversationById(
     String draftId,
   ) async {
-    final response = await apiClient.getJson(
+    final data = await apiClient.getMap(
       '/api/mobile/creation-sessions/$draftId',
     );
-    return MobileCreationConversationResponse.fromJson(
-      response.data as Map<String, dynamic>,
-    );
+    return MobileCreationConversationResponse.fromJson(data);
   }
 
   @override
@@ -213,7 +200,7 @@ class MobileCreationRepository implements CreationRepository {
     List<String>? mentionedCharacterIds,
     String? requestId,
   }) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/creation-sessions',
       data: <String, dynamic>{
         'message': ?message,
@@ -226,9 +213,7 @@ class MobileCreationRepository implements CreationRepository {
       },
       receiveTimeout: llmReceiveTimeout,
     );
-    return MobileCreationConversationResponse.fromJson(
-      response.data as Map<String, dynamic>,
-    );
+    return MobileCreationConversationResponse.fromJson(data);
   }
 
   @override
@@ -246,7 +231,7 @@ class MobileCreationRepository implements CreationRepository {
     int? expectedRevision,
     bool skippedQuestion = false,
   }) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/creation-sessions/$draftId/messages',
       data: <String, dynamic>{
         'message': message,
@@ -265,9 +250,7 @@ class MobileCreationRepository implements CreationRepository {
       },
       receiveTimeout: llmReceiveTimeout,
     );
-    return MobileCreationConversationResponse.fromJson(
-      response.data as Map<String, dynamic>,
-    );
+    return MobileCreationConversationResponse.fromJson(data);
   }
 
   @override
@@ -277,7 +260,7 @@ class MobileCreationRepository implements CreationRepository {
     required String direction,
     int? expectedRevision,
   }) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/creation-sessions/$draftId/branches',
       data: <String, dynamic>{
         'messageId': messageId,
@@ -285,9 +268,7 @@ class MobileCreationRepository implements CreationRepository {
         'expectedRevision': ?expectedRevision,
       },
     );
-    return MobileCreationConversationResponse.fromJson(
-      response.data as Map<String, dynamic>,
-    );
+    return MobileCreationConversationResponse.fromJson(data);
   }
 
   @override
@@ -339,7 +320,7 @@ class MobileCreationRepository implements CreationRepository {
     String? requestId,
     int? expectedRevision,
   }) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/creation-sessions/$draftId/build',
       data: <String, dynamic>{
         'presets': ?presets?.toJson(),
@@ -351,9 +332,7 @@ class MobileCreationRepository implements CreationRepository {
       },
       receiveTimeout: llmReceiveTimeout,
     );
-    return MobileCreationFinalizeResponse.fromJson(
-      response.data as Map<String, dynamic>,
-    );
+    return MobileCreationFinalizeResponse.fromJson(data);
   }
 
   @override
@@ -364,7 +343,7 @@ class MobileCreationRepository implements CreationRepository {
     MobileCreationOptionalDetails? optionalDetails,
     String? language,
   }) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/creation-sessions/$draftId/preflight',
       data: <String, dynamic>{
         'presets': ?presets?.toJson(),
@@ -374,9 +353,7 @@ class MobileCreationRepository implements CreationRepository {
       },
       receiveTimeout: llmReceiveTimeout,
     );
-    return MobileCreationBuildPreflight.fromJson(
-      response.data as Map<String, dynamic>,
-    );
+    return MobileCreationBuildPreflight.fromJson(data);
   }
 
   @override

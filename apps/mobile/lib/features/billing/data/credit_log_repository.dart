@@ -21,8 +21,7 @@ class MobileCreditLogRepository implements CreditLogRepository {
       path: '/api/mobile/billing/credit-log',
       queryParameters: <String, String>{'limit': '$limit', 'cursor': ?cursor},
     ).toString();
-    final response = await apiClient.getJson(path);
-    final data = response.data as Map<String, dynamic>;
+    final data = await apiClient.getMap(path);
     return CreditLogPage.fromJson(data['log'] as Map<String, dynamic>);
   }
 }

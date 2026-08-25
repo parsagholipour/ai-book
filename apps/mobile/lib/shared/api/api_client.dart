@@ -88,6 +88,14 @@ class ApiClient {
     return _request('GET', path, requiresAuth: requiresAuth);
   }
 
+  Future<Map<String, dynamic>> getMap(
+    String path, {
+    bool requiresAuth = true,
+  }) async {
+    final response = await getJson(path, requiresAuth: requiresAuth);
+    return response.data as Map<String, dynamic>;
+  }
+
   Stream<ServerSentEvent> getServerSentEvents(
     String path, {
     bool requiresAuth = true,
@@ -118,6 +126,21 @@ class ApiClient {
       requiresAuth: requiresAuth,
       receiveTimeout: receiveTimeout,
     );
+  }
+
+  Future<Map<String, dynamic>> postMap(
+    String path, {
+    Object? data,
+    bool requiresAuth = true,
+    Duration? receiveTimeout,
+  }) async {
+    final response = await postJson(
+      path,
+      data: data,
+      requiresAuth: requiresAuth,
+      receiveTimeout: receiveTimeout,
+    );
+    return response.data as Map<String, dynamic>;
   }
 
   Future<Response<dynamic>> patchJson(

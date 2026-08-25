@@ -69,9 +69,23 @@ class _FakeApiClient implements ApiClient {
     );
   }
 
+  Future<Map<String, dynamic>> _respondMap(
+    String method,
+    String path,
+    Object? data,
+  ) async {
+    final response = await _respond(method, path, data);
+    return response.data as Map<String, dynamic>;
+  }
+
   @override
   Future<Response<dynamic>> getJson(String path, {bool requiresAuth = true}) {
     return _respond('GET', path, null);
+  }
+
+  @override
+  Future<Map<String, dynamic>> getMap(String path, {bool requiresAuth = true}) {
+    return _respondMap('GET', path, null);
   }
 
   @override
@@ -82,6 +96,16 @@ class _FakeApiClient implements ApiClient {
     Duration? receiveTimeout,
   }) {
     return _respond('POST', path, data);
+  }
+
+  @override
+  Future<Map<String, dynamic>> postMap(
+    String path, {
+    Object? data,
+    bool requiresAuth = true,
+    Duration? receiveTimeout,
+  }) {
+    return _respondMap('POST', path, data);
   }
 
   @override

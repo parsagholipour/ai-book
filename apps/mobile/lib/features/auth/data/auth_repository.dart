@@ -50,8 +50,7 @@ class MobileAuthRepository implements AuthRepository {
         tokens = await apiClient.refreshTokens();
       }
 
-      final response = await apiClient.getJson('/api/mobile/auth/me');
-      final data = response.data as Map<String, dynamic>;
+      final data = await apiClient.getMap('/api/mobile/auth/me');
       final latestTokens = await tokenStore.read() ?? tokens;
       return AuthSession(
         user: AuthUser.fromJson(data['user'] as Map<String, dynamic>),
@@ -158,12 +157,12 @@ class MobileAuthRepository implements AuthRepository {
     String path, {
     required Map<String, dynamic> data,
   }) async {
-    final response = await apiClient.postJson(
+    final responseData = await apiClient.postMap(
       path,
       data: data,
       requiresAuth: false,
     );
-    final session = AuthSession.fromJson(response.data as Map<String, dynamic>);
+    final session = AuthSession.fromJson(responseData);
     await tokenStore.write(session.tokens);
     return session;
   }

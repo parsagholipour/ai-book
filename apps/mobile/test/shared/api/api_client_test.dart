@@ -11,6 +11,76 @@ import 'package:tomeza/shared/api/api_error.dart';
 import 'package:tomeza/shared/api/auth_token_store.dart';
 
 void main() {
+  test('getMap returns the top-level JSON map', () async {
+    final adapter = RecordingHttpClientAdapter(
+      responseBody: '{"project":{"id":"project-1"}}',
+    );
+    final apiClient = ApiClient(
+      dio: Dio(BaseOptions(baseUrl: 'http://localhost:4001'))
+        ..httpClientAdapter = adapter,
+      tokenStore: MemoryAuthTokenStore(validTokens()),
+    );
+
+    final result = await apiClient.getMap('/api/mobile/projects/project-1');
+
+    expect(result, {
+      'project': {'id': 'project-1'},
+    });
+    expect(adapter.lastOptions?.method, 'GET');
+  });
+
+  test('postMap returns the top-level JSON map and forwards data', () async {
+    final adapter = RecordingHttpClientAdapter(
+      responseBody: '{"operation":{"id":"operation-1"}}',
+    );
+    final apiClient = ApiClient(
+      dio: Dio(BaseOptions(baseUrl: 'http://localhost:4001'))
+        ..httpClientAdapter = adapter,
+      tokenStore: MemoryAuthTokenStore(validTokens()),
+    );
+
+    final result = await apiClient.postMap(
+      '/api/mobile/projects/project-1/plan',
+      data: const {'requestId': 'request-1'},
+    );
+
+    expect(result, {
+      'operation': {'id': 'operation-1'},
+    });
+    expect(adapter.lastOptions?.method, 'POST');
+    expect(adapter.lastOptions?.data, {'requestId': 'request-1'});
+    expect(adapter.lastOptions?.contentType, Headers.jsonContentType);
+  });
+
+  test('getMap and postMap forward requiresAuth', () async {
+    final adapter = RecordingHttpClientAdapter();
+    final apiClient = ApiClient(
+      dio: Dio(BaseOptions(baseUrl: 'http://localhost:4001'))
+        ..httpClientAdapter = adapter,
+      tokenStore: MemoryAuthTokenStore(),
+    );
+
+    await apiClient.getMap('/api/mobile/public', requiresAuth: false);
+    expect(adapter.lastOptions?.headers, isNot(contains('Authorization')));
+
+    await apiClient.postMap('/api/mobile/public', requiresAuth: false);
+    expect(adapter.lastOptions?.headers, isNot(contains('Authorization')));
+  });
+
+  test('getMap preserves the cast failure for a non-map response', () async {
+    final adapter = RecordingHttpClientAdapter(responseBody: '[]');
+    final apiClient = ApiClient(
+      dio: Dio(BaseOptions(baseUrl: 'http://localhost:4001'))
+        ..httpClientAdapter = adapter,
+      tokenStore: MemoryAuthTokenStore(validTokens()),
+    );
+
+    await expectLater(
+      apiClient.getMap('/api/mobile/projects'),
+      throwsA(isA<TypeError>()),
+    );
+  });
+
   test('postJson does not send JSON content type for empty posts', () async {
     final adapter = RecordingHttpClientAdapter();
     final apiClient = ApiClient(
@@ -48,7 +118,7 @@ void main() {
     expect(adapter.lastOptions?.contentType, Headers.jsonContentType);
   });
 
-  test('postJson forwards the per-request receive timeout for LLM endpoints '
+  test('postMap forwards the per-request receive timeout for LLM endpoints '
       'and leaves other requests on the global default', () async {
     final adapter = RecordingHttpClientAdapter();
     final apiClient = ApiClient(
@@ -61,7 +131,7 @@ void main() {
       tokenStore: MemoryAuthTokenStore(validTokens()),
     );
 
-    await apiClient.postJson(
+    await apiClient.postMap(
       '/api/mobile/projects/project-1/chat/messages',
       data: const {'message': 'Make chapter two warmer.'},
       receiveTimeout: llmReceiveTimeout,

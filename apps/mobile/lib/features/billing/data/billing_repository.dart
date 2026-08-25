@@ -33,8 +33,7 @@ class MobileBillingRepository implements BillingRepository {
 
   @override
   Future<MobileBilling> getBilling() async {
-    final response = await apiClient.getJson('/api/mobile/billing');
-    final data = response.data as Map<String, dynamic>;
+    final data = await apiClient.getMap('/api/mobile/billing');
     return MobileBilling.fromJson(data['billing'] as Map<String, dynamic>);
   }
 
@@ -59,13 +58,11 @@ class MobileBillingRepository implements BillingRepository {
     if (projectId != null) {
       payload['projectId'] = projectId;
     }
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/billing/google-play/verify',
       data: payload,
     );
-    return GooglePlayVerificationResult.fromJson(
-      response.data as Map<String, dynamic>,
-    );
+    return GooglePlayVerificationResult.fromJson(data);
   }
 
   @override
@@ -79,8 +76,7 @@ class MobileBillingRepository implements BillingRepository {
   }
 
   Future<MobileBilling> _postBilling(String path) async {
-    final response = await apiClient.postJson(path);
-    final data = response.data as Map<String, dynamic>;
+    final data = await apiClient.postMap(path);
     return MobileBilling.fromJson(data['billing'] as Map<String, dynamic>);
   }
 }

@@ -1,4 +1,3 @@
-import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/api/api_client.dart';
@@ -89,8 +88,8 @@ class MobileCharactersRepository implements CharactersRepository {
 
   @override
   Future<CharacterLibrary> list() async {
-    final response = await apiClient.getJson('/api/mobile/characters');
-    return CharacterLibrary.fromJson(response.data as Map<String, dynamic>);
+    final data = await apiClient.getMap('/api/mobile/characters');
+    return CharacterLibrary.fromJson(data);
   }
 
   @override
@@ -100,7 +99,7 @@ class MobileCharactersRepository implements CharactersRepository {
     List<CharacterField> fields = const [],
     List<String> mentionedCharacterIds = const [],
   }) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/characters',
       data: <String, dynamic>{
         'name': name,
@@ -109,7 +108,7 @@ class MobileCharactersRepository implements CharactersRepository {
         'mentionedCharacterIds': mentionedCharacterIds,
       },
     );
-    return _characterFrom(response);
+    return _characterFrom(data);
   }
 
   @override
@@ -132,7 +131,7 @@ class MobileCharactersRepository implements CharactersRepository {
         'dismissSuggestion': ?dismissSuggestion,
       },
     );
-    return _characterFrom(response);
+    return _characterFrom(response.data as Map<String, dynamic>);
   }
 
   @override
@@ -157,15 +156,12 @@ class MobileCharactersRepository implements CharactersRepository {
       },
       onSendProgress: onProgress,
     );
-    return _characterFrom(response);
+    return _characterFrom(response.data as Map<String, dynamic>);
   }
 
   @override
   Future<List<CharacterImage>> images(String id) async {
-    final response = await apiClient.getJson(
-      '/api/mobile/characters/$id/images',
-    );
-    final data = response.data as Map<String, dynamic>;
+    final data = await apiClient.getMap('/api/mobile/characters/$id/images');
     return CharacterImage.listFromJson(data['images']);
   }
 
@@ -174,10 +170,10 @@ class MobileCharactersRepository implements CharactersRepository {
     required String id,
     required String imageId,
   }) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/characters/$id/images/$imageId/promote',
     );
-    return _characterImagesFrom(response);
+    return _characterImagesFrom(data);
   }
 
   @override
@@ -188,7 +184,7 @@ class MobileCharactersRepository implements CharactersRepository {
     final response = await apiClient.deleteJson(
       '/api/mobile/characters/$id/images/$imageId',
     );
-    return _characterImagesFrom(response);
+    return _characterImagesFrom(response.data as Map<String, dynamic>);
   }
 
   @override
@@ -196,7 +192,7 @@ class MobileCharactersRepository implements CharactersRepository {
     final response = await apiClient.deleteJson(
       '/api/mobile/characters/$id/photo',
     );
-    return _characterFrom(response);
+    return _characterFrom(response.data as Map<String, dynamic>);
   }
 
   @override
@@ -204,11 +200,10 @@ class MobileCharactersRepository implements CharactersRepository {
     required String id,
     String? requestId,
   }) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/characters/$id/portrait',
       data: <String, dynamic>{'requestId': ?requestId},
     );
-    final data = response.data as Map<String, dynamic>;
     return (
       character: LibraryCharacter.fromJson(
         data['character'] as Map<String, dynamic>,
@@ -222,13 +217,11 @@ class MobileCharactersRepository implements CharactersRepository {
     return apiClient.authHeaders();
   }
 
-  LibraryCharacter _characterFrom(Response<dynamic> response) {
-    final data = response.data as Map<String, dynamic>;
+  LibraryCharacter _characterFrom(Map<String, dynamic> data) {
     return LibraryCharacter.fromJson(data['character'] as Map<String, dynamic>);
   }
 
-  CharacterImages _characterImagesFrom(Response<dynamic> response) {
-    final data = response.data as Map<String, dynamic>;
+  CharacterImages _characterImagesFrom(Map<String, dynamic> data) {
     return (
       character: LibraryCharacter.fromJson(
         data['character'] as Map<String, dynamic>,

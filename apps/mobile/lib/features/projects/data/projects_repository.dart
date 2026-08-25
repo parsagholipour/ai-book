@@ -164,8 +164,7 @@ class MobileProjectsRepository implements ProjectsRepository {
 
   @override
   Future<List<MobileProjectSummary>> listProjects() async {
-    final response = await apiClient.getJson('/api/mobile/projects');
-    final data = response.data as Map<String, dynamic>;
+    final data = await apiClient.getMap('/api/mobile/projects');
     final projects = data['projects'] as List<dynamic>;
     return projects
         .map(
@@ -179,11 +178,10 @@ class MobileProjectsRepository implements ProjectsRepository {
   Future<MobileProjectDetail> createProject(
     MobileProjectCreateRequest request,
   ) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/projects',
       data: request.toJson(),
     );
-    final data = response.data as Map<String, dynamic>;
     return MobileProjectDetail.fromJson(
       data['project'] as Map<String, dynamic>,
     );
@@ -191,8 +189,7 @@ class MobileProjectsRepository implements ProjectsRepository {
 
   @override
   Future<MobileProjectDetail> getProject(String id) async {
-    final response = await apiClient.getJson('/api/mobile/projects/$id');
-    final data = response.data as Map<String, dynamic>;
+    final data = await apiClient.getMap('/api/mobile/projects/$id');
     return MobileProjectDetail.fromJson(
       data['project'] as Map<String, dynamic>,
     );
@@ -200,11 +197,11 @@ class MobileProjectsRepository implements ProjectsRepository {
 
   @override
   Future<MobilePlanOperation> generatePlan(String projectId) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/projects/$projectId/plan',
       data: const <String, dynamic>{},
     );
-    return MobilePlanOperation.fromJson(response.data as Map<String, dynamic>);
+    return MobilePlanOperation.fromJson(data);
   }
 
   @override
@@ -213,11 +210,11 @@ class MobileProjectsRepository implements ProjectsRepository {
     required String message,
     String? requestId,
   }) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/plans/$planId/revise',
       data: {'message': message, 'requestId': ?requestId},
     );
-    return MobilePlanOperation.fromJson(response.data as Map<String, dynamic>);
+    return MobilePlanOperation.fromJson(data);
   }
 
   @override
@@ -226,20 +223,19 @@ class MobileProjectsRepository implements ProjectsRepository {
     String? requestId,
     bool disableIllustrations = false,
   }) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/plans/$planId/approve',
       data: {
         'requestId': ?requestId,
         if (disableIllustrations) 'disableIllustrations': true,
       },
     );
-    return MobilePlanOperation.fromJson(response.data as Map<String, dynamic>);
+    return MobilePlanOperation.fromJson(data);
   }
 
   @override
   Future<MobileProjectStatus> getProjectStatus(String id) async {
-    final response = await apiClient.getJson('/api/mobile/projects/$id/status');
-    final data = response.data as Map<String, dynamic>;
+    final data = await apiClient.getMap('/api/mobile/projects/$id/status');
     return MobileProjectStatus.fromJson(data['status'] as Map<String, dynamic>);
   }
 
@@ -273,8 +269,8 @@ class MobileProjectsRepository implements ProjectsRepository {
       path: '/api/mobile/projects/$id/chat',
       queryParameters: query,
     ).toString();
-    final response = await apiClient.getJson(path);
-    return MobileProjectChat.fromJson(response.data as Map<String, dynamic>);
+    final data = await apiClient.getMap(path);
+    return MobileProjectChat.fromJson(data);
   }
 
   @override
@@ -286,7 +282,7 @@ class MobileProjectsRepository implements ProjectsRepository {
     List<String>? mentionedCharacterIds,
     Map<String, Object>? readerContext,
   }) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/projects/$projectId/chat/messages',
       data: {
         'message': message,
@@ -299,9 +295,7 @@ class MobileProjectsRepository implements ProjectsRepository {
       },
       receiveTimeout: llmReceiveTimeout,
     );
-    return MobileProjectChatSendResult.fromJson(
-      response.data as Map<String, dynamic>,
-    );
+    return MobileProjectChatSendResult.fromJson(data);
   }
 
   @override
@@ -312,7 +306,7 @@ class MobileProjectsRepository implements ProjectsRepository {
     String? requestId,
     List<String>? mentionedCharacterIds,
   }) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/projects/$projectId/chat/messages',
       data: {
         'message': message,
@@ -323,9 +317,7 @@ class MobileProjectsRepository implements ProjectsRepository {
       },
       receiveTimeout: llmReceiveTimeout,
     );
-    return MobileProjectChatSendResult.fromJson(
-      response.data as Map<String, dynamic>,
-    );
+    return MobileProjectChatSendResult.fromJson(data);
   }
 
   @override
@@ -334,14 +326,12 @@ class MobileProjectsRepository implements ProjectsRepository {
     required String proposalId,
     String? requestId,
   }) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/projects/$projectId/chat/proposals/apply',
       data: {'proposalId': proposalId, 'requestId': ?requestId},
       receiveTimeout: llmReceiveTimeout,
     );
-    return MobileProjectChatSendResult.fromJson(
-      response.data as Map<String, dynamic>,
-    );
+    return MobileProjectChatSendResult.fromJson(data);
   }
 
   @override
@@ -350,14 +340,12 @@ class MobileProjectsRepository implements ProjectsRepository {
     required String proposalId,
     String? requestId,
   }) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/projects/$projectId/chat/proposals/cancel',
       data: {'proposalId': proposalId, 'requestId': ?requestId},
       receiveTimeout: llmReceiveTimeout,
     );
-    return MobileProjectChatSendResult.fromJson(
-      response.data as Map<String, dynamic>,
-    );
+    return MobileProjectChatSendResult.fromJson(data);
   }
 
   @override
@@ -365,14 +353,12 @@ class MobileProjectsRepository implements ProjectsRepository {
     required String projectId,
     String? requestId,
   }) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/projects/$projectId/chat/edits/undo',
       data: {'requestId': ?requestId},
       receiveTimeout: llmReceiveTimeout,
     );
-    return MobileProjectChatSendResult.fromJson(
-      response.data as Map<String, dynamic>,
-    );
+    return MobileProjectChatSendResult.fromJson(data);
   }
 
   @override
@@ -381,19 +367,16 @@ class MobileProjectsRepository implements ProjectsRepository {
     required String messageId,
     required String direction,
   }) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/projects/$projectId/chat/branches',
       data: {'messageId': messageId, 'direction': direction},
     );
-    return MobileProjectChat.fromJson(response.data as Map<String, dynamic>);
+    return MobileProjectChat.fromJson(data);
   }
 
   @override
   Future<MobileEditableBook> getEditableBook(String projectId) async {
-    final response = await apiClient.getJson(
-      '/api/mobile/projects/$projectId/book',
-    );
-    final data = response.data as Map<String, dynamic>;
+    final data = await apiClient.getMap('/api/mobile/projects/$projectId/book');
     return MobileEditableBook.fromJson(data['book'] as Map<String, dynamic>);
   }
 
@@ -402,10 +385,9 @@ class MobileProjectsRepository implements ProjectsRepository {
     required String projectId,
     required String operationId,
   }) async {
-    final response = await apiClient.getJson(
+    final data = await apiClient.getMap(
       '/api/mobile/projects/$projectId/operations/$operationId/changes',
     );
-    final data = response.data as Map<String, dynamic>;
     return MobileEditChanges.fromJson(data['changes'] as Map<String, dynamic>);
   }
 
@@ -416,7 +398,7 @@ class MobileProjectsRepository implements ProjectsRepository {
     String? savedExportMessageId,
     String? requestId,
   }) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/projects/$projectId/manual-edits',
       data: {
         'pages': pages.map((page) => page.toJson()).toList(),
@@ -424,9 +406,7 @@ class MobileProjectsRepository implements ProjectsRepository {
         'requestId': ?requestId,
       },
     );
-    return MobileManualBookEditResult.fromJson(
-      response.data as Map<String, dynamic>,
-    );
+    return MobileManualBookEditResult.fromJson(data);
   }
 
   @override
@@ -435,13 +415,11 @@ class MobileProjectsRepository implements ProjectsRepository {
     String? requestId,
     String? retryToken,
   }) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/projects/$id/resume',
       data: {'requestId': ?requestId, 'retryToken': ?retryToken},
     );
-    return MobileProjectRecovery.fromJson(
-      response.data as Map<String, dynamic>,
-    );
+    return MobileProjectRecovery.fromJson(data);
   }
 
   @override
@@ -451,11 +429,10 @@ class MobileProjectsRepository implements ProjectsRepository {
     String? requestId,
     String? retryToken,
   }) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/projects/$projectId/operations/$operationId/retry',
       data: {'requestId': ?requestId, 'retryToken': ?retryToken},
     );
-    final data = response.data as Map<String, dynamic>;
     final operation = data['operation'];
     return MobileBookEditOperation.fromJson(
       operation is Map<String, dynamic> ? operation : data,
@@ -476,11 +453,10 @@ class MobileProjectsRepository implements ProjectsRepository {
     required String reason,
     String? comment,
   }) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/projects/$projectId/reports',
       data: _reportPayload(reason: reason, comment: comment),
     );
-    final data = response.data as Map<String, dynamic>;
     return ModerationReportReceipt.fromJson(
       data['report'] as Map<String, dynamic>,
     );
@@ -493,11 +469,10 @@ class MobileProjectsRepository implements ProjectsRepository {
     required String reason,
     String? comment,
   }) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/projects/$projectId/assets/$assetId/reports',
       data: _reportPayload(reason: reason, comment: comment),
     );
-    final data = response.data as Map<String, dynamic>;
     return ModerationReportReceipt.fromJson(
       data['report'] as Map<String, dynamic>,
     );

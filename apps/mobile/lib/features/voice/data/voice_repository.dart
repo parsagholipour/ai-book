@@ -56,8 +56,9 @@ class HttpVoiceRepository implements VoiceRepository {
 
   @override
   Future<VoiceCast> getCast(String projectId) async {
-    final response = await _client.getJson('/api/mobile/projects/$projectId/voice/cast');
-    final data = response.data as Map<String, dynamic>;
+    final data = await _client.getMap(
+      '/api/mobile/projects/$projectId/voice/cast',
+    );
     return VoiceCast.fromJson(data['cast'] as Map<String, dynamic>);
   }
 
@@ -68,11 +69,10 @@ class HttpVoiceRepository implements VoiceRepository {
     int? pageIndex,
   }) async {
     try {
-      final response = await _client.postJson(
+      final data = await _client.postMap(
         '/api/mobile/projects/$projectId/voice/characters/$characterId/calls',
         data: {'pageIndex': ?pageIndex},
       );
-      final data = response.data as Map<String, dynamic>;
       return VoiceCallSession.fromJson(data['session'] as Map<String, dynamic>);
     } on ApiException catch (error) {
       if (error.code == 'CHARACTER_PREPARING') {
@@ -88,11 +88,10 @@ class HttpVoiceRepository implements VoiceRepository {
     required int elapsedSeconds,
     List<VoiceCallCaption> messages = const [],
   }) async {
-    final response = await _client.postJson(
+    final data = await _client.postMap(
       '/api/mobile/voice/calls/$callId/heartbeat',
       data: {'elapsedSeconds': elapsedSeconds, ..._transcript(messages)},
     );
-    final data = response.data as Map<String, dynamic>;
     return VoiceCallMeter.fromJson(data['meter'] as Map<String, dynamic>);
   }
 
@@ -103,7 +102,7 @@ class HttpVoiceRepository implements VoiceRepository {
     String reason = 'ended',
     List<VoiceCallCaption> messages = const [],
   }) async {
-    final response = await _client.postJson(
+    final data = await _client.postMap(
       '/api/mobile/voice/calls/$callId/end',
       data: {
         'elapsedSeconds': elapsedSeconds,
@@ -111,7 +110,6 @@ class HttpVoiceRepository implements VoiceRepository {
         ..._transcript(messages),
       },
     );
-    final data = response.data as Map<String, dynamic>;
     return VoiceCallMeter.fromJson(data['meter'] as Map<String, dynamic>);
   }
 

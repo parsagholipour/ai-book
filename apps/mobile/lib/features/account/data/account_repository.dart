@@ -17,13 +17,12 @@ class MobileAccountRepository implements AccountRepository {
   Future<AccountDeletionRequestReceipt> requestAccountDeletion({
     String? reason,
   }) async {
-    final response = await apiClient.postJson(
+    final data = await apiClient.postMap(
       '/api/mobile/account/deletion-request',
       data: {
         if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
       },
     );
-    final data = response.data as Map<String, dynamic>;
     return AccountDeletionRequestReceipt.fromJson(
       data['request'] as Map<String, dynamic>,
     );
