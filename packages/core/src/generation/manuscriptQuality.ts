@@ -27,37 +27,145 @@ export type ManuscriptIntegrityPage = {
   markdown: string;
 };
 
-export function runDeterministicManuscriptChecks(options: {
+type ManuscriptGlobalRuleContext = {
   pages: ManuscriptIntegrityPage[];
   expectedPageCount: number;
-}): ManuscriptQualityIssue[] {
-  const issues: ManuscriptQualityIssue[] = [];
-  const pages = [...options.pages].sort((a, b) => a.index - b.index);
-  if (pages.length === 0) {
-    issues.push(issue("MISSING_PAGES", "No manuscript pages were generated.", "Regenerate the book before exporting.", []));
-    return issues;
-  }
-  if (pages.length !== options.expectedPageCount) {
-    issues.push(
+  indexes: number[];
+  expectedIndexes: number[];
+};
+
+type ManuscriptPageRuleContext = {
+  page: ManuscriptIntegrityPage;
+  plain: string;
+  tokens: PageTokens;
+};
+
+type ManuscriptQualityRule<Context> = (
+  context: Context
+) => readonly ManuscriptQualityIssue[] | undefined;
+
+function manuscriptRule<Context>(
+  predicate: (context: Context) => boolean,
+  finding: (context: Context) => ManuscriptQualityIssue
+): ManuscriptQualityRule<Context> {
+  return (context) => (predicate(context) ? [finding(context)] : undefined);
+}
+
+const MANUSCRIPT_GLOBAL_QUALITY_RULES = [
+  manuscriptRule(
+    ({ pages }: ManuscriptGlobalRuleContext) => pages.length === 0,
+    () => issue("MISSING_PAGES", "No manuscript pages were generated.", "Regenerate the book before exporting.", [])
+  ),
+  manuscriptRule(
+    ({ pages, expectedPageCount }: ManuscriptGlobalRuleContext) =>
+      pages.length > 0 && pages.length !== expectedPageCount,
+    ({ pages, expectedPageCount }) =>
       issue(
         "PAGE_COUNT_MISMATCH",
-        `The manuscript has ${pages.length} pages but ${options.expectedPageCount} were expected.`,
+        `The manuscript has ${pages.length} pages but ${expectedPageCount} were expected.`,
         "Regenerate missing pages or correct the plan's page count.",
         pages.map((page) => page.index)
       )
-    );
-  }
-  const indexes = pages.map((page) => page.index);
-  const expectedIndexes = Array.from({ length: pages.length }, (_, index) => index + 1);
-  if (new Set(indexes).size !== indexes.length || indexes.some((value, index) => value !== expectedIndexes[index])) {
-    issues.push(
+  ),
+  manuscriptRule(
+    ({ pages, indexes, expectedIndexes }: ManuscriptGlobalRuleContext) =>
+      pages.length > 0 &&
+      (new Set(indexes).size !== indexes.length ||
+        indexes.some((value, index) => value !== expectedIndexes[index])),
+    ({ indexes }) =>
       issue(
         "PAGE_INDEX_INVALID",
         "Page indexes contain a duplicate, gap, or out-of-order value.",
         "Repair page ordering before publishing.",
         indexes
       )
-    );
+  )
+] as const satisfies readonly ManuscriptQualityRule<ManuscriptGlobalRuleContext>[];
+
+const MANUSCRIPT_PAGE_QUALITY_RULES = [
+  manuscriptRule(
+    ({ page, plain }: ManuscriptPageRuleContext) => !page.title.trim() || !plain,
+    ({ page }) =>
+      issue(
+        "EMPTY_PAGE",
+        `Page ${page.index} has an empty title or body.`,
+        "Open Edit Mode or regenerate this page.",
+        [page.index]
+      )
+  ),
+  manuscriptRule(
+    ({ page }: ManuscriptPageRuleContext) =>
+      containsPromptLeak(page.markdown, MANUSCRIPT_PROMPT_LEAK_PATTERNS),
+    ({ page }) =>
+      issue(
+        "PROMPT_LEAKAGE",
+        `Page ${page.index} appears to expose generation instructions or hidden prompt text.`,
+        "Regenerate this page without internal instructions.",
+        [page.index]
+      )
+  ),
+  manuscriptRule(
+    ({ page }: ManuscriptPageRuleContext) => containsPlaceholder(page.markdown),
+    ({ page }) =>
+      issue(
+        "PLACEHOLDER_TEXT",
+        `Page ${page.index} contains placeholder text.`,
+        "Replace the placeholder in Edit Mode or regenerate the page.",
+        [page.index]
+      )
+  ),
+  manuscriptRule(
+    ({ page }: ManuscriptPageRuleContext) => hasMalformedMarkdown(page.markdown),
+    ({ page }) =>
+      issue(
+        "MALFORMED_MARKDOWN",
+        `Page ${page.index} contains malformed Markdown.`,
+        "Fix unmatched code fences, links, or footnotes in Edit Mode.",
+        [page.index]
+      )
+  ),
+  manuscriptRule(
+    ({ page }: ManuscriptPageRuleContext) => hasUnsupportedFootnote(page.markdown),
+    ({ page }) =>
+      issue(
+        "UNSUPPORTED_CITATION",
+        `Page ${page.index} references a citation that has no matching definition.`,
+        "Add the missing source definition or remove the citation reference.",
+        [page.index]
+      )
+  )
+] as const satisfies readonly ManuscriptQualityRule<ManuscriptPageRuleContext>[];
+
+function runQualityRules<Context>(
+  rules: readonly ManuscriptQualityRule<Context>[],
+  context: Context
+): ManuscriptQualityIssue[] {
+  const findings: ManuscriptQualityIssue[] = [];
+  for (const rule of rules) {
+    const ruleFindings = rule(context);
+    if (ruleFindings) {
+      findings.push(...ruleFindings);
+    }
+  }
+  return findings;
+}
+
+export function runDeterministicManuscriptChecks(options: {
+  pages: ManuscriptIntegrityPage[];
+  expectedPageCount: number;
+}): ManuscriptQualityIssue[] {
+  const pages = [...options.pages].sort((a, b) => a.index - b.index);
+  const indexes = pages.map((page) => page.index);
+  const expectedIndexes = Array.from({ length: pages.length }, (_, index) => index + 1);
+  const globalContext: ManuscriptGlobalRuleContext = {
+    pages,
+    expectedPageCount: options.expectedPageCount,
+    indexes,
+    expectedIndexes
+  };
+  const issues = runQualityRules(MANUSCRIPT_GLOBAL_QUALITY_RULES, globalContext);
+  if (pages.length === 0) {
+    return issues;
   }
 
   // Stripped and tokenized once per page, and shared by every check below:
@@ -65,62 +173,15 @@ export function runDeterministicManuscriptChecks(options: {
   // re-running `plainMarkdown` plus the word regex ~3,500 times over the same
   // prose — and each book-level repetition check would otherwise pay a full
   // pass of its own on every compile.
-  const pageTexts = pages.map((page) => plainMarkdown(page.markdown));
-  const pageTokens = pageTexts.map((plain) => tokenizePage(plain));
+  const pageContexts = pages.map((page): ManuscriptPageRuleContext => {
+    const plain = plainMarkdown(page.markdown);
+    return { page, plain, tokens: tokenizePage(plain) };
+  });
+  const pageTexts = pageContexts.map(({ plain }) => plain);
+  const pageTokens = pageContexts.map(({ tokens }) => tokens);
 
-  for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
-    const page = pages[pageIndex]!;
-    const plain = pageTexts[pageIndex]!;
-    if (!page.title.trim() || !plain) {
-      issues.push(
-        issue(
-          "EMPTY_PAGE",
-          `Page ${page.index} has an empty title or body.`,
-          "Open Edit Mode or regenerate this page.",
-          [page.index]
-        )
-      );
-    }
-    if (containsPromptLeak(page.markdown, MANUSCRIPT_PROMPT_LEAK_PATTERNS)) {
-      issues.push(
-        issue(
-          "PROMPT_LEAKAGE",
-          `Page ${page.index} appears to expose generation instructions or hidden prompt text.`,
-          "Regenerate this page without internal instructions.",
-          [page.index]
-        )
-      );
-    }
-    if (containsPlaceholder(page.markdown)) {
-      issues.push(
-        issue(
-          "PLACEHOLDER_TEXT",
-          `Page ${page.index} contains placeholder text.`,
-          "Replace the placeholder in Edit Mode or regenerate the page.",
-          [page.index]
-        )
-      );
-    }
-    if (hasMalformedMarkdown(page.markdown)) {
-      issues.push(
-        issue(
-          "MALFORMED_MARKDOWN",
-          `Page ${page.index} contains malformed Markdown.`,
-          "Fix unmatched code fences, links, or footnotes in Edit Mode.",
-          [page.index]
-        )
-      );
-    }
-    if (hasUnsupportedFootnote(page.markdown)) {
-      issues.push(
-        issue(
-          "UNSUPPORTED_CITATION",
-          `Page ${page.index} references a citation that has no matching definition.`,
-          "Add the missing source definition or remove the citation reference.",
-          [page.index]
-        )
-      );
-    }
+  for (const context of pageContexts) {
+    issues.push(...runQualityRules(MANUSCRIPT_PAGE_QUALITY_RULES, context));
   }
 
   const wordSets = pageTokens.map((tokens) => distinctWords(tokens));

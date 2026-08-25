@@ -6,7 +6,6 @@ import { isImportedManuscript } from "../schemas/mediaSettings.js";
 import type { FinalQaPage, ReviewPageOptions } from "./pages.js";
 import {
   keywordsFromTokens,
-  overlapKeywords,
   overlapShingles,
   overlapTokens,
   sharedRatio,
@@ -32,6 +31,167 @@ import {
 
 export type LocalPageReviewOptions = Omit<ReviewPageOptions, "textModel">;
 
+const PASSING_PAGE_CHECKS = {
+  placeholderFree: true,
+  promptLeakFree: true,
+  titleClean: true,
+  repetitionOk: true,
+  progressionOk: true,
+  styleNatural: true
+} satisfies PageQualityReport["checks"];
+
+type LocalPageCheck = keyof typeof PASSING_PAGE_CHECKS;
+
+type LocalPageFinding = {
+  failedChecks: readonly LocalPageCheck[];
+  issue: string;
+};
+
+type LocalPageRuleContext = {
+  options: ReviewPageOptions;
+  text: string;
+  currentBody: string;
+  flowingBody: string;
+  flowingText: string;
+  adjacentPage: ReviewPageOptions["previousPages"][number] | undefined;
+  normalizedDraftTitle: string;
+  repeatedPage: ReviewPageOptions["previousPages"][number] | undefined;
+  kidsGuidance: ReturnType<typeof kidsReadingGuidanceForInput>;
+  wordCount: number;
+  minWords: number;
+  sentenceStats: ReturnType<typeof sentenceLengthStats> | undefined;
+};
+
+type LocalPageQualityRule = (context: LocalPageRuleContext) => readonly LocalPageFinding[] | undefined;
+
+function pageRule(
+  predicate: (context: LocalPageRuleContext) => boolean,
+  failedChecks: readonly LocalPageCheck[],
+  issue: string | ((context: LocalPageRuleContext) => string)
+): LocalPageQualityRule {
+  return (context) =>
+    predicate(context)
+      ? [{ failedChecks, issue: typeof issue === "string" ? issue : issue(context) }]
+      : undefined;
+}
+
+/**
+ * The report's public issue order. Each rule owns both its message and every
+ * check flag it invalidates, so adding an anti-slop predicate is one ordered
+ * table entry rather than another mutation site in the review loop.
+ */
+const LOCAL_PAGE_QUALITY_RULES = [
+  pageRule(
+    ({ flowingText }) => PLACEHOLDER_PATTERNS.some((pattern) => pattern.test(flowingText)),
+    ["placeholderFree"],
+    "Page contains placeholder or scaffold prose."
+  ),
+  pageRule(
+    ({ text }) => containsPromptLeak(text, PAGE_PROMPT_LEAK_PATTERNS),
+    ["promptLeakFree"],
+    "Page leaks prompts, schema, image instructions, or production notes."
+  ),
+  pageRule(
+    ({ currentBody }) => hasPageBriefMetaLanguage(currentBody),
+    ["promptLeakFree", "progressionOk"],
+    "Page turns page-brief instructions into reader-facing meta-commentary."
+  ),
+  pageRule(
+    ({ flowingText }) => FABRICATED_RESEARCH_PATTERNS.some((pattern) => pattern.test(flowingText)),
+    ["promptLeakFree", "progressionOk"],
+    "Page contains invented or explicitly fabricated research evidence."
+  ),
+  pageRule(
+    ({ flowingBody }) => hasFormulaicProofLeap(flowingBody),
+    ["styleNatural"],
+    "Page uses a formulaic proof-leap phrase that makes the prose sound generated."
+  ),
+  pageRule(
+    ({ currentBody }) => hasFormulaicAdjacentContrast(currentBody),
+    ["styleNatural"],
+    "Page stacks adjacent contrast sentences in a generic AI-rhetorical pattern."
+  ),
+  pageRule(
+    ({ currentBody }) => hasFormulaicContrastOveruse(currentBody),
+    ["styleNatural"],
+    "Page leans repeatedly on the formulaic 'not just X, it's Y' contrast pattern."
+  ),
+  pageRule(
+    ({ currentBody, options }) =>
+      !isSignpostingBookCategory(options.input.category) && hasChapterOpenerScaffold(currentBody),
+    ["styleNatural"],
+    "Page announces what the chapter will cover instead of covering it."
+  ),
+  pageRule(
+    ({ currentBody }) => hasExcessiveDashUse(currentBody),
+    ["styleNatural"],
+    "Page overuses inline em/en dashes in a way that makes the prose sound generated."
+  ),
+  pageRule(
+    ({ options }) => hasDuplicatePagePrefix(options.pageIndex, options.draft.title),
+    ["titleClean"],
+    "Page title repeats the page label."
+  ),
+  pageRule(
+    ({ adjacentPage, normalizedDraftTitle }) =>
+      Boolean(
+        adjacentPage &&
+          normalizedDraftTitle.length > 0 &&
+          normalizeTitle(adjacentPage.title) === normalizedDraftTitle
+      ),
+    ["titleClean", "repetitionOk"],
+    ({ adjacentPage }) => `Page title repeats adjacent page ${adjacentPage!.index}.`
+  ),
+  pageRule(
+    ({ repeatedPage }) => Boolean(repeatedPage),
+    ["repetitionOk"],
+    ({ repeatedPage }) =>
+      `Page repeats or substantially overlaps the beat from page ${repeatedPage!.index}.`
+  ),
+  pageRule(
+    ({ wordCount, minWords }) => wordCount < minWords,
+    ["progressionOk"],
+    ({ wordCount }) => `Page is too short to show meaningful progression (${wordCount} words).`
+  ),
+  pageRule(
+    ({ kidsGuidance, wordCount }) =>
+      Boolean(kidsGuidance && wordCount > kidsGuidance.maxWordsPerPageWithTolerance),
+    ["styleNatural"],
+    ({ kidsGuidance, wordCount }) =>
+      `Page is too long for ages ${kidsGuidance!.ageRange} (${wordCount} words; target ${kidsGuidance!.targetWordsPerPage.min}-${kidsGuidance!.targetWordsPerPage.max}).`
+  ),
+  pageRule(
+    ({ kidsGuidance, sentenceStats }) =>
+      Boolean(
+        kidsGuidance &&
+          sentenceStats &&
+          (sentenceStats.average > kidsGuidance.maxAverageSentenceWords ||
+            sentenceStats.max > kidsGuidance.maxSentenceWords)
+      ),
+    ["styleNatural"],
+    ({ kidsGuidance, sentenceStats }) =>
+      `Sentences are too long for ages ${kidsGuidance!.ageRange} (average ${sentenceStats!.average.toFixed(1)} words, longest ${sentenceStats!.max}; target average <= ${kidsGuidance!.maxAverageSentenceWords}, longest <= ${kidsGuidance!.maxSentenceWords}).`
+  ),
+  pageRule(
+    ({ flowingBody }) => SCAFFOLD_SHAPE_PATTERNS.some((pattern) => pattern.test(flowingBody)),
+    ["progressionOk"],
+    "Page describes its intended function instead of becoming finished book prose."
+  ),
+  pageRule(
+    ({ currentBody, options }) =>
+      options.pageIndex === 1 &&
+      !isImportedManuscript(options.input.mediaSettings) &&
+      hasWeakFirstPageOpening(currentBody),
+    ["styleNatural"],
+    "First page opens with a generic or meta hook instead of a concrete one."
+  ),
+  pageRule(
+    ({ options }) => options.pageIndex === options.input.targetPages && hasVagueEnding(options.draft),
+    ["progressionOk"],
+    "Final page ending is too vague to resolve the book's central promise."
+  )
+] as const satisfies readonly LocalPageQualityRule[];
+
 /**
  * Runs only the deterministic local quality heuristics (no model call).
  * Used by bulk strategies (e.g. whole-book single pass) to produce honest
@@ -42,6 +202,36 @@ export function reviewPageDraftLocally(options: LocalPageReviewOptions): PageQua
 }
 
 export function runLocalPageQualityChecks(options: ReviewPageOptions): PageQualityReport {
+  const context = localPageRuleContext(options);
+  const checks: PageQualityReport["checks"] = { ...PASSING_PAGE_CHECKS };
+  const issues: string[] = [];
+
+  for (const rule of LOCAL_PAGE_QUALITY_RULES) {
+    const findings = rule(context);
+    if (!findings) {
+      continue;
+    }
+    for (const finding of findings) {
+      for (const failedCheck of finding.failedChecks) {
+        checks[failedCheck] = false;
+      }
+      issues.push(finding.issue);
+    }
+  }
+
+  return {
+    approved: issues.length === 0,
+    score: Math.max(0, 100 - issues.length * 25),
+    issues,
+    requiredRevisions: issues.map((issue) => `Fix: ${issue}`),
+    notes: issues.length === 0 ? "Local quality checks passed." : "Local quality checks rejected the page.",
+    groundedOk: true,
+    unsupportedClaims: [],
+    checks
+  };
+}
+
+function localPageRuleContext(options: ReviewPageOptions): LocalPageRuleContext {
   const text = `${options.draft.title}\n${options.draft.markdown}`;
   const currentBody = options.draft.markdown.trim();
   // The phrase tables below are written with literal single spaces, so a page
@@ -67,87 +257,16 @@ export function runLocalPageQualityChecks(options: ReviewPageOptions): PageQuali
   // several — and again for every page of `runLocalFinalQa`.
   const flowingBody = collapseHardWraps(currentBody);
   const flowingText = `${collapseHardWraps(options.draft.title)}\n${flowingBody}`;
-  const issues: string[] = [];
-  const checks = {
-    placeholderFree: true,
-    promptLeakFree: true,
-    titleClean: true,
-    repetitionOk: true,
-    progressionOk: true,
-    styleNatural: true
-  };
-
-  const placeholder = PLACEHOLDER_PATTERNS.find((pattern) => pattern.test(flowingText));
-  if (placeholder) {
-    checks.placeholderFree = false;
-    issues.push("Page contains placeholder or scaffold prose.");
-  }
-
-  if (containsPromptLeak(text, PAGE_PROMPT_LEAK_PATTERNS)) {
-    checks.promptLeakFree = false;
-    issues.push("Page leaks prompts, schema, image instructions, or production notes.");
-  }
-
-  if (hasPageBriefMetaLanguage(currentBody)) {
-    checks.promptLeakFree = false;
-    checks.progressionOk = false;
-    issues.push("Page turns page-brief instructions into reader-facing meta-commentary.");
-  }
-
-  const fabricatedResearch = FABRICATED_RESEARCH_PATTERNS.find((pattern) => pattern.test(flowingText));
-  if (fabricatedResearch) {
-    checks.promptLeakFree = false;
-    checks.progressionOk = false;
-    issues.push("Page contains invented or explicitly fabricated research evidence.");
-  }
-
-  if (hasFormulaicProofLeap(flowingBody)) {
-    checks.styleNatural = false;
-    issues.push("Page uses a formulaic proof-leap phrase that makes the prose sound generated.");
-  }
-
-  if (hasFormulaicAdjacentContrast(currentBody)) {
-    checks.styleNatural = false;
-    issues.push("Page stacks adjacent contrast sentences in a generic AI-rhetorical pattern.");
-  }
-
-  if (hasFormulaicContrastOveruse(currentBody)) {
-    checks.styleNatural = false;
-    issues.push("Page leans repeatedly on the formulaic 'not just X, it's Y' contrast pattern.");
-  }
-
-  if (!isSignpostingBookCategory(options.input.category) && hasChapterOpenerScaffold(currentBody)) {
-    checks.styleNatural = false;
-    issues.push("Page announces what the chapter will cover instead of covering it.");
-  }
-
-  if (hasExcessiveDashUse(currentBody)) {
-    checks.styleNatural = false;
-    issues.push("Page overuses inline em/en dashes in a way that makes the prose sound generated.");
-  }
-
-  if (hasDuplicatePagePrefix(options.pageIndex, options.draft.title)) {
-    checks.titleClean = false;
-    issues.push("Page title repeats the page label.");
-  }
-
-  const adjacentPage = options.previousPages.at(-1);
-  const normalizedDraftTitle = normalizeTitle(options.draft.title);
-  if (adjacentPage && normalizedDraftTitle.length > 0 && normalizeTitle(adjacentPage.title) === normalizedDraftTitle) {
-    checks.titleClean = false;
-    checks.repetitionOk = false;
-    issues.push(`Page title repeats adjacent page ${adjacentPage.index}.`);
-  }
 
   // The draft is one text scored against five, so its three sets are built here
   // rather than inside the loop — the whole reason the overlap rule below is
-  // spelled over sets — and each predecessor's summary, which both halves of
-  // that rule read, is tokenized once inside it with both its sets derived from
-  // those tokens. Scoring per pair instead put the draft body through five full
-  // shingle passes, its summary through ten and every predecessor's through two,
-  // on a function that runs for every draft candidate of every page and again
-  // for every page of `runLocalFinalQa`: thousands of redundant tokenizations of
-  // a finished book, all of them on the worker's own thread.
+  // spelled over sets. The draft summary and each predecessor's summary are
+  // tokenized once, with both summary sets derived from those tokens. Scoring
+  // per pair instead put the draft body through five full shingle passes, its
+  // summary through ten and every predecessor's through two, on a function that
+  // runs for every draft candidate of every page and again for every page of
+  // `runLocalFinalQa`: thousands of redundant tokenizations of a finished book,
+  // all of them on the worker's own thread.
   //
   // **They are built inside the predecessor guard, because hoisting them out of
   // the loop also hoists them out of the loop's short circuit.** `.find` over an
@@ -159,78 +278,52 @@ export function runLocalPageQualityChecks(options: ReviewPageOptions): PageQuali
   // several candidates of, plus every `reviewPageDraftLocally` the bulk
   // strategies make with no `previousPages` at all.
   const recentPages = options.previousPages.slice(-5);
-  if (recentPages.length > 0) {
-    const draftBodyShingles = overlapShingles(currentBody);
-    const draftSummaryShingles = overlapShingles(options.draft.summary);
-    const draftSummaryKeywords = overlapKeywords(options.draft.summary);
-    const repeatedPage = recentPages.find((page) => {
-      const summaryTokens = overlapTokens(page.summary);
-      const bodySimilarity = sharedRatio(draftBodyShingles, overlapShingles(page.markdown));
-      const summarySimilarity = sharedRatio(draftSummaryShingles, shinglesFromTokens(summaryTokens));
-      const lexicalOverlap = sharedKeywordRatio(draftSummaryKeywords, keywordsFromTokens(summaryTokens));
-      return bodySimilarity >= 0.82 || summarySimilarity >= 0.72 || lexicalOverlap >= 0.78;
-    });
-    if (repeatedPage) {
-      checks.repetitionOk = false;
-      issues.push(`Page repeats or substantially overlaps the beat from page ${repeatedPage.index}.`);
-    }
-  }
+  const repeatedPage =
+    recentPages.length > 0
+      ? repeatedRecentPage(recentPages, currentBody, options.draft.summary)
+      : undefined;
 
   const kidsGuidance = kidsReadingGuidanceForInput(options.input);
   // countReadableWords is Unicode-aware; tokenize-based counts undercount or
   // zero out non-Latin scripts (e.g. Persian) and must not gate progression.
   const wordCount = countReadableWords(currentBody);
   const minWords = kidsGuidance?.targetWordsPerPage.min ?? (options.input.category === "STORY" ? 70 : 90);
-  if (wordCount < minWords) {
-    checks.progressionOk = false;
-    issues.push(`Page is too short to show meaningful progression (${wordCount} words).`);
-  }
-
-  if (kidsGuidance && wordCount > kidsGuidance.maxWordsPerPageWithTolerance) {
-    checks.styleNatural = false;
-    issues.push(
-      `Page is too long for ages ${kidsGuidance.ageRange} (${wordCount} words; target ${kidsGuidance.targetWordsPerPage.min}-${kidsGuidance.targetWordsPerPage.max}).`
-    );
-  }
-
-  if (kidsGuidance) {
-    const sentenceStats = sentenceLengthStats(currentBody);
-    if (
-      sentenceStats.average > kidsGuidance.maxAverageSentenceWords ||
-      sentenceStats.max > kidsGuidance.maxSentenceWords
-    ) {
-      checks.styleNatural = false;
-      issues.push(
-        `Sentences are too long for ages ${kidsGuidance.ageRange} (average ${sentenceStats.average.toFixed(1)} words, longest ${sentenceStats.max}; target average <= ${kidsGuidance.maxAverageSentenceWords}, longest <= ${kidsGuidance.maxSentenceWords}).`
-      );
-    }
-  }
-
-  if (SCAFFOLD_SHAPE_PATTERNS.some((pattern) => pattern.test(flowingBody))) {
-    checks.progressionOk = false;
-    issues.push("Page describes its intended function instead of becoming finished book prose.");
-  }
-
-  if (options.pageIndex === 1 && !isImportedManuscript(options.input.mediaSettings) && hasWeakFirstPageOpening(currentBody)) {
-    checks.styleNatural = false;
-    issues.push("First page opens with a generic or meta hook instead of a concrete one.");
-  }
-
-  if (options.pageIndex === options.input.targetPages && hasVagueEnding(options.draft)) {
-    checks.progressionOk = false;
-    issues.push("Final page ending is too vague to resolve the book's central promise.");
-  }
-
+  const adjacentPage = options.previousPages.at(-1);
   return {
-    approved: issues.length === 0,
-    score: Math.max(0, 100 - issues.length * 25),
-    issues,
-    requiredRevisions: issues.map((issue) => `Fix: ${issue}`),
-    notes: issues.length === 0 ? "Local quality checks passed." : "Local quality checks rejected the page.",
-    groundedOk: true,
-    unsupportedClaims: [],
-    checks
+    options,
+    text,
+    currentBody,
+    flowingBody,
+    flowingText,
+    adjacentPage,
+    normalizedDraftTitle: normalizeTitle(options.draft.title),
+    repeatedPage,
+    kidsGuidance,
+    wordCount,
+    minWords,
+    sentenceStats: kidsGuidance ? sentenceLengthStats(currentBody) : undefined
   };
+}
+
+function repeatedRecentPage(
+  recentPages: ReviewPageOptions["previousPages"],
+  currentBody: string,
+  currentSummary: string
+): ReviewPageOptions["previousPages"][number] | undefined {
+  if (recentPages.length === 0) {
+    return undefined;
+  }
+  const draftBodyShingles = overlapShingles(currentBody);
+  const draftSummaryTokens = overlapTokens(currentSummary);
+  const draftSummaryShingles = shinglesFromTokens(draftSummaryTokens);
+  const draftSummaryKeywords = keywordsFromTokens(draftSummaryTokens);
+  return recentPages.find((page) => {
+    const summaryTokens = overlapTokens(page.summary);
+    const bodySimilarity = sharedRatio(draftBodyShingles, overlapShingles(page.markdown));
+    const summarySimilarity = sharedRatio(draftSummaryShingles, shinglesFromTokens(summaryTokens));
+    const lexicalOverlap = sharedKeywordRatio(draftSummaryKeywords, keywordsFromTokens(summaryTokens));
+    return bodySimilarity >= 0.82 || summarySimilarity >= 0.72 || lexicalOverlap >= 0.78;
+  });
 }
 
 export function runLocalFinalQa(input: CreateProjectInput, pages: FinalQaPage[]): string[] {

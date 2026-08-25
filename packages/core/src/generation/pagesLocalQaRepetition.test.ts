@@ -178,8 +178,9 @@ describe("page repetition gate cost", () => {
   });
 
   it("tokenizes the draft once per call rather than once per predecessor", () => {
-    // Two reads are the summary's shingles and its keywords; scoring per pair
-    // instead reads it twice for each of the five pages behind this one.
+    // One read feeds one token array, from which both the summary's shingles
+    // and keywords are derived; scoring per pair instead read it twice for
+    // each of the five pages behind this one.
     const { reads, report } = countSummaryReads(
       [2, 3, 4, 5, 6].map((index) => ({
         index,
@@ -190,7 +191,7 @@ describe("page repetition gate cost", () => {
       7
     );
 
-    expect(reads).toBe(2);
+    expect(reads).toBe(1);
     expect(report.issues.join(" ")).not.toMatch(repetitionIssue);
     expect(report.checks.repetitionOk).toBe(true);
   });

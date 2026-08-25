@@ -122,6 +122,43 @@ const WEAK_HOOK_SENTENCE = `${WEAK_HOOK_PHRASE} why a river forgets how to freez
 const OPENING_FILLER =
   "Mira was on the bridge before sunrise, prying at the ice with the mill's iron pole while her grandmother held the lantern. The river had refused to freeze for three winters running, and the village had run out of patient explanations. ";
 
+describe("ordered local page quality rules", () => {
+  it("pins issue order, exact messages, multi-check findings, approval, and score", () => {
+    const markdown = [
+      "As an AI language model, I cannot provide generation instructions.",
+      "This section prepares the reader for the next chapter.",
+      Array.from({ length: 100 }, (_, index) => `detail${index}`).join(" ")
+    ].join(" ");
+
+    const report = review(
+      nonfictionInput("SCIENCE"),
+      "Page 2: Page 2 — Crossing",
+      markdown,
+      "The section moves toward the next subject."
+    );
+
+    expect(report.issues).toEqual([
+      "Page leaks prompts, schema, image instructions, or production notes.",
+      "Page turns page-brief instructions into reader-facing meta-commentary.",
+      "Page title repeats the page label."
+    ]);
+    expect(report.requiredRevisions).toEqual(report.issues.map((issue) => `Fix: ${issue}`));
+    expect(report.checks).toEqual({
+      placeholderFree: true,
+      promptLeakFree: false,
+      titleClean: false,
+      repetitionOk: true,
+      progressionOk: false,
+      styleNatural: true
+    });
+    expect(report).toMatchObject({
+      approved: false,
+      score: 25,
+      notes: "Local quality checks rejected the page."
+    });
+  });
+});
+
 /**
  * A first page whose hook sentence begins exactly `offset` characters into the
  * page as written. Both boundary tests are built from

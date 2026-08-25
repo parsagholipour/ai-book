@@ -96,6 +96,54 @@ describe("persistent manuscript quality gate", () => {
     });
   });
 
+  it("pins ordered global and per-page integrity rule messages and report scoring", () => {
+    const issues = runDeterministicManuscriptChecks({
+      expectedPageCount: 2,
+      pages: [
+        {
+          index: 2,
+          title: "",
+          markdown: "system prompt TODO [^missing]\n```"
+        }
+      ]
+    });
+
+    expect(issues.map(({ code, message }) => ({ code, message }))).toEqual([
+      {
+        code: "PAGE_COUNT_MISMATCH",
+        message: "The manuscript has 1 pages but 2 were expected."
+      },
+      {
+        code: "PAGE_INDEX_INVALID",
+        message: "Page indexes contain a duplicate, gap, or out-of-order value."
+      },
+      {
+        code: "EMPTY_PAGE",
+        message: "Page 2 has an empty title or body."
+      },
+      {
+        code: "PROMPT_LEAKAGE",
+        message: "Page 2 appears to expose generation instructions or hidden prompt text."
+      },
+      {
+        code: "PLACEHOLDER_TEXT",
+        message: "Page 2 contains placeholder text."
+      },
+      {
+        code: "MALFORMED_MARKDOWN",
+        message: "Page 2 contains malformed Markdown."
+      },
+      {
+        code: "UNSUPPORTED_CITATION",
+        message: "Page 2 references a citation that has no matching definition."
+      }
+    ]);
+    expect(buildManuscriptQualityReport(issues, [], { finalReviewRan: true })).toMatchObject({
+      state: "blocked",
+      score: 0
+    });
+  });
+
   it("flags two nearly identical pages", () => {
     const body = words(120);
     const issues = runDeterministicManuscriptChecks({
