@@ -82,8 +82,6 @@ export const AUDIOBOOK_NARRATORS: readonly AudiobookNarrator[] = [
   }
 ] as const;
 
-export const DEFAULT_AUDIOBOOK_NARRATOR: AudiobookNarratorVoice = "Zephyr";
-
 /** A fixed passage so listeners compare voices rather than sentences. */
 export const AUDIOBOOK_SAMPLE_PASSAGE =
   "She opened the book at the window, and the first line held her still. " +

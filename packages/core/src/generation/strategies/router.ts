@@ -13,8 +13,6 @@ import type { BookGenerationStrategy } from "./types.js";
 
 export const AUTO_BOOK_GENERATION_STRATEGY_ID = "auto";
 
-export type BookGenerationStrategySelection = BookGenerationStrategyId | typeof AUTO_BOOK_GENERATION_STRATEGY_ID;
-
 export type ResolvedBookGenerationStrategy = {
   strategy: BookGenerationStrategy;
   /** What the user originally asked for ("auto" when unset). */

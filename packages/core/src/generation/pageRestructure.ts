@@ -693,8 +693,6 @@ export const structuralSnapshotArchiveSchema = z.object({
   snapshotCount: z.number().int().positive().max(MAX_STRUCTURAL_ARCHIVED_SNAPSHOTS)
 });
 
-export type StructuralSnapshotArchive = z.infer<typeof structuralSnapshotArchiveSchema>;
-
 /**
  * The stamp written in the same transaction as the index shift.
  *

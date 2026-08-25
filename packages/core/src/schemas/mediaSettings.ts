@@ -75,7 +75,6 @@ export const subcategorySchema = z.preprocess(
   },
   z.string().max(80).optional()
 );
-export const bookGenerationStrategyIdSchema = z.enum(BOOK_GENERATION_STRATEGY_IDS);
 export const bookGenerationStrategySelectionSchema = z.enum(["auto", ...BOOK_GENERATION_STRATEGY_IDS]);
 export const textModelThinkingEffortSchema = z.enum(["none", "minimal", "low", "medium", "high", "max"]);
 export const modelTierSchema = z.enum(["fast", "balanced", "premium", "ultra"]);

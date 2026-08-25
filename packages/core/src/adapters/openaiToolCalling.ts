@@ -2,11 +2,8 @@ import type OpenAI from "openai";
 import { z } from "zod";
 import type {
   ChatMessage,
-  GenerateWithToolsOptions,
   ToolCall,
-  ToolCallsResult,
-  ToolDefinition,
-  Usage
+  ToolDefinition
 } from "./types.js";
 
 /**
@@ -127,35 +124,4 @@ function serializeToolArguments(args: unknown): string {
  */
 export function openAiRequestOptions(options: { signal?: AbortSignal }): { signal: AbortSignal } | undefined {
   return options.signal ? { signal: options.signal } : undefined;
-}
-
-export async function generateWithToolsViaOpenAi(context: {
-  client: OpenAI;
-  model: string;
-  provider: string;
-  options: GenerateWithToolsOptions;
-  extraParams?: Record<string, unknown> | undefined;
-  usageFromResponse: (usage: OpenAI.Completions.CompletionUsage | undefined) => Usage | undefined;
-}): Promise<ToolCallsResult> {
-  const { client, model, provider, options } = context;
-  const response = await client.chat.completions.create({
-    model,
-    messages: toOpenAiChatMessages(options.messages),
-    temperature: options.temperature,
-    max_tokens: options.maxTokens,
-    tools: toOpenAiTools(options.tools),
-    tool_choice: options.toolChoice ?? "auto",
-    ...context.extraParams
-  } as never, openAiRequestOptions(options));
-
-  const completion = response as OpenAI.Chat.Completions.ChatCompletion;
-  const message = completion.choices[0]?.message;
-  const usage = context.usageFromResponse(completion.usage);
-  return {
-    text: message?.content ?? "",
-    model,
-    provider,
-    toolCalls: toolCallsFromOpenAiMessage(message),
-    ...(usage ? { usage } : {})
-  };
 }

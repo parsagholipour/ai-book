@@ -2,7 +2,6 @@ import {
   applyStoryDelta,
   auditPageStyle,
   extractStoryState,
-  formatStoryStateLines,
   hasResearchIntent,
   unpaidPromiseIssues,
   verifyPageClaims,
@@ -210,10 +209,6 @@ export function revisedDraftStyleAuditor(options: {
       return report;
     }
   };
-}
-
-export function storyStateLinesForPack(state: StoryState): string[] {
-  return formatStoryStateLines(state);
 }
 
 /** Concatenate character/location lines with story-extract lines; keep the first of identical trims. */

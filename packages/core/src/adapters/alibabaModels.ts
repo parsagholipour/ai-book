@@ -131,10 +131,6 @@ export function alibabaImageModelOptions(configuredModel?: string): AlibabaImage
   return options;
 }
 
-export function qwenImageCostUsd(model: string): number | undefined {
-  return BASE_ALIBABA_IMAGE_MODEL_OPTIONS.find((option) => option.model === normalizeAlibabaModel(model, ""))?.costUsd;
-}
-
 export function supportsQwenImageReferenceImages(model: string): boolean {
   return /^qwen-image-2\.0(?:-pro)?(?:-|$)/i.test(normalizeAlibabaModel(model, ""));
 }
