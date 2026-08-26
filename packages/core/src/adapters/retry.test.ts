@@ -6,6 +6,7 @@ import {
   isRecoverableNetworkError,
   isSpeechProviderFallbackError,
   isStopOrAbortError,
+  isTextProviderFallbackError,
   withRecoverableNetworkRetry
 } from "./retry.js";
 
@@ -104,6 +105,20 @@ describe("isSpeechProviderFallbackError", () => {
     expect(isSpeechProviderFallbackError(Object.assign(new TypeError("fetch failed"), { code: "ECONNRESET" }))).toBe(true);
     expect(isSpeechProviderFallbackError(Object.assign(new Error("request aborted"), { name: "AbortError" }))).toBe(false);
     expect(isSpeechProviderFallbackError(Object.assign(new Error("Stopped by user"), { name: "StopRequestedError" }))).toBe(false);
+  });
+});
+
+describe("isTextProviderFallbackError", () => {
+  it("allows availability failures but not deterministic request or output failures", () => {
+    expect(isTextProviderFallbackError(new ProviderHttpError("provider unavailable", { status: 503 }))).toBe(true);
+    expect(isTextProviderFallbackError(new ProviderHttpError("bad request", { status: 400 }))).toBe(false);
+    expect(isTextProviderFallbackError(new SyntaxError("invalid JSON"))).toBe(false);
+  });
+
+  it("never turns cancellation into a fallback call", () => {
+    expect(
+      isTextProviderFallbackError(Object.assign(new Error("Stopped by user"), { name: "StopRequestedError" }))
+    ).toBe(false);
   });
 });
 

@@ -266,9 +266,37 @@ describe("createPlanningPackage", () => {
 
     expect(plan.questions.map((question) => question.prompt)).toEqual(["What should the story be about?"]);
   });
+
+  it("does not cap plan-book JSON output with app-level max tokens", async () => {
+    const input = testInput({ targetPages: 200 });
+    const capture = capturingPlanModel(input);
+    await createPlanningPackage({
+      input,
+      textModel: capture.model,
+      research: silentResearch()
+    });
+    expect(capture.hasMaxTokens).toBe(false);
+    expect(capture.maxTokens).toBeUndefined();
+  });
 });
 
 describe("revisePlanningPackage", () => {
+  it("does not cap revise-plan JSON output with app-level max tokens", async () => {
+    const input = testInput({ targetPages: 200 });
+    const capture = capturingPlanModel(input);
+
+    await revisePlanningPackage({
+      currentPlan: makeFallbackPlan(input),
+      userMessage: "Keep the same wars but tighten the chapter summaries.",
+      textModel: capture.model,
+      input,
+      targetPages: 200
+    });
+
+    expect(capture.hasMaxTokens).toBe(false);
+    expect(capture.maxTokens).toBeUndefined();
+  });
+
   it("uses a compact prompt and preserves existing research notes when omitted by the model", async () => {
     const input = testInput();
     const currentPlan: BookPlan = {
@@ -525,6 +553,46 @@ function testInput(overrides: Partial<CreateProjectInput> = {}): CreateProjectIn
     },
     ...overrides
   };
+}
+
+function silentResearch() {
+  return {
+    async search(query: { query: string }) {
+      return { query: query.query, summary: "", sources: [] };
+    }
+  };
+}
+
+function capturingPlanModel(input: CreateProjectInput): {
+  model: TextModelAdapter;
+  hasMaxTokens: boolean;
+  maxTokens: number | undefined;
+} {
+  const capture: { model: TextModelAdapter; hasMaxTokens: boolean; maxTokens: number | undefined } = {
+    hasMaxTokens: false,
+    maxTokens: undefined,
+    model: {
+      async generateJson<T>(options: GenerateJsonOptions<T>): Promise<JsonResult<T>> {
+        capture.hasMaxTokens = Object.hasOwn(options, "maxTokens");
+        capture.maxTokens = options.maxTokens;
+        const fallback = makeFallbackPlan(input);
+        return {
+          data: options.schema.parse(fallback),
+          text: JSON.stringify(fallback),
+          model: "test-model",
+          provider: "test"
+        };
+      },
+      async generateText(_options: GenerateTextOptions): Promise<TextResult> {
+        throw new Error("Not used");
+      },
+      async *streamText(_options: GenerateTextOptions): AsyncGenerator<string> {
+        throw new Error("Not used");
+      },
+      generateWithTools: unsupportedGenerateWithTools
+    }
+  };
+  return capture;
 }
 
 function unusedTextModel(): TextModelAdapter {

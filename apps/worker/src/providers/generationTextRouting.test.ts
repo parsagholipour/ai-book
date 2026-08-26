@@ -48,9 +48,10 @@ function routing(model: string): GenerationTextModelRouting {
   const selection = { provider: "deepseek" as const, model };
   return {
     fastJudgments: selection,
-    fast: { writer: selection, judgment: selection },
-    balanced: { writer: selection, judgment: selection },
-    premium: { writer: selection, judgment: selection },
-    ultra: { writer: selection, judgment: selection }
+    fastJudgmentsFallback: selection,
+    fast: { writer: selection, writerFallback: selection, judgment: selection, judgmentFallback: selection },
+    balanced: { writer: selection, writerFallback: selection, judgment: selection, judgmentFallback: selection },
+    premium: { writer: selection, writerFallback: selection, judgment: selection, judgmentFallback: selection },
+    ultra: { writer: selection, writerFallback: selection, judgment: selection, judgmentFallback: selection }
   };
 }

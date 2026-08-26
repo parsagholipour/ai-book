@@ -5,6 +5,8 @@ import type {
   AdminCostBreakdown,
   AdminGeneratedBookDetail,
   AdminGeneratedBookList,
+  AdminGeneratedPlanDetail,
+  AdminGeneratedPlanList,
   AdminOperationEconomics,
   AdminOverview,
   AdminProjectDetail,
@@ -111,6 +113,55 @@ export function useAdminGeneratedBookDetail(bookId: string | null) {
       active = false;
     };
   }, [bookId, reloadKey]);
+
+  return { data, error, loading, reload: () => setReloadKey((key) => key + 1) };
+}
+
+export function useAdminGeneratedPlans(options: { days: number; limit: number; offset: number }) {
+  const params = new URLSearchParams({
+    days: String(options.days),
+    limit: String(options.limit),
+    offset: String(options.offset)
+  });
+  return useResource<AdminGeneratedPlanList>(`/api/admin/operations/plans?${params.toString()}`);
+}
+
+export function useAdminGeneratedPlanDetail(planId: string | null) {
+  const [data, setData] = useState<AdminGeneratedPlanDetail | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    setData(null);
+    setError(null);
+    if (!planId) {
+      setLoading(false);
+      return;
+    }
+
+    let active = true;
+    setLoading(true);
+    void apiGet<AdminGeneratedPlanDetail>(`/api/admin/operations/plans/${encodeURIComponent(planId)}`)
+      .then((detail) => {
+        if (active) {
+          setData(detail);
+        }
+      })
+      .catch((loadError: unknown) => {
+        if (active) {
+          setError(readError(loadError));
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [planId, reloadKey]);
 
   return { data, error, loading, reload: () => setReloadKey((key) => key + 1) };
 }

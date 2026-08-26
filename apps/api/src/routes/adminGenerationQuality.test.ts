@@ -134,13 +134,10 @@ describe("admin generation quality settings", () => {
       settings: QUALITY_FEATURE_DEFAULTS,
       models: {
         fastJudgments: { provider: "deepseek", model: "deepseek-v4-flash", thinkingEnabled: false },
-        balanced: {
-          writer: { provider: "deepseek", model: "deepseek-v4-pro" },
-          judgment: { provider: "deepseek", model: "deepseek-v4-flash", thinkingEnabled: false }
-        },
-        premium: {
-          writer: { provider: "gemini", model: "gemini-2.5-pro", thinkingBudget: 2048 },
-          judgment: { provider: "gemini", model: "gemini-2.5-flash", thinkingBudget: 0 }
+        fastJudgmentsFallback: {
+          provider: "deepinfra",
+          model: "deepseek-ai/DeepSeek-V4-Flash",
+          thinkingEnabled: false
         }
       }
     });

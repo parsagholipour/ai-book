@@ -280,7 +280,7 @@ export function GenerationQualityScreen() {
                 : state.updatedAt
                   ? ` · ${new Date(state.updatedAt).toLocaleString()}`
                   : ""}
-              . Successful saves affect calls started afterward; running calls and their retries keep their original model.
+              . Successful saves affect calls started afterward; running calls and their retries keep their original primary/fallback pair.
             </p>
             {state.note ? (
               <p className="muted">

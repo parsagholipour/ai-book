@@ -162,6 +162,47 @@ export type AdminGeneratedBookDetail = {
   purposes: OperationCost[];
 };
 
+export type AdminGeneratedPlanSummary = {
+  id: string;
+  projectId: string;
+  title: string;
+  ownerEmail: string;
+  targetPages: number;
+  version: number;
+  status: string;
+  generatedAt: string;
+  grossCredits: number;
+  refundedCredits: number;
+  netCredits: number;
+  revenueUsd: number;
+  providerCostUsd: number;
+  marginUsd: number;
+  marginPercent: number | null;
+};
+
+export type AdminGeneratedPlanList = {
+  plans: AdminGeneratedPlanSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type AdminGeneratedPlanDetail = {
+  planId: string;
+  chargeCount: number;
+  refundCount: number;
+  grossCredits: number;
+  refundedCredits: number;
+  netCredits: number;
+  revenueUsd: number;
+  providerCostUsd: number;
+  marginUsd: number;
+  marginPercent: number | null;
+  totals: CostUsage;
+  byKind: Array<CostUsage & { kind: CostKind }>;
+  purposes: OperationCost[];
+};
+
 export type AdminUserRow = {
   id: string;
   email: string;

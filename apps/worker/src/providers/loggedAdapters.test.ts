@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createProjectSchema,
   FakeTextModelAdapter,
+  FallbackTextModelAdapter,
   LiveGenerationTextModelAdapter,
   PREMIUM_COVER_IMAGE_MODEL,
   PREMIUM_FALLBACK_IMAGE_MODEL,
@@ -10,7 +11,19 @@ import {
   type TextModelAdapter
 } from "@book-maker/core";
 
-vi.mock("@book-maker/db", () => ({ prisma: {}, Prisma: {} }));
+const mocks = vi.hoisted(() => ({
+  nextProviderCallLogId: 1,
+  providerCallLogs: new Map<string, Record<string, unknown>>(),
+  prisma: {
+    providerCallLog: {
+      create: vi.fn(),
+      update: vi.fn(),
+      findUnique: vi.fn()
+    }
+  }
+}));
+
+vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma, Prisma: {} }));
 vi.mock("../runtime/config.js", () => ({
   config: {
     MOCK_AI: false as boolean,
@@ -27,6 +40,29 @@ import {
   liveGenerationTextModel,
   LoggingTextModelAdapter
 } from "./loggedAdapters.js";
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.nextProviderCallLogId = 1;
+  mocks.providerCallLogs.clear();
+  mocks.prisma.providerCallLog.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
+    const id = `provider-call-${mocks.nextProviderCallLogId}`;
+    mocks.nextProviderCallLogId += 1;
+    mocks.providerCallLogs.set(id, { id, ...data });
+    return { id };
+  });
+  mocks.prisma.providerCallLog.update.mockImplementation(
+    async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+      const current = mocks.providerCallLogs.get(where.id) ?? { id: where.id };
+      const updated = { ...current, ...data };
+      mocks.providerCallLogs.set(where.id, updated);
+      return updated;
+    }
+  );
+  mocks.prisma.providerCallLog.findUnique.mockImplementation(
+    async ({ where }: { where: { id: string } }) => mocks.providerCallLogs.get(where.id) ?? null
+  );
+});
 
 function silentLogger() {
   return {
@@ -106,6 +142,89 @@ describe("LoggingTextModelAdapter live selection logging", () => {
         model: { provider: "deepseek", model: "revision-selected-model" }
       })
     );
+  });
+
+  it("accounts a failed primary and successful fallback as separate provider calls", async () => {
+    const logged = loggedFallbackAdapter(
+      usageFailure("gemini", "gemini-2.5-flash", { promptTokens: 17, outputTokens: 3 }),
+      {
+        text: "fallback answer",
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        usage: { promptTokens: 19, outputTokens: 5 }
+      }
+    );
+
+    await logged.generateText({ messages: [{ role: "user", content: "Draft a page." }] });
+
+    expect(providerCallRows()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          provider: "gemini",
+          model: "gemini-2.5-flash",
+          promptTokens: 17,
+          outputTokens: 3
+        }),
+        expect.objectContaining({
+          provider: "deepseek",
+          model: "deepseek-v4-flash",
+          promptTokens: 19,
+          outputTokens: 5
+        })
+      ])
+    );
+    expect(providerCallRows()).toHaveLength(2);
+  });
+
+  it("accounts both provider attempts when primary and fallback fail", async () => {
+    const logged = loggedFallbackAdapter(
+      usageFailure("gemini", "gemini-2.5-flash", { promptTokens: 23, outputTokens: 4 }),
+      usageFailure("deepseek", "deepseek-v4-flash", { promptTokens: 29, outputTokens: 6 })
+    );
+
+    await expect(
+      logged.generateText({ messages: [{ role: "user", content: "Draft a page." }] })
+    ).rejects.toThrow("failed for primary gemini/gemini-2.5-flash and fallback deepseek/deepseek-v4-flash");
+
+    expect(providerCallRows()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          provider: "gemini",
+          model: "gemini-2.5-flash",
+          promptTokens: 23,
+          outputTokens: 4
+        }),
+        expect.objectContaining({
+          provider: "deepseek",
+          model: "deepseek-v4-flash",
+          promptTokens: 29,
+          outputTokens: 6
+        })
+      ])
+    );
+    expect(providerCallRows()).toHaveLength(2);
+  });
+
+  it("keeps every primary/fallback pair separate when the logical call retries", async () => {
+    vi.useFakeTimers();
+    try {
+      const logged = loggedFallbackAdapter(
+        usageFailure("gemini", "gemini-2.5-flash", { promptTokens: 31, outputTokens: 7 }, 503),
+        usageFailure("deepseek", "deepseek-v4-flash", { promptTokens: 37, outputTokens: 8 }, 503)
+      );
+
+      const rejection = expect(
+        logged.generateText({ messages: [{ role: "user", content: "Draft a page." }] })
+      ).rejects.toThrow("failed for primary gemini/gemini-2.5-flash and fallback deepseek/deepseek-v4-flash");
+      await vi.runAllTimersAsync();
+      await rejection;
+
+      expect(providerCallRows().filter((row) => row.provider === "gemini")).toHaveLength(3);
+      expect(providerCallRows().filter((row) => row.provider === "deepseek")).toHaveLength(3);
+      expect(providerCallRows()).toHaveLength(6);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -202,4 +321,60 @@ function tierProjectInput(
       ...(textModel ? { textModel } : {})
     }
   });
+}
+
+function loggedFallbackAdapter(primaryError: Error, fallbackResult: Awaited<ReturnType<TextModelAdapter["generateText"]>> | Error) {
+  const primary = textAdapter(async () => {
+    throw primaryError;
+  });
+  const fallback = textAdapter(async () => {
+    if (fallbackResult instanceof Error) {
+      throw fallbackResult;
+    }
+    return fallbackResult;
+  });
+  return new LoggingTextModelAdapter(
+    new FallbackTextModelAdapter({
+      primary: {
+        selection: { provider: "gemini", model: "gemini-2.5-flash" },
+        adapter: primary
+      },
+      fallback: {
+        selection: { provider: "deepseek", model: "deepseek-v4-flash" },
+        adapter: fallback
+      }
+    }),
+    silentLogger(),
+    undefined,
+    "project-1",
+    { provider: "gemini", model: "gemini-2.5-flash" }
+  );
+}
+
+function textAdapter(generateText: TextModelAdapter["generateText"]): TextModelAdapter {
+  const fake = new FakeTextModelAdapter();
+  return {
+    generateText,
+    generateJson: (options) => fake.generateJson(options),
+    streamText: () => fake.streamText(),
+    generateWithTools: (options) => fake.generateWithTools(options)
+  };
+}
+
+function usageFailure(
+  provider: string,
+  model: string,
+  usage: { promptTokens: number; outputTokens: number },
+  status?: number
+) {
+  return Object.assign(new Error(`${provider} failed`), {
+    provider,
+    model,
+    usage,
+    ...(status === undefined ? {} : { status })
+  });
+}
+
+function providerCallRows() {
+  return [...mocks.providerCallLogs.values()];
 }

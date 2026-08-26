@@ -31,10 +31,14 @@ import {
   ULTRA_PAGE_MAP_THINKING_BUDGET
 } from "./modelTiers.js";
 import { RoutingTextModelAdapter } from "./textRouting.js";
+import { FallbackTextModelAdapter, type TextFallbackEvent } from "./textFallback.js";
+import { isTextProviderFallbackError } from "./retry.js";
 import {
   compiledGenerationTextModelRouting,
   generationTextModelOptionKey,
+  routingFallbackSelection,
   routingSelection,
+  sameTextModelSelection,
   textModelSelectionKey,
   type GenerationTextModelOption,
   type GenerationTextModelRole,
@@ -553,6 +557,7 @@ export type LiveGenerationTextModelOptions = {
   loadRouting: () => Promise<GenerationTextModelRouting>;
   tier?: ModelTier | undefined;
   fastJudgments?: boolean | undefined;
+  onFallbackEvent?: ((event: TextFallbackEvent) => void | Promise<void>) | undefined;
   /** Test seam; production uses the provider/fallback construction above. */
   createAdapter?: ((selection: TextModelSelection, role: GenerationTextModelRole) => TextModelAdapter) | undefined;
 };
@@ -596,16 +601,33 @@ export class LiveGenerationTextModelAdapter implements TextModelAdapter {
       : purpose && MECHANICAL_TEXT_PURPOSES.has(purpose)
         ? "judgment"
         : "writer";
-    const base = this.options.fastJudgments
+    const primaryBase = this.options.fastJudgments
       ? routing.fastJudgments
       : routingSelection(routing, tier, role);
+    const fallbackBase = this.options.fastJudgments
+      ? routing.fastJudgmentsFallback
+      : routingFallbackSelection(routing, tier, role);
     const selection = this.purposeOverridesEnabled
-      ? elevatedThinkingSelection(base, tier, purpose, this.catalog)
-      : base;
-    const key = `${tier}:${role}:${textModelSelectionKey(selection)}`;
+      ? elevatedThinkingSelection(primaryBase, tier, purpose, this.catalog)
+      : primaryBase;
+    const fallbackSelection = this.purposeOverridesEnabled
+      ? elevatedThinkingSelection(fallbackBase, tier, purpose, this.catalog)
+      : fallbackBase;
+    const key = `${tier}:${role}:${textModelSelectionKey(selection)}:${textModelSelectionKey(fallbackSelection)}`;
     let adapter = this.adapters.get(key);
     if (!adapter) {
-      adapter = this.createBoundAdapter(selection, role);
+      const primaryAdapter = this.createBoundAdapter(selection, role);
+      adapter = sameTextModelSelection(selection, fallbackSelection)
+        ? primaryAdapter
+        : new FallbackTextModelAdapter({
+            primary: { selection, adapter: primaryAdapter },
+            fallback: {
+              selection: fallbackSelection,
+              adapter: () => this.createBoundAdapter(fallbackSelection, role)
+            },
+            shouldFallback: isTextProviderFallbackError,
+            ...(this.options.onFallbackEvent ? { onEvent: this.options.onFallbackEvent } : {})
+          });
       this.adapters.set(key, adapter);
     }
     return { adapter, selection };

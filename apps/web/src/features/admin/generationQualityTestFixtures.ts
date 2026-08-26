@@ -8,20 +8,36 @@ export function generationQualityResponse(...undescribedIds: string[]): Generati
   settings.planCritic = ["ultra", "premium"];
   for (const id of undescribedIds) settings[id] = [];
   const fast = { provider: "deepseek" as const, model: "deepseek-fast", thinkingEnabled: false };
+  const fallback = { provider: "gemini" as const, model: "gemini-2.5-flash", thinkingBudget: 0 };
   return {
     version: 3,
     settings,
     models: {
       fastJudgments: { ...fast },
-      fast: { writer: { ...fast }, judgment: { ...fast } },
-      balanced: { writer: { provider: "deepseek", model: "deepseek-pro" }, judgment: { ...fast } },
+      fastJudgmentsFallback: { ...fallback },
+      fast: {
+        writer: { ...fast },
+        writerFallback: { ...fallback },
+        judgment: { ...fast },
+        judgmentFallback: { ...fallback }
+      },
+      balanced: {
+        writer: { provider: "deepseek", model: "deepseek-pro" },
+        writerFallback: { ...fallback },
+        judgment: { ...fast },
+        judgmentFallback: { ...fallback }
+      },
       premium: {
         writer: { provider: "gemini", model: "gemini-2.5-pro", thinkingBudget: 2048 },
-        judgment: { provider: "gemini", model: "gemini-2.5-flash", thinkingBudget: 0 }
+        writerFallback: { provider: "deepseek", model: "deepseek-pro" },
+        judgment: { provider: "gemini", model: "gemini-2.5-flash", thinkingBudget: 0 },
+        judgmentFallback: { ...fast }
       },
       ultra: {
         writer: { provider: "gemini", model: "gemini-2.5-pro", thinkingBudget: 2048 },
-        judgment: { provider: "gemini", model: "gemini-2.5-flash", thinkingBudget: 0 }
+        writerFallback: { provider: "deepseek", model: "deepseek-pro" },
+        judgment: { provider: "gemini", model: "gemini-2.5-flash", thinkingBudget: 0 },
+        judgmentFallback: { ...fast }
       }
     },
     modelOptions: [

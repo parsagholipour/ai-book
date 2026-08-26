@@ -1,5 +1,5 @@
 import {
-  GENERATION_TEXT_MODEL_ROLES,
+  GENERATION_TEXT_MODEL_ROUTE_FIELDS,
   GENERATION_TEXT_MODEL_TIERS,
   generationTextModelOptionKey,
   resolveGenerationTextModelRouting,
@@ -17,15 +17,21 @@ const partialSelectionSchema = textModelSelectionSchema
   .strict()
   .refine((value) => Object.keys(value).length > 0, { message: "Name at least one model selection field." });
 const tierModelsPatchSchema = z
-  .object({ writer: partialSelectionSchema.optional(), judgment: partialSelectionSchema.optional() })
+  .object({
+    writer: partialSelectionSchema.optional(),
+    writerFallback: partialSelectionSchema.optional(),
+    judgment: partialSelectionSchema.optional(),
+    judgmentFallback: partialSelectionSchema.optional()
+  })
   .strict()
-  .refine((value) => value.writer !== undefined || value.judgment !== undefined, {
-    message: "Name Writer or Judgment."
+  .refine((value) => GENERATION_TEXT_MODEL_ROUTE_FIELDS.some((field) => value[field] !== undefined), {
+    message: "Name a Writer or Judgment primary/fallback route."
   });
 
 export const generationModelsPatchSchema = z
   .object({
     fastJudgments: partialSelectionSchema.optional(),
+    fastJudgmentsFallback: partialSelectionSchema.optional(),
     fast: tierModelsPatchSchema.optional(),
     balanced: tierModelsPatchSchema.optional(),
     premium: tierModelsPatchSchema.optional(),
@@ -35,6 +41,7 @@ export const generationModelsPatchSchema = z
   .refine(
     (value) =>
       value.fastJudgments !== undefined ||
+      value.fastJudgmentsFallback !== undefined ||
       GENERATION_TEXT_MODEL_TIERS.some((tier) => value[tier] !== undefined),
     { message: "Name at least one model role." }
   );
@@ -65,7 +72,12 @@ const tierModelsPatchOpenApi = {
   type: "object",
   additionalProperties: false,
   minProperties: 1,
-  properties: { writer: partialSelectionOpenApi, judgment: partialSelectionOpenApi }
+  properties: {
+    writer: partialSelectionOpenApi,
+    writerFallback: partialSelectionOpenApi,
+    judgment: partialSelectionOpenApi,
+    judgmentFallback: partialSelectionOpenApi
+  }
 } as const;
 
 export const generationModelsPatchOpenApi = {
@@ -74,6 +86,7 @@ export const generationModelsPatchOpenApi = {
   minProperties: 1,
   properties: {
     fastJudgments: partialSelectionOpenApi,
+    fastJudgmentsFallback: partialSelectionOpenApi,
     fast: tierModelsPatchOpenApi,
     balanced: tierModelsPatchOpenApi,
     premium: tierModelsPatchOpenApi,
@@ -96,25 +109,26 @@ export function unknownGenerationModelPaths(body: unknown): string[] {
     return [];
   }
   const unknown: string[] = [];
-  const rootKeys = new Set<string>(["fastJudgments", ...GENERATION_TEXT_MODEL_TIERS]);
+  const rootKeys = new Set<string>(["fastJudgments", "fastJudgmentsFallback", ...GENERATION_TEXT_MODEL_TIERS]);
   for (const key of Object.keys(models)) {
     if (!rootKeys.has(key)) {
       unknown.push(`models.${key}`);
     }
   }
   inspectSelection(models.fastJudgments, "models.fastJudgments", unknown);
+  inspectSelection(models.fastJudgmentsFallback, "models.fastJudgmentsFallback", unknown);
   for (const tier of GENERATION_TEXT_MODEL_TIERS) {
     const tierValue = record(models[tier]);
     if (!tierValue) {
       continue;
     }
     for (const role of Object.keys(tierValue)) {
-      if (!(GENERATION_TEXT_MODEL_ROLES as readonly string[]).includes(role)) {
+      if (!(GENERATION_TEXT_MODEL_ROUTE_FIELDS as readonly string[]).includes(role)) {
         unknown.push(`models.${tier}.${role}`);
       }
     }
-    for (const role of GENERATION_TEXT_MODEL_ROLES) {
-      inspectSelection(tierValue[role], `models.${tier}.${role}`, unknown);
+    for (const field of GENERATION_TEXT_MODEL_ROUTE_FIELDS) {
+      inspectSelection(tierValue[field], `models.${tier}.${field}`, unknown);
     }
   }
   return unknown;
@@ -141,16 +155,24 @@ export function mergeGenerationModelPatch(
       "Fast judgments"
     ) as Prisma.InputJsonObject;
   }
+  if (patch.fastJudgmentsFallback) {
+    rawModels.fastJudgmentsFallback = validatedSelection(
+      current.fastJudgmentsFallback,
+      patch.fastJudgmentsFallback,
+      options,
+      "Fast judgments fallback"
+    ) as Prisma.InputJsonObject;
+  }
   for (const tier of GENERATION_TEXT_MODEL_TIERS) {
     const tierPatch = patch[tier];
     if (!tierPatch) {
       continue;
     }
     const rawTier = cloneJsonObject(record(rawModels[tier]));
-    for (const role of GENERATION_TEXT_MODEL_ROLES) {
-      const leaf = tierPatch[role];
+    for (const field of GENERATION_TEXT_MODEL_ROUTE_FIELDS) {
+      const leaf = tierPatch[field];
       if (leaf) {
-        rawTier[role] = validatedSelection(current[tier][role], leaf, options, `${tier}.${role}`) as Prisma.InputJsonObject;
+        rawTier[field] = validatedSelection(current[tier][field], leaf, options, `${tier}.${field}`) as Prisma.InputJsonObject;
       }
     }
     rawModels[tier] = rawTier;
@@ -158,17 +180,18 @@ export function mergeGenerationModelPatch(
   return rawModels;
 }
 
-/** Reset the nine known leaves and preserve routing a newer build may own. */
+/** Reset the nine known primary/fallback route pairs and preserve routing a newer build may own. */
 export function resetGenerationModels(
   storedSettings: unknown,
   compiled: GenerationTextModelRouting
 ): Prisma.InputJsonObject {
   const rawModels = cloneJsonObject(record(record(storedSettings)?.models));
   rawModels.fastJudgments = { ...compiled.fastJudgments } as Prisma.InputJsonObject;
+  rawModels.fastJudgmentsFallback = { ...compiled.fastJudgmentsFallback } as Prisma.InputJsonObject;
   for (const tier of GENERATION_TEXT_MODEL_TIERS) {
     const rawTier = cloneJsonObject(record(rawModels[tier]));
-    for (const role of GENERATION_TEXT_MODEL_ROLES) {
-      rawTier[role] = { ...compiled[tier][role] } as Prisma.InputJsonObject;
+    for (const field of GENERATION_TEXT_MODEL_ROUTE_FIELDS) {
+      rawTier[field] = { ...compiled[tier][field] } as Prisma.InputJsonObject;
     }
     rawModels[tier] = rawTier;
   }

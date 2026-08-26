@@ -1,12 +1,12 @@
 import { AlertTriangle, Cpu } from "lucide-react";
 import {
-  GENERATION_TEXT_MODEL_ROLES,
+  GENERATION_TEXT_MODEL_ROUTE_FIELDS,
   GENERATION_TEXT_MODEL_TIERS,
   generationTextModelOptionKey,
   parseTextModelSelection,
   selectionFromGenerationOption,
   type GenerationTextModelOption,
-  type GenerationTextModelRole,
+  type GenerationTextModelRouteField,
   type GenerationTextModelRouting,
   type ModelTier,
   type TextModelSelection,
@@ -15,10 +15,11 @@ import {
 
 export type GenerationModelRoutingPatch = {
   fastJudgments?: Partial<TextModelSelection> | undefined;
-  fast?: Partial<Record<GenerationTextModelRole, Partial<TextModelSelection>>> | undefined;
-  balanced?: Partial<Record<GenerationTextModelRole, Partial<TextModelSelection>>> | undefined;
-  premium?: Partial<Record<GenerationTextModelRole, Partial<TextModelSelection>>> | undefined;
-  ultra?: Partial<Record<GenerationTextModelRole, Partial<TextModelSelection>>> | undefined;
+  fastJudgmentsFallback?: Partial<TextModelSelection> | undefined;
+  fast?: Partial<Record<GenerationTextModelRouteField, Partial<TextModelSelection>>> | undefined;
+  balanced?: Partial<Record<GenerationTextModelRouteField, Partial<TextModelSelection>>> | undefined;
+  premium?: Partial<Record<GenerationTextModelRouteField, Partial<TextModelSelection>>> | undefined;
+  ultra?: Partial<Record<GenerationTextModelRouteField, Partial<TextModelSelection>>> | undefined;
 };
 
 const TIER_LABELS: Record<ModelTier, string> = {
@@ -39,8 +40,8 @@ export function GenerationModelRoutingSection({
   disabled: boolean;
   onChange: (next: GenerationTextModelRouting) => void;
 }) {
-  const update = (tier: ModelTier, role: GenerationTextModelRole, selection: TextModelSelection) => {
-    onChange({ ...models, [tier]: { ...models[tier], [role]: selection } });
+  const update = (tier: ModelTier, field: GenerationTextModelRouteField, selection: TextModelSelection) => {
+    onChange({ ...models, [tier]: { ...models[tier], [field]: selection } });
   };
   return (
     <section className="work-section safety-settings-card quality-model-routing">
@@ -50,9 +51,9 @@ export function GenerationModelRoutingSection({
       </div>
       <p className="muted">
         These provider/model choices control all writer, judgment, and inline decision calls, including calls for
-        existing projects. Each successful save affects calls started afterward; in-flight retries keep the model
-        they started with, and a provider failure is reported instead of silently switching to another model. Costs
-        are provider USD per 1M tokens; ranges cover long-context or peak/off-peak rate bands.
+        existing projects. Each successful save affects calls started afterward. An availability failure switches
+        once to that route&apos;s fallback; in-flight calls keep the primary/fallback pair they started with. Costs are
+        provider USD per 1M tokens; ranges cover long-context or peak/off-peak rate bands.
       </p>
       <div className="quality-model-fast">
         <ModelSelectionField
@@ -62,7 +63,16 @@ export function GenerationModelRoutingSection({
           disabled={disabled}
           onChange={(selection) => onChange({ ...models, fastJudgments: selection })}
         />
-        <small>Short inline creation, routing, advisor, and language-detection decisions.</small>
+        <ModelSelectionField
+          label="Fast judgments fallback"
+          selection={models.fastJudgmentsFallback}
+          options={options}
+          disabled={disabled}
+          onChange={(selection) => onChange({ ...models, fastJudgmentsFallback: selection })}
+        />
+        <small className="quality-model-fast-summary">
+          Short inline creation, routing, advisor, and language-detection decisions.
+        </small>
       </div>
       <div className="quality-model-table" role="table" aria-label="Tier model routing">
         <div className="quality-model-head" role="row">
@@ -75,27 +85,74 @@ export function GenerationModelRoutingSection({
           return (
             <div className="quality-model-row" role="row" key={tier}>
               <strong role="rowheader">{label}</strong>
-              <ModelSelectionField
+              <ModelRoutePair
                 label={`${label} Writer`}
-                hideLabel
-                selection={models[tier].writer}
+                primary={models[tier].writer}
+                fallback={models[tier].writerFallback}
                 options={options}
                 disabled={disabled}
-                onChange={(selection) => update(tier, "writer", selection)}
+                onPrimaryChange={(selection) => update(tier, "writer", selection)}
+                onFallbackChange={(selection) => update(tier, "writerFallback", selection)}
               />
-              <ModelSelectionField
+              <ModelRoutePair
                 label={`${label} Judgment`}
-                hideLabel
-                selection={models[tier].judgment}
+                primary={models[tier].judgment}
+                fallback={models[tier].judgmentFallback}
                 options={options}
                 disabled={disabled}
-                onChange={(selection) => update(tier, "judgment", selection)}
+                onPrimaryChange={(selection) => update(tier, "judgment", selection)}
+                onFallbackChange={(selection) => update(tier, "judgmentFallback", selection)}
               />
             </div>
           );
         })}
       </div>
     </section>
+  );
+}
+
+function ModelRoutePair({
+  label,
+  primary,
+  fallback,
+  options,
+  disabled,
+  onPrimaryChange,
+  onFallbackChange
+}: {
+  label: string;
+  primary: TextModelSelection;
+  fallback: TextModelSelection;
+  options: GenerationTextModelOption[];
+  disabled: boolean;
+  onPrimaryChange: (selection: TextModelSelection) => void;
+  onFallbackChange: (selection: TextModelSelection) => void;
+}) {
+  return (
+    <div className="quality-model-pair">
+      <div>
+        <small>Primary</small>
+        <ModelSelectionField
+          label={label}
+          hideLabel
+          selection={primary}
+          options={options}
+          disabled={disabled}
+          onChange={onPrimaryChange}
+        />
+      </div>
+      <div>
+        <small>Fallback</small>
+        <ModelSelectionField
+          label={`${label} fallback`}
+          hideLabel
+          selection={fallback}
+          options={options}
+          disabled={disabled}
+          onChange={onFallbackChange}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -182,11 +239,13 @@ export function generationModelRoutingClaim(
   const patch: GenerationModelRoutingPatch = {};
   const fast = selectionDiff(stored.fastJudgments, draft.fastJudgments);
   if (fast) patch.fastJudgments = fast;
+  const fastFallback = selectionDiff(stored.fastJudgmentsFallback, draft.fastJudgmentsFallback);
+  if (fastFallback) patch.fastJudgmentsFallback = fastFallback;
   for (const tier of GENERATION_TEXT_MODEL_TIERS) {
-    const tierPatch: Partial<Record<GenerationTextModelRole, Partial<TextModelSelection>>> = {};
-    for (const role of GENERATION_TEXT_MODEL_ROLES) {
-      const leaf = selectionDiff(stored[tier][role], draft[tier][role]);
-      if (leaf) tierPatch[role] = leaf;
+    const tierPatch: Partial<Record<GenerationTextModelRouteField, Partial<TextModelSelection>>> = {};
+    for (const field of GENERATION_TEXT_MODEL_ROUTE_FIELDS) {
+      const leaf = selectionDiff(stored[tier][field], draft[tier][field]);
+      if (leaf) tierPatch[field] = leaf;
     }
     if (Object.keys(tierPatch).length > 0) patch[tier] = tierPatch;
   }
@@ -201,10 +260,13 @@ export function rebaseGenerationModelRouting(
 ): GenerationTextModelRouting {
   const rebased = cloneGenerationModelRouting(head);
   if (selectionDiff(loaded.fastJudgments, draft.fastJudgments)) rebased.fastJudgments = { ...draft.fastJudgments };
+  if (selectionDiff(loaded.fastJudgmentsFallback, draft.fastJudgmentsFallback)) {
+    rebased.fastJudgmentsFallback = { ...draft.fastJudgmentsFallback };
+  }
   for (const tier of GENERATION_TEXT_MODEL_TIERS) {
-    for (const role of GENERATION_TEXT_MODEL_ROLES) {
-      if (selectionDiff(loaded[tier][role], draft[tier][role])) {
-        rebased[tier][role] = { ...draft[tier][role] };
+    for (const field of GENERATION_TEXT_MODEL_ROUTE_FIELDS) {
+      if (selectionDiff(loaded[tier][field], draft[tier][field])) {
+        rebased[tier][field] = { ...draft[tier][field] };
       }
     }
   }
@@ -214,6 +276,7 @@ export function rebaseGenerationModelRouting(
 export function cloneGenerationModelRouting(models: GenerationTextModelRouting): GenerationTextModelRouting {
   return {
     fastJudgments: { ...models.fastJudgments },
+    fastJudgmentsFallback: { ...models.fastJudgmentsFallback },
     fast: cloneTier(models.fast),
     balanced: cloneTier(models.balanced),
     premium: cloneTier(models.premium),
@@ -225,12 +288,13 @@ export function readGenerationModelRouting(value: unknown): GenerationTextModelR
   const candidate = record(value);
   if (!candidate) return null;
   const fastJudgments = readTextModelSelection(candidate.fastJudgments);
+  const fastJudgmentsFallback = readTextModelSelection(candidate.fastJudgmentsFallback);
   const fast = readTierModels(candidate.fast);
   const balanced = readTierModels(candidate.balanced);
   const premium = readTierModels(candidate.premium);
   const ultra = readTierModels(candidate.ultra);
-  return fastJudgments && fast && balanced && premium && ultra
-    ? { fastJudgments, fast, balanced, premium, ultra }
+  return fastJudgments && fastJudgmentsFallback && fast && balanced && premium && ultra
+    ? { fastJudgments, fastJudgmentsFallback, fast, balanced, premium, ultra }
     : null;
 }
 
@@ -285,8 +349,12 @@ function readTierModels(value: unknown): GenerationTextModelRouting["fast"] | nu
   const candidate = record(value);
   if (!candidate) return null;
   const writer = readTextModelSelection(candidate.writer);
+  const writerFallback = readTextModelSelection(candidate.writerFallback);
   const judgment = readTextModelSelection(candidate.judgment);
-  return writer && judgment ? { writer, judgment } : null;
+  const judgmentFallback = readTextModelSelection(candidate.judgmentFallback);
+  return writer && writerFallback && judgment && judgmentFallback
+    ? { writer, writerFallback, judgment, judgmentFallback }
+    : null;
 }
 
 function readTextModelSelection(value: unknown): TextModelSelection | null {
@@ -319,7 +387,12 @@ function optionalNonNegativeFinite(value: unknown): boolean {
 }
 
 function cloneTier(tier: GenerationTextModelRouting[ModelTier]) {
-  return { writer: { ...tier.writer }, judgment: { ...tier.judgment } };
+  return {
+    writer: { ...tier.writer },
+    writerFallback: { ...tier.writerFallback },
+    judgment: { ...tier.judgment },
+    judgmentFallback: { ...tier.judgmentFallback }
+  };
 }
 
 function selectionDiff(stored: TextModelSelection, draft: TextModelSelection): Partial<TextModelSelection> | null {

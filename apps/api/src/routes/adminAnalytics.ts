@@ -13,6 +13,7 @@ import { z } from "zod";
 import { markOperatorRequest } from "../requestAuth.js";
 import { loadAdminCostBreakdown } from "../admin/costBreakdown.js";
 import { listGeneratedBooks, loadGeneratedBookDetail } from "../admin/generatedBooks.js";
+import { listGeneratedPlans, loadGeneratedPlanDetail } from "../admin/generatedPlans.js";
 import { loadAdminProjectDetail, loadAdminUserDetail, listAdminUsers } from "../admin/inspection.js";
 import { loadAdminOverview, resolveWindow } from "../admin/metrics.js";
 import { loadOperationEconomics } from "../admin/operationEconomics.js";
@@ -120,6 +121,33 @@ export const adminAnalyticsRoutes: FastifyPluginAsync = async (fastify) => {
     const detail = await loadGeneratedBookDetail(id);
     if (!detail) {
       return reply.code(404).send({ error: "Completed book not found" });
+    }
+    return detail;
+  });
+
+  fastify.get(
+    "/api/admin/operations/plans",
+    { attachValidation: true, schema: { tags: ["admin"], querystring: generatedBookListQueryOpenApi } },
+    async (request, reply) => {
+      await markOperatorRequest(request);
+      const parsed = generatedBookListQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        return sendInvalid(reply, parsed.error);
+      }
+      return listGeneratedPlans({
+        window: resolveWindow(parsed.data.days),
+        limit: parsed.data.limit,
+        offset: parsed.data.offset
+      });
+    }
+  );
+
+  fastify.get("/api/admin/operations/plans/:id", { schema: { tags: ["admin"] } }, async (request, reply) => {
+    await markOperatorRequest(request);
+    const { id } = idParamsSchema.parse(request.params);
+    const detail = await loadGeneratedPlanDetail(id);
+    if (!detail) {
+      return reply.code(404).send({ error: "Generated plan not found" });
     }
     return detail;
   });

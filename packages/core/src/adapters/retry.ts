@@ -142,6 +142,26 @@ export function isSpeechProviderFallbackError(error: unknown): boolean {
   });
 }
 
+/** Availability failures that may be retried once through an operator-selected text fallback. */
+export function isTextProviderFallbackError(error: unknown): boolean {
+  if (isStopOrAbortError(error)) {
+    return false;
+  }
+  return collectErrorDescriptors(error).some((descriptor) => {
+    if (descriptor.status !== undefined) {
+      return descriptor.status === 408 || descriptor.status === 409 || descriptor.status === 429 || descriptor.status >= 500;
+    }
+    if (descriptor.code && RECOVERABLE_NETWORK_CODES.has(descriptor.code.toUpperCase())) {
+      return true;
+    }
+    return descriptor.messages.some((message) =>
+      /(?:rate.?limit|quota|capacity|overload|temporar(?:y|ily)|unavailable|fetch failed|network|connection (?:closed|reset|terminated|timed out)|socket hang up|timeout|timed out)/i.test(
+        message
+      )
+    );
+  });
+}
+
 /**
  * A cancellation rather than a failure: the run was stopped, or the call was
  * aborted, so nothing downstream may retry it, fall back from it, or fold it

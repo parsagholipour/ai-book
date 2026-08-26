@@ -34,6 +34,22 @@ export type TextFallbackEvent =
       fallback: TextFallbackProvider & { error: Record<string, unknown> };
     });
 
+export type TextFallbackEventObserver = (event: TextFallbackEvent) => void | Promise<void>;
+
+const TEXT_FALLBACK_EVENT_OBSERVER = Symbol("textFallbackEventObserver");
+
+type TextFallbackObservedOptions = GenerateTextOptions & {
+  [TEXT_FALLBACK_EVENT_OBSERVER]?: TextFallbackEventObserver | undefined;
+};
+
+/** Adds call-scoped fallback telemetry without mutating a cached adapter. */
+export function withTextFallbackEventObserver<T extends GenerateTextOptions>(
+  options: T,
+  observer: TextFallbackEventObserver
+): T {
+  return Object.assign({}, options, { [TEXT_FALLBACK_EVENT_OBSERVER]: observer });
+}
+
 export type FallbackTextModelAdapterOptions = {
   primary: { selection: TextModelSelection; adapter: TextModelAdapter };
   fallback: { selection: TextModelSelection; adapter: TextModelAdapter | (() => TextModelAdapter) };
@@ -61,7 +77,7 @@ export class TextGenerationFallbackError extends Error {
   }
 }
 
-/** One bounded fallback attempt after the caller/provider retry policy is exhausted. */
+/** One bounded fallback attempt; callers may apply their retry policy around the primary/fallback pair. */
 export class FallbackTextModelAdapter implements TextModelAdapter {
   private fallbackAdapter: TextModelAdapter | undefined;
 
@@ -71,7 +87,7 @@ export class FallbackTextModelAdapter implements TextModelAdapter {
     try {
       return await this.options.primary.adapter.generateText(options);
     } catch (error) {
-      return this.runFallback("generateText", options.purpose, error, (adapter) => adapter.generateText(options));
+      return this.runFallback("generateText", options, error, (adapter) => adapter.generateText(options));
     }
   }
 
@@ -79,7 +95,7 @@ export class FallbackTextModelAdapter implements TextModelAdapter {
     try {
       return await this.options.primary.adapter.generateJson(options);
     } catch (error) {
-      return this.runFallback("generateJson", options.purpose, error, (adapter) => adapter.generateJson(options));
+      return this.runFallback("generateJson", options, error, (adapter) => adapter.generateJson(options));
     }
   }
 
@@ -87,7 +103,7 @@ export class FallbackTextModelAdapter implements TextModelAdapter {
     try {
       return await this.options.primary.adapter.generateWithTools(options);
     } catch (error) {
-      return this.runFallback("generateWithTools", options.purpose, error, (adapter) =>
+      return this.runFallback("generateWithTools", options, error, (adapter) =>
         adapter.generateWithTools(options)
       );
     }
@@ -105,33 +121,33 @@ export class FallbackTextModelAdapter implements TextModelAdapter {
       if (yieldedChunks) {
         throw error;
       }
-      const context = await this.beginFallback("streamText", options.purpose, error);
+      const context = await this.beginFallback("streamText", options, error);
       try {
         yield* context.adapter.streamText(options);
-        await this.emitSuccess(context, "streamText", options.purpose);
+        await this.emitSuccess(context, "streamText", options);
       } catch (fallbackError) {
-        await this.failFallback(context, "streamText", options.purpose, fallbackError);
+        await this.failFallback(context, "streamText", options, fallbackError);
       }
     }
   }
 
   private async runFallback<T>(
     operation: TextFallbackOperation,
-    purpose: string | undefined,
+    options: GenerateTextOptions,
     error: unknown,
     run: (adapter: TextModelAdapter) => Promise<T>
   ): Promise<T> {
-    const context = await this.beginFallback(operation, purpose, error);
+    const context = await this.beginFallback(operation, options, error);
     try {
       const result = await run(context.adapter);
-      await this.emitSuccess(context, operation, purpose, providerFromResult(result) ?? context.fallback);
+      await this.emitSuccess(context, operation, options, providerFromResult(result) ?? context.fallback);
       return result;
     } catch (fallbackError) {
-      return this.failFallback(context, operation, purpose, fallbackError);
+      return this.failFallback(context, operation, options, fallbackError);
     }
   }
 
-  private async beginFallback(operation: TextFallbackOperation, purpose: string | undefined, error: unknown) {
+  private async beginFallback(operation: TextFallbackOperation, options: GenerateTextOptions, error: unknown) {
     if (this.options.shouldFallback && !this.options.shouldFallback(error)) {
       throw error;
     }
@@ -144,10 +160,10 @@ export class FallbackTextModelAdapter implements TextModelAdapter {
       provider: this.options.fallback.selection.provider,
       model: this.options.fallback.selection.model
     };
-    await this.options.onEvent?.({
+    await this.emit(options, {
       event: "fallback.start",
       operation,
-      purpose,
+      purpose: options.purpose,
       primary,
       fallback,
       attempt: 1,
@@ -156,20 +172,20 @@ export class FallbackTextModelAdapter implements TextModelAdapter {
     try {
       return { primary, fallback, adapter: this.resolveFallbackAdapter() };
     } catch (fallbackError) {
-      return this.failFallback({ primary, fallback }, operation, purpose, fallbackError);
+      return this.failFallback({ primary, fallback }, operation, options, fallbackError);
     }
   }
 
   private async emitSuccess(
     context: { primary: TextFallbackProvider & { error: Record<string, unknown> }; fallback: TextFallbackProvider },
     operation: TextFallbackOperation,
-    purpose: string | undefined,
+    options: GenerateTextOptions,
     result: TextFallbackProvider = context.fallback
   ) {
-    await this.options.onEvent?.({
+    await this.emit(options, {
       event: "fallback.success",
       operation,
-      purpose,
+      purpose: options.purpose,
       primary: context.primary,
       fallback: context.fallback,
       result,
@@ -181,20 +197,25 @@ export class FallbackTextModelAdapter implements TextModelAdapter {
   private async failFallback(
     context: { primary: TextFallbackProvider & { error: Record<string, unknown> }; fallback: TextFallbackProvider },
     operation: TextFallbackOperation,
-    purpose: string | undefined,
+    options: GenerateTextOptions,
     error: unknown
   ): Promise<never> {
     const fallback = { ...context.fallback, error: serializeFallbackError(error) };
-    await this.options.onEvent?.({
+    await this.emit(options, {
       event: "fallback.error",
       operation,
-      purpose,
+      purpose: options.purpose,
       primary: context.primary,
       fallback,
       attempt: 1,
       maxAttempts: 1
     });
     throw new TextGenerationFallbackError({ operation, primary: context.primary, fallback });
+  }
+
+  private async emit(options: GenerateTextOptions, event: TextFallbackEvent): Promise<void> {
+    await this.options.onEvent?.(event);
+    await (options as TextFallbackObservedOptions)[TEXT_FALLBACK_EVENT_OBSERVER]?.(event);
   }
 
   private resolveFallbackAdapter(): TextModelAdapter {

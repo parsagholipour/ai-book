@@ -49,18 +49,16 @@ import {
   durationBetweenTimestamps,
   estimateTokenCountFromText,
   estimateTokenCountFromTextLength,
-  markLiveTextUsageFailed,
   maybeUpdateLiveTextOutput,
   recordProviderAudioCost,
   recordProviderImageCost,
   recordProviderUsage,
-  recordProviderUsageFromError,
-  providerUsageFromError,
   settleLiveTextUsageEstimate,
   withLiveOutputTracking
 } from "./usageAccounting.js";
 import type { WorkerRuntimeJob } from "../runtime/jobPayloads.js";
 import { loadLiveGenerationTextRouting } from "./generationTextRouting.js";
+import { TextFallbackCallAccounting } from "./textFallbackAccounting.js";
 
 /**
  * Logging decorators around the provider adapters from `@book-maker/core`.
@@ -134,7 +132,8 @@ export function liveGenerationTextModel(
   }
   return createLiveGenerationTextModel(config, {
     tier: modelTierForInput(input),
-    loadRouting: loadLiveGenerationTextRouting(logger)
+    loadRouting: loadLiveGenerationTextRouting(logger),
+    onFallbackEvent: (event) => logger.append(`text.routing.${event.event}`, event).then(() => undefined)
   });
 }
 
@@ -257,6 +256,26 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
     };
   }
 
+  private fallbackAccounting(
+    liveUsage: Awaited<ReturnType<typeof beginLiveTextUsage>>,
+    options: GenerateTextOptions,
+    primary: LoggedTextModel,
+    operation: string,
+    callId: string,
+    startedAt: string
+  ): TextFallbackCallAccounting {
+    return new TextFallbackCallAccounting(liveUsage, {
+      projectId: options.projectId ?? this.projectId,
+      generationJobId: this.generationJobId,
+      purpose: options.purpose ?? operation,
+      operation,
+      callId,
+      primary,
+      requestOptions: options,
+      startedAt
+    });
+  }
+
   /**
    * Runs the delegate call with an abort signal wired to the job's stop flag,
    * polled every few seconds. Without it a stop was only observed *between*
@@ -298,6 +317,70 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
     }
   }
 
+  /** Owns the shared observer, retry, stop, and failure-settlement lifecycle. */
+  private async runFallbackCall<TOptions extends GenerateTextOptions, TResult>(parameters: {
+    liveUsage: Awaited<ReturnType<typeof beginLiveTextUsage>>;
+    options: TOptions;
+    primary: LoggedTextModel;
+    operation: string;
+    callId: string;
+    startedAt: string;
+    captureProviderUsageOnFailure: boolean;
+    prepareOptions?: ((accounting: TextFallbackCallAccounting) => TOptions) | undefined;
+    run: (options: TOptions) => Promise<TResult>;
+    onSuccess: (result: TResult, accounting: TextFallbackCallAccounting) => Promise<TResult>;
+  }): Promise<TResult> {
+    const accounting = this.fallbackAccounting(
+      parameters.liveUsage,
+      parameters.options,
+      parameters.primary,
+      parameters.operation,
+      parameters.callId,
+      parameters.startedAt
+    );
+    const callOptions = parameters.prepareOptions?.(accounting) ?? parameters.options;
+    const observedOptions = accounting.observe(callOptions);
+    try {
+      await assertJobNotStopped(this.generationJobId);
+      const result = await this.withStopAbort(observedOptions, (abortableOptions) =>
+        withRecoverableNetworkRetry(
+          () => accounting.run(() => parameters.run(abortableOptions)),
+          providerRetryOptions(
+            this.logger,
+            this.generationJobId,
+            parameters.operation,
+            parameters.options.purpose,
+            abortableOptions.signal
+          )
+        )
+      );
+      const settled = await parameters.onSuccess(result, accounting);
+      await assertJobNotStopped(this.generationJobId);
+      return settled;
+    } catch (error) {
+      return this.failFallbackCall(
+        accounting,
+        parameters.operation,
+        parameters.callId,
+        error,
+        parameters.captureProviderUsageOnFailure
+      );
+    }
+  }
+
+  private async failFallbackCall(
+    accounting: TextFallbackCallAccounting,
+    operation: string,
+    callId: string,
+    error: unknown,
+    captureProviderUsage: boolean
+  ): Promise<never> {
+    const errorAt = await this.logger.append(`${operation}.error`, { callId, error: serializeError(error) });
+    await accounting.finalizeUnhandledFailure(error, errorAt, captureProviderUsage);
+    await assertJobNotStopped(this.generationJobId);
+    throw error;
+  }
+
   async generateText(options: GenerateTextOptions) {
     const bound = await this.boundDelegate(options.purpose);
     const callId = randomUUID();
@@ -320,48 +403,46 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
     });
     let responseCharacterCount = 0;
     let lastLiveOutputUpdateAt = 0;
-    const monitoredOptions = withLiveOutputTracking(options, async (chunk) => {
-      responseCharacterCount += chunk.length;
-      lastLiveOutputUpdateAt = await maybeUpdateLiveTextOutput({
-        liveUsageId: liveUsage?.id,
-        outputTokens: estimateTokenCountFromTextLength(responseCharacterCount),
-        lastUpdateAt: lastLiveOutputUpdateAt
-      });
+    return this.runFallbackCall({
+      liveUsage,
+      options,
+      primary: textModel,
+      operation: "text.generateText",
+      callId,
+      startedAt: requestAt,
+      captureProviderUsageOnFailure: false,
+      prepareOptions: (accounting) =>
+        withLiveOutputTracking(options, async (chunk) => {
+          responseCharacterCount += chunk.length;
+          lastLiveOutputUpdateAt = await maybeUpdateLiveTextOutput({
+            liveUsageId: accounting.liveUsageId,
+            outputTokens: estimateTokenCountFromTextLength(responseCharacterCount),
+            lastUpdateAt: lastLiveOutputUpdateAt
+          });
+      }),
+      run: (callOptions) => bound.adapter.generateText(callOptions),
+      onSuccess: async (result, accounting) => {
+        const responseAt = await this.logger.append("text.generateText.response", { callId, result });
+        await recordProviderUsage({
+          projectId: options.projectId ?? this.projectId,
+          generationJobId: this.generationJobId,
+          provider: result.provider,
+          model: result.model,
+          purpose: options.purpose ?? "text.generateText",
+          operation: "text.generateText",
+          callId,
+          durationMs: durationBetweenTimestamps(accounting.startedAt, responseAt),
+          usage: result.usage,
+          liveUsageId: accounting.liveUsageId,
+          fallbackPromptTokens: accounting.promptTokens,
+          fallbackOutputTokens: Math.max(
+            estimateTokenCountFromText(result.text),
+            estimateTokenCountFromTextLength(responseCharacterCount)
+          )
+        });
+        return result;
+      }
     });
-    try {
-      await assertJobNotStopped(this.generationJobId);
-      const result = await this.withStopAbort(monitoredOptions, (abortableOptions) =>
-        withRecoverableNetworkRetry(
-          () => bound.adapter.generateText(abortableOptions),
-          providerRetryOptions(this.logger, this.generationJobId, "text.generateText", options.purpose, abortableOptions.signal)
-        )
-      );
-      const responseAt = await this.logger.append("text.generateText.response", { callId, result });
-      await recordProviderUsage({
-        projectId: options.projectId ?? this.projectId,
-        generationJobId: this.generationJobId,
-        provider: result.provider,
-        model: result.model,
-        purpose: options.purpose ?? "text.generateText",
-        operation: "text.generateText",
-        callId,
-        durationMs: durationBetweenTimestamps(requestAt, responseAt),
-        usage: result.usage,
-        liveUsageId: liveUsage?.id,
-        fallbackPromptTokens: liveUsage?.promptTokens,
-        fallbackOutputTokens: Math.max(estimateTokenCountFromText(result.text), estimateTokenCountFromTextLength(responseCharacterCount))
-      });
-      await assertJobNotStopped(this.generationJobId);
-      return result;
-    } catch (error) {
-      const errorAt = await this.logger.append("text.generateText.error", { callId, error: serializeError(error) });
-      await markLiveTextUsageFailed(liveUsage?.id, {
-        durationMs: durationBetweenTimestamps(requestAt, errorAt),
-        error
-      });
-      await assertJobNotStopped(this.generationJobId);
-      throw error;
-    }
   }
 
   async generateJson<T>(options: GenerateJsonOptions<T>) {
@@ -386,61 +467,46 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
     });
     let responseCharacterCount = 0;
     let lastLiveOutputUpdateAt = 0;
-    const monitoredOptions = withLiveOutputTracking(options, async (chunk) => {
-      responseCharacterCount += chunk.length;
-      lastLiveOutputUpdateAt = await maybeUpdateLiveTextOutput({
-        liveUsageId: liveUsage?.id,
-        outputTokens: estimateTokenCountFromTextLength(responseCharacterCount),
-        lastUpdateAt: lastLiveOutputUpdateAt
-      });
-    });
-    try {
-      await assertJobNotStopped(this.generationJobId);
-      const result = await this.withStopAbort(monitoredOptions, (abortableOptions) =>
-        withRecoverableNetworkRetry(
-          () => bound.adapter.generateJson(abortableOptions),
-          providerRetryOptions(this.logger, this.generationJobId, "text.generateJson", options.purpose, abortableOptions.signal)
-        )
-      );
-      const responseAt = await this.logger.append("text.generateJson.response", { callId, result });
-      await recordProviderUsage({
-        projectId: options.projectId ?? this.projectId,
-        generationJobId: this.generationJobId,
-        provider: result.provider,
-        model: result.model,
-        purpose: options.purpose ?? "text.generateJson",
-        operation: "text.generateJson",
-        callId,
-        durationMs: durationBetweenTimestamps(requestAt, responseAt),
-        usage: result.usage,
-        liveUsageId: liveUsage?.id,
-        fallbackPromptTokens: liveUsage?.promptTokens,
-        fallbackOutputTokens: Math.max(estimateTokenCountFromText(result.text), estimateTokenCountFromTextLength(responseCharacterCount))
-      });
-      await assertJobNotStopped(this.generationJobId);
-      return result;
-    } catch (error) {
-      const errorAt = await this.logger.append("text.generateJson.error", { callId, error: serializeError(error) });
-      await recordProviderUsageFromError({
-        projectId: options.projectId ?? this.projectId,
-        generationJobId: this.generationJobId,
-        purpose: options.purpose ?? "text.generateJson",
-        operation: "text.generateJson",
-        callId,
-        durationMs: durationBetweenTimestamps(requestAt, errorAt),
-        error,
-        liveUsageId: liveUsage?.id,
-        fallbackPromptTokens: liveUsage?.promptTokens
-      });
-      if (!providerUsageFromError(error)) {
-        await markLiveTextUsageFailed(liveUsage?.id, {
-          durationMs: durationBetweenTimestamps(requestAt, errorAt),
-          error
+    return this.runFallbackCall({
+      liveUsage,
+      options,
+      primary: textModel,
+      operation: "text.generateJson",
+      callId,
+      startedAt: requestAt,
+      captureProviderUsageOnFailure: true,
+      prepareOptions: (accounting) =>
+        withLiveOutputTracking(options, async (chunk) => {
+          responseCharacterCount += chunk.length;
+          lastLiveOutputUpdateAt = await maybeUpdateLiveTextOutput({
+            liveUsageId: accounting.liveUsageId,
+            outputTokens: estimateTokenCountFromTextLength(responseCharacterCount),
+            lastUpdateAt: lastLiveOutputUpdateAt
+          });
+      }),
+      run: (callOptions) => bound.adapter.generateJson<T>(callOptions),
+      onSuccess: async (result, accounting) => {
+        const responseAt = await this.logger.append("text.generateJson.response", { callId, result });
+        await recordProviderUsage({
+          projectId: options.projectId ?? this.projectId,
+          generationJobId: this.generationJobId,
+          provider: result.provider,
+          model: result.model,
+          purpose: options.purpose ?? "text.generateJson",
+          operation: "text.generateJson",
+          callId,
+          durationMs: durationBetweenTimestamps(accounting.startedAt, responseAt),
+          usage: result.usage,
+          liveUsageId: accounting.liveUsageId,
+          fallbackPromptTokens: accounting.promptTokens,
+          fallbackOutputTokens: Math.max(
+            estimateTokenCountFromText(result.text),
+            estimateTokenCountFromTextLength(responseCharacterCount)
+          )
         });
+        return result;
       }
-      await assertJobNotStopped(this.generationJobId);
-      throw error;
-    }
+    });
   }
 
   async generateWithTools(options: GenerateWithToolsOptions) {
@@ -463,53 +529,34 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
       startedAt: requestAt,
       options
     });
-    try {
-      await assertJobNotStopped(this.generationJobId);
-      const result = await this.withStopAbort(options, (abortableOptions) =>
-        withRecoverableNetworkRetry(
-          () => bound.adapter.generateWithTools(abortableOptions),
-          providerRetryOptions(this.logger, this.generationJobId, "text.generateWithTools", options.purpose, abortableOptions.signal)
-        )
-      );
-      const responseAt = await this.logger.append("text.generateWithTools.response", { callId, result });
-      await recordProviderUsage({
-        projectId: options.projectId ?? this.projectId,
-        generationJobId: this.generationJobId,
-        provider: result.provider,
-        model: result.model,
-        purpose: options.purpose ?? "text.generateWithTools",
-        operation: "text.generateWithTools",
-        callId,
-        durationMs: durationBetweenTimestamps(requestAt, responseAt),
-        usage: result.usage,
-        liveUsageId: liveUsage?.id,
-        fallbackPromptTokens: liveUsage?.promptTokens,
-        fallbackOutputTokens: estimateTokenCountFromText(result.text)
-      });
-      await assertJobNotStopped(this.generationJobId);
-      return result;
-    } catch (error) {
-      const errorAt = await this.logger.append("text.generateWithTools.error", { callId, error: serializeError(error) });
-      await recordProviderUsageFromError({
-        projectId: options.projectId ?? this.projectId,
-        generationJobId: this.generationJobId,
-        purpose: options.purpose ?? "text.generateWithTools",
-        operation: "text.generateWithTools",
-        callId,
-        durationMs: durationBetweenTimestamps(requestAt, errorAt),
-        error,
-        liveUsageId: liveUsage?.id,
-        fallbackPromptTokens: liveUsage?.promptTokens
-      });
-      if (!providerUsageFromError(error)) {
-        await markLiveTextUsageFailed(liveUsage?.id, {
-          durationMs: durationBetweenTimestamps(requestAt, errorAt),
-          error
+    return this.runFallbackCall({
+      liveUsage,
+      options,
+      primary: textModel,
+      operation: "text.generateWithTools",
+      callId,
+      startedAt: requestAt,
+      captureProviderUsageOnFailure: true,
+      run: (callOptions) => bound.adapter.generateWithTools(callOptions),
+      onSuccess: async (result, accounting) => {
+        const responseAt = await this.logger.append("text.generateWithTools.response", { callId, result });
+        await recordProviderUsage({
+          projectId: options.projectId ?? this.projectId,
+          generationJobId: this.generationJobId,
+          provider: result.provider,
+          model: result.model,
+          purpose: options.purpose ?? "text.generateWithTools",
+          operation: "text.generateWithTools",
+          callId,
+          durationMs: durationBetweenTimestamps(accounting.startedAt, responseAt),
+          usage: result.usage,
+          liveUsageId: accounting.liveUsageId,
+          fallbackPromptTokens: accounting.promptTokens,
+          fallbackOutputTokens: estimateTokenCountFromText(result.text)
         });
+        return result;
       }
-      await assertJobNotStopped(this.generationJobId);
-      throw error;
-    }
+    });
   }
 
   async *streamText(options: GenerateTextOptions) {
@@ -532,36 +579,39 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
       startedAt: requestAt,
       options
     });
+    const fallbackAccounting = this.fallbackAccounting(
+      liveUsage,
+      options,
+      textModel,
+      "text.streamText",
+      callId,
+      requestAt
+    );
+    const observedOptions = fallbackAccounting.observe(options);
     let chunkCount = 0;
     let characterCount = 0;
     let lastLiveOutputUpdateAt = 0;
     try {
       await assertJobNotStopped(this.generationJobId);
-      for await (const chunk of bound.adapter.streamText(options)) {
+      for await (const chunk of bound.adapter.streamText(observedOptions)) {
         await assertJobNotStopped(this.generationJobId);
         chunkCount += 1;
         characterCount += chunk.length;
         lastLiveOutputUpdateAt = await maybeUpdateLiveTextOutput({
-          liveUsageId: liveUsage?.id,
+          liveUsageId: fallbackAccounting.liveUsageId,
           outputTokens: estimateTokenCountFromTextLength(characterCount),
           lastUpdateAt: lastLiveOutputUpdateAt
         });
         yield chunk;
       }
       const responseAt = await this.logger.append("text.streamText.response", { callId, chunkCount, characterCount });
-      await settleLiveTextUsageEstimate(liveUsage?.id, {
-        durationMs: durationBetweenTimestamps(requestAt, responseAt),
+      await settleLiveTextUsageEstimate(fallbackAccounting.liveUsageId, {
+        durationMs: durationBetweenTimestamps(fallbackAccounting.startedAt, responseAt),
         outputTokens: estimateTokenCountFromTextLength(characterCount)
       });
       await assertJobNotStopped(this.generationJobId);
     } catch (error) {
-      const errorAt = await this.logger.append("text.streamText.error", { callId, error: serializeError(error) });
-      await markLiveTextUsageFailed(liveUsage?.id, {
-        durationMs: durationBetweenTimestamps(requestAt, errorAt),
-        error
-      });
-      await assertJobNotStopped(this.generationJobId);
-      throw error;
+      await this.failFallbackCall(fallbackAccounting, "text.streamText", callId, error, false);
     }
   }
 }

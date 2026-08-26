@@ -80,7 +80,11 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
     result = await generateJsonWithRetry(options.textModel, {
       purpose: "plan-book",
       temperature: Math.min(0.8, options.input.temperature),
-      maxTokens: 8000,
+      // No maxTokens. OpenAI counts reasoning toward max_output_tokens, so any
+      // guessed fuse clips thinking models mid-plan — gpt-5.6-luna hit 8000
+      // exactly on a 200-page war survey (`incomplete: max_output_tokens`)
+      // while DeepSeek finished the same shape in ~3400 visible tokens. The
+      // model's own output ceiling is the bound.
       schema: planningSchema,
       messages: [
         {
@@ -229,7 +233,6 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
     const result = await generateJsonWithRetry(options.textModel, {
       purpose: "revise-plan",
       temperature: options.temperature ?? 0.4,
-      maxTokens: 8000,
       schema: revisionSchema,
       messages: [
         {

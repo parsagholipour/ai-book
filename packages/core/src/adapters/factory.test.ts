@@ -67,20 +67,20 @@ describe("text model provider selection", () => {
   });
 
   it("binds live fast judgments to the lightest available catalog adapter", async () => {
-    expect(await boundFastJudgmentsAdapter({})).toBeInstanceOf(DeepSeekAdapter);
-    expect(await boundFastJudgmentsAdapter({ DEEPSEEK_API_KEY: "" })).toBeInstanceOf(DeepInfraAdapter);
+    expect((await boundFastJudgments({})).selection?.provider).toBe("deepseek");
+    expect((await boundFastJudgments({ DEEPSEEK_API_KEY: "" })).selection?.provider).toBe("deepinfra");
     expect(
-      await boundFastJudgmentsAdapter({ DEEPSEEK_API_KEY: "", DEEPINFRA_API_KEY: "" })
-    ).toBeInstanceOf(GeminiTextAdapter);
+      (await boundFastJudgments({ DEEPSEEK_API_KEY: "", DEEPINFRA_API_KEY: "" })).selection?.provider
+    ).toBe("gemini");
     expect(
-      await boundFastJudgmentsAdapter({
+      (await boundFastJudgments({
         DEEPSEEK_API_KEY: "",
         DEEPINFRA_API_KEY: "",
         GEMINI_API_KEY: "",
         ALIBABA_API_KEY: "alibaba-key"
-      })
-    ).toBeInstanceOf(AlibabaTextAdapter);
-    expect(await boundFastJudgmentsAdapter({ MOCK_AI: "true" })).toBeInstanceOf(FakeTextModelAdapter);
+      })).selection?.provider
+    ).toBe("alibaba");
+    expect((await boundFastJudgments({ MOCK_AI: "true" })).selection?.provider).toBe("deepseek");
   });
 
   it("exposes DeepInfra effort options only when configured", () => {
@@ -331,7 +331,7 @@ describe("text model provider selection", () => {
   });
 });
 
-async function boundFastJudgmentsAdapter(overrides: NodeJS.ProcessEnv) {
+async function boundFastJudgments(overrides: NodeJS.ProcessEnv) {
   const config = testConfig(overrides);
   const live = createLiveGenerationTextModel(config, {
     fastJudgments: true,
@@ -340,7 +340,7 @@ async function boundFastJudgmentsAdapter(overrides: NodeJS.ProcessEnv) {
   if (!(live instanceof LiveGenerationTextModelAdapter)) {
     throw new Error("expected LiveGenerationTextModelAdapter");
   }
-  return (await live.bindForCall(undefined)).adapter;
+  return live.bindForCall(undefined);
 }
 
 function testConfig(overrides: NodeJS.ProcessEnv) {

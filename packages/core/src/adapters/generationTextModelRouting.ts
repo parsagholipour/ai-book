@@ -10,16 +10,26 @@ export type { ModelTier, TextModelSelection, TextModelThinkingEffort } from "../
 
 export const GENERATION_TEXT_MODEL_TIERS = ["fast", "balanced", "premium", "ultra"] as const;
 export const GENERATION_TEXT_MODEL_ROLES = ["writer", "judgment"] as const;
+export const GENERATION_TEXT_MODEL_ROUTE_FIELDS = [
+  "writer",
+  "writerFallback",
+  "judgment",
+  "judgmentFallback"
+] as const;
 
 export type GenerationTextModelRole = (typeof GENERATION_TEXT_MODEL_ROLES)[number];
+export type GenerationTextModelRouteField = (typeof GENERATION_TEXT_MODEL_ROUTE_FIELDS)[number];
 export type GenerationTextModelTierRouting = {
   writer: TextModelSelection;
+  writerFallback: TextModelSelection;
   judgment: TextModelSelection;
+  judgmentFallback: TextModelSelection;
 };
 
-/** The nine operator-controlled text-model roles used by generation and inline decisions. */
+/** The nine text-model routes and their operator-controlled fallback selections. */
 export type GenerationTextModelRouting = {
   fastJudgments: TextModelSelection;
+  fastJudgmentsFallback: TextModelSelection;
   fast: GenerationTextModelTierRouting;
   balanced: GenerationTextModelTierRouting;
   premium: GenerationTextModelTierRouting;
@@ -62,49 +72,58 @@ export function compiledGenerationTextModelRouting(
   config: AppConfig,
   configuredOptions: readonly GenerationTextModelOption[]
 ): GenerationTextModelRouting {
-  const fast = preferredOrNext(
-    { provider: "deepseek", model: config.DEEPSEEK_FAST_MODEL, thinkingEnabled: false },
-    configuredOptions,
+  const fast = preferredRoute(
     [
+      { provider: "deepseek", model: config.DEEPSEEK_FAST_MODEL, thinkingEnabled: false },
       { provider: "deepinfra", model: config.DEEPINFRA_FAST_MODEL, thinkingEnabled: false },
       FAST_GEMINI,
       { provider: "alibaba", model: "qwen-flash" }
-    ]
+    ],
+    configuredOptions
   );
-  const balancedWriter = preferredOrNext(
-    { provider: "deepseek", model: config.DEEPSEEK_MODEL },
-    configuredOptions,
+  const balancedWriter = preferredRoute(
     [
+      { provider: "deepseek", model: config.DEEPSEEK_MODEL },
       { provider: "deepinfra", model: config.DEEPINFRA_MODEL },
       PREMIUM_WRITER,
       { provider: "alibaba", model: config.ALIBABA_TEXT_MODEL }
-    ]
+    ],
+    configuredOptions
   );
-  const balancedJudgment = preferredOrNext(
-    { provider: "deepseek", model: config.DEEPSEEK_FAST_MODEL, thinkingEnabled: false },
-    configuredOptions,
+  const balancedJudgment = preferredRoute(
     [
+      { provider: "deepseek", model: config.DEEPSEEK_FAST_MODEL, thinkingEnabled: false },
       { provider: "deepinfra", model: config.DEEPINFRA_FAST_MODEL, thinkingEnabled: false },
       PREMIUM_JUDGMENT,
       { provider: "alibaba", model: "qwen-flash" }
-    ]
+    ],
+    configuredOptions
   );
-  const premiumWriter = preferredOrNext(PREMIUM_WRITER, configuredOptions, [
-    { provider: "deepseek", model: config.DEEPSEEK_MODEL },
-    { provider: "deepinfra", model: config.DEEPINFRA_MODEL },
-    { provider: "alibaba", model: config.ALIBABA_TEXT_MODEL }
-  ]);
-  const premiumJudgment = preferredOrNext(PREMIUM_JUDGMENT, configuredOptions, [
-    { provider: "deepseek", model: config.DEEPSEEK_FAST_MODEL, thinkingEnabled: false },
-    { provider: "deepinfra", model: config.DEEPINFRA_FAST_MODEL, thinkingEnabled: false },
-    { provider: "alibaba", model: "qwen-flash" }
-  ]);
+  const premiumWriter = preferredRoute(
+    [
+      PREMIUM_WRITER,
+      { provider: "deepseek", model: config.DEEPSEEK_MODEL },
+      { provider: "deepinfra", model: config.DEEPINFRA_MODEL },
+      { provider: "alibaba", model: config.ALIBABA_TEXT_MODEL }
+    ],
+    configuredOptions
+  );
+  const premiumJudgment = preferredRoute(
+    [
+      PREMIUM_JUDGMENT,
+      { provider: "deepseek", model: config.DEEPSEEK_FAST_MODEL, thinkingEnabled: false },
+      { provider: "deepinfra", model: config.DEEPINFRA_FAST_MODEL, thinkingEnabled: false },
+      { provider: "alibaba", model: "qwen-flash" }
+    ],
+    configuredOptions
+  );
   return {
-    fastJudgments: fast,
-    fast: { writer: fast, judgment: fast },
-    balanced: { writer: balancedWriter, judgment: balancedJudgment },
-    premium: { writer: premiumWriter, judgment: premiumJudgment },
-    ultra: { writer: premiumWriter, judgment: premiumJudgment }
+    fastJudgments: fast.primary,
+    fastJudgmentsFallback: fast.fallback,
+    fast: tierRoute(fast, fast),
+    balanced: tierRoute(balancedWriter, balancedJudgment),
+    premium: tierRoute(premiumWriter, premiumJudgment),
+    ultra: tierRoute(premiumWriter, premiumJudgment)
   };
 }
 
@@ -120,8 +139,12 @@ export function resolveGenerationTextModelRouting(
 ): GenerationTextModelRouting {
   const settings = record(storedSettings);
   const stored = record(settings?.models);
+  const fastJudgments = parseTextModelSelection(stored?.fastJudgments) ?? cloneSelection(compiled.fastJudgments);
   return {
-    fastJudgments: parseTextModelSelection(stored?.fastJudgments) ?? cloneSelection(compiled.fastJudgments),
+    fastJudgments,
+    fastJudgmentsFallback:
+      parseTextModelSelection(stored?.fastJudgmentsFallback) ??
+      legacyFallback(fastJudgments, compiled.fastJudgments, compiled.fastJudgmentsFallback),
     fast: tierRouting(stored?.fast, compiled.fast),
     balanced: tierRouting(stored?.balanced, compiled.balanced),
     premium: tierRouting(stored?.premium, compiled.premium),
@@ -135,6 +158,18 @@ export function routingSelection(
   role: GenerationTextModelRole
 ): TextModelSelection {
   return routing[tier][role];
+}
+
+export function routingFallbackSelection(
+  routing: GenerationTextModelRouting,
+  tier: ModelTier,
+  role: GenerationTextModelRole
+): TextModelSelection {
+  return routing[tier][fallbackField(role)];
+}
+
+export function fallbackField(role: GenerationTextModelRole): "writerFallback" | "judgmentFallback" {
+  return role === "writer" ? "writerFallback" : "judgmentFallback";
 }
 
 /** Stable value for adapter caches and browser select controls. */
@@ -204,6 +239,55 @@ function preferredOrNext(
   return fallback ? selectionFromGenerationOption(fallback) : cloneSelection(preferred);
 }
 
+function preferredRoute(
+  candidates: readonly [TextModelSelection, ...TextModelSelection[]],
+  options: readonly GenerationTextModelOption[]
+): { primary: TextModelSelection; fallback: TextModelSelection } {
+  const primary = preferredOrNext(candidates[0], options, candidates.slice(1));
+  for (const candidate of candidates) {
+    const available = availableSelection(candidate, options);
+    if (available && !sameTextModelIdentity(primary, available)) {
+      return { primary, fallback: available };
+    }
+  }
+  const catalogFallback = options
+    .map(selectionFromGenerationOption)
+    .find((selection) => !sameTextModelIdentity(primary, selection));
+  return { primary, fallback: catalogFallback ?? cloneSelection(primary) };
+}
+
+function availableSelection(
+  candidate: TextModelSelection,
+  options: readonly GenerationTextModelOption[]
+): TextModelSelection | undefined {
+  const exact = options.find(
+    (option) =>
+      option.provider === candidate.provider &&
+      option.model === candidate.model &&
+      fixedReasoningMatches(option, candidate)
+  );
+  if (exact) return cloneSelection(candidate);
+  const sameModel = options.find(
+    (option) => option.provider === candidate.provider && option.model === candidate.model
+  );
+  if (!sameModel) return undefined;
+  return fixedReasoningSupported(sameModel, candidate)
+    ? cloneSelection(candidate)
+    : selectionFromGenerationOption(sameModel);
+}
+
+function tierRoute(
+  writer: { primary: TextModelSelection; fallback: TextModelSelection },
+  judgment: { primary: TextModelSelection; fallback: TextModelSelection }
+): GenerationTextModelTierRouting {
+  return {
+    writer: cloneSelection(writer.primary),
+    writerFallback: cloneSelection(writer.fallback),
+    judgment: cloneSelection(judgment.primary),
+    judgmentFallback: cloneSelection(judgment.fallback)
+  };
+}
+
 function fixedReasoningSupported(
   option: GenerationTextModelOption,
   selection: TextModelSelection
@@ -227,10 +311,32 @@ function fixedReasoningMatches(option: TextModelSelection, selection: TextModelS
 
 function tierRouting(value: unknown, fallback: GenerationTextModelTierRouting): GenerationTextModelTierRouting {
   const stored = record(value);
+  const writer = parseTextModelSelection(stored?.writer) ?? cloneSelection(fallback.writer);
+  const judgment = parseTextModelSelection(stored?.judgment) ?? cloneSelection(fallback.judgment);
   return {
-    writer: parseTextModelSelection(stored?.writer) ?? cloneSelection(fallback.writer),
-    judgment: parseTextModelSelection(stored?.judgment) ?? cloneSelection(fallback.judgment)
+    writer,
+    writerFallback:
+      parseTextModelSelection(stored?.writerFallback) ??
+      legacyFallback(writer, fallback.writer, fallback.writerFallback),
+    judgment,
+    judgmentFallback:
+      parseTextModelSelection(stored?.judgmentFallback) ??
+      legacyFallback(judgment, fallback.judgment, fallback.judgmentFallback)
   };
+}
+
+function legacyFallback(
+  primary: TextModelSelection,
+  compiledPrimary: TextModelSelection,
+  compiledFallback: TextModelSelection
+): TextModelSelection {
+  if (!sameTextModelIdentity(primary, compiledFallback)) return cloneSelection(compiledFallback);
+  if (!sameTextModelIdentity(primary, compiledPrimary)) return cloneSelection(compiledPrimary);
+  return cloneSelection(compiledFallback);
+}
+
+function sameTextModelIdentity(a: TextModelSelection, b: TextModelSelection): boolean {
+  return a.provider === b.provider && a.model === b.model;
 }
 
 /** Reads a stored or wire selection; malformed leaves fall through to compiled routing. */

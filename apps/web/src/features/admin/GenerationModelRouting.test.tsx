@@ -10,7 +10,7 @@ import {
 import type { GenerationTextModelOption, GenerationTextModelRouting } from "@book-maker/core/generationTextModelRouting";
 
 describe("GenerationModelRoutingSection", () => {
-  it("renders all nine model selectors and only capability-backed effort selectors", () => {
+  it("renders a primary and fallback for all nine routes with capability-backed effort selectors", () => {
     const markup = renderToStaticMarkup(
       createElement(GenerationModelRoutingSection, {
         models: routing(),
@@ -22,14 +22,23 @@ describe("GenerationModelRoutingSection", () => {
 
     for (const label of [
       "Fast judgments",
+      "Fast judgments fallback",
       "Quick Writer",
+      "Quick Writer fallback",
       "Quick Judgment",
+      "Quick Judgment fallback",
       "Balanced Writer",
+      "Balanced Writer fallback",
       "Balanced Judgment",
+      "Balanced Judgment fallback",
       "Premium Writer",
+      "Premium Writer fallback",
       "Premium Judgment",
+      "Premium Judgment fallback",
       "Ultra Writer",
-      "Ultra Judgment"
+      "Ultra Writer fallback",
+      "Ultra Judgment",
+      "Ultra Judgment fallback"
     ]) {
       expect(markup).toContain(`aria-label="${label}"`);
     }
@@ -38,8 +47,8 @@ describe("GenerationModelRoutingSection", () => {
     expect(markup).not.toContain('aria-label="Premium Writer Effort"');
     expect(markup).not.toContain("Saved provider credentials are unavailable.");
     expect(markup).toContain("Input $0.66–$1.32 · output $1.98–$3.96 / 1M tokens");
-    expect(markup.match(/<select/g)).toHaveLength(14);
-    expect(markup.match(/disabled=""/g)?.length).toBeGreaterThanOrEqual(14);
+    expect(markup.match(/<select/g)).toHaveLength(23);
+    expect(markup.match(/disabled=""/g)?.length).toBeGreaterThanOrEqual(23);
   });
 
   it("accepts valid rate-card costs and rejects malformed costs from the API", () => {
@@ -71,9 +80,11 @@ describe("model routing claims and rebasing", () => {
     const stored = routing();
     const draft = routing();
     draft.balanced.writer = { ...draft.balanced.writer, thinkingEffort: "high" };
+    draft.fastJudgmentsFallback = { provider: "deepseek", model: "deepseek-pro" };
     draft.ultra.judgment = { provider: "deepseek", model: "deepseek-fast", thinkingEnabled: false };
 
     expect(generationModelRoutingClaim(stored, draft)).toEqual({
+      fastJudgmentsFallback: { provider: "deepseek", model: "deepseek-pro" },
       balanced: { writer: { thinkingEffort: "high" } },
       ultra: {
         judgment: {
@@ -106,20 +117,33 @@ describe("model routing claims and rebasing", () => {
 
 function routing(): GenerationTextModelRouting {
   const fast = { provider: "deepseek" as const, model: "deepseek-fast", thinkingEnabled: false };
+  const fallback = { provider: "alibaba" as const, model: "qwen-plus" };
   return {
     fastJudgments: { ...fast },
-    fast: { writer: { ...fast }, judgment: { ...fast } },
+    fastJudgmentsFallback: { ...fallback },
+    fast: {
+      writer: { ...fast },
+      writerFallback: { ...fallback },
+      judgment: { ...fast },
+      judgmentFallback: { ...fallback }
+    },
     balanced: {
       writer: { provider: "deepseek", model: "deepseek-pro" },
-      judgment: { ...fast }
+      writerFallback: { ...fallback },
+      judgment: { ...fast },
+      judgmentFallback: { ...fallback }
     },
     premium: {
       writer: { provider: "gemini", model: "gemini-pro", thinkingBudget: 2048 },
-      judgment: { provider: "gemini", model: "gemini-flash", thinkingBudget: 0 }
+      writerFallback: { ...fallback },
+      judgment: { provider: "gemini", model: "gemini-flash", thinkingBudget: 0 },
+      judgmentFallback: { ...fallback }
     },
     ultra: {
       writer: { provider: "gemini", model: "gemini-pro", thinkingBudget: 2048 },
-      judgment: { provider: "gemini", model: "gemini-flash", thinkingBudget: 0 }
+      writerFallback: { ...fallback },
+      judgment: { provider: "gemini", model: "gemini-flash", thinkingBudget: 0 },
+      judgmentFallback: { ...fallback }
     }
   };
 }

@@ -3,39 +3,39 @@ import { ChevronDown, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { Button } from "../shared/Button.js";
 import { GeneratedEconomicsDetailContent } from "./GeneratedEconomicsDetail.js";
 import { count, dateTime, percent, usd, usdFine } from "./format.js";
-import type { AdminGeneratedBookDetail, AdminGeneratedBookList } from "./types.js";
-import { useAdminGeneratedBookDetail, useAdminGeneratedBooks } from "./useAdminData.js";
+import type { AdminGeneratedPlanDetail, AdminGeneratedPlanList } from "./types.js";
+import { useAdminGeneratedPlanDetail, useAdminGeneratedPlans } from "./useAdminData.js";
 
 const COLUMNS = 7;
 const PAGE_SIZE = 25;
 
-export function GeneratedBooksSection(props: { days: number }) {
+export function GeneratedPlansSection(props: { days: number }) {
   const [offset, setOffset] = useState(0);
-  const [expandedBookId, setExpandedBookId] = useState<string | null>(null);
-  const books = useAdminGeneratedBooks({ days: props.days, limit: PAGE_SIZE, offset });
-  const detail = useAdminGeneratedBookDetail(expandedBookId);
+  const [expandedPlanId, setExpandedPlanId] = useState<string | null>(null);
+  const plans = useAdminGeneratedPlans({ days: props.days, limit: PAGE_SIZE, offset });
+  const detail = useAdminGeneratedPlanDetail(expandedPlanId);
 
   useEffect(() => {
     setOffset(0);
-    setExpandedBookId(null);
+    setExpandedPlanId(null);
   }, [props.days]);
 
   function movePage(nextOffset: number) {
-    setExpandedBookId(null);
+    setExpandedPlanId(null);
     setOffset(Math.max(0, nextOffset));
   }
 
   return (
-    <GeneratedBooksView
-      list={books.data}
-      listError={books.error}
-      listStale={books.stale}
-      expandedBookId={expandedBookId}
+    <GeneratedPlansView
+      list={plans.data}
+      listError={plans.error}
+      listStale={plans.stale}
+      expandedPlanId={expandedPlanId}
       detail={detail.data}
       detailError={detail.error}
       detailLoading={detail.loading}
-      onToggle={(bookId) => setExpandedBookId((open) => open === bookId ? null : bookId)}
-      onRetryList={() => void books.reload()}
+      onToggle={(planId) => setExpandedPlanId((open) => open === planId ? null : planId)}
+      onRetryList={() => void plans.reload()}
       onRetryDetail={detail.reload}
       onPrevious={() => movePage(offset - PAGE_SIZE)}
       onNext={() => movePage(offset + PAGE_SIZE)}
@@ -43,31 +43,31 @@ export function GeneratedBooksSection(props: { days: number }) {
   );
 }
 
-export type GeneratedBooksViewProps = {
-  list: AdminGeneratedBookList | null;
+export type GeneratedPlansViewProps = {
+  list: AdminGeneratedPlanList | null;
   listError: string | null;
   listStale: boolean;
-  expandedBookId: string | null;
-  detail: AdminGeneratedBookDetail | null;
+  expandedPlanId: string | null;
+  detail: AdminGeneratedPlanDetail | null;
   detailError: string | null;
   detailLoading: boolean;
-  onToggle: (bookId: string) => void;
+  onToggle: (planId: string) => void;
   onRetryList: () => void;
   onRetryDetail: () => void;
   onPrevious: () => void;
   onNext: () => void;
 };
 
-export function GeneratedBooksView(props: GeneratedBooksViewProps) {
+export function GeneratedPlansView(props: GeneratedPlansViewProps) {
   return (
     <section className={`work-section generated-artifacts${props.listStale ? " is-stale" : ""}`}>
       <div className="section-title">
-        <h3>Generated books</h3>
+        <h3>Generated plans</h3>
         {props.list ? <span className="muted admin-count">{count(props.list.total)} total</span> : null}
       </div>
       <p className="muted chart-subtitle">
-        Books completed in this window. Revenue and provider cost include each book&apos;s full lifetime, including later
-        edits, images, replans, and audiobook work.
+        Plans generated in this window. Revenue and provider cost cover plan generation only; a book later generated
+        from the plan is intentionally excluded.
       </p>
       {props.listError ? (
         <div className="error-banner generated-book-list-error">
@@ -77,30 +77,30 @@ export function GeneratedBooksView(props: GeneratedBooksViewProps) {
       ) : null}
       {!props.list && props.listError ? null : !props.list ? (
         <div className="empty-state">
-          <Loader2 className="spin" size={20} aria-hidden /> Loading generated books…
+          <Loader2 className="spin" size={20} aria-hidden /> Loading generated plans…
         </div>
-      ) : props.list.books.length === 0 ? (
-        <p className="muted">No completed books in this window.</p>
+      ) : props.list.plans.length === 0 ? (
+        <p className="muted">No generated plans in this window.</p>
       ) : (
         <div className="admin-table-scroll">
           <table className="admin-table">
             <thead>
               <tr>
-                <th>Book</th>
+                <th>Plan</th>
                 <th>Owner</th>
-                <th className="numeric">Pages</th>
+                <th className="numeric">Target pages</th>
                 <th className="numeric">Revenue</th>
                 <th className="numeric">Provider cost</th>
                 <th className="numeric">Margin</th>
-                <th>Completed</th>
+                <th>Generated</th>
               </tr>
             </thead>
             <tbody>
-              {props.list.books.map((book) => {
-                const isOpen = props.expandedBookId === book.id;
-                const detailId = `generated-book-detail-${book.id}`;
+              {props.list.plans.map((plan) => {
+                const isOpen = props.expandedPlanId === plan.id;
+                const detailId = `generated-plan-detail-${plan.id}`;
                 return (
-                  <Fragment key={book.id}>
+                  <Fragment key={plan.id}>
                     <tr>
                       <td>
                         <button
@@ -108,35 +108,33 @@ export function GeneratedBooksView(props: GeneratedBooksViewProps) {
                           className="cost-expander"
                           aria-expanded={isOpen}
                           aria-controls={detailId}
-                          aria-label={`${isOpen ? "Hide" : "Show"} cost breakdown for ${book.title}`}
-                          onClick={() => props.onToggle(book.id)}
+                          aria-label={`${isOpen ? "Hide" : "Show"} cost breakdown for ${plan.title}`}
+                          onClick={() => props.onToggle(plan.id)}
                         >
                           {isOpen ? <ChevronDown size={15} aria-hidden /> : <ChevronRight size={15} aria-hidden />}
-                          <span className="cost-name">{book.title}</span>
+                          <span className="cost-name">{plan.title}</span>
                         </button>
-                        <span className="muted admin-subtle cost-indent">{book.id}</span>
+                        <span className="muted admin-subtle cost-indent">{plan.id}</span>
                       </td>
-                      <td>{book.ownerEmail}</td>
+                      <td>{plan.ownerEmail}</td>
                       <td className="numeric">
-                        {count(book.pageCount)}
-                        <span className="muted admin-subtle">
-                          {count(book.imageCount)} {book.imageCount === 1 ? "image" : "images"}
-                        </span>
+                        {count(plan.targetPages)}
+                        <span className="muted admin-subtle">v{plan.version} · {statusLabel(plan.status)}</span>
                       </td>
-                      <td className="numeric">{usd(book.revenueUsd)}</td>
-                      <td className="numeric">{usdFine(book.providerCostUsd)}</td>
-                      <td className={`numeric${book.marginUsd < 0 ? " is-debit" : ""}`}>
-                        {usdFine(book.marginUsd)}
-                        <span className="muted admin-subtle">{percent(book.marginPercent)}</span>
+                      <td className="numeric">{usd(plan.revenueUsd)}</td>
+                      <td className="numeric">{usdFine(plan.providerCostUsd)}</td>
+                      <td className={`numeric${plan.marginUsd < 0 ? " is-debit" : ""}`}>
+                        {usdFine(plan.marginUsd)}
+                        <span className="muted admin-subtle">{percent(plan.marginPercent)}</span>
                       </td>
-                      <td>{dateTime(book.completedAt)}</td>
+                      <td>{dateTime(plan.generatedAt)}</td>
                     </tr>
                     {isOpen ? (
                       <tr id={detailId} className="admin-subrow generated-book-detail-row">
                         <td colSpan={COLUMNS}>
                           <GeneratedEconomicsDetailContent
                             detail={props.detail}
-                            detailMatches={props.detail?.bookId === book.id}
+                            detailMatches={props.detail?.planId === plan.id}
                             error={props.detailError}
                             loading={props.detailLoading}
                             onRetry={props.onRetryDetail}
@@ -177,4 +175,8 @@ export function GeneratedBooksView(props: GeneratedBooksViewProps) {
       ) : null}
     </section>
   );
+}
+
+function statusLabel(status: string): string {
+  return status.toLowerCase().replaceAll("_", " ");
 }

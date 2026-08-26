@@ -46,6 +46,36 @@ describe("admin generation model routing", () => {
     await app.close();
   });
 
+  it("persists fallback selections for fast judgments and tier routes", async () => {
+    mockStoredRevision({ version: 5, settings: { ...QUALITY_FEATURE_DEFAULTS } });
+    const app = Fastify({ logger: false });
+    await app.register(adminGenerationQualityRoutes);
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/api/admin/generation-quality",
+      payload: {
+        models: {
+          fastJudgmentsFallback: { provider: "alibaba", model: "qwen-flash" },
+          fast: { writerFallback: { provider: "alibaba", model: "qwen-plus" } }
+        }
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      models: {
+        fastJudgmentsFallback: { provider: "alibaba", model: "qwen-flash" },
+        fast: { writerFallback: { provider: "alibaba", model: "qwen-plus" } }
+      }
+    });
+    expect(createdSettings(0).models).toMatchObject({
+      fastJudgmentsFallback: { provider: "alibaba", model: "qwen-flash" },
+      fast: { writerFallback: { provider: "alibaba", model: "qwen-plus" } }
+    });
+    await app.close();
+  });
+
   it("offers and saves every GPT-5.6 family model with OpenAI reasoning effort", async () => {
     mockStoredRevision(null);
     const app = Fastify({ logger: false });
@@ -154,7 +184,11 @@ describe("admin generation model routing", () => {
     expect(createdSettings(0).styleAuditor).toEqual([]);
     expect(createdSettings(0).models).toMatchObject({
       fastJudgments: { provider: "deepseek", model: "deepseek-v4-flash" },
-      premium: { writer: { provider: "gemini", model: "gemini-2.5-pro" } },
+      fastJudgmentsFallback: { provider: "deepinfra", model: "deepseek-ai/DeepSeek-V4-Flash" },
+      premium: {
+        writer: { provider: "gemini", model: "gemini-2.5-pro" },
+        writerFallback: { provider: "deepseek", model: "deepseek-v4-pro" }
+      },
       balanced: { futureReviewer: savedModels.balanced.futureReviewer },
       futureTier: savedModels.futureTier
     });

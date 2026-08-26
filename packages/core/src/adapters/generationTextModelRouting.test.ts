@@ -8,7 +8,7 @@ import {
   elevatedThinkingSelection,
   generationTextModelOptions
 } from "./factory.js";
-import { GeminiTextAdapter } from "./gemini.js";
+import { ProviderHttpError } from "./retry.js";
 import {
   compiledGenerationTextModelRouting,
   generationTextModelOptionKey,
@@ -30,21 +30,30 @@ describe("generation text model routing", () => {
 
     expect(defaults).toEqual({
       fastJudgments: { provider: "deepseek", model: "deepseek-v4-flash", thinkingEnabled: false },
+      fastJudgmentsFallback: { provider: "deepinfra", model: "deepseek-ai/DeepSeek-V4-Flash", thinkingEnabled: false },
       fast: {
         writer: { provider: "deepseek", model: "deepseek-v4-flash", thinkingEnabled: false },
-        judgment: { provider: "deepseek", model: "deepseek-v4-flash", thinkingEnabled: false }
+        writerFallback: { provider: "deepinfra", model: "deepseek-ai/DeepSeek-V4-Flash", thinkingEnabled: false },
+        judgment: { provider: "deepseek", model: "deepseek-v4-flash", thinkingEnabled: false },
+        judgmentFallback: { provider: "deepinfra", model: "deepseek-ai/DeepSeek-V4-Flash", thinkingEnabled: false }
       },
       balanced: {
         writer: { provider: "deepseek", model: "deepseek-v4-pro" },
-        judgment: { provider: "deepseek", model: "deepseek-v4-flash", thinkingEnabled: false }
+        writerFallback: { provider: "deepinfra", model: "deepseek-ai/DeepSeek-V4-Pro" },
+        judgment: { provider: "deepseek", model: "deepseek-v4-flash", thinkingEnabled: false },
+        judgmentFallback: { provider: "deepinfra", model: "deepseek-ai/DeepSeek-V4-Flash", thinkingEnabled: false }
       },
       premium: {
         writer: { provider: "gemini", model: "gemini-2.5-pro", thinkingBudget: 2048 },
-        judgment: { provider: "gemini", model: "gemini-2.5-flash", thinkingBudget: 0 }
+        writerFallback: { provider: "deepseek", model: "deepseek-v4-pro" },
+        judgment: { provider: "gemini", model: "gemini-2.5-flash", thinkingBudget: 0 },
+        judgmentFallback: { provider: "deepseek", model: "deepseek-v4-flash", thinkingEnabled: false }
       },
       ultra: {
         writer: { provider: "gemini", model: "gemini-2.5-pro", thinkingBudget: 2048 },
-        judgment: { provider: "gemini", model: "gemini-2.5-flash", thinkingBudget: 0 }
+        writerFallback: { provider: "deepseek", model: "deepseek-v4-pro" },
+        judgment: { provider: "gemini", model: "gemini-2.5-flash", thinkingBudget: 0 },
+        judgmentFallback: { provider: "deepseek", model: "deepseek-v4-flash", thinkingEnabled: false }
       }
     });
     expect(resolveGenerationTextModelRouting({ planCritic: ["premium"] }, defaults)).toEqual(defaults);
@@ -57,6 +66,19 @@ describe("generation text model routing", () => {
     expect(defaults.fastJudgments.provider).toBe("deepinfra");
     expect(defaults.balanced.writer.provider).toBe("deepinfra");
     expect(defaults.premium.writer.provider).toBe("deepinfra");
+  });
+
+  it("gives legacy primary-only revisions a distinct compiled fallback", () => {
+    const config = testConfig({});
+    const defaults = compiledGenerationTextModelRouting(config, generationTextModelOptions(config));
+    const selected = defaults.balanced.writerFallback;
+    const resolved = resolveGenerationTextModelRouting(
+      { models: { balanced: { writer: selected } } },
+      defaults
+    );
+
+    expect(resolved.balanced.writer).toEqual(selected);
+    expect(resolved.balanced.writerFallback).toEqual(defaults.balanced.writer);
   });
 
   it("uses Gemini flash-lite with thinkingBudget 0 when DeepSeek and DeepInfra are unavailable", () => {
@@ -114,7 +136,7 @@ describe("generation text model routing", () => {
     ).toEqual({ provider: "alibaba", model: "qwen-plus" });
   });
 
-  it("does not install an unconfigured cross-provider fallback behind a saved selection", async () => {
+  it("keeps the saved primary selection authoritative when a fallback is paired with it", async () => {
     const routing = routingWithBalancedWriter("balanced-writer");
     routing.premium.writer = {
       provider: "gemini",
@@ -126,7 +148,7 @@ describe("generation text model routing", () => {
       loadRouting: async () => routing
     });
 
-    expect((await live.bindForCall("generate-page")).adapter).toBeInstanceOf(GeminiTextAdapter);
+    expect((await live.bindForCall("generate-page")).selection).toEqual(routing.premium.writer);
   });
 
   it("lets consecutive calls see revisions while a repair retry stays bound", async () => {
@@ -196,6 +218,26 @@ describe("generation text model routing", () => {
     expect(calls).toEqual(["inline-fast", "inline-fast"]);
   });
 
+  it("uses the selected fallback once for an availability failure", async () => {
+    const config = testConfig({});
+    const calls: string[] = [];
+    const events: string[] = [];
+    const routing = routingWithBalancedWriter("primary-writer");
+    routing.balanced.writerFallback = { provider: "deepseek", model: "fallback-writer" };
+    const live = new LiveGenerationTextModelAdapter(config, {
+      tier: "balanced",
+      loadRouting: async () => routing,
+      createAdapter: (selection) => new AvailabilityAdapter(selection.model, calls),
+      onFallbackEvent: (event) => void events.push(event.event)
+    });
+
+    const result = await live.generateText({ messages: [], purpose: "generate-page" });
+
+    expect(result.model).toBe("fallback-writer");
+    expect(calls).toEqual(["primary-writer", "fallback-writer"]);
+    expect(events).toEqual(["fallback.start", "fallback.success"]);
+  });
+
   it("throws at construction when MOCK_AI is off and no text provider is configured", () => {
     const empty = {
       DEEPSEEK_API_KEY: "",
@@ -225,8 +267,8 @@ describe("generation text model routing", () => {
 class RevisionAdapter implements TextModelAdapter {
   private attempts = 0;
   constructor(
-    private readonly model: string,
-    private readonly calls: string[],
+    protected readonly model: string,
+    protected readonly calls: string[],
     private readonly moveRevision?: (() => void) | undefined
   ) {}
   async generateText(_options: GenerateTextOptions): Promise<TextResult> {
@@ -246,17 +288,45 @@ class RevisionAdapter implements TextModelAdapter {
   generateWithTools() { return unsupportedGenerateWithTools(); }
 }
 
+class AvailabilityAdapter extends RevisionAdapter {
+  override async generateText(options: GenerateTextOptions): Promise<TextResult> {
+    if (this.model === "primary-writer") {
+      this.calls.push("primary-writer");
+      throw new ProviderHttpError("provider unavailable", { status: 503 });
+    }
+    return super.generateText(options);
+  }
+}
+
 function routingWithBalancedWriter(model: string): GenerationTextModelRouting {
   const fast = { provider: "deepseek" as const, model: "fast" };
   return {
     fastJudgments: fast,
-    fast: { writer: fast, judgment: fast },
+    fastJudgmentsFallback: { provider: "deepseek", model: "fast-fallback" },
+    fast: {
+      writer: fast,
+      writerFallback: { provider: "deepseek", model: "fast-fallback" },
+      judgment: fast,
+      judgmentFallback: { provider: "deepseek", model: "fast-fallback" }
+    },
     balanced: {
       writer: { provider: "deepseek", model },
-      judgment: { provider: "deepseek", model: "judgment" }
+      writerFallback: { provider: "deepseek", model: "writer-fallback" },
+      judgment: { provider: "deepseek", model: "judgment" },
+      judgmentFallback: { provider: "deepseek", model: "judgment-fallback" }
     },
-    premium: { writer: fast, judgment: fast },
-    ultra: { writer: fast, judgment: fast }
+    premium: {
+      writer: fast,
+      writerFallback: { provider: "deepseek", model: "fast-fallback" },
+      judgment: fast,
+      judgmentFallback: { provider: "deepseek", model: "fast-fallback" }
+    },
+    ultra: {
+      writer: fast,
+      writerFallback: { provider: "deepseek", model: "fast-fallback" },
+      judgment: fast,
+      judgmentFallback: { provider: "deepseek", model: "fast-fallback" }
+    }
   };
 }
 
