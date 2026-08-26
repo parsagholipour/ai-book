@@ -154,7 +154,9 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
                 audience: options.plan.audience,
                 category: options.input.category,
                 subcategory: options.input.subcategory,
-                voiceGuide: options.plan.voiceGuide,
+                // voiceGuide is a writer assignment. A history plan that said
+                // "begin with documented testimony" made this reviewer reject
+                // pages that had no citeable notes.
                 antiAiRules: options.plan.antiAiRules,
                 styleGuidance: styleGuidancePayload(options.input)
               },

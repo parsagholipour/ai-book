@@ -141,6 +141,50 @@ describe("reviewPageDraft recency window", () => {
   });
 });
 
+describe("reviewPageDraft writer contracts", () => {
+  it("does not send voiceGuide; that is a writer assignment", async () => {
+    const capture = capturingReviewModel({
+      approved: true,
+      score: 92,
+      issues: [],
+      requiredRevisions: [],
+      notes: "Approved.",
+      checks: {
+        placeholderFree: true,
+        promptLeakFree: true,
+        titleClean: true,
+        repetitionOk: true,
+        progressionOk: true,
+        styleNatural: true
+      }
+    });
+
+    await reviewPageDraft({
+      input,
+      plan: {
+        ...plan,
+        voiceGuide: [
+          "Begin chapters with a specific documented moment, place, decision, or testimony, then widen the lens."
+        ]
+      },
+      chapter: plan.chapters[0],
+      pageIndex: 7,
+      draft: {
+        title: "The Door Opens",
+        markdown: goodMarkdown(),
+        summary: "Jack crosses the threshold and commits to a dangerous choice.",
+        continuityNotes: []
+      },
+      previousPages: [],
+      continuityNotes: [],
+      textModel: capture.model
+    });
+
+    expect(JSON.stringify(capture.payload)).not.toMatch(/"voiceGuide"/);
+    expect(JSON.stringify(capture.payload)).not.toMatch(/documented moment/);
+  });
+});
+
 describe("reviewPageDraft continuity notes", () => {
   it("keeps the end of the producer's ranking when the full budget overflows the prompt", async () => {
     const capture = capturingReviewModel({
