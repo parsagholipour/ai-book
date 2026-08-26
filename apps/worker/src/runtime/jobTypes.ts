@@ -89,6 +89,7 @@ export type ExportPageForRepair = {
   markdown: string;
   summary: string;
   imagePrompt: string | null;
+  qualityReport?: unknown;
   revision: number;
   status: string;
   chapter?: { id: string; index: number; productionBrief: unknown } | null;

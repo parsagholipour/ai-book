@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = await vi.hoisted(async () => ({
   continuityFindMany: vi.fn(),
+  researchFindMany: vi.fn(),
+  retrieveSemanticResearchNotes: vi.fn(),
   retrieveLexicalContinuityNotes: vi.fn(),
   /**
    * The shared degrade stand-in from `testing/degradeRetrievalArmFake.ts`. What
@@ -15,16 +17,17 @@ const mocks = await vi.hoisted(async () => ({
 vi.mock("@book-maker/db", async () => ({
   prisma: {
     continuityNote: { findMany: mocks.continuityFindMany },
-    researchSource: { findMany: vi.fn() }
+    researchSource: { findMany: mocks.researchFindMany }
   },
   retrieveLexicalContinuityNotes: mocks.retrieveLexicalContinuityNotes,
   degradeRetrievalArm: mocks.degradeRetrievalArm,
   ...(await import("../testing/dbScopeMocks.js")).dbScopeMocks()
 }));
-vi.mock("./researchMemory.js", () => ({ retrieveSemanticResearchNotes: vi.fn() }));
+vi.mock("./researchMemory.js", () => ({ retrieveSemanticResearchNotes: mocks.retrieveSemanticResearchNotes }));
 
 import { CONTINUITY_NOTE_PROMPT_LIMITS, continuityNotesForPrompt } from "@book-maker/core";
-import { loadContinuityNotes } from "./generationContext.js";
+import { StopRequestedError } from "../runtime/jobTypes.js";
+import { loadContinuityNotes, loadResearchNotesForGeneration } from "./generationContext.js";
 
 describe("loadContinuityNotes", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -152,6 +155,60 @@ describe("loadContinuityNotes", () => {
       // to reach the job runner as a stop, not as a thinner context pack.
       rethrowIf: expect.any(Function)
     });
+  });
+});
+
+describe("loadResearchNotesForGeneration", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.retrieveSemanticResearchNotes.mockResolvedValue([]);
+  });
+
+  it("drops URL-less bootstrap rows and keeps reader-facing sources", async () => {
+    mocks.researchFindMany.mockResolvedValue([
+      { query: "bootstrap", title: "Gemini grounded summary", summary: "No link.", url: null },
+      { query: "archive", title: "Boundary papers", summary: "Commission records.", url: "https://example.com/papers" },
+      { query: "blank", title: "Blank link", summary: "Not citeable.", url: "   " }
+    ]);
+
+    await expect(
+      loadResearchNotesForGeneration("project-1", { researchDepth: 0 } as never)
+    ).resolves.toEqual(["Boundary papers: Commission records."]);
+  });
+
+  it("filters semantic hits through the same URL-backed source set", async () => {
+    mocks.researchFindMany.mockResolvedValue([
+      { query: "bootstrap", title: "Grounding summary", summary: "No link.", url: null },
+      { query: "archive", title: "Boundary papers", summary: "Commission records.", url: "https://example.com/papers" }
+    ]);
+    mocks.retrieveSemanticResearchNotes.mockResolvedValue([
+      "Grounding summary: No link.",
+      "Boundary papers: Commission records."
+    ]);
+
+    await expect(
+      loadResearchNotesForGeneration(
+        "project-1",
+        { researchDepth: 4 } as never,
+        undefined,
+        { embedding: { embed: async () => [0.1] }, queryText: "commission" }
+      )
+    ).resolves.toEqual(["Boundary papers: Commission records."]);
+  });
+
+  it("lets a semantic stop outrank a concurrent research-source read failure", async () => {
+    const stop = new StopRequestedError();
+    mocks.retrieveSemanticResearchNotes.mockRejectedValue(stop);
+    mocks.researchFindMany.mockRejectedValue(new Error("research source read failed"));
+
+    await expect(
+      loadResearchNotesForGeneration(
+        "project-1",
+        { researchDepth: 4 } as never,
+        undefined,
+        { embedding: { embed: async () => [0.1] }, queryText: "commission" }
+      )
+    ).rejects.toBe(stop);
   });
 });
 

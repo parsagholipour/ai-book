@@ -45,6 +45,7 @@ export const mocks = {
   storeEmbedding: vi.fn(),
   loadContinuityNotes: vi.fn(),
   loadResearchNotesForGeneration: vi.fn(),
+  retrieveSemanticResearchNotes: vi.fn(),
   embedSemanticQuery: vi.fn(),
   lexicalTermsForQuery: vi.fn(),
   repairPageEmbeddings: vi.fn(),
@@ -91,7 +92,9 @@ export const entityStateModuleMock = () => ({
   updateEntityStateFromPage: vi.fn()
 });
 
-export const researchMemoryModuleMock = () => ({ retrieveSemanticResearchNotes: async () => [] });
+export const researchMemoryModuleMock = () => ({
+  retrieveSemanticResearchNotes: mocks.retrieveSemanticResearchNotes
+});
 
 export const semanticRecallModuleMock = () => ({
   RECENT_PAGE_WINDOW: 6,
@@ -263,6 +266,7 @@ export function resetGeneratePageMocks() {
   mocks.parseChapterBrief.mockReturnValue(undefined);
   mocks.loadContinuityNotes.mockResolvedValue([]);
   mocks.loadResearchNotesForGeneration.mockResolvedValue([]);
+  mocks.retrieveSemanticResearchNotes.mockResolvedValue([]);
   mocks.embedSemanticQuery.mockResolvedValue(undefined);
   mocks.lexicalTermsForQuery.mockReturnValue([]);
   mocks.repairPageEmbeddings.mockResolvedValue(undefined);

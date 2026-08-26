@@ -45,6 +45,57 @@ export const INTERNAL_PAGE_TITLE_RULE =
   "The title field is internal tracking metadata only; give it a concise page-specific title that reflects this page's beat, and do not reuse the book title, chapter title, a Page N label, mini-chapter heading, or an adjacent/recent page title.";
 export const GROUNDED_FACTUALITY_RULE =
   "For factual or research-grounded prose, never invent studies, journals, experts, institutions, citations, statistics, source names, or numeric findings; use provided researchNotes or qualify/omit unsupported claims.";
+
+export type CitationContractNote = string | {
+  title?: string | undefined;
+  url?: string | undefined;
+  summary?: string | undefined;
+};
+
+export type CitationContractFields = {
+  /** The source-identity rule selected by whether the payload has citeable notes. */
+  rules: string[];
+  /** The exact filtered list the rule names, carried beside it in the prompt. */
+  payload: { researchNotes: string[] };
+};
+
+/**
+ * Keeps the source-identity instruction and the evidence available to satisfy
+ * it in one prompt contract.
+ *
+ * String notes have already crossed the worker's reader-facing-source filter;
+ * structured plan notes still carry their URL here and are filtered locally.
+ * This lets every core prompt use an empty array as the deterministic gate
+ * without teaching core about database rows.
+ */
+export function citationContractFields(
+  researchNotes: readonly CitationContractNote[] | undefined
+): CitationContractFields {
+  const citeableNotes = (researchNotes ?? []).flatMap((note) => {
+    if (typeof note === "string") {
+      const trimmed = note.trim();
+      return trimmed ? [trimmed] : [];
+    }
+    if (!note.url?.trim()) {
+      return [];
+    }
+    const title = note.title?.trim() || "Research source";
+    const summary = note.summary?.trim();
+    return [`${title} (${note.url.trim()})${summary ? `: ${summary}` : ""}`];
+  });
+
+  return {
+    rules: citeableNotes.length > 0
+      ? [
+          "Use only sources present in researchNotes when assigning, writing, or reviewing named evidence; do not require, invent, or accept a diary, dispatch, archive, citation, named testimony, or other source identity that researchNotes does not contain."
+        ]
+      : [
+          "researchNotes is empty: use grounded people, places, dates, and qualified claims, but do not assign, require, invent, or reject prose for omitting a diary, dispatch, archive, citation, named testimony, or other source identity. Still reject invented named sources, fabricated scenes, factual errors, repetition, and other real defects."
+        ],
+    payload: { researchNotes: citeableNotes }
+  };
+}
+
 export const IMAGE_PROMPT_CHARACTER_RULE =
   "When imagePrompt depicts recurring characters, use exact character names from characters, preserve visualRules, and avoid generic labels when a named character appears.";
 

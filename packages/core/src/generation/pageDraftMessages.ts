@@ -13,6 +13,7 @@ import {
   INTERNAL_PAGE_TITLE_RULE,
   READER_FACING_PAGE_BRIEF_RULES,
   buildPageInstruction,
+  citationContractFields,
   chapterBriefPayloadForPageScope,
   compactFollowingPages,
   compactPriorPages,
@@ -40,11 +41,13 @@ export function buildPageDraftSystemContent(
   options: GeneratePageOptions,
   extraSystemLines: string[] = []
 ): string {
+  const citation = citationContractFields(options.researchNotes);
   return [
     "Write one finished Markdown page of the book as a human author would.",
     "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions.",
     INTERNAL_PAGE_TITLE_RULE,
     GROUNDED_FACTUALITY_RULE,
+    ...citation.rules,
     "Do not use scaffold phrases, meta commentary, or a summary of what the page should do.",
     ...READER_FACING_PAGE_BRIEF_RULES,
     "Make the page itself advance the story or explanation through concrete action, claims, dialogue, or scene work.",
@@ -69,6 +72,7 @@ export function buildPageDraftSystemContent(
 
 export function buildPageDraftUserPayload(options: GeneratePageOptions) {
   const pageInstruction = buildPageInstruction(options);
+  const citation = citationContractFields(options.researchNotes);
   const context = buildContextPack({
     plan: options.plan,
     chapter: options.chapter,
@@ -101,6 +105,7 @@ export function buildPageDraftUserPayload(options: GeneratePageOptions) {
     },
     chapterBrief: chapterBriefPayloadForPageScope(options.chapterBrief),
     pageBrief: options.pageBrief,
+    ...citation.payload,
     pageScope: pageScopePayload(options),
     characters: options.plan.characters,
     illustrationPlan: options.plan.illustrationPlan,

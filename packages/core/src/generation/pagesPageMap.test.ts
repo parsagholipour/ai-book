@@ -223,6 +223,33 @@ describe("chapter brief first-page contract", () => {
     expect(capture.payload?.openingHook).toBe(openingHook);
   });
 
+  it("forbids assigning a named archive when the plan has no citeable notes", async () => {
+    const capture = capturingJsonModel(briefResponse([1, 2, 3], 1));
+    const plan: BookPlan = {
+      ...chunkedPlan,
+      researchNotes: [
+        {
+          query: "bootstrap",
+          title: "Grounded planning summary",
+          summary: "A URL-less summary that cannot appear in Sources."
+        }
+      ]
+    };
+
+    await generateChapterBrief({
+      input: chunkedInput,
+      plan,
+      chapter: plan.chapters[0]!,
+      chapterPageStart: 1,
+      chapterPageEnd: 3,
+      textModel: capture.model
+    });
+
+    expect(capture.system).toContain("researchNotes is empty:");
+    expect(capture.system).toContain("do not assign, require, invent, or reject prose for omitting a diary");
+    expect(capture.payload?.researchNotes).toEqual([]);
+  });
+
   it("briefs a one-page book's only chapter to close the book", async () => {
     const capture = capturingJsonModel(briefResponse([1], 1));
     const plan: BookPlan = { ...makeFallbackPlan(onePageInput), openingHook };
@@ -441,6 +468,28 @@ describe("page brief repair first-page contract", () => {
     expect(capture.system).not.toMatch(/Global page 1 is the book's first page/);
     expect(capture.system).not.toMatch(/openingHook/);
     expect(capture.payload?.openingHook).toBeUndefined();
+    expect(capture.system).toContain("Discard source-identity requirements from the original page brief");
+    expect(capture.payload?.researchNotes).toEqual([]);
+  });
+
+  it("preserves source-identity requirements when a citeable note can satisfy them", async () => {
+    const capture = capturingJsonModel(modelPageBeat(2, 1));
+    const plan: BookPlan = {
+      ...makeFallbackPlan(input),
+      researchNotes: [
+        {
+          query: "archive",
+          title: "Boundary papers",
+          url: "https://example.com/papers",
+          summary: "Commission records."
+        }
+      ]
+    };
+
+    await repairPageBrief({ ...repairOptions(2, plan), textModel: capture.model });
+
+    expect(capture.system).not.toContain("Discard source-identity requirements from the original page brief");
+    expect(capture.payload?.researchNotes).toHaveLength(1);
   });
 
   it("keeps the first-page rule but sends no openingHook when the plan has none", async () => {

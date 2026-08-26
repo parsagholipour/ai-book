@@ -214,7 +214,7 @@ export async function generateBestOfPageDrafts<T extends BestOfDraftBase>(
    * re-bill the whole page.
    *
    * So: wait for every candidate, then decide rather than race — the shape
-   * `settleIndependentLoads` (`apps/worker/src/handlers/generatePage.ts`) holds
+   * `settleIndependentLoads` (`apps/worker/src/generation/independentLoads.ts`) holds
    * over the page's independent loads, and the rule `runToolLoop` holds one layer
    * down, where only a tool *failure* may become a tool result. The predicate is
    * {@link isCancellationError}, which reads the error's *identity* — an

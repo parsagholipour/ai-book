@@ -498,13 +498,6 @@ function hasFormulaicAdjacentContrast(text: string): boolean {
     ) {
       return true;
     }
-    if (
-      BROAD_NEGATION_PATTERN.test(current) &&
-      THESIS_SENTENCE_START_PATTERN.test(next) &&
-      THESIS_ABSTRACTION_PATTERN.test(next)
-    ) {
-      return true;
-    }
   }
   return false;
 }
@@ -866,9 +859,6 @@ const CONTRAST_RESOLUTION_PATTERNS = [
 
 const THESIS_ABSTRACTION_PATTERN =
   /\b(?:truth|sign|proof|evidence|indication|superiority|supremacy|primacy|hierarchy|destiny|essence|divine|original|supreme|ultimate|inferiority)\b/i;
-
-const BROAD_NEGATION_PATTERN = /\b(?:not|never|opposite|absent|wrong|misread|misunderstood|been taught)\b/i;
-const THESIS_SENTENCE_START_PATTERN = /^(?:this|that|it|the truth|therefore|thus|instead)\b/i;
 
 const SCAFFOLD_SHAPE_PATTERNS = [
   /\bthe page opens\b/i,

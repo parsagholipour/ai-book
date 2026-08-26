@@ -1,5 +1,11 @@
 import { isStopRequestedError, type ChapterSetup } from "../runtime/jobTypes.js";
 import { retrieveSemanticResearchNotes } from "./researchMemory.js";
+import { settleIndependentLoads } from "./independentLoads.js";
+import {
+  urlBackedResearchNotes,
+  urlBackedResearchSources,
+  validateSemanticResearchNotes
+} from "./researchSources.js";
 import {
   CONTINUITY_NOTE_PROMPT_LIMITS,
   type BookGenerationStrategy,
@@ -202,26 +208,34 @@ export async function loadResearchNotesForGeneration(
   semantic?: { embedding: EmbeddingAdapter; queryText: string; vector?: number[] | undefined } | undefined
 ): Promise<string[]> {
   const take = strategy.researchDepth ? strategy.researchDepth + 12 : 12;
-
-  if (semantic) {
-    const retrieved = await retrieveSemanticResearchNotes({
-      projectId,
-      queryText: semantic.queryText,
-      embedding: semantic.embedding,
-      topK: take,
-      ...(semantic.vector ? { vector: semantic.vector } : {})
-    });
-    if (retrieved.length > 0) {
-      return retrieved;
-    }
+  const [retrieved, storedSources] = await settleIndependentLoads([
+    semantic
+      ? retrieveSemanticResearchNotes({
+          projectId,
+          queryText: semantic.queryText,
+          embedding: semantic.embedding,
+          topK: take,
+          ...(semantic.vector ? { vector: semantic.vector } : {})
+        })
+      : Promise.resolve([]),
+    prisma.researchSource.findMany({
+      where: { projectId, url: { not: null } },
+      orderBy: { createdAt: "desc" },
+      // Semantic hits may point beyond the recency window; load the URL-backed
+      // identity set needed to validate those hits, then return only topK.
+      ...(semantic ? {} : { take })
+    })
+  ]);
+  // The Sources back matter can cite only rows with a real URL. Keep the
+  // generation contract on the same boundary: URL-less grounding/bootstrap
+  // summaries are useful planner context, but cannot satisfy a request to name
+  // a diary, dispatch, archive, or testimony in reader-facing prose.
+  const sources = urlBackedResearchSources(storedSources);
+  const notes = urlBackedResearchNotes(sources);
+  const citeableRetrieved = validateSemanticResearchNotes(retrieved, notes);
+  if (citeableRetrieved.length > 0) {
+    return citeableRetrieved;
   }
-
-  const sources = await prisma.researchSource.findMany({
-    where: { projectId },
-    orderBy: { createdAt: "desc" },
-    take
-  });
-  const notes = sources.map((source) => `${source.title}: ${source.summary}`);
   if (!strategy.researchDepth || !chapter) {
     return notes;
   }

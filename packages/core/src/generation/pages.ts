@@ -26,6 +26,7 @@ import {
   READER_FACING_PAGE_BRIEF_RULES,
   arrayLikeField,
   buildPageInstruction,
+  citationContractFields,
   compactPriorPages,
   isRecord,
   numberField,
@@ -70,6 +71,7 @@ export {
   pinStyleExcerpts,
   sampleExcerptsFromInput,
   buildPageInstruction,
+  citationContractFields,
   openingContractFields,
   openingContractFieldsForPage,
   openingContractForRange,
@@ -78,6 +80,7 @@ export {
   OPENING_QUALITY_RULE_MARKER,
   STYLE_LOCK_PAGE_INDEXES,
   type GeneratePageOptions,
+  type CitationContractFields,
   type OpeningContract,
   type OpeningContractAudience,
   type OpeningContractFields,
@@ -87,6 +90,7 @@ export {
   type PageInstructionSource,
   type PriorPageContext
 } from "./pagesShared.js";
+export { shouldSkipUnsatisfiableCitationRepair } from "./citationRepairPolicy.js";
 
 export type GenerateImageBytesOptions = {
   image: ImageAdapter;
@@ -211,6 +215,7 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
   // This pass always writes page 1, so it always owes page 1's opening contract
   // — including the hook the page map's first brief is written against.
   const opening = openingContractFields(options, "multiPageWriter", 1, options.input.targetPages);
+  const citation = citationContractFields(options.researchNotes);
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "generate-whole-book",
     temperature: options.input.temperature,
@@ -224,6 +229,7 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
           "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages.",
           INTERNAL_PAGE_TITLE_RULE,
           GROUNDED_FACTUALITY_RULE,
+          ...citation.rules,
           "Return exactly one root JSON object with a pages array.",
           ...multiPageImagePromptGuidance(options.input, 1, options.input.targetPages),
           ...READER_FACING_PAGE_BRIEF_RULES,
@@ -257,7 +263,7 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
             locations: options.plan.locations,
             pageMap: options.chapterBriefs ? pageMapForWholeBookDraft(options.chapterBriefs) : undefined,
             ...opening.payload,
-            researchNotes: options.researchNotes,
+            ...citation.payload,
             illustrationPlan: options.plan.illustrationPlan,
             pageGuidance: {
               targetWordsPerPage: targetWordsPerPage(options.input),
@@ -284,6 +290,7 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
 export async function generateChapterDraft(options: GenerateChapterDraftOptions): Promise<WholeBookDraft> {
   const expectedPages = range(options.chapterPageStart, options.chapterPageEnd);
   const opening = openingContractFields(options, "multiPageWriter", options.chapterPageStart, options.chapterPageEnd);
+  const citation = citationContractFields(options.researchNotes.slice(0, 18));
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "generate-chapter-draft",
     temperature: options.input.temperature,
@@ -299,6 +306,7 @@ export async function generateChapterDraft(options: GenerateChapterDraftOptions)
           ...multiPageImagePromptGuidance(options.input, options.chapterPageStart, options.chapterPageEnd),
           INTERNAL_PAGE_TITLE_RULE,
           GROUNDED_FACTUALITY_RULE,
+          ...citation.rules,
           "Do not mention AI, prompts, JSON, schemas, generation, or production instructions in reader-facing pages.",
           ...READER_FACING_PAGE_BRIEF_RULES,
           ...opening.rules,
@@ -335,7 +343,7 @@ export async function generateChapterDraft(options: GenerateChapterDraftOptions)
             },
             previousPages: compactPriorPages(options.previousPages, 6, 900),
             continuityNotes: continuityNotesForPrompt(options.continuityNotes, CONTINUITY_NOTE_PROMPT_LIMITS.bulkDraft),
-            researchNotes: options.researchNotes.slice(0, 18),
+            ...citation.payload,
             ...(options.styleExcerpts && options.styleExcerpts.length > 0
               ? { styleExcerpts: options.styleExcerpts }
               : {}),
@@ -360,6 +368,7 @@ export async function generateChapterDraft(options: GenerateChapterDraftOptions)
 export async function generateBatchDraft(options: GenerateBatchDraftOptions): Promise<WholeBookDraft> {
   const expectedPages = range(options.pageStart, options.pageEnd);
   const opening = openingContractFields(options, "multiPageWriter", options.pageStart, options.pageEnd);
+  const citation = citationContractFields(options.researchNotes.slice(0, 18));
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "generate-page-batch",
     temperature: options.input.temperature,
@@ -375,6 +384,7 @@ export async function generateBatchDraft(options: GenerateBatchDraftOptions): Pr
           ...multiPageImagePromptGuidance(options.input, options.pageStart, options.pageEnd),
           INTERNAL_PAGE_TITLE_RULE,
           GROUNDED_FACTUALITY_RULE,
+          ...citation.rules,
           "Make each page advance a distinct beat and avoid repeating recent pages.",
           ...READER_FACING_PAGE_BRIEF_RULES,
           ...opening.rules,
@@ -409,7 +419,7 @@ export async function generateBatchDraft(options: GenerateBatchDraftOptions): Pr
             ...opening.payload,
             previousPages: compactPriorPages(options.previousPages, 8, 900),
             continuityNotes: continuityNotesForPrompt(options.continuityNotes, CONTINUITY_NOTE_PROMPT_LIMITS.bulkDraft),
-            researchNotes: options.researchNotes.slice(0, 18),
+            ...citation.payload,
             ...(options.styleExcerpts && options.styleExcerpts.length > 0
               ? { styleExcerpts: options.styleExcerpts }
               : {}),
@@ -459,6 +469,7 @@ export function polishPageTemperature(input: CreateProjectInput): number {
 
 export async function polishPageDraft(options: PolishPageOptions): Promise<PageDraft> {
   const pageInstruction = buildPageInstruction(options);
+  const citation = citationContractFields(options.researchNotes.slice(0, 18));
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "polish-page",
     temperature: polishPageTemperature(options.input),
@@ -474,6 +485,7 @@ export async function polishPageDraft(options: PolishPageOptions): Promise<PageD
           "Return a complete replacement page, not notes.",
           INTERNAL_PAGE_TITLE_RULE,
           GROUNDED_FACTUALITY_RULE,
+          ...citation.rules,
           "Do not mention AI, prompts, JSON, schemas, generation, or production instructions.",
           ...READER_FACING_PAGE_BRIEF_RULES,
           ...pageDraftImagePromptGuidance(options.input, options.pageIndex),
@@ -507,7 +519,7 @@ export async function polishPageDraft(options: PolishPageOptions): Promise<PageD
             previousPages: compactPriorPages(options.previousPages, 4, 800),
             nextPages: compactPriorPages(options.nextPages, 3, 800),
             continuityNotes: continuityNotesForPrompt(options.continuityNotes, CONTINUITY_NOTE_PROMPT_LIMITS.bulkDraft),
-            researchNotes: options.researchNotes.slice(0, 18),
+            ...citation.payload,
             instruction: pageInstruction.text
           },
           null,

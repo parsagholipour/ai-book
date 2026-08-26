@@ -702,6 +702,31 @@ describe("non-Latin local quality review", () => {
 });
 
 describe("contrast formula patterns", () => {
+  it("approves an honest sourcing hedge followed by an evidence sentence", () => {
+    const report = review(
+      nonfictionInput("SCIENCE"),
+      "The Ogoja Record",
+      "The surviving administrative note mentions the Ogoja district, but it does not identify the publication or exact date. It therefore offers limited evidence: it can establish the language officials used, not prove how every resident understood the order. The district returns in later correspondence under several spellings, and the clerks rarely explain whether they copied a local name or inherited an earlier transcription. That uncertainty matters because the boundary itself moved while the record was being assembled. A careful account can still name the officers, settlements, and sequence of decisions visible in the papers while leaving the document's missing identity unresolved. The gap belongs in the history as a limit on the claim, not as an invitation to manufacture a cleaner archive than the one that survives.",
+      "The Ogoja note supports a limited claim while leaving its publication identity unresolved."
+    );
+
+    expect(report.issues).toEqual([]);
+    expect(report.approved).toBe(true);
+    expect(report.checks.styleNatural).toBe(true);
+  });
+
+  it("still rejects a rhetorical setup resolved as a sweeping thesis contrast", () => {
+    const report = review(
+      nonfictionInput("SCIENCE"),
+      "The Original Pattern",
+      "You have been taught that the treaty created the border in a single afternoon. But what if the original pattern was already visible in the market roads, tax stations, and patrol routes that officials inherited? The truth is that every later survey merely exposed this deeper hierarchy, and the evidence proves the map could never have taken another form. Clerks copied the same assumptions into ledgers, commanders repeated them in orders, and negotiators carried them into meetings where the final line was drawn. The old routes became a hidden blueprint, converting scattered administrative habits into the supreme logic of the settlement and fixing the region's destiny before the delegates arrived.",
+      "A sweeping claim that inherited routes predetermined the treaty border."
+    );
+
+    expect(report.checks.styleNatural).toBe(false);
+    expect(report.issues.join(" ")).toMatch(/generic AI-rhetorical pattern/);
+  });
+
   it("leaves the ordinary 'not only … but' correlative alone", () => {
     const report = review(
       nonfictionInput("SCIENCE"),

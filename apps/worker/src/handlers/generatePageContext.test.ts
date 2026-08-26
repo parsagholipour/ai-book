@@ -405,6 +405,28 @@ describe("generatePage context assembly", () => {
     );
   });
 
+  it("keeps URL-less semantic hits out of the generate-page revision prompt", async () => {
+    const citeable = "Boundary papers: Commission records.";
+    mocks.qualityEnabled.mockImplementation((feature?: string) => feature === "claimRetrieve");
+    mocks.loadResearchNotesForGeneration.mockResolvedValue([citeable]);
+    mocks.retrieveSemanticResearchNotes.mockResolvedValue([
+      "Grounding summary: URL-less bootstrap claim.",
+      citeable
+    ]);
+    mocks.generatePageDraft.mockResolvedValue(draftNamed("First"));
+    mocks.reviewPageDraft
+      .mockResolvedValueOnce({ ...report(40), groundedOk: false, issues: ["Needs revision."] })
+      .mockResolvedValue({ ...report(88), approved: true });
+    mocks.revisePageDraft.mockResolvedValue(draftNamed("Rewrite"));
+
+    await generatePage(job);
+
+    expect(mocks.retrieveSemanticResearchNotes).toHaveBeenCalledTimes(1);
+    expect(mocks.revisePageDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ retrievedResearch: [citeable] })
+    );
+  });
+
   it("hands the composed brief's needles to the continuity load", async () => {
     mocks.lexicalTermsForQuery.mockReturnValue(["Pip", "Oakhaven"]);
     mocks.generatePageDraft.mockResolvedValue(draftNamed("First"));

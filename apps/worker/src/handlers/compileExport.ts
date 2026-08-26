@@ -78,6 +78,8 @@ import type { CompileExportJob } from "../runtime/jobPayloads.js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
+import { failedQaPageIndexesForCompile } from "./compileExportCitationRepair.js";
+import { urlBackedResearchNotes } from "../generation/researchSources.js";
 /**
  * `compile-export` job: final QA over the manuscript, then Markdown/PDF/EPUB output.
  */
@@ -188,7 +190,8 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   // two different revisions — the repaired pages written against one gate set,
   // the report that ships them against another.
   const quality = await loadQualityContext(input);
-  const failedQaPageIndexes = pages.filter((page) => page.status === "FAILED_QA").map((page) => page.index);
+  const citeableResearchNotes = urlBackedResearchNotes(project.research);
+  const failedQaPageIndexes = failedQaPageIndexesForCompile(pages, citeableResearchNotes);
   // Lazily cache the pre-repair sweep used for repair targeting and stand-down.
   // The shipped report deliberately runs its own sweep over the durable pages.
   let initialIntegrityIssuesSnapshot: ManuscriptQualityIssue[] | undefined;
@@ -232,9 +235,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
         input,
         plan,
         pages: pages.map(toFinalQaPage),
-        researchNotes: strategy.researchDepth
-          ? project.research.map((source) => `${source.title}: ${source.summary}`)
-          : undefined,
+        researchNotes: strategy.researchDepth ? citeableResearchNotes : undefined,
         textModel: providers.text
       })
     ]);
@@ -252,6 +253,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
           quality,
           pages,
           finalQa,
+          researchNotes: citeableResearchNotes,
           extraPageIndexes: [
             ...failedQaPageIndexes,
             // Errors only: warning-severity issues (a repeated phrase, an unpaid
@@ -274,9 +276,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
         if (repairedPages) {
           pages = repairedPages;
           const repairedFinalQaPages = pages.map(toFinalQaPage);
-          const repairedResearchNotes = strategy.researchDepth
-            ? project.research.map((source) => `${source.title}: ${source.summary}`)
-            : undefined;
+          const repairedResearchNotes = strategy.researchDepth ? citeableResearchNotes : undefined;
           // The repair's last page claim does not protect the model call that
           // follows it. An edit can commit in that gap, making this expensive
           // second opinion both obsolete and capable of recording a verdict

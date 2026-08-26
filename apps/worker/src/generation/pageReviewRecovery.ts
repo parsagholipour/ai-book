@@ -215,6 +215,7 @@ export async function repairPageBriefForRecovery(options: {
   qualityReport: PageQualityReport;
   previousPages: PriorPageContext[];
   continuityNotes: string[];
+  researchNotes?: string[] | undefined;
   textModel: TextModelAdapter;
   generationJobId?: string | undefined;
   context: string;
@@ -245,6 +246,7 @@ export async function repairPageBriefForRecovery(options: {
     report: options.qualityReport,
     previousPages: options.previousPages,
     continuityNotes: options.continuityNotes,
+    researchNotes: options.researchNotes,
     textModel: options.textModel
   });
 

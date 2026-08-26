@@ -30,6 +30,7 @@ import {
   GROUNDED_FACTUALITY_RULE,
   arrayLikeField,
   chapterBriefPayloadForPageScope,
+  citationContractFields,
   compactPriorPages,
   isRecord,
   numberField,
@@ -62,6 +63,8 @@ export type GenerateChapterBriefOptions = {
   chapter: ChapterPlan;
   chapterPageStart: number;
   chapterPageEnd: number;
+  /** Filtered generation notes; falls back to citeable plan notes when absent. */
+  researchNotes?: string[] | undefined;
   textModel: TextModelAdapter;
 };
 
@@ -104,6 +107,7 @@ export async function generateWholeBookPageMap(options: GeneratePageMapOptions):
 
   // This pass maps the whole book, so it is always the one that briefs page 1.
   const firstPage = firstPageBriefFieldsForRange(options, 1, options.input.targetPages);
+  const citation = citationContractFields(options.plan.researchNotes);
   const chapterPageRanges = chapterRangesForPlan(options.plan, options.input.targetPages).map((setup) => ({
     index: setup.chapter.index,
     title: setup.chapter.title,
@@ -136,6 +140,7 @@ export async function generateWholeBookPageMap(options: GeneratePageMapOptions):
             "Never emit pageIndex values greater than targetPages.",
             "Each page beat object must include pageIndex, chapterIndex, purpose, beat, requiredContinuity, endingPressure, and optional imageMoment.",
             "Use global page indexes, not chapter-local page numbers.",
+            ...citation.rules,
             ...firstPage.rules,
             ...targetLanguageGenerationGuidance(options.input.language),
             ...plannerToneRules(options.input)
@@ -161,6 +166,7 @@ export async function generateWholeBookPageMap(options: GeneratePageMapOptions):
                 styleGuidance: styleGuidancePayload(options.input)
               },
               ...firstPage.payload,
+              ...citation.payload,
               chapterPageRanges,
               characters: options.plan.characters,
               locations: options.plan.locations,
@@ -205,6 +211,7 @@ export async function generateChapterBrief(options: GenerateChapterBriefOptions)
   // which is why `writesFirstPage` (`pagesShared.ts`), under the helper below,
   // is a range predicate and not an index one.
   const firstPage = firstPageBriefFieldsForRange(options, options.chapterPageStart, options.chapterPageEnd);
+  const citation = citationContractFields(options.researchNotes ?? options.plan.researchNotes);
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "generate-chapter-brief",
     temperature: Math.min(0.7, options.input.temperature),
@@ -220,6 +227,7 @@ export async function generateChapterBrief(options: GenerateChapterBriefOptions)
           "The beats must prevent filler, repetition, and generic endings.",
           "Return exactly one root JSON object with chapterIndex, title, summary, pages, and continuityFocus.",
           "Use pages for the page beat array; do not return pageBeats as the root shape.",
+          ...citation.rules,
           ...firstPage.rules,
           ...targetLanguageGenerationGuidance(options.input.language),
           ...plannerToneRules(options.input)
@@ -242,6 +250,7 @@ export async function generateChapterBrief(options: GenerateChapterBriefOptions)
               styleGuidance: styleGuidancePayload(options.input)
             },
             ...firstPage.payload,
+            ...citation.payload,
             chapter: options.chapter,
             pageRange: {
               start: options.chapterPageStart,
@@ -274,6 +283,7 @@ export async function repairPageBrief(options: RepairPageBriefOptions): Promise<
   // stays right for a page 1 redrafted inside a finished book. A repair rewrites
   // exactly one page, so it asks the range question in its one-page form.
   const firstPage = firstPageBriefFieldsForRange(options, options.pageIndex, options.pageIndex);
+  const citation = citationContractFields(options.researchNotes ?? options.retrievedResearch ?? options.plan.researchNotes);
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "repair-page-brief",
     temperature: Math.min(REWRITE_TEMPERATURE_CEILING, options.input.temperature),
@@ -289,6 +299,10 @@ export async function repairPageBrief(options: RepairPageBriefOptions): Promise<
           "Preserve the book premise, audience, and chapter purpose, but you may discard original required examples, sources, metaphors, or ending pressure when QA says they cause repetition.",
           "The repaired beat must create a distinct new contribution beyond previousPages: a new textual analysis, concrete case, irreversible decision, practical consequence, or specific evidence path.",
           GROUNDED_FACTUALITY_RULE,
+          ...citation.rules,
+          ...(citation.payload.researchNotes.length === 0
+            ? ["Discard source-identity requirements from the original page brief because researchNotes is empty."]
+            : []),
           "Do not ask the writer to restate, reframe, or lightly polish the rejected draft.",
           "If the chapter requires recurring mechanics, repair the assignment around the new consequence, location, choice, or relation rather than banning the recurring action itself.",
           "Use pageScope to keep the repaired assignment inside the current page. Do not move futureChapterPageBriefs or later chapter keyBeats into this page.",
@@ -320,6 +334,7 @@ export async function repairPageBrief(options: RepairPageBriefOptions): Promise<
               styleGuidance: styleGuidancePayload(options.input)
             },
             ...firstPage.payload,
+            ...citation.payload,
             chapter: options.chapter,
             chapterBrief: chapterBriefPayloadForPageScope(options.chapterBrief),
             pageIndex: options.pageIndex,

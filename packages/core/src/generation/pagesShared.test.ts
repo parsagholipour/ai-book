@@ -7,6 +7,7 @@ import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
 import {
   generateBatchDraft,
   generateChapterDraft,
+  generateChapterBrief,
   generatePageDraft,
   generateWholeBookDraft,
   polishPageDraft,
@@ -207,6 +208,153 @@ describe("chapter and batch draft style excerpts", () => {
       textModel: batch.model
     });
     expect(batch.payload?.styleExcerpts).toEqual(excerpts);
+  });
+});
+
+describe("the citation contract, across brief, writer, and reviewer prompts", () => {
+  const input = {
+    prompt: "A sourced history of a disputed border.",
+    category: "HISTORY",
+    targetPages: 2,
+    complexity: 6,
+    temperature: 0.7,
+    language: "en",
+    mediaSettings: {
+      fullIllustrations: false,
+      illustrationCadence: "template-driven",
+      includeCover: true,
+      coverTemplate: "auto",
+      finalReview: true,
+      toneProfile: "neutral"
+    }
+  } as CreateProjectInput;
+  const basePlan = makeFallbackPlan(input);
+  const source = {
+    query: "border archive",
+    title: "Boundary Commission papers",
+    url: "https://example.com/archive",
+    summary: "A catalog of commission correspondence."
+  };
+  const prose =
+    "The commission reached the river after the rains and found three roads converging at the ferry. Its clerks recorded the settlements on both banks, but the surviving map leaves the seasonal market unmarked. That omission limits what the line can prove without erasing the people and dates the record does preserve. The delegates returned in October, compared the road ledger with the ferry tolls, and shifted the proposed boundary east of the landing. Traders continued to use the western road through the dry season, while tax collectors counted cargo at a post the map placed on the opposite bank. Minutes from the final meeting preserve the vote and the names of the delegates, yet say nothing about the market day on which residents would first encounter the new line. A careful account can therefore reconstruct the administrative sequence without pretending the papers contain a complete civilian response.";
+
+  function captureModel(data: unknown) {
+    const capture: { system: string; payload: Record<string, unknown>; model: TextModelAdapter } = {
+      system: "",
+      payload: {},
+      model: {
+        async generateText() {
+          return { text: "", model: "test-model", provider: "test" };
+        },
+        async generateJson(options) {
+          capture.system = options.messages[0]?.content ?? "";
+          capture.payload = JSON.parse(options.messages[1]?.content ?? "{}") as Record<string, unknown>;
+          return { data: options.schema.parse(data), text: "{}", model: "test-model", provider: "test" };
+        },
+        async *streamText() {
+          yield "";
+        },
+        generateWithTools: unsupportedGenerateWithTools
+      }
+    };
+    return capture;
+  }
+
+  const approved = {
+    approved: true,
+    score: 90,
+    issues: [],
+    requiredRevisions: [],
+    notes: "Approved."
+  };
+
+  const sites = [
+    {
+      name: "chapter brief",
+      async run(citeable: boolean) {
+        const plan = { ...basePlan, researchNotes: citeable ? [source] : [] };
+        const capture = captureModel({
+          chapterIndex: plan.chapters[0]!.index,
+          title: plan.chapters[0]!.title,
+          summary: plan.chapters[0]!.summary,
+          pages: [
+            {
+              pageIndex: 1,
+              chapterIndex: plan.chapters[0]!.index,
+              purpose: "Establish the disputed record.",
+              beat: "Compare the ferry ledger with the commission map.",
+              requiredContinuity: [],
+              endingPressure: "The omission changes the boundary claim."
+            }
+          ],
+          continuityFocus: []
+        });
+        await generateChapterBrief({
+          input,
+          plan,
+          chapter: plan.chapters[0]!,
+          chapterPageStart: 1,
+          chapterPageEnd: 1,
+          textModel: capture.model
+        });
+        return capture;
+      }
+    },
+    {
+      name: "page writer",
+      async run(citeable: boolean) {
+        const capture = captureModel({ title: "The Ferry Ledger", markdown: prose, summary: "The records diverge.", continuityNotes: [] });
+        await generatePageDraft({
+          input,
+          plan: basePlan,
+          pageIndex: 2,
+          previousSummaries: [],
+          previousPages: [],
+          continuityNotes: [],
+          researchNotes: citeable ? [`${source.title}: ${source.summary}`] : [],
+          textModel: capture.model
+        });
+        return capture;
+      }
+    },
+    {
+      name: "page reviewer",
+      async run(citeable: boolean) {
+        const capture = captureModel(approved);
+        await reviewPageDraft({
+          input,
+          plan: basePlan,
+          pageIndex: 2,
+          draft: { title: "The Ferry Ledger", markdown: prose, summary: "The records diverge.", continuityNotes: [] },
+          previousPages: [],
+          continuityNotes: [],
+          researchNotes: citeable ? [`${source.title}: ${source.summary}`] : [],
+          textModel: capture.model
+        });
+        return capture;
+      }
+    }
+  ];
+
+  it("keeps the empty/source rule sets identical to their payload gate sets", async () => {
+    const emptyRule: string[] = [];
+    const emptyPayload: string[] = [];
+    const sourcedRule: string[] = [];
+    const sourcedPayload: string[] = [];
+
+    for (const site of sites) {
+      const empty = await site.run(false);
+      const sourced = await site.run(true);
+      if (empty.system.includes("researchNotes is empty:")) emptyRule.push(site.name);
+      if (Array.isArray(empty.payload.researchNotes) && empty.payload.researchNotes.length === 0) emptyPayload.push(site.name);
+      if (sourced.system.includes("Use only sources present in researchNotes")) sourcedRule.push(site.name);
+      if (Array.isArray(sourced.payload.researchNotes) && sourced.payload.researchNotes.length > 0) sourcedPayload.push(site.name);
+    }
+
+    expect(emptyRule).toEqual(emptyPayload);
+    expect(sourcedRule).toEqual(sourcedPayload);
+    expect(emptyRule).toEqual(sites.map((site) => site.name));
+    expect(sourcedRule).toEqual(sites.map((site) => site.name));
   });
 });
 

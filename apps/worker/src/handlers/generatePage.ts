@@ -20,6 +20,8 @@ import { repairPageEmbeddings } from "../generation/embeddingRepair.js";
 import { storeEmbedding } from "../generation/embeddingWrites.js";
 import { loadEntityStateLines, updateEntityStateFromPage } from "../generation/entityState.js";
 import { retrieveSemanticResearchNotes } from "../generation/researchMemory.js";
+import { settleIndependentLoads } from "../generation/independentLoads.js";
+import { validateSemanticResearchNotes } from "../generation/researchSources.js";
 import {
   RECENT_PAGE_WINDOW,
   embedSemanticQuery,
@@ -38,7 +40,6 @@ import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
 import { enqueueNextPageIfReady } from "../runtime/dispatch.js";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
-import { isStopRequestedError } from "../runtime/jobTypes.js";
 import { nextPageVersion } from "../generation/pageIllustrationOwnership.js";
 import {
   bookPlanSchema,
@@ -305,6 +306,7 @@ export async function generatePage(job: GeneratePageJob) {
     draft: initialDraft,
     previousPages: priorPageContext,
     continuityNotes,
+    researchNotes,
     textModel: providers.text,
     ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
   });
@@ -337,6 +339,7 @@ export async function generatePage(job: GeneratePageJob) {
     report: enriched.report,
     previousPages: priorPageContext,
     continuityNotes,
+    researchNotes,
     textModel: providers.text,
     generationJobId,
     maxCandidates: pageQaCandidatesFor(input),
@@ -350,13 +353,16 @@ export async function generatePage(job: GeneratePageJob) {
     ...(styleExcerpts.length > 0 ? { styleExcerpts } : {}),
     ...(quality.enabled("claimRetrieve")
       ? {
-          retrieveResearch: (draft) =>
-            retrieveSemanticResearchNotes({
-              projectId,
-              queryText: `${draft.title}\n${draft.summary}\n${draft.markdown}`.slice(0, 1200),
-              embedding: providers.embedding,
-              topK: 6
-            })
+          retrieveResearch: async (draft) =>
+            validateSemanticResearchNotes(
+              await retrieveSemanticResearchNotes({
+                projectId,
+                queryText: `${draft.title}\n${draft.summary}\n${draft.markdown}`.slice(0, 1200),
+                embedding: providers.embedding,
+                topK: 6
+              }),
+              researchNotes
+            )
         }
       : {}),
     onRewrite: (nextRevision, recoveryRevision) =>
@@ -478,46 +484,4 @@ export async function generatePage(job: GeneratePageJob) {
   await storeEmbedding({ projectId, scope: pageScope(page.index), sourceId: pageId, text: draft.summary }, providers.embedding);
 
   await enqueueNextPageIfReady(projectId, planId, input);
-}
-
-/**
- * Awaits loads that depend on nothing each other produces, without changing
- * which failure the page job ends up seeing.
- *
- * `Promise.all` is the wrong tool here twice over. It settles on the *first*
- * rejection and leaves its siblings running behind the handler's own failure
- * settlement — a warn line or a stray provider call landing in the next job's
- * run log — and it makes which error wins a matter of who lost the race. That
- * second half is the expensive one: `embedSemanticQuery` rethrows the
- * `StopRequestedError` the logged adapter raises when the reader stops the run,
- * and `loadEntityStateLines` and `loadProjectStoryState` swallow everything
- * *except* that error, so a stop is the one rejection several of these loads
- * can produce — and `Promise.all` would let an ordinary database error from a
- * sibling read mask it. `generate-page` has retry attempts, so the masked stop
- * comes back as a retry of a run the user already cancelled, and the book is
- * charged for it.
- *
- * So: wait for every load, then choose deterministically. A stop request wins
- * wherever it came from, and otherwise the failure the serial chain this
- * replaced would have thrown — the earliest one in argument order, which is
- * that chain's order. Nothing is swallowed and nothing escapes: `allSettled`
- * holds every other rejection, so none of them can surface as an unhandled
- * rejection either.
- */
-async function settleIndependentLoads<T extends readonly unknown[] | []>(
-  loads: T
-): Promise<{ -readonly [K in keyof T]: Awaited<T[K]> }> {
-  const settled = await Promise.allSettled(loads);
-  const failures = settled.flatMap((result) => (result.status === "rejected" ? [result.reason as unknown] : []));
-  for (const failure of failures) {
-    if (isStopRequestedError(failure)) {
-      throw failure;
-    }
-  }
-  if (failures.length > 0) {
-    throw failures[0];
-  }
-  return settled.map((result) => (result as PromiseFulfilledResult<unknown>).value) as unknown as {
-    -readonly [K in keyof T]: Awaited<T[K]>;
-  };
 }

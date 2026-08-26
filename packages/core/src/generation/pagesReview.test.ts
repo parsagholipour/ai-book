@@ -69,13 +69,15 @@ function paddedOpening(minLength: number): string {
 function capturingReviewModel(rawData: unknown): {
   model: TextModelAdapter;
   payload?: Record<string, unknown>;
+  system?: string;
 } {
-  const capture: { model: TextModelAdapter; payload?: Record<string, unknown> } = {
+  const capture: { model: TextModelAdapter; payload?: Record<string, unknown>; system?: string } = {
     model: {
       async generateText() {
         return { text: "", model: "test-model", provider: "test" };
       },
       async generateJson(options) {
+        capture.system = options.messages[0]?.content ?? "";
         capture.payload = JSON.parse(options.messages[1]?.content ?? "{}") as Record<string, unknown>;
         return {
           data: options.schema.parse(rawData),
@@ -705,5 +707,78 @@ describe("revisePageDraft first-page hook", () => {
     await revisePageDraft(reviseOptions(7, hookPlan, capture.model));
 
     expect(capture.payload?.openingHook).toBeUndefined();
+  });
+});
+
+describe("reviewPageDraft citation contract", () => {
+  const diaryBrief = {
+    pageIndex: 2,
+    chapterIndex: 1,
+    purpose: "Show how residents understood the order.",
+    beat: "Name a civilian diary and quote its account of the order.",
+    requiredContinuity: ["Identify the diary or archive holding it."],
+    endingPressure: "Land on the limits of the surviving record."
+  };
+
+  it("does not require an unsupplied diary identity when researchNotes is empty", async () => {
+    const capture = capturingReviewModel({
+      approved: true,
+      score: 91,
+      issues: [],
+      requiredRevisions: [],
+      notes: "The prose is grounded and appropriately qualified."
+    });
+
+    const result = await reviewPageDraft({
+      input,
+      plan,
+      pageIndex: 2,
+      pageBrief: diaryBrief,
+      draft: {
+        title: "The Order at the Ferry",
+        markdown: goodMarkdown(),
+        summary: "The surviving order establishes a sequence but not every resident's response.",
+        continuityNotes: []
+      },
+      previousPages: [],
+      continuityNotes: [],
+      researchNotes: [],
+      textModel: capture.model
+    });
+
+    expect(result.approved).toBe(true);
+    expect(capture.system).toContain("do not assign, require, invent, or reject prose for omitting a diary");
+    expect(capture.payload?.researchNotes).toEqual([]);
+  });
+
+  it("still rejects an invented named journal", async () => {
+    const capture = capturingReviewModel({
+      approved: false,
+      score: 42,
+      issues: ["The named North March Historical Journal is invented."],
+      requiredRevisions: ["Remove the invented journal and qualify the claim."],
+      notes: "Fabricated source identity."
+    });
+
+    const result = await reviewPageDraft({
+      input,
+      plan,
+      pageIndex: 2,
+      pageBrief: diaryBrief,
+      draft: {
+        title: "The Order at the Ferry",
+        markdown: `${goodMarkdown()} The North March Historical Journal supposedly confirmed the account in 1912.`,
+        summary: "The page attributes the account to a named journal.",
+        continuityNotes: []
+      },
+      previousPages: [],
+      continuityNotes: [],
+      researchNotes: [],
+      textModel: capture.model
+    });
+
+    expect(result.approved).toBe(false);
+    expect(result.issues.join(" ")).toMatch(/invented/i);
+    expect(capture.system).toContain("Still reject invented named sources");
   });
 });

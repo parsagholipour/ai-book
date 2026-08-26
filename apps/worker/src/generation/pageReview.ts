@@ -12,6 +12,7 @@ import {
 import { prepareEmbedding, strategyUsesSemanticMemory, writePreparedEmbedding } from "./embeddingWrites.js";
 import { updateEntityStateFromPage } from "./entityState.js";
 import { retrieveSemanticResearchNotes } from "./researchMemory.js";
+import { validateSemanticResearchNotes } from "./researchSources.js";
 import { loadQualityContext } from "./qualitySettings.js";
 import {
   GeneratedPagePublicationClaimLostError,
@@ -149,6 +150,8 @@ export async function runPageQualityLoop(options: {
   /** Prose that already exists after this page; set only when one is inserted. */
   nextPages?: PriorPageContext[] | undefined;
   continuityNotes: string[];
+  /** Citeable notes loaded for this page; empty is an explicit citation gate. */
+  researchNotes?: string[] | undefined;
   textModel: TextModelAdapter;
   generationJobId?: string | undefined;
   maxCandidates: number;
@@ -313,6 +316,7 @@ export async function runPageQualityLoop(options: {
         qualityReport: report,
         previousPages: options.previousPages,
         continuityNotes: options.continuityNotes,
+        researchNotes: options.researchNotes,
         textModel: options.textModel,
         generationJobId: options.generationJobId,
         context: options.reviseContext,
@@ -347,6 +351,7 @@ export async function runPageQualityLoop(options: {
         previousPages: options.previousPages,
         ...(options.nextPages && options.nextPages.length > 0 ? { nextPages: options.nextPages } : {}),
         continuityNotes: options.continuityNotes,
+        researchNotes: options.researchNotes,
         textModel: options.textModel,
         ...(styleExcerpts.length > 0 ? { styleExcerpts } : {}),
         ...(await retrievedResearchForRevise(options, draft, report))
@@ -366,6 +371,7 @@ export async function runPageQualityLoop(options: {
       previousPages: options.previousPages,
       ...(options.nextPages && options.nextPages.length > 0 ? { nextPages: options.nextPages } : {}),
       continuityNotes: options.continuityNotes,
+      researchNotes: options.researchNotes,
       textModel: options.textModel,
       ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
     });
@@ -613,6 +619,7 @@ export async function reviewAndSaveGeneratedPage(options: {
     previousPages: options.previousPages,
     ...(options.nextPages && options.nextPages.length > 0 ? { nextPages: options.nextPages } : {}),
     continuityNotes,
+    researchNotes,
     textModel: options.providers.text,
     ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
   });
@@ -647,6 +654,7 @@ export async function reviewAndSaveGeneratedPage(options: {
     previousPages: options.previousPages,
     ...(options.nextPages && options.nextPages.length > 0 ? { nextPages: options.nextPages } : {}),
     continuityNotes,
+    researchNotes,
     textModel: options.providers.text,
     generationJobId: options.generationJobId,
     maxCandidates: pageQaCandidatesFor(options.input),
@@ -660,13 +668,16 @@ export async function reviewAndSaveGeneratedPage(options: {
     ...(styleExcerpts.length > 0 ? { styleExcerpts } : {}),
     ...(quality.enabled("claimRetrieve")
       ? {
-          retrieveResearch: (draft: PageDraft) =>
-            retrieveSemanticResearchNotes({
-              projectId: options.projectId,
-              queryText: `${draft.title}\n${draft.summary}\n${draft.markdown}`.slice(0, 1200),
-              embedding: options.providers.embedding,
-              topK: 6
-            })
+          retrieveResearch: async (draft: PageDraft) =>
+            validateSemanticResearchNotes(
+              await retrieveSemanticResearchNotes({
+                projectId: options.projectId,
+                queryText: `${draft.title}\n${draft.summary}\n${draft.markdown}`.slice(0, 1200),
+                embedding: options.providers.embedding,
+                topK: 6
+              }),
+              researchNotes
+            )
         }
       : {}),
     onRewrite: (nextRevision, recoveryRevision) =>

@@ -31,6 +31,7 @@ import {
   READER_FACING_PAGE_BRIEF_RULES,
   buildPageInstruction,
   chapterBriefPayloadForPageScope,
+  citationContractFields,
   compactFollowingPages,
   compactPriorPages,
   openingContractFieldsForPage,
@@ -68,6 +69,8 @@ export type ReviewPageOptions = {
   continuityNotes: string[];
   textModel: TextModelAdapter;
   styleExcerpts?: string[] | undefined;
+  /** Citeable generation notes loaded by the worker. */
+  researchNotes?: string[] | undefined;
   retrievedResearch?: string[] | undefined;
 };
 
@@ -108,6 +111,7 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
   // rejects the author's own opening — a verdict whose only repair is
   // `revisePageDraft` rewriting that page.
   const opening = openingContractFieldsForPage(options, "reviewer");
+  const citation = citationContractFields(options.researchNotes ?? options.plan.researchNotes);
 
   let result: { data: PageQualityReport };
   try {
@@ -124,6 +128,7 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
             "Review one generated page for reader-facing quality.",
             "Reject filler, repetition, prompt leakage, generic scaffold prose, continuity contradictions, and pages that do not progress.",
             "Reject invented or explicitly fabricated research, including made-up studies, journals, institutes, statistics, experts, or citations.",
+            ...citation.rules,
             "Treat semantic repetition as a failure even when wording differs: the same encounter, same decision, same exposition, or same emotional turn cannot appear twice.",
             "Do not reject merely because the same character performs a necessary recurring action type assigned by the current pageBrief; reject it only when it restages the same beat, reuses distinctive wording, or fails to add a new consequence.",
             "For a final page, reject vague closure unless it resolves the core promise with a concrete consequence or completed choice.",
@@ -160,6 +165,7 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
               // handed it beside those lines; every other page prompt gets the
               // same pair out of `buildPageInstruction`.
               ...opening.payload,
+              ...citation.payload,
               pageScope: pageScopePayload(options),
               pageIndex: options.pageIndex,
               draft: options.draft,
@@ -223,6 +229,9 @@ function shouldUseLocalReviewFallback(error: unknown): boolean {
 
 export async function revisePageDraft(options: RevisePageOptions): Promise<PageDraft> {
   const pageInstruction = buildPageInstruction(options);
+  const citation = citationContractFields(
+    options.retrievedResearch ?? options.researchNotes ?? options.plan.researchNotes
+  );
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "revise-page",
     temperature: Math.min(0.85, options.input.temperature),
@@ -238,6 +247,7 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
           "The replacement must advance beyond the prior pages and satisfy the current page brief.",
           INTERNAL_PAGE_TITLE_RULE,
           GROUNDED_FACTUALITY_RULE,
+          ...citation.rules,
           "Do not mention the critique, AI, prompts, JSON, schemas, generation, or production instructions.",
           ...READER_FACING_PAGE_BRIEF_RULES,
           "If the current pageBrief requires a recurring action type from previousPages, keep the required action but change the physical details, sentence rhythm, and consequence.",
@@ -274,6 +284,7 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
             chapterBrief: chapterBriefPayloadForPageScope(options.chapterBrief),
             pageBrief: options.pageBrief,
             ...pageInstruction.payload,
+            ...citation.payload,
             pageScope: pageScopePayload(options),
             pageIndex: options.pageIndex,
             characters: options.plan.characters,
@@ -286,9 +297,6 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
               : {}),
             ...(options.styleExcerpts && options.styleExcerpts.length > 0
               ? { styleExcerpts: options.styleExcerpts }
-              : {}),
-            ...(options.retrievedResearch && options.retrievedResearch.length > 0
-              ? { retrievedResearch: options.retrievedResearch }
               : {}),
             instruction: pageInstruction.text
           },
@@ -387,6 +395,7 @@ export async function runFinalBookQa(options: FinalBookQaOptions): Promise<Final
     ? finalQaOpeningPages(options.pages)
     : [];
   const judgesOpening = openingPages.length > 0;
+  const citation = citationContractFields(options.researchNotes ?? options.plan.researchNotes);
 
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "final-book-qa",
@@ -400,6 +409,7 @@ export async function runFinalBookQa(options: FinalBookQaOptions): Promise<Final
           "You are the final quality editor for a book export.",
           "Reject the book if it contains placeholders, repeated pages, prompt leakage, broken continuity, or no progression.",
           "Reject the book if factual or research-grounded passages contain invented studies, journals, institutes, statistics, experts, citations, or claims described as fictional/fabricated/invented.",
+          ...citation.rules,
           "pageMap summaries are abbreviated excerpts for this review, not the exported manuscript.",
           ...(judgesOpening
             ? [
@@ -433,7 +443,7 @@ export async function runFinalBookQa(options: FinalBookQaOptions): Promise<Final
             },
             pageMap: compactPageMap(options.pages),
             ...(judgesOpening ? { openingPages } : {}),
-            researchNotes: options.researchNotes?.slice(0, 20) ?? [],
+            ...citation.payload,
             instruction: judgesOpening
               ? "Approve only if the compiled Markdown can be shown to a reader as the book output without obvious generation artifacts. pageMap summaries and openingPages excerpts may end with … because they are shortened for this check; that is not a book defect. Identical titles on adjacent pages are fine when the summaries describe different beats. openingPages is the book's first page as written and the only page an opening verdict is about; judge the reader's first impression from it, and give any other page's issue the page number pageMap records for it."
               : "Approve only if the compiled Markdown can be shown to a reader as the book output without obvious generation artifacts. pageMap summaries may end with … because they are shortened for this check; that is not a book defect. Identical titles on adjacent pages are fine when the summaries describe different beats. Give every issue the page number pageMap records for it."

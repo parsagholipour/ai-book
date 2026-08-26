@@ -73,6 +73,7 @@ import {
   qualitySummaryMessage,
   runBoundedChapterQualityReview
 } from "./compileExport.js";
+import { failedQaPageIndexesForCompile } from "./compileExportCitationRepair.js";
 import { repairPagesFromFinalQa } from "./compileExportRepair.js";
 import { finalQaRevisionsFor } from "../generation/tuning.js";
 
@@ -223,6 +224,22 @@ describe("repairPagesFromFinalQa", () => {
 
     const updatedIds = mocks.prisma.page.update.mock.calls.map((call) => (call[0] as { where: { id: string } }).where.id);
     expect(updatedIds).toEqual(["page-1", "page-2"]);
+  });
+
+  it("does not revise a FAILED_QA page whose only issues demand an unavailable source identity", async () => {
+    const sourceOnly = exportPage(2, { status: "FAILED_QA", qualityReport: { approved: false, issues: [
+      "Despite the page brief explicitly requiring a named testimony or archive, the page provides no specific dispatch date."
+    ] } });
+    const pages = [exportPage(1), sourceOnly];
+    const extraPageIndexes = failedQaPageIndexesForCompile(pages, []);
+
+    await expect(repairPagesFromFinalQa(baseOptions({ pages, finalQa: finalQa([]), extraPageIndexes })))
+      .resolves.toBeUndefined();
+
+    expect(extraPageIndexes).toEqual([]);
+    expect(failedQaPageIndexesForCompile(pages, ["Boundary papers: Commission records."])).toEqual([2]);
+    expect(mocks.revisePageDraftWithRestart).not.toHaveBeenCalled();
+    expect(mocks.prisma.page.update).not.toHaveBeenCalled();
   });
 
   it("asks both of its questions in the book's page numbers, never the plan's", async () => {

@@ -88,6 +88,8 @@ export async function repairPagesFromFinalQa(options: {
   quality: QualityGateContext;
   pages: ExportPageForRepair[];
   finalQa: FinalBookQa;
+  /** Citeable notes available to reviewer, reviser, and brief recovery. */
+  researchNotes?: string[] | undefined;
   /** Additional page indexes to repair (e.g. pages that failed page-level QA). */
   extraPageIndexes?: number[] | undefined;
   /**
@@ -347,6 +349,7 @@ export async function repairPagesFromFinalQa(options: {
         report: finalQaReport,
         previousPages,
         continuityNotes,
+        researchNotes: options.researchNotes,
         textModel: options.providers.text,
         ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
       }
@@ -366,6 +369,7 @@ export async function repairPagesFromFinalQa(options: {
       draft,
       previousPages,
       continuityNotes,
+      researchNotes: options.researchNotes,
       textModel: options.providers.text,
       ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
     });
@@ -393,6 +397,7 @@ export async function repairPagesFromFinalQa(options: {
       report: initialReport,
       previousPages,
       continuityNotes,
+      researchNotes: options.researchNotes,
       textModel: options.providers.text,
       generationJobId: options.generationJobId,
       maxCandidates: finalQaRevisionsFor(options.input),

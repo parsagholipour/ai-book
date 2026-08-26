@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
   writePreparedEmbedding: vi.fn(),
   updateEntityStateFromPage: vi.fn(),
   loadContinuityNotes: vi.fn(),
+  loadResearchNotesForGeneration: vi.fn(),
+  retrieveSemanticResearchNotes: vi.fn(),
   keeperStoryExtractForSave: vi.fn(),
   persistStoryExtract: vi.fn(),
   // Controllable: `reviewAndSaveGeneratedPage` pins its excerpts out of
@@ -59,10 +61,12 @@ vi.mock("./embeddingWrites.js", () => ({
     strategy?.executionMode === "sequential-pages"
 }));
 vi.mock("./entityState.js", () => ({ updateEntityStateFromPage: mocks.updateEntityStateFromPage }));
-vi.mock("./researchMemory.js", () => ({ retrieveSemanticResearchNotes: async () => [] }));
+vi.mock("./researchMemory.js", () => ({
+  retrieveSemanticResearchNotes: mocks.retrieveSemanticResearchNotes
+}));
 vi.mock("./generationContext.js", () => ({
   loadContinuityNotes: mocks.loadContinuityNotes,
-  loadResearchNotesForGeneration: async () => []
+  loadResearchNotesForGeneration: mocks.loadResearchNotesForGeneration
 }));
 vi.mock("./qualitySettings.js", () => ({
   loadQualityContext: async () => ({
@@ -167,6 +171,8 @@ beforeEach(() => {
   mocks.auditPageStyle.mockResolvedValue({ styleOk: true, styleIssues: [] });
   mocks.qualityEnabled.mockReturnValue(false);
   mocks.loadStyleLockPages.mockResolvedValue([]);
+  mocks.loadResearchNotesForGeneration.mockResolvedValue([]);
+  mocks.retrieveSemanticResearchNotes.mockResolvedValue([]);
 });
 
 describe("runPageQualityLoop style audit", () => {
@@ -467,6 +473,27 @@ describe("reviewAndSaveGeneratedPage", () => {
     // the page and needs the state the keeper actually left behind.
     expect(mocks.persistStoryExtract).toHaveBeenCalledTimes(1);
     expect(context.page).toMatchObject({ index: 3, title: "Rewrite 2" });
+  });
+
+  it("keeps URL-less semantic hits out of the shared page-review revision prompt", async () => {
+    const citeable = "Boundary papers: Commission records.";
+    mocks.qualityEnabled.mockImplementation((feature: string) => feature === "claimRetrieve");
+    mocks.loadResearchNotesForGeneration.mockResolvedValue([citeable]);
+    mocks.retrieveSemanticResearchNotes.mockResolvedValue([
+      "Grounding summary: URL-less bootstrap claim.",
+      citeable
+    ]);
+    strategy.reviewPageDraft
+      .mockResolvedValueOnce(report(40, { groundedOk: false, issues: ["Needs revision."] }))
+      .mockResolvedValue(report(90, { approved: true }));
+    strategy.revisePageDraft.mockResolvedValue(draftNamed("Rewrite"));
+
+    await reviewAndSaveGeneratedPage(baseOptions());
+
+    expect(mocks.retrieveSemanticResearchNotes).toHaveBeenCalledTimes(1);
+    expect(strategy.revisePageDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ retrievedResearch: [citeable] })
+    );
   });
 
   /** The book's opening pages, which is what a style lock is. */
