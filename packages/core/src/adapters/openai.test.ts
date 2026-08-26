@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { OpenAITextAdapter } from "./openai.js";
+import { isRecoverableNetworkError, isTextProviderFallbackError, ProviderHttpError } from "./retry.js";
 
 const lookupTool = {
   name: "lookup",
@@ -240,13 +241,37 @@ describe("OpenAITextAdapter", () => {
       model: "gpt-5.6-luna"
     });
   });
+
+  it("wraps a Responses SDK TPM 429 as ProviderHttpError with retry-after-ms", async () => {
+    const jsonSchema = z.object({ value: z.string() });
+    const textAdapter = new OpenAITextAdapter({ apiKey: "test-key", model: "gpt-5.6-luna" });
+    installMockResponses(textAdapter, [incidentRateLimitError()]);
+    await expectWrappedRateLimit(() =>
+      textAdapter.generateText({ messages: [{ role: "user", content: "Draft it." }] })
+    );
+
+    const jsonAdapter = new OpenAITextAdapter({ apiKey: "test-key", model: "gpt-5.6-luna" });
+    installMockResponses(jsonAdapter, [incidentRateLimitError()]);
+    await expectWrappedRateLimit(() =>
+      jsonAdapter.generateJson({ messages: [{ role: "user", content: "Return the value." }], schema: jsonSchema })
+    );
+
+    const streamAdapter = new OpenAITextAdapter({ apiKey: "test-key", model: "gpt-5.6-luna" });
+    installMockResponses(streamAdapter, [throwingStream(incidentRateLimitError())]);
+    await expectWrappedRateLimit(() =>
+      streamAdapter.generateText({
+        messages: [{ role: "user", content: "Draft it." }],
+        onOutputTextChunk: () => undefined
+      })
+    );
+  });
 });
 
 type MockCall = { request: Record<string, unknown>; options: unknown };
 
 function installMockResponses(
   adapter: OpenAITextAdapter,
-  responses: Array<Record<string, unknown> | AsyncIterable<Record<string, unknown>>>
+  responses: Array<Record<string, unknown> | AsyncIterable<Record<string, unknown>> | Error>
 ): { calls: MockCall[] } {
   const calls: MockCall[] = [];
   const queue = [...responses];
@@ -256,11 +281,57 @@ function installMockResponses(
         calls.push({ request, options });
         const next = queue.shift();
         if (!next) throw new Error("No mocked OpenAI response remains.");
+        if (next instanceof Error) throw next;
         return next;
       }
     }
   };
   return { calls };
+}
+
+async function expectWrappedRateLimit(run: () => Promise<unknown>): Promise<void> {
+  const error = await run().then(
+    () => {
+      throw new Error("expected provider call to reject");
+    },
+    (caught: unknown) => caught
+  );
+  expect(error).toBeInstanceOf(ProviderHttpError);
+  expect(error).toMatchObject({
+    status: 429,
+    retryAfterMs: 845,
+    message: "Rate limit reached for gpt-5.6-luna ... Please try again in 845ms."
+  });
+  expect(isRecoverableNetworkError(error)).toBe(true);
+  expect(isTextProviderFallbackError(error)).toBe(false);
+}
+
+function incidentRateLimitError(): Error {
+  return Object.assign(new Error("Rate limit reached for gpt-5.6-luna ... Please try again in 845ms."), {
+    code: "rate_limit_exceeded",
+    type: "tokens",
+    headers: {},
+    requestID: "req_e72cdd2985fd468c9e052e0490c2d304",
+    error: {
+      type: "tokens",
+      code: "rate_limit_exceeded",
+      headers: {
+        "retry-after": "1",
+        "retry-after-ms": "845",
+        "x-ratelimit-limit-tokens": "200000"
+      },
+      message: "Rate limit reached ...",
+      param: null
+    }
+  });
+}
+
+function throwingStream(error: Error): AsyncIterable<Record<string, unknown>> {
+  return {
+    async *[Symbol.asyncIterator]() {
+      throw error;
+    }
+  };
 }
 
 function textResponse(text: string, model = "gpt-5.6-sol"): Record<string, unknown> {

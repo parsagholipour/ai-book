@@ -8,6 +8,7 @@ import {
   serializeOpenAiToolArguments,
   toolParametersJsonSchema
 } from "./openaiToolCalling.js";
+import { isCancellationError, ProviderHttpError } from "./retry.js";
 import type {
   ChatMessage,
   GenerateJsonOptions,
@@ -125,12 +126,16 @@ export class OpenAITextAdapter implements TextModelAdapter {
     input: unknown[],
     extra: Record<string, unknown> = {}
   ): Promise<ResponseRecord> {
-    const response = await (this.client.responses.create(
-      this.request(options, input, extra) as never,
-      openAiRequestOptions(options)
-    ) as unknown as Promise<ResponseRecord>);
-    assertResponseSucceeded(response, this.model);
-    return response;
+    try {
+      const response = await (this.client.responses.create(
+        this.request(options, input, extra) as never,
+        openAiRequestOptions(options)
+      ) as unknown as Promise<ResponseRecord>);
+      assertResponseSucceeded(response, this.model);
+      return response;
+    } catch (error) {
+      rethrowOpenAiHttpError(error);
+    }
   }
 
   private async collectStream(
@@ -163,26 +168,30 @@ export class OpenAITextAdapter implements TextModelAdapter {
     input: unknown[],
     extra: Record<string, unknown> = {}
   ): AsyncGenerator<string, ResponseRecord> {
-    const stream = await this.client.responses.create(
-      this.request(options, input, { stream: true, ...extra }) as never,
-      openAiRequestOptions(options)
-    );
-    let completed: ResponseRecord | undefined;
-    for await (const event of stream as unknown as AsyncIterable<Record<string, unknown>>) {
-      if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
-        yield event.delta;
+    try {
+      const stream = await this.client.responses.create(
+        this.request(options, input, { stream: true, ...extra }) as never,
+        openAiRequestOptions(options)
+      );
+      let completed: ResponseRecord | undefined;
+      for await (const event of stream as unknown as AsyncIterable<Record<string, unknown>>) {
+        if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
+          yield event.delta;
+        }
+        const terminal = completedResponseFromEvent(event, this.model);
+        if (terminal) {
+          completed = terminal;
+        }
       }
-      const terminal = completedResponseFromEvent(event, this.model);
-      if (terminal) {
-        completed = terminal;
+      if (!completed) {
+        throwOpenAIResponseError("OpenAI response stream ended without a completion event.", {
+          model: this.model
+        });
       }
+      return completed;
+    } catch (error) {
+      rethrowOpenAiHttpError(error);
     }
-    if (!completed) {
-      throwOpenAIResponseError("OpenAI response stream ended without a completion event.", {
-        model: this.model
-      });
-    }
-    return completed;
   }
 
   private request(
@@ -468,6 +477,118 @@ function httpStatusForOpenAIErrorCode(code: string): number | undefined {
   if (code === "rate_limit_exceeded") return 429;
   if (code === "server_error") return 500;
   if (code.startsWith("invalid_")) return 400;
+  return undefined;
+}
+
+/**
+ * ProviderHttpError, not a bare SDK Error: status and retry-after-ms have to
+ * travel as fields or a TPM 429 matches no retry pattern and the text fallback
+ * hops before the wait loop sees it. Incomplete OpenAIResponseError is not HTTP.
+ */
+function rethrowOpenAiHttpError(error: unknown): never {
+  if (
+    isCancellationError(error) ||
+    error instanceof ProviderHttpError ||
+    (error instanceof Error && error.name === "OpenAIResponseError")
+  ) {
+    throw error;
+  }
+  const status = httpStatusFromOpenAiSdkError(error);
+  if (status === undefined) {
+    throw error;
+  }
+  const retryAfterMs = retryAfterMsFromOpenAiSdkError(error);
+  throw new ProviderHttpError(error instanceof Error ? error.message : String(error), {
+    status,
+    ...(retryAfterMs === undefined ? {} : { retryAfterMs })
+  });
+}
+
+function httpStatusFromOpenAiSdkError(error: unknown): number | undefined {
+  const code = openAiSdkErrorCode(error);
+  if (code) {
+    const mapped = httpStatusForOpenAIErrorCode(code);
+    if (mapped !== undefined) return mapped;
+  }
+  for (const layer of openAiSdkErrorLayers(error)) {
+    const status = parseHttpStatus(layer.status) ?? parseHttpStatus(layer.statusCode);
+    if (status !== undefined) return status;
+  }
+  return undefined;
+}
+
+function openAiSdkErrorCode(error: unknown): string | undefined {
+  if (!isRecord(error)) return undefined;
+  return stringValue(error.code) ?? (isRecord(error.error) ? stringValue(error.error.code) : undefined);
+}
+
+function retryAfterMsFromOpenAiSdkError(error: unknown): number | undefined {
+  const bags = headerBagsFromOpenAiSdkError(error);
+  const fromMs = parsePositiveNumber(firstHeader(bags, "retry-after-ms"));
+  if (fromMs !== undefined) return fromMs;
+  return parseRetryAfterHeader(firstHeader(bags, "retry-after"));
+}
+
+function openAiSdkErrorLayers(error: unknown): Record<string, unknown>[] {
+  if (!isRecord(error)) return [];
+  const layers = [error];
+  if (isRecord(error.error)) layers.push(error.error);
+  if (isRecord(error.response)) layers.push(error.response);
+  return layers;
+}
+
+function headerBagsFromOpenAiSdkError(error: unknown): unknown[] {
+  const bags: unknown[] = [];
+  for (const layer of openAiSdkErrorLayers(error)) {
+    if (layer.headers !== undefined) bags.push(layer.headers);
+  }
+  return bags;
+}
+
+function firstHeader(bags: unknown[], name: string): unknown {
+  for (const bag of bags) {
+    const value = headerValue(bag, name);
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+  return undefined;
+}
+
+function headerValue(headers: unknown, name: string): unknown {
+  if (headers && typeof headers === "object" && typeof (headers as { get?: unknown }).get === "function") {
+    return (headers as Headers).get(name);
+  }
+  if (!isRecord(headers)) return undefined;
+  const lower = name.toLowerCase();
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === lower) return value;
+  }
+  return undefined;
+}
+
+function parseRetryAfterHeader(value: unknown): number | undefined {
+  const seconds = parsePositiveNumber(value);
+  if (seconds !== undefined) return Math.round(seconds * 1_000);
+  if (typeof value !== "string") return undefined;
+  const at = Date.parse(value);
+  return Number.isFinite(at) && at > Date.now() ? at - Date.now() : undefined;
+}
+
+function parseHttpStatus(value: unknown): number | undefined {
+  const parsed = parseFiniteNumber(value);
+  return parsed !== undefined && parsed >= 400 ? parsed : undefined;
+}
+
+function parsePositiveNumber(value: unknown): number | undefined {
+  const parsed = parseFiniteNumber(value);
+  return parsed !== undefined && parsed > 0 ? parsed : undefined;
+}
+
+function parseFiniteNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
   return undefined;
 }
 

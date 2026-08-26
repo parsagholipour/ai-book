@@ -147,6 +147,15 @@ export function isTextProviderFallbackError(error: unknown): boolean {
   if (isStopOrAbortError(error)) {
     return false;
   }
+  // A waitable TPM 429 belongs to withRecoverableNetworkRetry on the primary —
+  // hopping would skip the cooldown. A spent daily quota is already not
+  // recoverable, so it still falls through to the other provider.
+  if (
+    isRecoverableNetworkError(error) &&
+    collectErrorDescriptors(error).some((descriptor) => descriptor.status === 429)
+  ) {
+    return false;
+  }
   return collectErrorDescriptors(error).some((descriptor) => {
     if (descriptor.status !== undefined) {
       return descriptor.status === 408 || descriptor.status === 409 || descriptor.status === 429 || descriptor.status >= 500;

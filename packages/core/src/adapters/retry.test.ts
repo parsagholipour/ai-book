@@ -115,6 +115,18 @@ describe("isTextProviderFallbackError", () => {
     expect(isTextProviderFallbackError(new SyntaxError("invalid JSON"))).toBe(false);
   });
 
+  it("keeps a waitable 429 on the primary, but still falls over a daily cap", () => {
+    const waitable = new ProviderHttpError("quota", { status: 429, retryAfterMs: 845 });
+    expect(isRecoverableNetworkError(waitable)).toBe(true);
+    expect(isTextProviderFallbackError(waitable)).toBe(false);
+
+    const daily = new ProviderHttpError("quota", { status: 429, retryAfterMs: 20_698_000 });
+    expect(isRecoverableNetworkError(daily)).toBe(false);
+    expect(isTextProviderFallbackError(daily)).toBe(true);
+
+    expect(isTextProviderFallbackError(new ProviderHttpError("unavailable", { status: 503 }))).toBe(true);
+  });
+
   it("never turns cancellation into a fallback call", () => {
     expect(
       isTextProviderFallbackError(Object.assign(new Error("Stopped by user"), { name: "StopRequestedError" }))
