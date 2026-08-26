@@ -1,5 +1,5 @@
-import { payloadOwnsProjectOutcome } from "@book-maker/core";
 import type { MobileProjectStatusDto, ProjectStatusResult } from "./dto.js";
+import { findCurrentOwningFailure } from "./generationRecovery.js";
 import { jsonRecord, stringField } from "./support.js";
 
 /**
@@ -388,16 +388,17 @@ function activeWriteTokens(phase: GenerationPhase): number {
   return Number.isFinite(tokens) ? Math.max(0, tokens) : 0;
 }
 
-function failedStepFor(jobs: readonly StatusJob[], writingStarted: boolean): GenerationStepKey | null {
-  const failed = jobs.find(
-    (job) =>
-      job.status === "FAILED" &&
-      // A detached compile rebuilds a file for a book that is already finished,
-      // and a presentation-only reprint reprints one; neither is this book's
-      // "Building your book" step and must not paint it red after the fact.
-      payloadOwnsProjectOutcome(job.payload) &&
-      (job.type === "GENERATE_BOOK" || job.type === "GENERATE_PAGE" || job.type === "GENERATE_IMAGE" || job.type === "COMPILE_EXPORT")
+function isGenerationProgressFailureType(type: string): boolean {
+  return (
+    type === "GENERATE_BOOK" ||
+    type === "GENERATE_PAGE" ||
+    type === "GENERATE_IMAGE" ||
+    type === "COMPILE_EXPORT"
   );
+}
+
+function failedStepFor(jobs: readonly StatusJob[], writingStarted: boolean): GenerationStepKey | null {
+  const failed = findCurrentOwningFailure(jobs, isGenerationProgressFailureType);
   if (!failed) {
     return null;
   }

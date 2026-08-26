@@ -3,9 +3,11 @@ import { type GenerationJobType } from "../queue.js";
 import { jsonRecord } from "./support.js";
 
 /**
- * Recovery predicates: whether a stranded GenerationJob row can be resumed
- * against the project's *current* plan and pages, and with what payload. Split
- * out of projectSerializers.ts, which re-exports it.
+ * Resume predicates and reporting filters for GenerationJob rows. Resume asks
+ * whether a stranded row can be recovered against the project's *current* plan
+ * and pages, and with what payload. Reporting asks whether a FAILED owning job
+ * has already been replaced by later work — which `canRecoverGenerationJob`
+ * cannot answer. Split out of projectSerializers.ts, which re-exports it.
  */
 
 /**
@@ -78,7 +80,94 @@ export function canRecoverGenerationJob(
 }
 
 export function isPlanningRecoveryJob(type: GenerationJobType): boolean {
+  return isPlanningWork(type);
+}
+
+function isPlanningWork(type: string): boolean {
   return type === "PLAN_BOOK" || type === "REVISE_PLAN";
+}
+
+type StatusJobRef = { type: string; status: string; payload: unknown };
+
+/**
+ * Newest FAILED owning job that later work has not already replaced.
+ * Both reporting surfaces must ask this of the same newest-first window.
+ */
+export function findCurrentOwningFailure<T extends StatusJobRef>(
+  jobs: readonly T[],
+  ownsType: (type: string) => boolean
+): T | undefined {
+  return jobs.find(
+    (job, index) =>
+      job.status === "FAILED" &&
+      ownsType(job.type) &&
+      payloadOwnsProjectOutcome(job.payload) &&
+      !laterJobSupersedesOwningFailure(job, jobs.slice(0, index))
+  );
+}
+
+/**
+ * Whether a later row has already replaced this FAILED owning job.
+ * The later row must own the project outcome. Jobs are newest-first;
+ * `newerJobs` is the prefix before this row.
+ */
+export function laterJobSupersedesOwningFailure(
+  failed: { type: string; payload: unknown },
+  newerJobs: ReadonlyArray<StatusJobRef>
+): boolean {
+  return newerJobs.some(
+    (job) =>
+      jobReplacesFailedWork(job.status) &&
+      payloadOwnsProjectOutcome(job.payload) &&
+      jobsTargetSameOwningWork(failed, job)
+  );
+}
+
+function jobReplacesFailedWork(status: string): boolean {
+  return status === "QUEUED" || status === "ACTIVE" || status === "COMPLETED";
+}
+
+function jobsTargetSameOwningWork(
+  failed: { type: string; payload: unknown },
+  candidate: { type: string; payload: unknown }
+): boolean {
+  if (isPlanningWork(failed.type) && isPlanningWork(candidate.type)) {
+    return true;
+  }
+  if (failed.type !== candidate.type) {
+    return false;
+  }
+  if (failed.type === "GENERATE_PAGE") {
+    return samePayloadString(failed.payload, candidate.payload, "pageId");
+  }
+  if (failed.type === "GENERATE_IMAGE") {
+    return sameImageTarget(failed.payload, candidate.payload);
+  }
+  if (failed.type === "GENERATE_BOOK" || failed.type === "COMPILE_EXPORT") {
+    return true;
+  }
+  if (
+    failed.type === "APPLY_BOOK_EDIT" ||
+    failed.type === "CONTINUE_BOOK" ||
+    failed.type === "REPLAN_BOOK"
+  ) {
+    return samePayloadString(failed.payload, candidate.payload, "operationId");
+  }
+  return false;
+}
+
+function samePayloadString(left: unknown, right: unknown, key: string): boolean {
+  const value = jsonRecord(left)[key];
+  return typeof value === "string" && value.length > 0 && value === jsonRecord(right)[key];
+}
+
+function sameImageTarget(left: unknown, right: unknown): boolean {
+  const leftRecord = jsonRecord(left);
+  const rightRecord = jsonRecord(right);
+  if (leftRecord.assetType === "COVER" || rightRecord.assetType === "COVER") {
+    return leftRecord.assetType === "COVER" && rightRecord.assetType === "COVER";
+  }
+  return samePayloadString(left, right, "pageId");
 }
 
 export function recoveryPayload(

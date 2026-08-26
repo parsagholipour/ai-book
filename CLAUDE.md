@@ -217,6 +217,7 @@ code in that area, however obvious the rule looks.
 - **A delivered edit outlives a recompile it could not queue.** → apps/worker/src/handlers/CLAUDE.md
 - **The status every apply fork restores rides the payload, because the enqueue is what takes it away.** → apps/worker/src/handlers/CLAUDE.md
 - **A stopped continuation restores only while its durable job is still QUEUED.** → apps/api/src/mobile/CLAUDE.md
+- **A FAILED row the book has already retried is not the book's current trouble.** → apps/api/src/mobile/CLAUDE.md
 - **An edit that settles itself as a delivered no-op has to refund itself too.** → apps/worker/src/handlers/CLAUDE.md
 - **A delivered no-op is APPLIED too, and the redelivery tail is not idempotent for it.** → apps/worker/src/handlers/CLAUDE.md
 - **An exact text edit that skips every target has no publication tail.** → apps/worker/src/handlers/CLAUDE.md

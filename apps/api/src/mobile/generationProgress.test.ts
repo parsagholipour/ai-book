@@ -367,6 +367,97 @@ describe("mobile generation progress", () => {
     expect(status.generationProgress.steps[3]).toMatchObject({ key: "finish", status: "pending" });
   });
 
+  it("does not keep a write step failed after the same page is retried", async () => {
+    const status = await readStatus(
+      generatingStatus({
+        project: {
+          jobs: [
+            job({
+              id: "job-page-retry",
+              type: "GENERATE_PAGE",
+              status: "COMPLETED",
+              payload: { pageId: "page-1" }
+            }),
+            job({
+              id: "job-page-failed",
+              type: "GENERATE_PAGE",
+              status: "FAILED",
+              error: "Page draft timed out.",
+              payload: { pageId: "page-1" }
+            })
+          ]
+        }
+      })
+    );
+
+    expect(status.generationProgress.steps[1].status).not.toBe("failed");
+    expect(status.failureMessage).toBeNull();
+  });
+
+  it("does not keep a superseded plan failure after the reader retries", async () => {
+    const status = await readStatus(
+      generatingStatus({
+        project: {
+          jobs: [
+            job({ id: "job-page", type: "GENERATE_PAGE", status: "ACTIVE", payload: { pageId: "page-1" } }),
+            job({ id: "job-book", type: "GENERATE_BOOK", status: "COMPLETED" }),
+            job({ id: "job-plan-ok", type: "PLAN_BOOK", status: "COMPLETED" }),
+            job({
+              id: "job-plan-failed",
+              type: "PLAN_BOOK",
+              status: "FAILED",
+              error: "OpenAI response was incomplete: max_output_tokens."
+            })
+          ]
+        }
+      })
+    );
+
+    expect(status.failureMessage).toBeNull();
+  });
+
+  it("still reports a plan failure that has not been retried", async () => {
+    const status = await readStatus(
+      generatingStatus({
+        project: {
+          status: "FAILED",
+          jobs: [
+            job({
+              id: "job-plan-failed",
+              type: "PLAN_BOOK",
+              status: "FAILED",
+              error: "Plan draft failed."
+            })
+          ]
+        }
+      })
+    );
+
+    expect(status.failureMessage).toContain("while creating your plan");
+  });
+
+  it("hides a plan failure as soon as the retry is queued", async () => {
+    const status = await readStatus(
+      generatingStatus({
+        project: {
+          status: "PLANNING",
+          jobs: [
+            job({ id: "job-plan-retry", type: "PLAN_BOOK", status: "QUEUED" }),
+            job({
+              id: "job-plan-failed",
+              type: "PLAN_BOOK",
+              status: "FAILED",
+              error: "Plan draft failed."
+            })
+          ]
+        }
+      })
+    );
+
+    expect(status.failureMessage).toBeNull();
+    expect(status.status).toBe("planning");
+  });
+
   it("stays out of the way while planning and while editing", async () => {
     const planning = await readStatus(generatingStatus({ project: { status: "PLANNING" } }));
     const editing = await readStatus(generatingStatus({ project: { status: "EDITING" } }));

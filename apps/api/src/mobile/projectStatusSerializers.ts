@@ -6,6 +6,7 @@ import { serializeGenerationProgress } from "./generationProgress.js";
 import { generationRecoveryQuote } from "./generationRetryQuote.js";
 import { imageSettingsFromMediaSettings } from "./imageSettings.js";
 import { serializePlanningProgress } from "./planningProgress.js";
+import { findCurrentOwningFailure } from "./generationRecovery.js";
 import { serializeExportSet } from "./projectArtifactSerializers.js";
 import { qualityWithExportsOnDisk } from "./qualityVerdict.js";
 import {
@@ -15,12 +16,7 @@ import {
   type MobileQueuedJobDto,
   type ProjectStatusResult
 } from "./dto.js";
-import {
-  generationJobControlsProjectStatus,
-  loadConfig,
-  payloadOwnsProjectOutcome,
-  printedPageOffset
-} from "@book-maker/core";
+import { generationJobControlsProjectStatus, loadConfig, printedPageOffset } from "@book-maker/core";
 
 /**
  * Serializes project status, progress, current actions, failures, and recovery.
@@ -97,12 +93,7 @@ export function serializeProjectStatus(status: ProjectStatusResult, exports: Mob
   // with nothing the reader could do about it. The repair re-queues itself
   // when a download or status surface next asks; a reprint re-queues when the
   // reader toggles the preference again.
-  const failedJob = project.jobs.find(
-    (job) =>
-      job.status === "FAILED" &&
-      generationJobControlsProjectStatus(job.type) &&
-      payloadOwnsProjectOutcome(job.payload)
-  );
+  const failedJob = findCurrentOwningFailure(project.jobs, generationJobControlsProjectStatus);
   const imageSettings = imageSettingsFromMediaSettings(project.mediaSettings);
   const generationProgress = serializeGenerationProgress(status, imageSettings);
   const editProgress = serializeEditProgress(status);

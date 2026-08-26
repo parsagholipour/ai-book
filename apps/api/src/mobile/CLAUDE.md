@@ -553,6 +553,19 @@ edit instead.
   repair is even queued. The two numbers are deliberately unmatched — the watch bounds pointless
   polling, the window bounds pointless compiles, and a repair that keeps failing is a broken book
   that polling faster would not fix.
+  **A FAILED row the book has already retried is not the book's current trouble.** Retry leaves the
+  old `GenerationJob` FAILED. `failureMessage` is the app's `hasFailure`, which is
+  `BookStage.needsAttention` even while project status is PLANNING or GENERATING, so a leftover
+  `PLAN_BOOK` after the reader clicked retry kept the plan error on screen after the retry had
+  already succeeded. `canRecoverGenerationJob` is the resume question against the current plan, not
+  this one — a completed retry of the same page is still "recoverable" in that sense.
+  `laterJobSupersedesOwningFailure` is the reporting filter: a later QUEUED, ACTIVE or COMPLETED row
+  that itself owns the project outcome, for the same work, replaces the leftover. Planning is one
+  family; `GENERATE_BOOK` and an owning `COMPILE_EXPORT` match by type; fan-out jobs match by
+  `pageId` / cover; edits (`APPLY_BOOK_EDIT`, `CONTINUE_BOOK`, `REPLAN_BOOK`) match by `operationId`.
+  A detached repair wearing `COMPILE_EXPORT` is not a retry of the generation compile, and another
+  page (or another edit) completing must not hide work that is still failed. Both reporting surfaces
+  read it through `findCurrentOwningFailure`.
 **Staying silent about the status is only half of it; the report still has to be ignored on the
 way out.** A repair writes its own `qualityReport` — deterministic checks alone, since
 `skipFinalReview` asks no model anything — and both readers took the newest compile that had one,
