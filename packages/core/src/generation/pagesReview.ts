@@ -32,6 +32,7 @@ import {
   buildPageInstruction,
   chapterBriefPayloadForPageScope,
   citationContractFields,
+  sanitizePageBriefForCitationContract,
   compactFollowingPages,
   compactPriorPages,
   openingContractFieldsForPage,
@@ -159,7 +160,9 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
               },
               chapter: options.chapter,
               chapterBrief: chapterBriefPayloadForPageScope(options.chapterBrief),
-              pageBrief: options.pageBrief,
+              pageBrief: options.pageBrief
+                ? sanitizePageBriefForCitationContract(options.pageBrief, options.researchNotes ?? options.plan.researchNotes)
+                : options.pageBrief,
               // This reviewer's first-page rules are system lines rather than a
               // built instruction, so it spreads the payload the shared contract
               // handed it beside those lines; every other page prompt gets the
@@ -259,7 +262,7 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
                 "followingPages is prose that already exists after this page and is not being rewritten. The replacement must end so the first of them reads on naturally, and must not repeat a beat or line that already appears there."
               ]
             : []),
-          "The current pageBrief is authoritative. Do not import futureChapterPageBriefs or later chapter keyBeats unless they are explicitly assigned to this page.",
+          "The current pageBrief is authoritative for its historical assignment; source-identity requirements are governed only by researchNotes and the citation rule. Do not import futureChapterPageBriefs or later chapter keyBeats unless they are explicitly assigned to this page.",
           IMAGE_PROMPT_CHARACTER_RULE,
           ...targetLanguageGenerationGuidance(options.input.language),
           ...writerToneRules(options.input)
@@ -282,7 +285,12 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
             },
             chapter: options.chapter,
             chapterBrief: chapterBriefPayloadForPageScope(options.chapterBrief),
-            pageBrief: options.pageBrief,
+            pageBrief: options.pageBrief
+              ? sanitizePageBriefForCitationContract(
+                  options.pageBrief,
+                  options.retrievedResearch ?? options.researchNotes ?? options.plan.researchNotes
+                )
+              : options.pageBrief,
             ...pageInstruction.payload,
             ...citation.payload,
             pageScope: pageScopePayload(options),

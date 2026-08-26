@@ -45,3 +45,6 @@ docs/english-regeneration-chat-router-incident.md
 # per-machine bits are ignored.
 .claude/settings.local.json
 .claude/worktrees/
+
+# Frozen review-page replay pack (real book drafts + reviewer payloads).
+.scratch/review-page-sensitivity/

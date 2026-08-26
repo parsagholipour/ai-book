@@ -9,6 +9,7 @@ import type { BookPlan, ChapterBrief, ChapterPlan, CreateProjectInput, PageProdu
 import { isRecord, jsonRecord, mediaSettingsMobileRecord } from "../schemas/jsonCoercion.js";
 import { isImportedManuscript } from "../schemas/mediaSettings.js";
 import { BYLINE_IS_TYPESET_RULE } from "./markdown.js";
+import { rewriteReviewedEmptyNotesPageBrief } from "./pageBriefCitationRewrites.js";
 
 /**
  * Prompt rules and payload helpers shared by the page-map production layer
@@ -90,10 +91,25 @@ export function citationContractFields(
           "Use only sources present in researchNotes when assigning, writing, or reviewing named evidence; do not require, invent, or accept a diary, dispatch, archive, citation, named testimony, or other source identity that researchNotes does not contain."
         ]
       : [
-          "researchNotes is empty: use grounded people, places, dates, and qualified claims, but do not assign, require, invent, or reject prose for omitting a diary, dispatch, archive, citation, named testimony, or other source identity. Still reject invented named sources, fabricated scenes, factual errors, repetition, and other real defects."
+          "researchNotes is empty: use grounded people, places, dates, and qualified claims, but do not assign, require, invent, or reject prose for omitting a diary, dispatch, archive, citation, named testimony, or other source identity. A page that names dates, places, institutions, and qualified claims is specific enough; do not reject it for omitting a named private civilian, interview, photograph caption, testimony, or source status that researchNotes does not contain. Still reject invented named sources, fabricated scenes, factual errors, repetition, and other real defects. Also reject generic scaffold with no historical particulars; an unnamed composite presented as a witnessed scene; and attribution to a named publication, dispatch, embassy record, or journalist that researchNotes does not contain."
         ],
     payload: { researchNotes: citeableNotes }
   };
+}
+
+/**
+ * Prompt-only exact rewrite of a reviewed page brief when the citation payload
+ * has no citeable notes. Unknown text is returned untouched. Stored
+ * `Chapter.productionBrief` is not mutated here.
+ */
+export function sanitizePageBriefForCitationContract(
+  pageBrief: PageProductionBeat,
+  researchNotes: readonly CitationContractNote[] | undefined
+): PageProductionBeat {
+  if (citationContractFields(researchNotes).payload.researchNotes.length > 0) {
+    return pageBrief;
+  }
+  return rewriteReviewedEmptyNotesPageBrief(pageBrief);
 }
 
 export const IMAGE_PROMPT_CHARACTER_RULE =

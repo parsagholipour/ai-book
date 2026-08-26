@@ -14,6 +14,7 @@ import {
   READER_FACING_PAGE_BRIEF_RULES,
   buildPageInstruction,
   citationContractFields,
+  sanitizePageBriefForCitationContract,
   chapterBriefPayloadForPageScope,
   compactFollowingPages,
   compactPriorPages,
@@ -62,7 +63,7 @@ export function buildPageDraftSystemContent(
           "followingPages is prose that already exists after this page and is not being rewritten. End so the first of them reads on naturally from your last line, and do not write any beat, reveal, or line of dialogue that already appears there."
         ]
       : []),
-    "The current pageBrief is authoritative; chapter keyBeats and futureChapterPageBriefs are context only unless assigned to this page.",
+    "The current pageBrief is authoritative for its historical assignment; source-identity requirements are governed only by researchNotes and the citation rule. Chapter keyBeats and futureChapterPageBriefs are context only unless assigned to this page.",
     ...pageDraftImagePromptGuidance(options.input, options.pageIndex),
     ...targetLanguageGenerationGuidance(options.input.language),
     ...writerToneRules(options.input),
@@ -104,7 +105,9 @@ export function buildPageDraftUserPayload(options: GeneratePageOptions) {
       styleGuidance: styleGuidancePayload(options.input)
     },
     chapterBrief: chapterBriefPayloadForPageScope(options.chapterBrief),
-    pageBrief: options.pageBrief,
+    pageBrief: options.pageBrief
+      ? sanitizePageBriefForCitationContract(options.pageBrief, options.researchNotes)
+      : options.pageBrief,
     ...citation.payload,
     pageScope: pageScopePayload(options),
     characters: options.plan.characters,

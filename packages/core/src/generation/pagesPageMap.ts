@@ -14,6 +14,7 @@ import {
   firstPageBriefFieldsForRange,
   pageEndingContract
 } from "./pageBriefContract.js";
+import { finalizeProductionPageBeat, OPENING_PAGE_SCOPE_RULES } from "./pageBriefOpeningScope.js";
 import { normalizePlanPageTargets } from "./planner.js";
 import type {
   BookPlan,
@@ -38,6 +39,7 @@ import {
   openingContractForRange,
   pageScopePayload,
   plannerToneRules,
+  sanitizePageBriefForCitationContract,
   stringArrayField,
   stringField,
   styleGuidancePayload,
@@ -140,6 +142,7 @@ export async function generateWholeBookPageMap(options: GeneratePageMapOptions):
             "Never emit pageIndex values greater than targetPages.",
             "Each page beat object must include pageIndex, chapterIndex, purpose, beat, requiredContinuity, endingPressure, and optional imageMoment.",
             "Use global page indexes, not chapter-local page numbers.",
+            ...OPENING_PAGE_SCOPE_RULES,
             ...citation.rules,
             ...firstPage.rules,
             ...targetLanguageGenerationGuidance(options.input.language),
@@ -227,6 +230,7 @@ export async function generateChapterBrief(options: GenerateChapterBriefOptions)
           "The beats must prevent filler, repetition, and generic endings.",
           "Return exactly one root JSON object with chapterIndex, title, summary, pages, and continuityFocus.",
           "Use pages for the page beat array; do not return pageBeats as the root shape.",
+          ...OPENING_PAGE_SCOPE_RULES,
           ...citation.rules,
           ...firstPage.rules,
           ...targetLanguageGenerationGuidance(options.input.language),
@@ -339,7 +343,10 @@ export async function repairPageBrief(options: RepairPageBriefOptions): Promise<
             chapterBrief: chapterBriefPayloadForPageScope(options.chapterBrief),
             pageIndex: options.pageIndex,
             pageScope: pageScopePayload(options),
-            originalPageBrief: options.pageBrief,
+            originalPageBrief: sanitizePageBriefForCitationContract(
+              options.pageBrief,
+              options.researchNotes ?? options.retrievedResearch ?? options.plan.researchNotes
+            ),
             rejectedDraft: {
               title: options.draft.title,
               summary: options.draft.summary,
@@ -374,10 +381,20 @@ function parsePageMapFromModel(raw: unknown, options: GeneratePageMapOptions): C
   return ranges.map((rangeInfo) => {
     const chapterPages = pages
       .filter((page) => page.pageIndex >= rangeInfo.startPage && page.pageIndex <= rangeInfo.endPage)
-      .map((page) => ({
-        ...page,
-        chapterIndex: rangeInfo.chapter.index
-      }));
+      .map((page) =>
+        finalizeProductionPageBeat(
+          {
+            ...page,
+            chapterIndex: rangeInfo.chapter.index
+          },
+          options.plan.researchNotes,
+          {
+            chapter: rangeInfo.chapter,
+            chapterPageStart: rangeInfo.startPage,
+            chapterPageEnd: rangeInfo.endPage
+          }
+        )
+      );
 
     return chapterBriefSchema.parse({
       chapterIndex: rangeInfo.chapter.index,
@@ -408,14 +425,22 @@ function fallbackPageMapFromPlan(options: GeneratePageMapOptions): ChapterBrief[
   return chapterRangesForPlan(options.plan, options.input.targetPages).map((rangeInfo) => {
     const pageIndexes = range(rangeInfo.startPage, rangeInfo.endPage);
     const pages = pageIndexes.map((pageIndex, index) =>
-      fallbackPageBeatFromChapter({
-        input: options.input,
-        plan: options.plan,
-        chapter: rangeInfo.chapter,
-        pageIndex,
-        localIndex: index,
-        pageCount: pageIndexes.length
-      })
+      finalizeProductionPageBeat(
+        fallbackPageBeatFromChapter({
+          input: options.input,
+          plan: options.plan,
+          chapter: rangeInfo.chapter,
+          pageIndex,
+          localIndex: index,
+          pageCount: pageIndexes.length
+        }),
+        options.plan.researchNotes,
+        {
+          chapter: rangeInfo.chapter,
+          chapterPageStart: rangeInfo.startPage,
+          chapterPageEnd: rangeInfo.endPage
+        }
+      )
     );
 
     return chapterBriefSchema.parse({
@@ -644,16 +669,24 @@ function normalizeRepairedPageBrief(raw: unknown, options: RepairPageBriefOption
   const requiredContinuity = parsed.requiredContinuity.map((item) => item.trim()).filter(Boolean);
   const imageMoment = parsed.imageMoment?.trim();
 
-  return {
-    ...parsed,
-    pageIndex: options.pageIndex,
-    chapterIndex,
-    purpose,
-    beat,
-    requiredContinuity,
-    endingPressure,
-    ...(imageMoment ? { imageMoment } : {})
-  };
+  return finalizeProductionPageBeat(
+    {
+      ...parsed,
+      pageIndex: options.pageIndex,
+      chapterIndex,
+      purpose,
+      beat,
+      requiredContinuity,
+      endingPressure,
+      ...(imageMoment ? { imageMoment } : {})
+    },
+    options.researchNotes ?? options.retrievedResearch ?? options.plan.researchNotes,
+    {
+      ...(options.chapter ? { chapter: options.chapter } : {}),
+      ...(options.chapterPageStart !== undefined ? { chapterPageStart: options.chapterPageStart } : {}),
+      ...(options.chapterPageEnd !== undefined ? { chapterPageEnd: options.chapterPageEnd } : {})
+    }
+  );
 }
 
 /**
@@ -725,11 +758,21 @@ function applyChapterContextToBrief(brief: ChapterBrief, options: GenerateChapte
     chapterIndex: options.chapter.index,
     title: brief.title.trim() || options.chapter.title,
     summary: brief.summary.trim() || options.chapter.summary,
-    pages: brief.pages.map((page, index) => ({
-      ...page,
-      chapterIndex: options.chapter.index,
-      pageIndex: usesLocalPageNumbers ? expectedPages[index]! : page.pageIndex
-    }))
+    pages: brief.pages.map((page, index) =>
+      finalizeProductionPageBeat(
+        {
+          ...page,
+          chapterIndex: options.chapter.index,
+          pageIndex: usesLocalPageNumbers ? expectedPages[index]! : page.pageIndex
+        },
+        options.researchNotes ?? options.plan.researchNotes,
+        {
+          chapter: options.chapter,
+          chapterPageStart: options.chapterPageStart,
+          chapterPageEnd: options.chapterPageEnd
+        }
+      )
+    )
   };
 }
 

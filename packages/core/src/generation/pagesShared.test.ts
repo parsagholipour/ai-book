@@ -21,6 +21,7 @@ import {
   pagesForStyleExcerpts,
   pinStyleExcerpts,
   sampleExcerptsFromInput,
+  sanitizePageBriefForCitationContract,
   type PriorPageContext
 } from "./pagesShared.js";
 
@@ -355,6 +356,158 @@ describe("the citation contract, across brief, writer, and reviewer prompts", ()
     expect(sourcedRule).toEqual(sourcedPayload);
     expect(emptyRule).toEqual(sites.map((site) => site.name));
     expect(sourcedRule).toEqual(sites.map((site) => site.name));
+  });
+});
+
+describe("sanitizePageBriefForCitationContract", () => {
+  const warsPage1Brief = {
+    pageIndex: 1,
+    chapterIndex: 1,
+    purpose:
+      "Open inside the July Crisis through a documented moment in a mobilizing European city, assigning the openingHook without explaining the book or defining the war.",
+    beat: "Present a specific sourced observation, notice, diary entry, newspaper report, public announcement, or other record showing ordinary people encountering mobilization, mourning, military preparation, or uncertainty after the Sarajevo assassination. Keep the immediate question concrete: what does this first visible disruption mean, and how quickly can a regional crisis become a war?",
+    requiredContinuity: [
+      "Identify the date, place, person or record, and source status. Do not invent interior thoughts or dialogue. Clarify that the assassination was a trigger within an already tense international system, not a complete explanation."
+    ],
+    endingPressure:
+      "Leave the reader needing to know how an assassination in Sarajevo could activate decisions across several governments and turn public uncertainty into military movement."
+  };
+
+  it("drops source-identity demands from the Wars page-1 brief when notes are empty", () => {
+    const sanitized = sanitizePageBriefForCitationContract(warsPage1Brief, []);
+    expect(sanitized).toEqual({
+      pageIndex: 1,
+      chapterIndex: 1,
+      purpose:
+        "Open inside the July Crisis in a mobilizing European city, assigning the openingHook without explaining the book or defining the war.",
+      beat: "Show ordinary people encountering mobilization, mourning, military preparation, or uncertainty after the Sarajevo assassination. Keep the immediate question concrete: what does this first visible disruption mean, and how quickly can a regional crisis become a war?",
+      requiredContinuity: [
+        "Keep the date, place, person, or public event concrete. Do not invent interior thoughts or dialogue. Clarify that the assassination was a trigger within an already tense international system, not a complete explanation."
+      ],
+      endingPressure:
+        "Leave the reader needing to know how an assassination in Sarajevo could activate decisions across several governments and turn public uncertainty into military movement."
+    });
+  });
+
+  it("passes the same brief through when notes are citeable", () => {
+    const notes = ["July Crisis papers (https://example.com/july-crisis): Diplomatic correspondence."];
+    expect(sanitizePageBriefForCitationContract(warsPage1Brief, notes)).toBe(warsPage1Brief);
+  });
+
+  it("keeps the historical assignment on stored Wars opening briefs without source-identity leftovers", () => {
+    const leftover = /diar(?:y|ies)|newspaper|source status|documented (?:moment|account|civilian|human)|official record|sourced account|verified civilian|contemporary report|photograph caption/i;
+    const briefs = [
+      {
+        keep: /local-government experience|political fragmentation/i,
+        purpose: "Open with a documented civilian or local-government experience that conveys political fragmentation at ground level.",
+        beat: "Open with a documented civilian or local-government experience that conveys political fragmentation at ground level.",
+        requiredContinuity: [
+          "Establish that the chapter concerns the Chinese Civil War as a distinct conflict."
+        ],
+        endingPressure: "Leave a practical political problem."
+      },
+      {
+        keep: /German invasion of Poland|September 1939/i,
+        purpose: "Open with civilians confronting the German invasion of Poland in September 1939, using a documented location, testimony, photograph, diary, or official record.",
+        beat: "Open with civilians confronting the German invasion of Poland in September 1939, using a documented location, testimony, photograph, diary, or official record.",
+        requiredContinuity: ["Place the opening within the chronology of the German-Soviet invasion."],
+        endingPressure: "End with occupation as a system."
+      },
+      {
+        keep: /December 1944/i,
+        purpose: "Open with a documented moment from the December 1944 crisis that places readers inside the uncertainty of liberation and contested authority.",
+        beat: "Open with a documented moment from the December 1944 crisis that places readers inside the uncertainty of liberation and contested authority.",
+        requiredContinuity: [
+          "Define the occupation, resistance movements, government-in-exile, and return of political authority. Identify whose testimony or record supports the opening scene."
+        ],
+        endingPressure: "Ask how a resistance movement became an opponent of the postwar state."
+      }
+    ];
+
+    for (const [index, fixture] of briefs.entries()) {
+      const sanitized = sanitizePageBriefForCitationContract(
+        {
+          pageIndex: index + 1,
+          chapterIndex: 1,
+          purpose: fixture.purpose,
+          beat: fixture.beat,
+          requiredContinuity: fixture.requiredContinuity,
+          endingPressure: fixture.endingPressure
+        },
+        []
+      );
+      expect(JSON.stringify(sanitized), `brief ${index}`).not.toMatch(leftover);
+      expect(`${sanitized.purpose} ${sanitized.beat}`, `brief ${index} keep`).toMatch(fixture.keep);
+    }
+  });
+
+  it("uses the reviewed displacement rewrite without inventing an unnamed witness", () => {
+    const sanitized = sanitizePageBriefForCitationContract(
+      {
+        pageIndex: 136,
+        chapterIndex: 14,
+        purpose: "Open with a documented human experience of displacement.",
+        beat: "Begin with a sourced account from a displaced person, relief worker, journalist, or official record during the flight from violence in 1966 or the early months of the war. Identify the place, date, and nature of the evidence, then briefly locate the reader in southeastern Nigeria.",
+        requiredContinuity: ["Do not imply that one testimony represents all displaced people."],
+        endingPressure: "End with why political crisis became mass displacement."
+      },
+      []
+    );
+    expect(sanitized.beat).toBe(
+      "Begin with the public effects of the flight from violence in 1966 or the early months of the war. Keep the place and date concrete, then briefly locate the reader in southeastern Nigeria."
+    );
+    expect(sanitized.requiredContinuity).toEqual([
+      "Do not imply that one person's experience represents all displaced people."
+    ]);
+  });
+
+  it("passes unreviewed text through byte-for-byte in every language and genre", () => {
+    const unreviewed = [
+      {
+        pageIndex: 4,
+        chapterIndex: 1,
+        purpose: "Move the investigation forward.",
+        beat: "Mara steals the diary from the archives before the guard returns.",
+        requiredContinuity: ["The diary belonged to Mara's mother."],
+        endingPressure: "The final entry changes whom Mara trusts."
+      },
+      {
+        pageIndex: 5,
+        chapterIndex: 1,
+        purpose: "Explain public mobilization.",
+        beat: "Explain how newspapers shaped public opinion during the July Crisis.",
+        requiredContinuity: ["Keep the date and place of the demonstrations concrete."],
+        endingPressure: "Public pressure narrows the cabinet's options."
+      },
+      {
+        pageIndex: 6,
+        chapterIndex: 1,
+        purpose: "تابع الأزمة السياسية.",
+        beat: "اشرح كيف تغير ميزان القوى بعد القرار.",
+        requiredContinuity: ["لا تخترع أفكارًا داخلية أو حوارًا."],
+        endingPressure: "اترك السؤال السياسي التالي مفتوحًا."
+      },
+      {
+        pageIndex: 7,
+        chapterIndex: 1,
+        purpose: "Explain the crisis.",
+        beat: "Present the ultimatum and mobilization timetable, showing how the crisis escalated.",
+        requiredContinuity: ["Identify the date and place of the invasion."],
+        endingPressure: "Show the consequence."
+      },
+      {
+        pageIndex: 8,
+        chapterIndex: 1,
+        purpose: "Explain the crisis.",
+        beat: "Cite a diary entry.",
+        requiredContinuity: [],
+        endingPressure: "Show the consequence."
+      }
+    ];
+
+    for (const brief of unreviewed) {
+      expect(sanitizePageBriefForCitationContract(brief, [])).toBe(brief);
+    }
   });
 });
 

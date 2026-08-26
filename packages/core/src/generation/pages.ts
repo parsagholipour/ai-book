@@ -31,6 +31,7 @@ import {
   isRecord,
   numberField,
   openingContractFields,
+  sanitizePageBriefForCitationContract,
   stringArrayField,
   stringField,
   styleGuidancePayload,
@@ -72,6 +73,7 @@ export {
   sampleExcerptsFromInput,
   buildPageInstruction,
   citationContractFields,
+  sanitizePageBriefForCitationContract,
   openingContractFields,
   openingContractFieldsForPage,
   openingContractForRange,
@@ -261,7 +263,12 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
             chapters: options.plan.chapters,
             characters: options.plan.characters,
             locations: options.plan.locations,
-            pageMap: options.chapterBriefs ? pageMapForWholeBookDraft(options.chapterBriefs) : undefined,
+            pageMap: options.chapterBriefs
+              ? sanitizedWholeBookPageMapForCitation(
+                  pageMapForWholeBookDraft(options.chapterBriefs),
+                  options.researchNotes
+                )
+              : undefined,
             ...opening.payload,
             ...citation.payload,
             illustrationPlan: options.plan.illustrationPlan,
@@ -333,7 +340,7 @@ export async function generateChapterDraft(options: GenerateChapterDraftOptions)
               styleGuidance: styleGuidancePayload(options.input)
             },
             chapter: options.chapter,
-            chapterBrief: options.chapterBrief,
+            chapterBrief: sanitizedChapterBriefForCitation(options.chapterBrief, options.researchNotes.slice(0, 18)),
             ...opening.payload,
             characters: options.plan.characters,
             illustrationPlan: options.plan.illustrationPlan,
@@ -415,7 +422,9 @@ export async function generateBatchDraft(options: GenerateBatchDraftOptions): Pr
             },
             characters: options.plan.characters,
             illustrationPlan: options.plan.illustrationPlan,
-            pageMap: pageMapForRange(options.chapterBriefs, options.pageStart, options.pageEnd),
+            pageMap: pageMapForRange(options.chapterBriefs, options.pageStart, options.pageEnd).map((page) =>
+              sanitizePageBriefForCitationContract(page, options.researchNotes.slice(0, 18))
+            ),
             ...opening.payload,
             previousPages: compactPriorPages(options.previousPages, 8, 900),
             continuityNotes: continuityNotesForPrompt(options.continuityNotes, CONTINUITY_NOTE_PROMPT_LIMITS.bulkDraft),
@@ -510,8 +519,10 @@ export async function polishPageDraft(options: PolishPageOptions): Promise<PageD
             },
             pageIndex: options.pageIndex,
             chapter: options.chapter,
-            chapterBrief: options.chapterBrief,
-            pageBrief: options.pageBrief,
+            chapterBrief: sanitizedChapterBriefForCitation(options.chapterBrief, options.researchNotes.slice(0, 18)),
+            pageBrief: options.pageBrief
+              ? sanitizePageBriefForCitationContract(options.pageBrief, options.researchNotes.slice(0, 18))
+              : options.pageBrief,
             ...pageInstruction.payload,
             characters: options.plan.characters,
             illustrationPlan: options.plan.illustrationPlan,
@@ -530,6 +541,49 @@ export async function polishPageDraft(options: PolishPageOptions): Promise<PageD
   });
 
   return result.data;
+}
+
+function sanitizedChapterBriefForCitation(
+  brief: ChapterBrief | undefined,
+  researchNotes: string[]
+): ChapterBrief | undefined {
+  if (!brief) {
+    return brief;
+  }
+  return {
+    ...brief,
+    pages: brief.pages.map((page) => sanitizePageBriefForCitationContract(page, researchNotes))
+  };
+}
+
+function sanitizedWholeBookPageMapForCitation(
+  entries: ReturnType<typeof pageMapForWholeBookDraft>,
+  researchNotes: string[]
+): ReturnType<typeof pageMapForWholeBookDraft> {
+  return entries.map((entry) => {
+    const sanitized = sanitizePageBriefForCitationContract(
+      {
+        pageIndex: entry.pageIndex,
+        chapterIndex: entry.chapterIndex,
+        purpose: entry.purpose,
+        beat: entry.beat,
+        requiredContinuity: entry.requiredContinuity,
+        endingPressure: entry.endingPressure,
+        ...(entry.imageMoment ? { imageMoment: entry.imageMoment } : {})
+      },
+      researchNotes
+    );
+    return {
+      chapterIndex: entry.chapterIndex,
+      chapterTitle: entry.chapterTitle,
+      pageIndex: entry.pageIndex,
+      purpose: sanitized.purpose,
+      beat: sanitized.beat,
+      requiredContinuity: sanitized.requiredContinuity,
+      endingPressure: sanitized.endingPressure,
+      imageMoment: sanitized.imageMoment ?? entry.imageMoment
+    };
+  });
 }
 
 function multiPageImagePromptGuidance(input: CreateProjectInput, from: number, to: number): string[] {

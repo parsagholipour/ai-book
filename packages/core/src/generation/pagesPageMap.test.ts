@@ -304,6 +304,154 @@ describe("chapter brief first-page contract", () => {
     expect(capture.payload?.openingHook).toBeUndefined();
     expect(capture.system).toMatch(/Global page 1 is the book's first page/);
   });
+
+  it("strips diary testimony and archive identity from the stored opening beat when notes are empty", async () => {
+    const diaryBeat =
+      "Quote a civilian diary, named testimony, and archive holding showing how Sarajevo's news reached a mobilizing city.";
+    const capture = capturingJsonModel({
+      chapterIndex: 1,
+      title: "July Crisis",
+      summary: "The assassination becomes a continental war.",
+      pages: [
+        {
+          pageIndex: 1,
+          chapterIndex: 1,
+          purpose: "Open on a documented civilian account of mobilisation.",
+          beat: diaryBeat,
+          requiredContinuity: ["Identify the diary or archive and its source status."],
+          endingPressure: "The reader needs the next cabinet's choice."
+        },
+        modelPageBeat(2, 1),
+        modelPageBeat(3, 1)
+      ],
+      continuityFocus: []
+    });
+    const plan: BookPlan = { ...chunkedPlan, researchNotes: [] };
+
+    const brief = await generateChapterBrief({
+      input: chunkedInput,
+      plan,
+      chapter: plan.chapters[0]!,
+      chapterPageStart: 1,
+      chapterPageEnd: 3,
+      textModel: capture.model
+    });
+
+    const opening = brief.pages.find((page) => page.pageIndex === 1);
+    expect(opening?.beat).toBeDefined();
+    expect(opening?.beat).not.toMatch(/diar/i);
+    expect(opening?.beat).not.toMatch(/testimony/i);
+    expect(opening?.beat).not.toMatch(/archive/i);
+    expect(JSON.stringify(opening?.requiredContinuity)).not.toMatch(/diar|archive|source status/i);
+    expect(capture.system).toContain("researchNotes is empty:");
+  });
+
+  it("keeps a diary assignment on the stored beat when notes are citeable", async () => {
+    const diaryBeat = "Quote a civilian diary from the archive showing mobilisation after Sarajevo.";
+    const capture = capturingJsonModel({
+      chapterIndex: 1,
+      title: "July Crisis",
+      summary: "The assassination becomes a continental war.",
+      pages: [
+        {
+          pageIndex: 1,
+          chapterIndex: 1,
+          purpose: "Open on a documented civilian account.",
+          beat: diaryBeat,
+          requiredContinuity: ["Identify the diary or archive holding it."],
+          endingPressure: "The reader needs the next cabinet's choice."
+        },
+        modelPageBeat(2, 1),
+        modelPageBeat(3, 1)
+      ],
+      continuityFocus: []
+    });
+    const plan: BookPlan = {
+      ...chunkedPlan,
+      researchNotes: [
+        {
+          query: "july crisis",
+          title: "July Crisis papers",
+          url: "https://example.com/july-crisis",
+          summary: "Diplomatic correspondence after Sarajevo."
+        }
+      ]
+    };
+
+    const brief = await generateChapterBrief({
+      input: chunkedInput,
+      plan,
+      chapter: plan.chapters[0]!,
+      chapterPageStart: 1,
+      chapterPageEnd: 3,
+      textModel: capture.model
+    });
+
+    expect(brief.pages.find((page) => page.pageIndex === 1)?.beat).toBe(diaryBeat);
+  });
+
+  it("normalizes a five-theater survey off the opening page of a multi-page chapter", async () => {
+    const chapter = {
+      index: 1,
+      title: "The Widening War",
+      summary: "The war spreads beyond the opening campaign.",
+      targetPages: 5,
+      keyBeats: [
+        "Ottoman entry and Middle Eastern fronts",
+        "Gallipoli",
+        "unrestricted submarine warfare",
+        "poison gas",
+        "the United States' entry"
+      ]
+    };
+    const surveyBeat =
+      "Survey Ottoman entry and Middle Eastern fronts, Gallipoli, unrestricted submarine warfare, poison gas, and the United States' entry.";
+    const laterBeats = [
+      modelPageBeat(2, 1),
+      modelPageBeat(3, 1),
+      modelPageBeat(4, 1),
+      modelPageBeat(5, 1)
+    ];
+    const capture = capturingJsonModel({
+      chapterIndex: 1,
+      title: chapter.title,
+      summary: chapter.summary,
+      pages: [
+        {
+          pageIndex: 1,
+          chapterIndex: 1,
+          purpose: "Survey the chapter.",
+          beat: surveyBeat,
+          requiredContinuity: [],
+          endingPressure: "The next page continues the war's spread."
+        },
+        ...laterBeats
+      ],
+      continuityFocus: []
+    });
+    const plan: BookPlan = {
+      ...makeFallbackPlan({ ...chunkedInput, targetPages: 5 }),
+      chapters: [chapter]
+    };
+
+    const brief = await generateChapterBrief({
+      input: { ...chunkedInput, targetPages: 5 },
+      plan,
+      chapter,
+      chapterPageStart: 1,
+      chapterPageEnd: 5,
+      textModel: capture.model
+    });
+
+    const opening = brief.pages.find((page) => page.pageIndex === 1);
+    expect(opening?.beat).toBeDefined();
+    expect(opening?.beat).not.toMatch(/Gallipoli/i);
+    expect(opening?.beat).not.toMatch(/poison gas/i);
+    expect(opening?.beat).not.toMatch(/United States/i);
+    expect(opening?.beat).not.toMatch(/submarine/i);
+    expect(opening?.beat).toMatch(/Ottoman|Middle Eastern/i);
+    expect(capture.system).toMatch(/One page, one irreversible change/i);
+  });
 });
 
 describe("deterministic fallback page map opening beat", () => {
