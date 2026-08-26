@@ -29,7 +29,13 @@ describe("OpenAITextAdapter", () => {
       text: "A finished answer.",
       model: "gpt-5.6-sol",
       provider: "openai",
-      usage: { promptTokens: 120, outputTokens: 30, cacheHitTokens: 20, cacheWriteTokens: 10 }
+      usage: {
+        promptTokens: 120,
+        outputTokens: 30,
+        cacheHitTokens: 20,
+        cacheWriteTokens: 10,
+        reasoningTokens: 10
+      }
     });
     expect(mock.calls[0]).toEqual({
       request: expect.objectContaining({
@@ -59,6 +65,7 @@ describe("OpenAITextAdapter", () => {
     });
 
     expect(mock.calls[0]?.request).toMatchObject({ reasoning: { effort: "none" }, temperature: 0.4 });
+    expect(mock.calls[0]?.request).not.toHaveProperty("include");
   });
 
   it("requests JSON mode and validates the returned object", async () => {
@@ -123,6 +130,7 @@ describe("OpenAITextAdapter", () => {
     expect(second.text).toBe("The answer is 42.");
     expect(mock.calls[1]?.request).toMatchObject({
       store: false,
+      include: ["reasoning.encrypted_content"],
       reasoning: { effort: "medium" },
       input: [
         { role: "user", content: "Look it up." },
@@ -176,7 +184,13 @@ describe("OpenAITextAdapter", () => {
       status: 500,
       provider: "openai",
       model: "gpt-5.6-sol",
-      usage: { promptTokens: 120, outputTokens: 30, cacheHitTokens: 20, cacheWriteTokens: 10 }
+      usage: {
+        promptTokens: 120,
+        outputTokens: 30,
+        cacheHitTokens: 20,
+        cacheWriteTokens: 10,
+        reasoningTokens: 10
+      }
     });
   });
 

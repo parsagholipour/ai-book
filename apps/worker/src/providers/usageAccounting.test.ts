@@ -109,6 +109,25 @@ describe("recordProviderUsage", () => {
     expect(createdData()).toMatchObject({ cacheWriteTokens: 40_000, costHint: 0.968 });
   });
 
+  it("persists reasoningTokens in settled metadata without changing cost", async () => {
+    await recordProviderUsage({
+      ...baseCall,
+      provider: "openai",
+      model: "gpt-5.6-sol",
+      usage: {
+        promptTokens: 200_000,
+        outputTokens: 10_000,
+        cacheHitTokens: 20_000,
+        cacheWriteTokens: 40_000,
+        reasoningTokens: 10
+      }
+    });
+
+    const data = createdData();
+    expect(data.costHint).toBe(0.968);
+    expect(data.metadata).toMatchObject({ reasoningTokens: 10 });
+  });
+
   it("leaves costHint null on estimated tokens, so provisional rows never read as spend", async () => {
     await recordProviderUsage({ ...baseCall, usage: undefined, fallbackPromptTokens: 500, fallbackOutputTokens: 200 });
 
@@ -318,6 +337,7 @@ describe("pure helpers", () => {
     expect(isUsage({ promptTokens: 1 })).toBe(true);
     expect(isUsage({ cacheHitTokens: 1 })).toBe(true);
     expect(isUsage({ cacheWriteTokens: 1 })).toBe(true);
+    expect(isUsage({ reasoningTokens: 1 })).toBe(true);
     expect(isUsage({})).toBe(false);
     expect(isUsage([1])).toBe(false);
     expect(isUsage(null)).toBe(false);

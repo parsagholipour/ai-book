@@ -190,11 +190,14 @@ export class OpenAITextAdapter implements TextModelAdapter {
     input: unknown[],
     extra: Record<string, unknown>
   ): Record<string, unknown> {
+    // Encrypted reasoning is only needed for tool-loop replay when thinking is
+    // on. Requesting it at effort "none" can still bill reasoning tokens.
+    // Undefined effort keeps include — the model may think by default.
     return {
       model: this.model,
       input,
       store: false,
-      include: ["reasoning.encrypted_content"],
+      ...(this.thinkingEffort !== "none" ? { include: ["reasoning.encrypted_content"] } : {}),
       ...(this.thinkingEffort ? { reasoning: { effort: this.thinkingEffort } } : {}),
       ...(options.temperature !== undefined && this.thinkingEffort === "none"
         ? { temperature: options.temperature }
@@ -352,11 +355,13 @@ function responseText(response: ResponseRecord): string {
 function usageFromOpenAIResponse(usage: unknown): Usage | undefined {
   if (!isRecord(usage)) return undefined;
   const details = isRecord(usage.input_tokens_details) ? usage.input_tokens_details : undefined;
+  const outputDetails = isRecord(usage.output_tokens_details) ? usage.output_tokens_details : undefined;
   return {
     promptTokens: numberValue(usage.input_tokens),
     outputTokens: numberValue(usage.output_tokens),
     cacheHitTokens: numberValue(details?.cached_tokens),
-    cacheWriteTokens: numberValue(details?.cache_write_tokens)
+    cacheWriteTokens: numberValue(details?.cache_write_tokens),
+    reasoningTokens: numberValue(outputDetails?.reasoning_tokens)
   };
 }
 

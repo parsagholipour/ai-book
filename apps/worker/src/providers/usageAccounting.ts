@@ -29,9 +29,16 @@ export async function recordProviderUsage(options: {
   const exactOutputTokens = finiteTokenCount(options.usage?.outputTokens);
   const cacheHitTokens = finiteTokenCount(options.usage?.cacheHitTokens);
   const cacheWriteTokens = finiteTokenCount(options.usage?.cacheWriteTokens);
+  const reasoningTokens = finiteTokenCount(options.usage?.reasoningTokens);
   const promptTokens = exactPromptTokens ?? finiteTokenCount(options.fallbackPromptTokens ?? undefined);
   const outputTokens = exactOutputTokens ?? finiteTokenCount(options.fallbackOutputTokens ?? undefined);
-  if (promptTokens === null && outputTokens === null && cacheHitTokens === null && cacheWriteTokens === null) {
+  if (
+    promptTokens === null &&
+    outputTokens === null &&
+    cacheHitTokens === null &&
+    cacheWriteTokens === null &&
+    reasoningTokens === null
+  ) {
     if (options.liveUsageId) {
       await markLiveTextUsageFailed(options.liveUsageId, { durationMs: options.durationMs });
     }
@@ -40,6 +47,7 @@ export async function recordProviderUsage(options: {
   const promptTokensEstimated = exactPromptTokens === null && promptTokens !== null;
   const outputTokensEstimated = exactOutputTokens === null && outputTokens !== null;
   const provisional = promptTokensEstimated || outputTokensEstimated;
+  // reasoningTokens are already inside outputTokens for billing — do not add them again.
   const costHint = provisional
     ? null
     : calculateTextGenerationCost({
@@ -56,7 +64,8 @@ export async function recordProviderUsage(options: {
     liveStatus: "settled",
     provisional,
     promptTokensEstimated,
-    outputTokensEstimated
+    outputTokensEstimated,
+    ...(reasoningTokens !== null ? { reasoningTokens } : {})
   } satisfies Prisma.InputJsonValue;
 
   try {
@@ -274,7 +283,8 @@ export function isUsage(value: unknown): value is Usage {
     "promptTokens" in value ||
     "outputTokens" in value ||
     "cacheHitTokens" in value ||
-    "cacheWriteTokens" in value
+    "cacheWriteTokens" in value ||
+    "reasoningTokens" in value
   );
 }
 

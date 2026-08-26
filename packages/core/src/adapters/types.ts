@@ -61,6 +61,8 @@ export type Usage = {
   outputTokens?: number | undefined;
   cacheHitTokens?: number | undefined;
   cacheWriteTokens?: number | undefined;
+  /** Billed reasoning tokens inside output_tokens; not added again to cost. */
+  reasoningTokens?: number | undefined;
 };
 
 export type TextResult = {
