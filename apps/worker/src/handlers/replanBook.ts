@@ -10,7 +10,11 @@ import {
   toPriorPageContext
 } from "../generation/bookHelpers.js";
 import { loadContinuityNotes } from "../generation/generationContext.js";
-import { revisePageDraftWithRestart, runPageQualityLoop } from "../generation/pageReview.js";
+import {
+  reviewPageWithQualityGates,
+  revisePageDraftWithRestart,
+  runPageQualityLoop
+} from "../generation/pageReview.js";
 import { type QualityGateContext } from "../generation/qualityEnrichment.js";
 import { inputForPlanVersion, inputWithMessageMediaPreferences, inputWithMobileSourceMaterial } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
@@ -362,18 +366,22 @@ export async function rewritePageForUserRequest(options: {
     }
   });
   await options.onPhase?.("review");
-  const initialReport = await options.strategy.reviewPageDraft({
-    input: options.input,
-    plan: options.plan,
-    chapter: chapterPlan,
-    chapterBrief,
-    pageBrief,
-    pageIndex: options.page.index,
-    draft,
-    previousPages: priorPageContext,
-    continuityNotes,
-    textModel: options.providers.text,
-    ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
+  const initialReport = await reviewPageWithQualityGates({
+    strategy: options.strategy,
+    quality,
+    reviewOptions: {
+      input: options.input,
+      plan: options.plan,
+      chapter: chapterPlan,
+      chapterBrief,
+      pageBrief,
+      pageIndex: options.page.index,
+      draft,
+      previousPages: priorPageContext,
+      continuityNotes,
+      textModel: options.providers.text,
+      ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
+    }
   });
   // A rejected rewrite used to be stored as-is with its report ignored. Give
   // it the same bounded revise → re-review loop a generated page gets, with a

@@ -92,7 +92,7 @@ vi.mock("@book-maker/core", async () => {
 import { compileExport } from "./compileExport.js";
 import { ExportManuscriptUnreadableError, ExportRepairFenceUnreadableError } from "./compileExportFence.js";
 import { StopRequestedError } from "../runtime/jobTypes.js";
-import { mocks } from "./testing/compileExportMocks.js";
+import { isDefaultCompileQualityFeature, mocks } from "./testing/compileExportMocks.js";
 // The real pair, not a stand-in: what `processJob` writes into the run log's
 // `job.failed` line is exactly `serializeError(error)` rendered as JSON, and
 // whether the fence's evidence survives that is the whole property below.
@@ -303,7 +303,7 @@ describe("compileExport when its repair fence cannot be read", () => {
     mocks.loadQualityContext.mockResolvedValue({
       settings: {},
       tier: "balanced",
-      enabled: (): boolean => false
+      enabled: isDefaultCompileQualityFeature
     });
     mocks.generateJsonWithRetry.mockResolvedValue({ data: { issues: [] } });
     mocks.exportPublicationSuperseded.mockResolvedValue(false);

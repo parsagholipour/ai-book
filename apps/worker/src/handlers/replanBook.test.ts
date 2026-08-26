@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Job } from "bullmq";
+import {
+  balancedPagePipelineQualityContext,
+  pagePipelineQualityGates
+} from "../testing/qualityGateFixtures.js";
 
 const mocks = vi.hoisted(() => ({
   prisma: {
@@ -24,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   ),
   loadContinuityNotes: vi.fn(async (): Promise<string[]> => []),
   qualityEnabled: vi.fn((_feature: string): boolean => false),
+  pageQualityEnabled: vi.fn((_feature: string): boolean => true),
   // The style audit's provider boundary; `withStyleAudit` above it stays real.
   auditPageStyle: vi.fn()
 }));
@@ -37,11 +42,11 @@ vi.mock("../runtime/dispatch.js", () => ({ enqueueWorkerJob: mocks.enqueueWorker
 vi.mock("../runtime/jobLifecycle.js", () => ({ advanceJobStep: vi.fn(), updateJobProgress: vi.fn() }));
 vi.mock("../generation/generationContext.js", () => ({ loadContinuityNotes: mocks.loadContinuityNotes }));
 vi.mock("../generation/qualitySettings.js", () => ({
-  loadQualityContext: async () => ({
-    settings: {},
-    tier: "balanced",
-    enabled: (feature: string) => mocks.qualityEnabled(feature)
-  }),
+  loadQualityContext: async () =>
+    balancedPagePipelineQualityContext({
+      defaultFeatureEnabled: mocks.pageQualityEnabled,
+      otherFeatureEnabled: mocks.qualityEnabled
+    }),
   applyPlanThinkingBoost: vi.fn()
 }));
 vi.mock("../runtime/config.js", () => ({ config: {} }));
@@ -267,7 +272,10 @@ describe("rewritePageForUserRequest style audit", () => {
       providers: { text: {} },
       request: "make page 3 more dramatic",
       // Handed in by `applyBookEdit`, one context for the whole edit.
-      quality: { enabled: (feature: string) => mocks.qualityEnabled(feature) },
+      quality: pagePipelineQualityGates({
+        defaultFeatureEnabled: mocks.pageQualityEnabled,
+        otherFeatureEnabled: mocks.qualityEnabled
+      }),
       generationJobId: "gj-1"
     }) as never;
 
@@ -280,6 +288,7 @@ describe("rewritePageForUserRequest style audit", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.qualityEnabled.mockReturnValue(false);
+    mocks.pageQualityEnabled.mockReturnValue(true);
     mocks.loadContinuityNotes.mockResolvedValue([]);
     mocks.loadStyleLockPages.mockResolvedValue([]);
     mocks.auditPageStyle.mockResolvedValue({ styleOk: true, styleIssues: [] });
@@ -346,6 +355,16 @@ describe("rewritePageForUserRequest style audit", () => {
     for (const briefing of briefings) {
       expect(briefing).toContain("Keep the user's requested edit applied: make page 3 more dramatic");
     }
+  });
+
+  it("keeps the requested rewrite but skips its post-edit review when page QA is off", async () => {
+    mocks.pageQualityEnabled.mockReturnValue(false);
+
+    const result = await rewritePageForUserRequest(rewriteOptions());
+
+    expect(strategy.revisePageDraft).toHaveBeenCalledTimes(1);
+    expect(strategy.reviewPageDraft).not.toHaveBeenCalled();
+    expect(result.qualityReport).toMatchObject({ approved: true, score: 100 });
   });
 
   it("builds no auditor with the gate off, or with nothing pinned to compare against", async () => {

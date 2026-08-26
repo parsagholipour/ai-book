@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PageQualityReport } from "@book-maker/core";
 import type { ChapterSetup } from "../runtime/jobTypes.js";
+import { balancedPageQaQualityContext } from "../testing/qualityGateFixtures.js";
 import { GeneratedPagePublicationClaimLostError } from "./pagePublication.js";
 
 /**
@@ -71,6 +72,7 @@ vi.mock("./bookHelpers.js", () => ({
   // The brief repair's compare-and-swap reads the row back through this.
   parseChapterBrief: (value: unknown) => value ?? undefined
 }));
+vi.mock("./wholeBookPageReview.js", () => ({ reviewWholeBookDraftPages: vi.fn() }));
 vi.mock("./generationContext.js", async () => {
   const actual = await vi.importActual<typeof import("./generationContext.js")>("./generationContext.js");
   return {
@@ -95,7 +97,7 @@ vi.mock("./qualityEnrichment.js", () => ({
   revisedDraftStyleAuditor: () => undefined
 }));
 vi.mock("./qualitySettings.js", () => ({
-  loadQualityContext: async () => ({ settings: {}, tier: "balanced", enabled: () => false }),
+  loadQualityContext: async () => balancedPageQaQualityContext(),
   applyPlanThinkingBoost: vi.fn()
 }));
 vi.mock("./embeddingWrites.js", () => ({

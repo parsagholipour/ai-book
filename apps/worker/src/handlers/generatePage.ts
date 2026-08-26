@@ -7,7 +7,11 @@ import {
   toPriorPageContext
 } from "../generation/bookHelpers.js";
 import { loadContinuityNotes, loadResearchNotesForGeneration } from "../generation/generationContext.js";
-import { runPageQualityLoop } from "../generation/pageReview.js";
+import {
+  pageReviewPassesFor,
+  reviewPageWithQualityGates,
+  runPageQualityLoop
+} from "../generation/pageReview.js";
 import { pageRevisionMessage } from "../generation/pageReviewRecovery.js";
 import {
   enrichPageQualityReport,
@@ -295,20 +299,26 @@ export async function generatePage(job: GeneratePageJob) {
           judgeModel: providers.text
         })
       : await draftPage(draftOptions);
-  await advanceJobStep(generationJobId, "qa", 55, `Reviewing page ${page.index}`);
-  const initialReport = await strategy.reviewPageDraft({
-    input,
-    plan,
-    chapter: chapterPlan,
-    chapterBrief,
-    pageBrief,
-    pageIndex: page.index,
-    draft: initialDraft,
-    previousPages: priorPageContext,
-    continuityNotes,
-    researchNotes,
-    textModel: providers.text,
-    ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
+  if (pageReviewPassesFor({ quality }).anyConfiguredPassEnabled) {
+    await advanceJobStep(generationJobId, "qa", 55, `Reviewing page ${page.index}`);
+  }
+  const initialReport = await reviewPageWithQualityGates({
+    strategy,
+    quality,
+    reviewOptions: {
+      input,
+      plan,
+      chapter: chapterPlan,
+      chapterBrief,
+      pageBrief,
+      pageIndex: page.index,
+      draft: initialDraft,
+      previousPages: priorPageContext,
+      continuityNotes,
+      researchNotes,
+      textModel: providers.text,
+      ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
+    }
   });
   const enriched = await enrichPageQualityReport({
     input,

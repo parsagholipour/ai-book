@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { FinalBookQa, ManuscriptQualityIssue, PageQualityReport, QualityFeatureId } from "@book-maker/core";
 import type { ExportPageForRepair } from "../runtime/jobTypes.js";
+import { pageQaQualityGates } from "../testing/qualityGateFixtures.js";
 
 vi.mock("@book-maker/db", async () => (await import("./testing/compileExportMocks.js")).dbModuleMock());
 vi.mock("../runtime/config.js", async () => (await import("./testing/compileExportMocks.js")).configModuleMock());
@@ -111,9 +112,8 @@ function exportPage(index: number, overrides: Partial<ExportPageForRepair> = {})
 const lockPage = (index: number) =>
   exportPage(index, { markdown: `Page ${index} prose, long enough to anchor the book's style lock.` });
 
-const qualityGates = (...enabled: QualityFeatureId[]) => ({
-  enabled: (feature: QualityFeatureId) => enabled.includes(feature)
-});
+const qualityGates = (...enabled: QualityFeatureId[]) =>
+  pageQaQualityGates({ additionalFeatures: enabled });
 
 const finalQa = (repairPageIndexes: number[]): FinalBookQa =>
   ({ approved: repairPageIndexes.length === 0, issues: [], repairPageIndexes }) as unknown as FinalBookQa;
@@ -182,7 +182,9 @@ describe("repairPagesFromFinalQa", () => {
     mocks.revisePageDraftWithRestart.mockResolvedValue({ ...draftNamed("Repaired"), continuityNotes: ["Pip stays."] });
     strategy.reviewPageDraft.mockResolvedValue(report(85, true));
 
-    const result = await repairPagesFromFinalQa(baseOptions());
+    const result = await repairPagesFromFinalQa(baseOptions({
+      quality: { enabled: (feature: QualityFeatureId) => feature === "pageModelReview" }
+    }));
 
     expect(mocks.prisma.page.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -211,6 +213,7 @@ describe("repairPagesFromFinalQa", () => {
     );
     expect(mocks.loadPagesForExport).toHaveBeenCalledWith("project-1");
     expect(result).toHaveLength(2);
+    expect(strategy.reviewPageDraft).toHaveBeenCalledWith(expect.objectContaining({ skipLocalChecks: true }));
     expect(mocks.keeperStoryExtractForSave).toHaveBeenCalledWith(
       expect.objectContaining({ pageIndex: 2, keeperWasRevised: true, previousExtract: null })
     );

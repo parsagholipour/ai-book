@@ -9,6 +9,7 @@ import {
 import { extractRepairPageIndexes, lastPageIndex } from "../generation/finalQaPageTargets.js";
 import { loadContinuityNotes } from "../generation/generationContext.js";
 import {
+  reviewPageWithQualityGates,
   revisePageDraftWithRestart,
   runPageQualityLoop,
   type PageQualityLoopOutcome
@@ -359,19 +360,23 @@ export async function repairPagesFromFinalQa(options: {
     // generated page's initial draft gets from `enrichPageQualityReport` — and
     // the loop is what pays it, on this seed report the same way it does on
     // every rewrite after it.
-    const initialReport = await options.strategy.reviewPageDraft({
-      input: options.input,
-      plan: options.plan,
-      chapter: chapterPlan,
-      chapterBrief,
-      pageBrief,
-      pageIndex,
-      draft,
-      previousPages,
-      continuityNotes,
-      researchNotes: options.researchNotes,
-      textModel: options.providers.text,
-      ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
+    const initialReport = await reviewPageWithQualityGates({
+      strategy: options.strategy,
+      quality: options.quality,
+      reviewOptions: {
+        input: options.input,
+        plan: options.plan,
+        chapter: chapterPlan,
+        chapterBrief,
+        pageBrief,
+        pageIndex,
+        draft,
+        previousPages,
+        continuityNotes,
+        researchNotes: options.researchNotes,
+        textModel: options.providers.text,
+        ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
+      }
     });
     const outcome = await runPageQualityLoop({
       projectId: options.projectId,

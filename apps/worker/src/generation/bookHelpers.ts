@@ -1,6 +1,5 @@
 import { config } from "../runtime/config.js";
-import { updateJobProgress } from "../runtime/jobLifecycle.js";
-import { isStopRequestedError, type ExportPageForRepair, type IndexedPageDraft } from "../runtime/jobTypes.js";
+import { type ExportPageForRepair } from "../runtime/jobTypes.js";
 import { cleanOptionalText } from "../runtime/serialization.js";
 import { finalQaMessagesForPage } from "./finalQaPageTargets.js";
 import {
@@ -11,7 +10,6 @@ import {
   pagesForStyleExcerpts,
   pinStyleExcerpts,
   resolveBookGenerationStrategy,
-  reviewPageDraftLocally,
   sampleExcerptsFromInput,
   type BookGenerationStrategy,
   type BookPlan,
@@ -23,8 +21,7 @@ import {
   type OptimizedImage,
   type PageQualityReport,
   type PriorPageContext,
-  type QualityFeatureId,
-  type TextModelAdapter
+  type QualityFeatureId
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { rm } from "node:fs/promises";
@@ -107,83 +104,6 @@ export function chapterSetupsForPlan(
 
 export function normalizedChapters(plan: BookPlan, targetPages: number): ChapterPlan[] {
   return normalizePlanPageTargets(plan, targetPages).chapters;
-}
-
-export type ReviewedWholeBookPage = {
-  draft: IndexedPageDraft;
-  qualityReport: PageQualityReport;
-  revision: number;
-};
-
-/**
- * Runs the deterministic local quality heuristics over a whole-book draft and
- * attempts one model revision for pages that fail, keeping whichever version
- * scores better. Reports stored on pages are honest rather than fabricated.
- */
-export async function reviewWholeBookDraftPages(options: {
-  input: CreateProjectInput;
-  plan: BookPlan;
-  strategy: BookGenerationStrategy;
-  textModel: TextModelAdapter;
-  pages: IndexedPageDraft[];
-  generationJobId?: string | undefined;
-}): Promise<ReviewedWholeBookPage[]> {
-  const reviewed: ReviewedWholeBookPage[] = [];
-  const previousPages: PriorPageContext[] = [];
-
-  for (const pageDraft of options.pages) {
-    let draft: IndexedPageDraft = pageDraft;
-    let revision = 1;
-    let report = reviewPageDraftLocally({
-      input: options.input,
-      plan: options.plan,
-      pageIndex: pageDraft.index,
-      draft,
-      previousPages,
-      continuityNotes: []
-    });
-
-    if (!report.approved) {
-      await updateJobProgress(options.generationJobId, {
-        message: `Page ${pageDraft.index} failed local quality checks; revising.`
-      });
-      try {
-        const revisedDraft = await options.strategy.revisePageDraft({
-          input: options.input,
-          plan: options.plan,
-          pageIndex: pageDraft.index,
-          draft,
-          report,
-          previousPages,
-          continuityNotes: [],
-          textModel: options.textModel
-        });
-        const revisedReport = reviewPageDraftLocally({
-          input: options.input,
-          plan: options.plan,
-          pageIndex: pageDraft.index,
-          draft: revisedDraft,
-          previousPages,
-          continuityNotes: []
-        });
-        if (revisedReport.score >= report.score) {
-          draft = { ...revisedDraft, index: pageDraft.index };
-          report = revisedReport;
-          revision = 2;
-        }
-      } catch (error) {
-        if (isStopRequestedError(error)) {
-          throw error;
-        }
-        // Keep the original draft with its honest (failing) report.
-      }
-    }
-
-    reviewed.push({ draft, qualityReport: report, revision });
-    previousPages.push({ index: draft.index, title: draft.title, markdown: draft.markdown, summary: draft.summary });
-  }
-
-  return reviewed;
 }
 
 export async function loadPagesForExport(projectId: string): Promise<ExportPageForRepair[]> {

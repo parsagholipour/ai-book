@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Job } from "bullmq";
-import type { QualityFeatureId, ReaderChapter } from "@book-maker/core";
+import type { ReaderChapter } from "@book-maker/core";
 
 vi.mock("@book-maker/db", async () => (await import("./testing/compileExportMocks.js")).dbModuleMock());
 vi.mock("../runtime/config.js", async () => (await import("./testing/compileExportMocks.js")).configModuleMock());
@@ -72,7 +72,7 @@ import {
   PRESENTATION_ONLY_RECOMPILE,
   PRESENTATION_RECOMPILE_FALLBACK_STATUS
 } from "@book-maker/core";
-import { mocks } from "./testing/compileExportMocks.js";
+import { isDefaultCompileQualityFeature, mocks } from "./testing/compileExportMocks.js";
 
 describe("compileExport publication policy", () => {
   const dirs: string[] = [];
@@ -159,8 +159,10 @@ describe("compileExport publication policy", () => {
     mocks.loadQualityContext.mockResolvedValue({
       settings: {},
       tier: "balanced",
-      enabled: (_feature: QualityFeatureId): boolean => false
+      enabled: isDefaultCompileQualityFeature
     });
+    mocks.strategy.executionMode = "whole-book";
+    mocks.parallelPageWaveSize.mockReturnValue(1);
   });
 
   afterEach(async () => {
@@ -195,6 +197,40 @@ describe("compileExport publication policy", () => {
         ownsProjectStatus: true
       })
     );
+  });
+
+  it("passes the local-page gate through to final book QA", async () => {
+    mocks.loadQualityContext.mockResolvedValue({
+      settings: {},
+      tier: "balanced",
+      enabled: (feature: string) =>
+        isDefaultCompileQualityFeature(feature) && feature !== "pageLocalQa"
+    });
+
+    await compileExport(job({ contentRevision: 4 }));
+
+    expect(mocks.strategy.runFinalBookQa).toHaveBeenCalledWith(
+      expect.objectContaining({ skipLocalChecks: true })
+    );
+  });
+
+  it("lets finalBookQa disable final review even when settings and parallel waves request it", async () => {
+    mocks.strategy.executionMode = "sequential-pages";
+    mocks.parallelPageWaveSize.mockReturnValue(4);
+    mocks.loadQualityContext.mockResolvedValue({
+      settings: {},
+      tier: "balanced",
+      enabled: (feature: string) =>
+        isDefaultCompileQualityFeature(feature) && feature !== "finalBookQa"
+    });
+
+    await compileExport(job({ contentRevision: 4 }));
+
+    expect(mocks.strategy.runFinalBookQa).not.toHaveBeenCalled();
+    expect(mocks.generateJsonWithRetry).not.toHaveBeenCalled();
+    expect(mocks.revisePageDraftWithRestart).not.toHaveBeenCalled();
+    expect(mocks.runDeterministicManuscriptChecks).toHaveBeenCalled();
+    expect(mocks.strategy.generatePdf).toHaveBeenCalled();
   });
 
   it("lets detached ownership win when a payload also claims to be a presentation reprint", async () => {

@@ -11,6 +11,10 @@ export const QUALITY_EFFORT_TIERS = ["ultra", "premium", "balanced", "fast"] as 
 export type QualityEffortTier = (typeof QUALITY_EFFORT_TIERS)[number];
 
 export const QUALITY_FEATURE_IDS = [
+  "pageLocalQa",
+  "pageModelReview",
+  "pageQaRewrite",
+  "finalBookQa",
   "storyExtractAudit",
   "planCritic",
   "claimVerifier",
@@ -29,6 +33,10 @@ export type QualityFeatureId = (typeof QUALITY_FEATURE_IDS)[number];
 export type QualityFeatureSettings = Record<QualityFeatureId, QualityEffortTier[]>;
 
 export const QUALITY_FEATURE_DEFAULTS: QualityFeatureSettings = {
+  pageLocalQa: ["ultra", "premium", "balanced", "fast"],
+  pageModelReview: ["ultra", "premium", "balanced", "fast"],
+  pageQaRewrite: ["ultra", "premium", "balanced", "fast"],
+  finalBookQa: ["ultra", "premium", "balanced", "fast"],
   storyExtractAudit: ["ultra", "premium", "balanced", "fast"],
   planCritic: ["ultra", "premium", "balanced", "fast"],
   claimVerifier: ["ultra", "premium", "balanced", "fast"],
@@ -50,6 +58,26 @@ export const QUALITY_FEATURES: Array<{
   label: string;
   summary: string;
 }> = [
+  {
+    id: "pageLocalQa",
+    label: "Local page checks",
+    summary: "Deterministic page checks for repetition, placeholders, prompt leaks, and formulaic prose."
+  },
+  {
+    id: "pageModelReview",
+    label: "Model page review",
+    summary: "Reviews each drafted page with the editor model after any enabled local checks."
+  },
+  {
+    id: "pageQaRewrite",
+    label: "Page QA rewrites",
+    summary: "Revises and re-reviews pages that fail enabled page checks. Off keeps the first reviewed draft."
+  },
+  {
+    id: "finalBookQa",
+    label: "Final book QA",
+    summary: "Runs chapter transitions, the final book review, and targeted repair before export."
+  },
   {
     id: "storyExtractAudit",
     label: "Story extract + audit",

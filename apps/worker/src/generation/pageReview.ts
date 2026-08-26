@@ -21,7 +21,9 @@ import {
   settledGeneratedPageContext,
   stageGeneratedPageAndBrief
 } from "./pagePublication.js";
-import { MAX_PAGE_REVISE_RESTARTS, pageQaCandidatesFor, pageQaRewriteAttemptsFor } from "./tuning.js";
+import { pageQaCandidatesFor, pageQaRewriteAttemptsFor } from "./tuning.js";
+import { revisePageDraftWithRestart } from "./pageRevision.js";
+import { reviewPageWithQualityGates } from "./pageQualityGateReview.js";
 import {
   pageRevisionMessage,
   pageRewriteReport,
@@ -42,11 +44,13 @@ import {
   type PageQualityReport,
   type PriorPageContext,
   type ProviderSet,
-  type RevisePageOptions,
   type StyleAuditedScore,
   type TextModelAdapter
 } from "@book-maker/core";
 import { pageScope } from "@book-maker/db";
+
+export { revisePageDraftWithRestart } from "./pageRevision.js";
+export { pageReviewPassesFor, reviewPageWithQualityGates } from "./pageQualityGateReview.js";
 
 /**
  * Page quality review loop: score a draft, revise it, and save the best candidate.
@@ -258,17 +262,18 @@ export async function runPageQualityLoop(options: {
   } | null = null;
   let revision = 1;
   let best: DraftCandidate = { draft, revision, report };
+  const maxCandidates = options.quality.enabled("pageQaRewrite") ? options.maxCandidates : 1;
   // Fitted to this loop's budget at both ends, and `undefined` for a loop that
   // has no recovery at all — `recoveryRevisionForLoop` owns both answers, and
   // it is what `onRewrite` is handed, so a progress message cannot disagree
   // with the rewrite it is announcing about which mode this loop is in.
   const recoveryRevision = recoveryRevisionForLoop({
-    maxCandidates: options.maxCandidates,
+    maxCandidates,
     ...(options.recoveryRevision !== undefined ? { requested: options.recoveryRevision } : {}),
     ...(options.userRequest ? { userRequest: options.userRequest } : {})
   });
 
-  while (!report.approved && revision < options.maxCandidates) {
+  while (!report.approved && revision < maxCandidates) {
     const nextRevision = revision + 1;
     await options.onRewrite?.(nextRevision, recoveryRevision);
     if (
@@ -358,22 +363,26 @@ export async function runPageQualityLoop(options: {
       }
     });
     revision = nextRevision;
-    report = await options.strategy.reviewPageDraft({
-      input: options.input,
-      plan: options.plan,
-      chapter: options.chapter,
-      chapterBrief,
-      pageBrief,
-      chapterPageStart: options.chapterPageStart,
-      chapterPageEnd: options.chapterPageEnd,
-      pageIndex: options.pageIndex,
-      draft,
-      previousPages: options.previousPages,
-      ...(options.nextPages && options.nextPages.length > 0 ? { nextPages: options.nextPages } : {}),
-      continuityNotes: options.continuityNotes,
-      researchNotes: options.researchNotes,
-      textModel: options.textModel,
-      ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
+    report = await reviewPageWithQualityGates({
+      strategy: options.strategy,
+      quality: options.quality,
+      reviewOptions: {
+        input: options.input,
+        plan: options.plan,
+        chapter: options.chapter,
+        chapterBrief,
+        pageBrief,
+        chapterPageStart: options.chapterPageStart,
+        chapterPageEnd: options.chapterPageEnd,
+        pageIndex: options.pageIndex,
+        draft,
+        previousPages: options.previousPages,
+        ...(options.nextPages && options.nextPages.length > 0 ? { nextPages: options.nextPages } : {}),
+        continuityNotes: options.continuityNotes,
+        researchNotes: options.researchNotes,
+        textModel: options.textModel,
+        ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
+      }
     });
     report = await auditApproved(draft, report);
     best = bestDraftCandidate(best, { draft, revision, report });
@@ -606,22 +615,26 @@ export async function reviewAndSaveGeneratedPage(options: {
     input: options.input,
     quality
   });
-  const initialReport = await options.strategy.reviewPageDraft({
-    input: options.input,
-    plan: options.plan,
-    chapter: options.chapter,
-    chapterBrief: options.chapterBrief,
-    pageBrief,
-    chapterPageStart: options.chapterPageStart,
-    chapterPageEnd: options.chapterPageEnd,
-    pageIndex: options.draft.index,
-    draft: options.draft,
-    previousPages: options.previousPages,
-    ...(options.nextPages && options.nextPages.length > 0 ? { nextPages: options.nextPages } : {}),
-    continuityNotes,
-    researchNotes,
-    textModel: options.providers.text,
-    ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
+  const initialReport = await reviewPageWithQualityGates({
+    strategy: options.strategy,
+    quality,
+    reviewOptions: {
+      input: options.input,
+      plan: options.plan,
+      chapter: options.chapter,
+      chapterBrief: options.chapterBrief,
+      pageBrief,
+      chapterPageStart: options.chapterPageStart,
+      chapterPageEnd: options.chapterPageEnd,
+      pageIndex: options.draft.index,
+      draft: options.draft,
+      previousPages: options.previousPages,
+      ...(options.nextPages && options.nextPages.length > 0 ? { nextPages: options.nextPages } : {}),
+      continuityNotes,
+      researchNotes,
+      textModel: options.providers.text,
+      ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
+    }
   });
   const enriched = await enrichPageQualityReport({
     input: options.input,
@@ -834,38 +847,6 @@ export async function reviewAndSaveGeneratedPage(options: {
   }
 
   return savedContext;
-}
-
-export async function revisePageDraftWithRestart(options: {
-  strategy: BookGenerationStrategy;
-  reviseOptions: RevisePageOptions;
-  context: string;
-  generationJobId?: string | undefined;
-  progress?: number | undefined;
-  maxRestarts?: number | undefined;
-}): Promise<PageDraft> {
-  const maxRestarts = options.maxRestarts ?? MAX_PAGE_REVISE_RESTARTS;
-  let lastError: unknown;
-
-  for (let attempt = 1; attempt <= maxRestarts + 1; attempt += 1) {
-    try {
-      return await options.strategy.revisePageDraft(options.reviseOptions);
-    } catch (error) {
-      lastError = error;
-      if (attempt > maxRestarts) {
-        throw error;
-      }
-
-      await updateJobProgress(options.generationJobId, {
-        ...(options.progress !== undefined ? { progress: options.progress } : {}),
-        message: `${options.context} revise failed; restarting with the generated page and revision (${attempt + 1}/${
-          maxRestarts + 1
-        }).`
-      });
-    }
-  }
-
-  throw lastError instanceof Error ? lastError : new Error(`${options.context} revise failed.`);
 }
 
 async function retrievedResearchForRevise(

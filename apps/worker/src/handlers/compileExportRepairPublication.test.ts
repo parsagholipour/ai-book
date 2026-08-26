@@ -77,7 +77,7 @@ import { qualityReportWithProvenance } from "./compileExportQualityProvenance.js
 import { exportRepairOwnershipFence, ExportRepairSupersededError } from "./compileExportFence.js";
 import { repairPagesFromFinalQa } from "./compileExportRepair.js";
 import { pageIllustrationKeeperToken } from "../generation/pageIllustrationOwnership.js";
-import { mocks } from "./testing/compileExportMocks.js";
+import { isDefaultCompileQualityFeature, mocks } from "./testing/compileExportMocks.js";
 
 const approvedReport = (approved: boolean): PageQualityReport =>
   ({
@@ -151,7 +151,7 @@ const repairOptions = (bookPage: ExportPageForRepair, overrides: Record<string, 
     plan,
     providers: { text: {}, embedding: {} },
     strategy,
-    quality: { enabled: (): boolean => false },
+    quality: { enabled: isDefaultCompileQualityFeature },
     pages: [bookPage],
     finalQa,
     assertOwnership: ownership(),
@@ -166,7 +166,7 @@ describe("compile final-QA repair atomic publication fence", () => {
     mocks.prisma.continuityNote.findMany.mockResolvedValue([]);
     mocks.parseChapterBrief.mockReturnValue(undefined);
     mocks.loadPagesForExport.mockResolvedValue([page()]);
-    mocks.loadQualityContext.mockResolvedValue({ settings: {}, tier: "balanced", enabled: (): boolean => false });
+    mocks.loadQualityContext.mockResolvedValue({ settings: {}, tier: "balanced", enabled: isDefaultCompileQualityFeature });
     mocks.exportPublicationSuperseded.mockResolvedValue(false);
     mocks.revisePageDraftWithRestart.mockResolvedValue(draft);
     strategy.revisePageDraft.mockResolvedValue(draft);

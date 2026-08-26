@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PageQualityReport } from "@book-maker/core";
+import {
+  balancedPagePipelineQualityContext,
+  pagePipelineQualityGates
+} from "../testing/qualityGateFixtures.js";
 
 const mocks = vi.hoisted(() => ({
   prisma: {
@@ -69,11 +73,8 @@ vi.mock("./generationContext.js", () => ({
   loadResearchNotesForGeneration: mocks.loadResearchNotesForGeneration
 }));
 vi.mock("./qualitySettings.js", () => ({
-  loadQualityContext: async () => ({
-    settings: {},
-    tier: "balanced",
-    enabled: (feature: string) => mocks.qualityEnabled(feature)
-  }),
+  loadQualityContext: async () =>
+    balancedPagePipelineQualityContext({ otherFeatureEnabled: mocks.qualityEnabled }),
   applyPlanThinkingBoost: vi.fn()
 }));
 vi.mock("./qualityEnrichment.js", async () => {
@@ -126,7 +127,6 @@ vi.mock("./bookHelpers.js", async () => {
 
 import {
   reviewAndSaveGeneratedPage,
-  revisePageDraftWithRestart,
   runPageQualityLoop
 } from "./pageReview.js";
 import { pageQaCandidatesFor } from "./tuning.js";
@@ -151,10 +151,8 @@ const draftNamed = (name: string) => ({
   summary: `${name} summary.`,
   continuityNotes: [] as string[]
 });
-
-/** Gate stub in the shape `loadQualityContext` answers with. */
-const qualityGates = (...enabled: string[]) => ({ enabled: (feature: string) => enabled.includes(feature) });
-
+const qualityGates = (...enabled: string[]) =>
+  pagePipelineQualityGates({ additionalFeatures: enabled });
 /** A page long enough for `pinStyleExcerpts` to accept it as a style anchor. */
 const anchorPage = (index: number, voice: string) => ({
   index,
@@ -317,52 +315,6 @@ describe("runPageQualityLoop style audit", () => {
 
     expect(auditedWith()[0]).not.toHaveProperty("userRequest");
     expect(strategy.revisePageDraft.mock.calls[0]![0].report.requiredRevisions).toEqual([]);
-  });
-});
-
-describe("revisePageDraftWithRestart", () => {
-  const strategyWith = (revise: ReturnType<typeof vi.fn>) => ({ revisePageDraft: revise }) as never;
-
-  beforeEach(() => vi.clearAllMocks());
-
-  it("returns the first successful revision", async () => {
-    const revise = vi.fn().mockResolvedValue(draftNamed("Fixed"));
-
-    await expect(
-      revisePageDraftWithRestart({ strategy: strategyWith(revise), reviseOptions: {} as never, context: "Page 1" })
-    ).resolves.toMatchObject({ title: "Fixed" });
-    expect(revise).toHaveBeenCalledTimes(1);
-  });
-
-  it("restarts after failures and surfaces the last error when the budget runs out", async () => {
-    const revise = vi.fn().mockRejectedValue(new Error("provider hiccup"));
-
-    await expect(
-      revisePageDraftWithRestart({
-        strategy: strategyWith(revise),
-        reviseOptions: {} as never,
-        context: "Page 1",
-        maxRestarts: 2
-      })
-    ).rejects.toThrow("provider hiccup");
-    expect(revise).toHaveBeenCalledTimes(3);
-    expect(mocks.updateJobProgress).toHaveBeenCalledTimes(2);
-  });
-
-  it("succeeds on a restart within the budget", async () => {
-    const revise = vi
-      .fn()
-      .mockRejectedValueOnce(new Error("provider hiccup"))
-      .mockResolvedValueOnce(draftNamed("Recovered"));
-
-    await expect(
-      revisePageDraftWithRestart({
-        strategy: strategyWith(revise),
-        reviseOptions: {} as never,
-        context: "Page 1",
-        maxRestarts: 1
-      })
-    ).resolves.toMatchObject({ title: "Recovered" });
   });
 });
 

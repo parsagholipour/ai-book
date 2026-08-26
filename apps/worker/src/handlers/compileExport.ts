@@ -203,8 +203,8 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   let modelQualityIssues: ManuscriptQualityIssue[] = [];
   let recoveredFinalQaIssues: ManuscriptQualityIssue[] | undefined;
   let repairVerificationIncomplete = false;
-  // Parallel-wave drafting relies on the final review as its continuity
-  // reconciliation pass, so it runs even when the user disabled final review.
+  // Parallel-wave drafting requests final review as its continuity
+  // reconciliation pass, but the operator's finalBookQa gate still wins.
   // `detachedRepair` is belt and braces here — every repair is queued with
   // `skipFinalReview` — but it is the signal that actually means "uncharged", and
   // a repair's verdict is discarded anyway: `ownsProjectStatus` is false, so it
@@ -212,6 +212,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   // which is the column the API reads the book's verdict off — so the report
   // below stays on this job for an operator and never reaches the app.
   const runFinalReview =
+    quality.enabled("finalBookQa") &&
     !skipFinalReview &&
     !detachedRepair &&
     !presentationOnly &&
@@ -236,7 +237,8 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
         plan,
         pages: pages.map(toFinalQaPage),
         researchNotes: strategy.researchDepth ? citeableResearchNotes : undefined,
-        textModel: providers.text
+        textModel: providers.text,
+        skipLocalChecks: !quality.enabled("pageLocalQa")
       })
     ]);
     if (!finalQa.approved || failedQaPageIndexes.length > 0) {
@@ -291,7 +293,8 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
             plan,
             pages: repairedFinalQaPages,
             researchNotes: repairedResearchNotes,
-            textModel: providers.text
+            textModel: providers.text,
+            skipLocalChecks: !quality.enabled("pageLocalQa")
           });
         }
       } catch (error) {

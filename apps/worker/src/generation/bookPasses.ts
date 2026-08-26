@@ -15,12 +15,13 @@ import { ensureCharacterReferenceAssets } from "./characterReferences.js";
 import { maybeEnqueueCompile, maybeEnqueueCover } from "../runtime/dispatch.js";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
 import { type ChapterSetup, type IndexedPageDraft } from "../runtime/jobTypes.js";
-import { chapterSetupsForPlan, reviewWholeBookDraftPages, styleExcerptsForPage } from "./bookHelpers.js";
+import { chapterSetupsForPlan, styleExcerptsForPage } from "./bookHelpers.js";
 import { chapterSetupForPage, loadContinuityNotes, loadResearchNotesForGeneration } from "./generationContext.js";
 import { reviewAndSaveGeneratedPage, type SavedGeneratedPage } from "./pageReview.js";
 import { persistKeeperStoryDelta, type QualityGateContext } from "./qualityEnrichment.js";
 import { loadQualityContext } from "./qualitySettings.js";
 import { polishPageWithQualityGates } from "./qualityDrafting.js";
+import { reviewWholeBookDraftPages } from "./wholeBookPageReview.js";
 import {
   GeneratedPagePublicationClaimLostError,
   publishStagedGeneratedPage,
@@ -740,7 +741,9 @@ export async function generateBookWholePass(options: {
       const chapterIndex = chapterRanges.find(
         (setup) => pageDraft.index >= setup.startPage && pageDraft.index <= setup.endPage
       )?.chapter.index;
+      const approved = reviewedPage.qualityReport.approved;
       const willIllustrate =
+        approved &&
         Boolean(pageDraft.imagePrompt) &&
         options.strategy.shouldIllustratePage(effective.input, effective.plan, pageDraft.index);
       const stagedPage = await stageGeneratedPageWithClient(tx, {
@@ -750,7 +753,7 @@ export async function generateBookWholePass(options: {
         draft: pageDraft,
         revision: reviewedPage.revision,
         qualityReport: reviewedPage.qualityReport,
-        status: willIllustrate ? "GENERATING" : "COMPLETED",
+        status: approved ? (willIllustrate ? "GENERATING" : "COMPLETED") : "FAILED_QA",
         existingPage: (existingPagesByIndex.get(pageDraft.index) as GeneratedPagePublicationSnapshot | undefined) ?? null
       });
       pages.push({

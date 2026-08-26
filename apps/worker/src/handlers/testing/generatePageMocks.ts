@@ -1,6 +1,7 @@
 import { vi } from "vitest";
 import type { Job } from "bullmq";
 import { dbScopeMocks } from "../../testing/dbScopeMocks.js";
+import { balancedPagePipelineQualityContext } from "../../testing/qualityGateFixtures.js";
 
 /**
  * Module mocks and fixtures shared by the `generatePage*.test.ts` suites.
@@ -12,8 +13,8 @@ import { dbScopeMocks } from "../../testing/dbScopeMocks.js";
  * mock that drifts cannot make one suite measure a handler the other one is not
  * running.
  *
- * This file must import nothing but `vitest` at runtime. `dbScopeMocks` is the
- * one exception because it imports nothing at all, not even `vitest`. Vitest
+ * This file keeps its runtime imports to `vitest` and the two dependency-free
+ * helpers under `src/testing`; neither helper imports a runtime module. Vitest
  * calls the factories below from inside `vi.mock(...)`, and reaching any module
  * that transitively imports a mocked module from there deadlocks the mock
  * registry — the suite hangs instead of failing. The `bullmq` import above is
@@ -39,6 +40,7 @@ export const mocks = {
   parseChapterBrief: vi.fn((_value?: unknown): unknown => undefined),
   generatePageDraft: vi.fn(),
   revisePageDraft: vi.fn(),
+  advanceJobStep: vi.fn(),
   enqueueNextPageIfReady: vi.fn(),
   maybeEnqueueCompile: vi.fn(),
   enqueueWorkerJob: vi.fn(),
@@ -64,6 +66,7 @@ export const mocks = {
       options.draftPage(options.baseOptions)
   ),
   qualityEnabled: vi.fn((_feature?: string) => false),
+  pageQualityEnabled: vi.fn((_feature?: string) => true),
   enrichPageQualityReport: vi.fn(),
   // The style audit's provider boundary; `withStyleAudit` above it stays real.
   auditPageStyle: vi.fn()
@@ -77,7 +80,7 @@ export const dispatchModuleMock = () => ({
   maybeEnqueueCompile: mocks.maybeEnqueueCompile
 });
 
-export const jobLifecycleModuleMock = () => ({ advanceJobStep: vi.fn(), updateJobProgress: vi.fn() });
+export const jobLifecycleModuleMock = () => ({ advanceJobStep: mocks.advanceJobStep, updateJobProgress: vi.fn() });
 
 export const configModuleMock = () => ({ config: {} });
 
@@ -210,11 +213,10 @@ export function completedPage(index: number, voice: string) {
 }
 
 export function qualityContextStub() {
-  return {
-    settings: {} as Record<string, unknown>,
-    tier: "balanced",
-    enabled: (feature: string): boolean => mocks.qualityEnabled(feature)
-  };
+  return balancedPagePipelineQualityContext({
+    defaultFeatureEnabled: mocks.pageQualityEnabled,
+    otherFeatureEnabled: mocks.qualityEnabled
+  });
 }
 
 export function emptyStoryState() {
@@ -284,6 +286,7 @@ export function resetGeneratePageMocks() {
       options.draftPage(options.baseOptions)
   );
   mocks.qualityEnabled.mockReturnValue(false);
+  mocks.pageQualityEnabled.mockReturnValue(true);
   // The handler pins once and hands the same array to the draft, the
   // enrichment pass and the review loop — which is where the auditor is built
   // from — so the test below can assert all three by reference.

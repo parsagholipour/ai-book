@@ -1,9 +1,10 @@
 import type { TextModelAdapter } from "../adapters/types.js";
 import { isSignpostingBookCategory } from "../categories.js";
 import { kidsReadingGuidanceForInput } from "../prompting/readingLevel.js";
-import type { CreateProjectInput, PageDraft, PageQualityReport } from "../schemas/book.js";
+import type { PageDraft, PageQualityReport } from "../schemas/book.js";
 import { isImportedManuscript } from "../schemas/mediaSettings.js";
 import type { FinalQaPage, ReviewPageOptions } from "./pages.js";
+import { skippedPageQualityReport } from "./pagesSkippedQualityReport.js";
 import {
   keywordsFromTokens,
   overlapShingles,
@@ -80,6 +81,15 @@ function pageRule(
  * check flag it invalidates, so adding an anti-slop predicate is one ordered
  * table entry rather than another mutation site in the review loop.
  */
+const FIRST_PAGE_OPENING_QUALITY_RULE = pageRule(
+  ({ currentBody, options }) =>
+    options.pageIndex === 1 &&
+    !isImportedManuscript(options.input.mediaSettings) &&
+    hasWeakFirstPageOpening(currentBody),
+  ["styleNatural"],
+  "First page opens with a generic or meta hook instead of a concrete one."
+);
+
 const LOCAL_PAGE_QUALITY_RULES = [
   pageRule(
     ({ flowingText }) => PLACEHOLDER_PATTERNS.some((pattern) => pattern.test(flowingText)),
@@ -177,14 +187,7 @@ const LOCAL_PAGE_QUALITY_RULES = [
     ["progressionOk"],
     "Page describes its intended function instead of becoming finished book prose."
   ),
-  pageRule(
-    ({ currentBody, options }) =>
-      options.pageIndex === 1 &&
-      !isImportedManuscript(options.input.mediaSettings) &&
-      hasWeakFirstPageOpening(currentBody),
-    ["styleNatural"],
-    "First page opens with a generic or meta hook instead of a concrete one."
-  ),
+  FIRST_PAGE_OPENING_QUALITY_RULE,
   pageRule(
     ({ options }) => options.pageIndex === options.input.targetPages && hasVagueEnding(options.draft),
     ["progressionOk"],
@@ -202,11 +205,31 @@ export function reviewPageDraftLocally(options: LocalPageReviewOptions): PageQua
 }
 
 export function runLocalPageQualityChecks(options: ReviewPageOptions): PageQualityReport {
+  return pageQualityReportForRules(options, LOCAL_PAGE_QUALITY_RULES);
+}
+
+/**
+ * The provenance-only deterministic invariant that remains active when the
+ * operator disables configurable local QA. Generated page 1 must still honor
+ * its opening contract; imported prose remains exempt.
+ */
+export function reviewRequiredPageQualityChecks(options: ReviewPageOptions): PageQualityReport {
+  if (options.pageIndex !== 1) {
+    return skippedPageQualityReport();
+  }
+  const report = pageQualityReportForRules(options, [FIRST_PAGE_OPENING_QUALITY_RULE]);
+  return report.approved ? skippedPageQualityReport() : report;
+}
+
+function pageQualityReportForRules(
+  options: ReviewPageOptions,
+  rules: readonly LocalPageQualityRule[]
+): PageQualityReport {
   const context = localPageRuleContext(options);
   const checks: PageQualityReport["checks"] = { ...PASSING_PAGE_CHECKS };
   const issues: string[] = [];
 
-  for (const rule of LOCAL_PAGE_QUALITY_RULES) {
+  for (const rule of rules) {
     const findings = rule(context);
     if (!findings) {
       continue;
@@ -324,56 +347,6 @@ function repeatedRecentPage(
     const lexicalOverlap = sharedKeywordRatio(draftSummaryKeywords, keywordsFromTokens(summaryTokens));
     return bodySimilarity >= 0.82 || summarySimilarity >= 0.72 || lexicalOverlap >= 0.78;
   });
-}
-
-export function runLocalFinalQa(input: CreateProjectInput, pages: FinalQaPage[]): string[] {
-  const issues: string[] = [];
-  if (pages.length !== input.targetPages) {
-    issues.push(`Expected ${input.targetPages} pages but found ${pages.length}.`);
-  }
-
-  for (const page of pages) {
-    const report = runLocalPageQualityChecks({
-      input,
-      plan: {
-        title: "",
-        premise: "",
-        audience: "",
-        writingComplexity: input.complexity,
-        voiceGuide: [""],
-        antiAiRules: [""],
-        questions: [],
-        chapters: [],
-        characters: [],
-        locations: [],
-        continuityRules: [],
-        researchQueries: [],
-        researchNotes: [],
-        promises: [],
-        illustrationPlan: {
-          cadence: input.mediaSettings.illustrationCadence,
-          globalStyle: "",
-          characterReferencePrompts: [],
-          pageRules: []
-        }
-      },
-      pageIndex: page.index,
-      draft: {
-        title: page.title,
-        markdown: page.markdown,
-        summary: page.summary,
-        continuityNotes: []
-      },
-      previousPages: pages.filter((candidate) => candidate.index < page.index).slice(-4),
-      continuityNotes: [],
-      textModel: {} as TextModelAdapter
-    });
-    if (!report.approved) {
-      issues.push(`Page ${page.index}: ${report.issues.join(" ")}`);
-    }
-  }
-
-  return issues.slice(0, 20);
 }
 
 export function compactSummaryForQa(summary: string, maxLength: number): string {

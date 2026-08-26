@@ -111,7 +111,7 @@ vi.mock("@book-maker/core", async () => {
 import { compileExport } from "./compileExport.js";
 import { updateJobProgress } from "../runtime/jobLifecycle.js";
 import { StopRequestedError } from "../runtime/jobTypes.js";
-import { DB_NULL, mocks } from "./testing/compileExportMocks.js";
+import { DB_NULL, isDefaultCompileQualityFeature, mocks } from "./testing/compileExportMocks.js";
 
 describe("compileExport final-QA repair stand-down", () => {
   const plan = { title: "The Long Walk", premise: "A walk home.", audience: "adults", chapters: [] };
@@ -270,7 +270,7 @@ describe("compileExport final-QA repair stand-down", () => {
     mocks.loadQualityContext.mockResolvedValue({
       settings: {},
       tier: "balanced",
-      enabled: (): boolean => false
+      enabled: isDefaultCompileQualityFeature
     });
     mocks.generateJsonWithRetry.mockResolvedValue({ data: { issues: [] } });
     mocks.exportPublicationSuperseded.mockResolvedValue(false);
@@ -665,7 +665,8 @@ describe("compileExport final-QA repair stand-down", () => {
     mocks.loadQualityContext.mockResolvedValue({
       settings: {},
       tier: "balanced",
-      enabled: (feature: string): boolean => feature === "storyExtractAudit"
+      enabled: (feature: string): boolean =>
+        isDefaultCompileQualityFeature(feature) || feature === "storyExtractAudit"
     });
     const restoreStrategy = supersedeOnFirstRepairedPageSave();
     const logged = vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -779,7 +780,8 @@ describe("compileExport final-QA repair stand-down", () => {
     mocks.loadQualityContext.mockResolvedValue({
       settings: {},
       tier: "balanced",
-      enabled: (feature: string): boolean => feature === "storyExtractAudit"
+      enabled: (feature: string): boolean =>
+        isDefaultCompileQualityFeature(feature) || feature === "storyExtractAudit"
     });
     // What the project's rows now fold to: the promise arrives with the page
     // the reader added while this compile was inside its repair. The reviewed
@@ -831,7 +833,8 @@ describe("compileExport final-QA repair stand-down", () => {
     mocks.loadQualityContext.mockResolvedValue({
       settings: {},
       tier: "balanced",
-      enabled: (feature: string): boolean => feature === "storyExtractAudit"
+      enabled: (feature: string): boolean =>
+        isDefaultCompileQualityFeature(feature) || feature === "storyExtractAudit"
     });
     const restoreStrategy = supersedeOnFirstRepairedPageSave();
     // After the helper, which stages a verdict of its own.

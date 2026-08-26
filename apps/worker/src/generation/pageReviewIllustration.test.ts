@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PageQualityReport } from "@book-maker/core";
+import { balancedPageQaQualityContext } from "../testing/qualityGateFixtures.js";
 
 /** The durable GENERATING -> image job -> exact keeper completion protocol. */
 const mocks = vi.hoisted(() => ({
@@ -30,7 +31,7 @@ vi.mock("./generationContext.js", () => ({
   loadResearchNotesForGeneration: async () => []
 }));
 vi.mock("./qualitySettings.js", () => ({
-  loadQualityContext: async () => ({ settings: {}, tier: "balanced", enabled: () => false }),
+  loadQualityContext: async () => balancedPageQaQualityContext(),
   applyPlanThinkingBoost: vi.fn()
 }));
 vi.mock("./qualityEnrichment.js", () => ({

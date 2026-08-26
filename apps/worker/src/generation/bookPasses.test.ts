@@ -64,9 +64,9 @@ vi.mock("./characterReferences.js", () => ({
 }));
 vi.mock("./bookHelpers.js", () => ({
   chapterSetupsForPlan: mocks.chapterSetupsForPlan,
-  reviewWholeBookDraftPages: mocks.reviewWholeBookDraftPages,
   styleExcerptsForPage: mocks.styleExcerptsForPage
 }));
+vi.mock("./wholeBookPageReview.js", () => ({ reviewWholeBookDraftPages: mocks.reviewWholeBookDraftPages }));
 vi.mock("./generationContext.js", async () => {
   const actual = await vi.importActual<typeof import("./generationContext.js")>("./generationContext.js");
   return {
@@ -653,6 +653,29 @@ describe("generateBookWholePass", () => {
         .find((options) => options.type === "GENERATE_IMAGE")?.dedupeKey)
     ).toMatch(/^generate-image:row-1:plan-1:1:v2-[0-9a-f]{24}$/);
     expect(mocks.persistAcceptedWholeBookTarget).toHaveBeenCalled();
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
+  });
+
+  it("stages a failed reviewed page as FAILED_QA without queueing its illustration", async () => {
+    const { durablePages, strategy } = installPublicationState([
+      {
+        draft: { ...pageDraft(1), imagePrompt: "A fox that repair may replace" },
+        revision: 1,
+        qualityReport: { approved: false, score: 42 }
+      }
+    ]);
+
+    await generateBookWholePass(baseOptions(strategy));
+
+    expect(durablePages.get("row-1")).toMatchObject({
+      status: "FAILED_QA",
+      qualityReport: { approved: false, score: 42 }
+    });
+    expect(
+      mocks.enqueueWorkerJob.mock.calls.some(
+        (call) => (call[0] as { type: string }).type === "GENERATE_IMAGE"
+      )
+    ).toBe(false);
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
   });
 

@@ -23,20 +23,6 @@ vi.mock("../requestAuth.js", () => ({
   requireOperatorActor: mockRequireOperatorActor
 }));
 
-const emptySettings = {
-  storyExtractAudit: [],
-  planCritic: [],
-  claimVerifier: [],
-  styleExcerpts: [],
-  styleAuditor: [],
-  pageMapCritic: [],
-  beatDedup: [],
-  writerTools: [],
-  bestOfPolish: [],
-  planThinkingBoost: [],
-  claimRetrieve: []
-};
-
 /** The revision the route reads as "current", plus a create that echoes what it wrote. */
 function mockStoredRevision(current: { version: number; settings?: unknown } | null): void {
   mockPrisma.generationQualityRevision.findFirst.mockResolvedValue(current);
@@ -191,7 +177,7 @@ describe("admin generation quality settings", () => {
     await app.close();
   });
 
-  it("treats an empty assignment as disabled", async () => {
+  it("stores an empty finalBookQa assignment as disabled", async () => {
     mockPrisma.generationQualityRevision.findFirst.mockResolvedValue({ version: 1 });
     mockPrisma.generationQualityRevision.create.mockImplementation(
       async ({ data }: { data: Record<string, unknown> }) => ({
@@ -208,14 +194,15 @@ describe("admin generation quality settings", () => {
     const response = await app.inject({
       method: "PATCH",
       url: "/api/admin/generation-quality",
-      payload: emptySettings
+      payload: { finalBookQa: [] }
     });
 
     expect(response.statusCode).toBe(200);
-    const body = response.json() as { settings: typeof emptySettings };
-    expect(body.settings.storyExtractAudit).toEqual([]);
-    expect(qualityFeatureEnabled(body.settings, "storyExtractAudit", "ultra")).toBe(false);
-    expect(qualityFeatureEnabled(body.settings, "writerTools", "ultra")).toBe(false);
+    expect(settingsOf(response).finalBookQa).toEqual([]);
+    expect(qualityFeatureEnabled(settingsOf(response), "finalBookQa", "balanced")).toBe(false);
+    expect(mockPrisma.generationQualityRevision.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ settings: expect.objectContaining({ finalBookQa: [] }) })
+    });
     await app.close();
   });
 

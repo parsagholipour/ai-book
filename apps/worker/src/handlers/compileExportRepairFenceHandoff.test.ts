@@ -65,7 +65,7 @@ vi.mock("@book-maker/core", async () => {
 });
 
 import { compileExport } from "./compileExport.js";
-import { mocks } from "./testing/compileExportMocks.js";
+import { isDefaultCompileQualityFeature, mocks } from "./testing/compileExportMocks.js";
 
 describe("compile final-QA repair fence replacement handoff", () => {
   const input = {
@@ -128,7 +128,7 @@ describe("compile final-QA repair fence replacement handoff", () => {
       research: []
     });
     mocks.prisma.continuityNote.findMany.mockResolvedValue([]);
-    mocks.loadQualityContext.mockResolvedValue({ settings: {}, tier: "balanced", enabled: () => false });
+    mocks.loadQualityContext.mockResolvedValue({ settings: {}, tier: "balanced", enabled: isDefaultCompileQualityFeature });
     mocks.generateJsonWithRetry.mockResolvedValue({ data: { issues: [] } });
     mocks.strategy.runFinalBookQa.mockResolvedValue({
       approved: false,

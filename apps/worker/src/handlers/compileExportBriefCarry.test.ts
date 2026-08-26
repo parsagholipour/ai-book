@@ -90,7 +90,7 @@ vi.mock("@book-maker/core", async () => {
 });
 
 import { repairPagesFromFinalQa } from "./compileExportRepair.js";
-import { mocks } from "./testing/compileExportMocks.js";
+import { isDefaultCompileQualityFeature, mocks } from "./testing/compileExportMocks.js";
 
 /** A brief as this suite reads it back off a rewrite's options. */
 type ReadableChapterBrief = { pages: Array<{ pageIndex: number; beat: string }>; from?: unknown };
@@ -167,7 +167,7 @@ describe("a brief repair between the flagged pages of one chapter", () => {
       plan: { title: "Book", chapters: [] },
       providers: { text: {}, embedding: {} },
       strategy,
-      quality: { enabled: () => false },
+      quality: { enabled: isDefaultCompileQualityFeature },
       finalQa: finalQa([1, 2]),
       generationJobId: "gj-1",
       ...overrides

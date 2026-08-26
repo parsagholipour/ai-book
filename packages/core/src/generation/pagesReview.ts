@@ -20,9 +20,10 @@ import { finalBookQaSchema, pageDraftSchema, pageQualityReportSchema } from "../
 import {
   compactPageMap,
   compactSummaryForQa,
-  runLocalFinalQa,
+  reviewRequiredPageQualityChecks,
   runLocalPageQualityChecks
 } from "./pagesLocalQa.js";
+import { runLocalFinalQa, runRequiredFinalQa } from "./pagesFinalLocalQa.js";
 import { isSourceIdentityOnlyIssue } from "./citationRepairPolicy.js";
 import {
   GROUNDED_FACTUALITY_RULE,
@@ -74,6 +75,8 @@ export type ReviewPageOptions = {
   /** Citeable generation notes loaded by the worker. */
   researchNotes?: string[] | undefined;
   retrievedResearch?: string[] | undefined;
+  /** Keep the model review but bypass configurable local checks; required invariants remain. */
+  skipLocalChecks?: boolean | undefined;
 };
 
 export type RevisePageOptions = ReviewPageOptions & {
@@ -93,10 +96,14 @@ export type FinalBookQaOptions = {
   pages: FinalQaPage[];
   researchNotes?: string[] | undefined;
   textModel: TextModelAdapter;
+  /** Keep the model review but bypass configurable local whole-book checks; required invariants remain. */
+  skipLocalChecks?: boolean | undefined;
 };
 
 export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQualityReport> {
-  const localReport = runLocalPageQualityChecks(options);
+  const localReport = options.skipLocalChecks
+    ? reviewRequiredPageQualityChecks(options)
+    : runLocalPageQualityChecks(options);
   if (!localReport.approved) {
     return localReport;
   }
@@ -567,7 +574,9 @@ function finalQaOpeningPages(pages: FinalQaPage[]) {
 }
 
 export async function runFinalBookQa(options: FinalBookQaOptions): Promise<FinalBookQa> {
-  const localIssues = runLocalFinalQa(options.input, options.pages);
+  const localIssues = options.skipLocalChecks
+    ? runRequiredFinalQa(options.input, options.pages)
+    : runLocalFinalQa(options.input, options.pages);
   if (localIssues.length > 0) {
     return {
       approved: false,

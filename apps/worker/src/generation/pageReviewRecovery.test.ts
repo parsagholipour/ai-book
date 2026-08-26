@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CHAPTER_CONTINUITY_FOCUS_LIMIT, type PageQualityReport } from "@book-maker/core";
+import { pageQaQualityGates } from "../testing/qualityGateFixtures.js";
 
 /**
  * Where a page loop's recovery lands, given its budget.
@@ -74,8 +75,8 @@ const draftNamed = (name: string) => ({
   continuityNotes: [] as string[]
 });
 
-/** The style auditor is off, which is what the loop reads off this. */
-const gatesOff = { enabled: () => false };
+/** Page QA keeps its historical defaults while the style auditor remains off. */
+const pageQaGates = pageQaQualityGates();
 
 describe("pageQaRecoveryRevision", () => {
   it("pulls the requested index down to a budget that would never reach it", () => {
@@ -158,7 +159,7 @@ describe("runPageQualityLoop recovery point", () => {
       continuityNotes: [],
       textModel: {} as never,
       reviseContext: "Page 4",
-      quality: gatesOff,
+      quality: pageQaGates,
       ...overrides
     } as never);
 

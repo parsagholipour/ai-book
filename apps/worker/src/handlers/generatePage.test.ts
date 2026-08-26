@@ -227,6 +227,39 @@ describe("generatePage quality loop", () => {
     expect(mocks.revisePageDraft).not.toHaveBeenCalled();
   });
 
+  it("skips configurable page review and its progress copy when all pipeline QA gates are off", async () => {
+    mocks.pageQualityEnabled.mockReturnValue(false);
+    mocks.generatePageDraft.mockResolvedValue(draftNamed("First"));
+
+    await generatePage(job);
+
+    expect(mocks.reviewPageDraft).not.toHaveBeenCalled();
+    expect(mocks.revisePageDraft).not.toHaveBeenCalled();
+    expect(mocks.advanceJobStep.mock.calls.some((call) => String(call[3]).includes("Reviewing page"))).toBe(false);
+    expect(
+      mocks.prisma.page.updateMany.mock.calls.some(
+        (call) => (call[0] as { data: { status?: string } }).data.status === "COMPLETED"
+      )
+    ).toBe(true);
+  });
+
+  it("keeps one failing model review as FAILED_QA when page rewrites are off", async () => {
+    mocks.pageQualityEnabled.mockImplementation((feature?: string) => feature === "pageModelReview");
+    mocks.generatePageDraft.mockResolvedValue(draftNamed("First"));
+    mocks.reviewPageDraft.mockResolvedValue(report(40));
+
+    await generatePage(job);
+
+    expect(mocks.reviewPageDraft).toHaveBeenCalledTimes(1);
+    expect(mocks.reviewPageDraft).toHaveBeenCalledWith(expect.objectContaining({ skipLocalChecks: true }));
+    expect(mocks.revisePageDraft).not.toHaveBeenCalled();
+    expect(
+      mocks.prisma.page.updateMany.mock.calls.some(
+        (call) => (call[0] as { data: { status?: string } }).data.status === "FAILED_QA"
+      )
+    ).toBe(true);
+  });
+
   it("rolls the keeper stage back when its kept brief CAS fails", async () => {
     // The page update runs first on the transaction client. A database failure
     // in the chapter CAS must reject the transaction rather than leave that

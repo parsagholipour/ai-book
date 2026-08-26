@@ -141,6 +141,101 @@ describe("reviewPageDraft recency window", () => {
   });
 });
 
+describe("reviewPageDraft local-check policy", () => {
+  it("skips a local adjacent-contrast rejection while still calling the model reviewer", async () => {
+    const capture = capturingReviewModel({
+      approved: true,
+      score: 92,
+      issues: [],
+      requiredRevisions: [],
+      notes: "Approved.",
+      checks: {
+        placeholderFree: true,
+        promptLeakFree: true,
+        titleClean: true,
+        repetitionOk: true,
+        progressionOk: true,
+        styleNatural: true
+      }
+    });
+    const result = await reviewPageDraft({
+      input,
+      plan,
+      pageIndex: 7,
+      draft: {
+        title: "The Reversal",
+        markdown: "You have been taught that the argument is settled. But what if the original pattern reveals the opposite: a hidden primacy and a hierarchy visible only when the old reading is overturned? A careful account then tests the words, the context, and the rival explanation before reaching its conclusion.",
+        summary: "The page tests a familiar argument against its original context.",
+        continuityNotes: []
+      },
+      previousPages: [],
+      continuityNotes: [],
+      textModel: capture.model,
+      skipLocalChecks: true
+    });
+
+    expect(capture.payload).toBeDefined();
+    expect(result.approved).toBe(true);
+  });
+
+  it("keeps the provenance-only opening invariant when configurable local checks are skipped", async () => {
+    const approved = {
+      approved: true,
+      score: 92,
+      issues: [],
+      requiredRevisions: [],
+      notes: "Approved.",
+      checks: {
+        placeholderFree: true,
+        promptLeakFree: true,
+        titleClean: true,
+        repetitionOk: true,
+        progressionOk: true,
+        styleNatural: true
+      }
+    };
+    const weakOpening = {
+      title: "August Water",
+      markdown: "Have you ever wondered why your tap water tastes different in August? The treatment works sits above the town, where the duty engineer records the reservoir temperature and adjusts the intake before the morning supply begins its journey downhill.",
+      summary: "The narrator begins investigating the town's changing summer water.",
+      continuityNotes: []
+    };
+    const generated = capturingReviewModel(approved);
+
+    const generatedReport = await reviewPageDraft({
+      input,
+      plan,
+      pageIndex: 1,
+      draft: weakOpening,
+      previousPages: [],
+      continuityNotes: [],
+      textModel: generated.model,
+      skipLocalChecks: true
+    });
+
+    expect(generatedReport.approved).toBe(false);
+    expect(generatedReport.issues).toContain(
+      "First page opens with a generic or meta hook instead of a concrete one."
+    );
+    expect(generated.payload).toBeUndefined();
+
+    const imported = capturingReviewModel(approved);
+    const importedReport = await reviewPageDraft({
+      input: importedInput,
+      plan,
+      pageIndex: 1,
+      draft: weakOpening,
+      previousPages: [],
+      continuityNotes: [],
+      textModel: imported.model,
+      skipLocalChecks: true
+    });
+
+    expect(importedReport.approved).toBe(true);
+    expect(imported.payload).toBeDefined();
+  });
+});
+
 describe("reviewPageDraft writer contracts", () => {
   it("does not send voiceGuide; that is a writer assignment", async () => {
     const capture = capturingReviewModel({
@@ -494,6 +589,35 @@ describe("reviewPageDraft first-page rule", () => {
     // What the opening rule carried for every other page still has to be said.
     expect(imported.systemPrompt).toMatch(/give every issue the page number pageMap records/i);
     expect(imported.payload?.instruction).toMatch(/Give every issue the page number pageMap records/);
+  });
+
+  it("keeps the provenance-only opening invariant when configurable final local QA is skipped", async () => {
+    const generated = capturingReviewModelWithSystem(approvedFinalQa);
+    const generatedReport = await runFinalBookQa({
+      input: { ...input, targetPages: 2 },
+      plan,
+      pages: [authorsOpeningPage, ledgerPage],
+      textModel: generated.model,
+      skipLocalChecks: true
+    });
+
+    expect(generatedReport.approved).toBe(false);
+    expect(generatedReport.issues).toContain(
+      "Page 1: First page opens with a generic or meta hook instead of a concrete one."
+    );
+    expect(generated.systemPrompt).toBeUndefined();
+
+    const imported = capturingReviewModelWithSystem(approvedFinalQa);
+    const importedReport = await runFinalBookQa({
+      input: { ...importedInput, targetPages: 2 },
+      plan,
+      pages: [authorsOpeningPage, ledgerPage],
+      textModel: imported.model,
+      skipLocalChecks: true
+    });
+
+    expect(importedReport.approved).toBe(true);
+    expect(imported.systemPrompt).toBeDefined();
   });
 
   it("drops the first-page opening rule for an imported manuscript's page-1 repair", async () => {

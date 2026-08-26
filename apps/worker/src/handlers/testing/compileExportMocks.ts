@@ -1,7 +1,8 @@
 import { vi } from "vitest";
 import type { Job } from "bullmq";
-import type { QualityFeatureId, StoryState } from "@book-maker/core";
+import type { StoryState } from "@book-maker/core";
 import { dbScopeMocks } from "../../testing/dbScopeMocks.js";
+import { isPagePipelineQaFeature } from "../../testing/qualityGateFixtures.js";
 
 type MockGenerationJobSelection =
   | {
@@ -13,11 +14,13 @@ type MockGenerationJobSelection =
   | { qualityReport: unknown }
   | null;
 
+export const isDefaultCompileQualityFeature = isPagePipelineQaFeature;
+
 /**
  * Module mocks shared by the `compileExport*.test.ts` suites.
  *
- * This file must import nothing but `vitest` at runtime — the imports above are
- * type-only and erased. Vitest calls the factories below from inside
+ * This file keeps its runtime imports to `vitest` and the dependency-free
+ * helpers under `src/testing`. Vitest calls the factories below from inside
  * `vi.mock(...)`, and reaching any module that transitively imports a mocked
  * module from there deadlocks the mock registry.
  */
@@ -119,6 +122,8 @@ export const mocks = {
   updateEntityStateFromPage: vi.fn(),
   dispatchWorkerGenerationJob: vi.fn(),
   maybeEnqueueCompile: vi.fn(),
+  parallelPageWaveSize: vi.fn(() => 1),
+  runDeterministicManuscriptChecks: vi.fn(),
   generateJsonWithRetry: vi.fn(),
   // Mutable so the whole-handler suite can point storage at a temp dir.
   config: { BOOK_STORAGE_DIR: "", IMAGE_STORAGE_DIR: "", PUBLIC_API_URL: "http://localhost:4001" },
@@ -175,7 +180,7 @@ export const mocks = {
   loadQualityContext: vi.fn(async () => ({
     settings: {},
     tier: "balanced" as const,
-    enabled: (_feature: QualityFeatureId): boolean => false
+    enabled: isDefaultCompileQualityFeature
   }))
 };
 
@@ -213,7 +218,7 @@ export const exportPublicationModuleMock = () => ({
 export const dispatchModuleMock = () => ({
   dispatchWorkerGenerationJob: mocks.dispatchWorkerGenerationJob,
   maybeEnqueueCompile: mocks.maybeEnqueueCompile,
-  parallelPageWaveSize: () => 1
+  parallelPageWaveSize: mocks.parallelPageWaveSize
 });
 
 export const jobLifecycleModuleMock = () => ({
@@ -295,6 +300,7 @@ export const qualitySettingsModuleMock = () => ({
 /** The loop is the real one — only the initial rewrite helper is mocked, so loop
  * rewrites still go through the strategy's `revisePageDraft`. */
 export const pageReviewModuleMock = (actual: typeof import("../../generation/pageReview.js")) => ({
+  reviewPageWithQualityGates: actual.reviewPageWithQualityGates,
   runPageQualityLoop: actual.runPageQualityLoop,
   revisePageDraftWithRestart: mocks.revisePageDraftWithRestart
 });
@@ -310,6 +316,10 @@ export const coreModuleMock = (actual: typeof import("@book-maker/core")) => ({
   // the repair suite is whether it happens at all.
   createReaderChaptersForExport: mocks.createReaderChaptersForExport,
   generateBookEpub: mocks.generateBookEpub,
+  runDeterministicManuscriptChecks: (...args: Parameters<typeof actual.runDeterministicManuscriptChecks>) => {
+    mocks.runDeterministicManuscriptChecks(...args);
+    return actual.runDeterministicManuscriptChecks(...args);
+  },
   bookPlanSchema: { parse: (value: unknown) => value },
   // The real factory builds live adapters and demands provider keys.
   createProviders: () => ({ text: {}, embedding: {}, image: {} })

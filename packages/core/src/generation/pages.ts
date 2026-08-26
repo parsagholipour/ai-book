@@ -44,10 +44,12 @@ import { pageGetsInteriorIllustration } from "./illustrationSlots.js";
 import { REWRITE_TEMPERATURE_CEILING, pageMapForRange, pageMapForWholeBookDraft } from "./pagesPageMap.js";
 
 export { shouldIllustratePage } from "./illustrationSlots.js";
+export { skippedPageQualityReport } from "./pagesSkippedQualityReport.js";
 
 export {
   compactSummaryForQa,
   reviewPageDraftLocally,
+  reviewRequiredPageQualityChecks,
   type LocalPageReviewOptions
 } from "./pagesLocalQa.js";
 export {

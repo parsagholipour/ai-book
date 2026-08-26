@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Job } from "bullmq";
-import { bookPdfCoverNumbering, type QualityFeatureId, type ReaderChapter } from "@book-maker/core";
+import { bookPdfCoverNumbering, type ReaderChapter } from "@book-maker/core";
 
 vi.mock("@book-maker/db", async () => (await import("./testing/compileExportMocks.js")).dbModuleMock());
 vi.mock("../runtime/config.js", async () => (await import("./testing/compileExportMocks.js")).configModuleMock());
@@ -79,7 +79,7 @@ import {
   PRESENTATION_RECOMPILE_FALLBACK_STATUS,
   readerChapterFingerprint
 } from "@book-maker/core";
-import { mocks } from "./testing/compileExportMocks.js";
+import { isDefaultCompileQualityFeature, mocks } from "./testing/compileExportMocks.js";
 
 describe("compileExport reader chapters", () => {
   // A detached repair is queued by a status read or a download for as long as a
@@ -215,7 +215,7 @@ describe("compileExport reader chapters", () => {
     mocks.loadQualityContext.mockResolvedValue({
       settings: {},
       tier: "balanced",
-      enabled: (_feature: QualityFeatureId): boolean => false
+      enabled: isDefaultCompileQualityFeature
     });
   });
 
@@ -598,7 +598,8 @@ describe("compileExport reader chapters", () => {
     mocks.loadQualityContext.mockResolvedValue({
       settings: {},
       tier: "balanced",
-      enabled: (feature: QualityFeatureId) => feature === "storyExtractAudit"
+      enabled: (feature: string) =>
+        isDefaultCompileQualityFeature(feature) || feature === "storyExtractAudit"
     });
     mocks.rebuildProjectStoryState.mockResolvedValue({
       promises: [{ id: "p1", text: "The lantern will be lit.", status: "open", openedAtPage: 0 }],
@@ -736,12 +737,13 @@ describe("compileExport reader chapters", () => {
       .mockResolvedValueOnce({
         settings: {},
         tier: "balanced",
-        enabled: (feature: QualityFeatureId) => feature === "styleExcerpts" || feature === "storyExtractAudit"
+        enabled: (feature: string) =>
+          isDefaultCompileQualityFeature(feature) || feature === "styleExcerpts" || feature === "storyExtractAudit"
       })
       .mockResolvedValue({
         settings: {},
         tier: "balanced",
-        enabled: (_feature: QualityFeatureId): boolean => false
+        enabled: (_feature: string): boolean => false
       });
     mocks.rebuildProjectStoryState.mockResolvedValue({
       promises: [{ id: "p1", text: "The lantern will be lit.", status: "open", openedAtPage: 0 }],
