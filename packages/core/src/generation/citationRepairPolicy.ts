@@ -41,10 +41,21 @@ const SOURCE_IDENTITY_ONLY_CLAUSE_PATTERNS = [
 ] as const;
 
 const REPAIRABLE_DEFECT_EVIDENCE =
-  /\b(?:invent\w*|fabricat\w*|made[-\s]?up|factual|inaccura\w*|incorrect|wrong|anachron\w*|chronolog\w*|repeat\w*|repetition|duplicat\w*|overpack\w*|too many (?:events|facts|ideas|beats)|placeholder|prompt leak|schema leak|contradict\w*|continuity|inconsisten\w*|unsupported|misrepresent\w*|conflict\w*|incoheren\w*)\b/i;
+  /\b(?:invent\w*|fabricat\w*|composite|made[-\s]?up|factual|inaccura\w*|incorrect|wrong|imprecise|anachron\w*|chronolog\w*|repetit\w*|duplicat\w*|restag\w*|reserved\s+(?:beat|closing|material)|overpack\w*|too many (?:events|facts|ideas|beats)|too much chronology|compress\w* (?:later|subsequent) (?:developments|material|pages?)|abstract|placeholder|prompt leak|schema leak|contradict\w*|continuity|inconsisten\w*|unsupported|misrepresent\w*|contest\w*|disput\w*|conflict\w*|incoheren\w*)\b/i;
+const NEGATED_REPAIRABLE_DEFECT =
+  /\b(?:avoids?|contains? no|does not|doesn't|has no|no)\s+(?:invent\w*|fabricat\w*|repetit\w*|restag\w*|unsupported|factual errors?)\b/gi;
 
-function isSourceIdentityOnlyIssue(rawIssue: string): boolean {
-  if (REPAIRABLE_DEFECT_EVIDENCE.test(rawIssue)) {
+const SOURCE_IDENTITY_REFERENCE =
+  /\b(?:accounts?|archives?|citations?|diar(?:y|ies)|dispatch(?:es)?|documents?|documented (?:civilian|human-scale|official|diplomatic|person|record|report|source|testimony)|interviews?|military accounts?|named (?:civilian|individual|person|record|soldier|source|testimony|witness)|newspaper reports?|notices?|photograph captions?|public announcements?|publications?|records?|reports?|source(?: context| status| type)?|testimon(?:y|ies)|witness(?:es)?)\b/i;
+
+const SOURCE_IDENTITY_ABSENCE_OR_REQUIREMENT =
+  /\b(?:could benefit from|does not (?:fulfill|identify|include|name|provide|use)|failing (?:the )?(?:page\s*)?brief|generalized,? unsourced|is not (?:actually )?(?:grounded|provided)|no (?:actual |clearly |precise |specific )?|not (?:actually )?provided|omission is acceptable|page\s*brief (?:explicitly )?(?:requested|requir\w*)|refers? vaguely|rather than presenting|requested|required (?:beat|documented|sourced)|unnamed|without (?:identifying|naming|providing|specifying))\b/i;
+
+const SOURCE_IDENTITY_REPAIR_COMMAND =
+  /^(?:consider|do not paraphrase an unnamed record|either cite|identify|name|replace|use)\b/i;
+
+export function isSourceIdentityOnlyIssue(rawIssue: string): boolean {
+  if (REPAIRABLE_DEFECT_EVIDENCE.test(rawIssue.replace(NEGATED_REPAIRABLE_DEFECT, ""))) {
     return false;
   }
   const issue = rawIssue
@@ -61,7 +72,9 @@ function isSourceIdentityOnlyIssue(rawIssue: string): boolean {
     .filter(Boolean);
   return (
     clauses.length > 0 &&
-    clauses.every((clause) => SOURCE_IDENTITY_ONLY_CLAUSE_PATTERNS.some((pattern) => pattern.test(clause)))
+    (clauses.every((clause) => SOURCE_IDENTITY_ONLY_CLAUSE_PATTERNS.some((pattern) => pattern.test(clause))) ||
+      (SOURCE_IDENTITY_REFERENCE.test(issue) &&
+        (SOURCE_IDENTITY_ABSENCE_OR_REQUIREMENT.test(issue) || SOURCE_IDENTITY_REPAIR_COMMAND.test(issue))))
   );
 }
 

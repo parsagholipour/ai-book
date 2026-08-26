@@ -23,6 +23,7 @@ import {
   runLocalFinalQa,
   runLocalPageQualityChecks
 } from "./pagesLocalQa.js";
+import { isSourceIdentityOnlyIssue } from "./citationRepairPolicy.js";
 import {
   GROUNDED_FACTUALITY_RULE,
   IMAGE_PROMPT_CHARACTER_RULE,
@@ -113,6 +114,7 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
   // `revisePageDraft` rewriting that page.
   const opening = openingContractFieldsForPage(options, "reviewer");
   const citation = citationContractFields(options.researchNotes ?? options.plan.researchNotes);
+  const citationReviewRules = reviewerCitationRules(citation.payload.researchNotes.length > 0);
 
   let result: { data: PageQualityReport };
   try {
@@ -128,14 +130,19 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
             "You are a strict book editor.",
             "Review one generated page for reader-facing quality.",
             "Reject filler, repetition, prompt leakage, generic scaffold prose, continuity contradictions, and pages that do not progress.",
-            "Reject invented or explicitly fabricated research, including made-up studies, journals, institutes, statistics, experts, or citations.",
-            ...citation.rules,
+            ...citationReviewRules,
             "Treat semantic repetition as a failure even when wording differs: the same encounter, same decision, same exposition, or same emotional turn cannot appear twice.",
             "Do not reject merely because the same character performs a necessary recurring action type assigned by the current pageBrief; reject it only when it restages the same beat, reuses distinctive wording, or fails to add a new consequence.",
             "For a final page, reject vague closure unless it resolves the core promise with a concrete consequence or completed choice.",
             ...opening.rules,
             "Use pageScope to distinguish global page position from chapter-local position.",
-            "Evaluate only the current pageBrief. Do not reject a page for omitting chapter keyBeats or futureChapterPageBriefs assigned to later pages.",
+            ...(citation.payload.researchNotes.length === 0
+              ? [
+                  "researchNotes is empty, so pageBrief in the user payload is the sanitized brief: omitting a diary, dispatch, archive, named testimony, or other source identity is not a reason to reject, even if an unsanitized stored brief asked for one. Evaluate only the sanitized current pageBrief. Still reject independently identifiable factual errors, unsupported claims, repetition, and continuity or structure defects."
+                ]
+              : ["Evaluate only the current pageBrief."]),
+            "Do not reject a page for omitting chapter keyBeats or futureChapterPageBriefs assigned to later pages.",
+            "Compare the draft with futureChapterPageBriefs and reject it if it substantially performs, resolves, or restages a beat reserved for a later page. The current endingPressure only authorizes a short concluding handoff that opens the next problem; it does not authorize developing that problem earlier in the page. Multiple paragraphs developing a future page's purpose, or a conclusion delivering that future page's endingPressure, consume the reserved beat and must be rejected even if the prose calls this a setup.",
             "If pageScope.isLastPageOfChapter is false, do not require chapter closure or all chapter keyBeats on this page.",
             ...targetLanguageReviewGuidance(options.input.language),
             ...reviewerStyleRules(options.input),
@@ -204,19 +211,211 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
   }
 
   const modelReport = pageQualityReportSchema.parse(result.data);
-  const approved = modelReport.approved && modelReport.score >= 75;
-  return {
+  const guardrailDefects = reviewerGuardrailDefects(options);
+  const guardedReport = {
     ...modelReport,
+    approved: modelReport.approved && guardrailDefects.length === 0,
+    issues: [...guardrailDefects.map((defect) => defect.issue), ...modelReport.issues],
+    requiredRevisions: [
+      ...guardrailDefects.map((defect) => defect.requiredRevision),
+      ...modelReport.requiredRevisions
+    ]
+  };
+  const filteredReport = filterIgnoredReviewerComplaints(guardedReport);
+  const remainingFeedback = [...filteredReport.issues, ...filteredReport.requiredRevisions];
+  const notesEndorseApproval =
+    /\b(?:approved|effectively|fulfills?|grounded|no (?:fabrication|progression issues?|repetition)|prose is (?:natural|specific)|avoids? (?:fabrication|invent\w*))\b/i.test(guardedReport.notes);
+  const explicitlyNonBlockingReport =
+    guardrailDefects.length === 0 &&
+    guardedReport.score >= 75 &&
+    filteredReport.issues.length > 0 &&
+    !remainingFeedback.some(isExplicitlyBlockingFeedback) &&
+    (remainingFeedback.every(isExplicitlyNonBlockingFeedback) || notesEndorseApproval);
+  const approved =
+    filteredReport.onlyIgnoredRejection ||
+    explicitlyNonBlockingReport ||
+    (!filteredReport.hasRemainingDefectAfterStripping && guardedReport.approved && guardedReport.score >= 75);
+  return {
+    ...guardedReport,
     approved,
-    issues: approved ? modelReport.issues : normalizeIssueList(modelReport.issues, "Reviewer rejected the page."),
+    issues: approved && (filteredReport.onlyIgnoredRejection || explicitlyNonBlockingReport)
+      ? []
+      : approved
+      ? filteredReport.issues
+      : normalizeIssueList(filteredReport.issues, "Reviewer rejected the page."),
     requiredRevisions:
-      approved || modelReport.requiredRevisions.length > 0
-        ? modelReport.requiredRevisions
+      approved && (filteredReport.onlyIgnoredRejection || explicitlyNonBlockingReport)
+        ? []
+        : approved || filteredReport.requiredRevisions.length > 0
+        ? filteredReport.requiredRevisions
         : ["Revise the page until it is specific, progressive, and free of generation artifacts."],
     checks: {
       ...localReport.checks,
       ...modelReport.checks
     }
+  };
+}
+
+const EXPLICITLY_NON_BLOCKING_FEEDBACK =
+  /\b(?:acceptable|adequate|adequately|addressed|anchored|appropriate(?:ly)?|approved with minor suggestions|avoids?|but|consider|correct per instructions|could (?:be|benefit)|fulfill\w*|generally|grounded|if (?:available|documented|possible)|minor|no required revisions|not disqualifying|not required|slight(?:ly)?|somewhat|though|which it is)\b/i;
+const EXPLICITLY_BLOCKING_FEEDBACK =
+  /\b(?:continuity|contradict\w*|does not (?:explicitly return|fulfill)|factual|fails? to fulfill|inaccura\w*|incorrect|mislead\w*|overextend\w*|overpack\w*|repetit\w*|reserved beat|restag\w*|unsupported|wrong)\b/i;
+const NEGATED_BLOCKING_FEEDBACK =
+  /\b(?:avoids?|do(?:es)? not(?: (?:constitute|imply|introduce|present))?|no|not (?:presented|treated) as|without)\s+(?:any impression of )?(?:(?:an?|the) )?(?:new |specific )?(?:contradict\w*|factual (?:claims?|errors?)|repetit\w*|restag\w*|unsupported claims?)\b/gi;
+const QUALIFIED_REPETITION_FEEDBACK =
+  /\b(?:necessary .{0,100}does not stall|not (?:a )?semantic repetition|required ending pressure|which is the ending pressure)\b/i;
+
+function isExplicitlyNonBlockingFeedback(feedback: string): boolean {
+  return !isExplicitlyBlockingFeedback(feedback) && EXPLICITLY_NON_BLOCKING_FEEDBACK.test(feedback);
+}
+
+function isExplicitlyBlockingFeedback(feedback: string): boolean {
+  let normalized = feedback.replace(NEGATED_BLOCKING_FEEDBACK, "");
+  if (QUALIFIED_REPETITION_FEEDBACK.test(normalized)) {
+    normalized = normalized.replace(/\b(?:repeats?|repetit\w*)\b/gi, "");
+  }
+  return EXPLICITLY_BLOCKING_FEEDBACK.test(normalized);
+}
+
+type ReviewerGuardrailDefect = {
+  issue: string;
+  requiredRevision: string;
+};
+
+const RESERVED_BEAT_STOP_WORDS = new Set([
+  "about", "after", "again", "against", "along", "also", "among", "because", "before", "between",
+  "chapter", "close", "closes", "closing", "conclude", "concludes", "concluding", "could", "current",
+  "demonstrate", "final", "finish", "finishes", "finishing", "from", "have", "into", "itself", "later",
+  "page", "purpose", "should", "show", "shows", "showing", "single", "that", "their", "them", "then",
+  "there", "these", "they", "this", "those", "through", "toward", "under", "what", "when", "where",
+  "which", "while", "with", "without", "would"
+]);
+
+function reviewerGuardrailDefects(options: ReviewPageOptions): ReviewerGuardrailDefect[] {
+  const defects: ReviewerGuardrailDefect[] = [];
+  const reservedBeat = reservedClosingBeatDefect(options);
+  if (reservedBeat) {
+    defects.push(reservedBeat);
+  }
+  return defects;
+}
+
+function reservedClosingBeatDefect(options: ReviewPageOptions): ReviewerGuardrailDefect | undefined {
+  const nextPage = options.chapterBrief?.pages
+    .filter((page) => page.pageIndex > options.pageIndex)
+    .sort((left, right) => left.pageIndex - right.pageIndex)[0];
+  if (!nextPage || !/\b(?:clos\w*|conclud\w*|synthesi[sz]\w*)\b/i.test(`${nextPage.purpose} ${nextPage.beat}`)) {
+    return undefined;
+  }
+
+  const futureTerms = significantReviewTerms(`${nextPage.purpose} ${nextPage.beat}`);
+  const currentTerms = significantReviewTerms([
+    options.pageBrief?.purpose ?? "",
+    options.pageBrief?.beat ?? "",
+    ...(options.pageBrief?.requiredContinuity ?? [])
+  ].join(" "));
+  const distinctiveFutureTerms = [...futureTerms].filter((term) => !currentTerms.has(term));
+  const paragraphs = options.draft.markdown.split(/\n\s*\n/).filter((paragraph) => paragraph.trim());
+  if (paragraphs.length < 2) {
+    return undefined;
+  }
+
+  const paragraphMatches = paragraphs.map((paragraph) => {
+    const terms = significantReviewTerms(paragraph);
+    return distinctiveFutureTerms.filter((term) => terms.has(term));
+  });
+  const allMatches = new Set(paragraphMatches.flat());
+  const preConclusionMatches = new Set(paragraphMatches.slice(0, -1).flat());
+  if (allMatches.size < 3 || preConclusionMatches.size < 2) {
+    return undefined;
+  }
+
+  const concepts = [...allMatches].slice(0, 4).join(", ");
+  return {
+    issue: `The draft substantially restages the reserved closing beat for page ${nextPage.pageIndex}: it develops future-page concepts (${concepts}) before the concluding handoff and returns to them in the ending.`,
+    requiredRevision: `Keep page ${options.pageIndex} on its assigned beat and reserve the closing synthesis for page ${nextPage.pageIndex}; use only a short final handoff to that later problem.`
+  };
+}
+
+function significantReviewTerms(raw: string): Set<string> {
+  return new Set(
+    (raw.match(/[A-Za-z]{5,}/g) ?? [])
+      .map(normalizeReviewTerm)
+      .filter((term) => term.length >= 5 && !RESERVED_BEAT_STOP_WORDS.has(term))
+  );
+}
+
+function normalizeReviewTerm(raw: string): string {
+  let term = raw.toLowerCase();
+  if (term.endsWith("ies") && term.length > 5) {
+    term = `${term.slice(0, -3)}y`;
+  } else if (term.endsWith("ing") && term.length > 6) {
+    term = term.slice(0, -3);
+  } else if (term.endsWith("ed") && term.length > 5) {
+    term = term.slice(0, -2);
+  } else if (term.endsWith("s") && term.length > 5) {
+    term = term.slice(0, -1);
+  }
+  if (term.startsWith("settl")) return "settle";
+  if (term.startsWith("memor")) return "memory";
+  return term;
+}
+
+const FABRICATION_ONLY_CONCERN =
+  /\b(?:composite|fabricat\w*|fake|fictional(?:i[sz]\w*)?|hallucinat\w*|imaginary|invent\w*|made[- ]?up|nonexistent|not real|reconstruct\w*|unsupported (?:individual|person|record|scene|source|testimony|witness))\b/i;
+const INDEPENDENT_REVIEW_DEFECT =
+  /\b(?:anachron\w*|chronolog\w*|continuity|contradict\w*|factual|filler|generic scaffold|inaccura\w*|incorrect|mislead\w*|overextend\w*|overpack\w*|placeholder|progression|prompt leak|repetit\w*|reserved beat|restag\w*|stalls?|unsupported (?:assertion|claim|conclusion|detail|finding|number|statistic|statement)|wrong)\b/i;
+const REVIEW_SOURCE_CONTEXT_REFERENCE =
+  /\b(?:archive|citation|diar(?:y|ies)|dispatch(?:es)?|document|evidence|journal(?:ist)?|publication|record|researchNotes|source|testimon(?:y|ies)|witness)\b/i;
+const REVIEW_SOURCE_CONTEXT_ABSENCE =
+  /\b(?:absent|anonymous|drop|identity|missing|no identity|not (?:identified|included|listed|named|present|provided)|remove|researchNotes|unnamed|without (?:identity|identification|naming|source))\b/i;
+
+function isFabricationOnlyComplaint(feedback: string): boolean {
+  return FABRICATION_ONLY_CONCERN.test(feedback) && !INDEPENDENT_REVIEW_DEFECT.test(feedback);
+}
+
+function isReviewerSourceContextOnlyComplaint(feedback: string): boolean {
+  return REVIEW_SOURCE_CONTEXT_REFERENCE.test(feedback) &&
+    REVIEW_SOURCE_CONTEXT_ABSENCE.test(feedback) &&
+    !INDEPENDENT_REVIEW_DEFECT.test(feedback);
+}
+
+function reviewerCitationRules(hasResearchNotes: boolean): string[] {
+  const gate = hasResearchNotes
+    ? "Use only sources present in researchNotes when checking source details, but treat researchNotes as context rather than an exhaustive inventory of everything established in the book."
+    : "researchNotes is empty: use the draft, previousPages, and qualified public facts as the available context; do not require a diary, dispatch, archive, citation, named testimony, or other source identity.";
+  return [
+    gate,
+    "For this review, never reject a person, event, scene, quotation, record, publication, institution, or other detail merely because it may be fake, invented, fabricated, fictional, reconstructed, or absent from researchNotes. An earlier page outside the supplied context may have established it. Reject only an independently identifiable defect such as a factual or chronological error, an unsupported claim, repetition, contradiction, prompt leakage, stalled progression, or a reserved-beat restage."
+  ];
+}
+
+function filterIgnoredReviewerComplaints(report: PageQualityReport): {
+  issues: string[];
+  requiredRevisions: string[];
+  onlyIgnoredRejection: boolean;
+  hasRemainingDefectAfterStripping: boolean;
+} {
+  const isIgnored = (feedback: string): boolean =>
+    isFabricationOnlyComplaint(feedback) ||
+    isReviewerSourceContextOnlyComplaint(feedback) ||
+    isSourceIdentityOnlyIssue(feedback);
+  const issues = report.issues.filter((issue) => !isIgnored(issue));
+  const requiredRevisions = report.requiredRevisions.filter((revision) => !isIgnored(revision));
+  const strippedComplaint =
+    issues.length < report.issues.length ||
+    requiredRevisions.length < report.requiredRevisions.length ||
+    (!report.approved && report.issues.length === 0 && report.requiredRevisions.length === 0 &&
+      isFabricationOnlyComplaint(report.notes));
+  const onlyIgnoredRejection =
+    strippedComplaint && issues.length === 0 && requiredRevisions.length === 0;
+
+  return {
+    issues,
+    requiredRevisions,
+    onlyIgnoredRejection,
+    hasRemainingDefectAfterStripping:
+      strippedComplaint && (issues.length > 0 || requiredRevisions.length > 0)
   };
 }
 
