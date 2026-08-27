@@ -210,7 +210,7 @@ class _VisualsPromptDialogState extends ConsumerState<_VisualsPromptDialog> {
               ),
               const SizedBox(height: 12),
               Text(
-                'Estimated full package cost, charged when you approve the plan.',
+                'Book after approval only: this package is charged after you approve the plan. The plan itself is charged when Build starts.',
                 style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
               ),
               const SizedBox(height: 8),

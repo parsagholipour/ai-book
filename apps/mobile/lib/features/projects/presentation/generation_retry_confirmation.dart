@@ -45,6 +45,10 @@ Future<MobileGenerationRecoveryQuote?> confirmPaidGenerationRetry(
     return null;
   }
 
+  if (!quote.requiresConfirmation) {
+    return quote;
+  }
+
   final confirmed = await showAppConfirmationDialog(
     context,
     title: 'Retry generation?',

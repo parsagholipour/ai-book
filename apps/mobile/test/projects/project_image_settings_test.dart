@@ -173,6 +173,33 @@ void main() {
     );
   });
 
+  test('initial planning mirrors all tier prices and live overrides', () {
+    int estimate(
+      String qualityPreset, [
+      Map<String, dynamic> creditCosts = const {},
+    ]) => estimatePlanGenerationCredits(
+      qualityPreset: qualityPreset,
+      creditCosts: creditCosts,
+    );
+
+    expect(estimate('fast'), 20);
+    expect(estimate('balanced'), 40);
+    expect(estimate('premium'), 80);
+    expect(estimate('ultra'), 120);
+    expect(estimate('custom'), 40);
+
+    const live = {
+      'planGenerationFast': 7,
+      'planGeneration': 0,
+      'planGenerationPremium': 91,
+      'planGenerationUltra': 133,
+    };
+    expect(estimate('fast', live), 7);
+    expect(estimate('balanced', live), 0);
+    expect(estimate('premium', live), 91);
+    expect(estimate('ultra', live), 133);
+  });
+
   test('cover adds one image charge independently from illustrations', () {
     int estimate({
       required bool coverEnabled,

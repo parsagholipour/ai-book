@@ -67,6 +67,7 @@ class ScriptedCreationRepository implements CreationRepository {
   final deletedAttachmentIds = <String>[];
   Object? uploadError;
   Object? sendError;
+  Object? buildError;
   List<String> replyWarnings = const [];
 
   /// The brief the reply turn carries; null keeps the bare `{'lane': 'auto'}`.
@@ -386,6 +387,10 @@ class ScriptedCreationRepository implements CreationRepository {
     String? requestId,
     int? expectedRevision,
   }) async {
+    final error = buildError;
+    if (error != null) {
+      throw error;
+    }
     buildDraftId = draftId;
     buildPresets = presets;
     buildOptionalDetails = optionalDetails;

@@ -107,6 +107,15 @@ describe("mobile plan lifecycle", () => {
       expect.objectContaining({
         userId: "user-a",
         projectId: "project-1",
+        operation: "PLAN_GENERATION",
+        amountCredits: DEFAULT_CREDIT_COSTS.planGeneration,
+        metadata: expect.objectContaining({ modelTier: "balanced", pricingKey: "planGeneration" })
+      })
+    );
+    expect(vi.mocked(reserveCredits)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "user-a",
+        projectId: "project-1",
         operation: "PLAN_REVISION",
         amountCredits: expect.any(Number)
       })
@@ -127,6 +136,9 @@ describe("mobile plan lifecycle", () => {
         relatedLedgerEntryId: "ledger-FULL_BOOK_GENERATION"
       })
     );
+    expect(
+      vi.mocked(reserveCredits).mock.calls.filter(([input]) => input.operation === "PLAN_GENERATION")
+    ).toHaveLength(1);
     expect(JSON.stringify({ plan: plan.json(), revise: revise.json(), approve: approve.json() })).not.toMatch(
       /strategy|provider|model|temperature/
     );

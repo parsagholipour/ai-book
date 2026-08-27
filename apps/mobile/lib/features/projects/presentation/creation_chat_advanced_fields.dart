@@ -150,8 +150,8 @@ class _PageCountControlState extends State<_PageCountControl> {
     if (estimateCredits == null || pages == null || pages < 1 || pages > 600) {
       return null;
     }
-    return '≈ ${estimateCredits(pages)} credits for $pages pages, '
-        'charged when you approve the plan.';
+    return 'Book after approval: ≈ ${estimateCredits(pages)} credits for '
+        '$pages pages, charged only after plan approval.';
   }
 
   @override
@@ -235,6 +235,7 @@ class _AdvancedGroup extends StatelessWidget {
     required this.selected,
     required this.onChanged,
     this.creditsPerPage,
+    this.planCredits,
   });
 
   final String title;
@@ -254,15 +255,22 @@ class _AdvancedGroup extends StatelessWidget {
   /// rows down, so folding them in would make one number answer for two
   /// choices.
   final int Function(String value)? creditsPerPage;
+  final int Function(String value)? planCredits;
 
   /// The price leads, because it is the part that differs between options the
   /// blurbs all describe as good. Written into the subtitle rather than a
   /// trailing widget so `AppChoiceTile` reads it into its semantic label too.
   String _subtitleFor(CreationPresetOption option) {
     final rate = creditsPerPage?.call(option.value);
-    return rate == null
-        ? option.subtitle
-        : '≈ $rate credits per page · ${option.subtitle}';
+    final planning = planCredits?.call(option.value);
+    if (rate == null && planning == null) {
+      return option.subtitle;
+    }
+    return [
+      if (planning != null) 'Plan now: $planning credits',
+      if (rate != null) 'Book after approval: ≈ $rate credits per page',
+      option.subtitle,
+    ].join(' · ');
   }
 
   @override

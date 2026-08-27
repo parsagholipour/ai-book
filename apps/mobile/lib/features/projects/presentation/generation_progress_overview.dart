@@ -141,7 +141,10 @@ class GenerationProgressOverviewCard extends StatelessWidget {
               if (onResume != null) ...[
                 const SizedBox(height: 10),
                 AppButton.primary(
-                  label: 'Retry generation',
+                  label:
+                      status.recoveryQuote?.requiresConfirmation == false
+                      ? 'Retry plan · ${status.recoveryQuote!.credits} credits'
+                      : 'Retry generation',
                   onPressed: busyAction == 'resume' ? null : () => onResume!(),
                   loading: busyAction == 'resume',
                   loadingLabel: 'Retrying generation',

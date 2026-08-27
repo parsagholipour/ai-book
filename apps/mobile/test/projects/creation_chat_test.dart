@@ -1794,6 +1794,7 @@ void main() {
         currentAction: 'Needs attention.',
         failureMessage: 'We hit a problem while creating your plan.',
         retryAvailable: true,
+        recoveryRequiresConfirmation: false,
         completedPages: 0,
         imageCount: 0,
       ),
@@ -1824,12 +1825,13 @@ void main() {
     expect(find.byType(LinearProgressIndicator), findsNothing);
     expect(find.byType(CircularProgressIndicator), findsNothing);
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Retry plan'));
-    await tester.pump();
-    await tester.tap(find.text('Retry for 40'));
+    await tester.tap(
+      find.widgetWithText(FilledButton, 'Retry plan · 40 credits'),
+    );
     await tester.pump();
 
     expect(projects.resumedProjectIds, ['project-1']);
+    expect(find.text('Retry for 40'), findsNothing);
     final retryingButton = tester.widget<FilledButton>(
       find.widgetWithText(FilledButton, 'Retrying…'),
     );
@@ -1839,7 +1841,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
 
-    expect(find.text('Retry plan'), findsNothing);
+    expect(find.text('Retry plan · 40 credits'), findsNothing);
     expect(find.text('Plan generation failed'), findsNothing);
     expect(find.text('Understanding your idea'), findsWidgets);
     expect(find.text('Retrying your book plan.'), findsWidgets);
@@ -1871,6 +1873,7 @@ void main() {
               currentAction: 'Needs attention.',
               failureMessage: 'We hit a problem while creating your plan.',
               retryAvailable: true,
+              recoveryRequiresConfirmation: false,
               completedPages: 0,
               imageCount: 0,
             ),
@@ -1892,9 +1895,9 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     await tester.pump(const Duration(milliseconds: 300));
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Retry plan'));
-    await tester.pump();
-    await tester.tap(find.text('Retry for 40'));
+    await tester.tap(
+      find.widgetWithText(FilledButton, 'Retry plan · 40 credits'),
+    );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
@@ -1903,7 +1906,10 @@ void main() {
       find.text('Generation is still winding down. Try again in a moment.'),
       findsOneWidget,
     );
-    expect(find.widgetWithText(FilledButton, 'Retry plan'), findsOneWidget);
+    expect(
+      find.widgetWithText(FilledButton, 'Retry plan · 40 credits'),
+      findsOneWidget,
+    );
     expect(find.text('Understanding your idea'), findsNothing);
 
     await tester.teardownScreen();
@@ -2002,6 +2008,7 @@ void main() {
         currentAction: 'Needs attention.',
         failureMessage: 'We hit a problem while creating your plan.',
         retryAvailable: true,
+        recoveryRequiresConfirmation: false,
         completedPages: 0,
         imageCount: 0,
       ),
@@ -2018,9 +2025,9 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     await tester.pump(const Duration(milliseconds: 300));
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Retry plan'));
-    await tester.pump();
-    await tester.tap(find.text('Retry for 40'));
+    await tester.tap(
+      find.widgetWithText(FilledButton, 'Retry plan · 40 credits'),
+    );
     await tester.pump();
     await tester.tap(find.widgetWithText(FilterChip, 'Other plan'));
     await tester.pump();

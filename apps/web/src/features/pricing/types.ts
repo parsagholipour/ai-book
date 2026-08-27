@@ -1,5 +1,8 @@
 export type CreditPricingKey =
   | "planGeneration"
+  | "planGenerationFast"
+  | "planGenerationPremium"
+  | "planGenerationUltra"
   | "previewGeneration"
   | "fullBookBase"
   | "fullBookPerPage"
@@ -41,6 +44,8 @@ export type CreditPricingValues = Record<CreditPricingKey, number>;
 
 export type PricingTierQuote = {
   tier: "fast" | "balanced" | "premium" | "ultra";
+  planningCredits: number;
+  bookGenerationCredits: number;
   totalCredits: number;
   estimatedUsd: number;
   lineItems: Array<{ code: string; label: string; quantity: number; unitCredits: number; credits: number }>;
@@ -49,7 +54,7 @@ export type PricingTierQuote = {
 export type PricingPreview = {
   label: string;
   targetPages: number;
-  /** The balanced quote, which is what the top-level fields have always meant. */
+  /** The balanced reader journey, initial plan plus the later book package. */
   totalCredits: number;
   estimatedUsd: number;
   lineItems: Array<{ code: string; label: string; quantity: number; unitCredits: number; credits: number }>;

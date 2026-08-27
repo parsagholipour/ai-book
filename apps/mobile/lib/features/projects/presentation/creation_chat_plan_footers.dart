@@ -242,6 +242,7 @@ class _PlanFailedFooter extends StatelessWidget {
     required this.message,
     required this.retrying,
     required this.retryAvailable,
+    this.retryCredits,
     required this.onRetry,
     required this.onRefresh,
   });
@@ -249,6 +250,7 @@ class _PlanFailedFooter extends StatelessWidget {
   final String message;
   final bool retrying;
   final bool retryAvailable;
+  final int? retryCredits;
   final VoidCallback onRetry;
   final VoidCallback onRefresh;
 
@@ -268,7 +270,11 @@ class _PlanFailedFooter extends StatelessWidget {
                 ? 'Your plan needs a retry'
                 : 'Your plan needs attention',
             message: message,
-            actionLabel: retryAvailable ? 'Retry plan' : 'Check again',
+            actionLabel: retryAvailable
+                ? retryCredits == null
+                      ? 'Retry plan'
+                      : 'Retry plan · $retryCredits credits'
+                : 'Check again',
             actionIcon: Icon(
               retryAvailable ? Icons.replay_outlined : Icons.refresh_outlined,
             ),

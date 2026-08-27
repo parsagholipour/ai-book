@@ -244,15 +244,21 @@ class MobileGenerationRecoveryQuote {
   const MobileGenerationRecoveryQuote({
     required this.retryToken,
     required this.credits,
+    this.requiresConfirmation = true,
   });
 
   final String retryToken;
   final int credits;
 
+  /// False only for initial-plan retries. Missing stays true so an older
+  /// server/client pairing retains the dedicated billing confirmation.
+  final bool requiresConfirmation;
+
   factory MobileGenerationRecoveryQuote.fromJson(Map<String, dynamic> json) {
     return MobileGenerationRecoveryQuote(
       retryToken: json['retryToken'] as String,
       credits: json['credits'] as int,
+      requiresConfirmation: json['requiresConfirmation'] as bool? ?? true,
     );
   }
 }

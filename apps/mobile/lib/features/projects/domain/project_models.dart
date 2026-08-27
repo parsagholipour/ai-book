@@ -740,6 +740,23 @@ int estimateProjectCredits({
       exportUnlock;
 }
 
+/// What starting the initial plan costs at the selected effort level.
+///
+/// This mirrors `planGenerationCreditCost` in core. It stays separate from
+/// [estimateProjectCredits], because planning is charged now while that book
+/// package is charged only after the plan is approved.
+int estimatePlanGenerationCredits({
+  required String qualityPreset,
+  required Map<String, dynamic> creditCosts,
+}) {
+  return _tierCost(creditCosts, 'planGeneration', qualityPreset, const {
+    'fast': 20,
+    'balanced': 40,
+    'premium': 80,
+    'ultra': 120,
+  });
+}
+
 /// One rate at the tier this book is priced at.
 ///
 /// Mirrors `tierPrice` in `packages/core/src/billing.ts`, including its key

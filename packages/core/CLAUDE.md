@@ -166,17 +166,23 @@ arrive with one.
 ## Credit pricing
 
 - **A price key with no tier suffix is the *balanced* rate.** The quality preset a reader picks in
-  the app's **Effort** section (`fast` / `balanced` / `premium`) routes to genuinely different models,
-  so five rates carry a `Fast` and a `Premium` twin beside them — `fullBookBase`,
-  `fullBookPerPage`, `imageGeneration`, `pageRegenerationPerPage`, `bookTextEditPerPage`
-  (`TIER_PRICED_KEYS`). Read them **only** through `tierPrice(pricing, key, tier)`, and name the
-  key to charge with `tierPriceKey` — the dashboard's revenue projection buckets by the same
-  function, so a book cannot be quoted against one key and counted against another. Leaving the
-  base key meaning balanced is what makes this migration-free: `normalizeCreditPricing` backfills
-  the new keys from the defaults, so every `CreditPricingRevision` written before tiers were
-  priced still means what it meant. Everything else stays flat on purpose — `exportUnlock`
-  compiles the same PDF whatever wrote it, audiobooks and voice calls reach a tier-blind provider,
-  and the `…Base` charges are request overhead rather than model spend.
+  the app's **Effort** section (`fast` / `balanced` / `premium` / `ultra`) routes to genuinely
+  different models, so six rates carry `Fast` / `Premium` / `Ultra` twins beside them —
+  `planGeneration`, `fullBookBase`, `fullBookPerPage`, `imageGeneration`,
+  `pageRegenerationPerPage`, `bookTextEditPerPage` (`TIER_PRICED_KEYS`). Read them **only**
+  through `tierPrice(pricing, key, tier)`, and name the key to charge with `tierPriceKey` — the
+  dashboard's revenue projection buckets by the same function, so a book cannot be quoted against
+  one key and counted against another. Leaving the base key meaning balanced is what makes adding
+  a twin migration-free: `normalizeCreditPricing` backfills the new keys from the defaults, so
+  every `CreditPricingRevision` written before those twins existed still means what it meant.
+  Raising a *legacy compiled zero* is the exception — initial planning used to be free, so
+  `planGeneration: 0` in a stored revision is not an operator override; migration
+  `000061_tiered_plan_generation_pricing` appends a head revision that turns that zero into 40
+  and seeds the three new tier keys. Charge the first plan through `planGenerationCreditCost`;
+  plan revisions, book replans and the other `…Base` charges stay flat. Everything else stays
+  flat on purpose — `exportUnlock` compiles the same PDF whatever wrote it, audiobooks and voice
+  calls reach a tier-blind provider, and those `…Base` charges are request overhead rather than
+  model spend.
   **Pricing reads `mediaSettings.modelTier`, never `mediaSettings.mobile.qualityPreset`**
   (`modelTierForInput`): the tier is what routes the models and what the provider-cost table
   already keys off, while the mobile echo is written only by the app — pricing off it let a

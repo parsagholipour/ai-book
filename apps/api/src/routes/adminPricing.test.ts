@@ -122,13 +122,13 @@ function sqlFromQueryRawCall(args: unknown[]): string {
     .join(" ");
 }
 
-function mockSpendRows(rows: Array<{ project_id: string | null; operation: string; count: number }>): void {
+function mockSpendRows(rows: Array<{ project_id: string | null; operation: string; pricing_key?: string | null; count: number }>): void {
   mockDb.prisma.$queryRaw.mockImplementation((...args: unknown[]) => {
     const sql = sqlFromQueryRawCall(args);
     if (sql.includes("AUDIOBOOK_GENERATION") && sql.includes("metadata")) {
       return Promise.resolve([]);
     }
-    return Promise.resolve(rows);
+    return Promise.resolve(rows.map((row) => ({ pricing_key: null, ...row })));
   });
 }
 
@@ -170,8 +170,8 @@ describe("GET /api/admin/pricing", () => {
     expect(body.limits.fullBookPerPage).toBe(CREDIT_PRICING_LIMITS.fullBookPerPage);
     expect(body.version).toBe(0);
     // The same estimator production charges through, so the dashboard cannot drift.
-    expect(body.preview.totalCredits).toBe(1_039);
-    expect(body.preview.estimatedUsd).toBeCloseTo(10.39, 2);
+    expect(body.preview.totalCredits).toBe(1_079);
+    expect(body.preview.estimatedUsd).toBeCloseTo(10.79, 2);
     // The tiers are priced apart, so one total describes a third of the books
     // being sold. The top-level fields stay the balanced quote.
     expect(body.preview.tiers.map((quote: { tier: string }) => quote.tier)).toEqual([
@@ -182,6 +182,14 @@ describe("GET /api/admin/pricing", () => {
     ]);
     const [fast, balanced, premium, ultra] = body.preview.tiers;
     expect(balanced.totalCredits).toBe(body.preview.totalCredits);
+    expect(balanced).toMatchObject({
+      planningCredits: DEFAULT_CREDIT_COSTS.planGeneration,
+      bookGenerationCredits: 1_039,
+      totalCredits: 1_079
+    });
+    expect(fast.planningCredits).toBe(DEFAULT_CREDIT_COSTS.planGenerationFast);
+    expect(premium.planningCredits).toBe(DEFAULT_CREDIT_COSTS.planGenerationPremium);
+    expect(ultra.planningCredits).toBe(DEFAULT_CREDIT_COSTS.planGenerationUltra);
     expect(fast.totalCredits).toBeLessThan(balanced.totalCredits);
     expect(premium.totalCredits).toBeGreaterThan(balanced.totalCredits);
     expect(ultra.totalCredits).toBeGreaterThan(premium.totalCredits);
@@ -326,7 +334,7 @@ describe("POST /api/admin/pricing/preview", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json().totalCredits).toBe(1_039 + 250);
+    expect(response.json().totalCredits).toBe(1_079 + 250);
     // The prices everyone else is being charged have not moved.
     expect(creditPricing().exportUnlock).toBe(DEFAULT_CREDIT_COSTS.exportUnlock);
   });
@@ -425,6 +433,65 @@ describe("GET /api/admin/pricing/drivers", () => {
     expect(body.drivers.bookReplanBase).toBe(1);
     expect(body.drivers.imageGeneration).toBe(2);
     expect(body.drivers.coverRegeneration).toBe(0);
+  });
+
+  it("attributes plan-generation revenue to its stamped tier and falls back to the project's tier", async () => {
+    mockSpendRows([
+      {
+        project_id: "project-stamped",
+        operation: "PLAN_GENERATION",
+        pricing_key: "planGenerationUltra",
+        count: 2
+      },
+      { project_id: "project-legacy", operation: "PLAN_GENERATION", count: 3 },
+      { project_id: null, operation: "PLAN_GENERATION", count: 1 }
+    ]);
+    mockDb.prisma.project.findMany.mockResolvedValue([
+      {
+        id: "project-stamped",
+        title: "Stamped plan",
+        subtitle: null,
+        authorName: null,
+        coverTagline: null,
+        prompt: "Create a stamped plan.",
+        category: "CUSTOM",
+        subcategory: null,
+        targetPages: 8,
+        complexity: 5,
+        temperature: 0.65,
+        language: "en",
+        mediaSettings: { modelTier: "fast" }
+      },
+      {
+        id: "project-legacy",
+        title: "Legacy premium plan",
+        subtitle: null,
+        authorName: null,
+        coverTagline: null,
+        prompt: "Create a legacy premium plan.",
+        category: "CUSTOM",
+        subcategory: null,
+        targetPages: 8,
+        complexity: 5,
+        temperature: 0.65,
+        language: "en",
+        mediaSettings: { modelTier: "premium" }
+      }
+    ]);
+    app = await buildApp();
+
+    const body = (await app.inject({ method: "GET", url: "/api/admin/pricing/drivers" })).json();
+
+    // The audit stamp wins even though the project now says fast. A legacy row
+    // has no stamp, so its stored project tier is the best surviving evidence;
+    // a project-less legacy row retains the Balanced fallback.
+    expect(body.drivers.planGenerationUltra).toBe(2);
+    expect(body.drivers.planGenerationPremium).toBe(3);
+    expect(body.drivers.planGeneration).toBe(1);
+    expect(body.drivers.planGenerationFast).toBe(0);
+    expect(sqlFromQueryRawCall(mockDb.prisma.$queryRaw.mock.calls[0] ?? [])).toContain(
+      'r."entryType" = \'REFUND\''
+    );
   });
 
   it("reports how faithfully the model reproduces the ledger", async () => {

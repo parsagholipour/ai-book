@@ -148,6 +148,10 @@ export async function buildProjectStatus(projectId: string) {
           id: true,
           commandKey: true,
           status: true,
+          // `requiresConfirmation` is false only for PLAN_GENERATION. Dropping
+          // this column makes every retry look like a full-book charge and the
+          // app keeps the dedicated billing dialog.
+          operation: true,
           quotedCredits: true,
           refundPending: true,
           // An attempt that already has a paid retry must never be quoted

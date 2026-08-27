@@ -745,6 +745,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
             message: _planFailureMessage(liveStatus),
             retrying: _planBusyAction == 'retry-plan',
             retryAvailable: liveStatus?.retryAvailable == true,
+            retryCredits: liveStatus?.recoveryQuote?.credits,
             onRetry: () => unawaited(_retryPlanGeneration(activeProjectId)),
             onRefresh: () => _refreshOutput(activeProjectId),
           );

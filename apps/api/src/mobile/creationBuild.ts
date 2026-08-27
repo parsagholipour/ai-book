@@ -47,12 +47,12 @@ import {
 } from "./schemas.js";
 import { fingerprintGenerationRequest, hashString, jsonInputValue, jsonRecord, promiseWithTimeout } from "./support.js";
 import {
-  creditCostForOperation,
   foldCharacterName,
   generateJsonWithRetry,
   isLibraryMentionNameCharacterAt,
   libraryMentionTokenEndsAt,
   libraryCharacterRelativeFile,
+  planGenerationCreditCost,
 } from "@book-maker/core";
 import { createLiveFastJudgmentsTextModel } from "../generationTextModelRouting.js";
 import { linearizeCreationMessages } from "../creationChatTree.js";
@@ -279,7 +279,7 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
       creationPayload: finalPayload,
       advisor: finalAdvisor
     });
-    const planCost = creditCostForOperation("PLAN_GENERATION");
+    const planQuote = planGenerationCreditCost(input);
     let project: MobileProjectRecord | null = null;
     let output: MobileCreationOutputRecord;
     let operation: MobilePlanOperationDto | null = null;
@@ -291,9 +291,14 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
         commandKey: `mobile:creation-build:${draftId}:${buildRequestId}`,
         requestFingerprint: fingerprintGenerationRequest({ draftId, buildRequestId, input }),
         operation: "PLAN_GENERATION",
-        quotedCredits: planCost,
+        quotedCredits: planQuote.credits,
         description: "Mobile plan generation",
-        metadata: { draftId, buildRequestId },
+        metadata: {
+          draftId,
+          buildRequestId,
+          modelTier: planQuote.modelTier,
+          pricingKey: planQuote.pricingKey
+        },
         create: async (tx, { attemptId, ledgerEntry }) => {
           const claimed = await updateCreationDraftCas({
             draft,

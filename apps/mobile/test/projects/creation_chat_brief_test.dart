@@ -5,6 +5,7 @@ import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/creation_chat_controller.dart';
 import 'package:tomeza/features/projects/presentation/creation_chat_screen.dart';
 import 'package:tomeza/features/projects/presentation/creation_labels.dart';
+import 'package:tomeza/shared/api/api_error.dart';
 
 import 'creation_chat_fakes.dart';
 import 'creation_chat_harness.dart';
@@ -251,11 +252,22 @@ void main() {
                 pages)
             .round();
 
-    for (final quality in ['fast', 'balanced', 'premium']) {
+    const planCredits = {
+      'fast': 20,
+      'balanced': 40,
+      'premium': 80,
+      'ultra': 120,
+    };
+    for (final quality in ['fast', 'balanced', 'premium', 'ultra']) {
       expect(
         find.textContaining('≈ ${perPage(quality)} credits per page'),
         findsOneWidget,
         reason: 'the $quality tile should carry its own per-page rate',
+      );
+      expect(
+        find.textContaining('Plan now: ${planCredits[quality]} credits'),
+        findsOneWidget,
+        reason: 'the $quality tile should carry its immediate plan price',
       );
     }
     expect(perPage('fast'), lessThan(perPage('balanced')));
@@ -347,13 +359,51 @@ void main() {
     expect(_inDetails(find.text('Shape')), findsOneWidget);
     expect(_inDetails(find.text('• Intro')), findsOneWidget);
     expect(_inDetails(find.text('Source notes attached')), findsOneWidget);
+    expect(_inDetails(find.text('Plan now')), findsOneWidget);
     expect(
-      _inDetails(find.text('Estimated build cost · ~12 pages')),
+      _inDetails(find.text('Book after approval · ~12 pages')),
       findsOneWidget,
     );
+    expect(_inDetails(find.text('Total reader journey')), findsOneWidget);
     // 350 base + 12·8 pages + 45 cover + 2·45 interiors + 150 unlock, from
-    // the harness billing costs — the same figure the page-count sheet quotes.
+    // the harness billing costs — plus the separate 40-credit Balanced plan.
+    expect(_inDetails(find.text('40')), findsOneWidget);
     expect(_inDetails(find.text('731')), findsOneWidget);
+    expect(_inDetails(find.text('771')), findsOneWidget);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('Build opens a planning paywall when credits are short', (
+    tester,
+  ) async {
+    final creation = ScriptedCreationRepository()
+      ..buildError = const ApiException(
+        code: 'INSUFFICIENT_CREDITS',
+        message: 'You need more credits for this action.',
+        statusCode: 402,
+        details: {
+          'requiredCredits': 40,
+          'availableCredits': 10,
+          'reservedCredits': 0,
+        },
+      );
+    await tester.pumpWidget(app(creation: creation));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('A kids book'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Build the plan'));
+    await tester.continuePastVisualsPrompt();
+    await tester.pumpAndSettle();
+
+    expect(creation.buildCount, 0);
+    expect(find.byKey(const ValueKey('paywall-credits-needed')), findsOneWidget);
+    expect(
+      find.text(
+        'Creating your book plan now. Writing the book is charged separately, only after you approve the plan.',
+      ),
+      findsOneWidget,
+    );
 
     await tester.teardownScreen();
   });

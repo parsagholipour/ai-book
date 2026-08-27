@@ -310,12 +310,8 @@ class _ListenBookButton extends StatelessWidget {
   }
 }
 
-/// The build's price before anyone taps Build: the same estimate the
-/// page-count sheet and plan approval quote, so no surface names a different
-/// number. Watches billing directly — the Advanced sheet already reads the
-/// cost map this way, and threading it through the header for one badge is
-/// not worth it. The auto page count is the preset default, not the
-/// chat-detected one, which is what the '~' says.
+/// Both charges in the reader journey, kept visibly separate because they
+/// happen at different decisions: planning now, writing after approval.
 class _BriefCreditEstimate extends ConsumerWidget {
   const _BriefCreditEstimate({required this.presets});
 
@@ -330,7 +326,11 @@ class _BriefCreditEstimate extends ConsumerWidget {
     final pages = presets.pageCountMode == 'custom' && targetPages != null
         ? targetPages
         : targetPageCountFor(presets.bookType, presets.lengthPreset);
-    final credits = estimateProjectCredits(
+    final planCredits = estimatePlanGenerationCredits(
+      qualityPreset: presets.qualityPreset,
+      creditCosts: creditCosts,
+    );
+    final bookCredits = estimateProjectCredits(
       bookType: presets.bookType,
       bookTypeChoice: presets.bookTypeChoice,
       qualityPreset: presets.qualityPreset,
@@ -339,11 +339,37 @@ class _BriefCreditEstimate extends ConsumerWidget {
       targetPages: pages,
       creditCosts: creditCosts,
     );
+    return Column(
+      children: [
+        _EstimateChargeRow(label: 'Plan now', credits: planCredits),
+        const SizedBox(height: 6),
+        _EstimateChargeRow(
+          label: 'Book after approval · ~$pages pages',
+          credits: bookCredits,
+        ),
+        const SizedBox(height: 6),
+        _EstimateChargeRow(
+          label: 'Total reader journey',
+          credits: planCredits + bookCredits,
+        ),
+      ],
+    );
+  }
+}
+
+class _EstimateChargeRow extends StatelessWidget {
+  const _EstimateChargeRow({required this.label, required this.credits});
+
+  final String label;
+  final int credits;
+
+  @override
+  Widget build(BuildContext context) {
     return Row(
       children: [
         Expanded(
           child: Text(
-            'Estimated build cost · ~$pages pages',
+            label,
             style: Theme.of(
               context,
             ).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w800),

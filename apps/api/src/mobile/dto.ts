@@ -456,6 +456,7 @@ export type MobileProjectRecoveryDto = {
 export type MobileGenerationRecoveryQuoteDto = {
   retryToken: string;
   credits: number;
+  requiresConfirmation: boolean;
 };
 
 export type MobileQueuedJobDto = {

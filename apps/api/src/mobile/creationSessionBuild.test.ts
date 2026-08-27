@@ -6,6 +6,7 @@ vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js"))
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
 import { enqueueGenerationJob } from "../queue.js";
+import { InsufficientCreditsError, reserveCredits } from "@book-maker/db/billing";
 import {
   bearer,
   buildMobileApp,
@@ -18,9 +19,162 @@ import {
   teardownMobileHarness
 } from "./testing/mobileApiHarness.js";
 
+type PlanningTier = "fast" | "balanced" | "premium" | "ultra";
+
+function buildPayloadAtTier(qualityPreset: PlanningTier) {
+  return {
+    payloadVersion: 3,
+    rawIdea: "Workbook for new coaches",
+    messages: [
+      { role: "assistant", content: "Hi!" },
+      { role: "user", content: "Workbook for new coaches" }
+    ],
+    selectedPresets: {
+      bookType: "workbook",
+      lengthPreset: "short",
+      qualityPreset,
+      imagesEnabled: true,
+      pageCountMode: "custom",
+      targetPages: 8,
+      pageCountSource: "settings"
+    }
+  };
+}
+
 describe("mobile creation session project build", () => {
   beforeEach(resetMobileHarness);
   afterEach(teardownMobileHarness);
+
+  it.each([
+    ["fast", 20, "planGenerationFast"],
+    ["balanced", 40, "planGeneration"],
+    ["premium", 80, "planGenerationPremium"],
+    ["ultra", 120, "planGenerationUltra"]
+  ] as const)("charges and stamps the %s plan quote when Build starts", async (tier, credits, pricingKey) => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const payload = buildPayloadAtTier(tier);
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
+      creationDraftRecord({ id: "session-draft", payload })
+    );
+    mockPrisma.template.findFirst.mockResolvedValue({ id: "template-workbook" });
+    mockPrisma.project.create.mockImplementation(async ({ data }: { data: Record<string, any> }) =>
+      projectRecord({
+        id: "project-from-session",
+        title: data.title,
+        prompt: data.prompt,
+        category: data.category,
+        subcategory: data.subcategory ?? null,
+        targetPages: data.targetPages,
+        mediaSettings: data.mediaSettings,
+        currentPlan: null,
+        pages: [],
+        _count: { pages: 0, images: 0, jobs: 0 }
+      })
+    );
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "session-draft", payload, ...data })
+    );
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: `job-plan-${tier}` }));
+    const app = await buildMobileApp({ advisorEnrichment: false, creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/build",
+      headers: bearer("token-a"),
+      payload: { requestId: `build-request-${tier}` }
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(reserveCredits).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: "PLAN_GENERATION",
+        amountCredits: credits,
+        metadata: expect.objectContaining({
+          draftId: "session-draft",
+          buildRequestId: `build-request-${tier}`,
+          modelTier: tier,
+          pricingKey
+        })
+      })
+    );
+    await app.close();
+  });
+
+  it("makes no project, output, or job when Build cannot reserve the plan price", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const payload = buildPayloadAtTier("ultra");
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
+      creationDraftRecord({ id: "session-draft", payload })
+    );
+    mockPrisma.template.findFirst.mockResolvedValue({ id: "template-workbook" });
+    vi.mocked(reserveCredits).mockRejectedValueOnce(
+      new InsufficientCreditsError({ requiredCredits: 120, availableCredits: 10, reservedCredits: 0 })
+    );
+    const app = await buildMobileApp({ advisorEnrichment: false, creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/build",
+      headers: bearer("token-a"),
+      payload: { requestId: "build-request-insufficient" }
+    });
+
+    expect(response.statusCode).toBe(402);
+    expect(response.json().error).toMatchObject({
+      code: "INSUFFICIENT_CREDITS",
+      requiredCredits: 120,
+      availableCredits: 10
+    });
+    expect(mockPrisma.project.create).not.toHaveBeenCalled();
+    expect(mockPrisma.mobileCreationOutput.create).not.toHaveBeenCalled();
+    expect(mockPrisma.mobileCreationDraft.update).not.toHaveBeenCalled();
+    expect(enqueueGenerationJob).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("replays the same Build request without charging or creating twice", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const payload = buildPayloadAtTier("premium");
+    const draft = creationDraftRecord({ id: "session-draft", payload });
+    const project = projectRecord({ id: "project-from-session", mediaSettings: { modelTier: "premium" } });
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValue(draft);
+    mockPrisma.template.findFirst.mockResolvedValue({ id: "template-workbook" });
+    mockPrisma.project.create.mockResolvedValue(project);
+    mockPrisma.project.findFirst.mockResolvedValue(project);
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "session-draft", payload, ...data })
+    );
+    mockPrisma.mobileCreationOutput.findFirst.mockResolvedValue({
+      id: "output-project-from-session",
+      draftId: "session-draft",
+      projectId: "project-from-session",
+      requestId: "build-request-idempotent",
+      title: project.title,
+      sequence: 1,
+      createdAt: new Date("2026-06-15T12:00:00.000Z"),
+      updatedAt: new Date("2026-06-15T12:00:00.000Z"),
+      project: { title: project.title, updatedAt: new Date("2026-06-15T12:00:00.000Z") }
+    });
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-plan" }));
+    const app = await buildMobileApp({ advisorEnrichment: false, creationEnrichment: false });
+    const request = {
+      method: "POST" as const,
+      url: "/api/mobile/creation-sessions/session-draft/build",
+      headers: bearer("token-a"),
+      payload: { requestId: "build-request-idempotent" }
+    };
+
+    const first = await app.inject(request);
+    const replay = await app.inject(request);
+
+    expect(first.statusCode).toBe(201);
+    expect(replay.statusCode).toBe(201);
+    expect(reserveCredits).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.project.create).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.mobileCreationOutput.create).toHaveBeenCalledTimes(1);
+    expect(enqueueGenerationJob).toHaveBeenCalledTimes(1);
+    await app.close();
+  });
 
   it("builds a project from a session and applies advanced overrides", async () => {
     mockAccessTokens({ "token-a": "user-a" });

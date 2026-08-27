@@ -162,7 +162,7 @@ function PreviewPanel(props: { preview: PricingPreview | null; creditUsdValue: n
         <h3>What this costs a reader</h3>
       </div>
       <p className="muted">
-        A {props.preview.label}, priced by the same estimator the app charges through.
+        A {props.preview.label}, from planning through the later approved book package.
       </p>
       <p className="pricing-total">
         {props.preview.totalCredits.toLocaleString()} credits
@@ -175,6 +175,7 @@ function PreviewPanel(props: { preview: PricingPreview | null; creditUsdValue: n
           <li key={quote.tier}>
             <span>{TIER_LABELS[quote.tier]}</span>
             <span className="muted">
+              {quote.planningCredits.toLocaleString()} plan + {quote.bookGenerationCredits.toLocaleString()} book ={" "}
               {quote.totalCredits.toLocaleString()} → ${quote.estimatedUsd.toFixed(2)}
             </span>
           </li>

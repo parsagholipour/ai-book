@@ -98,6 +98,7 @@ class BookScreenBody extends StatelessWidget {
           if (stage == BookStage.needsPlan && project != null) ...[
             NoPlanCard(
               project: project,
+              billing: billing,
               busyAction: busyAction,
               onGeneratePlan: onGeneratePlan ?? () async {},
             ),

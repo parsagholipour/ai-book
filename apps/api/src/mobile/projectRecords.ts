@@ -35,10 +35,10 @@ import { cleanTargetLanguage, fingerprintGenerationRequest, jsonInputValue, json
 import {
   AUTO_BOOK_GENERATION_STRATEGY_ID,
   createProjectSchema,
-  creditCostForOperation,
   includeCoverForSource,
   mediaSettingsSchema,
   mediaSettingsWithReplanSettings,
+  planGenerationCreditCost,
   type ReplanSettings
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
@@ -423,16 +423,21 @@ export async function queueInitialMobilePlan(
   projectId: string,
   inputSnapshot: Record<string, unknown>
 ): Promise<MobilePlanOperationDto> {
-  const planCost = creditCostForOperation("PLAN_GENERATION");
+  const input = createProjectSchema.parse(inputSnapshot);
+  const planQuote = planGenerationCreditCost(input);
   const started = await startGenerationAttempt({
     userId,
     commandKey: `mobile:project-initial-plan:${projectId}`,
     requestFingerprint: fingerprintGenerationRequest({ projectId, inputSnapshot }),
     projectId,
     operation: "PLAN_GENERATION",
-    quotedCredits: planCost,
+    quotedCredits: planQuote.credits,
     description: "Mobile plan generation",
-    metadata: { initialPlan: true },
+    metadata: {
+      initialPlan: true,
+      modelTier: planQuote.modelTier,
+      pricingKey: planQuote.pricingKey
+    },
     create: async (tx, { attemptId, ledgerEntry }) => {
       const job = await enqueueGenerationJob({
         projectId,

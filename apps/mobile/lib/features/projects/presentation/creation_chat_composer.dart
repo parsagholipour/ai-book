@@ -298,6 +298,7 @@ class _ConversationFooterState extends State<_ConversationFooter> {
                 canBuild: widget.state.canBuild,
                 building: widget.state.building,
                 skipsQuestion: question != null,
+                qualityPreset: widget.state.presets.qualityPreset,
                 onBuild: widget.onBuild,
               ),
             ],
@@ -761,16 +762,18 @@ class _Composer extends StatelessWidget {
   }
 }
 
-class _BuildButton extends StatelessWidget {
+class _BuildButton extends ConsumerWidget {
   const _BuildButton({
     required this.canBuild,
     required this.building,
     required this.skipsQuestion,
+    required this.qualityPreset,
     required this.onBuild,
   });
 
   final bool canBuild;
   final bool building;
+  final String qualityPreset;
 
   /// A question is on screen. Answering it is optional, so the button says so
   /// rather than looking like the wrong way out of the card.
@@ -778,13 +781,32 @@ class _BuildButton extends StatelessWidget {
   final Future<void> Function() onBuild;
 
   @override
-  Widget build(BuildContext context) {
-    return AppButton.primary(
-      onPressed: canBuild && !building ? () => onBuild() : null,
-      loading: building,
-      loadingLabel: 'Building the plan',
-      leading: const Icon(Icons.auto_awesome_outlined),
-      label: skipsQuestion ? 'Skip and build the plan' : 'Build the plan',
+  Widget build(BuildContext context, WidgetRef ref) {
+    final costs = ref.watch(billingProvider).asData?.value.creditCosts ??
+        const <String, dynamic>{};
+    final planCredits = estimatePlanGenerationCredits(
+      qualityPreset: qualityPreset,
+      creditCosts: costs,
+    );
+    return Row(
+      children: [
+        Expanded(
+          child: AppButton.primary(
+            onPressed: canBuild && !building ? () => onBuild() : null,
+            loading: building,
+            loadingLabel: 'Building the plan',
+            leading: const Icon(Icons.auto_awesome_outlined),
+            label: skipsQuestion
+                ? 'Skip and build the plan'
+                : 'Build the plan',
+          ),
+        ),
+        const SizedBox(width: 8),
+        CreditCostBadge(
+          credits: planCredits,
+          kind: CreditCostKind.quoted,
+        ),
+      ],
     );
   }
 }

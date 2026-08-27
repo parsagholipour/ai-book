@@ -118,18 +118,20 @@ export function modelTierFromMediaSettings(mediaSettings: unknown): ModelTier {
  * The rates that vary by tier, and the only ones.
  *
  * A tier changes which models run, so a price follows it exactly as far as the
- * model spend does: the writing rate, the images, and the per-page rate every
- * post-generation rewrite is billed at. Everything else is flat on purpose —
- * `exportUnlock` compiles the same PDF whatever wrote it, an audiobook and a
- * voice call reach a tier-blind provider, and `fullBookBase`'s siblings
- * (`bookTextEditBase`, `bookReplanBase`) are fixed overheads rather than model
- * spend.
+ * model spend does: the initial plan, the writing rate, the images, and the
+ * per-page rate every post-generation rewrite is billed at. Everything else is
+ * flat on purpose — `exportUnlock` compiles the same PDF whatever wrote it, an
+ * audiobook and a voice call reach a tier-blind provider, and the `…Base`
+ * charges (`fullBookBase`'s siblings `bookTextEditBase`, `bookReplanBase`) are
+ * request overhead rather than model spend. Plan revisions stay on the flat
+ * `planRevision` key; only the first plan follows the tier.
  *
- * The unsuffixed key is the balanced rate; the other two are that key plus
- * `Fast` / `Premium`. Keeping the convention mechanical is what lets one
- * resolver serve every call site, here and in the app's mirror of it.
+ * The unsuffixed key is the balanced rate; the others add `Fast` / `Premium` /
+ * `Ultra`. Keeping the convention mechanical is what lets one resolver serve
+ * every call site, here and in the app's mirror of it.
  */
 export const TIER_PRICED_KEYS = [
+  "planGeneration",
   "fullBookBase",
   "fullBookPerPage",
   "imageGeneration",
@@ -138,6 +140,18 @@ export const TIER_PRICED_KEYS = [
 ] as const;
 
 export type TierPricedKey = (typeof TIER_PRICED_KEYS)[number];
+
+export type PlanGenerationPricingKey =
+  | "planGeneration"
+  | "planGenerationFast"
+  | "planGenerationPremium"
+  | "planGenerationUltra";
+
+export type PlanGenerationCreditQuote = {
+  credits: number;
+  modelTier: ModelTier;
+  pricingKey: PlanGenerationPricingKey;
+};
 
 /**
  * Which price key a tier reads for one of {@link TIER_PRICED_KEYS}.
@@ -164,6 +178,23 @@ export function tierPriceKey<K extends TierPricedKey>(
 /** The tier's rate for one of {@link TIER_PRICED_KEYS}. */
 export function tierPrice(pricing: CreditPricing, key: TierPricedKey, tier: ModelTier): number {
   return pricing[tierPriceKey(key, tier)];
+}
+
+/**
+ * The charge for creating an initial plan.
+ *
+ * Initial planning is the one planning operation that follows the selected
+ * model tier. Plan revisions and book replans retain their existing flat
+ * prices. Returning the resolved key with the amount gives the charge and the
+ * ledger audit stamp one indivisible answer.
+ */
+export function planGenerationCreditCost(
+  input: CreateProjectInput,
+  pricing: CreditPricing = creditPricing()
+): PlanGenerationCreditQuote {
+  const modelTier = modelTierForInput(input);
+  const pricingKey = tierPriceKey("planGeneration", modelTier);
+  return { credits: pricing[pricingKey], modelTier, pricingKey };
 }
 
 /**

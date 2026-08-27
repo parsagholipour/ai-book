@@ -21,7 +21,8 @@ import {
   type ModelTier,
   createProjectSchema,
   creditPricingInputSchema,
-  estimateFullBookCreditCost
+  estimateFullBookCreditCost,
+  planGenerationCreditCost
 } from "@book-maker/core";
 import {
   CreditPricingConflictError,
@@ -267,11 +268,23 @@ function previewFor(values: CreditPricing) {
       mediaSettings: { ...PREVIEW_INPUT.mediaSettings, modelTier: tier }
     });
     const estimate = estimateFullBookCreditCost(input, values);
+    const planning = planGenerationCreditCost(input, values);
     return {
       tier,
-      totalCredits: estimate.totalCredits,
-      estimatedUsd: Math.round(estimate.totalCredits * CREDIT_USD_VALUE * 100) / 100,
-      lineItems: estimate.lineItems
+      planningCredits: planning.credits,
+      bookGenerationCredits: estimate.totalCredits,
+      totalCredits: planning.credits + estimate.totalCredits,
+      estimatedUsd: Math.round((planning.credits + estimate.totalCredits) * CREDIT_USD_VALUE * 100) / 100,
+      lineItems: [
+        {
+          code: "PLAN_GENERATION",
+          label: "Initial plan generation",
+          quantity: 1,
+          unitCredits: planning.credits,
+          credits: planning.credits
+        },
+        ...estimate.lineItems
+      ]
     };
   };
   const balanced = quoteAt("balanced");

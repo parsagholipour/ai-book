@@ -92,6 +92,7 @@ function audiobookPageCount(metadata: unknown): number {
 type SpendCountRow = {
   project_id: string | null;
   operation: string;
+  pricing_key: string | null;
   count: number;
 };
 
@@ -137,12 +138,13 @@ export async function loadPricingDrivers(
       SELECT
         e."projectId" AS project_id,
         e.operation::text AS operation,
+        e.metadata ->> 'pricingKey' AS pricing_key,
         COUNT(*)::double precision AS count
       FROM "CreditLedgerEntry" e
       WHERE e."entryType" = 'SPEND' AND e.status = 'SETTLED'
         AND e."createdAt" >= ${window.since}::timestamptz AND e."createdAt" <= ${window.until}::timestamptz
         AND ${Prisma.raw(NOT_FULLY_REFUNDED_SQL)}
-      GROUP BY e."projectId", e.operation
+      GROUP BY e."projectId", e.operation, e.metadata ->> 'pricingKey'
     `,
     prisma.creditLedgerEntry.aggregate({ _sum: { amountCredits: true }, where: { ...SETTLED_CHARGE, createdAt: inWindow } }),
     prisma.creditLedgerEntry.aggregate({
@@ -184,7 +186,11 @@ export async function loadPricingDrivers(
   const projectIds = [
     ...new Set(
       spendRows
-        .filter((row) => row.operation === "FULL_BOOK_GENERATION" || row.operation === "BOOK_REPLAN")
+        .filter((row) =>
+          row.operation === "FULL_BOOK_GENERATION" ||
+          row.operation === "BOOK_REPLAN" ||
+          row.operation === "PLAN_GENERATION"
+        )
         .map((row) => row.project_id)
         .filter((id): id is string => Boolean(id))
     )
@@ -198,7 +204,9 @@ export async function loadPricingDrivers(
   // premium book counted into the balanced buckets would project revenue at
   // prices nobody was charged.
   const bookShapes = new Map<string, { tier: ModelTier; pages: number; images: number; premium: number }>();
+  const projectTiers = new Map<string, ModelTier>();
   for (const project of projects) {
+    projectTiers.set(project.id, modelTierFromMediaSettings(project.mediaSettings));
     try {
       const input = createProjectSchema.parse(inputSnapshotFromProject(project));
       bookShapes.set(project.id, {
@@ -246,7 +254,19 @@ export async function loadPricingDrivers(
   // Standalone unlocks only — the bundled ones are already counted above.
   drivers.exportUnlock += countOf("EXPORT_UNLOCK");
   drivers.planRevision += countOf("PLAN_REVISION");
-  drivers.planGeneration += countOf("PLAN_GENERATION");
+  const planGenerationKeys = new Set<CreditPriceKey>([
+    "planGenerationFast",
+    "planGeneration",
+    "planGenerationPremium",
+    "planGenerationUltra"
+  ]);
+  for (const row of spendRows.filter((candidate) => candidate.operation === "PLAN_GENERATION")) {
+    const stamped = row.pricing_key as CreditPriceKey | null;
+    const key = stamped && planGenerationKeys.has(stamped)
+      ? stamped
+      : tierPriceKey("planGeneration", row.project_id ? projectTiers.get(row.project_id) ?? "balanced" : "balanced");
+    drivers[key] += Number(row.count);
+  }
   drivers.previewGeneration += countOf("PREVIEW_GENERATION");
   drivers.coverRegeneration += countOf("COVER_REGENERATION");
   drivers.characterPortraitGeneration += countOf("CHARACTER_PORTRAIT_GENERATION");

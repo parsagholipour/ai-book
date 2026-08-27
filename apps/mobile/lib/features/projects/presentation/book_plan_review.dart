@@ -114,7 +114,7 @@ class ProjectPlanReview extends StatelessWidget {
           title: 'Ready to write',
           message: estimate == null
               ? 'Approve when this plan matches the book you want.'
-              : 'Estimated package: $estimate credits. Available: ${billing!.credits.available}',
+              : 'Book after approval: $estimate credits. Available: ${billing!.credits.available}. Planning is not charged again.',
           icon: Icons.check_circle_outline,
           actionLabel: 'Approve and start writing',
           onAction: busyAction == null && onApprovePlan != null
@@ -200,19 +200,27 @@ class NoPlanCard extends StatelessWidget {
     required this.project,
     required this.busyAction,
     required this.onGeneratePlan,
+    this.billing,
     super.key,
   });
 
   final MobileProjectDetail project;
+  final MobileBilling? billing;
   final String? busyAction;
   final Future<void> Function() onGeneratePlan;
 
   @override
   Widget build(BuildContext context) {
     final isPlanning = project.status == 'planning' || busyAction == 'plan';
+    final planCredits = estimatePlanGenerationCredits(
+      qualityPreset: project.qualityPreset,
+      creditCosts: billing?.creditCosts ?? const <String, dynamic>{},
+    );
     return AppPrimaryActionPanel(
       title: isPlanning ? 'Creating your book plan' : 'Ready for a plan',
-      message: project.currentAction,
+      message: isPlanning
+          ? project.currentAction
+          : 'Plan now: $planCredits credits. ${project.currentAction}',
       icon: Icons.auto_awesome_outlined,
       actionLabel: isPlanning ? 'Plan requested' : 'Create book plan',
       onAction: isPlanning ? null : () => onGeneratePlan(),

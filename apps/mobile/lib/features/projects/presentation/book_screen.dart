@@ -10,6 +10,7 @@ import '../../../shared/ui/haptics.dart';
 import '../../../shared/ui/polling_state_mixin.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
+import '../../billing/presentation/billing_paywall.dart';
 import '../../reader/data/reader_repository.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
@@ -342,6 +343,22 @@ class _BookScreenState extends ConsumerState<BookScreen>
         return;
       }
       setState(() => _busyAction = null);
+      if (action == 'plan' &&
+          error is ApiException &&
+          error.code == 'INSUFFICIENT_CREDITS') {
+        await showBillingPaywall(
+          context,
+          projectId: widget.projectId,
+          title: null,
+          creditsNeeded: PaywallCreditsNeeded.fromApiError(
+            error,
+            reason:
+                'Creating your book plan now. Writing the book is charged separately, only after plan approval.',
+          ),
+        );
+        ref.invalidate(billingProvider);
+        return;
+      }
       ScaffoldMessenger.of(
         context,
       ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));

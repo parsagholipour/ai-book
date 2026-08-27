@@ -287,6 +287,7 @@ MobileProjectStatus projectStatus({
   String currentAction = 'Writing your book pages.',
   String? failureMessage,
   bool retryAvailable = false,
+  bool recoveryRequiresConfirmation = true,
   int completedPages = 3,
   int targetPages = 28,
   int imageCount = 1,
@@ -309,9 +310,10 @@ MobileProjectStatus projectStatus({
     failureMessage: failureMessage,
     retryAvailable: retryAvailable,
     recoveryQuote: retryAvailable
-        ? const MobileGenerationRecoveryQuote(
+        ? MobileGenerationRecoveryQuote(
             retryToken: 'confirmed-retry-token',
             credits: 40,
+            requiresConfirmation: recoveryRequiresConfirmation,
           )
         : null,
     steps: [

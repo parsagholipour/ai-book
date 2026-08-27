@@ -10,7 +10,13 @@ import {
   resetCreditPricing,
   setCreditPricing
 } from "./creditPricing.js";
-import { TIER_PRICED_KEYS, creditCostForOperation, estimateFullBookCreditCost, tierPrice } from "./billing.js";
+import {
+  TIER_PRICED_KEYS,
+  creditCostForOperation,
+  estimateFullBookCreditCost,
+  planGenerationCreditCost,
+  tierPrice
+} from "./billing.js";
 import { createProjectSchema } from "./schemas/book.js";
 
 afterEach(() => {
@@ -38,7 +44,7 @@ describe("normalizeCreditPricing", () => {
     expect(values.fullBookBase).toBe(DEFAULT_CREDIT_COSTS.fullBookBase);
   });
 
-  it("keeps zero, which is a real price for two operations today", () => {
+  it("keeps zero, which remains a valid operator-configured price", () => {
     expect(normalizeCreditPricing({ planGeneration: 0 }).planGeneration).toBe(0);
   });
 
@@ -133,6 +139,38 @@ describe("tier rates", () => {
     const values = normalizeCreditPricing(stored);
     expect(values.fullBookBaseUltra).toBe(540);
     expect(values.fullBookPerPageUltra).toBe(DEFAULT_CREDIT_COSTS.fullBookPerPageUltra);
+  });
+
+  it.each([
+    ["fast", 20, "planGenerationFast"],
+    ["balanced", 40, "planGeneration"],
+    ["premium", 80, "planGenerationPremium"],
+    ["ultra", 120, "planGenerationUltra"]
+  ] as const)("quotes %s initial planning at its tier key", (modelTier, credits, pricingKey) => {
+    const input = createProjectSchema.parse({
+      ...sampleInput,
+      mediaSettings: { ...sampleInput.mediaSettings, modelTier }
+    });
+
+    expect(planGenerationCreditCost(input)).toEqual({ credits, modelTier, pricingKey });
+  });
+
+  it("prices an unstamped legacy input as Balanced", () => {
+    expect(planGenerationCreditCost(sampleInput)).toEqual({
+      credits: DEFAULT_CREDIT_COSTS.planGeneration,
+      modelTier: "balanced",
+      pricingKey: "planGeneration"
+    });
+  });
+
+  it("uses live and explicit planning-price overrides", () => {
+    const fast = createProjectSchema.parse({
+      ...sampleInput,
+      mediaSettings: { ...sampleInput.mediaSettings, modelTier: "fast" }
+    });
+    setCreditPricing({ ...DEFAULT_CREDIT_COSTS, planGenerationFast: 27 });
+    expect(planGenerationCreditCost(fast).credits).toBe(27);
+    expect(planGenerationCreditCost(fast, { ...DEFAULT_CREDIT_COSTS, planGenerationFast: 31 }).credits).toBe(31);
   });
 });
 

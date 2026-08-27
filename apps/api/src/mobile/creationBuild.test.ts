@@ -123,8 +123,8 @@ describe("mobile creation build and outputs", () => {
       creationDraftRecord({ id: "draft-1", payload, ...data })
     );
     mockPrisma.project.update.mockResolvedValue({});
-    // Plan generation is free by default; this test prices it, the way an
-    // operator can from the pricing dashboard, so a reservation exists.
+    // A durable planning job owns the settled charge even when dispatching its
+    // outbox message fails; reconciliation may still deliver it later.
     vi.mocked(reserveCredits).mockResolvedValueOnce({ id: "ledger-plan", status: "RESERVED" } as never);
     vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-plan" }));
     vi.mocked(dispatchGenerationJob).mockRejectedValueOnce(new Error("redis unavailable"));

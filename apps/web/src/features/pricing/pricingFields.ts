@@ -21,8 +21,12 @@ export type PricingFieldGroup = {
 export const PRICING_FIELD_GROUPS: PricingFieldGroup[] = [
   {
     title: "Making a book",
-    blurb: "Charged once, when a plan is approved and the book is generated.",
+    blurb: "Planning is charged when it starts; the book package is charged later, after plan approval.",
     fields: [
+      { key: "planGenerationFast", label: "Initial plan — Quick draft", help: "Charged immediately when Quick draft planning starts." },
+      { key: "planGeneration", label: "Initial plan — Balanced", help: "Charged immediately when Balanced planning starts. Also used when no tier is recorded." },
+      { key: "planGenerationPremium", label: "Initial plan — Extra polish", help: "Charged immediately when Extra polish planning starts." },
+      { key: "planGenerationUltra", label: "Initial plan — Ultra effort", help: "Charged immediately when Ultra effort planning starts." },
       { key: "fullBookBaseFast", label: "Full book base — Quick draft", help: "Flat charge for generating any book on the Quick draft tier." },
       { key: "fullBookBase", label: "Full book base — Balanced", help: "Flat charge for generating any book. Also the rate for a book with no tier recorded." },
       { key: "fullBookBasePremium", label: "Full book base — Extra polish", help: "Flat charge for generating any book on the Extra polish tier." },
@@ -57,7 +61,6 @@ export const PRICING_FIELD_GROUPS: PricingFieldGroup[] = [
       },
       { key: "premiumReview", label: "Premium review", help: "Added once for Extra polish or Ultra effort, which run an extra review pass." },
       { key: "coverRegeneration", label: "Cover regeneration", help: "Redrawing a cover on its own. No route charges this today." },
-      { key: "planGeneration", label: "Plan generation", help: "Drafting the plan. Free today." },
       { key: "previewGeneration", label: "Preview generation", help: "Sample pages before committing. Free today." }
     ]
   },

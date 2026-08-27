@@ -856,3 +856,38 @@ describe("what the open-work read costs a finished book", () => {
     expect(read?.type?.in).toEqual([...PAGE_REWRITING_JOB_TYPES]);
   });
 });
+
+describe("buildProjectStatus recovery attempts", () => {
+  it("selects operation so an initial-plan retry can skip confirmation", async () => {
+    vi.clearAllMocks();
+    mockPrisma.project.findUnique.mockResolvedValue(
+      projectRecord({ status: "FAILED", currentPlanId: null, currentPlan: null }) as never
+    );
+    mockPrisma.$queryRawUnsafe.mockResolvedValue([] as never);
+    mockPrisma.generationJob.findMany.mockImplementation(async (args?: unknown) =>
+      (args as { where?: { status?: string } } | undefined)?.where?.status === "FAILED"
+        ? [{ type: "PLAN_BOOK", payload: {}, createdAt: new Date("2026-08-20T01:00:00.000Z"), attemptId: "attempt-plan" }]
+        : []
+    );
+    mockPrisma.generationAttempt.findMany.mockResolvedValueOnce([
+      {
+        id: "attempt-plan",
+        commandKey: "mobile:creation-build:draft:req",
+        status: "FAILED",
+        operation: "PLAN_GENERATION",
+        quotedCredits: 40,
+        refundPending: false,
+        retryAttempt: null
+      }
+    ]);
+
+    const status = await buildProjectStatus("project-1");
+
+    expect(mockPrisma.generationAttempt.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ select: expect.objectContaining({ operation: true }) })
+    );
+    expect(status?.project.generationAttempts).toEqual([
+      expect.objectContaining({ id: "attempt-plan", operation: "PLAN_GENERATION" })
+    ]);
+  });
+});

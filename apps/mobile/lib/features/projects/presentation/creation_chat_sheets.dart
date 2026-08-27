@@ -118,7 +118,7 @@ class _PageCountPromptSheetState extends State<_PageCountPromptSheet> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Pick a page count before I build the plan. These suggestions come from your chat.',
+              'Pick a page count before I build the plan. The estimate is the later book package, charged only after you approve the plan.',
               style: Theme.of(
                 context,
               ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
@@ -152,7 +152,7 @@ class _PageCountPromptSheetState extends State<_PageCountPromptSheet> {
             ],
             if (recommendations.isNotEmpty) ...[
               Text(
-                'Estimated full package cost, charged when you approve the plan.',
+                'Book after approval only: charged after you approve the plan. Planning is charged separately when Build starts.',
                 style: Theme.of(
                   context,
                 ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
@@ -451,6 +451,10 @@ class _AdvancedSheet extends ConsumerWidget {
               onChanged: controller.setQualityPreset,
               creditsPerPage: (quality) =>
                   _writingCreditsPerPage(presets, quality, creditCosts),
+              planCredits: (quality) => estimatePlanGenerationCredits(
+                qualityPreset: quality,
+                creditCosts: creditCosts,
+              ),
             ),
             const SizedBox(height: 6),
             Text(
@@ -530,7 +534,7 @@ class _AdvancedSheet extends ConsumerWidget {
 /// opens. Anything else is a snackbar — the paywall is not a general error
 /// screen, it is the one that has something to offer.
 String? _paywallTitleForError(String? code) => switch (code) {
-  'INSUFFICIENT_CREDITS' => 'Credits needed',
+  'INSUFFICIENT_CREDITS' => 'Credits needed for your plan',
   'IMAGE_LIMIT_REACHED' => 'Out of illustrated books',
   _ => null,
 };
@@ -547,7 +551,7 @@ PaywallCreditsNeeded? _paywallCreditsNeededForError(ApiException error) {
   return PaywallCreditsNeeded.fromApiError(
     error,
     reason:
-        'Writing this book, preparing its visuals and unlocking its export.',
+        'Creating your book plan now. Writing the book is charged separately, only after you approve the plan.',
   );
 }
 

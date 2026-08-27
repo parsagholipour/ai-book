@@ -5,7 +5,7 @@ vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApi
 vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js")).queueModuleMock());
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
-import { reserveCredits } from "@book-maker/db/billing";
+import { InsufficientCreditsError, reserveCredits } from "@book-maker/db/billing";
 import { enqueueGenerationJob } from "../queue.js";
 import {
   approvedPlanRecord,
@@ -22,6 +22,13 @@ import {
 
 type Tier = "fast" | "balanced" | "premium" | "ultra";
 const TIERS: Tier[] = ["fast", "balanced", "premium", "ultra"];
+const PLAN_TOTALS = { fast: 20, balanced: 40, premium: 80, ultra: 120 } as const;
+const PLAN_KEYS = {
+  fast: "planGenerationFast",
+  balanced: "planGeneration",
+  premium: "planGenerationPremium",
+  ultra: "planGenerationUltra"
+} as const;
 
 /** The harness book at one tier: 12 pages, lead magnet, illustrated, AI cover. */
 function projectAtTier(tier: Tier, overrides: Record<string, unknown> = {}) {
@@ -45,6 +52,115 @@ function projectAtTier(tier: Tier, overrides: Record<string, unknown> = {}) {
     ...overrides
   });
 }
+
+describe("direct project planning prices by quality tier", () => {
+  beforeEach(resetMobileHarness);
+  afterEach(teardownMobileHarness);
+
+  for (const tier of TIERS) {
+    it(`reserves and stamps the ${tier} plan quote`, async () => {
+      mockAccessTokens({ "token-a": "user-a" });
+      mockPrisma.project.findFirst.mockResolvedValueOnce(projectAtTier(tier));
+      vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: `job-plan-${tier}` }));
+      const app = await buildMobileApp();
+
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/mobile/projects/project-1/plan",
+        headers: bearer("token-a"),
+        payload: {}
+      });
+
+      expect(response.statusCode).toBe(202);
+      expect(reserveCredits).toHaveBeenCalledWith(
+        expect.objectContaining({
+          operation: "PLAN_GENERATION",
+          amountCredits: PLAN_TOTALS[tier],
+          metadata: expect.objectContaining({
+            initialPlan: true,
+            modelTier: tier,
+            pricingKey: PLAN_KEYS[tier]
+          })
+        })
+      );
+      await app.close();
+    });
+  }
+
+  it("charges a project with no stored tier at the Balanced plan rate", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValueOnce(projectRecord({ id: "project-1" }));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/plan",
+      headers: bearer("token-a"),
+      payload: {}
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(reserveCredits).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amountCredits: 40,
+        metadata: expect.objectContaining({ modelTier: "balanced", pricingKey: "planGeneration" })
+      })
+    );
+    await app.close();
+  });
+
+  it("replays a direct planning command without charging or queueing twice", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(projectAtTier("premium"));
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-plan" }));
+    const app = await buildMobileApp();
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/plan",
+      headers: bearer("token-a"),
+      payload: {}
+    });
+    const replay = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/plan",
+      headers: bearer("token-a"),
+      payload: {}
+    });
+
+    expect(first.statusCode).toBe(202);
+    expect(replay.statusCode).toBe(202);
+    expect(reserveCredits).toHaveBeenCalledTimes(1);
+    expect(enqueueGenerationJob).toHaveBeenCalledTimes(1);
+    await app.close();
+  });
+
+  it("does not queue or mutate a project when direct planning lacks credits", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValueOnce(projectAtTier("ultra"));
+    vi.mocked(reserveCredits).mockRejectedValueOnce(
+      new InsufficientCreditsError({ requiredCredits: 120, availableCredits: 10, reservedCredits: 0 })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/plan",
+      headers: bearer("token-a"),
+      payload: {}
+    });
+
+    expect(response.statusCode).toBe(402);
+    expect(response.json().error).toMatchObject({
+      code: "INSUFFICIENT_CREDITS",
+      requiredCredits: 120,
+      availableCredits: 10
+    });
+    expect(enqueueGenerationJob).not.toHaveBeenCalled();
+    expect(mockPrisma.project.update).not.toHaveBeenCalled();
+    await app.close();
+  });
+});
 
 /**
  * What approving a plan charges, per quality tier.

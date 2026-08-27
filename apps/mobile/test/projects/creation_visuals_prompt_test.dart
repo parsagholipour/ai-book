@@ -78,7 +78,7 @@ void main() {
     expect(find.text('≈ $withImages credits'), findsOneWidget);
     expect(
       find.text(
-        'Estimated full package cost, charged when you approve the plan.',
+        'Book after approval only: this package is charged after you approve the plan. The plan itself is charged when Build starts.',
       ),
       findsOneWidget,
     );

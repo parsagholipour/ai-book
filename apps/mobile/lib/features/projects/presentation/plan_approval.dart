@@ -110,7 +110,7 @@ Future<MobilePlanOperation?> confirmAndApprovePlan(
   }
 
   final estimateSummary =
-      'Estimated package: $estimate credits. You have ${billing.credits.available} available.';
+      'Book after approval: $estimate credits. You have ${billing.credits.available} available. Planning is not charged again.';
   final approved = await showAppConfirmationDialog(
     context,
     title: 'Approve this plan?',

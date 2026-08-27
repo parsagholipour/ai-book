@@ -26,7 +26,13 @@
 import { z } from "zod";
 
 export const DEFAULT_CREDIT_COSTS = {
-  planGeneration: 0,
+  // Initial planning follows the same model tier as the book it shapes. The
+  // unsuffixed key remains Balanced; `planGenerationCreditCost` is the only
+  // initial-plan resolver and selects the concrete key for the other tiers.
+  planGeneration: 40,
+  planGenerationFast: 20,
+  planGenerationPremium: 80,
+  planGenerationUltra: 120,
   previewGeneration: 0,
   fullBookBase: 350,
   fullBookPerPage: 8,
@@ -122,6 +128,9 @@ export const CREDIT_PRICE_KEYS = CREDIT_PRICING_KEYS.filter(
  */
 export const CREDIT_PRICING_LIMITS: Record<CreditPricingKey, number> = {
   planGeneration: 5_000,
+  planGenerationFast: 5_000,
+  planGenerationPremium: 5_000,
+  planGenerationUltra: 5_000,
   previewGeneration: 5_000,
   fullBookBase: 100_000,
   fullBookPerPage: 2_000,

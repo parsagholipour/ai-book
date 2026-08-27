@@ -77,4 +77,26 @@ void main() {
       expect(status.pdfPageNumbering, isNull);
     }
   });
+
+  test('recovery confirmation defaults true and honors a plan retry opt-out', () {
+    final legacy = MobileProjectStatus.fromJson({
+      ...statusJson(),
+      'recoveryQuote': {
+        'retryToken': 'legacy-confirmed-token',
+        'credits': 40,
+      },
+    });
+    final initialPlan = MobileProjectStatus.fromJson({
+      ...statusJson(),
+      'recoveryQuote': {
+        'retryToken': 'initial-plan-token',
+        'credits': 80,
+        'requiresConfirmation': false,
+      },
+    });
+
+    expect(legacy.recoveryQuote?.requiresConfirmation, isTrue);
+    expect(initialPlan.recoveryQuote?.requiresConfirmation, isFalse);
+    expect(initialPlan.recoveryQuote?.credits, 80);
+  });
 }

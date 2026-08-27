@@ -46,6 +46,7 @@ describe("mobile project status DTO", () => {
             {
               id: "attempt-failed",
               commandKey: "mobile:plan-approval:plan-1",
+              operation: "FULL_BOOK_GENERATION",
               status: "FAILED",
               quotedCredits: 776,
               refundPending: false
@@ -98,7 +99,7 @@ describe("mobile project status DTO", () => {
       progressPercent: 44,
       currentAction: "Writing page 4",
       retryAvailable: true,
-      recoveryQuote: { credits: 776, retryToken: expect.any(String) },
+      recoveryQuote: { credits: 776, retryToken: expect.any(String), requiresConfirmation: true },
       pageProgress: { completed: 3, target: 10 },
       imageCount: 1
     });
@@ -111,6 +112,50 @@ describe("mobile project status DTO", () => {
     expect(body.status.failureMessage).not.toContain("narrat");
     expect(body.status.failureMessage).not.toContain("GENERATE_PAGE");
     expect(JSON.stringify(body.status)).not.toMatch(/jobs|queue|tokens|cost|provider/);
+    await app.close();
+  });
+
+  it("lets an initial-plan retry skip confirmation at the quoted refunded price", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1" });
+    vi.mocked(buildProjectStatus).mockResolvedValue(
+      statusRecord({
+        project: {
+          id: "project-1",
+          title: "Plan Book",
+          status: "FAILED",
+          jobs: [{ id: "job-plan", type: "PLAN_BOOK", status: "FAILED", error: "Planner timed out." }],
+          generationAttempts: [
+            {
+              id: "attempt-plan",
+              commandKey: "mobile:creation-build:draft-1:build-1",
+              operation: "PLAN_GENERATION",
+              status: "FAILED",
+              quotedCredits: 80,
+              refundPending: false
+            }
+          ]
+        },
+        progress: {
+          resumableFailedJobs: 1,
+          resumableAttemptIds: ["attempt-plan"]
+        }
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/status",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().status.recoveryQuote).toEqual({
+      credits: 80,
+      retryToken: expect.any(String),
+      requiresConfirmation: false
+    });
     await app.close();
   });
 
