@@ -46,6 +46,24 @@ class ReaderTextHit implements Comparable<ReaderTextHit> {
 /// alternative is a selection that leaps to whichever words happen to be
 /// furthest away.
 ///
+/// That null is the only thing a *press* has to decline with, which is why this
+/// entry point never reaches past the margin. Every numbered sheet this app
+/// prints carries "Page n" in its bottom margin — the `@bottom-center` rule in
+/// `packages/core/src/generation/pdfCss.ts`, which only `@page pdf-cover` and
+/// `@page pdf-title` opt out of with `content: none` — so a page that is
+/// nothing but a full-page illustration still has extractable text on it, and
+/// "no words near the finger" and "no words on the page" are different
+/// questions. Only the first of them refuses here; the cover, whose sheet is
+/// one `<img>` and no footer, is the one place both answer the same way. A
+/// press that resolved anyway would fire the long-press haptic, set the range
+/// and leave the reader holding a Copy/Highlight bar over the words "Page 12":
+/// `_anchorNear` in `presentation/reader_selection_drag.dart` starts its
+/// selection from whatever this answers and has nothing else to stop on.
+///
+/// A drag wants the opposite answer and asks [readerDragCharIndexAt] instead —
+/// the same split as [readerAnchorWordAt] and [readerWordAt], with the
+/// qualified name on whichever of the pair is the one that deviates.
+///
 /// This is deliberately the same rule pdfrx applies to its own handle drags, so
 /// dragging a handle and dragging from a long press pick the same character.
 /// The fragment box is tested first because a book page carries a few thousand
@@ -76,6 +94,170 @@ int? readerCharIndexAt(PdfPageText text, PdfPoint point, {double margin = 8}) {
     return nearest;
   }
   return null;
+}
+
+/// The character a *drag* is reaching for, which is a laxer question than
+/// [readerCharIndexAt]'s and deliberately so.
+///
+/// A finger already holding a selection has said what it wants; all that is
+/// left to settle is how much of it. So the margin answers first — the fast
+/// path, and what nearly every move hits, since the finger is usually already
+/// on or near a glyph — and when nothing is that close [_nearestCharByLine]
+/// takes over with the nearest line, then the nearest character on that line.
+/// That is what carries a drag past the last word of a short line — a page's
+/// final line, more often than not — instead of stopping a word short of it,
+/// which reads as the selection being broken rather than careful.
+///
+/// One margin cannot serve both callers: it would have to be narrow enough that
+/// a press on a picture does not reach the footer under it and wide enough that
+/// a drag can run a finger's width past the end of a line, and a finger is
+/// wider than the gap the press has to refuse. Two entry points is what lets
+/// each of them keep the rule it needs; [margin] is only the width of the fast
+/// path, and widening it here would loosen the press as well.
+int? readerDragCharIndexAt(
+  PdfPageText text,
+  PdfPoint point, {
+  double margin = 8,
+}) {
+  return readerCharIndexAt(text, point, margin: margin) ??
+      _nearestCharByLine(text, point, minimumReach: margin);
+}
+
+/// How far a drag may reach for a line, in multiples of that line's own height.
+///
+/// Measured in the line's own band rather than in points because the book is
+/// typeset at a different size per script and the running footer is smaller
+/// again, so a fixed number of points would be two lines on one page and half a
+/// line on another. Two and a half bands clears the leading between two lines of
+/// body type several times over — the gap the fallback exists to bridge — and is
+/// nowhere near enough to cross a picture, which is the other half of the job: a
+/// finger parked in the middle of a full-page illustration sits hundreds of
+/// points above the "Page n" footer that is the only text on the sheet, so the
+/// drag resolves to nothing there and the selection stands still at the last
+/// word it reached — which is exactly what `extendTo` in
+/// `presentation/reader_selection_drag.dart` says happens over an illustration.
+const _dragLineReach = 2.5;
+
+/// [readerDragCharIndexAt]'s fallback once nothing is within its margin: the
+/// nearest line within [_dragLineReach] of the point, then the nearest
+/// character on it.
+///
+/// A page's fragments are word-granularity — pdfrx lays out one per word and
+/// one per run of spaces, never a whole line — so "the nearest line" is
+/// reconstructed rather than looked up. What makes that possible is that the
+/// formatter writes the *line's* own bounding box into every character box it
+/// emits for that line (`PdfRect(r.left, bounds.top, r.right, bounds.bottom)`
+/// in `PdfTextFormatter.addWord`), so a fragment's band is its line's band to
+/// the bit, and two fragments are on one line exactly when their bands are
+/// equal. Whichever band is nearest [point]'s Y is the line; the fragments
+/// carrying that same band are the words on it. Clamping to that line's first
+/// or last character once X is past either end is what lets a drag past a
+/// short line's final word — a page's last line, more often than not — take
+/// the whole word instead of stopping one short of it.
+///
+/// A line here is pdfrx's, which is finer than a printed one: a markdown
+/// table's cells are separate lines, and so is either side of a direction
+/// change inside one. That is the right grain to hold a drag to — a cell is
+/// where a finger dragging inside a cell is asking to stay.
+///
+/// Two lines can be equally near, because two bands can hold the point's Y at
+/// once. The nearer middle settles that, rather than whichever band
+/// `text.fragments` happens to offer first: fragment order is emission order,
+/// and on a page with a table that is not top to bottom.
+///
+/// Only the vertical search is bounded. Horizontally the whole line is fair
+/// game: a finger sweeping down the outer margin of a page is asking for the
+/// lines it is passing, which is what dragging does everywhere else on the
+/// device. It is the vertical distance that tells a neighbouring line apart
+/// from the far side of a picture, so that is the one with a ceiling on it.
+int? _nearestCharByLine(
+  PdfPageText text,
+  PdfPoint point, {
+  required double minimumReach,
+}) {
+  double? lineTop;
+  double? lineBottom;
+  var nearestLineDistance = double.infinity;
+  var nearestLineCentreDistance = double.infinity;
+  for (final fragment in text.fragments) {
+    if (fragment.length <= 0) {
+      continue;
+    }
+    final bounds = fragment.bounds;
+    final distance = point.y > bounds.top
+        ? point.y - bounds.top
+        : point.y < bounds.bottom
+        ? bounds.bottom - point.y
+        : 0.0;
+    final centreDistance = (point.y - (bounds.top + bounds.bottom) / 2).abs();
+    if (distance > nearestLineDistance ||
+        (distance == nearestLineDistance &&
+            centreDistance >= nearestLineCentreDistance)) {
+      continue;
+    }
+    nearestLineDistance = distance;
+    nearestLineCentreDistance = centreDistance;
+    lineTop = bounds.top;
+    lineBottom = bounds.bottom;
+  }
+  final top = lineTop;
+  final bottom = lineBottom;
+  if (top == null || bottom == null) {
+    return null;
+  }
+  // A band PDFium reported with no height at all must not be able to switch the
+  // fallback off, so the press's own margin is the floor under the multiple.
+  final scaledReach = (top - bottom) * _dragLineReach;
+  final reach = scaledReach > minimumReach ? scaledReach : minimumReach;
+  if (nearestLineDistance > reach) {
+    return null;
+  }
+  // The band the first loop settled on, both of its edges — not everything
+  // whose vertical extent happens to touch it. Since every fragment on a line
+  // carries that line's own bounds, matching top and bottom together is asking
+  // which line a fragment is on. The hair of tolerance is slack against a
+  // formatter that one day measures each word for itself; it cannot let a
+  // neighbouring line in, whose edges sit a line apart rather than a fraction
+  // of a point.
+  //
+  // This was an overlap test — admit anything whose band reaches into the
+  // chosen one — and a table is what that cost. Cells wrap to different depths
+  // and are aligned as blocks, so a short cell's line lands staggered half a
+  // line off from its neighbour's, and two staggered bands then overlap by a
+  // point or so: [614.41, 624.21] against [605.48, 616.00] on one shipped
+  // book's comparison table. This function is only reached when the finger is
+  // further than the margin from every glyph, and inside a table that is easy
+  // to be — the air past one cell's text is a whole column wide. From
+  // (253.7, 624.2), 110 points right of "Deities/Entities" and 8 above
+  // "caboclos, crianças," on the line under it, the overlap admitted the
+  // staggered line, whose glyphs span that X, so it won outright at horizontal
+  // distance 0 and the drag swallowed everything between the two.
+  const lineTolerance = 0.5;
+  int? nearest;
+  var nearestDistance = double.infinity;
+  for (final fragment in text.fragments) {
+    final bounds = fragment.bounds;
+    if ((bounds.top - top).abs() > lineTolerance ||
+        (bounds.bottom - bottom).abs() > lineTolerance) {
+      continue;
+    }
+    final count = fragment.charRects.length < fragment.length
+        ? fragment.charRects.length
+        : fragment.length;
+    for (var i = 0; i < count; i++) {
+      final rect = fragment.charRects[i];
+      final distance = point.x > rect.right
+          ? point.x - rect.right
+          : point.x < rect.left
+          ? rect.left - point.x
+          : 0.0;
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearest = fragment.index + i;
+      }
+    }
+  }
+  return nearest;
 }
 
 /// The whole word around [index], as an inclusive character range.

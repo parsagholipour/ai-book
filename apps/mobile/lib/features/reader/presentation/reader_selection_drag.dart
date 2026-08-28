@@ -194,8 +194,13 @@ class ReaderSelectionDrag {
       // pdfrx only takes a word whose box the point is genuinely inside, and a
       // finger is wider than the space between two lines of type. A press that
       // lands just under a line, or just past the last word on one, is looked up
-      // again with the tolerance the drag itself uses rather than being treated
-      // as a press on nothing.
+      // again within `readerCharIndexAt`'s margin rather than being treated as a
+      // press on nothing. The margin and nothing more: this deliberately does
+      // not take `readerDragCharIndexAt`'s reach for a whole line, because a
+      // press is the one gesture that still has to be able to come back with
+      // nothing. Every numbered sheet prints its own "Page n" footer, so a
+      // reach that never declines would turn a long press on a picture into a
+      // selection of the page number underneath it.
       await _anchorNear(delegate, point);
       range = delegate.textSelectionPointRange;
     }
@@ -263,12 +268,18 @@ class ReaderSelectionDrag {
       return;
     }
     final hit = _hitAt(point);
-    // Over an illustration, out in the margin, or on a page whose text has not
-    // been read yet. Standing still is the right answer: the selection keeps
-    // whatever it last reached rather than snapping somewhere arbitrary. It is
-    // kept rather than dropped because the third case answers itself a moment
-    // later, and a reader who crossed onto a new page and stopped there would
-    // otherwise be left holding half a passage.
+    // A page whose text has not been read yet; a page carrying no text at all,
+    // which is the cover — one image, and `@page pdf-cover` prints no footer
+    // under it; a point on no sheet at all, which `readerDocumentPointIsOnPage`
+    // names as the gap between two pages, the paper clearing the bars at either
+    // end, and the side gutter of a mixed-size book; or a finger too far from
+    // every line to be reaching for one — the middle of a full-page
+    // illustration, where the only text on the sheet is the footer a couple of
+    // hundred points below. Standing still is the right answer to all four: the
+    // selection keeps whatever it last reached rather than snapping somewhere
+    // arbitrary. It is kept rather than dropped because the first case answers
+    // itself a moment later, and a reader who crossed onto a new page and
+    // stopped there would otherwise be left holding half a passage.
     if (hit == null) {
       _pending = globalPosition;
       return;
@@ -301,6 +312,93 @@ class ReaderSelectionDrag {
     AppHaptics.selection();
     await delegate.setTextSelectionPointRange(
       PdfTextSelectionRange.fromPoints(start, end),
+    );
+  }
+
+  /// Where the finger dragging a selection *handle* has reached.
+  ///
+  /// Seeded from the handle's own position in [onHandlePanStart] and moved
+  /// only by [onHandlePanUpdate]'s deltas — never from pdfrx's own
+  /// resolution of where the handle landed, which is what lets this keep up
+  /// once that resolution gets stuck.
+  Offset? _handlePanPoint;
+
+  /// pdfrx drives its own selection handles entirely — see the class doc
+  /// above for why this file cannot reach inside that — but
+  /// [PdfTextSelectionParams] hands back a notification on every frame of a
+  /// handle drag regardless of whether pdfrx's own hit test actually moved
+  /// the handle. That hit test is the same tight, unwidened margin
+  /// [readerCharIndexAt] used to stop at before its own fix: a short line, or
+  /// the ordinary gap between two lines, leaves a dragged handle stuck
+  /// exactly the way the long-press drag used to. These three methods are
+  /// the other half of that fix reaching it — tracking the finger's own path
+  /// independently of pdfrx's resolution and correcting the selection on top
+  /// of whatever pdfrx already applied, through the same
+  /// [PdfTextSelectionDelegate] the long-press drag uses. The two agree
+  /// whenever pdfrx's own resolution already succeeded, so this only ever
+  /// changes anything in the case that used to freeze.
+  void onHandlePanStart(PdfTextSelectionAnchor anchor) {
+    _handlePanPoint = anchor.rect.center;
+    // The starting page's text is what pdfrx just handed over — free to
+    // remember rather than reload the moment a move reaches past its edge.
+    _rememberText(anchor.page);
+  }
+
+  void onHandlePanUpdate(PdfTextSelectionAnchor anchor, Offset delta) {
+    if (!controller.isReady) {
+      return;
+    }
+    final zoom = controller.currentZoom;
+    if (zoom == 0) {
+      return;
+    }
+    final point = (_handlePanPoint ?? anchor.rect.center) + delta / zoom;
+    _handlePanPoint = point;
+    unawaited(_correctHandle(anchor, point));
+  }
+
+  void onHandlePanEnd(PdfTextSelectionAnchor anchor) {
+    _handlePanPoint = null;
+  }
+
+  /// Resolves [documentPoint] the same way a long-press drag would and, when
+  /// that lands somewhere other than where pdfrx's own hit test already put
+  /// [anchor], moves the selection there instead — keeping the other end of
+  /// the range exactly where it was.
+  Future<void> _correctHandle(
+    PdfTextSelectionAnchor anchor,
+    Offset documentPoint,
+  ) async {
+    final delegate = _delegate;
+    if (delegate == null) {
+      return;
+    }
+    final hit = _hitAt(documentPoint);
+    if (hit == null ||
+        (hit.pageNumber == anchor.page.pageNumber &&
+            hit.index == anchor.index)) {
+      // Nowhere to resolve to, or pdfrx's own hit test already reached the
+      // same character: nothing to correct.
+      return;
+    }
+    final moving = _selectionPoint(hit);
+    if (moving == null || !moving.isValid) {
+      return;
+    }
+    final range = delegate.textSelectionPointRange;
+    if (range == null) {
+      return;
+    }
+    // Whichever end of the current range already matches this anchor is the
+    // one being dragged; [PdfTextSelectionRange.fromPoints] sorts the pair
+    // back into start/end, so which is passed as which here does not matter.
+    final draggingStart =
+        range.start.text.pageNumber == anchor.page.pageNumber &&
+        range.start.index == anchor.index;
+    final other = draggingStart ? range.end : range.start;
+    AppHaptics.selection();
+    await delegate.setTextSelectionPointRange(
+      PdfTextSelectionRange.fromPoints(moving, other),
     );
   }
 
@@ -435,7 +533,10 @@ class ReaderSelectionDrag {
       if (text == null) {
         return null;
       }
-      final index = readerCharIndexAt(
+      // The drag's own lookup, not the press's: a finger that has run off the
+      // end of a short line is still asking for that line, and a press in the
+      // same place is asking for nothing.
+      final index = readerDragCharIndexAt(
         text,
         (documentPoint - rect.topLeft).toPdfPoint(
           page: page,

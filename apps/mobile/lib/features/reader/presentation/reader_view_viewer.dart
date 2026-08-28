@@ -93,6 +93,16 @@ extension _ReaderViewViewer on _ReaderViewState {
         textSelectionParams: PdfTextSelectionParams(
           enabled: mode == ReaderViewerMode.reading,
           onTextSelectionChange: _onTextSelectionChange,
+          // pdfrx drives the handles themselves end to end — this reader never
+          // reaches inside that — but it reports every frame of a handle drag
+          // regardless of whether its own hit test (a fixed margin, the same
+          // one the long-press drag used to be stuck with) actually moved the
+          // handle. [ReaderSelectionDrag.onHandlePanStart]/[onHandlePanUpdate]
+          // correct it on top of whatever pdfrx already applied, through the
+          // same delegate the long-press drag uses.
+          onSelectionHandlePanStart: _selectionDrag.onHandlePanStart,
+          onSelectionHandlePanUpdate: _selectionDrag.onHandlePanUpdate,
+          onSelectionHandlePanEnd: _selectionDrag.onHandlePanEnd,
           // Both of these are worked out by the viewer from the pointer that
           // made the *selection* — and a selection this reader drives itself
           // (see [ReaderSelectionDrag]) was made by no pointer at all, which it
