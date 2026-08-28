@@ -216,53 +216,166 @@ void main() {
     expect(find.text('Nothing was changed'), findsOneWidget);
   });
 
-  // A restructure changed which pages the book has, not what any page says, so
-  // it snapshots nothing and there is no diff to list — for an insert, a delete
-  // and a move alike. "Nothing was changed" is the one thing that must not be
-  // said about it, and neither is a page count: the summary names what happened
-  // and the words gained or lost are read off the stamp instead.
-  for (final (action, request, added, removed) in const [
-    ('insert', 'Add 3 pages after page 10.', 240, 0),
-    ('delete', 'Delete page 2.', 0, 6),
-    ('move', 'Move page 4 after page 7.', 0, 0),
-  ]) {
-    testWidgets('names what a structural $action did, which lists no pages', (
-      tester,
-    ) async {
+  MobileEditChanges structural({
+    required String request,
+    required List<MobileEditPageChange> pages,
+  }) {
+    return MobileEditChanges(
+      operationId: 'operation-1',
+      kind: 'restructure_pages',
+      status: 'applied',
+      request: request,
+      creditsCharged: 0,
+      pages: pages,
+      addedWords: pages.fold(0, (total, page) => total + page.addedWords),
+      removedWords: pages.fold(0, (total, page) => total + page.removedWords),
+    );
+  }
+
+  MobileEditPageChange structuralPage({
+    required MobileEditPageStructuralChange change,
+    required int pageIndex,
+    String title = 'The long way round',
+    String text = '',
+    int? pageIndexBefore,
+  }) {
+    final added = change == MobileEditPageStructuralChange.added;
+    final removed = change == MobileEditPageStructuralChange.removed;
+    final words = text.trim().isEmpty ? 0 : text.trim().split(' ').length;
+    return MobileEditPageChange(
+      pageIndex: pageIndex,
+      titleBefore: title,
+      titleAfter: title,
+      titleChanged: false,
+      structuralChange: change,
+      pageIndexBefore: pageIndexBefore,
+      addedWords: added ? words : 0,
+      removedWords: removed ? words : 0,
+      blocks: text.isEmpty
+          ? const []
+          : [
+              MobileEditDiffBlock(
+                type: added
+                    ? MobileEditDiffBlockType.added
+                    : MobileEditDiffBlockType.removed,
+                runs: [
+                  MobileEditDiffRun(
+                    type: added
+                        ? MobileEditDiffRunType.insert
+                        : MobileEditDiffRunType.delete,
+                    text: text,
+                  ),
+                ],
+              ),
+            ],
+    );
+  }
+
+  // The whole point of an insert is the page it added, and this screen used to
+  // answer "+240 −0" and nothing else: a structural edit writes no snapshots, so
+  // it listed no pages at all. The text now comes off the stamp — the `Page` rows
+  // drafting wrote for an insert, the removed pages the stamp carries whole.
+  testWidgets('shows the text an inserted page was written with', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        structural(
+          request: 'Add a page after page 10.',
+          pages: [
+            structuralPage(
+              change: MobileEditPageStructuralChange.added,
+              pageIndex: 11,
+              text: 'The turtle waited by the gate until dawn.',
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Nothing was changed'), findsNothing);
+    expect(find.text('1 page added'), findsOneWidget);
+    expect(find.text('Page 11'), findsOneWidget);
+    expect(find.text('Added to the book'), findsOneWidget);
+    expect(
+      find.text('The turtle waited by the gate until dawn.'),
+      findsOneWidget,
+    );
+    // An added page is a page the reader can turn to.
+    expect(find.text('Open'), findsOneWidget);
+  });
+
+  testWidgets(
+    'shows the text a deleted page took with it, and offers no Open',
+    (tester) async {
       await tester.pumpWidget(
         _app(
-          MobileEditChanges(
-            operationId: 'operation-1',
-            kind: 'restructure_pages',
-            status: 'applied',
-            request: request,
-            creditsCharged: 0,
-            pages: const [],
-            addedWords: added,
-            removedWords: removed,
+          structural(
+            request: 'Delete page 2.',
+            pages: [
+              structuralPage(
+                change: MobileEditPageStructuralChange.removed,
+                pageIndex: 2,
+                text: 'The turtle waited by the gate.',
+              ),
+            ],
           ),
         ),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Nothing was changed'), findsNothing);
-      expect(find.text('The book’s pages changed'), findsOneWidget);
-      expect(find.text(request), findsOneWidget);
-      // Neither the count the non-structural path would give nor the page
-      // count this arm used to report for a list it can never be handed.
-      expect(find.text('0 pages changed'), findsNothing);
-      expect(find.textContaining('rewritten'), findsNothing);
-      if (added == 0 && removed == 0) {
-        // A move gains and loses nothing, so the counts stay off the card
-        // rather than reading "+0 −0" beside an edit that did move pages.
-        expect(find.text('+0'), findsNothing);
-        expect(find.text('−0'), findsNothing);
-      } else {
-        expect(find.text('+$added'), findsOneWidget);
-        expect(find.text('−$removed'), findsOneWidget);
-      }
-    });
-  }
+      expect(find.text('1 page removed'), findsOneWidget);
+      expect(find.text('Removed from the book'), findsOneWidget);
+      expect(find.text('The turtle waited by the gate.'), findsOneWidget);
+      // Page 2 is somebody else's page now, so there is nothing to open at it.
+      expect(find.text('Open'), findsNothing);
+    },
+  );
+
+  testWidgets('says where a moved page came from rather than showing a diff', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        structural(
+          request: 'Move page 4 after page 7.',
+          pages: [
+            structuralPage(
+              change: MobileEditPageStructuralChange.moved,
+              pageIndex: 7,
+              pageIndexBefore: 4,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('1 page moved'), findsOneWidget);
+    expect(find.text('Moved here from page 4'), findsOneWidget);
+    // A move gains and loses nothing, so the counts stay off the card rather
+    // than reading "+0 −0" beside an edit that did move pages.
+    expect(find.text('+0'), findsNothing);
+    expect(find.text('−0'), findsNothing);
+  });
+
+  // An insert the reader undid has no `Page` rows left to read, so the list is
+  // empty again — and "Nothing was changed" is still the one thing this screen
+  // must not say about an edit that added pages.
+  testWidgets('names a structural edit whose pages it can no longer list', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(structural(request: 'Add 3 pages after page 10.', pages: const [])),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Nothing was changed'), findsNothing);
+    expect(find.text('The book’s pages changed'), findsOneWidget);
+    expect(find.text('Add 3 pages after page 10.'), findsOneWidget);
+    expect(find.text('0 pages changed'), findsNothing);
+  });
 
   test('reads an illustration replacement from the server payload', () {
     final page = MobileEditPageChange.fromJson({
@@ -446,7 +559,9 @@ void main() {
     );
   });
 
-  testWidgets('says when an illustration was moved onto a page', (tester) async {
+  testWidgets('says when an illustration was moved onto a page', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _app(
         const MobileEditChanges(

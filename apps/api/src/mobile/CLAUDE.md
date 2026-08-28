@@ -301,9 +301,16 @@ reported as surviving, which is the escape a rollback-capable mock could not sim
   transaction that shifted the indexes, erased by the rollback, so its presence *is* "this edit
   changed the book's shape". A delivered no-op (`structuralSkipped`) returns before the shift and
   carries no stamp, so it stays unreviewable for the same reason it stays un-undoable.
-  `loadEditChanges` then answers with **no page diffs** — there is no before and after to show —
-  and the two word totals its own record can account for: the removed pages ride the stamp whole,
-  the inserted ones are `Page` rows the drafting pass wrote. **The live progress card said the
+  `loadEditChanges` then builds the diff **from the stamp** rather than from snapshots: an inserted
+  page's text is read live off the `Page` row drafting wrote and shown wholly added, a removed
+  page's rides the stamp whole and is shown wholly removed, and a moved page kept every word — so it
+  carries `pageIndexBefore` instead of a diff, and **which** pages moved is the request's own
+  `structuralEdit.pageIndexes`, never a comparison of the two orders: shifting one page renumbers
+  every page it passed, and none of those moved in any sense the reader means. Answering with the
+  two word totals alone was honest about the snapshots and useless to the reader — an insert's whole
+  point is the page it added, and "+240 −0" is not that page. The generic summary line still has to
+  be right, because an insert the reader undid lists nothing again: the revert deletes the pages it
+  made. **The live progress card said the
   opposite of that same fact**: sharing `APPLY_BOOK_EDIT`'s step keys means sharing its reader copy,
   so the step the worker spends shifting page indexes was announced as "Saving a version to undo".
   The worker's own step title is right and unusable — `advanceJobStep` puts it in

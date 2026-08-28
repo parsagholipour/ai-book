@@ -73,11 +73,10 @@ class _EditChangesBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // A structural edit lists no pages and never will: it changed which pages
-    // the book has rather than what any page says, so there is no before and
-    // after to diff. "Nothing was changed" is the one thing that must not be
-    // said about a page that was added, removed or moved — the summary card
-    // names what happened instead, and carries the words gained or lost.
+    // A structural edit can still list nothing — an insert the reader undid has
+    // no pages left to show — and "Nothing was changed" is the one thing that
+    // must not be said about an edit that added, removed or moved pages. The
+    // summary card names what happened instead.
     if (changes.isEmpty && changes.kind != 'restructure_pages') {
       return RefreshIndicator(
         onRefresh: () async => onRefresh(),
@@ -203,6 +202,10 @@ class _PageChangeSection extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final palette = EditDiffPalette.of(context);
+    final structural = page.structuralChange;
+    // A removed page has no page to open: the number it carries is the one it
+    // used to hold, and some other page holds it now.
+    final canOpen = structural != MobileEditPageStructuralChange.removed;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -220,15 +223,35 @@ class _PageChangeSection extends StatelessWidget {
               addedWords: page.addedWords,
               removedWords: page.removedWords,
             ),
-            const SizedBox(width: 4),
-            AppButton.text(
-              onPressed: () => context.push(
-                '/projects/$projectId/read?page=${page.pageIndex}',
+            if (canOpen) ...[
+              const SizedBox(width: 4),
+              AppButton.text(
+                onPressed: () => context.push(
+                  '/projects/$projectId/read?page=${page.pageIndex}',
+                ),
+                label: 'Open',
               ),
-              label: 'Open',
-            ),
+            ],
           ],
         ),
+        if (structural != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            _structuralCopy(structural, page.pageIndexBefore),
+            style: theme.textTheme.bodySmall?.copyWith(
+              // A move gained and lost nothing, so it is not coloured as a
+              // change to the text — the diff palette answers for words.
+              color: switch (structural) {
+                MobileEditPageStructuralChange.added =>
+                  palette.insertForeground,
+                MobileEditPageStructuralChange.removed =>
+                  palette.deleteForeground,
+                MobileEditPageStructuralChange.moved => colors.onSurfaceVariant,
+              },
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
         if (page.titleChanged) ...[
           const SizedBox(height: 4),
           Wrap(
@@ -283,7 +306,8 @@ class _PageChangeSection extends StatelessWidget {
         ],
         if (page.titleChanged ||
             page.addedWords > 0 ||
-            page.removedWords > 0) ...[
+            page.removedWords > 0 ||
+            (structural != null && page.blocks.isNotEmpty)) ...[
           const SizedBox(height: 10),
           EditDiffBlockList(blocks: page.blocks),
         ],
@@ -293,17 +317,8 @@ class _PageChangeSection extends StatelessWidget {
 }
 
 String _summaryTitle(MobileEditChanges changes) {
-  // A structural edit lists no diffs at all, whichever action it was: it
-  // changed which pages the book has rather than what any page says, so it
-  // snapshots nothing — an inserted page has no "before" to compare against, a
-  // deleted one has no row left to list, and a moved one reads exactly as it
-  // did. The count is therefore always zero, and saying "no pages changed"
-  // about an edit that added three is the one thing this card must not do, so
-  // it names what happened instead. The words gained or lost sit beside this
-  // line; the payload carries no action to tell insert from delete from move,
-  // and the request above already says which one the reader asked for.
   if (changes.kind == 'restructure_pages') {
-    return 'The book’s pages changed';
+    return _structuralSummaryTitle(changes.pages);
   }
   final pageCount = changes.pages.length;
   final illustrationOnly =
@@ -322,14 +337,17 @@ String _summaryTitle(MobileEditChanges changes) {
     }
     final removed = changes.pages
         .where(
-          (page) => page.illustrationBefore != null && page.illustrationAfter == null,
+          (page) =>
+              page.illustrationBefore != null && page.illustrationAfter == null,
         )
         .length;
     if (changes.kind == 'remove_image' || removed == pageCount) {
       // Counted in illustrations, not pages: removing two pictures from one
       // page is two illustrations gone, and the card said so when it asked.
       final count = removed > 0 ? removed : pageCount;
-      return count == 1 ? 'Illustration removed' : '$count illustrations removed';
+      return count == 1
+          ? 'Illustration removed'
+          : '$count illustrations removed';
     }
     if (pageCount > 1) {
       return 'Illustration moved';
@@ -337,6 +355,46 @@ String _summaryTitle(MobileEditChanges changes) {
     return 'Illustration replaced';
   }
   return pageCount == 1 ? '1 page changed' : '$pageCount pages changed';
+}
+
+/// What a structural edit did, counted in the pages it listed.
+///
+/// One operation only ever inserts, only ever deletes or only ever moves, so a
+/// homogeneous list names itself. The generic line is still reachable and still
+/// has to be right: an insert the reader undid lists nothing, because the revert
+/// deleted the pages it made.
+String _structuralSummaryTitle(List<MobileEditPageChange> pages) {
+  if (pages.isEmpty) {
+    return 'The book’s pages changed';
+  }
+  bool every(MobileEditPageStructuralChange change) =>
+      pages.every((page) => page.structuralChange == change);
+  final count = pages.length;
+  if (every(MobileEditPageStructuralChange.added)) {
+    return count == 1 ? '1 page added' : '$count pages added';
+  }
+  if (every(MobileEditPageStructuralChange.removed)) {
+    return count == 1 ? '1 page removed' : '$count pages removed';
+  }
+  if (every(MobileEditPageStructuralChange.moved)) {
+    return count == 1 ? '1 page moved' : '$count pages moved';
+  }
+  return 'The book’s pages changed';
+}
+
+String _structuralCopy(
+  MobileEditPageStructuralChange change,
+  int? pageIndexBefore,
+) {
+  return switch (change) {
+    MobileEditPageStructuralChange.added => 'Added to the book',
+    MobileEditPageStructuralChange.removed => 'Removed from the book',
+    // A move rewrote nothing, so where the page came from is the whole change.
+    MobileEditPageStructuralChange.moved =>
+      pageIndexBefore == null
+          ? 'Moved to a new place in the book'
+          : 'Moved here from page $pageIndexBefore',
+  };
 }
 
 String _illustrationCopy(MobileEditPageChange page, String kind) {

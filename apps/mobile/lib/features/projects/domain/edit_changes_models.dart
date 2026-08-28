@@ -59,6 +59,13 @@ class MobileEditChanges {
   }
 }
 
+/// How a structural edit changed a page's *existence*, as opposed to its text.
+///
+/// An added page is shown wholly inserted, a removed one wholly deleted, and a
+/// moved one kept every word — so it carries where it came from instead of a
+/// diff.
+enum MobileEditPageStructuralChange { added, removed, moved }
+
 class MobileEditPageChange {
   const MobileEditPageChange({
     required this.pageIndex,
@@ -71,6 +78,8 @@ class MobileEditPageChange {
     this.illustrationChanged = false,
     this.illustrationBefore,
     this.illustrationAfter,
+    this.structuralChange,
+    this.pageIndexBefore,
   });
 
   final int pageIndex;
@@ -90,6 +99,13 @@ class MobileEditPageChange {
   final String? illustrationBefore;
   final String? illustrationAfter;
 
+  /// Null for every edit that rewrote a page which stayed where it was.
+  final MobileEditPageStructuralChange? structuralChange;
+
+  /// Where a moved page sat before the edit; set only beside [structuralChange]
+  /// of [MobileEditPageStructuralChange.moved].
+  final int? pageIndexBefore;
+
   factory MobileEditPageChange.fromJson(Map<String, dynamic> json) {
     final blocks = json['blocks'] as List<dynamic>? ?? const [];
     return MobileEditPageChange(
@@ -108,6 +124,13 @@ class MobileEditPageChange {
       illustrationChanged: json['illustrationChanged'] as bool? ?? false,
       illustrationBefore: json['illustrationBefore'] as String?,
       illustrationAfter: json['illustrationAfter'] as String?,
+      structuralChange: switch (json['structuralChange'] as String?) {
+        'added' => MobileEditPageStructuralChange.added,
+        'removed' => MobileEditPageStructuralChange.removed,
+        'moved' => MobileEditPageStructuralChange.moved,
+        _ => null,
+      },
+      pageIndexBefore: json['pageIndexBefore'] as int?,
     );
   }
 }

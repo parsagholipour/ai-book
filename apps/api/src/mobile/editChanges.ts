@@ -3,7 +3,9 @@ import {
   diffProse,
   parseStructuralApplication,
   proseChanged,
-  type StructuralApplication
+  structuralEditFromClassifier,
+  type StructuralApplication,
+  type StructuralPageEdit
 } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 
@@ -20,7 +22,8 @@ import { jsonRecord } from "./support.js";
  * are kept in this view via `classifier.previousAsset` rather than a word diff.
  *
  * A structural edit is the one kind that snapshots nothing, because it rewrites
- * nothing — see `structuralWordTotals`.
+ * nothing — its pages are read back off its stamp instead, see
+ * `structuralPageChanges`.
  */
 export type EditSnapshotRecord = {
   pageId?: string;
@@ -68,9 +71,13 @@ export async function loadEditChanges(
   const structural = parseStructuralApplication(operation.classifier);
   if (structural) {
     // A structural edit has no illustration swap to resolve either — the layout
-    // forks are what write `previousAssets` — so it settles here with the two
-    // totals its own record can answer for.
-    return serializeEditChanges(operation, undefined, await structuralWordTotals(projectId, structural));
+    // forks are what write `previousAssets` — so it settles here with the pages
+    // its own record can answer for.
+    return serializeEditChanges(
+      operation,
+      undefined,
+      await structuralPageChanges(projectId, structural, structuralEditFromClassifier(operation.classifier))
+    );
   }
   const swap = illustrationChangesFromClassifier(operation);
   let afterPath = swap.find((change) => change.afterPath)?.afterPath;
@@ -89,16 +96,21 @@ export async function loadEditChanges(
 export function serializeEditChanges(
   operation: EditChangesOperationRecord,
   illustrationAfterPath?: string,
-  structuralWords?: { addedWords: number; removedWords: number }
+  structuralPages?: MobileEditPageChangeDto[]
 ): MobileEditChangesDto {
   const changes = illustrationChangesFromClassifier(operation, illustrationAfterPath);
   const written = operation.snapshots.filter((snapshot) => snapshot.markdownAfter !== null);
-  const pages = written
-    .map((snapshot) => pageChange(snapshot, changes, written.length))
-    .filter(
-      (page) =>
-        page.titleChanged || page.addedWords > 0 || page.removedWords > 0 || page.illustrationChanged
-    );
+  // A structural edit's pages come whole rather than filtered: a page that
+  // arrived or left *is* the change, and the test below asks what a page's text
+  // did — which for a moved page is nothing at all.
+  const pages =
+    structuralPages ??
+    written
+      .map((snapshot) => pageChange(snapshot, changes, written.length))
+      .filter(
+        (page) =>
+          page.titleChanged || page.addedWords > 0 || page.removedWords > 0 || page.illustrationChanged
+      );
 
   return {
     operationId: operation.id,
@@ -109,45 +121,130 @@ export function serializeEditChanges(
     appliedAt: operation.appliedAt?.toISOString() ?? null,
     undone: jsonRecord(operation.classifier).undoneAt !== undefined,
     pages,
-    addedWords: structuralWords?.addedWords ?? pages.reduce((total, page) => total + page.addedWords, 0),
-    removedWords: structuralWords?.removedWords ?? pages.reduce((total, page) => total + page.removedWords, 0)
+    addedWords: pages.reduce((total, page) => total + page.addedWords, 0),
+    removedWords: pages.reduce((total, page) => total + page.removedWords, 0)
   };
 }
 
 /**
- * How much prose a structural edit added or took away.
+ * What a structural edit did, page by page, read off its stamp.
  *
- * It lists **no pages**, and that is the honest answer rather than a gap: this
- * view is a before/after of page text, and a structural edit rewrote none — an
- * inserted page has no before to compare against and a removed one has no row
- * left to list, which is exactly what the app's summary card says when the list
- * is empty. The two totals are still real and already recorded, so the card is
- * not left saying nothing at all: the removed pages ride the stamp whole (it is
- * the undo record), and the inserted ones are `Page` rows the drafting pass
- * wrote.
+ * It is the one kind that writes no `PageEditSnapshot` — it rewrote no page, and
+ * a removed page's snapshot would cascade away with the page it describes — so
+ * this view used to answer with two word totals and nothing else. That was
+ * honest about the snapshots and useless to the reader: an insert's whole point
+ * is the pages it added, and "+240 −0" is not those pages. Each of the three
+ * actions has a record of its own instead:
  *
- * An *undone* insert has neither — the revert deletes the pages it made — so it
- * reports zero and the card says the edit was undone, which is the same bargain
- * the stamp already makes with a deleted page's semantic memory.
+ * - **inserted** pages are `Page` rows the drafting pass wrote, so the text is
+ *   read live and shown wholly added;
+ * - **removed** pages ride the stamp whole (it is the undo record), so their
+ *   text is shown wholly removed;
+ * - **moved** pages kept every word, so they carry where they came from rather
+ *   than a diff — and which pages moved is the *request's* `pageIndexes`, not a
+ *   comparison of the orders: shifting one page down renumbers every page it
+ *   passed, and none of those moved in any sense the reader means.
+ *
+ * An *undone* insert has no rows left — the revert deletes the pages it made —
+ * so it lists nothing and the card says the edit was undone, which is the same
+ * bargain the stamp already makes with a deleted page's semantic memory.
  */
-async function structuralWordTotals(
+async function structuralPageChanges(
+  projectId: string,
+  application: StructuralApplication,
+  requested: StructuralPageEdit | null
+): Promise<MobileEditPageChangeDto[]> {
+  const pages = [
+    ...(await insertedPageChanges(projectId, application)),
+    ...removedPageChanges(application),
+    ...(await movedPageChanges(projectId, application, requested))
+  ];
+  return pages.sort((left, right) => left.pageIndex - right.pageIndex);
+}
+
+async function insertedPageChanges(
   projectId: string,
   application: StructuralApplication
-): Promise<{ addedWords: number; removedWords: number }> {
-  const removedWords = application.removedPages.reduce(
-    (total, page) => total + diffProse(page.markdown, "").removedWords,
-    0
-  );
+): Promise<MobileEditPageChangeDto[]> {
   if (application.insertedPageIds.length === 0) {
-    return { addedWords: 0, removedWords };
+    return [];
   }
+  // Whichever of them the book still holds: a later edit may have taken one
+  // away, and `insertedPageIds` is a record of what this edit made rather than
+  // of what is there now.
   const inserted = await prisma.page.findMany({
     where: { projectId, id: { in: application.insertedPageIds } },
-    select: { markdown: true }
+    orderBy: { index: "asc" },
+    select: { index: true, title: true, markdown: true }
   });
+  return inserted.map((page) => structuralPageChange("added", page.index, page.title, "", page.markdown));
+}
+
+function removedPageChanges(application: StructuralApplication): MobileEditPageChangeDto[] {
+  return [...application.removedPages]
+    .sort((left, right) => left.index - right.index)
+    .map((page) => structuralPageChange("removed", page.index, page.title, page.markdown, ""));
+}
+
+async function movedPageChanges(
+  projectId: string,
+  application: StructuralApplication,
+  requested: StructuralPageEdit | null
+): Promise<MobileEditPageChangeDto[]> {
+  if (application.action !== "move" || !requested || requested.pageIndexes.length === 0) {
+    return [];
+  }
+  const idAt = new Map(application.pageOrderBefore.map((entry) => [entry.index, entry.pageId]));
+  const indexOf = new Map(application.pageOrderBefore.map((entry) => [entry.pageId, entry.index]));
+  const movedIds = requested.pageIndexes
+    .map((index) => idAt.get(index))
+    .filter((pageId): pageId is string => pageId !== undefined);
+  if (movedIds.length === 0) {
+    return [];
+  }
+  const moved = await prisma.page.findMany({
+    where: { projectId, id: { in: movedIds } },
+    orderBy: { index: "asc" },
+    select: { id: true, index: true, title: true }
+  });
+  return moved.flatMap((page) => {
+    const before = indexOf.get(page.id);
+    // A page the reader named that ended up where it started is not a change to
+    // report, and neither is one the stamp cannot place.
+    if (before === undefined || before === page.index) {
+      return [];
+    }
+    return [structuralPageChange("moved", page.index, page.title, "", "", before)];
+  });
+}
+
+/**
+ * One structural page, diffed against the emptiness on its other side.
+ *
+ * `titleChanged` is false for all three: a page that arrived or left did not
+ * have its heading *rewritten*, and rendering "" struck through beside the
+ * title is a change nobody made.
+ */
+function structuralPageChange(
+  structuralChange: "added" | "removed" | "moved",
+  pageIndex: number,
+  title: string,
+  markdownBefore: string,
+  markdownAfter: string,
+  pageIndexBefore?: number
+): MobileEditPageChangeDto {
+  const diff = diffProse(markdownBefore, markdownAfter);
   return {
-    addedWords: inserted.reduce((total, page) => total + diffProse("", page.markdown).addedWords, 0),
-    removedWords
+    pageIndex,
+    titleBefore: title,
+    titleAfter: title,
+    titleChanged: false,
+    blocks: diff.blocks,
+    addedWords: diff.addedWords,
+    removedWords: diff.removedWords,
+    illustrationChanged: false,
+    structuralChange,
+    ...(pageIndexBefore === undefined ? {} : { pageIndexBefore })
   };
 }
 

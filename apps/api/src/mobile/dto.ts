@@ -394,6 +394,14 @@ export type MobileEditPageChangeDto = {
   illustrationChanged: boolean;
   illustrationBefore?: string;
   illustrationAfter?: string;
+  /**
+   * How a structural edit changed this page's *existence* — it arrived, it
+   * left, or it kept its text and changed places. Absent for every edit that
+   * rewrote a page that stayed, which is what `blocks` alone can describe.
+   */
+  structuralChange?: "added" | "removed" | "moved";
+  /** Where a moved page sat before the edit; only set beside `"moved"`. */
+  pageIndexBefore?: number;
 };
 
 /** What one applied edit did to the book, page by page. */
