@@ -91,7 +91,12 @@ async function buildWithMessages(
   library: Array<Record<string, unknown>>
 ): Promise<Record<string, any>> {
   mockAccessTokens({ "token-a": "user-a" });
-  const draftId = `session-draft-${(buildSequence += 1)}`;
+  // Several tests build more than once, and each build is its own book: the
+  // plan job's dedupe key is `plan-book:<projectId>`, so a shared project id
+  // would put every later attempt on the first one's job — the re-parent
+  // `startGenerationAttempt` refuses.
+  const build = (buildSequence += 1);
+  const draftId = `session-draft-${build}`;
   const payload = { payloadVersion: 3, messages, selectedPresets: BUILD_PRESETS };
   mockPrisma.mobileCreationDraft.findFirst.mockResolvedValue(creationDraftRecord({ id: draftId, payload }));
   mockPrisma.template.findFirst.mockResolvedValue({ id: "template-kids" });
@@ -101,7 +106,7 @@ async function buildWithMessages(
   );
   mockPrisma.project.create.mockImplementation(async ({ data }: { data: Record<string, any> }) =>
     projectRecord({
-      id: "project-from-session",
+      id: `project-from-session-${build}`,
       title: data.title,
       prompt: data.prompt,
       mediaSettings: data.mediaSettings,
@@ -114,7 +119,7 @@ async function buildWithMessages(
     creationDraftRecord({ id: draftId, payload, ...data })
   );
   mockPrisma.project.update.mockResolvedValue({});
-  vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-plan" }));
+  vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: `job-plan-${build}` }));
   const app = await buildMobileApp({ advisorEnrichment: false, creationEnrichment: false });
   const response = await app.inject({
     method: "POST",

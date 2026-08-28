@@ -2,14 +2,23 @@
  * The one place the repo's Persian/Arabic (and Latin, and Hebrew) mark tables
  * live.
  *
- * Two callers fold text before comparing it, for two different reasons:
+ * Three callers fold text before comparing it, for three different reasons:
  * `foldCharacterName` in libraryCharacters.ts, deciding whether two spellings
- * are one person's name, and `foldOrthography` in promptLeak.ts, deciding
- * whether a page printed the model's own refusal boilerplate. They arrived with
- * a copy of the character lists each, under comments admitting as much ("same
- * list as `foldCharacterName`'s", "mirrors `OPTIONAL_SPELLING_MARKS`") — so a
- * mark discovered missing had to be added twice or the two would silently
- * disagree about the same page.
+ * are one person's name; `foldOrthography` in promptLeak.ts, deciding whether a
+ * page printed the model's own refusal boilerplate; and `foldRespelling` in
+ * copyrightSafeImagePrompt.ts, deciding whether a rewritten image prompt still
+ * names the character it reported removing. The first two arrived with a copy
+ * of the character lists each, under comments admitting as much ("same list as
+ * `foldCharacterName`'s", "mirrors `OPTIONAL_SPELLING_MARKS`") — so a mark
+ * discovered missing had to be added twice or the two would silently disagree
+ * about the same page.
+ *
+ * **Each composes its own fold out of these pieces, and the composition is
+ * where the judgement lives.** `foldOrthography` runs no NFD, because a page is
+ * prose and decomposing it would put every Latin accent in a mark table's
+ * reach; `foldRespelling` deletes no mark at all, because it scores a name
+ * against a whole document rather than against ten other names. What is offered
+ * here is therefore small pieces rather than one fold with options.
  *
  * **What is shared here is the character lists and the folds, not the boundary
  * rules.** Where a name ends, where a leak phrase may start, and whether a
@@ -131,7 +140,45 @@ export function stripOptionalSpellingMarks(value: string): string {
  * trained on Arabic text is otherwise two different names, and a model trained
  * on Arabic writes «ي»/«ك» into a Persian page. Alef maksura folds with them
  * because it is the same glyph undotted.
+ *
+ * **That last step is the one a caller may not want**, which is why it is the
+ * only thing this adds to {@link foldInterchangeableArabicLetters}. ى is a
+ * letter of its own and not merely a dotless ي: «على» is the preposition "on",
+ * one of the commonest words in Arabic, and «علی» is the name Ali. Merging them
+ * is right when the question is "are these two spellings one person's name" and
+ * wrong when it is "does this document still contain this exact name", where
+ * the preposition is on every other line.
  */
 export function foldArabicKafYehOntoPersian(value: string): string {
-  return value.replace(/ك/gu, "ک").replace(/[يى]/gu, "ی");
+  return foldInterchangeableArabicLetters(value).replace(/ى/gu, "ی");
+}
+
+/**
+ * The half of the fold above that changes no letter: Arabic kaf and yeh onto
+ * the Persian codepoints for the same two letters.
+ *
+ * Neither pair distinguishes a word from another word — they are one letter in
+ * two national encodings, which is why they are typed interchangeably in the
+ * first place — so this is safe for a caller comparing a name against a whole
+ * document, where every merged pair gets a document's worth of chances to
+ * collide. `survivingReplacedNames` (`copyrightSafeImagePrompt.ts`) is that
+ * caller.
+ */
+export function foldInterchangeableArabicLetters(value: string): string {
+  return value.replace(/ك/gu, "ک").replace(/ي/gu, "ی");
+}
+
+/**
+ * Arabic-Indic and Persian digits onto ASCII: "R2٠۱" and "R201" are one robot.
+ *
+ * Shared rather than kept beside `foldCharacterName`, which is where it was
+ * written, because the copyright-rewrite leak check needs exactly the same
+ * table — and a table this module holds one copy of is the whole point of this
+ * module. Nothing here is a judgement about a *name*: a digit written in
+ * another script is the same digit, in every caller.
+ */
+export function foldArabicIndicDigits(value: string): string {
+  return value
+    .replace(/[٠-٩]/gu, (digit) => String(digit.charCodeAt(0) - 0x0660))
+    .replace(/[۰-۹]/gu, (digit) => String(digit.charCodeAt(0) - 0x06f0));
 }

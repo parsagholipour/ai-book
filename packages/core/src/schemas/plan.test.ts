@@ -222,6 +222,24 @@ describe("plan style-rule truncation", () => {
   });
 });
 
+/**
+ * A plan character's name is its identity — a library character reaches a book
+ * by name, and its reference sheet is claimed and filed by one — so the schema
+ * is where it becomes canonical. Padded, it was a character the worker's
+ * settled-sheet gate could never find an answer for, and the whole cast was
+ * redrawn for every illustrated page of the book.
+ */
+describe("plan character names", () => {
+  it("trims a padded name and fills a blank one", () => {
+    const plan = bookPlanSchema.parse({
+      ...planWithContract(),
+      characters: [{ name: " Ada ", role: " Hero ", description: " Builds engines. " }, { name: "   " }]
+    });
+
+    expect(plan.characters.map((character) => character.name)).toEqual(["Ada", "Unnamed character"]);
+  });
+});
+
 function hasLoneSurrogate(value: string): boolean {
   return /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(value);
 }

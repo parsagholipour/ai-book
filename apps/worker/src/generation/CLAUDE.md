@@ -245,6 +245,60 @@ may have been edited in the meantime.
   bounded `{key, snapshotCount}` pointer, so classifier JSON never absorbs repeated page prose and
   revert can refuse a partial archive while still read-only. More than 1,000 rows settles the free
   delete unchanged instead of truncating history or overrunning the structural transaction.
+- **Two durable leases share a shape, and neither is the other's configuration — the waiters are the proof.**
+  `structuralPageLease.ts` and `characterReferenceRenderLease.ts` are both a token beside an expiry
+  compared in Postgres time, and the resemblance ends there — so extracting a primitive over them
+  would be a parameter bag holding one flag per difference, coupling two things that answer the
+  same questions differently on purpose. What the first protects is **manuscript correctness**: the
+  token *is* the write fence, re-asked at every statement of the delivery (`assertHeld`,
+  `renewStructuralPageLeaseTx`, `markStructuralPageLeaseApplied`, both skip settlements, `release`,
+  `complete`), so it has to be renewable and is heartbeated at a third of its budget. What the
+  second protects is a **bill**: nothing is fenced on its token, its commit is serialized by the
+  advisory lock and settled by `supersedes`, and overrunning costs a duplicated render rather than a
+  wrong book — so it is deliberately never renewed. Everything else follows from that one
+  difference. **The waiters are not even the same kind of function.**
+  `waitForStructuralPageLease` returns a *claim* and its loop body is the CAS: waiting there **is**
+  claiming, the waiter is a rival delivery of the same operation, and abandoning writes nothing and
+  costs nothing, because `processJob` neither completes nor fails on
+  `UnownedStructuralDeliveryError`. `waitForCharacterReferenceRender` returns a *value* and its loop
+  body is two reads: the waiter is a consumer — an image or cover job that needs the winner's sheets
+  — and abandoning under a live render throws them away. That is the whole reason only the second
+  renews its deadline on a relay and then needs a ceiling to bound the renewals, and why copying
+  that renewal into the first would only hold a worker slot for a delivery with nothing to gain by
+  waiting (`structuralPageLease.test.ts` pins the opposite: "a wedged one renews forever"). They
+  agree about a fence row that is *gone* — both stand down — and the second learned it the
+  expensive way. An operation row that vanished is `settled`; a plan version deleted mid-render used
+  to be `claimed` with a null token and rendered **unclaimed**, on the grounds that the page still
+  wants its sheets. But the CAS is a `WHERE "id" = $1`, so a row that is not there matches nothing
+  for *everybody*: the advisory lock serializes the claims and nothing serializes the renders, so
+  every waiting `generate-image` job plus the cover job was told it won at once and each paid for
+  the whole cast — one renderer per plan version inverted into `MAX_PARALLEL_IMAGE_JOBS + 1` of
+  them, unbilled, for a plan id no current read resolves, whose settlement `updateMany`s a row that
+  is gone and whose commits delete each other's rows. `takeRenderLease` answers `gone` now, the
+  caller stands down with the sheets that exist, and `claimed` carries a `string` token so a vanished
+  row cannot be spelled as a win. There is no lock order between them either: the first is held only
+  by `apply-book-edit` deliveries, the second only by `generate-book`, `generate-image` and
+  `generate-cover`. What genuinely *is* one protocol is already shared rather than copied —
+  `textEditLease.ts` reuses the `BookEditOperation`
+  lease outright for the text apply fork, and even there the skip CAS is a deliberate sibling
+  because the two forks' durable markers differ. That is the line: reuse a protocol, never a shape.
+  The remaining constants differ for the same reasons and are commented where they sit (poll rates:
+  a CAS one rival runs, against reads several jobs run); the two waits both capping at fifteen
+  minutes is arithmetic — `5 × 3min` and `3 × 5min` — not an agreement, so do not tie them to one
+  constant.
+  **And the second waiter's tick is four queries, so what they each read is the price of waiting.**
+  `MAX_PARALLEL_IMAGE_JOBS + 1` jobs poll one cast every `CHARACTER_REFERENCE_LEASE_POLL_MS` for as
+  long as `CHARACTER_REFERENCE_LEASE_MAX_WAIT_MS`, where the advisory-lock wait it replaced polled
+  zero times: the stop check, the two `pass.read` makes, and the lease. `ImageAsset` declared no
+  `@@index` at all and Postgres does not index a foreign key on its own, so the sheet read was a
+  sequential scan and a sort that shipped every row's multi-kilobyte `prompt`, over every plan
+  version's sheets — which the commit's id-scoped delete is what leaves standing — before dropping
+  all but one plan's in memory. It names a projection and a `metadata.planId` predicate now, behind
+  `@@index([projectId, type])` (migration `000065`, and the index is what every other read of a
+  project's pictures was missing too). The in-memory narrowing stays as the statement of what that
+  function returns, not as an optimization. The tick is still four: `settled` is read *before* the
+  lease on purpose, because a tick that returned `expired` over a set that had just settled would
+  hand the second wait's caller a stand-down instead of the winner's sheets.
 
 ## Long-range memory
 
@@ -580,15 +634,228 @@ to draw.
 
 ## Character reference sheets
 
+- **A refused reference sheet is a settled fact about the plan, and the book finishes without it.**
+  An image provider that reads the prompt and declines to draw it — a copyrighted character, a
+  blocked likeness — has answered, and it answers the same way every time. The render pool used to
+  set `failed` and rethrow on any error at all, so one such character failed `GENERATE_BOOK` at its
+  "Queue follow-ups" step and the project went FAILED before a single page existed: the one image
+  path in the pipeline with no tolerance, while an interior illustration marks `imageFailureReason`
+  and a cover that cannot be drawn falls back to a designed one. A sheet is weaker than either — it
+  is the *consistency* aid the page renders attach, so losing one costs one character's likeness
+  holding still, not a page. `isImageContentRefusalError` (`packages/core/src/adapters/imageRefusal.ts`)
+  is what separates that from an outage, and it demands **both** providers refused: a filtered
+  primary beside a 503 on the fallback is a drawing that was a minute away, and recording
+  "unrenderable" for it would be worse than the failure. Anything that is not a refusal stays fatal,
+  because `generate-book` is in `NETWORK_RETRYABLE_JOB_NAMES` and its retry ladder is the right
+  answer to an outage.
+  **The refusal has to be written down, or tolerating it costs more than failing did.** The gate on
+  re-rendering is "does every plan character have a sheet", which a refused character can never
+  satisfy — so every illustrated page's image job and the cover job would find the set incomplete,
+  take the advisory lock, `deleteMany` the sheets and render the whole cast again: the refusal paid
+  for once per page, and every *other* character redrawn per page, which is the consistency the
+  sheets exist to provide. `PlanVersion.characterReferenceRefusals` is that record and
+  `characterReferenceSetIsSettled` is the gate that reads it — a sheet or a refusal for every
+  character. It is written in the same transaction as the `ImageAsset` rows, because a settlement
+  without them re-renders nothing and sheets without it rebuild per page. The pass that runs owns
+  the whole answer: it attempted every character, so a name it does not refuse this time is one it
+  drew, and a later pass that draws everyone clears the column.
+  **But no later pass runs, which is why a refusal needs a door out of the product.** That clearing
+  is real — `supersedes` is built on it — and it is only ever reached by a pass that was *already
+  running* when the refusal committed. A refusal is precisely what stops the next one from starting:
+  `characterReferenceSetIsSettled` is satisfied by it, and `ensureCharacterReferenceAssets` answers
+  from that check before it goes near the lock, so no page, no cover, no `generate-book` retry and no
+  provider or configuration change ever attempts that character again for the life of the plan
+  version. Which is right when the provider meant it and unrecoverable when it did not — and
+  `isImageContentRefusalError` is a reading of a provider's words that has had several false
+  positives found in it. The only recovery was a replan: a new `PlanVersion`, whose column is NULL
+  because it is a new row. `scripts/clear-character-reference-refusals.ts` is that recovery without
+  the replan — `--apply`-gated, per project, plan or character name — and it is deliberately only
+  half a fix, because clearing the column merely unsettles the set: the *next* `generate-image` or
+  `generate-cover` job for that plan is what redraws the cast, which for a finished book means
+  regenerating one page's illustration afterwards. The refusal's own `console.warn` names the
+  `planId` for that reason. It is the line an operator sees — the run-log entry beside it is a file
+  inside the project's directory — and without the plan version it named the fact rather than the
+  row that holds it. What it does *not* write is a
+  settlement the row already holds — the ordinary pass refuses nobody against a column already NULL,
+  and `DbNull` over NULL is a row version and a dead tuple for no change inside the transaction that
+  holds the lock. Only equality is skipped, so the clearing above still happens; and order is not
+  part of the answer, since the render pool decides which refused name lands first.
+- **The renders no longer sit inside the lock, because tolerating a refusal is what made that
+  budget reachable.** The pass was one `prisma.$transaction` with a five-minute timeout:
+  `pg_advisory_xact_lock` at the top, then every image call, every file write and every row write
+  under it. That was already minutes of model latency spent holding a pooled connection
+  idle-in-transaction and a cross-process lock every other image job blocks on — and a refused
+  character used to end it in milliseconds. It no longer does: the rest of the cast keeps rendering,
+  and a *copyright* refusal additionally buys a text call to rewrite the prompt (two, if the reply
+  needs repairing) plus a second full primary→fallback render. A cast with two or three of those
+  outruns 300s, and the abort was the worst answer available — every sheet already rendered and paid
+  for rolled back, its files left on disk with no rows, and every waiting image job blocked for the
+  whole window. `characterReferenceRenderLease.ts` splits it into **claim, render, commit**: the
+  advisory lock is still taken and still fences the check-then-claim, but what it now protects is a
+  `PlanVersion.characterReferenceLease*` compare-and-set, in database time, taken and released in
+  milliseconds. The renders run between the two transactions with nothing held. The lease is what the
+  lock was doing across them, made durable, and it is the whole of the cost control — without it
+  every illustrated page's image job and the cover job would render the cast again. Its budget is
+  deliberately the *old transaction timeout*, because that is the render budget this pass always had;
+  what changed is the price of missing it, which is now a duplicated render rather than destroyed
+  work. Waiting is no longer free either — the lock used to block a loser until the winner's
+  transaction ended, and the winner's transaction *was* the render — so a loser polls, and that wait
+  **ends**: a lease whose owner died mid-render is a state nobody will write the end of, and giving
+  up means rendering the page with the sheets that exist, never failing the book. The commit is still
+  one transaction and still atomic exactly as before: the stale set's delete, the new rows and the
+  settlement land together or not at all.
+- **A waiter's budget is one owner's, and only a lease that changes hands renews it.** That wait's
+  deadline was fixed at entry, and the lease is deliberately never renewed — so the one way it could
+  stay live across the deadline was to be *taken again*, by a pass that found it expired and is
+  drawing the cast right now. Reaching the deadline at all was therefore proof of a relay, read as
+  proof of the opposite. A waiter that entered thirty seconds into a five-minute lease gave up
+  ninety seconds into the *next* owner's, warned `character_reference_lease_abandoned`, and handed
+  its page the sheets that existed — which mid-pass is **none**, since a pass commits its whole cast
+  in one transaction at the end. So an illustrated page drew with no reference sheet for any
+  character, a minute before every one of them landed, and the cost control worked exactly as
+  designed while the consistency it buys was thrown away. `readRenderLease` returns the lease token
+  beside its liveness for that reason — with no heartbeat, a token that moved is the whole of a
+  waiter's evidence that someone else took over — and a relay buys the new owner the same budget the
+  old one had, bounded by `CHARACTER_REFERENCE_LEASE_MAX_WAIT_MS`: three leases, so about three
+  owners, generous for the reason `structuralPageLease.ts`'s waits are. The ceiling is not
+  optional — renewal with no bound is that file's wedged-owner poll reached from the other side, a
+  worker slot held for as long as passes keep claiming and expiring. `abandoned` now means what it
+  always said: nobody is finishing this cast.
+  **The ceiling is the job's, not the call's.** `runCharacterReferenceRenderPass` takes it once and
+  hands it down, because that function enters the wait *twice*: a first wait that relayed through
+  owners for the whole budget answers `expired` when the last of them dies, the re-claim behind it
+  comes back `busy` because another worker was quicker, and a ceiling taken on entry to the wait then
+  started a second fifteen minutes — half an hour of a held worker slot out of a bound documented as
+  "the whole wait, however many owners it spans, taken once".
+  **And a reader who pressed Stop ends it.** Nothing else in that loop can see one — `pass.read` and
+  `readRenderLease` are plain selects, no abort signal reaches the driver, and `processJob`'s own
+  check runs only once the handler has returned or thrown — so a stopped run sat here for the whole
+  ceiling while the book kept billing behind it. The tick opens with `assertJobNotStopped`, raising
+  `StopRequestedError` the way every other pass in the worker does, so the delivery settles through
+  `markStopped` rather than as a book that finished with no sheets.
+  **And the stand-down is legible.** `runCharacterReferenceRenderPass` returns
+  `{ answer, outcome }`, because `[]` is the same answer for four different facts — this cast has no
+  sheets yet, a provider refused one, the plan version went away, or this caller gave up on a render
+  somebody else was still paying for. The last two now also append
+  `character.reference.stand_down` to the run log beside the refusal lines, since from the finished
+  book they look identical. None of it is written to `PlanVersion.characterReferenceRefusals`: an
+  abandoned wait is not a refusal, and only a refusal is permanent.
+- **A drawing beats a refusal, whoever's commit got there first.** Two passes over one cast is what
+  leaving the lock bought, and the loser's commit used to stand down on `state.settled` alone —
+  "the first one already answered for the whole cast, so ours is a duplicate, not a correction."
+  For two passes that *drew* the cast it is. But the answers are not all of one kind: a pass can
+  also come back refused, and a refusal is permanent by design — `characterReferenceSetIsSettled`
+  is satisfied by it, so nothing re-renders that set for the life of the plan version. So a slow
+  pass that drew Beatrice, standing down for the expired-lease re-claim that was refused her, threw
+  away the only sheet she was ever going to have, and the book's permanent answer for a character
+  was decided by which transaction won a race rather than by which render produced a picture. They
+  really can disagree: a copyright refusal buys a *text* call to rewrite the prompt
+  (`providers/copyrightSafeImageRetry.ts`), so the second attempt is not the same prompt twice.
+  `renderAndCommit` therefore asks the pass — `supersedes`, beside `read`/`render`/`commit`, so the
+  lease stays about coordination and `characterReferences.ts` keeps the domain rule. That rule is
+  *we drew somebody it only recorded a refusal for, and we drew everybody it has a sheet for*. The
+  second half is load-bearing: the commit replaces the rows it read rather than merging with them,
+  so without it a pass refused Ada would take Beatrice's refusal back by recording Ada's, and the
+  two could ping-pong. Answers neither of which covers the other are left with whoever committed
+  first, and two full successes are a tie — the one thing arrival order settles well. The drawn set
+  only grows, bounded by the cast, so this supersedes at most once per character.
+- **The stale set is the rows the commit read, and another plan version's sheets are not among
+  them.** `currentCharacterReferences` filters by `metadata.planId`, so what a pass reads under the
+  lock and what its creates replace are both one plan's cast — but the delete named
+  `{ projectId, type }` and took every plan version's sheets on the project. Rows the transaction
+  never counted and does not replace, deleted as collateral by a statement guarded on a set that
+  does not contain them: the guard narrowed to the plan when the render was first claimed and only
+  the `where` stayed behind. Two handlers read the superseded rows on purpose —
+  `handlers/characters.ts` filters a replanned project's sheets by plan *because* the older ones are
+  still there, and `insertionReferenceSelection` in `handlers/applyImageInsertion.ts` deliberately
+  falls back to them when the current plan has none, so a chat `add_image` on a replanned book drew
+  a cast the reader recognises from prose alone. And the loss is paid for twice: an undo of a
+  structural edit moves the book back to an earlier plan version, whose whole cast then re-renders
+  unbilled. The delete is staked on `current.assets`' ids now. It is a **row** scoping and not a
+  file one on purpose — sheet filenames carry a per-pass render id, so a row that goes away leaves
+  an orphan file, which is the same storage noise `generateImage` and `applyImageInsertion` accept.
+  **What that narrowing hands the reader is a cast per plan version, so the reader collapses.**
+  Nothing sweeps a superseded cast — no replan, no continuation, no undo, and nothing in this repo
+  unlinks under `IMAGE_STORAGE_DIR/<projectId>/` short of the project being deleted — so a book's
+  `CHARACTER_REFERENCE` rows now grow by one full cast per plan version, for good. Every reader
+  scoped to a plan is unaffected by construction, and the one that is not,
+  `insertionReferenceSelection`, met three identically-scoring drawings of one character where it
+  expected one. That is the crowding `selectCharacterReferenceAssets` collapses per character, and
+  the rule lives with the selection because it is a property of what a reference set *is*
+  (→ packages/core/src/generation/CLAUDE.md). The **growth** is not fixed and should not be fixed by
+  widening the delete back: a project-wide sweep is the collateral this bullet is about, and an undo
+  of a structural edit can make an older plan version current again, so a superseded cast is not
+  reliably dead. Bounding it — keeping the current plan's cast plus the *n* most recent — is a
+  separate change with its own question about which plan versions an undo can still reach.
 - **A reference-sheet filename must survive a non-Latin name.** `characterSlug` stripped everything
   outside `[a-z0-9]`, so every Persian, Cyrillic and CJK name emptied out and `safePathPart`
   returned the literal `"unknown"` — three characters in one book all wrote
-  `character-reference-unknown.jpg`, and because `hasReferenceForEveryCharacter` compares *names*
+  `character-reference-unknown.jpg`, and because `characterReferenceSetIsSettled` compares *names*
   the set looked complete and was never rebuilt, so the whole cast wore whichever face rendered
   last. It now hashes the folded name when the ASCII slug is empty, and
   `characterReferenceFileStems` resolves the **whole cast's** stems together before the concurrent
   renders start, since a per-name slug cannot promise cast-wide uniqueness. The ASCII path is
   byte-for-byte unchanged so no existing book's files move.
+  **And cast-wide uniqueness is only half of it, because the passes overlap now too.** Once the
+  renders left the advisory lock, two of them can run over one cast — a lease that expired under a
+  slow render, or two plan versions of one book, whose leases are separate rows while this directory
+  is shared. Named from
+  the cast alone that is one path with two writers, and the loser is the dangerous half: `writeFile`
+  truncates in place under a page render reading the same path, and its bytes land on a sheet the
+  winner has already committed an `ImageAsset` for, leaving a published row describing a picture
+  that is no longer there — `applyImageInsertion`'s "the loser's writeFile silently swapped the
+  artwork under the winner's published markdown", reached from the other end. So
+  `characterReferenceFileStems` takes the pass's own `renderId` and puts it on every stem. The pure
+  naming rules live in `characterReferenceFileNames.ts` — they left `characterReferences.ts` when it
+  reached its size budget, as `characterReferenceSettlement.ts` and `characterReferenceSheetFiles.ts`
+  later did.
+- **A pass owns every sheet file it wrote, because a per-pass name is unbounded and nothing else
+  sweeps that directory.** Naming a stem after its character alone made the file set bounded by the
+  cast: a re-render overwrote the same paths however many times a book redrew them, which is what
+  made "a losing pass leaves an orphan file" the cheap trade it was written as. The render id took
+  that away. Nothing in this repo unlinks anything under `IMAGE_STORAGE_DIR/<projectId>/` short of
+  the project being deleted — `attachmentStorage.ts` expires user uploads and
+  `startExportTempCleanup` expires export scratch, and that is the whole list — so **every** pass
+  that does not publish leaves a *whole cast* behind for good: a provider timeout half way through
+  the cast (the job's retry ladder then draws it again under a fresh id), a lease that expired under
+  a slow render, a commit that stood down as a duplicate, a commit that rolled back. On a flaky
+  provider day that is several casts for one book. So the pass sweeps its own, through
+  `characterReferenceSheetFiles.ts`. It is safe where the commit's stale-**row** delete deliberately
+  is not: a stem is unique to the pass that wrote it and the only way anything learns of a sheet is
+  the `ImageAsset` row naming it, so a file whose row never landed is unreachable rather than merely
+  stale, while a *published* sheet's path may still be in the hands of a page render that read it a
+  moment ago. Those stay the storage noise `applyImageInsertion` and `generateImage` accept, and they
+  are bounded — at most one cast per supersede. The render sweeps a cast it abandoned and
+  `characterReferenceRenderLease.ts` sweeps the rest through a required `discard` hook,
+  called after the lease is released, because the lease module is generic over `Rendered` and could
+  not name those files if it wanted to. Required rather than optional for the same reason: a pass
+  that does not sweep is a pass nothing sweeps for. And the render's first failure is *held* rather
+  than thrown — a rejected `Promise.all` settles while its siblings are still inside a render, and
+  their `writeFile`s would land behind the sweep.
+- **Which of those files the sweep may unlink is decided by a re-read of the rows, never by an
+  exception.** The hook above is called at the ways out that keep somebody else's answer, and three
+  of them are settled by the commit transaction *returning*: it committed, it stood down against an
+  answer this pass does not supersede, or its plan version had gone. The fourth is a throw, and the
+  first version of the sweep read a throw as a rollback — `settlement` is `undefined` either way, so
+  `settlement?.kind !== "committed"` swept. But a throw out of `prisma.$transaction` is not one fact:
+  a callback that raised did roll back, while a `P1017`, a socket dropped between the server's COMMIT
+  and the client seeing the ack, and a `$transaction` timeout raised after the callback had already
+  returned all name a commit that **landed**. Sweeping those unlinked every sheet of a cast whose
+  rows are on the table, and the rows are what makes it unrecoverable rather than merely wasteful:
+  `characterReferenceSetIsSettled` is satisfied by them, so no page, no cover and no retry ever
+  redraws that cast, and every reference path the book resolves for the life of the plan version
+  ENOENTs — "a published row names a picture that is no longer there", which is the outcome this
+  module gave up the advisory lock to avoid. So an unknown outcome is re-read and put to
+  `published`, a hook beside `supersedes` for the reason that one is beside `commit`: only the pass
+  can say whether the rows name what *it* wrote, and it says so from the render id every stem
+  carries, which is what makes a read taken after the lease was released sound — a rival's cast can
+  neither answer for this pass nor be mistaken for it. **Both ways the question can fail lean the
+  same way.** A database that cannot be read and a predicate that throws both keep the files, because
+  an unlink cannot be taken back while a leaked cast is the bounded storage noise the paragraph above
+  already accepts; the two are not close enough in cost to be raced. A kept cast is written to the
+  run log as `character.reference.sweep_declined` rather than left silent, since nothing else will
+  ever sweep it. A stand-down that really did write nothing still sweeps, and asks the rows nothing
+  to do it.
 - **The face is fed in twice, and only ever into spare budget.** A page render is two redraws from
   the image the reader recognises (artwork → per-book sheet → page), so `selectReferenceImagePaths`
   appends the character's own library file *after* the sheets, capped by

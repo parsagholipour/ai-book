@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ImageAdapter, ImageFallbackMetadata, TextModelAdapter } from "../adapters/types.js";
+import type { ImageAdapter, ImageCopyrightRewrite, ImageFallbackMetadata, TextModelAdapter } from "../adapters/types.js";
 import { isDiagramFriendlyBookCategory } from "../categories.js";
 import { range } from "../collections.js";
 import { CONTINUITY_NOTE_PROMPT_LIMITS, continuityNotesForPrompt } from "../context/contextPack.js";
@@ -103,6 +103,8 @@ export type GenerateImageBytesOptions = {
   projectId?: string | undefined;
   pageId?: string | undefined;
   referenceImagePaths?: string[] | undefined;
+  /** → `ImageRequest.promptForReferenceImages`, which is where the reasoning is. */
+  promptForReferenceImages?: ((attached: readonly string[]) => string) | undefined;
   aspectRatio?: string | undefined;
 };
 
@@ -113,6 +115,7 @@ export type GeneratedImageBytes = {
   model: string;
   revisedPrompt?: string | undefined;
   fallback?: ImageFallbackMetadata | undefined;
+  copyrightRewrite?: ImageCopyrightRewrite | undefined;
 };
 
 export type WholeBookPageDraft = PageDraft & {
@@ -616,6 +619,7 @@ export async function generateImageBytes(options: GenerateImageBytesOptions): Pr
     ...(options.projectId ? { projectId: options.projectId } : {}),
     aspectRatio: options.aspectRatio ?? "4:3",
     ...(options.referenceImagePaths?.length ? { referenceImagePaths: options.referenceImagePaths } : {}),
+    ...(options.promptForReferenceImages ? { promptForReferenceImages: options.promptForReferenceImages } : {}),
     ...(options.pageId ? { pageId: options.pageId } : {})
   });
   const bytes = result.data ?? (result.url ? await downloadGeneratedImage(result.url) : undefined);
@@ -627,7 +631,8 @@ export async function generateImageBytes(options: GenerateImageBytesOptions): Pr
     mimeType: result.mimeType,
     provider: result.provider,
     model: result.model,
-    fallback: result.fallback
+    fallback: result.fallback,
+    copyrightRewrite: result.copyrightRewrite
   };
   return result.revisedPrompt ? { ...output, revisedPrompt: result.revisedPrompt } : output;
 }

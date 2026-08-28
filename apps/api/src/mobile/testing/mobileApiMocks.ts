@@ -548,6 +548,17 @@ export const mockBilling = (() => {
     readonly code = "GENERATION_COMMAND_CONFLICT";
   }
 
+  /**
+   * The wiring fault, not the reader-facing conflict above.
+   *
+   * The real facade exports it, so a mock that omitted it left every
+   * `instanceof GenerationAttemptJobClaimError` in production code comparing
+   * against `undefined`. `installGenerationAttemptMock` is what raises it here.
+   */
+  class MockGenerationAttemptJobClaimError extends Error {
+    readonly code = "GENERATION_JOB_NOT_CLAIMED";
+  }
+
   class MockGenerationQuotaExceededError extends Error {
     readonly code = "IMAGE_LIMIT_REACHED";
     readonly claim: unknown;
@@ -561,6 +572,7 @@ export const mockBilling = (() => {
   return {
     InsufficientCreditsError: MockInsufficientCreditsError,
     GenerationAttemptConflictError: MockGenerationAttemptConflictError,
+    GenerationAttemptJobClaimError: MockGenerationAttemptJobClaimError,
     GenerationQuotaExceededError: MockGenerationQuotaExceededError,
     ensureDefaultProductCatalog: vi.fn(),
     getCreditBalance: vi.fn(),

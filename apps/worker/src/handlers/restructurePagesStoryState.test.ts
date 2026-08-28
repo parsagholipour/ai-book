@@ -201,6 +201,33 @@ describe("restructurePages rollback story state", () => {
     }
   );
 
+  /**
+   * The APPLIED → FAILED flip after a rollback is the sixth writer of
+   * `BookEditOperation.error`, and it was the last one still storing
+   * `errorMessage(error)`: the column is copied onto the mobile DTO, so a
+   * Prisma code or a null-deref inside the shift was drawn on the reader's
+   * failed edit card. It takes the shared verdict now, like every other write
+   * that fails one of these rows.
+   */
+  it("fails the rolled-back operation in the reader's words, not the cause's", async () => {
+    mocks.application = structuralApplication("insert");
+
+    await expect(
+      restructurePages(requestFor("insert"), { id: "op-1", status: "QUEUED", classifier: {} })
+    ).rejects.toThrow("settlement write failed");
+
+    expect(mocks.prisma.bookEditOperation.updateMany).toHaveBeenCalledWith({
+      where: { id: "op-1", status: "APPLIED" },
+      data: {
+        status: "FAILED",
+        error: "That change couldn’t be finished. Send it again to try once more.",
+        affectedPageIndexes: [],
+        structuralLeaseToken: null,
+        structuralLeaseExpiresAt: null
+      }
+    });
+  });
+
   it("does not rebuild when a stale owner cannot commit the rollback", async () => {
     mocks.application = structuralApplication("move");
     mocks.renewStructuralPageLeaseTx.mockResolvedValue(null);

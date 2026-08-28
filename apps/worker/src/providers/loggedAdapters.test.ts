@@ -3,9 +3,11 @@ import {
   createProjectSchema,
   FakeTextModelAdapter,
   FallbackTextModelAdapter,
+  geminiImageReferenceLimit,
   LiveGenerationTextModelAdapter,
   PREMIUM_COVER_IMAGE_MODEL,
   PREMIUM_FALLBACK_IMAGE_MODEL,
+  qwenImageReferenceLimit,
   RoutingTextModelAdapter,
   type ImageModelSelection,
   type TextModelAdapter
@@ -255,6 +257,33 @@ describe("imageFallbackSelection", () => {
       provider: "alibaba",
       model: "qwen-image-2.0"
     });
+  });
+
+  // The pair this module builds is the reason `FallbackImageAdapter` re-fits a
+  // fallback render rather than reporting the weaker of the two budgets: on the
+  // stock config a premium cover is sized against five references and its
+  // fallback takes three, so trimming is the ordinary case rather than an
+  // operator misconfiguration.
+  it("pairs a premium cover with a fallback that takes fewer reference images", () => {
+    const cover = coverImageSelectionForInput(tierProjectInput("premium"));
+    const fallback = imageFallbackSelection(cover!, tierProjectInput("premium"));
+
+    expect(geminiImageReferenceLimit(cover!.model)).toBe(5);
+    expect(qwenImageReferenceLimit(fallback.model)).toBe(3);
+  });
+
+  it("can pair a reference-capable primary with a fallback model that takes none", () => {
+    const previous = config.ALIBABA_IMAGE_MODEL;
+    try {
+      config.ALIBABA_IMAGE_MODEL = "qwen-image-max";
+      const fallback = imageFallbackSelection(geminiPrimary, tierProjectInput("balanced"));
+
+      expect(fallback).toEqual({ provider: "alibaba", model: "qwen-image-max" });
+      expect(geminiImageReferenceLimit(geminiPrimary.model)).toBeGreaterThan(0);
+      expect(qwenImageReferenceLimit(fallback.model)).toBe(0);
+    } finally {
+      config.ALIBABA_IMAGE_MODEL = previous;
+    }
   });
 });
 

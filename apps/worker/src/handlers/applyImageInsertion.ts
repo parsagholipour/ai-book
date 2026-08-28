@@ -2,7 +2,6 @@ import { getProjectOrThrow, strategyForInput } from "../generation/bookHelpers.j
 import {
   characterReferencePromptInstruction,
   imageAssetPlanId,
-  imageCapabilities,
   librarySnapshotForSheet,
   resolveLibraryPortraitSeed,
   selectReferenceImagePaths,
@@ -24,6 +23,8 @@ import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import {
   bookPlanSchema,
   createProviders,
+  imageAdapterCapabilities,
+  imageRenderProvenance,
   jsonRecord,
   libraryCharactersFromMediaSettings,
   markdownLabels,
@@ -31,6 +32,8 @@ import {
   optimizeImageForStorage,
   preEditProjectStatus,
   publicAssetUrl,
+  storedImageRenderProvenance,
+  withImageRenderProvenance,
   type BookPlan,
   type ImageAdapter,
   type SettledProjectStatus
@@ -222,20 +225,25 @@ export async function applyImageInsertion(job: ApplyBookEditJob, operation: { st
     projectUserId: project.userId ?? null
   });
   const trimmedRequest = request?.trim() ?? "";
-  const imagePrompt = [
-    `Create one interior book illustration depicting: ${insertion.subject}.`,
-    // The stored request carries the reader's wording and any appended library
-    // character sheets (`requestWithCharacterContext`) — the only channel the
-    // appearance rules travel through to this model.
-    trimmedRequest && trimmedRequest !== insertion.subject.trim()
-      ? `The reader's request, including any character notes:\n${trimmedRequest}`
-      : "",
-    characterReferencePromptInstruction(selection),
-    `Global visual style: ${plan.illustrationPlan.globalStyle}`,
-    `Continuity rules: ${plan.illustrationPlan.pageRules.join(" ")}`
-  ]
-    .filter(Boolean)
-    .join("\n");
+  // A function of what is attached, not of the selection: the instruction
+  // counts the pictures and names the last few as saved faces, so a fallback
+  // that can take fewer has to be able to say it again for what it sends.
+  const promptForReferenceImages = (attached: readonly string[]) =>
+    [
+      `Create one interior book illustration depicting: ${insertion.subject}.`,
+      // The stored request carries the reader's wording and any appended library
+      // character sheets (`requestWithCharacterContext`) — the only channel the
+      // appearance rules travel through to this model.
+      trimmedRequest && trimmedRequest !== insertion.subject.trim()
+        ? `The reader's request, including any character notes:\n${trimmedRequest}`
+        : "",
+      characterReferencePromptInstruction(selection, attached),
+      `Global visual style: ${plan.illustrationPlan.globalStyle}`,
+      `Continuity rules: ${plan.illustrationPlan.pageRules.join(" ")}`
+    ]
+      .filter(Boolean)
+      .join("\n");
+  const imagePrompt = promptForReferenceImages(selection.paths);
   // No try/catch: a failed render must fail the job (and refund through the
   // attempt settlement). The FallbackImageAdapter chain inside the logged
   // provider is the resilience budget, exactly as for generated pages.
@@ -244,7 +252,8 @@ export async function applyImageInsertion(job: ApplyBookEditJob, operation: { st
     prompt: imagePrompt,
     projectId,
     pageId: targetPage.id,
-    referenceImagePaths: selection.paths
+    referenceImagePaths: selection.paths,
+    promptForReferenceImages
   });
 
   await advanceJobStep(generationJobId, "apply", 70, `Storing the illustration for page ${targetPage.index}`, {
@@ -304,7 +313,8 @@ export async function applyImageInsertion(job: ApplyBookEditJob, operation: { st
           replaceAsset,
           subject: insertion.subject,
           publicPath,
-          storedPrompt: imagePrompt
+          storedPrompt: imagePrompt,
+          provenance: imageRenderProvenance(image)
         });
       }
       if (current.markdown.includes(marker)) {
@@ -471,8 +481,13 @@ async function removeInsertionImage(path: string): Promise<void> {
 
 type InsertionTransaction = {
   imageAsset: {
-    findUnique: (args: { where: { id: string } }) => Promise<{ id: string; path: string; prompt: string } | null>;
-    update: (args: { where: { id: string }; data: { path: string; prompt: string } }) => Promise<unknown>;
+    findUnique: (args: {
+      where: { id: string };
+    }) => Promise<{ id: string; path: string; prompt: string; metadata?: unknown } | null>;
+    update: (args: {
+      where: { id: string };
+      data: { path: string; prompt: string; metadata: Prisma.InputJsonValue };
+    }) => Promise<unknown>;
   };
   bookEditOperation: {
     findUnique: (args: { where: { id: string }; select: { classifier: true } }) => Promise<{ classifier: unknown } | null>;
@@ -505,8 +520,17 @@ type InsertionTransaction = {
 
 /**
  * Swap a generation illustration in place: new file, same ImageAsset id, no
- * markdown line. The previous path/prompt ride the classifier so undo can
- * put the old picture back without the old bytes having been overwritten.
+ * markdown line. The previous path/prompt/provenance ride the classifier so
+ * undo can put the old picture back — bytes and record together — without the
+ * old bytes having been overwritten.
+ *
+ * The row's `metadata` is rewritten as well as its path, because it is the same
+ * row describing different pixels now. `withImageRenderProvenance` installs
+ * this render's `copyrightRewrite`/`fallback` and *clears* the previous one:
+ * left alone, a picture whose prompt was rewritten around "Spider-Man" and then
+ * replaced by a lighthouse kept the claim that a protected name had been taken
+ * out of it. Only that half is replaced — `keeperToken` and the rest name the
+ * slot, and illustration ownership is decided from them.
  */
 async function applyAssetReplacementInTx(
   tx: InsertionTransaction,
@@ -527,6 +551,7 @@ async function applyAssetReplacementInTx(
     subject: string;
     publicPath: string;
     storedPrompt: string;
+    provenance: Record<string, unknown>;
   }
 ): Promise<boolean> {
   const live = await tx.imageAsset.findUnique({ where: { id: options.replaceAsset.id } });
@@ -552,6 +577,10 @@ async function applyAssetReplacementInTx(
           path: live.path,
           afterPath: options.publicPath,
           prompt: live.prompt,
+          // Read off the live row, not off the copy the delivery carried in,
+          // for the same reason the path is: undo restores these bytes, and
+          // this is the record that describes them.
+          generation: storedImageRenderProvenance(live.metadata),
           ...(typeof previousImagePrompt === "string" || previousImagePrompt === null
             ? { imagePrompt: previousImagePrompt }
             : {})
@@ -561,7 +590,11 @@ async function applyAssetReplacementInTx(
   });
   await tx.imageAsset.update({
     where: { id: live.id },
-    data: { path: options.publicPath, prompt: options.storedPrompt }
+    data: {
+      path: options.publicPath,
+      prompt: options.storedPrompt,
+      metadata: withImageRenderProvenance(live.metadata, options.provenance) as Prisma.InputJsonValue
+    }
   });
   const saved = await tx.page.update({
     where: { id: options.current.id },
@@ -637,7 +670,7 @@ async function insertionReferenceSelection(options: {
     image: options.image,
     context: options.subject
   });
-  const budget = imageCapabilities(options.image).maxReferenceImages - selection.paths.length;
+  const budget = imageAdapterCapabilities(options.image).maxReferenceImages - selection.paths.length;
   if (budget <= 0) {
     return selection;
   }

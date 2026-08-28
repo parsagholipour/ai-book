@@ -62,7 +62,8 @@ vi.mock("@book-maker/db", () => ({
 vi.mock("@book-maker/db/billing", () => ({
   refundCreditLedgerEntry: mocks.refundCreditLedgerEntry,
   refundLatestProjectOperationCredits: mocks.refundLatestProjectOperationCredits,
-  failGenerationAttempt: mocks.failGenerationAttempt
+  failGenerationAttempt: mocks.failGenerationAttempt,
+  GenerationAttemptJobClaimError: class GenerationAttemptJobClaimError extends Error {}
 }));
 
 import {

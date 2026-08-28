@@ -62,7 +62,13 @@ export const MECHANICAL_TEXT_PURPOSES: ReadonlySet<string> = new Set([
   "verify-page-claims",
   "audit-page-style",
   "critique-page-map",
-  "dedupe-page-beats"
+  "dedupe-page-beats",
+  // The copyright-safe image-prompt rewrite
+  // (`generation/copyrightSafeImagePrompt.ts`): a strict-schema find-and-replace
+  // that swaps protected names for generic descriptions and is forbidden from
+  // touching anything else. Spelled out rather than imported from the constant,
+  // because this module's subpath export is gated on having no runtime imports.
+  "rewrite-image-prompt-copyright-safe"
 ]);
 
 export const PREMIUM_PLAN_THINKING_BUDGET = 4096;

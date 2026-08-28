@@ -20,7 +20,9 @@
  * unactionable. They are different problems: `unratedCalls` means the rate card
  * does not know the model and the page is *understating* real spend, while
  * `estimatedCalls` means the provider never returned usage
- * (`settleLiveTextUsageEstimate`) so nothing could have priced it.
+ * (`settleLiveTextUsageEstimate`) so nothing could have priced it. An
+ * `estimatedCalls` row still carries token counts, and those are a guess with a
+ * stated error bar — see the field's own comment before reading tokens off one.
  *
  * **Image and audio calls can only ever appear priced.** `recordProviderImageCost`
  * and `recordProviderAudioCost` return early rather than writing a row they
@@ -44,7 +46,18 @@ export type CostUsage = {
   pricedCalls: number;
   failedCalls: number;
   inFlightCalls: number;
-  /** Settled on estimated token counts, which are never priced. */
+  /**
+   * Settled on estimated token counts, which are never priced.
+   *
+   * These rows are the only ones on this page whose tokens are a guess, which
+   * is why their dollars are absent rather than approximate — nothing here
+   * replays a rate card over an estimate. The guess itself is
+   * `estimateTokenCountFromText` (`apps/worker/src/providers/usageAccounting.ts`):
+   * a two-class character rule, four Latin characters per token and one token
+   * per character in every other script. Read it as right to within roughly a
+   * factor of two, in either direction, and never better than that — it is a
+   * character count standing in for a tokenizer nobody ran.
+   */
   estimatedCalls: number;
   /** Settled with real tokens, but no rate card knew the model. Text only. */
   unratedCalls: number;

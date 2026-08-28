@@ -1,7 +1,7 @@
 import type { MobileBookTypeChoice, MobilePageCountMode, MobilePageCountSource } from "../mobileCreation.js";
 import type { buildProjectStatus } from "../projectStatus.js";
 import type { MobileBookType, MobileJsonValue, MobileLengthPreset, MobileQualityPreset } from "./dto.js";
-import type { CreateProjectInput } from "@book-maker/core";
+import type { BillingOperation, CreateProjectInput } from "@book-maker/core";
 
 /**
  * The Prisma row shapes and creation inputs the mobile serializers read —
@@ -146,7 +146,7 @@ export type MobileBookEditOperationRecord = {
     id: string;
     commandKey: string;
     status: string;
-    operation: string;
+    operation: BillingOperation;
     quotedCredits: number;
     refundPending: boolean;
   }>;

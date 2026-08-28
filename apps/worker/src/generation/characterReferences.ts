@@ -5,9 +5,11 @@ import { safeJsonStringify } from "../runtime/serialization.js";
 import {
   buildCharacterReferencePrompt,
   characterReferenceSeedInstruction,
-  foldCharacterName,
+  errorMessage,
+  imageAdapterCapabilities,
+  imageRefusalReason,
+  isImageContentRefusalError,
   libraryCharacterDiskPath,
-  libraryCharacterFaceInstruction,
   libraryCharactersFromMediaSettings,
   matchLibraryCharacter,
   optimizeImageForStorage,
@@ -20,14 +22,29 @@ import {
   type BookPlan,
   type CreateProjectInput,
   type ImageAdapter,
-  type ImageAdapterCapabilities,
   type LibraryCharacterPortraitSource,
   type LibraryCharacterSnapshot,
   type ProviderSet
 } from "@book-maker/core";
 import { imageGenerationMetadata, imageStorageMetadata } from "./bookHelpers.js";
+import { characterReferenceFileStems, characterReferenceNameKey } from "./characterReferenceFileNames.js";
+import {
+  characterNameFromAssetMetadata,
+  characterReferenceRefusalsAgree,
+  characterReferenceSetIsSettled,
+  parseCharacterReferenceRefusals,
+  type CharacterReferenceRefusal
+} from "./characterReferenceSettlement.js";
+import {
+  discardCharacterReferenceSheetFiles,
+  localImagePathForAsset,
+  projectImageDir,
+  renderedSheetFileNames
+} from "./characterReferenceSheetFiles.js";
+import type { CharacterReferenceSelection } from "./characterReferencePrompt.js";
+import { runCharacterReferenceRenderPass } from "./characterReferenceRenderLease.js";
 import { Prisma, prisma } from "@book-maker/db";
-import { createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -39,7 +56,7 @@ import { join } from "node:path";
  * character handlers.
  */
 
-export async function ensureCharacterReferenceAssets(options: {
+export type CharacterReferenceRenderOptions = {
   projectId: string;
   planId: string;
   input: CreateProjectInput;
@@ -47,12 +64,16 @@ export async function ensureCharacterReferenceAssets(options: {
   providers: ProviderSet;
   strategy: BookGenerationStrategy;
   generationJobId?: string | undefined;
-}): Promise<WorkerImageAsset[]> {
+};
+
+export async function ensureCharacterReferenceAssets(
+  options: CharacterReferenceRenderOptions
+): Promise<WorkerImageAsset[]> {
   if (!shouldGenerateCharacterReferences(options.input, options.plan)) {
     return [];
   }
 
-  const capabilities = imageCapabilities(options.providers.image);
+  const capabilities = imageAdapterCapabilities(options.providers.image);
   if (!shouldUseCharacterReferenceImages(options.input, options.plan, capabilities)) {
     await updateJobProgress(options.generationJobId, {
       message: "Skipping character reference sheets for the selected image model"
@@ -60,77 +81,195 @@ export async function ensureCharacterReferenceAssets(options: {
     return [];
   }
 
-  const existing = await currentCharacterReferences(options.projectId, options.planId);
-  if (hasReferenceForEveryCharacter(existing, options.plan)) {
+  // Two independent reads, and the point of this check is to answer without
+  // going near the lock — so they go together. Every illustrated page's
+  // `generate-image` job and the cover job reach it before doing anything else,
+  // and in series it is a second serial round trip per page render. Safe to
+  // interleave because the check is only an optimization: the commit writes the
+  // sheets and the settlement in one transaction so neither read catches it half
+  // done, a mixed reading that under-covers the cast falls through to `read`
+  // under the advisory lock, which is the authoritative one, and a mix that
+  // over-covers is one the sequential pair could reach too, since the assets
+  // were read first either way. The copies inside `read` stay sequential for the
+  // reason the commit's creates do — a transaction client runs one query at a
+  // time.
+  const [existing, refusals] = await Promise.all([
+    currentCharacterReferences(options.projectId, options.planId),
+    settledCharacterReferenceRefusals(options.planId)
+  ]);
+  if (characterReferenceSetIsSettled(existing, refusals, options.plan)) {
     return existing.map(toWorkerImageAsset);
   }
 
   // Every illustrated page's `generate-image` job (and the cover job) calls
   // this before the project has any character reference yet, and several run
   // concurrently by design (`MAX_PARALLEL_IMAGE_JOBS`). Without a claim here,
-  // each one sees "nothing exists" and pays to generate a full set — this
-  // advisory lock, scoped to (projectId, planId), makes the expensive
-  // check-then-generate section run for one caller at a time; everyone else
-  // blocks, then finds the winner's rows already in place and returns those
-  // instead of generating again.
-  return prisma.$transaction(
-    async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`character-references:${options.projectId}:${options.planId}`}))`;
-      const claimed = await currentCharacterReferences(options.projectId, options.planId, tx);
-      if (hasReferenceForEveryCharacter(claimed, options.plan)) {
-        return claimed.map(toWorkerImageAsset);
-      }
-      return generateCharacterReferenceAssets(options, tx, claimed.length > 0);
+  // each one sees "nothing exists" and pays to generate a full set. The claim
+  // is still the advisory lock scoped to (projectId, planId) — but it now
+  // fences a lease rather than the renders themselves, so the model calls in
+  // `renderCharacterReferenceSheets` hold neither the lock nor a connection.
+  // See `characterReferenceRenderLease.ts` for why that split exists.
+  const state = await runCharacterReferenceRenderPass<RenderedCharacterReferences, CharacterReferenceState>({
+    projectId: options.projectId,
+    planId: options.planId,
+    generationJobId: options.generationJobId,
+    read: async (client) => {
+      const assets = await currentCharacterReferences(options.projectId, options.planId, client);
+      const settledRefusals = await settledCharacterReferenceRefusals(options.planId, client);
+      return {
+        answer: { assets: assets.map(toWorkerImageAsset), refusals: settledRefusals },
+        settled: characterReferenceSetIsSettled(assets, settledRefusals, options.plan)
+      };
     },
-    { timeout: 5 * 60_000 }
-  );
+    render: () => renderCharacterReferenceSheets(options),
+    // A pass whose answer the commit did not keep leaves a whole cast of files
+    // no row names, and nothing else will ever unlink one — see
+    // `characterReferenceSheetFiles.ts`.
+    discard: (rendered) =>
+      discardCharacterReferenceSheetFiles(options.projectId, renderedSheetFileNames(rendered.rendered)),
+    published: (rendered, current) => publishedCharacterReferenceSheets(options.projectId, rendered, current),
+    supersedes: supersedesSettledCharacterReferences,
+    commit: (tx, rendered, current) => commitCharacterReferenceSheets(options, tx, rendered, current)
+  });
+  return state.answer.assets;
 }
+
+/**
+ * What one read of this plan's sheet set finds. The refusals ride along because
+ * the commit has to know what it would be *replacing*, not only what it is
+ * writing — see `recordCharacterReferenceRefusals`. Every read that produces one
+ * is taken under the advisory lock, and this column has no other writer, so the
+ * pair is a reading of the row rather than a guess about it.
+ */
+type CharacterReferenceState = {
+  assets: WorkerImageAsset[];
+  refusals: CharacterReferenceRefusal[];
+};
 
 async function currentCharacterReferences(
   projectId: string,
   planId: string,
   client: Pick<typeof prisma, "imageAsset"> = prisma
 ): Promise<Array<{ id: string; path: string; metadata: unknown }>> {
+  // **Every waiter runs this once per poll, so what it does not ask for is the
+  // cost of waiting.** `MAX_PARALLEL_IMAGE_JOBS + 1` jobs run it every
+  // `CHARACTER_REFERENCE_LEASE_POLL_MS` for up to fifteen minutes, and it used
+  // to select whole rows — `prompt` above all, the multi-kilobyte text a sheet
+  // was drawn from — sort every plan version's sheets (the commit's id-scoped
+  // delete is what leaves them there) and drop all but this one's in memory,
+  // with no index behind any of it. The in-memory narrowing stays as the
+  // statement of what this returns rather than as an optimization: the JSON
+  // predicate is Postgres', and a client answering a `where` less precisely may
+  // not widen this set.
   const existing = await client.imageAsset.findMany({
-    where: { projectId, type: "CHARACTER_REFERENCE" },
-    orderBy: { createdAt: "asc" }
+    where: { projectId, type: "CHARACTER_REFERENCE", metadata: { path: ["planId"], equals: planId } },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, path: true, metadata: true }
   });
   return existing.filter((asset) => imageAssetPlanId(asset.metadata) === planId);
 }
 
-async function generateCharacterReferenceAssets(
-  options: {
-    projectId: string;
-    planId: string;
-    input: CreateProjectInput;
-    plan: BookPlan;
-    providers: ProviderSet;
-    strategy: BookGenerationStrategy;
-    generationJobId?: string | undefined;
-  },
-  tx: Prisma.TransactionClient,
-  hasExistingRows: boolean
-): Promise<WorkerImageAsset[]> {
-  if (hasExistingRows) {
-    await tx.imageAsset.deleteMany({ where: { projectId: options.projectId, type: "CHARACTER_REFERENCE" } });
-  }
+async function settledCharacterReferenceRefusals(
+  planId: string,
+  client: Pick<typeof prisma, "planVersion"> = prisma
+): Promise<CharacterReferenceRefusal[]> {
+  const planVersion = await client.planVersion.findUnique({
+    where: { id: planId },
+    select: { characterReferenceRefusals: true }
+  });
+  return parseCharacterReferenceRefusals(planVersion?.characterReferenceRefusals);
+}
 
-  const projectImageDir = join(config.IMAGE_STORAGE_DIR, options.projectId);
-  await mkdir(projectImageDir, { recursive: true });
+/**
+ * The pass that just ran owns the whole answer: it attempted every character,
+ * so a name missing from this list is one it drew. Written with the sheets, in
+ * their transaction — a settlement without them re-renders nothing, and sheets
+ * without it are the per-page rebuild `characterReferenceSetIsSettled`
+ * describes.
+ *
+ * `updateMany` because a plan version can be deleted out from under a running
+ * render — an undo of a structural edit removes the one it approved — and a
+ * settlement with nobody left to read it is not worth failing the book for.
+ *
+ * A settlement equal to what the row already holds is not written, and that is
+ * the ordinary pass: nobody refused, against a column already NULL. `DbNull`
+ * over NULL is a row version, a WAL record and a dead tuple on `PlanVersion`
+ * for no change, inside the transaction holding the lock every other image job
+ * of this book claims through. Only *equality* is skipped — a pass that draws a
+ * character an earlier one was refused still clears the column, which is the
+ * whole mechanism by which a refusal can be taken back. Order is not part of the
+ * answer, since the render pool decides which refused name lands first, so the
+ * two are compared as sets.
+ *
+ * `recorded` is the *parsed* prior value, and `parseCharacterReferenceRefusals`
+ * is this column's only reader — so an equal-parse skip cannot hide a difference
+ * from anyone; at worst it leaves a document this function did not spell, which
+ * every read already tolerates.
+ */
+async function recordCharacterReferenceRefusals(
+  tx: Prisma.TransactionClient,
+  planId: string,
+  refusals: readonly CharacterReferenceRefusal[],
+  recorded: readonly CharacterReferenceRefusal[]
+): Promise<void> {
+  if (characterReferenceRefusalsAgree(recorded, refusals)) {
+    return;
+  }
+  await tx.planVersion.updateMany({
+    where: { id: planId },
+    data: {
+      characterReferenceRefusals:
+        refusals.length > 0 ? (refusals.map((refusal) => ({ ...refusal })) as Prisma.InputJsonValue) : Prisma.DbNull
+    }
+  });
+}
+
+type RenderedCharacterReference = {
+  character: BookPlan["characters"][number];
+  prompt: string;
+  image: Awaited<ReturnType<BookGenerationStrategy["generateImageBytes"]>>;
+  optimizedImage: Awaited<ReturnType<typeof optimizeImageForStorage>>;
+  filename: string;
+  seeding: LibraryPortraitSeedOutcome;
+};
+
+/** One pass's whole answer for the cast: what it drew, and who it was refused. */
+type RenderedCharacterReferences = {
+  rendered: Array<RenderedCharacterReference | undefined>;
+  refused: CharacterReferenceRefusal[];
+  bookHasLibraryCharacters: boolean;
+};
+
+/**
+ * The slow half, and the reason it is a half at all: nothing here holds the
+ * advisory lock, a transaction or a database connection. Every model call this
+ * pass makes — the renders, and the copyright rewrite plus second render a
+ * refusal buys — happens between the two short transactions in
+ * `characterReferenceRenderLease.ts`, so no amount of provider latency can
+ * abort a commit or block another image job.
+ */
+async function renderCharacterReferenceSheets(
+  options: CharacterReferenceRenderOptions
+): Promise<RenderedCharacterReferences> {
+  const imageDir = projectImageDir(options.projectId);
+  await mkdir(imageDir, { recursive: true });
 
   // The renders are independent, so a small worker pool runs them
   // concurrently instead of paying one image-model latency per character in
-  // series — this whole section sits inside the advisory-lock transaction's
-  // timeout. Workers stop picking up new characters after the first failure
+  // series. Workers stop picking up new characters after the first failure
   // (a rejected Promise.all cannot cancel siblings, and renders nobody will
-  // keep spend the same image budget the retry needs). The transaction's row
-  // writes stay sequential below: an interactive transaction client must not
-  // run queries concurrently.
+  // keep spend the same image budget the retry needs).
   const characters = options.plan.characters;
   // Names decide filenames, so the whole cast's stems are resolved together and
   // up front: two characters must never share one, and the renders below run
-  // concurrently into this one directory.
-  const fileStems = characterReferenceFileStems(characters.map((character) => character.name));
+  // concurrently into this one directory. The pass's own id rides on every stem
+  // for the harder half of that — this directory is shared by every render pass
+  // of the book too, and since the renders left the advisory lock two of them
+  // can overlap. `characterReferenceFileNames.ts` has the reasoning.
+  const fileStems = characterReferenceFileStems(
+    characters.map((character) => character.name),
+    randomUUID()
+  );
   const librarySnapshots = libraryCharactersFromMediaSettings(options.input.mediaSettings);
   // The snapshots are stored JSON that client flows can reach, so a portrait
   // may only be read out of the book owner's own characters directory: the
@@ -146,17 +285,11 @@ async function generateCharacterReferenceAssets(
   // every ordinary book, which is noise standing exactly where the signal for
   // the books that *did* mention someone has to be readable.
   const bookHasLibraryCharacters = librarySnapshots.length > 0;
-  type RenderedReference = {
-    character: (typeof characters)[number];
-    prompt: string;
-    image: Awaited<ReturnType<typeof options.strategy.generateImageBytes>>;
-    optimizedImage: Awaited<ReturnType<typeof optimizeImageForStorage>>;
-    filename: string;
-    seeding: LibraryPortraitSeedOutcome;
-  };
-  const rendered = Array.from({ length: characters.length }) as RenderedReference[];
+  const rendered = Array.from({ length: characters.length }) as Array<RenderedCharacterReference | undefined>;
+  const refused: CharacterReferenceRefusal[] = [];
   let cursor = 0;
   let failed = false;
+  let failure: { error: unknown } | undefined;
   const renderWorker = async () => {
     while (!failed && cursor < characters.length) {
       const index = cursor;
@@ -186,24 +319,32 @@ async function generateCharacterReferenceAssets(
             outcome: seeding
           });
         }
-        const prompt = [
-          buildCharacterReferencePrompt({
-            input: options.input,
-            plan: options.plan,
-            character
-          }),
-          ...(seeding.seeded ? [characterReferenceSeedInstruction(seeding.seed.source)] : [])
-        ].join("\n");
+        const seed = seeding.seeded ? seeding.seed : null;
+        // "The attached image is this character's existing, approved artwork"
+        // is a claim about a picture, so it is a function of the picture: a
+        // fallback provider that can take no references drops the sentence
+        // with the file rather than describing an attachment that is gone.
+        const promptForReferenceImages = (attached: readonly string[]) =>
+          [
+            buildCharacterReferencePrompt({
+              input: options.input,
+              plan: options.plan,
+              character
+            }),
+            ...(seed && attached.length > 0 ? [characterReferenceSeedInstruction(seed.source)] : [])
+          ].join("\n");
+        const prompt = promptForReferenceImages(seed ? [seed.path] : []);
         const image = await options.strategy.generateImageBytes({
           image: options.providers.image,
           prompt,
           projectId: options.projectId,
-          ...(seeding.seeded ? { referenceImagePaths: [seeding.seed.path] } : {}),
+          ...(seed ? { referenceImagePaths: [seed.path] } : {}),
+          promptForReferenceImages,
           aspectRatio: "4:3"
         });
         const optimizedImage = await optimizeImageForStorage({ bytes: image.bytes, mimeType: image.mimeType });
         const filename = `${fileStems[index]!}.${optimizedImage.extension}`;
-        await writeFile(join(projectImageDir, filename), optimizedImage.bytes);
+        await writeFile(join(imageDir, filename), optimizedImage.bytes);
         rendered[index] = {
           character,
           prompt,
@@ -213,17 +354,173 @@ async function generateCharacterReferenceAssets(
           seeding
         };
       } catch (error) {
+        // A provider that read the prompt and declined to draw it — a
+        // copyrighted character, a blocked likeness — has answered, and it will
+        // answer the same way every time. Failing here failed the whole
+        // GENERATE_BOOK job, so a book whose cast one filter objected to went
+        // FAILED before a single page existed, while an interior illustration
+        // and a cover that cannot be drawn both let the book finish without
+        // them. A sheet is weaker than either: it is the *consistency* aid the
+        // page renders attach, so losing one costs one character's likeness
+        // holding still, not a page. The rest of the cast keeps rendering —
+        // `failed` stays false — and the refusal is written down below.
+        if (isImageContentRefusalError(error)) {
+          const reason = imageRefusalReason(error);
+          refused.push({ name: character.name, reason });
+          await logCharacterReferenceRefused({
+            projectId: options.projectId,
+            planId: options.planId,
+            generationJobId: options.generationJobId,
+            characterName: character.name,
+            reason,
+            detail: errorMessage(error)
+          });
+          continue;
+        }
+        // Anything else — an outage, a timeout, a spent quota — is not a
+        // verdict about this prompt, and recording it as one would settle a
+        // book to "no reference sheets" that would have been drawn a minute
+        // later. It stays fatal so the job's existing retry ladder runs — but it
+        // is *held* rather than thrown, because a rejected `Promise.all` settles
+        // while its siblings are still inside a render and their `writeFile`s
+        // would land behind the sweep below. `failed` already stops new pickups,
+        // so waiting the drawing workers out costs one image call. The first
+        // failure is the one raised, which is what `Promise.all` gave.
         failed = true;
-        throw error;
+        failure ??= { error };
+        return;
       }
     }
   };
   await Promise.all(
     Array.from({ length: Math.min(CHARACTER_REFERENCE_RENDER_CONCURRENCY, Math.max(characters.length, 1)) }, renderWorker)
   );
+  // The other half of "a pass owns the files it wrote": an outage part way
+  // through the cast throws, `generate-book` retries under a fresh render id,
+  // and the sheets this attempt wrote are unreachable from the moment it stops.
+  if (failure) {
+    await discardCharacterReferenceSheetFiles(options.projectId, renderedSheetFileNames(rendered));
+    throw failure.error;
+  }
 
+  return { rendered, refused, bookHasLibraryCharacters };
+}
+
+/**
+ * Whether the rows this plan holds name the sheets *this* pass wrote.
+ *
+ * Asked at one moment only — the commit threw and nobody knows whether it
+ * landed — and it decides an irreversible unlink of a whole cast, so see
+ * `renderIsUnpublished` in `characterReferenceRenderLease.ts` for why an
+ * exception may not answer it.
+ *
+ * The evidence is the **file**, and it is computed in the same path space the
+ * sweep would unlink in, so the two cannot come to disagree about which bytes
+ * are at stake. `characterReferenceFileStems` stamps every stem with this pass's
+ * own render id, so a stored row resolving to one of these paths could only have
+ * been written by this commit: a rival's cast — drawn under its own id — can
+ * neither answer for this pass nor be mistaken for it, which is what makes a
+ * read taken after the lease was released sound. One row is enough, the commit
+ * being atomic, and one is also the safe direction for a question whose `false`
+ * deletes files.
+ *
+ * A pass that drew nobody — every character refused — has no file to sweep and
+ * no filename that could prove anything, so it answers `false` and the sweep
+ * runs over an empty list.
+ */
+function publishedCharacterReferenceSheets(
+  projectId: string,
+  result: RenderedCharacterReferences,
+  current: CharacterReferenceState
+): boolean {
+  const written = new Set(
+    renderedSheetFileNames(result.rendered).map((filename) => join(projectImageDir(projectId), filename))
+  );
+  return current.assets.some((asset) => {
+    const stored = localImagePathForAsset(asset.path, projectId);
+    return stored !== undefined && written.has(stored);
+  });
+}
+
+/**
+ * Whether this pass's answer may replace the one that reached the commit first.
+ *
+ * Two passes over one cast is ordinary now that the renders sit outside the
+ * advisory lock — a lease that expired under a slow render is the usual way
+ * there — and the loser used to stand down unconditionally, its answer being a
+ * duplicate. For two passes that drew the cast it is. But a pass may also answer
+ * with a *refusal*, and a refusal settles the set: nothing re-renders it after
+ * that, so the sheet a losing pass drew is not late, it is gone for the life of
+ * the plan version, and a character's likeness was decided by which commit won a
+ * race rather than by which render drew a picture. The two can genuinely
+ * disagree — a copyright refusal buys a *text* call to rewrite the prompt, so
+ * the second attempt is not the same prompt twice.
+ *
+ * So a drawing beats a refusal for the same character, and nothing else beats
+ * anything: we drew somebody the settled answer only recorded a refusal for,
+ * **and** we drew everybody it has a sheet for. The second half is load-bearing
+ * because `commitCharacterReferenceSheets` replaces the rows it read rather than
+ * merging with them — without it, a pass that drew Beatrice but was refused Ada
+ * would take one refusal back by recording another, and the two could ping-pong.
+ * Incomparable answers are left with whoever committed first; two full successes
+ * are a tie, and a tie is the one thing arrival order settles well.
+ */
+function supersedesSettledCharacterReferences(
+  result: RenderedCharacterReferences,
+  settled: CharacterReferenceState
+): boolean {
+  const drawn = result.rendered.filter((item): item is RenderedCharacterReference => Boolean(item));
+  const drew = new Set(drawn.map((item) => characterReferenceNameKey(item.character.name)));
+  const settledSheets = settled.assets
+    .map((asset) => characterNameFromAssetMetadata(asset.metadata))
+    .filter((name): name is string => Boolean(name));
+  return (
+    settled.refusals.some((refusal) => drew.has(characterReferenceNameKey(refusal.name))) &&
+    settledSheets.every((name) => drew.has(characterReferenceNameKey(name)))
+  );
+}
+
+/**
+ * The durable half: one short transaction, under the advisory lock, with every
+ * model call already behind it.
+ *
+ * The settlement and the sheets still commit together — one landing without
+ * the other is either a cast re-rendered per page or a character silently
+ * given up on — and the delete of the stale set is still atomic with the
+ * creates that replace it. What no longer shares that transaction is the
+ * waiting.
+ */
+async function commitCharacterReferenceSheets(
+  options: CharacterReferenceRenderOptions,
+  tx: Prisma.TransactionClient,
+  result: RenderedCharacterReferences,
+  current: CharacterReferenceState
+): Promise<CharacterReferenceState> {
+  // Staked on the rows this pass read under the lock, never on the project.
+  // `currentCharacterReferences` filters by `metadata.planId` and the creates
+  // below write this plan's cast and nothing else, so every row a
+  // `{ projectId, type }` delete took beyond that set was one this transaction
+  // neither counted nor replaced: another plan version's settled answer, gone
+  // as collateral. The guard has been plan-scoped since the render was first
+  // claimed and only the `where` stayed project-wide. Two handlers read those
+  // superseded rows on purpose — `handlers/characters.ts` filters a replanned
+  // project's sheets by plan precisely because the older ones are still there,
+  // and `handlers/applyImageInsertion.ts` falls back to them when the current
+  // plan has none — so losing them draws a cast the reader recognises from
+  // prose alone, and buys an unbilled re-render of every character if that plan
+  // version is current again, which an undo of a structural edit makes it.
+  if (current.assets.length > 0) {
+    await tx.imageAsset.deleteMany({ where: { id: { in: current.assets.map((asset) => asset.id) } } });
+  }
+  await recordCharacterReferenceRefusals(tx, options.planId, result.refused, current.refusals);
+
+  // Sequential by necessity: an interactive transaction client must not run
+  // queries concurrently.
   const created: WorkerImageAsset[] = [];
-  for (const item of rendered) {
+  for (const item of result.rendered) {
+    if (!item) {
+      continue;
+    }
     const asset = await tx.imageAsset.create({
       data: {
         projectId: options.projectId,
@@ -241,14 +538,14 @@ async function generateCharacterReferenceAssets(
           revisedPrompt: item.image.revisedPrompt,
           ...imageGenerationMetadata(item.image),
           fileName: item.filename,
-          ...librarySeedMetadata(item.seeding, bookHasLibraryCharacters)
+          ...librarySeedMetadata(item.seeding, result.bookHasLibraryCharacters)
         }
       }
     });
     created.push(toWorkerImageAsset(asset));
   }
 
-  return created;
+  return { assets: created, refusals: [...result.refused] };
 }
 
 const CHARACTER_REFERENCE_RENDER_CONCURRENCY = 3;
@@ -392,21 +689,57 @@ async function logLibrarySeedSkipped(options: {
 }
 
 /**
- * What a page or cover render attaches: the per-book character sheets, plus —
- * where the model's reference budget has room left — the reader's own saved
- * artwork for those same characters.
- *
- * The sheet is a redraw of that artwork, so by the time it reaches a page the
- * face is two generations from the one the reader recognises. Sending the
- * original alongside it is what stops that compounding. It is strictly
- * additive: the faces only ever fill slots the sheets did not want, so a page
- * with as many characters as the budget allows still gets every sheet.
+ * One line per refused sheet, beside the skipped-seed lines above and for the
+ * same reason: from the finished book, a character drawn without a reference
+ * sheet and a character the plan never had look exactly alike.
  */
-export type CharacterReferenceSelection = {
-  paths: string[];
-  /** Characters whose own artwork travels at the end of `paths`, in that order. */
-  libraryFaceNames: string[];
-};
+async function logCharacterReferenceRefused(options: {
+  projectId: string;
+  planId: string;
+  generationJobId: string | undefined;
+  characterName: string;
+  reason: string;
+  detail: string;
+}): Promise<void> {
+  console.warn("Character reference sheet refused; the book will render without it", {
+    event: "generation.consistency_warning",
+    warning: "character_reference_refused",
+    projectId: options.projectId,
+    // The refusal is permanent *per plan version*, and this is the only place it
+    // is announced anywhere an operator is looking — the run-log line below is a
+    // file inside the project's own directory. Without the plan id it names the
+    // fact and not the row that holds it, which is the row
+    // `scripts/clear-character-reference-refusals.ts` has to be pointed at.
+    planId: options.planId,
+    characterName: options.characterName,
+    reason: options.reason
+  });
+  const logDir = join(config.BOOK_STORAGE_DIR, options.projectId, "runs");
+  const runId = safePathPart(options.generationJobId ?? "unknown-run");
+  const entry = {
+    timestamp: new Date().toISOString(),
+    event: "character.reference.refused",
+    projectId: options.projectId,
+    planId: options.planId,
+    generationJobId: options.generationJobId,
+    characterName: options.characterName,
+    reason: options.reason,
+    detail: options.detail
+  };
+  try {
+    await mkdir(logDir, { recursive: true });
+    await appendFile(join(logDir, `${runId}-character-references.jsonl`), `${safeJsonStringify(entry)}\n`, "utf8");
+  } catch (error) {
+    console.error(`Failed to record a refused character reference sheet for ${options.projectId}`, error);
+  }
+}
+
+// What a render attaches and what it says about it: one module, because the
+// sentences are indexed and a layer that shortens the attachment has to be
+// able to state them again. Re-exported here so every caller still reaches
+// both through the module that builds the selection.
+export { characterReferencePromptInstruction } from "./characterReferencePrompt.js";
+export type { CharacterReferenceSelection } from "./characterReferencePrompt.js";
 
 export async function selectReferenceImagePaths(options: {
   input: CreateProjectInput;
@@ -416,7 +749,7 @@ export async function selectReferenceImagePaths(options: {
   image: ImageAdapter;
   context: string;
 }): Promise<CharacterReferenceSelection> {
-  const capabilities = imageCapabilities(options.image);
+  const capabilities = imageAdapterCapabilities(options.image);
   if (!capabilities.supportsReferenceImages || capabilities.maxReferenceImages <= 0) {
     return { paths: [], libraryFaceNames: [] };
   }
@@ -511,47 +844,12 @@ export function librarySnapshotForSheet(
   return name ? matchLibraryCharacter(name, snapshots) : null;
 }
 
-export function characterReferencePromptInstruction(selection: CharacterReferenceSelection): string {
-  const count = selection.paths.length;
-  if (count === 0) {
-    return "";
-  }
-  return [
-    `Use the ${count} attached character reference image${count === 1 ? "" : "s"} as the authoritative design source.`,
-    "Preserve each referenced character's face, silhouette, outfit, colors, and distinctive details; change only pose, expression, lighting, and scene placement.",
-    libraryCharacterFaceInstruction(selection.libraryFaceNames)
-  ]
-    .filter(Boolean)
-    .join(" ");
-}
-
-export function imageCapabilities(image: ImageAdapter): ImageAdapterCapabilities {
-  return image.capabilities?.() ?? { supportsReferenceImages: false, maxReferenceImages: 0 };
-}
-
-export function hasReferenceForEveryCharacter(assets: Array<{ metadata: unknown }>, plan: BookPlan): boolean {
-  const names = new Set(
-    assets
-      .map((asset) => characterNameFromAssetMetadata(asset.metadata)?.toLowerCase())
-      .filter((name): name is string => Boolean(name))
-  );
-  return plan.characters.every((character) => names.has(character.name.toLowerCase()));
-}
-
 export function imageAssetPlanId(metadata: unknown): string | undefined {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
     return undefined;
   }
   const value = (metadata as Record<string, unknown>).planId;
   return typeof value === "string" ? value : undefined;
-}
-
-export function characterNameFromAssetMetadata(metadata: unknown): string | undefined {
-  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
-    return undefined;
-  }
-  const value = (metadata as Record<string, unknown>).characterName;
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 /**
@@ -567,78 +865,10 @@ export function libraryCharacterIdFromAssetMetadata(metadata: unknown): string |
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-export function localImagePathForAsset(path: string, projectId: string): string | undefined {
-  let pathname = path;
-  try {
-    pathname = new URL(path).pathname;
-  } catch {
-    // Stored paths can also be relative API asset paths.
-  }
-  const marker = `/assets/images/${projectId}/`;
-  const markerIndex = pathname.indexOf(marker);
-  if (markerIndex < 0) {
-    return undefined;
-  }
-  const filename = decodeURIComponent(pathname.slice(markerIndex + marker.length));
-  if (!filename || filename.includes("/")) {
-    return undefined;
-  }
-  return join(config.IMAGE_STORAGE_DIR, projectId, filename);
-}
-
 export function toWorkerImageAsset(asset: { id: string; path: string; metadata: unknown }): WorkerImageAsset {
   return {
     id: asset.id,
     path: asset.path,
     metadata: asset.metadata
   };
-}
-
-/**
- * The filename-safe stem for one character's reference sheet.
- *
- * The ASCII path is deliberately byte-for-byte what it always was, so no
- * existing book's files move. What it could not do is name a character whose
- * name holds no ASCII at all: every Persian, Cyrillic, Hebrew or CJK name
- * emptied out and `safePathPart`'s own fallback turned the empty string into
- * the literal "unknown", so a Persian book's entire cast wrote to
- * `character-reference-unknown.jpg` — one file, several concurrent writers, and
- * every character afterwards drawn from whichever render happened to land last.
- * Nothing rebuilt it either: `hasReferenceForEveryCharacter` compares names, so
- * the set looked complete for the life of the plan.
- *
- * The fallback hashes the *folded* name, so the two spellings of one Persian
- * name (an Arabic kaf against a Persian one, a stray ZWNJ, a diacritic the
- * planner echoed back) still resolve to the same file rather than to two.
- */
-export function characterSlug(value: string): string {
-  const ascii = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-  if (ascii) {
-    return safePathPart(ascii);
-  }
-  return `char-${createHash("sha256").update(foldCharacterName(value)).digest("hex").slice(0, 10)}`;
-}
-
-/**
- * One filename stem per plan character, unique within the cast.
- *
- * `characterSlug` is per-name and so cannot promise that on its own: a name
- * that is mostly non-Latin still yields an ASCII slug from whatever Latin it
- * does contain, so "Ada بهرام" and "Ada کیوان" both reduce to `ada`. Uniqueness
- * is a property of the cast, not of a name, and it has to hold before the
- * renders start — they run concurrently into a single project directory, and
- * two characters sharing a stem is one file written twice and a book whose
- * whole cast wears one face.
- */
-export function characterReferenceFileStems(names: readonly string[]): string[] {
-  const taken = new Set<string>();
-  return names.map((name) => {
-    const base = `character-reference-${characterSlug(name)}`;
-    let stem = base;
-    for (let suffix = 2; taken.has(stem); suffix += 1) {
-      stem = `${base}-${suffix}`;
-    }
-    taken.add(stem);
-    return stem;
-  });
 }

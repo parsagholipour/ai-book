@@ -23,7 +23,6 @@ const mocks = vi.hoisted(() => ({
   maybeEnqueueCompile: vi.fn(),
   generateImageBytes: vi.fn(),
   selectReferenceImagePaths: vi.fn(),
-  imageCapabilities: vi.fn(),
   optimizeImageForStorage: vi.fn(),
   mkdir: vi.fn(),
   writeFile: vi.fn(),
@@ -62,8 +61,7 @@ vi.mock("../generation/characterReferences.js", async () => {
   );
   return {
     ...actual,
-    selectReferenceImagePaths: mocks.selectReferenceImagePaths,
-    imageCapabilities: mocks.imageCapabilities
+    selectReferenceImagePaths: mocks.selectReferenceImagePaths
   };
 });
 vi.mock("node:fs/promises", () => ({
@@ -79,6 +77,7 @@ vi.mock("@book-maker/core", async () => {
     ...actual,
     bookPlanSchema: { parse: (value: unknown) => value },
     createProviders: () => ({}),
+    imageAdapterCapabilities: () => ({ supportsReferenceImages: true, maxReferenceImages: 4 }),
     optimizeImageForStorage: mocks.optimizeImageForStorage
   };
 });
@@ -182,7 +181,6 @@ beforeEach(() => {
     extension: "jpg"
   });
   mocks.selectReferenceImagePaths.mockResolvedValue({ paths: [], libraryFaceNames: [] });
-  mocks.imageCapabilities.mockReturnValue({ supportsReferenceImages: true, maxReferenceImages: 4 });
   mocks.stat.mockRejectedValue(new Error("ENOENT"));
 });
 
@@ -639,7 +637,7 @@ describe("applyImageInsertion", () => {
       where: { id: "asset-1" },
       data: {
         path: `http://localhost:4001/assets/images/project-1/${writtenFilename()}`,
-        prompt: expect.stringContaining("a more aggressive fox")
+        prompt: expect.stringContaining("a more aggressive fox"), metadata: {}
       }
     });
     expect(mocks.tx.page.update).toHaveBeenCalledWith({
@@ -659,7 +657,7 @@ describe("applyImageInsertion", () => {
             path: asset.path,
             afterPath: `http://localhost:4001/assets/images/project-1/${writtenFilename()}`,
             prompt: asset.prompt,
-            imagePrompt: "Mae in the garden with a fox."
+            imagePrompt: "Mae in the garden with a fox.", generation: {}
           }
         }
       }

@@ -1,4 +1,5 @@
 import { jsonRecord } from "./support.js";
+import { storedImageRenderProvenance } from "@book-maker/core";
 
 /**
  * What an image edit wrote down so it can be taken back.
@@ -20,8 +21,27 @@ export type PreviousImageAssetRecord = {
   path: string;
   prompt: string;
   imagePrompt?: string | null;
-  /** Set by a replacement: where the new artwork landed. */
+  /**
+   * Set by a replacement: where the new artwork landed.
+   *
+   * It is also what *identifies* a replacement to undo, which matters for the
+   * rows written before `generation` existed: a move or a remove never writes
+   * one, so `afterPath` without `generation` is a replacement whose provenance
+   * was never recorded, and undo clears the redraw's claim rather than leaving
+   * it standing over the old bytes.
+   */
   afterPath?: string;
+  /**
+   * Set by a replacement: the render provenance of the picture at `path`.
+   *
+   * A move or a remove never redraws, so its record has none — the row's
+   * `metadata.copyrightRewrite` still describes the bytes it always did. A
+   * replacement is the one edit that puts different pixels behind the same
+   * `ImageAsset` row, so the record it left has to travel back with them:
+   * restoring the old path over the new render's provenance would say a
+   * protected name was removed from a picture drawn before anyone asked.
+   */
+  generation?: Record<string, unknown>;
   /** Set by a move: the page it went to, and that page's own prompt beforehand. */
   destPageId?: string;
   destImagePrompt?: string | null;
@@ -46,6 +66,9 @@ export function previousImageAssetsFromClassifier(classifier: unknown): Previous
       ? { imagePrompt: stored.raw.imagePrompt }
       : {}),
     ...(typeof stored.raw.afterPath === "string" && stored.raw.afterPath ? { afterPath: stored.raw.afterPath } : {}),
+    ...(stored.raw.generation !== undefined
+      ? { generation: storedImageRenderProvenance(stored.raw.generation) }
+      : {}),
     ...(typeof stored.raw.destPageId === "string" && stored.raw.destPageId
       ? { destPageId: stored.raw.destPageId }
       : {}),

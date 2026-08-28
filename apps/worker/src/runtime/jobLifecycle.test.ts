@@ -736,14 +736,14 @@ describe("job lifecycle ownership", () => {
       job("compile-export", { generationJobId: "compile-successor", ...scope }),
       new Error("successor image failed")
     );
-
     expect(mocks.markGenerationAttemptSucceeded).not.toHaveBeenCalled();
+    // The attempt settlement keeps the cause; the operation column is read.
     expect(mocks.failGenerationAttempt).toHaveBeenCalledWith("attempt-1", "successor image failed");
     expect(mocks.bookEditOperationUpdateMany).toHaveBeenCalledWith({
       where: { id: "operation-1", status: { in: ["QUEUED", "ACTIVE"] } },
       data: {
         status: "FAILED",
-        error: "successor image failed",
+        error: "That change couldn’t be finished. Send it again to try once more.",
         structuralLeaseToken: null,
         structuralLeaseExpiresAt: null
       }

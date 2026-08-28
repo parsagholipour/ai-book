@@ -661,6 +661,25 @@ reason, and a null answer refuses the whole move rather than half-applying it.
   `StopRequestedError` and renders a designed cover, recording
   `coverFallbackReason: "ai_cover_failed"`. The stop check is load-bearing: swallowing it would turn
   every user-cancelled run into a finished book.
+  **The reference sheets are on the far side of that guard, and they are an enhancement rather than
+  a precondition.** `ensureCharacterReferenceAssets` is awaited some seventy lines *above* the
+  `try`, which was safe only while it blocked on `pg_advisory_xact_lock` and could not really fail
+  from contention. `characterReferenceRenderLease.ts` split it into two interactive transactions
+  with a `maxWait` of `CHARACTER_REFERENCE_POOL_WAIT_MS`, nothing between them catches, and
+  `MAX_PARALLEL_IMAGE_JOBS + 1` jobs reach the claim at once by design — so a P2024 pool timeout is
+  an *expected* outcome, and it travelled straight past the fallback into the FAILED-and-refunded
+  path this rule closed, for a consistency aid rather than for a cover. Both handlers that own a
+  picture and no retry budget now take the sheets through `characterReferenceAssetsOrNone`
+  (`../generation/characterReferenceTolerance.ts`): the cover is drawn without them, and the
+  designed-cover fallback still stands behind it if the artwork also fails. `generateImage.ts` calls
+  it for the same reason at a smaller price — its own catch writes `Page.imageFailureReason`, which
+  is durable and which nothing retries, so a ten-second pool timeout permanently cost a page an
+  illustration nobody had attempted. The tolerance lives at those two call sites and **not** inside
+  `ensureCharacterReferenceAssets`: `generate-book` is in `NETWORK_RETRYABLE_JOB_NAMES` and its
+  ladder is the right answer to an outage that costs a whole cast. A stop still travels, and the
+  give-up is written to the character-reference run log as `character.reference.unavailable`, since
+  it is the fifth way a page ends up drawn with no sheet and they are indistinguishable from the
+  book.
 - **The portrait job is the one `GenerationJob` with no project.** `GENERATE_CHARACTER_PORTRAIT`
   runs with `projectId` null, which is why that column is nullable: every project-scoped query
   (stop, settlement, status, `failureMessage`) simply never sees the row, and

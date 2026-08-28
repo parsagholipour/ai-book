@@ -1,5 +1,5 @@
-import type { GenerateTextOptions, Usage } from "@book-maker/core";
-import { calculateTextGenerationCost } from "@book-maker/core";
+import type { GenerateTextOptions, ScriptTokenWeights, Usage } from "@book-maker/core";
+import { calculateTextGenerationCost, estimateTokensByScript } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { jsonInputValue, jsonPayloadToRecord, serializeError } from "../runtime/serialization.js";
 
@@ -9,6 +9,15 @@ import { jsonInputValue, jsonPayloadToRecord, serializeError } from "../runtime/
  * Text calls open a "live" ProviderCallLog row as soon as streaming starts so
  * the UI can show spend in flight, then settle it with real usage when the
  * call finishes (or fails).
+ *
+ * Every number in here is either a count the provider reported or an estimate,
+ * and the two are never mixed into a price: the moment either half of a call's
+ * tokens comes from {@link estimateTokenCountFromText}, `provisional` is set and
+ * `costHint` is written `null`. That is the invariant the whole admin
+ * directory reads by (`apps/api/src/admin/CLAUDE.md`) — a non-null `costHint`
+ * *is* a settled, priced call — so an estimate can never move a dollar figure,
+ * a margin, or a credit charge. It can only move the token counts an operator
+ * sees, which is why it still has to be roughly right.
  */
 
 export async function recordProviderUsage(options: {
@@ -393,15 +402,83 @@ export function withLiveOutputTracking<T extends GenerateTextOptions>(options: T
   };
 }
 
+/**
+ * The prompt's estimated size, counted over the messages joined exactly as the
+ * provider will see them.
+ *
+ * **Counted over the join, not summed per message**, and the copy that costs is
+ * worth what it buys. Summing {@link estimateTokenCountFromText} per message is
+ * a different number, not a cheaper route to this one: each class is rounded up
+ * once per message instead of once per request, the `Math.max(1, …)` floor
+ * applies per message, and the `\n\n` between messages stops being counted at
+ * all. Three two-character messages come to 30 that way and 31 this way, and
+ * forty come to 612 against 619 — every stored `promptTokens` would shift.
+ * Measured, the join is ~0.23 ms of a ~1 ms call on the largest prompt this
+ * worker builds (400 KB, `runBoundedChapterQualityReview`); the counting is the
+ * rest, and `estimateTokensByScript` (`packages/core/src/textTokens.ts`) is
+ * where that was made cheap.
+ */
 export function estimateTextRequestTokens(options: GenerateTextOptions): number {
   const messageText = options.messages.map((message) => `${message.role}\n${message.content}`).join("\n\n");
   return estimateTokenCountFromText(messageText) + options.messages.length * 4 + 12;
 }
 
+/**
+ * What a piece of text was probably worth in tokens, for the calls where the
+ * provider did not say.
+ *
+ * This used to be `chars / 4` — the English rule, applied to a product that
+ * ships books in Persian, Arabic, Hebrew, Hindi, Thai, Chinese, Japanese and
+ * Korean. Those scripts are two to three UTF-8 bytes per character, so the same
+ * page of prose was reported at roughly a quarter of its real size: on every
+ * screen that counts tokens, a Persian or Chinese book read as three to four
+ * times lighter than an English one of the same length, and only ever in the
+ * direction that understates it. `estimateTokensByScript` (`textTokens.ts`)
+ * is the same counting `rewriteOutputTokenBudget` uses to size an echo; only
+ * the weights below differ, because a fuse wants to be generous and a cost
+ * estimate wants the middle.
+ *
+ * It stays an estimate. A real tokenizer is not four characters per token in
+ * Latin either, and the dense classes vary by vocabulary — see `textTokens.ts`
+ * for how wrong this can be and in which direction. `provisional` on the row is
+ * what says so; nothing here is ever priced.
+ */
 export function estimateTokenCountFromText(text: string): number {
-  return estimateTokenCountFromTextLength(text.length);
+  if (!text) {
+    return 0;
+  }
+  return Math.max(1, estimateTokensByScript(text, COST_ESTIMATE_TOKEN_WEIGHTS));
 }
 
+/**
+ * Four Latin characters per token keeps every English number this function has
+ * ever reported exactly where it was — typographic punctuation included, which
+ * was not true until `textTokens.ts` stopped reading a character shared between
+ * scripts as evidence of a dense one. While it did, an em dash, a curly quote
+ * and an ellipsis each cost a token of their own, and a line of English
+ * dialogue reported 17 tokens where the flat rule reported 13.
+ *
+ * A pictograph is the one English character this does not hold for, and that is
+ * deliberate: an emoji really is several tokens, so `\p{Extended_Pictographic}`
+ * — `©` and `™` with it — stays dense. One token per dense character is the
+ * central value across the scripts above rather than a measurement of any one
+ * of them.
+ */
+const COST_ESTIMATE_TOKEN_WEIGHTS = { latinCharsPerToken: 4, denseCharsPerToken: 1 } satisfies ScriptTokenWeights;
+
+/**
+ * The same estimate for a stream that has only been *counted*, not kept.
+ *
+ * Deliberately still flat: there is no text left to classify, so this is the
+ * Latin reading and therefore a floor rather than a guess. `generateText` and
+ * `generateJson` (`loggedAdapters.ts`) persist `Math.max` of this and
+ * {@link estimateTokenCountFromText} over the whole reply, so the floor never
+ * lowers a stored number — it covers the live in-flight display, and the case
+ * where the accumulated stream ran longer than the text the adapter handed
+ * back. The one place it *is* the whole answer is
+ * {@link settleLiveTextUsageEstimate}, which only `streamText` reaches, and
+ * nothing in this repo calls `streamText`.
+ */
 export function estimateTokenCountFromTextLength(length: number): number {
   if (!Number.isFinite(length) || length <= 0) {
     return 0;

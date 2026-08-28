@@ -3,11 +3,13 @@ import { InMemoryRateLimiter, identityRateLimitKey, sendRateLimitError } from ".
 import { authenticateMobileBearer, sendMobileAuthFailure, type MobileAuthContext } from "../requestAuth.js";
 import {
   GenerationAttemptConflictError,
+  GenerationAttemptJobClaimError,
   GenerationQuotaExceededError,
   InsufficientCreditsError,
   ensureProjectExportEntitlementOrSpend,
   hasActiveSubscriptionEntitlement
 } from "@book-maker/db/billing";
+import { imageLimitReachedMessage } from "@book-maker/core/editFailure";
 import { type FastifyError, type FastifyReply, type FastifyRequest } from "fastify";
 
 /**
@@ -283,6 +285,11 @@ export const insufficientCreditsError = {
  * Deliberately not a silent downgrade to a text-only book: the user asked for
  * illustrations, so they get the choice between upgrading and turning visuals
  * off, and the quota travels with the error so the app can say which it is.
+ *
+ * The sentence itself is `imageLimitReachedMessage`'s and not this function's,
+ * because the limit has a second claiming door: the chat `add_image` Apply
+ * fails the operation row instead of answering an HTTP status, and it reaches
+ * the same reader about the same spent slot. One code, one sentence.
  */
 export function sendImageLimitReached(
   reply: FastifyReply,
@@ -291,7 +298,7 @@ export function sendImageLimitReached(
   return reply.code(403).send({
     error: {
       code: "IMAGE_LIMIT_REACHED",
-      message: `Free plans include ${quota.limit} illustrated books a month. Upgrade for unlimited, or turn visuals off.`,
+      message: imageLimitReachedMessage(quota.limit),
       imageQuota: {
         used: quota.used,
         limit: quota.limit,
@@ -300,6 +307,21 @@ export function sendImageLimitReached(
     }
   });
 }
+
+/**
+ * What the reader is told when a paid start was wired onto work it does not own.
+ *
+ * Not a number and not an id: `GenerationAttemptJobClaimError`'s own message is
+ * the debugging artifact — it names the attempt, the job and the spent
+ * `dedupeKey` — and thrown, it is Fastify's default handler that puts exactly
+ * that string in the response body. `editFailure.ts` (core) already keeps it
+ * off `BookEditOperation.error`, the column the app parses; the wire is the
+ * other way it shipped, and this is that sentence. It says a retry is worth trying
+ * because the refusal happens *inside* the attempt transaction: the
+ * reservation, the spend, the quota slot and every domain write roll back with
+ * it, so a reader who meets this has been charged nothing.
+ */
+const GENERATION_START_NOT_CLAIMED = "That couldn’t be started, so nothing was charged. Try again in a moment.";
 
 /**
  * The shared part of a generation-attempt catch ladder.
@@ -315,6 +337,14 @@ export function sendImageLimitReached(
  * sharing the complete ladder there is harmless and prevents the copies from
  * drifting when generation-attempt failures evolve.
  *
+ * The claim rung is the same kind of defence and answers **500**, not 409: it
+ * is a wiring fault, so dressing it up as a conflict would promise the reader a
+ * setting they could change. What it refuses is the *body*, which Fastify would
+ * otherwise fill with the internal sentence — so the ladder here and
+ * `classifyEditFailure`'s stay one rung for one rung, three refusals the
+ * reader can act on and then the fault. Because answering it means the caller
+ * no longer rethrows, this rung is also where the cause is logged.
+ *
  * Returns whether it answered so callers can rethrow unknown errors and retain
  * Fastify's logging and 500 handling.
  */
@@ -329,6 +359,11 @@ export function sendGenerationAttemptError(reply: FastifyReply, error: unknown):
   }
   if (error instanceof GenerationAttemptConflictError) {
     sendMobileError(reply, 409, error.code, error.message);
+    return true;
+  }
+  if (error instanceof GenerationAttemptJobClaimError) {
+    reply.log.error({ err: error }, "Generation attempt could not claim its own generation job");
+    sendMobileError(reply, 500, error.code, GENERATION_START_NOT_CLAIMED);
     return true;
   }
   return false;

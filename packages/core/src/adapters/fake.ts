@@ -10,6 +10,7 @@ import {
 } from "../schemas/book.js";
 import { DEFAULT_TTS_CHANNELS, DEFAULT_TTS_SAMPLE_RATE, pcm16DurationMs } from "../audio/pcm.js";
 import { COVER_DESIGN_SELECTION_PURPOSE, DEFAULT_COVER_DESIGN_ID } from "../generation/coverDesigns.js";
+import { COPYRIGHT_SAFE_IMAGE_PROMPT_PURPOSE } from "../generation/copyrightSafeImagePrompt.js";
 import type {
   EmbeddingAdapter,
   GenerateJsonOptions,
@@ -206,6 +207,14 @@ export class FakeTextModelAdapter implements TextModelAdapter {
 
     if (options.purpose === "detect-language") {
       return fakeLanguageDetection(options);
+    }
+
+    if (options.purpose === COPYRIGHT_SAFE_IMAGE_PROMPT_PURPOSE) {
+      // The fake image adapter never refuses, so nothing reaches this on a dry
+      // run today. Answering "nothing protected" keeps it that way if one ever
+      // does, rather than inventing a rewrite MOCK_AI cannot check — `changed:
+      // false` makes the caller keep its refusal, so the prompt is unread.
+      return { prompt: "[MOCK_AI] no protected name found.", changed: false, replaced: [] };
     }
 
     if (options.purpose === COVER_DESIGN_SELECTION_PURPOSE) {

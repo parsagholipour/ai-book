@@ -89,7 +89,7 @@ export function resetMobileHarness(): void {
     status: "SETTLED",
     idempotencyKey: `test-${id}`
   }));
-  installGenerationAttemptMock({ mockBilling, mockPrisma, state });
+  installGenerationAttemptMock({ mockBilling, mockPrisma, mockQueue, state });
   mockBilling.refundCreditLedgerEntry.mockResolvedValue(null);
   mockBilling.grantProjectEntitlement.mockResolvedValue({
     id: "entitlement-export",
@@ -672,7 +672,7 @@ export function failedPlanRevisionOperationRecord(overrides: Record<string, unkn
         id: "attempt-failed-revision",
         commandKey: "mobile:edit-operation:operation-failed-revision",
         status: "FAILED",
-        operation: "PLAN_REVISION",
+        operation: "PLAN_REVISION" as const,
         quotedCredits: 40,
         refundPending: false,
         retryOfAttemptId: null,

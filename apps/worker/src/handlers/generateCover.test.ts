@@ -13,7 +13,9 @@ const mocks = vi.hoisted(() => ({
   advanceJobStep: vi.fn(),
   updateJobProgress: vi.fn(),
   writeFile: vi.fn(),
-  selectCoverDesign: vi.fn()
+  selectCoverDesign: vi.fn(),
+  ensureCharacterReferenceAssets: vi.fn(async () => []),
+  appendCharacterReferenceRunLog: vi.fn()
 }));
 
 vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma, Prisma: {} }));
@@ -29,6 +31,16 @@ vi.mock("../providers/loggedAdapters.js", () => ({
   createLoggedProviders: () => ({ text: {}, image: {} })
 }));
 vi.mock("node:fs/promises", () => ({ mkdir: vi.fn(), writeFile: mocks.writeFile }));
+// The tolerant wrapper is the code under test on the reference-sheet path, so
+// only the pass it wraps is mocked out.
+vi.mock("../generation/characterReferences.js", () => ({
+  characterReferencePromptInstruction: () => "",
+  ensureCharacterReferenceAssets: mocks.ensureCharacterReferenceAssets,
+  selectReferenceImagePaths: async () => ({ paths: [], libraryFaceNames: [] })
+}));
+vi.mock("../generation/characterReferenceRunLog.js", () => ({
+  appendCharacterReferenceRunLog: mocks.appendCharacterReferenceRunLog
+}));
 vi.mock("../generation/bookHelpers.js", async () => {
   const actual = await vi.importActual<typeof import("../generation/bookHelpers.js")>("../generation/bookHelpers.js");
   return {
@@ -167,6 +179,59 @@ describe("generateCover", () => {
     expect(asset?.provider).toBe("gemini");
     expect(asset?.metadata).toMatchObject({ coverArtSource: "ai", sourceImageModel: "gemini-3-pro-image" });
     expect(mocks.selectCoverDesign).not.toHaveBeenCalled();
+  });
+
+  // `ensureCharacterReferenceAssets` sits ~70 lines above the artwork guard, and
+  // since the render lease split it into two interactive transactions with a
+  // 10s `maxWait`, a P2024 pool timeout is an expected outcome of
+  // `MAX_PARALLEL_IMAGE_JOBS + 1` claimants. `generate-image` owns the project
+  // lifecycle, so that throw used to mark a fully written, fully paid book
+  // FAILED and refund `FULL_BOOK_GENERATION` for a missing consistency aid.
+  it("draws the cover without sheets when the reference pass cannot reach the database", async () => {
+    mocks.prisma.planVersion.findUnique.mockResolvedValue(planVersion({ includeCover: true }));
+    mocks.ensureCharacterReferenceAssets.mockRejectedValueOnce(
+      new Error("Timed out fetching a new connection from the connection pool")
+    );
+    mocks.generateImageBytes.mockResolvedValue({
+      bytes: Buffer.from("art"),
+      mimeType: "image/png",
+      provider: "gemini",
+      model: "gemini-3-pro-image"
+    });
+
+    await generateCover(job());
+
+    const asset = storedAsset();
+    expect(asset?.provider).toBe("gemini");
+    expect(asset?.metadata).toMatchObject({ coverArtSource: "ai", characterReferenceCount: 0 });
+    // Nothing else records the difference between a cast that has no sheets and
+    // a pass that could not answer.
+    expect(mocks.appendCharacterReferenceRunLog).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: "project-1", planId: "plan-1" }),
+      "character.reference.unavailable",
+      expect.objectContaining({ drawing: "cover" })
+    );
+  });
+
+  it("still falls back to a designed cover when the reference pass and the artwork both fail", async () => {
+    mocks.prisma.planVersion.findUnique.mockResolvedValue(planVersion({ includeCover: true }));
+    mocks.ensureCharacterReferenceAssets.mockRejectedValueOnce(new Error("character reference lease commit aborted"));
+    mocks.generateImageBytes.mockRejectedValue(new Error("all image providers failed"));
+
+    await generateCover(job());
+
+    const asset = storedAsset();
+    expect(asset?.provider).toBe(BUNDLED_COVER_PROVIDER);
+    expect(asset?.metadata).toMatchObject({ coverArtSource: "design", coverFallbackReason: "ai_cover_failed" });
+  });
+
+  it("surfaces a stop raised while the reference pass waits rather than finishing the book", async () => {
+    mocks.prisma.planVersion.findUnique.mockResolvedValue(planVersion({ includeCover: true }));
+    mocks.ensureCharacterReferenceAssets.mockRejectedValueOnce(new StopRequestedError());
+
+    await expect(generateCover(job())).rejects.toThrow(StopRequestedError);
+    expect(mocks.prisma.imageAsset.create).not.toHaveBeenCalled();
+    expect(mocks.generateImageBytes).not.toHaveBeenCalled();
   });
 
   it("writes no cover at all only when the source is none", async () => {

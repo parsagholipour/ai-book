@@ -1,0 +1,51 @@
+-- `ImageAsset` carried no index at all: a primary key on `id`, and Postgres
+-- does not index a foreign key column on its own. So every read of a project's
+-- pictures was a sequential scan of the whole table — the cover count on every
+-- dispatch, the project cost summary, the mobile status route, the add-image
+-- targets, and above all the character reference sheet set.
+--
+-- That last one is what makes it worth a migration. A book's illustrated pages
+-- fan out `MAX_PARALLEL_IMAGE_JOBS` image jobs plus a cover job, and any of them
+-- that loses the render claim polls `where projectId, type = 'CHARACTER_REFERENCE'`
+-- every two seconds for up to fifteen minutes while the winner draws the cast.
+-- Sequentially scanned and sorted, with `prompt` — the whole text a sheet was
+-- drawn from — on every returned row.
+--
+-- `(projectId, type)` rather than `(projectId)` because every one of those reads
+-- names a type, and the leading column still serves the ones that do not.
+--
+-- **CONCURRENTLY, because this index is built while the worker is mid-book.**
+-- The same sentence that makes the index worth having — this is the largest
+-- completely unindexed table, and books are retained forever — is what makes a
+-- plain `CREATE INDEX` a production incident. It takes `SHARE`, which conflicts
+-- with the `ROW EXCLUSIVE` every INSERT holds, so for the whole build every
+-- `imageAsset.create` blocks: `commitCharacterReferenceSheets`, `generateImage`
+-- and `applyImageInsertion`. The first of those runs inside the commit
+-- transaction holding the character-reference advisory lock and a pooled
+-- connection, so the image jobs queued behind it exhaust
+-- `CHARACTER_REFERENCE_POOL_WAIT_MS` (10s `maxWait`) and raise `P2024` — which
+-- by that lease's own docblock throws away a cast already rendered and paid
+-- for, and which in `generateCover.ts` fails and refunds the whole book.
+--
+-- And the build really does overlap a live worker. `scripts/start-production.sh`
+-- — PID 1 of the production image — runs `pnpm db:deploy` before it starts this
+-- container's worker and API, but `railway.json` deploys with a healthcheck, so
+-- the *previous* deployment keeps serving the same database and the same Redis
+-- queue until the new one is healthy. `make dbmigration-up` is the same shape
+-- against a running local stack. `SHARE UPDATE EXCLUSIVE` is what CONCURRENTLY
+-- takes instead, and it blocks no INSERT at all.
+--
+-- Two things this spelling requires. It must be the **only** statement in its
+-- own migration: measured against this repo's Prisma 7.8, `migrate deploy` does
+-- not wrap a migration file in a transaction (a two-statement file whose second
+-- statement raised left the first applied), so CONCURRENTLY runs — but a
+-- concurrent build that fails leaves an INVALID index behind and marks the
+-- migration failed, and alone in a file that is one idempotent statement to
+-- recover rather than a partially applied script. `IF NOT EXISTS` is what makes
+-- the retry idempotent; the cost is that a retry after an interrupted build
+-- skips over the invalid index it left, so recovery from a *failed* build is
+-- `DROP INDEX CONCURRENTLY "ImageAsset_projectId_type_idx"` and re-running.
+-- Degrading to an unused index is the right way to be wrong here: reads fall
+-- back to the sequential scan they already did, while halting `migrate deploy`
+-- would take the whole deployment down over an optimization.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "ImageAsset_projectId_type_idx" ON "ImageAsset"("projectId", "type");

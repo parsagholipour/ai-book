@@ -207,10 +207,12 @@ code in that area, however obvious the rule looks.
 
 - **Generation state lives in the database, not in Redis.** → apps/worker/CLAUDE.md
 - **Run logs are the debugging artifact.** → apps/worker/CLAUDE.md
+- **A diagnostic write may not decide the render it describes.** → packages/core/src/adapters/CLAUDE.md
 - **The portrait job is the one `GenerationJob` with no project.** → apps/worker/src/handlers/CLAUDE.md
 - **Every fork out of `applyBookEdit` — structural and both image ones — is decided by the operation's `kind`, never by the payload.** → apps/worker/src/handlers/CLAUDE.md
 - **A structural edit's redelivery stamp comes down in the same transaction that puts the book back.** → apps/worker/src/handlers/CLAUDE.md
 - **A structural shift and every write after it belong to one durable, expiring delivery lease.** → apps/worker/src/generation/CLAUDE.md + apps/worker/src/handlers/CLAUDE.md
+- **Two durable leases share a shape, and neither is the other's configuration — the waiters are the proof.** → apps/worker/src/generation/CLAUDE.md
 - **Every read the shift is derived from is taken under the claim, and reconciled against what the claim actually finds.** → apps/worker/src/generation/CLAUDE.md
 - **An edit the reader has already undone is terminal for every delivery of it.** → apps/worker/src/handlers/CLAUDE.md
 - **A settlement merges onto the classifier it re-reads under its own row lock, never the copy the delivery carried in.** → apps/worker/src/handlers/CLAUDE.md
@@ -242,6 +244,7 @@ code in that area, however obvious the rule looks.
 
 - **Credits are reserved, then committed or refunded.** → packages/db/CLAUDE.md
 - **A charge has one cumulative reversal, and partial settlements name their claim.** → packages/db/CLAUDE.md
+- **A paid attempt may only be parented onto the job its own `create` callback wrote.** → packages/db/CLAUDE.md
 - **A balance is two pools, and spending draws the expiring one first.** → packages/db/CLAUDE.md
 - **The free month is granted lazily, not by a cron.** → packages/db/CLAUDE.md
 - **Cancelling belongs to Google Play; the app's job is to say what it costs and then re-ask.** → apps/api/src/mobile/CLAUDE.md
@@ -278,14 +281,32 @@ code in that area, however obvious the rule looks.
 - **Declining the cover buys a designed one, it does not remove the cover.** → packages/core/src/generation/CLAUDE.md
 - **A cover that cannot be drawn now finishes the book instead of failing it.** → apps/worker/src/handlers/CLAUDE.md
 - **Two things decide whether a cover design reads, and neither is visible in the code.** → packages/core/src/generation/CLAUDE.md
+- **A refused picture gets one rewritten prompt, and only a refusal about a name may have it.** → apps/worker/CLAUDE.md
+- **The rewrite touches the prompt, so the provenance record speaks for the prompt: a retry that re-sent the reference sheets claims no removal.** → apps/worker/CLAUDE.md
+- **A replacement replaces the provenance record too, and undo brings the old one back with the old bytes.** → apps/worker/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
+- **A picture that never arrived is not a picture that was refused, and only the second is permanent.** → packages/core/src/adapters/CLAUDE.md
+- **An Imagen score table says what the classifier scored, never what the filter blocked on, so it is diagnostics and the sentence is the verdict.** → packages/core/src/adapters/CLAUDE.md
+- **A native safety rating asserts only where it says `blocked`, and that flag is the one structured door the child-safety veto has.** → packages/core/src/adapters/CLAUDE.md
+- **A refused reference sheet is a settled fact about the plan, and the book finishes without it.** → apps/worker/src/generation/CLAUDE.md
+- **A drawing beats a refusal, whoever's commit got there first.** → apps/worker/src/generation/CLAUDE.md
+- **The refusal has to be written down, or tolerating it costs more than failing did.** → apps/worker/src/generation/CLAUDE.md
+- **The renders no longer sit inside the lock, because tolerating a refusal is what made that budget reachable.** → apps/worker/src/generation/CLAUDE.md
+- **A waiter's budget is one owner's, and only a lease that changes hands renews it.** → apps/worker/src/generation/CLAUDE.md
+- **The stale set is the rows the commit read, and another plan version's sheets are not among them.** → apps/worker/src/generation/CLAUDE.md
 - **A library character reaches a book by copy and by name, never by foreign key.** → packages/core/src/generation/CLAUDE.md
 - **A character's look lives in pixels, so it has to be written down or the planner invents one.** → packages/core/src/generation/CLAUDE.md
 - **Nothing used to check that the planner obeyed, and now one pass does.** → packages/core/src/generation/CLAUDE.md
 - **A per-book character list is a copy, and it says which library character it is a copy of.** → apps/api/src/mobile/CLAUDE.md
 - **A reference-sheet filename must survive a non-Latin name.** → apps/worker/src/generation/CLAUDE.md
+- **A pass owns every sheet file it wrote, because a per-pass name is unbounded and nothing else sweeps that directory.** → apps/worker/src/generation/CLAUDE.md
+- **Which of those files the sweep may unlink is decided by a re-read of the rows, never by an exception.** → apps/worker/src/generation/CLAUDE.md
+- **But no later pass runs, which is why a refusal needs a door out of the product.** → apps/worker/src/generation/CLAUDE.md
+- **And the second waiter's tick is four queries, so what they each read is the price of waiting.** → apps/worker/src/generation/CLAUDE.md
 - **`photoPath` is not a reference; `portraitPath` is, and the upload decides which one an image becomes.** → apps/api/src/mobile/CLAUDE.md
 - **A portrait start's prompt inputs are part of its command identity, never a test it is refused on.** → apps/api/src/mobile/CLAUDE.md
+- **One sheet per character reaches the model, because a superseded cast is still the same cast.** → packages/core/src/generation/CLAUDE.md + apps/worker/src/generation/CLAUDE.md
 - **The face is fed in twice, and only ever into spare budget.** → apps/worker/src/generation/CLAUDE.md
+- **A fallback pair reports the primary's reference budget, and the fallback attempt re-fits the request to its own — the prompt included, because the prompt counts the pictures and names the last few.** → packages/core/src/adapters/CLAUDE.md
 - **A mentioned character's sheet rides the stored edit request, never the routed text.** → apps/api/src/mobile/CLAUDE.md
 - **The mention scanner's rule about marks runs the other way, and both are right.** → packages/core/src/generation/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
 - **A mention row nothing can name is what makes the strip stop trusting the name list.** → packages/db/CLAUDE.md

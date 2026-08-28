@@ -1,0 +1,15 @@
+-- A character reference sheet an image provider refuses to draw — a
+-- copyrighted character, a blocked likeness — used to fail the whole book: the
+-- render pass threw, GENERATE_BOOK failed, and the project went FAILED before
+-- a single page existed. The pass now renders the rest of the cast and carries
+-- on, which needs somewhere to write down that a character has no sheet and
+-- never will.
+--
+-- Without that record the completeness check ("does every plan character have
+-- a sheet?") is false forever, so every page's image job would delete the
+-- whole set and re-render it: the cast redrawn per page, and the refusal paid
+-- for again each time.
+--
+-- Per plan version, because that is the identity a sheet already carries in
+-- its own metadata. Existing rows are NULL, which reads as "nothing refused".
+ALTER TABLE "PlanVersion" ADD COLUMN "characterReferenceRefusals" JSONB;

@@ -4,6 +4,13 @@ import { PAGE_RESTRUCTURE_TRANSACTION_OPTIONS, Prisma, prisma } from "@book-make
 /** Long enough for a slow provider call; renewed in the background at one third. */
 export const STRUCTURAL_PAGE_LEASE_MS = 3 * 60_000;
 const STRUCTURAL_PAGE_LEASE_RENEW_MS = STRUCTURAL_PAGE_LEASE_MS / 3;
+/**
+ * A tick of both waits, and the ceiling on the sleep a `busy` claim asks for.
+ * Fast because the acquire wait's tick **is** the CAS: an expiry frees the row
+ * at an instant nothing announces, and one rival delivery is polling for it.
+ * `characterReferenceRenderLease.ts` polls at half the rate for the mirror of
+ * both reasons — its tick is two reads, and a book can have several waiters.
+ */
 const STRUCTURAL_PAGE_LEASE_POLL_MS = 1_000;
 
 /**
@@ -23,6 +30,20 @@ const STRUCTURAL_PAGE_LEASE_POLL_MS = 1_000;
  * because giving up on a live delivery is the expensive mistake, and with an
  * answer the caller settles rather than a silent return that would leave the
  * book EDITING with no compile behind it.
+ *
+ * **Fixed at entry, and deliberately not renewed the way
+ * `characterReferenceRenderLease.ts` renews its own.** That lease has no
+ * heartbeat, so one still live at the deadline *proves* it changed hands, and
+ * its waiter is a consumer — an image or cover job that needs the winner's
+ * sheets — so abandoning under a live render throws the answer away. Neither
+ * half holds here. This lease is heartbeated, so an owner still holding at the
+ * deadline is ordinarily the same one still working, which is the case the
+ * suite pins ("a wedged one renews forever"); and this waiter is a *rival*, a
+ * duplicate delivery of the same operation whose whole job in losing is to
+ * write nothing — `processJob` neither completes nor fails on
+ * `UnownedStructuralDeliveryError`. So giving up costs this delivery its turn
+ * and the book nothing, while renewing on a relay would only hold the worker
+ * slot, which is the failure this bound exists to stop.
  */
 export const STRUCTURAL_PAGE_LEASE_WAIT_MS = 5 * STRUCTURAL_PAGE_LEASE_MS;
 

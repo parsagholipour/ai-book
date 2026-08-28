@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./collections": "./src/collections.ts",
+    "./editFailure": "./src/editFailure.ts",
     "./jobSteps": "./src/jobSteps.ts",
     "./libraryMentions": "./src/generation/libraryMentions.ts",
     "./modelTiers": "./src/adapters/modelTiers.ts",

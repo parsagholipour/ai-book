@@ -747,6 +747,19 @@ model PlanVersion {
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
+  /// Plan characters whose reference sheet an image provider refused to draw.
+  /// Written by the one pass that renders the set, so the next caller reads a
+  /// settled answer instead of paying to be refused again. See
+  /// apps/worker/src/generation/characterReferences.ts.
+  characterReferenceRefusals Json?
+
+  /// Who is currently rendering this plan's reference sheets, and until when.
+  /// The renders happen with no transaction and no lock held, so this column
+  /// pair is the whole of the cost control: see
+  /// apps/worker/src/generation/characterReferenceRenderLease.ts.
+  characterReferenceLeaseToken     String?
+  characterReferenceLeaseExpiresAt DateTime?
+
   project    Project  @relation("ProjectPlans", fields: [projectId], references: [id], onDelete: Cascade)
   currentFor Project? @relation("CurrentPlan")
 
@@ -1176,6 +1189,13 @@ model LibraryCharacterImage {
   /// a re-derivation would be a one-tap route from a photograph of a real
   /// person to the authoritative design source for every page.
   referenceEligible Boolean @default(false)
+  /// What this picture was drawn from when that is not what was asked for:
+  /// `{ copyrightRewrite: { refusalReason, replaced, unverifiedReferenceImages?, prompt } }`, the same key
+  /// `ImageAsset.metadata` carries. A portrait is the seed for every book's
+  /// character reference sheets, so a drawing whose prompt an IP filter refused
+  /// and a text model rewrote had nowhere to be recorded and left no trace at
+  /// all. Null on an upload and on a drawing nothing was rewritten for.
+  metadata    Json?
   createdAt   DateTime @default(now())
 
   character LibraryCharacter @relation(fields: [characterId], references: [id], onDelete: Cascade)
@@ -1243,6 +1263,8 @@ model ImageAsset {
   project           Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
   page              Page?              @relation(fields: [pageId], references: [id], onDelete: SetNull)
   moderationReports ModerationReport[]
+
+  @@index([projectId, type])
 }
 
 model ModerationReport {

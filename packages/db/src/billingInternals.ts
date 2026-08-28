@@ -7,7 +7,39 @@
  */
 import type { BillingOperation } from "@book-maker/core";
 import { Prisma, prisma } from "./client.ts";
+import type { CreditOperation } from "./generated/prisma/enums.ts";
 import { activeCreditPricingVersion } from "./creditPricing.ts";
+
+/**
+ * What a credit operation is *here*: the generated type of the column itself,
+ * so a row shape this package publishes describes the row its own client
+ * returns. Core's `BillingOperation` is the wire-facing spelling of the same
+ * set — core is the leaf of the dependency order and cannot import the Prisma
+ * client, so the two have to be declared apart — and `CreditOperationsAgree`
+ * below is the only thing holding them together.
+ */
+export type CreditOperationName = CreditOperation;
+
+type AssertTrue<T extends true> = T;
+type SameMembers<A, B> = [A] extends [B]
+  ? [B] extends [A]
+    ? true
+    : "schema.prisma's CreditOperation has a member core's BillingOperation does not"
+  : "core's BillingOperation has a member schema.prisma's CreditOperation does not";
+
+/**
+ * Fails to compile the moment `enum CreditOperation` in `prisma/schema.prisma`
+ * and `BillingOperation` in `packages/core/src/billing.ts` stop naming the same
+ * members — the one place either declaration is measured against the other.
+ * Both directions used to be reported by whatever call site happened to compare
+ * the two, which named the wrong fault: a value added to the Prisma enum alone
+ * came back as this package's own record type rejecting a row its own client
+ * returns, and one added to core's union alone as a `create` refusing the value
+ * several statements away. Adding a priced operation fails here, by name, until
+ * both are edited — the rest of that checklist is in the `add-priced-operation`
+ * skill.
+ */
+export type CreditOperationsAgree = AssertTrue<SameMembers<BillingOperation, CreditOperationName>>;
 
 export type CreditBalance = {
   /**

@@ -24,6 +24,8 @@ import type {
   Usage
 } from "./types.js";
 import { geminiImageReferenceLimit, isGeminiNativeImageModel, normalizeGeminiImageModel } from "./geminiModels.js";
+import { missingImagenImageError } from "./geminiImagenRefusal.js";
+import { missingNativeImageError } from "./geminiNativeImageRefusal.js";
 import { resolveGroundingRedirects } from "./groundingRedirect.js";
 import type { TextModelThinkingEffort } from "../schemas/book.js";
 
@@ -597,11 +599,12 @@ export class GeminiImageAdapter implements ImageAdapter {
       }
     });
 
-    const parts = response.candidates?.[0]?.content?.parts ?? response.parts ?? [];
+    const candidate = response.candidates?.[0];
+    const parts = candidate?.content?.parts ?? response.parts ?? [];
     const imagePart = parts.find((part: any) => part.inlineData?.data);
     const imageBytes = imagePart?.inlineData?.data;
     if (!imageBytes) {
-      throw new Error(`Gemini image model ${this.model} did not return image bytes.`);
+      throw missingNativeImageError(this.model, response, candidate, parts);
     }
 
     const text = parts
@@ -621,7 +624,54 @@ export class GeminiImageAdapter implements ImageAdapter {
   private async generateImagenImage(request: ImageRequest): Promise<ImageResult> {
     const config: Record<string, unknown> = {
       numberOfImages: 1,
-      aspectRatio: request.aspectRatio ?? "4:3"
+      aspectRatio: request.aspectRatio ?? "4:3",
+      // Why a picture was filtered is opt-in on this endpoint. The SDK
+      // documents `includeRaiReason` as "whether to include the Responsible AI
+      // filter reason if the image is filtered out of the response", and
+      // without it a filtered request answers with an ordinary 200, an empty
+      // picture and nothing else — silence indistinguishable from a render
+      // that fell over. Asking for the reason is what lets
+      // `missingImagenImageError` tell a refusal from a blip at all, so it is
+      // not optional for us. The Gemini API takes it: the SDK's mldev
+      // converter passes it through, where the parameters that endpoint really
+      // refuses (`seed`, `negativePrompt`, `enhancePrompt`, …) throw instead.
+      includeRaiReason: true,
+      // What the classifier *scored* is a second opt-in, and it is not a second
+      // reason. `includeSafetyAttributes` makes the endpoint report the RAI
+      // categories with the reading it gave each one, for the picture and for
+      // the prompt — a standing table returned for a drawn picture as readily
+      // as for a filtered one, naming `Porn` and "Violence" on every answer
+      // whether or not anything tripped. The same converter passes it through
+      // beside `includeRaiReason`. It is worth asking for: it is the only
+      // machine vocabulary this endpoint has, and a run log is where anyone
+      // would go to see what the filter was looking at. It is not worth
+      // believing — folding it into the refusal's `reason` vetoed every Imagen
+      // copyright block, at every threshold — so `geminiImagenRefusal.ts`
+      // records the table as `diagnostics` and lets only a category the RAI
+      // sentence itself names reach `reason`.
+      //
+      // **This flag is also the only thing that can arm the SDK's one
+      // discard, and what keeps that harmless is a property of the endpoint
+      // rather than of the SDK.** `models.generateImages` (1.52.0) walks the
+      // predictions and, for any entry whose `safetyAttributes.contentType` is
+      // `"Positive Prompt"`, lifts the attributes to top-level
+      // `positivePromptSafetyAttributes` and **drops the entry** — its
+      // `raiFilteredReason` with it. Nothing recovers that: the SDK rebuilds
+      // its answer as `generatedImages` / `positivePromptSafetyAttributes` /
+      // `sdkHttpResponse`, `SafetyAttributes` maps only `categories`, `scores`
+      // and `contentType`, and `sdkHttpResponse` carries headers with no body.
+      // A reason riding a stamped entry would therefore leave `generatedImages`
+      // empty, `missingImagenImageError` with nothing that names a filter, and
+      // every Imagen block back to the retryable `Error` this whole path
+      // replaced. It cannot ride one: Imagen returns the prompt's attributes as
+      // their *own* prediction, and "if an output image is filtered its safety
+      // attributes aren't returned" — so the entry carrying the reason carries
+      // no `safetyAttributes`, has no `contentType` to be stamped with, and is
+      // never a candidate for the discard. That is a two-sided fact and both
+      // sides are pinned through the real client in
+      // `geminiImagenRefusal.test.ts`, because only a test that drives the SDK
+      // sees an SDK bump move the line.
+      includeSafetyAttributes: true
     };
     const response = await this.ai.models.generateImages({
       model: this.model,
@@ -632,7 +682,7 @@ export class GeminiImageAdapter implements ImageAdapter {
     const image = response.generatedImages?.[0]?.image;
     const imageBytes = image?.imageBytes;
     if (!imageBytes) {
-      throw new Error("Gemini did not return image bytes.");
+      throw missingImagenImageError(this.model, response);
     }
 
     return {

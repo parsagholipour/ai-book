@@ -114,4 +114,60 @@ describe("character reference helpers", () => {
 
     expect(selected.map((asset) => asset.path)).toEqual(["/tmp/milo.png", "/tmp/asha.png"]);
   });
+
+  // The commit's stale-set delete is scoped to the ids one plan version read,
+  // so a replanned book keeps every superseded cast. Three drawings of one
+  // character score identically, and before the collapse they took the whole
+  // budget: the rest of the cast was attached to nothing.
+  it("gives each character one sheet when superseded casts are still on the project", () => {
+    const largePlan: BookPlan = {
+      ...plan,
+      characters: [
+        ...plan.characters,
+        { name: "Asha", role: "Guide", description: "A guide.", traits: [], visualRules: ["Silver scarf."] }
+      ]
+    };
+    const sheets = ["plan-1", "plan-2", "plan-3"].flatMap((planId) =>
+      largePlan.characters.map((character) => ({
+        path: `/tmp/${planId}-${character.name.toLowerCase()}.png`,
+        metadata: { characterName: character.name, planId }
+      }))
+    );
+
+    const selected = selectCharacterReferenceAssets({
+      input,
+      plan: largePlan,
+      assets: sheets,
+      context: "Nora, Milo and Asha stand beside the moon bell.",
+      maxReferences: 3
+    });
+
+    // Newest sheet per character: the callers read rows createdAt-ascending.
+    expect(selected.map((asset) => asset.path)).toEqual([
+      "/tmp/plan-3-nora.png",
+      "/tmp/plan-3-milo.png",
+      "/tmp/plan-3-asha.png"
+    ]);
+  });
+
+  // Same crowding, reached through the "only one character in the book" door:
+  // three copies counted as three characters, so the fallback never fired and
+  // an add_image whose subject does not name them attached nothing at all.
+  it("still attaches a lone character whose superseded sheets outnumber the budget", () => {
+    const soloPlan: BookPlan = { ...plan, characters: [plan.characters[0]!] };
+
+    const selected = selectCharacterReferenceAssets({
+      input: { ...input, category: "STORY" },
+      plan: soloPlan,
+      assets: [
+        { path: "/tmp/plan-1-nora.png", metadata: { characterName: "Nora", planId: "plan-1" } },
+        { path: "/tmp/plan-2-nora.png", metadata: { characterName: "Nora", planId: "plan-2" } },
+        { path: "/tmp/plan-3-nora.png", metadata: { characterName: "Nora", planId: "plan-3" } }
+      ],
+      context: "A quiet kitchen at dawn.",
+      maxReferences: 3
+    });
+
+    expect(selected.map((asset) => asset.path)).toEqual(["/tmp/plan-3-nora.png"]);
+  });
 });

@@ -1,3 +1,5 @@
+import { isImageContentRefusalError } from "./imageRefusal.js";
+
 export type RecoverableRetryContext = {
   attempt: number;
   attempts: number;
@@ -101,6 +103,13 @@ export async function withRecoverableNetworkRetry<T>(
 }
 
 export function isRecoverableNetworkError(error: unknown): boolean {
+  if (isImageContentRefusalError(error)) {
+    // A provider that read the prompt and declined has answered, and it will
+    // answer the same way on every attempt. The refusal's `detail` is the
+    // model's own prose, so a message pattern below ("timeout", "network")
+    // can appear in it by coincidence and buy three retries of a verdict.
+    return false;
+  }
   const requested = providerRetryAfterMs(error);
   if (requested !== undefined && requested > PROVIDER_RETRY_AFTER_CEILING_MS) {
     // "Please retry in 5h44m" is an exhausted daily quota. Every attempt inside

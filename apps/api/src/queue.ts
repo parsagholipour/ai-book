@@ -22,6 +22,7 @@ import {
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import {
+  GenerationAttemptJobClaimError,
   failGenerationAttempt,
   refundCreditLedgerEntry,
   refundLatestProjectOperationCredits
@@ -66,6 +67,7 @@ export async function enqueueGenerationJob(options: {
   if (options.dedupeKey) {
     const existing = await db.generationJob.findUnique({ where: { dedupeKey: options.dedupeKey } });
     if (existing) {
+      assertEnqueueMayClaimFoundJob(options, existing);
       if (options.dispatch !== false && existing.status === "QUEUED" && !existing.bullJobId) {
         return (await dispatchGenerationJob(existing.id)) ?? existing;
       }
@@ -100,11 +102,61 @@ export async function enqueueGenerationJob(options: {
     if (!generationJob) {
       throw error;
     }
+    // The unique conflict is the concurrent half of the lookup above, and it
+    // answers with a row this call did not write for exactly the same reason.
+    assertEnqueueMayClaimFoundJob(options, generationJob);
   }
   if (options.dispatch === false) {
     return generationJob;
   }
   return (await dispatchGenerationJob(generationJob.id)) ?? generationJob;
+}
+
+/**
+ * A paid attempt may only be parented onto the job this call actually wrote.
+ *
+ * `enqueueGenerationJob` answers a spent `dedupeKey` with whatever row already
+ * stands under it, and it used to answer with that row whoever asked. Passing
+ * `attemptId` is a caller saying "this row is my attempt's work", so a row that
+ * carries somebody else's stamp — or no stamp at all — is refused here rather
+ * than handed back to be charged against.
+ *
+ * The refusal belongs at this call and not only at
+ * `assertPrimaryJobBelongsToAttempt` (`packages/db/src/generationAttempts.ts`),
+ * because that one can only vouch for the *primary* job: a `create` callback
+ * that enqueues several — `POST /api/mobile/projects/:id/resume` loops over the
+ * failed run's jobs and keeps the first as `primaryJobId` — left every job after
+ * the first neither stamped nor verified. A second job answered from a spent key
+ * would leave the charge committed, its attempt id absent from the BullMQ payload
+ * that carries settlement, and the dispatch query `where: { attemptId }` unable
+ * to find the row at all: fewer actions queued than the reader paid for, and, if
+ * that pre-existing row had already finished, nothing left to mark the attempt
+ * succeeded or failed. Refusing here covers every job of every attempt, and it
+ * is free for the reader: every `attemptId` caller is inside
+ * `startGenerationAttempt`'s serializable transaction, so the reservation, the
+ * spend, the quota slot and every domain write roll back with the throw.
+ *
+ * A caller that passes no `attemptId` is unaffected — the operator routes, the
+ * export repair, the free presentation recompiles and `enqueueOrRequeueGenerationJob`,
+ * whose options carry no `attemptId` to disagree with. This is deliberately not
+ * a `GenerationAttemptConflictError`: that one is a 409 the reader can act on,
+ * and this is a wiring fault nothing above it can. `sendGenerationAttemptError`
+ * (`apps/api/src/mobile/httpErrors.ts`) keeps its 500 and answers with reader
+ * copy; a caller that can give a better answer refuses *before* it enqueues, the
+ * way `queueInitialMobilePlan` does.
+ */
+function assertEnqueueMayClaimFoundJob(
+  options: { dedupeKey?: string | undefined; attemptId?: string | undefined },
+  existing: { id: string; attemptId: string | null }
+): void {
+  if (!options.attemptId || existing.attemptId === options.attemptId) {
+    return;
+  }
+  throw new GenerationAttemptJobClaimError(
+    `Generation attempt ${options.attemptId} may not claim generation job ${existing.id}: it is ${
+      existing.attemptId ? `already attempt ${existing.attemptId}'s work` : "not stamped with any attempt"
+    }, and it already stood under dedupe key ${options.dedupeKey}. A paid start must enqueue its own job, never adopt one it found under a spent key.`
+  );
 }
 
 /**

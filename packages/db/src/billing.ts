@@ -74,6 +74,7 @@ export {
 
 export {
   GenerationAttemptConflictError,
+  GenerationAttemptJobClaimError,
   GenerationQuotaExceededError,
   type GenerationAttemptDomainResult,
   type GenerationAttemptRecord,

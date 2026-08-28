@@ -12,7 +12,6 @@ import {
   hitTieredLimit,
   requireMobileAuth,
   sendGenerationAttemptError,
-  sendInsufficientCredits,
   sendMobileError,
   sendOperationNotFound,
   sendProjectNotFound
@@ -47,7 +46,6 @@ import { createProjectSchema, estimateFullBookCreditCost } from "@book-maker/cor
 import { Prisma, prisma } from "@book-maker/db";
 import {
   GenerationAttemptConflictError,
-  InsufficientCreditsError,
   getImageQuota,
   startGenerationAttempt
 } from "@book-maker/db/billing";
@@ -121,8 +119,8 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
           .code(202)
           .send(await queueInitialMobilePlan(auth.user.id, id, inputSnapshotFromProject(project)));
       } catch (error) {
-        if (error instanceof InsufficientCreditsError) {
-          return sendInsufficientCredits(reply, error);
+        if (sendGenerationAttemptError(reply, error)) {
+          return;
         }
         throw error;
       }

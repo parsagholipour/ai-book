@@ -1,11 +1,12 @@
 import { hashString } from "./support.js";
+import type { BillingOperation } from "@book-maker/core";
 
 export type GenerationRecoveryAttempt = {
   id: string;
   commandKey: string;
   quotedCredits: number;
   /** Missing on a few legacy/test records; those keep the safer confirmation. */
-  operation?: string | undefined;
+  operation?: BillingOperation;
 };
 
 export type MobileGenerationRecoveryQuote = {

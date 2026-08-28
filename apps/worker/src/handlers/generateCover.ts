@@ -21,11 +21,8 @@ import {
   type CoverDesign,
   type CoverTemplateOverride
 } from "@book-maker/core";
-import {
-  characterReferencePromptInstruction,
-  ensureCharacterReferenceAssets,
-  selectReferenceImagePaths
-} from "../generation/characterReferences.js";
+import { characterReferencePromptInstruction, selectReferenceImagePaths } from "../generation/characterReferences.js";
+import { characterReferenceAssetsOrNone } from "../generation/characterReferenceTolerance.js";
 import { coverDesignArtwork } from "../generation/coverArtwork.js";
 import { isStopRequestedError } from "../runtime/jobTypes.js";
 import { prisma } from "@book-maker/db";
@@ -68,15 +65,22 @@ export async function generateCover(job: GenerateImageJob) {
   );
   const plan = bookPlanSchema.parse(planVersion.planningPackage);
   const metadata = coverMetadataFromProject(project, plan);
-  const characterReferences = await ensureCharacterReferenceAssets({
-    projectId,
-    planId,
-    input,
-    plan,
-    providers,
-    strategy,
-    generationJobId
-  });
+  // Outside the artwork guard below, and deliberately tolerant instead: the
+  // sheets are an enhancement to the cover, never a precondition for one, and
+  // this call is the only thing between a finished book and `markFailed`'s
+  // refund of the whole run. See `characterReferenceTolerance.ts`.
+  const characterReferences = await characterReferenceAssetsOrNone(
+    {
+      projectId,
+      planId,
+      input,
+      plan,
+      providers,
+      strategy,
+      generationJobId
+    },
+    "cover"
+  );
   await advanceJobStep(generationJobId, "prompt", 20, "Building cover prompt");
 
   const designedCover = async (fallbackReason?: string): Promise<CoverArtworkResult> => {
@@ -128,10 +132,14 @@ export async function generateCover(job: GenerateImageJob) {
       context: [baseArtworkPrompt, ...plan.characters.map((character) => `${character.name}: ${character.description}`)].join("\n")
     });
     const referenceImagePaths = references.paths;
-    const artworkPrompt = [
-      baseArtworkPrompt,
-      characterReferencePromptInstruction(references)
-    ].filter(Boolean).join("\n");
+    // A function of what is attached: the instruction counts the pictures and
+    // names the last few, so a fallback taking fewer re-states it.
+    const promptForReferenceImages = (attached: readonly string[]) =>
+      [
+        baseArtworkPrompt,
+        characterReferencePromptInstruction(references, attached)
+      ].filter(Boolean).join("\n");
+    const artworkPrompt = promptForReferenceImages(referenceImagePaths);
 
     await advanceJobStep(generationJobId, "render", 45, "Rendering cover artwork");
     try {
@@ -140,6 +148,7 @@ export async function generateCover(job: GenerateImageJob) {
         prompt: artworkPrompt,
         projectId,
         referenceImagePaths,
+        promptForReferenceImages,
         aspectRatio: "3:4"
       });
       cover = {

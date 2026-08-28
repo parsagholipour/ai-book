@@ -5,11 +5,8 @@ import { config } from "../runtime/config.js";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
 import { isStopRequestedError } from "../runtime/jobTypes.js";
 import { jsonPayloadToRecord } from "../runtime/serialization.js";
-import {
-  characterReferencePromptInstruction,
-  ensureCharacterReferenceAssets,
-  selectReferenceImagePaths
-} from "../generation/characterReferences.js";
+import { characterReferencePromptInstruction, selectReferenceImagePaths } from "../generation/characterReferences.js";
+import { characterReferenceAssetsOrNone } from "../generation/characterReferenceTolerance.js";
 import { generateCover } from "./generateCover.js";
 import {
   ownsPageIllustration,
@@ -155,15 +152,23 @@ async function renderAndStorePageIllustration(options: {
   };
 }) {
   const { projectId, pageId, planId, prompt, ownership, generationJobId, input, strategy, providers, plan, page } = options;
-  const characterReferences = await ensureCharacterReferenceAssets({
-    projectId,
-    planId,
-    input,
-    plan,
-    providers,
-    strategy,
-    generationJobId
-  });
+  // The catch around this whole function marks `imageFailureReason`, which is
+  // durable and which nothing retries — so a lease pool timeout used to cost
+  // the page an illustration nobody had attempted yet. A page drawn without
+  // sheets is one character's consistency; a page with no picture is the whole
+  // decoration. See `characterReferenceTolerance.ts`.
+  const characterReferences = await characterReferenceAssetsOrNone(
+    {
+      projectId,
+      planId,
+      input,
+      plan,
+      providers,
+      strategy,
+      generationJobId
+    },
+    "page-illustration"
+  );
   const references = await selectReferenceImagePaths({
     input,
     plan,
@@ -173,12 +178,17 @@ async function renderAndStorePageIllustration(options: {
     context: [prompt, page.title, page.summary, page.markdown].filter(Boolean).join("\n")
   });
   const referenceImagePaths = references.paths;
-  const imagePrompt = [
-    prompt,
-    characterReferencePromptInstruction(references),
-    `Global visual style: ${plan.illustrationPlan.globalStyle}`,
-    `Continuity rules: ${plan.illustrationPlan.pageRules.join(" ")}`
-  ].filter(Boolean).join("\n");
+  // Built as a function of what is attached, because the instruction counts
+  // the pictures and names the last few: a fallback that can take fewer
+  // re-states it rather than re-pointing those sentences at other sheets.
+  const promptForReferenceImages = (attached: readonly string[]) =>
+    [
+      prompt,
+      characterReferencePromptInstruction(references, attached),
+      `Global visual style: ${plan.illustrationPlan.globalStyle}`,
+      `Continuity rules: ${plan.illustrationPlan.pageRules.join(" ")}`
+    ].filter(Boolean).join("\n");
+  const imagePrompt = promptForReferenceImages(referenceImagePaths);
   await advanceJobStep(generationJobId, "prompt", 25, `Building prompt for page ${page.index}`);
   await advanceJobStep(generationJobId, "render", 45, `Rendering page ${page.index}`);
   const image = await strategy.generateImageBytes({
@@ -186,7 +196,8 @@ async function renderAndStorePageIllustration(options: {
     prompt: imagePrompt,
     projectId,
     pageId,
-    referenceImagePaths
+    referenceImagePaths,
+    promptForReferenceImages
   });
 
   await advanceJobStep(generationJobId, "store", 80, `Storing image for page ${page.index}`);

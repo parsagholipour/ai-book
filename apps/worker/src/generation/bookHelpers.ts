@@ -5,6 +5,7 @@ import { finalQaMessagesForPage } from "./finalQaPageTargets.js";
 import {
   chapterBriefSchema,
   exportProvenancePaths,
+  imageRenderProvenance,
   missingStyleLockIndexes,
   normalizePlanPageTargets,
   pagesForStyleExcerpts,
@@ -271,8 +272,16 @@ export function imageStorageMetadata(image: OptimizedImage): Record<string, unkn
   );
 }
 
+/**
+ * The provenance every *creating* site spreads onto a fresh `ImageAsset`.
+ *
+ * One definition, in core, because the replace and undo paths write the same
+ * keys onto rows that already exist (`withImageRenderProvenance`), and a second
+ * copy of this shape is how those two end up disagreeing about what a picture
+ * was drawn from.
+ */
 export function imageGenerationMetadata(image: GeneratedImageBytes): Record<string, unknown> {
-  return image.fallback ? { fallback: image.fallback } : {};
+  return imageRenderProvenance(image);
 }
 
 /**

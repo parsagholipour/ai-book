@@ -135,6 +135,54 @@ describe("direct project planning prices by quality tier", () => {
     await app.close();
   });
 
+  it("does not charge direct planning when the project already has a plan", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValueOnce(projectAtTier("balanced"));
+    mockPrisma.project.findUnique.mockResolvedValueOnce({ currentPlanId: "plan-1" });
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/plan",
+      headers: bearer("token-a"),
+      payload: {}
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error).toMatchObject({
+      code: "GENERATION_COMMAND_CONFLICT",
+      message: "This project already has a plan."
+    });
+    expect(reserveCredits).not.toHaveBeenCalled();
+    expect(enqueueGenerationJob).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("does not charge against a legacy initial-plan job with no attempt", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValueOnce(projectAtTier("premium"));
+    mockPrisma.generationAttempt.findUnique.mockResolvedValueOnce(null);
+    mockPrisma.generationJob.findUnique.mockResolvedValueOnce({ id: "legacy-plan-job" });
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/plan",
+      headers: bearer("token-a"),
+      payload: {}
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error).toMatchObject({
+      code: "GENERATION_COMMAND_CONFLICT",
+      message: "Planning has already started for this project."
+    });
+    expect(reserveCredits).not.toHaveBeenCalled();
+    expect(enqueueGenerationJob).not.toHaveBeenCalled();
+    expect(mockPrisma.project.update).not.toHaveBeenCalled();
+    await app.close();
+  });
+
   it("does not queue or mutate a project when direct planning lacks credits", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.project.findFirst.mockResolvedValueOnce(projectAtTier("ultra"));

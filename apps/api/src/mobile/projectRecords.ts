@@ -42,7 +42,7 @@ import {
   type ReplanSettings
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
-import { startGenerationAttempt } from "@book-maker/db/billing";
+import { GenerationAttemptConflictError, startGenerationAttempt } from "@book-maker/db/billing";
 import { z } from "zod";
 
 /**
@@ -425,9 +425,33 @@ export async function queueInitialMobilePlan(
 ): Promise<MobilePlanOperationDto> {
   const input = createProjectSchema.parse(inputSnapshot);
   const planQuote = planGenerationCreditCost(input);
+  const commandKey = `mobile:project-initial-plan:${projectId}`;
+  const dedupeKey = `plan-book:${projectId}`;
+  const existingAttempt = await prisma.generationAttempt.findUnique({
+    where: { commandKey },
+    select: { id: true }
+  });
+  if (!existingAttempt) {
+    const [project, existingJob] = await Promise.all([
+      prisma.project.findUnique({
+        where: { id: projectId },
+        select: { currentPlanId: true }
+      }),
+      prisma.generationJob.findUnique({
+        where: { dedupeKey },
+        select: { id: true }
+      })
+    ]);
+    if (project?.currentPlanId) {
+      throw new GenerationAttemptConflictError("This project already has a plan.");
+    }
+    if (existingJob) {
+      throw new GenerationAttemptConflictError("Planning has already started for this project.");
+    }
+  }
   const started = await startGenerationAttempt({
     userId,
-    commandKey: `mobile:project-initial-plan:${projectId}`,
+    commandKey,
     requestFingerprint: fingerprintGenerationRequest({ projectId, inputSnapshot }),
     projectId,
     operation: "PLAN_GENERATION",
@@ -439,10 +463,35 @@ export async function queueInitialMobilePlan(
       pricingKey: planQuote.pricingKey
     },
     create: async (tx, { attemptId, ledgerEntry }) => {
+      const project = await tx.project.findUnique({
+        where: { id: projectId },
+        select: { currentPlanId: true }
+      });
+      if (project?.currentPlanId) {
+        throw new GenerationAttemptConflictError("This project already has a plan.");
+      }
+      // Race-safe twin of the `existingJob` read above, and it has to run
+      // *before* the enqueue rather than over what the enqueue returns:
+      // `enqueueGenerationJob` refuses this exact disagreement itself now, with
+      // a `GenerationAttemptJobClaimError` that answers 500 because a shared
+      // guard cannot attribute the fault. Here it has a name — a row under
+      // `plan-book:<projectId>` means planning already started, and a failed one
+      // is retried for a fresh charge through the resume route, never by
+      // re-running this command — so this claims the answer first and gives the
+      // app a 409 with a sentence. `startGenerationAttempt`'s own
+      // `assertPrimaryJobBelongsToAttempt` remains the third net. All three
+      // throw inside the attempt transaction, so all three roll the charge back.
+      const spentPlanJob = await tx.generationJob.findUnique({
+        where: { dedupeKey },
+        select: { attemptId: true }
+      });
+      if (spentPlanJob && spentPlanJob.attemptId !== attemptId) {
+        throw new GenerationAttemptConflictError("Planning has already started for this project.");
+      }
       const job = await enqueueGenerationJob({
         projectId,
         type: "PLAN_BOOK",
-        dedupeKey: `plan-book:${projectId}`,
+        dedupeKey,
         transaction: tx,
         dispatch: false,
         attemptId,

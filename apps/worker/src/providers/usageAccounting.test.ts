@@ -363,9 +363,81 @@ describe("pure helpers", () => {
     expect(estimateTokenCountFromTextLength(1)).toBe(1);
     expect(estimateTokenCountFromTextLength(8)).toBe(2);
     expect(estimateTokenCountFromText("abcdefgh")).toBe(2);
+    expect(estimateTokenCountFromText("")).toBe(0);
     expect(estimateTextRequestTokens({ messages: [{ role: "user", content: "hi" }] } as GenerateTextOptions)).toBe(
       estimateTokenCountFromText("user\nhi") + 4 + 12
     );
+  });
+
+  it("counts the joined request, which is not the sum of its messages", () => {
+    // Guards the one shortcut this function keeps being offered: dropping the
+    // prompt-sized join and summing per message instead. It is a different
+    // number — each message would round up on its own and the "\n\n" between
+    // them would go uncounted — so taking it would move every stored
+    // promptTokens. The join is ~0.23 ms of a ~1 ms call; the speed problem was
+    // never here.
+    const messages = [
+      { role: "user", content: "hi" },
+      { role: "user", content: "ok" },
+      { role: "user", content: "no" }
+    ];
+    const joined = estimateTextRequestTokens({ messages } as GenerateTextOptions);
+    const summed =
+      messages.reduce((total, message) => total + estimateTokenCountFromText(`${message.role}\n${message.content}`), 0) +
+      messages.length * 4 + 12;
+    expect(joined).toBe(estimateTokenCountFromText("user\nhi\n\nuser\nok\n\nuser\nno") + 3 * 4 + 12);
+    expect(joined).toBe(31);
+    expect(summed).toBe(30);
+  });
+
+  it("leaves an English page at `chars / 4`, curly quotes and em dashes included", () => {
+    // The sentence beside COST_ESTIMATE_TOKEN_WEIGHTS, asserted. Every one of
+    // these characters is `Script=Common` — owned by no script — and while the
+    // classifier read "not ASCII" as "dense" they were billed at one token
+    // each, four times their Latin rate, on the punctuation the generator
+    // emits by default.
+    const page =
+      "The lighthouse keeper hadn\u2019t slept in three days \u2014 not since the light began to stutter. " +
+      "\u201CIt\u2019s the lens,\u201D he told the gulls, who didn\u2019t answer. The beam paused\u2026 and faltered.";
+    expect(estimateTokenCountFromText(page)).toBe(Math.ceil([...page].length / 4));
+    expect(estimateTokenCountFromText(page)).toBe(estimateTokenCountFromTextLength(page.length));
+
+    const dialogue = "\u201CI don\u2019t think so,\u201D she said \u2014 and the door closed\u2026";
+    expect(estimateTokenCountFromText(dialogue)).toBe(13);
+  });
+
+  it("does not price a non-Latin page as four characters per token", () => {
+    // Every script this product ships books in, at one dense character per
+    // token — `chars / 4` reported all of these at roughly a quarter of this.
+    const pages = {
+      persian: "نگهبان فانوس دریایی سه روز بود که نخوابیده بود",
+      arabic: "لم ينم حارس المنارة منذ ثلاثة أيام",
+      hebrew: "שומר המגדלור לא ישן שלושה ימים",
+      hindi: "प्रकाशस्तंभ का रखवाला तीन दिनों से सोया नहीं था",
+      thai: "ผู้ดูแลประภาคารไม่ได้นอนมาสามวันแล้ว",
+      chinese: "灯塔看守人已经三天没有合眼了",
+      japanese: "灯台守は三日も眠っていなかった",
+      korean: "등대지기는 사흘째 잠을 자지 못했다"
+    };
+
+    for (const [script, page] of Object.entries(pages)) {
+      const characters = [...page].length;
+      expect(estimateTokenCountFromText(page), script).toBeGreaterThan(3 * Math.ceil(characters / 4));
+      expect(estimateTokenCountFromText(page), script).toBeLessThanOrEqual(characters);
+    }
+
+    expect(estimateTokenCountFromText("灯塔看守人已经三天没有合眼了")).toBe(14);
+  });
+
+  it("counts a request's Persian prompt at close to a token per character", () => {
+    const content = "این صفحه را دوباره بنویس";
+    expect([...content].length).toBe(24);
+    const tokens = estimateTextRequestTokens({
+      messages: [{ role: "user", content }]
+    } as GenerateTextOptions);
+    // "user\n" is 5 ASCII characters and the five words are parted by 4 spaces,
+    // so 9 characters land in the Latin class and the 20 Persian letters do not.
+    expect(tokens).toBe(Math.ceil(9 / 4) + 20 + 4 + 12);
   });
 
   it("measures durations only for ordered, parseable timestamps", () => {

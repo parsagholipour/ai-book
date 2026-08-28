@@ -366,6 +366,14 @@ reported as surviving, which is the escape a rollback-capable mock could not sim
   held it there. The refinement only ever *narrows* the coarse answer, and every unknown it meets —
   no `operationId`, a missing row, a kind this build does not know — answers "owed", because
   under-reporting a finished book is the failure it exists to stop.
+  **A replacement is the one image edit whose undo has to move a record as well as a file.** Move
+  and remove never redraw, so the row's `metadata.copyrightRewrite` still describes the pixels it
+  always did; replacing a picture puts different pixels behind the same `ImageAsset` id, and the
+  worker records the outgoing render's provenance on `classifier.previousAsset.generation` for this
+  revert to merge back (`withImageRenderProvenance`, core). Restoring `path` without it left the
+  *replacement's* claim standing over a picture drawn before anyone asked — the false kind, and a
+  false one is worse than none. Merged onto the row read inside the transaction rather than written
+  whole, because `keeperToken` and its siblings on that document decide illustration ownership.
   All four enqueue sites also stamp `PRE_EDIT_PROJECT_STATUS` from that same pre-transaction
   project row before changing it to EDITING. The worker cannot reconstruct COMPLETE versus
   REVIEW_REQUIRED after commit, so text rewrite, image insertion, image layout and restructure

@@ -43,6 +43,7 @@ holds the event loop open and vitest will never exit.
 - [Export provenance and scratch files](#export-provenance-and-scratch-files)
 - [Chapter apparatus](#chapter-apparatus)
 - [Library characters](#library-characters)
+- [Character reference selection](#character-reference-selection)
 
 ## Page 1's opening contract
 
@@ -616,3 +617,27 @@ checks between entries and awaited, rather than left running into `prisma.$disco
   **only**, and `revisePlanningPackage` serialized no `userInput` and no `mediaSettings` at all, so
   any "make it shorter" after approval re-decided the saved character against nothing. Arrays merge
   as atomic replacements, so whatever came back won.
+
+## Character reference selection
+
+- **One sheet per character reaches the model, because a superseded cast is still the same cast.**
+  `selectCharacterReferenceAssets` (`characterReferences.ts`) scores an asset by whether the
+  context names the character its `metadata.characterName` resolves to — a function of the name and
+  the prose, never of the file — so several sheets of one character score identically and the sort
+  is a tie each of them wins. That was harmless while a book's sheets were one plan version's: the
+  worker's render pass used to delete every `CHARACTER_REFERENCE` row on the project before writing
+  its own. It no longer may (→ apps/worker/src/generation/CLAUDE.md), so a replan or a continuation
+  leaves a whole cast behind permanently, and the one reader that ranges across plan versions —
+  `insertionReferenceSelection` in `apps/worker/src/handlers/applyImageInsertion.ts`, which falls
+  back to *all* of a project's sheets when the current plan has none — handed this function three
+  drawings of Ada beside three of Beatrice. On a book replanned twice, a chat `add_image` then spent
+  its entire 3-to-5 reference budget on one character while the rest of the cast was attached to
+  nothing and drawn from prose alone, which is the exact failure the sheets exist to prevent. The
+  `ordered.length === 1` fallback — the rule that a book with a single character attaches them even
+  when the subject does not name them — missed for the same reason, since three copies counted as
+  three characters and it returned nothing at all. `oneSheetPerCharacter` collapses by plan-character
+  index before any of that, and it keeps the **last** copy: every caller reads the rows
+  `orderBy: { createdAt: "asc" }`, so the last sheet for a character is the newest, drawn against
+  the most recent plan's description of them. A caller whose sheets are already one plan's is
+  unchanged by construction, which is why this is the fix rather than a second plan filter at the
+  one call site that has no plan to filter by.

@@ -23,11 +23,11 @@ import { settleSkippedRestructure } from "./restructurePagesSettlement.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
 import { advanceJobStep, refundUnwrittenEditPages } from "../runtime/jobLifecycle.js";
+import { failedEditOperationData } from "@book-maker/core/editFailure";
 import { UnownedStructuralDeliveryError } from "../runtime/jobTypes.js";
 import {
   bookPlanSchema,
   createProviders,
-  errorMessage,
   jsonRecord,
   parseStructuralApplication,
   preEditProjectStatus,
@@ -413,13 +413,10 @@ export async function restructurePages(job: ApplyBookEditJob, operation: { id: s
     await prisma.bookEditOperation
       .updateMany({
         where: { id: operationId, status: "APPLIED" },
-        data: {
-          status: "FAILED",
-          error: errorMessage(error),
-          affectedPageIndexes: [],
-          structuralLeaseToken: null,
-          structuralLeaseExpiresAt: null
-        }
+        // Its own claim, the shared verdict: `error` is copied onto the mobile
+        // DTO, so the sentence comes from `failedEditOperationData` like every
+        // other write that fails one of these rows.
+        data: { ...failedEditOperationData(error), affectedPageIndexes: [] }
       })
       .catch((flipError) => {
         console.error(`Failed to mark rolled-back restructure ${operationId} FAILED`, flipError);

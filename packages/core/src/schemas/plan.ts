@@ -306,6 +306,18 @@ export const chapterPlanSchema = z.object({
   illustrationPrompts: z.array(z.string()).optional()
 });
 
+/**
+ * The name is trimmed here because it is the *identity* of a plan character,
+ * not a display string: a library character reaches a book by name, a reference
+ * sheet is claimed by name, and a sheet's filename is derived from one. Every
+ * one of those consumers trims the name it reads back out of storage, and none
+ * of them could trim the plan's copy, so a planner name with a stray space was
+ * a character no sheet and no refusal could ever answer for — which had every
+ * illustrated page's image job redraw the whole cast (see
+ * `characterReferenceNameKey` in the worker). Blank falls through to the
+ * placeholder for the same reason `role` and `description` do: a nameless
+ * character keys to nothing, and nothing is not an answer either.
+ */
 function normalizeCharacter(value: unknown): unknown {
   if (typeof value === "string" && value.trim()) {
     return {
@@ -333,7 +345,7 @@ function normalizeCharacter(value: unknown): unknown {
 
   return {
     ...value,
-    name: stringField(value, ["name", "characterName", "fullName"]) ?? "Unnamed character",
+    name: stringField(value, ["name", "characterName", "fullName"])?.trim() || "Unnamed character",
     role: role?.trim() || "Supporting character",
     description: description?.trim() || "Recurring character in the plan.",
     traits: stringArrayField(value, ["traits", "personality", "personalityTraits", "qualities"]) ?? [],

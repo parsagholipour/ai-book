@@ -1,8 +1,9 @@
 import { dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
 import { createOpenBookEditOperation } from "./editOperationClaims.js";
+import { classifyEditFailure } from "@book-maker/core/editFailure";
 import { type MobileBookEditOperationRecord } from "./dto.js";
 import { fingerprintGenerationRequest, hashString, jsonInputValue, jsonRecord } from "./support.js";
-import { creditCostForOperation, errorMessage } from "@book-maker/core";
+import { creditCostForOperation } from "@book-maker/core";
 import { PLAN_REVISION_AUTOMATIC_RETRY_LIMIT, Prisma, prisma } from "@book-maker/db";
 import {
   GenerationAttemptConflictError,
@@ -75,10 +76,15 @@ export async function queueDirectPlanRevision(options: {
     });
   } catch (error) {
     // Same job-linkage guard as the chat paths: only a row whose attempt never
-    // committed may be failed here.
+    // committed may be failed here. And the same reader/log split — the column
+    // reaches the app, so the cause goes to the log instead.
+    const failure = classifyEditFailure(error, "start");
+    if (failure.internal) {
+      console.error(`Direct plan revision could not start for edit operation ${operation.id}`, error);
+    }
     await prisma.bookEditOperation.updateMany({
       where: { id: operation.id, generationJobId: null },
-      data: { status: "FAILED", error: errorMessage(error) }
+      data: { status: "FAILED", error: failure.message }
     });
     throw error;
   }

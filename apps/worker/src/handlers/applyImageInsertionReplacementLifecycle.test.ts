@@ -52,7 +52,6 @@ vi.mock("../generation/editProjectStatus.js", () => ({
 vi.mock("../generation/characterReferences.js", () => ({
   characterReferencePromptInstruction: () => "",
   imageAssetPlanId: () => null,
-  imageCapabilities: () => ({ maxReferenceImages: 4 }),
   librarySnapshotForSheet: () => null,
   resolveLibraryPortraitSeed: vi.fn(),
   selectReferenceImagePaths: async () => ({ paths: [], libraryFaceNames: [] }),
@@ -69,6 +68,7 @@ vi.mock("@book-maker/core", async () => {
     ...actual,
     bookPlanSchema: { parse: (value: unknown) => value },
     createProviders: () => ({}),
+    imageAdapterCapabilities: () => ({ supportsReferenceImages: true, maxReferenceImages: 4 }),
     optimizeImageForStorage: mocks.optimizeImageForStorage
   };
 });

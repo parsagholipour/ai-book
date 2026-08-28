@@ -16,7 +16,7 @@ describe("mobile generation recovery quotes", () => {
     });
   });
 
-  it.each(["FULL_BOOK_GENERATION", "PLAN_REVISION"])(
+  it.each(["FULL_BOOK_GENERATION", "PLAN_REVISION"] as const)(
     "keeps confirmation for %s retries",
     (operation) => {
       expect(generationRecoveryQuote({ ...attempt, operation }).requiresConfirmation).toBe(true);

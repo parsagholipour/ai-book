@@ -47,8 +47,16 @@ translate, so it has no business in a display table. `./collections` is the fift
 plan-question normalizer needs the same trim/drop/order-preserving string uniqueness as core and
 the worker, but the console may not import the barrel. It has no imports of its own, and stays
 narrowly about collection construction (`uniqueStrings` and inclusive `range`) rather than
-becoming a general utilities drawer. A sixth entry has to earn itself the same way: a true leaf on
-the other end, and a consumer that breaks without it.
+becoming a general utilities drawer. `./editFailure` is the sixth, and it earned itself the same
+way: it holds the sentences a failed `BookEditOperation` may show a reader, and both `apps/api` and
+`apps/worker` write that column — so the rule has to sit below both, in the one package neither of
+them can be without. Its consumers are what make the subpath load-bearing rather than tidy:
+`apps/api/src/mobile/editOperations.test.ts` mocks the barrel with a bare factory, and
+`apps/worker/src/handlers/restructurePages.test.ts` does the same to `runtime/jobLifecycle.js`, so
+either one reaching the classifier through a mocked surface would leave the code under test
+shipping a Prisma error to the device with nothing failing. It carries no import statement at all.
+A seventh entry has to earn itself the same way: a true leaf on the other end, and a consumer that
+breaks without it.
 
 That empty closure is a gate now, not a habit. `scripts/check-core-subpaths.mjs` — the `subpaths`
 gate in `pnpm check`, or `pnpm check --only subpaths` on its own — takes every entry in the

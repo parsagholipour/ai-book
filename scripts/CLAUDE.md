@@ -71,6 +71,13 @@ Anything that launches Chromium must go through the shared browser pool and must
 - `repair-plan-from-run-log.ts` — rebuilds a project's plan from its provider run log.
 - `repair-stuck-plan-revisions.ts` — projects whose plan revision job finished but whose plan never
   advanced.
+- `clear-character-reference-refusals.ts` — takes back a recorded character reference refusal. A
+  provider that declines to draw a character settles that cast for the life of the plan version and
+  nothing else in the tree ever clears the column, so a false positive from the refusal classifier
+  used to cost a replan. `--project` / `--plan` / `--character` narrow it, and it skips a plan whose
+  render lease is live. Clearing only *unsettles* the set: the next `generate-image` or
+  `generate-cover` job for that plan is what redraws the cast, which for a finished book means
+  asking for a picture afterwards. See `apps/worker/src/generation/CLAUDE.md`.
 - `check_alibaba_credentials.py` — standalone Python probe; redacts secrets.
 
 ## Process entry points

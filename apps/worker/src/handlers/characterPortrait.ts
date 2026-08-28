@@ -6,6 +6,7 @@ import {
   buildLibraryCharacterPortraitPrompt,
   createProjectSchema,
   createProviders,
+  imageRenderProvenance,
   libraryCharacterDiskPath,
   libraryCharacterFileName,
   libraryCharacterFileToken,
@@ -14,7 +15,7 @@ import {
   pruneLibraryCharacterImages,
   type LibraryCharacterField
 } from "@book-maker/core";
-import { prisma } from "@book-maker/db";
+import { Prisma, prisma } from "@book-maker/db";
 import { generationDescription, libraryMentionInclude } from "@book-maker/db/libraryMentions";
 import type { GenerateCharacterPortraitJob } from "../runtime/jobPayloads.js";
 import { mkdir, rm, stat, writeFile } from "node:fs/promises";
@@ -58,23 +59,29 @@ export async function generateCharacterPortrait(job: GenerateCharacterPortraitJo
   const strategy = strategyForInput(input);
 
   const photoPath = await existingCharacterFile(userId, character.photoPath);
-  const prompt = buildLibraryCharacterPortraitPrompt(
-    {
-      name: character.name,
-      description: generationDescription(character),
-      // The recorded look, so a redraw lands on the same person rather than
-      // inventing a new one for every generation.
-      ...(character.appearance ? { appearance: character.appearance } : {}),
-      fields: fieldsFromJson(character.fields)
-    },
-    { fromPhoto: photoPath !== null }
-  );
+  // `fromPhoto` swaps in a sentence about "the attached reference photo", so
+  // it answers to what is attached rather than to what was found on disk: a
+  // fallback provider that takes no references gets the from-nothing prompt.
+  const promptForReferenceImages = (attached: readonly string[]) =>
+    buildLibraryCharacterPortraitPrompt(
+      {
+        name: character.name,
+        description: generationDescription(character),
+        // The recorded look, so a redraw lands on the same person rather than
+        // inventing a new one for every generation.
+        ...(character.appearance ? { appearance: character.appearance } : {}),
+        fields: fieldsFromJson(character.fields)
+      },
+      { fromPhoto: attached.length > 0 }
+    );
+  const prompt = promptForReferenceImages(photoPath ? [photoPath] : []);
 
   await advanceJobStep(generationJobId, "render", 40);
   const image = await strategy.generateImageBytes({
     image: providers.image,
     prompt,
     ...(photoPath ? { referenceImagePaths: [photoPath] } : {}),
+    promptForReferenceImages,
     aspectRatio: "1:1"
   });
 
@@ -93,6 +100,13 @@ export async function generateCharacterPortrait(job: GenerateCharacterPortraitJo
   if (!diskPath) {
     throw new Error("Could not resolve a storage path for the character portrait.");
   }
+  // What the picture was drawn from, when that is not what was asked for: an
+  // IP filter can refuse a character prompt here exactly as it refuses a scene,
+  // and `CopyrightSafeRetryImageAdapter` then buys one rewritten prompt and
+  // draws from that. The character's own name and description are the request;
+  // this is the claim about what replaced it, and the row is the only place it
+  // can be kept — this portrait seeds every book's reference sheets.
+  const provenance = imageRenderProvenance(image);
   // Row first, bytes second — the same rule the upload route follows, for the
   // same reason: nothing sweeps `characters/`, so a file no row names is
   // permanent and invisible. The previous portrait is left exactly where it is;
@@ -106,6 +120,7 @@ export async function generateCharacterPortrait(job: GenerateCharacterPortraitJo
       byteSize: optimizedImage.outputBytes,
       ...(optimizedImage.width ? { width: optimizedImage.width } : {}),
       ...(optimizedImage.height ? { height: optimizedImage.height } : {}),
+      ...(Object.keys(provenance).length > 0 ? { metadata: provenance as Prisma.InputJsonValue } : {}),
       referenceEligible: true
     }
   });

@@ -194,6 +194,9 @@ export function planGenerationCreditCost(
 ): PlanGenerationCreditQuote {
   const modelTier = modelTierForInput(input);
   const pricingKey = tierPriceKey("planGeneration", modelTier);
+  // Indexed on the key this quote is about to hand back, rather than through
+  // `tierPrice` — which would resolve the same suffix a second time and leave
+  // the amount and the audit stamp two answers that merely agree.
   return { credits: pricing[pricingKey], modelTier, pricingKey };
 }
 

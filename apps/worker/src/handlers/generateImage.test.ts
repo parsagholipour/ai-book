@@ -14,7 +14,9 @@ const mocks = vi.hoisted(() => ({
   maybeEnqueueCompile: vi.fn(),
   updateJobProgress: vi.fn(),
   mkdir: vi.fn(),
-  writeFile: vi.fn()
+  writeFile: vi.fn(),
+  ensureCharacterReferenceAssets: vi.fn(async () => []),
+  appendCharacterReferenceRunLog: vi.fn()
 }));
 
 vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma }));
@@ -29,10 +31,15 @@ vi.mock("../generation/bookHelpers.js", () => ({
   imageStorageMetadata: () => ({}),
   strategyForInput: () => ({ generateImageBytes: mocks.generateImageBytes })
 }));
+// `characterReferenceTolerance.ts` is the code under test on this path, so only
+// the pass it wraps is mocked out.
 vi.mock("../generation/characterReferences.js", () => ({
   characterReferencePromptInstruction: () => "",
-  ensureCharacterReferenceAssets: async () => [],
+  ensureCharacterReferenceAssets: mocks.ensureCharacterReferenceAssets,
   selectReferenceImagePaths: async () => ({ paths: [], libraryFaceNames: [] })
+}));
+vi.mock("../generation/characterReferenceRunLog.js", () => ({
+  appendCharacterReferenceRunLog: mocks.appendCharacterReferenceRunLog
 }));
 vi.mock("./generateCover.js", () => ({ generateCover: vi.fn() }));
 vi.mock("@book-maker/core", async () => {
@@ -384,6 +391,43 @@ describe("generateImage interior rescue", () => {
     expect(mocks.updateJobProgress).toHaveBeenCalledWith("legacy-job-1", {
       message: "Illustration for page 3 failed; the book will finish without it"
     });
+  });
+
+  // Since the render lease split the reference pass into two interactive
+  // transactions with a 10s `maxWait`, a P2024 pool timeout is an expected
+  // outcome of `MAX_PARALLEL_IMAGE_JOBS + 1` claimants. It used to reach this
+  // handler's catch, which writes `imageFailureReason` durably and is never
+  // retried — so the page permanently lost an illustration nobody had drawn.
+  it("draws the page without sheets when the reference pass cannot reach the database", async () => {
+    mocks.ensureCharacterReferenceAssets.mockRejectedValueOnce(
+      new Error("Timed out fetching a new connection from the connection pool")
+    );
+    mocks.generateImageBytes.mockResolvedValue({
+      bytes: Buffer.from("img"),
+      mimeType: "image/png",
+      provider: "gemini",
+      model: "img-model"
+    });
+
+    await generateImage(job);
+
+    expect(mocks.prisma.imageAsset.create).toHaveBeenCalledTimes(1);
+    expect(mocks.prisma.page.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ imageFailureReason: "interior_image_failed" }) })
+    );
+    expect(mocks.appendCharacterReferenceRunLog).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: "project-1", planId: "plan-1" }),
+      "character.reference.unavailable",
+      expect.objectContaining({ drawing: "page-illustration" })
+    );
+  });
+
+  it("still surfaces a stop raised while the reference pass waits", async () => {
+    mocks.ensureCharacterReferenceAssets.mockRejectedValueOnce(new StopRequestedError());
+
+    await expect(generateImage(job)).rejects.toThrow(StopRequestedError);
+    expect(mocks.generateImageBytes).not.toHaveBeenCalled();
+    expect(mocks.prisma.page.updateMany).not.toHaveBeenCalled();
   });
 
   it("still surfaces a user stop", async () => {

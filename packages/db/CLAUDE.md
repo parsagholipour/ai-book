@@ -49,9 +49,14 @@ neither package barrel at runtime.
 
 ## Adding a priced operation
 
-Add the value to `enum CreditOperation` in `prisma/schema.prisma`, add the price key to
-`DEFAULT_CREDIT_COSTS` and `CREDIT_PRICING_LIMITS` in `packages/core/src/creditPricing.ts` (the
-latter is an exhaustive `Record`, so the compiler catches a missed key), then close the loop:
+Add the value to `enum CreditOperation` in `prisma/schema.prisma` **and** to the `BillingOperation`
+union in `packages/core/src/billing.ts` — one column, two declarations, because core is the leaf of
+the dependency order and cannot import the generated client. `CreditOperationsAgree`
+(`src/billingInternals.ts`) is where they are held equal, so editing one and not the other stops
+compiling there by name rather than surfacing as this package rejecting a row its own client
+returns. Add the price key to `DEFAULT_CREDIT_COSTS` and `CREDIT_PRICING_LIMITS` in
+`packages/core/src/creditPricing.ts` (the latter is an exhaustive `Record`, so the compiler catches
+a missed key), then close the loop:
 reserve through `startGenerationAttempt` (`src/generationAttempts.ts`) or `reserveCredits`
 (`src/billingLedger.ts`), commit with `commitReservedCredits`, refund with
 `refundCreditLedgerEntry`. The `add-priced-operation` skill walks the surfaces above this package.
@@ -564,6 +569,62 @@ diff rather than by silently reordering rows.
   `planPeriods.ts` (allowances and quotas) and `billingInternals.ts` (shared plumbing) — import the
   facade, never a module behind it, or the `vi.mock("@book-maker/db/billing")` in the API suites
   stops covering you.
+
+- **A paid attempt may only be parented onto the job its own `create` callback wrote.**
+  `startGenerationAttempt` gets that job id from a callback, and every callback gets it from
+  `enqueueGenerationJob`, which returns whatever row already stands under its `dedupeKey` instead
+  of creating one. So a key another path already spent hands back a job this attempt never made,
+  and the writes after the callback used to re-parent the attempt *and its committed spend* onto
+  it unconditionally. Where that row is already some attempt's `primaryJobId` the unique index on
+  that column catches it — as a raw `P2002` several statements later — but where it is not, nothing
+  did: an unbilled row (`generate-book:<projectId>:<planId>`, written for free by the operator
+  approval route in `apps/api/src/routes/projects.ts`, which takes no attempt at all) or the second
+  job of a multi-job attempt. And the damage is not a mispointed column: worker settlement reads
+  `attemptId` off the **BullMQ payload**, not off `GenerationJob`, and the payload is written once
+  at dispatch — a row that already carries a `bullJobId`, or is already terminal, will never carry
+  the new attempt's id to a worker. Nothing then marks that attempt succeeded or failed;
+  `reconcileGenerationAttemptRefunds` only sees `refundPending` terminal rows, so a QUEUED attempt
+  holding a committed SPEND is invisible to it forever. A charge with no settlement is the one shape
+  this loop has no answer for. `assertPrimaryJobBelongsToAttempt` is the guard, and it lives in this
+  function rather than at each caller because the contract is this function's:
+  `enqueueGenerationJob`'s `attemptId` is optional, so nothing above it compiles differently for
+  getting this wrong. The test is exact — the row must *already* carry `claimed.id`, which every
+  caller stamps at enqueue — because `attemptId: null` is precisely the unbilled row being refused,
+  so there is no tolerated middle and a forgotten stamp is a loud `GenerationAttemptJobClaimError`
+  rather than a silent re-parent.
+  **But it can only vouch for the job the callback *named*, so the same refusal is also a
+  precondition of `enqueueGenerationJob` itself.** A `create` callback may enqueue more than one job
+  — `POST /api/mobile/projects/:id/resume` loops over the failed run's rows and keeps the first as
+  `primaryJobId` — and every job after that first one reached the commit neither stamped nor
+  verified. Answered from a key another path had spent, such a job leaves the charge committed while
+  the dispatch query `where: { attemptId }` cannot find it: fewer actions queued than the reader
+  paid for, and no settlement at all if that pre-existing row had already finished.
+  `assertEnqueueMayClaimFoundJob` (`apps/api/src/queue.ts`) refuses at the one place the hazard is
+  created — both when a `dedupeKey` lookup finds a row and when the concurrent-create `P2002`
+  recovery reads one back — so it covers every job of every attempt. It is inert for a caller that
+  passes no `attemptId`: the operator routes, the export repair, the free presentation recompiles
+  and `enqueueOrRequeueGenerationJob`, whose options carry none. Neither check subsumes the other,
+  which is why both stand: `packages/db` may not import `apps/api`, and `create` hands back an *id*
+  that could have come from a hand-written `generationJob.create` or off another row entirely — and
+  this one is the only check that answers "no such job". The worker's own `enqueueWorkerJob`
+  (`apps/worker/src/runtime/dispatch.ts`) needs neither, because it appends `:attempt:<attemptId>`
+  to its dedupe key: a row it finds under that key already belongs to the attempt asking.
+  Both spellings raise `GenerationAttemptJobClaimError`, deliberately not a
+  `GenerationAttemptConflictError`: that one is a 409 the reader can act on, and this is a wiring
+  fault nothing above can. Refusing inside
+  the attempt transaction is what makes the refusal free — the reservation, the spend, the quota
+  slot and every domain write roll back with it. Callers keep their own local guards where they can
+  give a better answer than a 500 — and the better answer is not the same one twice.
+  `queueInitialMobilePlan` (`apps/api/src/mobile/projectRecords.ts`) refuses first, with a 409 and a
+  sentence: a row under `plan-book:<projectId>` means planning already started, and a failed one is
+  retried for a fresh charge through `POST /api/mobile/projects/:id/resume` — which enqueues under
+  its own `generation-retry:` key — never by re-running this command. "First" is now literal: it
+  reads the row *before* it enqueues, because the enqueue refuses the same disagreement itself and
+  a check over what the enqueue returned would never run. The legacy-approval branch in
+  `apps/api/src/mobile/routes/plans.ts` *replays* instead, answering 202: an unbilled
+  `generate-book:<projectId>:<planId>` row is a full book already queued for free, so it dispatches
+  that row if it is still QUEUED and undispatched rather than charging a second package for work
+  that is already under way.
 
 - **A charge has one cumulative reversal, and partial settlements name their claim.**
   `refundCreditLedgerEntryPortion` is the ledger's only partial reversal, for work priced by the

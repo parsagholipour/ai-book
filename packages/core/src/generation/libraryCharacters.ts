@@ -14,6 +14,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { jsonRecord } from "../schemas/jsonCoercion.js";
 import {
+  foldArabicIndicDigits,
   foldArabicKafYehOntoPersian,
   stripInvisibleMarks,
   stripOptionalSpellingMarks
@@ -157,21 +158,24 @@ export function libraryCharactersFromMediaSettings(mediaSettings: unknown): Libr
  * class `[^\p{L}\p{N}]` accepted one as a word break and seeded an unrelated
  * character with the reader's saved face.
  *
- * The digit fold and the whitespace collapse stay here rather than moving to
- * the shared module: they answer a question about a *name* ("R2٠۱" and "R201"
- * are one robot), and the leak detector deliberately collapses no whitespace at
- * all, so that one of its patterns cannot match across a paragraph break.
+ * The whitespace collapse stays here rather than moving to the shared module:
+ * the prompt-leak detector deliberately collapses no whitespace at all, so that
+ * one of its patterns cannot match across a paragraph break. The digit fold did
+ * too, as a question about a *name* ("R2٠۱" and "R201" are one robot), until
+ * `foldRespelling` needed the identical table — a digit written in another
+ * script is the same digit whoever is asking, so it moved to the module that
+ * exists to hold one copy of a table.
  *
  * The result stays in NFD, so a mark the fold keeps is kept in one canonical
  * form on both sides of every comparison: composed क़ and क + nukta fold alike,
  * and so do the two spellings of a Bengali two-part vowel.
  */
 export function foldCharacterName(value: string): string {
-  return foldArabicKafYehOntoPersian(
-    stripOptionalSpellingMarks(stripInvisibleMarks(value.normalize("NFD")))
+  return foldArabicIndicDigits(
+    foldArabicKafYehOntoPersian(
+      stripOptionalSpellingMarks(stripInvisibleMarks(value.normalize("NFD")))
+    )
   )
-    .replace(/[٠-٩]/gu, (digit) => String(digit.charCodeAt(0) - 0x0660))
-    .replace(/[۰-۹]/gu, (digit) => String(digit.charCodeAt(0) - 0x06f0))
     .replace(/\s+/gu, " ")
     .trim()
     .toLowerCase();

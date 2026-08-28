@@ -71,13 +71,15 @@ export function selectCharacterReferenceAssets(options: SelectCharacterReference
     return [];
   }
 
-  const ordered = options.assets
-    .map((asset) => ({
-      asset,
-      characterIndex: characterIndexForAsset(options.plan.characters, asset),
-      score: scoreAssetForContext(options.plan.characters, asset, options.context)
-    }))
-    .filter((entry) => entry.characterIndex >= 0);
+  const ordered = oneSheetPerCharacter(
+    options.assets
+      .map((asset) => ({
+        asset,
+        characterIndex: characterIndexForAsset(options.plan.characters, asset),
+        score: scoreAssetForContext(options.plan.characters, asset, options.context)
+      }))
+      .filter((entry) => entry.characterIndex >= 0)
+  );
 
   if (options.input.category === "KIDS" && ordered.length <= options.maxReferences) {
     return ordered.sort(byPlanOrderThenScore).map((entry) => entry.asset);
@@ -95,6 +97,46 @@ export function selectCharacterReferenceAssets(options: SelectCharacterReference
   }
 
   return [];
+}
+
+type ScoredCharacterReference = {
+  asset: CharacterReferenceAsset;
+  characterIndex: number;
+  score: number;
+};
+
+/**
+ * One sheet per plan character, because a superseded cast is still the same
+ * cast.
+ *
+ * A book's sheets used to be one plan version's: the render pass deleted every
+ * `CHARACTER_REFERENCE` row on the project before writing its own. That delete
+ * is scoped to the ids the commit read now — it had to be, or one plan
+ * version's commit would destroy another's — so every replan and every
+ * continuation leaves a whole cast behind, and the one reader that ranges
+ * across them (`insertionReferenceSelection` in
+ * `apps/worker/src/handlers/applyImageInsertion.ts`, which falls back to *all*
+ * of a project's sheets when the current plan has none) hands this function
+ * three drawings of Ada beside three of Beatrice.
+ *
+ * They score identically — the score is a function of the character's name and
+ * the context, not of the file — so the sort below is a tie every duplicate
+ * wins, and a book replanned twice spent its entire 3-to-5 reference budget on
+ * one character while the rest of the cast was attached to nothing and drawn
+ * from prose alone. The `ordered.length === 1` fallback missed for the same
+ * reason: one character with three sheets counted as three.
+ *
+ * The **last** copy wins. Every caller reads the rows `orderBy: { createdAt:
+ * "asc" }`, so the last sheet for a character is the newest one — drawn against
+ * the most recent plan's description of them, which is the one the current
+ * plan's `characters` entry was reconciled against.
+ */
+function oneSheetPerCharacter(entries: ScoredCharacterReference[]): ScoredCharacterReference[] {
+  const newest = new Map<number, ScoredCharacterReference>();
+  for (const entry of entries) {
+    newest.set(entry.characterIndex, entry);
+  }
+  return [...newest.values()];
 }
 
 function byPlanOrderThenScore(

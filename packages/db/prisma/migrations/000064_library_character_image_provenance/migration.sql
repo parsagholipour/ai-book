@@ -1,0 +1,16 @@
+-- `metadata.copyrightRewrite` is the only IP-provenance record this product
+-- keeps: `ImageAsset.prompt` is what the book asked for, and that key is the
+-- claim about what was drawn instead when an IP filter refused the name and a
+-- text model rewrote the prompt.
+--
+-- The library-character portrait renders through the same
+-- `CopyrightSafeRetryImageAdapter` as every other picture, but it stores its
+-- bytes as a LibraryCharacterImage, which had nowhere to put that record — and
+-- the portrait is the seed every book's character reference sheets are drawn
+-- from, so it is the one drawing whose provenance travels furthest.
+--
+-- Per row rather than on LibraryCharacter, for the reason `photoKind` is per
+-- row: the character's pointer is overwritten by the next drawing and would
+-- then describe a different picture. Null means nothing was rewritten, which is
+-- every upload and every existing row.
+ALTER TABLE "LibraryCharacterImage" ADD COLUMN "metadata" JSONB;

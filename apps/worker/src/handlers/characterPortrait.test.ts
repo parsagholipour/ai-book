@@ -137,6 +137,42 @@ describe("generateCharacterPortrait", () => {
     });
   });
 
+  /**
+   * The portrait renders through the same `CopyrightSafeRetryImageAdapter` as
+   * every other picture, and it is the seed every book's character reference
+   * sheets are drawn from. The character's name and description are the
+   * request; `metadata.copyrightRewrite` is the claim about what was drawn
+   * instead, and this row is the only place it can be kept.
+   */
+  it("records the rewrite a refused portrait was redrawn from", async () => {
+    const copyrightRewrite = {
+      refusalReason: "PROHIBITED_CONTENT",
+      replaced: ["Spider-Man"],
+      prompt: "A young masked hero in a red-and-blue suit."
+    };
+    mocks.generateImageBytes.mockResolvedValue({
+      bytes: Buffer.from("rendered"),
+      mimeType: "image/png",
+      provider: "fake",
+      model: "fake-image",
+      copyrightRewrite
+    });
+
+    await generateCharacterPortrait(job);
+
+    expect(mocks.prisma.libraryCharacterImage.create.mock.calls[0]![0].data).toMatchObject({
+      metadata: { copyrightRewrite }
+    });
+  });
+
+  it("claims nothing about a portrait nobody refused", async () => {
+    await generateCharacterPortrait(job);
+
+    // Absent rather than an empty document: the row says nothing, which is what
+    // is true of a drawing made from the prompt it was asked for.
+    expect(mocks.prisma.libraryCharacterImage.create.mock.calls[0]![0].data).not.toHaveProperty("metadata");
+  });
+
   it("strips mention markers before the description reaches the prompt", async () => {
     mocks.prisma.libraryCharacter.findFirst.mockResolvedValue(
       characterRow({

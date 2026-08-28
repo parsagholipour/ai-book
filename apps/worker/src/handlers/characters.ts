@@ -316,12 +316,15 @@ export async function generateCharacterProfileImage(options: {
   // Attached images the prompt never mentions are treated as loose inspiration,
   // which is how an avatar drifted off the face the page renders use. The page
   // and cover handlers say what the attachments are; so does this one.
-  const prompt = [basePrompt, characterReferencePromptInstruction(references)].filter(Boolean).join("\n");
+  const promptForReferenceImages = (attached: readonly string[]) =>
+    [basePrompt, characterReferencePromptInstruction(references, attached)].filter(Boolean).join("\n");
+  const prompt = promptForReferenceImages(referenceImagePaths);
   const image = await options.strategy.generateImageBytes({
     image: options.providers.image,
     prompt,
     projectId: options.projectId,
     referenceImagePaths,
+    promptForReferenceImages,
     aspectRatio: "1:1"
   });
   const optimizedImage = await optimizeImageForStorage({ bytes: image.bytes, mimeType: image.mimeType });

@@ -340,5 +340,120 @@ describe("chat image replacement", () => {
       });
       await app.close();
     });
+
+    /**
+     * `metadata.copyrightRewrite` is the only IP-provenance record this product
+     * keeps, and a replacement is the one edit that puts different pixels behind
+     * a row that already exists. Undo puts the old file back, so the record that
+     * describes those bytes has to come back with them — otherwise the restored
+     * picture inherits the redraw's claim, and the row says a protected name was
+     * removed from a drawing made before anyone asked. A false one is worse
+     * than none.
+     */
+    async function undoReplacementWithProvenance(options: {
+      recorded?: Record<string, unknown>;
+      live: Record<string, unknown>;
+    }) {
+      mockAccessTokens({ "token-a": "user-a" });
+      mockPrisma.project.findFirst.mockResolvedValue(completeProject());
+      const operation = appliedEditOperationRecord({
+        id: "op-asset",
+        kind: "ADD_IMAGE",
+        request: "change the first image to more aggressive",
+        classifier: {
+          previousAsset: {
+            id: "asset-1",
+            pageId: "page-1",
+            path: "http://localhost:4001/assets/images/project-1/page-1.jpg",
+            // What makes this record a replacement rather than a move or a
+            // remove, and — for a row written before `generation` existed —
+            // the only thing that does.
+            afterPath: "http://localhost:4001/assets/images/project-1/page-1-op-asset.jpg",
+            prompt: "old prompt",
+            imagePrompt: "old prompt",
+            ...(options.recorded ? { generation: options.recorded } : {})
+          }
+        },
+        snapshots: [
+          {
+            pageId: "page-1",
+            pageIndex: 1,
+            titleBefore: "One",
+            markdownBefore: "Prose.",
+            summaryBefore: "S",
+            revisionBefore: 1
+          }
+        ]
+      });
+      state.bookEditOperations.push(operation);
+      mockPrisma.bookEditOperation.findMany.mockResolvedValue([operation]);
+      mockPrisma.imageAsset.updateMany.mockResolvedValue({ count: 1 });
+      // What the row holds now: the redraw's own record, over slot keys the
+      // merge may not disturb.
+      mockPrisma.imageAsset.findMany.mockResolvedValue([{ id: "asset-1", metadata: options.live }]);
+      state.pages.push({
+        id: "page-1",
+        projectId: "project-1",
+        index: 1,
+        title: "One",
+        markdown: "Prose.",
+        summary: "S",
+        revision: 2,
+        status: "COMPLETED"
+      });
+      const app = await buildMobileApp();
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/mobile/projects/project-1/chat/edits/undo",
+        headers: bearer("token-a"),
+        payload: {}
+      });
+      expect(response.statusCode).toBe(200);
+      const call = mockPrisma.imageAsset.updateMany.mock.calls.at(-1)?.[0] as {
+        data: { metadata?: Record<string, unknown> };
+      };
+      await app.close();
+      return call.data.metadata;
+    }
+
+    const OLD_REWRITE = { refusalReason: "PROHIBITED_CONTENT", replaced: ["Spider-Man"], prompt: "A masked hero." };
+    const NEW_REWRITE = { refusalReason: "RECITATION", replaced: ["Batman"], prompt: "A caped watchman." };
+
+    it("puts the restored picture's own rewrite record back with its bytes", async () => {
+      const metadata = await undoReplacementWithProvenance({
+        recorded: { copyrightRewrite: OLD_REWRITE },
+        live: { keeperToken: "v2-keeper-1", copyrightRewrite: NEW_REWRITE }
+      });
+
+      expect(metadata).toEqual({ keeperToken: "v2-keeper-1", copyrightRewrite: OLD_REWRITE });
+    });
+
+    it("drops the redraw's rewrite record when the restored picture claimed nothing", async () => {
+      const metadata = await undoReplacementWithProvenance({
+        recorded: {},
+        live: { keeperToken: "v2-keeper-1", copyrightRewrite: NEW_REWRITE }
+      });
+
+      expect(metadata).toEqual({ keeperToken: "v2-keeper-1" });
+    });
+
+    /**
+     * Every replacement APPLIED before the record existed carries no
+     * `generation` key at all, and nothing backfills one — while its undo
+     * window outlives the deploy that added it. Skipping the metadata write
+     * for those left the *replacement's* `copyrightRewrite` standing over a
+     * path that had just gone back to the old picture: the row then asserted a
+     * protected name was removed from a drawing made before anyone asked.
+     * Nothing can be restored, so the honest answer is to say nothing — a
+     * false record is worse than none.
+     */
+    it("clears the redraw's claim for a replacement recorded before provenance was", async () => {
+      const metadata = await undoReplacementWithProvenance({
+        live: { keeperToken: "v2-keeper-1", copyrightRewrite: NEW_REWRITE, fallback: { provider: "gemini" } }
+      });
+
+      // The slot keys stay: illustration ownership is decided from them.
+      expect(metadata).toEqual({ keeperToken: "v2-keeper-1" });
+    });
   });
 

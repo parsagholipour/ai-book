@@ -5,6 +5,7 @@ vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApi
 
 import {
   GenerationAttemptConflictError,
+  GenerationAttemptJobClaimError,
   GenerationQuotaExceededError,
   InsufficientCreditsError
 } from "@book-maker/db/billing";
@@ -385,6 +386,37 @@ describe("sendGenerationAttemptError", () => {
     });
   });
 
+  /**
+   * The fourth rung, and the one that is not a refusal.
+   *
+   * A claim error means the paid start was wired onto work it does not own, so
+   * the status stays 500 — there is no setting the reader could change. What it
+   * may not do is hand over the error's own words: `assertPrimaryJobBelongsToAttempt`
+   * writes them for whoever is reading the log, and rethrowing put that string
+   * straight into Fastify's default 500 body.
+   */
+  it("answers a job-claim fault as a logged 500 that ships none of its own words", () => {
+    const { reply, response, logged } = recordingReply();
+    const claim = new GenerationAttemptJobClaimError(
+      "Generation attempt attempt-2 may not claim generation job job-1: it is already attempt attempt-1's work. " +
+        "A create() callback must enqueue its own job with this attemptId, never return one it found under a spent dedupeKey."
+    );
+
+    expect(sendGenerationAttemptError(reply, claim)).toBe(true);
+    expect(response).toEqual({
+      statusCode: 500,
+      body: {
+        error: {
+          code: "GENERATION_JOB_NOT_CLAIMED",
+          message: "That couldn’t be started, so nothing was charged. Try again in a moment."
+        }
+      }
+    });
+    expect(JSON.stringify(response.body)).not.toMatch(/dedupeKey|create\(\)|attemptId|attempt-\d|job-\d/);
+    // Answering means the caller stops rethrowing, so this rung owns the log.
+    expect(logged).toEqual([claim]);
+  });
+
   it("leaves unknown errors for the caller to rethrow", () => {
     const { reply, response } = recordingReply();
 
@@ -396,9 +428,16 @@ describe("sendGenerationAttemptError", () => {
 function recordingReply(): {
   reply: FastifyReply;
   response: { statusCode: number | null; body: unknown };
+  logged: unknown[];
 } {
   const response: { statusCode: number | null; body: unknown } = { statusCode: null, body: null };
+  const logged: unknown[] = [];
   const reply = {
+    log: {
+      error(details: { err?: unknown }) {
+        logged.push(details.err);
+      }
+    },
     code(statusCode: number) {
       response.statusCode = statusCode;
       return this;
@@ -407,8 +446,8 @@ function recordingReply(): {
       response.body = body;
       return this;
     }
-  } as FastifyReply;
-  return { reply, response };
+  } as unknown as FastifyReply;
+  return { reply, response, logged };
 }
 
 async function waitFor(condition: () => boolean, timeoutMs = 3000): Promise<void> {

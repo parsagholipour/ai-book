@@ -4,6 +4,7 @@ import {
   calculateImageGenerationCost,
   estimateSpeechCostUsd,
   FallbackImageAdapter,
+  imageAdapterCapabilities,
   GeminiImageAdapter,
   isPremiumProject,
   modelTierForInput,
@@ -57,6 +58,7 @@ import {
   withLiveOutputTracking
 } from "./usageAccounting.js";
 import type { WorkerRuntimeJob } from "../runtime/jobPayloads.js";
+import { CopyrightSafeRetryImageAdapter } from "./copyrightSafeImageRetry.js";
 import { loadLiveGenerationTextRouting } from "./generationTextRouting.js";
 import { TextFallbackCallAccounting } from "./textFallbackAccounting.js";
 
@@ -83,10 +85,17 @@ export function createLoggedProviders(
   const { generationJobId, projectId } = job.data;
   const textModel = loggedTextModel(input);
   const liveTextModel = liveGenerationTextModel(providers.text, input, logger);
+  const text = new LoggingTextModelAdapter(liveTextModel, logger, generationJobId, projectId, textModel);
   return {
-    text: new LoggingTextModelAdapter(liveTextModel, logger, generationJobId, projectId, textModel),
+    text,
     research: new LoggingResearchAdapter(providers.research, logger, generationJobId),
-    image: createLoggedImageAdapter(providers.image, logger, generationJobId, input, options?.imageSelection),
+    // Outside the provider fallback, so only a request both providers refused
+    // reaches the rewrite.
+    image: new CopyrightSafeRetryImageAdapter({
+      image: createLoggedImageAdapter(providers.image, logger, generationJobId, input, options?.imageSelection),
+      text,
+      logger
+    }),
     embedding: new LoggingEmbeddingAdapter(providers.embedding, logger, generationJobId),
     speech: new LoggingSpeechAdapter(providers.speech, logger, generationJobId, projectId)
   };
@@ -652,7 +661,7 @@ class LoggingImageAdapter implements ImageAdapter {
   ) {}
 
   capabilities(): ImageAdapterCapabilities {
-    return this.delegate.capabilities?.() ?? { supportsReferenceImages: false, maxReferenceImages: 0 };
+    return imageAdapterCapabilities(this.delegate);
   }
 
   async generateImage(request: ImageRequest) {

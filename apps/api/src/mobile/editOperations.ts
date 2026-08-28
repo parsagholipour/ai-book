@@ -3,6 +3,7 @@ import { pageInstructionsWithCharacterContext, requestWithCharacterContext } fro
 import { type BookEditIntent } from "../bookEditIntent.js";
 import { dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
 import { createOpenBookEditOperation, replayClaimedChatOperation } from "./editOperationClaims.js";
+import { classifyEditFailure } from "@book-maker/core/editFailure";
 import {
   affectedPagesForIntent,
   busyEditReply,
@@ -24,7 +25,6 @@ import { fingerprintGenerationRequest, jsonInputValue } from "./support.js";
 import {
   bookPlanSchema,
   creditCostForOperation,
-  errorMessage,
   isDetachedFromProjectLifecycle,
   PRE_EDIT_PROJECT_STATUS
 } from "@book-maker/core";
@@ -154,9 +154,13 @@ export async function queueAttemptChatOperation(options: {
     // commit (the replay read, a serialization retry read) reaches this catch
     // too — and then the row carries its committed generationJobId and must
     // not be failed over work that still runs.
+    const failure = classifyEditFailure(error, "start");
+    if (failure.internal) {
+      console.error(`Edit generation attempt could not start for edit operation ${options.operation.id}`, error);
+    }
     await prisma.bookEditOperation.updateMany({
       where: { id: options.operation.id, generationJobId: null },
-      data: { status: "FAILED", error: errorMessage(error) }
+      data: { status: "FAILED", error: failure.message }
     });
     if (error instanceof InsufficientCreditsError) {
       const reply = await insufficientCreditsChatMessage(
@@ -293,9 +297,13 @@ export async function queueChatPlanRevision(options: {
     // Conditional on the job linkage: a post-commit read failure inside
     // queueChargedPlanRevision lands here too, and the committed row already
     // carries its generationJobId — failing it would disown a charged job.
+    const failure = classifyEditFailure(error, "start");
+    if (failure.internal) {
+      console.error(`Plan revision attempt could not start for edit operation ${operation.id}`, error);
+    }
     await prisma.bookEditOperation.updateMany({
       where: { id: operation.id, generationJobId: null },
-      data: { status: "FAILED", error: errorMessage(error) }
+      data: { status: "FAILED", error: failure.message }
     });
     if (error instanceof InsufficientCreditsError) {
       const reply = await insufficientCreditsChatMessage(

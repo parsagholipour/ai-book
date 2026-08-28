@@ -30,6 +30,7 @@ import {
   EXPORT_PUBLICATION_PROJECT_STATUS,
   bookPlanSchema,
   parseStructuralApplication,
+  withImageRenderProvenance,
   type StructuralApplication
 } from "@book-maker/core";
 import {
@@ -448,10 +449,50 @@ export async function undoLastBookEdit(
     }
     // Every picture the edit touched goes back where it was — a bulk remove
     // unlinked as many as the book had.
-    for (const asset of [...previousAssets, ...demotedAssets]) {
+    const restoredAssets = [...previousAssets, ...demotedAssets];
+    // The picture's own record goes back with its bytes. Only a replacement
+    // redrew anything, so only a replacement wrote one down — a demoted hero is
+    // moved out of the hero slot, never redrawn, and its
+    // `metadata.copyrightRewrite` still describes the pixels it always did.
+    // Restoring the path without this left the *replacement's* provenance over
+    // the picture it was taken from, claiming a protected name had been removed
+    // from a drawing made before anyone asked.
+    //
+    // A replacement applied before that record existed has no `generation` key
+    // at all, and its undo window outlives the deploy that added one — so the
+    // restore is keyed on `afterPath`, which is what makes a record a
+    // replacement (a move and a remove never write one). Nothing can be put
+    // back for those, but the redraw's claim can be taken off: an empty
+    // provenance clears both keys, and saying nothing about the restored
+    // picture is the honest answer where saying the new render's words is a
+    // false record, which is worse than none.
+    const recordedProvenance = new Map<string, Record<string, unknown>>(
+      previousAssets.flatMap((asset): [string, Record<string, unknown>][] =>
+        asset.generation ? [[asset.id, asset.generation]] : asset.afterPath ? [[asset.id, {}]] : []
+      )
+    );
+    // Merged onto what the row holds now rather than written whole:
+    // `keeperToken` and the other slot keys on that document may have moved
+    // since (`stampLegacyGeneratedIllustrationOwnership`), and illustration
+    // ownership is decided from them.
+    const liveMetadata = await liveMetadataForRestore(tx, project.id, [...recordedProvenance.keys()]);
+    for (const asset of restoredAssets) {
+      const provenance = recordedProvenance.get(asset.id);
       await tx.imageAsset.updateMany({
         where: { id: asset.id, projectId: project.id },
-        data: { path: asset.path, prompt: asset.prompt, pageId: asset.pageId }
+        data: {
+          path: asset.path,
+          prompt: asset.prompt,
+          pageId: asset.pageId,
+          ...(provenance && liveMetadata.has(asset.id)
+            ? {
+                metadata: withImageRenderProvenance(
+                  liveMetadata.get(asset.id),
+                  provenance
+                ) as Prisma.InputJsonValue
+              }
+            : {})
+        }
       });
     }
     await tx.bookEditOperation.update({
@@ -569,6 +610,30 @@ function undoConfirmation(
   const undone =
     shape && restored ? `${shape} and ${restored}` : (shape ?? restored ?? "put the book back to how it was");
   return `Done - I ${undone} to undo “${request.slice(0, 120)}”, and I’m refreshing the exports. Undo is free.`;
+}
+
+/**
+ * The stored metadata of every asset whose provenance this Undo puts back,
+ * keyed by id — empty for an edit that redrew nothing, which is every move and
+ * every remove.
+ *
+ * One read for the batch rather than one per picture: it is a lookup, and the
+ * ceiling this transaction runs under is a limit on the structural replay
+ * happening beside it.
+ */
+async function liveMetadataForRestore(
+  tx: Pick<Prisma.TransactionClient, "imageAsset">,
+  projectId: string,
+  ids: readonly string[]
+): Promise<Map<string, unknown>> {
+  if (ids.length === 0) {
+    return new Map();
+  }
+  const rows = await tx.imageAsset.findMany({
+    where: { id: { in: [...ids] }, projectId },
+    select: { id: true, metadata: true }
+  });
+  return new Map(rows.map((row) => [row.id, row.metadata]));
 }
 
 /**
