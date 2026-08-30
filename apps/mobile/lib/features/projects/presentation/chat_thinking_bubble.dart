@@ -42,6 +42,14 @@ const bookChatThinkingStages = <String>[
   'Almost there…',
 ];
 
+/// The short handoff after Undo has queued its compile but before the status
+/// stream has delivered the first real progress tick.
+const undoRebuildThinkingStages = <String>[
+  'Rebuilding your book…',
+  'Laying out the updated pages…',
+  'Refreshing your book files…',
+];
+
 class _ChatThinkingBubbleState extends State<ChatThinkingBubble> {
   Timer? _timer;
   int _stage = 0;

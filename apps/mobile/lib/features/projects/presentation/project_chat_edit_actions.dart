@@ -12,6 +12,20 @@ mixin _ProjectChatEditActions on ConsumerState<ProjectChatScreen> {
   /// The operation whose retry is in flight, if any.
   String? _retryingOperationId;
   bool _undoing = false;
+  bool _awaitingUndoStatus = false;
+
+  bool get _hasPendingOperationAction =>
+      _undoing || _awaitingUndoStatus || _retryingOperationId != null;
+
+  List<String> get _operationThinkingStages =>
+      _awaitingUndoStatus ? undoRebuildThinkingStages : bookChatThinkingStages;
+
+  /// Replaces the local Undo handoff with streamed progress (or removes it if
+  /// a very fast rebuild already settled before the first status tick).
+  void _didReceiveProjectStatus() {
+    if (!_awaitingUndoStatus) return;
+    setState(() => _awaitingUndoStatus = false);
+  }
 
   // Provided by the screen this mixin is applied to.
   TextEditingController get _controller;
@@ -173,12 +187,18 @@ mixin _ProjectChatEditActions on ConsumerState<ProjectChatScreen> {
           .undoLastBookEdit(projectId: widget.projectId, requestId: requestId);
       if (!mounted) return;
       _armFallingEdge(result.operation);
-      setState(() => _undoing = false);
+      setState(() {
+        _undoing = false;
+        _awaitingUndoStatus = result.reply.metadata['undo'] is Map;
+      });
       _refresh();
       _scrollToBottomSoon();
     } catch (error) {
       if (!mounted) return;
-      setState(() => _undoing = false);
+      setState(() {
+        _undoing = false;
+        _awaitingUndoStatus = false;
+      });
       ScaffoldMessenger.of(
         context,
       ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));

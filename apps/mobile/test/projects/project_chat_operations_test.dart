@@ -9,6 +9,44 @@ import 'package:tomeza/shared/api/api_error.dart';
 import 'project_chat_harness_optimistic.dart';
 
 void main() {
+  testWidgets(
+    'undo keeps showing a rebuild indicator until live status arrives',
+    (tester) async {
+      final repository = ScriptedProjectsRepository()
+        ..withAppliedEditThenPendingProposal();
+      repository.undoResult = repository.successfulUndoResult;
+      await tester.pumpWidget(chatApp(repository));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Undo'));
+      // Not pumpAndSettle: the handoff spinner is expected to keep animating
+      // until the status stream produces its first post-Undo event.
+      for (var frame = 0; frame < 4; frame++) {
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+
+      expect(
+        find.text('Rebuilding your book…'),
+        findsOneWidget,
+        reason:
+            'the request has queued a compile, but the status stream has not '
+            'reported it yet',
+      );
+
+      repository.emitStatus(
+        status: 'editing',
+        progressPercent: 92,
+        action: 'Laying out your updated book',
+        editProgress: editProgress(92, active: 'Rebuilding your book'),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('Rebuilding your book…'), findsNothing);
+      expect(find.text('Laying out your updated book'), findsOneWidget);
+    },
+  );
+
   testWidgets('a running edit reports progress and lands the result on its own', (
     tester,
   ) async {

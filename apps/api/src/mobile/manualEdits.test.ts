@@ -870,6 +870,8 @@ describe("mobile editable book and manual edits", () => {
     });
 
     expect(response.statusCode).toBe(200);
+    expect(response.json().reply.content).not.toMatch(/^Done\b/);
+    expect(response.json().reply.content).toContain("I’m rebuilding your book now");
     expect(mockPrisma.page.update).toHaveBeenCalledWith({
       where: { id: "page-1" },
       data: expect.objectContaining({

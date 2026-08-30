@@ -52,6 +52,7 @@ class ScriptedProjectsRepository implements ProjectsRepository {
   final chatFetches = <String>[];
   final statusController = StreamController<MobileProjectStatus>.broadcast();
   MobileProjectChatSendResult Function()? applyResult;
+  MobileProjectChatSendResult Function()? undoResult;
 
   /// The operation a send comes back with, when the message queued real work.
   MobileBookEditOperation? sendOperation;
@@ -231,6 +232,36 @@ class ScriptedProjectsRepository implements ProjectsRepository {
     );
   }
 
+  MobileProjectChatSendResult successfulUndoResult() {
+    _contents.add((role: 'user', content: 'Undo'));
+    _contents.add((
+      role: 'assistant',
+      content:
+          'I restored page 1 to how it was and I’m rebuilding your book now. '
+          'Undo is free.',
+    ));
+    final chat = _chat();
+    final reply = chat.messages.last;
+    return MobileProjectChatSendResult(
+      messages: chat.messages,
+      operations: chat.operations,
+      reply: MobileProjectChatMessage(
+        id: reply.id,
+        projectId: reply.projectId,
+        parentId: reply.parentId,
+        role: reply.role,
+        content: reply.content,
+        metadata: const {
+          'undo': {
+            'operationId': 'op-1',
+            'restoredPageIndexes': [1],
+          },
+        },
+        createdAt: reply.createdAt,
+      ),
+    );
+  }
+
   @override
   Future<MobileProjectChat> getProjectChat(
     String id, {
@@ -299,7 +330,9 @@ class ScriptedProjectsRepository implements ProjectsRepository {
     required String projectId,
     String? requestId,
   }) async {
-    throw UnimplementedError();
+    final build = undoResult;
+    if (build == null) throw UnimplementedError();
+    return build();
   }
 
   @override
@@ -362,4 +395,3 @@ MobileBookEditOperation queuedOperation() {
     changesAvailable: false,
   );
 }
-

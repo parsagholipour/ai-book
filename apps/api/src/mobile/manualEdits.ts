@@ -609,7 +609,7 @@ function undoConfirmation(
           : "put the pages back in their original order";
   const undone =
     shape && restored ? `${shape} and ${restored}` : (shape ?? restored ?? "put the book back to how it was");
-  return `Done - I ${undone} to undo “${request.slice(0, 120)}”, and I’m refreshing the exports. Undo is free.`;
+  return `I ${undone} to undo “${request.slice(0, 120)}”. I’m rebuilding your book now. Undo is free.`;
 }
 
 /**

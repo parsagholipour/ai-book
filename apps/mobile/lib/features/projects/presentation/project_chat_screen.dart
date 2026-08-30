@@ -191,7 +191,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
   /// thing with real numbers and two busy indicators read as two jobs.
   bool _showThinking(MobileProjectStatus? liveStatus) {
     if (liveStatus != null) return false;
-    return _sending || _editing || _undoing || _retryingOperationId != null;
+    return _sending || _editing || _hasPendingOperationAction;
   }
 
   /// Remembers that work was handed to the worker.
@@ -215,6 +215,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
   void _onStatusChanged(AsyncValue<MobileProjectStatus> value) {
     final status = value.asData?.value;
     if (status == null) return;
+    _didReceiveProjectStatus();
     final live = status.isLive;
     if (live) {
       _wasLive = true;
@@ -428,9 +429,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
                       // card below says the same thing with real numbers, and
                       // two busy indicators read as two things happening.
                       if (_showThinking(liveStatus)) ...[
-                        const ChatThinkingBubble(
-                          stages: bookChatThinkingStages,
-                        ),
+                        ChatThinkingBubble(stages: _operationThinkingStages),
                         const SizedBox(height: 10),
                       ],
                       for (final operation in operations.unanchored)
