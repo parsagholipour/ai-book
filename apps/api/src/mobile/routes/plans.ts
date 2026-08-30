@@ -7,7 +7,7 @@ import {
 import { addImageQuotaLimit } from "../addImageOperations.js";
 import { type MobileProjectRecoveryDto } from "../dto.js";
 import { queueDirectPlanRevision } from "../editOperations.js";
-import { retryPlanRevisionOperation } from "../planRevisionRetries.js";
+import { retryBookEditOperation } from "../bookEditOperationRetries.js";
 import {
   hitTieredLimit,
   requireMobileAuth,
@@ -206,7 +206,7 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
     }
     let result;
     try {
-      result = await retryPlanRevisionOperation({
+      result = await retryBookEditOperation({
         userId: auth.user.id,
         ...(params.projectId ? { projectId: params.projectId } : {}),
         operationId: params.id,

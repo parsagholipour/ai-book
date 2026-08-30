@@ -21,6 +21,7 @@ import { serializePlan } from "./projectArtifactSerializers.js";
 import { normalizeJobStatus } from "./projectStatusSerializers.js";
 import { MODEL_PAGE_NUMBERING, numberingForProject, type ReaderPageNumbering } from "../bookPageNumbering.js";
 import { generationRecoveryQuote } from "./generationRetryQuote.js";
+import { isPaidRetryableBookEditFailure } from "./bookEditRetryPolicy.js";
 import { clipText, jsonInputValue, jsonValue } from "./support.js";
 import { prisma } from "@book-maker/db";
 import { InsufficientCreditsError } from "@book-maker/db/billing";
@@ -493,10 +494,9 @@ export function serializeBookEditOperation(
 ): MobileBookEditOperationDto {
   const numbering = options?.pageNumbering ?? MODEL_PAGE_NUMBERING;
   const latestAttempt = operation.generationAttempts?.[0] ?? null;
-  const failedPlanRevision =
-    operation.kind === "PLAN_REVISION" && ["FAILED", "CANCELED"].includes(operation.status);
+  const failedRetryableEdit = isPaidRetryableBookEditFailure(operation);
   const retryableAttempt =
-    failedPlanRevision &&
+    failedRetryableEdit &&
     latestAttempt &&
     ["FAILED", "CANCELED"].includes(latestAttempt.status) &&
     !latestAttempt.refundPending
@@ -504,11 +504,11 @@ export function serializeBookEditOperation(
       : null;
   const recoveryQuote = retryableAttempt ? generationRecoveryQuote(retryableAttempt) : null;
   const retryAvailable = recoveryQuote !== null;
-  const retryState = retryAvailable ? "available" : failedPlanRevision ? "exhausted" : null;
+  const retryState = retryAvailable ? "available" : failedRetryableEdit ? "exhausted" : null;
   const retryMessage = retryAvailable
     ? `Retry costs ${recoveryQuote.credits} credits. The failed attempt was refunded.`
     : retryState === "exhausted"
-      ? "Refresh to check whether this plan revision can be retried."
+      ? "Refresh to check whether this book update can be retried."
       : null;
   return {
     id: operation.id,

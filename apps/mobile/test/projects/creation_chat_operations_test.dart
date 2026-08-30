@@ -158,6 +158,44 @@ Future<PlanProjectsRepository> _pumpFinishedBook(
   return projects;
 }
 
+class _AppliedPageRewriteRetryRepository extends PlanProjectsRepository {
+  _AppliedPageRewriteRetryRepository()
+    : super(
+        project: plannedProject(status: 'complete', plan: approvedPlan()),
+      );
+
+  final retriedOperationIds = <String>[];
+
+  @override
+  Future<MobileBookEditOperation> retryOperation({
+    required String projectId,
+    required String operationId,
+    String? requestId,
+    String? retryToken,
+  }) async {
+    retriedOperationIds.add(operationId);
+    final index = chatOperations.indexWhere(
+      (operation) => operation.id == operationId,
+    );
+    final failed = chatOperations[index];
+    final applied = MobileBookEditOperation(
+      id: failed.id,
+      projectId: failed.projectId,
+      kind: failed.kind,
+      status: 'applied',
+      affectedPageIndexes: failed.affectedPageIndexes,
+      creditsCharged: failed.creditsCharged,
+      currentAction: 'Page rewrite applied.',
+      createdAt: failed.createdAt,
+      appliedAt: DateTime.utc(2026, 8, 31, 14, 19),
+      anchorMessageId: failed.anchorMessageId,
+    );
+    chatOperations[index] = applied;
+    status = projectStatusFromProject(project);
+    return applied;
+  }
+}
+
 void main() {
   testWidgets('an applied edit lands under the reply that announced it', (
     tester,
@@ -233,6 +271,70 @@ void main() {
 
     await tester.teardownScreen();
   });
+
+  testWidgets(
+    'a finished page rewrite retry does not show plan revision work',
+    (tester) async {
+      final creation = ScriptedCreationRepository(
+        sessions: [
+          chatSession(
+            draftId: 'draft-done',
+            title: 'Completed book',
+            status: 'COMPLETED',
+            createdProjectId: 'project-1',
+            outputs: [
+              creationOutput(
+                projectId: 'project-1',
+                title: planTitle,
+                sequence: 1,
+              ),
+            ],
+          ),
+        ],
+      );
+      creation.resumeAssistantMessages['draft-done'] = 'Book transcript';
+      final projects = _AppliedPageRewriteRetryRepository();
+      projects.chatOperations.add(
+        MobileBookEditOperation(
+          id: 'rewrite-1',
+          projectId: 'project-1',
+          kind: 'page_rewrite',
+          status: 'failed',
+          affectedPageIndexes: const [8],
+          creditsCharged: 80,
+          currentAction: 'Edit failed.',
+          error: 'The rewrite could not be verified.',
+          retryAvailable: true,
+          recoveryQuote: const MobileGenerationRecoveryQuote(
+            retryToken: 'retry-token',
+            credits: 80,
+            requiresConfirmation: true,
+          ),
+          createdAt: DateTime.utc(2026, 8, 31, 14, 16),
+        ),
+      );
+
+      await tester.pumpWidget(
+        app(creation: creation, projects: projects, draftId: 'draft-done'),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Retry update'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Retry for 80'));
+      // The pre-fix state left a four-second poll running forever, so settling
+      // would hide the wrong footer behind a timeout instead of detecting it.
+      await tester.pump();
+      for (var frame = 0; frame < 6; frame++) {
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+
+      expect(projects.retriedOperationIds, ['rewrite-1']);
+      expect(find.text('Revising your book plan'), findsNothing);
+      expect(find.text('Ask for an edit to this book…'), findsOneWidget);
+
+      await tester.teardownScreen();
+    },
+  );
 
   testWidgets('a spent proposal stops offering Apply', (tester) async {
     await _pumpFinishedBook(tester, status: 'applied');

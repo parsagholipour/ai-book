@@ -600,14 +600,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
             retryToken: confirmed.retryToken,
           );
       if (!mounted) return;
-      setState(() {
-        _planBusyAction = 'revise';
-        _pendingRevisionOperationId = retried.id;
-        if (project?.plan != null) {
-          _pendingRevisionPlanKey = _planKey(project!.plan!);
-        }
-      });
-      _startPlanPoll();
+      _trackRetriedOperation(retried, project);
       _refreshOutput(operation.projectId);
     } catch (error) {
       if (!mounted) return;

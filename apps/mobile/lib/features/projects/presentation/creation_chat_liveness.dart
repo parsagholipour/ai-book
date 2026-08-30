@@ -89,6 +89,26 @@ mixin _LiveOutputRefresh
     });
   }
 
+  void _trackRetriedOperation(
+    MobileBookEditOperation operation,
+    MobileProjectDetail? project,
+  ) {
+    setState(() {
+      if (operation.isPlanRevision) {
+        _planBusyAction = 'revise';
+        _pendingRevisionOperationId = operation.id;
+        _pendingRevisionPlanKey = project?.plan == null
+            ? null
+            : _planKey(project!.plan!);
+      } else {
+        _planBusyAction = null;
+        _pendingRevisionOperationId = null;
+        _pendingRevisionPlanKey = null;
+      }
+    });
+    if (operation.isPlanRevision) _startPlanPoll();
+  }
+
   void _stopPollingWhenSettled(MobileProjectDetail project) {
     if (project.status == 'failed') {
       stopPolling();
