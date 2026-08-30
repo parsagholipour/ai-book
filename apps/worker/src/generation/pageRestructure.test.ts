@@ -183,7 +183,7 @@ const transaction = (book: TransactionBook = {}) => {
   },
   project: {
     findUnique: mocks.track("project.findUnique", { pdfPageMap: null }),
-    update: mocks.track("project.update", {})
+    update: mocks.track("project.update", { contentRevision: 7 })
   }
   };
 };
@@ -318,8 +318,7 @@ describe("applying a structural page change", () => {
     );
 
     expect(result.outcome).toBe("applied");
-    expect(appliedBy(result).newPlanVersionId).toBe("plan-4");
-    expect(appliedBy(result).insertedPageIds).toEqual(["new-1", "new-2"]);
+    expect(appliedBy(result)).toMatchObject({ newPlanVersionId: "plan-4", insertedPageIds: ["new-1", "new-2"], baseContentRevision: 7 });
     expect(mocks.order.at(-1)).toBe("bookEditOperation.update");
   });
 
@@ -328,7 +327,7 @@ describe("applying a structural page change", () => {
     expect(mocks.order[0]).toBe("project.update");
     expect(mocks.order[1]).toBe("bookEditOperation.updateMany");
     expect(mocks.order[2]).toBe("bookEditOperation.findUnique");
-    expect(tx.project.update).toHaveBeenNthCalledWith(1, { where: { id: "project-1" }, data: { contentRevision: { increment: 0 } } });
+    expect(tx.project.update).toHaveBeenNthCalledWith(1, { where: { id: "project-1" }, data: { contentRevision: { increment: 0 } }, select: { contentRevision: true } });
     expect(mocks.order.indexOf("bookEditOperation.findUnique")).toBeLessThan(
       mocks.order.indexOf("shiftPageIndexes")
     );

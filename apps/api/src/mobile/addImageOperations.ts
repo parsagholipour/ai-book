@@ -310,6 +310,8 @@ export async function queueChatAddImage(options: QueuedChatEdit): Promise<{
     kind: "ADD_IMAGE",
     status: "QUEUED",
     request: message,
+    editInstruction: resolvedIntent.editInstruction?.trim() || message.trim(),
+    ...(options.characterContext?.trim() ? { characterContext: options.characterContext.trim() } : {}),
     classifier: jsonInputValue(resolvedIntent),
     affectedPageIndexes: [target],
     creditsCharged: 0
@@ -358,6 +360,8 @@ export async function queueChatAddImage(options: QueuedChatEdit): Promise<{
           payload: {
             operationId: operation.id,
             request: requestWithCharacterContext(message, options.characterContext),
+            editInstruction: resolvedIntent.editInstruction?.trim() || message.trim(),
+            ...(options.characterContext?.trim() ? { characterContext: options.characterContext.trim() } : {}),
             affectedPageIndexes: [target],
             intentKind: "add_image",
             [PRE_EDIT_PROJECT_STATUS]: settledStatusBeforeEdit(project.status),

@@ -14,6 +14,7 @@ export * from "./creditPricing.ts";
 export * from "./embeddingScopes.ts";
 export * from "./pageOrdering.ts";
 export * from "./pageRestructureRevert.ts";
+export * from "./pageRestructureCompensation.ts";
 export * from "./researchLinks.ts";
 export * from "./storyState.ts";
 /**

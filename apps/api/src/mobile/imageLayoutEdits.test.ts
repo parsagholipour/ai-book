@@ -35,7 +35,8 @@ function layoutRouterModel() {
     pageIndexes: [] as number[],
     chapterIndex: null,
     targetLanguage: null,
-    action: "propose_edit"
+    action: "propose_edit",
+    editInstruction: "Apply the requested illustration layout change."
   };
   const decide = (args: Record<string, unknown>) => ({
     text: "",

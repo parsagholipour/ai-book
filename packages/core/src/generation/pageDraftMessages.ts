@@ -45,6 +45,14 @@ export function buildPageDraftSystemContent(
   const citation = citationContractFields(options.researchNotes);
   return [
     "Write one finished Markdown page of the book as a human author would.",
+    ...(options.editInstruction
+      ? [
+          "editInstruction is the approved reader request and is authoritative. Apply it explicitly. pageBrief governs structure and continuity, but never whether the requested change is performed. Do not soften, substitute, or silently omit it."
+        ]
+      : []),
+    ...(options.characterContext
+      ? ["characterContext is supplemental canon for character identity, traits, and appearance. Use it when writing, but do not treat it as an additional requested edit."]
+      : []),
     "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions.",
     INTERNAL_PAGE_TITLE_RULE,
     GROUNDED_FACTUALITY_RULE,
@@ -97,6 +105,9 @@ export function buildPageDraftUserPayload(options: GeneratePageOptions) {
 
   return {
     context,
+    ...(options.editInstruction ? { editInstruction: options.editInstruction } : {}),
+    ...(options.characterContext ? { characterContext: options.characterContext } : {}),
+    ...(options.adherenceRepair?.length ? { adherenceRepair: options.adherenceRepair } : {}),
     language: targetLanguagePayload(options.input.language),
     userContext: {
       prompt: options.input.prompt,

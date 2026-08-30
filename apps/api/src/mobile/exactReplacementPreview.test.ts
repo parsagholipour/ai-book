@@ -103,6 +103,43 @@ describe("deterministic exact-replacement edits", () => {
     await app.close();
   });
 
+  it("prices and queues a compound replacement for model generation and full review", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    state.pages = editablePages();
+    mockPrisma.project.findFirst.mockResolvedValue(completeProject());
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-1", type: "APPLY_BOOK_EDIT" }));
+    const app = await buildMobileApp();
+    const instruction =
+      'Replace "Rabbit" with "Fox" and make the tone darker throughout the whole book.';
+
+    const proposed = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: instruction }
+    });
+    const proposal = proposed.json().reply.metadata.editProposal;
+
+    expect(proposed.statusCode).toBe(200);
+    expect(proposal).toMatchObject({ kind: "local_patch" });
+    expect(proposal.credits).toBeGreaterThan(0);
+    expect(proposal.preview).toBeUndefined();
+
+    const confirmed = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "apply it" }
+    });
+
+    expect(confirmed.statusCode).toBe(200);
+    const enqueue = vi.mocked(enqueueGenerationJob).mock.calls.at(-1)?.[0];
+    expect(enqueue?.payload).toMatchObject({ editInstruction: instruction });
+    expect(enqueue?.payload).not.toHaveProperty("exactReplacement");
+    expect(enqueue?.payload).not.toHaveProperty("mode");
+    await app.close();
+  });
+
   it("keeps a page whose only match is the title and previews the rename", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     // Page 2's markdown and summary no longer mention the term; only the title does.

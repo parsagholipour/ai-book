@@ -1,8 +1,8 @@
-import { type BookEditIntent, type BookEditIntentKind, type BookEditPageInstruction } from "../bookEditIntent.js";
+import { type BookEditIntent, type BookEditIntentKind } from "../bookEditIntent.js";
 import { clippedImageSubject, imageLayoutProposalSummary, imageLayoutQueuedMessage } from "../bookEditImage.js";
 import { MODEL_PAGE_NUMBERING, type ReaderPageNumbering } from "../bookPageNumbering.js";
 import { type StructuralCardPlan } from "./pendingEditState.js";
-import { structuralPlacementOf } from "./structuralPageEdits.js";
+import { structuralActionInstruction } from "./structuralPageEdits.js";
 import { languageDisplayName } from "./support.js";
 
 /**
@@ -30,6 +30,20 @@ export function editProposalSummary(
    */
   structuralPlan?: StructuralCardPlan | undefined
 ): string {
+  const durableInstruction = intent.editInstruction?.trim();
+  if (
+    durableInstruction &&
+    (kind === "local_patch" ||
+      kind === "page_rewrite" ||
+      kind === "chapter_regenerate" ||
+      kind === "restructure_pages")
+  ) {
+    // This is the execution contract the reader approves, not preview copy.
+    // The router accepts up to 1,200 characters because multi-requirement
+    // edits need that space; clipping the card hid requirements that the
+    // worker would still execute after Apply.
+    return durableInstruction;
+  }
   if (kind === "plan_revision") {
     // Only ever carded by a credits-blocked revision's resume proposal; the
     // ordinary plan revision path charges without a card.
@@ -37,15 +51,25 @@ export function editProposalSummary(
   }
   if (kind === "continue_book") {
     const chapterCount = intent.continuation?.chapterCount ?? 1;
-    return chapterCount > 1
+    const action = chapterCount > 1
       ? `Write ${chapterCount} new chapters continuing your book`
       : "Write the next chapter of your book";
+    // Keep the priced unit visible, but make the reader approve the same
+    // standalone content contract Apply persists and the worker executes. A
+    // contextual request such as "yes, do that for two chapters" is not a safe
+    // substitute once the router has resolved what "that" means.
+    return durableInstruction ? `${action}: ${durableInstruction}` : action;
   }
   if (kind === "restructure_pages") {
-    return structuralProposalSummary(intent, numbering, structuralPlan);
+    return structuralActionInstruction(intent, numbering, structuralPlan);
   }
   if (kind === "book_replan") {
-    return replanProposalSummary(intent);
+    const action = replanProposalSummary(intent);
+    // The settings phrase explains the kind and price of the operation; the
+    // durable instruction says what the rebuilt copy must actually become.
+    // Both belong on the final confirmation instead of replacing the resolved
+    // instruction with generic "rebuild" prose.
+    return durableInstruction ? `${action}: ${durableInstruction}` : action;
   }
   if (kind === "add_image") {
     const subject = clippedImageSubject(intent.imageEdit?.subject ?? "a scene from this book");
@@ -219,114 +243,11 @@ export function operationQueuedMessage(
 }
 
 /**
- * The request as the worker's prompts should see it: the reader's own words
- * plus the mentioned characters' sheets. Only ever applied where the string is
- * handed to a model — job payloads and the plan-revision message — because the
- * bare `message` is what page targeting and exact-replacement parsing read.
+ * Compatibility copy for the few legacy consumers whose model-facing schema
+ * still accepts one request string. The durable payload also carries the bare
+ * edit instruction and `characterContext` separately; this derived string is
+ * never an adherence contract or an input to targeting.
  */
 export function requestWithCharacterContext(message: string, characterContext: string | undefined): string {
   return characterContext ? `${message}\n\n${characterContext}` : message;
-}
-
-/**
- * The same, for the per-page instructions riding the same payload. The worker
- * *substitutes* a page's instruction for the whole request rather than adding to
- * it (`applyBookEdit.ts`), so appending the sheets to `request` alone left every
- * page the reader named — "make page 3 funnier and page 7 shorter" — rewritten
- * with no idea who the mentioned character is, while the unnamed pages in the
- * same edit had the sheet. Only the payload copy is composed: the entries on the
- * intent stay bare, because that is what the card shows and what the resumable
- * pending state rebuilds from.
- */
-export function pageInstructionsWithCharacterContext(
-  instructions: BookEditPageInstruction[],
-  characterContext: string | undefined
-): BookEditPageInstruction[] {
-  if (!characterContext) {
-    return instructions;
-  }
-  return instructions.map((entry) => ({
-    pageIndex: entry.pageIndex,
-    instruction: requestWithCharacterContext(entry.instruction, characterContext)
-  }));
-}
-
-/**
- * The card's own words for a structural edit — how many pages, and where, in
- * the numbering the reader can see.
- *
- * Deliberately unlike the `continue_book` card, which says "Write 8 new
- * chapters" while carrying a quote of `8 × medianChapterSize × perPage`: a
- * reader looking at a four-figure number has no way to tell what it counted.
- *
- * **Where the pages land is {@link structuralPlacementOf}'s answer, and this
- * sentence only chooses the words for it.** The chip drawn beside it is that
- * same answer (`structuralCardBlock`), which is what keeps the two halves of one
- * card from naming different places: the prose used to resolve the anchor
- * itself, so it printed the request's unclamped "after page 100" beside a chip
- * that said page 20, and it named a move's destination on a card whose chip
- * named none. The three placements — and what a `null` anchor means, and what an
- * anchor the page map cannot place means — now have one place to live, and each
- * action keeps only its own preposition here.
- */
-function structuralProposalSummary(
-  intent: BookEditIntent,
-  numbering: ReaderPageNumbering,
-  plan?: StructuralCardPlan | undefined
-): string {
-  const edit = intent.structuralEdit;
-  if (!edit) {
-    return "Change which pages the book has";
-  }
-  if (edit.action === "delete") {
-    return structuralPagesPhrase("Remove", edit.pageIndexes, numbering);
-  }
-  const placement = structuralPlacementOf(edit, plan, numbering);
-  if (edit.action === "move") {
-    const moved = structuralPagesPhrase("Move", edit.pageIndexes, numbering);
-    switch (placement.at) {
-      case "front":
-        return `${moved} to the front of the book`;
-      case "end":
-        return `${moved} to the end of the book`;
-      case "after":
-        return `${moved} after page ${placement.readerPage}`;
-      case "unnamed":
-        // A move the resolver would refuse (it has no destination), or one whose
-        // destination the map cannot place. Saying only what is true beats
-        // naming the front of the book, which is where this sentence used to
-        // send both of them.
-        return moved;
-    }
-  }
-  const pages = edit.pageCount === 1 ? "1 new page" : `${edit.pageCount} new pages`;
-  switch (placement.at) {
-    case "front":
-      return `Add ${pages} at the front of the book`;
-    case "end":
-      return `Add ${pages} at the end of the book`;
-    case "after":
-      return `Add ${pages} after page ${placement.readerPage}`;
-    case "unnamed":
-      return `Add ${pages}`;
-  }
-}
-
-function structuralPagesPhrase(
-  verb: "Remove" | "Move",
-  pageIndexes: readonly number[],
-  numbering: ReaderPageNumbering
-): string {
-  const shown = numbering.displayPages(pageIndexes);
-  if (shown.length === 1) {
-    return `${verb} page ${shown[0]}`;
-  }
-  if (shown.length > 1) {
-    return `${verb} pages ${shown.join(", ")}`;
-  }
-  // A map in force can still name nothing: a version-2 cover sheet has a PDF
-  // span and no printed number, so displayPages returns []. Do not interpolate
-  // that into "Remove pages " / "Move pages ".
-  const pages = pageIndexes.length === 1 ? "that page" : "those pages";
-  return `${verb} ${pages}`;
 }

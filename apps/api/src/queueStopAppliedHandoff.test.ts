@@ -8,7 +8,9 @@ const mocks = vi.hoisted(() => ({
   generationJobUpdateMany: vi.fn(),
   operationFindMany: vi.fn(),
   operationUpdateMany: vi.fn(),
+  queryRawUnsafe: vi.fn(),
   failGenerationAttempt: vi.fn(),
+  generationAttemptUpdateMany: vi.fn(),
   refundCreditLedgerEntry: vi.fn(),
   refundLatestProjectOperationCredits: vi.fn()
 }));
@@ -27,6 +29,7 @@ vi.mock("@book-maker/core", async () => {
 });
 vi.mock("@book-maker/db", () => ({
   Prisma: { JsonNull: null, PrismaClientKnownRequestError: class extends Error {} },
+  PAGE_RESTRUCTURE_TRANSACTION_OPTIONS: { timeout: 30_000, maxWait: 10_000 },
   prisma: {
     $transaction: mocks.transaction,
     generationJob: { findMany: mocks.generationJobFindMany },
@@ -46,14 +49,17 @@ import { stopProjectGenerationJobs } from "./queue.js";
 describe("Stop racing an applied edit handoff", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.projectUpdate.mockResolvedValue({ status: "EDITING" });
+    mocks.projectUpdate.mockResolvedValue({ status: "EDITING", contentRevision: 8 });
     mocks.operationUpdateMany.mockResolvedValue({ count: 0 });
+    mocks.queryRawUnsafe.mockResolvedValue([]);
     mocks.failGenerationAttempt.mockResolvedValue(undefined);
     mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) =>
       callback({
         project: { update: mocks.projectUpdate, updateMany: mocks.projectUpdateMany },
         generationJob: { findMany: mocks.generationJobFindMany, updateMany: mocks.generationJobUpdateMany },
-        bookEditOperation: { findMany: mocks.operationFindMany, updateMany: mocks.operationUpdateMany }
+        bookEditOperation: { findMany: mocks.operationFindMany, updateMany: mocks.operationUpdateMany },
+        generationAttempt: { updateMany: mocks.generationAttemptUpdateMany },
+        $queryRawUnsafe: mocks.queryRawUnsafe
       })
     );
   });
@@ -91,5 +97,29 @@ describe("Stop racing an applied edit handoff", () => {
     expect(mocks.failGenerationAttempt).not.toHaveBeenCalled();
     expect(mocks.refundCreditLedgerEntry).not.toHaveBeenCalled();
     expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
+  });
+
+  it("preserves EDITING when a completed durable edit still holds the live publication tail", async () => {
+    mocks.generationJobFindMany.mockResolvedValue([]);
+    mocks.queryRawUnsafe.mockResolvedValue([{ id: "op-applied" }]);
+
+    const result = await stopProjectGenerationJobs("project-1");
+
+    expect(result.stoppedJobs).toBe(0);
+    expect(mocks.projectUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.failGenerationAttempt).not.toHaveBeenCalled();
+    const [sql, projectId, contentRevision] = mocks.queryRawUnsafe.mock.calls[0]!;
+    expect(sql).toContain('JOIN "GenerationJob" job');
+    expect(sql).toContain('job."projectId" = $1');
+    expect(sql).toContain('job."status" = \'COMPLETED\'');
+    expect(sql).toContain('operation."publicationRevision" = $2');
+    expect(sql).toContain('operation."structuralLeaseExpiresAt" > CURRENT_TIMESTAMP');
+    expect(sql).toContain(
+      '(operation."projectId" = $1 AND job."type" IN (\'APPLY_BOOK_EDIT\', \'CONTINUE_BOOK\'))'
+    );
+    expect(sql).toContain('operation."kind" = \'BOOK_REPLAN\'');
+    expect(sql).toContain('job."type" = \'GENERATE_BOOK\'');
+    expect(sql).toContain('operation."sourceProjectId" = operation."projectId"');
+    expect([projectId, contentRevision]).toEqual(["project-1", 8]);
   });
 });

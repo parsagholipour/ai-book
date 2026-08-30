@@ -862,30 +862,6 @@ describe("job lifecycle ownership", () => {
     expect(mocks.refundCreditLedgerEntryPortion).not.toHaveBeenCalled();
   });
 
-  it("lets a failed shortfall refund throw, for the reason a skipped edit's does", async () => {
-    mocks.bookEditOperationFindUnique.mockResolvedValue({ ledgerEntryId: "ledger-op", creditsCharged: 200 });
-    mocks.refundCreditLedgerEntryPortion.mockRejectedValue(new Error("ledger unavailable"));
-    const logged = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-
-    await expect(
-      refundUnwrittenEditPages(job("apply-book-edit", { operationId: "op-1" }), {
-        billedPages: 5,
-        writtenPages: 2,
-        reason: "wrote 2 of 5"
-      })
-    ).rejects.toThrow("ledger unavailable");
-    logged.mockRestore();
-  });
-
-  it("lets a failed settlement of a skipped edit throw, rather than keeping the charge quietly", async () => {
-    // The caller has not settled its operation yet, so the throw reaches
-    // markFailed, which asks for the same refund against a row still ACTIVE.
-    mocks.failGenerationAttempt.mockRejectedValue(new Error("ledger unavailable"));
-
-    await expect(
-      refundSkippedEditOperation(job("apply-book-edit", { operationId: "op-1", attemptId: "attempt-1" }), "skipped")
-    ).rejects.toThrow("ledger unavailable");
-  });
 });
 
 function job(name: string, data: Record<string, unknown> = {}) {

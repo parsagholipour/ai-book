@@ -42,6 +42,7 @@ export function imageRouterModel() {
     chapterIndex: null,
     targetLanguage: null,
     action: "propose_edit",
+    editInstruction: "Add or replace the requested illustration at the requested location.",
     editTarget: "insert_image"
   };
   const decide = (args: Record<string, unknown>) => ({

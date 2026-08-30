@@ -218,12 +218,12 @@ code in that area, however obvious the rule looks.
 - **A settlement merges onto the classifier it re-reads under its own row lock, never the copy the delivery carried in.** → apps/worker/src/handlers/CLAUDE.md
 - **A delivered edit outlives a recompile it could not queue.** → apps/worker/src/handlers/CLAUDE.md
 - **The status every apply fork restores rides the payload, because the enqueue is what takes it away.** → apps/worker/src/handlers/CLAUDE.md
-- **A stopped continuation restores only while its durable job is still QUEUED.** → apps/api/src/mobile/CLAUDE.md
+- **A stopped continuation always restores while its durable job is QUEUED, and once ACTIVE only under the atomic-candidates publication protocol.** → apps/api/src/mobile/CLAUDE.md
 - **A FAILED row the book has already retried is not the book's current trouble.** → apps/api/src/mobile/CLAUDE.md
 - **An edit that settles itself as a delivered no-op has to refund itself too.** → apps/worker/src/handlers/CLAUDE.md
 - **A delivered no-op is APPLIED too, and the redelivery tail is not idempotent for it.** → apps/worker/src/handlers/CLAUDE.md
 - **An exact text edit that skips every target has no publication tail.** → apps/worker/src/handlers/CLAUDE.md
-- **An insert that delivers fewer pages than it billed refunds the difference, and the count that drives both is the one drafting actually wrote.** → apps/worker/src/handlers/CLAUDE.md + packages/db/CLAUDE.md
+- **A recorded structural insert is indivisible: a delivery that cannot write every page it recorded rolls back and is refunded whole, never by the page.** → apps/worker/src/handlers/CLAUDE.md + packages/db/CLAUDE.md
 - **Only the post-APPLIED window is that handler's to flip.** → apps/worker/src/handlers/CLAUDE.md
 - **EDITING is a shared state; an edit publication owns it by operation and revision, never by status alone.** → apps/worker/src/handlers/CLAUDE.md
 - **Project is the root of the edit lock order.** → apps/worker/src/handlers/CLAUDE.md
@@ -307,7 +307,7 @@ code in that area, however obvious the rule looks.
 - **One sheet per character reaches the model, because a superseded cast is still the same cast.** → packages/core/src/generation/CLAUDE.md + apps/worker/src/generation/CLAUDE.md
 - **The face is fed in twice, and only ever into spare budget.** → apps/worker/src/generation/CLAUDE.md
 - **A fallback pair reports the primary's reference budget, and the fallback attempt re-fits the request to its own — the prompt included, because the prompt counts the pictures and names the last few.** → packages/core/src/adapters/CLAUDE.md
-- **A mentioned character's sheet rides the stored edit request, never the routed text.** → apps/api/src/mobile/CLAUDE.md
+- **A mentioned character's sheet is supplemental context, never part of the approved edit instruction.** → apps/api/src/mobile/CLAUDE.md
 - **The mention scanner's rule about marks runs the other way, and both are right.** → packages/core/src/generation/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
 - **A mention row nothing can name is what makes the strip stop trusting the name list.** → packages/db/CLAUDE.md
 - **The broad strip's word test reads the prose it is producing, not the prose it was handed.** → packages/db/CLAUDE.md
@@ -343,6 +343,7 @@ code in that area, however obvious the rule looks.
 - **A download says which compile answered it, because the URL cannot.** → packages/core/src/generation/CLAUDE.md + apps/mobile/lib/features/reader/CLAUDE.md
 - **A sheet number belongs to one file, so it may only be sent with that file's digest.** → apps/mobile/lib/features/reader/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
 - **A compile publishes by claiming the revision it compiled, and it renders somewhere else until it has.** → apps/worker/src/generation/CLAUDE.md + packages/core/src/generation/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
+- **The export barrier blocks the revision it names, not every revision, and only an expired publication lease lets recovery retire it.** → apps/worker/src/generation/CLAUDE.md + apps/api/src/routes/CLAUDE.md
 - **A book only earns the word "Chapter" by being long enough to need it.** → packages/core/src/generation/CLAUDE.md
 - **The page map is measured from the published PDF's own bytes, and measuring must move nothing.** → packages/core/src/generation/CLAUDE.md
 - **A publication may replace the page map; it may never refuse to publish over it.** → apps/worker/src/generation/CLAUDE.md

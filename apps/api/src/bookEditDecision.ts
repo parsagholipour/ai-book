@@ -16,6 +16,7 @@ import type {
 } from "./bookEditIntent.js";
 import type { DecideActionPayload } from "./bookEditRouterPrompt.js";
 import { structuralPageEditFromMessage } from "./bookEditStructure.js";
+import { exactReplacementInstructionMatches, type ExactReplacement } from "@book-maker/core";
 import {
   MODEL_PAGE_NUMBERING,
   modelPagesForCopiedPrintedPages,
@@ -141,6 +142,19 @@ export function intentFromDecideAction(
 }
 
 export function intentFromProposeEdit(
+  decision: DecideActionPayload,
+  message: string,
+  chapters: BookEditChapterContext[] = [],
+  context: IntentDecisionContext = {}
+): BookEditIntent {
+  const intent = intentFromProposeEditBase(decision, message, chapters, context);
+  return {
+    ...intent,
+    editInstruction: decision.editInstruction?.trim() || message.trim()
+  };
+}
+
+function intentFromProposeEditBase(
   decision: DecideActionPayload,
   message: string,
   chapters: BookEditChapterContext[] = [],
@@ -304,6 +318,8 @@ export function intentFromProposeEdit(
   const scopedInstructions = perPageInstructions.filter((entry) => pageIndexes.includes(entry.pageIndex));
 
   if (style === "exact_replace") {
+    const editInstruction = decision.editInstruction?.trim() || message.trim();
+    const routerReplacement = exactReplacementFromDecision(decision, editInstruction);
     return {
       kind: "local_patch",
       confidence: decision.confidence,
@@ -313,6 +329,7 @@ export function intentFromProposeEdit(
       scope,
       impact: "small_text",
       clarification: "none",
+      ...(routerReplacement !== undefined ? { exactReplacement: routerReplacement } : {}),
       ...(scopedInstructions.length > 0 ? { perPageInstructions: scopedInstructions } : {})
     };
   }
@@ -328,6 +345,27 @@ export function intentFromProposeEdit(
     clarification: "none",
     ...(scopedInstructions.length > 0 ? { perPageInstructions: scopedInstructions } : {})
   };
+}
+
+/**
+ * `undefined` means the router made no structured claim and the conservative
+ * durable-instruction parser may decide later. `null` means it did make a
+ * claim, but the pair was incomplete or disagreed with the approved contract;
+ * that negative proof must survive proposal reconstruction and redelivery.
+ */
+function exactReplacementFromDecision(
+  decision: DecideActionPayload,
+  editInstruction: string
+): ExactReplacement | null | undefined {
+  const hasFrom = typeof decision.replacementFrom === "string";
+  const hasTo = typeof decision.replacementTo === "string";
+  if (!hasFrom && !hasTo) return undefined;
+  if (!hasFrom || !hasTo) return null;
+  const replacement = {
+    from: decision.replacementFrom!.trim(),
+    to: decision.replacementTo!.trim()
+  };
+  return exactReplacementInstructionMatches(editInstruction, replacement) ? replacement : null;
 }
 
 /**

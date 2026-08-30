@@ -1,4 +1,3 @@
-import { requestWithCharacterContext } from "./bookEditCopy.js";
 import { busyEditReply, proposeBookEdit } from "./bookEditIntents.js";
 import { bookEditCreditCost } from "./bookEditPricing.js";
 import { type MobileBookEditOperationRecord, type MobileProjectChatMessageRecord, type MobileProjectRecord } from "./dto.js";
@@ -50,6 +49,9 @@ export async function queueChatBookReplanCopy(options: QueuedChatEdit): Promise<
     kind: "BOOK_REPLAN",
     status: "QUEUED",
     request: message,
+    editInstruction: intent.editInstruction?.trim() || message.trim(),
+    ...(options.characterContext?.trim() ? { characterContext: options.characterContext.trim() } : {}),
+    sourceProjectId: project.id,
     classifier: jsonInputValue(intent),
     affectedPageIndexes: [],
     creditsCharged: 0
@@ -122,7 +124,9 @@ export async function queueChatBookReplanCopy(options: QueuedChatEdit): Promise<
           operationId: operation.id,
           sourceProjectId: project.id,
           sourcePlanId: project.currentPlanId,
-          request: requestWithCharacterContext(message, options.characterContext),
+          request: message,
+          editInstruction: intent.editInstruction?.trim() || message.trim(),
+          ...(options.characterContext?.trim() ? { characterContext: options.characterContext.trim() } : {}),
           affectedPageIndexes: [],
           intentKind: intent.kind,
           ...(targetLanguage ? { targetLanguage } : {}),

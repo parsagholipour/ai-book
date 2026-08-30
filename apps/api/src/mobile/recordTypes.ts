@@ -130,7 +130,11 @@ export type MobileBookEditOperationRecord = {
   kind: string;
   status: string;
   request?: string;
+  editInstruction?: string | null;
+  characterContext?: string | null;
+  sourceProjectId?: string | null;
   classifier?: unknown;
+  adherenceAudit?: unknown;
   affectedPageIndexes: number[];
   creditsCharged: number;
   automaticRetryCount?: number;

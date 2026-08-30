@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
     bookEditOperation: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     project: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     planVersion: { findUnique: vi.fn() },
-    page: { findMany: vi.fn(), findUnique: vi.fn(), count: vi.fn() },
+    page: { findMany: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn(), count: vi.fn() },
     $transaction: vi.fn()
   },
   applyStructuralPageChange: vi.fn(),
@@ -20,9 +20,11 @@ const mocks = vi.hoisted(() => ({
   markStructuralPageLeaseApplied: vi.fn(),
   renewStructuralPageLeaseTx: vi.fn(),
   reviewAndSaveGeneratedPage: vi.fn(),
+  reviewAppliedBookEdit: vi.fn(),
   generatePageDraft: vi.fn(),
   rebuildProjectStoryState: vi.fn(),
   rebuildRolledBackProjectStoryState: vi.fn(),
+  compensateStructuralPageChangeTx: vi.fn(),
   revertStructuralPageChange: vi.fn(),
   refundUnwrittenEditPages: vi.fn()
 }));
@@ -31,6 +33,7 @@ vi.mock("@book-maker/db", () => ({
   prisma: mocks.prisma,
   Prisma: { DbNull: Symbol("DbNull") },
   PAGE_RESTRUCTURE_TRANSACTION_OPTIONS: {},
+  compensateStructuralPageChangeTx: mocks.compensateStructuralPageChangeTx,
   revertStructuralPageChange: mocks.revertStructuralPageChange
 }));
 vi.mock("../generation/pageRestructure.js", () => ({
@@ -58,9 +61,19 @@ vi.mock("../generation/generationContext.js", () => ({
   loadContinuityNotes: async () => [],
   loadResearchNotesForGeneration: async () => []
 }));
+vi.mock("../generation/embeddingWrites.js", () => ({
+  prepareEmbedding: vi.fn(),
+  strategyUsesSemanticMemory: () => false,
+  writePreparedEmbedding: vi.fn()
+}));
+vi.mock("../generation/qualityEnrichment.js", () => ({
+  keeperStoryExtractForSave: async () => null,
+  persistStoryExtract: vi.fn()
+}));
 vi.mock("../generation/projectInput.js", () => ({ inputForPlanVersion: () => ({ targetPages: 4 }) }));
 vi.mock("../generation/qualitySettings.js", () => ({ loadQualityContext: async () => ({ enabled: () => false }) }));
 vi.mock("../generation/storyStateStore.js", () => ({
+  loadProjectStoryState: async () => ({}),
   rebuildProjectStoryState: mocks.rebuildProjectStoryState,
   rebuildRolledBackProjectStoryState: mocks.rebuildRolledBackProjectStoryState
 }));
@@ -75,12 +88,17 @@ vi.mock("../runtime/jobLifecycle.js", () => ({
   refundSkippedEditOperation: vi.fn(),
   refundUnwrittenEditPages: mocks.refundUnwrittenEditPages
 }));
+vi.mock("../runtime/durableEditCompletion.js", () => ({
+  claimDurableEditCompletionTx: vi.fn(async () => true),
+  settleDurableEditAttemptTx: vi.fn(async () => true)
+}));
 vi.mock("@book-maker/core", async () => {
   const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
   return {
     ...actual,
     bookPlanSchema: { parse: (value: unknown) => ({ chapters: [], promises: (value as { promises?: string[] }).promises ?? [] }) },
-    createProviders: () => ({})
+    createProviders: () => ({}),
+    reviewAppliedBookEdit: mocks.reviewAppliedBookEdit
   };
 });
 
@@ -91,6 +109,24 @@ const pages = Array.from({ length: 4 }, (_value, index) => ({
   index: index + 1,
   chapterId: null
 }));
+
+const approvedReport = {
+  approved: true,
+  score: 90,
+  issues: [],
+  requiredRevisions: [],
+  notes: "Approved",
+  groundedOk: true,
+  unsupportedClaims: [],
+  checks: {
+    placeholderFree: true,
+    promptLeakFree: true,
+    titleClean: true,
+    repetitionOk: true,
+    progressionOk: true,
+    styleNatural: true
+  }
+};
 
 const structuralApplication = (action: "insert" | "delete" | "move") => ({
   action,
@@ -128,8 +164,9 @@ describe("restructurePages rollback story state", () => {
     mocks.restoredPlanId = "plan-1";
     mocks.prisma.$transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(mocks.prisma));
     mocks.prisma.bookEditOperation.updateMany.mockResolvedValue({ count: 1 });
+    mocks.prisma.bookEditOperation.update.mockResolvedValue({});
     mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({ id: "op-1", status: "ACTIVE", classifier: {} });
-    mocks.prisma.project.update.mockResolvedValue({});
+    mocks.prisma.project.update.mockResolvedValue({ contentRevision: 8 });
     mocks.prisma.project.updateMany.mockResolvedValue({ count: 1 });
     mocks.prisma.planVersion.findUnique.mockResolvedValue({
       id: "plan-2",
@@ -143,17 +180,32 @@ describe("restructurePages rollback story state", () => {
       id: "page-new", index: 3, chapterId: null, chapter: null
     });
     mocks.prisma.page.count.mockResolvedValue(1);
+    mocks.prisma.page.updateMany.mockResolvedValue({ count: 1 });
     mocks.applyStructuralPageChange.mockImplementation(async () => ({
       outcome: "applied",
       application: mocks.application
     }));
     mocks.generatePageDraft.mockResolvedValue({ title: "New", markdown: "Body", summary: "Summary", continuityNotes: [] });
-    mocks.reviewAndSaveGeneratedPage.mockResolvedValue({});
+    mocks.reviewAndSaveGeneratedPage.mockImplementation(async ({ draft }) => ({
+      page: { index: draft.index, title: draft.title, markdown: draft.markdown, summary: draft.summary },
+      candidate: { draft, qualityReport: approvedReport }
+    }));
+    mocks.reviewAppliedBookEdit.mockResolvedValue({
+      satisfied: true,
+      confidence: 0.99,
+      missingRequirements: [],
+      contradictions: [],
+      pageIndexesToRevise: []
+    });
     mocks.rebuildProjectStoryState.mockResolvedValue({});
     mocks.rebuildRolledBackProjectStoryState.mockResolvedValue({});
     mocks.refundUnwrittenEditPages.mockResolvedValue(undefined);
     mocks.markStructuralPageLeaseApplied.mockRejectedValue(new Error("settlement write failed"));
     mocks.renewStructuralPageLeaseTx.mockResolvedValue({ status: "ACTIVE", classifier: {} });
+    mocks.compensateStructuralPageChangeTx.mockImplementation(async () => ({
+      outcome: "compensated",
+      currentPlanId: mocks.restoredPlanId
+    }));
     mocks.revertStructuralPageChange.mockImplementation(async () => ({ currentPlanId: mocks.restoredPlanId }));
   });
 
@@ -166,38 +218,76 @@ describe("restructurePages rollback story state", () => {
 
       await expect(
         restructurePages(requestFor(action), { id: "op-1", status: "QUEUED", classifier: {} })
-      ).resolves.toBeUndefined();
+      ).resolves.toEqual({ durableCompletionCommitted: true, lifecycleCompletionCommitted: true });
 
-      expect(mocks.markStructuralPageLeaseApplied).toHaveBeenCalledWith({
-        projectId: "project-1",
-        operationId: "op-1",
-        ownerToken: expect.any(String),
-        affectedPageIndexes: expect.any(Array)
-      });
-      expect(mocks.revertStructuralPageChange).not.toHaveBeenCalled();
+      if (action === "insert") {
+        expect(mocks.markStructuralPageLeaseApplied).not.toHaveBeenCalled();
+        expect(mocks.prisma.bookEditOperation.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: "op-1" },
+            data: expect.objectContaining({ status: "APPLIED", publicationRevision: 8 })
+          })
+        );
+      } else {
+        expect(mocks.markStructuralPageLeaseApplied).toHaveBeenCalledWith({
+          projectId: "project-1",
+          operationId: "op-1",
+          ownerToken: expect.any(String),
+          affectedPageIndexes: expect.any(Array)
+        });
+      }
+      expect(mocks.compensateStructuralPageChangeTx).not.toHaveBeenCalled();
     }
   );
 
   it.each(["insert", "delete", "move"] as const)(
-    "restores story state after a %s rollback that follows a successful forward rebuild",
+    "restores story state after a %s rollback, having rebuilt nothing forward",
     async (action) => {
       mocks.application = structuralApplication(action);
       if (action === "move") mocks.restoredPlanId = "plan-3";
+      if (action === "insert") {
+        mocks.prisma.bookEditOperation.update.mockRejectedValueOnce(new Error("settlement write failed"));
+      }
 
       await expect(
         restructurePages(requestFor(action), { id: "op-1", status: "QUEUED", classifier: {} })
       ).rejects.toThrow("settlement write failed");
 
-      expect(mocks.rebuildProjectStoryState).toHaveBeenCalledWith("project-1", ["Changed-book promise"]);
-      expect(mocks.revertStructuralPageChange).toHaveBeenCalledWith(
+      // The forward rebuild is the publication's own tail now, so a settlement
+      // that never published has nothing to have folded — and the rollback's
+      // rebuild is still what puts the pack back on the restored plan.
+      expect(mocks.rebuildProjectStoryState).not.toHaveBeenCalled();
+      expect(mocks.compensateStructuralPageChangeTx).toHaveBeenCalledWith(
         mocks.prisma,
-        "project-1",
-        expect.objectContaining({ action })
+        expect.objectContaining({
+          projectId: "project-1",
+          operationId: "op-1",
+          expectedLeaseToken: expect.any(String),
+          expectedAppliedAt: expect.any(String)
+        })
       );
       expect(mocks.rebuildRolledBackProjectStoryState).toHaveBeenCalledWith("project-1", mocks.restoredPlanId);
-      expect(mocks.rebuildProjectStoryState.mock.invocationCallOrder[0]!).toBeLessThan(
-        mocks.rebuildRolledBackProjectStoryState.mock.invocationCallOrder[0]!
-      );
+    }
+  );
+
+  it.each(["insert", "delete", "move"] as const)(
+    "folds a delivered %s into the story state it rebuilds",
+    async (action) => {
+      // The inserted pages' `storyDelta` rows are written by the publication,
+      // so a rebuild taken ahead of it folds the book without the new prose and
+      // leaves those deltas applied last instead of at their own index.
+      mocks.application = structuralApplication(action);
+      mocks.markStructuralPageLeaseApplied.mockResolvedValue(8);
+      mocks.completeStructuralPageLease.mockResolvedValue(true);
+
+      await restructurePages(requestFor(action), { id: "op-1", status: "QUEUED", classifier: {} });
+
+      expect(mocks.rebuildProjectStoryState).toHaveBeenCalledWith("project-1", ["Changed-book promise"]);
+      const published =
+        action === "insert"
+          ? mocks.prisma.bookEditOperation.update.mock.invocationCallOrder[0]!
+          : mocks.markStructuralPageLeaseApplied.mock.invocationCallOrder[0]!;
+      expect(mocks.rebuildProjectStoryState.mock.invocationCallOrder[0]!).toBeGreaterThan(published);
     }
   );
 
@@ -211,6 +301,7 @@ describe("restructurePages rollback story state", () => {
    */
   it("fails the rolled-back operation in the reader's words, not the cause's", async () => {
     mocks.application = structuralApplication("insert");
+    mocks.prisma.bookEditOperation.update.mockRejectedValueOnce(new Error("settlement write failed"));
 
     await expect(
       restructurePages(requestFor("insert"), { id: "op-1", status: "QUEUED", classifier: {} })
@@ -230,20 +321,98 @@ describe("restructurePages rollback story state", () => {
 
   it("does not rebuild when a stale owner cannot commit the rollback", async () => {
     mocks.application = structuralApplication("move");
-    mocks.renewStructuralPageLeaseTx.mockResolvedValue(null);
+    mocks.compensateStructuralPageChangeTx.mockResolvedValue({ outcome: "lost" });
 
     await expect(
       restructurePages(requestFor("move"), { id: "op-1", status: "ACTIVE", classifier: {} })
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({});
 
-    expect(mocks.rebuildProjectStoryState).toHaveBeenCalledOnce();
+    expect(mocks.rebuildProjectStoryState).not.toHaveBeenCalled();
     expect(mocks.revertStructuralPageChange).not.toHaveBeenCalled();
+    expect(mocks.rebuildRolledBackProjectStoryState).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["concurrent Stop", "lost"],
+    ["APPLIED publication", "published"]
+  ] as const)("stands down when %s wins compensation ownership", async (_winner, outcome) => {
+    mocks.application = structuralApplication("move");
+    mocks.compensateStructuralPageChangeTx.mockResolvedValue({ outcome });
+
+    await expect(
+      restructurePages(requestFor("move"), { id: "op-1", status: "ACTIVE", classifier: {} })
+    ).resolves.toEqual({});
+
+    expect(mocks.compensateStructuralPageChangeTx).toHaveBeenCalledWith(mocks.prisma, {
+      projectId: "project-1",
+      operationId: "op-1",
+      expectedLeaseToken: expect.any(String),
+      expectedAppliedAt: "2026-08-18T00:00:00.000Z"
+    });
+    expect(mocks.rebuildRolledBackProjectStoryState).not.toHaveBeenCalled();
+  });
+
+  it("requeues a lost rollback only while the shift is still standing", async () => {
+    // The stamp under the lock is the pages still being moved, so this is the
+    // one shape where failing would refund and restore COMPLETE over a shifted
+    // book — a redelivery resumes it instead.
+    mocks.application = structuralApplication("move");
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({
+      id: "op-1", status: "ACTIVE", classifier: { structuralApplication: mocks.application }
+    });
+    mocks.waitForStructuralPageLease.mockResolvedValueOnce({
+      outcome: "acquired", phase: "draft", application: mocks.application
+    });
+    mocks.compensateStructuralPageChangeTx.mockResolvedValue({ outcome: "lost" });
+    // `clearAllMocks` keeps implementations, so this may not outlive its test.
+    mocks.waitForStructuralPageLeaseCompletion.mockResolvedValueOnce("abandoned");
+
+    await expect(
+      restructurePages(requestFor("move"), { id: "op-1", status: "ACTIVE", classifier: {} })
+    ).rejects.toThrow(/requeued to resume/);
+  });
+
+  it("settles a rollback the book no longer needs rather than re-applying it", async () => {
+    // `not-needed` is the stamp already gone under the operation's own lock, and
+    // only a compensation clears one — reverting the pages in the same
+    // transaction. The book is already back, so there is nothing to resume and
+    // nothing to wait for; requeueing would re-apply an edit the reader no
+    // longer has, and `markFailed` hands the charge back over an unshifted book.
+    mocks.application = structuralApplication("delete");
+    mocks.compensateStructuralPageChangeTx.mockResolvedValue({ outcome: "not-needed" });
+
+    await expect(
+      restructurePages(requestFor("delete"), { id: "op-1", status: "ACTIVE", classifier: {} })
+    ).rejects.toThrow("settlement write failed");
+    expect(mocks.waitForStructuralPageLeaseCompletion).not.toHaveBeenCalled();
+    expect(mocks.rebuildRolledBackProjectStoryState).not.toHaveBeenCalled();
+  });
+
+  it("uses the unowned exit when a newer manuscript revision wins", async () => {
+    mocks.application = structuralApplication("move");
+    mocks.compensateStructuralPageChangeTx.mockResolvedValue({ outcome: "superseded" });
+
+    await expect(
+      restructurePages(requestFor("move"), { id: "op-1", status: "ACTIVE", classifier: {} })
+    ).rejects.toMatchObject({ name: "UnownedStructuralDeliveryError" });
+
+    expect(mocks.rebuildRolledBackProjectStoryState).not.toHaveBeenCalled();
+  });
+
+  it("keeps repeated redeliveries idempotent after Stop owns cleanup", async () => {
+    mocks.application = structuralApplication("delete");
+    mocks.compensateStructuralPageChangeTx.mockResolvedValue({ outcome: "lost" });
+
+    await restructurePages(requestFor("delete"), { id: "op-1", status: "ACTIVE", classifier: {} });
+    await restructurePages(requestFor("delete"), { id: "op-1", status: "ACTIVE", classifier: {} });
+
+    expect(mocks.compensateStructuralPageChangeTx).toHaveBeenCalledTimes(2);
     expect(mocks.rebuildRolledBackProjectStoryState).not.toHaveBeenCalled();
   });
 
   it("does not rebuild when rollback cleanup fails", async () => {
     mocks.application = structuralApplication("delete");
-    mocks.revertStructuralPageChange.mockRejectedValue(new Error("rollback deadlock"));
+    mocks.compensateStructuralPageChangeTx.mockRejectedValue(new Error("rollback deadlock"));
 
     await expect(
       restructurePages(requestFor("delete"), { id: "op-1", status: "QUEUED", classifier: {} })
@@ -254,6 +423,7 @@ describe("restructurePages rollback story state", () => {
 
   it("logs a restoration failure without masking the original handler error", async () => {
     mocks.application = structuralApplication("insert");
+    mocks.prisma.bookEditOperation.update.mockRejectedValueOnce(new Error("settlement write failed"));
     mocks.rebuildRolledBackProjectStoryState.mockRejectedValue(new Error("story rebuild failed"));
     const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
 

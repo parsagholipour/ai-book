@@ -6,6 +6,11 @@ import {
   MAX_DELETED_PAGES,
   MAX_INSERTED_PAGES,
   MAX_MOVED_PAGES,
+  STRUCTURAL_ACTION_PREFIX_PATTERN,
+  STRUCTURAL_PAGE_SELECTION_PATTERN,
+  STRUCTURAL_WHOLE_BOOK_TAIL_PATTERN,
+  isBareStructuralInstruction,
+  structuralEditRequiresWholeBookGeneration,
   type ExistingPage,
   type StructuralPageEdit,
   type StructuralPagePlan,
@@ -172,6 +177,344 @@ export function structuralPlacementOf(
   }
   const readerPage = numbering.printedPageEnd(anchor);
   return readerPage === undefined ? { at: "unnamed" } : { at: "after", readerPage };
+}
+
+/**
+ * The resolved structural clause shared by the proposal and the durable
+ * instruction. It contains only facts the resolver accepted: action, count,
+ * selected pages and canonical destination.
+ */
+export function structuralActionInstruction(
+  intent: BookEditIntent,
+  numbering: ReaderPageNumbering,
+  plan?: StructuralCardPlan | undefined
+): string {
+  const edit = intent.structuralEdit;
+  if (!edit) {
+    return "Change which pages the book has";
+  }
+  if (edit.action === "delete") {
+    return structuralPagesPhrase("Remove", edit.pageIndexes, numbering);
+  }
+  const placement = structuralPlacementOf(edit, plan, numbering);
+  if (edit.action === "move") {
+    const moved = structuralPagesPhrase("Move", edit.pageIndexes, numbering);
+    switch (placement.at) {
+      case "front":
+        return `${moved} to the front of the book`;
+      case "end":
+        return `${moved} to the end of the book`;
+      case "after":
+        return `${moved} after page ${placement.readerPage}`;
+      case "unnamed":
+        return moved;
+    }
+  }
+  const pages = edit.pageCount === 1 ? "1 new page" : `${edit.pageCount} new pages`;
+  switch (placement.at) {
+    case "front":
+      return `Add ${pages} at the front of the book`;
+    case "end":
+      return `Add ${pages} at the end of the book`;
+    case "after":
+      return `Add ${pages} after page ${placement.readerPage}`;
+    case "unnamed":
+      return `Add ${pages}`;
+  }
+}
+
+/**
+ * Makes the instruction approved on the card the same instruction persisted
+ * on the operation and delivered to the worker.
+ *
+ * A router instruction is useful for its content requirements, but it is not
+ * authoritative about structural coordinates: the resolver may translate a
+ * printed "before" target or clamp an anchor beyond the current book. The
+ * structural clause above replaces that part. The remaining prose is retained
+ * under an explicit content label so a degraded raw request does not collapse
+ * to generic placement copy and a rich model instruction does not keep a
+ * contradictory destination.
+ */
+export function canonicalStructuralEditInstruction(options: {
+  intent: BookEditIntent;
+  numbering: ReaderPageNumbering;
+  plan: StructuralCardPlan;
+  request?: string | undefined;
+}): string {
+  const action = structuralActionInstruction(options.intent, options.numbering, options.plan);
+  const source = options.intent.editInstruction?.trim() || options.request?.trim() || "";
+  const requirements = structuralContentRequirements(source, options.intent.structuralEdit);
+  if (!requirements) {
+    return action;
+  }
+  const sentence = /^[a-z]/.test(requirements)
+    ? `${requirements[0]?.toUpperCase() ?? ""}${requirements.slice(1)}`
+    : requirements;
+  return `${action}. Content requirements: ${/[.!?]$/.test(sentence) ? sentence : `${sentence}.`}`;
+}
+
+/**
+ * Converts a delete/move that also promises prose work into the existing
+ * whole-manuscript generation path before the proposal is priced.
+ *
+ * The structural resolver still supplies the target length: a delete must
+ * quote and generate the shorter manuscript, while a move keeps the current
+ * count. The original structural edit remains on the intent as durable audit
+ * context; `kind` is the execution discriminator and therefore changes.
+ */
+export function compoundStructuralReplanIntent(
+  intent: BookEditIntent,
+  plan: StructuralCardPlan
+): BookEditIntent | null {
+  const edit = intent.structuralEdit;
+  const instruction = intent.editInstruction?.trim();
+  if (!edit || !instruction || !structuralEditRequiresWholeBookGeneration(edit, instruction)) {
+    return null;
+  }
+  return {
+    ...intent,
+    kind: "book_replan",
+    scope: "all_pages",
+    impact: "structural_replan",
+    replanSettings: { ...intent.replanSettings, targetPages: plan.totalPages }
+  };
+}
+
+/**
+ * The page grammar and the action clauses this file strips are `@book-maker/core`'s,
+ * not a copy of them. They were spelled out here a second time, byte for byte,
+ * and the two copies were narrow in the same places: neither read "the final
+ * page", so a delete of it kept "of the story" as a content requirement and was
+ * repriced from a free row deletion into a whole-book replan.
+ *
+ * Every one of those patterns ends at a word boundary of its own, so none of
+ * the consumers below appends one. Only the insert consumer used to, which is
+ * how the delete and move prefixes went on matching "remove a page" out of
+ * "remove a pageant scene" — the boundary belongs to the grammar, not to
+ * whichever caller remembered it.
+ */
+
+/**
+ * Removes only the structural directive, leaving prose/content constraints.
+ *
+ * **A request that says nothing beyond the edit itself carries no requirement,
+ * in any language.** Everything below is subtractive — it takes a closed English
+ * action clause off the front and reads the remainder as prose — so a request it
+ * cannot read at all came back as *entirely* prose. "صفحه ۴ را حذف کن" is a bare
+ * delete; read that way it became `Remove page 4. Content requirements: صفحه ۴ را
+ * حذف کن.`, which {@link compoundStructuralReplanIntent} then priced as a whole
+ * book regenerated. `isBareStructuralInstruction` is the same predicate that
+ * classifier reads, so the canonical instruction this builds and the answer that
+ * instruction is later classified by cannot disagree.
+ *
+ * It is asked of deletes and moves only. An insert's remainder is the brief its
+ * new pages are drafted from, so blanking a bare-looking one ("صفحه‌ای درباره
+ * مینا اضافه کن") would throw the subject away rather than save anyone a charge —
+ * and an insert is never repriced by that classifier in the first place.
+ *
+ * A requirement already behind the canonical marker is taken at its word: the
+ * marker means this function has already decided that text is prose, and asking
+ * a second time would let a short foreign requirement disappear.
+ */
+function structuralContentRequirements(
+  instruction: string,
+  edit: StructuralPageEdit | null | undefined
+): string {
+  const action = edit?.action;
+  const alreadyCanonical = /\bContent requirements:\s*/i.exec(instruction);
+  if (alreadyCanonical?.index !== undefined) {
+    return cleanRequirement(
+      stripEmbeddedStructuralPlacement(
+        instruction.slice(alreadyCanonical.index + alreadyCanonical[0].length),
+        action
+      )
+    );
+  }
+  if (edit && edit.action !== "insert" && isBareStructuralInstruction(edit, instruction)) {
+    return "";
+  }
+
+  let remainder = instruction.trim();
+  if (action === "insert") {
+    const insert = new RegExp(`^${STRUCTURAL_ACTION_PREFIX_PATTERN.insert}`, "i").exec(remainder);
+    if (insert) {
+      remainder = stripLeadingStructuralPlacement(remainder.slice(insert[0].length));
+    }
+  } else if (action === "delete") {
+    const deletion = new RegExp(`^${STRUCTURAL_ACTION_PREFIX_PATTERN.delete}`, "i").exec(remainder);
+    if (deletion) {
+      // Every regex in this file is built inside the function that uses it, and
+      // that is load-bearing rather than lazy: `editOperations.test.ts` mocks
+      // `@book-maker/core` with a bare factory, whose proxy throws on any export
+      // the factory does not name — so one of these read at module load takes a
+      // whole suite down on import with nothing under test having run.
+      remainder = remainder
+        .slice(deletion[0].length)
+        .replace(new RegExp(`^${STRUCTURAL_WHOLE_BOOK_TAIL_PATTERN}`, "i"), "");
+    }
+  } else if (action === "move") {
+    const move = new RegExp(`^${STRUCTURAL_ACTION_PREFIX_PATTERN.move}`, "i").exec(remainder);
+    if (move) {
+      remainder = stripLeadingMoveOrigin(remainder.slice(move[0].length));
+      remainder = stripLeadingStructuralPlacement(remainder);
+    }
+  }
+  return cleanRequirement(stripEmbeddedStructuralPlacement(remainder, action));
+}
+
+/**
+ * A move may restate the selected page as an origin before naming its actual
+ * destination: "move page 2 from page 2 to before page 5". The selected page
+ * is already in the canonical action, so this immediate origin is structural
+ * too. Keeping the rule anchored here avoids treating a later "from page N"
+ * content requirement as placement.
+ */
+function stripLeadingMoveOrigin(value: string): string {
+  const origin = new RegExp(
+    `^\\s*from\\s+(?:(?:after|before|following|preceding)\\s+)?${STRUCTURAL_PAGE_SELECTION_PATTERN}`,
+    "i"
+  ).exec(value);
+  return origin ? value.slice(origin[0].length) : value;
+}
+
+/**
+ * Removes a placement only when it immediately follows the structural action.
+ * Page references later in the sentence can be destinations for content being
+ * preserved or moved, so a whole-string replacement would silently erase a
+ * substantive requirement such as "moving its quote to page 3".
+ */
+function stripLeadingStructuralPlacement(value: string): string {
+  const numbered = new RegExp(
+    `^\\s*(?:(?:to\\s+)?(?:after|before|following|preceding)|at|to)\\s+${STRUCTURAL_PAGE_SELECTION_PATTERN}`,
+    "i"
+  ).exec(value);
+  if (numbered) {
+    return value.slice(numbered[0].length);
+  }
+  const edge =
+    /^\s*(?:(?:at|to)\s+(?:the\s+)?(?:very\s+)?(?:front|beginning|start|end|back)(?:\s+of\s+(?:the\s+)?book)?|as\s+(?:the\s+)?(?:first|last|opening|closing)\s+pages?)\b/i.exec(
+      value
+    );
+  return edge ? value.slice(edge[0].length) : value;
+}
+
+const CONTENT_PAGE_REFERENCE_CUE =
+  /\b(?:discuss(?:es|ed|ing)?|mention(?:s|ed|ing)?|quot(?:e|es|ed|ing)|refer(?:s|red|ring)?|the\s+phrase|the\s+words?|what\s+happen(?:s|ed)?|events?)\b/i;
+
+/**
+ * Router prose sometimes puts an insert's subject before its destination:
+ * "add a page about Mina after page 100". Once the action prefix is gone,
+ * that destination is no longer leading, but it is still structural and may
+ * contradict the resolver's clamp.
+ *
+ * Keep this deliberately narrow: only insert-style content noun phrases are
+ * eligible, quoted spans are opaque, and prose explicitly discussing a page
+ * reference is retained. Generic "to page N" clauses remain content because
+ * they commonly describe where a quote or footnote must be copied.
+ */
+function stripEmbeddedStructuralPlacement(
+  value: string,
+  action: StructuralPageEdit["action"] | undefined
+): string {
+  if (action !== "insert") {
+    return value;
+  }
+  const contentPrefix = /^\s*(?:about|on|covering|concerning|focused\s+on|centred\s+on|centered\s+on)\b/i.exec(
+    value
+  );
+  if (!contentPrefix) {
+    return value;
+  }
+
+  const numbered = new RegExp(
+    `\\s+(?:(?:to\\s+)?(?:after|before|following|preceding)|at)\\s+${STRUCTURAL_PAGE_SELECTION_PATTERN}`,
+    "gi"
+  );
+  const edge =
+    /\s+(?:(?:at|to)\s+(?:the\s+)?(?:very\s+)?(?:front|beginning|start|end|back)\s+of\s+(?:the\s+)?book|as\s+(?:the\s+)?(?:first|last|opening|closing)\s+pages?)\b/gi;
+  const placements = [...value.matchAll(numbered), ...value.matchAll(edge)].sort(
+    (left, right) => (left.index ?? 0) - (right.index ?? 0)
+  );
+  for (const placement of placements) {
+    const index = placement.index;
+    if (index === undefined || isInsideQuotedSpan(value, index)) {
+      continue;
+    }
+    const prefix = value.slice(contentPrefix[0].length, index);
+    if (!prefix.trim() || CONTENT_PAGE_REFERENCE_CUE.test(prefix)) {
+      continue;
+    }
+    return `${value.slice(0, index)}${value.slice(index + placement[0].length)}`;
+  }
+  return value;
+}
+
+/** True when `index` sits inside straight, curly or backtick quotation. */
+function isInsideQuotedSpan(value: string, index: number): boolean {
+  let straightSingle = false;
+  let straightDouble = false;
+  let curlySingle = false;
+  let curlyDouble = false;
+  let backtick = false;
+  for (let offset = 0; offset < index; offset += 1) {
+    const character = value[offset];
+    const previousIsWord = /[\p{L}\p{N}]/u.test(value[offset - 1] ?? "");
+    const nextIsWord = /[\p{L}\p{N}]/u.test(value[offset + 1] ?? "");
+    if (character === "'" && !(previousIsWord && nextIsWord) && !straightDouble) {
+      // A straight apostrophe is not two characters the way the curly pair is,
+      // so a plain toggle is wrong in one direction only. `dogs'`, `1990s'` and
+      // `James'` are possessives shaped exactly like a *closing* quote — word
+      // character behind, space ahead — and each one opened a span nothing
+      // could close, so every placement after it read as quoted and
+      // `stripEmbeddedStructuralPlacement` kept the "after page 100" it exists
+      // to remove. An opening mark needs a word to open onto; a closing one
+      // only needs an open span. The intra-word guard above is still what keeps
+      // "don't" from closing one from the inside.
+      straightSingle = straightSingle ? false : !previousIsWord && nextIsWord;
+    } else if (character === '"' && !straightSingle) {
+      straightDouble = !straightDouble;
+    } else if (character === "‘" && !straightDouble) {
+      curlySingle = true;
+    } else if (character === "’" && curlySingle) {
+      curlySingle = false;
+    } else if (character === "“" && !straightSingle) {
+      curlyDouble = true;
+    } else if (character === "”" && curlyDouble) {
+      curlyDouble = false;
+    } else if (character === "`") {
+      backtick = !backtick;
+    }
+  }
+  return straightSingle || straightDouble || curlySingle || curlyDouble || backtick;
+}
+
+function cleanRequirement(value: string): string {
+  return value
+    .replace(/\s+/g, " ")
+    .replace(/^\s*[,.;:—–-]+\s*/, "")
+    // Coordinating glue can be dropped after the action is removed. Keep
+    // subordinators such as "while" and "but": they can carry a constraint
+    // whose meaning changes if the relationship to the deletion is erased.
+    .replace(/^\s*(?:(?:and|then)\s+)+/i, "")
+    .replace(/\s+([,.;!?])/g, "$1")
+    .replace(/[,:;—–-]+\s*$/g, "")
+    .trim();
+}
+
+function structuralPagesPhrase(
+  verb: "Remove" | "Move",
+  pageIndexes: readonly number[],
+  numbering: ReaderPageNumbering
+): string {
+  const shown = numbering.displayPages(pageIndexes);
+  if (shown.length === 1) {
+    return `${verb} page ${shown[0]}`;
+  }
+  if (shown.length > 1) {
+    return `${verb} pages ${shown.join(", ")}`;
+  }
+  const pages = pageIndexes.length === 1 ? "that page" : "those pages";
+  return `${verb} ${pages}`;
 }
 
 /**

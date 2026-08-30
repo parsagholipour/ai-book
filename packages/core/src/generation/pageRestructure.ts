@@ -723,6 +723,11 @@ export const structuralApplicationSchema = z.object({
   newPlanVersionId: z.string().nullable().default(null),
   previousTargetPages: z.number().int().positive(),
   previousChapterTargetPages: z.record(z.string(), z.number().int()).default({}),
+  /**
+   * Project revision whose manuscript the shift was derived from. Optional for
+   * stamps written before cancellation compensation gained a revision fence.
+   */
+  baseContentRevision: z.number().int().nonnegative().optional(),
   appliedAt: z.string()
 });
 

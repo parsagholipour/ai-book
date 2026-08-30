@@ -1,96 +1,44 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Job } from "bullmq";
-import {
-  balancedPagePipelineQualityContext,
-  pagePipelineQualityGates
-} from "../testing/qualityGateFixtures.js";
 
 const mocks = vi.hoisted(() => ({
   prisma: {
-    bookEditOperation: { update: vi.fn() },
-    page: { findMany: vi.fn(async (): Promise<Array<Record<string, unknown>>> => []) },
+    bookEditOperation: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+    generationJob: { updateMany: vi.fn(), upsert: vi.fn() },
     project: { update: vi.fn(), findUnique: vi.fn() },
     planVersion: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     character: { deleteMany: vi.fn(), createMany: vi.fn() },
     location: { deleteMany: vi.fn(), createMany: vi.fn() },
     researchSource: { deleteMany: vi.fn(), createMany: vi.fn() },
+    $queryRawUnsafe: vi.fn(),
     $transaction: vi.fn()
   },
   revisePlan: vi.fn(),
-  enqueueWorkerJob: vi.fn(),
-  nextPlanVersion: vi.fn(),
-  loadStyleLockPages: vi.fn(
-    async (
-      _projectId?: string,
-      _pageIndex?: number,
-      _recencyPages?: Array<Record<string, unknown>>
-    ): Promise<Array<Record<string, unknown>>> => []
-  ),
-  loadContinuityNotes: vi.fn(async (): Promise<string[]> => []),
-  qualityEnabled: vi.fn((_feature: string): boolean => false),
-  pageQualityEnabled: vi.fn((_feature: string): boolean => true),
-  // The style audit's provider boundary; `withStyleAudit` above it stays real.
-  auditPageStyle: vi.fn()
+  stagedPlanCreate: vi.fn(),
+  canEnqueueProjectWork: vi.fn(),
+  dispatchWorkerGenerationJob: vi.fn(),
+  nextPlanVersion: vi.fn()
 }));
 
 vi.mock("@book-maker/db", async () => ({
   prisma: mocks.prisma,
   Prisma: {},
+  PAGE_RESTRUCTURE_TRANSACTION_OPTIONS: {},
   ...(await import("../testing/dbScopeMocks.js")).dbScopeMocks()
 }));
-vi.mock("../runtime/dispatch.js", () => ({ enqueueWorkerJob: mocks.enqueueWorkerJob }));
-vi.mock("../runtime/jobLifecycle.js", () => ({ advanceJobStep: vi.fn(), updateJobProgress: vi.fn() }));
-vi.mock("../generation/generationContext.js", () => ({ loadContinuityNotes: mocks.loadContinuityNotes }));
-vi.mock("../generation/qualitySettings.js", () => ({
-  loadQualityContext: async () =>
-    balancedPagePipelineQualityContext({
-      defaultFeatureEnabled: mocks.pageQualityEnabled,
-      otherFeatureEnabled: mocks.qualityEnabled
-    }),
-  applyPlanThinkingBoost: vi.fn()
+vi.mock("../runtime/dispatch.js", () => ({
+  canEnqueueProjectWork: mocks.canEnqueueProjectWork,
+  dispatchWorkerGenerationJob: mocks.dispatchWorkerGenerationJob
 }));
+vi.mock("../runtime/jobLifecycle.js", () => ({ advanceJobStep: vi.fn(), updateJobProgress: vi.fn() }));
 vi.mock("../runtime/config.js", () => ({ config: {} }));
 vi.mock("../providers/loggedAdapters.js", () => ({ createLoggedProviders: () => ({ text: {} }) }));
-vi.mock("../generation/bookHelpers.js", async () => {
-  const { pagesForStyleExcerpts, pinStyleExcerpts, sampleExcerptsFromInput } = await vi.importActual<
-    typeof import("@book-maker/core")
-  >("@book-maker/core");
-  return {
-    getProjectOrThrow: async (id: string) => ({ id, currentPlanId: "plan-1", targetPages: 12 }),
-    invalidateProjectExports: vi.fn(),
-    nextPlanVersion: mocks.nextPlanVersion,
-    parseChapterBrief: () => null,
-    planInputSnapshot: (input: { targetPages: number }) => ({ targetPages: input.targetPages }),
-    // The real deep clone, not a stub: the mediaSettings write-back is exactly
-    // what these tests exist to observe.
-    planMediaSettingsSnapshot: (input: { mediaSettings: unknown }) => JSON.parse(JSON.stringify(input.mediaSettings)),
-    strategyForInput: () => ({ revisePlan: mocks.revisePlan }),
-    toPriorPageContext: (page: unknown) => page,
-    // Controllable: `rewritePageForUserRequest` builds its style lock — and so
-    // the auditor — out of whatever this returns.
-    loadStyleLockPages: mocks.loadStyleLockPages,
-    styleExcerptsForPage: async (options: {
-      projectId: string;
-      pageIndex: number;
-      recencyPages: Array<{ index: number; title: string; markdown: string; summary: string }>;
-      input: Parameters<typeof sampleExcerptsFromInput>[0];
-      quality: { enabled: (feature: string) => boolean };
-    }) => {
-      if (!options.quality.enabled("styleExcerpts")) {
-        return [];
-      }
-      const lockPages = (await mocks.loadStyleLockPages(
-        options.projectId,
-        options.pageIndex,
-        options.recencyPages
-      )) as Array<{ index: number; title: string; markdown: string; summary: string }>;
-      return pinStyleExcerpts(
-        pagesForStyleExcerpts(options.recencyPages, lockPages),
-        sampleExcerptsFromInput(options.input)
-      );
-    }
-  };
-});
+vi.mock("../generation/bookHelpers.js", () => ({
+  getProjectOrThrow: async (id: string) => ({ id, currentPlanId: "plan-1", targetPages: 12 }),
+  nextPlanVersion: mocks.nextPlanVersion,
+  planInputSnapshot: (input: { targetPages: number }) => ({ targetPages: input.targetPages }),
+  strategyForInput: () => ({ revisePlan: mocks.revisePlan })
+}));
 vi.mock("../generation/storyStateStore.js", () => ({
   seedProjectStoryState: vi.fn()
 }));
@@ -98,14 +46,14 @@ vi.mock("@book-maker/core", async () => {
   const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
   return {
     ...actual,
-    auditPageStyle: mocks.auditPageStyle,
     bookPlanSchema: { parse: () => ({ chapters: [] }) },
     createProviders: () => ({})
   };
 });
 
 import { seedProjectStoryState } from "../generation/storyStateStore.js";
-import { replanBook, rewritePageForUserRequest } from "./replanBook.js";
+import { UnownedReplanDeliveryError } from "../runtime/jobTypes.js";
+import { replanBook } from "./replanBook.js";
 
 const sourceSnapshot = {
   prompt: "A guide to budget shops with enough detail to parse correctly.",
@@ -129,6 +77,7 @@ function replanJob(payload: Record<string, unknown>): Job {
   return {
     data: {
       projectId: "project-copy",
+      generationJobId: "job-replan",
       operationId: "operation-1",
       request: "make it 3 pages",
       sourceProjectId: "project-1",
@@ -147,23 +96,90 @@ describe("replanBook page budget", () => {
       planningPackage: {},
       messages: []
     });
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({
+      id: "operation-1",
+      projectId: "project-1",
+      sourceProjectId: "project-1",
+      generationJobId: "job-replan",
+      status: "ACTIVE",
+      request: "make it 3 pages",
+      editInstruction: "make it 3 pages",
+      classifier: {}
+    });
     mocks.prisma.$transaction.mockImplementation(async (run: (tx: unknown) => Promise<void>) => {
-      await run({
+      return run({
         planVersion: {
           updateMany: vi.fn(),
           update: vi.fn(),
-          create: async () => ({ id: "plan-2" })
+          create: mocks.stagedPlanCreate
         },
+        bookEditOperation: mocks.prisma.bookEditOperation,
+        generationJob: mocks.prisma.generationJob,
         project: { update: mocks.prisma.project.update, findUnique: mocks.prisma.project.findUnique },
         character: mocks.prisma.character,
         location: mocks.prisma.location,
-        researchSource: mocks.prisma.researchSource
+        researchSource: mocks.prisma.researchSource,
+        $queryRawUnsafe: mocks.prisma.$queryRawUnsafe
       });
     });
     mocks.prisma.project.findUnique.mockResolvedValue({ mediaSettings: null });
+    mocks.prisma.project.update.mockResolvedValue({ status: "EDITING" });
+    mocks.prisma.generationJob.updateMany.mockResolvedValue({ count: 1 });
+    mocks.prisma.bookEditOperation.updateMany.mockImplementation(async (args: { data?: Record<string, unknown> }) => {
+      const current = await mocks.prisma.bookEditOperation.findUnique({ where: { id: "operation-1" } });
+      if (current && args.data) {
+        mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({ ...current, ...args.data });
+      }
+      return { count: 1 };
+    });
+    mocks.prisma.$queryRawUnsafe.mockImplementation(
+      async (sql: string, _operationId: string, generationJobId: string, ownerToken: string) => {
+        const current = await mocks.prisma.bookEditOperation.findUnique({ where: { id: "operation-1" } });
+        if (!current) return [];
+        if (sql.includes('SET "status" = \'ACTIVE\'')) {
+          if (
+            !["QUEUED", "ACTIVE"].includes(current.status as string) ||
+            current.structuralLeaseCompletedAt ||
+            (current.structuralLeaseToken && current.structuralLeaseToken !== ownerToken)
+          ) {
+            return [];
+          }
+          const claimed = {
+            ...current,
+            generationJobId: current.generationJobId ?? generationJobId,
+            status: "ACTIVE",
+            structuralLeaseToken: ownerToken,
+            structuralLeaseExpiresAt: new Date("2099-01-01T00:03:00.000Z")
+          };
+          mocks.prisma.bookEditOperation.findUnique.mockResolvedValue(claimed);
+          return [claimed];
+        }
+        if (sql.includes('SET "structuralLeaseExpiresAt" = CURRENT_TIMESTAMP')) {
+          if (current.status !== "ACTIVE" || current.structuralLeaseToken !== ownerToken) return [];
+          const renewed = {
+            ...current,
+            structuralLeaseExpiresAt: new Date("2099-01-01T00:06:00.000Z")
+          };
+          mocks.prisma.bookEditOperation.findUnique.mockResolvedValue(renewed);
+          return [renewed];
+        }
+        if (sql.includes('SET "structuralLeaseToken" = NULL')) {
+          if (current.status !== "ACTIVE" || current.structuralLeaseToken !== ownerToken) return [];
+          mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({
+            ...current,
+            structuralLeaseToken: null,
+            structuralLeaseExpiresAt: null
+          });
+          return [{ id: current.id }];
+        }
+        return [];
+      }
+    );
     mocks.nextPlanVersion.mockResolvedValue(2);
+    mocks.stagedPlanCreate.mockResolvedValue({ id: "plan-2" });
     mocks.revisePlan.mockResolvedValue({ title: "Revised", chapters: [], characters: [], locations: [], researchNotes: [] });
-    mocks.enqueueWorkerJob.mockResolvedValue({ id: "job-generate" });
+    mocks.canEnqueueProjectWork.mockResolvedValue(true);
+    mocks.prisma.generationJob.upsert.mockResolvedValue({ id: "job-generate" });
   });
   afterEach(() => vi.clearAllMocks());
 
@@ -175,11 +191,8 @@ describe("replanBook page budget", () => {
     // normalizePlanPageTargets pads the revised chapters back up to it — which
     // is how a three-chapter plan came out as an eight-page book.
     expect(mocks.revisePlan).toHaveBeenCalledWith(expect.objectContaining({ targetPages: 3 }));
-    expect(seedProjectStoryState).toHaveBeenCalledWith("project-copy", []);
-    // The row and the snapshot the next edit reads have to agree.
-    expect(mocks.prisma.project.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ targetPages: 3 }) })
-    );
+    expect(seedProjectStoryState).not.toHaveBeenCalled();
+    expect(mocks.prisma.planVersion.create).not.toHaveBeenCalled();
   });
 
   it("keeps the source plan's page count when the replan named no length", async () => {
@@ -188,18 +201,328 @@ describe("replanBook page budget", () => {
     expect(mocks.revisePlan).toHaveBeenCalledWith(expect.objectContaining({ targetPages: 12 }));
   });
 
-  const writtenMediaSettings = () =>
-    mocks.prisma.project.update.mock.calls
-      .map((call) => (call[0] as { data: Record<string, unknown> }).data.mediaSettings)
-      .find((value) => value !== undefined) as Record<string, unknown>;
+  it("prefers the durable instruction over stale queue text in the planner and staged plan", async () => {
+    const durable = "Rewrite the book so Mara finds the red key and refuses to use it.";
+    const characterContext = "Mentioned character profiles:\n- Mara: a careful navigator";
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({
+      id: "operation-1",
+      status: "ACTIVE",
+      request: "legacy request",
+      editInstruction: durable,
+      characterContext,
+      classifier: { preserved: true }
+    });
 
-  it("writes the resize into the mobile metadata the app's settings sheet reads", async () => {
-    await replanBook(replanJob({ targetPages: 3 }));
+    await replanBook(
+      replanJob({ request: "supplemental context", editInstruction: "stale queued instruction" })
+    );
 
-    expect(writtenMediaSettings().mobile).toMatchObject({ targetPages: 3, lengthPreset: "custom", pageCountMode: "custom" });
+    expect(mocks.revisePlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userMessage: expect.stringContaining(durable)
+      })
+    );
+    expect((mocks.revisePlan.mock.calls[0]![0] as { userMessage: string }).userMessage).toContain(
+      "supplemental context"
+    );
+    expect((mocks.revisePlan.mock.calls[0]![0] as { userMessage: string }).userMessage).not.toContain(
+      "stale queued instruction"
+    );
+    expect(mocks.stagedPlanCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: "DRAFT",
+          messages: expect.arrayContaining([expect.objectContaining({ content: durable })])
+        })
+      })
+    );
+    expect(mocks.prisma.generationJob.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          type: "GENERATE_BOOK",
+          payload: expect.objectContaining({
+            editInstruction: durable,
+            request: "legacy request",
+            characterContext
+          })
+        })
+      })
+    );
+    const successorPayload = successorCreate()!.payload;
+    expect(successorPayload.editInstruction).not.toContain("careful navigator");
+    expect(successorPayload.request).not.toContain("careful navigator");
+    expect(stagedPlanData()?.classifier).toMatchObject({ preserved: true, replanStagedPlanId: "plan-2" });
   });
 
-  it("merges over the live row instead of replacing it", async () => {
+  it("strips legacy-composed character sheets from both successor recovery strings", async () => {
+    const sheets = "Mentioned character profiles (the user's own library characters; treat as authoritative canon):\n- Mara: a careful navigator";
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({
+      id: "operation-1",
+      projectId: "project-1",
+      sourceProjectId: "project-1",
+      status: "ACTIVE",
+      request: `change the ending\n\n${sheets}`,
+      editInstruction: `Rewrite the ending so Mara refuses the red key.\n\n${sheets}`,
+      classifier: { replanStagedPlanId: "plan-staged" }
+    });
+
+    await replanBook(replanJob({}));
+
+    expect(successorCreate()?.payload).toMatchObject({
+      editInstruction: "Rewrite the ending so Mara refuses the red key.",
+      request: "change the ending",
+      characterContext: sheets
+    });
+  });
+
+  it("re-enqueues the same staged plan on redelivery without planning again", async () => {
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({
+      id: "operation-1",
+      projectId: "project-1",
+      sourceProjectId: "project-1",
+      status: "ACTIVE",
+      request: "legacy request",
+      editInstruction: "durable instruction",
+      classifier: { replanStagedPlanId: "plan-staged" }
+    });
+
+    await replanBook(replanJob({}));
+
+    expect(mocks.revisePlan).not.toHaveBeenCalled();
+    expect(successorCreate()?.where).toEqual({ dedupeKey: "generate-book:project-copy:plan-staged" });
+    expect(successorCreate()?.payload).toMatchObject({
+      sourceProjectId: "project-1",
+      editInstruction: "durable instruction",
+      request: "legacy request"
+    });
+    expect(mocks.prisma.bookEditOperation.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          generationJobId: "job-generate",
+          classifier: expect.objectContaining({ replanSuccessorJobId: "job-generate" })
+        })
+      })
+    );
+  });
+
+  it("stands down before planning when the edit was canceled and refunded", async () => {
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({
+      id: "operation-1",
+      projectId: "project-1",
+      sourceProjectId: "project-1",
+      generationJobId: "job-replan",
+      status: "CANCELED",
+      request: "make it 3 pages",
+      editInstruction: "make it 3 pages",
+      classifier: {}
+    });
+    mocks.prisma.bookEditOperation.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(replanBook(replanJob({ generationJobId: "job-replan" }))).rejects.toBeInstanceOf(
+      UnownedReplanDeliveryError
+    );
+
+    expect(mocks.revisePlan).not.toHaveBeenCalled();
+    expect(mocks.prisma.generationJob.upsert).not.toHaveBeenCalled();
+    expect(mocks.prisma.project.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "EDITING" } })
+    );
+  });
+
+  it("discards the delivery when Stop closes the job before the provider call", async () => {
+    let jobClaims = 0;
+    mocks.prisma.generationJob.updateMany.mockImplementation(async () => ({ count: ++jobClaims === 1 ? 1 : 0 }));
+
+    await expect(replanBook(replanJob({}))).rejects.toBeInstanceOf(UnownedReplanDeliveryError);
+
+    expect(mocks.revisePlan).not.toHaveBeenCalled();
+    expect(mocks.stagedPlanCreate).not.toHaveBeenCalled();
+    expect(mocks.prisma.generationJob.upsert).not.toHaveBeenCalled();
+  });
+
+  it("discards a provider result when Stop closes the job during the call", async () => {
+    let jobClaims = 0;
+    mocks.prisma.generationJob.updateMany.mockImplementation(async () => ({ count: ++jobClaims < 3 ? 1 : 0 }));
+
+    await expect(replanBook(replanJob({}))).rejects.toBeInstanceOf(UnownedReplanDeliveryError);
+
+    expect(mocks.revisePlan).toHaveBeenCalledOnce();
+    expect(mocks.stagedPlanCreate).not.toHaveBeenCalled();
+    expect(mocks.prisma.generationJob.upsert).not.toHaveBeenCalled();
+  });
+
+  it("stands down without planning when the durable replan job is no longer open", async () => {
+    mocks.prisma.generationJob.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(replanBook(replanJob({}))).rejects.toBeInstanceOf(UnownedReplanDeliveryError);
+
+    expect(mocks.prisma.bookEditOperation.updateMany).not.toHaveBeenCalled();
+    expect(mocks.revisePlan).not.toHaveBeenCalled();
+    expect(mocks.prisma.generationJob.upsert).not.toHaveBeenCalled();
+  });
+
+  it("lets one concurrent staging owner spend the provider call while the loser stands down", async () => {
+    let finishRevision!: (value: { title: string; chapters: never[]; characters: never[]; locations: never[]; researchNotes: never[] }) => void;
+    mocks.revisePlan.mockReturnValue(new Promise((resolve) => { finishRevision = resolve; }));
+    const winner = replanBook(replanJob({}));
+    await vi.waitFor(() => expect(mocks.revisePlan).toHaveBeenCalledOnce());
+    await expect(replanBook(replanJob({}))).rejects.toBeInstanceOf(UnownedReplanDeliveryError);
+    finishRevision({ title: "Revised", chapters: [], characters: [], locations: [], researchNotes: [] });
+    await winner;
+
+    expect(mocks.revisePlan).toHaveBeenCalledOnce();
+    expect(mocks.stagedPlanCreate).toHaveBeenCalledOnce();
+    expect(mocks.prisma.generationJob.upsert).toHaveBeenCalledOnce();
+  });
+
+  it("locks Project then predecessor and successor jobs before linking the operation", async () => {
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({
+      id: "operation-1",
+      projectId: "project-1",
+      sourceProjectId: "project-1",
+      generationJobId: "job-replan",
+      status: "ACTIVE",
+      request: "legacy request",
+      editInstruction: "durable instruction",
+      classifier: { replanStagedPlanId: "plan-staged" }
+    });
+
+    await replanBook(replanJob({}));
+
+    const projectLock = mocks.prisma.project.update.mock.invocationCallOrder[0]!;
+    const predecessorLock = mocks.prisma.generationJob.updateMany.mock.invocationCallOrder[0]!;
+    const operationClaim = mocks.prisma.$queryRawUnsafe.mock.invocationCallOrder[0]!;
+    expect(projectLock).toBeLessThan(predecessorLock);
+    expect(predecessorLock).toBeLessThan(operationClaim);
+    const successorLinkCall = mocks.prisma.bookEditOperation.updateMany.mock.calls.findIndex(
+      (call) => (call[0] as { data?: { generationJobId?: string } }).data?.generationJobId === "job-generate"
+    );
+    const successorLock = mocks.prisma.generationJob.updateMany.mock.invocationCallOrder.at(-1)!;
+    expect(successorLock).toBeLessThan(mocks.prisma.bookEditOperation.updateMany.mock.invocationCallOrder[successorLinkCall]!);
+  });
+
+  // The successor's own pre-ACTIVE guard proves the operation names *this* row,
+  // so a job published to Redis before that linkage commits is one a worker
+  // reads as an impostor, cancels and refunds — and the linkage behind it then
+  // finds no open row left to claim, wedging the replan on a spent dedupe key.
+  it("commits the successor row and its linkage before publishing either", async () => {
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({
+      id: "operation-1",
+      projectId: "project-1",
+      sourceProjectId: "project-1",
+      generationJobId: "job-replan",
+      status: "ACTIVE",
+      request: "legacy request",
+      editInstruction: "durable instruction",
+      classifier: { replanStagedPlanId: "plan-staged" }
+    });
+
+    await replanBook(replanJob({}));
+
+    const linkCall = mocks.prisma.bookEditOperation.updateMany.mock.calls.findIndex(
+      (call) => (call[0] as { data?: { generationJobId?: string } }).data?.generationJobId === "job-generate"
+    );
+    const created = mocks.prisma.generationJob.upsert.mock.invocationCallOrder[0]!;
+    const linked = mocks.prisma.bookEditOperation.updateMany.mock.invocationCallOrder[linkCall]!;
+    const published = mocks.dispatchWorkerGenerationJob.mock.invocationCallOrder[0]!;
+    expect(created).toBeLessThan(linked);
+    expect(linked).toBeLessThan(published);
+    expect(mocks.dispatchWorkerGenerationJob).toHaveBeenCalledWith("job-generate");
+    expect(mocks.prisma.generationJob.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { dedupeKey: "generate-book:project-copy:plan-staged" },
+        create: expect.objectContaining({ projectId: "project-copy", type: "GENERATE_BOOK", status: "QUEUED" }),
+        update: {}
+      })
+    );
+  });
+
+  it("publishes nothing when the linkage this delivery no longer owns is refused", async () => {
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({
+      id: "operation-1",
+      projectId: "project-1",
+      sourceProjectId: "project-1",
+      generationJobId: "job-replan",
+      status: "ACTIVE",
+      request: "legacy request",
+      editInstruction: "durable instruction",
+      classifier: { replanStagedPlanId: "plan-staged" }
+    });
+    mocks.prisma.bookEditOperation.updateMany.mockImplementation(
+      async (args: { data?: Record<string, unknown> }) => ({ count: args.data?.generationJobId ? 0 : 1 })
+    );
+
+    await expect(replanBook(replanJob({}))).rejects.toBeInstanceOf(UnownedReplanDeliveryError);
+
+    expect(mocks.dispatchWorkerGenerationJob).not.toHaveBeenCalled();
+  });
+
+  it("stages nothing for a project that can take no more work", async () => {
+    mocks.canEnqueueProjectWork.mockResolvedValue(false);
+
+    await expect(replanBook(replanJob({}))).rejects.toBeInstanceOf(UnownedReplanDeliveryError);
+
+    expect(mocks.prisma.generationJob.upsert).not.toHaveBeenCalled();
+    expect(mocks.dispatchWorkerGenerationJob).not.toHaveBeenCalled();
+  });
+
+  it("uses the durable source when a redelivery carries the empty target as stale provenance", async () => {
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({
+      id: "operation-1",
+      projectId: "project-owner-source",
+      sourceProjectId: "project-durable-source",
+      status: "ACTIVE",
+      request: "legacy request",
+      editInstruction: "durable instruction",
+      classifier: { replanStagedPlanId: "plan-staged" }
+    });
+
+    await replanBook(replanJob({ sourceProjectId: "project-copy" }));
+
+    expect(successorCreate()?.payload).toMatchObject({ sourceProjectId: "project-durable-source" });
+    expect(mocks.prisma.bookEditOperation.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ sourceProjectId: "project-durable-source" }) })
+    );
+  });
+
+  it("reconstructs a legacy staged delivery from the operation owner when its queue source is absent", async () => {
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({
+      id: "operation-1",
+      projectId: "project-legacy-source",
+      sourceProjectId: null,
+      status: "ACTIVE",
+      request: "legacy request",
+      editInstruction: "durable instruction",
+      classifier: { replanStagedPlanId: "plan-staged" }
+    });
+
+    await replanBook(replanJob({ sourceProjectId: undefined }));
+
+    expect(successorCreate()?.payload).toMatchObject({ sourceProjectId: "project-legacy-source" });
+  });
+
+  const successorCreate = () => {
+    const call = mocks.prisma.generationJob.upsert.mock.calls[0]?.[0] as
+      | { where: { dedupeKey: string }; create: { payload: Record<string, unknown> } }
+      | undefined;
+    return call ? { where: call.where, payload: call.create.payload } : undefined;
+  };
+
+  const stagedPlanData = () =>
+    ([...mocks.prisma.bookEditOperation.update.mock.calls, ...mocks.prisma.bookEditOperation.updateMany.mock.calls].find(
+      (call) => (call[0] as { data: Record<string, unknown> }).data.classifier !== undefined
+    )?.[0] as { data: Record<string, unknown> } | undefined)?.data;
+
+  it("stages the resize without applying project metadata before adherence", async () => {
+    await replanBook(replanJob({ targetPages: 3 }));
+
+    expect(stagedPlanData()?.classifier).toMatchObject({ replanStagedPlanId: "plan-2", replanSourcePlanId: "plan-1" });
+    expect(mocks.prisma.project.update.mock.calls).not.toContainEqual([
+      expect.objectContaining({ data: expect.objectContaining({ targetPages: 3 }) })
+    ]);
+  });
+
+  it("does not replace live presentation metadata while the candidate is unreviewed", async () => {
     // The target row owns presentation preferences the plan snapshot has
     // schema-stripped, and — for a replan copy — its provenance markers.
     mocks.prisma.project.findUnique.mockResolvedValue({
@@ -213,223 +536,8 @@ describe("replanBook page budget", () => {
 
     await replanBook(replanJob({ targetPages: 3 }));
 
-    const written = writtenMediaSettings();
-    expect(written).toMatchObject({
-      chapterHeadingStyle: "title_only",
-      chapterHeadingLabel: "Part",
-      includeSources: false,
-      // The snapshot's generation settings still land.
-      fullIllustrations: true
-    });
-    expect(written.mobile).toMatchObject({ revisionOfProjectId: "project-1", targetPages: 3 });
-  });
-});
-
-
-describe("rewritePageForUserRequest style audit", () => {
-  const strategy = { revisePageDraft: vi.fn(), reviewPageDraft: vi.fn() };
-
-  const priorPage = (index: number) => ({
-    index,
-    title: `Page ${index}`,
-    markdown: `Page ${index} prose, long enough to serve as a style anchor.`,
-    summary: `Page ${index} summary.`
-  });
-
-  const draftNamed = (name: string) => ({
-    title: name,
-    markdown: `${name} text.`,
-    summary: `${name} summary.`,
-    imagePrompt: null,
-    continuityNotes: [] as string[]
-  });
-
-  const report = (score: number, approved = false) => ({
-    approved,
-    score,
-    issues: [] as string[],
-    requiredRevisions: [] as string[],
-    notes: "",
-    checks: { repetitionOk: true, progressionOk: true }
-  });
-
-  const rewriteOptions = () =>
-    ({
-      projectId: "project-1",
-      page: {
-        id: "page-3",
-        index: 3,
-        title: "Page 3",
-        markdown: "Page 3 prose.",
-        summary: "Page 3 summary.",
-        imagePrompt: null,
-        chapterId: null,
-        chapter: null
-      },
-      input: { targetPages: 12, mediaSettings: {} },
-      plan: { title: "Book", chapters: [], voiceGuide: ["Warm and plain."] },
-      strategy,
-      providers: { text: {} },
-      request: "make page 3 more dramatic",
-      // Handed in by `applyBookEdit`, one context for the whole edit.
-      quality: pagePipelineQualityGates({
-        defaultFeatureEnabled: mocks.pageQualityEnabled,
-        otherFeatureEnabled: mocks.qualityEnabled
-      }),
-      generationJobId: "gj-1"
-    }) as never;
-
-  /** The style lock the first rewrite was anchored to. */
-  const revisedWith = () => (strategy.revisePageDraft.mock.calls[0]![0] as { styleExcerpts?: string[] }).styleExcerpts;
-
-  const auditCalls = () =>
-    mocks.auditPageStyle.mock.calls.map((call) => call[0] as unknown as { markdown: string; styleExcerpts: string[] });
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.qualityEnabled.mockReturnValue(false);
-    mocks.pageQualityEnabled.mockReturnValue(true);
-    mocks.loadContinuityNotes.mockResolvedValue([]);
-    mocks.loadStyleLockPages.mockResolvedValue([]);
-    mocks.auditPageStyle.mockResolvedValue({ styleOk: true, styleIssues: [] });
-    // Newest first, the way the handler reads them before reversing.
-    mocks.prisma.page.findMany.mockResolvedValue([priorPage(11)]);
-    strategy.revisePageDraft.mockResolvedValue(draftNamed("Rewrite"));
-  });
-  afterEach(() => vi.clearAllMocks());
-
-  it("audits the rewrite against the very lock it was written against", async () => {
-    // A chat rewrite lands mid-book, so its excerpts come from the loaded
-    // style-lock pages rather than the recency window it sits in. The auditor
-    // is asserted to hold that same array by reference, which is what stops a
-    // second derivation drifting from the one the rewrite used.
-    mocks.qualityEnabled.mockImplementation(
-      (feature: string) => feature === "styleExcerpts" || feature === "styleAuditor"
+    expect(mocks.prisma.project.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ mediaSettings: expect.anything() }) })
     );
-    mocks.loadStyleLockPages.mockResolvedValue([priorPage(1), priorPage(2)]);
-    strategy.reviewPageDraft.mockResolvedValue(report(85, true));
-
-    const result = await rewritePageForUserRequest(rewriteOptions());
-
-    expect(mocks.loadStyleLockPages).toHaveBeenCalledWith("project-1", 3, [priorPage(11)]);
-    expect(revisedWith()).toEqual([priorPage(1).markdown, priorPage(2).markdown]);
-    expect(auditCalls()).toHaveLength(1);
-    expect(auditCalls()[0]!.markdown).toBe("Rewrite text.");
-    expect(auditCalls()[0]!.styleExcerpts).toBe(revisedWith());
-    // Zero rather than absent: it is what marks the report as audited at all.
-    expect((result.qualityReport as unknown as { stylePenalty?: number }).stylePenalty).toBe(0);
-  });
-
-  it("tells the auditor the register change was the reader's own request", async () => {
-    // The excerpts are the book's *opening* pages, so "make page 3 more
-    // dramatic" is a register shift by construction. Audited by the plain rules
-    // it came back rejected, the reviewer's approval was flipped, the edit's
-    // three-candidate budget went on pulling the page back toward the voice the
-    // reader had just asked it to leave, and the edit was delivered FAILED_QA —
-    // which then feeds `failedQaPageIndexes` into the next compile's repair.
-    mocks.qualityEnabled.mockImplementation(
-      (feature: string) => feature === "styleExcerpts" || feature === "styleAuditor"
-    );
-    mocks.loadStyleLockPages.mockResolvedValue([priorPage(1), priorPage(2)]);
-    strategy.reviewPageDraft.mockResolvedValue(report(85, true));
-
-    await rewritePageForUserRequest(rewriteOptions());
-
-    expect(auditCalls()).toHaveLength(1);
-    expect(auditCalls()[0]).toMatchObject({ userRequest: "make page 3 more dramatic" });
-  });
-
-  it("holds every quality rewrite to the edit the reader paid for", async () => {
-    mocks.qualityEnabled.mockReturnValue(false);
-    // Rejected outright, so the loop rewrites: the requested edit is already in
-    // the draft, and a revision that repairs quality by undoing it delivers the
-    // page the reader started from.
-    strategy.reviewPageDraft.mockResolvedValue(report(40));
-
-    await rewritePageForUserRequest(rewriteOptions());
-
-    const briefings = strategy.revisePageDraft.mock.calls
-      .slice(1)
-      .map((call) => (call[0] as { report: { requiredRevisions: string[] } }).report.requiredRevisions);
-    expect(briefings.length).toBeGreaterThan(0);
-    for (const briefing of briefings) {
-      expect(briefing).toContain("Keep the user's requested edit applied: make page 3 more dramatic");
-    }
-  });
-
-  it("keeps the requested rewrite but skips its post-edit review when page QA is off", async () => {
-    mocks.pageQualityEnabled.mockReturnValue(false);
-
-    const result = await rewritePageForUserRequest(rewriteOptions());
-
-    expect(strategy.revisePageDraft).toHaveBeenCalledTimes(1);
-    expect(strategy.reviewPageDraft).not.toHaveBeenCalled();
-    expect(result.qualityReport).toMatchObject({ approved: true, score: 100 });
-  });
-
-  it("builds no auditor with the gate off, or with nothing pinned to compare against", async () => {
-    mocks.qualityEnabled.mockImplementation((feature: string) => feature === "styleExcerpts");
-    mocks.loadStyleLockPages.mockResolvedValue([priorPage(1), priorPage(2)]);
-    strategy.reviewPageDraft.mockResolvedValue(report(85, true));
-
-    // Excerpts pinned, auditor gate off: the rewrite is still anchored.
-    const anchored = await rewritePageForUserRequest(rewriteOptions());
-
-    expect(mocks.auditPageStyle).not.toHaveBeenCalled();
-    expect(revisedWith()).toEqual([priorPage(1).markdown, priorPage(2).markdown]);
-    expect(anchored.qualityReport).not.toHaveProperty("stylePenalty");
-
-    // Auditor gate on, excerpts gate off: nothing is even loaded to pin.
-    vi.clearAllMocks();
-    mocks.qualityEnabled.mockImplementation((feature: string) => feature === "styleAuditor");
-    mocks.prisma.page.findMany.mockResolvedValue([priorPage(11)]);
-    strategy.revisePageDraft.mockResolvedValue(draftNamed("Rewrite"));
-    strategy.reviewPageDraft.mockResolvedValue(report(85, true));
-    await rewritePageForUserRequest(rewriteOptions());
-
-    expect(mocks.loadStyleLockPages).not.toHaveBeenCalled();
-    expect(mocks.auditPageStyle).not.toHaveBeenCalled();
-  });
-
-  it("carries a failed audit's penalty and issues into the report it returns", async () => {
-    mocks.qualityEnabled.mockImplementation(
-      (feature: string) => feature === "styleExcerpts" || feature === "styleAuditor"
-    );
-    mocks.loadStyleLockPages.mockResolvedValue([priorPage(1), priorPage(2)]);
-    // Approved once, then rejected: the audited draft stays the keeper, so its
-    // report is the one the edit is saved on.
-    strategy.reviewPageDraft.mockResolvedValueOnce(report(85, true)).mockResolvedValue(report(40));
-    mocks.auditPageStyle.mockResolvedValue({
-      styleOk: false,
-      styleIssues: ["Register drifts into lecture mode.", "Rhythm ignores the opening."]
-    });
-
-    const result = await rewritePageForUserRequest(rewriteOptions());
-
-    expect(result.qualityReport).toMatchObject({ approved: false, score: 85, stylePenalty: 30 });
-    expect(result.qualityReport.issues).toContain("Register drifts into lecture mode.");
-    expect(result.qualityReport.requiredRevisions).toContain("Revise style: Register drifts into lecture mode.");
-  });
-
-  it("spends at most two style audits on a page, and gives the next page a fresh budget", async () => {
-    // The reviewer approves every rewrite and the audit rejects every one, so
-    // nothing but the counter can stop the two gates trading provider calls.
-    mocks.qualityEnabled.mockImplementation(
-      (feature: string) => feature === "styleExcerpts" || feature === "styleAuditor"
-    );
-    mocks.loadStyleLockPages.mockResolvedValue([priorPage(1), priorPage(2)]);
-    strategy.reviewPageDraft.mockResolvedValue(report(85, true));
-    mocks.auditPageStyle.mockResolvedValue({ styleOk: false, styleIssues: ["Register drifts."] });
-
-    const first = await rewritePageForUserRequest(rewriteOptions());
-
-    // Two, then the third approval stands unaudited and ends the loop.
-    expect(mocks.auditPageStyle).toHaveBeenCalledTimes(2);
-    expect(first.qualityReport).not.toHaveProperty("stylePenalty");
-
-    // The closure is built once per rewrite, so the next page pays its own.
-    await rewritePageForUserRequest(rewriteOptions());
-
-    expect(mocks.auditPageStyle).toHaveBeenCalledTimes(4);
   });
 });

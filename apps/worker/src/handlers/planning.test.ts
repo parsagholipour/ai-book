@@ -25,7 +25,8 @@ vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma, Prisma: {} }));
 vi.mock("../runtime/jobLifecycle.js", () => ({
   advanceJobStep: vi.fn(),
   editOperationIdFromJob: (job: { data: Record<string, unknown> }) =>
-    typeof job.data.operationId === "string" ? job.data.operationId : null
+    (typeof job.data.operationId === "string" ? job.data.operationId : null) ??
+    (typeof job.data.editOperationId === "string" ? job.data.editOperationId : null)
 }));
 vi.mock("../runtime/config.js", () => ({ config: { MOCK_AI: true } }));
 vi.mock("../providers/loggedAdapters.js", () => ({
@@ -256,6 +257,12 @@ describe("revisePlan persistence", () => {
         })
       })
     );
+    expect((mocks.revisePlan.mock.calls[0]![0] as { userMessage: string }).userMessage).toContain(
+      "Approved editInstruction"
+    );
+    expect((mocks.revisePlan.mock.calls[0]![0] as { userMessage: string }).userMessage).toContain(
+      "Make the tone warmer."
+    );
     expect(mocks.txProjectUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "project-1", currentPlanId: "plan-1" },
@@ -311,6 +318,42 @@ describe("revisePlan persistence", () => {
       fullIllustrations: true
     });
     expect(written.mobile).toMatchObject({ targetPages: 12 });
+  });
+
+  it("keeps fused character sheets out of the stored plan-revision contract", async () => {
+    const editInstruction = "Make the book brighter around Luna.";
+    const request = "Make it brighter around @Luna.";
+    const characterContext = "Mentioned character profiles:\n- Luna: a brave night-flying rabbit.";
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({
+      generationJobId: "gj-1",
+      ledgerEntryId: "ledger-1",
+      status: "RUNNING",
+      classifier: {},
+      request,
+      editInstruction,
+      characterContext
+    });
+
+    await revisePlan(
+      reviseJob({
+        message: `${request}\n\n${characterContext}`,
+        editInstruction,
+        characterContext,
+        editOperationId: "op-1",
+        billingLedgerEntryId: "ledger-1"
+      })
+    );
+
+    const userMessage = (mocks.revisePlan.mock.calls[0]![0] as { userMessage: string }).userMessage;
+    expect(userMessage).toContain(editInstruction);
+    expect(userMessage).toContain("Character context (supplemental canon, not an additional edit requirement):");
+    expect(userMessage).toContain("night-flying");
+    expect(userMessage).toContain(request);
+    const stored = mocks.txPlanVersionCreate.mock.calls[0]![0] as {
+      data: { messages: Array<{ content: string }> };
+    };
+    expect(stored.data.messages.at(-1)?.content).toBe(editInstruction);
+    expect(stored.data.messages.at(-1)?.content).not.toContain("night-flying");
   });
 });
 

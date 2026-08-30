@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
     project: { update: vi.fn(), updateMany: vi.fn() },
     planVersion: { findUnique: vi.fn() },
     page: { findMany: vi.fn(), update: vi.fn() },
-    pageEditSnapshot: { findMany: vi.fn(), create: vi.fn(), update: vi.fn(), deleteMany: vi.fn() },
+    pageEditSnapshot: { findMany: vi.fn(), createManyAndReturn: vi.fn(), update: vi.fn(), deleteMany: vi.fn() },
     continuityNote: { createMany: vi.fn() },
     $executeRawUnsafe: vi.fn()
   },
@@ -42,14 +42,56 @@ const mocks = vi.hoisted(() => ({
   heartbeatAssertHeld: vi.fn(async () => undefined),
   heartbeatStop: vi.fn(async () => undefined),
   claimAppliedEditPublication: vi.fn(async () => true),
-  restoreEditProjectStatus: vi.fn(async () => true)
+  restoreEditProjectStatus: vi.fn(async () => true),
+  publishTextEditManuscript: vi.fn(async (options: {
+    ownerToken: string;
+    pages: Array<{ preparedEmbedding: unknown }>;
+  }) => ({
+    identity: {
+      projectId: "project-1", operationId: "op-1", planVersionId: "plan-1",
+      publicationRevision: 8, fallbackStatus: "REVIEW_REQUIRED"
+    },
+    memory: options.pages.flatMap((page) => page.preparedEmbedding ? [page] : [])
+  })),
+  textEditPublicationCompletion: vi.fn(() => ({
+    durableCompletionCommitted: true,
+    lifecycleCompletionCommitted: true,
+    retryFollowUpOnRedelivery: true,
+    afterJobCompleted: vi.fn()
+  })),
+  textEditPublicationIdentity: vi.fn((): null | {
+    projectId: string;
+    operationId: string;
+    planVersionId: string;
+    publicationRevision: number;
+    fallbackStatus: "REVIEW_REQUIRED";
+  } => null),
+  adoptLegacyTextEditTail: vi.fn(async (): Promise<null | {
+    projectId: string;
+    operationId: string;
+    planVersionId: string;
+    publicationRevision: number;
+    fallbackStatus: "REVIEW_REQUIRED";
+  }> => ({
+    projectId: "project-1", operationId: "op-1", planVersionId: "plan-1",
+    publicationRevision: 8, fallbackStatus: "REVIEW_REQUIRED"
+  }))
 }));
 
-vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma, Prisma: {}, pageScope: vi.fn() }));
+vi.mock("@book-maker/db", () => ({
+  prisma: mocks.prisma,
+  Prisma: {},
+  pageScope: vi.fn(),
+  MANUSCRIPT_PUBLICATION_TRANSACTION_OPTIONS: { timeout: 30_000, maxWait: 10_000 }
+}));
 vi.mock("../runtime/dispatch.js", () => ({ maybeEnqueueCompile: mocks.maybeEnqueueCompile }));
 vi.mock("../runtime/jobLifecycle.js", () => ({
   advanceJobStep: vi.fn(),
   refundSkippedEditOperation: mocks.refundSkippedEditOperation
+}));
+vi.mock("../runtime/durableEditCompletion.js", () => ({
+  claimDurableEditCompletionTx: vi.fn(async () => true),
+  settleDurableEditAttemptTx: vi.fn(async () => true)
 }));
 vi.mock("../runtime/config.js", () => ({ config: {} }));
 vi.mock("../providers/loggedAdapters.js", () => ({ createLoggedProviders: vi.fn(() => ({ text: {}, embedding: {} })) }));
@@ -89,10 +131,27 @@ vi.mock("../generation/editProjectStatus.js", () => ({
   claimAppliedEditPublication: mocks.claimAppliedEditPublication,
   restoreEditProjectStatus: mocks.restoreEditProjectStatus
 }));
-vi.mock("./replanBook.js", () => ({ locallyPatchedPage: vi.fn(), rewritePageForUserRequest: mocks.rewritePageForUserRequest }));
+vi.mock("../generation/textEditPublication.js", () => ({
+  publishTextEditManuscript: mocks.publishTextEditManuscript,
+  textEditPublicationCompletion: mocks.textEditPublicationCompletion,
+  textEditPublicationIdentity: mocks.textEditPublicationIdentity,
+  adoptLegacyTextEditTail: mocks.adoptLegacyTextEditTail
+}));
+vi.mock("../generation/textEditRewrite.js", () => ({ locallyPatchedPage: vi.fn(), rewritePageForUserRequest: mocks.rewritePageForUserRequest }));
 vi.mock("@book-maker/core", async () => {
   const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
-  return { ...actual, bookPlanSchema: { parse: () => ({}) }, createProviders: () => ({}) };
+  return {
+    ...actual,
+    bookPlanSchema: { parse: () => ({}) },
+    createProviders: () => ({}),
+    reviewAppliedBookEdit: async () => ({
+      satisfied: true,
+      confidence: 1,
+      missingRequirements: [],
+      contradictions: [],
+      pageIndexesToRevise: []
+    })
+  };
 });
 
 import { PRE_EDIT_PROJECT_STATUS } from "@book-maker/core";
@@ -122,6 +181,11 @@ beforeEach(() => {
   mocks.prisma.bookEditOperation.updateMany.mockResolvedValue({ count: 1 });
   mocks.prisma.project.updateMany.mockResolvedValue({ count: 1 });
   mocks.prisma.project.update.mockResolvedValue({ contentRevision: 8 });
+  mocks.prisma.pageEditSnapshot.findMany.mockResolvedValue([]);
+  mocks.prisma.pageEditSnapshot.createManyAndReturn.mockImplementation(
+    async ({ data }: { data: Array<Record<string, unknown>> }) =>
+      data.map((snapshot) => ({ ...snapshot, id: `snap-${String(snapshot.pageId)}` }))
+  );
   mocks.prisma.$transaction.mockImplementation(async (run: (tx: typeof mocks.prisma) => Promise<unknown>) => run(mocks.prisma));
   mocks.waitForTextEditLease.mockResolvedValue({ outcome: "acquired", phase: "tail" });
   mocks.waitForTextEditLeaseCompletion.mockResolvedValue("completed");
@@ -137,6 +201,14 @@ beforeEach(() => {
   mocks.settleSkippedTextEditLeaseTx.mockResolvedValue({ classifier: {} });
   mocks.claimAppliedEditPublication.mockResolvedValue(true);
   mocks.restoreEditProjectStatus.mockResolvedValue(true);
+  mocks.textEditPublicationIdentity.mockReturnValue(null);
+  mocks.adoptLegacyTextEditTail.mockResolvedValue({
+    projectId: "project-1",
+    operationId: "op-1",
+    planVersionId: "plan-1",
+    publicationRevision: 8,
+    fallbackStatus: "REVIEW_REQUIRED"
+  });
 });
 
 describe("applyBookEdit APPLIED redelivery", () => {
@@ -156,166 +228,124 @@ describe("applyBookEdit APPLIED redelivery", () => {
     expect(mocks.refundSkippedEditOperation).not.toHaveBeenCalled();
   });
 
-  it("recognizes the exact-text no-op marker again under the APPLIED tail lock", async () => {
-    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({
-      id: "op-1",
-      kind: "PAGE_REWRITE",
-      status: "QUEUED",
-      classifier: {}
-    });
-    mocks.assertTextEditLeaseTx.mockResolvedValue({
-      status: "APPLIED",
-      classifier: { textExactSkipped: true, skippedPageIndexes: [1] }
-    });
+  it("replays the durable publication tail without redrafting pages", async () => {
+    const identity = {
+      projectId: "project-1",
+      operationId: "op-1",
+      planVersionId: "plan-1",
+      publicationRevision: 8,
+      fallbackStatus: "REVIEW_REQUIRED" as const
+    };
+    mocks.textEditPublicationIdentity.mockReturnValue(identity);
+
+    await expect(applyBookEdit(job())).resolves.toMatchObject({ retryFollowUpOnRedelivery: true });
+
+    expect(mocks.textEditPublicationCompletion).toHaveBeenCalledWith(
+      expect.objectContaining({ identity, durableCompletionCommitted: true, memory: expect.any(Function) })
+    );
+    expect(mocks.adoptLegacyTextEditTail).not.toHaveBeenCalled();
+    expect(mocks.prisma.page.findMany).not.toHaveBeenCalled();
+    expect(mocks.rewritePageForUserRequest).not.toHaveBeenCalled();
+  });
+
+  it("adopts a legacy APPLIED operation before returning its replay tail", async () => {
+    await expect(applyBookEdit(job())).resolves.toMatchObject({ retryFollowUpOnRedelivery: true });
+
+    expect(mocks.adoptLegacyTextEditTail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "project-1",
+        operationId: "op-1",
+        planVersionId: "plan-1",
+        fallbackStatus: "REVIEW_REQUIRED"
+      })
+    );
+    expect(mocks.textEditPublicationCompletion).toHaveBeenCalledWith(
+      expect.objectContaining({ durableCompletionCommitted: false })
+    );
+  });
+
+  it("stands down when a legacy publication no longer owns the manuscript", async () => {
+    mocks.adoptLegacyTextEditTail.mockResolvedValueOnce(null);
+
+    await expect(applyBookEdit(job())).resolves.toEqual({});
+
+    expect(mocks.textEditPublicationCompletion).not.toHaveBeenCalled();
+    expect(mocks.prisma.page.findMany).not.toHaveBeenCalled();
+    // The delivery still owes the APPLIED-tail completion, or the operation
+    // keeps a live lease nobody is working under and every redelivery waits
+    // out its expiry before finding the same answer.
+    expect(mocks.completeTextEditLease).toHaveBeenCalledWith("op-1", expect.any(String));
+  });
+
+  it("reads the follow-up checkpoint from the row as it stands under the claim", async () => {
+    // The first read happens before the lease wait, which blocks for as long as
+    // the winning delivery holds the operation — and that delivery is the one
+    // that writes the checkpoint and rewrites `affectedPageIndexes`.
+    mocks.prisma.bookEditOperation.findUnique
+      .mockResolvedValueOnce({ id: "op-1", kind: "PAGE_REWRITE", status: "ACTIVE", classifier: {} })
+      .mockResolvedValueOnce({
+        classifier: { textEditFollowUp: { completedSteps: [] } },
+        affectedPageIndexes: [4]
+      });
 
     await applyBookEdit(job());
 
-    expect(mocks.invalidateProjectExports).not.toHaveBeenCalled();
-    expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
-    expect(mocks.refundSkippedEditOperation).not.toHaveBeenCalled();
-    expect(mocks.completeTextEditLease).toHaveBeenCalledTimes(1);
+    expect(mocks.textEditPublicationIdentity).toHaveBeenCalledWith(
+      { textEditFollowUp: { completedSteps: [] } },
+      { projectId: "project-1", operationId: "op-1" }
+    );
   });
 
-  it.each([
-    ["queue-time fallback", "REVIEW_REQUIRED", "compile"],
-    ["owned publication window", "EDITING", "waiting"]
-  ] as const)(
-    "claims the %s before replaying the export tail",
-    async (_label, currentStatus, outcome) => {
-      let transactionOpen = false;
-      mocks.prisma.$transaction.mockImplementation(async (run: (tx: typeof mocks.prisma) => Promise<unknown>) => {
-        transactionOpen = true;
-        try {
-          return await run(mocks.prisma);
-        } finally {
-          transactionOpen = false;
-        }
+  it("stands down on a no-op marker that landed while this delivery waited for the lease", async () => {
+    // The entry read is taken before the lease wait, and that wait blocks for
+    // as long as the winning delivery holds the operation — so the settlement
+    // that marks the edit a delivered no-op is invisible to the copy this
+    // delivery carried in.
+    mocks.prisma.bookEditOperation.findUnique
+      .mockResolvedValueOnce({ id: "op-1", kind: "PAGE_REWRITE", status: "ACTIVE", classifier: {} })
+      .mockResolvedValueOnce({
+        classifier: { textExactSkipped: true, skippedPageIndexes: [1] },
+        affectedPageIndexes: []
       });
-      mocks.prisma.project.updateMany.mockImplementation(async ({ where }: { where: { status: { in: string[] } } }) => {
-        expect(transactionOpen).toBe(true);
-        return { count: where.status.in.includes(currentStatus) ? 1 : 0 };
-      });
-      mocks.invalidateProjectExports.mockImplementationOnce(async () => {
-        expect(transactionOpen).toBe(true);
-      });
-      mocks.maybeEnqueueCompile.mockResolvedValue(outcome);
-      await applyBookEdit(job());
 
-      expect(mocks.prisma.bookEditOperation.updateMany).not.toHaveBeenCalled();
-      expect(mocks.prisma.bookEditOperation.update).not.toHaveBeenCalled();
-      expect(mocks.prisma.page.findMany).not.toHaveBeenCalled();
-      expect(mocks.prisma.pageEditSnapshot.create).not.toHaveBeenCalled();
-      expect(mocks.rewritePageForUserRequest).not.toHaveBeenCalled();
-      expect(mocks.prisma.project.update).not.toHaveBeenCalled();
-      expect(mocks.claimAppliedEditPublication).toHaveBeenCalledWith(
-        mocks.prisma, "project-1", "op-1", "REVIEW_REQUIRED"
-      );
-      expect(mocks.claimAppliedEditPublication.mock.invocationCallOrder[0]).toBeLessThan(
-        mocks.assertTextEditLeaseTx.mock.invocationCallOrder[0]!
-      );
-      expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
-      expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", { skipFinalReview: true });
-    }
-  );
+    await expect(applyBookEdit(job())).resolves.toEqual({});
 
-  it.each([
-    "the project lifecycle moved",
-    "the manuscript revision moved",
-    "a later operation owns publication"
-  ])(
-    "terminalizes the old APPLIED tail without touching exports when %s",
-    async () => {
-      mocks.claimAppliedEditPublication.mockResolvedValue(false);
+    expect(mocks.adoptLegacyTextEditTail).not.toHaveBeenCalled();
+    expect(mocks.claimAppliedEditPublication).not.toHaveBeenCalled();
+    expect(mocks.textEditPublicationCompletion).not.toHaveBeenCalled();
+    expect(mocks.invalidateProjectExports).not.toHaveBeenCalled();
+    expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
+    // It still owes the APPLIED-tail lease completion, or the operation keeps a
+    // live lease nobody is working under.
+    expect(mocks.completeTextEditLease).toHaveBeenCalledWith("op-1", expect.any(String));
+  });
 
-      await expect(applyBookEdit(job())).resolves.toBeUndefined();
+  it("never falls through into drafting after standing down from the APPLIED tail", async () => {
+    const lostLease = new Error("lease replaced by a live delivery");
+    lostLease.name = "StructuralPageLeaseLostError";
+    mocks.adoptLegacyTextEditTail.mockRejectedValue(lostLease);
+    // The winner finished, so this delivery owns nothing at all — and its
+    // heartbeat is already stopped, which makes every later ownership barrier
+    // a no-op.
+    mocks.waitForTextEditLeaseCompletion.mockResolvedValue("completed");
 
-      expect(mocks.claimAppliedEditPublication).toHaveBeenCalledTimes(1);
-      expect(mocks.prisma.project.update).not.toHaveBeenCalled();
-      expect(mocks.invalidateProjectExports).not.toHaveBeenCalled();
-      expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
-      expect(mocks.completeTextEditLease).toHaveBeenCalledWith("op-1", expect.any(String));
-    }
-  );
+    await expect(applyBookEdit(job())).resolves.toEqual({});
+
+    expect(mocks.prisma.project.update).not.toHaveBeenCalled();
+    expect(mocks.prisma.page.findMany).not.toHaveBeenCalled();
+    expect(mocks.rewritePageForUserRequest).not.toHaveBeenCalled();
+    expect(mocks.publishTextEditManuscript).not.toHaveBeenCalled();
+  });
 
   it("retains no-settlement behavior when a live owner wins the APPLIED-tail lease race", async () => {
     const lostLease = new Error("lease replaced by a live delivery");
     lostLease.name = "StructuralPageLeaseLostError";
-    mocks.assertTextEditLeaseTx.mockRejectedValue(lostLease);
+    mocks.adoptLegacyTextEditTail.mockRejectedValue(lostLease);
     mocks.waitForTextEditLeaseCompletion.mockResolvedValue("abandoned");
 
     await expect(applyBookEdit(job())).rejects.toMatchObject({ name: "UnownedTextEditDeliveryError" });
 
-    expect(mocks.claimAppliedEditPublication).toHaveBeenCalledTimes(1);
-    expect(mocks.invalidateProjectExports).not.toHaveBeenCalled();
-    expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
-    expect(mocks.completeTextEditLease).not.toHaveBeenCalled();
     expect(mocks.waitForTextEditLeaseCompletion).toHaveBeenCalledWith("op-1");
-  });
-
-  it.each(["not-ready", "throw"])("restores the stamped status when compile handoff ends in %s", async (outcome) => {
-    let logged: ReturnType<typeof vi.spyOn> | undefined;
-    if (outcome === "throw") {
-      mocks.maybeEnqueueCompile.mockRejectedValue(new Error("queue unavailable"));
-      logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    } else {
-      mocks.maybeEnqueueCompile.mockResolvedValue("not-ready");
-    }
-
-    await applyBookEdit(job());
-
-    expect(mocks.prisma.page.update).not.toHaveBeenCalled();
-    expect(mocks.restoreEditProjectStatus).toHaveBeenCalledWith(
-      mocks.prisma, "project-1", "op-1", "REVIEW_REQUIRED"
-    );
-    logged?.mockRestore();
-  });
-
-  it("restores the stamped status when no plan can be handed to a compile", async () => {
-    mocks.getProjectOrThrow.mockResolvedValue({ id: "project-1", currentPlanId: null });
-
-    await applyBookEdit(job({ planId: undefined }));
-
-    expect(mocks.invalidateProjectExports).not.toHaveBeenCalled();
-    expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
-    expect(mocks.restoreEditProjectStatus).toHaveBeenCalledWith(
-      mocks.prisma, "project-1", "op-1", "REVIEW_REQUIRED"
-    );
-  });
-
-  it("replays the APPLIED tail when the durable claim finds another delivery already settled", async () => {
-    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({ id: "op-1", kind: "PAGE_REWRITE", status: "QUEUED" });
-    mocks.waitForTextEditLease.mockResolvedValue({ outcome: "acquired", phase: "tail" });
-
-    await applyBookEdit(job());
-
-    expect(mocks.prisma.bookEditOperation.updateMany).not.toHaveBeenCalled();
-    expect(mocks.prisma.page.findMany).not.toHaveBeenCalled();
-    expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledTimes(1);
-  });
-
-  it("keeps an APPLIED-tail delivery successful when lease completion bookkeeping throws", async () => {
-    const completionError = new Error("database response lost");
-    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    mocks.completeTextEditLease.mockRejectedValue(completionError);
-    // A thrown completion write has an unknown outcome, not the explicit
-    // ownership-transfer signal represented by a returned false.
-    mocks.waitForTextEditLeaseCompletion.mockResolvedValue("abandoned");
-
-    await expect(applyBookEdit(job({ generationJobId: "generation-job-1" }))).resolves.toBeUndefined();
-
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledTimes(1);
-    expect(mocks.waitForTextEditLeaseCompletion).not.toHaveBeenCalled();
-    expect(logged).toHaveBeenCalledWith("Text edit lease completion failed after durable compile handoff", {
-      event: "generation.text_edit_lease_completion_failed",
-      projectId: "project-1",
-      operationId: "op-1",
-      generationJobId: "generation-job-1",
-      phase: "applied-tail",
-      recovery: "applied-tail-replay",
-      error: completionError
-    });
-    logged.mockRestore();
   });
 });
 
@@ -364,12 +394,9 @@ function prepareExactNoopDelivery(): void {
   prepareDraftDelivery();
   mocks.prisma.page.findMany.mockResolvedValue([{ ...targetPage, markdown: "The literal is gone." }]);
   mocks.prisma.pageEditSnapshot.findMany.mockResolvedValue([]);
-  mocks.prisma.pageEditSnapshot.create.mockResolvedValue({
-    id: "snap-page-1",
-    pageId: "page-1",
-    pageIndex: 1,
-    revisionAfter: null
-  });
+  mocks.prisma.pageEditSnapshot.createManyAndReturn.mockResolvedValue([
+    { id: "snap-page-1", pageId: "page-1", pageIndex: 1, revisionAfter: null }
+  ]);
 }
 
 describe("applyBookEdit exact all-skipped settlement", () => {
@@ -379,7 +406,7 @@ describe("applyBookEdit exact all-skipped settlement", () => {
       classifier: { preservedClassifierField: "keep" }
     });
 
-    await expect(applyBookEdit(exactNoopJob())).resolves.toBeUndefined();
+    await expect(applyBookEdit(exactNoopJob())).resolves.toEqual({});
 
     expect(mocks.refundSkippedEditOperation).toHaveBeenCalledWith(
       exactNoopJob(),
@@ -422,7 +449,7 @@ describe("applyBookEdit exact all-skipped settlement", () => {
     mocks.settleSkippedTextEditLeaseTx.mockResolvedValue(null);
     const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
-    await expect(applyBookEdit(exactNoopJob())).resolves.toBeUndefined();
+    await expect(applyBookEdit(exactNoopJob())).resolves.toEqual({});
 
     expect(mocks.refundSkippedEditOperation).toHaveBeenCalledTimes(1);
     expect(mocks.waitForTextEditLeaseCompletion).toHaveBeenCalledWith("op-1");
@@ -450,7 +477,7 @@ describe("applyBookEdit exact all-skipped settlement", () => {
     prepareExactNoopDelivery();
     mocks.waitForTextEditLease.mockResolvedValue({ outcome: "completed" });
 
-    await expect(applyBookEdit(exactNoopJob())).resolves.toBeUndefined();
+    await expect(applyBookEdit(exactNoopJob())).resolves.toEqual({});
 
     expect(mocks.prisma.page.findMany).not.toHaveBeenCalled();
     expect(mocks.refundSkippedEditOperation).not.toHaveBeenCalled();
@@ -460,14 +487,12 @@ describe("applyBookEdit exact all-skipped settlement", () => {
 });
 
 describe("applyBookEdit overlapping delivery lease", () => {
-  it("keeps a newly drafted delivery successful when lease completion bookkeeping throws", async () => {
+  it("returns durable completion immediately after the publication seam commits", async () => {
     prepareDraftDelivery();
     mocks.prisma.pageEditSnapshot.findMany.mockResolvedValue([]);
-    mocks.prisma.pageEditSnapshot.create.mockResolvedValue({
-      id: "snap-page-1",
-      pageId: "page-1",
-      revisionAfter: null
-    });
+    mocks.prisma.pageEditSnapshot.createManyAndReturn.mockResolvedValue([
+      { id: "snap-page-1", pageId: "page-1", revisionAfter: null }
+    ]);
     mocks.rewritePageForUserRequest.mockResolvedValue({
       title: "Page 1",
       markdown: "Durably rewritten.",
@@ -475,113 +500,56 @@ describe("applyBookEdit overlapping delivery lease", () => {
       continuityNotes: [],
       qualityReport: { approved: true }
     });
-    const completionError = new Error("connection dropped after update");
-    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    mocks.completeTextEditLease.mockRejectedValue(completionError);
-    mocks.waitForTextEditLeaseCompletion.mockResolvedValue("abandoned");
-
-    await expect(applyBookEdit(job({ generationJobId: "generation-job-1" }))).resolves.toBeUndefined();
-
-    expect(mocks.prisma.bookEditOperation.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: "APPLIED" }) })
-    );
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledTimes(1);
-    expect(mocks.waitForTextEditLeaseCompletion).not.toHaveBeenCalled();
-    expect(logged).toHaveBeenCalledWith("Text edit lease completion failed after durable compile handoff", {
-      event: "generation.text_edit_lease_completion_failed",
-      projectId: "project-1",
-      operationId: "op-1",
-      generationJobId: "generation-job-1",
-      phase: "draft-success",
-      recovery: "applied-tail-replay",
-      error: completionError
+    await expect(applyBookEdit(job({ generationJobId: "generation-job-1" }))).resolves.toMatchObject({
+      durableCompletionCommitted: true,
+      lifecycleCompletionCommitted: true,
+      retryFollowUpOnRedelivery: true
     });
-    logged.mockRestore();
+
+    expect(mocks.publishTextEditManuscript).toHaveBeenCalledWith(
+      expect.objectContaining({
+        completion: expect.objectContaining({ generationJobId: "generation-job-1" }),
+        pages: [expect.objectContaining({ markdownAfter: "Durably rewritten." })]
+      })
+    );
+    expect(mocks.textEditPublicationCompletion).toHaveBeenCalledTimes(1);
+    expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
   });
 
-  it.each(["embedding", "story"] as const)(
-    "commits the fenced page when the %s SQL write aborts its best-effort block",
-    async (failedMemory) => {
-      prepareDraftDelivery();
-      mocks.rewritePageForUserRequest.mockResolvedValue({
-        title: "Page 1",
-        markdown: "Published despite optional memory.",
-        summary: "New summary.",
-        continuityNotes: [],
-        qualityReport: { approved: true }
-      });
-      mocks.prisma.pageEditSnapshot.findMany.mockResolvedValue([]);
-      mocks.prisma.pageEditSnapshot.create.mockResolvedValue({
-        id: "snap-page-1",
-        pageId: "page-1",
-        revisionAfter: null
-      });
-      mocks.strategyUsesSemanticMemory.mockReturnValue(true);
-      mocks.prepareEmbedding.mockResolvedValue({ vectorLiteral: "[0.1]", error: null });
-      mocks.keeperStoryExtractForSave.mockResolvedValue({ storyDelta: {}, contradictions: [] });
+  it("prepares optional memory before entering the publication seam", async () => {
+    prepareDraftDelivery();
+    mocks.rewritePageForUserRequest.mockResolvedValue({
+      title: "Page 1",
+      markdown: "Published with prepared memory.",
+      summary: "New summary.",
+      continuityNotes: [],
+      qualityReport: { approved: true }
+    });
+    mocks.strategyUsesSemanticMemory.mockReturnValue(true);
+    const embedding = { vectorLiteral: "[0.1]", error: null };
+    mocks.prepareEmbedding.mockResolvedValue(embedding);
 
-      const aborted = new Error("current transaction is aborted (25P02)");
-      const failSqlAndSwallow = async (client: { $executeRawUnsafe: (sql: string) => Promise<unknown> }) => {
-        await client.$executeRawUnsafe("FAIL OPTIONAL MEMORY").catch(() => undefined);
-        return null;
-      };
-      if (failedMemory === "embedding") {
-        mocks.writePreparedEmbedding.mockImplementation(async (_target, _prepared, client) => {
-          await failSqlAndSwallow(client);
-          return "degraded";
-        });
-      } else {
-        mocks.persistStoryExtract.mockImplementation(async ({ client }) => failSqlAndSwallow(client));
-      }
+    await applyBookEdit(job());
 
-      const committedMarkdown: string[] = [];
-      mocks.prisma.$transaction.mockImplementation(async (run: (tx: typeof mocks.prisma) => Promise<unknown>) => {
-        let transactionAborted = false;
-        const stagedMarkdown: string[] = [];
-        const tx = {
-          ...mocks.prisma,
-          page: {
-            ...mocks.prisma.page,
-            update: vi.fn(async (args: { data: { markdown?: string } }) => {
-              const saved = await mocks.prisma.page.update(args);
-              if (args.data.markdown) stagedMarkdown.push(args.data.markdown);
-              return saved;
-            })
-          },
-          $executeRawUnsafe: vi.fn(async (sql: string) => {
-            if (sql.startsWith("ROLLBACK TO SAVEPOINT")) {
-              transactionAborted = false;
-              return 0;
-            }
-            if (transactionAborted) throw aborted;
-            if (sql.startsWith("SAVEPOINT") || sql.startsWith("RELEASE SAVEPOINT")) return 0;
-            transactionAborted = true;
-            throw new Error("optional memory SQL failed");
-          })
-        };
-        const result = await run(tx as typeof mocks.prisma);
-        if (transactionAborted) throw aborted;
-        committedMarkdown.push(...stagedMarkdown);
-        return result;
-      });
-
-      await expect(applyBookEdit(job())).resolves.toBeUndefined();
-
-      expect(committedMarkdown).toContain("Published despite optional memory.");
-      expect(mocks.prisma.bookEditOperation.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ status: "APPLIED" }) })
-      );
-    }
-  );
+    expect(mocks.prepareEmbedding).toHaveBeenCalledWith("New summary.", expect.anything());
+    expect(mocks.publishTextEditManuscript).toHaveBeenCalledWith(
+      expect.objectContaining({ pages: [expect.objectContaining({ preparedEmbedding: embedding })] })
+    );
+    expect(mocks.prepareEmbedding.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.publishTextEditManuscript.mock.invocationCallOrder[0]!
+    );
+  });
 
   it("keeps a live overlapping delivery out of the rewrite", async () => {
     prepareDraftDelivery();
     let storedSnapshot: Record<string, unknown> | undefined;
     mocks.prisma.pageEditSnapshot.findMany.mockImplementation(async () => (storedSnapshot ? [storedSnapshot] : []));
-    mocks.prisma.pageEditSnapshot.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
-      storedSnapshot = { ...data, id: "snap-page-1", revisionAfter: null };
-      return storedSnapshot;
-    });
+    mocks.prisma.pageEditSnapshot.createManyAndReturn.mockImplementation(
+      async ({ data }: { data: Array<Record<string, unknown>> }) => {
+        storedSnapshot = { ...data[0], id: "snap-page-1", revisionAfter: null };
+        return [storedSnapshot];
+      }
+    );
     let releaseFirstRewrite!: () => void;
     const firstRewrite = new Promise<void>((resolve) => {
       releaseFirstRewrite = resolve;
@@ -606,36 +574,31 @@ describe("applyBookEdit overlapping delivery lease", () => {
     mocks.waitForTextEditLease
       .mockResolvedValueOnce({ outcome: "acquired", phase: "draft" })
       .mockImplementationOnce(() => waitingDelivery);
-    mocks.completeTextEditLease.mockImplementationOnce(async () => {
-      releaseWaitingDelivery();
-      return true;
-    });
-
     const winner = applyBookEdit(job());
     await vi.waitFor(() => expect(mocks.rewritePageForUserRequest).toHaveBeenCalledTimes(1));
     const overlap = applyBookEdit(job());
     await vi.waitFor(() => expect(mocks.waitForTextEditLease).toHaveBeenCalledTimes(2));
     expect(mocks.rewritePageForUserRequest).toHaveBeenCalledTimes(1);
     releaseFirstRewrite();
-    await Promise.all([winner, overlap]);
+    await winner;
+    releaseWaitingDelivery();
+    await overlap;
 
     expect(mocks.rewritePageForUserRequest).toHaveBeenCalledTimes(1);
-    expect(mocks.prisma.bookEditOperation.update).toHaveBeenCalledTimes(1);
-    expect(
-      mocks.prisma.project.update.mock.calls.filter(
-        (call) => (call[0] as { data: { contentRevision?: { increment?: number } } }).data.contentRevision?.increment === 1
-      )
-    ).toHaveLength(1);
+    expect(mocks.publishTextEditManuscript).toHaveBeenCalledTimes(1);
   });
 
   it("lets an expired-lease replacement publish while the stalled owner stands down", async () => {
     prepareDraftDelivery();
+    let committedPublications = 0;
     let storedSnapshot: Record<string, unknown> | undefined;
     mocks.prisma.pageEditSnapshot.findMany.mockImplementation(async () => (storedSnapshot ? [storedSnapshot] : []));
-    mocks.prisma.pageEditSnapshot.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
-      storedSnapshot = { ...data, id: "snap-page-1", revisionAfter: null };
-      return storedSnapshot;
-    });
+    mocks.prisma.pageEditSnapshot.createManyAndReturn.mockImplementation(
+      async ({ data }: { data: Array<Record<string, unknown>> }) => {
+        storedSnapshot = { ...data[0], id: "snap-page-1", revisionAfter: null };
+        return [storedSnapshot];
+      }
+    );
     let releaseStalledRewrite!: () => void;
     const stalledRewrite = new Promise<void>((resolve) => {
       releaseStalledRewrite = resolve;
@@ -670,6 +633,20 @@ describe("applyBookEdit overlapping delivery lease", () => {
       }
       return { status: "ACTIVE", classifier: {} };
     });
+    mocks.publishTextEditManuscript.mockImplementation(async (options) => {
+      await mocks.assertTextEditLeaseTx(mocks.prisma, "op-1", options.ownerToken);
+      committedPublications += 1;
+      return {
+        identity: {
+          projectId: "project-1",
+          operationId: "op-1",
+          planVersionId: "plan-1",
+          publicationRevision: 8,
+          fallbackStatus: "REVIEW_REQUIRED"
+        },
+        memory: []
+      };
+    });
 
     const stalled = applyBookEdit(job());
     await vi.waitFor(() => expect(mocks.rewritePageForUserRequest).toHaveBeenCalledTimes(1));
@@ -679,14 +656,8 @@ describe("applyBookEdit overlapping delivery lease", () => {
 
     // A stale provider call may finish, but only the replacement publishes.
     expect(mocks.rewritePageForUserRequest).toHaveBeenCalledTimes(2);
-    expect(mocks.prisma.pageEditSnapshot.create).toHaveBeenCalledTimes(1);
-    expect(mocks.prisma.page.update).toHaveBeenCalledTimes(1);
-    expect(mocks.prisma.bookEditOperation.update).toHaveBeenCalledTimes(1);
-    expect(
-      mocks.prisma.project.update.mock.calls.filter(
-        (call) => (call[0] as { data: { contentRevision?: { increment?: number } } }).data.contentRevision?.increment === 1
-      )
-    ).toHaveLength(1);
+    expect(mocks.publishTextEditManuscript).toHaveBeenCalledTimes(2);
+    expect(committedPublications).toBe(1);
     expect(mocks.waitForTextEditLeaseCompletion).toHaveBeenCalledWith("op-1");
   });
 });

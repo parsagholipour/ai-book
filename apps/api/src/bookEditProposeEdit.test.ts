@@ -3,6 +3,7 @@ import { intentFromDecideAction, intentFromProposeEdit } from "./bookEditIntent.
 import { classifyWithDegradedHeuristics } from "./bookEditHeuristics.js";
 import { bookPageMapForProject, readerPageNumbering } from "./bookPageNumbering.js";
 import { type DecideActionPayload } from "./bookEditRouterPrompt.js";
+import { exactReplacementForIntent } from "./mobile/bookEditScope.js";
 
 /**
  * The router's `propose_edit` decision mapped onto a priced intent kind, and the
@@ -55,6 +56,44 @@ describe("propose_edit pricing mapping", () => {
     expect(intent.kind).toBe("local_patch");
     expect(intent.scope).toBe("explicit_pages");
     expect(intent.impact).toBe("small_text");
+  });
+
+  it("retains only router replacement terms proven by the durable instruction", () => {
+    const decide = (editInstruction: string, replacementFrom: string, replacementTo: string) =>
+      intentFromProposeEdit(
+        {
+          action: "propose_edit",
+          confidence: 0.9,
+          reasoning: "Exact replacement.",
+          assistantMessage: "I’ll apply the replacement.",
+          clarification: "none",
+          editTarget: "whole_book",
+          editStyle: "exact_replace",
+          editInstruction,
+          pageIndexes: [],
+          chapterIndex: null,
+          targetLanguage: null,
+          replacementFrom,
+          replacementTo
+        },
+        editInstruction,
+        chapters
+      );
+
+    const proven = decide('Replace "Rabbit" with "Silver Fox" everywhere.', "Rabbit", "Silver Fox");
+    expect(proven.exactReplacement).toEqual({ from: "Rabbit", to: "Silver Fox" });
+    expect(exactReplacementForIntent(proven, proven.editInstruction!)).toEqual({
+      from: "Rabbit",
+      to: "Silver Fox"
+    });
+
+    const disagreement = decide('Replace "Rabbit" with "Hare" everywhere.', "Rabbit", "Fox");
+    expect(disagreement.exactReplacement).toBeNull();
+    expect(exactReplacementForIntent(disagreement, disagreement.editInstruction!)).toBeNull();
+
+    const ambiguous = decide("Rename the hero Rabbit to Fox everywhere.", "hero Rabbit", "Fox");
+    expect(ambiguous.exactReplacement).toBeNull();
+    expect(exactReplacementForIntent(ambiguous, ambiguous.editInstruction!)).toBeNull();
   });
 
   it("maps whole-book rewrites to page_rewrite", () => {

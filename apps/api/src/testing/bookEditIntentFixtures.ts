@@ -60,6 +60,7 @@ export type DecideArgs = {
   confidence: number;
   reasoning: string;
   assistantMessage: string;
+  editInstruction?: string;
   clarification: "none" | "scope";
   pageIndexes: number[];
   chapterIndex: number | null;
@@ -72,11 +73,18 @@ export type DecideArgs = {
 export type FakeRouterModel = TextModelAdapter & { generateWithTools: ReturnType<typeof vi.fn> };
 
 export function decideDecision(args: DecideArgs): ToolCallsResult {
+  const completeArgs = {
+    ...args,
+    editInstruction:
+      args.action === "propose_edit"
+        ? args.editInstruction?.trim() || args.assistantMessage
+        : args.editInstruction ?? ""
+  };
   return {
     text: "",
     model: "test-router",
     provider: "test",
-    toolCalls: [{ id: "call-decide", name: "decide", arguments: args }]
+    toolCalls: [{ id: "call-decide", name: "decide", arguments: completeArgs }]
   };
 }
 

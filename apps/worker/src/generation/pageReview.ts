@@ -200,6 +200,9 @@ export async function runPageQualityLoop(options: {
    * FAILED_QA — which then feeds the next compile's repair pass.
    */
   userRequest?: string | undefined;
+  characterContext?: string | undefined;
+  /** Supplemental page-local guidance kept beside the authoritative userRequest. */
+  pageEditGuidance?: string | undefined;
   retrieveResearch?: ((draft: PageDraft, report: PageQualityReport) => Promise<string[]>) | undefined;
   /**
    * Per-rewrite progress reporting, in the caller's own style. The loop hands
@@ -353,6 +356,9 @@ export async function runPageQualityLoop(options: {
           nextRevision,
           recoveryRevision
         ),
+        ...(options.userRequest ? { editInstruction: options.userRequest } : {}),
+        ...(options.characterContext ? { characterContext: options.characterContext } : {}),
+        ...(options.pageEditGuidance ? { pageEditGuidance: options.pageEditGuidance } : {}),
         previousPages: options.previousPages,
         ...(options.nextPages && options.nextPages.length > 0 ? { nextPages: options.nextPages } : {}),
         continuityNotes: options.continuityNotes,
@@ -510,6 +516,8 @@ function keepUserRequestApplied(report: PageQualityReport, userRequest: string |
 export type SavedGeneratedPage = {
   page: PriorPageContext;
   repairedChapterBrief?: ChapterBrief | undefined;
+  /** Always present for a `deferPublication` caller — which publishes this page itself, so a settled row it does not own throws rather than returning a candidate-less shape four call sites each invent an answer to — and it owes `repairedChapterBrief` the same adoption. */
+  candidate?: { draft: PageDraft; qualityReport: PageQualityReport } | undefined;
 };
 
 /**
@@ -577,6 +585,13 @@ export async function reviewAndSaveGeneratedPage(options: {
    * means for the book. Callers with no lease pass nothing and are unchanged.
    */
   assertOwnership?: () => Promise<void>;
+  /** Review and revise, publishing nothing — no page, no brief CAS — until an operation-level gate passes. */
+  deferPublication?: boolean | undefined;
+  /** Approved edit request pinned through any quality revisions. */
+  editInstruction?: string | undefined;
+  characterContext?: string | undefined;
+  /** Let an operation-level retry loop own the candidate budget. */
+  maxCandidates?: number | undefined;
 }): Promise<SavedGeneratedPage> {
   // Pin optimistic ownership before any review/rewrite provider call. A retry
   // of an already-settled page replays nothing, while a row that changes under
@@ -592,7 +607,11 @@ export async function reviewAndSaveGeneratedPage(options: {
     options.settledPageToReplace.summary === settledPage.summary &&
     options.settledPageToReplace.imagePrompt === existingPage?.imagePrompt;
   if (settledPage && !replacesExpectedSettledPage) {
-    return { page: settledPage };
+    // A deferred caller publishes this page itself, so a row somebody else
+    // settled is a lost claim rather than its replay; its own fence speaks first.
+    if (!options.deferPublication) return { page: settledPage };
+    await options.assertOwnership?.();
+    throw new GeneratedPagePublicationClaimLostError(options.draft.index);
   }
   const pageBrief = options.chapterBrief?.pages.find((brief) => brief.pageIndex === options.draft.index);
   // Whole book on purpose: this reviews a draft against the facts the book
@@ -670,7 +689,7 @@ export async function reviewAndSaveGeneratedPage(options: {
     researchNotes,
     textModel: options.providers.text,
     generationJobId: options.generationJobId,
-    maxCandidates: pageQaCandidatesFor(options.input),
+    maxCandidates: options.maxCandidates ?? pageQaCandidatesFor(options.input),
     repairBrief: true,
     // This function owns the page write, so it also owns when the accepted
     // chapter repair becomes durable. The loop returns the CAS for the
@@ -678,6 +697,8 @@ export async function reviewAndSaveGeneratedPage(options: {
     deferBriefRepairPersistence: true,
     reviseContext: `Page ${options.draft.index}`,
     quality,
+    ...(options.editInstruction ? { userRequest: options.editInstruction } : {}),
+    ...(options.characterContext ? { characterContext: options.characterContext } : {}),
     ...(styleExcerpts.length > 0 ? { styleExcerpts } : {}),
     ...(quality.enabled("claimRetrieve")
       ? {
@@ -705,6 +726,20 @@ export async function reviewAndSaveGeneratedPage(options: {
     ...(options.assertOwnership ? { assertOwnership: options.assertOwnership } : {})
   });
   const { draft, revision, report: qualityReport } = outcome;
+
+  const pageContext: PriorPageContext = {
+    index: options.draft.index,
+    title: draft.title,
+    markdown: draft.markdown,
+    summary: draft.summary
+  };
+  if (options.deferPublication) {
+    return {
+      page: pageContext,
+      candidate: { draft, qualityReport },
+      ...(outcome.repairedChapterBrief ? { repairedChapterBrief: outcome.repairedChapterBrief } : {})
+    };
+  }
 
   if (!qualityReport.approved) {
     // Page-level failure isolation: keep the best draft with its honest
@@ -736,12 +771,7 @@ export async function reviewAndSaveGeneratedPage(options: {
   // caller's brief was never written to — so a page that shipped its pre-repair
   // prose leaves the chapter exactly as it found it.
   const savedContext: SavedGeneratedPage = {
-    page: {
-      index: options.draft.index,
-      title: draft.title,
-      markdown: draft.markdown,
-      summary: draft.summary
-    },
+    page: pageContext,
     ...(outcome.repairedChapterBrief ? { repairedChapterBrief: outcome.repairedChapterBrief } : {})
   };
 

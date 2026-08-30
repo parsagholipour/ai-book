@@ -182,7 +182,8 @@ describe("mobile project chat book replan", () => {
     // the request was understood or dropped.
     expect(proposalBody.reply.metadata.editProposal).toMatchObject({
       kind: "book_replan",
-      summary: "Rebuild as a new 3-page copy without illustrations",
+      summary:
+        "Rebuild as a new 3-page copy without illustrations: It's too much talking. I think we should make it 3 pages without illustrations",
       // The 12-page illustrated book quotes 851; this is the book asked for.
       credits: 689
     });
@@ -277,6 +278,7 @@ describe("mobile project chat book replan", () => {
     expect(mockPrisma.bookEditOperation.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
+          sourceProjectId: "project-1",
           classifier: expect.objectContaining({
             kind: "book_replan",
             targetLanguage: "en"

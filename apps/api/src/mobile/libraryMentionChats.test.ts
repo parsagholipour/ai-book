@@ -17,6 +17,7 @@ import {
   mockPrisma,
   projectRecord,
   resetMobileHarness,
+  state,
   teardownMobileHarness
 } from "./testing/mobileApiHarness.js";
 
@@ -242,7 +243,7 @@ describe("character mentions in the finished-book chat", () => {
   beforeEach(resetMobileHarness);
   afterEach(teardownMobileHarness);
 
-  it("carries the sheets on the stored request but never the visible transcript", async () => {
+  it("keeps text-edit proposal, operation and payload instructions identical while carrying sheets separately", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.project.findFirst.mockResolvedValue(
       projectRecord({
@@ -290,10 +291,14 @@ describe("character mentions in the finished-book chat", () => {
     expect(confirm.statusCode).toBe(200);
     const queued = vi.mocked(enqueueGenerationJob).mock.calls.at(-1)![0];
     expect(queued.type).toBe("APPLY_BOOK_EDIT");
-    const request = queued.payload.request as string;
-    expect(request.startsWith("Rewrite the whole book so @Luna is the main character.")).toBe(true);
-    expect(request).toContain("Mentioned character profiles");
-    expect(request).toContain("night-flying");
+    const approvedInstruction = proposalBody.reply.metadata.intent.editInstruction;
+    const operation = state.bookEditOperations.at(-1);
+    expect(operation?.editInstruction).toBe(approvedInstruction);
+    expect(queued.payload.editInstruction).toBe(approvedInstruction);
+    expect(operation?.characterContext).toContain("night-flying");
+    expect(queued.payload.characterContext).toBe(operation?.characterContext);
+    expect(queued.payload.request).toBe("Rewrite the whole book so @Luna is the main character.");
+    expect(String(queued.payload.editInstruction)).not.toContain("night-flying");
     await app.close();
   });
 
@@ -359,6 +364,150 @@ describe("character mentions in the finished-book chat", () => {
     expect(response.json().reply.metadata.pendingEdit.characterContext).not.toContain("@Bram");
     const userMessage = response.json().messages.find((message: { role: string }) => message.role === "user");
     expect(userMessage.metadata.characters).toEqual([{ id: "char-1", name: "Luna" }]);
+    await app.close();
+  });
+
+  it("keeps continuation proposal, operation and payload instructions identical while carrying sheets separately", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "COMPLETE",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord(),
+        pages: generatedPages()
+      })
+    );
+    mockPrisma.libraryCharacter.findMany.mockResolvedValue([libraryCharacterRow()]);
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-continue", type: "CONTINUE_BOOK" }));
+    const app = await buildMobileApp();
+
+    const proposal = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: {
+        message: "Continue the story with one chapter about @Luna finding home.",
+        mentionedCharacterIds: ["char-1"]
+      }
+    });
+    const proposalBody = proposal.json();
+    const confirm = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/proposals/apply",
+      headers: bearer("token-a"),
+      payload: { proposalId: proposalBody.reply.metadata.editProposal.id }
+    });
+
+    expect(confirm.statusCode).toBe(200);
+    const approvedInstruction = proposalBody.reply.metadata.intent.editInstruction;
+    const operation = state.bookEditOperations.at(-1);
+    const queued = vi.mocked(enqueueGenerationJob).mock.calls.at(-1)![0];
+    expect(queued.type).toBe("CONTINUE_BOOK");
+    expect(operation?.editInstruction).toBe(approvedInstruction);
+    expect(queued.payload.editInstruction).toBe(approvedInstruction);
+    expect(queued.payload.characterContext).toBe(operation?.characterContext);
+    expect(String(queued.payload.editInstruction)).not.toContain("night-flying");
+    await app.close();
+  });
+
+  it("keeps structural proposal, operation and payload instructions identical while carrying sheets separately", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "COMPLETE",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord(),
+        pages: generatedPages()
+      })
+    );
+    mockPrisma.libraryCharacter.findMany.mockResolvedValue([libraryCharacterRow()]);
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-structural", type: "APPLY_BOOK_EDIT" }));
+    const app = await buildMobileApp();
+
+    const proposal = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: {
+        message: "Add one page at the end about @Luna finding home.",
+        mentionedCharacterIds: ["char-1"]
+      }
+    });
+    const proposalBody = proposal.json();
+    const confirm = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/proposals/apply",
+      headers: bearer("token-a"),
+      payload: { proposalId: proposalBody.reply.metadata.editProposal.id }
+    });
+
+    expect(confirm.statusCode).toBe(200);
+    const approvedInstruction = proposalBody.reply.metadata.intent.editInstruction;
+    const operation = state.bookEditOperations.at(-1);
+    const queued = vi.mocked(enqueueGenerationJob).mock.calls.at(-1)![0];
+    expect(operation?.kind).toBe("RESTRUCTURE_PAGES");
+    expect(operation?.editInstruction).toBe(approvedInstruction);
+    expect(queued.payload.editInstruction).toBe(approvedInstruction);
+    expect(queued.payload.characterContext).toBe(operation?.characterContext);
+    expect(String(queued.payload.editInstruction)).not.toContain("night-flying");
+    await app.close();
+  });
+
+  it("keeps replan proposal, operation and payload instructions identical while carrying sheets separately", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "COMPLETE",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord(),
+        pages: generatedPages()
+      })
+    );
+    mockPrisma.libraryCharacter.findMany.mockResolvedValue([libraryCharacterRow()]);
+    mockPrisma.mobileCreationOutput.findFirst.mockResolvedValueOnce({
+      id: "output-source",
+      draftId: "draft-1",
+      projectId: "project-1",
+      title: "Owned Book",
+      sequence: 1,
+      createdAt: new Date("2026-06-15T12:00:00.000Z"),
+      updatedAt: new Date("2026-06-15T12:00:00.000Z"),
+      draft: creationDraftRecord({ id: "draft-1", createdProjectId: "project-1", outputs: [] })
+    });
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(
+      jobRecord({ id: "job-replan", projectId: "project-copy", type: "REPLAN_BOOK" })
+    );
+    const app = await buildMobileApp();
+
+    const proposal = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: {
+        message: "Change the character of rabbit with @Luna.",
+        mentionedCharacterIds: ["char-1"]
+      }
+    });
+    const proposalBody = proposal.json();
+    const confirm = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/proposals/apply",
+      headers: bearer("token-a"),
+      payload: { proposalId: proposalBody.reply.metadata.editProposal.id }
+    });
+
+    expect(confirm.statusCode).toBe(200);
+    const approvedInstruction = proposalBody.reply.metadata.intent.editInstruction;
+    const operation = state.bookEditOperations.at(-1);
+    const queued = vi.mocked(enqueueGenerationJob).mock.calls.at(-1)![0];
+    expect(queued.type).toBe("REPLAN_BOOK");
+    expect(operation?.editInstruction).toBe(approvedInstruction);
+    expect(queued.payload.editInstruction).toBe(approvedInstruction);
+    expect(queued.payload.characterContext).toBe(operation?.characterContext);
+    expect(String(queued.payload.editInstruction)).not.toContain("night-flying");
     await app.close();
   });
 });

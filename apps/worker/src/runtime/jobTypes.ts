@@ -58,6 +58,22 @@ export function isUnownedTextEditDeliveryError(error: unknown): boolean {
 }
 
 /**
+ * A regenerated-book delivery either waited out or lost the replan operation
+ * lease. Another delivery owns the shared generation job and edit settlement,
+ * so this invocation may not complete, fail or refund either durable row.
+ */
+export class UnownedReplanDeliveryError extends Error {
+  constructor() {
+    super("Replan generation no longer owns the delivery");
+    this.name = "UnownedReplanDeliveryError";
+  }
+}
+
+export function isUnownedReplanDeliveryError(error: unknown): boolean {
+  return error instanceof UnownedReplanDeliveryError;
+}
+
+/**
  * Drafting failed and the revert did not put the book back, so the shifted
  * manuscript is still there with its stamp. `processJob` must not `markFailed`:
  * that would refund the ACTIVE operation, clear its lease and restore COMPLETE
@@ -123,10 +139,18 @@ export type JobCompletion = {
    * must not make Bull report that already-delivered work as failed.
    */
   durableCompletionCommitted?: boolean;
+  /** The manuscript transaction also settled the job's paid lifecycle. */
+  lifecycleCompletionCommitted?: boolean;
   /**
    * Terminalize this durable job without settling its shared attempt or edit.
    * The successor preserves that scope and owns its eventual success/failure.
    */
   lifecycleSettlement?: JobLifecycleSettlement;
+  /**
+   * A post-completion hook owns replayable delivery work. If it fails, let
+   * Bull retry the already-COMPLETED job; the completed-delivery path invokes
+   * the hook again without reopening or failing the durable lifecycle.
+   */
+  retryFollowUpOnRedelivery?: boolean;
   afterJobCompleted?: () => Promise<void>;
 };

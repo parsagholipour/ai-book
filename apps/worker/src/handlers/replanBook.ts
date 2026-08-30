@@ -1,43 +1,39 @@
 import {
   getProjectOrThrow,
-  invalidateProjectExports,
   nextPlanVersion,
-  parseChapterBrief,
   planInputSnapshot,
-  planMediaSettingsSnapshot,
-  strategyForInput,
-  styleExcerptsForPage,
-  toPriorPageContext
+  strategyForInput
 } from "../generation/bookHelpers.js";
-import { loadContinuityNotes } from "../generation/generationContext.js";
-import {
-  reviewPageWithQualityGates,
-  revisePageDraftWithRestart,
-  runPageQualityLoop
-} from "../generation/pageReview.js";
-import { type QualityGateContext } from "../generation/qualityEnrichment.js";
 import { inputForPlanVersion, inputWithMessageMediaPreferences, inputWithMobileSourceMaterial } from "../generation/projectInput.js";
+import {
+  authoritativeReplanMessage,
+  resolveEditPromptContext,
+  splitLegacyCharacterContext
+} from "../generation/editOperationContext.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
-import { enqueueWorkerJob } from "../runtime/dispatch.js";
+import { canEnqueueProjectWork, dispatchWorkerGenerationJob } from "../runtime/dispatch.js";
+import { currentGenerationAttemptId } from "../runtime/generationAttemptContext.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
-import { seedProjectStoryState } from "../generation/storyStateStore.js";
+import { UnownedReplanDeliveryError } from "../runtime/jobTypes.js";
 import { cleanTargetLanguage } from "../runtime/serialization.js";
 import {
-  applyExactReplacement,
+  acquireReplanStagingLeaseTx,
+  releaseReplanStagingLeaseTx,
+  renewReplanStagingLeaseTx,
+  type ReplanStagingLeaseOperation,
+  startReplanEditLeaseHeartbeat
+} from "../generation/replanEditLease.js";
+import {
   bookPlanSchema,
   createProviders,
   inputWithReplanSettings,
-  mediaSettingsRowWriteback,
-  type BookGenerationStrategy,
+  jsonPayloadToRecord,
   type BookPlan,
-  type CreateProjectInput,
-  type ExactReplacement,
-  type PageDraft,
-  type PageQualityReport,
-  type ProviderSet
+  type CreateProjectInput
 } from "@book-maker/core";
-import { Prisma, prisma } from "@book-maker/db";
+import { PAGE_RESTRUCTURE_TRANSACTION_OPTIONS, Prisma, prisma } from "@book-maker/db";
+import { randomUUID } from "node:crypto";
 import type { ReplanBookJob } from "../runtime/jobPayloads.js";
 
 /**
@@ -45,382 +41,413 @@ import type { ReplanBookJob } from "../runtime/jobPayloads.js";
  */
 
 export async function replanBook(job: ReplanBookJob) {
-  const { projectId, operationId, request, planId, sourceProjectId, sourcePlanId, targetLanguage, targetPages } =
+  const { projectId, operationId, planId, sourceProjectId: queuedSourceProjectId, sourcePlanId, targetLanguage, targetPages } =
     job.data;
   const { generationJobId } = job.data;
-  await prisma.bookEditOperation.update({ where: { id: operationId }, data: { status: "ACTIVE" } });
-  await prisma.project.update({ where: { id: projectId }, data: { status: "EDITING" } });
-  await advanceJobStep(generationJobId, "revise", 30, "Rebuilding book plan");
-
-  const targetProject = await getProjectOrThrow(projectId);
-  const sourceProject = sourceProjectId && sourceProjectId !== projectId
-    ? await getProjectOrThrow(sourceProjectId)
-    : targetProject;
-  const currentPlanId = sourcePlanId ?? planId ?? sourceProject.currentPlanId;
-  if (!currentPlanId) {
-    throw new Error("Cannot replan without a current plan");
-  }
-  const planVersion = await prisma.planVersion.findUnique({ where: { id: currentPlanId }, include: { project: true } });
-  if (!planVersion) {
-    throw new Error("Current plan not found");
-  }
-  const requestedLanguage = cleanTargetLanguage(targetLanguage);
-  // The plan is revised from the *source* book's input snapshot, so a replan
-  // that resizes the book has to say so here: left to the snapshot the planner
-  // is told to hit the old length, and normalizePlanPageTargets then pads the
-  // revised chapters back up to it even when the model wrote fewer.
-  //
-  // Only an explicit count overrides it: for an in-place replan the project row
-  // holds the length the book actually came out at, which is not what this plan
-  // was written against.
-  const requestedPages =
-    typeof targetPages === "number" && Number.isInteger(targetPages) && targetPages > 0 ? targetPages : null;
-  const sourceInput = inputWithMessageMediaPreferences(inputForPlanVersion(sourceProject, planVersion.inputSnapshot), request);
-  // Through the shared applier, so a resize also lands in
-  // `mediaSettings.mobile.targetPages` — the number the app's settings sheet
-  // reads — rather than only on the top-level field.
-  const input = inputWithReplanSettings(
-    {
-      ...sourceInput,
-      ...(requestedLanguage ? { language: requestedLanguage } : {})
-    },
-    requestedPages === null ? null : { targetPages: requestedPages }
-  );
-  const strategy = strategyForInput(input);
-  const providers = createLoggedProviders(job, createProviders(config, input), input);
-  const currentPlan = bookPlanSchema.parse(planVersion.planningPackage);
-  const revised = await strategy.revisePlan({
-    currentPlan,
-    userMessage: request,
-    textModel: providers.text,
-    input: inputWithMobileSourceMaterial(input),
-    targetPages: input.targetPages,
-    temperature: input.temperature,
-    language: input.language,
-    toneProfile: input.mediaSettings.toneProfile
+  let stagingOwnerToken = randomUUID();
+  let operation = await claimReplanStaging({ projectId, operationId, generationJobId, ownerToken: stagingOwnerToken });
+  const { editInstruction, requestContext, characterContext } = resolveEditPromptContext(operation, job.data);
+  const legacyRequest =
+    splitLegacyCharacterContext(operation.request).text ||
+    splitLegacyCharacterContext(job.data.request).text ||
+    editInstruction;
+  const sourceProjectId = resolveReplanSourceProjectId({
+    targetProjectId: projectId,
+    operationProjectId: operation.projectId,
+    durableSourceProjectId: operation.sourceProjectId,
+    queuedSourceProjectId
   });
-  const version = await nextPlanVersion(projectId);
-  const priorMessages = Array.isArray(planVersion.messages) ? planVersion.messages : [];
-  await advanceJobStep(generationJobId, "save", 65, "Saving approved plan");
-
-  let newPlanId = "";
-  await prisma.$transaction(async (tx) => {
-    if (sourceProject.id === targetProject.id) {
-      await tx.planVersion.updateMany({
-        where: { projectId, id: { not: currentPlanId } },
-        data: { status: "SUPERSEDED" }
-      });
-      await tx.planVersion.update({ where: { id: currentPlanId }, data: { status: "SUPERSEDED" } });
-    } else {
-      await tx.planVersion.updateMany({
-        where: { projectId },
-        data: { status: "SUPERSEDED" }
-      });
-    }
-    const newPlan = await tx.planVersion.create({
-      data: {
-        projectId,
-        version,
-        status: "APPROVED",
-        approvedAt: new Date(),
-        planningPackage: revised,
-        inputSnapshot: planInputSnapshot(input),
-        messages: [...priorMessages, { role: "user", content: request, at: new Date().toISOString(), source: "book_replan" }]
+  let stagedPlanId = stagedReplanId(operation.classifier);
+  if (!stagedPlanId) {
+    const heartbeat = startReplanEditLeaseHeartbeat(operationId, stagingOwnerToken);
+    try {
+      await advanceJobStep(generationJobId, "revise", 30, "Rebuilding book plan");
+      const targetProject = await getProjectOrThrow(projectId);
+      const sourceProject = sourceProjectId && sourceProjectId !== projectId
+        ? await getProjectOrThrow(sourceProjectId)
+        : targetProject;
+      const currentPlanId = sourcePlanId ?? planId ?? sourceProject.currentPlanId;
+      if (!currentPlanId) {
+        throw new Error("Cannot replan without a current plan");
       }
-    });
-    newPlanId = newPlan.id;
-    // Merged over the live row, never a wholesale replacement: the row owns
-    // presentation preferences (and, for a replan copy, its provenance
-    // markers) that the plan snapshot has stripped or never had.
-    const liveProject = await tx.project.findUnique({
-      where: { id: projectId },
-      select: { mediaSettings: true }
-    });
-    await tx.project.update({
-      where: { id: projectId },
-      data: {
-        currentPlanId: newPlan.id,
-        status: "GENERATING",
-        title: revised.title,
-        language: input.language,
-        // Written alongside the snapshot the plan was made from, so the row a
-        // later edit prices and replans off cannot drift from the book on disk.
+      const planVersion = await prisma.planVersion.findUnique({ where: { id: currentPlanId }, include: { project: true } });
+      if (!planVersion) {
+        throw new Error("Current plan not found");
+      }
+      const requestedLanguage = cleanTargetLanguage(targetLanguage);
+      // The plan is revised from the *source* book's input snapshot, so a replan
+      // that resizes the book has to say so here: left to the snapshot the planner
+      // is told to hit the old length, and normalizePlanPageTargets then pads the
+      // revised chapters back up to it even when the model wrote fewer.
+      const requestedPages =
+        typeof targetPages === "number" && Number.isInteger(targetPages) && targetPages > 0 ? targetPages : null;
+      const sourceInput = inputWithMessageMediaPreferences(
+        inputForPlanVersion(sourceProject, planVersion.inputSnapshot),
+        editInstruction
+      );
+      const input = inputWithReplanSettings(
+        {
+          ...sourceInput,
+          ...(requestedLanguage ? { language: requestedLanguage } : {})
+        },
+        requestedPages === null ? null : { targetPages: requestedPages }
+      );
+      const strategy = strategyForInput(input);
+      const providers = createLoggedProviders(job, createProviders(config, input), input);
+      const currentPlan = bookPlanSchema.parse(planVersion.planningPackage);
+
+      // The initial claim is intentionally repeated at the last possible point
+      // before spending a provider call. Stop takes the same Project -> Job ->
+      // Operation order, so a committed stop makes this assertion stand down.
+      operation = await assertReplanStaging({
+        projectId,
+        operationId,
+        generationJobId,
+        ownerToken: stagingOwnerToken
+      });
+      const revised = await strategy.revisePlan({
+        currentPlan,
+        userMessage: authoritativeReplanMessage(editInstruction, requestContext, characterContext),
+        textModel: providers.text,
+        input: inputWithMobileSourceMaterial(input),
         targetPages: input.targetPages,
-        mediaSettings: mediaSettingsRowWriteback(
-          liveProject?.mediaSettings,
-          planMediaSettingsSnapshot(input) as Record<string, unknown>
-        ) as Prisma.InputJsonValue
-      }
-    });
-    await replaceProjectPlanReferenceRecords(tx, projectId, revised);
-  });
+        temperature: input.temperature,
+        language: input.language,
+        toneProfile: input.mediaSettings.toneProfile
+      });
+      const priorMessages = Array.isArray(planVersion.messages) ? planVersion.messages : [];
+      stagedPlanId = await stageOwnedReplan({
+        projectId,
+        operationId,
+        generationJobId,
+        ownerToken: stagingOwnerToken,
+        editInstruction,
+        sourceProjectId,
+        currentPlanId,
+        input,
+        revised,
+        priorMessages
+      });
+    } finally {
+      await heartbeat.stop();
+    }
 
-  await seedProjectStoryState(projectId, revised.promises ?? []);
-  await invalidateProjectExports(projectId);
-  await advanceJobStep(generationJobId, "generate", 85, "Queueing regenerated book");
-  const generateJob = await enqueueWorkerJob({
-    projectId,
-    type: "GENERATE_BOOK",
-    dedupeKey: `generate-book:${projectId}:${newPlanId}`,
-    payload: {
-      planId: newPlanId,
-      replanOperationId: operationId,
-      billingLedgerEntryId: job.data.billingLedgerEntryId
-    }
-  });
-  if (!generateJob) {
-    throw new Error("Could not queue regenerated book");
+    // Staging deliberately releases the provider-call lease. A crash after the
+    // DRAFT commit can therefore replay immediately, while this delivery must
+    // re-claim before it is allowed to create/link the successor.
+    stagingOwnerToken = randomUUID();
+    operation = await claimReplanStaging({ projectId, operationId, generationJobId, ownerToken: stagingOwnerToken });
+    stagedPlanId = stagedReplanId(operation.classifier);
+    if (!stagedPlanId) throw new UnownedReplanDeliveryError();
   }
-  await prisma.bookEditOperation.update({
-    where: { id: operationId },
-    data: {
-      status: "APPLIED",
-      generationJobId: generateJob.id,
-      appliedAt: new Date()
-    }
-  });
+
+  const enqueueHeartbeat = startReplanEditLeaseHeartbeat(operationId, stagingOwnerToken);
+  try {
+    await advanceJobStep(generationJobId, "generate", 85, "Queueing regenerated book");
+    await enqueueStagedReplan(
+      job,
+      stagedPlanId,
+      editInstruction,
+      legacyRequest,
+      sourceProjectId,
+      stagingOwnerToken,
+      characterContext
+    );
+  } finally {
+    await enqueueHeartbeat.stop();
+  }
 }
 
-export async function replaceProjectPlanReferenceRecords(
-  tx: Prisma.TransactionClient,
-  projectId: string,
-  plan: BookPlan
+async function enqueueStagedReplan(
+  job: ReplanBookJob,
+  planId: string,
+  editInstruction: string,
+  legacyRequest: string,
+  sourceProjectId: string,
+  ownerToken: string,
+  characterContext?: string | undefined
 ): Promise<void> {
-  await tx.character.deleteMany({ where: { projectId } });
-  await tx.location.deleteMany({ where: { projectId } });
-  await tx.researchSource.deleteMany({ where: { projectId } });
-
-  if (plan.characters.length > 0) {
-    await tx.character.createMany({
-      data: plan.characters.map((character) => ({
-        projectId,
-        name: character.name,
-        role: character.role,
-        description: character.description,
-        traits: character.traits,
-        visualRules: character.visualRules
-      }))
-    });
+  const { projectId, operationId, generationJobId } = job.data;
+  // The same refusal `enqueueWorkerJob` makes: a FAILED project takes no new
+  // work, and a durable row created under one would only be republished by
+  // reconciliation forever.
+  if (!(await canEnqueueProjectWork(projectId))) {
+    throw new UnownedReplanDeliveryError();
   }
-
-  if (plan.locations.length > 0) {
-    await tx.location.createMany({
-      data: plan.locations.map((location) => ({
-        projectId,
-        name: location.name,
-        description: location.description,
-        rules: location.rules
-      }))
-    });
-  }
-
-  if (plan.researchNotes.length > 0) {
-    await tx.researchSource.createMany({
-      data: plan.researchNotes.map((source) => ({
-        projectId,
-        query: source.query,
-        title: source.title,
-        url: source.url ?? null,
-        summary: source.summary,
-        publishedAt: source.publishedAt ? new Date(source.publishedAt) : null
-      }))
-    });
-  }
-}
-
-export function locallyPatchedPage(
-  page: { title: string; markdown: string; summary: string; imagePrompt: string | null; qualityReport: unknown },
-  replacement: ExactReplacement
-): PageDraft & { qualityReport: PageQualityReport } {
-  const markdown = applyExactReplacement(page.markdown, replacement);
-  return {
-    title: applyExactReplacement(page.title, replacement),
-    markdown,
-    summary: applyExactReplacement(page.summary, replacement),
-    imagePrompt: page.imagePrompt ?? undefined,
-    continuityNotes: [],
-    qualityReport: {
-      approved: true,
-      score: 90,
-      issues: [],
-      requiredRevisions: [],
-      notes: "Applied exact user-requested text replacement.",
-      groundedOk: true,
-      unsupportedClaims: [],
-      checks: {
-        placeholderFree: true,
-        promptLeakFree: true,
-        titleClean: true,
-        repetitionOk: true,
-        progressionOk: true,
-        styleNatural: true
-      }
-    }
-  };
-}
-
-export async function rewritePageForUserRequest(options: {
-  projectId: string;
-  page: {
-    id: string;
-    index: number;
-    title: string;
-    markdown: string;
-    summary: string;
-    imagePrompt: string | null;
-    chapterId: string | null;
-    chapter?: { index: number; productionBrief: unknown } | null;
-  };
-  input: CreateProjectInput;
-  plan: BookPlan;
-  strategy: BookGenerationStrategy;
-  providers: ProviderSet;
-  request: string;
-  /**
-   * The edit's own quality context, loaded once by `applyBookEdit` and handed
-   * to every page it touches. Loaded per page, a ten-page edit read the
-   * operator's gates ten times, and a Quality-tab save landing mid-edit ran one
-   * edit under two different configurations — the same split a compile fixed by
-   * hoisting one context above its passes.
-   */
-  quality: QualityGateContext;
-  generationJobId?: string | undefined;
-  /**
-   * Called as the page moves between writing and reading back, so the caller
-   * can report which of the two the reader is waiting on. Rewriting a page is
-   * two long model calls, and one label over both of them reads as a stall.
-   */
-  onPhase?: ((phase: "draft" | "review") => Promise<void>) | undefined;
-}): Promise<PageDraft & { qualityReport: PageQualityReport }> {
-  const previousPages = await prisma.page.findMany({
-    where: { projectId: options.projectId, index: { lt: options.page.index }, status: "COMPLETED" },
-    orderBy: { index: "desc" },
-    take: 18
-  });
-  const priorPageContext = previousPages.reverse().map(toPriorPageContext);
-  // Whole book: a replan reasons about the manuscript as it stands.
-  const continuityNotes = await loadContinuityNotes(options.projectId, { beforePageIndex: null });
-  const chapterPlan = options.plan.chapters.find((chapter) => chapter.index === options.page.chapter?.index);
-  const chapterBrief = parseChapterBrief(options.page.chapter?.productionBrief);
-  const pageBrief = chapterBrief?.pages.find((brief) => brief.pageIndex === options.page.index);
-  // The same style lock a generated page reviews against. A chat rewrite lands
-  // mid-book among pages that were excerpt-anchored at generation, and this
-  // path used to carry no excerpts and never run the style auditor — the one
-  // guard that catches register drift the general reviewer approves, missing
-  // from exactly the request ("make page 12 more dramatic") most likely to
-  // produce it. That request now travels with the lock, because it is also the
-  // one request against which a register shift is the *point*.
-  const quality = options.quality;
-  const styleExcerpts = await styleExcerptsForPage({
-    projectId: options.projectId,
-    pageIndex: options.page.index,
-    recencyPages: priorPageContext,
-    input: options.input,
-    quality
-  });
-  const report: PageQualityReport = {
-    approved: false,
-    score: 50,
-    issues: [`User requested this page edit: ${options.request}`],
-    requiredRevisions: [
-      "Revise the existing page to satisfy the user's requested edit.",
-      "Keep the same page role and overall book structure unless the request explicitly requires otherwise.",
-      "Return a complete replacement page draft, not a diff."
-    ],
-    notes: "User-requested book edit.",
-    groundedOk: true,
-    unsupportedClaims: [],
-    checks: {
-      placeholderFree: true,
-      promptLeakFree: true,
-      titleClean: true,
-      repetitionOk: true,
-      progressionOk: true,
-      styleNatural: true
-    }
-  };
-  const draft = await revisePageDraftWithRestart({
-    strategy: options.strategy,
-    generationJobId: options.generationJobId,
-    progress: 62,
-    context: `User edit page ${options.page.index}`,
-    reviseOptions: {
-      input: options.input,
-      plan: options.plan,
-      chapter: chapterPlan,
-      chapterBrief,
-      pageBrief,
-      pageIndex: options.page.index,
-      draft: {
-        title: options.page.title,
-        markdown: options.page.markdown,
-        summary: options.page.summary,
-        imagePrompt: options.page.imagePrompt ?? undefined,
-        continuityNotes: []
-      },
-      report,
-      previousPages: priorPageContext,
-      continuityNotes,
-      textModel: options.providers.text,
-      ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
+  const successorJobId = await linkReplanSuccessor({
+    projectId,
+    operationId,
+    predecessorJobId: generationJobId,
+    ownerToken,
+    planId,
+    editInstruction,
+    sourceProjectId,
+    payload: {
+      planId,
+      replanOperationId: operationId,
+      sourceProjectId,
+      editInstruction,
+      request: legacyRequest,
+      ...(characterContext ? { characterContext } : {}),
+      ...(job.data.billingLedgerEntryId ? { billingLedgerEntryId: job.data.billingLedgerEntryId } : {})
     }
   });
-  await options.onPhase?.("review");
-  const initialReport = await reviewPageWithQualityGates({
-    strategy: options.strategy,
-    quality,
-    reviewOptions: {
-      input: options.input,
-      plan: options.plan,
-      chapter: chapterPlan,
-      chapterBrief,
-      pageBrief,
-      pageIndex: options.page.index,
-      draft,
-      previousPages: priorPageContext,
-      continuityNotes,
-      textModel: options.providers.text,
-      ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
-    }
-  });
-  // A rejected rewrite used to be stored as-is with its report ignored. Give
-  // it the same bounded revise → re-review loop a generated page gets, with a
-  // smaller budget — the requested edit is already in the draft, so revisions
-  // must repair quality without undoing it, which `userRequest` pins down. An
-  // approved rewrite goes through the same call rather than returning early:
-  // the loop is what audits an approved report, this one included, and it
-  // returns it untouched when the audit is clean.
-  const outcome = await runPageQualityLoop({
-    projectId: options.projectId,
-    strategy: options.strategy,
-    input: options.input,
-    plan: options.plan,
-    chapter: chapterPlan,
-    chapterBrief,
-    pageBrief,
-    pageIndex: options.page.index,
-    draft,
-    report: initialReport,
-    previousPages: priorPageContext,
-    continuityNotes,
-    textModel: options.providers.text,
-    generationJobId: options.generationJobId,
-    maxCandidates: USER_EDIT_MAX_CANDIDATES,
-    repairBrief: false,
-    reviseContext: `User edit page ${options.page.index}`,
-    reviseProgress: 62,
-    quality,
-    userRequest: options.request,
-    ...(styleExcerpts.length > 0 ? { styleExcerpts } : {}),
-    onRewrite: async () => {
-      await options.onPhase?.("draft");
-    }
-  });
-  return { ...outcome.draft, qualityReport: outcome.report };
+  // Published only once the linkage it will be judged on is committed. The
+  // successor's own pre-ACTIVE guard proves the operation names *this* row, so
+  // a job on Redis ahead of that write is one a worker reads as an impostor,
+  // cancels and refunds — and the linkage behind it then finds no open row left
+  // to claim, wedging the replan on a dedupe key nothing can reuse. A row
+  // committed but not yet published is the state
+  // `reconcileUndispatchedWorkerJobs` exists to finish.
+  await dispatchWorkerGenerationJob(successorJobId);
 }
 
 /**
- * Smaller than a generated page's budget: the edit was priced as one rewrite,
- * so a stubborn page gets two extra attempts, not six.
+ * Attempt-scoped identity for the book a staged replan regenerates.
+ *
+ * Mirrors `enqueueWorkerJob`'s own key scoping: a paid retry is a new attempt
+ * and stages its own successor, while redelivery within one attempt collapses
+ * onto the row a previous delivery already created and linked.
  */
-const USER_EDIT_MAX_CANDIDATES = 3;
+function replanSuccessorDedupeKey(projectId: string, planId: string, attemptId: string | null): string {
+  const base = `generate-book:${projectId}:${planId}`;
+  return attemptId ? `${base}:attempt:${attemptId}` : base;
+}
+
+class ReplanStagingClaimLostError extends Error {}
+
+async function claimReplanStaging(options: {
+  projectId: string;
+  operationId: string;
+  generationJobId: string;
+  ownerToken: string;
+}): Promise<ReplanStagingLeaseOperation> {
+  return replanStagingTransaction(async (tx) => {
+    await lockReplanProjectAndJob(tx, options);
+    const operation = await acquireReplanStagingLeaseTx(tx, options);
+    if (!operation) throw new ReplanStagingClaimLostError();
+    await tx.project.update({ where: { id: options.projectId }, data: { status: "EDITING" } });
+    return operation;
+  });
+}
+
+async function assertReplanStaging(options: {
+  projectId: string;
+  operationId: string;
+  generationJobId: string;
+  ownerToken: string;
+}): Promise<ReplanStagingLeaseOperation> {
+  return replanStagingTransaction(async (tx) => {
+    await lockReplanProjectAndJob(tx, options);
+    return renewAndLoadStagingOperation(tx, options);
+  });
+}
+
+async function stageOwnedReplan(options: {
+  projectId: string;
+  operationId: string;
+  generationJobId: string;
+  ownerToken: string;
+  editInstruction: string;
+  sourceProjectId: string;
+  currentPlanId: string;
+  input: CreateProjectInput;
+  revised: BookPlan;
+  priorMessages: unknown[];
+}): Promise<string> {
+  return replanStagingTransaction(async (tx) => {
+    await lockReplanProjectAndJob(tx, options);
+    const operation = await renewAndLoadStagingOperation(tx, options);
+    const version = await nextPlanVersion(options.projectId, tx);
+    const newPlan = await tx.planVersion.create({
+      data: {
+        projectId: options.projectId,
+        version,
+        status: "DRAFT",
+        planningPackage: options.revised,
+        inputSnapshot: planInputSnapshot(options.input),
+        messages: [
+          ...options.priorMessages,
+          { role: "user", content: options.editInstruction, at: new Date().toISOString(), source: "book_replan" }
+        ] as Prisma.InputJsonValue
+      }
+    });
+    const staged = await tx.bookEditOperation.updateMany({
+      where: {
+        id: options.operationId,
+        generationJobId: options.generationJobId,
+        status: "ACTIVE",
+        structuralLeaseToken: options.ownerToken,
+        structuralLeaseCompletedAt: null
+      },
+      data: {
+        editInstruction: options.editInstruction,
+        sourceProjectId: options.sourceProjectId,
+        classifier: {
+          ...jsonPayloadToRecord(operation.classifier),
+          replanStagedPlanId: newPlan.id,
+          replanSourcePlanId: options.currentPlanId
+        } as Prisma.InputJsonValue
+      }
+    });
+    if (staged.count !== 1) throw new ReplanStagingClaimLostError();
+    if (!(await releaseReplanStagingLeaseTx(tx, options))) throw new ReplanStagingClaimLostError();
+    return newPlan.id;
+  });
+}
+
+/**
+ * Creates the successor row and the linkage that names it in one commit.
+ *
+ * The row is deliberately *not* created by `enqueueWorkerJob`: that helper
+ * publishes to Redis as part of creating the row, and this successor is only
+ * legible to a worker once the operation points at it. Creating it here keeps
+ * the two facts in one transaction, so no reconciliation sweep or rival
+ * delivery can ever observe an unlinked successor. Returns its id for the
+ * caller to publish after the commit.
+ */
+async function linkReplanSuccessor(options: {
+  projectId: string;
+  operationId: string;
+  predecessorJobId: string;
+  ownerToken: string;
+  planId: string;
+  editInstruction: string;
+  sourceProjectId: string;
+  payload: Record<string, unknown>;
+}): Promise<string> {
+  const attemptId = currentGenerationAttemptId();
+  const dedupeKey = replanSuccessorDedupeKey(options.projectId, options.planId, attemptId);
+  return replanStagingTransaction(async (tx) => {
+    await lockReplanProjectAndJob(tx, {
+      projectId: options.projectId,
+      generationJobId: options.predecessorJobId
+    });
+    const claimed = await tx.generationJob.upsert({
+      where: { dedupeKey },
+      create: {
+        projectId: options.projectId,
+        type: "GENERATE_BOOK",
+        status: "QUEUED",
+        progress: 0,
+        message: "Queued",
+        dedupeKey,
+        ...(attemptId ? { attemptId } : {}),
+        payload: options.payload as Prisma.InputJsonValue
+      },
+      update: {},
+      select: { id: true }
+    });
+    const successor = await tx.generationJob.updateMany({
+      where: {
+        id: claimed.id,
+        projectId: options.projectId,
+        type: "GENERATE_BOOK",
+        status: { in: ["QUEUED", "ACTIVE"] }
+      },
+      data: { dispatchAttempts: { increment: 0 } }
+    });
+    if (successor.count !== 1) throw new ReplanStagingClaimLostError();
+    const operation = await renewAndLoadStagingOperation(tx, {
+      operationId: options.operationId,
+      generationJobId: options.predecessorJobId,
+      ownerToken: options.ownerToken
+    });
+    if (stagedReplanId(operation.classifier) !== options.planId) throw new ReplanStagingClaimLostError();
+    const linked = await tx.bookEditOperation.updateMany({
+      where: {
+        id: options.operationId,
+        generationJobId: options.predecessorJobId,
+        status: "ACTIVE",
+        structuralLeaseToken: options.ownerToken,
+        structuralLeaseCompletedAt: null
+      },
+      data: {
+        generationJobId: claimed.id,
+        editInstruction: options.editInstruction,
+        sourceProjectId: options.sourceProjectId,
+        classifier: {
+          ...jsonPayloadToRecord(operation.classifier),
+          replanSuccessorJobId: claimed.id
+        } as Prisma.InputJsonValue
+      }
+    });
+    if (linked.count !== 1) throw new ReplanStagingClaimLostError();
+    if (
+      !(await releaseReplanStagingLeaseTx(tx, {
+        operationId: options.operationId,
+        generationJobId: claimed.id,
+        ownerToken: options.ownerToken
+      }))
+    ) {
+      throw new ReplanStagingClaimLostError();
+    }
+    return claimed.id;
+  });
+}
+
+async function lockReplanProjectAndJob(
+  tx: Prisma.TransactionClient,
+  options: { projectId: string; generationJobId: string }
+): Promise<void> {
+  await tx.project.update({
+    where: { id: options.projectId },
+    data: { contentRevision: { increment: 0 } }
+  });
+  const job = await tx.generationJob.updateMany({
+    where: {
+      id: options.generationJobId,
+      projectId: options.projectId,
+      type: "REPLAN_BOOK",
+      status: "ACTIVE"
+    },
+    data: { dispatchAttempts: { increment: 0 } }
+  });
+  if (job.count !== 1) throw new ReplanStagingClaimLostError();
+}
+
+async function renewAndLoadStagingOperation(
+  tx: Prisma.TransactionClient,
+  options: { operationId: string; generationJobId: string; ownerToken: string }
+): Promise<ReplanStagingLeaseOperation> {
+  const operation = await renewReplanStagingLeaseTx(tx, options);
+  if (!operation) throw new ReplanStagingClaimLostError();
+  return operation;
+}
+
+async function replanStagingTransaction<T>(run: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+  try {
+    return await prisma.$transaction(run, PAGE_RESTRUCTURE_TRANSACTION_OPTIONS);
+  } catch (error) {
+    if (error instanceof ReplanStagingClaimLostError) throw new UnownedReplanDeliveryError();
+    throw error;
+  }
+}
+
+function resolveReplanSourceProjectId(options: {
+  targetProjectId: string;
+  operationProjectId?: string | null | undefined;
+  durableSourceProjectId?: string | null | undefined;
+  queuedSourceProjectId?: string | undefined;
+}): string {
+  const durable = options.durableSourceProjectId?.trim();
+  if (durable) return durable;
+
+  // Replan-copy operations have always lived on the source project. Prefer
+  // that durable owner over a stale or reconstructed queue payload.
+  const operationOwner = options.operationProjectId?.trim();
+  if (operationOwner && operationOwner !== options.targetProjectId) return operationOwner;
+
+  const queued = options.queuedSourceProjectId?.trim();
+  if (queued && queued !== options.targetProjectId) return queued;
+
+  // Legacy in-place replans legitimately use the same project as source and
+  // target. Candidate generation separately refuses an empty source set, so a
+  // copy cannot silently turn this fallback into an empty comparison.
+  return operationOwner || queued || options.targetProjectId;
+}
+
+function stagedReplanId(classifier: unknown): string | null {
+  const value = jsonPayloadToRecord(classifier).replanStagedPlanId;
+  return typeof value === "string" && value.trim() ? value : null;
+}

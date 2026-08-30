@@ -16,6 +16,7 @@ describe("clarification budget", () => {
     confidence: 0.5,
     reasoning: "Who is Kaka and where should they appear?",
     assistantMessage: "Could you tell me a bit more about who Kaka is?",
+    editInstruction: "",
     clarification: "scope",
     pageIndexes: [],
     chapterIndex: null,
@@ -53,6 +54,14 @@ describe("clarification budget", () => {
     expect(spentBudget.parameters.safeParse(clarifyPayload).success).toBe(false);
     expect(
       spentBudget.parameters.safeParse({ ...clarifyPayload, action: "propose_edit", editTarget: "whole_book" }).success
+    ).toBe(false);
+    expect(
+      spentBudget.parameters.safeParse({
+        ...clarifyPayload,
+        action: "propose_edit",
+        editTarget: "whole_book",
+        editInstruction: "Add Kaka as a new character throughout the book."
+      }).success
     ).toBe(true);
   });
 

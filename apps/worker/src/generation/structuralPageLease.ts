@@ -1,5 +1,10 @@
 import { jsonRecord, parseStructuralApplication, type StructuralApplication } from "@book-maker/core";
 import { PAGE_RESTRUCTURE_TRANSACTION_OPTIONS, Prisma, prisma } from "@book-maker/db";
+import {
+  claimDurableEditCompletionTx,
+  settleDurableEditAttemptTx,
+  type DurableEditCompletionClaim
+} from "../runtime/durableEditCompletion.js";
 
 /** Long enough for a slow provider call; renewed in the background at one third. */
 export const STRUCTURAL_PAGE_LEASE_MS = 3 * 60_000;
@@ -270,12 +275,21 @@ class StructuralPageLeaseSettlementMissError extends Error {
  * operation without a revision cannot be recovered as a compile owner, while a
  * revision bump without its owner would leave the same publication generation
  * permanently anonymous.
+ *
+ * The job predicate is NULL-tolerant, like the insert publisher's
+ * (`publishDraftedInsertedPages`): `BookEditOperation.generationJobId` is
+ * nullable and Stop still walks the legacy shape by payload id, so a row that
+ * predates the relation would otherwise be fenced out of its own publication
+ * for good — rolled back and refunded on every delivery of a book whose pages
+ * are already shifted. It rejects only a row that names a *different* job.
  */
 export async function markStructuralPageLeaseApplied(options: {
   projectId: string;
   operationId: string;
   ownerToken: string;
   affectedPageIndexes: number[];
+  generationJobId: string;
+  attemptId?: string | undefined;
 }): Promise<number | null> {
   const pgIndexes = `{${options.affectedPageIndexes.join(",")}}`;
   let publicationRevision: number | null = null;
@@ -286,6 +300,17 @@ export async function markStructuralPageLeaseApplied(options: {
         data: { contentRevision: { increment: 1 } },
         select: { contentRevision: true }
       });
+      const durableCompletion: DurableEditCompletionClaim = {
+        generationJobId: options.generationJobId,
+        projectId: options.projectId,
+        operationId: options.operationId,
+        attemptId: options.attemptId,
+        type: "APPLY_BOOK_EDIT",
+        message: "Page structure updated"
+      };
+      if (!(await claimDurableEditCompletionTx(tx, durableCompletion))) {
+        throw new StructuralPageLeaseSettlementMissError();
+      }
       const rows = await tx.$queryRawUnsafe<{ id: string }[]>(
         `UPDATE "BookEditOperation"
            SET "status" = 'APPLIED',
@@ -300,15 +325,20 @@ export async function markStructuralPageLeaseApplied(options: {
            AND "structuralLeaseExpiresAt" > CURRENT_TIMESTAMP
            AND "structuralLeaseCompletedAt" IS NULL
            AND "status" = 'ACTIVE'
+           AND ("generationJobId" IS NULL OR "generationJobId" = $7)
          RETURNING "id"`,
         options.operationId,
         options.ownerToken,
         STRUCTURAL_PAGE_LEASE_MS,
         pgIndexes,
         published.contentRevision,
-        options.projectId
+        options.projectId,
+        options.generationJobId
       );
       if (rows.length !== 1) {
+        throw new StructuralPageLeaseSettlementMissError();
+      }
+      if (!(await settleDurableEditAttemptTx(tx, durableCompletion))) {
         throw new StructuralPageLeaseSettlementMissError();
       }
       publicationRevision = published.contentRevision;
@@ -422,8 +452,12 @@ export async function renewStructuralPageLeaseTx(
   tx: Prisma.TransactionClient,
   operationId: string,
   ownerToken: string
-): Promise<{ classifier: unknown; status: string } | null> {
-  const rows = await tx.$queryRawUnsafe<Array<{ classifier: unknown; status: string }>>(
+): Promise<{ classifier: unknown; status: string; generationJobId: string | null } | null> {
+  const rows = await tx.$queryRawUnsafe<Array<{
+    classifier: unknown;
+    status: string;
+    generationJobId: string | null;
+  }>>(
     `UPDATE "BookEditOperation"
        SET "structuralLeaseExpiresAt" = CURRENT_TIMESTAMP + ($3::double precision * INTERVAL '1 millisecond'),
            "updatedAt" = CURRENT_TIMESTAMP
@@ -432,7 +466,7 @@ export async function renewStructuralPageLeaseTx(
        AND "structuralLeaseExpiresAt" > CURRENT_TIMESTAMP
        AND "structuralLeaseCompletedAt" IS NULL
        AND "status" IN ('ACTIVE', 'APPLIED')
-     RETURNING "classifier", "status"`,
+     RETURNING "classifier", "status", "generationJobId"`,
     operationId,
     ownerToken,
     STRUCTURAL_PAGE_LEASE_MS

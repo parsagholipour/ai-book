@@ -331,6 +331,23 @@ export function pendingEditProposalFromMetadata(
     scope,
     impact,
     clarification: "none",
+    // **A card that stored no instruction has none, and saying otherwise is
+    // not the same as having one.** Every consumer already resolves an absent
+    // one the same way, with `intent.editInstruction?.trim() || message.trim()`
+    // over a `message` that *is* this request on the Apply — so promoting the
+    // request here bought nothing and cost the one distinction the field has:
+    // `editInstruction` is new and un-backfilled, so an absent one is a card
+    // written before it existed, while a present one is the canonical contract
+    // the reader approved. The restructure Apply compares those, and with the
+    // request standing in for a contract every outstanding card differed from
+    // its own re-resolution and bounced back as a second, identical-looking
+    // proposal — a confirm button that silently did nothing.
+    ...(typeof intentSource.editInstruction === "string" && intentSource.editInstruction.trim()
+      ? { editInstruction: intentSource.editInstruction.trim() }
+      : {}),
+    ...(Object.prototype.hasOwnProperty.call(intentSource, "exactReplacement")
+      ? { exactReplacement: exactReplacementFromMetadata(intentSource.exactReplacement) }
+      : {}),
     ...(typeof intentSource.affectedChapterIndex === "number"
       ? { affectedChapterIndex: intentSource.affectedChapterIndex }
       : typeof card.affectedChapterIndex === "number"
@@ -357,7 +374,9 @@ export function pendingEditProposalFromMetadata(
       : {}),
     // Without this the Apply executes an insert with no anchor and no count —
     // the card said "Remove page 2" and the job would add one page at the end.
-    ...(kind === "restructure_pages" ? structuralEditFromMetadata(intentSource.structuralEdit) : {}),
+    ...((kind === "restructure_pages" || kind === "book_replan")
+      ? structuralEditFromMetadata(intentSource.structuralEdit)
+      : {}),
     ...(kind === "add_image" ? imageEditFromMetadata(intentSource.imageEdit) : {}),
     ...(kind === "move_image" || kind === "remove_image"
       ? imageLayoutFromMetadata(intentSource.imageLayout)
@@ -628,6 +647,14 @@ function replanSettingsFromMetadata(value: unknown): { replanSettings?: ReplanSe
     ...(typeof stored.includeCover === "boolean" ? { includeCover: stored.includeCover } : {})
   };
   return Object.keys(settings).length > 0 ? { replanSettings: settings } : {};
+}
+
+/** Invalid structured terms remain an explicit refusal of the exact fast path. */
+function exactReplacementFromMetadata(value: unknown): { from: string; to: string } | null {
+  const stored = jsonRecord(value);
+  const from = typeof stored.from === "string" ? stored.from.trim() : "";
+  const to = typeof stored.to === "string" ? stored.to.trim() : "";
+  return from && to ? { from, to } : null;
 }
 
 export function scopeFromRecentUserMessages(messages: MobileProjectChatMessageRecord[]): BookEditScope {

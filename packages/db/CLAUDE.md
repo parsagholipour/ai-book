@@ -72,6 +72,13 @@ both ends of the queue need them: the worker shifts `Page.index` when it applies
 and the API runs the identical steps when the reader taps Undo. Two copies of a compensation is how
 those ends start disagreeing about the same row.
 
+`compensateStructuralPageChangeTx` is the ownership wrapper shared by worker failure rollback and
+API Stop. Callers hand it an existing transaction; it takes Project before `BookEditOperation`,
+checks the exact `structuralApplication.appliedAt` and (for a worker) lease token, refuses APPLIED or
+newer-revision winners, and commits the revert, stamp removal, and durable completion marker as one
+unit. Do not recreate any of those checks in either app. Reader Undo deliberately calls the
+lower-level revert because it keeps the application stamp as operation history.
+
 - **Every renumber parks before it lands, because neither unique index is deferrable.**
   `@@unique([projectId, index])` on `Page` and `@@unique([projectId, scope])` on `Embedding` are
   both plain `CREATE UNIQUE INDEX`, checked row by row as a statement runs, and a renumber overlaps
@@ -628,8 +635,10 @@ diff rather than by silently reordering rows.
 
 - **A charge has one cumulative reversal, and partial settlements name their claim.**
   `refundCreditLedgerEntryPortion` is the ledger's only partial reversal, for work priced by the
-  page that delivered fewer than it billed — a structural insert that resumed against a book
-  holding two of its five recorded pages. The unique `reversesEntryId` still links one REFUND row,
+  page that delivered fewer than it billed. Its one production caller was a structural insert that
+  resumed against a book holding two of its five recorded pages; a recorded insert is now
+  indivisible and settles whole, so the primitive is currently unreached and kept for the next
+  operation priced that way. The unique `reversesEntryId` still links one REFUND row,
   but that row's amount is the cumulative total returned; the partial caller's stable claim key in
   metadata makes a redelivery a no-op. `failEditOperation`, `failGenerationAttempt`, the fallback
   project refund and the attempt reconciler may later reach the same charge: they top that row up by

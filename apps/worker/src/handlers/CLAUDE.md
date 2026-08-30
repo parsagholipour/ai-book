@@ -327,36 +327,32 @@ reason, and a null answer refuses the whole move rather than half-applying it.
 
 ## Text page edits
 
-- **A text rewrite and every manuscript write after it belong to one durable, expiring delivery lease.**
-  `ACTIVE` is a lifecycle state, not an owner: matching `ACTIVE` let a stalled Bull delivery and
-  its replacement both snapshot and rewrite the same pages, then each mark the operation APPLIED
-  and increment `contentRevision`. `applyBookEdit` now gives each invocation a fresh token and
-  claims the operation with the database-time lease first introduced for structural edits (the
-  column names are historical; the operation kinds are disjoint). A live owner makes the loser
-  wait through the export handoff; expiry lets a real crash replacement take over. The heartbeat
-  spans provider calls, and the first operation-row statement of every snapshot, page-publication,
-  status, invalidation and final APPLIED/revision transaction renews and locks that token. A
-  transaction that also touches Project locks Project before that statement. A paused zombie
-  can therefore finish a model call but publish nothing after its replacement owns the row.
-  Snapshot `revisionAfter` is the durable per-page resume stamp: page content, its after-snapshot,
-  continuity notes, story delta and embedding commit together under the lease, so takeover skips
-  exactly the pages already delivered rather than applying the request to their rewritten prose a
-  second time. The two best-effort memory helpers each run in their own SQL savepoint inside that
-  transaction. This is not just error handling: both helpers catch their statement errors, but
-  PostgreSQL still marks the transaction aborted, so without `ROLLBACK TO SAVEPOINT` its commit
-  rolls the page and resume stamp back too. Separate savepoints let either optional row degrade
-  without poisoning the other, while keeping the operation-row lock held — moving the writes to a
-  later transaction would open a crash gap and let an expired zombie race takeover memory. Lease
-  completion comes only after the compile handoff; a waiter may neither return into `markCompleted`
-  under a live owner nor fall through to `markFailed` and refund it. Once that handoff is durable,
-  completion is bookkeeping: a returned `false` is still ownership evidence and takes the explicit
-  completion wait, but a thrown database/transport error has an unknown write outcome and is logged
-  without failing the delivered edit. The APPLIED row remains the replay fence, so an overlapping or
-  future delivery can safely repeat the idempotent export tail and reconcile the completion marker.
-  Publication ownership rejection is a different terminal answer: once a newer project lifecycle,
-  manuscript revision or operation supersedes an already-APPLIED tail, that tail touches neither the
-  project nor its exports, completes only its still-owned lease and returns so the durable job can
-  become COMPLETED. Only a lease assertion lost to a live owner keeps the no-settlement stand-down.
+- **Text-edit publication is one set-based manuscript transaction followed by a durable tail.**
+  `ACTIVE` is a lifecycle state, not an owner: matching it let a stalled Bull delivery and its
+  replacement both rewrite and publish. Each invocation therefore carries a database-time lease
+  token through provider work. Once every rewrite, story extract and optional embedding has been
+  prepared in memory, `textEditPublication.ts` locks Project, the durable GenerationJob and the
+  operation in that order, then publishes every page and before/after snapshot with one
+  `jsonb_to_recordset` statement. The statement compares the complete before-image (including page
+  revision, image prompt, quality report and story delta) and returns six cardinalities; anything
+  other than one exact page/snapshot pair per input aborts the transaction. The same transaction
+  advances `contentRevision`, persists the rebuilt project story state, marks the operation APPLIED,
+  and settles the job and attempt. Its number of database round trips is independent of page count,
+  so a whole-book edit does not turn the publication timeout into a per-page budget.
+  Slow filesystem deletion, optional vector persistence and queue dispatch happen only after that
+  commit. Their progress lives in `classifier.textEditFollowUp` (`exports`, `memory`, `compile`,
+  `status`), so a crash returns to the missing step instead of redrafting or advancing the revision
+  again. `Project.exportInvalidationRevision` is stamped with the new revision in the manuscript
+  transaction; both worker and inline-API publishers refuse to install shared
+  export filenames while it names the revision *they* are claiming — null, or any other revision,
+  lets them through, because nothing sweeps this column and a tail killed before it clears would
+  otherwise fence the book off from every future compile. The tail removes the files outside SQL, then clears only its exact barrier and
+  checkpoints under the lease. Repeating an unlink is safe; a different pending revision belongs to
+  a newer tail and is never touched. Memory writes re-check the project revision/plan/status and the
+  exact page id/index/revision/summary, while compile dispatch carries the exact publication revision.
+  A superseded tail therefore completes its still-owned lease without touching newer files, memory
+  or status. Legacy APPLIED rows are adopted only through the existing exact publication claim and
+  start after exports/memory, because their old publication already performed those steps.
 - **An exact text edit that skips every target has no publication tail.** A partial exact replacement
   is still a real manuscript edit: its untouched snapshots are deleted, `skippedPageIndexes` is
   recorded for the operation card, and its changed pages take the ordinary export invalidation,
@@ -394,8 +390,10 @@ reason, and a null answer refuses the whole move rather than half-applying it.
 - **A structural edit's redelivery stamp comes down in the same transaction that puts the book back.**
   `restructurePages.ts` fences a second delivery on `classifier.structuralApplication`, written by
   the transaction that shifted the indexes: its presence is proof the shift landed, and a resumed
-  delivery skips straight to drafting the page *ids* it recorded. The rollback is the same claim in
-  reverse, so `rollbackStructuralChange` erases the stamp inside the revert's own transaction —
+  delivery skips straight to drafting the page *ids* it recorded. Worker rollback and API Stop both
+  call `compensateStructuralPageChangeTx`: it takes Project first, locks the operation, requires the
+  worker's lease token when there is one and the exact stamp `appliedAt`, then erases the stamp in
+  the revert's own transaction and records durable compensation completion —
   a stamp outliving the shape it describes sent the next delivery past the shift, into
   `findUnique`s that all miss and `continue`, and out the far side marking the operation APPLIED
   and recompiling an unchanged book, which the paid retry lane had just charged for again. If the
@@ -405,11 +403,20 @@ reason, and a null answer refuses the whole move rather than half-applying it.
   yields the lease, requeues the durable job and exits unrecoverably
   (`StructuralRollbackRedeliveryError`) so the next delivery can draft the ids the stamp still
   names. `stampDescribesBook` asks the same question of the book itself before resuming — an
-  insert whose recorded ids the book no longer holds does not get resumed on the strength of the
-  stamp alone — so the fence does not rest on two writes agreeing. What that answer buys is a
-  second, *locked* look and not a re-apply: it sends the delivery back through
-  `applyStructuralPageChange`, whose lease CAS still answers `resumed` while the stamp is on the
-  row, so the shift re-runs only once a rollback has taken the stamp down too.
+  insert whose recorded ids the book does not hold in full (none, or a subset) does not get
+  resumed on the strength of the stamp alone — so the fence does not rest on two writes agreeing.
+  What that answer buys is a second, *locked* look and not a re-apply: it sends the delivery back
+  through `applyStructuralPageChange`, whose lease CAS still answers `resumed` while the stamp is
+  on the row, so the shift re-runs only once compensation has taken the stamp down too. Drafting
+  then throws on a subset rather than publishing it. An APPLIED edit or a newer content revision
+  wins instead; worker, Stop, and redelivery losers stand down and never refund through an
+  unclaimed cleanup.
+- **A direct delete or move may carry coordinates, never prose work.** New compound proposals are
+  rerouted to full-book replan before pricing, but legacy or tampered `RESTRUCTURE_PAGES` rows still
+  reach this handler. `guardCompoundStructuralDelivery` uses the same core instruction classifier:
+  unstamped rows fail before a shift; stamped rows acquire the exact structural lease, compensate
+  the exact `appliedAt` stamp through the shared DB primitive, then enter normal failure/refund
+  settlement. A publication winner or another lease owner is never failed or refunded by the loser.
 - **An edit the reader has already undone is terminal for every delivery of it.** The reader's Undo
   runs the same `revertStructuralPageChange` the rollback does but deliberately *keeps*
   `structuralApplication` — it is the record of what the edit did and what the operation card reads
@@ -450,11 +457,25 @@ reason, and a null answer refuses the whole move rather than half-applying it.
   would mark the shared `GenerationJob` COMPLETED under the winner, while drafting would give both
   deliveries the same inserted page ids. If the owner crashes, expiry lets the waiting redelivery
   resume those ids; if it crashed after APPLIED, the replacement owns only the export tail. A
-  heartbeat keeps ordinary provider waits live, `reviewAndSaveGeneratedPage.assertOwnership` fences
-  the page upsert *and everything that save publishes behind it*
-  (`apps/worker/src/generation/CLAUDE.md`), APPLIED is conditional on the token, and rollback begins by renewing that same
-  unexpired token inside its transaction. A stale catch therefore cannot revert, fail or refund the
-  winner. The lease completes only after the compile dispatch tail; its columns are deliberately
+  heartbeat keeps ordinary provider waits live, and structural insert review is deferred: drafting,
+  page QA, adherence review, embedding preparation and story extraction produce only an in-memory
+  publication candidate. After any shortfall refund and the last heartbeat barrier, one short
+  Project-first transaction renews and locks the exact ACTIVE owner, publishes every inserted page
+  and its optional savepoint-isolated memory, stores the adherence audit, increments
+  `contentRevision`, and marks the operation APPLIED with that publication revision. Stop therefore
+  either wins before this transaction and rolls the placeholder/index/plan shift back with no prose
+  or success audit left behind, or waits on Project and finds an APPLIED edit it cannot cancel; there
+  is no published-prose/ACTIVE interval. A legacy row from the former split publication whose pages
+  and satisfied audit are already durable takes the same transaction with no candidates, closing it
+  APPLIED without regenerating or rewriting prose. Rollback begins by proving that same unexpired
+  token under the operation's own row lock. A stale catch therefore cannot revert, fail or refund
+  the winner — but the proof is an assertion, not a renewal, so it buys the critical section the
+  lock covers and not the minutes a renewal used to add after commit. **An uncompensatable delivery
+  requeues only while its stamp is still on the row**: `redeliverWorkerGenerationJob` has no attempt
+  cap, so an outcome that can never change — a `structuralApplication` that no longer parses, a
+  kind or project mismatch — settles through `markFailed` and refunds instead, and the outcomes are
+  an exhaustive switch so the next one added is a compile error rather than an infinite requeue.
+  The lease completes only after the compile dispatch tail; its columns are deliberately
   outside `classifier`, whose whole-document merges would otherwise erase a concurrent heartbeat.
   **The pre-flight refusal settles under the same lease**, which is the half that was missing: the
   page read `resolveStructuralPageEdit` answers against is taken outside every claim, and "the pages
@@ -600,23 +621,16 @@ reason, and a null answer refuses the whole move rather than half-applying it.
   APPLIED row the first one just wrote. For the same reason the skip's two writes are now **one
   transaction**: the marker is what tells that second delivery to stand down, so it may not land
   before the write that takes the project out of EDITING.
-- **An insert that delivers fewer pages than it billed refunds the difference, and the count that
-  drives both is the one drafting actually wrote.** The no-op rule above covers a delivery that
-  applied *nothing*; this is the same rule for a delivery that applied *some*. A resumed insert
-  drafts the page ids the stamp recorded, and `stampDescribesBook` resumes on a partial survival —
-  deliberately, because the survivors sit at indexes the tail was already shifted for, so
-  re-applying would shift it again and insert a duplicate set beside them. `draftInsertedPages`
-  therefore `continue`d past ids the book no longer held **in silence**, and the operation settled
-  APPLIED having written two of five pages while `pagesBilled` was five: a completion, so
-  `markCompleted` marked the attempt SUCCEEDED, `operationCanUndo` offered an undo of the shift
-  rather than of the charge, and no failure path ever ran. The loop now logs every skip and returns
-  the ids it wrote; `affectedPageIndexes` and `refundUnwrittenEditPages` (`runtime/jobLifecycle.ts`)
-  both read that list, and the refund runs **before** the APPLIED claim for the reason
-  `settleSkippedRestructure`'s does. `restructure_pages` is priced per page with no flat half, so
-  the share owed is the missing pages' share of `BookEditOperation.creditsCharged`.
-  Redelivery safety is the ledger's: `refundCreditLedgerEntryPortion` records the operation-derived
-  settlement key on the charge's cumulative reversal, so the same shortfall moves nothing twice;
-  a later full failure tops up only the remainder. See `packages/db/CLAUDE.md`.
+- **A recorded structural insert is indivisible: a delivery that cannot write every page it
+  recorded rolls back and is refunded whole, never by the page.** A resumed insert drafts the exact page ids the
+  shift stamped. If any recorded id is missing, `draftInsertedPages` logs the missing rows, publishes
+  none of the survivors, and throws into the existing exact-owner rollback; treating a surviving
+  subset as delivery would claim adherence for an edit the reader did not receive. When the whole
+  set exists, its ids drive `affectedPageIndexes`. Nothing prices this fork by the page any more:
+  a surviving subset is never published, so the throw reaches `markFailed` and the reader is
+  refunded the whole charge rather than a slice of a book with blank pages in it — which is why
+  `refundUnwrittenEditPages` now has no production caller. Redelivery safety for any refund is the
+  ledger's operation-derived settlement key. See `packages/db/CLAUDE.md`.
 - **Only the post-APPLIED window is that handler's to flip.** The `updateMany` after the rollback
   claims `status: "APPLIED"` and deliberately does not claim ACTIVE: a drafting failure — the
   ordinary one — leaves the operation ACTIVE, and `markFailed` settles exactly that row through

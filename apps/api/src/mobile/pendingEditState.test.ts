@@ -61,4 +61,44 @@ describe("pendingEditProposalFromMetadata", () => {
     expect(resumed.intent).toBeDefined();
     expect(resumed.intent?.perPageInstructions).toBeUndefined();
   });
+
+  it("keeps a stored instruction, and reports no instruction rather than the request", () => {
+    // The two answers this rebuild must keep apart. `editInstruction` is new
+    // and un-backfilled, so a card that stores none was written before the
+    // field existed — and standing the raw request in for it turns "no
+    // contract was recorded" into "a contract that differs from every
+    // canonical clause", which the restructure Apply reads as a changed
+    // contract and re-proposes instead of executing. Every consumer resolves
+    // the absent case as `intent.editInstruction?.trim() || message.trim()`
+    // over the same request, so nothing loses the fallback by asking for it.
+    const stored = confirmed({
+      kind: "page_rewrite",
+      scope: "explicit_pages",
+      affectedPageIndexes: [3, 7],
+      editInstruction: "  Make page 3 funnier and page 7 shorter.  "
+    });
+    const legacy = confirmed({ kind: "page_rewrite", scope: "explicit_pages", affectedPageIndexes: [3, 7] });
+
+    expect(stored.intent?.editInstruction).toBe("Make page 3 funnier and page 7 shorter.");
+    expect(legacy.intent).toBeDefined();
+    expect(legacy.intent).not.toHaveProperty("editInstruction");
+  });
+
+  it("preserves both proven router terms and the explicit mismatch sentinel", () => {
+    const proven = confirmed({
+      kind: "local_patch",
+      scope: "all_pages",
+      editInstruction: 'Replace "Rabbit" with "Fox" everywhere.',
+      exactReplacement: { from: "Rabbit", to: "Fox" }
+    });
+    const mismatch = confirmed({
+      kind: "local_patch",
+      scope: "all_pages",
+      editInstruction: 'Replace "Rabbit" with "Hare" everywhere.',
+      exactReplacement: null
+    });
+
+    expect(proven.intent?.exactReplacement).toEqual({ from: "Rabbit", to: "Fox" });
+    expect(mismatch.intent).toHaveProperty("exactReplacement", null);
+  });
 });

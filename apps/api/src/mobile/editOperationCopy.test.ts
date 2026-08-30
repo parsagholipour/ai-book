@@ -217,16 +217,15 @@ describe("currentActionForEditOperation for an applied insert", () => {
 /**
  * An insert that created five pages and wrote fewer of them.
  *
- * `stampDescribesBook` resumes a delivery on a partial survival on purpose —
- * the survivors sit at indexes the tail was already shifted for, so re-applying
- * would shift it again and insert a duplicate set beside them — and
- * `refundUnwrittenEditPages` hands back the pages nobody will read. What
- * settles is therefore an APPLIED row whose `affectedPageIndexes` is a *part*
- * of the run the stamp records, and the card read the anchor off the lowest of
- * them: one less than the first page written is the head of the run only when
- * the whole run is there, and otherwise a page of the insert itself or the gap
- * one left behind. Neither exists in the map in force, so the number reached
- * the reader as a raw model index wearing a printed page's clothes.
+ * A live delivery no longer settles that shape — the recorded set is
+ * indivisible, so the worker rolls back rather than publish a subset — but a
+ * historical APPLIED row can still carry `affectedPageIndexes` that are only
+ * *part* of the run the stamp records. The card used to read the anchor off
+ * the lowest of them: one less than the first page written is the head of the
+ * run only when the whole run is there, and otherwise a page of the insert
+ * itself or the gap one left behind. Neither exists in the map in force, so
+ * the number reached the reader as a raw model index wearing a printed page's
+ * clothes.
  */
 describe("an applied insert that wrote fewer pages than it created", () => {
   /**
@@ -277,8 +276,8 @@ describe("an applied insert that wrote fewer pages than it created", () => {
   });
 
   it("names no page at all when only the tail of the insert survived", () => {
-    // Five ids recorded, two pages drafted: the rest were gone by the time the
-    // resumed delivery looked for them, and the difference was refunded.
+    // Five ids recorded, two pages drafted: a historical settlement of a
+    // subset the worker no longer publishes.
     const summary = currentActionForEditOperation(
       appliedRestructure(afterPageOne, [5, 6], fivePagesCreated),
       numbering

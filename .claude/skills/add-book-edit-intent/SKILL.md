@@ -131,9 +131,11 @@ Chat replies never name a credit price in their text: the number travels as
 `stripCreditAnnouncement` in `apps/api/src/mobile/projectChat.ts` removes the old sentence from
 historical transcripts, so a new priced reply that writes the price into its prose says it twice.
 
-If the request reaches a model, append the character sheets through `requestWithCharacterContext`
-(`editOperations.ts`) onto the *payload*, never onto the message the router classified — the bare
-message is what `classifyProjectChatMessage`, `affectedPagesForIntent` and
+If the request reaches a model, store character sheets as `characterContext` on the operation and
+payload, never fused into `request`, `editInstruction`, `perPageInstructions`, or the `REVISE_PLAN`
+`message`. `REVISE_PLAN` composes them for the planner via `authoritativeReplanMessage` the same way
+`REPLAN_BOOK` does. `requestWithCharacterContext` remains only for the image insertion/layout payload
+`request` string. The bare message is what `classifyProjectChatMessage`, `affectedPagesForIntent` and
 `exactReplacementFromMessage` read, and a sheet inside it moves page targeting and the price.
 
 ## Step 5 — the recompile

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { BookPlan, ChapterPlan } from "@book-maker/core";
+import type { BookPlan, ChapterPlan, PageDraft, PageQualityReport, PriorPageContext } from "@book-maker/core";
 
 /**
  * Pure helpers for the CONTINUE_BOOK job: distributing the priced page budget
@@ -112,4 +112,63 @@ export function continuationChapterPlans(
 export function continuationPageIndexes(lastPageIndex: number, pageDistribution: number[]): number[] {
   const total = pageDistribution.reduce((sum, count) => sum + count, 0);
   return Array.from({ length: total }, (_, offset) => lastPageIndex + offset + 1);
+}
+
+/** Candidate fields shared by the continuation adherence context helpers. */
+export type ContinuationContextCandidate = {
+  pageIndex: number;
+  draft: PageDraft;
+  qualityReport: PageQualityReport;
+  previousPages: PriorPageContext[];
+  continuityNotes: string[];
+};
+
+export function continuationPreviousPages(
+  candidate: ContinuationContextCandidate,
+  candidates: ReadonlyMap<number, ContinuationContextCandidate>
+): PriorPageContext[] {
+  const byIndex = new Map(candidate.previousPages.map((page) => [page.index, page]));
+  for (const previous of candidates.values()) {
+    if (previous.pageIndex < candidate.pageIndex) {
+      byIndex.set(previous.pageIndex, {
+        index: previous.pageIndex,
+        title: previous.draft.title,
+        markdown: previous.draft.markdown,
+        summary: previous.draft.summary
+      });
+    }
+  }
+  return [...byIndex.values()].sort((left, right) => left.index - right.index).slice(-18);
+}
+
+export function continuationContinuityNotes(
+  candidate: ContinuationContextCandidate,
+  candidates: ReadonlyMap<number, ContinuationContextCandidate>
+): string[] {
+  return [...new Set([
+    ...candidate.continuityNotes,
+    ...[...candidates.values()]
+      .filter((previous) => previous.pageIndex < candidate.pageIndex)
+      .flatMap((previous) => previous.draft.continuityNotes)
+  ])];
+}
+
+export function continuationRepairReport(
+  report: PageQualityReport,
+  requirements: string[]
+): PageQualityReport {
+  return {
+    ...report,
+    approved: false,
+    requiredRevisions: [
+      ...requirements.map((requirement) => `Apply this missing approved requirement: ${requirement}`),
+      ...report.requiredRevisions
+    ]
+  };
+}
+
+export function continuationProseApproved(
+  candidates: ReadonlyMap<number, ContinuationContextCandidate>
+): boolean {
+  return [...candidates.values()].every((candidate) => candidate.qualityReport.approved);
 }

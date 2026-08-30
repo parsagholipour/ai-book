@@ -227,4 +227,23 @@ describe("edit project status ownership", () => {
       data: { status: "REVIEW_REQUIRED" }
     });
   });
+
+  it("refuses an APPLIED status restore while a newer lifecycle owns EDITING", async () => {
+    const { client, updateMany, findLaterLifecycle } = statusClient({
+      laterLifecycle: { id: "compile-new" }
+    });
+
+    await expect(
+      restoreEditProjectStatus(client, "project-1", "op-old", "REVIEW_REQUIRED")
+    ).resolves.toBe(false);
+    expect(findLaterLifecycle).toHaveBeenCalledWith({
+      where: {
+        projectId: "project-1",
+        createdAt: { gt: appliedAt },
+        id: { notIn: ["job-old"] }
+      },
+      select: { id: true }
+    });
+    expect(updateMany).toHaveBeenCalledTimes(1);
+  });
 });

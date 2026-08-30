@@ -9,6 +9,10 @@ import { strategyUsesSemanticMemory } from "../generation/embeddingWrites.js";
 import { embedResearchSourcesForProject } from "../generation/researchMemory.js";
 import { planRevisionConsistencyWarning } from "../generation/planRevisionSafety.js";
 import {
+  authoritativeReplanMessage,
+  resolveEditPromptContext
+} from "../generation/editOperationContext.js";
+import {
   inputForPlanVersion,
   inputFromProject,
   inputFromSnapshot,
@@ -194,11 +198,21 @@ export async function revisePlan(job: RevisePlanJob) {
     });
     throw new Error("Plan revision targets a superseded plan");
   }
+  const operation = operationId
+    ? await prisma.bookEditOperation.findUnique({
+        where: { id: operationId },
+        select: {
+          generationJobId: true,
+          ledgerEntryId: true,
+          status: true,
+          classifier: true,
+          request: true,
+          editInstruction: true,
+          characterContext: true
+        }
+      })
+    : null;
   if (operationId) {
-    const operation = await prisma.bookEditOperation.findUnique({
-      where: { id: operationId },
-      select: { generationJobId: true, ledgerEntryId: true, status: true, classifier: true }
-    });
     const billingLedgerEntryId = job.data.billingLedgerEntryId ?? null;
     const operationClassifier = jsonPayloadToRecord(operation?.classifier);
     const warning = planRevisionConsistencyWarning({
@@ -225,14 +239,23 @@ export async function revisePlan(job: RevisePlanJob) {
       );
     }
   }
-  const input = inputWithMessageMediaPreferences(inputForPlanVersion(planVersion.project, planVersion.inputSnapshot), message);
+  const { editInstruction, requestContext, characterContext } = resolveEditPromptContext(operation ?? {}, {
+    request: message,
+    ...(job.data.editInstruction ? { editInstruction: job.data.editInstruction } : {}),
+    ...(job.data.characterContext ? { characterContext: job.data.characterContext } : {})
+  });
+  const userMessage = authoritativeReplanMessage(editInstruction, requestContext, characterContext);
+  const input = inputWithMessageMediaPreferences(
+    inputForPlanVersion(planVersion.project, planVersion.inputSnapshot),
+    editInstruction
+  );
   const strategy = strategyForInput(input);
   const providers = createLoggedProviders(job, createProviders(config, input), input);
   const currentPlan = bookPlanSchema.parse(planVersion.planningPackage);
   await advanceJobStep(generationJobId, "revise", 35);
   const revised = await strategy.revisePlan({
     currentPlan,
-    userMessage: message,
+    userMessage,
     textModel: providers.text,
     input: inputWithMobileSourceMaterial(input),
     targetPages: input.targetPages,
@@ -263,7 +286,7 @@ export async function revisePlan(job: RevisePlanJob) {
         version,
         planningPackage: revised,
         inputSnapshot: planInputSnapshot(input),
-        messages: [...priorMessages, { role: "user", content: message, at: new Date().toISOString() }]
+        messages: [...priorMessages, { role: "user", content: editInstruction, at: new Date().toISOString() }]
       }
     });
     // Merged over the live row, never a wholesale replacement: the row owns

@@ -6,7 +6,11 @@ vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js"))
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
 import { reserveCredits } from "@book-maker/db/billing";
-import { PRE_EDIT_PROJECT_STATUS } from "@book-maker/core";
+import {
+  ATOMIC_CANDIDATES_CONTINUATION_PROTOCOL,
+  CONTINUATION_PUBLICATION_PROTOCOL_FIELD,
+  PRE_EDIT_PROJECT_STATUS
+} from "@book-maker/core";
 
 import { enqueueGenerationJob } from "../queue.js";
 import { serializeProjectChatMessage, stripCreditAnnouncement } from "./projectChat.js";
@@ -788,10 +792,14 @@ describe("mobile project chat", () => {
             chapterCount: 2,
             newPageCount: 10,
             planId: "plan-1",
+            [CONTINUATION_PUBLICATION_PROTOCOL_FIELD]: ATOMIC_CANDIDATES_CONTINUATION_PROTOCOL,
             [PRE_EDIT_PROJECT_STATUS]: origin
           })
         })
       );
+      expect(state.bookEditOperations.at(-1)?.classifier).toMatchObject({
+        [CONTINUATION_PUBLICATION_PROTOCOL_FIELD]: ATOMIC_CANDIDATES_CONTINUATION_PROTOCOL
+      });
       await app.close();
     }
   );

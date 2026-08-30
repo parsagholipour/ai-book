@@ -310,8 +310,11 @@ continuity state. They were one `semanticMemory.ts` until the file reached its s
 
 Whether a book writes any of it is `strategyUsesSemanticMemory`, which lives in
 `embeddingWrites.ts` — beside the writes, not beside the recall it is named for. Only the
-sequential-pages mode ever *reads* this memory, so every other mode (every book inside the mobile
-page ceiling) skips the embedding call per page and the per-entity writes entirely. Its seven call
+sequential-pages mode ever *reads* the page embeddings, so every other mode (every book inside the
+mobile page ceiling) skips the embedding call per page. The per-entity writes are **not** the same
+case, and a deferred publication does not gate them on this predicate: `continueBook.ts` loads
+entity state unconditionally, so that publication is the only writer of the state a later
+continuation of a non-sequential book reads. Its seven call
 sites are all writers about to spend that call; no reader has ever asked it, which is why sitting in
 `semanticRecall.ts` it only made seven handlers and passes import the read module for a predicate that
 never reaches a retrieval.
@@ -580,7 +583,9 @@ to draw.
   `book.epub` over the fresh ones and then set COMPLETE *unconditionally*, so a book could sit
   finished with the pre-edit PDF for good. `generation/exportPublication.ts` renders to
   `.book-<uuid>.{md,pdf,epub}` beside the real names and publishes only after
-  `project.updateMany({ where: { id, contentRevision } })` matches a row: the claim is first, so a
+  `project.updateMany({ where: { id, contentRevision, OR: [{ exportInvalidationRevision: null },
+  { exportInvalidationRevision: { not: contentRevision } }] } })` matches
+  a row: the claim is first, so a
   loser publishes nothing rather than publishing a book somebody has since changed. Standing down
   is not a failure — the job still COMPLETEs, because failing it would refund a book that is fine —
   and it cannot strand the project, because **every** `contentRevision` bump queues its own compile
@@ -598,7 +603,37 @@ to draw.
   enqueues. Keep the scratch names per compile: two compiles for one
   project overlapping is the whole case, so a shared name would have them rendering over each
   other. A payload with no revision claims unconditionally, matching what
-  `staleGenerationTargetReason` does with a null.
+  `staleGenerationTargetReason` does with a null. The invalidation field is a second, short-lived
+  publication fence: a text edit stamps its new revision atomically with the manuscript but removes
+  old shared files only after commit, so no worker compile or inline API rebuild may install files
+  in that gap. Its tail deletes outside SQL and clears only the exact stamped revision.
+  **The export barrier blocks the revision it names, not every revision, and only an expired
+  publication lease lets recovery retire it.** A tail killed before it clears used to strand the
+  value forever: under a strict null test every
+  later compile claimed zero rows, stood down, marked itself COMPLETED, and was re-queued by
+  `reconcileStrandedGeneration` to do it again, while the project never left EDITING and
+  `ensureExportRepairQueued` — which takes only COMPLETE and REVIEW_REQUIRED — could not reach it.
+  Each reader therefore blocks only on a barrier equal to *its own* claimed revision, which the
+  revision CAS beside it has already pinned to the row. What that trades away is a compile for a
+  *later* revision publishing files a delayed tail then unlinks — the tail's barrier survives a
+  non-text revision bump, since only another text edit overwrites it — and that is recoverable,
+  because a settled project with a missing file is exactly what the repair lane rebuilds. But that
+  trade only ever covered a barrier left at an *older* revision. The value a dying tail strands is
+  the revision the project is sitting at — the one every later reader claims — so the tail may not
+  be allowed to leave it: a delivery that hands its lease back retires its own barrier first, and
+  because the release CAS matches only that delivery's own token, a successful hand-back proves no
+  successor is inside the tail. A process kill or a database outage can lose even that hand-back,
+  after the durable job is already COMPLETED and Bull has spent its attempts. The delayed
+  `reconcileStrandedGeneration` sweep therefore compare-clears an exact current-revision barrier
+  only when no APPLIED publication operation holds an unexpired lease, using `CURRENT_TIMESTAMP`
+  in the same statement; it queues no doomed compile while a live tail owns the gap.
+  `invalidateRevisionOwnedExports` reads a null barrier as "already retired", so a late redelivery
+  checkpoints instead of unlinking files the recovery compile may have installed. Only the text,
+  continuation and replan forks stamp; the
+  structural insert deliberately does not, because its clear would have to live in two other files
+  and it has two publication arms, and a stranded barrier is worse than an absent one. The null arm is not decoration: Prisma compiles a bare
+  `{ not: n }` to `<> $1`, UNKNOWN for a null column, which would have excluded every healthy
+  project — the same three-valued-logic bug as `chapterId: { not: destination }` above.
   **The revision is not the whole claim, because an edit moves the status first and the revision
   last.** `applyBookEdit` sets EDITING before it rewrites a single page and increments only once
   every page is saved; `continueBook` does the same across an appended chapter. For those minutes

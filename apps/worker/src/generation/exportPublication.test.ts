@@ -83,9 +83,20 @@ const publishResult = (overrides: Record<string, unknown> = {}) =>
 const publish = async (overrides: Record<string, unknown> = {}) =>
   (await publishResult(overrides)).published;
 
+/** The row's text-edit invalidation barrier; null is what a healthy project has. */
+let barrier: number | null = null;
+
+/** Postgres' verdict for one row: `"col" <> $1` is UNKNOWN — never true — for a null column. */
+const claimMatchesBarrier = (where: Record<string, unknown>, value: number | null): boolean =>
+  ((where.OR as Record<string, unknown>[] | undefined) ?? [where]).some((arm) => {
+    const filter = arm.exportInvalidationRevision as null | { not: number } | undefined;
+    return filter === undefined ? true : filter === null ? value === null : value !== null && value !== filter.not;
+  });
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.events.length = 0;
+  barrier = null;
   // A transaction that records its own commit, so a test can say when the
   // status write became visible relative to the files it describes.
   mocks.prisma.$transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
@@ -98,9 +109,9 @@ beforeEach(() => {
       throw error;
     }
   });
-  mocks.prisma.project.updateMany.mockImplementation(async () => {
+  mocks.prisma.project.updateMany.mockImplementation(async ({ where }) => {
     mocks.events.push("claim");
-    return { count: 1 };
+    return { count: claimMatchesBarrier(where, barrier) ? 1 : 0 };
   });
   mocks.prisma.project.update.mockResolvedValue({});
   mocks.prisma.generationJob.updateMany.mockImplementation(async () => {
@@ -291,7 +302,11 @@ describe("publishCompiledExports", () => {
       where: {
         id: "project-1",
         contentRevision: 7,
-        status: "GENERATING"
+        status: "GENERATING",
+        OR: [
+          { exportInvalidationRevision: null },
+          { exportInvalidationRevision: { not: 7 } }
+        ]
       },
       data: { contentRevision: { increment: 0 } }
     });
@@ -331,6 +346,26 @@ describe("publishCompiledExports", () => {
       ["/books/project-1/.book-token.epub", "/books/project-1/book.epub"]
     ]);
   });
+
+  // Only the revision being published is the text edit's own unlink gap; any
+  // other value is unrelated to this claim and need not wait for the delayed
+  // lease-aware sweep. The null case is the one a bare `{ not: 7 }` would
+  // wrongly exclude — every healthy project.
+  const barrierCases: [barrier: string, value: number | null, published: boolean][] = [
+    ["the revision this compile publishes", 7, false],
+    ["nothing, as a healthy project does", null, true],
+    ["a revision a dead tail stranded", 5, true]
+  ];
+
+  for (const [name, value, published] of barrierCases) {
+    it(`publishes over an invalidation barrier holding ${name}: ${published}`, async () => {
+      barrier = value;
+
+      await expect(publish()).resolves.toBe(published);
+      expect(publishedMoves().length > 0).toBe(published);
+      expect(mocks.prisma.generationJob.updateMany.mock.calls.length > 0).toBe(published);
+    });
+  }
 
   it("atomically settles attempt/edit state and persists character preparation with publication", async () => {
     const result = await publishResult({
@@ -774,7 +809,7 @@ describe("publishCompiledExports", () => {
     await expect(publish({ contentRevision: null })).resolves.toBe(true);
 
     expect(mocks.prisma.project.updateMany).toHaveBeenCalledWith({
-      where: { id: "project-1", status: "GENERATING" },
+      where: { id: "project-1", status: "GENERATING", exportInvalidationRevision: null },
       data: { contentRevision: { increment: 0 } }
     });
   });
@@ -787,7 +822,15 @@ describe("publishCompiledExports", () => {
     await expect(publish({ ownsProjectStatus: false, repairFormat: "pdf" })).resolves.toBe(true);
 
     expect(mocks.prisma.project.updateMany).toHaveBeenCalledWith({
-      where: { id: "project-1", contentRevision: 7, status: { in: ["COMPLETE", "REVIEW_REQUIRED"] } },
+      where: {
+        id: "project-1",
+        contentRevision: 7,
+        status: { in: ["COMPLETE", "REVIEW_REQUIRED"] },
+        OR: [
+          { exportInvalidationRevision: null },
+          { exportInvalidationRevision: { not: 7 } }
+        ]
+      },
       data: { contentRevision: { increment: 0 } }
     });
     expect(publishedMoves()).toEqual([[pending.pdf, "/books/project-1/book.pdf"]]);
@@ -815,7 +858,11 @@ describe("publishCompiledExports", () => {
     ).resolves.toBe(true);
 
     expect(mocks.prisma.project.updateMany).toHaveBeenCalledWith({
-      where: { id: "project-1", status: { in: ["COMPLETE", "REVIEW_REQUIRED"] } },
+      where: {
+        id: "project-1",
+        status: { in: ["COMPLETE", "REVIEW_REQUIRED"] },
+        exportInvalidationRevision: null
+      },
       data: { contentRevision: { increment: 0 } }
     });
   });

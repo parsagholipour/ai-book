@@ -44,6 +44,7 @@ export async function queueDirectPlanRevision(options: {
     kind: "PLAN_REVISION",
     status: "QUEUED",
     request: options.message,
+    editInstruction: options.message,
     classifier: jsonInputValue({ kind: "plan_revision", source: "direct" }),
     affectedPageIndexes: [],
     creditsCharged: 0,
@@ -131,6 +132,8 @@ export async function queueChargedPlanRevision(options: {
   projectId: string;
   planId: string;
   message: string;
+  editInstruction?: string | undefined;
+  characterContext?: string | undefined;
   idempotencyKey: string;
   operationId?: string | undefined;
   /** Plan question prompts this revision answers; the reviser won't re-ask them. */
@@ -146,6 +149,8 @@ export async function queueChargedPlanRevision(options: {
       projectId: options.projectId,
       planId: options.planId,
       message: options.message,
+      ...(options.editInstruction ? { editInstruction: options.editInstruction } : {}),
+      ...(options.characterContext ? { characterContext: options.characterContext } : {}),
       ...(options.respondedQuestionPrompts?.length
         ? { respondedQuestionPrompts: options.respondedQuestionPrompts }
         : {})
@@ -169,6 +174,8 @@ export async function queueChargedPlanRevision(options: {
           payload: {
             planId: options.planId,
             message: options.message,
+            ...(options.editInstruction ? { editInstruction: options.editInstruction } : {}),
+            ...(options.characterContext ? { characterContext: options.characterContext } : {}),
             ...(options.respondedQuestionPrompts?.length
               ? { respondedQuestionPrompts: options.respondedQuestionPrompts }
               : {}),

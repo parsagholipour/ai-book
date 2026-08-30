@@ -15,12 +15,21 @@ import {
   jobOwnsQualityVerdict,
   jsonPayloadToRecord,
   loadConfig,
+  parseStructuralApplication,
   preEditProjectStatus,
   presentationRecompileFallbackStatus,
   retryJobOptions,
   type GenerationJobType
 } from "@book-maker/core";
-import { Prisma, prisma } from "@book-maker/db";
+import { classifyStoppedContinuationsTx } from "./continuationStopPolicy.js";
+import { hasLiveCompletedPublicationTailTx } from "./stopPublicationOwnership.js";
+import {
+  PAGE_RESTRUCTURE_TRANSACTION_OPTIONS,
+  Prisma,
+  compensateStructuralPageChangeTx,
+  prisma,
+  type StructuralCompensationResult
+} from "@book-maker/db";
 import {
   GenerationAttemptJobClaimError,
   failGenerationAttempt,
@@ -346,11 +355,16 @@ export async function stopProjectGenerationJobs(projectId: string) {
   // the same lock order and terminalizes both in one transaction, so exactly
   // one outcome wins: a committed publication owns COMPLETED and cannot be
   // refunded, while a committed stop owns FAILED and cannot publish.
+  // On the shared manuscript budget, not Prisma's 5 s default: a structural
+  // stop reverts a whole book in here — page restores, the two-pass renumber
+  // over every page, two plan writes — which is what every other caller of the
+  // shared compensation primitive already buys this budget for. A P2028 rolls
+  // the entire stop back, and every retry reproduces it.
   const openJobs = await prisma.$transaction(async (tx) => {
     const project = await tx.project.update({
       where: { id: projectId },
       data: { contentRevision: { increment: 0 } },
-      select: { status: true }
+      select: { status: true, contentRevision: true }
     });
     const candidates = await tx.generationJob.findMany({
       where: { projectId, status: { in: ["QUEUED", "ACTIVE"] } },
@@ -378,7 +392,8 @@ export async function stopProjectGenerationJobs(projectId: string) {
     // lease. `generationJobId` is the durable linkage; payload ids keep jobs
     // created before that relation (and replan-copy operations owned by the
     // source project) on the same atomic path.
-    const appliedEditHandoffJobIds = await cancelEditOperationsForStoppedJobsTx(tx, lockedCandidates);
+    const editStop = await cancelEditOperationsForStoppedJobsTx(tx, projectId, lockedCandidates);
+    const appliedEditHandoffJobIds = editStop.handoffJobIds;
     const stopped = [] as typeof candidates;
     for (const candidate of lockedCandidates) {
       if (appliedEditHandoffJobIds.has(candidate.id)) {
@@ -398,6 +413,25 @@ export async function stopProjectGenerationJobs(projectId: string) {
       }
     }
 
+    // The stopped job, canceled operation/lease, restored project and the paid
+    // attempt's *refund obligation* are one verdict: a crash after this commit
+    // must not leave an open attempt whose failed job nothing will reconcile.
+    // The ledger move deliberately stays outside. It has to be SERIALIZABLE —
+    // `refundCreditLedgerEntryTx` reads the entry and the account without `FOR
+    // UPDATE` and increments from that snapshot, so at this transaction's Read
+    // Committed it can release the same charge twice beside the worker's own
+    // settlement — and it is the one write that can fail alone (the
+    // `reversesEntryId` unique index), which in here would roll back every job,
+    // operation and project write above it. `refundPending` on a terminal row
+    // is what `reconcileGenerationAttemptRefunds` sweeps, so the settlement
+    // below and the reconciler are both free to finish it.
+    for (const attemptId of settlingAttemptIds(stopped)) {
+      await tx.generationAttempt.updateMany({
+        where: { id: attemptId, status: { in: ["QUEUED", "ACTIVE"] } },
+        data: { status: "CANCELED", error: STOPPED_JOB_ERROR, finishedAt: new Date(), refundPending: true }
+      });
+    }
+
     // Outcome precedence is deliberate and independent of query order. A real
     // generation run still owns FAILED even when stopped beside derivative or
     // edit rows. Without one, an edit restores its queue-time settled status;
@@ -405,23 +439,31 @@ export async function stopProjectGenerationJobs(projectId: string) {
     // together, preserving the more cautious verdict. A presentation-only
     // reprint is the final restore case. Anything else — including a stop that
     // claims zero rows — keeps the stranded-project fallback to FAILED.
-    const stoppedRestorableEdits = stopped.filter((job) => restoresPreEditProjectStatusOnStop(job));
+    const stoppedRestorableEdits = stopped.filter((job) =>
+      restoresPreEditProjectStatusOnStop(job, editStop.restorableContinuationJobIds)
+    );
     const stoppedRestorableEditIds = new Set(stoppedRestorableEdits.map((job) => job.id));
     const owningGenerationStopped = stopped.some(
       (job) =>
         !stoppedRestorableEditIds.has(job.id) && generationJobOwnsFailureLifecycle(job.type, job.payload)
     );
     const presentationJobs = stopped.filter((job) => isPresentationOnlyRecompile(job.payload));
+    const completedPublicationOwnsEditing =
+      project.status === "EDITING" && appliedEditHandoffJobIds.size === 0
+        ? await hasLiveCompletedPublicationTailTx(tx, projectId, project.contentRevision)
+        : false;
     if (owningGenerationStopped) {
       await tx.project.updateMany({
         where: { id: projectId, status: { notIn: [...SETTLED_PROJECT_STATUSES] } },
         data: { status: "FAILED" }
       });
-    } else if (appliedEditHandoffJobIds.size > 0) {
+    } else if (appliedEditHandoffJobIds.size > 0 || completedPublicationOwnsEditing) {
       // APPLIED is the edit handler's durable publication fence. Its job is
-      // still ACTIVE only because processJob has not completed the idempotent
-      // compile/status tail yet; leave both that job and its EDITING project
-      // to the handler instead of restoring and refunding delivered work.
+      // either still ACTIVE at the publication handoff above, or already
+      // COMPLETED because the manuscript transaction durably settled it before
+      // its idempotent compile/status tail. Leave the exact live publication
+      // and its EDITING project to that tail instead of failing or restoring
+      // delivered work.
     } else if (stoppedRestorableEdits.length > 0 && project.status === "EDITING") {
       const restoredStatus = stoppedRestorableEdits.some(
         (job) => preEditProjectStatus(job.payload) === "REVIEW_REQUIRED"
@@ -449,7 +491,7 @@ export async function stopProjectGenerationJobs(projectId: string) {
       });
     }
     return stopped;
-  });
+  }, PAGE_RESTRUCTURE_TRANSACTION_OPTIONS);
   let removedQueueJobs = 0;
 
   await Promise.all(
@@ -478,19 +520,14 @@ export async function stopProjectGenerationJobs(projectId: string) {
   // attempt state machine: terminalizing the attempt refunds its own ledger
   // entry (plan, edit, audiobook or book — whichever paid for it) exactly once,
   // and marks the attempt CANCELED so its rows can never be resumed for free.
-  // This is idempotent against the worker noticing the stop on an active job
-  // and settling the same attempt itself.
-  const attemptIds = [
-    ...new Set(
-      openJobs.flatMap((job) =>
-        job.attemptId && payloadOwnsProjectOutcome(job.payload) ? [job.attemptId] : []
-      )
-    )
-  ];
-  for (const attemptId of attemptIds) {
+  // `failGenerationAttempt` is the serializable form, and the only one: the
+  // transaction above committed the obligation, this settles it. Idempotent
+  // against the worker noticing the stop on an active job and settling the same
+  // attempt itself, and against that committed `refundPending` stamp.
+  for (const attemptId of settlingAttemptIds(openJobs)) {
     await failGenerationAttempt(attemptId, STOPPED_JOB_ERROR, "CANCELED").catch((error) => {
-      // failGenerationAttempt left refundPending set; the worker's refund
-      // reconciler finishes the settlement.
+      // The attempt is already CANCELED with refundPending set, so the worker's
+      // refund reconciler finishes the settlement.
       console.error(`Failed to settle stopped generation attempt ${attemptId}`, error);
     });
   }
@@ -522,19 +559,28 @@ export async function stopProjectGenerationJobs(projectId: string) {
   };
 }
 
+/** One settlement per distinct paid attempt among the jobs a stop claimed. */
+function settlingAttemptIds(jobs: ReadonlyArray<{ attemptId?: string | null | undefined; payload: unknown }>) {
+  const owning = jobs.flatMap((job) => (job.attemptId && payloadOwnsProjectOutcome(job.payload) ? [job.attemptId] : []));
+  return [...new Set(owning)];
+}
+
 /**
- * Apply can restore as soon as Stop has atomically revoked its publication
- * lease. Continue has no equivalent API-side compensation: once its durable
- * row is ACTIVE, the worker may already have installed the extended plan,
- * chapters, pages, and semantic tail. Keep that project FAILED until the
- * worker's continuation rollback has durably completed. A QUEUED continuation
- * has not reached the worker, so its enqueue-time EDITING transition is the
- * only state to undo and the stamped settled status is safe to restore.
+ * Apply restores after Stop revokes its publication lease. Continue restores
+ * whenever its durable job is still QUEUED — whatever its operation says, and
+ * whether or not one is durably linked at all — and, once ACTIVE, only when the
+ * classifier proves the in-memory-candidates protocol owns this exact job. An
+ * ACTIVE row under any other protocol stays conservative, because an older
+ * worker may have committed its plan, chapters, pages or semantic tail
+ * incrementally.
  */
-function restoresPreEditProjectStatusOnStop(job: { type: string; status: string }): boolean {
+function restoresPreEditProjectStatusOnStop(
+  job: { id: string; type: string },
+  restorableContinuationJobIds: ReadonlySet<string>
+): boolean {
   return (
     generationJobRestoresPreEditProjectStatus(job.type) &&
-    (job.type !== "CONTINUE_BOOK" || job.status === "QUEUED")
+    (job.type !== "CONTINUE_BOOK" || restorableContinuationJobIds.has(job.id))
   );
 }
 
@@ -626,12 +672,18 @@ async function closeDerivativeRowsForStoppedJobs(
   }
 }
 
+type StoppedEditClassification = {
+  handoffJobIds: Set<string>;
+  restorableContinuationJobIds: Set<string>;
+};
+
 async function cancelEditOperationsForStoppedJobsTx(
   tx: Prisma.TransactionClient,
-  stoppedJobs: ReadonlyArray<{ id: string; type: string; payload: unknown }>
-): Promise<Set<string>> {
+  projectId: string,
+  stoppedJobs: ReadonlyArray<{ id: string; status: string; type: string; payload: unknown }>
+): Promise<StoppedEditClassification> {
   if (stoppedJobs.length === 0) {
-    return new Set();
+    return { handoffJobIds: new Set(), restorableContinuationJobIds: new Set() };
   }
   const generationJobIds = stoppedJobs.map((job) => job.id);
   const legacyOperationIds = [
@@ -640,13 +692,60 @@ async function cancelEditOperationsForStoppedJobsTx(
       return operationId ? [operationId] : [];
     }))
   ];
+
+  // A structural shift commits before its prose is drafted. Stop therefore
+  // owns compensation before it owns cancellation: clearing the lease first
+  // strands the shifted indexes/placeholders because the worker's rollback CAS
+  // can no longer renew. Project and every candidate GenerationJob are already
+  // locked by the caller; the shared primitive takes the operation lock next,
+  // restores the exact stamped shape, and records completion atomically.
+  const linkedWhere = [
+    { generationJobId: { in: generationJobIds } },
+    ...(legacyOperationIds.length > 0 ? [{ id: { in: legacyOperationIds } }] : [])
+  ];
+  const { handoffJobIds, restorableContinuationJobIds, retainedOperationIds } =
+    await classifyStoppedContinuationsTx(tx, projectId, stoppedJobs);
+  const structuralOperations = await tx.bookEditOperation.findMany({
+    where: {
+      kind: "RESTRUCTURE_PAGES",
+      status: { in: ["QUEUED", "ACTIVE"] },
+      OR: linkedWhere
+    },
+    select: { id: true, generationJobId: true, status: true, classifier: true }
+  });
+  for (const operation of structuralOperations) {
+    if (operation.status !== "QUEUED" && operation.status !== "ACTIVE") continue;
+    const expectedApplication = parseStructuralApplication(operation.classifier);
+    const compensation = await compensateStoppedStructuralShiftTx(tx, {
+      projectId,
+      operationId: operation.id,
+      ...(expectedApplication ? { expectedAppliedAt: expectedApplication.appliedAt } : {})
+    });
+    if (compensation.outcome === "compensated" || compensation.outcome === "not-needed") continue;
+    // A Stop that cannot prove it reverted the exact stamped shift owns no
+    // cleanup verdict. `lost` can mean another live lease or a row/stamp that
+    // changed under the locked read; `superseded` means a newer manuscript
+    // revision won. In both cases clearing the lease, canceling, or refunding
+    // would strand the shifted shape while revoking the delivery that can
+    // still draft/recover it. Preserve the stamp and stand down exactly as for
+    // an APPLIED/publication winner; only a completed or unnecessary revert
+    // grants Stop permission to terminalize this operation.
+    retainedOperationIds.add(operation.id);
+    if (operation.generationJobId) {
+      handoffJobIds.add(operation.generationJobId);
+    } else {
+      for (const job of stoppedJobs) {
+        if (legacyOperationId(jsonPayloadToRecord(job.payload)) === operation.id) {
+          handoffJobIds.add(job.id);
+        }
+      }
+    }
+  }
   await tx.bookEditOperation.updateMany({
     where: {
       status: { in: ["QUEUED", "ACTIVE"] },
-      OR: [
-        { generationJobId: { in: generationJobIds } },
-        ...(legacyOperationIds.length > 0 ? [{ id: { in: legacyOperationIds } }] : [])
-      ]
+      ...(retainedOperationIds.size > 0 ? { id: { notIn: [...retainedOperationIds] } } : {}),
+      OR: linkedWhere
     },
     data: {
       status: "CANCELED",
@@ -658,7 +757,7 @@ async function cancelEditOperationsForStoppedJobsTx(
 
   const restorableJobs = stoppedJobs.filter((job) => generationJobRestoresPreEditProjectStatus(job.type));
   if (restorableJobs.length === 0) {
-    return new Set();
+    return { handoffJobIds, restorableContinuationJobIds };
   }
   const restorableJobIds = restorableJobs.map((job) => job.id);
   const restorableLegacyOperationIds = [
@@ -681,14 +780,60 @@ async function cancelEditOperationsForStoppedJobsTx(
     appliedOperations.flatMap((operation) => operation.generationJobId ? [operation.generationJobId] : [])
   );
   const appliedOperationIds = new Set(appliedOperations.map((operation) => operation.id));
-  return new Set(
-    restorableJobs.flatMap((job) => {
-      const legacyId = legacyOperationId(jsonPayloadToRecord(job.payload));
-      return appliedGenerationJobIds.has(job.id) || (legacyId !== null && appliedOperationIds.has(legacyId))
-        ? [job.id]
-        : [];
-    })
-  );
+  for (const job of restorableJobs) {
+    const legacyId = legacyOperationId(jsonPayloadToRecord(job.payload));
+    if (appliedGenerationJobIds.has(job.id) || (legacyId !== null && appliedOperationIds.has(legacyId))) {
+      handoffJobIds.add(job.id);
+    }
+  }
+  return { handoffJobIds, restorableContinuationJobIds };
+}
+
+const STRUCTURAL_STOP_SAVEPOINT = `SAVEPOINT "stop_structural_compensation"`;
+const STRUCTURAL_STOP_ROLLBACK = `ROLLBACK TO SAVEPOINT "stop_structural_compensation"`;
+const STRUCTURAL_STOP_RELEASE = `RELEASE SAVEPOINT "stop_structural_compensation"`;
+
+/**
+ * A shift this stop cannot revert may not take the stop down with it.
+ *
+ * `revertStructuralPageChange` refuses transactionally and by design — an
+ * archive whose rows do not match the count the stamp recorded, a plan lineage
+ * it does not recognise, an embedding re-point that would collide — and each of
+ * those *throws*. Inside the one transaction above, that rolled back every other
+ * row the stop was settling: no job terminalized, no operation canceled, nothing
+ * refunded, and `POST /:id/stop` reproducing it on every retry, because a
+ * refusal is a fact about the stored stamp rather than a transient.
+ *
+ * The savepoint is what makes continuing safe rather than reckless: the refusals
+ * are not all raised before the first write — `repointPageEmbeddings` checks
+ * between its park and land passes, with the renumber already landed — so a bare
+ * catch would commit a half-reverted book. Rolling back discards the attempt's
+ * writes and, since PostgreSQL keeps a transaction aborted after a statement
+ * error, is also what leaves this one committable. The verdict is then `lost`,
+ * which makes the caller preserve the operation, job, lease and
+ * `structuralApplication` stamp and stand down. The durable delivery retains
+ * responsibility for recovering the shifted manuscript.
+ */
+async function compensateStoppedStructuralShiftTx(
+  tx: Prisma.TransactionClient,
+  options: { projectId: string; operationId: string; expectedAppliedAt?: string }
+): Promise<StructuralCompensationResult> {
+  await tx.$executeRawUnsafe(STRUCTURAL_STOP_SAVEPOINT);
+  try {
+    const compensation = await compensateStructuralPageChangeTx(tx, options);
+    await tx.$executeRawUnsafe(STRUCTURAL_STOP_RELEASE);
+    return compensation;
+  } catch (error) {
+    try {
+      await tx.$executeRawUnsafe(STRUCTURAL_STOP_ROLLBACK);
+      await tx.$executeRawUnsafe(STRUCTURAL_STOP_RELEASE);
+    } catch (recoveryError) {
+      // Nothing is committable after this, so fail rather than report a settlement the database will discard.
+      throw new AggregateError([error, recoveryError], `Stop could not recover after compensating ${options.operationId}`);
+    }
+    console.error(`Stop could not revert structural page shift ${options.operationId}`, error);
+    return { outcome: "lost" };
+  }
 }
 
 function legacyOperationId(payload: Record<string, unknown>): string | null {

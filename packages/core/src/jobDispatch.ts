@@ -76,14 +76,35 @@ export const STOPPED_JOB_ERROR = "Stopped by user";
  * whole book. generate-audiobook resumes the same way, from the chapters
  * already marked READY — and it is the job most exposed to a per-minute quota,
  * because it is dozens of speech calls in a row.
+ *
+ * apply-book-edit and continue-book have a budget for a different reason, and
+ * it is deliberately invisible to their handlers. They publish the manuscript
+ * and settle the charge inside one transaction, then run a checkpointed tail
+ * — export invalidation, the memory write, the compile enqueue, the settled
+ * status — outside the failure boundary, and `processJob` rethrows a tail
+ * failure so BullMQ replays it. With no `attempts` that rethrow only moved the
+ * job to failed: a COMPLETED durable row is not requeued by either side's
+ * dispatch reconciliation, so the tail was simply lost and the book sat
+ * EDITING until the stranded-generation sweep found it. Every failure the
+ * handler itself reaches still bypasses the budget below, so a failed,
+ * refunded edit is redelivered no more than it ever was.
  */
 
 export const GENERATE_PAGE_RECOVERY_ATTEMPTS = 4;
 export const GENERATE_BOOK_RECOVERY_ATTEMPTS = 2;
 export const GENERATE_AUDIOBOOK_RECOVERY_ATTEMPTS = 3;
+export const DELIVERED_TAIL_RECOVERY_ATTEMPTS = 2;
 export const RECOVERY_BACKOFF_MS = 15_000;
 
 const NETWORK_RETRYABLE_JOB_NAMES = new Set(["generate-page", "generate-book", "generate-audiobook"]);
+
+const JOB_ATTEMPT_BUDGETS: Record<string, number> = {
+  "generate-page": GENERATE_PAGE_RECOVERY_ATTEMPTS,
+  "generate-book": GENERATE_BOOK_RECOVERY_ATTEMPTS,
+  "generate-audiobook": GENERATE_AUDIOBOOK_RECOVERY_ATTEMPTS,
+  "apply-book-edit": DELIVERED_TAIL_RECOVERY_ATTEMPTS,
+  "continue-book": DELIVERED_TAIL_RECOVERY_ATTEMPTS
+};
 
 export type JobRetryContext = {
   jobName: string;
@@ -97,14 +118,7 @@ export type JobRetryContext = {
 export function retryJobOptions(
   jobName: string
 ): { attempts: number; backoff: { type: "exponential"; delay: number } } | undefined {
-  const attempts =
-    jobName === "generate-page"
-      ? GENERATE_PAGE_RECOVERY_ATTEMPTS
-      : jobName === "generate-book"
-        ? GENERATE_BOOK_RECOVERY_ATTEMPTS
-        : jobName === "generate-audiobook"
-          ? GENERATE_AUDIOBOOK_RECOVERY_ATTEMPTS
-          : undefined;
+  const attempts = JOB_ATTEMPT_BUDGETS[jobName];
   if (attempts === undefined) {
     return undefined;
   }
@@ -123,9 +137,20 @@ export function shouldRecoverJobAttempt(context: JobRetryContext): boolean {
   );
 }
 
-/** True when remaining configured attempts should be skipped because the error is deterministic. */
+/**
+ * True when remaining configured attempts should be skipped because the error
+ * is deterministic — or because this job's budget was never the handler's to
+ * spend. A name outside the network-retryable set carries attempts only for
+ * its post-completion tail, so **every** failure that reaches the settlement
+ * path is terminal for it, transient or not: the delivery has already failed
+ * and refunded the edit, and a redelivery would re-run it against the row it
+ * just settled.
+ */
 export function shouldBypassConfiguredRetries(context: JobRetryContext): boolean {
-  return NETWORK_RETRYABLE_JOB_NAMES.has(context.jobName) && context.maxAttempts > 1 && !context.recoverableNetworkError;
+  if (context.maxAttempts <= 1) {
+    return false;
+  }
+  return !NETWORK_RETRYABLE_JOB_NAMES.has(context.jobName) || !context.recoverableNetworkError;
 }
 
 /** Backoff bounds for re-dispatching durable jobs that failed to reach Redis. */

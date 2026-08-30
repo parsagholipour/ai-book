@@ -22,7 +22,14 @@ const mocks = vi.hoisted(() => ({
     bookEditOperation: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     project: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     planVersion: { findUnique: vi.fn() },
-    page: { findMany: vi.fn(), findUnique: vi.fn(), createMany: vi.fn(), deleteMany: vi.fn(), count: vi.fn() },
+    page: {
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      createMany: vi.fn(),
+      updateMany: vi.fn(),
+      deleteMany: vi.fn(),
+      count: vi.fn()
+    },
     chapter: { updateMany: vi.fn() },
     imageAsset: { updateMany: vi.fn() },
     $transaction: vi.fn()
@@ -40,9 +47,11 @@ const mocks = vi.hoisted(() => ({
   claimAppliedEditPublication: vi.fn(),
   restoreEditProjectStatus: vi.fn(),
   reviewAndSaveGeneratedPage: vi.fn(),
+  reviewAppliedBookEdit: vi.fn(),
   generatePageDraft: vi.fn(),
   maybeEnqueueCompile: vi.fn(),
   invalidateProjectExports: vi.fn(),
+  compensateStructuralPageChangeTx: vi.fn(),
   revertStructuralPageChange: vi.fn(),
   rebuildProjectStoryState: vi.fn(),
   rebuildRolledBackProjectStoryState: vi.fn(),
@@ -54,6 +63,7 @@ vi.mock("@book-maker/db", () => ({
   prisma: mocks.prisma,
   Prisma: { DbNull: Symbol("DbNull") },
   PAGE_RESTRUCTURE_TRANSACTION_OPTIONS: { timeout: 30_000, maxWait: 10_000 },
+  compensateStructuralPageChangeTx: mocks.compensateStructuralPageChangeTx,
   revertStructuralPageChange: mocks.revertStructuralPageChange
 }));
 vi.mock("../generation/pageRestructure.js", () => ({
@@ -93,9 +103,19 @@ vi.mock("../generation/generationContext.js", () => ({
   loadContinuityNotes: async () => [],
   loadResearchNotesForGeneration: async () => []
 }));
+vi.mock("../generation/embeddingWrites.js", () => ({
+  prepareEmbedding: vi.fn(),
+  strategyUsesSemanticMemory: () => false,
+  writePreparedEmbedding: vi.fn()
+}));
+vi.mock("../generation/qualityEnrichment.js", () => ({
+  keeperStoryExtractForSave: async () => null,
+  persistStoryExtract: vi.fn()
+}));
 vi.mock("../generation/projectInput.js", () => ({ inputForPlanVersion: () => ({ targetPages: 6 }) }));
 vi.mock("../generation/qualitySettings.js", () => ({ loadQualityContext: async () => ({ enabled: () => false }) }));
 vi.mock("../generation/storyStateStore.js", () => ({
+  loadProjectStoryState: async () => ({}),
   rebuildProjectStoryState: mocks.rebuildProjectStoryState,
   rebuildRolledBackProjectStoryState: mocks.rebuildRolledBackProjectStoryState
 }));
@@ -110,11 +130,20 @@ vi.mock("../runtime/jobLifecycle.js", () => ({
   refundSkippedEditOperation: mocks.refundSkippedEditOperation,
   refundUnwrittenEditPages: mocks.refundUnwrittenEditPages
 }));
+vi.mock("../runtime/durableEditCompletion.js", () => ({
+  claimDurableEditCompletionTx: vi.fn(async () => true),
+  settleDurableEditAttemptTx: vi.fn(async () => true)
+}));
 vi.mock("@book-maker/core", async () => {
   // The resolver, the stamp parser and the request reader stay real: they are
   // what the fence is made of, and a mocked fence tests nothing.
   const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
-  return { ...actual, bookPlanSchema: { parse: () => ({ chapters: [], promises: [] }) }, createProviders: () => ({}) };
+  return {
+    ...actual,
+    bookPlanSchema: { parse: () => ({ chapters: [], promises: [] }) },
+    createProviders: () => ({}),
+    reviewAppliedBookEdit: mocks.reviewAppliedBookEdit
+  };
 });
 
 import { PRE_EDIT_PROJECT_STATUS } from "@book-maker/core";
@@ -140,6 +169,24 @@ const pages = (count: number) =>
     chapterId: null
   }));
 
+const approvedReport = {
+  approved: true,
+  score: 90,
+  issues: [],
+  requiredRevisions: [],
+  notes: "Approved",
+  groundedOk: true,
+  unsupportedClaims: [],
+  checks: {
+    placeholderFree: true,
+    promptLeakFree: true,
+    titleClean: true,
+    repetitionOk: true,
+    progressionOk: true,
+    styleNatural: true
+  }
+};
+
 const application = (overrides: Record<string, unknown> = {}) => ({
   action: "insert",
   pageOrderBefore: pages(6).map((page) => ({ pageId: page.id, index: page.index, chapterId: page.chapterId })),
@@ -163,12 +210,14 @@ describe("restructurePages project status", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.projectRow.status = "EDITING";
+    mocks.projectRow.contentRevision = 7;
     // The status write is applied to the row, so every read after it answers
     // what the handler just wrote — which is the whole point.
-    mocks.prisma.project.update.mockImplementation(async ({ data }: { data: { status?: string } }) => {
+    mocks.prisma.project.update.mockImplementation(async ({ data }: { data: { status?: string; contentRevision?: { increment: number } } }) => {
       if (typeof data.status === "string") {
         mocks.projectRow.status = data.status;
       }
+      if (data.contentRevision) mocks.projectRow.contentRevision += data.contentRevision.increment;
       return { ...mocks.projectRow };
     });
     mocks.prisma.project.findUnique.mockImplementation(async () => ({ ...mocks.projectRow }));
@@ -186,6 +235,7 @@ describe("restructurePages project status", () => {
     });
     mocks.prisma.page.findMany.mockResolvedValue(pages(6));
     mocks.prisma.page.count.mockResolvedValue(2);
+    mocks.prisma.page.updateMany.mockResolvedValue({ count: 1 });
     mocks.prisma.page.findUnique.mockResolvedValue({
       id: "page-new-1",
       index: 4,
@@ -216,8 +266,19 @@ describe("restructurePages project status", () => {
       }).then((result: { count: number }) => result.count === 1)
     );
     mocks.generatePageDraft.mockResolvedValue({ title: "New", markdown: "Body.", summary: "S.", continuityNotes: [] });
-    mocks.reviewAndSaveGeneratedPage.mockResolvedValue({ index: 4, title: "New", markdown: "Body.", summary: "S." });
+    mocks.reviewAndSaveGeneratedPage.mockImplementation(async ({ draft }) => ({
+      page: { index: draft.index, title: draft.title, markdown: draft.markdown, summary: draft.summary },
+      candidate: { draft, qualityReport: approvedReport }
+    }));
+    mocks.reviewAppliedBookEdit.mockResolvedValue({
+      satisfied: true,
+      confidence: 0.99,
+      missingRequirements: [],
+      contradictions: [],
+      pageIndexesToRevise: []
+    });
     mocks.maybeEnqueueCompile.mockResolvedValue("compile");
+    mocks.compensateStructuralPageChangeTx.mockResolvedValue({ outcome: "compensated", currentPlanId: "plan-1" });
     mocks.revertStructuralPageChange.mockResolvedValue({ currentPlanId: "plan-1" });
     mocks.rebuildProjectStoryState.mockResolvedValue({});
     mocks.rebuildRolledBackProjectStoryState.mockResolvedValue({});

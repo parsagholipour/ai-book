@@ -2,7 +2,77 @@ import { describe, expect, it } from "vitest";
 
 import { type BookEditIntent } from "../bookEditIntent.js";
 import { readerPageNumbering } from "../bookPageNumbering.js";
-import { editProposalSummary, operationQueuedMessage } from "./bookEditCopy.js";
+import { editProposalMessage, editProposalSummary, operationQueuedMessage } from "./bookEditCopy.js";
+
+function editIntent(overrides: Partial<BookEditIntent>): BookEditIntent {
+  return {
+    kind: "page_rewrite",
+    confidence: 0.9,
+    reasoning: "r",
+    assistantMessage: "a",
+    affectedPageIndexes: [],
+    scope: "none",
+    impact: "style_rewrite",
+    clarification: "none",
+    ...overrides
+  };
+}
+
+describe("continuation and replan proposal contracts", () => {
+  it("shows the resolved continuation instruction instead of contextual request copy", () => {
+    const editInstruction =
+      "Continue with two chapters in which Mina finds the missing map, follows it to the lighthouse, and reconciles with Arun.";
+    const intent = editIntent({
+      kind: "continue_book",
+      // This models the contextual/raw wording that must not replace the
+      // router's standalone contract on either proposal surface.
+      assistantMessage: "Yes, do that for two more chapters.",
+      editInstruction,
+      continuation: { chapterCount: 2 }
+    });
+
+    expect(editProposalSummary(intent.kind, [], intent)).toBe(
+      `Write 2 new chapters continuing your book: ${editInstruction}`
+    );
+    expect(editProposalMessage(intent.kind, [], intent)).toBe(
+      `Write 2 new chapters continuing your book: ${editInstruction}. Tap Apply to confirm, or Cancel to drop it.`
+    );
+    expect(editProposalSummary(intent.kind, [], intent)).not.toContain(intent.assistantMessage);
+  });
+
+  it("shows the resolved replan instruction alongside the priced rebuild settings", () => {
+    const editInstruction =
+      "Rebuild the book as a concise three-page guide for first-time managers, using examples from remote teams and no illustrations.";
+    const intent = editIntent({
+      kind: "book_replan",
+      assistantMessage: "Yes, make those changes.",
+      editInstruction,
+      impact: "structural_replan",
+      replanSettings: { targetPages: 3, fullIllustrations: false }
+    });
+
+    expect(editProposalSummary(intent.kind, [], intent)).toBe(
+      `Rebuild as a new 3-page copy without illustrations: ${editInstruction}`
+    );
+    expect(editProposalMessage(intent.kind, [], intent)).toContain(editInstruction);
+    expect(editProposalSummary(intent.kind, [], intent)).not.toContain(intent.assistantMessage);
+  });
+
+  it("keeps safe action-only copy for legacy intents without a durable instruction", () => {
+    const continuation = editIntent({
+      kind: "continue_book",
+      continuation: { chapterCount: 1 }
+    });
+    const replan = editIntent({
+      kind: "book_replan",
+      impact: "structural_replan",
+      replanSettings: { targetPages: 5 }
+    });
+
+    expect(editProposalSummary(continuation.kind, [], continuation)).toBe("Write the next chapter of your book");
+    expect(editProposalSummary(replan.kind, [], replan)).toBe("Rebuild as a new 5-page copy");
+  });
+});
 
 /**
  * The prose a structural edit promises.
@@ -74,6 +144,14 @@ describe("structural page edit copy", () => {
     expect(editProposalSummary("restructure_pages", [], insert(2, 1))).toBe("Add 2 new pages after page 1");
     expect(editProposalSummary("restructure_pages", [], insert(1, 0))).toBe("Add 1 new page at the front of the book");
     expect(editProposalSummary("restructure_pages", [], insert(1))).toBe("Add 1 new page at the end of the book");
+  });
+
+  it("uses the durable execution instruction as the proposal promise", () => {
+    const intent = insert(1);
+    intent.editInstruction =
+      "Add a closing page that presents the survivor’s outcome as positive and recommends it to other couples.";
+
+    expect(editProposalSummary("restructure_pages", [], intent)).toBe(intent.editInstruction);
   });
 
   it("names where a move lands, and says nothing when the request named nowhere", () => {

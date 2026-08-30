@@ -1,4 +1,4 @@
-import { type BookEditIntent, type BookEditIntentKind } from "../bookEditIntent.js";
+import { type BookEditIntent } from "../bookEditIntent.js";
 import { editProposalMessage, editProposalSummary } from "./bookEditCopy.js";
 import { numberingForProject, MODEL_PAGE_NUMBERING, type ReaderPageNumbering } from "../bookPageNumbering.js";
 import { proposeAddImageEdit } from "./addImageOperations.js";
@@ -6,7 +6,11 @@ import { proposeImageLayoutEdit } from "./imageLayoutOperations.js";
 import { type ChatReplyQuote } from "../chatReplyQuote.js";
 import { applyBackMatterEdit } from "./backMatterEdits.js";
 import { applyChapterHeadingEdit } from "./chapterHeadingEdits.js";
-import { affectedPagesForIntent, continuationNewPageCount, exactReplacementFromMessage } from "./bookEditScope.js";
+import {
+  affectedPagesForIntent,
+  continuationNewPageCount,
+  exactReplacementForIntent
+} from "./bookEditScope.js";
 import { exactReplacementPreviewCard, planExactReplacement } from "./exactReplacementPreview.js";
 import { type MobileBookEditOperationRecord, type MobileProjectChatMessageRecord, type MobileProjectChatMessageResponseDto } from "./dto.js";
 import { type ProposedChatEdit } from "./chatEditOptions.js";
@@ -34,12 +38,14 @@ import {
 import { bookEditCreditCost, operationKindForIntent } from "./bookEditPricing.js";
 import { generateGroundedProjectAnswer } from "./groundedAnswer.js";
 import { replayClaimedProposal } from "./proposalExecutionClaims.js";
-import { isPrismaUniqueConflict, jsonInputValue, languageDisplayName } from "./support.js";
+import { isPrismaUniqueConflict, jsonInputValue } from "./support.js";
 import { findPendingProposalById, type PendingEditState } from "./pendingEditState.js";
 import { bookPlanSchema, chapterDisplayHeading, resolveStructuralPageEdit, type TextModelAdapter } from "@book-maker/core";
 import { type FastifyReply } from "fastify";
 import { randomUUID } from "node:crypto";
 import {
+  canonicalStructuralEditInstruction,
+  compoundStructuralReplanIntent,
   structuralCardBlock,
   structuralCardPlanOf,
   structuralEditForProposal,
@@ -129,6 +135,7 @@ export async function applyOrCancelEditProposal(options: {
       kind: operationKindForIntent(pending.intent.kind),
       status: "CANCELED",
       request: pending.request,
+      editInstruction: pending.intent.editInstruction?.trim() || pending.request,
       classifier: jsonInputValue({ ...pending.intent, cancelledProposal: true }),
       affectedPageIndexes: [],
       creditsCharged: 0
@@ -360,7 +367,10 @@ export async function proposeBookEdit(options: ProposedChatEdit & {
   clarifyExhausted?: boolean | undefined;
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: null }> {
   const { project, userMessageId, message } = options;
-  let intent = options.intent;
+  let intent: BookEditIntent = {
+    ...options.intent,
+    editInstruction: options.intent.editInstruction?.trim() || options.pendingRequest?.trim() || message.trim()
+  };
   const numbering = numberingForProject(project);
   const pendingRequest = options.pendingRequest?.trim() || message;
   const characterContext = options.characterContext?.trim() || undefined;
@@ -380,51 +390,69 @@ export async function proposeBookEdit(options: ProposedChatEdit & {
       });
       return { reply, operation: null };
     }
-    const cost = bookEditCreditCost(intent.kind, resolved.plan.pagesBilled, project);
-    const proposalIntent = { ...intent, clarification: "none" as const };
     // Stored beside the quote for the same reason the quote is stored: the
     // resolver worked both out against the book, and a card rebuilt from this
     // state — a recovery reply, a credits-blocked resume — has no pages to
     // resolve against. Without it that card loses its chip entirely.
     const structuralPlan = structuralCardPlanOf(intent, resolved.plan);
-    const reply = await createAssistantChatMessage({
-      projectId: project.id,
-      parentId: userMessageId,
-      // Same numbering *and the same resolved plan* as the card's summary
-      // below: this bubble is the only other place a structural edit prints
-      // page numbers, and a model index here beside a printed one there — or
-      // the request's unclamped anchor here beside the resolver's there — names
-      // two different pages.
-      content: editProposalMessage(intent.kind, [], intent, numbering, structuralPlan),
-      metadata: {
-        intent: proposalIntent,
-        charged: false,
-        pendingEdit: pendingEditMetadataFromState({
-          request: message,
-          scope: "none",
-          clarification: "confirm",
+    // One instruction is approved, stored and executed. Its structural clause
+    // comes from the resolver even when the router supplied richer prose: that
+    // preserves content requirements without keeping an impossible placement
+    // such as "after page 100" after the resolver clamped it to page 20.
+    intent = {
+      ...intent,
+      editInstruction: canonicalStructuralEditInstruction({
+        intent,
+        numbering,
+        plan: structuralPlan,
+        request: pendingRequest
+      })
+    };
+    const compoundReplan = compoundStructuralReplanIntent(intent, structuralPlan);
+    if (compoundReplan) {
+      intent = compoundReplan;
+    } else {
+      const cost = bookEditCreditCost(intent.kind, resolved.plan.pagesBilled, project);
+      const proposalIntent = { ...intent, clarification: "none" as const };
+      const reply = await createAssistantChatMessage({
+        projectId: project.id,
+        parentId: userMessageId,
+        // Same numbering *and the same resolved plan* as the card's summary
+        // below: this bubble is the only other place a structural edit prints
+        // page numbers, and a model index here beside a printed one there — or
+        // the request's unclamped anchor here beside the resolver's there — names
+        // two different pages.
+        content: editProposalMessage(intent.kind, [], intent, numbering, structuralPlan),
+        metadata: {
           intent: proposalIntent,
-          affectedPageIndexes: [],
-          credits: cost,
-          proposalId,
-          structuralPlan,
-          ...(characterContext ? { characterContext } : {})
-        }),
-        editProposal: {
-          id: proposalId,
-          kind: intent.kind,
-          scope: "none",
-          affectedPageIndexes: [],
-          credits: cost,
-          summary: editProposalSummary(intent.kind, [], intent, numbering, structuralPlan),
-          // The card says how many pages and where, in printed numbering — the
-          // wart the `continue_book` card still has, where "8 new chapters"
-          // carries a four-figure quote with no page count anywhere on it.
-          structural: structuralCardBlock(intent, structuralPlan, numbering)
+          charged: false,
+          pendingEdit: pendingEditMetadataFromState({
+            request: message,
+            scope: "none",
+            clarification: "confirm",
+            intent: proposalIntent,
+            affectedPageIndexes: [],
+            credits: cost,
+            proposalId,
+            structuralPlan,
+            ...(characterContext ? { characterContext } : {})
+          }),
+          editProposal: {
+            id: proposalId,
+            kind: intent.kind,
+            scope: "none",
+            affectedPageIndexes: [],
+            credits: cost,
+            summary: editProposalSummary(intent.kind, [], intent, numbering, structuralPlan),
+            // The card says how many pages and where, in printed numbering — the
+            // wart the `continue_book` card still has, where "8 new chapters"
+            // carries a four-figure quote with no page count anywhere on it.
+            structural: structuralCardBlock(intent, structuralPlan, numbering)
+          }
         }
-      }
-    });
-    return { reply, operation: null };
+      });
+      return { reply, operation: null };
+    }
   }
   if (intent.kind === "continue_book") {
     const newPageCount = continuationNewPageCount(intent, project);
@@ -572,9 +600,14 @@ export async function proposeBookEdit(options: ProposedChatEdit & {
   // A literal find/replace is computable here, so it is quoted as what it is:
   // a known diff at no charge, rather than a per-page estimate for a rewrite
   // the worker was never going to run.
+  const editInstruction = intent.editInstruction?.trim() || message.trim();
   const patch =
     intent.kind === "local_patch"
-      ? await planExactReplacement(project.id, exactReplacementFromMessage(message), affectedPageIndexes)
+      ? await planExactReplacement(
+          project.id,
+          exactReplacementForIntent(intent, editInstruction),
+          affectedPageIndexes
+        )
       : null;
   if (patch) {
     affectedPageIndexes = patch.pageIndexes;
@@ -839,6 +872,7 @@ export async function contentCardForTarget(
 export {
   affectedPagesForIntent,
   continuationNewPageCount,
+  exactReplacementForIntent,
   exactReplacementFromMessage,
   pagesMatchingEditText,
   pagesMatchingNeedle,

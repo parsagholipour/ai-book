@@ -7,7 +7,14 @@ const mocks = vi.hoisted(() => ({
     bookEditOperation: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     project: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     planVersion: { findUnique: vi.fn() },
-    page: { findMany: vi.fn(), findUnique: vi.fn(), createMany: vi.fn(), deleteMany: vi.fn(), count: vi.fn() },
+    page: {
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      createMany: vi.fn(),
+      updateMany: vi.fn(),
+      deleteMany: vi.fn(),
+      count: vi.fn()
+    },
     chapter: { updateMany: vi.fn() },
     imageAsset: { updateMany: vi.fn() },
     $transaction: vi.fn()
@@ -26,9 +33,11 @@ const mocks = vi.hoisted(() => ({
   claimAppliedEditPublication: vi.fn(),
   restoreEditProjectStatus: vi.fn(),
   reviewAndSaveGeneratedPage: vi.fn(),
+  reviewAppliedBookEdit: vi.fn(),
   generatePageDraft: vi.fn(),
   maybeEnqueueCompile: vi.fn(),
   invalidateProjectExports: vi.fn(),
+  compensateStructuralPageChangeTx: vi.fn(),
   revertStructuralPageChange: vi.fn(),
   rebuildProjectStoryState: vi.fn(),
   rebuildRolledBackProjectStoryState: vi.fn(),
@@ -42,6 +51,7 @@ vi.mock("@book-maker/db", () => ({
   prisma: mocks.prisma,
   Prisma: { DbNull: Symbol("DbNull") },
   PAGE_RESTRUCTURE_TRANSACTION_OPTIONS: { timeout: 30_000, maxWait: 10_000 },
+  compensateStructuralPageChangeTx: mocks.compensateStructuralPageChangeTx,
   revertStructuralPageChange: mocks.revertStructuralPageChange
 }));
 vi.mock("../generation/pageRestructure.js", () => ({
@@ -82,9 +92,19 @@ vi.mock("../generation/generationContext.js", () => ({
   loadContinuityNotes: async () => [],
   loadResearchNotesForGeneration: async () => []
 }));
+vi.mock("../generation/embeddingWrites.js", () => ({
+  prepareEmbedding: vi.fn(),
+  strategyUsesSemanticMemory: () => false,
+  writePreparedEmbedding: vi.fn()
+}));
+vi.mock("../generation/qualityEnrichment.js", () => ({
+  keeperStoryExtractForSave: async () => null,
+  persistStoryExtract: vi.fn()
+}));
 vi.mock("../generation/projectInput.js", () => ({ inputForPlanVersion: () => ({ targetPages: 6 }) }));
 vi.mock("../generation/qualitySettings.js", () => ({ loadQualityContext: async () => ({ enabled: () => false }) }));
 vi.mock("../generation/storyStateStore.js", () => ({
+  loadProjectStoryState: async () => ({}),
   rebuildProjectStoryState: mocks.rebuildProjectStoryState,
   rebuildRolledBackProjectStoryState: mocks.rebuildRolledBackProjectStoryState
 }));
@@ -99,9 +119,15 @@ vi.mock("../runtime/jobLifecycle.js", () => ({
   refundSkippedEditOperation: mocks.refundSkippedEditOperation,
   refundUnwrittenEditPages: mocks.refundUnwrittenEditPages
 }));
+vi.mock("../runtime/durableEditCompletion.js", () => ({ claimDurableEditCompletionTx: async () => true, settleDurableEditAttemptTx: async () => true }));
 vi.mock("@book-maker/core", async () => {
   const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
-  return { ...actual, bookPlanSchema: { parse: () => ({ chapters: [], promises: [] }) }, createProviders: () => ({}) };
+  return {
+    ...actual,
+    bookPlanSchema: { parse: () => ({ chapters: [], promises: [] }) },
+    createProviders: () => ({}),
+    reviewAppliedBookEdit: mocks.reviewAppliedBookEdit
+  };
 });
 
 import { PRE_EDIT_PROJECT_STATUS } from "@book-maker/core";
@@ -125,6 +151,24 @@ const pages = (count: number) =>
     index: offset + 1,
     chapterId: null
   }));
+
+const approvedReport = {
+  approved: true,
+  score: 90,
+  issues: [],
+  requiredRevisions: [],
+  notes: "Approved",
+  groundedOk: true,
+  unsupportedClaims: [],
+  checks: {
+    placeholderFree: true,
+    promptLeakFree: true,
+    titleClean: true,
+    repetitionOk: true,
+    progressionOk: true,
+    styleNatural: true
+  }
+};
 
 const application = (overrides: Record<string, unknown> = {}) => ({
   action: "insert",
@@ -152,10 +196,12 @@ describe("restructurePages", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.projectRow.status = "EDITING";
-    mocks.prisma.project.update.mockImplementation(async ({ data }: { data: { status?: string } }) => {
+    mocks.projectRow.contentRevision = 7;
+    mocks.prisma.project.update.mockImplementation(async ({ data }: { data: { status?: string; contentRevision?: { increment: number } } }) => {
       if (typeof data.status === "string") {
         mocks.projectRow.status = data.status;
       }
+      if (data.contentRevision) mocks.projectRow.contentRevision += data.contentRevision.increment;
       return { ...mocks.projectRow };
     });
     mocks.prisma.project.findUnique.mockImplementation(async () => ({ ...mocks.projectRow }));
@@ -173,12 +219,10 @@ describe("restructurePages", () => {
     });
     mocks.prisma.page.findMany.mockResolvedValue(pages(6));
     mocks.prisma.page.count.mockResolvedValue(2);
-    mocks.prisma.page.findUnique.mockResolvedValue({
-      id: "page-new-1",
-      index: 4,
-      chapterId: null,
-      chapter: null
-    });
+    mocks.prisma.page.updateMany.mockResolvedValue({ count: 1 });
+    mocks.prisma.page.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => ({
+      id: where.id, index: where.id.endsWith("1") ? 4 : 5, chapterId: null, chapter: null
+    }));
     mocks.applyStructuralPageChange.mockResolvedValue({
       outcome: "applied",
       application: application()
@@ -200,8 +244,19 @@ describe("restructurePages", () => {
     mocks.claimAppliedEditPublication.mockResolvedValue(true);
     mocks.restoreEditProjectStatus.mockResolvedValue(true);
     mocks.generatePageDraft.mockResolvedValue({ title: "New", markdown: "Body.", summary: "S.", continuityNotes: [] });
-    mocks.reviewAndSaveGeneratedPage.mockResolvedValue({ index: 4, title: "New", markdown: "Body.", summary: "S." });
+    mocks.reviewAndSaveGeneratedPage.mockImplementation(async ({ draft }) => ({
+      page: { index: draft.index, title: draft.title, markdown: draft.markdown, summary: draft.summary },
+      candidate: { draft, qualityReport: approvedReport }
+    }));
+    mocks.reviewAppliedBookEdit.mockResolvedValue({
+      satisfied: true,
+      confidence: 0.99,
+      missingRequirements: [],
+      contradictions: [],
+      pageIndexesToRevise: []
+    });
     mocks.maybeEnqueueCompile.mockResolvedValue("compile");
+    mocks.compensateStructuralPageChangeTx.mockResolvedValue({ outcome: "compensated", currentPlanId: "plan-1" });
     mocks.revertStructuralPageChange.mockResolvedValue({ currentPlanId: "plan-1" });
     mocks.rebuildProjectStoryState.mockResolvedValue({});
     mocks.rebuildRolledBackProjectStoryState.mockResolvedValue({});
@@ -225,54 +280,6 @@ describe("restructurePages", () => {
     mocks.refundUnwrittenEditPages.mockResolvedValue(undefined);
   });
   afterEach(() => vi.clearAllMocks());
-
-  it("shifts once, writes the new pages, and hands the book to the recompile", async () => {
-    await restructurePages(insertJob(), { id: "op-1", status: "QUEUED", classifier: {} });
-
-    expect(mocks.applyStructuralPageChange).toHaveBeenCalledTimes(1);
-    expect(mocks.applyStructuralPageChange.mock.calls[0]?.[0].plan).toMatchObject({
-      action: "insert",
-      insertAfterIndex: 3,
-      newPageIndexes: [4, 5]
-    });
-    expect(mocks.reviewAndSaveGeneratedPage).toHaveBeenCalledTimes(2);
-    expect(mocks.markStructuralPageLeaseApplied).toHaveBeenCalledWith(
-      expect.objectContaining({ projectId: "project-1", operationId: "op-1" })
-    );
-    // No skipFinalReview: a structural change is the one edit where the
-    // chapter-transition review is worth its cost.
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-2", undefined, {
-      contentRevision: 8,
-      requireContentRevisionMatch: true
-    });
-  });
-
-  it("gives an inserted page the prose that already follows it", async () => {
-    mocks.prisma.page.findMany.mockImplementation(async ({ where }: { where: Record<string, unknown> }) => {
-      const index = where.index as Record<string, number> | undefined;
-      if (index?.lt !== undefined) {
-        return [{ index: 3, title: "Before", markdown: "Ends here.", summary: "s" }];
-      }
-      if (index?.gt !== undefined) {
-        return [{ index: 6, title: "After", markdown: "Starts here.", summary: "s" }];
-      }
-      if (where.id !== undefined) {
-        return [{ index: 4 }, { index: 5 }];
-      }
-      return pages(6);
-    });
-
-    await restructurePages(insertJob(), { id: "op-1", status: "QUEUED", classifier: {} });
-
-    expect(mocks.generatePageDraft.mock.calls[0]?.[0].nextPages).toEqual([
-      expect.objectContaining({ index: 6, markdown: "Starts here." })
-    ]);
-    expect(mocks.reviewAndSaveGeneratedPage.mock.calls[0]?.[0].nextPages).toEqual([
-      expect.objectContaining({ index: 6 })
-    ]);
-    // Never illustrated: the structural charge prices pages, not pictures.
-    expect(mocks.reviewAndSaveGeneratedPage.mock.calls[0]?.[0].illustrate).toBe(false);
-  });
 
   it("never shifts twice when a redelivery finds the stamp already committed", async () => {
     // The dangerous case. The stamp is written in the same transaction as the
@@ -312,7 +319,7 @@ describe("restructurePages", () => {
     expect(mocks.waitForStructuralPageLease).toHaveBeenCalledTimes(1);
     expect(mocks.reviewAndSaveGeneratedPage).not.toHaveBeenCalled();
     expect(mocks.markStructuralPageLeaseApplied).not.toHaveBeenCalled();
-    expect(mocks.revertStructuralPageChange).not.toHaveBeenCalled();
+    expect(mocks.compensateStructuralPageChangeTx).not.toHaveBeenCalled();
     expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
   });
 
@@ -685,11 +692,13 @@ describe("restructurePages", () => {
       "model outage"
     );
 
-    expect(mocks.revertStructuralPageChange).toHaveBeenCalledWith(mocks.prisma, "project-1", expect.objectContaining({
-      insertedPageIds: ["page-new-1", "page-new-2"],
-      pageOrderBefore: expect.arrayContaining([{ pageId: "page-1", index: 1, chapterId: null }])
-    }));
-    expect(mocks.prisma.project.update).toHaveBeenCalledWith({ where: { id: "project-1" }, data: { contentRevision: { increment: 0 } } }); expect(mocks.prisma.project.update.mock.invocationCallOrder.at(-1)!).toBeLessThan(mocks.renewStructuralPageLeaseTx.mock.invocationCallOrder.at(-1)!);
+    expect(mocks.compensateStructuralPageChangeTx).toHaveBeenCalledWith(mocks.prisma, {
+      projectId: "project-1",
+      operationId: "op-1",
+      expectedLeaseToken: expect.any(String),
+      expectedAppliedAt: "2026-08-15T00:00:00.000Z"
+    });
+    expect(mocks.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 30_000, maxWait: 10_000 });
     expect(mocks.prisma.bookEditOperation.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: "op-1", status: "APPLIED" } })
     );
@@ -697,26 +706,28 @@ describe("restructurePages", () => {
 
   it("does not let a stale delivery roll back after another owner takes over", async () => {
     mocks.generatePageDraft.mockRejectedValue(new Error("old delivery resumed"));
-    mocks.renewStructuralPageLeaseTx.mockResolvedValue(null);
+    mocks.compensateStructuralPageChangeTx.mockResolvedValue({ outcome: "lost" });
 
-    await expect(restructurePages(insertJob(), { id: "op-1", status: "ACTIVE", classifier: {} })).resolves.toBeUndefined();
+    await expect(restructurePages(insertJob(), { id: "op-1", status: "ACTIVE", classifier: {} })).resolves.toEqual({});
 
     expect(mocks.revertStructuralPageChange).not.toHaveBeenCalled();
+    expect(mocks.compensateStructuralPageChangeTx).toHaveBeenCalledOnce();
     expect(mocks.waitForStructuralPageLeaseCompletion).toHaveBeenCalledWith("op-1");
   });
 
-  it("settles the failure itself when the wait gives up on a winner that never comes", async () => {
+  it("settles rather than requeueing when nothing is left to resume", async () => {
     mocks.generatePageDraft.mockRejectedValue(new Error("old delivery resumed"));
-    mocks.renewStructuralPageLeaseTx.mockResolvedValue(null);
-    // Nothing holds the lease and nothing is left to complete it, so returning
-    // would leave the book EDITING with no compile and no refund behind it.
+    mocks.compensateStructuralPageChangeTx.mockResolvedValue({ outcome: "lost" });
+    // Nothing settles it and no stamp is left to resume, so a requeue would only
+    // reproduce this verdict forever with the charge never handed back.
     mocks.waitForStructuralPageLeaseCompletion.mockResolvedValue("abandoned");
 
-    await expect(restructurePages(insertJob(), { id: "op-1", status: "ACTIVE", classifier: {} })).rejects.toThrow(
-      "old delivery resumed"
-    );
+    await expect(restructurePages(insertJob({ generationJobId: "gj-1" }), {
+      id: "op-1", status: "ACTIVE", classifier: {}
+    })).rejects.toThrow("old delivery resumed");
+    expect(mocks.redeliverWorkerGenerationJob).not.toHaveBeenCalled();
   });
-  it("takes the stamp down with the book, so the next delivery shifts again", async () => {
+  it("hands the exact stamp and lease to the shared durable compensation", async () => {
     mocks.prisma.$transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) =>
       run(mocks.prisma)
     );
@@ -727,31 +738,25 @@ describe("restructurePages", () => {
         status: "ACTIVE",
         classifier: { structuralEdit: { action: "insert" }, structuralApplication: application() }
       });
-    mocks.renewStructuralPageLeaseTx.mockResolvedValue({
-      status: "ACTIVE",
-      classifier: { structuralEdit: { action: "insert" }, structuralApplication: application() }
-    });
     mocks.generatePageDraft.mockRejectedValue(new Error("model outage"));
 
     await expect(restructurePages(insertJob(), { id: "op-1", status: "QUEUED", classifier: {} })).rejects.toThrow(
       "model outage"
     );
 
-    const cleared = mocks.prisma.bookEditOperation.update.mock.calls.at(-1)?.[0] as {
-      where: { id: string };
-      data: { classifier: Record<string, unknown> };
-    };
-    expect(cleared.where).toEqual({ id: "op-1" });
-    expect(cleared.data.classifier).not.toHaveProperty("structuralApplication");
-    expect(cleared.data.classifier).toMatchObject({ structuralEdit: { action: "insert" } });
-    expect(cleared.data.classifier.structuralRolledBackAt).toEqual(expect.any(String));
+    expect(mocks.compensateStructuralPageChangeTx).toHaveBeenCalledWith(mocks.prisma, {
+      projectId: "project-1",
+      operationId: "op-1",
+      expectedLeaseToken: expect.any(String),
+      expectedAppliedAt: "2026-08-15T00:00:00.000Z"
+    });
   });
 
   it("keeps the stamp when the revert itself fails, because nothing was put back", async () => {
     mocks.prisma.$transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) =>
       run(mocks.prisma)
     );
-    mocks.revertStructuralPageChange.mockRejectedValueOnce(new Error("deadlock"));
+    mocks.compensateStructuralPageChangeTx.mockRejectedValueOnce(new Error("deadlock"));
     mocks.generatePageDraft.mockRejectedValue(new Error("model outage"));
 
     await expect(
@@ -771,7 +776,7 @@ describe("restructurePages", () => {
 
     await restructurePages(insertJob(), { id: "op-1", status: "QUEUED", classifier: {} });
 
-    expect(mocks.revertStructuralPageChange).not.toHaveBeenCalled();
+    expect(mocks.compensateStructuralPageChangeTx).not.toHaveBeenCalled();
     expect(mocks.prisma.bookEditOperation.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: "APPLIED" }) })
     );
@@ -794,20 +799,23 @@ describe("restructurePages", () => {
     );
   });
 
-  it("refunds the pages a partly surviving insert could not write, and settles for what it wrote", async () => {
+  it("rolls back a partly surviving insert instead of settling a partial page set", async () => {
     // A five-page insert whose first delivery died mid-drafting, and whose
-    // rollback left only two of the five rows in the book. Resuming is right —
-    // re-applying would shift the tail a second time and insert five more pages
-    // beside the survivors — but the operation may not settle APPLIED claiming
-    // five pages, and the reader may not keep paying for three that will never
-    // be written.
+    // interrupted attempt left only two of the five rows in the book. The
+    // recorded set is indivisible: a subset is not a live stamp, and reviewing
+    // or settling only the survivors would claim adherence for an edit that
+    // was never fully applied.
     const partial = application({ insertedPageIds: ["new-1", "new-2", "new-3", "new-4", "new-5"] });
     mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({
       id: "op-1",
       status: "ACTIVE",
       classifier: { structuralApplication: partial }
     });
-    mocks.leaseClaim = { outcome: "acquired", phase: "draft", application: partial };
+    mocks.applyStructuralPageChange.mockResolvedValue({
+      outcome: "resumed",
+      phase: "draft",
+      application: partial
+    });
     mocks.prisma.page.count.mockResolvedValue(2);
     mocks.prisma.page.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) =>
       where.id === "new-1" || where.id === "new-2"
@@ -818,33 +826,34 @@ describe("restructurePages", () => {
       where.id === undefined ? pages(6) : [{ index: 4 }, { index: 5 }]
     );
     const logged = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const job5 = insertJob();
+    await expect(
+      restructurePages(insertJob(), { id: "op-1", status: "ACTIVE", classifier: {} })
+    ).rejects.toThrow("Structural insert is missing 3 of 5 recorded pages");
 
-    await restructurePages(job5, { id: "op-1", status: "ACTIVE", classifier: {} });
-
-    // It resumed rather than shifting again, and drafted only what is there.
-    expect(mocks.applyStructuralPageChange).not.toHaveBeenCalled();
-    expect(mocks.reviewAndSaveGeneratedPage).toHaveBeenCalledTimes(2);
-    // Three billed pages nobody will read: the difference comes back, and it
-    // comes back before the APPLIED claim closes the last door a refund has.
-    expect(mocks.refundUnwrittenEditPages).toHaveBeenCalledWith(
-      job5,
-      expect.objectContaining({ billedPages: 5, writtenPages: 2 })
-    );
-    expect(mocks.refundUnwrittenEditPages.mock.invocationCallOrder[0]!).toBeLessThan(
-      mocks.prisma.bookEditOperation.update.mock.invocationCallOrder[0]!
-    );
-    // And the operation claims the two pages it actually wrote.
-    expect(mocks.prisma.bookEditOperation.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ status: "APPLIED", affectedPageIndexes: [4, 5] })
-      })
+    // The unlocked classifier refuses the subset; the locked look answers
+    // `resumed` (stamp still on the row) rather than shifting twice.
+    expect(mocks.waitForStructuralPageLease).not.toHaveBeenCalled();
+    expect(mocks.applyStructuralPageChange).toHaveBeenCalledTimes(1);
+    expect(mocks.reviewAndSaveGeneratedPage).not.toHaveBeenCalled();
+    expect(mocks.reviewAppliedBookEdit).not.toHaveBeenCalled();
+    expect(mocks.prisma.page.updateMany).not.toHaveBeenCalled();
+    expect(mocks.refundUnwrittenEditPages).not.toHaveBeenCalled();
+    expect(mocks.markStructuralPageLeaseApplied).not.toHaveBeenCalled();
+    expect(mocks.compensateStructuralPageChangeTx).toHaveBeenCalledWith(mocks.prisma, {
+      projectId: "project-1",
+      operationId: "op-1",
+      expectedLeaseToken: expect.any(String),
+      expectedAppliedAt: partial.appliedAt
+    });
+    expect(mocks.prisma.bookEditOperation.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "APPLIED" }) })
     );
     // The run log is the debugging artifact: three ids the book no longer holds
-    // may not be skipped in silence.
+    // may not be skipped in silence, and a subset is not logged as a live stamp.
     expect(
       logged.mock.calls.filter((call) => String(call[0]).includes("no longer holds")).length
     ).toBe(3);
+    expect(logged.mock.calls.some((call) => String(call[0]).includes("survives only in part"))).toBe(false);
     logged.mockRestore();
   });
 
@@ -869,14 +878,14 @@ describe("restructurePages", () => {
     });
   });
 
-  it("asks for no refund when the insert wrote every page it billed", async () => {
+  it("never settles an insert as a partial delivery", async () => {
+    // No shortfall to price: the recorded set is indivisible (see above), so an
+    // insert delivers every page it billed or none, and the one that cannot is
+    // refunded *whole* by `markFailed` rather than by the difference.
     await restructurePages(insertJob(), { id: "op-1", status: "QUEUED", classifier: {} });
 
     expect(mocks.reviewAndSaveGeneratedPage).toHaveBeenCalledTimes(2);
-    expect(mocks.refundUnwrittenEditPages).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ billedPages: 2, writtenPages: 2 })
-    );
+    expect(mocks.refundUnwrittenEditPages).not.toHaveBeenCalled();
   });
 
   it("asks again under the lock when a stamp outlived the pages it recorded", async () => {

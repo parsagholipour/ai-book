@@ -68,6 +68,24 @@ export function decideActionSchema(actions: [DecideAction, ...DecideAction[]]) {
       // grounded pass, and for edits the proposal card carries the details —
       // the router was spending output tokens on prose that was discarded.
       assistantMessage: z.string().trim().min(1).max(600),
+      /**
+       * The complete, standalone instruction the generation worker executes.
+       * It is required in the tool contract so a proposal can never depend on
+       * chat history that is unavailable after Apply or on a retry.
+       *
+       * A default rather than `.optional()`, because this schema is converted
+       * with `z.toJSONSchema` and handed to the provider as the decide tool's
+       * parameters: an optional field is simply absent from `required`, so the
+       * only statement of the rule was the `superRefine` below — which the
+       * conversion cannot express at all. A model in structured-output mode
+       * then trusts `required`, omits the instruction, and the parse refuses
+       * the call it was told it could make. Zod lists a defaulted field in
+       * `required` and prints its default beside it, so the wire schema now
+       * asks for the field on every decision, exactly as the prompt does —
+       * while an `answer` that still omits it reads as the empty string it was
+       * told to send rather than losing one of two router calls.
+       */
+      editInstruction: z.string().trim().max(1200).default(""),
       clarification: z.enum(["none", "scope"]).default("none"),
       /** Required when action is propose_edit. */
       editTarget: z
@@ -171,10 +189,29 @@ export function decideActionSchema(actions: [DecideAction, ...DecideAction[]]) {
       replacementFrom: z.string().trim().min(1).max(500).optional(),
       replacementTo: z.string().trim().min(1).max(500).optional()
     })
-    .strict();
+    .strict()
+    .superRefine((value, context) => {
+      if (value.action === "propose_edit" && !value.editInstruction?.length) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["editInstruction"],
+          message: "editInstruction is required for propose_edit"
+        });
+      }
+    });
 }
 
-export type DecideActionPayload = z.infer<ReturnType<typeof decideActionSchema>>;
+type ParsedDecideActionPayload = z.infer<ReturnType<typeof decideActionSchema>>;
+/**
+ * The live tool schema asks for editInstruction on every decision and the
+ * parser refuses a propose_edit without one — `bookEditRouterPrompt.test.ts`
+ * asserts both of the *converted* schema. Keeping it optional at this boundary
+ * lets legacy stored/test decisions be replayed through the fallback that
+ * promotes the original request into the durable field.
+ */
+export type DecideActionPayload = Omit<ParsedDecideActionPayload, "editInstruction"> & {
+  editInstruction?: string | undefined;
+};
 
 /**
  * Everything the router is told about pictures. Grouped because the five rules
@@ -240,10 +277,11 @@ export function routerSystemPrompt(
       ? [
           "Use action undo_last_edit when the user wants to undo, revert, or roll back the most recent edit.",
           "For any charged book change, use action propose_edit. Set editTarget to pages (named pages), matching (find phrase matches), whole_book, chapter, structural (replacing the premise/main character/audience/ending/structure/visual identity), language_copy (new language version), or continuation (continue the book: write the next chapter(s), keep writing, finish the story; set newChapterCount when the user says how many).",
+          "For propose_edit, editInstruction is the durable instruction that will execute after this conversation is gone. Write a complete, standalone instruction that resolves fragments and pronouns from userMessage, replyingTo, and recentConversation. State the requested change, the content to add or alter, and its placement or scope. Never refer to ‘it’, ‘that’, ‘the earlier request’, or chat history. For every other action, set editInstruction to an empty string.",
           "Adding something new to the finished book — a character, a scene, an object, a mention — is propose_edit, not clarify. Set editTarget to pages for the scenes where it belongs, or whole_book when it should run through the story. Reserve structural for replacing the book's premise or main character, because it regenerates the entire book.",
           ...(readerPagesArePdf ? READER_PAGE_RULES : []),
           ...imageRules(readerPagesArePdf),
-          "Set editStyle to exact_replace for typos, renames, and quoted replacements; use rewrite for tone/style/content rewrites. Optionally set replacementFrom/replacementTo for exact replacements.",
+          "Set editStyle to exact_replace for typos, renames, and quoted replacements; use rewrite for tone/style/content rewrites. Set replacementFrom and replacementTo together only when their exact boundaries are explicit in editInstruction (quoted terms or single tokens), and copy those terms exactly. Omit both for an unquoted multiword phrase or any ambiguous boundary.",
           "Use editTarget back_matter, with backMatterSources false, when the user wants the sources / references / bibliography list at the end of the book gone (true to print it again). That list is generated at export time, so no page edit can remove it; this target is free.",
           "Use editTarget chapter_heading when the user wants chapter headings worded differently — dropping the word \"Chapter\", showing only the title, changing the numbering, or calling them Parts or Episodes. Set chapterHeadingStyle to title_only (just the title), number_title (\"1. The Web Spins\"), or label_number_title (\"Chapter 1: The Web Spins\", the default), and chapterHeadingLabel when they name a different word. Chapter headings are generated at export time from the title alone, so no page edit can change them; this target is free.",
           "A request that changes how long the book is or whether it has pictures is structural, because both are decided when the book is planned. Set newTargetPages whenever the user names the book's whole new length (\"make it 3 pages\", \"half as long\" — resolve it to a number), and illustrationsEnabled false when they want it without illustrations (true to add them). Report them even when the message also asks for other changes; the server prices the book you describe, so leaving them out quotes the old book's size.",

@@ -8,7 +8,9 @@ const mocks = vi.hoisted(() => ({
   generationJobUpdateMany: vi.fn(),
   operationFindMany: vi.fn(),
   operationUpdateMany: vi.fn(),
+  queryRawUnsafe: vi.fn(),
   failGenerationAttempt: vi.fn(),
+  generationAttemptUpdateMany: vi.fn(),
   refundCreditLedgerEntry: vi.fn(),
   refundLatestProjectOperationCredits: vi.fn()
 }));
@@ -27,6 +29,7 @@ vi.mock("@book-maker/core", async () => {
 });
 vi.mock("@book-maker/db", () => ({
   Prisma: { JsonNull: null, PrismaClientKnownRequestError: class extends Error {} },
+  PAGE_RESTRUCTURE_TRANSACTION_OPTIONS: { timeout: 30_000, maxWait: 10_000 },
   prisma: {
     $transaction: mocks.transaction,
     generationJob: { findMany: mocks.generationJobFindMany },
@@ -40,7 +43,11 @@ vi.mock("@book-maker/db/billing", () => ({
   refundLatestProjectOperationCredits: mocks.refundLatestProjectOperationCredits
 }));
 
-import { PRE_EDIT_PROJECT_STATUS } from "@book-maker/core";
+import {
+  ATOMIC_CANDIDATES_CONTINUATION_PROTOCOL,
+  CONTINUATION_PUBLICATION_PROTOCOL_FIELD,
+  PRE_EDIT_PROJECT_STATUS
+} from "@book-maker/core";
 import { stopProjectGenerationJobs } from "./queue.js";
 
 type DurableContinuation = {
@@ -52,25 +59,52 @@ type DurableContinuation = {
   attemptId: string;
 };
 
-function continuation(status: "QUEUED" | "ACTIVE"): DurableContinuation {
+function continuation(status: "QUEUED" | "ACTIVE", marked = true): DurableContinuation {
   return {
     id: "job-continue",
     bullJobId: null,
     status,
     type: "CONTINUE_BOOK",
-    payload: { operationId: "op-continue", [PRE_EDIT_PROJECT_STATUS]: "REVIEW_REQUIRED" },
+    payload: {
+      operationId: "op-continue",
+      ...(marked
+        ? { [CONTINUATION_PUBLICATION_PROTOCOL_FIELD]: ATOMIC_CANDIDATES_CONTINUATION_PROTOCOL }
+        : {}),
+      [PRE_EDIT_PROJECT_STATUS]: "REVIEW_REQUIRED"
+    },
     attemptId: "attempt-continue"
   };
 }
 
+function operation(marked = true, overrides: Record<string, unknown> = {}) {
+  return {
+    id: "op-continue",
+    projectId: "project-1",
+    generationJobId: "job-continue",
+    kind: "CONTINUE_BOOK",
+    status: "ACTIVE",
+    classifier: marked
+      ? { [CONTINUATION_PUBLICATION_PROTOCOL_FIELD]: ATOMIC_CANDIDATES_CONTINUATION_PROTOCOL }
+      : {},
+    publicationRevision: null,
+    ...overrides
+  };
+}
+
+let durableOperation = operation();
+
 describe("Stop compensation for continuation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.projectUpdate.mockResolvedValue({ status: "EDITING" });
+    mocks.projectUpdate.mockResolvedValue({ status: "EDITING", contentRevision: 8 });
     mocks.projectUpdateMany.mockResolvedValue({ count: 1 });
     mocks.generationJobUpdateMany.mockResolvedValue({ count: 1 });
-    mocks.operationFindMany.mockResolvedValue([]);
+    durableOperation = operation();
+    mocks.operationFindMany.mockImplementation(async ({ where }: { where: Record<string, unknown> }) =>
+      where.kind === "CONTINUE_BOOK" ? [durableOperation] : []
+    );
     mocks.operationUpdateMany.mockResolvedValue({ count: 1 });
+    mocks.queryRawUnsafe.mockResolvedValue([]);
     mocks.failGenerationAttempt.mockResolvedValue(undefined);
     mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) =>
       callback({
@@ -79,12 +113,51 @@ describe("Stop compensation for continuation", () => {
           findMany: mocks.generationJobFindMany,
           updateMany: mocks.generationJobUpdateMany
         },
-        bookEditOperation: { findMany: mocks.operationFindMany, updateMany: mocks.operationUpdateMany }
+        bookEditOperation: { findMany: mocks.operationFindMany, updateMany: mocks.operationUpdateMany },
+        generationAttempt: { updateMany: mocks.generationAttemptUpdateMany },
+        $queryRawUnsafe: mocks.queryRawUnsafe
       })
     );
   });
 
-  it("restores a queued continuation before the worker can mutate the book", async () => {
+  it.each([true, false])("restores a queued continuation (marked: %s)", async (marked) => {
+    durableOperation = operation(marked, { status: "QUEUED" });
+    mocks.generationJobFindMany.mockResolvedValue([continuation("QUEUED", marked)]);
+
+    await stopProjectGenerationJobs("project-1");
+
+    expect(mocks.projectUpdateMany).toHaveBeenCalledWith({
+      where: { id: "project-1", status: "EDITING" },
+      data: { status: "REVIEW_REQUIRED" }
+    });
+  });
+
+  it.each(["during outline", "during page drafting", "during adherence", "during memory preparation"])(
+    "restores a marked ACTIVE continuation paused %s",
+    async () => {
+      mocks.generationJobFindMany.mockResolvedValue([continuation("ACTIVE")]);
+
+      await stopProjectGenerationJobs("project-1");
+
+      expect(mocks.projectUpdateMany).toHaveBeenCalledWith({
+        where: { id: "project-1", status: "EDITING" },
+        data: { status: "REVIEW_REQUIRED" }
+      });
+      expect(mocks.failGenerationAttempt).toHaveBeenCalledWith(
+        "attempt-continue",
+        "Stopped by user",
+        "CANCELED"
+      );
+    }
+  );
+
+  // The classifier reads the durable `generationJobId` relation, so a row
+  // created before that relation carries only the payload id and reaches no
+  // disposition at all. Fail-closed is the wrong default there: it marks a
+  // finished book FAILED over a continuation that never started, and nothing
+  // moves it back. Those keep the rule the classifier replaced.
+  it("restores a queued continuation whose operation predates the durable link", async () => {
+    mocks.operationFindMany.mockResolvedValue([]);
     mocks.generationJobFindMany.mockResolvedValue([continuation("QUEUED")]);
 
     await stopProjectGenerationJobs("project-1");
@@ -95,28 +168,49 @@ describe("Stop compensation for continuation", () => {
     });
   });
 
-  it.each(["after installing the extended plan", "after drafting only some appended pages"])(
-    "keeps a stopped continuation failed %s",
-    async () => {
-      // Both phases are deliberately indistinguishable to the API: ACTIVE is
-      // the durable fact that append mutations may already be committed.
-      mocks.generationJobFindMany.mockResolvedValue([continuation("ACTIVE")]);
+  // A QUEUED row's markers are not evidence about the book: `markActive` claims
+  // the GenerationJob before it touches the operation, the plan or the
+  // manuscript, so QUEUED under Stop's own row claim proves the worker never
+  // started. Failing closed on a disagreement here marks a finished, paid book
+  // FAILED, and `SETTLED_PROJECT_STATUSES` is the only thing that would have
+  // saved it — which EDITING is not.
+  it("restores a queued continuation whose durable and payload markers disagree", async () => {
+    durableOperation = operation(true, { status: "QUEUED" });
+    mocks.generationJobFindMany.mockResolvedValue([continuation("QUEUED", false)]);
 
-      await stopProjectGenerationJobs("project-1");
+    await stopProjectGenerationJobs("project-1");
 
-      expect(mocks.projectUpdateMany).toHaveBeenCalledWith({
-        where: { id: "project-1", status: { notIn: ["COMPLETE", "REVIEW_REQUIRED"] } },
-        data: { status: "FAILED" }
-      });
-      expect(mocks.failGenerationAttempt).toHaveBeenCalledWith(
-        "attempt-continue",
-        "Stopped by user",
-        "CANCELED"
-      );
-    }
-  );
+    expect(mocks.projectUpdateMany).toHaveBeenCalledWith({
+      where: { id: "project-1", status: "EDITING" },
+      data: { status: "REVIEW_REQUIRED" }
+    });
+  });
 
-  it("keeps repeated Stop idempotent after failing an active continuation", async () => {
+  it("keeps an ACTIVE continuation with no durable link failed", async () => {
+    mocks.operationFindMany.mockResolvedValue([]);
+    mocks.generationJobFindMany.mockResolvedValue([continuation("ACTIVE")]);
+
+    await stopProjectGenerationJobs("project-1");
+
+    expect(mocks.projectUpdateMany).toHaveBeenCalledWith({
+      where: { id: "project-1", status: { notIn: ["COMPLETE", "REVIEW_REQUIRED"] } },
+      data: { status: "FAILED" }
+    });
+  });
+
+  it("keeps an unmarked ACTIVE rolling-deploy continuation failed", async () => {
+    durableOperation = operation(false);
+    mocks.generationJobFindMany.mockResolvedValue([continuation("ACTIVE", false)]);
+
+    await stopProjectGenerationJobs("project-1");
+
+    expect(mocks.projectUpdateMany).toHaveBeenCalledWith({
+      where: { id: "project-1", status: { notIn: ["COMPLETE", "REVIEW_REQUIRED"] } },
+      data: { status: "FAILED" }
+    });
+  });
+
+  it("keeps repeated Stop idempotent after restoring a marked active continuation", async () => {
     const durableJob = continuation("ACTIVE");
     let projectStatus = "EDITING";
     mocks.projectUpdate.mockImplementation(async () => ({ status: projectStatus }));
@@ -147,7 +241,7 @@ describe("Stop compensation for continuation", () => {
     const repeated = await stopProjectGenerationJobs("project-1");
 
     expect([first.stoppedJobs, repeated.stoppedJobs]).toEqual([1, 0]);
-    expect(projectStatus).toBe("FAILED");
+    expect(projectStatus).toBe("REVIEW_REQUIRED");
     expect(durableJob.status).toBe("FAILED");
     expect(mocks.failGenerationAttempt.mock.calls).toEqual([
       ["attempt-continue", "Stopped by user", "CANCELED"]

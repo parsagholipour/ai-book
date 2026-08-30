@@ -80,6 +80,10 @@ export const EDIT_START_FAILED =
 /** Something broke mid-flight. The card reports the refund; this says what to do. */
 export const EDIT_RUN_FAILED = "That change couldn’t be finished. Send it again to try once more.";
 
+/** The adherence gate kept the published manuscript unchanged. */
+export const EDIT_ADHERENCE_FAILED =
+  "That change couldn’t be applied as requested, so the original book was kept and your credits were returned. Try describing the change differently.";
+
 /**
  * Mirrors `insufficientCreditsChatMessage`'s way forward without repeating its
  * numbers: the reply that failure also writes already names the shortfall, and

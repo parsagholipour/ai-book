@@ -271,7 +271,20 @@ async function publishRebuiltExport(options: {
         where: {
           id: options.projectId,
           contentRevision: options.contentRevision,
-          status: { in: [...PUBLISHABLE_EXPORT_STATUSES] }
+          status: { in: [...PUBLISHABLE_EXPORT_STATUSES] },
+          // The text-edit barrier, matched against the revision this rename
+          // claims rather than tested for emptiness. See `publishCompiledExports`:
+          // the CAS above pins the row to `options.contentRevision`, so a
+          // barrier holding anything else belongs to a tail that died without a
+          // redelivery. The worker eventually retires an abandoned current
+          // barrier after its operation lease expires, but this reader need not
+          // wait on an unrelated revision. Both `OR` arms are
+          // required — Prisma compiles a bare `{ not: n }` to `<> $1`, which is
+          // UNKNOWN, and so no match, for the null every healthy project has.
+          OR: [
+            { exportInvalidationRevision: null },
+            { exportInvalidationRevision: { not: options.contentRevision } }
+          ]
         },
         // Deliberately changes nothing: this render rebuilds a file, not the
         // book, so it has no verdict to write. The write is here for the row
@@ -545,7 +558,16 @@ export async function readProjectExportArtifact(
           where: {
             id: projectId,
             contentRevision: source.contentRevision,
-            status: { in: [...PUBLISHABLE_EXPORT_STATUSES] }
+            status: { in: [...PUBLISHABLE_EXPORT_STATUSES] },
+            // Same barrier test as `publishRebuiltExport` above, for the same
+            // reason: only a barrier at the revision being claimed is a live
+            // invalidation gap, and a stranded one may not lock this book out
+            // of provenance repair forever. The null arm is what keeps every
+            // healthy project matching.
+            OR: [
+              { exportInvalidationRevision: null },
+              { exportInvalidationRevision: { not: source.contentRevision } }
+            ]
           },
           data: { contentRevision: { increment: 0 } }
         });

@@ -11,6 +11,7 @@ import {
 import { DEFAULT_TTS_CHANNELS, DEFAULT_TTS_SAMPLE_RATE, pcm16DurationMs } from "../audio/pcm.js";
 import { COVER_DESIGN_SELECTION_PURPOSE, DEFAULT_COVER_DESIGN_ID } from "../generation/coverDesigns.js";
 import { COPYRIGHT_SAFE_IMAGE_PROMPT_PURPOSE } from "../generation/copyrightSafeImagePrompt.js";
+import { fakeEditAdherence } from "./fakeEditAdherence.js";
 import type {
   EmbeddingAdapter,
   GenerateJsonOptions,
@@ -221,6 +222,10 @@ export class FakeTextModelAdapter implements TextModelAdapter {
       // A real id keeps MOCK_AI on the model path instead of exercising the
       // selection fallback on every dry run.
       return { designId: DEFAULT_COVER_DESIGN_ID, reason: "Deterministic dry-run pick." };
+    }
+
+    if (options.purpose === "review-edit-adherence") {
+      return fakeEditAdherence(options);
     }
 
     if (schema === bookPlanSchema && this.input) {

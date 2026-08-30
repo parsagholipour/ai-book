@@ -70,6 +70,62 @@ describe("mobile plan revision retries and operations", () => {
     await app.close();
   });
 
+  it("queues a mentioned character's sheets beside the plan-revision message, not inside it", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "GENERATING",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord(),
+        pages: []
+      })
+    );
+    mockPrisma.libraryCharacter.findMany.mockResolvedValue([
+      {
+        id: "char-1",
+        userId: "user-a",
+        name: "Luna",
+        description: "A brave night-flying rabbit.",
+        fields: [],
+        photoPath: null,
+        photoKind: null,
+        suggestedDescription: null,
+        appearance: null,
+        portraitPath: null,
+        portraitSource: null,
+        portraitStatus: "NONE",
+        portraitError: null,
+        portraitJobId: null,
+        createdAt: new Date("2026-08-01T10:00:00.000Z"),
+        updatedAt: new Date("2026-08-01T10:00:00.000Z"),
+        outgoingMentions: []
+      }
+    ]);
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-chat-revise-luna", type: "REVISE_PLAN" }));
+    const app = await buildMobileApp();
+    const message = "Change rabbit into a fly before writing starts, and keep @Luna.";
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message, mentionedCharacterIds: ["char-1"] }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().operation).toMatchObject({ kind: "plan_revision" });
+    const queued = vi.mocked(enqueueGenerationJob).mock.calls.at(-1)![0];
+    const operation = state.bookEditOperations.at(-1);
+    expect(queued.payload.message).toBe(message);
+    expect(String(queued.payload.message)).not.toContain("night-flying");
+    expect(queued.payload.editInstruction).not.toContain("night-flying");
+    expect(operation?.editInstruction).not.toContain("night-flying");
+    expect(queued.payload.characterContext).toContain("night-flying");
+    expect(operation?.characterContext).toBe(queued.payload.characterContext);
+    await app.close();
+  });
+
   it("requires a quote and creates a newly charged attempt for a failed revision", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     const failed = failedPlanRevisionOperationRecord();
@@ -131,7 +187,11 @@ describe("mobile plan revision retries and operations", () => {
 
   it("creates a fresh charged job for a confirmed failed revision", async () => {
     mockAccessTokens({ "token-a": "user-a" });
+    const editInstruction = "Make the book brighter around Luna.";
+    const characterContext = "Mentioned character profiles:\n- Luna: a brave night-flying rabbit.";
     const failed = failedPlanRevisionOperationRecord({
+      editInstruction,
+      characterContext,
       automaticRetryCount: 0,
       automaticRetryLimit: 2,
       nextRetryAt: null,
@@ -142,7 +202,9 @@ describe("mobile plan revision retries and operations", () => {
         status: "FAILED",
         payload: {
           planId: "plan-1",
-          message: "Make it brighter.",
+          message: `Make it brighter.\n\n${characterContext}`,
+          editInstruction,
+          characterContext,
           editOperationId: "operation-failed-revision",
           billingLedgerEntryId: "ledger-PLAN_REVISION"
         },
@@ -174,7 +236,9 @@ describe("mobile plan revision retries and operations", () => {
         dispatch: false,
         payload: expect.objectContaining({
           billingLedgerEntryId: "ledger-PLAN_REVISION",
-          retryOfGenerationJobId: "job-failed-revision"
+          retryOfGenerationJobId: "job-failed-revision",
+          editInstruction,
+          characterContext
         })
       })
     );

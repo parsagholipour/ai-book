@@ -100,6 +100,53 @@ describe("worker job payload schemas", () => {
     expect(payload.legacyResumeMarker).toBe("kept");
   });
 
+  it("validates the complete replan recovery contract on regenerated-book payloads", () => {
+    const payload = parseWorkerJobData(jobNames.GENERATE_BOOK, {
+      ...validPayloads[jobNames.GENERATE_BOOK],
+      replanOperationId: "operation-1",
+      sourceProjectId: "project-source",
+      editInstruction: "Rewrite the ending so Mara refuses the red key.",
+      request: "change the ending",
+      characterContext: "Mentioned character profiles:\n- Mara: a careful navigator"
+    });
+
+    expect(payload).toMatchObject({
+      replanOperationId: "operation-1",
+      sourceProjectId: "project-source",
+      editInstruction: "Rewrite the ending so Mara refuses the red key.",
+      request: "change the ending",
+      characterContext: "Mentioned character profiles:\n- Mara: a careful navigator"
+    });
+    expect(payload.editInstruction).not.toContain("careful navigator");
+    expect(payload.request).not.toContain("careful navigator");
+  });
+
+  it("accepts a request-only regenerated-book payload from a legacy replan", () => {
+    const payload = parseWorkerJobData(jobNames.GENERATE_BOOK, {
+      ...validPayloads[jobNames.GENERATE_BOOK],
+      replanOperationId: "operation-legacy",
+      request: "Rebuild the story around Mara's red key."
+    });
+
+    expect(payload.editInstruction).toBeUndefined();
+    expect(payload.request).toBe("Rebuild the story around Mara's red key.");
+  });
+
+  it.each([jobNames.APPLY_BOOK_EDIT, jobNames.CONTINUE_BOOK, jobNames.REPLAN_BOOK, jobNames.REVISE_PLAN] as const)(
+    "keeps approved instructions and character context as separate %s fields",
+    (name) => {
+      const payload = parseWorkerJobData(name, {
+        ...validPayloads[name],
+        editInstruction: "Add Luna to the final scene.",
+        characterContext: "Mentioned character profiles:\n- Luna: a careful navigator"
+      });
+
+      expect(payload.editInstruction).toBe("Add Luna to the final scene.");
+      expect(payload.characterContext).toContain("careful navigator");
+      expect(payload.editInstruction).not.toContain("careful navigator");
+    }
+  );
+
   it("keeps worker fan-out payloads paired with their durable job type", () => {
     const pageFanout = { planId: "plan-1", pageId: "page-1" } satisfies EnqueuePayloadForType<"GENERATE_PAGE">;
     expect(pageFanout.pageId).toBe("page-1");

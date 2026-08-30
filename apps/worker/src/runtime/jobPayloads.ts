@@ -1,4 +1,10 @@
-import { jobNames, type GenerationJobType, type WorkerJobName } from "@book-maker/core";
+import {
+  ATOMIC_CANDIDATES_CONTINUATION_PROTOCOL,
+  CONTINUATION_PUBLICATION_PROTOCOL_FIELD,
+  jobNames,
+  type GenerationJobType,
+  type WorkerJobName
+} from "@book-maker/core";
 import type { Job } from "bullmq";
 import { z } from "zod";
 
@@ -118,13 +124,22 @@ const revisePlanSchema = z.object({
   planId: requiredId("planId"),
   message: z.string().trim().min(1, "message is required"),
   editOperationId: optionalId("editOperationId"),
+  editInstruction: z.string().trim().min(1).optional(),
+  characterContext: z.string().trim().min(1).optional(),
   respondedQuestionPrompts: z.array(z.string()).optional()
 }).passthrough();
 
 const generateBookSchema = z.object({
   ...projectDispatchedFields,
   planId: requiredId("planId"),
-  replanOperationId: optionalId("replanOperationId")
+  replanOperationId: optionalId("replanOperationId"),
+  /** Durable source manuscript for a replan copy; absent on legacy jobs. */
+  sourceProjectId: optionalId("sourceProjectId"),
+  /** Approved standalone replan instruction; recovery fallback when the operation row is legacy-null. */
+  editInstruction: z.string().trim().min(1).optional(),
+  /** Raw pre-instruction request, retained only for legacy successor recovery. */
+  request: z.string().trim().min(1).optional(),
+  characterContext: z.string().trim().min(1).optional()
 }).passthrough();
 
 const generatePageSchema = z.object({
@@ -164,6 +179,8 @@ const applyBookEditSchema = z.object({
   ...projectDispatchedFields,
   operationId: requiredId("operationId"),
   request: z.string().trim().min(1, "request is required"),
+  editInstruction: z.string().trim().min(1).optional(),
+  characterContext: z.string().trim().min(1).optional(),
   affectedPageIndexes: z.array(z.number().int()),
   planId: optionalId("planId"),
   exactReplacement: exactReplacementSchema.optional(),
@@ -182,6 +199,8 @@ const replanBookSchema = z.object({
   ...projectDispatchedFields,
   operationId: requiredId("operationId"),
   request: z.string().trim().min(1, "request is required"),
+  editInstruction: z.string().trim().min(1).optional(),
+  characterContext: z.string().trim().min(1).optional(),
   planId: optionalId("planId"),
   sourceProjectId: optionalId("sourceProjectId"),
   sourcePlanId: optionalId("sourcePlanId").nullable(),
@@ -209,7 +228,10 @@ const importBookSchema = z.object({
 const continueBookSchema = z.object({
   ...projectDispatchedFields,
   operationId: requiredId("operationId"),
+  [CONTINUATION_PUBLICATION_PROTOCOL_FIELD]: z.literal(ATOMIC_CANDIDATES_CONTINUATION_PROTOCOL).optional(),
   request: z.string().trim().min(1, "request is required"),
+  editInstruction: z.string().trim().min(1).optional(),
+  characterContext: z.string().trim().min(1).optional(),
   planId: optionalId("planId"),
   chapterCount: z.coerce.number().int().positive().optional(),
   newPageCount: z.coerce.number().int().positive().optional()

@@ -393,6 +393,38 @@ describe("reviewAndSaveGeneratedPage", () => {
     expect(context.repairedChapterBrief).toBeUndefined();
   });
 
+  it("replays a settled row for an ordinary caller and refuses it for a deferred one", async () => {
+    // The early return is a redelivery replay for a caller that publishes here.
+    // A `deferPublication` caller publishes the page itself, so the same fact is
+    // a lost claim: returning `{ page }` with no candidate left four call sites
+    // each inventing "returned no candidate" for a row another delivery owns.
+    strategy.reviewPageDraft.mockResolvedValue(report(90, { approved: true }));
+    mocks.prisma.page.findUnique.mockResolvedValue({
+      id: "page-row-1",
+      status: "COMPLETED",
+      title: "Someone else",
+      markdown: "Their prose.",
+      summary: "Their summary.",
+      imagePrompt: null,
+      revision: 4,
+      updatedAt: new Date()
+    });
+
+    const replayed = await reviewAndSaveGeneratedPage(baseOptions());
+    expect(replayed).toEqual({ page: { index: 3, title: "Someone else", markdown: "Their prose.", summary: "Their summary." } });
+    expect(strategy.reviewPageDraft).not.toHaveBeenCalled();
+
+    const fence = vi.fn(async () => undefined);
+    await expect(
+      reviewAndSaveGeneratedPage({ ...(baseOptions() as object), deferPublication: true, assertOwnership: fence } as never)
+    ).rejects.toThrow("lost its optimistic publication claim");
+    // The caller's own fence is asked first, so a lost lease wins with its own
+    // stand-down error instead of this generic one.
+    expect(fence).toHaveBeenCalledOnce();
+    expect(strategy.reviewPageDraft).not.toHaveBeenCalled();
+    expect(mocks.prisma.page.updateMany).not.toHaveBeenCalled();
+  });
+
   it("keeps the best draft, not the last, when no rewrite is approved", async () => {
     // Scores 40 → 70 → 55…: the sixth-rewrite-worse-than-second shape. The
     // page must be saved FAILED_QA at the score-70 draft, and the flagged page

@@ -1,5 +1,4 @@
 import { MODEL_PAGE_NUMBERING, numberingForProject, type ReaderPageNumbering } from "../bookPageNumbering.js";
-import { pageInstructionsWithCharacterContext, requestWithCharacterContext } from "./bookEditCopy.js";
 import { type BookEditIntent } from "../bookEditIntent.js";
 import { dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
 import { createOpenBookEditOperation, replayClaimedChatOperation } from "./editOperationClaims.js";
@@ -9,7 +8,7 @@ import {
   busyEditReply,
   continuationNewPageCount,
   editProposalCardFromState,
-  exactReplacementFromMessage,
+  exactReplacementForIntent,
   operationQueuedMessage,
   pendingEditMetadataFromState,
   proposeBookEdit
@@ -23,6 +22,8 @@ import { createAssistantChatMessage, insufficientCreditsChatMessage, type Projec
 import { type QueuedChatEdit } from "./chatEditOptions.js";
 import { fingerprintGenerationRequest, jsonInputValue } from "./support.js";
 import {
+  ATOMIC_CANDIDATES_CONTINUATION_PROTOCOL,
+  CONTINUATION_PUBLICATION_PROTOCOL_FIELD,
   bookPlanSchema,
   creditCostForOperation,
   isDetachedFromProjectLifecycle,
@@ -259,6 +260,8 @@ export async function queueChatPlanRevision(options: {
     kind: "PLAN_REVISION",
     status: "QUEUED",
     request: message,
+    editInstruction: intent.editInstruction?.trim() || message.trim(),
+    ...(options.characterContext?.trim() ? { characterContext: options.characterContext.trim() } : {}),
     classifier: jsonInputValue(intent),
     affectedPageIndexes: [],
     creditsCharged: 0
@@ -288,7 +291,9 @@ export async function queueChatPlanRevision(options: {
       userId,
       projectId: project.id,
       planId,
-      message: requestWithCharacterContext(message, options.characterContext),
+      message,
+      editInstruction: intent.editInstruction?.trim() || message.trim(),
+      ...(options.characterContext?.trim() ? { characterContext: options.characterContext.trim() } : {}),
       operationId: operation.id,
       idempotencyKey: `mobile:project-chat:${project.id}:${operation.id}:plan-revision`,
       ...(respondedQuestionPrompts.length ? { respondedQuestionPrompts } : {})
@@ -376,12 +381,14 @@ export async function queueChatBookEdit(options: QueuedChatEdit): Promise<{
   }
 
   let affectedPageIndexes = await affectedPagesForIntent(intent, message, project);
+  const editInstruction = intent.editInstruction?.trim() || message.trim();
+  const requestedExactReplacement = exactReplacementForIntent(intent, editInstruction);
   // Recomputed rather than read off the proposal: this is the number that gets
   // charged, so it has to be derived from the pages as they are now, and the
   // same scoping the quote used has to be applied or the two disagree.
   const patch =
     intent.kind === "local_patch" && affectedPageIndexes.length > 0
-      ? await planExactReplacement(project.id, exactReplacementFromMessage(message), affectedPageIndexes)
+      ? await planExactReplacement(project.id, requestedExactReplacement, affectedPageIndexes)
       : null;
   // A proposal quoted at 0 was a verified find/replace — the user approved a
   // known diff at no charge, never a model rewrite. When the book changed and
@@ -457,6 +464,8 @@ export async function queueChatBookEdit(options: QueuedChatEdit): Promise<{
     kind: operationKind,
     status: "QUEUED",
     request: message,
+    editInstruction,
+    ...(options.characterContext?.trim() ? { characterContext: options.characterContext.trim() } : {}),
     classifier: jsonInputValue(intent),
     affectedPageIndexes,
     creditsCharged: 0
@@ -504,7 +513,9 @@ export async function queueChatBookEdit(options: QueuedChatEdit): Promise<{
         attemptId,
         payload: {
           operationId: operation.id,
-          request: requestWithCharacterContext(message, options.characterContext),
+          request: message,
+          editInstruction,
+          ...(options.characterContext?.trim() ? { characterContext: options.characterContext.trim() } : {}),
           affectedPageIndexes,
           intentKind: intent.kind,
           // The enqueue transaction takes the project out of this settled
@@ -513,11 +524,10 @@ export async function queueChatBookEdit(options: QueuedChatEdit): Promise<{
           [PRE_EDIT_PROJECT_STATUS]: settledStatusBeforeEdit(project.status),
           // Absent means what it has always meant: the whole request covers
           // every page. Present, it only narrows what a named page is told,
-          // and a page with no entry still gets the request. The sheets are
-          // composed onto each entry as well as onto `request`, because the
-          // worker substitutes one for the other rather than adding to it.
+          // and a page with no entry still gets the request. Character sheets
+          // ride separately so they cannot become hidden edit requirements.
           ...(perPageInstructions.length > 0
-            ? { perPageInstructions: pageInstructionsWithCharacterContext(perPageInstructions, options.characterContext) }
+            ? { perPageInstructions }
             : {}),
           ...(project.currentPlanId ? { planId: project.currentPlanId } : {}),
           ...(ledgerEntry ? { billingLedgerEntryId: ledgerEntry.id } : {}),
@@ -527,8 +537,8 @@ export async function queueChatBookEdit(options: QueuedChatEdit): Promise<{
           // a patch-priced edit into a per-page regeneration.
           ...(patch
             ? { exactReplacement: patch.replacement, mode: "exact" as const }
-            : exactReplacementFromMessage(message)
-              ? { exactReplacement: exactReplacementFromMessage(message) }
+            : requestedExactReplacement
+              ? { exactReplacement: requestedExactReplacement }
               : {})
         }
       });
@@ -570,7 +580,12 @@ export async function queueChatContinueBook(options: QueuedChatEdit): Promise<{
     kind: "CONTINUE_BOOK",
     status: "QUEUED",
     request: message,
-    classifier: jsonInputValue(intent),
+    editInstruction: intent.editInstruction?.trim() || message.trim(),
+    ...(options.characterContext?.trim() ? { characterContext: options.characterContext.trim() } : {}),
+    classifier: jsonInputValue({
+      ...intent,
+      [CONTINUATION_PUBLICATION_PROTOCOL_FIELD]: ATOMIC_CANDIDATES_CONTINUATION_PROTOCOL
+    }),
     affectedPageIndexes: [],
     creditsCharged: 0
   });
@@ -617,7 +632,10 @@ export async function queueChatContinueBook(options: QueuedChatEdit): Promise<{
         attemptId,
         payload: {
           operationId: operation.id,
-          request: requestWithCharacterContext(message, options.characterContext),
+          [CONTINUATION_PUBLICATION_PROTOCOL_FIELD]: ATOMIC_CANDIDATES_CONTINUATION_PROTOCOL,
+          request: message,
+          editInstruction: intent.editInstruction?.trim() || message.trim(),
+          ...(options.characterContext?.trim() ? { characterContext: options.characterContext.trim() } : {}),
           chapterCount,
           newPageCount,
           [PRE_EDIT_PROJECT_STATUS]: settledStatusBeforeEdit(project.status),

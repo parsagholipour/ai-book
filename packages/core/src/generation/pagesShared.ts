@@ -140,6 +140,12 @@ export type GeneratePageOptions = {
   chapterPageStart?: number | undefined;
   chapterPageEnd?: number | undefined;
   pageIndex: number;
+  /** Approved edit instruction; authoritative over a stale page brief. */
+  editInstruction?: string | undefined;
+  /** Prompt-only character canon; never an additional edit requirement. */
+  characterContext?: string | undefined;
+  /** Concrete omissions from the preceding adherence verdict. */
+  adherenceRepair?: string[] | undefined;
   previousSummaries: string[];
   previousPages?: PriorPageContext[] | undefined;
   /**
@@ -447,7 +453,7 @@ export type OpeningContractSource = {
  * producers, which assign work for prose about to be written, and false of every
  * prompt this contract feeds: `revisePageDraft` and `polishPageDraft`
  * rewrite the page they are handed, in place, and `rewritePageForUserRequest`
- * (`apps/worker/src/handlers/replanBook.ts`) routes a reader's "make page 1
+ * (`apps/worker/src/generation/textEditRewrite.ts`) routes a reader's "make page 1
  * sharper" through that same `revisePageDraft`. On an import's page 1 all three
  * therefore carried "deliver the plan's openingHook in the page's own prose" —
  * an instruction to rewrite the author's opening into a stranger's idea of it,

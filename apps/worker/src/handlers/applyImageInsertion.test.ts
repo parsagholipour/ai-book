@@ -894,13 +894,4 @@ describe("applyImageInsertion with no imageInsertion on the payload", () => {
     expect(mocks.prisma.project.update).not.toHaveBeenCalled();
   });
 
-  it("still replays an APPLIED redelivery whose payload lost the field", async () => {
-    await applyImageInsertion(job({ imageInsertion: undefined }), operation("APPLIED"));
-
-    // The picture is already on the page, so the missing-subject throw may not
-    // come before the redelivery fence.
-    expect(mocks.generateImageBytes).not.toHaveBeenCalled();
-    expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", COMPILE_OPTIONS);
-  });
 });

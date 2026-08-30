@@ -45,3 +45,15 @@ file access is scoped to that book's own illustrations as it is in the worker. A
 rebuild (saved `book.md`, no anchor plan) replaces translatable ranges with a cover-numbering
 stub rather than leaving a map from the Contents-reprinted pass — same manuscript is not the
 same pagination, but chrome still needs to know whether the CSS skipped the cover.
+**The export barrier blocks the revision it names, not every revision, and only an expired
+publication lease lets recovery retire it.** The claim also tests the text-edit invalidation
+barrier — against *its own* revision, never for emptiness:
+`OR: [{ exportInvalidationRevision: null }, { exportInvalidationRevision: { not: contentRevision } }]`.
+A text edit commits its new manuscript before deleting the old shared files, and a barrier naming
+the revision this rename claims *is* that window, so the inline publisher and the provenance repair
+both stand down inside it. A barrier naming any other revision cannot be that window — the revision
+CAS beside it pins the row to this one — so it belongs to a tail that died without a redelivery, and
+refusing on it would lock the book out of rebuilds until the worker's delayed, lease-aware stranded
+sweep retires an abandoned current barrier. Both `OR` arms are load-bearing: Prisma compiles a bare
+`{ not: n }` to `"exportInvalidationRevision" <> $1`, which is UNKNOWN — and so excludes the row —
+for the null every healthy project has.

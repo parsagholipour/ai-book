@@ -1,6 +1,5 @@
 import { type BookEditIntent } from "../bookEditIntent.js";
 import { numberingForProject } from "../bookPageNumbering.js";
-import { requestWithCharacterContext } from "./bookEditCopy.js";
 import { busyEditReply, operationQueuedMessage, proposeBookEdit } from "./bookEditIntents.js";
 import { bookEditCreditCost } from "./bookEditPricing.js";
 import { type MobileBookEditOperationRecord, type MobileProjectChatMessageRecord } from "./dto.js";
@@ -9,7 +8,13 @@ import { type QueuedChatEdit } from "./chatEditOptions.js";
 import { createOpenBookEditOperation, replayClaimedChatOperation } from "./editOperationClaims.js";
 import { queueAttemptChatOperation } from "./editOperations.js";
 import { createAssistantChatMessage, type ProjectForChat } from "./projectChat.js";
-import { structuralCardPlanOf, structuralPagesOf, structuralRefusalMessage } from "./structuralPageEdits.js";
+import {
+  canonicalStructuralEditInstruction,
+  compoundStructuralReplanIntent,
+  structuralCardPlanOf,
+  structuralPagesOf,
+  structuralRefusalMessage
+} from "./structuralPageEdits.js";
 import { jsonInputValue } from "./support.js";
 import { enqueueGenerationJob } from "../queue.js";
 import { PRE_EDIT_PROJECT_STATUS, resolveStructuralPageEdit } from "@book-maker/core";
@@ -57,15 +62,60 @@ export async function queueChatRestructurePages(options: QueuedChatEdit): Promis
     });
   }
 
-  const cost = bookEditCreditCost(intent.kind, resolved.plan.pagesBilled, project);
-  if (options.quotedCredits !== undefined && cost > options.quotedCredits) {
-    // The shown quote is a ceiling. A book that grew since the card re-proposes
-    // at the current price rather than charging past the number the reader saw.
+  const numbering = numberingForProject(project);
+  const structuralPlan = structuralCardPlanOf(intent, resolved.plan);
+  const executionIntent: BookEditIntent = {
+    ...intent,
+    editInstruction: canonicalStructuralEditInstruction({
+      intent,
+      numbering,
+      plan: structuralPlan,
+      request: message
+    })
+  };
+  const executionInstruction = executionIntent.editInstruction?.trim() || message.trim();
+  const compoundReplan = compoundStructuralReplanIntent(executionIntent, structuralPlan);
+  if (compoundReplan) {
+    // A proposal written by an older API may still claim this is a free direct
+    // delete/move. Present the whole-book price and execution kind before any
+    // operation or charge exists; never turn Apply into an implicit reprice.
     return proposeBookEdit({
       project,
       userMessageId,
       message,
-      intent,
+      intent: compoundReplan,
+      ...(options.characterContext ? { characterContext: options.characterContext } : {})
+    });
+  }
+  // The proposal's canonical instruction is the contract the reader approved.
+  // Resolve once more against the live manuscript, but never let a new
+  // coordinate slip through merely because it costs the same (or less). The
+  // proposal path stores its canonical result on `intent`, so an unchanged
+  // re-resolution compares equal and proceeds without another card.
+  //
+  // **A card that carries no instruction is not a card that carries a
+  // different one.** `editInstruction` is new and un-backfilled, so every
+  // proposal outstanding at the deploy stores none — and reading the raw
+  // request in its place made all of them differ from their own canonical
+  // clause, because the reader's words ("delete the last page please") are
+  // never what the resolver writes, so the Apply answered with a second,
+  // identical-looking card and only went through on the next tap. Absent
+  // means the card predates the contract:
+  // it is executed under the price ceiling alone, which is the whole guard
+  // those cards were shown under.
+  const approvedInstruction = intent.editInstruction?.trim();
+  const contractChanged = Boolean(approvedInstruction) && executionInstruction !== approvedInstruction;
+
+  const cost = bookEditCreditCost(intent.kind, resolved.plan.pagesBilled, project);
+  if (contractChanged || (options.quotedCredits !== undefined && cost > options.quotedCredits)) {
+    // A changed canonical instruction is a changed contract even when the
+    // quote did not rise. Re-propose the live plan before creating an operation
+    // or worker payload. The existing price ceiling remains in force too.
+    return proposeBookEdit({
+      project,
+      userMessageId,
+      message,
+      intent: executionIntent,
       ...(options.characterContext ? { characterContext: options.characterContext } : {})
     });
   }
@@ -78,12 +128,14 @@ export async function queueChatRestructurePages(options: QueuedChatEdit): Promis
     kind: "RESTRUCTURE_PAGES",
     status: "QUEUED",
     request: message,
+    editInstruction: executionInstruction,
+    ...(options.characterContext?.trim() ? { characterContext: options.characterContext.trim() } : {}),
     // The request rides the classifier as well as the payload, and `kind` below
     // is what routes the job to the fork that reads either: `applyBookEdit`
     // gates on the column rather than on the payload's `structuralEdit`, so a
     // delivery whose job data no longer carries the field reads it back from
     // here. The worker's stamp is written onto this same column.
-    classifier: jsonInputValue({ ...intent, structuralEdit: edit }),
+    classifier: jsonInputValue({ ...executionIntent, structuralEdit: edit }),
     affectedPageIndexes: [],
     creditsCharged: 0
   });
@@ -92,13 +144,13 @@ export async function queueChatRestructurePages(options: QueuedChatEdit): Promis
       projectId: project.id,
       requestId: commandRequestId,
       parentMessageId: userMessageId,
-      intent
+      intent: executionIntent
     });
     if (replay) return replay;
     const reply = await busyEditReply({
       projectId: project.id,
       parentMessageId: userMessageId,
-      intent,
+      intent: executionIntent,
       request: message,
       ...(options.characterContext ? { characterContext: options.characterContext } : {})
     });
@@ -110,7 +162,7 @@ export async function queueChatRestructurePages(options: QueuedChatEdit): Promis
     project,
     userMessageId,
     request: message,
-    intent,
+    intent: executionIntent,
     operation,
     cost,
     billingOperation: "PAGE_REGENERATION",
@@ -118,9 +170,9 @@ export async function queueChatRestructurePages(options: QueuedChatEdit): Promis
     // A charge this book cannot afford re-proposes, and the fresh card is built
     // from state rather than from the book. These are the numbers that state
     // cannot recompute — without them the resume's chip names no pages at all.
-    structuralPlan: structuralCardPlanOf(intent, resolved.plan),
+    structuralPlan,
     ...(options.characterContext ? { characterContext: options.characterContext } : {}),
-    metadata: { intent, structuralEdit: edit, pagesBilled: resolved.plan.pagesBilled },
+    metadata: { intent: executionIntent, structuralEdit: edit, pagesBilled: resolved.plan.pagesBilled },
     enqueue: async (tx, { attemptId, ledgerEntry }) => {
       await tx.project.update({ where: { id: project.id }, data: { status: "EDITING" } });
       return enqueueGenerationJob({
@@ -134,9 +186,11 @@ export async function queueChatRestructurePages(options: QueuedChatEdit): Promis
         attemptId,
         payload: {
           operationId: operation.id,
-          request: requestWithCharacterContext(message, options.characterContext),
+          request: message,
+          editInstruction: executionInstruction,
+          ...(options.characterContext?.trim() ? { characterContext: options.characterContext.trim() } : {}),
           affectedPageIndexes: [],
-          intentKind: intent.kind,
+          intentKind: executionIntent.kind,
           structuralEdit: edit,
           // Stamped from the row this transaction is about to move: the worker
           // settles the book itself on a delivered no-op and on a recompile it
@@ -148,8 +202,8 @@ export async function queueChatRestructurePages(options: QueuedChatEdit): Promis
         }
       });
     },
-    replyContent: operationQueuedMessage(intent.kind, [], intent, numberingForProject(project)),
-    replyMetadata: { intent, charged: true, creditsCharged: cost }
+    replyContent: operationQueuedMessage(executionIntent.kind, [], executionIntent, numbering),
+    replyMetadata: { intent: executionIntent, charged: true, creditsCharged: cost }
   });
 }
 

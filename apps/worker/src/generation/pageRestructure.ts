@@ -83,9 +83,10 @@ import {
  * and the `create` that takes it, and `PlanVersion` carries
  * `@@unique([projectId, version])`. Any writer committing a plan version for
  * this project in that window turned the create into a `23505` that rolled the
- * entire shift back, and `apply-book-edit` has no retry budget
- * (`retryJobOptions` names three job types and this is not one), so the delivery
- * went straight to `markFailed`: the edit failed and refunded over a number
+ * entire shift back, and an `apply-book-edit` handler failure is never
+ * redelivered — its `retryJobOptions` budget exists to replay a delivered tail,
+ * and `shouldBypassConfiguredRetries` turns every other error into an
+ * unrecoverable one — so the delivery went straight to `markFailed`: the edit failed and refunded over a number
  * nobody was looking at. It is derived below instead, one statement after the
  * base version's own row lock — which is the lock every writer that supersedes
  * a plan before creating the next one already blocks on — and the create is
@@ -151,9 +152,10 @@ export async function applyStructuralPageChange(
     // both Project and BookEditOperation. Stop holds Project before it revokes
     // the operation lease; taking the lease first here inverted that order and
     // let cancellation deadlock against a structural publication.
-    await tx.project.update({
+    const lockedProject = await tx.project.update({
       where: { id: projectId },
-      data: { contentRevision: { increment: 0 } }
+      data: { contentRevision: { increment: 0 } },
+      select: { contentRevision: true }
     });
 
     // --- The claim, and it is the redelivery fence -------------------------
@@ -474,6 +476,7 @@ export async function applyStructuralPageChange(
       previousChapterTargetPages: Object.fromEntries(
         chapters.map((chapter) => [chapter.id, chapter.targetPages])
       ),
+      baseContentRevision: lockedProject.contentRevision,
       appliedAt: new Date().toISOString()
     };
     if (plan.action === "insert") {

@@ -1,25 +1,28 @@
-import { getProjectOrThrow, invalidateProjectExports, strategyForInput } from "../generation/bookHelpers.js";
+import { getProjectOrThrow, strategyForInput } from "../generation/bookHelpers.js";
 import {
   prepareEmbedding,
-  strategyUsesSemanticMemory,
-  writePreparedEmbedding
+  strategyUsesSemanticMemory
 } from "../generation/embeddingWrites.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
+import { resolveEditPromptContext } from "../generation/editOperationContext.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
-import { maybeEnqueueCompile } from "../runtime/dispatch.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import { applyImageInsertion } from "./applyImageInsertion.js";
 import { applyImageLayout } from "./applyImageLayout.js";
 import { restructurePages } from "./restructurePages.js";
-import { locallyPatchedPage, rewritePageForUserRequest } from "./replanBook.js";
+import {
+  draftTextEditCandidates,
+  storedExactReplacementCandidate,
+  type TextEditCandidate
+} from "./textEditCandidates.js";
 import {
   settleSkippedExactTextEdit,
   textExactEditWasSkipped
 } from "./applyBookEditNoop.js";
-import { keeperStoryExtractForSave, persistStoryExtract } from "../generation/qualityEnrichment.js";
+import { keeperStoryExtractForSave } from "../generation/qualityEnrichment.js";
 import { loadQualityContext } from "../generation/qualitySettings.js";
-import { loadProjectStoryState, rebuildProjectStoryState } from "../generation/storyStateStore.js";
+import { loadProjectStoryState } from "../generation/storyStateStore.js";
 import {
   assertTextEditLeaseTx,
   completeTextEditLease,
@@ -28,26 +31,32 @@ import {
   waitForTextEditLease,
   waitForTextEditLeaseCompletion
 } from "../generation/textEditLease.js";
-import {
-  claimAppliedEditPublication,
-  restoreEditProjectStatus
-} from "../generation/editProjectStatus.js";
-import { runBestEffortPageMemoryWrite } from "../generation/bestEffortSavepoint.js";
 import { UnownedTextEditDeliveryError } from "../runtime/jobTypes.js";
 import {
+  applyStoryDelta,
   bookPlanSchema,
-  compilePublicationPolicyFromPayload,
   createProviders,
-  DETACHED_FROM_PROJECT_LIFECYCLE,
-  EXPORT_REPAIR_FORMAT,
-  hasExactMatch,
-  jsonPayloadToRecord,
+  parseStoryDelta,
   preEditProjectStatus,
-  type SettledProjectStatus
+  rebuildStoryState,
+  seedStoryStateFromPromises,
+  type StoryState
 } from "@book-maker/core";
-import { pageScope, Prisma, prisma } from "@book-maker/db";
+import { EDIT_ADHERENCE_FAILED, ReaderEditFailure } from "@book-maker/core/editFailure";
+import { Prisma, prisma } from "@book-maker/db";
 import type { ApplyBookEditJob } from "../runtime/jobPayloads.js";
 import { randomUUID } from "node:crypto";
+import type { DurableEditCompletionClaim } from "../runtime/durableEditCompletion.js";
+import type { JobCompletion } from "../runtime/jobTypes.js";
+import {
+  adoptLegacyTextEditTail,
+  publishTextEditManuscript,
+  textEditPublicationCompletion,
+  textEditPublicationIdentity,
+  type TextEditMemoryEntry,
+  type TextEditPublicationIdentity,
+  type TextEditPublicationPage
+} from "../generation/textEditPublication.js";
 
 /**
  * `apply-book-edit` job: apply a user-approved edit to saved pages.
@@ -63,11 +72,10 @@ function applyStepProgress(pagesDone: number, total: number): number {
   return 40 + Math.round((pagesDone / Math.max(total, 1)) * 35);
 }
 
-export async function applyBookEdit(job: ApplyBookEditJob) {
+export async function applyBookEdit(job: ApplyBookEditJob): Promise<JobCompletion> {
   const {
     projectId,
     operationId,
-    request,
     affectedPageIndexes,
     planId,
     exactReplacement,
@@ -97,8 +105,7 @@ export async function applyBookEdit(job: ApplyBookEditJob) {
     // the same transaction as that shift. Reaching the unconditional ACTIVE
     // write below before the fence runs would put a redelivery on the far side
     // of it.
-    await restructurePages(job, operation);
-    return;
+    return await restructurePages(job, operation);
   }
   if (operation.kind === "MOVE_IMAGE" || operation.kind === "REMOVE_IMAGE") {
     // On the column, for the same reason as above and with a worse failure
@@ -116,7 +123,7 @@ export async function applyBookEdit(job: ApplyBookEditJob) {
     // copy; a job carrying neither settles as a delivered no-op, which is the
     // path a vanished picture already takes.
     await applyImageLayout(job, operation);
-    return;
+    return {};
   }
   if (operation.kind === "ADD_IMAGE") {
     // A paid one-off illustration, not a text rewrite. Forked before the
@@ -126,19 +133,27 @@ export async function applyBookEdit(job: ApplyBookEditJob) {
     // above: the reader bought a picture, and the rewrite loop would have spent
     // the charge rewriting the page it was going on.
     await applyImageInsertion(job, operation);
-    return;
+    return {};
   }
   // Unlike an ordinary APPLIED text edit, this row changed no manuscript
   // revision and owns no publication tail. Its settlement completed the lease,
   // but the classifier marker is the durable fast-path for every sequential
   // redelivery and keeps this door safe even if lease bookkeeping is repaired.
   if (operation.status === "APPLIED" && textExactEditWasSkipped(operation.classifier)) {
-    return;
+    return {};
   }
   // The enqueue transaction already moved the project to EDITING. This stamp
   // is the only record of which settled status a text edit may restore when
   // its compile handoff cannot be queued; legacy jobs decode as COMPLETE.
   const fallbackStatus = preEditProjectStatus(job.data);
+  const durableCompletion: DurableEditCompletionClaim = {
+    generationJobId,
+    projectId,
+    operationId,
+    attemptId: job.data.attemptId,
+    type: "APPLY_BOOK_EDIT",
+    message: "Book edit applied"
+  };
   // Paid/operator retry paths intentionally replay the payload against the
   // FAILED operation row. Re-open only the status this delivery actually read;
   // an ordinary stalled ACTIVE delivery may never resurrect a winner's later
@@ -155,7 +170,7 @@ export async function applyBookEdit(job: ApplyBookEditJob) {
   const ownerToken = randomUUID();
   const claim = await waitForTextEditLease(operationId, ownerToken);
   if (claim.outcome === "completed" || claim.outcome === "settled") {
-    return;
+    return {};
   }
   if (claim.outcome === "abandoned") {
     throw new UnownedTextEditDeliveryError();
@@ -163,25 +178,61 @@ export async function applyBookEdit(job: ApplyBookEditJob) {
   const heartbeat = startTextEditLeaseHeartbeat(operationId, ownerToken);
   if (claim.phase === "tail") {
     try {
-      await replayAppliedTextEdit(
+      // Re-read under the claim. The snapshot above was taken before the lease
+      // wait, which blocks for as long as another delivery holds the operation
+      // — and that delivery is exactly the one that publishes the follow-up
+      // checkpoint and rewrites `affectedPageIndexes` to the pages it actually
+      // changed. Deciding modern-vs-legacy off the stale copy adopted a
+      // published edit as a legacy one and checkpointed its export invalidation
+      // as already done, so the stale files were never retired and the barrier
+      // never cleared. `continueBook` and `replanEditCandidates` re-read here
+      // for the same reason.
+      const applied = await prisma.bookEditOperation.findUnique({
+        where: { id: operationId },
+        select: { classifier: true, affectedPageIndexes: true }
+      });
+      const replayPageIndexes = applied?.affectedPageIndexes ?? operation.affectedPageIndexes;
+      // The same re-read answers the no-op door, which the entry check above
+      // can only ask of a marker that was already there. A settlement that
+      // landed while this delivery waited changed no manuscript revision and
+      // owns no publication tail, so there is nothing here to replay: adopting
+      // it as a legacy one claims the project's publication window, stamps a
+      // `publicationRevision` on the one row that deliberately has none, and
+      // queues a compile that deletes the finished PDF the reader is holding.
+      // Only the lease is still owed, exactly as on the stood-down tail below.
+      if (textExactEditWasSkipped(applied?.classifier ?? operation.classifier)) {
+        await completeStoodDownTextEditTail(operationId, ownerToken);
+        return {};
+      }
+      let identity = textEditPublicationIdentity(applied?.classifier, {
         projectId,
-        planId,
-        fallbackStatus,
-        operationId,
-        ownerToken
-      );
-      // A superseded publication generation is terminal for this already-
-      // delivered edit, not evidence of a competing lease owner. It must not
-      // touch the newer project/exports, but this delivery still owns and owes
-      // the APPLIED-tail lease completion below so processJob can terminalize
-      // its durable GenerationJob. A live-owner race throws from the lease
-      // assertion inside replayAppliedTextEdit and retains the stand-down path.
-      await completeDeliveredTextEditLease({
-        projectId,
-        operationId,
+        operationId
+      });
+      let legacy = false;
+      if (!identity) {
+        legacy = true;
+        identity = await adoptLegacyTextEditTail({
+          projectId,
+          operationId,
+          ownerToken,
+          ...(planId ? { planVersionId: planId } : {}),
+          fallbackStatus
+        });
+      }
+      if (!identity) {
+        // Either a newer lifecycle owns the publication window or there is no
+        // plan to compile against; both are terminal for an edit the reader
+        // already has. The delivery still owes the APPLIED-tail completion, or
+        // the operation keeps a live lease nobody is working under and every
+        // redelivery waits out its expiry first.
+        await completeStoodDownTextEditTail(operationId, ownerToken);
+        return {};
+      }
+      return textEditPublicationCompletion({
+        identity,
         ownerToken,
-        generationJobId,
-        phase: "applied-tail"
+        memory: () => prepareReplayMemory(job, replayPageIndexes, identity!),
+        durableCompletionCommitted: !legacy
       });
     } catch (error) {
       if (!isTextEditLeaseLostError(error)) throw error;
@@ -191,7 +242,12 @@ export async function applyBookEdit(job: ApplyBookEditJob) {
     } finally {
       await heartbeat.stop();
     }
-    return;
+    // The tail branch is the whole of this delivery. Falling through re-entered
+    // drafting: a published edit drove its finished project back to EDITING and
+    // re-applied the request over prose it had already changed — with the fence
+    // permanently inert, because `heartbeat.stop()` above makes every later
+    // `assertHeld()` a no-op.
+    return {};
   }
   try {
     await prisma.$transaction(async (tx) => {
@@ -232,38 +288,10 @@ export async function applyBookEdit(job: ApplyBookEditJob) {
       throw new Error("No matching pages found for this edit");
     }
 
-    await advanceJobStep(generationJobId, "snapshot", 35, `Snapshotting ${pages.length} page edit target(s)`, {
+    await advanceJobStep(generationJobId, "snapshot", 35, `Preparing ${pages.length} page edit target(s)`, {
       done: 0,
       total: pages.length
     });
-    const snapshotRows = await prisma.$transaction(async (tx) => {
-      await assertTextEditLeaseTx(tx, operationId, ownerToken);
-      const existing = await tx.pageEditSnapshot.findMany({
-        where: { operationId, pageId: { in: pages.map((page) => page.id) } }
-      });
-      const byPageId = new Map(existing.map((snapshot) => [snapshot.pageId, snapshot]));
-      for (const page of pages) {
-        if (byPageId.has(page.id)) continue;
-        const snapshot = await tx.pageEditSnapshot.create({
-          data: {
-            projectId,
-            pageId: page.id,
-            operationId,
-            pageIndex: page.index,
-            titleBefore: page.title,
-            markdownBefore: page.markdown,
-            summaryBefore: page.summary,
-            revisionBefore: page.revision,
-            ...(page.storyDelta != null ? { storyDeltaBefore: page.storyDelta as Prisma.InputJsonValue } : {})
-          }
-        });
-        byPageId.set(page.id, snapshot);
-      }
-      return [...byPageId.values()];
-    });
-    const snapshots = new Map(snapshotRows.map((snapshot) => [snapshot.pageId, snapshot]));
-
-    const updatedPageIndexes: number[] = [];
     // Rewriting is the long step, and one flat "applying" for the whole of it is
     // what made a multi-page edit look stalled. Each page reports itself three
     // times so both the bar and the phrase above it keep moving; the API turns
@@ -277,194 +305,42 @@ export async function applyBookEdit(job: ApplyBookEditJob) {
         { done: offset, total: pages.length, phase, pageIndex: page.index }
       );
 
-    const skippedPageIndexes: number[] = [];
-    // A page named by the reader gets its own instruction; every other page in
-    // the edit gets the request, which is what this loop has always done. Both
-    // strings already carry the mentioned characters' sheets — neither may be
-    // rebuilt from the operation's classifier, whose entries are the bare ones.
-    const instructionForPage = new Map((perPageInstructions ?? []).map((entry) => [entry.pageIndex, entry.instruction]));
-    const seedPromises = plan.promises ?? [];
-    let currentState = await loadProjectStoryState(projectId, seedPromises);
-    try {
-      for (const [offset, page] of pages.entries()) {
-        const snapshot = snapshots.get(page.id);
-        if (!snapshot) {
-          throw new Error(`Snapshot missing for text edit page ${page.id}`);
-        }
-        // The page save and this marker commit in one fenced transaction below.
-        // A crash replacement resumes after the pages that transaction already
-        // delivered instead of applying the reader's instruction to them twice.
-        if (snapshot.revisionAfter != null) {
-          updatedPageIndexes.push(page.index);
-          continue;
-        }
-        await reportPage(page, offset, "draft");
-        // Through the shared matcher, not `includes`: the pages were chosen with a
-        // case-insensitive search, so a literal check here disagreed with the search
-        // that selected them and sent those pages to the model instead. The title
-        // counts too — the preview prices title-only pages, and `locallyPatchedPage`
-        // patches the title, so a markdown-only gate skipped a promised rename.
-        const patchable = Boolean(
-          exactReplacement &&
-            (hasExactMatch(page.markdown, exactReplacement) || hasExactMatch(page.title, exactReplacement))
-        );
-        if (mode === "exact" && !patchable) {
-          // The page changed between the quote and the apply. Nothing to replace,
-          // and rewriting it is not what was approved.
-          skippedPageIndexes.push(page.index);
-          continue;
-        }
-        const updated = exactReplacement && patchable
-          ? locallyPatchedPage(page, exactReplacement)
-          : await rewritePageForUserRequest({
-              projectId,
-              page,
-              input,
-              plan,
-              strategy,
-              providers,
-              request: instructionForPage.get(page.index) ?? request,
-              quality,
-              generationJobId,
-              onPhase: (phase) => reportPage(page, offset, phase)
-            });
-        await reportPage(page, offset, "save");
-        // Spend every provider call before taking the publication lock. The
-        // transaction below then begins by proving this delivery still owns the
-        // lease and publishes the page, snapshot, notes and memory as one unit.
-        const preparedEmbedding = strategyUsesSemanticMemory(strategy)
-          ? await prepareEmbedding(updated.summary, providers.embedding)
-          : null;
-        const draft = {
-          title: updated.title,
-          markdown: updated.markdown,
-          summary: updated.summary,
-          continuityNotes: updated.continuityNotes,
-          ...(updated.imagePrompt ? { imagePrompt: updated.imagePrompt } : {})
-        };
-        const storyExtract = await keeperStoryExtractForSave({
-          projectId,
-          pageIndex: page.index,
-          draft,
-          textModel: providers.text,
-          plan,
-          input,
-          previousExtract: null,
-          keeperWasRevised: true,
-          currentState,
-          quality
+    const { editInstruction, characterContext } = resolveEditPromptContext(operation, job.data);
+    const storedExactReplacement = storedExactReplacementCandidate(operation.classifier);
+    const candidateResult = await draftTextEditCandidates({
+      projectId,
+      pages,
+      input,
+      plan,
+      strategy,
+      providers,
+      editInstruction,
+      ...(characterContext ? { characterContext } : {}),
+      perPageInstructions,
+      exactReplacement,
+      ...(storedExactReplacement.present
+        ? { operationExactReplacement: storedExactReplacement.replacement }
+        : {}),
+      mode,
+      quality,
+      generationJobId,
+      onPhase: reportPage
+    });
+    const { candidates, skippedPageIndexes, audit } = candidateResult;
+    const updatedPageIndexes = candidates.map((candidate) => candidate.page.index);
+
+    // `unverified` means the review did not run, not that the reader's edit was
+    // refused. Keep the raw verdict in the audit, but do not discard delivered
+    // candidates or enter the refund boundary over an absence of review.
+    if (!candidateResult.satisfied && audit && audit.verdict.basis !== "unverified") {
+      await prisma.$transaction(async (tx) => {
+        await assertTextEditLeaseTx(tx, operationId, ownerToken);
+        await tx.bookEditOperation.update({
+          where: { id: operationId },
+          data: { adherenceAudit: audit as unknown as Prisma.InputJsonValue }
         });
-        const { nextState } = await prisma.$transaction(async (tx) => {
-          await assertTextEditLeaseTx(tx, operationId, ownerToken);
-          const saved = await tx.page.update({
-            where: { id: page.id },
-            data: {
-              title: updated.title,
-              markdown: updated.markdown,
-              summary: updated.summary,
-              imagePrompt: updated.imagePrompt ?? page.imagePrompt,
-              // The rewrite loop's verdict is saved honestly: a page whose best
-              // candidate still failed review stays flagged, so a later full
-              // compile's repair pass can target it instead of it passing silently.
-              status: updated.qualityReport.approved ? "COMPLETED" : "FAILED_QA",
-              revision: { increment: 1 },
-              qualityReport: updated.qualityReport as Prisma.InputJsonValue
-            }
-          });
-          await tx.pageEditSnapshot.update({
-            where: { id: snapshot.id },
-            data: {
-              titleAfter: saved.title,
-              markdownAfter: saved.markdown,
-              summaryAfter: saved.summary,
-              revisionAfter: saved.revision
-            }
-          });
-          if (updated.continuityNotes.length > 0) {
-            await tx.continuityNote.createMany({
-              data: updated.continuityNotes.map((body) => ({
-                projectId,
-                pageId: page.id,
-                scope: `page:${page.index}:edit:${operationId}`,
-                body,
-                tags: ["page", String(page.index), "edit"]
-              }))
-            });
-          }
-          if (preparedEmbedding) {
-            await runBestEffortPageMemoryWrite(tx, () =>
-              writePreparedEmbedding(
-                { projectId, scope: pageScope(page.index), sourceId: page.id, text: saved.summary },
-                preparedEmbedding,
-                tx
-              )
-            );
-          }
-          const nextState = storyExtract
-            ? await runBestEffortPageMemoryWrite(tx, () =>
-                persistStoryExtract({ projectId, pageIndex: page.index, plan, extract: storyExtract, client: tx })
-              )
-            : null;
-          return { nextState };
-        });
-        if (nextState) {
-          currentState = nextState;
-        }
-        updatedPageIndexes.push(page.index);
-      }
-    } catch (error) {
-      // Pages are saved per iteration, but the export invalidation and the
-      // contentRevision bump live on the success path below — so a mid-loop
-      // failure or stop used to hand back a "COMPLETE" book whose Page.markdown
-      // held a half-applied edit while book.pdf still held the pre-edit text.
-      // If anything was saved, rebuild the exports from what the pages actually
-      // say before letting the failure settle. Detached, because the settlement
-      // for this failed edit (markFailed/markStopped, and the attempt it stops
-      // siblings for) must not cancel the rebuild — and the rebuild's own
-      // failure must not flip the restored book to FAILED or refund its
-      // generation charge. Every contentRevision bump queues its own compile;
-      // if this one cannot (`not-ready`, enqueue outage), the restored COMPLETE
-      // status with missing files is exactly the state the on-demand export
-      // repair lane rebuilds.
-      if (updatedPageIndexes.length > 0) {
-        try {
-          await heartbeat.assertHeld();
-          await rebuildProjectStoryState(projectId, plan.promises ?? []);
-          await prisma.$transaction(async (tx) => {
-            // Stop locks Project before revoking this operation lease. Match
-            // that order so cancellation cannot deadlock with half-apply repair.
-            await tx.project.update({
-              where: { id: projectId },
-              data: { contentRevision: { increment: 0 } }
-            });
-            await assertTextEditLeaseTx(tx, operationId, ownerToken);
-            await invalidateProjectExports(projectId);
-            await tx.project.update({
-              where: { id: projectId },
-              data: { contentRevision: { increment: 1 } }
-            });
-          });
-          await maybeEnqueueCompile(
-            projectId,
-            effectivePlanVersion.id,
-            compilePublicationPolicyFromPayload({
-              skipFinalReview: true,
-              [DETACHED_FROM_PROJECT_LIFECYCLE]: true,
-              [EXPORT_REPAIR_FORMAT]: "pdf"
-            })
-          );
-        } catch (cleanupError) {
-          if (isTextEditLeaseLostError(cleanupError)) {
-            throw cleanupError;
-          }
-          console.error(
-            `Failed to queue the export rebuild for half-applied edit ${operationId} on project ${projectId}:`,
-            cleanupError
-          );
-        }
-      }
-      // Rethrown as-is: a StopRequestedError must still reach markStopped.
-      throw error;
+      });
+      throw new ReaderEditFailure(EDIT_ADHERENCE_FAILED);
     }
 
     if (updatedPageIndexes.length === 0 && skippedPageIndexes.length > 0) {
@@ -480,71 +356,93 @@ export async function applyBookEdit(job: ApplyBookEditJob) {
       if (!settled && (await waitForTextEditLeaseCompletion(operationId)) === "abandoned") {
         throw new UnownedTextEditDeliveryError();
       }
-      return;
-    }
-
-    if (skippedPageIndexes.length > 0) {
-      // Undo restores every snapshot it finds and names those pages in its reply,
-      // so a snapshot for a page that was never touched would report a page as
-      // rolled back that never moved.
-      await prisma.$transaction(async (tx) => {
-        await assertTextEditLeaseTx(tx, operationId, ownerToken);
-        await tx.pageEditSnapshot.deleteMany({
-          where: { operationId, pageIndex: { in: skippedPageIndexes } }
-        });
-      });
+      return {};
     }
 
     await advanceJobStep(generationJobId, "export", 85, "Refreshing exports");
     await heartbeat.assertHeld();
-    await rebuildProjectStoryState(projectId, plan.promises ?? []);
-    // APPLIED is the redelivery fence, so it must prove the manuscript revision
-    // moved with it. Written separately, a crash after the operation update sent
-    // the next delivery to the idempotent compile tail without ever advancing
-    // contentRevision, allowing that compile to publish under the old revision.
-    await prisma.$transaction(async (tx) => {
-      await tx.project.update({
-        where: { id: projectId },
-        data: { contentRevision: { increment: 0 } }
+    // Embeddings and story extracts are provider work. Prepare every one before
+    // the short publication transaction so a refusal or timeout leaves the live
+    // manuscript and its snapshots untouched.
+    const seedPromises = plan.promises ?? [];
+    let currentState = await loadProjectStoryState(projectId, seedPromises);
+    const prepared: Array<
+      TextEditCandidate & {
+        preparedEmbedding: Awaited<ReturnType<typeof prepareEmbedding>> | null;
+        storyExtract: Awaited<ReturnType<typeof keeperStoryExtractForSave>>;
+      }
+    > = [];
+    for (const candidate of candidates) {
+      const { page, updated } = candidate;
+      const preparedEmbedding = strategyUsesSemanticMemory(strategy)
+        ? await prepareEmbedding(updated.summary, providers.embedding)
+        : null;
+      const draft = {
+        title: updated.title,
+        markdown: updated.markdown,
+        summary: updated.summary,
+        continuityNotes: updated.continuityNotes,
+        ...(updated.imagePrompt ? { imagePrompt: updated.imagePrompt } : {})
+      };
+      const storyExtract = await keeperStoryExtractForSave({
+        projectId,
+        pageIndex: page.index,
+        draft,
+        textModel: providers.text,
+        plan,
+        input,
+        previousExtract: null,
+        keeperWasRevised: true,
+        currentState,
+        quality
       });
-      const owned = await assertTextEditLeaseTx(tx, operationId, ownerToken);
-      // Keep deletion ordered with the lease claim. A zombie paused after a
-      // barrier cannot wake after a replacement compile and remove its exports.
-      await invalidateProjectExports(projectId);
-      const published = await tx.project.update({
-        where: { id: projectId },
-        data: { contentRevision: { increment: 1 } },
-        select: { contentRevision: true }
-      });
-      await tx.bookEditOperation.update({
-        where: { id: operationId },
-        data: {
-          status: "APPLIED",
-          publicationRevision: published.contentRevision,
-          affectedPageIndexes: updatedPageIndexes,
-          // The queued reply already promised these pages, so a page skipped
-          // because its text changed has to be named somewhere the reader sees —
-          // the serializer reads this to say what was and wasn't touched.
-          ...(skippedPageIndexes.length > 0
-            ? { classifier: { ...jsonPayloadToRecord(owned.classifier), skippedPageIndexes } as Prisma.InputJsonValue }
-            : {}),
-          appliedAt: new Date()
-        }
-      });
-    });
-    // The recompile after an edit never runs the whole-book QA pass: an exact
-    // patch changed only approved strings, and a model rewrite was reviewed per
-    // page inside the edit — with the user's request in context, which the QA
-    // repair pass would not have. Rewriting surrounding pages the user never
-    // asked about is the same hazard the manual Edit Mode skip exists for, and
-    // the per-page price never modeled a book-sized review.
-    await queueTextEditCompile(projectId, effectivePlanVersion.id, fallbackStatus, operationId, ownerToken);
-    await completeDeliveredTextEditLease({
+      if (storyExtract) {
+        currentState = applyStoryDelta(currentState, storyExtract.storyDelta, page.index);
+      }
+      prepared.push({ ...candidate, preparedEmbedding, storyExtract });
+    }
+    const publishedPages: TextEditPublicationPage[] = prepared.map(
+      ({ page, updated, preparedEmbedding, storyExtract }) => ({
+        pageId: page.id,
+        pageIndex: page.index,
+        revisionBefore: page.revision,
+        titleBefore: page.title,
+        markdownBefore: page.markdown,
+        summaryBefore: page.summary,
+        imagePromptBefore: page.imagePrompt,
+        qualityReportBefore: page.qualityReport,
+        storyDeltaBefore: page.storyDelta,
+        titleAfter: updated.title,
+        markdownAfter: updated.markdown,
+        summaryAfter: updated.summary,
+        imagePromptAfter: updated.imagePrompt ?? page.imagePrompt,
+        qualityReportAfter: updated.qualityReport,
+        storyDeltaAfter: storyExtract?.storyDelta ?? page.storyDelta,
+        // The rewrite loop's verdict is saved honestly: a page whose best
+        // candidate still failed review stays flagged, so a later full compile's
+        // repair pass can target it instead of it passing silently.
+        statusAfter: updated.qualityReport.approved ? "COMPLETED" : "FAILED_QA",
+        continuityNotes: updated.continuityNotes,
+        preparedEmbedding
+      })
+    );
+    const publication = await publishTextEditManuscript({
       projectId,
       operationId,
       ownerToken,
-      generationJobId,
-      phase: "draft-success"
+      planVersionId: effectivePlanVersion.id,
+      fallbackStatus,
+      editInstruction,
+      audit,
+      skippedPageIndexes,
+      storyStateAfter: await storyStateForPublishedEdit(projectId, seedPromises, publishedPages),
+      completion: durableCompletion,
+      pages: publishedPages
+    });
+    return textEditPublicationCompletion({
+      identity: publication.identity,
+      ownerToken,
+      memory: publication.memory
     });
   } catch (error) {
     if (!isTextEditLeaseLostError(error)) {
@@ -559,157 +457,118 @@ export async function applyBookEdit(job: ApplyBookEditJob) {
   } finally {
     await heartbeat.stop();
   }
+  return {};
 }
 
 /**
- * Complete only the delivery marker after the edit and compile handoff are
- * durable. A false compare-and-set is ownership evidence, so it keeps the
- * existing wait/stand-down protocol. A thrown write has an unknown outcome:
- * failing the delivered job would refund it and can stop its queued compile,
- * while leaving the APPLIED row untouched lets an overlapping or future
- * delivery replay the idempotent publication tail and reconcile the marker.
+ * Derive the aggregate this edit publishes, rather than folding onto the one it
+ * loaded.
+ *
+ * `applyStoryDelta` can only ever add: a fact is appended, a promise pushed or
+ * marked, an entity field overwritten. Nothing in it retracts. So folding the
+ * new extracts onto `Project.storyState` keeps every fact the edited pages used
+ * to state — the page the reader has just paid to have a detail taken out of
+ * goes on briefing every later draft, review and continuation with it, and only
+ * an unrelated compile or Undo would ever re-derive it away. Which is why this
+ * path has always rebuilt (`rebuildProjectStoryState`) instead.
+ *
+ * The rebuild runs in memory, over the deltas this publication is about to
+ * write, so the aggregate still moves inside the one manuscript transaction
+ * that moves the pages it is derived from — atomicity a post-commit rebuild
+ * would give back. It reads what `rebuildStoryStateFromPages` reads and folds
+ * it the same way, minus that helper's write and its CAS loop.
  */
-async function completeDeliveredTextEditLease(options: {
-  projectId: string;
-  operationId: string;
-  ownerToken: string;
-  generationJobId: string | undefined;
-  phase: "draft-success" | "applied-tail";
-}): Promise<void> {
+async function storyStateForPublishedEdit(
+  projectId: string,
+  seedPromises: readonly string[],
+  published: readonly Pick<TextEditPublicationPage, "pageIndex" | "storyDeltaAfter">[]
+): Promise<StoryState> {
+  const publishedDeltas = new Map(published.map((page) => [page.pageIndex, page.storyDeltaAfter]));
+  const rows = await prisma.page.findMany({
+    where: { projectId },
+    orderBy: { index: "asc" },
+    select: { index: true, storyDelta: true }
+  });
+  const deltas = rows.flatMap((row) => {
+    const delta = parseStoryDelta(
+      publishedDeltas.has(row.index) ? publishedDeltas.get(row.index) : row.storyDelta
+    );
+    return delta ? [{ pageIndex: row.index, delta }] : [];
+  });
+  return rebuildStoryState(deltas, seedStoryStateFromPromises(seedPromises));
+}
+
+/**
+ * Complete the delivery marker for an APPLIED tail with nothing left to
+ * publish. A false compare-and-set is ownership evidence and keeps the existing
+ * wait/stand-down protocol; a thrown write has an unknown outcome, and failing
+ * a delivered edit here would refund it.
+ */
+async function completeStoodDownTextEditTail(
+  operationId: string,
+  ownerToken: string
+): Promise<void> {
   let completed: boolean;
   try {
-    completed = await completeTextEditLease(options.operationId, options.ownerToken);
+    completed = await completeTextEditLease(operationId, ownerToken);
   } catch (error) {
-    console.error("Text edit lease completion failed after durable compile handoff", {
+    console.error("Text edit lease completion failed for a stood-down APPLIED tail", {
       event: "generation.text_edit_lease_completion_failed",
-      projectId: options.projectId,
-      operationId: options.operationId,
-      generationJobId: options.generationJobId ?? null,
-      phase: options.phase,
+      operationId,
+      phase: "applied-tail",
       recovery: "applied-tail-replay",
       error
     });
     return;
   }
-  if (completed) return;
-  if ((await waitForTextEditLeaseCompletion(options.operationId)) === "abandoned") {
+  if (!completed && (await waitForTextEditLeaseCompletion(operationId)) === "abandoned") {
     throw new UnownedTextEditDeliveryError();
   }
 }
 
-/**
- * An APPLIED row proves the rewrite, snapshots, invalidation and revision bump
- * already landed. A redelivery therefore owns only the export handoff: it may
- * invalidate the same files again, but it must never snapshot or rewrite the
- * pages a second time, nor advance the manuscript revision again.
- */
-async function replayAppliedTextEdit(
-  projectId: string,
-  planId: string | undefined,
-  fallbackStatus: SettledProjectStatus,
-  operationId: string,
-  ownerToken: string
-): Promise<"publication" | "noop" | "lifecycle-superseded"> {
-  const project = await getProjectOrThrow(projectId);
-  const compilePlanId = planId ?? project.currentPlanId;
-  let publicationClaimed = false;
-  let deliveredNoop = false;
-  await prisma.$transaction(async (tx) => {
-    publicationClaimed = await claimAppliedEditPublication(
-      tx,
-      projectId,
-      operationId,
-      fallbackStatus
-    );
-    if (!publicationClaimed) {
-      return;
-    }
-    const owned = await assertTextEditLeaseTx(tx, operationId, ownerToken);
-    // The entry read may predate a racing no-op settlement. Re-read under the
-    // lease row lock before claiming publication so that door also recognizes
-    // the text-only marker and leaves exports and revision untouched.
-    if (textExactEditWasSkipped(owned.classifier)) {
-      deliveredNoop = true;
-      return;
-    }
-    if (!compilePlanId) {
-      // There is no compile this delivery can hand the project to. The
-      // operation is already delivered, so expose the settled book to the
-      // on-demand repair lane under its queue-time status.
-      await restoreEditProjectStatus(tx, projectId, operationId, fallbackStatus);
-      return;
-    }
-    // Keep the operation row locked across the short filesystem delete. An
-    // expired zombie cannot resume after a replacement publishes and remove
-    // that replacement's files.
-    await invalidateProjectExports(projectId);
+/** Rebuild only a missing optional embedding tail on an APPLIED redelivery. */
+async function prepareReplayMemory(
+  job: ApplyBookEditJob,
+  affectedPageIndexes: readonly number[],
+  identity: TextEditPublicationIdentity
+): Promise<TextEditMemoryEntry[]> {
+  const [project, planVersion] = await Promise.all([
+    getProjectOrThrow(identity.projectId),
+    prisma.planVersion.findUnique({ where: { id: identity.planVersionId } })
+  ]);
+  if (!planVersion || project.contentRevision !== identity.publicationRevision) {
+    return [];
+  }
+  const input = inputForPlanVersion(project, planVersion.inputSnapshot);
+  const strategy = strategyForInput(input);
+  if (!strategyUsesSemanticMemory(strategy)) {
+    return [];
+  }
+  const expectedPageIndexes = [...new Set(affectedPageIndexes)];
+  if (expectedPageIndexes.length === 0) {
+    throw new Error("Text edit memory replay is missing its affected page indexes");
+  }
+  const providers = createLoggedProviders(job, createProviders(config, input), input);
+  const pages = await prisma.page.findMany({
+    where: {
+      projectId: identity.projectId,
+      index: { in: expectedPageIndexes }
+    },
+    orderBy: { index: "asc" },
+    select: { id: true, index: true, revision: true, summary: true }
   });
-  // The marker branch above claims no project publication window and has no
-  // compile to enqueue. It can only be reached by a repaired/legacy lease whose
-  // completion stamp was absent.
-  if (deliveredNoop) {
-    return "noop";
+  if (pages.length !== expectedPageIndexes.length) {
+    throw new Error("Text edit memory replay could not resolve every affected page");
   }
-  if (!publicationClaimed) {
-    return "lifecycle-superseded";
-  }
-  if (!compilePlanId) {
-    return "publication";
-  }
-  await queueTextEditCompile(projectId, compilePlanId, fallbackStatus, operationId, ownerToken);
-  return "publication";
-}
-
-/** Queue the idempotent publication tail without failing an already-delivered edit. */
-async function queueTextEditCompile(
-  projectId: string,
-  planVersionId: string,
-  fallbackStatus: SettledProjectStatus,
-  operationId: string,
-  ownerToken: string
-): Promise<void> {
-  let dispatched: Awaited<ReturnType<typeof maybeEnqueueCompile>>;
-  try {
-    dispatched = await maybeEnqueueCompile(projectId, planVersionId, { skipFinalReview: true });
-  } catch (error) {
-    // The edit and its snapshots are already committed and the old exports are
-    // intentionally gone. Failing the delivered edit here only leaves its Bull
-    // row disagreeing with an APPLIED operation; restoring a settled project
-    // hands the missing files to the same on-demand repair lane as `not-ready`.
-    console.error(`Failed to enqueue the export refresh for edited project ${projectId}:`, error);
-    dispatched = "not-ready";
-  }
-  if (dispatched === "not-ready") {
-    // The compile is the only thing that takes this project back out of
-    // EDITING, and the exports are already deleted — so a fan-in that declines
-    // to queue one, with nothing in flight to call it again, would leave the
-    // book unreadable until delayed EDITING reconciliation. Handing it back to
-    // `ensureExportRepairQueued` immediately avoids that grace-period delay —
-    // a settled project with missing files is precisely the state the app's
-    // status stream already knows how to rebuild.
-    await restoreTextEditStatus(projectId, fallbackStatus, operationId, ownerToken);
-  }
-}
-
-async function restoreTextEditStatus(
-  projectId: string,
-  fallbackStatus: SettledProjectStatus,
-  operationId: string,
-  ownerToken: string
-): Promise<void> {
-  await prisma
-    .$transaction(async (tx) => {
-      const restored = await restoreEditProjectStatus(
-        tx,
-        projectId,
-        operationId,
-        fallbackStatus
-      );
-      if (restored) {
-        await assertTextEditLeaseTx(tx, operationId, ownerToken);
-      }
-    })
-    .catch((error: unknown) => {
-      if (isTextEditLeaseLostError(error)) throw error;
+  const prepared: TextEditMemoryEntry[] = [];
+  for (const page of pages) {
+    prepared.push({
+      pageId: page.id,
+      pageIndex: page.index,
+      pageRevision: page.revision,
+      summary: page.summary,
+      preparedEmbedding: await prepareEmbedding(page.summary, providers.embedding)
     });
+  }
+  return prepared;
 }

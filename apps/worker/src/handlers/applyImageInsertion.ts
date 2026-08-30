@@ -15,6 +15,7 @@ import {
 } from "../generation/imageMarkdown.js";
 import { publishAppliedEditTail } from "../generation/appliedEditPublication.js";
 import { claimEditOperationForDelivery } from "../generation/editOperationDelivery.js";
+import { resolveEditPromptContext } from "../generation/editOperationContext.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
@@ -121,8 +122,17 @@ export function insertionFromClassifier(classifier: unknown): ImageInsertionPayl
   };
 }
 
-export async function applyImageInsertion(job: ApplyBookEditJob, operation: { status: string; classifier: unknown }) {
-  const { projectId, operationId, request, planId, imageInsertion, generationJobId } = job.data;
+export async function applyImageInsertion(
+  job: ApplyBookEditJob,
+  operation: {
+    status: string;
+    classifier: unknown;
+    request?: string | null;
+    editInstruction?: string | null;
+    characterContext?: string | null;
+  }
+) {
+  const { projectId, operationId, planId, imageInsertion, generationJobId } = job.data;
   // Read once: the project has already been committed as EDITING, including on
   // redelivery. The payload stamp is the only surviving settled status.
   const fallbackStatus = preEditProjectStatus(job.data);
@@ -224,18 +234,20 @@ export async function applyImageInsertion(job: ApplyBookEditJob, operation: { st
     image: providers.image,
     projectUserId: project.userId ?? null
   });
-  const trimmedRequest = request?.trim() ?? "";
+  // The payload request may still carry fused sheets at the compatibility
+  // boundary; they are not the instruction to draw.
+  const { requestContext, characterContext } = resolveEditPromptContext(operation, job.data);
   // A function of what is attached, not of the selection: the instruction
   // counts the pictures and names the last few as saved faces, so a fallback
   // that can take fewer has to be able to say it again for what it sends.
   const promptForReferenceImages = (attached: readonly string[]) =>
     [
       `Create one interior book illustration depicting: ${insertion.subject}.`,
-      // The stored request carries the reader's wording and any appended library
-      // character sheets (`requestWithCharacterContext`) — the only channel the
-      // appearance rules travel through to this model.
-      trimmedRequest && trimmedRequest !== insertion.subject.trim()
-        ? `The reader's request, including any character notes:\n${trimmedRequest}`
+      requestContext && requestContext !== insertion.subject.trim()
+        ? `The reader's request:\n${requestContext}`
+        : "",
+      characterContext
+        ? `Character context (supplemental canon, not an additional edit requirement):\n${characterContext}`
         : "",
       characterReferencePromptInstruction(selection, attached),
       `Global visual style: ${plan.illustrationPlan.globalStyle}`,

@@ -17,7 +17,13 @@ import {
 import { editProposalSummary } from "./bookEditCopy.js";
 import { type MobileBookEditOperationRecord } from "./dto.js";
 import { currentActionForEditOperation } from "./editOperationCopy.js";
-import { structuralCardBlock, structuralCardPlanOf, structuralRefusalMessage } from "./structuralPageEdits.js";
+import {
+  canonicalStructuralEditInstruction,
+  compoundStructuralReplanIntent,
+  structuralCardBlock,
+  structuralCardPlanOf,
+  structuralRefusalMessage
+} from "./structuralPageEdits.js";
 
 /**
  * The card is the confirmation for an insert, a delete *and* a move, so the
@@ -72,6 +78,314 @@ function surfacesFor(
     card: structuralCardBlock(intent, plan, numbering)
   };
 }
+
+function canonicalInstruction(edit: StructuralPageEdit, instruction: string, pages = PAGES): string {
+  const resolved = resolveStructuralPageEdit(edit, pages);
+  if (!resolved.ok) {
+    throw new Error(`expected a plan, got refusal ${resolved.reason}`);
+  }
+  const intent = { ...intentFor(edit), editInstruction: instruction };
+  return canonicalStructuralEditInstruction({
+    intent,
+    numbering: MODEL_PAGE_NUMBERING,
+    plan: structuralCardPlanOf(intent, resolved.plan)
+  });
+}
+
+describe("canonical structural edit instructions", () => {
+  it("converts only compound delete/move instructions to a correctly sized replan", () => {
+    const deleteIntent = {
+      ...intentFor({ action: "delete", anchorPageIndex: null, pageIndexes: [2], pageCount: 0 }),
+      editInstruction: "Remove page 2. Content requirements: Move its final quote to page 3."
+    };
+    const resolved = resolveStructuralPageEdit(deleteIntent.structuralEdit!, PAGES);
+    if (!resolved.ok) throw new Error("expected delete plan");
+
+    expect(compoundStructuralReplanIntent(deleteIntent, structuralCardPlanOf(deleteIntent, resolved.plan))).toMatchObject({
+      kind: "book_replan",
+      scope: "all_pages",
+      editInstruction: deleteIntent.editInstruction,
+      structuralEdit: deleteIntent.structuralEdit,
+      replanSettings: { targetPages: 4 }
+    });
+
+    const pure = { ...deleteIntent, editInstruction: "Remove page 2" };
+    expect(compoundStructuralReplanIntent(pure, structuralCardPlanOf(pure, resolved.plan))).toBeNull();
+
+    const moveIntent = {
+      ...intentFor({ action: "move", anchorPageIndex: 4, pageIndexes: [2], pageCount: 0 }),
+      editInstruction: "Move page 2 after page 4. Content requirements: Preserve its final quote on page 3."
+    };
+    const moved = resolveStructuralPageEdit(moveIntent.structuralEdit!, PAGES);
+    if (!moved.ok) throw new Error("expected move plan");
+    expect(compoundStructuralReplanIntent(moveIntent, structuralCardPlanOf(moveIntent, moved.plan))).toMatchObject({
+      kind: "book_replan",
+      structuralEdit: { action: "move", pageIndexes: [2] },
+      replanSettings: { targetPages: 5 }
+    });
+  });
+
+  /**
+   * The action clause and the page grammar are `@book-maker/core`'s now, and the
+   * hand copy they replace was narrow in the same places core's was: "Delete the
+   * last page of the book." kept "of the book" as a content requirement, and a
+   * request in a language the clause cannot read kept all of itself. A canonical
+   * instruction carrying a requirement nobody asked for is a whole-book replan,
+   * quoted and charged for deleting one page. The language sweep is core's, in
+   * `structuralInstruction.test.ts`; this is the extractor's half of it.
+   */
+  const bare = (action: "delete" | "move", pageIndexes: number[], anchorPageIndex: number | null) =>
+    ({ action, anchorPageIndex, pageIndexes, pageCount: 0 }) as StructuralPageEdit;
+  it.each([
+    { source: "Delete the last page of the book.", edit: bare("delete", [5], null), expected: "Remove page 5" },
+    { source: "Remove the final page of the story.", edit: bare("delete", [5], null), expected: "Remove page 5" },
+    { source: "Cut page 4, thanks", edit: bare("delete", [4], null), expected: "Remove page 4" },
+    { source: "صفحه ۴ را حذف کن", edit: bare("delete", [4], null), expected: "Remove page 4" },
+    { source: "Move page 2 after page 4 please", edit: bare("move", [2], 4), expected: "Move page 2 after page 4" },
+    { source: "صفحه ۲ را بعد از صفحه ۴ ببر", edit: bare("move", [2], 4), expected: "Move page 2 after page 4" }
+  ])("leaves no content requirement on a bare page edit: $source", ({ source, edit, expected }) => {
+    expect(canonicalInstruction(edit, source)).toBe(expected);
+  });
+
+  it.each([
+    {
+      name: "before",
+      edit: { action: "insert", anchorPageIndex: 2, pageIndexes: [], pageCount: 2 } as StructuralPageEdit,
+      source: "Insert two new pages before page 3 about Mina decoding the brass key.",
+      expected: "Add 2 new pages after page 2. Content requirements: About Mina decoding the brass key."
+    },
+    {
+      name: "after",
+      edit: { action: "insert", anchorPageIndex: 3, pageIndexes: [], pageCount: 1 } as StructuralPageEdit,
+      source: "Add a new page after page 3 that keeps the chase suspenseful.",
+      expected: "Add 1 new page after page 3. Content requirements: That keeps the chase suspenseful."
+    },
+    {
+      name: "end",
+      edit: { action: "insert", anchorPageIndex: null, pageIndexes: [], pageCount: 1 } as StructuralPageEdit,
+      source: "Write one new page at the end of the book where Mina returns the key.",
+      expected: "Add 1 new page at the end of the book. Content requirements: Where Mina returns the key."
+    }
+  ])("normalizes an insert at the $name without losing its content", ({ edit, source, expected }) => {
+    expect(canonicalInstruction(edit, source)).toBe(expected);
+  });
+
+  it.each([
+    {
+      name: "an after destination following an about phrase",
+      edit: { action: "insert", anchorPageIndex: 100, pageIndexes: [], pageCount: 1 } as StructuralPageEdit,
+      source: "Add a page about Mina after page 100",
+      expected: "Add 1 new page after page 20. Content requirements: About Mina."
+    },
+    {
+      name: "a before destination following an about phrase",
+      edit: { action: "insert", anchorPageIndex: 99, pageIndexes: [], pageCount: 1 } as StructuralPageEdit,
+      source: "Insert a page about Mina before page 100",
+      expected: "Add 1 new page after page 20. Content requirements: About Mina."
+    },
+    {
+      name: "an end destination following an about phrase",
+      edit: { action: "insert", anchorPageIndex: null, pageIndexes: [], pageCount: 1 } as StructuralPageEdit,
+      source: "Write a page about Mina at the end of the book",
+      expected: "Add 1 new page at the end of the book. Content requirements: About Mina."
+    }
+  ])("removes $name after resolving the insert", ({ edit, source, expected }) => {
+    const pages = Array.from({ length: 20 }, (_value, offset) => ({
+      id: `page-${offset + 1}`,
+      index: offset + 1,
+      chapterId: null
+    }));
+    const canonical = canonicalInstruction(edit, source, pages);
+    expect(canonical).toBe(expected);
+    expect(canonicalInstruction(edit, canonical, pages)).toBe(canonical);
+  });
+
+  it("strips a move's immediate from/to coordinates but keeps its content clause", () => {
+    const edit: StructuralPageEdit = { action: "move", anchorPageIndex: 4, pageIndexes: [2], pageCount: 0 };
+    const canonical = canonicalInstruction(
+      edit,
+      "Move page 2 from page 2 to before page 5 while preserving Mina's final line."
+    );
+
+    expect(canonical).toBe(
+      "Move page 2 after page 4. Content requirements: While preserving Mina's final line."
+    );
+    expect(canonicalInstruction(edit, canonical)).toBe(canonical);
+  });
+
+  it.each([
+    'Add a page at the end of the book about Mina quoting the phrase "after page 100" exactly.',
+    'Add a page at the end of the book about Mina discussing what happened after page 100.'
+  ])("preserves a genuine content page reference: %s", (source) => {
+    const edit: StructuralPageEdit = { action: "insert", anchorPageIndex: null, pageIndexes: [], pageCount: 1 };
+    const canonical = canonicalInstruction(edit, source);
+    expect(canonical).toContain("page 100");
+    expect(canonicalInstruction(edit, canonical)).toBe(canonical);
+  });
+
+  it.each([
+    {
+      name: "a punctuation-free preserving clause",
+      edit: { action: "delete", anchorPageIndex: null, pageIndexes: [2], pageCount: 0 } as StructuralPageEdit,
+      source: "Delete page 2 preserving its final quote on page 3",
+      expected: "Remove page 2. Content requirements: Preserving its final quote on page 3."
+    },
+    {
+      name: "a numeric range and keeping clause",
+      edit: {
+        action: "delete",
+        anchorPageIndex: null,
+        pageIndexes: [2, 3, 4],
+        pageCount: 0
+      } as StructuralPageEdit,
+      source: "Delete pages 2-4 keeping the lighthouse reveal on page 5",
+      expected: "Remove pages 2, 3, 4. Content requirements: Keeping the lighthouse reveal on page 5."
+    },
+    {
+      name: "a copying clause with another page as its content destination",
+      edit: { action: "delete", anchorPageIndex: null, pageIndexes: [2, 3], pageCount: 0 } as StructuralPageEdit,
+      source: "Delete pages 2 and 3 copying their final footnote to page 5 without changing its wording",
+      expected:
+        "Remove pages 2, 3. Content requirements: Copying their final footnote to page 5 without changing its wording."
+    },
+    {
+      name: "a moving clause with another page as its content destination",
+      edit: { action: "delete", anchorPageIndex: null, pageIndexes: [2], pageCount: 0 } as StructuralPageEdit,
+      source: "Delete page 2 moving its final quote to page 3",
+      expected: "Remove page 2. Content requirements: Moving its final quote to page 3."
+    },
+    {
+      name: "a while clause",
+      edit: { action: "delete", anchorPageIndex: null, pageIndexes: [2], pageCount: 0 } as StructuralPageEdit,
+      source: "Delete page 2 while keeping its title on page 3",
+      expected: "Remove page 2. Content requirements: While keeping its title on page 3."
+    },
+    {
+      name: "a leading so-that clause",
+      edit: { action: "delete", anchorPageIndex: null, pageIndexes: [2], pageCount: 0 } as StructuralPageEdit,
+      source: "Delete page 2 so that page 3 opens with Mina finding the key",
+      expected: "Remove page 2. Content requirements: So that page 3 opens with Mina finding the key."
+    },
+    {
+      name: "a leading without clause",
+      edit: { action: "delete", anchorPageIndex: null, pageIndexes: [2], pageCount: 0 } as StructuralPageEdit,
+      source: "Delete page 2 without changing the quote copied to page 3",
+      expected: "Remove page 2. Content requirements: Without changing the quote copied to page 3."
+    },
+    {
+      name: "a rewriting clause with so that",
+      edit: { action: "delete", anchorPageIndex: null, pageIndexes: [2], pageCount: 0 } as StructuralPageEdit,
+      source: "Delete page 2 rewriting the bridge on page 3 so that Mina still finds the key",
+      expected:
+        "Remove page 2. Content requirements: Rewriting the bridge on page 3 so that Mina still finds the key."
+    },
+    {
+      name: "a because clause",
+      edit: { action: "delete", anchorPageIndex: null, pageIndexes: [2], pageCount: 0 } as StructuralPageEdit,
+      source: "Delete page 2 because it repeats the scene on page 1",
+      expected: "Remove page 2. Content requirements: Because it repeats the scene on page 1."
+    },
+    {
+      name: "a move/delete hybrid",
+      edit: { action: "delete", anchorPageIndex: null, pageIndexes: [2], pageCount: 0 } as StructuralPageEdit,
+      source: "Delete page 2 and move its final quote to page 3",
+      expected: "Remove page 2. Content requirements: Move its final quote to page 3."
+    },
+    {
+      name: "non-English content after an unambiguous coordinate",
+      edit: { action: "delete", anchorPageIndex: null, pageIndexes: [2], pageCount: 0 } as StructuralPageEdit,
+      source: "Delete page 2 conservando la cita final en la página 3 sin reescribirla",
+      expected:
+        "Remove page 2. Content requirements: Conservando la cita final en la página 3 sin reescribirla."
+    },
+    {
+      name: "an Oxford-comma page selection",
+      edit: {
+        action: "delete",
+        anchorPageIndex: null,
+        pageIndexes: [1, 2, 3],
+        pageCount: 0
+      } as StructuralPageEdit,
+      source: "Delete pages 1, 2, and 3 preserving the final quote on page 4",
+      expected: "Remove pages 1, 2, 3. Content requirements: Preserving the final quote on page 4."
+    }
+  ])("keeps $name on a delete", ({ edit, source, expected }) => {
+    const canonical = canonicalInstruction(edit, source);
+    expect(canonical).toBe(expected);
+    expect(canonicalInstruction(edit, canonical)).toBe(canonical);
+  });
+
+  it.each([
+    "احذف الصفحة ٢ مع الاحتفاظ بالاقتباس الأخير في الصفحة ٣",
+    "Delete the final spread while preserving its last quote on page 3"
+  ])("retains an ambiguous instruction conservatively: %s", (source) => {
+    const edit: StructuralPageEdit = {
+      action: "delete",
+      anchorPageIndex: null,
+      pageIndexes: [2],
+      pageCount: 0
+    };
+    const canonical = canonicalInstruction(edit, source);
+    expect(canonical).toBe(`Remove page 2. Content requirements: ${source}.`);
+    expect(canonicalInstruction(edit, canonical)).toBe(canonical);
+  });
+
+  it("keeps non-structural requirements on a move", () => {
+    expect(
+      canonicalInstruction(
+        { action: "move", anchorPageIndex: 4, pageIndexes: [2], pageCount: 0 },
+        "Move page 2 after page 4 while keeping the chapter headings unchanged."
+      )
+    ).toBe("Move page 2 after page 4. Content requirements: While keeping the chapter headings unchanged.");
+  });
+
+  it.each([
+    {
+      edit: { action: "move", anchorPageIndex: 4, pageIndexes: [2, 3], pageCount: 0 } as StructuralPageEdit,
+      source: "Move pages 2 through 3 before page 5 while preserving page 4's final line",
+      expected: "Move pages 2, 3 after page 4. Content requirements: While preserving page 4's final line."
+    },
+    {
+      edit: { action: "move", anchorPageIndex: 4, pageIndexes: [2], pageCount: 0 } as StructuralPageEdit,
+      source: "Move page 2 after page 5 and delete only its duplicate paragraph on page 3",
+      expected:
+        "Move page 2 after page 4. Content requirements: Delete only its duplicate paragraph on page 3."
+    },
+    {
+      edit: { action: "insert", anchorPageIndex: 4, pageIndexes: [], pageCount: 1 } as StructuralPageEdit,
+      source: "Add one new page after page 5 without changing page 3's opening",
+      expected: "Add 1 new page after page 4. Content requirements: Without changing page 3's opening."
+    }
+  ])("removes only a move/insert action and its old placement", ({ edit, source, expected }) => {
+    const result = canonicalInstruction(edit, source);
+    expect(result).toBe(expected);
+    expect(canonicalInstruction(edit, result)).toBe(result);
+  });
+
+  it("replaces a rich model instruction's impossible destination with the resolver clamp", () => {
+    const pages = Array.from({ length: 20 }, (_value, offset) => ({
+      id: `page-${offset + 1}`,
+      index: offset + 1,
+      chapterId: null
+    }));
+    const instruction = canonicalInstruction(
+      { action: "insert", anchorPageIndex: 100, pageIndexes: [], pageCount: 1 },
+      "Create one new page after page 100 that reveals Mina hid the brass key and keeps the tone ominous.",
+      pages
+    );
+
+    expect(instruction).toBe(
+      "Add 1 new page after page 20. Content requirements: That reveals Mina hid the brass key and keeps the tone ominous."
+    );
+    expect(instruction).not.toContain("100");
+  });
+
+  it("is stable when a pending proposal is canonicalized again during Apply", () => {
+    const edit: StructuralPageEdit = { action: "insert", anchorPageIndex: 3, pageIndexes: [], pageCount: 1 };
+    const first = canonicalInstruction(edit, "Add a page after page 3 about the missing compass.");
+    expect(canonicalInstruction(edit, first)).toBe(first);
+  });
+});
 
 describe("structuralCardBlock", () => {
   it("counts the pages an insert will write", () => {

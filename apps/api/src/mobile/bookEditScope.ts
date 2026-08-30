@@ -1,7 +1,12 @@
 import { type BookEditIntent } from "../bookEditIntent.js";
 import { quotedTexts, replacementTermsFromMessage } from "../bookEditMessage.js";
 import { type ProjectForChat } from "./projectChat.js";
-import { bookPlanSchema, chapterDisplayHeading, type ExactReplacement } from "@book-maker/core";
+import {
+  bookPlanSchema,
+  chapterDisplayHeading,
+  exactReplacementFromInstruction,
+  type ExactReplacement
+} from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 
 /**
@@ -102,7 +107,27 @@ export function continuationNewPageCount(intent: BookEditIntent, project: Pick<P
 }
 
 export function exactReplacementFromMessage(message: string): ExactReplacement | null {
-  return replacementTermsFromMessage(message);
+  return exactReplacementFromInstruction(message);
+}
+
+/**
+ * Resolves the one mechanical replacement proposal and Apply may use.
+ *
+ * Router terms are optional corroboration, not authority. When present they
+ * must match the conservative durable-instruction classifier; explicit null
+ * records an incomplete/disagreeing router claim and permanently fails closed.
+ */
+export function exactReplacementForIntent(
+  intent: Pick<BookEditIntent, "exactReplacement">,
+  editInstruction: string
+): ExactReplacement | null {
+  if (Object.prototype.hasOwnProperty.call(intent, "exactReplacement")) {
+    const candidate = intent.exactReplacement;
+    if (!candidate) return null;
+    const parsed = exactReplacementFromInstruction(editInstruction);
+    return parsed && parsed.from === candidate.from && parsed.to === candidate.to ? parsed : null;
+  }
+  return exactReplacementFromInstruction(editInstruction);
 }
 
 export async function pagesMatchingEditText(message: string, projectId: string): Promise<number[]> {

@@ -81,6 +81,14 @@ export type ReviewPageOptions = {
 
 export type RevisePageOptions = ReviewPageOptions & {
   report: PageQualityReport;
+  /** Approved edit instruction; authoritative over a stale page brief. */
+  editInstruction?: string | undefined;
+  /** Prompt-only character canon; never an additional edit requirement. */
+  characterContext?: string | undefined;
+  /** Supplemental guidance for this page; it may refine but never replace editInstruction. */
+  pageEditGuidance?: string | undefined;
+  /** Concrete omissions from the preceding adherence verdict. */
+  adherenceRepair?: string[] | undefined;
 };
 
 export type FinalQaPage = {
@@ -453,6 +461,19 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
         role: "system",
         content: [
           "Revise one book page so it passes editorial QA.",
+          ...(options.editInstruction
+            ? [
+                "editInstruction is the approved reader request and is authoritative. Apply it explicitly. pageBrief governs structure and continuity, but never whether the requested change is performed. Do not soften, substitute, or silently omit it."
+              ]
+            : []),
+          ...(options.pageEditGuidance
+            ? [
+                "pageEditGuidance is supplemental guidance for this page. Follow it while still satisfying the complete authoritative editInstruction."
+              ]
+            : []),
+          ...(options.characterContext
+            ? ["characterContext is supplemental canon for character identity, traits, and appearance. Use it when revising, but do not treat it as an additional requested edit."]
+            : []),
           "Return a complete replacement page, not notes.",
           "Change the actual story or explanation beat when needed; do not merely rephrase repeated material.",
           "The replacement must advance beyond the prior pages and satisfy the current page brief.",
@@ -481,6 +502,10 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
         content: JSON.stringify(
           {
             language: targetLanguagePayload(options.input.language),
+            ...(options.editInstruction ? { editInstruction: options.editInstruction } : {}),
+            ...(options.characterContext ? { characterContext: options.characterContext } : {}),
+            ...(options.pageEditGuidance ? { pageEditGuidance: options.pageEditGuidance } : {}),
+            ...(options.adherenceRepair?.length ? { adherenceRepair: options.adherenceRepair } : {}),
             book: {
               title: options.plan.title,
               premise: options.plan.premise,

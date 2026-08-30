@@ -316,27 +316,7 @@ export async function failGenerationAttempt(
   status: "FAILED" | "CANCELED" = "FAILED"
 ): Promise<void> {
   try {
-    await runSerializable(async (tx) => {
-      const attempt = await tx.generationAttempt.findUnique({
-        where: { id: attemptId },
-        select: { ledgerEntryId: true, status: true, refundPending: true }
-      });
-      if (
-        !attempt ||
-        attempt.status === "SUCCEEDED" ||
-        (["FAILED", "CANCELED"].includes(attempt.status) && !attempt.refundPending)
-      ) {
-        return;
-      }
-      const terminalStatus = ["FAILED", "CANCELED"].includes(attempt.status) ? attempt.status : status;
-      if (attempt.ledgerEntryId) {
-        await refundCreditLedgerEntryTx(tx, attempt.ledgerEntryId, reason);
-      }
-      await tx.generationAttempt.update({
-        where: { id: attemptId },
-        data: { status: terminalStatus, error: reason, finishedAt: new Date(), refundPending: false }
-      });
-    });
+    await runSerializable((tx) => failGenerationAttemptTx(tx, attemptId, reason, status));
   } catch (error) {
     const finishedAt = new Date();
     await prisma.generationAttempt
@@ -355,6 +335,38 @@ export async function failGenerationAttempt(
       .catch(() => ({ count: 0 }));
     throw error;
   }
+}
+
+/**
+ * Transaction-local attempt settlement for a domain transition that must not
+ * expose canceled work before its charge is refunded. The public wrapper above
+ * supplies the transaction and reconciliation fallback for ordinary callers.
+ */
+export async function failGenerationAttemptTx(
+  tx: BillingTx,
+  attemptId: string,
+  reason: string,
+  status: "FAILED" | "CANCELED" = "FAILED"
+): Promise<void> {
+  const attempt = await tx.generationAttempt.findUnique({
+    where: { id: attemptId },
+    select: { ledgerEntryId: true, status: true, refundPending: true }
+  });
+  if (
+    !attempt ||
+    attempt.status === "SUCCEEDED" ||
+    (["FAILED", "CANCELED"].includes(attempt.status) && !attempt.refundPending)
+  ) {
+    return;
+  }
+  const terminalStatus = ["FAILED", "CANCELED"].includes(attempt.status) ? attempt.status : status;
+  if (attempt.ledgerEntryId) {
+    await refundCreditLedgerEntryTx(tx, attempt.ledgerEntryId, reason);
+  }
+  await tx.generationAttempt.update({
+    where: { id: attemptId },
+    data: { status: terminalStatus, error: reason, finishedAt: new Date(), refundPending: false }
+  });
 }
 
 export async function reconcileGenerationAttemptRefunds(limit = 50): Promise<number> {

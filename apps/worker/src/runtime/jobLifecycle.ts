@@ -2,6 +2,7 @@ import {
   BOOK_GENERATION_CHARGE_LOOKBACK,
   bookGenerationChargeFromPayloads,
   errorMessage,
+  exportPublicationProjectStatusFromPayload,
   isPresentationOnlyRecompile,
   isRecoverableNetworkError,
   parseStructuralApplication,
@@ -42,6 +43,7 @@ import {
 } from "./jobProgress.js";
 import { completedJobLifecycle } from "./jobCompletion.js";
 import { staleGenerationTargetReason } from "./staleJobGuard.js";
+import { stagedReplanSuccessorProof } from "./stagedReplanJobGuard.js";
 import { STOPPED_JOB_ERROR, STOPPED_JOB_MESSAGE, type JobLifecycleSettlement } from "./jobTypes.js";
 import { jsonPayloadToRecord } from "./serialization.js";
 import {
@@ -144,12 +146,13 @@ export async function staleGenerationJobReason(job: WorkerRuntimeJob): Promise<s
   }
   const project = await prisma.project.findUnique({
     where: { id: payloadProjectId },
-    select: { currentPlanId: true, contentRevision: true }
+    select: { currentPlanId: true, contentRevision: true, status: true }
   });
   if (!project) {
     return "The target project no longer exists.";
   }
   const planId = job.data.planId ?? null;
+  const expectedProjectStatus = exportPublicationProjectStatusFromPayload(job.data);
   // A structural shift replaces its own plan before its delivery settles; the
   // operation linkage and exact stamp pair prove this mismatch is that shift.
   const operationId = editOperationIdFromJob(job);
@@ -169,6 +172,32 @@ export async function staleGenerationJobReason(job: WorkerRuntimeJob): Promise<s
     (structuralOperation.status === "ACTIVE" || structuralOperation.status === "APPLIED") &&
     structuralApplication?.basePlanVersionId === planId &&
     structuralApplication?.newPlanVersionId === project.currentPlanId;
+  const replanOperationId = job.name === "generate-book" ? (job.data.replanOperationId ?? null) : null;
+  const stagedReplanDelivery = replanOperationId !== null;
+  const stagedReplanProof =
+    stagedReplanDelivery && generationJob.status !== "COMPLETED"
+      ? planId === null
+        ? ("mismatch" as const)
+        : await stagedReplanSuccessorProof({
+            targetProjectId: payloadProjectId,
+            generationJobId,
+            operationId: replanOperationId,
+            stagedPlanId: planId
+          })
+      : null;
+  // A current-plan equality cannot rescue an open staged successor. For a
+  // copy it means another publication reached the blank target; for an
+  // in-place replan it means the source relation changed. Completed rows are
+  // outside this pre-ACTIVE proof and may replay their APPLIED durable tail.
+  // An `unstaged` operation is outside it too: nothing staged a plan, so this
+  // successor was queued against a plan the project already published, and
+  // the ordinary checks below answer for it exactly as they did before staging.
+  if (stagedReplanProof === "mismatch") {
+    return "The staged replan successor no longer matches its durable operation.";
+  }
+  if (stagedReplanDelivery && generationJob.status === "COMPLETED" && generationJob.type !== "GENERATE_BOOK") {
+    return "The staged replan successor no longer matches its durable operation.";
+  }
   const pageId = job.data.pageId ?? null;
   const page = pageId
     ? await prisma.page.findUnique({ where: { id: pageId }, select: { projectId: true } })
@@ -183,7 +212,10 @@ export async function staleGenerationJobReason(job: WorkerRuntimeJob): Promise<s
     pageProjectId: page?.projectId ?? null,
     contentRevision: generationJob.contentRevision,
     projectContentRevision: project.contentRevision,
-    jobCreatedCurrentPlan
+    expectedProjectStatus,
+    projectStatus: project.status,
+    jobCreatedCurrentPlan,
+    jobTargetsStagedReplan: stagedReplanProof === "exact"
   });
 }
 

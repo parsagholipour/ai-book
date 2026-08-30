@@ -69,8 +69,11 @@ export * from "./generation/libraryCharacterImages.js";
 export * from "./generation/voiceCharacters.js";
 export * from "./generation/readerChapters.js";
 export * from "./generation/exactReplacement.js";
+export * from "./generation/editAdherence.js";
+export * from "./generation/editAdherenceHierarchy.js";
 export * from "./generation/replanSettings.js";
 export * from "./generation/pageRestructure.js";
+export * from "./generation/structuralInstruction.js";
 export * from "./generation/manuscriptQuality.js";
 export * from "./generation/cover.js";
 export * from "./generation/coverText.js";
@@ -109,6 +112,7 @@ export * from "./jobSteps.js";
 export * from "./jobScope.js";
 export * from "./compilePublicationPolicy.js";
 export * from "./jobDispatch.js";
+export * from "./continuationPublication.js";
 // The record coercion every workspace reaches for. Only these two names leave
 // the package — the rest of `schemas/jsonCoercion.js` stays internal.
 export { isRecord, jsonRecord } from "./schemas/jsonCoercion.js";

@@ -57,7 +57,8 @@ export async function seedProjectStoryState(projectId: string, promises: readonl
 /**
  * Write this page's delta, then fold it into `Project.storyState` in O(1).
  * Out-of-order finishes can diverge from index-order rebuild; that is fine for
- * the live pack. Undo, applyBookEdit, and compile call `rebuildProjectStoryState`.
+ * the live pack. Undo and compile call `rebuildProjectStoryState`; applyBookEdit
+ * derives the same index-order fold inside its own publication transaction.
  */
 export async function persistPageStoryDelta(options: {
   projectId: string;

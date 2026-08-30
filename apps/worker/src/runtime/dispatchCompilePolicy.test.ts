@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => {
     queueAdd: vi.fn(),
     queueGetJob: vi.fn(),
     prisma: {
-      project: { findUnique: vi.fn() },
+      project: { findUnique: vi.fn(), findMany: vi.fn() },
       planVersion: { findUnique: vi.fn() },
       page: { findMany: vi.fn() },
       imageAsset: { count: vi.fn() },
@@ -48,7 +48,7 @@ vi.mock("../generation/projectInput.js", () => ({
 import { compilePublicationDedupeKey, compilePublicationPolicyFromPayload } from "@book-maker/core";
 import type { Job } from "bullmq";
 import { createHash } from "node:crypto";
-import { maybeCompileAfterCompletedJob, maybeEnqueueCompile } from "./dispatch.js";
+import { maybeCompileAfterCompletedJob, maybeEnqueueCompile, reconcileStrandedGeneration } from "./dispatch.js";
 
 const completedPages = [
   { id: "page-1", index: 1, status: "COMPLETED", markdown: "One.", revision: 1 },
@@ -65,6 +65,7 @@ beforeEach(() => {
   mocks.prisma.generationJob.count.mockResolvedValue(0);
   mocks.prisma.generationJob.findFirst.mockResolvedValue(null);
   mocks.prisma.bookEditOperation.findFirst.mockResolvedValue(null);
+  mocks.prisma.project.findMany.mockResolvedValue([]);
   mocks.prisma.generationJob.findMany.mockResolvedValue([]);
   mocks.prisma.generationJob.findUnique.mockImplementation(
     async ({ where }: { where: Record<string, unknown> }) => (where.id ? mocks.createdJob : null)
@@ -474,4 +475,98 @@ describe("maybeEnqueueCompile publication-policy identity", () => {
       );
     }
   );
+});
+
+/**
+ * A chat `book_replan` forks a second project and regenerates there, but its
+ * `BookEditOperation` stays on the source book — both `projectId` and
+ * `sourceProjectId` name the source — so the copy is reachable only through
+ * `generationJobId`, which `linkReplanSuccessor` points at the successor
+ * `generate-book` row on the copy.
+ */
+describe("compile recovery for a replan copy", () => {
+  const replanOperation = { kind: "BOOK_REPLAN" };
+
+  function forkedOperationOnly(): void {
+    mocks.prisma.bookEditOperation.findFirst.mockImplementation(
+      async ({ where }: { where: Record<string, unknown> }) =>
+        where.generationJob ? replanOperation : null
+    );
+  }
+
+  it("recovers the replan's own policy when the copy's image fan-in finds no compile", async () => {
+    // The illustrated path, not a crash: the replan tail queues the cover and
+    // the page pictures, so its own compile step returns "waiting" and writes
+    // no row. The optionless fan-in behind the last picture is all that is
+    // left, and the copy has no edit operation of its own to read.
+    mocks.prisma.project.findUnique.mockResolvedValue({ status: "EDITING", contentRevision: 3 });
+    forkedOperationOnly();
+
+    await maybeCompileAfterCompletedJob({
+      name: "generate-image",
+      data: { projectId: "project-copy", planId: "plan-1" }
+    } as unknown as Job);
+
+    expect(createdCompile()).toMatchObject({
+      projectId: "project-copy",
+      contentRevision: 3,
+      ownsQualityVerdict: true,
+      payload: {
+        planId: "plan-1",
+        contentRevision: 3,
+        exportPublicationProjectStatus: "EDITING"
+      }
+    });
+    // Exactly the revision the operation stamped, and only an operation filed
+    // against another project: a book must not recover its own edits here.
+    expect(mocks.prisma.bookEditOperation.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          status: "APPLIED",
+          projectId: { not: "project-copy" },
+          publicationRevision: 3,
+          generationJob: { projectId: "project-copy" }
+        }
+      })
+    );
+  });
+
+  it("recovers the same policy from the delayed stranded sweep", async () => {
+    mocks.prisma.project.findMany.mockResolvedValue([
+      {
+        id: "project-copy",
+        status: "EDITING",
+        contentRevision: 3,
+        currentPlanId: "plan-1",
+        mediaSettings: {}
+      }
+    ]);
+    mocks.prisma.project.findUnique.mockResolvedValue({ status: "EDITING", contentRevision: 3 });
+    forkedOperationOnly();
+
+    expect(await reconcileStrandedGeneration()).toBe(1);
+
+    expect(createdCompile()).toMatchObject({
+      projectId: "project-copy",
+      contentRevision: 3,
+      payload: { exportPublicationProjectStatus: "EDITING" }
+    });
+  });
+
+  it("stays unknown when the fork's operation published a different revision", async () => {
+    mocks.prisma.project.findUnique.mockResolvedValue({ status: "EDITING", contentRevision: 4 });
+    mocks.prisma.bookEditOperation.findFirst.mockImplementation(
+      async ({ where }: { where: Record<string, unknown> }) =>
+        where.generationJob && (where.publicationRevision as number) === 3 ? replanOperation : null
+    );
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      expect(await maybeEnqueueCompile("project-copy", "plan-1")).toBe("not-ready");
+    } finally {
+      error.mockRestore();
+    }
+
+    expect(mocks.prisma.generationJob.create).not.toHaveBeenCalled();
+  });
 });

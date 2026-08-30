@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => {
     queueAdd: vi.fn(),
     queueGetJob: vi.fn(),
     prisma: {
+      $queryRawUnsafe: vi.fn(),
       project: { findUnique: vi.fn(), findMany: vi.fn() },
       planVersion: { findUnique: vi.fn() },
       page: { findMany: vi.fn() },
@@ -68,6 +69,7 @@ beforeEach(() => {
   mocks.currentJob = null;
   mocks.recoveryJobs = [];
   mocks.editOperations = [];
+  mocks.prisma.$queryRawUnsafe.mockResolvedValue([]);
   mocks.prisma.project.findMany.mockResolvedValue([]);
   mocks.prisma.project.findUnique.mockResolvedValue({ status: "GENERATING", contentRevision: 4 });
   mocks.prisma.planVersion.findUnique.mockResolvedValue({ id: "plan-1", inputSnapshot: {} });
@@ -87,8 +89,13 @@ beforeEach(() => {
         status?: string | { in: string[] };
         appliedAt?: { gt?: Date; gte?: Date };
         createdAt?: { gt?: Date; gte?: Date };
+        generationJob?: { projectId: string };
       }
     }) => {
+      // The forked-publication lane asks for an operation filed against another
+      // project whose successor job is on this one — a replan copy. Every
+      // fixture here is a same-project edit, so it must answer nothing.
+      if (where.generationJob) return null;
       const threshold = where.appliedAt?.gt ?? where.appliedAt?.gte ?? where.createdAt?.gt ?? where.createdAt?.gte;
       const boundary = threshold?.getTime() ?? Number.NEGATIVE_INFINITY;
       const inclusive = where.appliedAt?.gte !== undefined || where.createdAt?.gte !== undefined;
@@ -127,6 +134,7 @@ function strandedProject(overrides: Record<string, unknown> = {}) {
     status: "EDITING",
     contentRevision: 7,
     currentPlanId: "plan-1",
+    exportInvalidationRevision: null,
     mediaSettings: {},
     jobs: [],
     editOperations: [],
@@ -166,6 +174,56 @@ function createdCompile(): Record<string, unknown> {
 }
 
 describe("reconcileStrandedGeneration compile policy", () => {
+  it("retires an abandoned current-revision export barrier before queueing recovery", async () => {
+    queueStrandedProject({
+      exportInvalidationRevision: 7,
+      jobs: [{ contentRevision: 7, payload: { skipFinalReview: true } }]
+    });
+    mocks.prisma.$queryRawUnsafe.mockResolvedValue([{ id: "project-1" }]);
+    mocks.prisma.project.findUnique.mockResolvedValue({ status: "EDITING", contentRevision: 7 });
+
+    await reconcileStrandedGeneration();
+
+    expect(mocks.prisma.$queryRawUnsafe).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE "Project" project'),
+      "project-1",
+      7
+    );
+    const retirementSql = String(mocks.prisma.$queryRawUnsafe.mock.calls[0]?.[0]);
+    expect(retirementSql).toContain('operation."structuralLeaseExpiresAt" > CURRENT_TIMESTAMP');
+    expect(retirementSql).toContain('operation."structuralLeaseCompletedAt" IS NULL');
+    expect(retirementSql).toContain('operation."projectId" = project."id"');
+    expect(createdCompile()).toMatchObject({ contentRevision: 7 });
+  });
+
+  it("preserves a replan copy barrier owned by the source operation's live tail", async () => {
+    queueStrandedProject({
+      exportInvalidationRevision: 7,
+      jobs: [{ contentRevision: 7, payload: { skipFinalReview: true } }]
+    });
+    // Zero rows is the raw CAS saying either the project moved or an unexpired
+    // APPLIED publication tail still owns this exact revision.
+    mocks.prisma.$queryRawUnsafe.mockResolvedValue([]);
+
+    await reconcileStrandedGeneration();
+
+    expect(mocks.prisma.$queryRawUnsafe).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE "Project" project'),
+      "project-1",
+      7
+    );
+    const retirementSql = String(mocks.prisma.$queryRawUnsafe.mock.calls[0]?.[0]);
+    expect(retirementSql).toContain('operation."kind" = \'BOOK_REPLAN\'');
+    expect(retirementSql).toContain('operation."projectId" <> project."id"');
+    expect(retirementSql).toContain('operation."sourceProjectId" = operation."projectId"');
+    expect(retirementSql).toContain('FROM "GenerationJob" job');
+    expect(retirementSql).toContain('job."id" = operation."generationJobId"');
+    expect(retirementSql).toContain('job."projectId" = project."id"');
+    expect(retirementSql).toContain('job."type" = \'GENERATE_BOOK\'');
+    expect(retirementSql).toContain('job."status" = \'COMPLETED\'');
+    expect(mocks.prisma.generationJob.create).not.toHaveBeenCalled();
+  });
+
   it("keeps GENERATING recovery on the ordinary full-review path", async () => {
     queueStrandedProject({ status: "GENERATING", contentRevision: 4 });
 

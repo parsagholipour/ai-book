@@ -17,7 +17,9 @@ const mocks = vi.hoisted(() => ({
   bookEditOperationUpdateMany: vi.fn(),
   refundCreditLedgerEntry: vi.fn(),
   refundLatestProjectOperationCredits: vi.fn(),
-  failGenerationAttempt: vi.fn()
+  failGenerationAttempt: vi.fn(),
+  generationAttemptUpdateMany: vi.fn(),
+  queryRawUnsafe: vi.fn()
 }));
 
 vi.mock("bullmq", () => ({
@@ -40,6 +42,7 @@ vi.mock("@book-maker/core", async () => {
 });
 vi.mock("@book-maker/db", () => ({
   Prisma: { JsonNull: null },
+  PAGE_RESTRUCTURE_TRANSACTION_OPTIONS: { timeout: 30_000, maxWait: 10_000 },
   prisma: {
     $transaction: mocks.transaction,
     generationJob: {
@@ -275,11 +278,15 @@ describe("stopping a run", () => {
         bookEditOperation: {
           findMany: mocks.bookEditOperationFindMany,
           updateMany: mocks.bookEditOperationUpdateMany
-        }
+        },
+        generationAttempt: { updateMany: mocks.generationAttemptUpdateMany },
+        $queryRawUnsafe: mocks.queryRawUnsafe
       })
     );
+    mocks.generationAttemptUpdateMany.mockResolvedValue({ count: 1 });
     mocks.bookEditOperationFindMany.mockResolvedValue([]);
     mocks.bookEditOperationUpdateMany.mockResolvedValue({ count: 0 });
+    mocks.queryRawUnsafe.mockResolvedValue([]);
     mocks.refundCreditLedgerEntry.mockResolvedValue({});
     mocks.refundLatestProjectOperationCredits.mockResolvedValue({});
     mocks.failGenerationAttempt.mockResolvedValue(undefined);
@@ -406,21 +413,23 @@ describe("stopping a run", () => {
     });
   });
 
-  it("fails a stranded project even when the stop claims no open jobs", async () => {
-    // A crash can leave a book GENERATING with no QUEUED/ACTIVE rows at all.
-    // Stop is the one lever the user has to move it back to a retryable
-    // FAILED, so the status write must not be gated on something having been
-    // stopped — only on the status itself.
-    mocks.projectUpdate.mockResolvedValue({ status: "GENERATING" });
-    mocks.findMany.mockResolvedValue([]);
+  it.each(["GENERATING", "EDITING"] as const)(
+    "fails a stranded %s project even when the stop claims no open jobs",
+    async (status) => {
+      // A crash can leave a book GENERATING or EDITING with no QUEUED/ACTIVE
+      // rows and no live publication owner at all. Stop is the one lever the
+      // user has to move it back to a retryable FAILED.
+      mocks.projectUpdate.mockResolvedValue({ status, contentRevision: 8 });
+      mocks.findMany.mockResolvedValue([]);
 
-    await stopProjectGenerationJobs("project-1");
+      await stopProjectGenerationJobs("project-1");
 
-    expect(mocks.projectUpdateMany).toHaveBeenCalledWith({
-      where: { id: "project-1", status: { notIn: ["COMPLETE", "REVIEW_REQUIRED"] } },
-      data: { status: "FAILED" }
-    });
-  });
+      expect(mocks.projectUpdateMany).toHaveBeenCalledWith({
+        where: { id: "project-1", status: { notIn: ["COMPLETE", "REVIEW_REQUIRED"] } },
+        data: { status: "FAILED" }
+      });
+    }
+  );
 
   it("settles a legacy audiobook job against its own charge, never the book's", async () => {
     mocks.findMany.mockResolvedValue([
@@ -626,7 +635,8 @@ describe("stopping a run", () => {
         bookEditOperation: {
           findMany: mocks.bookEditOperationFindMany,
           updateMany: mocks.bookEditOperationUpdateMany
-        }
+        },
+        $queryRawUnsafe: mocks.queryRawUnsafe
       });
 
       // This is the first instant a provider-paused worker can resume after

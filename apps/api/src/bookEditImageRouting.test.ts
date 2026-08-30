@@ -51,11 +51,17 @@ function routerAdapter(
 }
 
 function fakeDecideModel(args: DecideArgs): TextModelAdapter & { generateWithTools: ReturnType<typeof vi.fn> } {
+  const completeArgs = {
+    ...args,
+    ...(args.action === "propose_edit"
+      ? { editInstruction: String(args.editInstruction ?? args.assistantMessage ?? "Apply the requested image edit.") }
+      : {})
+  };
   const generateWithTools = vi.fn(async () => ({
     text: "",
     model: "test-router",
     provider: "test",
-    toolCalls: [{ id: "call-decide", name: "decide", arguments: args }]
+    toolCalls: [{ id: "call-decide", name: "decide", arguments: completeArgs }]
   }));
   return Object.assign(routerAdapter(generateWithTools), { generateWithTools });
 }
@@ -75,6 +81,7 @@ describe("image insertion routing", () => {
     const model = fakeDecideModel({
       ...decideBase,
       action: "propose_edit",
+      editInstruction: "Add a dragon illustration at the end of the book.",
       assistantMessage: "I’ll add that picture to page 3.",
       pageIndexes: [3],
       editTarget: "insert_image",
@@ -260,6 +267,7 @@ describe("image insertion routing", () => {
     const parsed = decideTool.parameters.safeParse({
       ...decideBase,
       action: "propose_edit",
+      editInstruction: "Add a dragon illustration at the end of the book.",
       editTarget: "insert_image",
       imageSubject: "a dragon",
       imagePlacement: "end_of_book",
@@ -277,6 +285,7 @@ describe("image insertion routing", () => {
       textModel: fakeDecideModel({
         ...decideBase,
         action: "propose_edit",
+        editInstruction: "Move the illustration from page 1 to page 2.",
         editTarget: "remove_image",
         pageIndexes: [1]
       })
@@ -494,6 +503,7 @@ describe("image insertion routing", () => {
       decideTool.parameters.safeParse({
         ...decideBase,
         action: "propose_edit",
+        editInstruction: "Move the illustration from page 1 to page 2.",
         editTarget: "move_image",
         pageIndexes: [1],
         imageDestPageIndexes: [2]

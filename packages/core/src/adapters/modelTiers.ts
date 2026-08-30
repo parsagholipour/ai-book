@@ -44,6 +44,7 @@ export function modelTierForInput(input: CreateProjectInput): ModelTier {
  */
 export const MECHANICAL_TEXT_PURPOSES: ReadonlySet<string> = new Set([
   "review-page",
+  "review-edit-adherence",
   "judge-page-drafts",
   "final-book-qa",
   // The chapter-transition sibling of final-book-qa: a strict-schema issue

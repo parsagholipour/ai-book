@@ -396,6 +396,7 @@ describe("redeliverWorkerGenerationJob", () => {
     expect(mocks.prisma.generationJob.findUnique).not.toHaveBeenCalled();
     expect(mocks.queueAdd).not.toHaveBeenCalled();
   });
+
 });
 
 describe("reconcileUndispatchedWorkerJobs", () => {

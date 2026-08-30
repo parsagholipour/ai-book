@@ -8,7 +8,10 @@ export function staleGenerationTargetReason(input: {
   pageProjectId: string | null;
   contentRevision: number | null;
   projectContentRevision: number;
+  expectedProjectStatus?: string | null;
+  projectStatus?: string;
   jobCreatedCurrentPlan?: boolean;
+  jobTargetsStagedReplan?: boolean;
 }): string | null {
   if (input.durableProjectId !== input.payloadProjectId) {
     return "The job targets a different project than its durable record.";
@@ -25,7 +28,8 @@ export function staleGenerationTargetReason(input: {
     input.planId &&
     planBoundTypes.has(input.type) &&
     input.currentPlanId !== input.planId &&
-    !(input.type === "APPLY_BOOK_EDIT" && input.jobCreatedCurrentPlan)
+    !(input.type === "APPLY_BOOK_EDIT" && input.jobCreatedCurrentPlan) &&
+    !(input.type === "GENERATE_BOOK" && input.jobTargetsStagedReplan)
   ) {
     return "The job targets a superseded book plan.";
   }
@@ -33,11 +37,20 @@ export function staleGenerationTargetReason(input: {
     return "The job targets a missing page or a page from another project.";
   }
   if (
-    input.type === "COMPILE_EXPORT" &&
+    (input.type === "COMPILE_EXPORT" ||
+      (input.type === "GENERATE_IMAGE" && input.expectedProjectStatus !== null && input.expectedProjectStatus !== undefined)) &&
     input.contentRevision !== null &&
     input.contentRevision !== input.projectContentRevision
   ) {
     return "The manuscript changed after this export job was queued.";
+  }
+  if (
+    input.type === "GENERATE_IMAGE" &&
+    input.expectedProjectStatus !== null &&
+    input.expectedProjectStatus !== undefined &&
+    input.projectStatus !== input.expectedProjectStatus
+  ) {
+    return "The project changed status after this publication job was queued.";
   }
   return null;
 }

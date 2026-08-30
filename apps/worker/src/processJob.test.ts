@@ -19,6 +19,8 @@ const mocks = vi.hoisted(() => ({
   planBook: vi.fn(),
   compileExport: vi.fn(),
   continueBook: vi.fn(),
+  generateBook: vi.fn(),
+  stagedReplanSuccessorOperationId: vi.fn(),
   generatePage: vi.fn(),
   applyBookEdit: vi.fn()
 }));
@@ -51,7 +53,10 @@ vi.mock("./handlers/compileExport.js", () => ({ compileExport: mocks.compileExpo
 vi.mock("./handlers/continueBook.js", () => ({ continueBook: mocks.continueBook }));
 vi.mock("./handlers/generateAudiobook.js", () => ({ generateAudiobook: vi.fn() }));
 vi.mock("./handlers/characterPortrait.js", () => ({ generateCharacterPortrait: vi.fn() }));
-vi.mock("./handlers/generateBook.js", () => ({ generateBook: vi.fn() }));
+vi.mock("./handlers/generateBook.js", () => ({
+  generateBook: mocks.generateBook,
+  stagedReplanSuccessorOperationId: mocks.stagedReplanSuccessorOperationId
+}));
 vi.mock("./handlers/generateImage.js", () => ({ generateImage: vi.fn() }));
 vi.mock("./handlers/generatePage.js", () => ({ generatePage: mocks.generatePage }));
 vi.mock("./handlers/importBook.js", () => ({ importBook: vi.fn() }));
@@ -62,6 +67,7 @@ import { processWorkerJob } from "./processJob.js";
 import {
   StopRequestedError,
   StructuralRollbackRedeliveryError,
+  UnownedReplanDeliveryError,
   UnownedStructuralDeliveryError,
   UnownedTextEditDeliveryError
 } from "./runtime/jobTypes.js";
@@ -103,6 +109,11 @@ beforeEach(() => {
   mocks.generatePage.mockImplementation(async () => {
     mocks.order.push("handler");
   });
+  // The staged successor is the ordinary shape; the pre-staging one is pinned
+  // below, because only it may not be replayed through the destructive path.
+  mocks.stagedReplanSuccessorOperationId.mockImplementation(
+    async (job: Job) => (job.data as { replanOperationId?: string }).replanOperationId ?? null
+  );
   mocks.planBook.mockResolvedValue(undefined);
   mocks.compileExport.mockResolvedValue({});
   mocks.continueBook.mockResolvedValue({});
@@ -118,6 +129,15 @@ describe("processWorkerJob ordering", () => {
     expect(mocks.order).toEqual(["stale-check", "mark-active", "handler"]);
   });
 
+  it("dispatches an admitted staged replan successor instead of canceling it", async () => {
+    const staged = job("generate-book", { replanOperationId: "operation-1", planId: "plan-staged" });
+
+    await processWorkerJob(staged);
+
+    expect(mocks.cancelStaleGenerationJob).not.toHaveBeenCalled();
+    expect(mocks.generateBook).toHaveBeenCalledWith(staged);
+  });
+
   it("cancels a stale job without ever claiming it or running its handler", async () => {
     mocks.staleGenerationJobReason.mockResolvedValue("The durable job was canceled before it could run.");
 
@@ -126,6 +146,46 @@ describe("processWorkerJob ordering", () => {
     expect(mocks.cancelStaleGenerationJob).toHaveBeenCalled();
     expect(mocks.markActive).not.toHaveBeenCalled();
     expect(mocks.generatePage).not.toHaveBeenCalled();
+  });
+
+  it("never re-runs a pre-staging replan successor whose row is already COMPLETED", async () => {
+    // `generateBook` answers this question the same way and would fall through
+    // to the execution-mode switch, which deletes every page, chapter and
+    // illustration before it rewrites a book the reader already paid for.
+    mocks.markActive.mockResolvedValue(false);
+    mocks.stagedReplanSuccessorOperationId.mockResolvedValue(null);
+    const legacyReplan = job("generate-book", { replanOperationId: "operation-1" });
+
+    await processWorkerJob(legacyReplan);
+
+    expect(mocks.generateBook).not.toHaveBeenCalled();
+    expect(mocks.markCompleted).toHaveBeenCalledWith(legacyReplan);
+    expect(mocks.maybeCompileAfterCompletedJob).toHaveBeenCalled();
+  });
+
+  it("keeps the generic fan-in for a pre-staging replan successor that ran the ordinary path", async () => {
+    mocks.stagedReplanSuccessorOperationId.mockResolvedValue(null);
+    mocks.generateBook.mockResolvedValue(undefined);
+
+    await processWorkerJob(job("generate-book", { replanOperationId: "operation-1" }));
+
+    expect(mocks.generateBook).toHaveBeenCalled();
+    expect(mocks.maybeCompileAfterCompletedJob).toHaveBeenCalled();
+  });
+
+  it("settles the attempt of a completed image apply whose replay returns no completion", async () => {
+    // applyImageInsertion/applyImageLayout publish outside
+    // claimDurableEditCompletionTx and return void, so this markCompleted is
+    // the only thing that ever marks their paid attempt SUCCEEDED.
+    mocks.markActive.mockResolvedValue(false);
+    mocks.applyBookEdit.mockResolvedValue(undefined);
+    const imageApply = job("apply-book-edit", { attemptId: "attempt-1" });
+
+    await processWorkerJob(imageApply);
+
+    expect(mocks.applyBookEdit).toHaveBeenCalledWith(imageApply);
+    expect(mocks.markCompleted).toHaveBeenCalledWith(imageApply);
+    expect(mocks.markFailed).not.toHaveBeenCalled();
   });
 
   it("replays success settlement and fan-in when the row is already COMPLETED", async () => {
@@ -218,17 +278,24 @@ describe("processWorkerJob completion", () => {
     logged.mockRestore();
   });
 
-  it("keeps a delivered continuation successful when its export enqueue follow-up fails", async () => {
+  it("retries a delivered continuation tail without entering failure or refund routing", async () => {
     const enqueueExport = vi.fn().mockRejectedValue(new Error("queue unavailable"));
-    mocks.continueBook.mockResolvedValue({ afterJobCompleted: enqueueExport });
+    mocks.continueBook.mockResolvedValue({
+      durableCompletionCommitted: true,
+      lifecycleCompletionCommitted: true,
+      retryFollowUpOnRedelivery: true,
+      afterJobCompleted: enqueueExport
+    });
     const continuationJob = job("continue-book");
     const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
-    await expect(processWorkerJob(continuationJob)).resolves.toBeUndefined();
+    await expect(processWorkerJob(continuationJob)).rejects.toThrow("queue unavailable");
 
-    expect(mocks.markCompleted).toHaveBeenCalledWith(continuationJob, undefined);
+    expect(mocks.markCompleted).not.toHaveBeenCalled();
     expect(enqueueExport).toHaveBeenCalled();
     expect(mocks.markFailed).not.toHaveBeenCalled();
+    expect(mocks.markStopped).not.toHaveBeenCalled();
+    expect(mocks.maybeCompileAfterCompletedJob).not.toHaveBeenCalled();
     expect(mocks.runLoggerAppend).toHaveBeenCalledWith(
       "job.follow_up_failed",
       expect.objectContaining({ error: expect.anything() })
@@ -236,7 +303,83 @@ describe("processWorkerJob completion", () => {
     logged.mockRestore();
   });
 
-  it("keeps Bull successful when completion bookkeeping throws after durable export publication", async () => {
+  it("reconstructs a completed continuation's missing tail without reopening its lifecycle", async () => {
+    const followUp = vi.fn().mockResolvedValue(undefined);
+    mocks.markActive.mockResolvedValue(false);
+    mocks.continueBook.mockResolvedValue({
+      durableCompletionCommitted: true,
+      lifecycleCompletionCommitted: true,
+      retryFollowUpOnRedelivery: true,
+      afterJobCompleted: followUp
+    });
+    const continuationJob = job("continue-book");
+
+    await expect(processWorkerJob(continuationJob)).resolves.toBeUndefined();
+
+    expect(mocks.continueBook).toHaveBeenCalledWith(continuationJob);
+    expect(followUp).toHaveBeenCalledTimes(1);
+    // Once, for the settlement half of the crash this branch replays — never
+    // a second write that could reopen the lifecycle the tail runs under.
+    expect(mocks.markCompleted).toHaveBeenCalledTimes(1);
+    expect(mocks.maybeCompileAfterCompletedJob).not.toHaveBeenCalled();
+    expect(mocks.markFailed).not.toHaveBeenCalled();
+    expect(mocks.markStopped).not.toHaveBeenCalled();
+  });
+
+  it("skips every tail and generic fan-in step when a completed continuation lease is settled", async () => {
+    mocks.markActive.mockResolvedValue(false);
+    mocks.continueBook.mockResolvedValue({});
+
+    await expect(processWorkerJob(job("continue-book"))).resolves.toBeUndefined();
+
+    expect(mocks.continueBook).toHaveBeenCalledTimes(1);
+    expect(mocks.maybeCompileAfterCompletedJob).not.toHaveBeenCalled();
+    expect(mocks.markFailed).not.toHaveBeenCalled();
+  });
+
+  it("settles a published replan before a retryable tail failure without entering refund routing", async () => {
+    const followUp = vi.fn().mockRejectedValue(new Error("asset service unavailable"));
+    mocks.generateBook.mockResolvedValue({
+      durableCompletionCommitted: true,
+      retryFollowUpOnRedelivery: true,
+      afterJobCompleted: followUp
+    });
+    const replanJob = job("generate-book", { replanOperationId: "operation-1" });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(processWorkerJob(replanJob)).rejects.toThrow("asset service unavailable");
+
+    expect(mocks.markCompleted).toHaveBeenCalledWith(replanJob, undefined);
+    expect(mocks.markFailed).not.toHaveBeenCalled();
+    expect(mocks.markStopped).not.toHaveBeenCalled();
+    expect(mocks.runLoggerAppend).toHaveBeenCalledWith(
+      "job.follow_up_failed",
+      expect.objectContaining({ error: expect.anything() })
+    );
+    logged.mockRestore();
+  });
+
+  it("replays a completed replan's missing tail without reopening its settled lifecycle", async () => {
+    const followUp = vi.fn().mockResolvedValue(undefined);
+    mocks.markActive.mockResolvedValue(false);
+    mocks.generateBook.mockResolvedValue({
+      durableCompletionCommitted: true,
+      retryFollowUpOnRedelivery: true,
+      afterJobCompleted: followUp
+    });
+    const replanJob = job("generate-book", { replanOperationId: "operation-1" });
+
+    await expect(processWorkerJob(replanJob)).resolves.toBeUndefined();
+
+    expect(mocks.markCompleted).toHaveBeenCalledTimes(2);
+    expect(mocks.generateBook).toHaveBeenCalledWith(replanJob);
+    expect(followUp).toHaveBeenCalledTimes(1);
+    expect(mocks.maybeCompileAfterCompletedJob).not.toHaveBeenCalled();
+    expect(mocks.markFailed).not.toHaveBeenCalled();
+    expect(mocks.markStopped).not.toHaveBeenCalled();
+  });
+
+  it("keeps durable export publication outside failure routing when bookkeeping throws", async () => {
     mocks.compileExport.mockResolvedValue({ durableCompletionCommitted: true });
     mocks.markCompleted.mockRejectedValue(new Error("completion write unavailable"));
     const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -252,6 +395,39 @@ describe("processWorkerJob completion", () => {
     );
     logged.mockRestore();
   });
+
+  it.each([
+    { label: "text edit", name: "apply-book-edit", data: {} },
+    {
+      label: "structural edit",
+      name: "apply-book-edit",
+      data: {
+        structuralEdit: { action: "insert", anchorPageIndex: 2, pageIndexes: [], pageCount: 1 }
+      }
+    },
+    { label: "continuation", name: "continue-book", data: {} }
+  ])(
+    "does not issue a second completion write after durable $label publication",
+    async ({ name, data }) => {
+      if (name === "apply-book-edit") {
+        mocks.applyBookEdit.mockResolvedValue({
+          durableCompletionCommitted: true,
+          lifecycleCompletionCommitted: true
+        });
+      } else {
+        mocks.continueBook.mockResolvedValue({
+          durableCompletionCommitted: true,
+          lifecycleCompletionCommitted: true
+        });
+      }
+      mocks.markCompleted.mockRejectedValue(new Error("old post-publication completion failure"));
+
+      await expect(processWorkerJob(job(name, data))).resolves.toBeUndefined();
+
+      expect(mocks.markCompleted).not.toHaveBeenCalled();
+      expect(mocks.markFailed).not.toHaveBeenCalled();
+    }
+  );
 
   it("does not mask completion errors for a compile that did not durably publish", async () => {
     mocks.compileExport.mockResolvedValue({});
@@ -321,6 +497,23 @@ describe("processWorkerJob failure routing", () => {
     expect(mocks.markStopped).not.toHaveBeenCalled();
     expect(mocks.runLoggerAppend).toHaveBeenCalledWith(
       "job.unowned_text_edit_delivery",
+      expect.objectContaining({ error: expect.anything() })
+    );
+  });
+
+  it("routes a replan lease loser as superseded before stopped failure settlement", async () => {
+    mocks.hasStoppedGenerationJob.mockResolvedValue(true);
+    mocks.generateBook.mockRejectedValue(new UnownedReplanDeliveryError());
+
+    await expect(
+      processWorkerJob(job("generate-book", { replanOperationId: "operation-1" }))
+    ).rejects.toBeInstanceOf(UnrecoverableError);
+
+    expect(mocks.markCompleted).not.toHaveBeenCalled();
+    expect(mocks.markFailed).not.toHaveBeenCalled();
+    expect(mocks.markStopped).not.toHaveBeenCalled();
+    expect(mocks.runLoggerAppend).toHaveBeenCalledWith(
+      "job.unowned_replan_delivery",
       expect.objectContaining({ error: expect.anything() })
     );
   });

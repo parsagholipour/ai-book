@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   reviewAndSaveGeneratedPage: vi.fn(),
   invalidateProjectExports: vi.fn(),
   maybeEnqueueCompile: vi.fn(),
+  compensateStructuralPageChangeTx: vi.fn(),
   revertStructuralPageChange: vi.fn(),
   refundSkippedEditOperation: vi.fn(),
   refundUnwrittenEditPages: vi.fn()
@@ -37,6 +38,7 @@ vi.mock("@book-maker/db", () => ({
   prisma: mocks.prisma,
   Prisma: { DbNull: Symbol("DbNull") },
   PAGE_RESTRUCTURE_TRANSACTION_OPTIONS: {},
+  compensateStructuralPageChangeTx: mocks.compensateStructuralPageChangeTx,
   revertStructuralPageChange: mocks.revertStructuralPageChange
 }));
 vi.mock("../generation/pageRestructure.js", () => ({

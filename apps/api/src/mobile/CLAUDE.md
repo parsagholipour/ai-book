@@ -196,9 +196,9 @@ reported as surviving, which is the escape a rollback-capable mock could not sim
   number and names a sheet holding something else; `printedPageEnd` is that same end answering
   `undefined` instead, and the applied insert's card drops the clause on it. The other way is the
   anchor itself: that card derives it as the first page the apply *wrote*, less one, which is
-  `insertAfterIndex` only while the whole run is in the book. A resumed delivery drafts just the
-  recorded ids the book still holds (`stampDescribesBook` resumes on a partial survival on purpose;
-  `refundUnwrittenEditPages` hands back the rest), so `insertedPagesLocation` compares the stamp's
+  `insertAfterIndex` only while the whole run is in the book. A live insert is indivisible — the
+  worker writes every recorded id or rolls the set back — but a historical row can still show
+  fewer written indexes than the stamp recorded, so `insertedPagesLocation` compares the stamp's
   `insertedPageIds` against the pages written and names only the count when they disagree — one
   less than the first survivor is a page of the insert itself or the gap another left, and neither
   has a sheet in the map that was measured before either existed. The two placements the *request*
@@ -271,6 +271,18 @@ reported as surviving, which is the escape a rollback-capable mock could not sim
   (`packages/core/src/generation/pageRestructure.ts`) is the one resolver the quote and the job both
   run, and it refuses rather than throws: a delete that would empty the book or leave a `Chapter`
   row with no pages settles for free with a sentence naming what is in the way.
+  **A delete or move is direct only while its whole instruction is structural.** The canonical
+  instruction separates coordinates from `Content requirements:`; if the latter is non-empty,
+  `compoundStructuralReplanIntent` changes the proposal to `book_replan` before pricing, preserving
+  the resolved target page count and the structural edit as audit context. The shared core classifier
+  (one definition in `packages/core`, read by both sides) has two doors. A request that writes
+  "page" in English is decided solely by a closed action/placement grammar. A request naming its
+  page in one of the other scripts `BOOK_PAGE_WORD_PATTERN` covers may also reach the cheap path,
+  but only on positive evidence of bareness — no more distinct page numbers than the edit has
+  coordinates, and a residue inside a small character budget — because the alternative was quoting
+  a Persian reader a whole regeneration for deleting one page. Ambiguity outside both doors still
+  buys whole-book generation and adherence rather than letting a free row-ordering path promise
+  prose it never drafts. Apply repeats the check so an older free card is re-proposed, never silently repriced.
   **Its caps are its own, and nothing upstream may clamp a request down to them.** A request the
   resolver refuses is answered free, in prose naming the real limit ("I can add up to 10 pages at a
   time"); the same request quietly narrowed on the way in is a card, a price and a charge for an
@@ -536,14 +548,20 @@ edit instead.
   finished while real in-flight work is GENERATING or EDITING — so an unstarted edit or a narration
   stopped on a finished book leaves it finished too, and nothing that should fail a run stopped
   failing it. The operator console draws Stop for any QUEUED or ACTIVE job, which a repair is.
-  **A stopped continuation restores only while its durable job is still QUEUED.** Enqueue moves the
-  settled book to EDITING before the worker sees it, so QUEUED proves that transition is the only
-  mutation and the payload's pre-edit status is safe to restore. ACTIVE cannot identify a phase:
+  **A stopped continuation always restores while its durable job is QUEUED, and once ACTIVE only
+  under the atomic-candidates publication protocol.** Enqueue moves the settled book to EDITING
+  before the worker sees it, and `markActive` claims the job row before any plan or manuscript
+  write — so QUEUED, read under Stop's own claim, proves that transition is the only mutation and
+  the payload's pre-edit status is safe to restore. QUEUED restores unconditionally: a mixed or
+  unrecognised protocol marker is not evidence of a publication, and failing closed on one took a
+  finished book to FAILED the day the protocol version moves. ACTIVE cannot identify a phase:
   `continueBook` may still be outlining, or it may already have atomically installed its extended
   plan and chapters and partially drafted the appended pages, including page-owned semantic state.
   The API does not own enough of that handler's snapshot to compensate it safely, so Stop leaves an
-  ACTIVE continuation's project FAILED even though Apply can restore after its publication lease is
-  revoked. That FAILED status is the barrier that prevents a partial append reading as delivered if
+  ACTIVE continuation's project FAILED — unless the durable classifier *and* the payload both carry
+  the atomic-candidates marker, which is the worker saying it holds every candidate until one
+  publication transaction and so published atomically or not at all; any winner is caught earlier by
+  the APPLIED handoff branch. Apply can restore after its publication lease is revoked. That FAILED status is the barrier that prevents a partial append reading as delivered if
   the worker's best-effort rollback is interrupted. APPLIED remains a different durable fact: Stop
   excludes that job from terminalization and refund so its idempotent publication handoff can finish.
   Keep the APPLIED query on the full pre-edit job set even though the immediate-restore filter treats
@@ -655,6 +673,12 @@ of the same manuscript can have fixed.
   predecessor to supply the settled-status fallback; guessing one would let the reprint steal that
   edit's lifecycle and quality policy.
 - **A verified exact replacement is free, and the verification is what makes it safe.**
+  Exact eligibility is proved from the complete standalone `editInstruction`, never inferred by
+  taking everything between a replacement verb and its connector. Unquoted terms must each be one
+  atomic token; multiword phrases, determiners/roles and punctuation need explicit quotes. Router
+  `replacementFrom`/`replacementTo` fields only corroborate that shared core parse, and an
+  incomplete or disagreeing pair is stored as an explicit null on the intent so proposal rebuild,
+  Apply and worker redelivery cannot re-enable the fast path by parsing again without that evidence.
   `locallyPatchedPage` was always model-free, but the choice between it and a two-model-call page
   rewrite was made per page *at apply time* and never reached pricing, so a `local_patch` was billed
   `25 + 10/page` either way. `planExactReplacement` (`apps/api/src/mobile/exactReplacementPreview.ts`)
@@ -746,21 +770,26 @@ the write binds has to be one all three of them can still find.
   saw succeed, so the retained id could only 409 again until the screen was disposed. `cost` is in
   the key for the same reason — it is the other value the refusal is made on, and prices are
   operator-editable and re-read every 15s.
-- **A mentioned character's sheet rides the stored edit request, never the routed text.** In the
-  finished-book chat the sheets become `characterContext`, carried on `PendingEditState` (so a
-  clarify → confirm → Apply chain keeps it) and appended only where the request reaches a model:
-  the `APPLY_BOOK_EDIT`/`CONTINUE_BOOK`/`REPLAN_BOOK` payloads and the plan-revision message
-  (`requestWithCharacterContext` in `editOperations.ts`). The bare message is what
-  `classifyProjectChatMessage`, `affectedPagesForIntent` and `exactReplacementFromMessage` read —
-  a sheet inside it would move page targeting — and the visible transcript and proposal card stay
-  as typed. **"The payload" means every string in it the model will see, and one of them is not
-  the request**: `applyBookEdit.ts` *substitutes* a `perPageInstructions` entry for the whole
-  request on the page it names, so composing the sheets onto `request` alone rewrote the pages the
-  reader actually named — "make page 3 funnier and page 7 shorter" — with no idea who the mentioned
-  character is, while every unnamed page in the same edit had the sheet.
-  `pageInstructionsWithCharacterContext` composes the payload copy of those entries; the ones on
-  the intent stay bare, because that is what the card shows and what the resumable pending state
-  rebuilds from. In the creation chat mentions are message-level `{id, name}` refs, so
+- **A mentioned character's sheet is supplemental context, never part of the approved edit
+  instruction.** In the finished-book chat the sheets become `characterContext`, carried on
+  `PendingEditState` so a clarify → confirm → Apply chain keeps them, then stored separately on the
+  `BookEditOperation` and queue payload. Retry and recovery copy that field unchanged. The
+  standalone operation `request`, payload `editInstruction` and `perPageInstructions` remain the
+  reader-approved edit contract, byte-for-byte free of character sheets; adherence-bearing worker
+  prompt builders place `characterContext` in its own supplemental section and adherence review
+  judges only `editInstruction`. This split is load-bearing: `classifyProjectChatMessage`,
+  `affectedPagesForIntent` and
+  `exactReplacementFromMessage` read the bare message, while `applyBookEdit.ts` can substitute a
+  page's own instruction for the whole-book one without losing the character canon.
+  `requestWithCharacterContext` remains only at two compatibility boundaries whose existing
+  consumer still expects a single derived string: the image insertion and layout payload
+  request. Those payloads still carry the separate durable
+  `characterContext` and bare `editInstruction`; the derived string is neither an adherence
+  contract nor permission to compose sheets into `request`, `editInstruction`,
+  `perPageInstructions`, or the `REVISE_PLAN` message. `REVISE_PLAN` follows `REPLAN_BOOK`:
+  the worker composes `authoritativeReplanMessage` for the model and writes the approved
+  `editInstruction` onto `planVersion.messages`. In the creation chat mentions are message-level
+  `{id, name}` refs, so
   `activeThreadPayload` branch-filters them for free, and every turn re-reads the live rows so a
   library edit propagates; the build snapshot is the moment that stops. Where a *typed* `@name`
   ends is `isLibraryMentionNameCharacterAt` in core, which the build sweep calls rather than

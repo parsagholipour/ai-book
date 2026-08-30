@@ -81,6 +81,7 @@ export {
   type StartGenerationAttemptOptions,
   type StartGenerationAttemptResult,
   failGenerationAttempt,
+  failGenerationAttemptTx,
   getGenerationAttempt,
   markGenerationAttemptActive,
   markGenerationAttemptSucceeded,

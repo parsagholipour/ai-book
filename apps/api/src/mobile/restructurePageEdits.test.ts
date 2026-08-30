@@ -54,6 +54,41 @@ describe("structural page edits in the chat", () => {
       payload: { message }
     });
 
+  function structuralRouterModel(editInstruction: string, overrides: Record<string, unknown> = {}) {
+    const decision = {
+      action: "propose_edit",
+      confidence: 0.96,
+      reasoning: "Add the requested interlude.",
+      assistantMessage: "I’ll add that page.",
+      editInstruction,
+      clarification: "none",
+      editTarget: "insert_pages",
+      editStyle: "rewrite",
+      pageIndexes: [],
+      structuralAnchorPageIndex: 100,
+      structuralAnchorPosition: "after",
+      structuralPageCount: 1,
+      chapterIndex: null,
+      targetLanguage: null,
+      ...overrides
+    };
+    return {
+      generateText: async () => ({ text: "", model: "test-router", provider: "test" }),
+      generateJson: async () => {
+        throw new Error("generateJson is not used by the tool-calling router");
+      },
+      generateWithTools: async () => ({
+        text: "",
+        model: "test-router",
+        provider: "test",
+        toolCalls: [{ id: "call-decide", name: "decide", arguments: decision }]
+      }),
+      async *streamText() {
+        yield "";
+      }
+    };
+  }
+
   it("proposes an insertion as a card priced per new page, not as a whole-book replan", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     const project = completeProject();
@@ -86,6 +121,55 @@ describe("structural page edits in the chat", () => {
     // reasoning that prices move_image and remove_image at zero.
     expect(proposal).toMatchObject({ kind: "restructure_pages", credits: 0 });
     expect(proposal.summary).toBe("Remove page 2");
+    await app.close();
+  });
+
+  /**
+   * The reader does not have to write in English to delete a page.
+   *
+   * The canonical instruction is built by taking a closed *English* action
+   * clause off the front of the request and calling whatever is left the prose
+   * requirement, so a request in a language that grammar cannot read came back
+   * as entirely prose: `Remove page 2. Content requirements: صفحه ۲ را حذف کن.`,
+   * which `compoundStructuralReplanIntent` then priced as the whole book
+   * regenerated. A page delete costs nothing in every language or in none.
+   */
+  it("keeps a bare page delete free when the reader does not type in English", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(completeProject());
+    const app = await buildMobileApp({
+      routingTextModel: structuralRouterModel("صفحه ۲ را حذف کن", {
+        editTarget: "delete_pages",
+        pageIndexes: [2],
+        structuralAnchorPageIndex: null,
+        structuralPageCount: null
+      })
+    });
+
+    const proposal = (await send(app, "صفحه ۲ را حذف کن")).json().reply.metadata.editProposal;
+
+    expect(proposal).toMatchObject({ kind: "restructure_pages", credits: 0 });
+    expect(proposal.summary).toBe("Remove page 2");
+    await app.close();
+  });
+
+  it("still buys the whole-book path for a request in that language that asks for prose", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(completeProject());
+    const request = "صفحه ۲ را حذف کن و صفحه ۱ را گرم‌تر بازنویسی کن";
+    const app = await buildMobileApp({
+      routingTextModel: structuralRouterModel(request, {
+        editTarget: "delete_pages",
+        pageIndexes: [2],
+        structuralAnchorPageIndex: null,
+        structuralPageCount: null
+      })
+    });
+
+    const proposal = (await send(app, request)).json().reply.metadata.editProposal;
+
+    expect(proposal).toMatchObject({ kind: "book_replan" });
+    expect(proposal.summary).toContain(`Content requirements: ${request}`);
     await app.close();
   });
 
@@ -161,6 +245,117 @@ describe("structural page edits in the chat", () => {
     expect(reply.metadata.editProposal.summary).toBe("Add 1 new page after page 20");
     expect(reply.content).toContain("Add 1 new page after page 20");
     expect(reply.content).not.toContain("100");
+    await app.close();
+  });
+
+  it("keeps degraded content requirements in the proposal, durable row and worker payload", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(completeProject());
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-1", type: "APPLY_BOOK_EDIT" }));
+    const app = await buildMobileApp();
+
+    const proposed = await send(
+      app,
+      "Add a new page after page 1 about Mina finding the brass key, and keep the tone suspenseful."
+    );
+    const proposal = proposed.json().reply.metadata.editProposal;
+    const canonical =
+      "Add 1 new page after page 1. Content requirements: About Mina finding the brass key, and keep the tone suspenseful.";
+
+    expect(proposal.summary).toBe(canonical);
+    expect(proposed.json().reply.metadata.intent.editInstruction).toBe(canonical);
+    const recovered = await send(app, "i already said it");
+    expect(recovered.json().reply.metadata.editProposal.summary).toBe(canonical);
+
+    await send(app, "apply it");
+    expect(state.bookEditOperations.at(-1)?.editInstruction).toBe(canonical);
+    const payload = vi.mocked(enqueueGenerationJob).mock.calls.at(-1)?.at(0)?.payload as Record<string, unknown>;
+    expect(payload.editInstruction).toBe(canonical);
+    await app.close();
+  });
+
+  it("reroutes a delete with prose work before pricing and keeps its contract identical", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(completeProject());
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(
+      jobRecord({ id: "job-1", projectId: "project-copy", type: "REPLAN_BOOK" })
+    );
+    const app = await buildMobileApp();
+
+    const proposed = await send(app, "Delete page 2 preserving its final quote on page 3");
+    const canonical = "Remove page 2. Content requirements: Preserving its final quote on page 3.";
+
+    expect(proposed.json().reply.metadata.editProposal).toMatchObject({
+      kind: "book_replan",
+      summary: `Rebuild as a new 1-page copy: ${canonical}`
+    });
+    expect(proposed.json().reply.metadata.intent.editInstruction).toBe(canonical);
+    expect(proposed.json().reply.metadata.intent).toMatchObject({
+      kind: "book_replan",
+      structuralEdit: { action: "delete", pageIndexes: [2] },
+      replanSettings: { targetPages: 1 }
+    });
+
+    await send(app, "apply it");
+    expect(state.bookEditOperations.at(-1)?.editInstruction).toBe(canonical);
+    expect(state.bookEditOperations.at(-1)).toMatchObject({
+      kind: "BOOK_REPLAN",
+      sourceProjectId: "project-1",
+      classifier: {
+        kind: "book_replan",
+        structuralEdit: { action: "delete", pageIndexes: [2] },
+        replanSettings: { targetPages: 1 }
+      }
+    });
+    const payload = vi.mocked(enqueueGenerationJob).mock.calls.at(-1)?.at(0)?.payload as Record<string, unknown>;
+    expect(payload).toMatchObject({
+      editInstruction: canonical,
+      request: "Delete page 2 preserving its final quote on page 3",
+      sourceProjectId: "project-1",
+      sourcePlanId: "plan-1",
+      targetPages: 1,
+      intentKind: "book_replan"
+    });
+    await app.close();
+  });
+
+  it("replaces a rich router instruction's impossible placement before proposal and Apply", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "COMPLETE",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord(),
+        pages: Array.from({ length: 20 }, (_value, offset) => ({
+          id: `page-${offset + 1}`,
+          index: offset + 1,
+          title: `Page ${offset + 1}`,
+          markdown: "Mina searches the old observatory.",
+          summary: "Mina searches.",
+          imagePrompt: null,
+          status: "COMPLETED"
+        }))
+      })
+    );
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-1", type: "APPLY_BOOK_EDIT" }));
+    const app = await buildMobileApp({
+      routingTextModel: structuralRouterModel(
+        "Create one new page about Mina hiding the brass key after page 100."
+      )
+    });
+
+    const proposed = await send(app, "Add a page after page 100 revealing why Mina hid the brass key.");
+    const canonical =
+      "Add 1 new page after page 20. Content requirements: About Mina hiding the brass key.";
+    expect(proposed.json().reply.metadata.editProposal.summary).toBe(canonical);
+    expect(proposed.json().reply.metadata.intent.editInstruction).toBe(canonical);
+    expect(proposed.json().reply.content).not.toContain("100");
+
+    await send(app, "apply it");
+    expect(state.bookEditOperations.at(-1)?.editInstruction).toBe(canonical);
+    const payload = vi.mocked(enqueueGenerationJob).mock.calls.at(-1)?.at(0)?.payload as Record<string, unknown>;
+    expect(payload.editInstruction).toBe(canonical);
     await app.close();
   });
 

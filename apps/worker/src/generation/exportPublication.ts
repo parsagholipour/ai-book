@@ -676,6 +676,24 @@ export async function publishCompiledExports(options: {
           where: {
             id: options.projectId,
             ...(options.contentRevision === null ? {} : { contentRevision: options.contentRevision }),
+            // A text-edit publication commits its manuscript before it unlinks
+            // the old shared files, stamping the barrier with the revision it
+            // published. Only a barrier at *this claim's* revision is that gap:
+            // the CAS above pins the row to `options.contentRevision`, so any
+            // other value was left by a tail that died without a redelivery.
+            // Recovery sweeps an abandoned *current* barrier only after its
+            // operation lease expires; refusing an older value here would still
+            // stand later revisions down unnecessarily until that delayed pass.
+            // Both `OR` arms are load-bearing: Prisma compiles a bare
+            // `{ not: n }` to `<> $1`, UNKNOWN — and so no match — for the null
+            // barrier every healthy project has. A payload with no revision has
+            // nothing to compare against and stays strict.
+            ...(options.contentRevision === null
+              ? { exportInvalidationRevision: null }
+              : { OR: [
+                  { exportInvalidationRevision: null },
+                  { exportInvalidationRevision: { not: options.contentRevision } }
+                ] }),
             status: options.ownsProjectStatus
               ? options.expectedProjectStatus
               : { in: [...DETACHED_PUBLISHABLE_STATUSES] }

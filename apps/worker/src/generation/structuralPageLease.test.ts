@@ -13,6 +13,10 @@ vi.mock("@book-maker/db", () => ({
   Prisma: {},
   PAGE_RESTRUCTURE_TRANSACTION_OPTIONS: { timeout: 30_000, maxWait: 10_000 }
 }));
+vi.mock("../runtime/durableEditCompletion.js", () => ({
+  claimDurableEditCompletionTx: vi.fn(async () => true),
+  settleDurableEditAttemptTx: vi.fn(async () => true)
+}));
 
 import {
   acquireStructuralPageLeaseTx,
@@ -128,7 +132,8 @@ describe("structural page delivery lease", () => {
         projectId: "project-1",
         operationId: "op-1",
         ownerToken: "old-owner",
-        affectedPageIndexes: [4, 5]
+        affectedPageIndexes: [4, 5],
+        generationJobId: "job-1"
       })
     ).resolves.toBeNull();
 
@@ -154,7 +159,8 @@ describe("structural page delivery lease", () => {
         projectId: "project-1",
         operationId: "op-1",
         ownerToken: "owner",
-        affectedPageIndexes: [2, 3]
+        affectedPageIndexes: [2, 3],
+        generationJobId: "job-1"
       })
     ).resolves.toBe(12);
 
@@ -173,6 +179,31 @@ describe("structural page delivery lease", () => {
     expect(client.project.update.mock.invocationCallOrder[0]!).toBeLessThan(
       client.$queryRawUnsafe.mock.invocationCallOrder[0]!
     );
+  });
+
+  it("still publishes a legacy row that never carried a generationJobId", async () => {
+    // `BookEditOperation.generationJobId` is nullable and Stop still finds the
+    // legacy shape by payload id, so an equality predicate would fence such a
+    // row out of its own publication for good: rolled back and refunded on
+    // every delivery, over pages that are already shifted. The insert publisher
+    // tolerates the same NULL, and the two may not disagree about one kind.
+    const client = tx();
+    client.project.update.mockResolvedValue({ contentRevision: 4 });
+    client.$queryRawUnsafe.mockResolvedValue([{ id: "op-1" }]);
+    mocks.prisma.$transaction.mockImplementation(async (run: (client: unknown) => Promise<unknown>) => run(client));
+
+    await expect(
+      markStructuralPageLeaseApplied({
+        projectId: "project-1",
+        operationId: "op-1",
+        ownerToken: "owner",
+        affectedPageIndexes: [],
+        generationJobId: "job-1"
+      })
+    ).resolves.toBe(4);
+
+    const [sql] = client.$queryRawUnsafe.mock.calls[0]!;
+    expect(sql).toContain('AND ("generationJobId" IS NULL OR "generationJobId" = $7)');
   });
 
   it("renews the matching live owner", async () => {

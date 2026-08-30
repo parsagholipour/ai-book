@@ -193,6 +193,8 @@ export async function queueChatImageLayout(options: QueuedChatEdit): Promise<{
     kind: operationKind,
     status: "QUEUED",
     request: message,
+    editInstruction: resolvedIntent.editInstruction?.trim() || message.trim(),
+    ...(options.characterContext?.trim() ? { characterContext: options.characterContext.trim() } : {}),
     classifier: jsonInputValue(resolvedIntent),
     affectedPageIndexes: affected,
     creditsCharged: 0
@@ -239,6 +241,8 @@ export async function queueChatImageLayout(options: QueuedChatEdit): Promise<{
         payload: {
           operationId: operation.id,
           request: requestWithCharacterContext(message, options.characterContext),
+          editInstruction: resolvedIntent.editInstruction?.trim() || message.trim(),
+          ...(options.characterContext?.trim() ? { characterContext: options.characterContext.trim() } : {}),
           affectedPageIndexes: affected,
           intentKind: resolvedIntent.kind,
           [PRE_EDIT_PROJECT_STATUS]: settledStatusBeforeEdit(project.status),

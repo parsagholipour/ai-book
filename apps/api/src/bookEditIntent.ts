@@ -116,6 +116,15 @@ export type BookEditIntent = {
   scope: BookEditScope;
   impact: BookEditImpact;
   clarification: BookEditClarification;
+  /** Durable, standalone execution instruction resolved by the edit router. */
+  editInstruction?: string;
+  /**
+   * Router-provided literal terms after validation against editInstruction.
+   * `null` is durable evidence that the router supplied incomplete or
+   * disagreeing terms, so later proposal/Apply code must not re-parse the
+   * instruction and accidentally restore the mechanical fast path.
+   */
+  exactReplacement?: BookEditReplacement | null;
   /** Chapter index when the intent targets a whole chapter (chapter_regenerate). */
   affectedChapterIndex?: number | null;
   /** Set for show_content intents. */
@@ -427,7 +436,7 @@ async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditI
     textModel: options.textModel,
     purpose: "project_chat.edit_router",
     temperature: 0,
-    maxTokens: 900,
+    maxTokens: 1100,
     toolChoice: "required",
     maxModelCalls: ROUTER_MAX_MODEL_CALLS,
     tools,

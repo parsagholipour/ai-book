@@ -5,28 +5,28 @@ import {
   compilePublicationDedupeKey,
   compilePublicationPolicyFromPayload,
   compilePublicationPolicyIdentity,
-  chapterHeadingStylePreference,
   coverArtSourceFor,
   dispatchBackoffMs,
   errorMessage,
-  includeSourcesPreference,
   isDetachedFromProjectLifecycle,
   jobOwnsQualityVerdict,
   legacyCompilePolicy,
-  MARKDOWN_RECOMPILE_WITHOUT_VERDICT,
   resolveBookGenerationStrategy,
   retryJobOptions,
   workerJobNameForType,
   type CompilePublicationPolicy,
   type CreateProjectInput,
   type GenerationJobType,
-  type LegacyCompileOptions,
-  type SettledProjectStatus
+  type LegacyCompileOptions
 } from "@book-maker/core";
-import { Prisma, prisma, type BookEditOperationKind } from "@book-maker/db";
+import { Prisma, prisma } from "@book-maker/db";
 import { acceptedSavedPageTarget, terminalSavedPageCount } from "../generation/wholeBookTolerance.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
-import { exportPublicationCommittedAt } from "../generation/exportPublicationEvidence.js";
+import {
+  forkedPublicationRecoveryPolicy,
+  loadStrandedCompileRecoveryPolicy,
+  strandedCompileRecoveryPolicy
+} from "./compileRecoveryPolicy.js";
 import { config } from "./config.js";
 import { queue } from "./queue.js";
 import { jsonPayloadToRecord } from "./serialization.js";
@@ -534,7 +534,7 @@ export async function maybeEnqueueCompile(
         mediaSettings: project.mediaSettings,
         jobs: currentRevisionCompiles,
         editOperations: latestEdit ? [latestEdit] : []
-      });
+      }) ?? (await forkedPublicationRecoveryPolicy({ id: projectId, contentRevision: project.contentRevision }));
   if (policy === null) {
     console.error("Stranded edit compile policy could not be recovered", {
       projectId,
@@ -595,242 +595,73 @@ export async function maybeEnqueueCompile(
 
 const STRANDED_GENERATION_GRACE_MS = 60_000;
 
-/** The policy each edit handler uses when its own compile is first queued. */
-function compileRecoveryPolicyFromEdit(kind: BookEditOperationKind): CompilePublicationPolicy {
-  switch (kind) {
-    case "ADD_IMAGE":
-    case "MOVE_IMAGE":
-    case "REMOVE_IMAGE":
-      return compilePublicationPolicyFromPayload({
-        skipFinalReview: true,
-        [MARKDOWN_RECOMPILE_WITHOUT_VERDICT]: true
-      });
-    case "LOCAL_PATCH":
-    case "PAGE_REWRITE":
-    case "CHAPTER_REGENERATE":
-    case "MANUAL_EDIT":
-      return compilePublicationPolicyFromPayload({ skipFinalReview: true });
-    case "PLAN_REVISION":
-    case "BOOK_REPLAN":
-    case "CONTINUE_BOOK":
-    case "RESTRUCTURE_PAGES":
-      return compilePublicationPolicyFromPayload({});
-    default: {
-      const exhaustive: never = kind;
-      return exhaustive;
-    }
-  }
-}
-
 /**
- * Recovers the compile intent already durably attached to this revision.
+ * Retires a publication barrier whose last Bull delivery can no longer do it.
  *
- * Both live fan-in and delayed reconciliation use this selector so a later
- * detached repair cannot hide the outcome/presentation compile that owns the
- * project transition. GENERATING is the one state with an unambiguous default
- * when no compile row exists yet.
+ * The manuscript transaction completes its GenerationJob before the
+ * post-publication tail unlinks the old files. If that tail exhausts its Bull
+ * attempts while the database is unavailable, the job is already terminal and
+ * neither queue reconciliation can replay it. The stranded-generation sweep is
+ * the remaining durable owner of the recovery.
+ *
+ * A live tail is excluded in database time, using the same operation lease it
+ * heartbeats around filesystem invalidation. Ordinary edits own their project
+ * directly. A book-replan operation remains on the source project, so its
+ * completed GENERATE_BOOK successor is the durable relationship to the copy.
+ * Once neither supported owner has a live lease, clearing is the safe
+ * direction: a later delivery reads NULL as "already retired" and will not
+ * unlink files a recovery compile installs.
  */
-function currentRevisionCompileRecoveryPolicy(project: {
-  status: string;
-  contentRevision: number;
-  jobs: readonly { contentRevision: number | null; payload: unknown }[];
-}): CompilePublicationPolicy | null {
-  const currentRevisionJobs = project.jobs.filter((job) =>
-    job.contentRevision === project.contentRevision
-  );
-  const priorCompile = currentRevisionJobs.find((job) =>
-    compilePublicationPolicyFromPayload(job.payload).ownership.kind !== "detached"
-  ) ?? currentRevisionJobs[0];
-  if (priorCompile) {
-    return compilePublicationPolicyFromPayload(priorCompile.payload);
-  }
-  return project.status === "GENERATING" ? compilePublicationPolicyFromPayload({}) : null;
-}
-
-function strandedCompileRecoveryPolicy(project: {
-  status: string;
-  contentRevision: number;
-  mediaSettings: unknown;
-  jobs: readonly {
-    contentRevision: number | null;
-    payload: unknown;
-    status?: string;
-    ownsQualityVerdict?: boolean;
-    qualityReport?: unknown;
-  }[];
-  editOperations: readonly { kind: BookEditOperationKind; status: string }[];
-}): CompilePublicationPolicy | null {
-  const currentRevisionPolicy = currentRevisionCompileRecoveryPolicy(project);
-  if (currentRevisionPolicy) {
-    return currentRevisionPolicy;
-  }
-  const edit = project.editOperations[0];
-  if (edit) {
-    return edit.status === "APPLIED" ? compileRecoveryPolicyFromEdit(edit.kind) : null;
-  }
-
-  // Presentation preferences used to commit the EDITING transition and the
-  // revision bump before creating their compile row, and deliberately created
-  // no BookEditOperation. A crash in that one historical gap therefore has no
-  // current-revision intent to read. A presentation compile for the immediately
-  // preceding revision is the one durable signal that carries both facts this
-  // recovery must not guess: this is still a model-free, verdict-preserving
-  // reprint, and the exact settled status it must restore. Do not generalize a
-  // prior outcome/edit compile into this path; an unknown EDITING state is not
-  // permission to run full QA or publish it as COMPLETE.
-  const presentationPredecessor = project.jobs.find((job) =>
-    job.contentRevision === project.contentRevision - 1 &&
-    compilePublicationPolicyFromPayload(job.payload).ownership.kind === "presentation"
-  );
-  if (presentationPredecessor) {
-    const policy = compilePublicationPolicyFromPayload(presentationPredecessor.payload);
-    return {
-      ...policy,
-      review: { ...policy.review },
-      expectedProjectStatus: "EDITING",
-      ownership: { ...policy.ownership }
-    };
-  }
-
-  // The first presentation edit has no earlier presentation payload to copy.
-  // It is still distinguishable from an arbitrary EDITING row when the
-  // immediately preceding revision has a completed verdict-owning compile
-  // and the project now carries one of the presentation-only preferences
-  // that old route wrote. That compile's report is the same durable verdict
-  // that decided its settled publication status: blocked meant
-  // REVIEW_REQUIRED; passed/review_recommended meant COMPLETE. A malformed or
-  // absent old report cannot justify COMPLETE, so the one-time legacy lane
-  // conservatively leaves the reader in REVIEW_REQUIRED while preserving the
-  // prior verdict (the recovered compile itself owns no quality verdict).
-  const outcomePredecessor = project.jobs.find((job) =>
-    job.contentRevision === project.contentRevision - 1 &&
-    job.status === "COMPLETED" &&
-    job.ownsQualityVerdict === true &&
-    compilePublicationPolicyFromPayload(job.payload).ownership.kind === "outcome"
-  );
-  if (outcomePredecessor && hasPresentationPreference(project.mediaSettings)) {
-    return {
-      review: { skipFinalReview: true, withoutQualityVerdict: false },
-      expectedProjectStatus: "EDITING",
-      ownership: {
-        kind: "presentation",
-        fallbackStatus: settledStatusFromQualityReport(outcomePredecessor.qualityReport) ?? "REVIEW_REQUIRED"
-      }
-    };
-  }
-  return null;
-}
-
-type StrandedProject = {
+async function retireAbandonedCurrentExportBarrier(project: {
   id: string;
   status: string;
   contentRevision: number;
-  currentPlanId: string | null;
-  mediaSettings: unknown;
-};
-
-/**
- * Loads only the two revisions that can explain a stranded transition.
- *
- * BookEditOperation predates revision stamping, so recency within that table
- * alone is not ownership. A current edit must have applied after revision
- * N-1's last durably recorded project-owning publication; anything older was
- * already represented by that publication. A terminal job is not that proof:
- * superseded compiles stand down as COMPLETED too. If no publication marker
- * exists, the operation is ambiguous and only the legacy presentation checks
- * below get a chance to recover the project.
- */
-async function loadStrandedCompileRecoveryPolicy(
-  project: StrandedProject
-): Promise<{ policy: CompilePublicationPolicy } | null> {
-  const revisions = project.contentRevision > 0
-    ? [project.contentRevision, project.contentRevision - 1]
-    : [project.contentRevision];
-  const jobs = await prisma.generationJob.findMany({
-    where: {
-      projectId: project.id,
-      type: "COMPILE_EXPORT",
-      contentRevision: { in: revisions }
-    },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    select: {
-      id: true,
-      contentRevision: true,
-      payload: true,
-      status: true,
-      ownsQualityVerdict: true,
-      qualityReport: true
-    }
-  });
-
-  // A current-revision compile is the durable intent and wins before any
-  // inference from an unversioned edit operation or predecessor.
-  const currentRevisionPolicy = currentRevisionCompileRecoveryPolicy({ ...project, jobs });
-  if (currentRevisionPolicy) {
-    return { policy: currentRevisionPolicy };
+  exportInvalidationRevision: number | null;
+}): Promise<boolean> {
+  if (
+    project.status !== "EDITING" ||
+    project.exportInvalidationRevision !== project.contentRevision
+  ) {
+    return true;
   }
-
-  const boundary = jobs
-    .filter((job) =>
-      job.contentRevision === project.contentRevision - 1 &&
-      job.status === "COMPLETED" &&
-      compilePublicationPolicyFromPayload(job.payload).ownership.kind !== "detached"
-    )
-    .map((job) => exportPublicationCommittedAt(job.payload))
-    .filter((committedAt): committedAt is Date => committedAt !== null)
-    .sort((left, right) => right.getTime() - left.getTime())[0];
-  const [currentEditCandidate, unfinishedCurrentEdit] = await Promise.all([
-    boundary
-      ? prisma.bookEditOperation.findFirst({
-          where: {
-            projectId: project.id,
-            status: "APPLIED",
-            appliedAt: { gte: boundary }
-          },
-          orderBy: [{ appliedAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
-          select: { kind: true, status: true, appliedAt: true }
-        })
-      : Promise.resolve(null),
-    prisma.bookEditOperation.findFirst({
-      where: {
-        projectId: project.id,
-        status: { in: ["QUEUED", "ACTIVE"] },
-        ...(boundary ? { createdAt: { gte: boundary } } : {})
-      },
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      select: { id: true }
-    })
-  ]);
-  const currentEdit = currentEditCandidate?.appliedAt && boundary &&
-      currentEditCandidate.appliedAt.getTime() > boundary.getTime()
-    ? currentEditCandidate
-    : null;
-  // Equal millisecond timestamps cannot establish which side of the revision
-  // boundary an unversioned operation belongs to. Preserve the unknown state.
-  if (unfinishedCurrentEdit || (currentEditCandidate && !currentEdit)) {
-    return null;
-  }
-
-  const policy = strandedCompileRecoveryPolicy({
-    ...project,
-    jobs,
-    editOperations: currentEdit ? [currentEdit] : []
-  });
-  return policy ? { policy } : null;
-}
-
-function hasPresentationPreference(mediaSettings: unknown): boolean {
-  return includeSourcesPreference(mediaSettings) !== undefined ||
-    chapterHeadingStylePreference(mediaSettings) !== undefined;
-}
-
-function settledStatusFromQualityReport(qualityReport: unknown): SettledProjectStatus | null {
-  if (!qualityReport || typeof qualityReport !== "object" || Array.isArray(qualityReport)) {
-    return null;
-  }
-  const state = (qualityReport as Record<string, unknown>).state;
-  if (state === "blocked") return "REVIEW_REQUIRED";
-  return state === "passed" || state === "review_recommended" ? "COMPLETE" : null;
+  const retired = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+    `UPDATE "Project" project
+        SET "exportInvalidationRevision" = NULL,
+            "updatedAt" = CURRENT_TIMESTAMP
+      WHERE project."id" = $1
+        AND project."status" = 'EDITING'
+        AND project."contentRevision" = $2
+        AND project."exportInvalidationRevision" = $2
+        AND NOT EXISTS (
+          SELECT 1
+            FROM "BookEditOperation" operation
+           WHERE operation."publicationRevision" = $2
+             AND operation."status" = 'APPLIED'
+             AND operation."structuralLeaseToken" IS NOT NULL
+             AND operation."structuralLeaseExpiresAt" > CURRENT_TIMESTAMP
+             AND operation."structuralLeaseCompletedAt" IS NULL
+             AND (
+               operation."projectId" = project."id"
+               OR (
+                 operation."kind" = 'BOOK_REPLAN'
+                 AND operation."projectId" <> project."id"
+                 AND operation."sourceProjectId" = operation."projectId"
+                 AND EXISTS (
+                   SELECT 1
+                     FROM "GenerationJob" job
+                    WHERE job."id" = operation."generationJobId"
+                      AND job."projectId" = project."id"
+                      AND job."type" = 'GENERATE_BOOK'
+                      AND job."status" = 'COMPLETED'
+                 )
+               )
+             )
+        )
+      RETURNING project."id"`,
+    project.id,
+    project.contentRevision
+  );
+  return retired.length === 1;
 }
 
 /**
@@ -860,6 +691,7 @@ export async function reconcileStrandedGeneration(limit = 20): Promise<number> {
       id: true,
       status: true,
       contentRevision: true,
+      exportInvalidationRevision: true,
       currentPlanId: true,
       mediaSettings: true
     }
@@ -867,6 +699,9 @@ export async function reconcileStrandedGeneration(limit = 20): Promise<number> {
   const results = await Promise.allSettled(
     projects.map(async (project) => {
       if (!project.currentPlanId) {
+        return;
+      }
+      if (!(await retireAbandonedCurrentExportBarrier(project))) {
         return;
       }
       const recovery = await loadStrandedCompileRecoveryPolicy(project);

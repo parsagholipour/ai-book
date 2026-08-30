@@ -37,6 +37,7 @@ holds the event loop open and vitest will never exit.
 ## Index
 
 - [Page 1's opening contract](#page-1s-opening-contract)
+- [Whole-set edit adherence](#whole-set-edit-adherence)
 - [Best-of candidate sampling](#best-of-candidate-sampling)
 - [Covers](#covers)
 - [PDF typesetting and the render transport](#pdf-typesetting-and-the-render-transport)
@@ -64,7 +65,7 @@ holds the event loop open and vitest will never exit.
   brief producers and fails for every prompt this contract feeds: `revisePageDraft` and
   `polishPageDraft` rewrite the page they are handed, in place, and a reader's own "make page 1
   sharper" reaches `revisePageDraft` through `rewritePageForUserRequest`
-  (`apps/worker/src/handlers/replanBook.ts`). Which page is the author's cannot be asked — `Page`
+  (`apps/worker/src/generation/textEditRewrite.ts`). Which page is the author's cannot be asked — `Page`
   has no provenance column, so `isImportedManuscript` reads the *project's* mediaSettings and both
   halves are book-level. That over-applies to prose inserted at the head of an import
   (`resolveStructuralEdit` accepts `anchorPageIndex: 0`, so a generated page can sit at global index
@@ -148,6 +149,74 @@ holds the event loop open and vitest will never exit.
   handed it `plan.openingHook` as a string — and it now takes the book like the other four, with
   `apps/worker/src/generation/bookState.ts` passing `input` and `plan` over whole and only
   `mergePageMapCriticPatch`, which states no rule, still taking a plain `lastPageIndex`.
+
+## Whole-set edit adherence
+
+- **One operation-level verdict does not mean one unbounded prompt.** `reviewAppliedBookEdit`
+  sends a small candidate set jointly, but a larger manuscript is divided into stable UTF-8-safe
+  page segments under `EDIT_ADHERENCE_MESSAGE_BUDGET_BYTES`. Every leaf returns evidence and exact
+  coverage, never a premature global missing verdict; bounded reducers preserve that evidence until
+  one final call judges the complete coverage root. A missing segment id, a broken coverage range,
+  an oversized call, malformed evidence, or a final verdict that does not accept the root digest
+  fails closed. Do not truncate, sample, or independently approve pages to make the request fit.
+  The exact-replacement path remains local and precedes this protocol.
+
+  **Coverage is not evidence lineage.** A leaf has an explicit completeness bit, and its bounded
+  lists hold one unadvertised slot past the capacity the prompt offers: a list that fills every
+  advertised slot is accepted, one that spills into the spare is rejected. The rejection is what
+  stops a provider filling the last slot it knows about and silently implying there was no next
+  fact — the spare slot is what lets it say so instead of being refused for obeying. Code assigns stable ids to every accepted fact. Reducers may
+  summarize positive evidence only by naming every immediate source fact exactly once and in order;
+  the summary id hashes that lineage and the evidence digest binds it recursively. Possible
+  omissions and contradictions never pass through a reducer at all: code carries their immutable
+  facts to the final call, which must accept every id exactly and may resolve only ordered omission
+  ids. Any contradiction, unresolved omission, id collision, lost lineage, overflowed output, or
+  lossless negative set too large for the final budget fails closed rather than publishing. A fact
+  repeated verbatim inside one list is collapsed instead: a repeat carries no information, and
+  failing an edit over it refunds work the reader received. A leaf that honestly reports incomplete
+  evidence is **backpressure, not failure**: the group is halved and re-asked, twice at most, and
+  only then fails closed — the prompt and the guard now give the model the same advice, where the
+  prompt used to ask for a flag the guard threw on. Each call's output budget is computed from what
+  its own schema forces the model to echo, at one token per response character, because evidence is
+  written in the book's language and Devanagari, Han, Kana and Hebrew all tokenise near 1 char/token
+  rather than the ~4 an English estimate assumes; the fact id is 16 hex because its width *is* that
+  budget, and the final negative ceiling is a bound on what fits, not a constant.
+
+  **`satisfied` is the verdict; the other three fields are the repair order it carries when the
+  answer is no.** Nothing distinguishes a suggestion from an unmet requirement in a `string[]`, so a
+  list volunteered beside `satisfied: true` may not veto it — that is one model's remark overruling
+  the same model's answer in the same response, and it cost the reader three redraft rounds and a
+  refund of a correctly applied edit. Both prompts now say the repair order is empty when satisfied
+  is true. What may still outrank the boolean is evidence *code* carries: an omission the final call
+  declined to resolve by id, and a contradiction it was never offered a way to clear.
+
+  **A verdict says on what basis it was reached, because a review that never ran refused nothing.**
+  `basis: "reviewed" | "unverified"` is required on every verdict; `failClosedVerdict` is the only
+  producer of `"unverified"` and `normalizeVerdict` the only producer of `"reviewed"`. Everything
+  upstream returns `EditAdherenceFindings` — the same shape minus `basis` — and the response schema
+  is `.strict()` without it, so no reviewer and no provider can claim one. Callers test the field
+  and nothing else: they used to infer it from a five-field shape that only worked because
+  `failClosedVerdict` bypasses `normalizeVerdict` and its flagged set happened to equal the caller's
+  candidate set. One transient provider error otherwise read as "nothing was applied" and flagged
+  every page — two full redraft rounds on a whole-book replan, and on a structural insert a rollback
+  that discarded the drafted set and refunded. The basis rides into the stored `adherenceAudit`, so
+  `publishedPagesMaySettle` can tell a refusal from an absence months later; a computed exact
+  replacement reports `"reviewed"`, because it is the most certain verification here, not the least.
+
+  **The undivided whole-set review is budgeted by the same measurement as every hierarchical call**,
+  because it is the common case — everything under `EDIT_ADHERENCE_MESSAGE_BUDGET_BYTES` takes it,
+  and most edits are one to three pages. Its schema forces up to 31,380 response characters and an
+  ordinary verbose verdict measures 1,579; the flat 1,200 truncated both.
+
+  **The overflow slot is the second spelling of "give me less to read".** A leaf list past the
+  advertised capacity is halved and re-asked exactly as `evidenceComplete: false` is. A reducer's
+  overflow stays fatal — it has no smaller slice to be given, and its merge must be lossless.
+
+  **`MOCK_AI` can reach the expensive half of this protocol.** A marker in the edit instruction —
+  `[mock-adherence:unsatisfied|incomplete|truncated|failed]` — drives the fake adapter down the
+  unsatisfied, backpressure, truncation and provider-error paths. Without it the fake always said
+  satisfied, so every failure path this protocol has was invisible in the repo's default way of
+  working.
 
 ## Best-of candidate sampling
 

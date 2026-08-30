@@ -8,8 +8,9 @@ export type EditOperationDeliveryClaim =
 /**
  * A pre-flight, not a fence, and the same shape `applyImageInsertion` opens
  * with. `markEditOperationActive` has usually moved this row already — QUEUED
- * only, so this is also what re-activates a FAILED one: `apply-book-edit` has
- * no BullMQ attempt budget (`retryJobOptions`), and the two resume doors that
+ * only, so this is also what re-activates a FAILED one: `apply-book-edit`'s
+ * BullMQ attempt budget (`retryJobOptions`) replays a delivered tail and never a
+ * failed handler, and the two resume doors that
  * do bring it back — the mobile paid retry and the operator requeue — replay
  * the payload against the FAILED operation row without resetting it. What the
  * count is really for is standing down before any of the work below when

@@ -10,14 +10,17 @@ import { ensureCharacterReferenceAssets } from "../generation/characterReference
 import { strategyUsesSemanticMemory } from "../generation/embeddingWrites.js";
 import { embedResearchSourcesForProject } from "../generation/researchMemory.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
+import { generateReplannedBook } from "../generation/replanEditCandidates.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
 import { enqueueWorkerJob, maybeEnqueueCompile, maybeEnqueueCover, parallelPageWaveSize } from "../runtime/dispatch.js";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
+import { type JobCompletion } from "../runtime/jobTypes.js";
 import {
   bookPlanSchema,
   createProviders,
   expandChapterResearch,
+  jsonPayloadToRecord,
   seedStoryStateFromPromises,
   type BookGenerationStrategy,
   type BookPlan,
@@ -32,7 +35,7 @@ import type { GenerateBookJob } from "../runtime/jobPayloads.js";
  * pages, and either fan out per-page jobs or run a direct in-process generation.
  */
 
-export async function generateBook(job: GenerateBookJob) {
+export async function generateBook(job: GenerateBookJob): Promise<JobCompletion> {
   const { projectId, planId, generationJobId } = job.data;
   const project = await getProjectOrThrow(projectId);
   const planVersion = await prisma.planVersion.findUnique({ where: { id: planId } });
@@ -43,6 +46,48 @@ export async function generateBook(job: GenerateBookJob) {
   const plan = bookPlanSchema.parse(planVersion.planningPackage);
   const strategy = strategyForInput(input);
   const providers = createLoggedProviders(job, createProviders(config, input), input);
+
+  const stagedReplanOperationId = await stagedReplanSuccessorOperationId(job);
+  if (stagedReplanOperationId) {
+    // A replan deliberately does not reach the execution-mode switch below. Its
+    // pages are drafted, adherence-audited and repaired in memory and published
+    // in one transaction, so the reader's book survives a replan that fails the
+    // audit; every arm of that switch writes chapters and pages as it goes and
+    // would destroy the manuscript before knowing whether the replacement is
+    // any good. The strategy still writes the prose — `generatePageDraft` is
+    // its own — so only the orchestration differs.
+    const completion = await generateReplannedBook({
+      projectId,
+      planId,
+      operationId: stagedReplanOperationId,
+      sourceProjectId: job.data.sourceProjectId,
+      queuedEditInstruction: job.data.editInstruction,
+      queuedRequest: job.data.request,
+      queuedCharacterContext: job.data.characterContext,
+      input,
+      plan,
+      providers,
+      strategy,
+      generationJobId,
+      attemptId: job.data.attemptId
+    });
+    return {
+      ...completion,
+      afterJobCompleted: async () => {
+        // After the delivery tail, never in front of it. The publication
+        // transaction is the tail lease's last renewal, and nothing heartbeats
+        // it again until `replannedBookFollowUpCompletion` starts its own — so
+        // an unbounded per-chapter research expansion here spent the whole
+        // three-minute budget on a picture the tail needed, and the first
+        // statement of that tail is the renewal that would then find the lease
+        // gone. The expansion's own rows are read by the compile this tail
+        // queues, so a corpus that lands behind that enqueue reaches the next
+        // export rather than this one; a tail that cannot start reaches none.
+        await completion.afterJobCompleted?.();
+        await expandPublishedReplanResearch({ projectId, input, plan, providers, strategy, generationJobId });
+      }
+    };
+  }
 
   await maybeExpandStrategyResearch({
     projectId,
@@ -64,7 +109,7 @@ export async function generateBook(job: GenerateBookJob) {
         strategy,
         generationJobId
       });
-      return;
+      return {};
     case "chapter-whole-pass":
       await generateBookChapterWholePass({
         projectId,
@@ -75,7 +120,7 @@ export async function generateBook(job: GenerateBookJob) {
         strategy,
         generationJobId
       });
-      return;
+      return {};
     case "batch-window":
       await generateBookBatchWindow({
         projectId,
@@ -86,7 +131,7 @@ export async function generateBook(job: GenerateBookJob) {
         strategy,
         generationJobId
       });
-      return;
+      return {};
     case "draft-then-polish":
       await generateBookDraftThenPolish({
         projectId,
@@ -97,7 +142,7 @@ export async function generateBook(job: GenerateBookJob) {
         strategy,
         generationJobId
       });
-      return;
+      return {};
     case "sequential-pages":
       await generateBookSequential({
         projectId,
@@ -108,9 +153,105 @@ export async function generateBook(job: GenerateBookJob) {
         strategy,
         generationJobId
       });
-      return;
+      return {};
     default:
       assertNeverExecutionMode(strategy.executionMode);
+  }
+}
+
+/**
+ * The replan this GENERATE_BOOK delivery is the staged successor of, or null
+ * when it is not one.
+ *
+ * `processJob` asks this before it replays an already-COMPLETED row, because
+ * that question and the fork below have to be the same one. The replay gate
+ * keyed on `replanOperationId` alone, so a redelivered *pre-staging* successor
+ * — which answers null here and is regenerated through the ordinary book path
+ * — re-entered the execution-mode switch with its durable row already
+ * COMPLETED, and every arm of that switch deletes the project's pages,
+ * chapters, illustrations, continuity notes and page embeddings before it
+ * rewrites the book. The redelivery is not hypothetical: `generate-book` has a
+ * BullMQ attempt budget, and a tail failure is rethrown to spend it.
+ */
+export async function stagedReplanSuccessorOperationId(job: GenerateBookJob): Promise<string | null> {
+  const operationId = job.data.replanOperationId;
+  if (!operationId) return null;
+  return (await stagedReplanSuccessor(operationId)) ? operationId : null;
+}
+
+/**
+ * Whether the staged-replan pipeline is what queued this successor — and so
+ * whether `generateReplannedBook` owns the delivery at all.
+ *
+ * `replanBook.ts` stamps `classifier.replanStagedPlanId` before it creates the
+ * GENERATE_BOOK row, so every successor the current build produces carries it;
+ * `stagedReplanJobGuard.ts` reads the same stamp to decide whether it has
+ * anything to prove, and correctly answers `unstaged` — no opinion — for a row
+ * that has none. A successor queued by the *pre-staging* build carries none of
+ * it: that build published the revised plan itself, set the project GENERATING,
+ * left this job to regenerate the book through the execution-mode switch below,
+ * and then marked the operation APPLIED. Sent into `generateReplannedBook`
+ * instead, it claims the lease, reads `phase: "tail"` off that APPLIED row,
+ * finds no publication identity to replay and throws
+ * `UnownedReplanDeliveryError` — which `processJob` converts to an
+ * `UnrecoverableError` *without* settling anything, leaving the durable job
+ * ACTIVE and the project GENERATING for good, on a book the reader has paid
+ * for. A rolling deploy has to answer an in-flight legacy successor the way the
+ * build that queued it would have, which is the ordinary path.
+ *
+ * An operation row that is *missing* is not that: it still takes the fork,
+ * whose own "Book edit operation not found" failure settles and refunds.
+ */
+async function stagedReplanSuccessor(operationId: string): Promise<boolean> {
+  const operation = await prisma.bookEditOperation.findUnique({
+    where: { id: operationId },
+    select: { classifier: true }
+  });
+  if (!operation) return true;
+  const stagedPlanId = jsonPayloadToRecord(operation.classifier).replanStagedPlanId;
+  if (typeof stagedPlanId === "string" && stagedPlanId.trim()) return true;
+  console.warn("Regenerating a pre-staging replan successor through the ordinary book path", {
+    event: "generation.legacy_replan_successor",
+    operationId
+  });
+  return false;
+}
+
+/**
+ * Chapter research expansion for a replan, run against the manuscript it just
+ * published.
+ *
+ * Not the ordinary pre-drafting call below: a replan's publication transaction
+ * replaces every `ResearchSource` row with the revised plan's own notes, so
+ * rows written before it are deleted by it, and the guard inside
+ * `maybeExpandStrategyResearch` would skip the call anyway — the live project
+ * still holds the *old* plan's sources at that point, and a stored query the
+ * revised plan does not name reads as "an earlier expansion already ran".
+ * After the publication the project's corpus is exactly the plan's notes, which
+ * is the state that guard is written for, so the expansion runs and the
+ * replanned book keeps a research corpus rather than shrinking to the plan.
+ *
+ * Best-effort: the manuscript is published, settled and paid for by the time
+ * this runs, so a research outage must not reopen it. The rows and their
+ * embeddings are read by later edits, continuations and exports, all of which
+ * ask again.
+ */
+async function expandPublishedReplanResearch(options: {
+  projectId: string;
+  input: CreateProjectInput;
+  plan: BookPlan;
+  providers: ProviderSet;
+  strategy: BookGenerationStrategy;
+  generationJobId?: string | undefined;
+}): Promise<void> {
+  try {
+    await maybeExpandStrategyResearch(options);
+  } catch (error) {
+    console.warn("Replan research expansion skipped for a published book", {
+      event: "generation.replan_research_expansion_failed",
+      projectId: options.projectId,
+      error
+    });
   }
 }
 

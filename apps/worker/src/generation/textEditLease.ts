@@ -7,7 +7,7 @@ import {
   waitForStructuralPageLease,
   waitForStructuralPageLeaseCompletion
 } from "./structuralPageLease.js";
-import type { Prisma } from "@book-maker/db";
+import { prisma, type Prisma } from "@book-maker/db";
 
 /**
  * Text rewrites share the operation-level delivery columns that were first
@@ -33,6 +33,25 @@ export const startTextEditLeaseHeartbeat = startStructuralPageLeaseHeartbeat;
 export const completeTextEditLease = completeStructuralPageLease;
 export const waitForTextEditLeaseCompletion = waitForStructuralPageLeaseCompletion;
 export const isTextEditLeaseLostError = isStructuralPageLeaseLostError;
+export { StructuralPageLeaseLostError as TextEditLeaseLostError };
+
+/** Release only this owner of an APPLIED post-publication tail for Bull retry. */
+export async function releaseTextEditTailLease(operationId: string, ownerToken: string): Promise<boolean> {
+  const rows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+    `UPDATE "BookEditOperation"
+       SET "structuralLeaseToken" = NULL,
+           "structuralLeaseExpiresAt" = NULL,
+           "updatedAt" = CURRENT_TIMESTAMP
+     WHERE "id" = $1
+       AND "structuralLeaseToken" = $2
+       AND "structuralLeaseCompletedAt" IS NULL
+       AND "status" = 'APPLIED'
+     RETURNING "id"`,
+    operationId,
+    ownerToken
+  );
+  return rows.length === 1;
+}
 
 /**
  * First operation-row statement of every manuscript-writing transaction. A
@@ -45,7 +64,7 @@ export async function assertTextEditLeaseTx(
   tx: Prisma.TransactionClient,
   operationId: string,
   ownerToken: string
-): Promise<{ classifier: unknown; status: string }> {
+): Promise<{ classifier: unknown; status: string; generationJobId: string | null }> {
   const owned = await renewStructuralPageLeaseTx(tx, operationId, ownerToken);
   if (!owned) {
     throw new StructuralPageLeaseLostError();

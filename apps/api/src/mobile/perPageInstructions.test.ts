@@ -47,6 +47,7 @@ function perPageRouterModel() {
         confidence: 0.93,
         reasoning: "Two pages, two different changes.",
         assistantMessage: "I’ll rewrite those two pages.",
+        editInstruction: "Make page 1 funnier and page 2 shorter.",
         clarification: "none",
         editTarget: "pages",
         editStyle: "rewrite",
@@ -120,7 +121,7 @@ describe("per-page instructions in one edit", () => {
     await app.close();
   });
 
-  it("carries a mentioned character's sheet on every page's own instruction", async () => {
+  it("carries a mentioned character's sheet separately from every approved instruction", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     state.pages = editablePages();
     mockPrisma.project.findFirst.mockResolvedValue(completeProject());
@@ -168,16 +169,16 @@ describe("per-page instructions in one edit", () => {
 
     const payload = vi.mocked(enqueueGenerationJob).mock.calls.at(-1)![0].payload;
     const instructions = payload.perPageInstructions as { pageIndex: number; instruction: string }[];
-    expect(payload.request as string).toContain("night-flying");
-    // The worker substitutes a named page's instruction for the whole request
-    // rather than adding to it, so a sheet carried only on `request` reached
-    // every page in the edit *except* the ones the reader actually named.
+    expect(payload.request).toBe("Make page 1 funnier and page 2 shorter, and put @Luna in both.");
+    expect(payload.characterContext as string).toContain("night-flying");
+    // The sheets are supplemental prompt context, not hidden additions to the
+    // page-local or operation-level edit contracts.
     expect(instructions.map((entry) => entry.pageIndex)).toEqual([1, 2]);
     expect(instructions[0]!.instruction.startsWith("Make it funnier.")).toBe(true);
     expect(instructions[1]!.instruction.startsWith("Make it shorter.")).toBe(true);
     for (const entry of instructions) {
-      expect(entry.instruction).toContain("Mentioned character profiles");
-      expect(entry.instruction).toContain("night-flying");
+      expect(entry.instruction).not.toContain("Mentioned character profiles");
+      expect(entry.instruction).not.toContain("night-flying");
     }
     await app.close();
   });

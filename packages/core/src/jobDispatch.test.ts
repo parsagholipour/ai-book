@@ -41,6 +41,32 @@ describe("job retry policy", () => {
     expect(retryJobOptions("plan-book")).toBeUndefined();
   });
 
+  it("budgets the two delivered-tail jobs so processJob's replay rethrow is redelivered", () => {
+    // Both publish and settle in one transaction and then run a checkpointed
+    // tail outside the failure boundary; with no budget the rethrow that is
+    // supposed to replay that tail only moved the job to failed.
+    expect(retryJobOptions("apply-book-edit")).toMatchObject({ attempts: 2 });
+    expect(retryJobOptions("continue-book")).toMatchObject({ attempts: 2 });
+  });
+
+  it("never lets a delivered-tail budget be spent by the handler's own failure", () => {
+    // The settlement path has already failed and refunded the edit, so a
+    // redelivery would re-run it against the row it just settled — transient
+    // network faults included, which is what separates these two names from
+    // the network-retryable ones.
+    for (const jobName of ["apply-book-edit", "continue-book"]) {
+      expect(
+        shouldRecoverJobAttempt({ jobName, attemptsMade: 0, maxAttempts: 2, recoverableNetworkError: true })
+      ).toBe(false);
+      expect(
+        shouldBypassConfiguredRetries({ jobName, attemptsMade: 0, maxAttempts: 2, recoverableNetworkError: true })
+      ).toBe(true);
+      expect(
+        shouldBypassConfiguredRetries({ jobName, attemptsMade: 0, maxAttempts: 2, recoverableNetworkError: false })
+      ).toBe(true);
+    }
+  });
+
   it("recovers network failures while attempts remain", () => {
     expect(
       shouldRecoverJobAttempt({ jobName: "generate-book", attemptsMade: 0, maxAttempts: 2, recoverableNetworkError: true })

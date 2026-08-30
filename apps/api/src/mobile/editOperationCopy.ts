@@ -314,14 +314,14 @@ function structuralEditSummary(
  *
  * **True of every row that wrote the whole insert**, which is what
  * {@link wroteEveryRecordedPage} is now asked. `affectedPageIndexes` is the
- * pages the worker actually *drafted*, and a resumed delivery drafts only the
- * recorded ids the book still holds (`stampDescribesBook` resumes on a partial
- * survival on purpose, and `refundUnwrittenEditPages` hands back the
- * difference) — so on those rows the lowest page written is somewhere inside
- * the run rather than at its head, and one less than it is a page of the run
- * itself or a gap where one was. Neither is the anchor, and neither is
- * translatable: the map in force was measured before any of them existed. The
- * count is still true, so the card keeps it and says no place at all.
+ * pages the worker actually *drafted*. A recorded insert is indivisible now, so
+ * a live delivery either writes every stamped id or rolls back — but a
+ * historical row can still show fewer written indexes than the stamp recorded,
+ * and on those rows the lowest page written is somewhere inside the run rather
+ * than at its head. One less than it is a page of the run itself or a gap where
+ * one was. Neither is the anchor, and neither is translatable: the map in force
+ * was measured before any of them existed. The count is still true, so the card
+ * keeps it and says no place at all.
  *
  * The anchor of a whole insert is a page which already existed, so unlike the
  * new pages it is still translatable: an insert shifts only the pages after it,
@@ -370,10 +370,10 @@ function insertedPagesLocation(
  *
  * The stamp records the page *ids* the shift created, and the settlement writes
  * the indexes of the ones drafting actually wrote — equal on every ordinary
- * delivery, and deliberately not on a resumed one whose book had lost some of
- * them. The two counts are the only thing that separates the two, so the
- * comparison is any disagreement rather than "fewer": a row whose numbers do
- * not add up is a row this sentence may not be derived from either way.
+ * delivery, and unequal only on a historical row that settled a subset. The two
+ * counts are the only thing that separates the two, so the comparison is any
+ * disagreement rather than "fewer": a row whose numbers do not add up is a row
+ * this sentence may not be derived from either way.
  *
  * `true` when nothing is recorded to compare against — a stamp that predates
  * the ids, or a row whose marker is missing. That is the answer the card gave

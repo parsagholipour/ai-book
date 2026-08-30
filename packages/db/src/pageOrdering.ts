@@ -628,16 +628,18 @@ export async function applyPageOrder(
 }
 
 /**
- * Interactive transactions here run well past Prisma's 5 s default: two raw
- * updates across every page after the anchor, a `createMany`, two `PlanVersion`
- * writes carrying the whole plan JSON, and the project and chapter rows. No
- * call site in this repo passes transaction options, so this is the one place
- * that names them.
+ * Final manuscript publications can legitimately touch every page while they
+ * hold the Project-first delivery fence. Keep that atomic window bounded, but
+ * give bulk page replacement and the accompanying plan writes room beyond
+ * Prisma's 5 s interactive-transaction default.
  */
-export const PAGE_RESTRUCTURE_TRANSACTION_OPTIONS = {
+export const MANUSCRIPT_PUBLICATION_TRANSACTION_OPTIONS = {
   timeout: 30_000,
   maxWait: 10_000
 } satisfies { timeout: number; maxWait: number };
+
+/** Structural publication uses the shared manuscript-wide transaction budget. */
+export const PAGE_RESTRUCTURE_TRANSACTION_OPTIONS = MANUSCRIPT_PUBLICATION_TRANSACTION_OPTIONS;
 
 /** Re-exported so callers do not have to import Prisma just to type a tx. */
 export type PageOrderingTransaction = Prisma.TransactionClient;

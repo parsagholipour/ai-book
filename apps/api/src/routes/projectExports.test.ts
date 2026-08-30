@@ -122,10 +122,21 @@ function projectDirEntries(): string[] {
   return readdirSync(join(bookStorageDir, "project-1"));
 }
 
+/** The row's text-edit invalidation barrier; null is what a healthy project has. */
+let barrier: number | null = null;
+
+/** Postgres' verdict for one row: `"col" <> $1` is UNKNOWN — never true — for a null column. */
+const claimMatchesBarrier = (where: Record<string, unknown>, value: number | null): boolean =>
+  ((where.OR as Record<string, unknown>[] | undefined) ?? [where]).some((arm) => {
+    const filter = arm.exportInvalidationRevision as null | { not: number } | undefined;
+    return filter === undefined ? true : filter === null ? value === null : value !== null && value !== filter.not;
+  });
+
 describe("lazy export rebuilds", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mockProvenanceWrite.failure = null;
+    barrier = null;
     bookStorageDir = mkdtempSync(join(tmpdir(), "book-maker-exports-"));
     mkdirSync(join(bookStorageDir, "project-1"), { recursive: true });
     process.env = {
@@ -138,7 +149,9 @@ describe("lazy export rebuilds", () => {
     appConfig = loadConfig(process.env);
     mockPrisma.project.findUnique.mockResolvedValue(projectRow(7));
     mockPrisma.$transaction.mockImplementation((fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma));
-    mockPrisma.project.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.project.updateMany.mockImplementation(async ({ where }: { where: Record<string, unknown> }) => ({
+      count: claimMatchesBarrier(where, barrier) ? 1 : 0
+    }));
     // The proof the metadata heal demands before stamping a revision onto
     // sidecar-less bytes: some compile really COMPLETED for that revision.
     mockPrisma.generationJob.findFirst.mockResolvedValue({ id: "compile-7" });
@@ -247,7 +260,11 @@ describe("lazy export rebuilds", () => {
       where: {
         id: "project-1",
         contentRevision: 7,
-        status: { in: ["COMPLETE", "REVIEW_REQUIRED"] }
+        status: { in: ["COMPLETE", "REVIEW_REQUIRED"] },
+        OR: [
+          { exportInvalidationRevision: null },
+          { exportInvalidationRevision: { not: 7 } }
+        ]
       },
       data: { contentRevision: { increment: 0 } }
     });
@@ -360,6 +377,43 @@ describe("lazy export rebuilds", () => {
     expect(pdf?.toString()).toBe("fresh-pdf");
     expect(projectDirEntries()).toEqual(["book.pdf"]);
   });
+
+  // Only a barrier at the revision this rename claims is a live invalidation
+  // gap. Any other value was stranded by a text-edit tail that died without a
+  // redelivery — so it may not lock the book out of a different-revision rebuild
+  // while the delayed lease-aware sweep catches up. Null is the case a bare
+  // `{ not: 7 }` would exclude, and it is every healthy project.
+  const barrierCases: [barrier: string, value: number | null, installs: boolean][] = [
+    ["the revision this render claims", 7, false],
+    ["nothing, as a healthy project does", null, true],
+    ["a revision a dead tail stranded", 5, true]
+  ];
+
+  for (const [name, value, installs] of barrierCases) {
+    it(`installs an inline render over an invalidation barrier holding ${name}: ${installs}`, async () => {
+      mockGeneratePdf.mockImplementation(renderWriting("rendered-before-invalidation"));
+      barrier = value;
+      const { rebuildProjectPdfExport } = await import("./projectExports.js");
+
+      const pdf = await rebuildProjectPdfExport(appConfig, "project-1", exportSource(7));
+
+      expect(pdf?.toString()).toBe("rendered-before-invalidation");
+      expect(projectDirEntries()).toEqual(installs ? ["book.pdf", "book.pdf.provenance.json"] : []);
+    });
+
+    it(`repairs sidecar-less provenance over an invalidation barrier holding ${name}: ${installs}`, async () => {
+      writeFileSync(join(bookStorageDir, "project-1", "book.pdf"), "legacy-pdf");
+      barrier = value;
+      const { readProjectExportArtifact } = await import("./projectExports.js");
+
+      const artifact = await readProjectExportArtifact(appConfig, "project-1", "pdf", {
+        contentRevision: 7,
+        status: "COMPLETE"
+      });
+
+      expect(artifact?.provenance.state).toBe(installs ? "exact" : "unknown");
+    });
+  }
 
   it.each([
     { format: "pdf" as const, rendered: "api-pdf", worker: "worker-pdf" },

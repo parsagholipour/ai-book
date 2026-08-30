@@ -625,6 +625,12 @@ model Project {
   mediaSettings Json
   status        ProjectStatus    @default(DRAFT)
   contentRevision Int            @default(0)
+  /// A manuscript publication has committed but its old on-disk exports have
+  /// not yet been retired. Export publishers claiming the revision named here
+  /// must stand down; the revision-scoped tail clears only its own value after
+  /// the filesystem work finishes, with a lease-aware stranded sweep as the
+  /// crash backstop.
+  exportInvalidationRevision Int?
   /// Where each model page landed in the published book.pdf, measured at
   /// publish time from the rendered bytes (see packages/core pdfPageMap.ts).
   /// Stamped with the contentRevision and pdf digest it was measured against;
@@ -853,7 +859,16 @@ model BookEditOperation {
   kind                BookEditOperationKind
   status              BookEditOperationStatus @default(QUEUED)
   request             String
+  /// Standalone execution instruction resolved before the proposal is shown.
+  editInstruction     String?
+  /// Supplemental mentioned-character canon. Never part of the approved edit instruction.
+  characterContext    String?
+  /// Immutable manuscript source for a full-book replan copy. Legacy rows
+  /// fall back to projectId, which was already the source-side operation owner.
+  sourceProjectId     String?
   classifier          Json
+  /// Compact instruction-adherence verdict and attempt history.
+  adherenceAudit      Json?
   affectedPageIndexes Int[]
   creditsCharged      Int                     @default(0)
   automaticRetryCount Int                     @default(0)
