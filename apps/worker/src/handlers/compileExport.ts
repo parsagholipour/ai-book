@@ -197,7 +197,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   let initialIntegrityIssuesSnapshot: ManuscriptQualityIssue[] | undefined;
   const initialIntegrityIssues = (): ManuscriptQualityIssue[] =>
     (initialIntegrityIssuesSnapshot ??= runDeterministicManuscriptChecks({
-      pages: pages.map((page) => ({ index: page.index, title: page.title, markdown: page.markdown })),
+      pages: pages.map(({ index, title, markdown, chapter }) => ({ index, title, markdown, ...(chapter ? { chapterIndex: chapter.index } : {}) })),
       expectedPageCount: input.targetPages
     }));
   let modelQualityIssues: ManuscriptQualityIssue[] = [];
@@ -258,11 +258,11 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
           researchNotes: citeableResearchNotes,
           extraPageIndexes: [
             ...failedQaPageIndexes,
-            // Errors only: warning-severity issues (a repeated phrase, an unpaid
-            // promise) are review recommendations, not licences to model-rewrite
-            // every page they touch.
+            // Errors only: warning-severity issues and the corroborated
+            // structural barrier are review findings, not licences to
+            // model-rewrite every page they touch.
             ...initialIntegrityIssues()
-              .filter((issue) => issue.severity === "error")
+              .filter((issue) => issue.severity === "error" && issue.code !== "STRUCTURAL_SLOP_SATURATION")
               .flatMap((issue) => issue.affectedPageIndexes)
           ],
           // What fences every durable write the pass makes — the pages it
@@ -467,7 +467,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     (await rebuildStoryStateFromPages(projectId, plan.promises ?? []));
   const deterministicIssues = [
     ...runDeterministicManuscriptChecks({
-      pages: pages.map((page) => ({ index: page.index, title: page.title, markdown: page.markdown })),
+      pages: pages.map(({ index, title, markdown, chapter }) => ({ index, title, markdown, ...(chapter ? { chapterIndex: chapter.index } : {}) })),
       expectedPageCount: input.targetPages
     }),
     ...(repairVerificationIncomplete

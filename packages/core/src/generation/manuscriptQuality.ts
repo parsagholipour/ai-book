@@ -1,4 +1,5 @@
 import { MANUSCRIPT_PROMPT_LEAK_PATTERNS, containsPromptLeak } from "./promptLeak.js";
+import { structuralSlopIssues } from "./manuscriptStructuralSlop.js";
 
 export type ManuscriptQualityState = "passed" | "review_recommended" | "blocked";
 export type ManuscriptQualitySeverity = "error" | "warning";
@@ -23,6 +24,7 @@ export type ManuscriptQualityReport = {
 
 export type ManuscriptIntegrityPage = {
   index: number;
+  chapterIndex?: number;
   title: string;
   markdown: string;
 };
@@ -201,7 +203,8 @@ export function runDeterministicManuscriptChecks(options: {
   }
   issues.push(
     ...repeatedPhraseIssues(pages, pageTexts, pageTokens),
-    ...repeatedOpeningIssues(pages, pageTexts, pageTokens)
+    ...repeatedOpeningIssues(pages, pageTexts, pageTokens),
+    ...structuralSlopIssues(pages, pageTexts)
   );
   return issues;
 }
