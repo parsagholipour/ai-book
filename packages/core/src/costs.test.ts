@@ -53,6 +53,18 @@ describe("provider cost calculation", () => {
       expect.objectContaining({ inputPerMillion: 0.2, outputPerMillion: 1.2, label: "Up to 272K prompt tokens" }),
       expect.objectContaining({ inputPerMillion: 0.4, outputPerMillion: 1.8, label: "Over 272K prompt tokens" })
     ]);
+    expect(textGenerationCostRates({ provider: "openai", model: "gpt-5-nano" })).toEqual([
+      { inputPerMillion: 0.05, outputPerMillion: 0.4, cacheHitPerMillion: 0.005 }
+    ]);
+    expect(textGenerationCostRates({ provider: "alibaba", model: "qwen3.7-flash" })).toEqual([
+      { inputPerMillion: 0.03, outputPerMillion: 0.13, label: "Up to 32K prompt tokens" },
+      {
+        inputPerMillion: 0.1,
+        outputPerMillion: 0.4,
+        label: "Over 32K and up to 256K prompt tokens"
+      },
+      { inputPerMillion: 0.2, outputPerMillion: 0.8, label: "Over 256K prompt tokens" }
+    ]);
     expect(textGenerationCostRates({ provider: "deepinfra", model: "unknown" })).toEqual([]);
   });
 
@@ -157,6 +169,18 @@ describe("provider cost calculation", () => {
     expect(luna).toBe(0.0302);
   });
 
+  it("calculates GPT-5 nano text cost including cached input", () => {
+    const cost = calculateTextGenerationCost({
+      provider: "openai",
+      model: "gpt-5-nano",
+      promptTokens: 100_000,
+      cacheHitTokens: 10_000,
+      outputTokens: 10_000
+    });
+
+    expect(cost).toBe(0.00855);
+  });
+
   it("uses selected Gemini text model pricing tiers", () => {
     const shortPromptCost = calculateTextGenerationCost({
       provider: "gemini",
@@ -226,11 +250,32 @@ describe("provider cost calculation", () => {
       cacheHitTokens: 20_000,
       outputTokens: 10_000
     });
+    const qwen37FlashShortCost = calculateTextGenerationCost({
+      provider: "alibaba",
+      model: "qwen3.7-flash",
+      promptTokens: 30_000,
+      outputTokens: 10_000
+    });
+    const qwen37FlashMediumCost = calculateTextGenerationCost({
+      provider: "alibaba",
+      model: "qwen3.7-flash",
+      promptTokens: 100_000,
+      outputTokens: 10_000
+    });
+    const qwen37FlashLongCost = calculateTextGenerationCost({
+      provider: "alibaba",
+      model: "qwen3.7-flash",
+      promptTokens: 300_000,
+      outputTokens: 10_000
+    });
 
     expect(plusCost).toBe(0.1);
     expect(qwen37Cost).toBe(0.12);
     expect(qwen35Cost).toBe(0.21);
     expect(qwen38MaxCost).toBe(0.225);
+    expect(qwen37FlashShortCost).toBe(0.0022);
+    expect(qwen37FlashMediumCost).toBe(0.014);
+    expect(qwen37FlashLongCost).toBe(0.068);
   });
 
   it("prices supported Gemini image models from asset metadata", () => {

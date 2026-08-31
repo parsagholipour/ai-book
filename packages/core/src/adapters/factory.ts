@@ -84,11 +84,15 @@ export type ImageModelProviderOption = ImageModelSelection & {
 };
 export type ImageModelOption = ImageModelProviderOption;
 
-const GEMINI_FLASH_THINKING_LEVEL_EFFORTS: TextModelThinkingEffortOption[] = [
-  { value: "minimal", label: "Minimal" },
+const GEMINI_37_FLASH_THINKING_LEVEL_EFFORTS: TextModelThinkingEffortOption[] = [
   { value: "low", label: "Low" },
   { value: "medium", label: "Medium", default: true },
   { value: "high", label: "High" }
+];
+
+const GEMINI_35_FLASH_THINKING_LEVEL_EFFORTS: TextModelThinkingEffortOption[] = [
+  { value: "minimal", label: "Minimal" },
+  ...GEMINI_37_FLASH_THINKING_LEVEL_EFFORTS
 ];
 
 const GEMINI_MAIN_TEXT_MODEL_OPTIONS: TextModelOption[] = [
@@ -97,14 +101,14 @@ const GEMINI_MAIN_TEXT_MODEL_OPTIONS: TextModelOption[] = [
     model: "gemini-3.7-flash",
     label: "Gemini 3.7 Flash",
     thinking: true,
-    thinkingEfforts: GEMINI_FLASH_THINKING_LEVEL_EFFORTS
+    thinkingEfforts: GEMINI_37_FLASH_THINKING_LEVEL_EFFORTS
   },
   {
     provider: "gemini",
     model: "gemini-3.5-flash",
     label: "Gemini 3.5 Flash",
     thinking: true,
-    thinkingEfforts: GEMINI_FLASH_THINKING_LEVEL_EFFORTS
+    thinkingEfforts: GEMINI_35_FLASH_THINKING_LEVEL_EFFORTS
   },
   {
     provider: "gemini",

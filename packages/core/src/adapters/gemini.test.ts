@@ -106,7 +106,7 @@ describe("GeminiTextAdapter", () => {
     expect(requests[0].config.thinkingConfig).toEqual({ thinkingBudget: 0 });
   });
 
-  it("passes configured thinking levels to Gemini 3.5 and 3.7 Flash requests", async () => {
+  it("passes configured thinking levels to Gemini 3.5 Flash requests", async () => {
     const cases = [
       ["minimal", ThinkingLevel.MINIMAL],
       ["low", ThinkingLevel.LOW],
@@ -114,29 +114,57 @@ describe("GeminiTextAdapter", () => {
       ["high", ThinkingLevel.HIGH]
     ] as const;
 
-    for (const textModel of ["gemini-3.5-flash", "gemini-3.7-flash"] as const) {
-      for (const [thinkingEffort, thinkingLevel] of cases) {
-        const requests: any[] = [];
-        const adapter = new GeminiTextAdapter({
-          apiKey: "test-key",
-          textModel,
-          thinkingEffort
-        });
-        (adapter as any).ai = {
-          models: {
-            generateContent: async (request: any) => {
-              requests.push(request);
-              return { text: "A generated response." };
-            }
+    for (const [thinkingEffort, thinkingLevel] of cases) {
+      const requests: any[] = [];
+      const adapter = new GeminiTextAdapter({
+        apiKey: "test-key",
+        textModel: "gemini-3.5-flash",
+        thinkingEffort
+      });
+      (adapter as any).ai = {
+        models: {
+          generateContent: async (request: any) => {
+            requests.push(request);
+            return { text: "A generated response." };
           }
-        };
+        }
+      };
 
-        await adapter.generateText({
-          messages: [{ role: "user", content: "Draft a paragraph." }]
-        });
+      await adapter.generateText({
+        messages: [{ role: "user", content: "Draft a paragraph." }]
+      });
 
-        expect(requests[0].config.thinkingConfig).toEqual({ thinkingLevel });
-      }
+      expect(requests[0].config.thinkingConfig).toEqual({ thinkingLevel });
+    }
+  });
+
+  it("never sends the unsupported minimal thinking level to Gemini 3.7 Flash", async () => {
+    for (const [thinkingEffort, thinkingLevel] of [
+      ["minimal", ThinkingLevel.LOW],
+      ["low", ThinkingLevel.LOW],
+      ["medium", ThinkingLevel.MEDIUM],
+      ["high", ThinkingLevel.HIGH]
+    ] as const) {
+      const requests: any[] = [];
+      const adapter = new GeminiTextAdapter({
+        apiKey: "test-key",
+        textModel: "gemini-3.7-flash",
+        thinkingEffort
+      });
+      (adapter as any).ai = {
+        models: {
+          generateContent: async (request: any) => {
+            requests.push(request);
+            return { text: "A generated response." };
+          }
+        }
+      };
+
+      await adapter.generateText({
+        messages: [{ role: "user", content: "Draft a paragraph." }]
+      });
+
+      expect(requests[0].config.thinkingConfig).toEqual({ thinkingLevel });
     }
   });
 

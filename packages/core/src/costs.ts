@@ -1,3 +1,5 @@
+import { qwen37FlashCostRates, qwen37FlashRateForPrompt } from "./qwen37FlashPricing.js";
+
 export type ProviderCostLog = {
   provider?: string | null;
   model?: string | null;
@@ -133,7 +135,9 @@ const GEMINI_TEXT_RATES = new Map<string, TextRate | TieredTextRate>([
   ]
 ]);
 
-const OPENAI_TEXT_RATES = new Map<string, TieredTextRate>([
+const GPT_5_NANO_RATE: TextRate = { inputPerMillion: 0.05, outputPerMillion: 0.4, cacheHitPerMillion: 0.005 };
+
+const OPENAI_TEXT_RATES = new Map<string, TextRate | TieredTextRate>([
   [
     "gpt-5.6-sol",
     {
@@ -172,7 +176,9 @@ const OPENAI_TEXT_RATES = new Map<string, TieredTextRate>([
       },
       above: { inputPerMillion: 0.4, outputPerMillion: 1.8, cacheHitPerMillion: 0.04, cacheWritePerMillion: 0.5 }
     }
-  ]
+  ],
+  ["gpt-5-nano", GPT_5_NANO_RATE],
+  ["gpt-5-nano-2025-08-07", GPT_5_NANO_RATE]
 ]);
 
 const ALIBABA_TEXT_RATES = new Map<string, TextRate | TieredTextRate>([
@@ -503,7 +509,15 @@ export function textGenerationCostRates(input: {
   provider?: string | null;
   model?: string | null;
 }): TextGenerationCostRate[] {
-  const rateCard = resolveTextRateCard(normalizeProvider(input.provider), normalizeModel(input.model));
+  const provider = normalizeProvider(input.provider);
+  const model = normalizeModel(input.model);
+  if (provider === "alibaba" || provider === "qwen") {
+    const qwenRates = qwen37FlashCostRates(model);
+    if (qwenRates.length > 0) {
+      return qwenRates;
+    }
+  }
+  const rateCard = resolveTextRateCard(provider, model);
   if (!rateCard) {
     return [];
   }
@@ -649,6 +663,12 @@ function resolveTextRate(
   promptTokens: number | null,
   billedAt: Date
 ): TextRate | null {
+  if (provider === "alibaba" || provider === "qwen") {
+    const qwenRate = qwen37FlashRateForPrompt(model, promptTokens);
+    if (qwenRate) {
+      return qwenRate;
+    }
+  }
   const rateCard = resolveTextRateCard(provider, model);
   if (!rateCard) {
     return null;

@@ -120,7 +120,7 @@ describe("admin generation model routing", () => {
     await app.close();
   });
 
-  it("offers and saves every GPT-5.6 family model with OpenAI reasoning effort", async () => {
+  it("offers and saves every OpenAI model with its supported reasoning effort", async () => {
     mockStoredRevision(null);
     const app = Fastify({ logger: false });
     await app.register(adminGenerationQualityRoutes);
@@ -137,13 +137,19 @@ describe("admin generation model routing", () => {
     expect(catalog.filter((option) => option.provider === "openai").map((option) => option.model)).toEqual([
       "gpt-5.6-sol",
       "gpt-5.6-terra",
-      "gpt-5.6-luna"
+      "gpt-5.6-luna",
+      "gpt-5-nano"
     ]);
     expect(catalog.find((option) => option.model === "gpt-5.6-sol")?.thinkingEfforts?.map((effort) => effort.value))
       .toEqual(["none", "low", "medium", "high", "xhigh", "max"]);
     expect(catalog.find((option) => option.model === "gpt-5.6-luna")?.costs).toEqual([
       expect.objectContaining({ inputPerMillion: 0.2, outputPerMillion: 1.2 }),
       expect.objectContaining({ inputPerMillion: 0.4, outputPerMillion: 1.8 })
+    ]);
+    expect(catalog.find((option) => option.model === "gpt-5-nano")?.thinkingEfforts?.map((effort) => effort.value))
+      .toEqual(["minimal", "low", "medium", "high"]);
+    expect(catalog.find((option) => option.model === "gpt-5-nano")?.costs).toEqual([
+      expect.objectContaining({ inputPerMillion: 0.05, outputPerMillion: 0.4 })
     ]);
 
     const save = await app.inject({

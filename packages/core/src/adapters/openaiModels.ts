@@ -3,6 +3,7 @@ import type { TextModelSelection, TextModelThinkingEffort } from "../schemas/boo
 export const OPENAI_GPT_5_6_SOL_MODEL = "gpt-5.6-sol";
 export const OPENAI_GPT_5_6_TERRA_MODEL = "gpt-5.6-terra";
 export const OPENAI_GPT_5_6_LUNA_MODEL = "gpt-5.6-luna";
+export const OPENAI_GPT_5_NANO_MODEL = "gpt-5-nano";
 
 export type OpenAITextModelOption = TextModelSelection & {
   label: string;
@@ -23,6 +24,13 @@ const GPT_5_6_THINKING_EFFORTS: OpenAIThinkingEffortOption[] = [
   { value: "high", label: "High" },
   { value: "xhigh", label: "Extra high" },
   { value: "max", label: "Max" }
+];
+
+const GPT_5_NANO_THINKING_EFFORTS: OpenAIThinkingEffortOption[] = [
+  { value: "minimal", label: "Minimal" },
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium", default: true },
+  { value: "high", label: "High" }
 ];
 
 const OPENAI_TEXT_MODEL_OPTIONS: OpenAITextModelOption[] = [
@@ -46,6 +54,13 @@ const OPENAI_TEXT_MODEL_OPTIONS: OpenAITextModelOption[] = [
     label: "GPT-5.6 Luna",
     thinking: true,
     thinkingEfforts: GPT_5_6_THINKING_EFFORTS
+  },
+  {
+    provider: "openai",
+    model: OPENAI_GPT_5_NANO_MODEL,
+    label: "GPT-5 nano",
+    thinking: true,
+    thinkingEfforts: GPT_5_NANO_THINKING_EFFORTS
   }
 ];
 

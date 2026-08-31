@@ -278,7 +278,7 @@ function geminiThinkingLevel(
     return undefined;
   }
   if (thinkingEffort === "minimal" || thinkingEffort === "none") {
-    return ThinkingLevel.MINIMAL;
+    return supportsGeminiMinimalThinkingLevel(model) ? ThinkingLevel.MINIMAL : ThinkingLevel.LOW;
   }
   if (thinkingEffort === "low") {
     return ThinkingLevel.LOW;
@@ -290,7 +290,7 @@ function geminiThinkingLevel(
     return ThinkingLevel.HIGH;
   }
   if (thinkingEnabled === false) {
-    return ThinkingLevel.MINIMAL;
+    return supportsGeminiMinimalThinkingLevel(model) ? ThinkingLevel.MINIMAL : ThinkingLevel.LOW;
   }
   if (thinkingEnabled === true) {
     return ThinkingLevel.MEDIUM;
@@ -301,6 +301,11 @@ function geminiThinkingLevel(
 function usesGeminiThinkingLevel(model: string): boolean {
   const normalized = model.trim().replace(/^models\//, "").toLowerCase();
   return normalized.startsWith("gemini-3.5-flash") || normalized.startsWith("gemini-3.7-flash");
+}
+
+function supportsGeminiMinimalThinkingLevel(model: string): boolean {
+  const normalized = model.trim().replace(/^models\//, "").toLowerCase();
+  return normalized.startsWith("gemini-3.5-flash");
 }
 
 function geminiPromptFromMessages(messages: ChatMessage[], extraSystemLines: string[] = []) {

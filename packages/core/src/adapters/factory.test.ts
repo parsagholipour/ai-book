@@ -150,6 +150,9 @@ describe("text model provider selection", () => {
       expect.objectContaining({ provider: "alibaba", model: "qwen3.7-plus", thinking: true })
     );
     expect(options).toContainEqual(
+      expect.objectContaining({ provider: "alibaba", model: "qwen3.7-flash", label: "Qwen 3.7 Flash", thinking: true })
+    );
+    expect(options).toContainEqual(
       expect.objectContaining({ provider: "alibaba", model: "qwen3.5-plus", thinking: true })
     );
     expect(options).toContainEqual(
@@ -158,7 +161,18 @@ describe("text model provider selection", () => {
     expect(options.filter((option) => option.provider === "openai")).toEqual([
       expect.objectContaining({ provider: "openai", model: "gpt-5.6-sol", label: "GPT-5.6 Sol" }),
       expect.objectContaining({ provider: "openai", model: "gpt-5.6-terra", label: "GPT-5.6 Terra" }),
-      expect.objectContaining({ provider: "openai", model: "gpt-5.6-luna", label: "GPT-5.6 Luna" })
+      expect.objectContaining({ provider: "openai", model: "gpt-5.6-luna", label: "GPT-5.6 Luna" }),
+      expect.objectContaining({
+        provider: "openai",
+        model: "gpt-5-nano",
+        label: "GPT-5 nano",
+        thinkingEfforts: [
+          { value: "minimal", label: "Minimal" },
+          { value: "low", label: "Low" },
+          { value: "medium", label: "Medium", default: true },
+          { value: "high", label: "High" }
+        ]
+      })
     ]);
     expect(options.find((option) => option.provider === "openai")?.thinkingEfforts).toEqual([
       { value: "none", label: "Off" },
@@ -172,7 +186,15 @@ describe("text model provider selection", () => {
       expect.objectContaining({ inputPerMillion: 0.2, outputPerMillion: 1.2 }),
       expect.objectContaining({ inputPerMillion: 0.4, outputPerMillion: 1.8 })
     ]);
-    const geminiFlashThinkingEfforts = [
+    expect(generationTextModelOptions(testConfig({})).find((option) => option.model === "gpt-5-nano")?.costs).toEqual([
+      expect.objectContaining({ inputPerMillion: 0.05, outputPerMillion: 0.4, cacheHitPerMillion: 0.005 })
+    ]);
+    expect(generationTextModelOptions(testConfig({})).find((option) => option.model === "qwen3.7-flash")?.costs).toEqual([
+      expect.objectContaining({ inputPerMillion: 0.03, outputPerMillion: 0.13 }),
+      expect.objectContaining({ inputPerMillion: 0.1, outputPerMillion: 0.4 }),
+      expect.objectContaining({ inputPerMillion: 0.2, outputPerMillion: 0.8 })
+    ]);
+    const gemini35FlashThinkingEfforts = [
       { value: "minimal", label: "Minimal" },
       { value: "low", label: "Low" },
       { value: "medium", label: "Medium", default: true },
@@ -183,14 +205,18 @@ describe("text model provider selection", () => {
       model: "gemini-3.7-flash",
       label: "Gemini 3.7 Flash",
       thinking: true,
-      thinkingEfforts: geminiFlashThinkingEfforts
+      thinkingEfforts: [
+        { value: "low", label: "Low" },
+        { value: "medium", label: "Medium", default: true },
+        { value: "high", label: "High" }
+      ]
     });
     expect(gemini35Flash).toMatchObject({
       provider: "gemini",
       model: "gemini-3.5-flash",
       label: "Gemini 3.5 Flash",
       thinking: true,
-      thinkingEfforts: geminiFlashThinkingEfforts
+      thinkingEfforts: gemini35FlashThinkingEfforts
     });
     expect(options).toContainEqual(
       expect.objectContaining({ provider: "gemini", model: "gemini-2.5-flash", thinking: true })
