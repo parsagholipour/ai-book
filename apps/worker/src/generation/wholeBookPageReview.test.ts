@@ -79,4 +79,41 @@ describe("reviewWholeBookDraftPages", () => {
       }
     ]);
   });
+
+  it("spends Smart unslop once when the conditional rewrite keeps the page unchanged", async () => {
+    const candidateReport = {
+      approved: false,
+      score: 70,
+      issues: ["Smart unslop candidate scan found possible signals."],
+      requiredRevisions: ["Inspect candidates contextually."],
+      notes: "Candidate review.",
+      groundedOk: true,
+      unsupportedClaims: [],
+      checks: {
+        placeholderFree: true,
+        promptLeakFree: true,
+        titleClean: true,
+        repetitionOk: true,
+        progressionOk: true,
+        styleNatural: false
+      }
+    };
+    const approvedReport = { ...candidateReport, approved: true, score: 100, issues: [], requiredRevisions: [] };
+    const revisePageDraft = vi.fn().mockResolvedValue(page);
+    mocks.qualityEnabled.mockImplementation(
+      (feature: string) => feature === "smartUnslop" || feature === "pageQaRewrite"
+    );
+    mocks.reviewPageWithQualityGates
+      .mockResolvedValueOnce(candidateReport)
+      .mockResolvedValueOnce(approvedReport);
+
+    const reviewed = await reviewWholeBookDraftPages(baseOptions(revisePageDraft));
+
+    expect(revisePageDraft).toHaveBeenCalledTimes(1);
+    expect(mocks.reviewPageWithQualityGates).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ allowSmartUnslop: false })
+    );
+    expect(reviewed[0]).toMatchObject({ draft: page, qualityReport: approvedReport, revision: 2 });
+  });
 });

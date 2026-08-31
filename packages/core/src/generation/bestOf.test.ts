@@ -161,6 +161,27 @@ function bestOfOptions(
 }
 
 describe("generateBestOfPageDrafts", () => {
+  it("preserves compact draft context mode across every candidate", async () => {
+    type ContextualDraftBase = BestOfDraftBase & { pageDraftContextMode: "compact" };
+    const modes: string[] = [];
+
+    await generateBestOfPageDrafts<ContextualDraftBase>({
+      draftPage: async (options) => {
+        modes.push(options.pageDraftContextMode);
+        return draftNamed(`Draft ${options.input.temperature}`);
+      },
+      baseOptions: {
+        input: inputForTier("premium"),
+        pageIndex: 4,
+        pageDraftContextMode: "compact"
+      },
+      candidateCount: 2,
+      judgeModel: judgeModel({ chosenIndex: 0 })
+    });
+
+    expect(modes).toEqual(["compact", "compact"]);
+  });
+
   it("propagates a candidate's stop even when a sibling candidate succeeded", async () => {
     const stopped = new StopRequestedError();
     const draftPage = async (options: BestOfDraftBase): Promise<PageDraft> => {

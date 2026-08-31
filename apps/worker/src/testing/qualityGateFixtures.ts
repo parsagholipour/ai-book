@@ -2,6 +2,7 @@ import type { QualityFeatureId } from "@book-maker/core/qualityGates";
 
 const pageQaFeatureIds = [
   "pageLocalQa",
+  "smartUnslop",
   "pageModelReview",
   "pageQaRewrite"
 ] as const satisfies readonly QualityFeatureId[];

@@ -52,6 +52,7 @@ import {
   generateBestOfPageDrafts,
   generatePageDraftWithWriterTools,
   pageCandidateCount,
+  type PageDraftContextMode,
   type PriorPageContext
 } from "@book-maker/core";
 import { pageScope, prisma } from "@book-maker/db";
@@ -224,6 +225,9 @@ export async function generatePage(job: GeneratePageJob) {
   });
 
   const candidateCount = pageCandidateCount(input, page.index, quality.enabled("bestOfPolish"));
+  const pageDraftContextMode: PageDraftContextMode = quality.enabled("compactPageDraftContext")
+    ? "compact"
+    : "excerpted";
   await advanceJobStep(
     generationJobId,
     "draft",
@@ -237,6 +241,7 @@ export async function generatePage(job: GeneratePageJob) {
     chapterBrief,
     pageBrief,
     pageIndex: page.index,
+    pageDraftContextMode,
     previousSummaries: orderedPreviousPages.map((previousPage) => previousPage.summary).filter(Boolean),
     previousPages: priorPageContext,
     continuityNotes,

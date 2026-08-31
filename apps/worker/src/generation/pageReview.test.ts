@@ -318,6 +318,56 @@ describe("runPageQualityLoop style audit", () => {
   });
 });
 
+describe("runPageQualityLoop conditional Smart unslop", () => {
+  it("accepts an unchanged contextual no-op without spending another unslop rewrite", async () => {
+    const candidateDraft = {
+      title: "Treatment",
+      markdown:
+        "Here's the thing: the valve stayed shut. At its core, the test measures pressure. " +
+        "The result serves as a testament to calibration.",
+      summary: "The operator tests a valve.",
+      continuityNotes: [] as string[]
+    };
+    const candidateReport = report(70, {
+      issues: ["Smart unslop candidate scan found 3 possible signals."],
+      requiredRevisions: ["Inspect the candidates contextually."],
+      checks: {
+        placeholderFree: true,
+        promptLeakFree: true,
+        titleClean: true,
+        repetitionOk: true,
+        progressionOk: true,
+        styleNatural: false
+      }
+    });
+    const approved = report(94, { approved: true });
+    const strategy = {
+      revisePageDraft: vi.fn(async () => candidateDraft),
+      reviewPageDraft: vi.fn(async () => approved)
+    };
+
+    const outcome = await runPageQualityLoop({
+      projectId: "project-1",
+      strategy,
+      input: {} as never,
+      plan: {} as never,
+      pageIndex: 4,
+      draft: candidateDraft,
+      report: candidateReport,
+      previousPages: [],
+      continuityNotes: [],
+      textModel: {} as never,
+      maxCandidates: BALANCED_CANDIDATES,
+      reviseContext: "Page 4",
+      quality: qualityGates()
+    } as never);
+
+    expect(strategy.revisePageDraft).toHaveBeenCalledTimes(1);
+    expect(strategy.reviewPageDraft).toHaveBeenCalledTimes(1);
+    expect(outcome).toMatchObject({ approved: true, draft: candidateDraft, revision: 2, attempts: 2 });
+  });
+});
+
 describe("reviewAndSaveGeneratedPage", () => {
   const strategy = {
     id: "test-strategy",

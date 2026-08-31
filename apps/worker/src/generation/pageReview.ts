@@ -33,6 +33,7 @@ import {
   type RepairedPageBrief
 } from "./pageReviewRecovery.js";
 import {
+  hasSmartUnslopCandidates,
   styleAuditedScoreBeats,
   type BookGenerationStrategy,
   type BookPlan,
@@ -265,6 +266,10 @@ export async function runPageQualityLoop(options: {
   } | null = null;
   let revision = 1;
   let best: DraftCandidate = { draft, revision, report };
+  // A deterministic candidate cluster buys one contextual rewrite. If the
+  // writer returns the page unchanged because every match is protected, the
+  // same scanner result must not burn the rest of this page's rewrite budget.
+  let smartUnslopSpent = false;
   const maxCandidates = options.quality.enabled("pageQaRewrite") ? options.maxCandidates : 1;
   // Fitted to this loop's budget at both ends, and `undefined` for a loop that
   // has no recovery at all — `recoveryRevisionForLoop` owns both answers, and
@@ -277,6 +282,8 @@ export async function runPageQualityLoop(options: {
   });
 
   while (!report.approved && revision < maxCandidates) {
+    const resolvesSmartUnslop =
+      !smartUnslopSpent && hasSmartUnslopCandidates(report);
     const nextRevision = revision + 1;
     await options.onRewrite?.(nextRevision, recoveryRevision);
     if (
@@ -372,6 +379,7 @@ export async function runPageQualityLoop(options: {
     report = await reviewPageWithQualityGates({
       strategy: options.strategy,
       quality: options.quality,
+      allowSmartUnslop: !smartUnslopSpent && !resolvesSmartUnslop,
       reviewOptions: {
         input: options.input,
         plan: options.plan,
@@ -390,6 +398,9 @@ export async function runPageQualityLoop(options: {
         ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
       }
     });
+    if (resolvesSmartUnslop) {
+      smartUnslopSpent = true;
+    }
     report = await auditApproved(draft, report);
     best = bestDraftCandidate(best, { draft, revision, report });
   }

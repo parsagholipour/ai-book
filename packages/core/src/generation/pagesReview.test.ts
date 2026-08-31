@@ -5,6 +5,8 @@ import { CONTINUITY_NOTE_PROMPT_LIMITS } from "../context/contextPack.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
 import type { CreateProjectInput, PageQualityReport } from "../schemas/book.js";
 import { revisePageDraft, reviewPageDraft, runFinalBookQa } from "./pagesReview.js";
+import { GROUNDED_FACTUALITY_RULE } from "./pagesShared.js";
+import { SMART_UNSLOP_ISSUE_PREFIX } from "./smartUnslop.js";
 
 const input: CreateProjectInput = {
   prompt: "Jack The Martyr, a character-led story about sacrifice and consequence.",
@@ -871,9 +873,101 @@ describe("revisePageDraft first-page hook", () => {
 
     expect(capture.payload?.openingHook).toBe(hookPlan.openingHook);
     expect(capture.payload?.instruction).toMatch(/openingHook/);
+    expect(capture.system).toContain(GROUNDED_FACTUALITY_RULE);
+    expect(capture.payload?.instruction).toContain(GROUNDED_FACTUALITY_RULE);
 
     await revisePageDraft(reviseOptions(7, hookPlan, capture.model));
 
     expect(capture.payload?.openingHook).toBeUndefined();
+  });
+});
+
+describe("revisePageDraft conditional Smart unslop", () => {
+  it("does not inject Smart unslop instructions for another quality gate", async () => {
+    const draft = {
+      title: "The Wall Bell",
+      markdown: goodMarkdown(),
+      summary: "Jack crosses the threshold and commits to a dangerous choice.",
+      continuityNotes: [] as string[]
+    };
+    const capture = capturingReviewModel(draft);
+    const report: PageQualityReport = {
+      approved: false,
+      score: 45,
+      issues: ["The page repeats a beat already covered on page 3."],
+      requiredRevisions: ["Replace the repeated beat with new progression."],
+      notes: "The repetition quality gate rejected the page.",
+      groundedOk: true,
+      unsupportedClaims: [],
+      checks: {
+        placeholderFree: true,
+        promptLeakFree: true,
+        titleClean: true,
+        repetitionOk: false,
+        progressionOk: false,
+        styleNatural: true
+      }
+    };
+
+    await revisePageDraft({
+      input,
+      plan,
+      chapter: plan.chapters[0],
+      pageIndex: 4,
+      draft,
+      report,
+      previousPages: [],
+      continuityNotes: [],
+      textModel: capture.model
+    });
+
+    expect(capture.system).not.toMatch(/Smart unslop findings/i);
+    expect(capture.system).not.toMatch(/scanner candidates, not confirmed defects/i);
+    expect(capture.system).not.toMatch(/copy rejectedDraft to the output exactly/i);
+    expect(capture.system).not.toMatch(/every other sentence byte-for-byte/i);
+  });
+
+  it("treats deterministic matches as candidates and permits an exact no-op", async () => {
+    const draft = {
+      title: "The Wall Bell",
+      markdown: goodMarkdown(),
+      summary: "Jack crosses the threshold and commits to a dangerous choice.",
+      continuityNotes: [] as string[]
+    };
+    const capture = capturingReviewModel(draft);
+    const report: PageQualityReport = {
+      approved: false,
+      score: 70,
+      issues: [`${SMART_UNSLOP_ISSUE_PREFIX} found three possible signals.`],
+      requiredRevisions: ["Inspect the deterministic candidates in context."],
+      notes: "Candidate review requested.",
+      groundedOk: true,
+      unsupportedClaims: [],
+      checks: {
+        placeholderFree: true,
+        promptLeakFree: true,
+        titleClean: true,
+        repetitionOk: true,
+        progressionOk: true,
+        styleNatural: false
+      }
+    };
+
+    const revised = await revisePageDraft({
+      input,
+      plan,
+      chapter: plan.chapters[0],
+      pageIndex: 4,
+      draft,
+      report,
+      previousPages: [],
+      continuityNotes: [],
+      textModel: capture.model
+    });
+
+    expect(capture.system).toMatch(/scanner candidates, not confirmed defects and not authorization to edit/i);
+    expect(capture.system).toMatch(/copy rejectedDraft to the output exactly/i);
+    expect(capture.system).toMatch(/every other sentence byte-for-byte/i);
+    expect(revised).toEqual(draft);
   });
 });

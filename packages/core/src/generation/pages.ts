@@ -53,6 +53,11 @@ export {
   type LocalPageReviewOptions
 } from "./pagesLocalQa.js";
 export {
+  SMART_UNSLOP_ISSUE_PREFIX,
+  hasSmartUnslopCandidates,
+  reviewPageDraftForSmartUnslop
+} from "./smartUnslop.js";
+export {
   REWRITE_TEMPERATURE_CEILING,
   generateChapterBrief,
   generateWholeBookPageMap,
@@ -90,8 +95,10 @@ export {
   type OpeningContractFields,
   type OpeningContractSource,
   type OpeningHookPayload,
+  type PageDraftContextMode,
   type PageInstructionFields,
   type PageInstructionSource,
+  type PageInstructionStage,
   type PriorPageContext
 } from "./pagesShared.js";
 export { shouldSkipUnsatisfiableCitationRepair } from "./citationRepairPolicy.js";
@@ -482,7 +489,7 @@ export function polishPageTemperature(input: CreateProjectInput): number {
 }
 
 export async function polishPageDraft(options: PolishPageOptions): Promise<PageDraft> {
-  const pageInstruction = buildPageInstruction(options);
+  const pageInstruction = buildPageInstruction(options, "rewrite");
   const citation = citationContractFields(options.researchNotes.slice(0, 18));
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "polish-page",

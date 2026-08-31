@@ -131,6 +131,9 @@ export type PriorPageContext = {
   summary: string;
 };
 
+/** Prior-page prose serialized into an initial single-page drafting prompt. */
+export type PageDraftContextMode = "excerpted" | "compact";
+
 export type GeneratePageOptions = {
   input: CreateProjectInput;
   plan: BookPlan;
@@ -140,6 +143,8 @@ export type GeneratePageOptions = {
   chapterPageStart?: number | undefined;
   chapterPageEnd?: number | undefined;
   pageIndex: number;
+  /** Defaults to the legacy five-page excerpt window. */
+  pageDraftContextMode?: PageDraftContextMode | undefined;
   /** Approved edit instruction; authoritative over a stale page brief. */
   editInstruction?: string | undefined;
   /** Prompt-only character canon; never an additional edit requirement. */
@@ -345,6 +350,7 @@ export function sampleExcerptsFromInput(input: CreateProjectInput): string[] {
  */
 export type PageInstructionSource = OpeningContractSource & {
   pageIndex: number;
+  pageDraftContextMode?: PageDraftContextMode | undefined;
 };
 
 /** Spread into a prompt payload; empty on every page that is not shown a hook. */
@@ -356,6 +362,8 @@ export type PageInstructionFields = {
   /** The `openingHook` key that line owes the model, spread beside it. */
   payload: OpeningHookPayload;
 };
+
+export type PageInstructionStage = "initialDraft" | "rewrite";
 
 /**
  * The one predicate every opening-hook decision in the pipeline is built on:
@@ -646,17 +654,27 @@ export function openingContractFieldsForPage(
  * polisher an explicit instruction to rewrite the author's opening, on a page
  * that had failed QA for repetition or a prompt leak.
  */
-export function buildPageInstruction(source: PageInstructionSource): PageInstructionFields {
+export function buildPageInstruction(
+  source: PageInstructionSource,
+  stage: PageInstructionStage
+): PageInstructionFields {
   const { input, pageIndex } = source;
   const opening = openingContractFieldsForPage(source, "pageWriter");
   const base = [
     "Write exactly this page, not a description of the page.",
     "Use a clean title without a Page N prefix.",
     "Treat the title as internal metadata only; the markdown should begin with book prose, not a page title or heading.",
-    GROUNDED_FACTUALITY_RULE,
-    "Advance beyond recentPages and alreadyCovered; do not restate their scene, decision, exposition, or emotional beat.",
+    // Initial single-page drafts already receive this exact rule in their
+    // higher-priority system message. Rewrite prompts keep the self-contained
+    // instruction they have always carried.
+    ...(stage === "rewrite" ? [GROUNDED_FACTUALITY_RULE] : []),
+    source.pageDraftContextMode === "compact"
+      ? "Advance beyond the indexed previous-page summaries and nearestPriorPage; do not restate their scene, decision, exposition, or emotional beat."
+      : "Advance beyond recentPages and alreadyCovered; do not restate their scene, decision, exposition, or emotional beat.",
     'Treat pageBrief and endingPressure as internal notes; do not echo phrases like "concluding the survey" or announce a transition to another chapter.',
-    "The page summary must name the new beat or changed consequence introduced on this page.",
+    stage === "initialDraft"
+      ? "The page summary must be one or two compact sentences recording this page's outcome or conclusion, important facts or decisions, and any unresolved handoff."
+      : "The page summary must name the new beat or changed consequence introduced on this page.",
     ...opening.rules
   ];
   if (pageIndex === input.targetPages) {

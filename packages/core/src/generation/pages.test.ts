@@ -17,6 +17,7 @@ import {
   reviewPageDraft,
   revisePageDraft
 } from "./pages.js";
+import { GROUNDED_FACTUALITY_RULE } from "./pagesShared.js";
 
 const input: CreateProjectInput = {
   prompt: "Jack The Martyr, a character-led story about sacrifice and consequence.",
@@ -209,13 +210,14 @@ describe("page quality review", () => {
     const payload = JSON.parse(userMessage ?? "{}") as {
       recentPages: Array<{ excerpt: string }>;
       alreadyCovered: Array<{ coveredBeat: string }>;
-      userContext: { subcategory?: string; styleGuidance?: { toneProfile?: string; rules?: string[] } };
+      userContext: { prompt?: string; category?: string; subcategory?: string; styleGuidance?: unknown };
       pageInstruction: string;
     };
 
+    expect(payload.userContext.prompt).toBe(promptInput.prompt);
+    expect(payload.userContext.category).toBe(promptInput.category);
     expect(payload.userContext.subcategory).toBe("Mystery & thriller");
-    expect(payload.userContext.styleGuidance?.toneProfile).toBe("skeptical");
-    expect(payload.userContext.styleGuidance?.rules?.join(" ")).toMatch(/proof-leap/i);
+    expect(payload.userContext).not.toHaveProperty("styleGuidance");
     expect(payload.recentPages[0]?.excerpt).toContain("checkpoint");
     expect(payload.alreadyCovered[0]?.coveredBeat).toContain("checkpoint");
     expect(systemMessage).toMatch(/Treat pageBrief purpose, beat, requiredContinuity, and endingPressure as internal assignment notes/i);
@@ -224,7 +226,8 @@ describe("page quality review", () => {
     expect(payload.pageInstruction).toMatch(/resolve/i);
     expect(payload.pageInstruction).toMatch(/internal metadata/i);
     expect(payload.pageInstruction).toMatch(/Treat pageBrief and endingPressure as internal notes/i);
-    expect(payload.pageInstruction).toMatch(/never invent studies/i);
+    expect(systemMessage).toContain(GROUNDED_FACTUALITY_RULE);
+    expect(payload.pageInstruction).not.toContain(GROUNDED_FACTUALITY_RULE);
   });
 
   it("keeps a 5-page recency window of 1000-character excerpts in page drafts", async () => {
@@ -295,20 +298,15 @@ describe("page quality review", () => {
     const userMessage = request?.messages.find((message) => message.role === "user")?.content;
     const payload = JSON.parse(userMessage ?? "{}") as {
       context?: { system?: string };
-      userContext?: {
-        styleGuidance?: {
-          readingGuidance?: {
-            ageRange?: string;
-            targetWordsPerPage?: { min?: number; max?: number };
-          };
-        };
-      };
+      userContext?: { styleGuidance?: unknown };
     };
 
     expect(systemMessage).toMatch(/Kids reading level: 4-6/i);
     expect(payload.context?.system).toMatch(/Reading guidance/i);
-    expect(payload.userContext?.styleGuidance?.readingGuidance?.ageRange).toBe("4-6");
-    expect(payload.userContext?.styleGuidance?.readingGuidance?.targetWordsPerPage).toEqual({ min: 20, max: 65 });
+    expect(payload.context?.system).toMatch(/Target 20-65 words per page/i);
+    expect(payload.context?.system).toMatch(/average sentence length at or below 9 words/i);
+    expect(payload.context?.system).toMatch(/avoid sentences over 16 words/i);
+    expect(payload.userContext).not.toHaveProperty("styleGuidance");
   });
 
   it("tells page drafting to use exact recurring character names in image prompts", async () => {
@@ -1235,6 +1233,8 @@ describe("page quality review", () => {
     await polishPageDraft(polishOptions(1));
     expect(capture.payload?.openingHook).toBe(hookPlan.openingHook);
     expect(capture.payload?.instruction).toMatch(/openingHook/);
+    expect(capture.systemPrompt).toContain(GROUNDED_FACTUALITY_RULE);
+    expect(capture.payload?.instruction).toContain(GROUNDED_FACTUALITY_RULE);
 
     await polishPageDraft(polishOptions(7));
     expect(capture.payload).not.toHaveProperty("openingHook");

@@ -85,6 +85,7 @@ vi.mock("@book-maker/core", async () => {
 import { generatePage } from "./generatePage.js";
 import { ownsPageIllustration } from "../generation/pageIllustrationOwnership.js";
 import { GeneratedPagePublicationClaimLostError } from "../generation/pagePublication.js";
+import type { QualityFeatureId } from "@book-maker/core/qualityGates";
 // Real via the partial mock above: the audited-initial-draft test applies the
 // same transform `enrichPageQualityReport` does, not a restatement of it.
 import { withStyleAudit } from "@book-maker/core";
@@ -108,6 +109,31 @@ describe("generatePage quality loop", () => {
     beat,
     requiredContinuity: [] as string[],
     endingPressure: ""
+  });
+
+  it("keeps compact mode on initial drafts only, not review or QA revision inputs", async () => {
+    const baseline = (await mocks.loadQualityContext()) as {
+      enabled: (feature: QualityFeatureId) => boolean;
+    };
+    mocks.loadQualityContext.mockResolvedValue({
+      settings: {},
+      tier: "ultra",
+      enabled: (feature: QualityFeatureId) =>
+        feature === "compactPageDraftContext" ? true : baseline.enabled(feature)
+    });
+    mocks.generatePageDraft.mockResolvedValue(draftNamed("First"));
+    mocks.revisePageDraft.mockResolvedValue(draftNamed("Second"));
+    mocks.reviewPageDraft
+      .mockResolvedValueOnce({ ...report(60), checks: { repetitionOk: false } })
+      .mockResolvedValueOnce({ ...report(90), approved: true, checks: { repetitionOk: true } });
+
+    await generatePage(job);
+
+    expect(mocks.generatePageDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ pageDraftContextMode: "compact" })
+    );
+    expect(mocks.reviewPageDraft.mock.calls[0]?.[0]).not.toHaveProperty("pageDraftContextMode");
+    expect(mocks.revisePageDraft.mock.calls[0]?.[0]).not.toHaveProperty("pageDraftContextMode");
   });
 
   const pageWhereMatches = (row: Record<string, unknown>, where: Record<string, unknown>) =>

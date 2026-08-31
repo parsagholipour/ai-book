@@ -25,6 +25,7 @@ import {
 } from "./pagesLocalQa.js";
 import { runLocalFinalQa, runRequiredFinalQa } from "./pagesFinalLocalQa.js";
 import { isSourceIdentityOnlyIssue } from "./citationRepairPolicy.js";
+import { hasSmartUnslopCandidates } from "./smartUnslop.js";
 import {
   GROUNDED_FACTUALITY_RULE,
   IMAGE_PROMPT_CHARACTER_RULE,
@@ -447,7 +448,8 @@ function shouldUseLocalReviewFallback(error: unknown): boolean {
 }
 
 export async function revisePageDraft(options: RevisePageOptions): Promise<PageDraft> {
-  const pageInstruction = buildPageInstruction(options);
+  const pageInstruction = buildPageInstruction(options, "rewrite");
+  const conditionalUnslop = hasSmartUnslopCandidates(options.report);
   const citation = citationContractFields(
     options.retrievedResearch ?? options.researchNotes ?? options.plan.researchNotes
   );
@@ -473,6 +475,14 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
             : []),
           ...(options.characterContext
             ? ["characterContext is supplemental canon for character identity, traits, and appearance. Use it when revising, but do not treat it as an additional requested edit."]
+            : []),
+          ...(conditionalUnslop
+            ? [
+                "Smart unslop findings in qualityReport are deterministic scanner candidates, not confirmed defects and not authorization to edit.",
+                "Judge every candidate in the full page context. Protect literal, domain-valid, quoted, attributed, accurately caveated, and genre-natural uses.",
+                "If none of the Smart unslop candidates is a clear contextual defect, leave those spans unchanged. If qualityReport names no separate confirmed defect either, copy rejectedDraft to the output exactly: preserve title, markdown, summary, continuityNotes, and imagePrompt byte-for-byte, and make no other improvement.",
+                "For a confirmed candidate or a separate confirmed defect, make the smallest repair only in its sentence. Copy every other sentence byte-for-byte and preserve facts, quantities, dates, names, quotations, citations, code, units, scope, uncertainty, attribution, register, and meaning. Add no claim or conclusion."
+              ]
             : []),
           "Return a complete replacement page, not notes.",
           "Change the actual story or explanation beat when needed; do not merely rephrase repeated material.",

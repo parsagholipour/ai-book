@@ -12,12 +12,14 @@ export type QualityEffortTier = (typeof QUALITY_EFFORT_TIERS)[number];
 
 export const QUALITY_FEATURE_IDS = [
   "pageLocalQa",
+  "smartUnslop",
   "pageModelReview",
   "pageQaRewrite",
   "finalBookQa",
   "storyExtractAudit",
   "planCritic",
   "claimVerifier",
+  "compactPageDraftContext",
   "styleExcerpts",
   "styleAuditor",
   "pageMapCritic",
@@ -34,12 +36,17 @@ export type QualityFeatureSettings = Record<QualityFeatureId, QualityEffortTier[
 
 export const QUALITY_FEATURE_DEFAULTS: QualityFeatureSettings = {
   pageLocalQa: ["ultra", "premium", "balanced", "fast"],
+  // Detection is deterministic. It hands a failed report to the existing page
+  // QA rewrite loop, so there is no extra model call unless the prose actually
+  // contains a significant cluster of AI-writing tells.
+  smartUnslop: ["ultra", "premium", "balanced", "fast"],
   pageModelReview: ["ultra", "premium", "balanced", "fast"],
   pageQaRewrite: ["ultra", "premium", "balanced", "fast"],
   finalBookQa: ["ultra", "premium", "balanced", "fast"],
   storyExtractAudit: ["ultra", "premium", "balanced", "fast"],
   planCritic: ["ultra", "premium", "balanced", "fast"],
   claimVerifier: ["ultra", "premium", "balanced", "fast"],
+  compactPageDraftContext: ["balanced", "fast"],
   styleExcerpts: ["ultra", "premium", "balanced", "fast"],
   styleAuditor: ["ultra", "premium", "balanced"],
   pageMapCritic: ["ultra", "premium"],
@@ -62,6 +69,11 @@ export const QUALITY_FEATURES: Array<{
     id: "pageLocalQa",
     label: "Local page checks",
     summary: "Deterministic page checks for repetition, placeholders, prompt leaks, and formulaic prose."
+  },
+  {
+    id: "smartUnslop",
+    label: "Smart unslop",
+    summary: "Finds significant deterministic slop candidates and, when Page QA rewrites is on, asks for a contextual minimal rewrite or an unchanged page."
   },
   {
     id: "pageModelReview",
@@ -92,6 +104,11 @@ export const QUALITY_FEATURES: Array<{
     id: "claimVerifier",
     label: "Claim verifier (factual books)",
     summary: "Checks page claims against loaded research notes. Kids and fiction skip the call even when this is on."
+  },
+  {
+    id: "compactPageDraftContext",
+    label: "Compact page-draft context",
+    summary: "Drafts from indexed summaries plus one bounded nearest-page handoff instead of five page excerpts."
   },
   {
     id: "styleExcerpts",

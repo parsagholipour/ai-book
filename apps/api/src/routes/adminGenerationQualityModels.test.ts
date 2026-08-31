@@ -24,6 +24,50 @@ describe("admin generation model routing", () => {
     mockRequireOperatorActor.mockResolvedValue({ kind: "operator", userId: "local-admin" });
   });
 
+  it("backfills compact context defaults in a stored pre-feature revision", async () => {
+    const { compactPageDraftContext: _missing, ...legacySettings } = QUALITY_FEATURE_DEFAULTS;
+    mockStoredRevision({ version: 4, settings: legacySettings });
+    const app = Fastify({ logger: false });
+    await app.register(adminGenerationQualityRoutes);
+
+    const response = await app.inject({ method: "GET", url: "/api/admin/generation-quality" });
+
+    expect(response.statusCode).toBe(200);
+    expect((response.json() as { settings: Record<string, string[]> }).settings.compactPageDraftContext).toEqual([
+      "balanced",
+      "fast"
+    ]);
+    await app.close();
+  });
+
+  it("can disable and reassign compact page-draft context tiers live", async () => {
+    mockStoredRevision({ version: 1, settings: { ...QUALITY_FEATURE_DEFAULTS } });
+    const app = Fastify({ logger: false });
+    await app.register(adminGenerationQualityRoutes);
+
+    const disabled = await app.inject({
+      method: "PATCH",
+      url: "/api/admin/generation-quality",
+      payload: { compactPageDraftContext: [] }
+    });
+    expect(disabled.statusCode).toBe(200);
+    const disabledSettings = (disabled.json() as { settings: Record<string, string[]> }).settings;
+    expect(disabledSettings.compactPageDraftContext).toEqual([]);
+
+    mockStoredRevision({ version: 2, settings: disabledSettings });
+    const enabled = await app.inject({
+      method: "PATCH",
+      url: "/api/admin/generation-quality",
+      payload: { compactPageDraftContext: ["ultra", "premium"] }
+    });
+    expect(enabled.statusCode).toBe(200);
+    expect((enabled.json() as { settings: Record<string, string[]> }).settings.compactPageDraftContext).toEqual([
+      "ultra",
+      "premium"
+    ]);
+    await app.close();
+  });
+
   it("merges one model-role leaf and validates its discrete effort", async () => {
     mockStoredRevision({ version: 5, settings: { ...QUALITY_FEATURE_DEFAULTS } });
     const app = Fastify({ logger: false });
@@ -232,7 +276,16 @@ describe("admin generation model routing", () => {
 });
 
 function mockStoredRevision(current: { version: number; settings?: unknown } | null): void {
-  mockPrisma.generationQualityRevision.findFirst.mockResolvedValue(current);
+  mockPrisma.generationQualityRevision.findFirst.mockResolvedValue(
+    current
+      ? {
+          note: null,
+          updatedBy: "operator-console",
+          createdAt: new Date("2026-08-23T08:00:00.000Z"),
+          ...current
+        }
+      : null
+  );
   mockPrisma.generationQualityRevision.create.mockImplementation(echoCreatedRevision);
 }
 

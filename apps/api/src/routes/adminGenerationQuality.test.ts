@@ -127,10 +127,23 @@ describe("admin generation quality settings", () => {
         }
       }
     });
-    const body = response.json() as { modelOptions: Array<{ provider: string }> };
+    const body = response.json() as {
+      modelOptions: Array<{ provider: string }>;
+      features: Array<{ id: string; label: string; summary: string }>;
+    };
     expect(new Set(body.modelOptions.map((option) => option.provider))).toEqual(
       new Set(["deepseek", "deepinfra", "gemini", "alibaba", "openai"])
     );
+    expect(body.features).toContainEqual({
+      id: "smartUnslop",
+      label: "Smart unslop",
+      summary: expect.any(String)
+    });
+    expect(body.features).toContainEqual({
+      id: "compactPageDraftContext",
+      label: "Compact page-draft context",
+      summary: expect.any(String)
+    });
     await app.close();
   });
 

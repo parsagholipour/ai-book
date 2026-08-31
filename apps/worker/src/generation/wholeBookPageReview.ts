@@ -2,13 +2,14 @@ import { updateJobProgress } from "../runtime/jobLifecycle.js";
 import { isStopRequestedError, type IndexedPageDraft } from "../runtime/jobTypes.js";
 import { reviewPageWithQualityGates } from "./pageReview.js";
 import { loadQualityContext } from "./qualitySettings.js";
-import type {
-  BookGenerationStrategy,
-  BookPlan,
-  CreateProjectInput,
-  PageQualityReport,
-  PriorPageContext,
-  TextModelAdapter
+import {
+  hasSmartUnslopCandidates,
+  type BookGenerationStrategy,
+  type BookPlan,
+  type CreateProjectInput,
+  type PageQualityReport,
+  type PriorPageContext,
+  type TextModelAdapter
 } from "@book-maker/core";
 
 export type ReviewedWholeBookPage = {
@@ -67,6 +68,7 @@ export async function reviewWholeBookDraftPages(options: {
           strategy: options.strategy,
           quality,
           allowModelReview: false,
+          allowSmartUnslop: !hasSmartUnslopCandidates(report as PageQualityReport),
           reviewOptions: {
             input: options.input,
             plan: options.plan,

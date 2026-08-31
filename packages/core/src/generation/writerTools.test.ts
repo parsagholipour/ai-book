@@ -4,7 +4,7 @@ import type { ChatMessage } from "../adapters/types.js";
 import { FakeTextModelAdapter } from "../adapters/fake.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
 import { pageDraftSchema, type CreateProjectInput, type PageDraft } from "../schemas/book.js";
-import type { GeneratePageOptions } from "./pagesShared.js";
+import { GROUNDED_FACTUALITY_RULE, type GeneratePageOptions } from "./pagesShared.js";
 import { emptyStoryState, type StoryState } from "./storyState.js";
 
 const runToolLoopMock = vi.hoisted(() => vi.fn());
@@ -230,10 +230,9 @@ describe("generatePageDraftWithWriterTools", () => {
     const payload = JSON.parse(userMessage) as {
       context?: { system?: string; outline?: string; research?: string };
       characters?: unknown;
-      illustrationPlan?: unknown;
       recentPages?: Array<{ excerpt: string }>;
       pageInstruction?: string;
-      userContext?: { prompt?: string };
+      userContext?: { prompt?: string; styleGuidance?: unknown };
     };
 
     expect(payload.context?.system).toMatch(/dockside chronicler/i);
@@ -241,10 +240,45 @@ describe("generatePageDraftWithWriterTools", () => {
     expect(payload.context?.outline).toMatch(/Current chapter/i);
     expect(payload.context?.research).toMatch(/painted black/i);
     expect(payload.userContext?.prompt).toMatch(/Jack The Martyr/i);
+    expect(payload.userContext).not.toHaveProperty("styleGuidance");
     expect(payload.characters).toEqual(plan.characters);
-    expect(payload.illustrationPlan).toEqual(plan.illustrationPlan);
+    expect(payload).not.toHaveProperty("illustrationPlan");
     expect(payload.recentPages?.[0]?.excerpt).toContain("checkpoint");
     expect(payload.pageInstruction).toMatch(/Write exactly this page/i);
+    expect(payload.pageInstruction).not.toContain(GROUNDED_FACTUALITY_RULE);
+    expect(
+      loop.messages
+        .map((message) => message.content)
+        .join("\n")
+        .split(GROUNDED_FACTUALITY_RULE).length - 1
+    ).toBe(1);
+  });
+
+  it("feeds compact context into the writer-tool loop's initial messages", async () => {
+    await generatePageDraftWithWriterTools({
+      ...draftOptions({ pageDraftContextMode: "compact" }),
+      storyState,
+      fallback: async () => {
+        throw new Error("fallback should not run");
+      }
+    });
+
+    const userMessage = loopCall().messages.find((message) => message.role === "user")?.content ?? "{}";
+    const payload = JSON.parse(userMessage) as {
+      pageDraftContextMode?: string;
+      context?: { memory?: string };
+      nearestPriorPage?: { index: number; isDirectHandoff: boolean };
+      recentPages?: unknown;
+      alreadyCovered?: unknown;
+    };
+
+    expect(payload.pageDraftContextMode).toBe("compact");
+    expect(payload.context?.memory).toContain("Page 1 — The Checkpoint:");
+    expect(payload.nearestPriorPage).toEqual(
+      expect.objectContaining({ index: 1, isDirectHandoff: true })
+    );
+    expect(payload).not.toHaveProperty("recentPages");
+    expect(payload).not.toHaveProperty("alreadyCovered");
   });
 
   it("forwards a raised input temperature into the tool loop", async () => {

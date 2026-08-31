@@ -90,6 +90,7 @@ import { RECENT_PAGE_WINDOW } from "../generation/semanticRecall.js";
 // Not mocked: the handler's own stop-request test has to be the real one, or a
 // suite could pass while a stop was being masked by a sibling's failure.
 import { StopRequestedError } from "../runtime/jobTypes.js";
+import { qualityFeatureEnabled, type QualityFeatureId } from "@book-maker/core/qualityGates";
 import {
   completedPage,
   draftNamed,
@@ -104,6 +105,52 @@ import {
 describe("generatePage context assembly", () => {
   beforeEach(() => resetGeneratePageMocks());
   afterEach(() => vi.clearAllMocks());
+
+  it.each([
+    ["fast", "compact"],
+    ["balanced", "compact"],
+    ["premium", "excerpted"],
+    ["ultra", "excerpted"]
+  ] as const)("selects %s tier's default %s draft context", async (tier, expectedMode) => {
+    const baseline = qualityContextStub();
+    mocks.loadQualityContext.mockResolvedValue({
+      settings: {},
+      tier,
+      enabled: (feature: QualityFeatureId) =>
+        feature === "compactPageDraftContext"
+          ? qualityFeatureEnabled(undefined, feature, tier)
+          : baseline.enabled(feature)
+    });
+    mocks.generatePageDraft.mockResolvedValue(draftNamed("First"));
+    mocks.reviewPageDraft.mockResolvedValueOnce({ ...report(88), approved: true });
+
+    await generatePage(job);
+
+    expect(mocks.generatePageDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ pageDraftContextMode: expectedMode })
+    );
+  });
+
+  it.each([
+    [true, "compact"],
+    [false, "excerpted"]
+  ] as const)("honors a live compact-context admin override of %s", async (enabled, expectedMode) => {
+    const baseline = qualityContextStub();
+    mocks.loadQualityContext.mockResolvedValue({
+      settings: {},
+      tier: "ultra",
+      enabled: (feature: QualityFeatureId) =>
+        feature === "compactPageDraftContext" ? enabled : baseline.enabled(feature)
+    });
+    mocks.generatePageDraft.mockResolvedValue(draftNamed("First"));
+    mocks.reviewPageDraft.mockResolvedValueOnce({ ...report(88), approved: true });
+
+    await generatePage(job);
+
+    expect(mocks.generatePageDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ pageDraftContextMode: expectedMode })
+    );
+  });
 
   it("passes both entity-state and story-state lines into the page draft", async () => {
     mocks.loadEntityStateLines.mockResolvedValue(["Jack (protagonist) — as of page 3: at Oakhaven"]);

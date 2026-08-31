@@ -9,7 +9,7 @@ import {
 
 describe("qualityFeatureEnabled", () => {
   it("uses compiled defaults when there are no rows", () => {
-    for (const feature of ["pageLocalQa", "pageModelReview", "pageQaRewrite", "finalBookQa"] as const) {
+    for (const feature of ["pageLocalQa", "smartUnslop", "pageModelReview", "pageQaRewrite", "finalBookQa"] as const) {
       for (const tier of ["ultra", "premium", "balanced", "fast"] as const) {
         expect(qualityFeatureEnabled(undefined, feature, tier)).toBe(true);
       }
@@ -25,6 +25,10 @@ describe("qualityFeatureEnabled", () => {
     expect(qualityFeatureEnabled(undefined, "pageMapCritic", "premium")).toBe(true);
     expect(qualityFeatureEnabled(undefined, "planThinkingBoost", "premium")).toBe(true);
     expect(qualityFeatureEnabled(undefined, "claimRetrieve", "ultra")).toBe(true);
+    expect(qualityFeatureEnabled(undefined, "compactPageDraftContext", "fast")).toBe(true);
+    expect(qualityFeatureEnabled(undefined, "compactPageDraftContext", "balanced")).toBe(true);
+    expect(qualityFeatureEnabled(undefined, "compactPageDraftContext", "premium")).toBe(false);
+    expect(qualityFeatureEnabled(undefined, "compactPageDraftContext", "ultra")).toBe(false);
   });
 
   it("treats an empty array as disabled", () => {
@@ -48,6 +52,7 @@ describe("qualityFeatureEnabled", () => {
     expect(settings.finalBookQa).toEqual([]);
     expect(settings.styleAuditor).toEqual([...QUALITY_FEATURE_DEFAULTS.styleAuditor]);
     expect(qualityFeatureEnabled(settings, "styleAuditor", "premium")).toBe(true);
+    expect(settings.compactPageDraftContext).toEqual(["balanced", "fast"]);
   });
 
   it("ignores unknown feature ids and unknown tier labels", () => {
@@ -62,5 +67,15 @@ describe("qualityFeatureEnabled", () => {
 
   it("keeps feature metadata in the canonical id order", () => {
     expect(QUALITY_FEATURES.map((feature) => feature.id)).toEqual(QUALITY_FEATURE_IDS);
+    expect(QUALITY_FEATURES.find((feature) => feature.id === "smartUnslop")).toEqual({
+      id: "smartUnslop",
+      label: "Smart unslop",
+      summary: "Finds significant deterministic slop candidates and, when Page QA rewrites is on, asks for a contextual minimal rewrite or an unchanged page."
+    });
+    expect(QUALITY_FEATURES.find((feature) => feature.id === "compactPageDraftContext")).toEqual({
+      id: "compactPageDraftContext",
+      label: "Compact page-draft context",
+      summary: "Drafts from indexed summaries plus one bounded nearest-page handoff instead of five page excerpts."
+    });
   });
 });
