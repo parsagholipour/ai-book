@@ -214,7 +214,7 @@ describe("compileExport publication policy", () => {
     );
   });
 
-  it("lets finalBookQa disable final review even when settings and parallel waves request it", async () => {
+  it("honors an explicit final review even when the preset disables automatic final QA", async () => {
     mocks.strategy.executionMode = "sequential-pages";
     mocks.parallelPageWaveSize.mockReturnValue(4);
     mocks.loadQualityContext.mockResolvedValue({
@@ -226,11 +226,32 @@ describe("compileExport publication policy", () => {
 
     await compileExport(job({ contentRevision: 4 }));
 
-    expect(mocks.strategy.runFinalBookQa).not.toHaveBeenCalled();
-    expect(mocks.generateJsonWithRetry).not.toHaveBeenCalled();
+    expect(mocks.strategy.runFinalBookQa).toHaveBeenCalledTimes(1);
+    expect(mocks.generateJsonWithRetry).toHaveBeenCalledTimes(1);
     expect(mocks.revisePageDraftWithRestart).not.toHaveBeenCalled();
     expect(mocks.runDeterministicManuscriptChecks).toHaveBeenCalled();
     expect(mocks.strategy.generatePdf).toHaveBeenCalled();
+  });
+
+  it("lets the preset disable automatic final QA when the project did not request it", async () => {
+    mocks.strategy.executionMode = "sequential-pages";
+    mocks.parallelPageWaveSize.mockReturnValue(4);
+    mocks.inputForPlanVersion.mockReturnValue({
+      ...input,
+      mediaSettings: { ...input.mediaSettings, finalReview: false }
+    });
+    mocks.loadQualityContext.mockResolvedValue({
+      settings: {},
+      tier: "balanced",
+      enabled: (feature: string) =>
+        isDefaultCompileQualityFeature(feature) && feature !== "finalBookQa"
+    });
+
+    await compileExport(job({ contentRevision: 4 }));
+
+    expect(mocks.strategy.runFinalBookQa).not.toHaveBeenCalled();
+    expect(mocks.generateJsonWithRetry).not.toHaveBeenCalled();
+    expect(mocks.runDeterministicManuscriptChecks).toHaveBeenCalled();
   });
 
   it("lets detached ownership win when a payload also claims to be a presentation reprint", async () => {

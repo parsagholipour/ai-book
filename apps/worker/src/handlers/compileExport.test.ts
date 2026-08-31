@@ -632,6 +632,27 @@ describe("compileExport reader chapters", () => {
     expect(mocks.publishCompiledExports).toHaveBeenCalledWith(expect.objectContaining({ status: "COMPLETE" }));
   });
 
+  it("lets initial deterministic warnings recommend review when model QA is disabled", async () => {
+    withUnpaidPromise();
+    mocks.inputForPlanVersion.mockReturnValue({
+      ...input,
+      mediaSettings: { ...input.mediaSettings, finalReview: false }
+    });
+    mocks.loadQualityContext.mockResolvedValue({
+      settings: {},
+      tier: "balanced",
+      enabled: (feature: string) => feature === "storyExtractAudit"
+    });
+
+    await compileExport(job({ contentRevision: 4 }));
+
+    expect(mocks.strategy.runFinalBookQa).not.toHaveBeenCalled();
+    expect(persistedQualityReport()).toMatchObject({
+      state: "review_recommended",
+      issues: expect.arrayContaining([expect.objectContaining({ code: "UNPAID_PROMISE" })])
+    });
+  });
+
   it("carries each final-QA complaint's own pages onto the reader's quality card", async () => {
     // The card draws one page list under each message and opens Edit Mode at
     // its first page, so a page borrowed from a neighbouring complaint sends

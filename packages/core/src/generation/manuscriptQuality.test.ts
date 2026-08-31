@@ -40,13 +40,26 @@ describe("persistent manuscript quality gate", () => {
     // verdict, and all re-run these whole-book checks over prose the edit never
     // touched — so a book that passed came back "review recommended" for a
     // repeated phrase its own first compile had already accepted, forever.
-    const report = buildManuscriptQualityReport([unpaidPromise()], [], { finalReviewRan: false });
+    const report = buildManuscriptQualityReport([unpaidPromise()], [], {
+      finalReviewRan: false,
+      deterministicWarningsAffectVerdict: false
+    });
 
     expect(report.state).toBe("passed");
     // Still recorded: the compile saw it, and the job row is where an operator
     // reads what it saw. Only the state is the claim the app acts on.
     expect(report.issues.map((issue) => issue.code)).toEqual(["UNPAID_PROMISE"]);
     expect(report.affectedPageIndexes).toEqual([12]);
+  });
+
+  it("recommends review for an initial compile warning even when model review did not run", () => {
+    const report = buildManuscriptQualityReport([unpaidPromise()], [], {
+      finalReviewRan: false,
+      deterministicWarningsAffectVerdict: true
+    });
+
+    expect(report.state).toBe("review_recommended");
+    expect(report.issues.map((issue) => issue.code)).toEqual(["UNPAID_PROMISE"]);
   });
 
   it("blocks an integrity error whether or not the final review ran", () => {

@@ -12,6 +12,7 @@ export interface ReviewedPageFingerprint {
 export interface StoredQualityProvenance {
   version: 1;
   finalReviewRan: boolean;
+  deterministicWarningsAffectVerdict: boolean;
   reviewedPages: ReviewedPageFingerprint[];
 }
 
@@ -24,7 +25,11 @@ const PROVENANCE_KEY = "_standDownProvenance";
  */
 export function qualityReportWithProvenance(
   report: ManuscriptQualityReport,
-  options: { finalReviewRan: boolean; reviewedPages: PageTextSnapshot[] | ReviewedPageFingerprint[] }
+  options: {
+    finalReviewRan: boolean;
+    deterministicWarningsAffectVerdict?: boolean;
+    reviewedPages: PageTextSnapshot[] | ReviewedPageFingerprint[];
+  }
 ): ManuscriptQualityReport {
   const reviewedPages = options.reviewedPages.map((page) =>
     "contentHash" in page ? page : fingerprintPage(page)
@@ -34,6 +39,8 @@ export function qualityReportWithProvenance(
     [PROVENANCE_KEY]: {
       version: 1,
       finalReviewRan: options.finalReviewRan,
+      deterministicWarningsAffectVerdict:
+        options.deterministicWarningsAffectVerdict ?? options.finalReviewRan,
       reviewedPages
     }
   } as ManuscriptQualityReport;
@@ -48,6 +55,12 @@ export function storedQualityProvenance(value: unknown): StoredQualityProvenance
   if (record.version !== 1 || typeof record.finalReviewRan !== "boolean" || !Array.isArray(record.reviewedPages)) {
     return null;
   }
+  if (
+    record.deterministicWarningsAffectVerdict !== undefined &&
+    typeof record.deterministicWarningsAffectVerdict !== "boolean"
+  ) {
+    return null;
+  }
   const reviewedPages: ReviewedPageFingerprint[] = [];
   const indexes = new Set<number>();
   for (const value of record.reviewedPages) {
@@ -56,7 +69,15 @@ export function storedQualityProvenance(value: unknown): StoredQualityProvenance
     indexes.add(page.index);
     reviewedPages.push(page);
   }
-  return { version: 1, finalReviewRan: record.finalReviewRan, reviewedPages };
+  return {
+    version: 1,
+    finalReviewRan: record.finalReviewRan,
+    // Reports written before this field existed used finalReviewRan for this
+    // decision, so that is the only honest legacy reconstruction.
+    deterministicWarningsAffectVerdict:
+      record.deterministicWarningsAffectVerdict ?? record.finalReviewRan,
+    reviewedPages
+  };
 }
 
 /** Which current page positions no longer match the durable reviewed snapshot. */

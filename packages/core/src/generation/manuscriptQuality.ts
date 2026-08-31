@@ -427,28 +427,35 @@ function firstSentence(plain: string): string {
 
 export type ManuscriptQualityReportOptions = {
   /**
-   * Whether the compile that produced these issues ran the full review, or only
-   * the deterministic checks. Stated by the caller, never inferred from what the
-   * issue lists happen to hold.
+   * Whether the compile that produced these issues ran the full model review.
+   * Stated by the caller, never inferred from what the issue lists happen to
+   * hold.
    */
   finalReviewRan: boolean;
+  /**
+   * Whether deterministic warnings discovered by this compile are new verdict
+   * evidence. Initial/outcome compiles set this even when model review is not
+   * requested; edit and presentation recompiles leave it false so they do not
+   * retroactively re-grade untouched prose.
+   *
+   * Optional for stored/legacy callers: the former behavior was equivalent to
+   * `finalReviewRan`.
+   */
+  deterministicWarningsAffectVerdict?: boolean;
 };
 
 /**
  * Turns one compile's findings into the verdict the app reads off the book.
  *
- * `finalReviewRan` decides whether a *warning* may recommend review, and it is
- * the compile's own statement about itself. A full compile grades a book nobody
- * has graded yet, so every warning it raises is news. A deterministic-only
- * compile is not grading anything: every `skipFinalReview` recompile — an undo,
- * a verified exact replacement, a chat edit's apply — re-runs the whole-book
- * checks over prose the edit never touched, and those jobs *do* own the quality
- * verdict (`jobOwnsQualityVerdict` in `packages/core/src/jobScope.ts` excludes
- * only detached repairs and presentation reprints). So a book that passed months
- * ago came back "review recommended" for a repeated phrase its own first compile
- * had already accepted, on the strength of a free edit — and permanently, since
- * the export repair pass filters to `severity === "error"`: a warning is
- * unfixable, so every later recompile re-asserted it.
+ * `deterministicWarningsAffectVerdict` decides whether a deterministic warning
+ * may recommend review. It describes the compile's role, independently of
+ * whether model QA happened to run: an initial/outcome compile grades a book
+ * nobody has graded yet, so every warning it raises is news even when model QA
+ * was not requested. A `skipFinalReview` recompile is not grading the whole book:
+ * an undo, a verified exact replacement, or a chat edit re-runs deterministic
+ * checks over prose the edit never touched. Letting those warnings speak made a
+ * book that passed months ago come back "review recommended" permanently, since
+ * the export repair pass only rewrites errors.
  *
  * Two things are deliberately outside that gate. An **error** blocks whatever
  * ran, because publication integrity is never bypassed by an edit. And a model
@@ -466,9 +473,11 @@ export function buildManuscriptQualityReport(
   const issues = [...deterministicIssues, ...modelIssues];
   const blocked = deterministicIssues.some((entry) => entry.severity === "error");
   const deterministicWarnings = deterministicIssues.filter((entry) => entry.severity === "warning").length;
+  const deterministicWarningsAffectVerdict =
+    options.deterministicWarningsAffectVerdict ?? options.finalReviewRan;
   const state: ManuscriptQualityState = blocked
     ? "blocked"
-    : modelIssues.length > 0 || (options.finalReviewRan && deterministicWarnings > 0)
+    : modelIssues.length > 0 || (deterministicWarningsAffectVerdict && deterministicWarnings > 0)
       ? "review_recommended"
       : "passed";
   const score = Math.max(

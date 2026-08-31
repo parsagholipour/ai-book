@@ -203,8 +203,11 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   let modelQualityIssues: ManuscriptQualityIssue[] = [];
   let recoveredFinalQaIssues: ManuscriptQualityIssue[] | undefined;
   let repairVerificationIncomplete = false;
-  // Parallel-wave drafting requests final review as its continuity
-  // reconciliation pass, but the operator's finalBookQa gate still wins.
+  // An explicit project choice is a request, not a hint; the preset controls only
+  // the automatic continuity review added for parallel-wave drafting.
+  // `skipFinalReview` still prevents unexpected edit/presentation recompile charges and rewrites.
+  const automaticFinalReview = quality.enabled("finalBookQa") &&
+    strategy.executionMode === "sequential-pages" && parallelPageWaveSize(input) > 1;
   // `detachedRepair` is belt and braces here — every repair is queued with
   // `skipFinalReview` — but it is the signal that actually means "uncharged", and
   // a repair's verdict is discarded anyway: `ownsProjectStatus` is false, so it
@@ -212,12 +215,10 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   // which is the column the API reads the book's verdict off — so the report
   // below stays on this job for an operator and never reaches the app.
   const runFinalReview =
-    quality.enabled("finalBookQa") &&
     !skipFinalReview &&
     !detachedRepair &&
     !presentationOnly &&
-    (input.mediaSettings.finalReview ||
-      (strategy.executionMode === "sequential-pages" && parallelPageWaveSize(input) > 1));
+    (input.mediaSettings.finalReview || automaticFinalReview);
   if (runFinalReview) {
     await advanceJobStep(generationJobId, "qa", 25);
     // Independent reads of the same unmodified pages — their results only
@@ -422,7 +423,8 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
                 ...modelQualityIssues,
                 ...(recoveredFinalQaIssues ?? qualityIssuesFromFinalQa(finalQa, lastPageIndex(pages)))
               ]),
-              finalReviewRan: true
+              finalReviewRan: true,
+              deterministicWarningsAffectVerdict: true
             }
           });
           return error instanceof ExportRepairIllustrationDeferredError || deferToReplacementSuccessor
@@ -486,13 +488,11 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     // gate answers — so the thunk is only the shape the other caller needs.
     ...unpaidPromiseQualityIssues({ quality, targetPages: input.targetPages, storyState: () => storyState })
   ];
-  // `runFinalReview` is what makes a deterministic warning speak for the book.
-  // Every `skipFinalReview` recompile — an undo, an exact replacement, a chat
-  // edit's apply — owns the quality verdict and re-runs these whole-book checks
-  // over prose it never touched, so without this a free edit re-graded a book
-  // that passed months ago as "review recommended", permanently: the repair pass
-  // above only rewrites `severity === "error"`. Errors still block from either
-  // mode; see `buildManuscriptQualityReport`.
+  // An outcome compile's deterministic warnings are new quality evidence even
+  // when model review was not requested. Every `skipFinalReview` recompile — an
+  // undo, exact replacement, or chat edit — re-runs these checks over prose it
+  // never touched, so its warnings remain recorded without retroactively
+  // re-grading the book. Errors still block from either mode.
   // Kept as findings and graded, rather than graded and kept, because two of
   // this handler's three stand-downs are below this line: both of them have
   // already stored `qualityReport`, and a stored verdict is an opinion with no
@@ -503,7 +503,8 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     reviewedPages: pages,
     deterministicIssues,
     modelIssues: dedupeQualityIssues(modelQualityIssues),
-    finalReviewRan: runFinalReview
+    finalReviewRan: runFinalReview,
+    deterministicWarningsAffectVerdict: ownsOutcome && !skipFinalReview
   };
   const qualityReport = qualityReportFromFindings(findings);
   await recordCompileQualityReport(generationJobId, qualityReport);

@@ -70,21 +70,23 @@ export interface StandDownFindings {
   reviewedPageFingerprints?: ReviewedPageFingerprint[];
   deterministicIssues: ManuscriptQualityIssue[];
   modelIssues: ManuscriptQualityIssue[];
-  /**
-   * Whether the model half of the review actually ran, which is what decides
-   * whether a deterministic *warning* speaks for the book at all; see the gate
-   * in `buildManuscriptQualityReport`.
-   */
+  /** Whether the model half of the review actually ran. */
   finalReviewRan: boolean;
+  /** Whether deterministic warnings from this compile may affect book state. */
+  deterministicWarningsAffectVerdict?: boolean;
 }
 
 /** The grader, applied to findings. One spelling, so a stand-down cannot grade differently. */
 export function qualityReportFromFindings(findings: StandDownFindings): ManuscriptQualityReport {
+  const deterministicWarningsAffectVerdict =
+    findings.deterministicWarningsAffectVerdict ?? findings.finalReviewRan;
   const report = buildManuscriptQualityReport(findings.deterministicIssues, findings.modelIssues, {
-    finalReviewRan: findings.finalReviewRan
+    finalReviewRan: findings.finalReviewRan,
+    deterministicWarningsAffectVerdict
   });
   return qualityReportWithProvenance(report, {
     finalReviewRan: findings.finalReviewRan,
+    deterministicWarningsAffectVerdict,
     reviewedPages: findings.reviewedPageFingerprints ?? findings.reviewedPages
   });
 }
@@ -200,7 +202,8 @@ function findingsFromStoredQualityReport(report: unknown):
       reviewedPageFingerprints: provenance.reviewedPages,
       deterministicIssues: parsed.issues.filter((issue) => issue.source === "deterministic"),
       modelIssues: parsed.issues.filter((issue) => issue.source === "model"),
-      finalReviewRan: provenance.finalReviewRan
+      finalReviewRan: provenance.finalReviewRan,
+      deterministicWarningsAffectVerdict: provenance.deterministicWarningsAffectVerdict
     }
   };
 }
