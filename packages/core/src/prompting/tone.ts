@@ -39,6 +39,7 @@ const toneRules: Record<ToneProfile, string[]> = {
 export const HUMAN_STYLE_GUARDRAILS = [
   "Avoid proof-leap transitions such as 'This is not a coincidence', 'no accident', 'hidden in plain sight', and 'the truth is' unless directly quoted or genuinely necessary.",
   "Do not stack adjacent contrast sentences that jump from a fact to a sweeping conclusion; earn the claim with evidence, scene, context, or qualification.",
+  "Avoid binary-reversal scaffolds such as 'X is not A. It is B.' State B directly unless both halves are needed for a precise correction or distinction, and do not repeat the construction across nearby pages.",
   "Use em dashes and en dashes sparingly; when a dash is ornamental, prefer a period, comma, colon, or a cleaner sentence.",
   "Replace inflated abstractions with concrete examples, precise claims, or human-sized uncertainty.",
   "Preserve the user's thesis and intended edge, but do not make unsupported interpretive claims sound proven."

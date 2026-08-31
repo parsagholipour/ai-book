@@ -204,7 +204,7 @@ describe("page quality review", () => {
     const userMessage = request?.messages.find((message) => message.role === "user")?.content;
     expect(systemMessage).toMatch(/Tone profile: Skeptical/i);
     expect(systemMessage).toMatch(/This is not a coincidence/i);
-    expect(systemMessage).toMatch(/adjacent contrast sentences/i);
+    expect(systemMessage).toMatch(/adjacent contrast sentences.*X is not A\. It is B/i);
     expect(userMessage).toBeTruthy();
     const payload = JSON.parse(userMessage ?? "{}") as {
       recentPages: Array<{ excerpt: string }>;
