@@ -140,6 +140,12 @@ describe("whole-book structural slop warnings", () => {
     });
 
     expect(codes(pages)).toContain("CROSS_CHAPTER_CONCEPT_REPETITION");
+    const cross = runDeterministicManuscriptChecks({ pages, expectedPageCount: pages.length }).find(
+      (issue) => issue.code === "CROSS_CHAPTER_CONCEPT_REPETITION"
+    );
+    expect(cross?.affectedPageIndexes).toEqual(expect.arrayContaining([3, 11]));
+    expect(cross?.evidence?.some((entry) => entry.pageIndex === 3 && entry.excerpt.length > 0)).toBe(true);
+    expect(cross?.metrics?.clusterCount).toBe(1);
   });
 
   it("protects chapters that share a topic but make different claims", () => {

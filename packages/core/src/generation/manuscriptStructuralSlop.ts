@@ -1,10 +1,20 @@
-import type {
-  ManuscriptIntegrityPage,
-  ManuscriptQualityIssue
-} from "./manuscriptQuality.js";
+import {
+  evidenceForPages,
+  manuscriptWarning,
+  ratio,
+  type ManuscriptIntegrityPage,
+  type ManuscriptQualityIssue,
+  type ManuscriptQualityIssueMetrics
+} from "./manuscriptQualityIssue.js";
+import {
+  chaptersSpannedBy,
+  dominantParagraphRole,
+  type CachedManuscriptPage
+} from "./manuscriptSignatures.js";
 
 type StructuralPage = {
   page: ManuscriptIntegrityPage;
+  markdown: string;
   plain: string;
   lower: string;
   words: Set<string>;
@@ -22,47 +32,45 @@ const ENGLISH_WORD = /[a-z][a-z'’-]*/g;
  * Deterministic whole-manuscript signals for structural AI prose. These are
  * warnings rather than rewrite licences: recurrence supplies the evidence, but
  * genre and authorial intent still decide whether the pattern is a defect.
+ *
+ * English phrase families (grids, hedges, research-meta, generic placeholders)
+ * run only when the orchestrator has classified the manuscript as English.
+ * Cross-chapter concept comparison stays on for every language.
  */
 export function structuralSlopIssues(
-  pages: ManuscriptIntegrityPage[],
-  plainTexts: string[]
+  cached: readonly CachedManuscriptPage[],
+  options: { englishPhraseDetectors: boolean }
 ): ManuscriptQualityIssue[] {
-  const contexts = pages.map((page, index): StructuralPage => {
-    const plain = plainTexts[index] ?? "";
-    const lower = plain.toLowerCase();
-    return { page, plain, lower, words: new Set(lower.match(ENGLISH_WORD) ?? []) };
-  });
+  const contexts = cached.map(
+    (page): StructuralPage => ({
+      page: page.page,
+      markdown: page.markdown,
+      plain: page.plain,
+      lower: page.plain.toLowerCase(),
+      words: new Set(page.plain.toLowerCase().match(ENGLISH_WORD) ?? [])
+    })
+  );
   if (contexts.length === 0) {
     return [];
   }
 
+  const english = options.englishPhraseDetectors
+    ? englishStructuralIssues(contexts, cached)
+    : [];
+  return [...english, ...crossChapterConceptRepetitionIssues(contexts, cached)];
+}
+
+function englishStructuralIssues(
+  contexts: StructuralPage[],
+  cached: readonly CachedManuscriptPage[]
+): ManuscriptQualityIssue[] {
   const grids = repeatedAnalyticalGrids(contexts);
-  const warnings = [
-    ...gridIssues(grids),
-    ...frameworkSaturationIssues(contexts, grids),
-    ...symmetricalHedgingIssues(contexts),
-    ...genericHistoricalPlaceholderIssues(contexts),
-    ...researchMetaFramingIssues(contexts),
-    ...crossChapterConceptRepetitionIssues(contexts)
-  ];
-  // One structural metric is editorial evidence, not a verdict. Three
-  // independent families recurring at book scale are corroboration: the
-  // manuscript needs a human or model review before it can claim COMPLETE.
-  // This barrier never feeds the automatic page rewrite loop; it keeps the
-  // generated artifacts available and routes the book to REVIEW_REQUIRED.
-  if (new Set(warnings.map(({ code }) => code)).size < 3) {
-    return warnings;
-  }
-  const affected = [...new Set(warnings.flatMap(({ affectedPageIndexes }) => affectedPageIndexes))]
-    .sort((a, b) => a - b);
   return [
-    ...warnings,
-    error(
-      "STRUCTURAL_SLOP_SATURATION",
-      `${warnings.length} independent structural repetition signals recur across the manuscript.`,
-      "Review the book's framework, examples, caveats, evidence integration, and cross-chapter progression before marking it complete.",
-      affected
-    )
+    ...gridIssues(grids, cached),
+    ...frameworkSaturationIssues(contexts, grids, cached),
+    ...symmetricalHedgingIssues(contexts, cached),
+    ...genericHistoricalPlaceholderIssues(contexts, cached),
+    ...researchMetaFramingIssues(contexts, cached)
   ];
 }
 
@@ -76,10 +84,6 @@ function repeatedAnalyticalGrids(pages: StructuralPage[]): RepeatedGrid[] {
       ownersByGrid.set(key, entry);
     }
   }
-  // A grid is far more specific than an arbitrary four-word phrase, so six
-  // appearances in a 120-page book are already editorially meaningful. The
-  // old 15% phrase threshold required eighteen and missed the eight-field grid
-  // that motivated this check.
   const minPages = recurringPageFloor(pages.length, 3, 0.05);
   return [...ownersByGrid.values()]
     .filter(({ owners }) => owners.size >= minPages)
@@ -117,9 +121,6 @@ function gridLabelsFromPart(part: string, index: number, partCount: number): str
   if (andParts.length > 1) {
     return andParts.map((value) => terminalLabel(value));
   }
-  // The first comma segment usually contains the governing verb ("Compare
-  // actors, ..."); every middle segment is already one field. The final one
-  // may begin with "and" and continue into a purpose clause.
   return [index === 0 ? terminalLabel(cleaned) : index === partCount - 1 ? leadingLabel(cleaned) : terminalLabel(cleaned)];
 }
 
@@ -160,18 +161,24 @@ const GRID_LABEL_ALIASES: Record<string, string> = {
   organization: "institution"
 };
 
-function gridIssues(grids: RepeatedGrid[]): ManuscriptQualityIssue[] {
+function gridIssues(grids: RepeatedGrid[], cached: readonly CachedManuscriptPage[]): ManuscriptQualityIssue[] {
   return grids.map(({ labels, owners }) =>
-    warning(
+    slopWarning(
+      cached,
       "REPEATED_ANALYTICAL_GRID",
       `The same ${labels.length}-field analytical grid recurs on ${owners.length} pages (${labels.join(", ")}).`,
       "Keep the complete grid only where it adds a new comparison; let other sections follow the evidence's natural shape.",
-      owners
+      owners,
+      { occurrences: owners.length }
     )
   );
 }
 
-function frameworkSaturationIssues(pages: StructuralPage[], grids: RepeatedGrid[]): ManuscriptQualityIssue[] {
+function frameworkSaturationIssues(
+  pages: StructuralPage[],
+  grids: RepeatedGrid[],
+  cached: readonly CachedManuscriptPage[]
+): ManuscriptQualityIssue[] {
   const cuePages = pages
     .filter(({ lower }) => countPatternFamilies(lower, FRAMEWORK_CUE_PATTERNS) >= 3)
     .map(({ page }) => page.index);
@@ -190,16 +197,22 @@ function frameworkSaturationIssues(pages: StructuralPage[], grids: RepeatedGrid[
   }
 
   const affected = largestDistinctPageSet(candidates);
-  return affected.length === 0
-    ? []
-    : [
-        warning(
-          "FRAMEWORK_SATURATION",
-          `Framework and checklist language dominates ${affected.length} pages across the manuscript.`,
-          "Reserve the framework for synthesis points and replace repeated diagnostics with concrete argument, evidence, or narrative movement.",
-          affected
-        )
-      ];
+  if (affected.length === 0) {
+    return [];
+  }
+  const occurrences = pages
+    .filter(({ page }) => affected.includes(page.index))
+    .reduce((sum, { lower }) => sum + countPatternOccurrences(lower, FRAMEWORK_CUE_PATTERNS), 0);
+  return [
+    slopWarning(
+      cached,
+      "FRAMEWORK_SATURATION",
+      `Framework and checklist language dominates ${affected.length} pages across the manuscript.`,
+      "Reserve the framework for synthesis points and replace repeated diagnostics with concrete argument, evidence, or narrative movement.",
+      affected,
+      { occurrences: Math.max(occurrences, affected.length) }
+    )
+  ];
 }
 
 const FRAMEWORK_CUE_PATTERNS = [
@@ -212,20 +225,34 @@ const FRAMEWORK_CUE_PATTERNS = [
   /\b(?:identify|record|label)\s+the\s+(?:actors|setting|goals|resources|institutions|norms|technology|evidence)\b/gu
 ] as const;
 
-function symmetricalHedgingIssues(pages: StructuralPage[]): ManuscriptQualityIssue[] {
-  const affected = pages
-    .filter(({ lower }) => countPatternFamilies(lower, SYMMETRICAL_HEDGE_PATTERNS) > 0)
-    .map(({ page }) => page.index);
-  return affected.length >= recurringPageFloor(pages.length, 4, 0.05)
-    ? [
-        warning(
-          "SYMMETRICAL_HEDGING",
-          `${affected.length} pages rely on the same symmetrical hedge or balanced reversal.`,
-          "Keep the contrast only where both sides are analytically necessary; state the supported claim directly elsewhere.",
-          affected
-        )
-      ]
-    : [];
+function symmetricalHedgingIssues(
+  pages: StructuralPage[],
+  cached: readonly CachedManuscriptPage[]
+): ManuscriptQualityIssue[] {
+  const hits = pages
+    .map((page) => ({ page, count: countPatternOccurrences(page.lower, SYMMETRICAL_HEDGE_PATTERNS) }))
+    .filter(({ count }) => count > 0);
+  const affected = hits.map(({ page }) => page.page.index);
+  if (affected.length < recurringPageFloor(pages.length, 4, 0.05)) {
+    return [];
+  }
+  const sameParagraphRole = sameParagraphRoleAcross(
+    pages.filter(({ page }) => affected.includes(page.index)),
+    (lower) => countPatternFamilies(lower, SYMMETRICAL_HEDGE_PATTERNS) > 0
+  );
+  return [
+    slopWarning(
+      cached,
+      "SYMMETRICAL_HEDGING",
+      `${affected.length} pages rely on the same symmetrical hedge or balanced reversal.`,
+      "Keep the contrast only where both sides are analytically necessary; state the supported claim directly elsewhere.",
+      affected,
+      {
+        occurrences: hits.reduce((sum, { count }) => sum + count, 0),
+        ...(sameParagraphRole !== undefined ? { sameParagraphRole } : {})
+      }
+    )
+  ];
 }
 
 const SYMMETRICAL_HEDGE_PATTERNS = [
@@ -239,7 +266,10 @@ const SYMMETRICAL_HEDGE_PATTERNS = [
   /\b(?:may|can)\b[^.!?\n]{2,140}\b(?:restrain|limit|reduce|prevent)\b[^.!?\n]{0,140}\b(?:or|and|while|but)\b[^.!?\n]{0,140}\b(?:enable|authorize|expand|increase|organize|intensify)\b/gu
 ] as const;
 
-function genericHistoricalPlaceholderIssues(pages: StructuralPage[]): ManuscriptQualityIssue[] {
+function genericHistoricalPlaceholderIssues(
+  pages: StructuralPage[],
+  cached: readonly CachedManuscriptPage[]
+): ManuscriptQualityIssue[] {
   const affected = pages
     .filter(({ plain }) => {
       const sentences = plain.split(SENTENCE_SPLIT);
@@ -252,11 +282,13 @@ function genericHistoricalPlaceholderIssues(pages: StructuralPage[]): Manuscript
     .map(({ page }) => page.index);
   return affected.length >= recurringPageFloor(pages.length, 3, 0.1)
     ? [
-        warning(
+        slopWarning(
+          cached,
           "GENERIC_HISTORICAL_PLACEHOLDERS",
           `${affected.length} pages substitute generic rulers, polities, or societies for named historical examples.`,
           "Replace hypothetical historical placeholders with named events, people, institutions, dates, or explicitly marked abstractions.",
-          affected
+          affected,
+          { occurrences: affected.length }
         )
       ]
     : [];
@@ -279,18 +311,27 @@ function hasHistoricalAnchor(sentence: string): boolean {
   return /\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*\b/u.test(withoutOpening);
 }
 
-function researchMetaFramingIssues(pages: StructuralPage[]): ManuscriptQualityIssue[] {
-  const affected = pages
-    .filter(({ page, lower }) => !/^(?:sources|references|bibliography|methodology|notes)$/iu.test(page.title.trim()) &&
-      countPatternFamilies(lower, RESEARCH_META_PATTERNS) > 0)
-    .map(({ page }) => page.index);
+function researchMetaFramingIssues(
+  pages: StructuralPage[],
+  cached: readonly CachedManuscriptPage[]
+): ManuscriptQualityIssue[] {
+  const hits = pages.filter(
+    ({ page, lower }) =>
+      !/^(?:sources|references|bibliography|methodology|notes)$/iu.test(page.title.trim()) &&
+      countPatternFamilies(lower, RESEARCH_META_PATTERNS) > 0
+  );
+  const affected = hits.map(({ page }) => page.index);
   return affected.length >= recurringPageFloor(pages.length, 3, 0.05)
     ? [
-        warning(
+        slopWarning(
+          cached,
           "RESEARCH_META_FRAMING",
           `${affected.length} pages refer to supplied or provided research instead of presenting the evidence directly.`,
           "Name and cite the source or state the evidence-bound claim; remove internal descriptions of how research reached the writer.",
-          affected
+          affected,
+          {
+            occurrences: hits.reduce((sum, { lower }) => sum + countPatternOccurrences(lower, RESEARCH_META_PATTERNS), 0)
+          }
         )
       ]
     : [];
@@ -305,7 +346,10 @@ const RESEARCH_META_PATTERNS = [
   /\b(?:the\s+)?research (?:summary|summaries|note|notes)\b/gu
 ] as const;
 
-function crossChapterConceptRepetitionIssues(pages: StructuralPage[]): ManuscriptQualityIssue[] {
+function crossChapterConceptRepetitionIssues(
+  pages: StructuralPage[],
+  cached: readonly CachedManuscriptPage[]
+): ManuscriptQualityIssue[] {
   const signatures = pages.map((page) => ({
     page,
     modules: conceptModules(page.plain),
@@ -331,11 +375,13 @@ function crossChapterConceptRepetitionIssues(pages: StructuralPage[]): Manuscrip
   const affected = [...repeatedPages].sort((a, b) => a - b);
   return affected.length >= 2
     ? [
-        warning(
+        slopWarning(
+          cached,
           "CROSS_CHAPTER_CONCEPT_REPETITION",
           `${affected.length} pages in different chapters contain conceptually overlapping explanatory modules.`,
           "Keep the strongest treatment and make later chapters advance, challenge, or apply it rather than restating the same causal module.",
-          affected
+          affected,
+          { occurrences: affected.length, clusterCount: 1 }
         )
       ]
     : [];
@@ -458,13 +504,6 @@ function modulesOverlap(leftModules: Set<string>[], rightModules: Set<string>[])
   return false;
 }
 
-/**
- * A lower, content-only counterpart to the 0.9 whole-page duplicate check.
- * Stop words, morphology and a small synonym map are removed first, so the
- * overlap represents explanatory concepts rather than identical sentences.
- * The absolute shared-term floor keeps short passages and generic topic
- * vocabulary from becoming a finding by ratio alone.
- */
 function pageConceptsOverlap(left: Set<string>, right: Set<string>): boolean {
   if (left.size < 45 || right.size < 45) {
     return false;
@@ -502,6 +541,15 @@ function countPatternFamilies(text: string, patterns: readonly RegExp[]): number
   return count;
 }
 
+function countPatternOccurrences(text: string, patterns: readonly RegExp[]): number {
+  let count = 0;
+  for (const pattern of patterns) {
+    pattern.lastIndex = 0;
+    count += text.match(pattern)?.length ?? 0;
+  }
+  return count;
+}
+
 function recurringPageFloor(pageCount: number, floor: number, fraction: number): number {
   return Math.max(floor, Math.ceil(pageCount * fraction));
 }
@@ -517,20 +565,40 @@ function largestDistinctPageSet(candidates: number[][]): number[] {
   return [...distinct.values()].sort((left, right) => right.length - left.length)[0] ?? [];
 }
 
-function warning(
-  code: string,
-  message: string,
-  guidance: string,
-  affectedPageIndexes: number[]
-): ManuscriptQualityIssue {
-  return { code, severity: "warning", source: "deterministic", message, guidance, affectedPageIndexes };
+function sameParagraphRoleAcross(pages: StructuralPage[], test: (lower: string) => boolean): boolean | undefined {
+  const roles = new Set(
+    pages.flatMap((page) => {
+      const role = dominantParagraphRole(page.markdown, (paragraph) => test(paragraph.toLowerCase()));
+      return role ? [role] : [];
+    })
+  );
+  return roles.size === 0 ? undefined : roles.size === 1;
 }
 
-function error(
+function slopWarning(
+  cached: readonly CachedManuscriptPage[],
   code: string,
   message: string,
   guidance: string,
-  affectedPageIndexes: number[]
+  affected: number[],
+  extras: {
+    occurrences: number;
+    clusterCount?: number;
+    sameParagraphRole?: boolean;
+  }
 ): ManuscriptQualityIssue {
-  return { code, severity: "error", source: "deterministic", message, guidance, affectedPageIndexes };
+  const metrics: ManuscriptQualityIssueMetrics = {
+    occurrences: extras.occurrences,
+    affectedPageRatio: ratio(affected.length, cached.length),
+    chaptersSpanned: chaptersSpannedBy(cached, affected),
+    ...(extras.clusterCount !== undefined ? { clusterCount: extras.clusterCount } : {}),
+    ...(extras.sameParagraphRole !== undefined ? { sameParagraphRole: extras.sameParagraphRole } : {})
+  };
+  return manuscriptWarning(code, message, guidance, affected, {
+    metrics,
+    evidence: evidenceForPages(
+      cached.map((page) => ({ index: page.page.index, plain: page.plain })),
+      affected
+    )
+  });
 }

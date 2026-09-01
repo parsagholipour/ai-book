@@ -6,6 +6,7 @@ import {
   storedQualityProvenance,
   type ReviewedPageFingerprint
 } from "./compileExportQualityProvenance.js";
+import { parseStoredQualityIssue } from "./compileExportStoredQuality.js";
 import type { QualityGateContext } from "../generation/qualityEnrichment.js";
 import { updateJobProgress } from "../runtime/jobLifecycle.js";
 import { isStopRequestedError, type ExportPageForRepair } from "../runtime/jobTypes.js";
@@ -80,9 +81,14 @@ export interface StandDownFindings {
 export function qualityReportFromFindings(findings: StandDownFindings): ManuscriptQualityReport {
   const deterministicWarningsAffectVerdict =
     findings.deterministicWarningsAffectVerdict ?? findings.finalReviewRan;
+  const manuscriptPageCount =
+    findings.reviewedPages.length > 0
+      ? findings.reviewedPages.length
+      : findings.reviewedPageFingerprints?.length ?? 0;
   const report = buildManuscriptQualityReport(findings.deterministicIssues, findings.modelIssues, {
     finalReviewRan: findings.finalReviewRan,
-    deterministicWarningsAffectVerdict
+    deterministicWarningsAffectVerdict,
+    ...(manuscriptPageCount > 0 ? { manuscriptPageCount } : {})
   });
   return qualityReportWithProvenance(report, {
     finalReviewRan: findings.finalReviewRan,
@@ -253,32 +259,6 @@ function parseStoredQualityReport(value: unknown): {
     issues.push(issue);
   }
   return { issues };
-}
-
-function parseStoredQualityIssue(value: unknown): ManuscriptQualityIssue | null {
-  if (typeof value !== "object" || value === null) {
-    return null;
-  }
-  const record = value as Record<string, unknown>;
-  if (
-    typeof record.code !== "string" ||
-    (record.severity !== "error" && record.severity !== "warning") ||
-    (record.source !== "deterministic" && record.source !== "model") ||
-    typeof record.message !== "string" ||
-    typeof record.guidance !== "string" ||
-    !Array.isArray(record.affectedPageIndexes) ||
-    record.affectedPageIndexes.some((index) => typeof index !== "number")
-  ) {
-    return null;
-  }
-  return {
-    code: record.code,
-    severity: record.severity,
-    source: record.source,
-    message: record.message,
-    guidance: record.guidance,
-    affectedPageIndexes: record.affectedPageIndexes
-  };
 }
 
 /**

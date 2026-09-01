@@ -43,6 +43,7 @@ import { maybeEnqueueCompile, parallelPageWaveSize } from "../runtime/dispatch.j
 import { advanceJobStep, editOperationIdFromJob, updateJobProgress } from "../runtime/jobLifecycle.js";
 import { isStopRequestedError, type ExportPageForRepair, type JobCompletion } from "../runtime/jobTypes.js";
 import { effectiveSavedWholeBookExportContext } from "../generation/wholeBookTolerance.js";
+import { runCompileManuscriptChecks } from "../generation/compileManuscriptChecks.js";
 import { maybeEnqueueCharacterCandidatePreparation } from "./characters.js";
 import {
   appendQualityIssue,
@@ -62,7 +63,6 @@ import {
   publicAssetUrl,
   readerChapterFingerprint,
   resolvePublicImageUrl,
-  runDeterministicManuscriptChecks,
   normalizedCompilePublicationPolicy,
   type PersistableBookPdfPageMap,
   type BookPlan,
@@ -196,9 +196,8 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   // The shipped report deliberately runs its own sweep over the durable pages.
   let initialIntegrityIssuesSnapshot: ManuscriptQualityIssue[] | undefined;
   const initialIntegrityIssues = (): ManuscriptQualityIssue[] =>
-    (initialIntegrityIssuesSnapshot ??= runDeterministicManuscriptChecks({
-      pages: pages.map(({ index, title, markdown, chapter }) => ({ index, title, markdown, ...(chapter ? { chapterIndex: chapter.index } : {}) })),
-      expectedPageCount: input.targetPages
+    (initialIntegrityIssuesSnapshot ??= runCompileManuscriptChecks({
+      pages, expectedPageCount: input.targetPages, ...(input.language ? { language: input.language } : {})
     }));
   let modelQualityIssues: ManuscriptQualityIssue[] = [];
   let recoveredFinalQaIssues: ManuscriptQualityIssue[] | undefined;
@@ -468,9 +467,10 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     (await rebuildProjectStoryState(projectId, plan.promises ?? [])) ??
     (await rebuildStoryStateFromPages(projectId, plan.promises ?? []));
   const deterministicIssues = [
-    ...runDeterministicManuscriptChecks({
-      pages: pages.map(({ index, title, markdown, chapter }) => ({ index, title, markdown, ...(chapter ? { chapterIndex: chapter.index } : {}) })),
-      expectedPageCount: input.targetPages
+    ...runCompileManuscriptChecks({
+      pages,
+      expectedPageCount: input.targetPages,
+      ...(input.language ? { language: input.language } : {})
     }),
     ...(repairVerificationIncomplete
       ? [{

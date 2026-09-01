@@ -230,6 +230,9 @@ describe("compileExport publication policy", () => {
     expect(mocks.generateJsonWithRetry).toHaveBeenCalledTimes(1);
     expect(mocks.revisePageDraftWithRestart).not.toHaveBeenCalled();
     expect(mocks.runDeterministicManuscriptChecks).toHaveBeenCalled();
+    expect(mocks.runDeterministicManuscriptChecks).toHaveBeenCalledWith(
+      expect.objectContaining({ language: "en", expectedPageCount: 12 })
+    );
     expect(mocks.strategy.generatePdf).toHaveBeenCalled();
   });
 

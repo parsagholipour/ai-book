@@ -89,8 +89,35 @@ export type ProjectQualityStatus = {
     message: string;
     guidance: string;
     affectedPageIndexes: number[];
+    metrics?: {
+      occurrences?: number;
+      affectedPageRatio?: number;
+      clusterCount?: number;
+      chaptersSpanned?: number;
+      sameParagraphRole?: boolean;
+      wouldBlock?: boolean;
+    };
+    evidence?: Array<{
+      pageIndex: number;
+      excerpt: string;
+    }>;
   }>;
   affectedPageIndexes: number[];
+  diagnostics?: {
+    detectorVersion: string;
+    wouldBlock: boolean;
+    findings: Array<{
+      code: string;
+      detectorVersion: string;
+      severity: "error" | "warning";
+      affectedPageCount: number;
+      occurrences: number;
+      affectedPageRatio: number;
+      clusterCount?: number;
+      chaptersSpanned?: number;
+      wouldBlock: boolean;
+    }>;
+  };
 };
 
 const config = loadConfig();
@@ -299,7 +326,9 @@ export function normalizeProjectQuality(value: unknown): ProjectQualityStatus {
       source,
       message: issue.message,
       guidance: typeof issue.guidance === "string" ? issue.guidance : "Review the affected pages.",
-      affectedPageIndexes
+      affectedPageIndexes,
+      ...optionalQualityMetrics(issue.metrics),
+      ...optionalQualityEvidence(issue.evidence)
     }];
   });
   const affectedPageIndexes = [
@@ -312,7 +341,96 @@ export function normalizeProjectQuality(value: unknown): ProjectQualityStatus {
     state,
     score: typeof record.score === "number" && Number.isFinite(record.score) ? record.score : null,
     issues,
-    affectedPageIndexes
+    affectedPageIndexes,
+    ...optionalQualityDiagnostics(record.diagnostics)
+  };
+}
+
+function optionalQualityMetrics(
+  value: unknown
+): { metrics: NonNullable<ProjectQualityStatus["issues"][number]["metrics"]> } | Record<string, never> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  const record = value as Record<string, unknown>;
+  const metrics: NonNullable<ProjectQualityStatus["issues"][number]["metrics"]> = {
+    ...(typeof record.occurrences === "number" && Number.isFinite(record.occurrences) ? { occurrences: record.occurrences } : {}),
+    ...(typeof record.affectedPageRatio === "number" && Number.isFinite(record.affectedPageRatio)
+      ? { affectedPageRatio: record.affectedPageRatio }
+      : {}),
+    ...(typeof record.clusterCount === "number" && Number.isFinite(record.clusterCount) ? { clusterCount: record.clusterCount } : {}),
+    ...(typeof record.chaptersSpanned === "number" && Number.isFinite(record.chaptersSpanned)
+      ? { chaptersSpanned: record.chaptersSpanned }
+      : {}),
+    ...(typeof record.sameParagraphRole === "boolean" ? { sameParagraphRole: record.sameParagraphRole } : {}),
+    ...(typeof record.wouldBlock === "boolean" ? { wouldBlock: record.wouldBlock } : {})
+  };
+  return Object.keys(metrics).length > 0 ? { metrics } : {};
+}
+
+function optionalQualityEvidence(
+  value: unknown
+): { evidence: NonNullable<ProjectQualityStatus["issues"][number]["evidence"]> } | Record<string, never> {
+  if (!Array.isArray(value)) {
+    return {};
+  }
+  const evidence = value.flatMap((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return [];
+    }
+    const record = entry as Record<string, unknown>;
+    if (!Number.isInteger(record.pageIndex) || typeof record.excerpt !== "string") {
+      return [];
+    }
+    return [{ pageIndex: Number(record.pageIndex), excerpt: record.excerpt }];
+  });
+  return evidence.length > 0 ? { evidence } : {};
+}
+
+function optionalQualityDiagnostics(
+  value: unknown
+): { diagnostics: NonNullable<ProjectQualityStatus["diagnostics"]> } | Record<string, never> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  const record = value as Record<string, unknown>;
+  if (typeof record.detectorVersion !== "string" || typeof record.wouldBlock !== "boolean" || !Array.isArray(record.findings)) {
+    return {};
+  }
+  const findings = record.findings.flatMap((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return [];
+    }
+    const finding = entry as Record<string, unknown>;
+    if (
+      typeof finding.code !== "string" ||
+      typeof finding.detectorVersion !== "string" ||
+      (finding.severity !== "error" && finding.severity !== "warning") ||
+      typeof finding.affectedPageCount !== "number" ||
+      typeof finding.occurrences !== "number" ||
+      typeof finding.affectedPageRatio !== "number" ||
+      typeof finding.wouldBlock !== "boolean"
+    ) {
+      return [];
+    }
+    return [{
+      code: finding.code,
+      detectorVersion: finding.detectorVersion,
+      severity: finding.severity,
+      affectedPageCount: finding.affectedPageCount,
+      occurrences: finding.occurrences,
+      affectedPageRatio: finding.affectedPageRatio,
+      wouldBlock: finding.wouldBlock,
+      ...(typeof finding.clusterCount === "number" ? { clusterCount: finding.clusterCount } : {}),
+      ...(typeof finding.chaptersSpanned === "number" ? { chaptersSpanned: finding.chaptersSpanned } : {})
+    }];
+  });
+  return {
+    diagnostics: {
+      detectorVersion: record.detectorVersion,
+      wouldBlock: record.wouldBlock,
+      findings
+    }
   };
 }
 

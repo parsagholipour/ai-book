@@ -76,6 +76,7 @@ export * from "./generation/replanSettings.js";
 export * from "./generation/pageRestructure.js";
 export * from "./generation/structuralInstruction.js";
 export * from "./generation/manuscriptQuality.js";
+export * from "./generation/manuscriptReplay.js";
 export * from "./generation/cover.js";
 export * from "./generation/coverText.js";
 export * from "./generation/coverSource.js";
