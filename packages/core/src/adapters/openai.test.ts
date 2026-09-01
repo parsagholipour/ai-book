@@ -89,6 +89,19 @@ describe("OpenAITextAdapter", () => {
     });
   });
 
+  it("does not bypass response validation for chapter briefs", async () => {
+    const adapter = new OpenAITextAdapter({ apiKey: "test-key", model: "gpt-5.6-terra" });
+    installMockResponses(adapter, [textResponse(`{"value":1}`, "gpt-5.6-terra")]);
+
+    await expect(
+      adapter.generateJson({
+        purpose: "generate-chapter-brief",
+        messages: [{ role: "user", content: "Return the value." }],
+        schema: z.object({ value: z.string() })
+      })
+    ).rejects.toMatchObject({ name: "OpenAIJsonValidationError" });
+  });
+
   it("replays encrypted reasoning and function calls across a stateless tool loop", async () => {
     const adapter = new OpenAITextAdapter({
       apiKey: "test-key",

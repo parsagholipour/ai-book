@@ -260,9 +260,6 @@ export class OpenAITextAdapter implements TextModelAdapter {
     } catch (error) {
       throwWithProviderUsage(error, { provider: PROVIDER_ID, model: responseModel || this.model, usage });
     }
-    if (options.purpose === "generate-chapter-brief") {
-      return { ...this.textResult(text, usage, responseModel), data: parsedObject as T };
-    }
     try {
       return {
         ...this.textResult(text, usage, responseModel),

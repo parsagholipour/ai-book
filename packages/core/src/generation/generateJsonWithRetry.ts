@@ -5,12 +5,17 @@ import {
   type ChatMessage,
   type GenerateJsonOptions,
   type JsonResult,
+  type ProviderCallMetadata,
   type TextModelAdapter
 } from "../adapters/types.js";
 
 export type GenerateJsonWithRetryOptions<T> = GenerateJsonOptions<T> & {
   /** Additional model calls after a repairable parse/schema failure. Bounded to two. */
   repairAttempts?: number | undefined;
+  annotatePhysicalAttempt?: (
+    metadata: ProviderCallMetadata | undefined,
+    attempt: { index: number; maxAttempts: number; schemaRepair: boolean }
+  ) => ProviderCallMetadata | undefined;
 };
 
 const STRICT_JSON_RETRY_RULES = [
@@ -29,7 +34,11 @@ export async function generateJsonWithRetry<T>(
   textModel: TextModelAdapter,
   options: GenerateJsonWithRetryOptions<T>
 ): Promise<JsonResult<T>> {
-  const { repairAttempts: requestedRepairAttempts, ...generateOptions } = options;
+  const {
+    repairAttempts: requestedRepairAttempts,
+    annotatePhysicalAttempt,
+    ...generateOptions
+  } = options;
   const repairAttempts = Math.max(0, Math.min(2, Math.floor(requestedRepairAttempts ?? 1)));
   let nextOptions: GenerateJsonOptions<T> = generateOptions;
   // A schema-repair attempt belongs to the call that produced the invalid
@@ -37,16 +46,45 @@ export async function generateJsonWithRetry<T>(
   // not silently hand the repair to another model.
   const bound = await bindTextModelCall(textModel, generateOptions.purpose);
 
+  let schemaRepair = false;
   for (let attempt = 0; ; attempt += 1) {
     try {
-      return await bound.adapter.generateJson(nextOptions);
+      return await bound.adapter.generateJson(withPhysicalAttemptMetadata(
+        nextOptions,
+        annotatePhysicalAttempt,
+        attempt + 1,
+        repairAttempts + 1,
+        schemaRepair
+      ));
     } catch (error) {
       if (attempt >= repairAttempts || !isRepairableJsonError(error)) {
         throw error;
       }
+      schemaRepair = isSchemaValidationError(error);
       nextOptions = repairOptions(generateOptions, error);
     }
   }
+}
+
+function withPhysicalAttemptMetadata<T>(
+  options: GenerateJsonOptions<T>,
+  annotatePhysicalAttempt: GenerateJsonWithRetryOptions<T>["annotatePhysicalAttempt"],
+  attempt: number,
+  maxAttempts: number,
+  schemaRepair: boolean
+): GenerateJsonOptions<T> {
+  if (!annotatePhysicalAttempt) {
+    return options;
+  }
+  const nextMeta = annotatePhysicalAttempt(options.providerCallMetadata, {
+    index: attempt,
+    maxAttempts,
+    schemaRepair
+  });
+  return {
+    ...options,
+    ...(nextMeta ? { providerCallMetadata: nextMeta } : {})
+  };
 }
 
 function repairOptions<T>(options: GenerateJsonOptions<T>, error: unknown): GenerateJsonOptions<T> {
@@ -91,12 +129,18 @@ function isRepairableJsonError(error: unknown): boolean {
 }
 
 function isSchemaValidationError(error: unknown): boolean {
-  return error instanceof AdapterJsonValidationError || (error instanceof Error && error.name.endsWith('JsonValidationError'));
+  return (
+    error instanceof AdapterJsonValidationError
+    || (error instanceof Error && error.name.endsWith("JsonValidationError"))
+  );
 }
 
 function validationDetails(error: unknown): string {
   if (error instanceof AdapterJsonValidationError) {
     return error.context.validationMessage.slice(0, 4000);
+  }
+  if (error instanceof z.ZodError) {
+    return error.message.slice(0, 4000);
   }
   return error instanceof Error ? error.message.slice(0, 4000) : "Unknown validation error.";
 }

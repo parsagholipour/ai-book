@@ -920,10 +920,10 @@ describe("page quality review", () => {
               const pageIndex = start + index;
               return {
                 pageIndex,
-                purpose: `Purpose ${pageIndex}`,
-                beat: `Beat ${pageIndex}`,
-                requiredContinuity: [`Continuity ${pageIndex}`],
-                endingPressure: `Pressure ${pageIndex}`
+                purpose: `Establish measurement ${pageIndex} as a distinct step in the friction experiment.`,
+                beat: `Compare the spring-scale reading during experimental stage ${pageIndex}.`,
+                requiredContinuity: [`Keep the crate's normal load fixed during measurement ${pageIndex}.`],
+                endingPressure: `The result from measurement ${pageIndex} determines which variable the next stage isolates.`
               };
             })
           };

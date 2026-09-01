@@ -699,8 +699,8 @@ function firstPageOpeningRule(category: string | undefined): string {
 }
 
 // ---------------------------------------------------------------------------
-// Tolerant readers for model-shaped JSON, shared by the draft and page-map
-// normalizers.
+// Tolerant readers for model-shaped JSON, shared by draft normalizers and the
+// generated-page response seam.
 // ---------------------------------------------------------------------------
 
 export function unwrapModelObject(value: unknown, keys: string[]): unknown {
@@ -742,7 +742,7 @@ export function arrayLikeField(record: Record<string, unknown>, key: string): un
 // reading it off the helper bundle they already import.
 export { isRecord };
 
-export function numberField(record: Record<string, unknown>, keys: string[]): number | undefined {
+export function numberField(record: Record<string, unknown>, keys: readonly string[]): number | undefined {
   for (const key of keys) {
     const value = record[key];
     if (typeof value === "number") {
@@ -755,7 +755,17 @@ export function numberField(record: Record<string, unknown>, keys: string[]): nu
   return undefined;
 }
 
-export function stringField(record: Record<string, unknown>, keys: string[]): string | undefined {
+export function integerField(record: Record<string, unknown>, keys: readonly string[]): number | undefined {
+  for (const key of keys) {
+    const value = numberField(record, [key]);
+    if (Number.isInteger(value)) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+export function stringField(record: Record<string, unknown>, keys: readonly string[]): string | undefined {
   for (const key of keys) {
     const value = record[key];
     if (typeof value === "string" && value.trim()) {
@@ -765,7 +775,7 @@ export function stringField(record: Record<string, unknown>, keys: string[]): st
   return undefined;
 }
 
-export function stringArrayField(record: Record<string, unknown>, keys: string[]): string[] | undefined {
+export function stringArrayField(record: Record<string, unknown>, keys: readonly string[]): string[] | undefined {
   for (const key of keys) {
     const value = record[key];
     if (typeof value === "string" && value.trim()) {

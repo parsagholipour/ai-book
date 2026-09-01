@@ -7,6 +7,7 @@ import {
   beginLiveTextUsage,
   durationBetweenTimestamps,
   markLiveTextUsageFailed,
+  optionalProviderCallMetadata,
   providerUsageFromError,
   recordProviderUsage
 } from "./usageAccounting.js";
@@ -89,7 +90,8 @@ export class TextFallbackCallAccounting {
     }
     await markLiveTextUsageFailed(this.liveUsageId, {
       durationMs: durationBetweenTimestamps(this.attemptStartedAt, finishedAt),
-      error
+      error,
+      ...optionalProviderCallMetadata(this.context.requestOptions.providerCallMetadata)
     });
   }
 
@@ -133,10 +135,15 @@ export class TextFallbackCallAccounting {
         usage: providerUsage.usage,
         liveUsageId: this.liveUsageId,
         fallbackPromptTokens: this.promptTokens,
-        providerCallMetadata: this.context.requestOptions.providerCallMetadata
+        ...optionalProviderCallMetadata(this.context.requestOptions.providerCallMetadata),
+        providerCallError: error
       });
       return;
     }
-    await markLiveTextUsageFailed(this.liveUsageId, { durationMs, error });
+    await markLiveTextUsageFailed(this.liveUsageId, {
+      durationMs,
+      error,
+      ...optionalProviderCallMetadata(this.context.requestOptions.providerCallMetadata)
+    });
   }
 }

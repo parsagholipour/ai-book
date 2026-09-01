@@ -67,6 +67,12 @@ export {
   type RepairPageBriefOptions
 } from "./pagesPageMap.js";
 export {
+  PageMapResponseInvalidError,
+  decodeGeneratedChapterBrief,
+  pageMapResponseViolationCodesFromError,
+  type GeneratedChapterBriefContract
+} from "./generatedChapterBriefAcceptance.js";
+export {
   reviewPageDraft,
   revisePageDraft,
   runFinalBookQa,

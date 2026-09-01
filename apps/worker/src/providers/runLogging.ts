@@ -164,13 +164,14 @@ export function providerOperationLabel(operation: string, purpose?: string | und
   }
 }
 
-export function logTextRequest(options: GenerateTextOptions) {
+export function logTextRequest(options: GenerateTextOptions, providerCallMetadata: Record<string, unknown> = {}) {
   return {
     purpose: options.purpose,
     projectId: options.projectId,
     temperature: options.temperature,
     maxTokens: options.maxTokens,
-    messages: options.messages
+    messages: options.messages,
+    ...(Object.keys(providerCallMetadata).length > 0 ? { providerCallMetadata } : {})
   };
 }
 

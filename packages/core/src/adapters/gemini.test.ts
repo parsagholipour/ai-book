@@ -201,6 +201,23 @@ describe("GeminiTextAdapter", () => {
     expect(result.usage).toMatchObject({ promptTokens: 5, outputTokens: 4 });
   });
 
+  it("does not bypass response validation for chapter briefs", async () => {
+    const adapter = new GeminiTextAdapter({ apiKey: "test-key", textModel: "gemini-json" });
+    (adapter as any).ai = {
+      models: {
+        generateContent: async () => ({ text: `{ "value": 1 }` })
+      }
+    };
+
+    await expect(
+      adapter.generateJson({
+        purpose: "generate-chapter-brief",
+        messages: [{ role: "user", content: "Return a report." }],
+        schema: z.object({ value: z.string() })
+      })
+    ).rejects.toMatchObject({ name: "GeminiJsonValidationError" });
+  });
+
   it("streams text chunks", async () => {
     const adapter = new GeminiTextAdapter({ apiKey: "test-key", textModel: "gemini-stream" });
     (adapter as any).ai = {

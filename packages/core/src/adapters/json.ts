@@ -29,27 +29,30 @@ export class AdapterJsonValidationError extends Error {
     rootKeys: string[],
     validationMessage: string,
     rawText: string,
-    parsedObject: unknown
+    parsedObject: unknown,
+    validationIssues?: unknown[]
   ) {
     super(
       `${providerLabel} JSON validation failed${purpose ? ` for ${purpose}` : ""}. Root keys: ${rootKeys.join(", ") || "(none)"}. ${validationMessage}`
     );
     this.name = `${providerLabel}JsonValidationError`;
     this.context = {
-      purpose,
       rootKeys,
       validationMessage,
       rawText,
-      parsedObject
+      parsedObject,
+      ...(purpose ? { purpose } : {}),
+      ...(validationIssues ? { validationIssues } : {})
     };
   }
 
   readonly context: {
-    purpose?: string | undefined;
+    purpose?: string;
     rootKeys: string[];
     validationMessage: string;
     rawText: string;
     parsedObject: unknown;
+    validationIssues?: unknown[];
   };
 }
 
@@ -116,8 +119,32 @@ export function parseSchemaWithContext<T>(
     const rootKeys =
       value && typeof value === "object" && !Array.isArray(value) ? Object.keys(value as Record<string, unknown>) : [];
     const message = error instanceof Error ? error.message : "Unknown schema validation error.";
-    throw new AdapterJsonValidationError(providerLabel, purpose, rootKeys, message, rawText, value);
+    throw new AdapterJsonValidationError(
+      providerLabel,
+      purpose,
+      rootKeys,
+      message,
+      rawText,
+      value,
+      validationIssuesFrom(error)
+    );
   }
+}
+
+export function validationIssuesFrom(error: unknown): unknown[] | undefined {
+  if (!error || typeof error !== "object") {
+    return undefined;
+  }
+  const issues: unknown[] = [];
+  const direct = (error as { issues?: unknown }).issues;
+  if (Array.isArray(direct)) {
+    issues.push(...direct);
+  }
+  const nested = (error as { context?: { validationIssues?: unknown } }).context?.validationIssues;
+  if (Array.isArray(nested)) {
+    issues.push(...nested);
+  }
+  return issues.length > 0 ? issues : undefined;
 }
 
 function jsonObjectCandidates(text: string): string[] {

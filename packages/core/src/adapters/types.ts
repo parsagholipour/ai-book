@@ -1,5 +1,5 @@
 import type { ZodType } from "zod";
-import type { TextModelSelection } from "../schemas/book.js";
+import type { ModelTier, TextModelSelection } from "../schemas/book.js";
 
 /** A tool invocation requested by the model during a generateWithTools call. */
 export type ToolCall = {
@@ -35,18 +35,63 @@ export const PAGE_QA_TRIGGER_REASONS = [
 
 export type PageQaTriggerReason = (typeof PAGE_QA_TRIGGER_REASONS)[number];
 
-/**
- * A deliberately closed provider-log payload. It has no free-form string
- * field, so page prose, reviewer feedback, and prompts cannot accidentally be
- * copied into `ProviderCallLog.metadata` with the diagnostics.
- */
-export type ProviderCallMetadata = {
+/** A deliberately closed page-QA provider-log payload with no prose fields. */
+export type PageQaProviderCallMetadata = {
   qaTriggerReasons: PageQaTriggerReason[];
   /** Candidate produced by this call; the original draft is candidate 1. */
   qaCandidateNumber: number;
   /** One less than the candidate number; the original draft has no rewrite. */
   qaRewriteNumber: number;
 };
+
+/** One physical provider attempt within a generated chapter-brief call. */
+export type ChapterBriefProviderCallMetadata = {
+  chapterBriefLogicalCallId: string;
+  chapterBriefTier: ModelTier;
+  chapterBriefChapterIndex: number;
+  chapterBriefPageStart: number;
+  chapterBriefPageEnd: number;
+  /** One-based physical JSON attempt, including schema repairs. */
+  chapterBriefAttempt: number;
+  /** Initial attempt plus the bounded schema-repair allowance. */
+  chapterBriefMaxAttempts: number;
+  /**
+   * Present on physical attempts after a schema-validation failure.
+   * Absent on the first attempt and on JSON-syntax repair attempts.
+   */
+  chapterBriefSchemaRepair?: boolean;
+};
+
+export type ProviderCallMetadata = PageQaProviderCallMetadata | ChapterBriefProviderCallMetadata;
+
+export function isPageQaProviderCallMetadata(
+  value: ProviderCallMetadata | undefined
+): value is PageQaProviderCallMetadata {
+  return value !== undefined && "qaTriggerReasons" in value;
+}
+
+export function isChapterBriefProviderCallMetadata(
+  value: ProviderCallMetadata | undefined
+): value is ChapterBriefProviderCallMetadata {
+  return value !== undefined && "chapterBriefLogicalCallId" in value;
+}
+
+/** Stamp physical attempt fields on chapter-brief provider-call metadata. */
+export function stampChapterBriefPhysicalAttempt(
+  metadata: ProviderCallMetadata | undefined,
+  attempt: { index: number; maxAttempts: number; schemaRepair: boolean }
+): ProviderCallMetadata | undefined {
+  if (!isChapterBriefProviderCallMetadata(metadata)) {
+    return metadata;
+  }
+  const { chapterBriefSchemaRepair: _ignored, ...rest } = metadata;
+  return {
+    ...rest,
+    chapterBriefAttempt: attempt.index,
+    chapterBriefMaxAttempts: attempt.maxAttempts,
+    ...(attempt.schemaRepair ? { chapterBriefSchemaRepair: true } : {})
+  };
+}
 
 export type GenerateTextOptions = {
   messages: ChatMessage[];

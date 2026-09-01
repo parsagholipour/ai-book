@@ -120,10 +120,10 @@ function modelPageBeat(pageIndex: number, chapterIndex: number) {
   return {
     pageIndex,
     chapterIndex,
-    purpose: `Advance the book on page ${pageIndex}.`,
-    beat: `A concrete turn for page ${pageIndex}.`,
+    purpose: `Expose a distinct consequence through the decision assigned to page ${pageIndex}.`,
+    beat: `Jack changes course when the chapel bell marks stage ${pageIndex} of his escape.`,
     requiredContinuity: [],
-    endingPressure: `A reason page ${pageIndex + 1} must continue.`
+    endingPressure: "That choice reveals the specific cost the following page must confront."
   };
 }
 
@@ -269,12 +269,13 @@ describe("chapter brief first-page contract", () => {
   });
 
   it("leaves a later chapter's brief unchanged", async () => {
-    const capture = capturingJsonModel(briefResponse([20, 21], 2));
+    const laterChapter = chunkedPlan.chapters[chunkedPlan.chapters.length - 1]!;
+    const capture = capturingJsonModel(briefResponse([20, 21], laterChapter.index));
 
     await generateChapterBrief({
       input: chunkedInput,
       plan: chunkedPlan,
-      chapter: chunkedPlan.chapters[chunkedPlan.chapters.length - 1]!,
+      chapter: laterChapter,
       chapterPageStart: 20,
       chapterPageEnd: 21,
       textModel: capture.model

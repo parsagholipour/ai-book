@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import {
   createProjectSchema,
   FakeTextModelAdapter,
   FallbackTextModelAdapter,
+  generateJsonWithRetry,
   geminiImageReferenceLimit,
+  stampChapterBriefPhysicalAttempt,
   LiveGenerationTextModelAdapter,
   PREMIUM_COVER_IMAGE_MODEL,
   PREMIUM_FALLBACK_IMAGE_MODEL,
@@ -136,6 +139,177 @@ describe("LoggingTextModelAdapter live selection logging", () => {
       qaRewriteNumber: 2
     });
     expect(JSON.stringify(metadata)).not.toContain("Reader-facing draft content");
+  });
+
+  it("attributes chapter-brief repairs to one logical call in provider rows and run logs", async () => {
+    const fake = new FakeTextModelAdapter();
+    let call = 0;
+    const inner: TextModelAdapter = {
+      generateText: (options) => fake.generateText(options),
+      async generateJson(options) {
+        call += 1;
+        if (call === 1) {
+          throw Object.assign(new Error("Full validation detail retained for the provider log"), {
+            name: "GeminiJsonValidationError",
+            provider: "gemini",
+            model: "mechanical-model",
+            usage: { promptTokens: 40, outputTokens: 8 },
+            context: {
+              validationIssues: [
+                {
+                  code: "custom",
+                  params: { pageMapResponseViolation: { code: "PAGE_NOT_OBJECT", indexes: [4, 5, 6] } }
+                }
+              ]
+            }
+          });
+        }
+        const data = options.schema.parse({ value: "repaired" });
+        return {
+          data,
+          text: JSON.stringify(data),
+          provider: "gemini",
+          model: "mechanical-model",
+          usage: { promptTokens: 45, outputTokens: 9 }
+        };
+      },
+      streamText: () => fake.streamText(),
+      generateWithTools: (options) => fake.generateWithTools(options)
+    };
+    const append = vi.fn().mockResolvedValue("2026-01-01T00:00:00.000Z");
+    const logged = new LoggingTextModelAdapter(
+      inner,
+      { filePath: "/tmp/logged-adapters-test.jsonl", append },
+      undefined,
+      "project-1",
+      { provider: "gemini", model: "mechanical-model" }
+    );
+    const providerCallMetadata = {
+      chapterBriefLogicalCallId: "logical-call-logged-0001",
+      chapterBriefTier: "premium" as const,
+      chapterBriefChapterIndex: 2,
+      chapterBriefPageStart: 4,
+      chapterBriefPageEnd: 6,
+      chapterBriefAttempt: 1,
+      chapterBriefMaxAttempts: 3
+    };
+
+    await generateJsonWithRetry(logged, {
+      schema: z.object({ value: z.string() }),
+      purpose: "generate-chapter-brief",
+      repairAttempts: 2,
+      providerCallMetadata,
+      annotatePhysicalAttempt: stampChapterBriefPhysicalAttempt,
+      messages: [{ role: "user", content: "Return the chapter brief." }]
+    });
+
+    expect(providerCallRows()).toHaveLength(2);
+    const metadata = providerCallRows().map((row) => row.metadata as Record<string, unknown>);
+    expect(metadata[0]).toMatchObject({
+      chapterBriefLogicalCallId: "logical-call-logged-0001",
+      chapterBriefTier: "premium",
+      chapterBriefAttempt: 1,
+      chapterBriefMaxAttempts: 3,
+      chapterBriefResponseInvalid: true,
+      chapterBriefViolationCodes: ["PAGE_NOT_OBJECT"]
+    });
+    expect(metadata[0]).not.toHaveProperty("chapterBriefExhausted");
+    expect(metadata[0]).not.toHaveProperty("chapterBriefSchemaRepair");
+    expect(metadata[1]).toMatchObject({
+      chapterBriefLogicalCallId: "logical-call-logged-0001",
+      chapterBriefAttempt: 2,
+      chapterBriefSchemaRepair: true,
+      chapterBriefRepairSucceeded: true
+    });
+    expect(append).toHaveBeenCalledWith(
+      "text.generateJson.request",
+      expect.objectContaining({
+        request: expect.objectContaining({
+          providerCallMetadata: expect.objectContaining({
+            chapterBriefLogicalCallId: "logical-call-logged-0001",
+            chapterBriefAttempt: 2,
+            chapterBriefSchemaRepair: true
+          })
+        })
+      })
+    );
+    expect(append).toHaveBeenCalledWith(
+      "text.generateJson.error",
+      expect.objectContaining({
+        error: expect.objectContaining({
+          message: "Full validation detail retained for the provider log",
+          context: expect.objectContaining({ validationIssues: expect.any(Array) })
+        })
+      })
+    );
+  });
+
+  it("does not mark a chapter-brief JSON parse error as an invalid page-map response", async () => {
+    const fake = new FakeTextModelAdapter();
+    let call = 0;
+    const inner: TextModelAdapter = {
+      generateText: (options) => fake.generateText(options),
+      async generateJson(options) {
+        call += 1;
+        if (call === 1) {
+          throw Object.assign(new Error("Unterminated string"), {
+            name: "GeminiJsonParseError",
+            provider: "gemini",
+            model: "mechanical-model",
+            usage: { promptTokens: 40, outputTokens: 8 }
+          });
+        }
+        const data = options.schema.parse({ value: "repaired" });
+        return {
+          data,
+          text: JSON.stringify(data),
+          provider: "gemini",
+          model: "mechanical-model",
+          usage: { promptTokens: 45, outputTokens: 9 }
+        };
+      },
+      streamText: () => fake.streamText(),
+      generateWithTools: (options) => fake.generateWithTools(options)
+    };
+    const logged = new LoggingTextModelAdapter(
+      inner,
+      silentLogger(),
+      undefined,
+      "project-1",
+      { provider: "gemini", model: "mechanical-model" }
+    );
+
+    await generateJsonWithRetry(logged, {
+      schema: z.object({ value: z.string() }),
+      purpose: "generate-chapter-brief",
+      repairAttempts: 2,
+      providerCallMetadata: {
+        chapterBriefLogicalCallId: "logical-call-logged-0001",
+        chapterBriefTier: "premium",
+        chapterBriefChapterIndex: 2,
+        chapterBriefPageStart: 4,
+        chapterBriefPageEnd: 6,
+        chapterBriefAttempt: 1,
+        chapterBriefMaxAttempts: 3
+      },
+      annotatePhysicalAttempt: stampChapterBriefPhysicalAttempt,
+      messages: [{ role: "user", content: "Return the chapter brief." }]
+    });
+
+    expect(providerCallRows()).toHaveLength(2);
+    const metadata = providerCallRows().map((row) => row.metadata as Record<string, unknown>);
+    expect(metadata[0]).toMatchObject({
+      chapterBriefLogicalCallId: "logical-call-logged-0001",
+      chapterBriefAttempt: 1
+    });
+    expect(metadata[0]).not.toHaveProperty("chapterBriefResponseInvalid");
+    expect(metadata[0]).not.toHaveProperty("chapterBriefExhausted");
+    expect(metadata[1]).toMatchObject({
+      chapterBriefLogicalCallId: "logical-call-logged-0001",
+      chapterBriefAttempt: 2
+    });
+    expect(metadata[1]).not.toHaveProperty("chapterBriefSchemaRepair");
+    expect(metadata[1]).not.toHaveProperty("chapterBriefRepairSucceeded");
   });
 
   it("records the model bound for the call in its request log", async () => {

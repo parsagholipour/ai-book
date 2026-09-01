@@ -1,5 +1,20 @@
-import type { GenerateTextOptions, ProviderCallMetadata, ScriptTokenWeights, Usage } from "@book-maker/core";
-import { PAGE_QA_TRIGGER_REASONS, calculateTextGenerationCost, estimateTokensByScript } from "@book-maker/core";
+import type {
+  ChapterBriefProviderCallMetadata,
+  GenerateTextOptions,
+  PageQaProviderCallMetadata,
+  ProviderCallMetadata,
+  ScriptTokenWeights,
+  Usage
+} from "@book-maker/core";
+import {
+  GENERATION_TEXT_MODEL_TIERS,
+  PAGE_QA_TRIGGER_REASONS,
+  calculateTextGenerationCost,
+  estimateTokensByScript,
+  isChapterBriefProviderCallMetadata,
+  isPageQaProviderCallMetadata,
+  pageMapResponseViolationCodesFromError
+} from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { jsonInputValue, jsonPayloadToRecord, serializeError } from "../runtime/serialization.js";
 
@@ -34,6 +49,8 @@ export async function recordProviderUsage(options: {
   fallbackPromptTokens?: number | null | undefined;
   fallbackOutputTokens?: number | null | undefined;
   providerCallMetadata?: ProviderCallMetadata | undefined;
+  /** Present only when this row settles a provider failure rather than a result. */
+  providerCallError?: unknown;
 }) {
   const exactPromptTokens = finiteTokenCount(options.usage?.promptTokens);
   const exactOutputTokens = finiteTokenCount(options.usage?.outputTokens);
@@ -50,7 +67,11 @@ export async function recordProviderUsage(options: {
     reasoningTokens === null
   ) {
     if (options.liveUsageId) {
-      await markLiveTextUsageFailed(options.liveUsageId, { durationMs: options.durationMs });
+      await markLiveTextUsageFailed(options.liveUsageId, {
+        durationMs: options.durationMs,
+        ...(options.providerCallError !== undefined ? { error: options.providerCallError } : {}),
+        ...optionalProviderCallMetadata(options.providerCallMetadata)
+      });
     }
     return;
   }
@@ -75,7 +96,10 @@ export async function recordProviderUsage(options: {
     provisional,
     promptTokensEstimated,
     outputTokensEstimated,
-    ...boundedProviderCallMetadata(options.providerCallMetadata),
+    ...boundedProviderCallMetadata(
+      options.providerCallMetadata,
+      options.providerCallError === undefined ? "success" : { error: options.providerCallError }
+    ),
     ...(reasoningTokens !== null ? { reasoningTokens } : {})
   } satisfies Prisma.InputJsonValue;
 
@@ -135,7 +159,8 @@ export async function recordProviderUsageFromError(options: {
     usage: providerUsage.usage,
     liveUsageId: options.liveUsageId,
     fallbackPromptTokens: options.fallbackPromptTokens,
-    providerCallMetadata: options.providerCallMetadata
+    ...optionalProviderCallMetadata(options.providerCallMetadata),
+    providerCallError: options.error
   });
 }
 
@@ -174,7 +199,7 @@ export async function beginLiveTextUsage(options: {
           outputTokensEstimated: true,
           startedAt: options.startedAt,
           maxTokens: options.options.maxTokens ?? null,
-          ...boundedProviderCallMetadata(options.options.providerCallMetadata)
+          ...boundedProviderCallMetadata(options.options.providerCallMetadata, "pending")
         } satisfies Prisma.InputJsonValue
       },
       select: { id: true }
@@ -187,24 +212,107 @@ export async function beginLiveTextUsage(options: {
 }
 
 const PAGE_QA_TRIGGER_REASON_SET = new Set<string>(PAGE_QA_TRIGGER_REASONS);
+const MODEL_TIER_SET = new Set<string>(GENERATION_TEXT_MODEL_TIERS);
 
 /** Runtime allow-listing keeps this metadata machine-only even across untyped callers. */
-function boundedProviderCallMetadata(value: ProviderCallMetadata | undefined): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+export function boundedProviderCallMetadata(
+  value: ProviderCallMetadata | undefined,
+  outcome: "pending" | "success" | { error: unknown } = "success"
+): Record<string, unknown> {
+  if (!value) {
     return {};
   }
-  const raw = value as unknown as Record<string, unknown>;
-  const qaTriggerReasons = Array.isArray(raw.qaTriggerReasons)
-    ? [...new Set(raw.qaTriggerReasons.filter(
-        (reason): reason is string => typeof reason === "string" && PAGE_QA_TRIGGER_REASON_SET.has(reason)
-      ))]
-    : [];
-  const qaCandidateNumber = positiveInteger(raw.qaCandidateNumber);
-  const qaRewriteNumber = positiveInteger(raw.qaRewriteNumber, true);
+  if (isChapterBriefProviderCallMetadata(value)) {
+    return boundedChapterBriefMetadata(value, outcome) ?? {};
+  }
+  if (!isPageQaProviderCallMetadata(value)) {
+    return {};
+  }
+  return boundedPageQaMetadata(value);
+}
+
+function boundedPageQaMetadata(value: PageQaProviderCallMetadata): Record<string, unknown> {
+  const qaTriggerReasons = [...new Set(value.qaTriggerReasons.filter(
+    (reason) => PAGE_QA_TRIGGER_REASON_SET.has(reason)
+  ))];
+  const qaCandidateNumber = positiveInteger(value.qaCandidateNumber);
+  const qaRewriteNumber = positiveInteger(value.qaRewriteNumber, true);
   if (qaTriggerReasons.length === 0 || qaCandidateNumber === null || qaRewriteNumber === null) {
     return {};
   }
   return { qaTriggerReasons, qaCandidateNumber, qaRewriteNumber };
+}
+
+function boundedChapterBriefMetadata(
+  value: ChapterBriefProviderCallMetadata,
+  outcome: "pending" | "success" | { error: unknown }
+): Record<string, unknown> | undefined {
+  const logicalCallId = boundedLogicalCallId(value.chapterBriefLogicalCallId);
+  const tier = MODEL_TIER_SET.has(value.chapterBriefTier) ? value.chapterBriefTier : undefined;
+  const chapterIndex = positiveInteger(value.chapterBriefChapterIndex);
+  const pageStart = positiveInteger(value.chapterBriefPageStart);
+  const pageEnd = positiveInteger(value.chapterBriefPageEnd);
+  const attempt = positiveInteger(value.chapterBriefAttempt);
+  const maxAttempts = positiveInteger(value.chapterBriefMaxAttempts);
+  if (
+    !logicalCallId
+    || !tier
+    || chapterIndex === null
+    || pageStart === null
+    || pageEnd === null
+    || pageEnd < pageStart
+    || attempt === null
+    || maxAttempts === null
+    || maxAttempts > 3
+    || attempt > maxAttempts
+  ) {
+    return undefined;
+  }
+
+  const metadata: Record<string, unknown> = {
+    chapterBriefLogicalCallId: logicalCallId,
+    chapterBriefTier: tier,
+    chapterBriefChapterIndex: chapterIndex,
+    chapterBriefPageStart: pageStart,
+    chapterBriefPageEnd: pageEnd,
+    chapterBriefAttempt: attempt,
+    chapterBriefMaxAttempts: maxAttempts,
+    ...(value.chapterBriefSchemaRepair === true ? { chapterBriefSchemaRepair: true } : {})
+  };
+  if (outcome === "success") {
+    if (attempt > 1 && value.chapterBriefSchemaRepair === true) {
+      metadata.chapterBriefRepairSucceeded = true;
+    }
+    return metadata;
+  }
+  if (outcome === "pending") {
+    return metadata;
+  }
+
+  const violationCodes = pageMapResponseViolationCodesFromError(outcome.error);
+  if (violationCodes.length === 0) {
+    return metadata;
+  }
+  metadata.chapterBriefResponseInvalid = true;
+  metadata.chapterBriefViolationCodes = violationCodes;
+  if (attempt === maxAttempts) {
+    metadata.chapterBriefExhausted = true;
+  }
+  return metadata;
+}
+
+function boundedLogicalCallId(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return /^[a-zA-Z0-9][a-zA-Z0-9_-]{7,79}$/.test(trimmed) ? trimmed : undefined;
+}
+
+export function optionalProviderCallMetadata(
+  metadata: ProviderCallMetadata | undefined
+): { providerCallMetadata: ProviderCallMetadata } | Record<string, never> {
+  return metadata === undefined ? {} : { providerCallMetadata: metadata };
 }
 
 function positiveInteger(value: unknown, allowZero = false): number | null {
@@ -274,7 +382,11 @@ export async function settleLiveTextUsageEstimate(
 
 export async function markLiveTextUsageFailed(
   liveUsageId: string | undefined,
-  options: { durationMs: number | null; error?: unknown } = { durationMs: null }
+  options: {
+    durationMs: number | null;
+    error?: unknown;
+    providerCallMetadata?: ProviderCallMetadata;
+  } = { durationMs: null }
 ) {
   if (!liveUsageId) {
     return;
@@ -293,6 +405,10 @@ export async function markLiveTextUsageFailed(
           ...jsonPayloadToRecord(current?.metadata),
           liveStatus: "failed",
           provisional: true,
+          ...boundedProviderCallMetadata(
+            options.providerCallMetadata,
+            options.error === undefined ? "pending" : { error: options.error }
+          ),
           ...(options.error ? { error: serializeError(options.error) } : {})
         })
       }

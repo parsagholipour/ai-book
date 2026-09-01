@@ -1,5 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import type { TextModelAdapter } from "../adapters/types.js";
+import { modelTierForInput } from "../adapters/modelTiers.js";
+import { stampChapterBriefPhysicalAttempt, type TextModelAdapter } from "../adapters/types.js";
 import { mapWithConcurrency } from "../concurrency.js";
 import { range } from "../collections.js";
 import { CONTINUITY_NOTE_PROMPT_LIMITS, continuityNotesForPrompt } from "../context/contextPack.js";
@@ -8,6 +10,21 @@ import {
   targetLanguagePayload
 } from "../prompting/language.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
+import {
+  PageMapResponseInvalidError,
+  generatedChapterBriefResponseSchema,
+  pageMapResponseInvalidErrorFromSchemaError,
+  type GeneratedChapterBriefContract
+} from "./generatedChapterBriefAcceptance.js";
+import {
+  MODEL_PAGE_ARRAY_KEYS,
+  MODEL_PAGE_BEAT_KEYS,
+  MODEL_PAGE_CONTINUITY_KEYS,
+  MODEL_PAGE_ENDING_PRESSURE_KEYS,
+  MODEL_PAGE_IMAGE_MOMENT_KEYS,
+  MODEL_PAGE_INDEX_KEYS,
+  MODEL_PAGE_PURPOSE_KEYS
+} from "./generatedPageResponse.js";
 import {
   FIRST_PAGE_ENDING_PRESSURE,
   LAST_PAGE_ENDING_PRESSURE,
@@ -43,8 +60,7 @@ import {
   sanitizePageBriefForCitationContract,
   stringArrayField,
   stringField,
-  styleGuidancePayload,
-  unwrapModelObject
+  styleGuidancePayload
 } from "./pagesShared.js";
 
 /**
@@ -100,6 +116,7 @@ export type RepairPageBriefOptions = ReviewPageOptions & {
 export const REWRITE_TEMPERATURE_CEILING = 0.65;
 
 const CHUNKED_PAGE_MAP_THRESHOLD = 24;
+const CHAPTER_BRIEF_REPAIR_ATTEMPTS = 2;
 
 const wholeBookPageMapSchema = z.object({
   pages: z.array(pageProductionBeatSchema).min(1)
@@ -209,6 +226,11 @@ export async function generateWholeBookPageMap(options: GeneratePageMapOptions):
 
 export async function generateChapterBrief(options: GenerateChapterBriefOptions): Promise<ChapterBrief> {
   const expectedPages = range(options.chapterPageStart, options.chapterPageEnd);
+  const contract: GeneratedChapterBriefContract = {
+    chapterIndex: options.chapter.index,
+    pageRange: { start: options.chapterPageStart, end: options.chapterPageEnd },
+    allowCompleteLocalPageNumbering: true
+  };
   // This brief is chapter-scoped, so only the chapter whose absolute page range
   // covers global page 1 opens the book; telling every chapter to hook a first
   // impression would hook a reader who is already twenty pages in. The test is
@@ -218,69 +240,85 @@ export async function generateChapterBrief(options: GenerateChapterBriefOptions)
   // is a range predicate and not an index one.
   const firstPage = firstPageBriefFieldsForRange(options, options.chapterPageStart, options.chapterPageEnd);
   const citation = citationContractFields(options.researchNotes ?? options.plan.researchNotes);
-  const result = await generateJsonWithRetry(options.textModel, {
-    purpose: "generate-chapter-brief",
-    temperature: Math.min(0.7, options.input.temperature),
-    maxTokens: 5000,
-    schema: z.unknown(),
-    messages: [
-      {
-        role: "system",
-        content: [
-          "You are the production editor for a long-form book.",
-          "Create a practical chapter brief for the writer.",
-          "Every page in the requested range must receive a distinct page beat.",
-          "The beats must prevent filler, repetition, and generic endings.",
-          "Return exactly one root JSON object with chapterIndex, title, summary, pages, and continuityFocus.",
-          "Use pages for the page beat array; do not return pageBeats as the root shape.",
-          ...OPENING_PAGE_SCOPE_RULES,
-          ...citation.rules,
-          ...firstPage.rules,
-          ...targetLanguageGenerationGuidance(options.input.language),
-          ...plannerToneRules(options.input)
-        ].join(" ")
+  try {
+    const result = await generateJsonWithRetry(options.textModel, {
+      purpose: "generate-chapter-brief",
+      providerCallMetadata: {
+        chapterBriefLogicalCallId: randomUUID(),
+        chapterBriefTier: modelTierForInput(options.input),
+        chapterBriefChapterIndex: contract.chapterIndex,
+        chapterBriefPageStart: contract.pageRange.start,
+        chapterBriefPageEnd: contract.pageRange.end,
+        chapterBriefAttempt: 1,
+        chapterBriefMaxAttempts: CHAPTER_BRIEF_REPAIR_ATTEMPTS + 1
       },
-      {
-        role: "user",
-        content: JSON.stringify(
-          {
-            language: targetLanguagePayload(options.input.language),
-            book: {
-              title: options.plan.title,
-              premise: options.plan.premise,
-              audience: options.plan.audience,
-              category: options.input.category,
-              subcategory: options.input.subcategory,
-              voiceGuide: options.plan.voiceGuide,
-              antiAiRules: options.plan.antiAiRules,
-              continuityRules: options.plan.continuityRules,
-              styleGuidance: styleGuidancePayload(options.input)
+      temperature: Math.min(0.7, options.input.temperature),
+      maxTokens: 5000,
+      schema: generatedChapterBriefResponseSchema(contract),
+      repairAttempts: CHAPTER_BRIEF_REPAIR_ATTEMPTS,
+      annotatePhysicalAttempt: stampChapterBriefPhysicalAttempt,
+      messages: [
+        {
+          role: "system",
+          content: [
+            "You are the production editor for a long-form book.",
+            "Create a practical chapter brief for the writer.",
+            "Every page in the requested range must receive a distinct page beat.",
+            "The beats must prevent filler, repetition, and generic endings.",
+            "Return exactly one root JSON object with chapterIndex, title, summary, pages, and continuityFocus.",
+            "Use pages for the page beat array; do not return pageBeats as the root shape.",
+            ...OPENING_PAGE_SCOPE_RULES,
+            ...citation.rules,
+            ...firstPage.rules,
+            ...targetLanguageGenerationGuidance(options.input.language),
+            ...plannerToneRules(options.input)
+          ].join(" ")
+        },
+        {
+          role: "user",
+          content: JSON.stringify(
+            {
+              language: targetLanguagePayload(options.input.language),
+              book: {
+                title: options.plan.title,
+                premise: options.plan.premise,
+                audience: options.plan.audience,
+                category: options.input.category,
+                subcategory: options.input.subcategory,
+                voiceGuide: options.plan.voiceGuide,
+                antiAiRules: options.plan.antiAiRules,
+                continuityRules: options.plan.continuityRules,
+                styleGuidance: styleGuidancePayload(options.input)
+              },
+              ...firstPage.payload,
+              ...citation.payload,
+              chapter: options.chapter,
+              pageRange: {
+                start: options.chapterPageStart,
+                end: options.chapterPageEnd,
+                globalPageIndexes: expectedPages
+              },
+              instruction:
+                "Return one beat per page. Each beat needs purpose, concrete action or explanation, required continuity, ending pressure, and optional image moment."
             },
-            ...firstPage.payload,
-            ...citation.payload,
-            chapter: options.chapter,
-            pageRange: {
-              start: options.chapterPageStart,
-              end: options.chapterPageEnd,
-              globalPageIndexes: expectedPages
-            },
-            instruction:
-              "Return one beat per page. Each beat needs purpose, concrete action or explanation, required continuity, ending pressure, and optional image moment."
-          },
-          null,
-          2
-        )
-      }
-    ]
-  });
+            null,
+            2
+          )
+        }
+      ]
+    });
 
-  const brief = parseChapterBriefFromModel(result.data, options);
-  const actualPages = new Set(brief.pages.map((page) => page.pageIndex));
-  const missingPages = expectedPages.filter((pageIndex) => !actualPages.has(pageIndex));
-  if (missingPages.length > 0) {
-    throw new Error(`Chapter brief missing page beats: ${missingPages.join(", ")}`);
+    return applyChapterContextToBrief(result.data, options);
+  } catch (error) {
+    const typed =
+      error instanceof PageMapResponseInvalidError
+        ? error
+        : pageMapResponseInvalidErrorFromSchemaError(error, contract);
+    if (typed) {
+      throw typed;
+    }
+    throw error;
   }
-  return brief;
 }
 
 export async function repairPageBrief(options: RepairPageBriefOptions): Promise<PageProductionBeat> {
@@ -666,9 +704,7 @@ function normalizeRepairedPageBrief(raw: unknown, options: RepairPageBriefOption
   const parsed = pageProductionBeatSchema.parse(raw);
   const chapterIndex = options.chapter?.index ?? options.pageBrief.chapterIndex;
   const purpose = parsed.purpose.trim() || `Advance page ${options.pageIndex} with a non-repetitive page assignment.`;
-  const beat =
-    parsed.beat.trim() ||
-    `Add a distinct concrete beat for page ${options.pageIndex} that does not restate previous pages or the rejected draft.`;
+  const beat = parsed.beat.trim() || `Add a distinct concrete beat for page ${options.pageIndex} that does not restate previous pages or the rejected draft.`;
   const rawEndingPressure = parsed.endingPressure.trim();
   const endingPressure =
     rawEndingPressure && !hasPageBriefMetaLanguage(rawEndingPressure)
@@ -720,58 +756,18 @@ function repairedEndingPressureFallback(options: RepairPageBriefOptions): string
   return "The new material establishes one evidence-bound implication for the central claim.";
 }
 
-function parseChapterBriefFromModel(raw: unknown, options: GenerateChapterBriefOptions): ChapterBrief {
-  const unwrapped = unwrapModelObject(raw, ["chapterBrief", "brief", "productionBrief", "data", "result"]);
-  const pageBeats = findPageBeatArray(unwrapped) ?? findPageBeatArray(raw);
-  if (!pageBeats || pageBeats.length === 0) {
-    throw new Error(
-      `Chapter brief did not include a usable pages/pageBeats array. Root keys: ${objectKeys(raw)}. Chapter keys: ${objectKeys(unwrapped)}.`
-    );
-  }
-
-  const chapterRecord = isRecord(unwrapped) ? unwrapped : {};
-  const fallbackRecord = isRecord(raw) ? raw : {};
-  const inferredChapterIndex =
-    numberField(chapterRecord, ["chapterIndex", "chapterNumber", "chapter"]) ??
-    numberField(fallbackRecord, ["chapterIndex", "chapterNumber", "chapter"]) ??
-    options.chapter.index;
-  const expectedPages = range(options.chapterPageStart, options.chapterPageEnd);
-
-  const canonical = {
-    chapterIndex: inferredChapterIndex,
-    title:
-      stringField(chapterRecord, ["title", "chapterTitle", "name"]) ??
-      stringField(fallbackRecord, ["title", "chapterTitle", "name"]) ??
-      options.chapter.title,
-    summary:
-      stringField(chapterRecord, ["summary", "chapterSummary", "overview", "description"]) ??
-      stringField(fallbackRecord, ["summary", "chapterSummary", "overview", "description"]) ??
-      options.chapter.summary,
-    pages: pageBeats.map((page, index) => normalizeModelPageBeat(page, index, expectedPages, inferredChapterIndex)),
-    continuityFocus:
-      stringArrayField(chapterRecord, ["continuityFocus", "continuity", "continuityNotes", "requiredContinuity"]) ??
-      stringArrayField(fallbackRecord, ["continuityFocus", "continuity", "continuityNotes", "requiredContinuity"]) ??
-      []
-  };
-
-  return applyChapterContextToBrief(chapterBriefSchema.parse(canonical), options);
-}
-
 function applyChapterContextToBrief(brief: ChapterBrief, options: GenerateChapterBriefOptions): ChapterBrief {
-  const expectedPages = range(options.chapterPageStart, options.chapterPageEnd);
-  const usesLocalPageNumbers =
-    brief.pages.length === expectedPages.length && brief.pages.every((page, index) => page.pageIndex === index + 1);
   return {
     ...brief,
     chapterIndex: options.chapter.index,
     title: brief.title.trim() || options.chapter.title,
     summary: brief.summary.trim() || options.chapter.summary,
-    pages: brief.pages.map((page, index) =>
+    pages: brief.pages.map((page) =>
       finalizeProductionPageBeat(
         {
           ...page,
           chapterIndex: options.chapter.index,
-          pageIndex: usesLocalPageNumbers ? expectedPages[index]! : page.pageIndex
+          pageIndex: page.pageIndex
         },
         options.researchNotes ?? options.plan.researchNotes,
         {
@@ -793,24 +789,21 @@ function normalizeModelPageBeat(
   const record = isRecord(value) ? value : {};
   const textBeat = typeof value === "string" ? value : undefined;
   const pageIndex =
-    numberField(record, ["pageIndex", "pageNumber", "page", "index", "globalPageIndex"]) ??
-    expectedPages[index] ??
-    expectedPages[0]! + index;
-  const purpose = stringField(record, ["purpose", "pagePurpose", "goal", "objective", "function"]) ?? textBeat;
-  const beat =
-    stringField(record, ["beat", "pageBeat", "action", "event", "scene", "description", "summary", "content"]) ??
-    purpose;
+    numberField(record, [...MODEL_PAGE_INDEX_KEYS]) ?? expectedPages[index] ?? expectedPages[0]! + index;
+  const purpose = stringField(record, [...MODEL_PAGE_PURPOSE_KEYS]) ?? textBeat;
+  const beat = stringField(record, [...MODEL_PAGE_BEAT_KEYS]) ?? purpose;
+  const imageMoment = stringField(record, [...MODEL_PAGE_IMAGE_MOMENT_KEYS]);
 
   return {
     pageIndex,
     chapterIndex,
     purpose: purpose ?? `Advance the chapter on page ${pageIndex}.`,
     beat: beat ?? `Advance the chapter with a concrete, non-repetitive beat on page ${pageIndex}.`,
-    requiredContinuity: stringArrayField(record, ["requiredContinuity", "continuity", "continuityNotes"]) ?? [],
+    requiredContinuity: stringArrayField(record, [...MODEL_PAGE_CONTINUITY_KEYS]) ?? [],
     endingPressure:
-      stringField(record, ["endingPressure", "nextPagePressure", "hook", "transition", "endingHook", "pageTurn"]) ??
+      stringField(record, [...MODEL_PAGE_ENDING_PRESSURE_KEYS]) ??
       "Leave a concrete reason for the next page to continue.",
-    imageMoment: stringField(record, ["imageMoment", "visualMoment", "imagePrompt", "illustrationMoment"])
+    ...(imageMoment ? { imageMoment } : {})
   };
 }
 
@@ -819,7 +812,7 @@ function findPageBeatArray(value: unknown): unknown[] | undefined {
     return undefined;
   }
 
-  for (const key of ["pages", "pageBeats", "page_beats", "pagebeats", "beats", "pagePlans", "page_plans"]) {
+  for (const key of MODEL_PAGE_ARRAY_KEYS) {
     const candidate = arrayLikeField(value, key);
     if (candidate && (key.toLowerCase().includes("page") || looksLikePageBeatArray(candidate))) {
       return candidate;

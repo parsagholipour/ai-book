@@ -11,6 +11,7 @@ vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma, Prisma: {} }));
 
 import {
   beginLiveTextUsage,
+  boundedProviderCallMetadata,
   durationBetweenTimestamps,
   estimateTextRequestTokens,
   estimateTokenCountFromText,
@@ -41,6 +42,32 @@ const baseCall = {
 
 const createdData = () => mocks.prisma.providerCallLog.create.mock.calls[0]?.[0]?.data as Record<string, unknown>;
 const updatedData = () => mocks.prisma.providerCallLog.update.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+
+const chapterBriefMetadata = (attempt: number, maxAttempts = 3) => ({
+  chapterBriefLogicalCallId: "logical-call-0001",
+  chapterBriefTier: "premium" as const,
+  chapterBriefChapterIndex: 2,
+  chapterBriefPageStart: 4,
+  chapterBriefPageEnd: 6,
+  chapterBriefAttempt: attempt,
+  chapterBriefMaxAttempts: maxAttempts
+});
+
+const invalidChapterBriefError = () => Object.assign(new Error("Detailed provider validation failure"), {
+  name: "GeminiJsonValidationError",
+  context: {
+    validationIssues: [
+      {
+        code: "custom",
+        params: { pageMapResponseViolation: { code: "PAGE_NOT_OBJECT", indexes: [4, 5, 6] } }
+      },
+      {
+        code: "custom",
+        params: { pageMapResponseViolation: { code: "PURPOSE_NOT_SUBSTANTIVE", indexes: [4] } }
+      }
+    ]
+  }
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -126,6 +153,118 @@ describe("recordProviderUsage", () => {
     const data = createdData();
     expect(data.costHint).toBe(0.968);
     expect(data.metadata).toMatchObject({ reasoningTokens: 10 });
+  });
+
+  it("records chapter-brief schema-repair success on the successful physical attempt", async () => {
+    await recordProviderUsage({
+      ...baseCall,
+      purpose: "generate-chapter-brief",
+      usage: { promptTokens: 100, outputTokens: 20 },
+      providerCallMetadata: {
+        ...chapterBriefMetadata(2),
+        chapterBriefSchemaRepair: true
+      }
+    });
+
+    expect(createdData().metadata).toMatchObject({
+      ...chapterBriefMetadata(2),
+      chapterBriefSchemaRepair: true,
+      chapterBriefRepairSucceeded: true
+    });
+  });
+
+  it("does not treat JSON syntax repair as chapter-brief schema-repair success", async () => {
+    await recordProviderUsage({
+      ...baseCall,
+      purpose: "generate-chapter-brief",
+      usage: { promptTokens: 100, outputTokens: 20 },
+      providerCallMetadata: chapterBriefMetadata(2)
+    });
+
+    const metadata = createdData().metadata as Record<string, unknown>;
+    expect(metadata).toMatchObject(chapterBriefMetadata(2));
+    expect(metadata).not.toHaveProperty("chapterBriefRepairSucceeded");
+    expect(metadata).not.toHaveProperty("chapterBriefSchemaRepair");
+  });
+
+  it("does not mark a JSON parse error as an invalid chapter-brief response", async () => {
+    await recordProviderUsage({
+      ...baseCall,
+      purpose: "generate-chapter-brief",
+      usage: { promptTokens: 100, outputTokens: 20 },
+      providerCallMetadata: chapterBriefMetadata(3),
+      providerCallError: Object.assign(new Error("Unterminated string"), {
+        name: "GeminiJsonParseError"
+      })
+    });
+
+    const metadata = createdData().metadata as Record<string, unknown>;
+    expect(metadata).toMatchObject(chapterBriefMetadata(3));
+    expect(metadata).not.toHaveProperty("chapterBriefResponseInvalid");
+    expect(metadata).not.toHaveProperty("chapterBriefViolationCodes");
+    expect(metadata).not.toHaveProperty("chapterBriefExhausted");
+  });
+
+  it("records invalid-response codes and marks only an exhausted final repair attempt", async () => {
+    await recordProviderUsage({
+      ...baseCall,
+      purpose: "generate-chapter-brief",
+      usage: { promptTokens: 100, outputTokens: 20 },
+      providerCallMetadata: chapterBriefMetadata(3),
+      providerCallError: invalidChapterBriefError()
+    });
+
+    expect(createdData().metadata).toMatchObject({
+      ...chapterBriefMetadata(3),
+      chapterBriefResponseInvalid: true,
+      chapterBriefViolationCodes: ["PAGE_NOT_OBJECT", "PURPOSE_NOT_SUBSTANTIVE"],
+      chapterBriefExhausted: true
+    });
+  });
+
+  it("records violation codes from a direct ZodError.issues array", async () => {
+    await recordProviderUsage({
+      ...baseCall,
+      purpose: "generate-chapter-brief",
+      usage: { promptTokens: 100, outputTokens: 20 },
+      providerCallMetadata: chapterBriefMetadata(3),
+      providerCallError: Object.assign(new Error("[\n  {\n    \"code\": \"custom\"\n  }\n]"), {
+        name: "ZodError",
+        issues: [
+          {
+            code: "custom",
+            params: { pageMapResponseViolation: { code: "PAGE_NOT_OBJECT", indexes: [4, 5, 6] } }
+          },
+          {
+            code: "custom",
+            params: { pageMapResponseViolation: { code: "PURPOSE_NOT_SUBSTANTIVE", indexes: [4] } }
+          }
+        ]
+      })
+    });
+
+    expect(createdData().metadata).toMatchObject({
+      chapterBriefResponseInvalid: true,
+      chapterBriefViolationCodes: ["PAGE_NOT_OBJECT", "PURPOSE_NOT_SUBSTANTIVE"],
+      chapterBriefExhausted: true
+    });
+  });
+
+  it("drops unbounded chapter-brief metadata while retaining the QA metadata branch", () => {
+    expect(boundedProviderCallMetadata({
+      ...chapterBriefMetadata(1),
+      chapterBriefLogicalCallId: "contains spaces and prompt prose",
+      secretPrompt: "do not persist"
+    } as never, "pending")).toEqual({});
+    expect(boundedProviderCallMetadata({
+      qaTriggerReasons: ["style"],
+      qaCandidateNumber: 2,
+      qaRewriteNumber: 1
+    })).toEqual({
+      qaTriggerReasons: ["style"],
+      qaCandidateNumber: 2,
+      qaRewriteNumber: 1
+    });
   });
 
   it("leaves costHint null on estimated tokens, so provisional rows never read as spend", async () => {

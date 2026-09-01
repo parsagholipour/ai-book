@@ -211,15 +211,6 @@ export class GeminiTextAdapter implements TextModelAdapter {
     } catch (error) {
       throwWithProviderUsage(error, { provider: "gemini", model: this.model, usage });
     }
-    if (options.purpose === "generate-chapter-brief") {
-      return {
-        data: parsedObject as T,
-        text,
-        model: this.model,
-        provider: "gemini",
-        ...(usage ? { usage } : {})
-      };
-    }
     try {
       return {
         data: parseSchemaWithContext("Gemini", options.schema, parsedObject, options.purpose, text),

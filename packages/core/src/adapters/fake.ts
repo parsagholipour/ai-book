@@ -12,6 +12,7 @@ import { DEFAULT_TTS_CHANNELS, DEFAULT_TTS_SAMPLE_RATE, pcm16DurationMs } from "
 import { COVER_DESIGN_SELECTION_PURPOSE, DEFAULT_COVER_DESIGN_ID } from "../generation/coverDesigns.js";
 import { COPYRIGHT_SAFE_IMAGE_PROMPT_PURPOSE } from "../generation/copyrightSafeImagePrompt.js";
 import { fakeEditAdherence } from "./fakeEditAdherence.js";
+import { parseSchemaWithContext } from "./json.js";
 import type {
   EmbeddingAdapter,
   GenerateJsonOptions,
@@ -63,7 +64,7 @@ export class FakeTextModelAdapter implements TextModelAdapter {
     const text = JSON.stringify(data);
     await options.onOutputTextChunk?.(text);
     return {
-      data: options.schema.parse(data),
+      data: parseSchemaWithContext("Fake", options.schema, data, options.purpose, text),
       text,
       model: "fake-model",
       provider: "fake",

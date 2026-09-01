@@ -47,10 +47,12 @@ import {
 } from "./runLogging.js";
 import {
   beginLiveTextUsage,
+  boundedProviderCallMetadata,
   durationBetweenTimestamps,
   estimateTokenCountFromText,
   estimateTokenCountFromTextLength,
   maybeUpdateLiveTextOutput,
+  optionalProviderCallMetadata,
   recordProviderAudioCost,
   recordProviderImageCost,
   recordProviderUsage,
@@ -397,7 +399,7 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
     const requestAt = await this.logger.append("text.generateText.request", {
       callId,
       model: textModel,
-      request: logTextRequest(options)
+      request: logTextRequest(options, boundedProviderCallMetadata(options.providerCallMetadata, "pending"))
     });
     const liveUsage = await beginLiveTextUsage({
       projectId: options.projectId ?? this.projectId,
@@ -448,7 +450,7 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
             estimateTokenCountFromText(result.text),
             estimateTokenCountFromTextLength(responseCharacterCount)
           ),
-          providerCallMetadata: options.providerCallMetadata
+          ...optionalProviderCallMetadata(options.providerCallMetadata)
         });
         return result;
       }
@@ -462,7 +464,7 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
     const requestAt = await this.logger.append("text.generateJson.request", {
       callId,
       model: textModel,
-      request: logTextRequest(options)
+      request: logTextRequest(options, boundedProviderCallMetadata(options.providerCallMetadata, "pending"))
     });
     const liveUsage = await beginLiveTextUsage({
       projectId: options.projectId ?? this.projectId,
@@ -513,7 +515,7 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
             estimateTokenCountFromText(result.text),
             estimateTokenCountFromTextLength(responseCharacterCount)
           ),
-          providerCallMetadata: options.providerCallMetadata
+          ...optionalProviderCallMetadata(options.providerCallMetadata)
         });
         return result;
       }
@@ -527,7 +529,10 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
     const requestAt = await this.logger.append("text.generateWithTools.request", {
       callId,
       model: textModel,
-      request: { ...logTextRequest(options), tools: options.tools.map((tool) => tool.name) }
+      request: {
+        ...logTextRequest(options, boundedProviderCallMetadata(options.providerCallMetadata, "pending")),
+        tools: options.tools.map((tool) => tool.name)
+      }
     });
     const liveUsage = await beginLiveTextUsage({
       projectId: options.projectId ?? this.projectId,
@@ -564,7 +569,7 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
           liveUsageId: accounting.liveUsageId,
           fallbackPromptTokens: accounting.promptTokens,
           fallbackOutputTokens: estimateTokenCountFromText(result.text),
-          providerCallMetadata: options.providerCallMetadata
+          ...optionalProviderCallMetadata(options.providerCallMetadata)
         });
         return result;
       }
@@ -578,7 +583,7 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
     const requestAt = await this.logger.append("text.streamText.request", {
       callId,
       model: textModel,
-      request: logTextRequest(options)
+      request: logTextRequest(options, boundedProviderCallMetadata(options.providerCallMetadata, "pending"))
     });
     const liveUsage = await beginLiveTextUsage({
       projectId: options.projectId ?? this.projectId,

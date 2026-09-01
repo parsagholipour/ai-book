@@ -234,13 +234,6 @@ export abstract class OpenAIChatCompletionsTextAdapter implements TextModelAdapt
       throwWithProviderUsage(error, { provider: this.provider, model: this.model, usage });
     }
 
-    if (options.purpose === "generate-chapter-brief") {
-      return {
-        ...this.textResult(text, usage),
-        data: parsedObject as T
-      };
-    }
-
     try {
       return {
         ...this.textResult(text, usage),

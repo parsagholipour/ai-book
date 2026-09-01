@@ -1,7 +1,7 @@
 import {
   PAGE_QA_TRIGGER_REASONS,
   type PageQaTriggerReason,
-  type ProviderCallMetadata
+  type PageQaProviderCallMetadata
 } from "../adapters/types.js";
 import { hasSmartUnslopCandidates } from "./smartUnslop.js";
 
@@ -70,7 +70,7 @@ export function pageQaProviderCallMetadata(options: {
   report: RewriteReport;
   candidateNumber?: number | undefined;
   additionalReasons?: readonly PageQaTriggerReason[] | undefined;
-}): ProviderCallMetadata {
+}): PageQaProviderCallMetadata {
   const qaCandidateNumber = Math.max(2, Math.floor(options.candidateNumber ?? 2));
   return {
     qaTriggerReasons: orderedReasons([
