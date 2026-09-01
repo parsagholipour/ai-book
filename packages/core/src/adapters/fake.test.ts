@@ -287,3 +287,20 @@ describe("dry-run rotation tables", () => {
     });
   });
 });
+
+describe("manuscript structural review dry-run", () => {
+  it("returns an empty keep result so MOCK_AI books are not blocked", async () => {
+    const { MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE, structuralReviewResultSchema } = await import(
+      "../generation/manuscriptStructuralReview.js"
+    );
+    const result = await textModel.generateJson({
+      purpose: MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE,
+      schema: structuralReviewResultSchema,
+      messages: [
+        { role: "system", content: "structural review" },
+        { role: "user", content: "{}" }
+      ]
+    });
+    expect(result.data).toEqual({ clusters: [] });
+  });
+});

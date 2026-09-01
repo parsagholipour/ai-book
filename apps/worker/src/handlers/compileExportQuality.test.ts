@@ -69,18 +69,13 @@ vi.mock("@book-maker/core", async () => {
   return (await import("./testing/compileExportMocks.js")).coreModuleMock(actual);
 });
 
-import {
-  dedupeQualityIssues,
-  qualitySummaryMessage,
-  runBoundedChapterQualityReview
-} from "./compileExport.js";
+import { dedupeQualityIssues, qualitySummaryMessage } from "./compileExport.js";
 import { failedQaPageIndexesForCompile } from "./compileExportCitationRepair.js";
 import { repairPagesFromFinalQa } from "./compileExportRepair.js";
 import { finalQaRevisionsFor } from "../generation/tuning.js";
 
 /** The revision budget the fixtures run under: no tier recorded is balanced. */
 const BALANCED_FINAL_QA_REVISIONS = finalQaRevisionsFor({ mediaSettings: {} } as never);
-import { StopRequestedError } from "../runtime/jobTypes.js";
 import { mocks } from "./testing/compileExportMocks.js";
 
 const report = (score: number, approved = false): PageQualityReport =>
@@ -806,58 +801,6 @@ describe("repairPagesFromFinalQa", () => {
     // pages ship on a report the auditor never saw.
     expect(savedPageData().map((data) => data.status)).toEqual(["COMPLETED", "COMPLETED"]);
     expect(savedPageData().map((data) => data.qualityReport.stylePenalty)).toEqual([undefined, undefined]);
-  });
-});
-
-describe("runBoundedChapterQualityReview", () => {
-  const baseOptions = (pages: ExportPageForRepair[]) =>
-    ({
-      input: { language: "en", mediaSettings: {} },
-      plan: { title: "Book", chapters: [{ index: 1, title: "Openings" }] },
-      pages,
-      textModel: {},
-      projectId: "project-1"
-    }) as never;
-
-  beforeEach(() => vi.clearAllMocks());
-
-  it("returns nothing for an empty book without calling the model", async () => {
-    await expect(runBoundedChapterQualityReview(baseOptions([]))).resolves.toEqual([]);
-    expect(mocks.generateJsonWithRetry).not.toHaveBeenCalled();
-  });
-
-  it("groups chapterless pages into synthetic chapters of eight and tags issues as model warnings", async () => {
-    mocks.generateJsonWithRetry.mockResolvedValue({
-      data: {
-        issues: [
-          { code: "CHAPTER_TRANSITION", message: "Abrupt jump.", guidance: "Bridge it.", affectedPageIndexes: [8, 9] }
-        ]
-      }
-    });
-    const pages = Array.from({ length: 9 }, (_, index) => exportPage(index + 1));
-
-    const issues = await runBoundedChapterQualityReview(baseOptions(pages));
-
-    const payload = JSON.parse(
-      (mocks.generateJsonWithRetry.mock.calls[0]![1] as { messages: Array<{ content: string }> }).messages[1]!.content
-    );
-    expect(payload.chapters.map((chapter: { index: number }) => chapter.index)).toEqual([1, 2]);
-    expect(payload.chapters[0].title).toBe("Openings");
-    expect(payload.chapters[1].title).toBe("Chapter 2");
-    expect(payload.transitions).toHaveLength(1);
-    expect(issues).toEqual([
-      expect.objectContaining({ code: "CHAPTER_TRANSITION", severity: "warning", source: "model" })
-    ]);
-  });
-
-  it("treats a model failure as no issues, but still propagates a user stop", async () => {
-    mocks.generateJsonWithRetry.mockRejectedValue(new Error("model outage"));
-    await expect(runBoundedChapterQualityReview(baseOptions([exportPage(1)]))).resolves.toEqual([]);
-
-    mocks.generateJsonWithRetry.mockRejectedValue(new StopRequestedError());
-    await expect(runBoundedChapterQualityReview(baseOptions([exportPage(1)]))).rejects.toBeInstanceOf(
-      StopRequestedError
-    );
   });
 });
 

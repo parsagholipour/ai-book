@@ -15,11 +15,14 @@ import type {
 } from "./types.js";
 
 /**
- * `book.final_qa.chapter_transitions` is passed by apps/worker (compileExport.ts),
- * which this core test does not read; the worker's own suites exercise the call
- * that carries it.
+ * `book.final_qa.chapter_transitions` and `review-manuscript-structure` are
+ * passed by apps/worker compile handlers, which this core test does not read;
+ * the worker's own suites exercise the calls that carry them.
  */
-const PURPOSES_EMITTED_OUTSIDE_CORE: ReadonlySet<string> = new Set(["book.final_qa.chapter_transitions"]);
+const PURPOSES_EMITTED_OUTSIDE_CORE: ReadonlySet<string> = new Set([
+  "book.final_qa.chapter_transitions",
+  "review-manuscript-structure"
+]);
 
 /**
  * Every other purpose core passes today: the prose writers and revisers, the

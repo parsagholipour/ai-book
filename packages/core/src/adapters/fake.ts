@@ -11,6 +11,7 @@ import {
 import { DEFAULT_TTS_CHANNELS, DEFAULT_TTS_SAMPLE_RATE, pcm16DurationMs } from "../audio/pcm.js";
 import { COVER_DESIGN_SELECTION_PURPOSE, DEFAULT_COVER_DESIGN_ID } from "../generation/coverDesigns.js";
 import { COPYRIGHT_SAFE_IMAGE_PROMPT_PURPOSE } from "../generation/copyrightSafeImagePrompt.js";
+import { MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE } from "../generation/manuscriptStructuralReview.js";
 import { fakeEditAdherence } from "./fakeEditAdherence.js";
 import { parseSchemaWithContext } from "./json.js";
 import type {
@@ -332,6 +333,10 @@ export class FakeTextModelAdapter implements TextModelAdapter {
         requiredFixes: [],
         notes: "Fake final QA approved the deterministic dry-run book."
       };
+    }
+
+    if (options.purpose === MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE) {
+      return { clusters: [] };
     }
 
     if (options.purpose === "extract-voice-character-candidates") {

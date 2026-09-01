@@ -262,13 +262,14 @@ export type ManuscriptQualityReportOptions = {
  * the export repair pass only rewrites errors.
  *
  * Two things are deliberately outside that gate. An **error** blocks whatever
- * ran, because publication integrity is never bypassed by an edit. And a model
- * finding always speaks, because only a full review can produce one.
+ * ran, because publication integrity is never bypassed by an edit. Existing
+ * model reviewers still emit warnings; only the structural corroboration path
+ * constructs a model `error`. A model finding always speaks, because only a
+ * full review can produce one.
  *
  * Shadow `diagnostics.wouldBlock` is measured here and is **not** mapped onto
- * `state`. Publication still blocks only on deterministic errors (including
- * existing `STRUCTURAL_SLOP_SATURATION`). Phase 04 owns enforcement of
- * prevalence `wouldBlock`.
+ * `state`. Publication blocks on explicit `severity === "error"`, including a
+ * high-confidence corroborated structural duplication.
  */
 export function buildManuscriptQualityReport(
   deterministicIssues: ManuscriptQualityIssue[],
@@ -276,20 +277,21 @@ export function buildManuscriptQualityReport(
   options: ManuscriptQualityReportOptions
 ): ManuscriptQualityReport {
   const issues = [...deterministicIssues, ...modelIssues];
-  const blocked = deterministicIssues.some((entry) => entry.severity === "error");
+  const blocked = issues.some((entry) => entry.severity === "error");
   const deterministicWarnings = deterministicIssues.filter((entry) => entry.severity === "warning").length;
+  const advisoryModelIssues = modelIssues.filter((entry) => entry.severity !== "error").length;
   const deterministicWarningsAffectVerdict =
     options.deterministicWarningsAffectVerdict ?? options.finalReviewRan;
   const state: ManuscriptQualityState = blocked
     ? "blocked"
-    : modelIssues.length > 0 || (deterministicWarningsAffectVerdict && deterministicWarnings > 0)
+    : advisoryModelIssues > 0 || (deterministicWarningsAffectVerdict && deterministicWarnings > 0)
       ? "review_recommended"
       : "passed";
   const score = Math.max(
     0,
     100 -
-      deterministicIssues.filter((entry) => entry.severity === "error").length * 18 -
-      (modelIssues.length + deterministicWarnings) * 5
+      issues.filter((entry) => entry.severity === "error").length * 18 -
+      (advisoryModelIssues + deterministicWarnings) * 5
   );
   const manuscriptPageCount =
     options.manuscriptPageCount ??
@@ -308,14 +310,13 @@ export function buildManuscriptQualityReport(
  * Adds a post-hoc issue (e.g. an export artifact failure discovered after the
  * manuscript checks ran) to an existing report, recomputing state and score
  * with the same weights as buildManuscriptQualityReport. State never improves:
- * a warning bumps "passed" to "review_recommended"; a deterministic error
- * blocks.
+ * a warning bumps "passed" to "review_recommended"; an error blocks.
  */
 export function appendQualityIssue(
   report: ManuscriptQualityReport,
   issue: ManuscriptQualityIssue
 ): ManuscriptQualityReport {
-  const blocked = report.state === "blocked" || (issue.severity === "error" && issue.source === "deterministic");
+  const blocked = report.state === "blocked" || issue.severity === "error";
   const issues = [...report.issues, issue];
   return {
     ...report,

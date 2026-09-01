@@ -69,6 +69,7 @@ export type ManuscriptFindingInput = {
   message: string;
   guidance: string;
   affectedPageIndexes: number[];
+  source?: ManuscriptQualitySource;
   metrics?: ManuscriptQualityIssueMetrics;
   evidence?: ManuscriptQualityIssueEvidence[];
 };
@@ -77,7 +78,7 @@ export function manuscriptFinding(input: ManuscriptFindingInput): ManuscriptQual
   return {
     code: input.code,
     severity: input.severity,
-    source: "deterministic",
+    source: input.source ?? "deterministic",
     message: input.message,
     guidance: input.guidance,
     affectedPageIndexes: input.affectedPageIndexes,

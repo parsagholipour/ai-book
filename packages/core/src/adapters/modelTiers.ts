@@ -50,6 +50,9 @@ export const MECHANICAL_TEXT_PURPOSES: ReadonlySet<string> = new Set([
   // The chapter-transition sibling of final-book-qa: a strict-schema issue
   // list, not prose. Left off this list it ran on the premium prose model.
   "book.final_qa.chapter_transitions",
+  // Compile-time structural corroboration of deterministic clusters.
+  // Spelled as a literal: this module must stay import-free.
+  "review-manuscript-structure",
   "chapterize-export",
   "repair-page-brief",
   "generate-page-map",

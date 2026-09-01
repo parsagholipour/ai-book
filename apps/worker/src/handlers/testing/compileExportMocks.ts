@@ -124,7 +124,14 @@ export const mocks = {
   maybeEnqueueCompile: vi.fn(),
   parallelPageWaveSize: vi.fn(() => 1),
   runDeterministicManuscriptChecks: vi.fn(),
-  generateJsonWithRetry: vi.fn(),
+  generateJsonWithRetry: vi.fn(
+    async (_model: unknown, options?: { purpose?: string }): Promise<{ data: Record<string, unknown> }> => {
+      if (options?.purpose === "review-manuscript-structure") {
+        return { data: { clusters: [] } };
+      }
+      return { data: { issues: [] } };
+    }
+  ),
   // Mutable so the whole-handler suite can point storage at a temp dir.
   config: { BOOK_STORAGE_DIR: "", IMAGE_STORAGE_DIR: "", PUBLIC_API_URL: "http://localhost:4001" },
   strategy: {

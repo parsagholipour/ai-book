@@ -120,4 +120,25 @@ describe("qualityGateCostsForProject", () => {
       costNote: "Enabled, but no attributable provider call was triggered."
     });
   });
+
+  it("attributes manuscript structural review to final-book QA compile spend", () => {
+    const gates = qualityGateCostsForProject({
+      mediaSettings: { modelTier: "balanced" },
+      fallbackAt: at(20),
+      runs: [{ createdAt: at(10), startedAt: at(11) }],
+      revisions: [
+        {
+          version: 1,
+          settings: settingsWith("finalBookQa"),
+          createdAt: at(5)
+        }
+      ],
+      costRows: [row("review-manuscript-structure", 0.01, "COMPILE_EXPORT")]
+    });
+
+    expect(gates.find((gate) => gate.id === "finalBookQa")).toMatchObject({
+      calls: 1,
+      providerCostUsd: 0.01
+    });
+  });
 });

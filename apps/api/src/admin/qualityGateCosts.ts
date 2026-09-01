@@ -32,6 +32,7 @@ const DIRECT_COST_PURPOSES: Partial<Record<QualityFeatureId, ReadonlySet<string>
   finalBookQa: new Set([
     "final-book-qa",
     "book.final_qa.chapter_transitions",
+    "review-manuscript-structure",
     "revise-page",
     "repair-page-brief"
   ]),

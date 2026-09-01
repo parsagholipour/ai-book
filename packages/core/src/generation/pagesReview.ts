@@ -707,8 +707,9 @@ export async function runFinalBookQa(options: FinalBookQaOptions): Promise<Final
   /*
    * The imported-manuscript exemption, carried the rest of the way — and asked
    * of the same contract every page prompt asks (`openingContractForRange`,
-   * pagesShared.ts). This reviewer is handed the whole book, so the range test
-   * is settled and `statesOpeningQuality` is exactly the exemption.
+   * pagesShared.ts). This reviewer is handed actual opening prose (when it
+   * judges opening) and a compact pageMap of summaries, not the compiled book,
+   * so the range test is settled and `statesOpeningQuality` is exactly the exemption.
    *
    * The deterministic gate skips page 1's opening check for an import — which
    * means it returns no issues, the early return above does not fire, and this
@@ -742,10 +743,11 @@ export async function runFinalBookQa(options: FinalBookQaOptions): Promise<Final
         role: "system",
         content: [
           "You are the final quality editor for a book export.",
-          "Reject the book if it contains placeholders, repeated pages, prompt leakage, broken continuity, or no progression.",
+          "Reject the book if the supplied payload shows placeholders, prompt leakage, broken continuity, or no progression.",
           "Reject the book if factual or research-grounded passages contain invented studies, journals, institutes, statistics, experts, citations, or claims described as fictional/fabricated/invented.",
           ...citation.rules,
-          "pageMap summaries are abbreviated excerpts for this review, not the exported manuscript.",
+          "pageMap is abbreviated planning and progression context, not the book and not complete manuscript prose.",
+          "Do not decide full-book repeated-page quality from pageMap summaries; those rows are not the compiled manuscript.",
           ...(judgesOpening
             ? [
                 "Do not reject because a pageMap summary or an openingPages excerpt ends with an ellipsis or looks cut off.",
@@ -780,8 +782,8 @@ export async function runFinalBookQa(options: FinalBookQaOptions): Promise<Final
             ...(judgesOpening ? { openingPages } : {}),
             ...citation.payload,
             instruction: judgesOpening
-              ? "Approve only if the compiled Markdown can be shown to a reader as the book output without obvious generation artifacts. pageMap summaries and openingPages excerpts may end with … because they are shortened for this check; that is not a book defect. Identical titles on adjacent pages are fine when the summaries describe different beats. openingPages is the book's first page as written and the only page an opening verdict is about; judge the reader's first impression from it, and give any other page's issue the page number pageMap records for it."
-              : "Approve only if the compiled Markdown can be shown to a reader as the book output without obvious generation artifacts. pageMap summaries may end with … because they are shortened for this check; that is not a book defect. Identical titles on adjacent pages are fine when the summaries describe different beats. Give every issue the page number pageMap records for it."
+              ? "Approve only if the supplied payload — abbreviated pageMap planning context and actual openingPages prose — can be shown without obvious generation artifacts. This call did not receive the complete compiled Markdown. pageMap summaries and openingPages excerpts may end with … because they are shortened for this check; that is not a book defect. Identical titles on adjacent pages are fine when the summaries describe different beats. openingPages is the book's first page as written and the only page an opening verdict is about; judge the reader's first impression from it, and give any other page's issue the page number pageMap records for it."
+              : "Approve only if the supplied payload — abbreviated pageMap planning context — can be shown without obvious generation artifacts. This call did not receive the complete compiled Markdown. pageMap summaries may end with … because they are shortened for this check; that is not a book defect. Identical titles on adjacent pages are fine when the summaries describe different beats. Give every issue the page number pageMap records for it."
           },
           null,
           2

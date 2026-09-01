@@ -93,6 +93,57 @@ describe("persistent manuscript quality gate", () => {
     expect(report.affectedPageIndexes).toEqual([4, 5]);
   });
 
+  it("blocks a high-confidence corroborated structural error from the model path", () => {
+    const report = buildManuscriptQualityReport(
+      [],
+      [
+        {
+          code: "CORROBORATED_STRUCTURAL_DUPLICATION",
+          severity: "error",
+          source: "model",
+          message: "Pages 2 and 3 repeat page 1's treatment.",
+          guidance: "Review the canonical page and the duplicates in Edit Mode.",
+          affectedPageIndexes: [1, 2, 3]
+        }
+      ],
+      { finalReviewRan: true }
+    );
+
+    expect(report.state).toBe("blocked");
+  });
+
+  it("keeps a medium-confidence corroborated structural finding advisory", () => {
+    const report = buildManuscriptQualityReport(
+      [],
+      [
+        {
+          code: "CORROBORATED_STRUCTURAL_DUPLICATION",
+          severity: "warning",
+          source: "model",
+          message: "Pages 2 and 3 may restate page 1.",
+          guidance: "Review the cluster.",
+          affectedPageIndexes: [1, 2]
+        }
+      ],
+      { finalReviewRan: true }
+    );
+
+    expect(report.state).toBe("review_recommended");
+  });
+
+  it("blocks when appending a corroborated structural error onto a passed report", () => {
+    const report = buildManuscriptQualityReport([], [], { finalReviewRan: true });
+    const blocked = appendQualityIssue(report, {
+      code: "CORROBORATED_STRUCTURAL_DUPLICATION",
+      severity: "error",
+      source: "model",
+      message: "Pages 2 and 3 repeat page 1's treatment.",
+      guidance: "Review the duplicates in Edit Mode.",
+      affectedPageIndexes: [1, 2, 3]
+    });
+    expect(blocked.state).toBe("blocked");
+  });
+
   it("passes a complete clean manuscript", () => {
     const issues = runDeterministicManuscriptChecks({
       expectedPageCount: 2,
