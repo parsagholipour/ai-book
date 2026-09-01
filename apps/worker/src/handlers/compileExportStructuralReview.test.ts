@@ -47,7 +47,18 @@ const pages = [
   exportPage(3, "The 13.63 gram unit recurs among cubical chert stones kept beside balance pans.")
 ];
 
-const plan = { title: "Weights", chapters: [{ index: 1, title: "Measure" }] };
+const plan = {
+  title: "Weights",
+  premise: "A history of Indus weights",
+  audience: "adults",
+  voiceGuide: ["Be specific."],
+  antiAiRules: ["UNIQUE_LOCAL_PAGE_RULE"],
+  styleContract: {
+    localRules: [{ id: "custom-local", instruction: "UNIQUE_LOCAL_PAGE_RULE" }],
+    distributionRules: [{ id: "custom-dist", instruction: "UNIQUE_DISTRIBUTION_CAVEAT_RULE" }]
+  },
+  chapters: [{ index: 1, title: "Measure" }]
+};
 
 function highConfidenceCluster() {
   return {
@@ -94,6 +105,14 @@ describe("reviewManuscriptStructure", () => {
       expect.anything(),
       expect.objectContaining({ purpose: MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE })
     );
+    const user = JSON.parse(
+      String(
+        generateJsonWithRetry.mock.calls[0]?.[1]?.messages.find((message: { role: string }) => message.role === "user")
+          ?.content
+      )
+    ) as { distributionRules?: string[] };
+    expect(user.distributionRules?.some((rule) => rule.includes("UNIQUE_DISTRIBUTION_CAVEAT_RULE"))).toBe(true);
+    expect(JSON.stringify(user)).not.toContain("UNIQUE_LOCAL_PAGE_RULE");
     expect(issues).toEqual([
       expect.objectContaining({
         code: CORROBORATED_STRUCTURAL_DUPLICATION,
@@ -101,6 +120,35 @@ describe("reviewManuscriptStructure", () => {
         source: "model"
       })
     ]);
+  });
+
+  it("keeps a stored parallel-structure distribution line unchanged in the review payload", async () => {
+    generateJsonWithRetry.mockResolvedValue({ data: { clusters: [highConfidenceCluster()] } });
+    const userWording = "Ask the same questions throughout the book.";
+
+    await reviewManuscriptStructure({
+      pages,
+      plan: {
+        ...plan,
+        writingMode: "analytical-history",
+        styleContract: {
+          localRules: plan.styleContract.localRules,
+          distributionRules: [{ id: "user-parallel-questions", instruction: userWording }]
+        }
+      } as never,
+      findings: [candidate],
+      textModel: {} as never,
+      projectId: "project-1"
+    });
+
+    const user = JSON.parse(
+      String(
+        generateJsonWithRetry.mock.calls[0]?.[1]?.messages.find((message: { role: string }) => message.role === "user")
+          ?.content
+      )
+    ) as { distributionRules?: string[] };
+    expect(user.distributionRules).toContain(userWording);
+    expect(user.distributionRules?.join(" ")).not.toMatch(/chapter where it is assigned/i);
   });
 
   it("keeps medium confidence advisory", async () => {

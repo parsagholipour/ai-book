@@ -5,6 +5,11 @@ import type { ModelTier } from "../schemas/mediaSettings.js";
  * Effort tiers. An empty array disables the feature until an operator checks a
  * box again. No revision rows means the compiled defaults below, so a fresh
  * database still generates with the approved science.
+ *
+ * None of these ids is a mandatory integrity check. Schema validation, page-map
+ * coverage, generic assignment rejection, collision handling, deterministic
+ * page and manuscript audits, and publication-state grading always run. See
+ * `MANDATORY_INTEGRITY_CHECKS`.
  */
 
 export const QUALITY_EFFORT_TIERS = ["ultra", "premium", "balanced", "fast"] as const;
@@ -44,6 +49,51 @@ export const QUALITY_FEATURE_IDS = [
 
 export type QualityFeatureId = (typeof QUALITY_FEATURE_IDS)[number];
 
+/**
+ * Integrity that cannot be disabled by model tier or operator checkboxes.
+ * These are not `QUALITY_FEATURE_IDS` and must never be encoded as a
+ * disableable tier list on a GenerationQualityRevision.
+ */
+export const MANDATORY_INTEGRITY_CHECKS = [
+  {
+    id: "generated-response-schema",
+    label: "Generated-response schema validation",
+    summary: "Malformed chapter briefs and page maps fail before drafting."
+  },
+  {
+    id: "page-map-coverage",
+    label: "Page-map coverage and ordering",
+    summary: "The production map must cover the target book exactly, in order."
+  },
+  {
+    id: "generic-assignment-rejection",
+    label: "Generic assignment rejection",
+    summary: "Placeholder purpose/beat/ending-pressure assignments cannot become briefs."
+  },
+  {
+    id: "full-map-collision",
+    label: "Full-map collision detection and resolution",
+    summary: "Near-duplicate beats are detected across the whole map and repaired or rejected."
+  },
+  {
+    id: "deterministic-page-integrity",
+    label: "Deterministic page integrity",
+    summary: "Page-level structural integrity checks run before durable drafts."
+  },
+  {
+    id: "deterministic-manuscript-audit",
+    label: "Deterministic manuscript structural audit",
+    summary: "Detector manuscript-structural-audit-v1 always runs on outcome compiles."
+  },
+  {
+    id: "publication-state-grading",
+    label: "Publication-state grading",
+    summary: "Quality-report state decides COMPLETE vs REVIEW_REQUIRED independently of polish gates."
+  }
+] as const;
+
+export type MandatoryIntegrityCheckId = (typeof MANDATORY_INTEGRITY_CHECKS)[number]["id"];
+
 export type QualityFeatureSettings = Record<QualityFeatureId, QualityEffortTier[]>;
 
 export const QUALITY_FEATURE_DEFAULTS: QualityFeatureSettings = {
@@ -62,9 +112,9 @@ export const QUALITY_FEATURE_DEFAULTS: QualityFeatureSettings = {
   styleExcerpts: ["ultra", "premium", "balanced", "fast"],
   styleAuditor: ["ultra", "premium", "balanced"],
   pageMapCritic: ["ultra", "premium"],
-  // All tiers: detection is deterministic and free, and the one bounded
-  // rewrite call runs only when a collision was actually found — cheaper on
-  // every tier than the rewrites a drafted collision burns downstream.
+  // Detection is deterministic and free. The optional rewrite call this flag
+  // used to imply still runs as mandatory map integrity; this checkbox is
+  // retained so operators can see the polish row without disabling integrity.
   beatDedup: ["ultra", "premium", "balanced", "fast"],
   writerTools: ["ultra"],
   bestOfPolish: ["ultra"],
@@ -100,7 +150,7 @@ export const QUALITY_FEATURES: Array<{
   {
     id: "finalBookQa",
     label: "Final book QA",
-    summary: "Runs chapter transitions, the final book review, and targeted repair before export."
+    summary: "Optional chapter transitions, the final book review, and targeted repair before export. Deterministic manuscript audit and targeted structural review are mandatory integrity and are not this checkbox."
   },
   {
     id: "storyExtractAudit",
@@ -139,8 +189,8 @@ export const QUALITY_FEATURES: Array<{
   },
   {
     id: "beatDedup",
-    label: "Page-beat dedup",
-    summary: "Deterministic near-duplicate beat detection over the page map; one cheap rewrite call only when a collision is found. Structural map integrity (coverage, generics, collisions) is mandatory on every tier and is not gated by this flag."
+    label: "Page-beat rewrite (optional polish)",
+    summary: "One cheap rewrite call when a beat collision is found. Map integrity (coverage, generics, collisions) always runs and is not this checkbox."
   },
   {
     id: "writerTools",

@@ -37,6 +37,7 @@ holds the event loop open and vitest will never exit.
 ## Index
 
 - [Page 1's opening contract](#page-1s-opening-contract)
+- [Style contract routing](#style-contract-routing)
 - [Whole-set edit adherence](#whole-set-edit-adherence)
 - [Best-of candidate sampling](#best-of-candidate-sampling)
 - [Covers](#covers)
@@ -45,6 +46,30 @@ holds the event loop open and vitest will never exit.
 - [Chapter apparatus](#chapter-apparatus)
 - [Library characters](#library-characters)
 - [Character reference selection](#character-reference-selection)
+
+## Style contract routing
+
+- **Page prompts take local style rules; distribution rules reach manuscript review only.** Mixing
+  manuscript-wide “ask the same questions throughout” lines into `antiAiRules` taught every page to
+  perform the same analytical grid. `styleContract.localRules` (and `pagePromptBookStyle`) are what
+  page drafts, page review, and the context-pack Avoid line see. `distributionRules` (and
+  `manuscriptPromptStyleFields`) are what targeted manuscript structural review sees. After plan
+  time that helper reads stored `distributionRules` instead of re-running the repetitive-guidance
+  rewrite without the user prompt — otherwise a preserved parallel-structure line becomes the
+  chapter-scoped house rewrite. `mergePlanCriticPatch` drops `styleGuidanceRewrites` whose `from` is
+  a USER_PARALLEL_INTENT line when the user prompt matches; those replacements run before
+  `applyPlanStyleContract`, so a preserve on the original wording never fires if the critic already
+  replaced it. `critiquePlan` is told not to emit them when that intent is present; the critic stays
+  on. Required factuality and prompt-leak ids merge by identity; a
+  planner that already returned six anti-AI lines cannot suppress them. Page-local `antiAiRules` routinely differ from `localRules`; classified
+  extras merge into the stored contract by id and do not drop planner `distributionRules`. A
+  non-Latin anti-AI line whose ASCII slug is empty hashes `foldCharacterName` (the
+  `characterSlug` fallback) rather than sharing `planner-rule`. One invalid `localRules` entry is
+  dropped; it does not strip the contract. Instruction length is code points, matching `antiAiRules`.
+  `QUALITY_FEATURE_IDS` never includes schema validation, page-map
+  coverage, generic assignment rejection, collision handling, deterministic audits, or publication
+  grading — those live on `MANDATORY_INTEGRITY_CHECKS` and still run when every polish checkbox is
+  off. `BOOK_MAKER_PRODUCTION_MAP_INTEGRITY=shadow` is a rollout switch, not a quality revision.
 
 ## Page 1's opening contract
 

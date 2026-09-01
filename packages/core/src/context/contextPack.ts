@@ -1,4 +1,5 @@
 import type { BookPlan, ChapterPlan } from "../schemas/book.js";
+import { localStyleInstructions } from "../generation/styleContract.js";
 
 /**
  * How many continuity notes each prompt keeps, and the only place that decides
@@ -108,7 +109,7 @@ export function buildContextPack(input: ContextPackInput): ContextPack {
       `Writing complexity: ${input.plan.writingComplexity}/10`,
       ...(input.readingGuidance?.length ? [`Reading guidance: ${input.readingGuidance.join(" ")}`] : []),
       `Voice: ${input.plan.voiceGuide.join(" ")}`,
-      `Avoid: ${input.plan.antiAiRules.join(" ")}`,
+      `Avoid: ${localStyleInstructions(input.plan).join(" ")}`,
       ...(styleExcerpts.length > 0
         ? [`Style lock excerpts:\n${styleExcerpts.map((excerpt, index) => `${index + 1}. ${excerpt}`).join("\n")}`]
         : [])

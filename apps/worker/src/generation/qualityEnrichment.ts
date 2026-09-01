@@ -3,6 +3,7 @@ import {
   auditPageStyle,
   extractStoryState,
   hasResearchIntent,
+  localStyleInstructions,
   unpaidPromiseIssues,
   verifyPageClaims,
   withClaimVerification,
@@ -138,7 +139,7 @@ export async function enrichPageQualityReport(options: {
         textModel: options.textModel,
         markdown: options.draft.markdown,
         voiceGuide: options.plan.voiceGuide,
-        antiAiRules: options.plan.antiAiRules,
+        antiAiRules: localStyleInstructions(options.plan),
         styleExcerpts
       });
       report = withStyleAudit(report, audit);
@@ -217,7 +218,7 @@ export function revisedDraftStyleAuditor(options: {
         textModel: options.textModel,
         markdown: draft.markdown,
         voiceGuide: options.plan.voiceGuide,
-        antiAiRules: options.plan.antiAiRules,
+        antiAiRules: localStyleInstructions(options.plan),
         styleExcerpts: options.styleExcerpts,
         ...(options.userRequest ? { userRequest: options.userRequest } : {})
       });

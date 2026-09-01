@@ -378,6 +378,25 @@ describe("compileExport publication policy", () => {
     expect(purposes).not.toContain(MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE);
   });
 
+  it("runs manuscript integrity when every optional quality feature is disabled", async () => {
+    withIndusManuscript();
+    mockJsonByPurpose({ clusters: [duplicatedWeightsCluster] });
+    mocks.loadQualityContext.mockResolvedValue({
+      settings: {},
+      tier: "balanced",
+      enabled: () => false
+    });
+
+    await compileExport(job({ contentRevision: 4 }));
+
+    expect(mocks.runDeterministicManuscriptChecks).toHaveBeenCalled();
+    const purposes = mocks.generateJsonWithRetry.mock.calls.map(
+      (call) => (call[1] as { purpose?: string } | undefined)?.purpose
+    );
+    expect(purposes).toContain(MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE);
+    expect(persistedQualityReport().issues.map((issue) => issue.code)).toContain(CORROBORATED_STRUCTURAL_DUPLICATION);
+  });
+
   it("skips structural review when skipFinalReview is set", async () => {
     withIndusManuscript();
     await compileExport(job({ contentRevision: 4, skipFinalReview: true }));

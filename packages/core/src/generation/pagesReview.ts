@@ -48,6 +48,7 @@ import {
   writerToneRules,
   type PriorPageContext
 } from "./pagesShared.js";
+import { localStyleInstructions, pagePromptBookStyle } from "./styleContract.js";
 
 /**
  * The editorial review loop: the model page reviewer, the revision writer and
@@ -192,7 +193,7 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
                 // voiceGuide is a writer assignment. A history plan that said
                 // "begin with documented testimony" made this reviewer reject
                 // pages that had no citeable notes.
-                antiAiRules: options.plan.antiAiRules,
+                antiAiRules: localStyleInstructions(options.plan),
                 styleGuidance: styleGuidancePayload(options.input)
               },
               chapter: compactPrompt ? compactReviewChapter(options.chapter) : options.chapter,
@@ -604,8 +605,7 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
               audience: options.plan.audience,
               category: options.input.category,
               subcategory: options.input.subcategory,
-              voiceGuide: options.plan.voiceGuide,
-              antiAiRules: options.plan.antiAiRules,
+              ...pagePromptBookStyle(options.plan),
               styleGuidance: styleGuidancePayload(options.input)
             },
             chapter: options.chapter,

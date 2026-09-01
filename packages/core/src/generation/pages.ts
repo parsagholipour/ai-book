@@ -40,6 +40,7 @@ import {
   type GeneratePageOptions,
   type PriorPageContext
 } from "./pagesShared.js";
+import { pagePromptBookStyle } from "./styleContract.js";
 import { pageGetsInteriorIllustration } from "./illustrationSlots.js";
 import { REWRITE_TEMPERATURE_CEILING, pageMapForRange, pageMapForWholeBookDraft } from "./pagesPageMap.js";
 
@@ -279,8 +280,7 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
               category: options.input.category,
               subcategory: options.input.subcategory,
               writingComplexity: options.plan.writingComplexity,
-              voiceGuide: options.plan.voiceGuide,
-              antiAiRules: options.plan.antiAiRules,
+              ...pagePromptBookStyle(options.plan),
               continuityRules: options.plan.continuityRules,
               styleGuidance: styleGuidancePayload(options.input)
             },
@@ -358,8 +358,7 @@ export async function generateChapterDraft(options: GenerateChapterDraftOptions)
               category: options.input.category,
               subcategory: options.input.subcategory,
               writingComplexity: options.plan.writingComplexity,
-              voiceGuide: options.plan.voiceGuide,
-              antiAiRules: options.plan.antiAiRules,
+              ...pagePromptBookStyle(options.plan),
               continuityRules: options.plan.continuityRules,
               styleGuidance: styleGuidancePayload(options.input)
             },
@@ -435,8 +434,7 @@ export async function generateBatchDraft(options: GenerateBatchDraftOptions): Pr
               targetPages: options.input.targetPages,
               category: options.input.category,
               subcategory: options.input.subcategory,
-              voiceGuide: options.plan.voiceGuide,
-              antiAiRules: options.plan.antiAiRules,
+              ...pagePromptBookStyle(options.plan),
               styleGuidance: styleGuidancePayload(options.input)
             },
             pageRange: {
@@ -537,8 +535,7 @@ export async function polishPageDraft(options: PolishPageOptions): Promise<PageD
               audience: options.plan.audience,
               category: options.input.category,
               subcategory: options.input.subcategory,
-              voiceGuide: options.plan.voiceGuide,
-              antiAiRules: options.plan.antiAiRules,
+              ...pagePromptBookStyle(options.plan),
               styleGuidance: styleGuidancePayload(options.input)
             },
             pageIndex: options.pageIndex,

@@ -449,6 +449,62 @@ describe("createProjectSchema", () => {
     ]);
   });
 
+  it("coerces nested generationPlan distributionRules from a lone string the way it coerces antiAiRules", () => {
+    const customDistribution = {
+      id: "custom-irrigation-lens",
+      instruction: "CUSTOM_DISTRIBUTION_IRRIGATION_LENS: rotate which canal system is the comparison case."
+    };
+    const fallback = bookPlanSchema.parse({
+      ...minimalPlan("template-driven"),
+      styleContract: {
+        localRules: [{ id: "ok-local", instruction: "Prefer concrete nouns on this page." }],
+        distributionRules: [customDistribution]
+      }
+    });
+    const plan = bookPlanSchemaWithFallback(fallback).parse({
+      generationPlan: {
+        chapters: fallback.chapters,
+        styleContract: {
+          distributionRules: "Vary caveat endings across chapters."
+        }
+      }
+    });
+
+    expect(plan.styleContract?.distributionRules).toHaveLength(1);
+    expect(plan.styleContract?.distributionRules[0]?.instruction).toBe("Vary caveat endings across chapters.");
+    expect(plan.styleContract?.localRules).toEqual(fallback.styleContract?.localRules);
+  });
+
+  it("keeps stored custom distributionRules when a nested generationPlan list is empty or invalid", () => {
+    const customDistribution = {
+      id: "custom-irrigation-lens",
+      instruction: "CUSTOM_DISTRIBUTION_IRRIGATION_LENS: rotate which canal system is the comparison case."
+    };
+    const fallback = bookPlanSchema.parse({
+      ...minimalPlan("template-driven"),
+      styleContract: {
+        localRules: [{ id: "ok-local", instruction: "Prefer concrete nouns on this page." }],
+        distributionRules: [customDistribution]
+      }
+    });
+
+    const emptied = bookPlanSchemaWithFallback(fallback).parse({
+      generationPlan: {
+        chapters: fallback.chapters,
+        styleContract: { distributionRules: [] }
+      }
+    });
+    expect(emptied.styleContract?.distributionRules).toEqual([customDistribution]);
+
+    const invalid = bookPlanSchemaWithFallback(fallback).parse({
+      generationPlan: {
+        chapters: fallback.chapters,
+        styleContract: { distributionRules: [{ id: "", instruction: "" }, "not-an-object"] }
+      }
+    });
+    expect(invalid.styleContract?.distributionRules).toEqual([customDistribution]);
+  });
+
   it("preserves illustrationPlan.globalStyle when a direct revision patch omits it", () => {
     const fallback = bookPlanSchema.parse(minimalPlan("template-driven"));
     const plan = bookPlanSchemaWithFallback(fallback).parse({

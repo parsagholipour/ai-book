@@ -4,6 +4,7 @@ import {
   groupPacksForCalls,
   isStructuralReviewCandidate,
   MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE,
+  manuscriptPromptStyleFields,
   selectManuscriptReviewPacks,
   structuralReviewBudgetExceededIssue,
   structuralReviewResultSchema,
@@ -43,7 +44,7 @@ export async function reviewManuscriptStructure(options: {
       candidateFindings,
       textModel: options.textModel,
       projectId: options.projectId,
-      title: options.plan.title
+      plan: options.plan
     })));
   }
   return extra;
@@ -54,7 +55,7 @@ async function adjudicatePacks(options: {
   candidateFindings: readonly ManuscriptQualityIssue[];
   textModel: TextModelAdapter;
   projectId: string;
-  title: string;
+  plan: BookPlan;
 }): Promise<ManuscriptQualityIssue[]> {
   try {
     const result = await generateJsonWithRetry(options.textModel, {
@@ -79,7 +80,8 @@ async function adjudicatePacks(options: {
         {
           role: "user",
           content: JSON.stringify({
-            title: options.title,
+            title: options.plan.title,
+            ...manuscriptPromptStyleFields(options.plan),
             packs: options.packs.map((pack) => ({
               id: pack.id,
               findingCodes: pack.findingCodes,

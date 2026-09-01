@@ -8,6 +8,7 @@ import {
   planStyleContract,
   type TemplateDefinition
 } from "../prompting/templates.js";
+import { applyPlanStyleContract, PLANNER_STYLE_CONTRACT_GUIDANCE } from "./styleContract.js";
 import { plannerToneGuidance, toneProfileFromMediaSettings } from "../prompting/tone.js";
 import {
   bookPlanModelOutputSchemaWithFallback,
@@ -69,7 +70,13 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
     // one does: the template fallback plans no characters at all, and without
     // this an @-mentioned character simply vanishes in development.
     return normalizePlanPageTargets(
-      reconcilePlanLibraryCharacters({ ...fallback, researchNotes }, librarySnapshots),
+      reconcilePlanLibraryCharacters(
+        ensurePlanStyleContract(
+          { ...fallback, researchNotes },
+          { input: options.input, toneProfile }
+        ),
+        librarySnapshots
+      ),
       options.input.targetPages
     );
   }
@@ -114,6 +121,7 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
             ...targetLanguageGenerationGuidance(options.input.language),
             ...kidsReadingGuidanceLines(options.input),
             ...plannerToneGuidance(toneProfile),
+            ...PLANNER_STYLE_CONTRACT_GUIDANCE,
             // Last deliberately. Three earlier rules argue against a saved
             // character, each in a way recency decides: "write all book-facing
             // strings in <language>" (which translated the name), "for every
@@ -174,15 +182,15 @@ const MIN_VOICE_GUIDE_RULES = 2;
 const MIN_ANTI_AI_RULES = 3;
 
 /**
- * The quality floor under the plan's style contract. Plan arrays replace
- * atomically, so a planner that answered the antiAiRules instruction with one
- * vacuous rule wholesale displaced the rich fallback set that omitting the
- * field would have preserved — and nothing downstream re-checks the field, so
- * that one rule became the book-specific half of every draft and review
- * prompt. A list that is too short to be a real contract gets `planStyleContract`
- * — the same composition `makeFallbackPlan` seeds a plan with, `input` and all,
- * so a kids book keeps its reading band — appended back, deduped; a plan the
- * model filled in properly comes back by identity.
+ * The quality floor under the plan's style contract. Voice still uses a
+ * minimum-count top-up so a one-line kids `voiceGuide` keeps the reading band.
+ * Template/tone anti-AI extras still top up a thin list. Required factuality
+ * and prompt-leak rules then merge by `id` via `applyPlanStyleContract`, so a
+ * planner that already returned six arbitrary lines cannot suppress them.
+ * Page-local `antiAiRules` routinely differ from `styleContract.localRules`;
+ * that split is not a stale contract, and `applyPlanStyleContract` merges the
+ * classified lines into the stored rules by id so planner `distributionRules`
+ * survive.
  */
 export function ensurePlanStyleContract(
   plan: BookPlan,
@@ -197,10 +205,13 @@ export function ensurePlanStyleContract(
     plan.antiAiRules.length >= MIN_ANTI_AI_RULES
       ? plan.antiAiRules
       : appendUniqueRules(plan.antiAiRules, contract.antiAiRules);
-  if (voiceGuide === plan.voiceGuide && antiAiRules === plan.antiAiRules) {
-    return plan;
-  }
-  return { ...plan, voiceGuide, antiAiRules };
+  const candidate =
+    voiceGuide === plan.voiceGuide && antiAiRules === plan.antiAiRules
+      ? plan
+      : { ...plan, voiceGuide, antiAiRules };
+  return applyPlanStyleContract(candidate, {
+    ...(options.input ? { input: options.input, userPrompt: options.input.prompt } : {})
+  });
 }
 
 function appendUniqueRules(current: string[], additions: string[]): string[] {
@@ -215,7 +226,7 @@ function appendUniqueRules(current: string[], additions: string[]): string[] {
     seen.add(key);
     merged.push(trimmed);
   }
-  return merged;
+  return merged.length === current.length ? current : merged;
 }
 
 export async function revisePlanningPackage(options: RevisePlanOptions): Promise<BookPlan> {
@@ -248,6 +259,7 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
               ...targetLanguageGenerationGuidance(options.language),
               ...(options.input ? kidsReadingGuidanceLines(options.input) : []),
               ...plannerToneGuidance(toneProfile),
+              ...PLANNER_STYLE_CONTRACT_GUIDANCE,
               // Last for the same reason as in initial planning: the rules it
               // has to outrank are all above it.
               ...planLibraryCharacterGuidance(librarySnapshots)

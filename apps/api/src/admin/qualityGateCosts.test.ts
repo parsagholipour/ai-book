@@ -67,6 +67,9 @@ describe("qualityGateCostsForProject", () => {
     });
 
     expect(gates.map((gate) => gate.id)).toEqual([
+      "integrity.generate-chapter-brief",
+      "integrity.dedupe-page-beats",
+      "integrity.review-manuscript-structure",
       "pageLocalQa",
       "smartUnslop",
       "pageModelReview",
@@ -113,15 +116,21 @@ describe("qualityGateCostsForProject", () => {
       costRows: []
     });
 
-    expect(gates.map((gate) => gate.id)).toEqual(["pageModelReview", "planCritic"]);
-    expect(gates[0]).toMatchObject({
+    expect(gates.map((gate) => gate.id)).toEqual([
+      "integrity.generate-chapter-brief",
+      "integrity.dedupe-page-beats",
+      "integrity.review-manuscript-structure",
+      "pageModelReview",
+      "planCritic"
+    ]);
+    expect(gates.find((gate) => gate.id === "pageModelReview")).toMatchObject({
       calls: 0,
       providerCostUsd: 0,
       costNote: "Enabled, but no attributable provider call was triggered."
     });
   });
 
-  it("attributes manuscript structural review to final-book QA compile spend", () => {
+  it("attributes manuscript structural review as mandatory integrity, not final-book QA", () => {
     const gates = qualityGateCostsForProject({
       mediaSettings: { modelTier: "balanced" },
       fallbackAt: at(20),
@@ -129,16 +138,50 @@ describe("qualityGateCostsForProject", () => {
       revisions: [
         {
           version: 1,
-          settings: settingsWith("finalBookQa"),
+          settings: settingsWith(),
           createdAt: at(5)
         }
       ],
-      costRows: [row("review-manuscript-structure", 0.01, "COMPILE_EXPORT")]
+      costRows: [
+        row("review-manuscript-structure", 0.01, "COMPILE_EXPORT"),
+        row("dedupe-page-beats", 0.02, "GENERATE_BOOK"),
+        row("generate-chapter-brief", 0.03, "GENERATE_BOOK")
+      ]
     });
 
-    expect(gates.find((gate) => gate.id === "finalBookQa")).toMatchObject({
+    expect(gates.find((gate) => gate.id === "integrity.review-manuscript-structure")).toMatchObject({
       calls: 1,
       providerCostUsd: 0.01
+    });
+    expect(gates.find((gate) => gate.id === "integrity.dedupe-page-beats")).toMatchObject({
+      calls: 1,
+      providerCostUsd: 0.02
+    });
+    expect(gates.find((gate) => gate.id === "integrity.generate-chapter-brief")).toMatchObject({
+      calls: 1,
+      providerCostUsd: 0.03
+    });
+    expect(gates.find((gate) => gate.id === "finalBookQa")).toBeUndefined();
+    expect(gates.find((gate) => gate.id === "beatDedup")).toBeUndefined();
+  });
+
+  it("still shows clean-path no-call integrity rows when every polish gate is off", () => {
+    const gates = qualityGateCostsForProject({
+      mediaSettings: { modelTier: "fast" },
+      fallbackAt: at(20),
+      runs: [{ createdAt: at(10), startedAt: at(11) }],
+      revisions: [{ version: 1, settings: settingsWith(), createdAt: at(5) }],
+      costRows: []
+    });
+    expect(gates.map((gate) => gate.id)).toEqual([
+      "integrity.generate-chapter-brief",
+      "integrity.dedupe-page-beats",
+      "integrity.review-manuscript-structure"
+    ]);
+    expect(gates.find((gate) => gate.id === "integrity.review-manuscript-structure")).toMatchObject({
+      calls: 0,
+      providerCostUsd: 0,
+      costNote: expect.stringMatching(/Clean-path no-call/)
     });
   });
 });

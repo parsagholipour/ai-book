@@ -8,7 +8,7 @@ import {
 import { costBreakdownFromRows, type ProviderCostRow } from "./costBreakdown.js";
 
 export type QualityGateCost = {
-  id: QualityFeatureId;
+  id: string;
   label: string;
   calls: number | null;
   providerCostUsd: number | null;
@@ -32,7 +32,6 @@ const DIRECT_COST_PURPOSES: Partial<Record<QualityFeatureId, ReadonlySet<string>
   finalBookQa: new Set([
     "final-book-qa",
     "book.final_qa.chapter_transitions",
-    "review-manuscript-structure",
     "revise-page",
     "repair-page-brief"
   ]),
@@ -41,7 +40,6 @@ const DIRECT_COST_PURPOSES: Partial<Record<QualityFeatureId, ReadonlySet<string>
   claimVerifier: new Set(["verify-page-claims"]),
   styleAuditor: new Set(["audit-page-style"]),
   pageMapCritic: new Set(["critique-page-map"]),
-  beatDedup: new Set(["dedupe-page-beats"]),
   writerTools: new Set(["write-page-with-tools"]),
   bestOfPolish: new Set(["polish-page", "judge-page-drafts"])
 };
@@ -49,7 +47,9 @@ const DIRECT_COST_PURPOSES: Partial<Record<QualityFeatureId, ReadonlySet<string>
 const NON_SEPARATE_COST_NOTES: Partial<Record<QualityFeatureId, string>> = {
   smartUnslop: "Detection is free; any resulting rewrite is included under Page QA rewrites.",
   planThinkingBoost: "Incremental reasoning spend is included in the planning calls it modifies.",
-  claimRetrieve: "Embedding retrieval spend is not separately metered in provider call logs."
+  claimRetrieve: "Embedding retrieval spend is not separately metered in provider call logs.",
+  beatDedup:
+    "Optional polish row only. Map-integrity rewrite spend is listed under Page-map integrity rewrite, which always runs."
 };
 
 const FREE_GATE_NOTES: Partial<Record<QualityFeatureId, string>> = {
@@ -58,9 +58,34 @@ const FREE_GATE_NOTES: Partial<Record<QualityFeatureId, string>> = {
   styleExcerpts: "Prompt context only; no separate provider call."
 };
 
+const INTEGRITY_COST_GATES = [
+  {
+    id: "integrity.generate-chapter-brief",
+    label: "Chapter briefs (including dense regeneration and map repairs)",
+    purposes: new Set(["generate-chapter-brief"]),
+    emptyNote:
+      "Clean-path no extra brief in this window. Initial briefs, dense regeneration, and map repairs share this purpose."
+  },
+  {
+    id: "integrity.dedupe-page-beats",
+    label: "Page-map integrity rewrite",
+    purposes: new Set(["dedupe-page-beats"]),
+    emptyNote: "Clean-path no-call: map integrity ran without a rewrite."
+  },
+  {
+    id: "integrity.review-manuscript-structure",
+    label: "Manuscript structural review",
+    purposes: new Set(["review-manuscript-structure"]),
+    emptyNote: "Clean-path no-call: no structural-review model call."
+  }
+] as const;
+
 /**
  * Gates enabled for at least one project generation run, paired with spend from
  * provider-call purposes that belong to one gate unambiguously.
+ *
+ * Integrity rows always appear: those calls are not optional polish and must
+ * remain attributable when every quality checkbox is off.
  *
  * Revisions are resolved at each job's start rather than from today's live
  * settings: the operator can change a tier after a book finishes, and the
@@ -81,9 +106,27 @@ export function qualityGateCostsForProject(options: {
     ? options.runs.map((run) => run.startedAt ?? run.createdAt)
     : [options.fallbackAt];
 
-  return QUALITY_FEATURES.filter((feature) =>
+  const polish = QUALITY_FEATURES.filter((feature) =>
     runTimes.some((runAt) => qualityFeatureEnabled(settingsAt(revisions, runAt), feature.id, tier))
   ).map((feature) => gateCost(feature.id, feature.label, options.costRows));
+
+  const integrity = INTEGRITY_COST_GATES.map((gate) => integrityCost(gate, options.costRows));
+  return [...integrity, ...polish];
+}
+
+function integrityCost(
+  gate: (typeof INTEGRITY_COST_GATES)[number],
+  rows: ProviderCostRow[]
+): QualityGateCost {
+  const matchingRows = rows.filter((row) => gate.purposes.has(row.purpose?.trim() ?? ""));
+  const usage = costBreakdownFromRows(matchingRows).totals;
+  return {
+    id: gate.id,
+    label: gate.label,
+    calls: usage.calls,
+    providerCostUsd: usage.usd,
+    costNote: usage.calls === 0 ? gate.emptyNote : null
+  };
 }
 
 function settingsAt(revisions: QualityGateRevision[], runAt: Date) {

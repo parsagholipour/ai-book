@@ -275,6 +275,7 @@ code in that area, however obvious the rule looks.
 
 - **Nothing states page 1's opening contract in its own words: a prompt names an audience and gets the ban, the import exemption that silences it, and the hook fused to its payload key — or gets nothing.** → packages/core/src/generation/CLAUDE.md
 - **No best-of candidate samples hotter than the pass would have run at without candidates, and a band too narrow for the ladder compresses the step rather than widening the band.** → packages/core/src/generation/CLAUDE.md
+- **Page prompts take local style rules; distribution rules reach manuscript review only.** → packages/core/src/generation/CLAUDE.md
 
 ### Characters, covers and illustrations
 
@@ -386,6 +387,7 @@ code in that area, however obvious the rule looks.
 - **A costless call has four different causes and the Costs tab splits all four.** → apps/api/src/admin/CLAUDE.md
 - **"Revenue" is two different numbers and the dashboard shows both.** → apps/api/src/admin/CLAUDE.md
 - **A reversal is an amount, not a boolean.** → apps/api/src/admin/CLAUDE.md
+- **Integrity is not a quality-gate checkbox, and its provider calls stay attributable when every polish box is off.** → packages/core/src/generation/CLAUDE.md
 
 ### Local stack
 

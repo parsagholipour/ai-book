@@ -70,8 +70,11 @@ export async function planBook(job: PlanBookJob): Promise<JobCompletion> {
   });
   if (quality.enabled("planCritic")) {
     try {
-      const patch = await critiquePlan({ textModel: providers.text, plan });
-      plan = mergePlanCriticPatch(plan, patch);
+      const patch = await critiquePlan({ textModel: providers.text, plan, userPrompt: input.prompt });
+      plan = mergePlanCriticPatch(plan, patch, {
+        input,
+        userPrompt: input.prompt
+      });
     } catch (error) {
       if (isStopRequestedError(error)) {
         throw error;

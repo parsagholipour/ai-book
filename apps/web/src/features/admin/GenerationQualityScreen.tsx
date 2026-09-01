@@ -29,6 +29,7 @@ import {
   toggleQualityTier,
   type ServerEffortTier
 } from "./GenerationQualityControls.js";
+import { GenerationQualityIntegrityPanel } from "./GenerationQualityIntegrityPanel.js";
 
 /** An id core describes, or one only the server knows about yet — see `featureRows`. */
 type ServerFeatureId = QualityFeatureId | (string & {});
@@ -260,9 +261,12 @@ export function GenerationQualityScreen() {
               <h3>Generation quality gates</h3>
             </div>
             <p className="muted">
-              Each row can run on any subset of Effort tiers. Deselect every tier and that feature
-              is off for the next page, plan, or map step — live, not stamped at enqueue.
+              Checkboxes below are optional polish. Deselect every tier and that
+              polish feature is off for the next page, plan, or map step — live,
+              not stamped at enqueue. Integrity listed above the list cannot be
+              disabled by model tier or these boxes.
             </p>
+            <GenerationQualityIntegrityPanel />
             <PageReviewPromptModeControls
               modes={pageReviewPromptModeDraft}
               disabled={busy}

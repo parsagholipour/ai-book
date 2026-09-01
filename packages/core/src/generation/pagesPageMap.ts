@@ -62,6 +62,7 @@ import {
   stringField,
   styleGuidancePayload
 } from "./pagesShared.js";
+import { pagePromptBookStyle } from "./styleContract.js";
 
 /**
  * The production-editor layer: the global page-by-page production map, the
@@ -183,8 +184,7 @@ export async function generateWholeBookPageMap(options: GeneratePageMapOptions):
                 category: options.input.category,
                 subcategory: options.input.subcategory,
                 writingComplexity: options.plan.writingComplexity,
-                voiceGuide: options.plan.voiceGuide,
-                antiAiRules: options.plan.antiAiRules,
+                ...pagePromptBookStyle(options.plan),
                 continuityRules: options.plan.continuityRules,
                 styleGuidance: styleGuidancePayload(options.input)
               },
@@ -285,8 +285,7 @@ export async function generateChapterBrief(options: GenerateChapterBriefOptions)
                 audience: options.plan.audience,
                 category: options.input.category,
                 subcategory: options.input.subcategory,
-                voiceGuide: options.plan.voiceGuide,
-                antiAiRules: options.plan.antiAiRules,
+                ...pagePromptBookStyle(options.plan),
                 continuityRules: options.plan.continuityRules,
                 styleGuidance: styleGuidancePayload(options.input)
               },
@@ -379,8 +378,7 @@ export async function repairPageBrief(options: RepairPageBriefOptions): Promise<
               audience: options.plan.audience,
               category: options.input.category,
               subcategory: options.input.subcategory,
-              voiceGuide: options.plan.voiceGuide,
-              antiAiRules: options.plan.antiAiRules,
+              ...pagePromptBookStyle(options.plan),
               styleGuidance: styleGuidancePayload(options.input)
             },
             ...firstPage.payload,

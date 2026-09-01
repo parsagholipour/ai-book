@@ -1,4 +1,5 @@
 import { isSourceForwardBookCategory, type BookCategory } from "../categories.js";
+import { applyPlanStyleContract } from "../generation/styleContract.js";
 import type { BookPlan, CreateProjectInput, ToneProfile } from "../schemas/book.js";
 import { kidsAudienceLabelForInput, kidsReadingGuidanceLines } from "./readingLevel.js";
 import { HUMAN_STYLE_GUARDRAILS, toneLabel, toneProfileFromMediaSettings, writerToneGuidance } from "./tone.js";
@@ -523,48 +524,51 @@ export function makeFallbackPlan(input: CreateProjectInput): BookPlan {
   const basePages = Math.floor(input.targetPages / chapterCount);
   const extra = input.targetPages % chapterCount;
   const title = input.title ?? deriveTitle(input.prompt);
-  const styleContract = planStyleContract(input, toneProfileFromMediaSettings(input.mediaSettings));
+  const composed = planStyleContract(input, toneProfileFromMediaSettings(input.mediaSettings));
 
-  return {
-    title,
-    premise: input.prompt,
-    audience: audienceForInput(input),
-    writingComplexity: input.complexity,
-    voiceGuide: styleContract.voiceGuide,
-    antiAiRules: styleContract.antiAiRules,
-    questions: [],
-    chapters: Array.from({ length: chapterCount }, (_, index) => ({
-      index: index + 1,
-      title: `Chapter ${index + 1}: ${chapterTitle(index, input.category)}`,
-      summary: `Develop the book's central idea through a distinct movement of the outline while preserving continuity with the approved plan.`,
-      targetPages: basePages + (index < extra ? 1 : 0),
-      keyBeats: [
-        "Open with a concrete scene or question.",
-        "Advance one clear idea, conflict, or discovery.",
-        "End with a reason to continue."
-      ]
-    })),
-    characters: [],
-    locations: [],
-    continuityRules: [
-      "Do not contradict established names, relationships, chronology, or visual details.",
-      "When a new recurring detail appears, add it to continuity notes."
-    ],
-    researchQueries: isSourceForwardBookCategory(input.category) ? [input.prompt] : [],
-    researchNotes: [],
-    promises: [],
-    illustrationPlan: {
-      cadence: input.mediaSettings.illustrationCadence,
-      globalStyle: input.mediaSettings.imageStyle ?? template.styleRules.imageStyle,
-      coverPrompt: `Cover illustration for ${title}: ${input.prompt}`,
-      characterReferencePrompts: [],
-      pageRules: [
-        "Keep recurring characters visually consistent.",
-        "Make each illustration readable as a single scene.",
-        "Avoid text inside images unless this is a labeled diagram."
-      ]
-    }
-  };
+  return applyPlanStyleContract(
+    {
+      title,
+      premise: input.prompt,
+      audience: audienceForInput(input),
+      writingComplexity: input.complexity,
+      voiceGuide: composed.voiceGuide,
+      antiAiRules: composed.antiAiRules,
+      questions: [],
+      chapters: Array.from({ length: chapterCount }, (_, index) => ({
+        index: index + 1,
+        title: `Chapter ${index + 1}: ${chapterTitle(index, input.category)}`,
+        summary: `Develop the book's central idea through a distinct movement of the outline while preserving continuity with the approved plan.`,
+        targetPages: basePages + (index < extra ? 1 : 0),
+        keyBeats: [
+          "Open with a concrete scene or question.",
+          "Advance one clear idea, conflict, or discovery.",
+          "End with a reason to continue."
+        ]
+      })),
+      characters: [],
+      locations: [],
+      continuityRules: [
+        "Do not contradict established names, relationships, chronology, or visual details.",
+        "When a new recurring detail appears, add it to continuity notes."
+      ],
+      researchQueries: isSourceForwardBookCategory(input.category) ? [input.prompt] : [],
+      researchNotes: [],
+      promises: [],
+      illustrationPlan: {
+        cadence: input.mediaSettings.illustrationCadence,
+        globalStyle: input.mediaSettings.imageStyle ?? template.styleRules.imageStyle,
+        coverPrompt: `Cover illustration for ${title}: ${input.prompt}`,
+        characterReferencePrompts: [],
+        pageRules: [
+          "Keep recurring characters visually consistent.",
+          "Make each illustration readable as a single scene.",
+          "Avoid text inside images unless this is a labeled diagram."
+        ]
+      }
+    },
+    { input, userPrompt: input.prompt }
+  );
 }
 
 function deriveTitle(prompt: string): string {

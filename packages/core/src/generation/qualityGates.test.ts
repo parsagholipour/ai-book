@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  MANDATORY_INTEGRITY_CHECKS,
   QUALITY_FEATURE_DEFAULTS,
   QUALITY_FEATURE_IDS,
   QUALITY_FEATURES,
@@ -77,5 +78,43 @@ describe("qualityFeatureEnabled", () => {
       label: "Compact page-draft context",
       summary: "Drafts from indexed summaries plus one bounded nearest-page handoff instead of five page excerpts."
     });
+    expect(QUALITY_FEATURES.find((feature) => feature.id === "beatDedup")).toEqual({
+      id: "beatDedup",
+      label: "Page-beat rewrite (optional polish)",
+      summary: "One cheap rewrite call when a beat collision is found. Map integrity (coverage, generics, collisions) always runs and is not this checkbox."
+    });
+  });
+
+  it("lists mandatory integrity separately from disableable polish ids", () => {
+    expect(MANDATORY_INTEGRITY_CHECKS.map((check) => check.id)).toEqual([
+      "generated-response-schema",
+      "page-map-coverage",
+      "generic-assignment-rejection",
+      "full-map-collision",
+      "deterministic-page-integrity",
+      "deterministic-manuscript-audit",
+      "publication-state-grading"
+    ]);
+    const polishIds = new Set<string>(QUALITY_FEATURE_IDS);
+    expect(MANDATORY_INTEGRITY_CHECKS.every((check) => !polishIds.has(check.id))).toBe(true);
+    expect(qualityFeatureEnabled(parseQualityFeatureSettings({
+      pageLocalQa: [],
+      smartUnslop: [],
+      pageModelReview: [],
+      pageQaRewrite: [],
+      finalBookQa: [],
+      storyExtractAudit: [],
+      planCritic: [],
+      claimVerifier: [],
+      compactPageDraftContext: [],
+      styleExcerpts: [],
+      styleAuditor: [],
+      pageMapCritic: [],
+      beatDedup: [],
+      writerTools: [],
+      bestOfPolish: [],
+      planThinkingBoost: [],
+      claimRetrieve: []
+    }), "beatDedup", "ultra")).toBe(false);
   });
 });

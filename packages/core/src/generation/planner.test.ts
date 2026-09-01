@@ -3,6 +3,7 @@ import { unsupportedGenerateWithTools } from "../adapters/fake.js";
 import type { GenerateJsonOptions, GenerateTextOptions, JsonResult, TextModelAdapter, TextResult } from "../adapters/types.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
+import { REQUIRED_LOCAL_RULE_IDS } from "./styleContract.js";
 import { createPlanningPackage, ensurePlanStyleContract, normalizePlanPageTargets, revisePlanningPackage } from "./planner.js";
 
 describe("createPlanningPackage", () => {
@@ -492,7 +493,8 @@ describe("revisePlanningPackage", () => {
     // its voice.
     expect(revised.title).toBe("The Shorter Race");
     expect(revised.voiceGuide).toEqual(currentPlan.voiceGuide);
-    expect(revised.antiAiRules).toEqual(currentPlan.antiAiRules);
+    expect(revised.antiAiRules).toEqual(expect.arrayContaining(currentPlan.antiAiRules));
+    expect(revised.antiAiRules.join(" ")).toMatch(/Do not invent evidence/);
   });
 });
 
@@ -666,5 +668,60 @@ describe("ensurePlanStyleContract", () => {
     expect(ensured.voiceGuide.some((rule) => rule.startsWith("Tone profile:"))).toBe(false);
     expect(ensured.antiAiRules.some((rule) => rule.startsWith("Tone profile:"))).toBe(false);
     expect(makeFallbackPlan(input).voiceGuide.some((rule) => rule.startsWith("Tone profile:"))).toBe(false);
+  });
+
+  it("keeps required factuality rules when the planner already returned six anti-AI lines", () => {
+    const input = testInput({ prompt: "A comparative history of irrigation across eras" });
+    const plan: BookPlan = {
+      ...makeFallbackPlan(input),
+      antiAiRules: [
+        "No moral-of-the-story closing line.",
+        "Never call the race a journey.",
+        "No sparkle words.",
+        "Avoid stock transitions.",
+        "Do not open on a question.",
+        "Keep sentences short."
+      ]
+    };
+    const { styleContract: _styleContract, writingMode: _writingMode, ...legacy } = plan;
+    const ensured = ensurePlanStyleContract(legacy, { input, toneProfile: "neutral" });
+    expect(ensured.antiAiRules.join(" ")).toMatch(/Do not invent evidence/);
+    expect(ensured.antiAiRules.join(" ")).toMatch(/Do not mention AI/);
+    expect(ensured.styleContract?.distributionRules.length).toBeGreaterThan(0);
+  });
+
+  it("keeps planner distributionRules when antiAiRules differ from localRules", () => {
+    const input = testInput({ prompt: "A comparative history of irrigation across eras", category: "HISTORY" });
+    const customDistribution = {
+      id: "custom-irrigation-lens",
+      instruction: "CUSTOM_DISTRIBUTION_IRRIGATION_LENS: rotate which canal system is the comparison case."
+    };
+    const antiAiRules = ["No sparkle words.", "Keep sentences short.", "Never open on a question."];
+    const plan: BookPlan = {
+      ...makeFallbackPlan(input),
+      antiAiRules,
+      styleContract: {
+        localRules: [
+          {
+            id: "no-invented-evidence",
+            instruction: "Do not invent evidence, citations, studies, experts, or source identities."
+          }
+        ],
+        distributionRules: [customDistribution]
+      }
+    };
+    expect(antiAiRules).not.toEqual(plan.styleContract?.localRules.map((rule) => rule.instruction));
+
+    const ensured = ensurePlanStyleContract(plan, { input, toneProfile: "neutral" });
+
+    expect(ensured.styleContract?.distributionRules.some((rule) => rule.id === customDistribution.id)).toBe(true);
+    expect(
+      ensured.styleContract?.distributionRules.some((rule) => rule.instruction === customDistribution.instruction)
+    ).toBe(true);
+    const localIds = ensured.styleContract?.localRules.map((rule) => rule.id) ?? [];
+    for (const id of REQUIRED_LOCAL_RULE_IDS) {
+      expect(localIds).toContain(id);
+    }
+    expect(ensured.antiAiRules).toEqual(expect.arrayContaining(antiAiRules));
   });
 });

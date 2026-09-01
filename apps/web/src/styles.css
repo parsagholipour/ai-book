@@ -2401,6 +2401,38 @@ figcaption {
   gap: 10px;
 }
 
+.quality-integrity-panel {
+  margin: 14px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid #bfd0c6;
+  border-radius: 10px;
+  background: #f4f8f5;
+}
+
+.quality-integrity-panel > strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.quality-integrity-panel ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.quality-integrity-panel li {
+  display: grid;
+  gap: 2px;
+}
+
+.quality-integrity-panel small {
+  color: #65706b;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
 .quality-admin-layout {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);

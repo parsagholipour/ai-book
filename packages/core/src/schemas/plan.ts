@@ -9,6 +9,13 @@ import {
   unwrapJsonObject
 } from "./jsonCoercion.js";
 import { illustrationCadenceSchema } from "./mediaSettings.js";
+import {
+  isWritingMode,
+  parseStyleContract,
+  styleContractSchema,
+  truncateStyleRuleText,
+  WRITING_MODES
+} from "./styleContract.js";
 
 /**
  * The plan tree: bookPlanSchema and every schema it is assembled from,
@@ -156,28 +163,6 @@ function mergeRecords(
  * back is `ensurePlanStyleContract` in generation/planner.ts.
  */
 const MAX_STYLE_RULES = 24;
-const MAX_STYLE_RULE_LENGTH = 500;
-
-/**
- * A UTF-16 slice is not a truncation. `.slice(0, 500)` cuts an emoji that
- * straddles index 500 in half, and the lone high surrogate left behind is a
- * legal JS string that `JSON.stringify` writes as `\ud83d` — which Postgres
- * `jsonb` **rejects**. So a model that padded one style rule past the cap and
- * ended it in an emoji did not produce a shortened rule; it failed the plan at
- * the *write*, after the parse had passed, taking the whole planning job with
- * it. Counting code points instead can never split a pair.
- *
- * A surrogate the model itself sent unpaired is dropped for the same reason:
- * `JSON.parse("\"\\ud83d\"")` hands one straight through, and nothing
- * downstream can store it however it got here.
- */
-const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
-
-function truncateCharacters(value: string, maxLength: number): string {
-  const storable = value.replace(LONE_SURROGATE, "");
-  const characters = [...storable];
-  return characters.length > maxLength ? characters.slice(0, maxLength).join("") : storable;
-}
 
 const GENERIC_VOICE_GUIDE = ["Write in a natural, specific human voice suited to the book's audience."];
 const GENERIC_ANTI_AI_RULES = [
@@ -185,7 +170,7 @@ const GENERIC_ANTI_AI_RULES = [
 ];
 
 /** Whatever this parse already had to fall back on: the current plan of a revision, or an echoed outline. */
-type PlanStyleSource = { voiceGuide?: unknown; antiAiRules?: unknown };
+type PlanStyleSource = { voiceGuide?: unknown; antiAiRules?: unknown; styleContract?: unknown };
 
 function cleanStyleRules(value: unknown): string[] {
   const coerced = coerceStringArray(value);
@@ -196,7 +181,8 @@ function cleanStyleRules(value: unknown): string[] {
     if (typeof rule !== "string") {
       continue;
     }
-    const trimmed = truncateCharacters(rule.trim(), MAX_STYLE_RULE_LENGTH);
+    // Code points, not UTF-16: see truncateStyleRuleText.
+    const trimmed = truncateStyleRuleText(rule.trim());
     const key = trimmed.toLowerCase();
     if (!trimmed || seen.has(key)) {
       continue;
@@ -260,18 +246,38 @@ function normalizeBookPlan(value: unknown, fallback: PlanStyleSource | undefined
     return unwrapped;
   }
 
-  return normalizePlanScalarArrays(
-    {
-      ...unwrapped,
-      writingComplexity: firstPresentField(unwrapped, WRITING_COMPLEXITY_KEYS),
-      // stringField rather than `??`: a model that answers the hook as an
-      // object or array must degrade to "no hook", not fail the whole parse.
-      // Trimmed like every other string this file normalizes, and a hook that
-      // trims away is no hook at all.
-      openingHook: stringField(unwrapped, [...OPENING_HOOK_KEYS])?.trim() || undefined
-    },
-    fallback ?? fallbackOutline
+  const styleSource = fallback ?? fallbackOutline;
+  return normalizeStyleContractFields(
+    normalizePlanScalarArrays(
+      {
+        ...unwrapped,
+        writingComplexity: firstPresentField(unwrapped, WRITING_COMPLEXITY_KEYS),
+        // stringField rather than `??`: a model that answers the hook as an
+        // object or array must degrade to "no hook", not fail the whole parse.
+        // Trimmed like every other string this file normalizes, and a hook that
+        // trims away is no hook at all.
+        openingHook: stringField(unwrapped, [...OPENING_HOOK_KEYS])?.trim() || undefined
+      },
+      styleSource
+    ),
+    styleSource
   );
+}
+
+function normalizeStyleContractFields(
+  value: Record<string, unknown>,
+  fallback: PlanStyleSource | undefined
+): Record<string, unknown> {
+  const writingMode = isWritingMode(value.writingMode) ? value.writingMode : undefined;
+  const styleContract = parseStyleContract(value.styleContract, fallback?.styleContract);
+  const next = { ...value };
+  delete next.writingMode;
+  delete next.styleContract;
+  return {
+    ...next,
+    ...(writingMode ? { writingMode } : {}),
+    ...(styleContract ? { styleContract } : {})
+  };
 }
 
 function normalizeBookPlanWithFallback(fallback: BookPlan) {
@@ -479,6 +485,8 @@ const bookPlanObjectSchema = z.object({
   writingComplexity: writingComplexitySchema,
   voiceGuide: z.array(z.string()).min(1),
   antiAiRules: z.array(z.string()).min(1),
+  writingMode: z.enum(WRITING_MODES).optional(),
+  styleContract: styleContractSchema.optional(),
   questions: z.array(planQuestionSchema).default([]),
   chapters: z.array(chapterPlanSchema).min(1),
   characters: z.array(characterSchema).default([]),

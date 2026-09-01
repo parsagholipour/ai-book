@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MAX_LOCAL_STYLE_RULES } from "./styleContract.js";
 import { bookPlanSchema, bookPlanSchemaWithFallback } from "./plan.js";
 
 /**
@@ -51,6 +52,203 @@ describe("plan style-contract fallbacks", () => {
     // the book it describes cannot be compiled, revised, or continued.
     expect(plan.voiceGuide.join(" ")).toMatch(/natural, specific human voice/);
     expect(plan.antiAiRules.join(" ")).toMatch(/formulaic AI rhetoric/);
+  });
+
+  it("accepts optional writingMode and styleContract and drops malformed ones", () => {
+    const plan = bookPlanSchema.parse({
+      ...planWithContract(),
+      writingMode: "analytical-history",
+      styleContract: {
+        localRules: [{ id: "no-invented-evidence", instruction: "Do not invent evidence." }],
+        distributionRules: [{ id: "vary-caveat-endings", instruction: "Vary endings." }]
+      }
+    });
+    expect(plan.writingMode).toBe("analytical-history");
+    expect(plan.styleContract?.localRules[0]?.id).toBe("no-invented-evidence");
+
+    const dropped = bookPlanSchema.parse({
+      ...planWithContract(),
+      writingMode: "space-opera",
+      styleContract: { localRules: { not: "a-list" } }
+    });
+    expect(dropped.writingMode).toBeUndefined();
+    expect(dropped.styleContract).toBeUndefined();
+  });
+
+  it("coerces a lone-string distributionRules revision into a one-item list, like antiAiRules", () => {
+    const customDistribution = {
+      id: "custom-irrigation-lens",
+      instruction: "CUSTOM_DISTRIBUTION_IRRIGATION_LENS: rotate which canal system is the comparison case."
+    };
+    const currentPlan = bookPlanSchema.parse({
+      ...planWithContract(),
+      styleContract: {
+        localRules: [{ id: "ok-local", instruction: "Prefer concrete nouns on this page." }],
+        distributionRules: [customDistribution]
+      }
+    });
+
+    const revised = bookPlanSchemaWithFallback(currentPlan).parse({
+      styleContract: {
+        distributionRules: "Vary caveat endings across chapters."
+      }
+    });
+
+    expect(revised.styleContract?.distributionRules).toHaveLength(1);
+    expect(revised.styleContract?.distributionRules[0]?.instruction).toBe("Vary caveat endings across chapters.");
+    expect(revised.styleContract?.localRules).toEqual(currentPlan.styleContract?.localRules);
+  });
+
+  it("keeps stored custom distributionRules when a revision emits an empty or invalid nested list", () => {
+    const customDistribution = {
+      id: "custom-irrigation-lens",
+      instruction: "CUSTOM_DISTRIBUTION_IRRIGATION_LENS: rotate which canal system is the comparison case."
+    };
+    const currentPlan = bookPlanSchema.parse({
+      ...planWithContract(),
+      styleContract: {
+        localRules: [{ id: "ok-local", instruction: "Prefer concrete nouns on this page." }],
+        distributionRules: [customDistribution]
+      }
+    });
+
+    const emptied = bookPlanSchemaWithFallback(currentPlan).parse({
+      styleContract: { distributionRules: [] }
+    });
+    expect(emptied.styleContract?.distributionRules).toEqual([customDistribution]);
+
+    const invalid = bookPlanSchemaWithFallback(currentPlan).parse({
+      styleContract: { distributionRules: [{ id: "", instruction: "" }, "not-an-object"] }
+    });
+    expect(invalid.styleContract?.distributionRules).toEqual([customDistribution]);
+  });
+
+  it("round-trips 12 custom local rules plus required ids without dropping custom distributionRules", () => {
+    const customDistribution = {
+      id: "custom-irrigation-lens",
+      instruction: "CUSTOM_DISTRIBUTION_IRRIGATION_LENS: rotate which canal system is the comparison case."
+    };
+    const localRules = [
+      ...Array.from({ length: 12 }, (_, index) => ({
+        id: `custom-local-${index + 1}`,
+        instruction: `CUSTOM_LOCAL_${index + 1}: prefer concrete nouns on this page.`
+      })),
+      {
+        id: "no-proof-leap",
+        instruction: "Avoid unsupported proof-leap transitions."
+      },
+      {
+        id: "no-invented-evidence",
+        instruction: "Do not invent evidence, citations, studies, experts, or source identities."
+      },
+      {
+        id: "no-generic-conclusion",
+        instruction: "Avoid generic conclusions and visible prompt scaffolding."
+      },
+      {
+        id: "uncertainty-where-earned",
+        instruction: "Use uncertainty only where the evidence on this page requires it."
+      },
+      {
+        id: "prompt-leak-ban",
+        instruction: "Do not mention AI, prompts, plans, or generation in reader-facing pages."
+      }
+    ];
+
+    const plan = bookPlanSchema.parse({
+      ...planWithContract(),
+      writingMode: "analytical-history",
+      styleContract: {
+        localRules,
+        distributionRules: [customDistribution]
+      }
+    });
+
+    expect(plan.styleContract).toBeDefined();
+    expect(plan.styleContract?.localRules).toHaveLength(localRules.length);
+    expect(plan.styleContract?.localRules.length).toBeLessThanOrEqual(MAX_LOCAL_STYLE_RULES);
+    expect(plan.styleContract?.localRules.map((rule) => rule.id)).toEqual(
+      expect.arrayContaining([
+        "no-proof-leap",
+        "no-invented-evidence",
+        "no-generic-conclusion",
+        "uncertainty-where-earned",
+        "prompt-leak-ban"
+      ])
+    );
+    expect(plan.styleContract?.distributionRules).toEqual([customDistribution]);
+  });
+
+  it("keeps custom distributionRules when localRules overflow the contract cap", () => {
+    const customDistribution = {
+      id: "custom-irrigation-lens",
+      instruction: "CUSTOM_DISTRIBUTION_IRRIGATION_LENS: rotate which canal system is the comparison case."
+    };
+    const localRules = Array.from({ length: MAX_LOCAL_STYLE_RULES + 1 }, (_, index) => ({
+      id: `overflow-local-${index + 1}`,
+      instruction: `OVERFLOW_LOCAL_${index + 1}: prefer concrete nouns on this page.`
+    }));
+
+    const plan = bookPlanSchema.parse({
+      ...planWithContract(),
+      writingMode: "analytical-history",
+      styleContract: {
+        localRules,
+        distributionRules: [customDistribution]
+      }
+    });
+
+    expect(plan.styleContract).toBeDefined();
+    expect(plan.styleContract?.localRules.length).toBeLessThanOrEqual(MAX_LOCAL_STYLE_RULES);
+    expect(plan.styleContract?.distributionRules).toEqual([customDistribution]);
+  });
+
+  it("keeps custom distributionRules when one localRules entry is invalid", () => {
+    const customDistribution = {
+      id: "custom-irrigation-lens",
+      instruction: "CUSTOM_DISTRIBUTION_IRRIGATION_LENS: rotate which canal system is the comparison case."
+    };
+
+    const plan = bookPlanSchema.parse({
+      ...planWithContract(),
+      writingMode: "analytical-history",
+      styleContract: {
+        localRules: [
+          { id: "ok-local", instruction: "Prefer concrete nouns on this page." },
+          { id: "x".repeat(81), instruction: "This id is longer than the contract allows." },
+          "not-an-object",
+          { id: "also-ok", instruction: "Keep sentences short." }
+        ],
+        distributionRules: [customDistribution]
+      }
+    });
+
+    expect(plan.styleContract).toBeDefined();
+    expect(plan.styleContract?.localRules.map((rule) => rule.id)).toEqual(["ok-local", "also-ok"]);
+    expect(plan.styleContract?.distributionRules).toEqual([customDistribution]);
+  });
+
+  it("round-trips a 500-code-point emoji local rule without dropping the contract", () => {
+    const instruction = "\u{1F600}".repeat(500);
+    expect(instruction.length).toBeGreaterThan(500);
+    expect([...instruction]).toHaveLength(500);
+    const customDistribution = {
+      id: "custom-irrigation-lens",
+      instruction: "CUSTOM_DISTRIBUTION_IRRIGATION_LENS: rotate which canal system is the comparison case."
+    };
+
+    const plan = bookPlanSchema.parse({
+      ...planWithContract(),
+      writingMode: "analytical-history",
+      styleContract: {
+        localRules: [{ id: "emoji-local", instruction }],
+        distributionRules: [customDistribution]
+      }
+    });
+
+    expect(plan.styleContract).toBeDefined();
+    expect(plan.styleContract?.localRules.some((rule) => rule.instruction === instruction)).toBe(true);
+    expect(plan.styleContract?.distributionRules).toEqual([customDistribution]);
   });
 });
 
