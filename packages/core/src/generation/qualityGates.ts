@@ -10,6 +10,18 @@ import type { ModelTier } from "../schemas/mediaSettings.js";
 export const QUALITY_EFFORT_TIERS = ["ultra", "premium", "balanced", "fast"] as const;
 export type QualityEffortTier = (typeof QUALITY_EFFORT_TIERS)[number];
 
+export const PAGE_REVIEW_PROMPT_MODES = ["normal", "compact"] as const;
+export type PageReviewPromptMode = (typeof PAGE_REVIEW_PROMPT_MODES)[number];
+export type PageReviewPromptModes = Record<QualityEffortTier, PageReviewPromptMode>;
+
+/** Missing or legacy revision values keep the pre-existing full review prompt. */
+export const PAGE_REVIEW_PROMPT_MODE_DEFAULTS: PageReviewPromptModes = {
+  ultra: "normal",
+  premium: "normal",
+  balanced: "normal",
+  fast: "normal"
+};
+
 export const QUALITY_FEATURE_IDS = [
   "pageLocalQa",
   "smartUnslop",
@@ -154,6 +166,31 @@ export const QUALITY_FEATURES: Array<{
 
 function isEffortTier(value: unknown): value is QualityEffortTier {
   return typeof value === "string" && (QUALITY_EFFORT_TIERS as readonly string[]).includes(value);
+}
+
+function isPageReviewPromptMode(value: unknown): value is PageReviewPromptMode {
+  return typeof value === "string" &&
+    (PAGE_REVIEW_PROMPT_MODES as readonly string[]).includes(value);
+}
+
+/** Resolve per-tier reviewer prompt modes from a GenerationQualityRevision settings JSON value. */
+export function parsePageReviewPromptModes(raw: unknown): PageReviewPromptModes {
+  const record = raw && typeof raw === "object" && !Array.isArray(raw)
+    ? (raw as Record<string, unknown>)
+    : {};
+  const modes = record.pageReviewPromptModes &&
+    typeof record.pageReviewPromptModes === "object" &&
+    !Array.isArray(record.pageReviewPromptModes)
+    ? (record.pageReviewPromptModes as Record<string, unknown>)
+    : {};
+  return Object.fromEntries(
+    QUALITY_EFFORT_TIERS.map((tier) => [
+      tier,
+      isPageReviewPromptMode(modes[tier])
+        ? modes[tier]
+        : PAGE_REVIEW_PROMPT_MODE_DEFAULTS[tier]
+    ])
+  ) as PageReviewPromptModes;
 }
 
 /**

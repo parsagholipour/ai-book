@@ -1,4 +1,7 @@
-import { QUALITY_FEATURE_IDS } from "@book-maker/core/qualityGates";
+import {
+  PAGE_REVIEW_PROMPT_MODE_DEFAULTS,
+  QUALITY_FEATURE_IDS
+} from "@book-maker/core/qualityGates";
 import type { GenerationQuality } from "./GenerationQualityScreen.js";
 
 /** A complete current API response, optionally carrying future feature ids. */
@@ -12,6 +15,7 @@ export function generationQualityResponse(...undescribedIds: string[]): Generati
   return {
     version: 3,
     settings,
+    pageReviewPromptModes: { ...PAGE_REVIEW_PROMPT_MODE_DEFAULTS },
     models: {
       fastJudgments: { ...fast },
       fastJudgmentsFallback: { ...fallback },

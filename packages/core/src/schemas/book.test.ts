@@ -6,8 +6,44 @@ import {
   bookPlanModelOutputSchemaWithFallback,
   bookPlanSchema,
   bookPlanSchemaWithFallback,
-  createProjectSchema
+  createProjectSchema,
+  pageQualityReportSchema
 } from "./book.js";
+
+describe("pageQualityReportSchema grounding compatibility", () => {
+  it("derives an explicit status from legacy groundedOk reports", () => {
+    const legacyPassing = pageQualityReportSchema.parse({
+      approved: true,
+      score: 90,
+      groundedOk: true
+    });
+    const legacyFailing = pageQualityReportSchema.parse({
+      approved: false,
+      score: 60,
+      groundedOk: false
+    });
+
+    expect(legacyPassing).toMatchObject({ groundedOk: true, groundingStatus: "not_applicable" });
+    expect(legacyFailing).toMatchObject({ groundedOk: false, groundingStatus: "failed" });
+  });
+
+  it("keeps groundedOk serialization compatible with explicit grounding statuses", () => {
+    const failed = pageQualityReportSchema.parse({
+      approved: false,
+      score: 60,
+      groundedOk: true,
+      grounding_status: "failed"
+    });
+    const unavailable = pageQualityReportSchema.parse({
+      approved: true,
+      score: 90,
+      groundingStatus: "unavailable"
+    });
+
+    expect(failed).toMatchObject({ groundedOk: false, groundingStatus: "failed" });
+    expect(unavailable).toMatchObject({ groundedOk: true, groundingStatus: "unavailable" });
+  });
+});
 
 describe("createProjectSchema", () => {
   it("accepts the expanded top-level book categories", () => {

@@ -17,9 +17,9 @@ export function withClaimVerification<T extends {
 }>(
   report: T,
   verification: PageClaimVerification
-): T & { groundedOk: boolean; unsupportedClaims: string[] } {
+): T & { groundedOk: boolean; groundingStatus: "verified" | "failed"; unsupportedClaims: string[] } {
   if (verification.groundedOk && verification.unsupportedClaims.length === 0) {
-    return { ...report, groundedOk: true, unsupportedClaims: [] };
+    return { ...report, groundedOk: true, groundingStatus: "verified", unsupportedClaims: [] };
   }
   const unsupportedClaims = verification.unsupportedClaims;
   const claimIssues = unsupportedClaims.map((claim) => `Unsupported claim: ${claim}`);
@@ -27,6 +27,7 @@ export function withClaimVerification<T extends {
     ...report,
     approved: false,
     groundedOk: false,
+    groundingStatus: "failed",
     unsupportedClaims,
     issues: uniqueStrings([...report.issues, ...claimIssues]),
     requiredRevisions: uniqueStrings([

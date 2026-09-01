@@ -160,6 +160,69 @@ describe("GET /api/admin/operations/books", () => {
 });
 
 describe("GET /api/admin/operations/books/:id", () => {
+  it("partitions page-QA rewrite spend by exact trigger combination without changing purpose totals", async () => {
+    mockDb.prisma.project.findUnique.mockResolvedValue({
+      id: "book-qa",
+      status: "COMPLETE",
+      mediaSettings: {},
+      updatedAt: new Date("2026-08-25T14:00:00.000Z")
+    });
+    mockDb.prisma.$queryRawUnsafe.mockResolvedValue([]);
+    mockDb.prisma.$queryRaw.mockResolvedValue([
+      {
+        kind: "text",
+        purpose: "revise-page",
+        provider: "gemini",
+        model: "writer",
+        qa_trigger_reasons: '["claim_grounding"]',
+        calls: 3,
+        priced_calls: 3,
+        failed_calls: 0,
+        in_flight_calls: 0,
+        estimated_calls: 0,
+        usd: 0.3,
+        prompt_tokens: 300,
+        cached_prompt_tokens: 0,
+        output_tokens: 90,
+        audio_ms: 0
+      },
+      {
+        kind: "text",
+        purpose: "revise-page",
+        provider: "gemini",
+        model: "writer",
+        qa_trigger_reasons: '["claim_grounding","style"]',
+        calls: 2,
+        priced_calls: 2,
+        failed_calls: 0,
+        in_flight_calls: 0,
+        estimated_calls: 0,
+        usd: 0.2,
+        prompt_tokens: 200,
+        cached_prompt_tokens: 0,
+        output_tokens: 60,
+        audio_ms: 0
+      }
+    ]);
+    app = await buildApp();
+
+    const detail = (await app.inject({ method: "GET", url: "/api/admin/operations/books/book-qa" })).json();
+
+    expect(detail.qaRewriteTriggers).toEqual([
+      { key: "claim_grounding", reasons: ["claim_grounding"], calls: 3, providerCostUsd: 0.3 },
+      {
+        key: "claim_grounding+style",
+        reasons: ["claim_grounding", "style"],
+        calls: 2,
+        providerCostUsd: 0.2
+      }
+    ]);
+    expect(detail.purposes).toEqual([
+      expect.objectContaining({ key: "revise-page", calls: 5, usd: 0.5 })
+    ]);
+    expect(detail.providerCostUsd).toBe(0.5);
+  });
+
   it("returns complete lifetime ledger economics and provider costs grouped by raw purpose and model", async () => {
     mockDb.prisma.project.findUnique.mockResolvedValue({ id: "book-1", status: "COMPLETE" });
     mockDb.prisma.$queryRawUnsafe.mockResolvedValue([

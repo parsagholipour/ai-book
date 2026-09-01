@@ -2,7 +2,7 @@ import { Loader2, RotateCcw, Save, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   QUALITY_EFFORT_TIERS,
-  type QualityEffortTier,
+  type PageReviewPromptModes,
   type QualityFeatureId
 } from "@book-maker/core/qualityGates";
 import { apiGet, apiPatch, apiPost } from "../../api.js";
@@ -21,12 +21,17 @@ import {
   rebaseGenerationModelRouting,
   type GenerationModelRoutingPatch
 } from "./GenerationModelRouting.js";
+import {
+  PageReviewPromptModeControls,
+  QualityTierFieldset,
+  readPageReviewPromptModes,
+  rebasePageReviewPromptModes,
+  toggleQualityTier,
+  type ServerEffortTier
+} from "./GenerationQualityControls.js";
 
 /** An id core describes, or one only the server knows about yet — see `featureRows`. */
 type ServerFeatureId = QualityFeatureId | (string & {});
-
-/** An effort tier this console labels, or one observed from a newer server. */
-export type ServerEffortTier = QualityEffortTier | (string & {});
 
 /**
  * The whole map a save has to carry, keyed by the ids core actually compiles.
@@ -52,7 +57,9 @@ type QualitySettings = Record<QualityFeatureId, ServerEffortTier[]> &
  * features rather than under a key of its own.
  */
 type QualitySavePatch = {
-  [feature: string]: ServerEffortTier[] | GenerationModelRoutingPatch | string | undefined;
+  [feature: string]: ServerEffortTier[] | GenerationModelRoutingPatch |
+    Partial<PageReviewPromptModes> | string | undefined;
+  pageReviewPromptModes?: Partial<PageReviewPromptModes>;
   models?: GenerationModelRoutingPatch;
   note?: string;
 };
@@ -66,6 +73,7 @@ type QualityFeature = {
 export type GenerationQuality = {
   version: number;
   settings: QualitySettings;
+  pageReviewPromptModes: PageReviewPromptModes;
   models: GenerationTextModelRouting;
   modelOptions: GenerationTextModelOption[];
   usingCompiledDefaults: boolean;
@@ -75,18 +83,12 @@ export type GenerationQuality = {
   updatedAt: string | null;
 };
 
-/** Keyed rather than listed, so a tier core renames stops compiling here. */
-const TIER_LABELS: Record<QualityEffortTier, string> = {
-  ultra: "Ultra",
-  premium: "Premium",
-  balanced: "Balanced",
-  fast: "Quick draft"
-};
-
 export function GenerationQualityScreen() {
   const [state, setState] = useState<GenerationQuality | null>(null);
   const [draft, setDraft] = useState<QualitySettings | null>(null);
   const [modelDraft, setModelDraft] = useState<GenerationTextModelRouting | null>(null);
+  const [pageReviewPromptModeDraft, setPageReviewPromptModeDraft] =
+    useState<PageReviewPromptModes | null>(null);
   const [note, setNote] = useState("");
   const [busyAction, setBusyAction] = useState<"save" | "gates-reset" | "models-reset" | null>(null);
   const busyRef = useRef(false);
@@ -96,9 +98,11 @@ export function GenerationQualityScreen() {
   useEffect(() => {
     void apiGet<GenerationQuality>("/api/admin/generation-quality")
       .then((value) => {
-        setState(value);
+        const normalized = normalizeGenerationQuality(value);
+        setState(normalized);
         setDraft(cloneSettings(value.settings));
         setModelDraft(cloneGenerationModelRouting(value.models));
+        setPageReviewPromptModeDraft(clonePageReviewPromptModes(normalized.pageReviewPromptModes));
       })
       .catch((loadError) => setError(readError(loadError)));
   }, []);
@@ -106,11 +110,19 @@ export function GenerationQualityScreen() {
   const rows = useMemo(() => (state ? featureRows(state) : []), [state]);
 
   const claim = useMemo(() => {
-    if (!state || !draft || !modelDraft) {
+    if (!state || !draft || !modelDraft || !pageReviewPromptModeDraft) {
       return null;
     }
-    return qualitySaveClaim(state.settings, draft, note, state.models, modelDraft);
-  }, [draft, modelDraft, note, state]);
+    return qualitySaveClaim(
+      state.settings,
+      draft,
+      note,
+      state.models,
+      modelDraft,
+      state.pageReviewPromptModes,
+      pageReviewPromptModeDraft
+    );
+  }, [draft, modelDraft, note, pageReviewPromptModeDraft, state]);
 
   function toggle(feature: ServerFeatureId, tier: ServerEffortTier) {
     // State does not commit until React finishes the current interaction. The
@@ -133,11 +145,13 @@ export function GenerationQualityScreen() {
   async function save() {
     // `state` and `draft` are what a non-null claim is built from; naming them
     // here is what lets the conflict path below rebase against them.
-    if (!claim || !state || !draft || !modelDraft || !beginRequest("save")) {
+    if (!claim || !state || !draft || !modelDraft || !pageReviewPromptModeDraft || !beginRequest("save")) {
       return;
     }
     try {
-      const value = await apiPatch<GenerationQuality>("/api/admin/generation-quality", claim);
+      const value = normalizeGenerationQuality(
+        await apiPatch<GenerationQuality>("/api/admin/generation-quality", claim)
+      );
       // The stored revision is what the next claim diffs against, so both halves
       // move to the merge the server answered with — which may carry another
       // operator's boxes as well as ours. Re-basing only the draft would leave
@@ -145,6 +159,7 @@ export function GenerationQualityScreen() {
       setState(value);
       setDraft(cloneSettings(value.settings));
       setModelDraft(cloneGenerationModelRouting(value.models));
+      setPageReviewPromptModeDraft(clonePageReviewPromptModes(value.pageReviewPromptModes));
       setNote("");
       setError(null);
       setSaved(`Saved as generation quality version ${value.version}.`);
@@ -158,6 +173,7 @@ export function GenerationQualityScreen() {
         loaded: state,
         draft,
         modelDraft,
+        draftPageReviewPromptModes: pageReviewPromptModeDraft,
         note,
         reload: () => apiGet<GenerationQuality>("/api/admin/generation-quality")
       });
@@ -165,6 +181,7 @@ export function GenerationQualityScreen() {
         setState(recovery.state);
         setDraft(recovery.draft);
         setModelDraft(recovery.modelDraft);
+        setPageReviewPromptModeDraft(recovery.pageReviewPromptModeDraft);
       }
       setError(recovery.error);
     } finally {
@@ -179,10 +196,13 @@ export function GenerationQualityScreen() {
     try {
       const path =
         kind === "gates" ? "/api/admin/generation-quality/reset" : "/api/admin/generation-quality/models/reset";
-      const value = await apiPost<GenerationQuality>(path, note.trim() ? { note: note.trim() } : {});
+      const value = normalizeGenerationQuality(
+        await apiPost<GenerationQuality>(path, note.trim() ? { note: note.trim() } : {})
+      );
       setState(value);
       setDraft(cloneSettings(value.settings));
       setModelDraft(cloneGenerationModelRouting(value.models));
+      setPageReviewPromptModeDraft(clonePageReviewPromptModes(value.pageReviewPromptModes));
       setNote("");
       setError(null);
       setSaved(
@@ -218,7 +238,7 @@ export function GenerationQualityScreen() {
     <div className="admin-page">
       {error ? <div className="error-banner">{error}</div> : null}
       {saved ? <div className="pricing-saved">{saved}</div> : null}
-      {!state || !draft || !modelDraft ? (
+      {!state || !draft || !modelDraft || !pageReviewPromptModeDraft ? (
         <div className="empty-state">
           <Loader2 className="spin" size={20} aria-hidden /> Loading quality gates…
         </div>
@@ -243,6 +263,15 @@ export function GenerationQualityScreen() {
               Each row can run on any subset of Effort tiers. Deselect every tier and that feature
               is off for the next page, plan, or map step — live, not stamped at enqueue.
             </p>
+            <PageReviewPromptModeControls
+              modes={pageReviewPromptModeDraft}
+              disabled={busy}
+              onChange={(tier, mode) => {
+                if (busyRef.current) return;
+                setPageReviewPromptModeDraft((current) => current ? { ...current, [tier]: mode } : current);
+                setSaved(null);
+              }}
+            />
             <ul className="quality-gate-list">
               {rows.map((feature) => {
                 const assigned = draft[feature.id] ?? [];
@@ -380,7 +409,9 @@ export function qualitySaveClaim(
   draft: QualitySettings,
   note: string,
   storedModels: GenerationTextModelRouting,
-  draftModels: GenerationTextModelRouting
+  draftModels: GenerationTextModelRouting,
+  storedPageReviewPromptModes?: PageReviewPromptModes | undefined,
+  draftPageReviewPromptModes?: PageReviewPromptModes | undefined
 ): QualitySavePatch | null {
   const trimmed = note.trim();
   const moved: QualitySavePatch = {};
@@ -392,6 +423,15 @@ export function qualitySaveClaim(
   }
   const models = generationModelRoutingClaim(storedModels, draftModels);
   if (models) moved.models = models;
+  if (storedPageReviewPromptModes && draftPageReviewPromptModes) {
+    const promptModes: Partial<PageReviewPromptModes> = {};
+    for (const tier of QUALITY_EFFORT_TIERS) {
+      if (draftPageReviewPromptModes[tier] !== storedPageReviewPromptModes[tier]) {
+        promptModes[tier] = draftPageReviewPromptModes[tier];
+      }
+    }
+    if (Object.keys(promptModes).length > 0) moved.pageReviewPromptModes = promptModes;
+  }
   if (Object.keys(moved).length === 0 && !trimmed) {
     return null;
   }
@@ -420,6 +460,7 @@ export type QualitySaveRecovery =
       state: GenerationQuality;
       draft: QualitySettings;
       modelDraft: GenerationTextModelRouting;
+      pageReviewPromptModeDraft: PageReviewPromptModes;
       error: string;
     };
 
@@ -468,6 +509,7 @@ export async function recoverQualitySave(input: {
   loaded: GenerationQuality;
   draft: QualitySettings;
   modelDraft: GenerationTextModelRouting;
+  draftPageReviewPromptModes?: PageReviewPromptModes | undefined;
   note: string;
   reload: () => Promise<GenerationQuality>;
 }): Promise<QualitySaveRecovery> {
@@ -499,19 +541,33 @@ export async function recoverQualitySave(input: {
       input.loaded.models,
       input.modelDraft
     );
+    const rebasedPageReviewPromptModes = rebasePageReviewPromptModes(
+      head.pageReviewPromptModes,
+      input.loaded.pageReviewPromptModes,
+      input.draftPageReviewPromptModes ?? input.loaded.pageReviewPromptModes
+    );
     const described = new Map(featureRows(head).map((row) => [row.id, row.label]));
     return {
       kind: "rebase",
       state: head,
       draft: rebased.settings,
       modelDraft: rebasedModels,
+      pageReviewPromptModeDraft: rebasedPageReviewPromptModes,
       error: qualityConflictNotice({
         version: head.version,
         reloaded: true,
         movedUnderneath: rebased.movedUnderneath.map((id) => described.get(id) ?? id),
         // Asked rather than assumed: the winner may have stored the very box this
         // operator was claiming, which leaves nothing to press Save for.
-        stillClaiming: qualitySaveClaim(head.settings, rebased.settings, input.note, head.models, rebasedModels) !== null
+        stillClaiming: qualitySaveClaim(
+          head.settings,
+          rebased.settings,
+          input.note,
+          head.models,
+          rebasedModels,
+          head.pageReviewPromptModes,
+          rebasedPageReviewPromptModes
+        ) !== null
       })
     };
   } catch {
@@ -580,12 +636,14 @@ export function readQualityHead(value: unknown): GenerationQuality | null {
   const features = readFeatureCopy(value.features);
   const models = readGenerationModelRouting(value.models);
   const modelOptions = readGenerationModelOptions(value.modelOptions);
+  const pageReviewPromptModes = readPageReviewPromptModes(value.pageReviewPromptModes);
   if (typeof version !== "number" || !Number.isFinite(version) || !settings || !features || !models || !modelOptions) {
     return null;
   }
   return {
     version,
     settings,
+    pageReviewPromptModes,
     models,
     modelOptions,
     usingCompiledDefaults: value.usingCompiledDefaults === true,
@@ -593,6 +651,15 @@ export function readQualityHead(value: unknown): GenerationQuality | null {
     note: readNullableText(value.note),
     updatedBy: readNullableText(value.updatedBy),
     updatedAt: readNullableText(value.updatedAt)
+  };
+}
+
+function normalizeGenerationQuality(value: GenerationQuality): GenerationQuality {
+  return {
+    ...value,
+    pageReviewPromptModes: readPageReviewPromptModes(
+      (value as GenerationQuality & { pageReviewPromptModes?: unknown }).pageReviewPromptModes
+    )
   };
 }
 
@@ -797,57 +864,6 @@ function cloneSettings(settings: QualitySettings): QualitySettings {
   ) as QualitySettings;
 }
 
-/** The known choices plus any active tier string observed from a newer server. */
-export function qualityTierChoices(
-  assigned: readonly ServerEffortTier[]
-): Array<{ tier: ServerEffortTier; label: string }> {
-  const choices: Array<{ tier: ServerEffortTier; label: string }> = QUALITY_EFFORT_TIERS.map(
-    (tier) => ({ tier, label: TIER_LABELS[tier] })
-  );
-  const seen = new Set<string>(QUALITY_EFFORT_TIERS);
-  for (const tier of assigned) {
-    if (!seen.has(tier)) {
-      seen.add(tier);
-      choices.push({ tier, label: `Unknown tier · ${tier}` });
-    }
-  }
-  return choices;
-}
-
-/** Presence is the toggle: removing an unknown tier makes it postable to this build again. */
-export function toggleQualityTier(
-  assigned: readonly ServerEffortTier[],
-  tier: ServerEffortTier
-): ServerEffortTier[] {
-  return assigned.includes(tier)
-    ? assigned.filter((item) => item !== tier)
-    : [...assigned, tier];
-}
-
-/** Kept small and exported so forward-compatible tier rendering has a direct UI regression test. */
-export function QualityTierFieldset({
-  label,
-  assigned,
-  disabled = false,
-  onToggle
-}: {
-  label: string;
-  assigned: ServerEffortTier[];
-  disabled?: boolean;
-  onToggle: (tier: ServerEffortTier) => void;
-}) {
-  return (
-    <fieldset className="quality-gate-tiers" aria-label={label} disabled={disabled}>
-      {qualityTierChoices(assigned).map((choice) => (
-        <label key={choice.tier}>
-          <input
-            type="checkbox"
-            checked={assigned.includes(choice.tier)}
-            onChange={() => onToggle(choice.tier)}
-          />
-          {choice.label}
-        </label>
-      ))}
-    </fieldset>
-  );
+function clonePageReviewPromptModes(modes: PageReviewPromptModes): PageReviewPromptModes {
+  return { ...modes };
 }

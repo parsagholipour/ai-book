@@ -26,6 +26,7 @@ import type {
 } from "../schemas/book.js";
 import { chapterBriefSchema, pageProductionBeatSchema } from "../schemas/book.js";
 import { hasPageBriefMetaLanguage } from "./pagesLocalQa.js";
+import { pageQaProviderCallMetadata } from "./pageQaRewriteTelemetry.js";
 import type { ReviewPageOptions } from "./pagesReview.js";
 import {
   GROUNDED_FACTUALITY_RULE,
@@ -79,6 +80,8 @@ export type GeneratePageMapOptions = {
 export type RepairPageBriefOptions = ReviewPageOptions & {
   pageBrief: PageProductionBeat;
   report: PageQualityReport;
+  /** Candidate the repaired assignment will brief; the original draft is 1. */
+  qaCandidateNumber?: number | undefined;
 };
 
 /**
@@ -290,6 +293,11 @@ export async function repairPageBrief(options: RepairPageBriefOptions): Promise<
   const citation = citationContractFields(options.researchNotes ?? options.retrievedResearch ?? options.plan.researchNotes);
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "repair-page-brief",
+    providerCallMetadata: pageQaProviderCallMetadata({
+      report: options.report,
+      candidateNumber: options.qaCandidateNumber,
+      additionalReasons: ["brief_repair"]
+    }),
     temperature: Math.min(REWRITE_TEMPERATURE_CEILING, options.input.temperature),
     maxTokens: 2200,
     schema: pageProductionBeatSchema,

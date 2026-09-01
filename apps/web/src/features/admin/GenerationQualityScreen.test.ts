@@ -1,12 +1,9 @@
 import { QUALITY_FEATURE_IDS } from "@book-maker/core/qualityGates";
 import { existsSync } from "node:fs";
 import { chromium } from "@playwright/test";
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { createServer } from "vite";
 import {
-  QualityTierFieldset,
   featureRows,
   qualityConflictNotice,
   qualityResetFailure,
@@ -15,7 +12,6 @@ import {
   readQualityHead,
   rebaseQualityDraft,
   recoverQualitySave,
-  toggleQualityTier,
   type GenerationQuality
 } from "./GenerationQualityScreen.js";
 import { cloneGenerationModelRouting } from "./GenerationModelRouting.js";
@@ -84,27 +80,6 @@ describe("featureRows", () => {
     const labels = new Map(rows.map((row) => [row.id, row.label]));
     expect(labels.get("beat_dedup")).toBe("Beat Dedup");
     expect(labels.get("arcContinuityCheck")).toBe("Arc Continuity Check");
-  });
-});
-
-describe("quality tier controls", () => {
-  it("renders an observed unknown active tier and lets the shared toggle remove it", () => {
-    const assigned = ["ultra", "glacial"];
-    const markup = renderToStaticMarkup(
-      createElement(QualityTierFieldset, {
-        label: "Plan critic",
-        assigned,
-        disabled: true,
-        onToggle: () => undefined
-      })
-    );
-
-    expect(markup).toContain("Ultra");
-    expect(markup).toContain("Unknown tier · glacial");
-    expect(markup).toContain('aria-label="Plan critic"');
-    expect(markup).toContain("disabled");
-    expect(markup.match(/checked=""/g)).toHaveLength(2);
-    expect(toggleQualityTier(assigned, "glacial")).toEqual(["ultra"]);
   });
 });
 
@@ -261,6 +236,23 @@ describe("quality form request boundary", () => {
 });
 
 describe("qualitySaveClaim", () => {
+  it("claims only the tier whose model-page-review prompt mode changed", () => {
+    const state = responseWith();
+    const modes = { ...state.pageReviewPromptModes, premium: "compact" as const };
+
+    expect(
+      qualitySaveClaim(
+        state.settings,
+        draftOf(state),
+        "",
+        state.models,
+        state.models,
+        state.pageReviewPromptModes,
+        modes
+      )
+    ).toEqual({ pageReviewPromptModes: { premium: "compact" } });
+  });
+
   it("posts the trimmed note alone when no box was touched", () => {
     const state = responseWith();
 

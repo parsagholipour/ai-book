@@ -132,7 +132,8 @@ export class TextFallbackCallAccounting {
         durationMs,
         usage: providerUsage.usage,
         liveUsageId: this.liveUsageId,
-        fallbackPromptTokens: this.promptTokens
+        fallbackPromptTokens: this.promptTokens,
+        providerCallMetadata: this.context.requestOptions.providerCallMetadata
       });
       return;
     }

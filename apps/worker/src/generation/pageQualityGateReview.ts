@@ -4,6 +4,7 @@ import {
   reviewPageDraftForSmartUnslop,
   reviewRequiredPageQualityChecks,
   type BookGenerationStrategy,
+  type PageReviewPromptMode,
   type PageQualityReport,
   type ReviewPageOptions
 } from "@book-maker/core";
@@ -67,6 +68,10 @@ export async function reviewPageWithQualityGates(options: {
         ? reviewPageDraftLocally(options.reviewOptions)
         : await options.strategy.reviewPageDraft({
             ...options.reviewOptions,
+            pageReviewPromptMode:
+              (options.quality as QualityGateContext & {
+                pageReviewPromptMode?: PageReviewPromptMode | undefined;
+              }).pageReviewPromptMode ?? "normal",
             skipLocalChecks: !localEnabled
           });
 

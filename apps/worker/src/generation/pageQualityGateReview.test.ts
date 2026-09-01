@@ -86,6 +86,23 @@ function reviewOptions(markdown: string) {
 }
 
 describe("reviewPageWithQualityGates Smart unslop", () => {
+  it("applies the tier-resolved page-review prompt mode to the model review", async () => {
+    const strategy = { reviewPageDraft: vi.fn().mockResolvedValue(approvedModelReport) };
+
+    await reviewPageWithQualityGates({
+      strategy: strategy as never,
+      quality: {
+        pageReviewPromptMode: "compact",
+        enabled: (feature: string) => feature === "pageModelReview"
+      } as never,
+      reviewOptions: reviewOptions("Operators measure turbidity before the water leaves the plant.")
+    });
+
+    expect(strategy.reviewPageDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ pageReviewPromptMode: "compact" })
+    );
+  });
+
   it("turns a significant slop cluster into the existing page rewrite report", async () => {
     const strategy = { reviewPageDraft: vi.fn().mockResolvedValue(approvedModelReport) };
     const report = await reviewPageWithQualityGates({

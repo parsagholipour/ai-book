@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
+import { withPageQaTriggerReasons } from "./pageQaRewriteTelemetry.js";
 
 export const storyPromiseStatusSchema = z.enum(["open", "paid", "broken"]);
 
@@ -285,12 +286,12 @@ export function withStoryContradictions<T extends {
   if (extra.length === 0) {
     return report;
   }
-  return {
+  return withPageQaTriggerReasons({
     ...report,
     approved: false,
     issues: [...report.issues, ...extra],
     requiredRevisions: [...report.requiredRevisions, ...extra.map((item) => `Fix: ${item}`)]
-  };
+  }, ["story_contradiction"]);
 }
 
 export function unpaidPromiseIssues(

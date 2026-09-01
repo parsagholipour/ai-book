@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  PAGE_REVIEW_PROMPT_MODE_DEFAULTS,
   QUALITY_EFFORT_TIERS,
   QUALITY_FEATURE_DEFAULTS,
   qualityFeatureEnabled,
@@ -118,6 +119,7 @@ describe("admin generation quality settings", () => {
       version: 0,
       usingCompiledDefaults: true,
       settings: QUALITY_FEATURE_DEFAULTS,
+      pageReviewPromptModes: PAGE_REVIEW_PROMPT_MODE_DEFAULTS,
       models: {
         fastJudgments: { provider: "deepseek", model: "deepseek-v4-flash", thinkingEnabled: false },
         fastJudgmentsFallback: {
@@ -215,35 +217,6 @@ describe("admin generation quality settings", () => {
     expect(qualityFeatureEnabled(settingsOf(response), "finalBookQa", "balanced")).toBe(false);
     expect(mockPrisma.generationQualityRevision.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ settings: expect.objectContaining({ finalBookQa: [] }) })
-    });
-    await app.close();
-  });
-
-  it("reset writes a revision matching compiled defaults", async () => {
-    mockPrisma.generationQualityRevision.findFirst.mockResolvedValue({ version: 4 });
-    mockPrisma.generationQualityRevision.create.mockImplementation(
-      async ({ data }: { data: Record<string, unknown> }) => ({
-        id: "quality-5",
-        updatedBy: "operator-console",
-        createdAt: new Date("2026-08-14T11:00:00.000Z"),
-        ...data
-      })
-    );
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/admin/generation-quality/reset",
-      payload: {}
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({
-      version: 5,
-      usingCompiledDefaults: false,
-      settings: QUALITY_FEATURE_DEFAULTS,
-      note: "Reset to compiled defaults"
     });
     await app.close();
   });

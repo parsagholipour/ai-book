@@ -7,7 +7,11 @@
  * margin when the dashboard range changes.
  */
 
-import { CREDIT_USD_VALUE } from "@book-maker/core";
+import {
+  CREDIT_USD_VALUE,
+  PAGE_QA_TRIGGER_REASONS,
+  type PageQaTriggerReason
+} from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import {
   costBreakdownFromRows,
@@ -59,7 +63,16 @@ export type GeneratedBookDetail = {
   totals: CostUsage;
   byKind: KindCost[];
   purposes: OperationCost[];
+  qaRewriteTriggers: QaRewriteTriggerCost[];
   qualityGates: QualityGateCost[];
+};
+
+export type QaRewriteTriggerCost = {
+  /** A reason combination, not an individually allocated cause, so rows partition exactly. */
+  key: string;
+  reasons: PageQaTriggerReason[];
+  calls: number;
+  providerCostUsd: number;
 };
 
 const QUALITY_GATE_JOB_TYPES = [
@@ -186,6 +199,7 @@ export async function loadGeneratedBookDetail(projectId: string): Promise<Genera
     totals: breakdown.totals,
     byKind: breakdown.byKind,
     purposes: breakdown.operations,
+    qaRewriteTriggers: qaRewriteTriggerCostsFromRows(costRows),
     qualityGates: qualityGateCostsForProject({
       mediaSettings: project.mediaSettings,
       fallbackAt: project.updatedAt,
@@ -258,6 +272,11 @@ async function loadProjectCostRows(projectId: string): Promise<ProviderCostRow[]
       END AS kind,
       l.purpose AS purpose,
       j.type::text AS generation_job_type,
+      CASE
+        WHEN jsonb_typeof(l.metadata -> 'qaTriggerReasons') = 'array'
+          THEN (l.metadata -> 'qaTriggerReasons')::text
+        ELSE NULL
+      END AS qa_trigger_reasons,
       l.provider AS provider,
       l.model AS model,
       COUNT(*)::double precision AS calls,
@@ -288,8 +307,46 @@ async function loadProjectCostRows(projectId: string): Promise<ProviderCostRow[]
     FROM "ProviderCallLog" l
     LEFT JOIN "GenerationJob" j ON j.id = l."generationJobId"
     WHERE COALESCE(l."projectId", j."projectId") = ${projectId}
-    GROUP BY 1, 2, 3, 4, 5
+    GROUP BY 1, 2, 3, 4, 5, 6
   `;
+}
+
+function qaRewriteTriggerCostsFromRows(rows: ProviderCostRow[]): QaRewriteTriggerCost[] {
+  const grouped = new Map<string, QaRewriteTriggerCost>();
+  for (const row of rows) {
+    const purpose = row.purpose?.trim();
+    if (purpose !== "revise-page" && purpose !== "repair-page-brief") {
+      continue;
+    }
+    const reasons = parseQaTriggerReasons(row.qa_trigger_reasons);
+    const key = reasons.length > 0 ? reasons.join("+") : "unattributed";
+    const current = grouped.get(key) ?? { key, reasons, calls: 0, providerCostUsd: 0 };
+    current.calls += Number(row.calls ?? 0);
+    current.providerCostUsd += Number(row.usd ?? 0);
+    grouped.set(key, current);
+  }
+  return [...grouped.values()]
+    .map((entry) => ({ ...entry, providerCostUsd: round6(entry.providerCostUsd) }))
+    .sort((left, right) => right.providerCostUsd - left.providerCostUsd || right.calls - left.calls || left.key.localeCompare(right.key));
+}
+
+function parseQaTriggerReasons(raw: string | null | undefined): PageQaTriggerReason[] {
+  if (!raw) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    const selected = new Set(parsed.filter(
+      (reason): reason is PageQaTriggerReason =>
+        typeof reason === "string" && (PAGE_QA_TRIGGER_REASONS as readonly string[]).includes(reason)
+    ));
+    return PAGE_QA_TRIGGER_REASONS.filter((reason) => selected.has(reason));
+  } catch {
+    return [];
+  }
 }
 
 function economicsFromRow(row: ProjectEconomicsRow): ProjectEconomics {

@@ -1,5 +1,7 @@
 import type { FastifyBaseLogger, FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import {
+  PAGE_REVIEW_PROMPT_MODES,
+  PAGE_REVIEW_PROMPT_MODE_DEFAULTS,
   QUALITY_EFFORT_TIERS,
   QUALITY_FEATURE_DEFAULTS,
   QUALITY_FEATURE_IDS,
@@ -7,10 +9,13 @@ import {
   compiledGenerationTextModelRouting,
   generationTextModelOptions,
   loadConfig,
+  parsePageReviewPromptModes,
   parseQualityFeatureSettings,
   resolveGenerationTextModelRouting,
   type GenerationTextModelOption,
   type GenerationTextModelRouting,
+  type QualityEffortTier,
+  type PageReviewPromptMode,
   type QualityFeatureSettings
 } from "@book-maker/core";
 import { prisma, type Prisma } from "@book-maker/db";
@@ -39,6 +44,20 @@ import {
  */
 const effortTierSchema = z.enum(QUALITY_EFFORT_TIERS);
 const featureTiersSchema = z.array(effortTierSchema).optional();
+const pageReviewPromptModeSchema = z.enum(PAGE_REVIEW_PROMPT_MODES);
+type PageReviewPromptModePatch = {
+  [K in QualityEffortTier]?: PageReviewPromptMode | undefined;
+};
+const pageReviewPromptModesPatchSchema = z
+  .object(
+    Object.fromEntries(
+      QUALITY_EFFORT_TIERS.map((tier) => [tier, pageReviewPromptModeSchema.optional()])
+    ) as Record<QualityEffortTier, z.ZodOptional<typeof pageReviewPromptModeSchema>>
+  )
+  .strict()
+  .refine((modes) => Object.keys(modes).length > 0, {
+    message: "Name at least one effort tier whose model-page-review prompt mode should change."
+  });
 
 /**
  * Derived from `QUALITY_FEATURE_IDS`, like the OpenAPI copy below, because the
@@ -119,6 +138,7 @@ const EMPTY_PATCH_ERROR = "Name at least one generation-quality feature, model r
 
 const patchGenerationQualitySchema = qualitySettingsBodySchema
   .extend({
+    pageReviewPromptModes: pageReviewPromptModesPatchSchema.optional(),
     models: generationModelsPatchSchema.optional(),
     note: z.string().trim().max(NOTE_MAX_LENGTH).optional()
   })
@@ -126,7 +146,8 @@ const patchGenerationQualitySchema = qualitySettingsBodySchema
   // `[]` is a claim like any other — it is how a feature is switched off — so
   // this is the same presence test the merge makes, never a truthiness one.
   .refine(
-    (body) => Boolean(body.note) || body.models !== undefined || QUALITY_FEATURE_IDS.some((id) => body[id] !== undefined),
+    (body) => Boolean(body.note) || body.models !== undefined || body.pageReviewPromptModes !== undefined ||
+      QUALITY_FEATURE_IDS.some((id) => body[id] !== undefined),
     { message: EMPTY_PATCH_ERROR }
   );
 
@@ -169,6 +190,17 @@ const patchGenerationQualityOpenApi = {
         { type: "array", items: { type: "string", enum: [...QUALITY_EFFORT_TIERS] } }
       ])
     ),
+    pageReviewPromptModes: {
+      type: "object",
+      additionalProperties: false,
+      minProperties: 1,
+      properties: Object.fromEntries(
+        QUALITY_EFFORT_TIERS.map((tier) => [
+          tier,
+          { type: "string", enum: [...PAGE_REVIEW_PROMPT_MODES] }
+        ])
+      )
+    },
     models: generationModelsPatchOpenApi,
     note: { type: "string", maxLength: NOTE_MAX_LENGTH }
   }
@@ -273,6 +305,16 @@ function refuseUnknownBodyKeys(
   };
 }
 
+function unknownPageReviewPromptModePaths(body: unknown): string[] {
+  if (!isJsonObject(body) || !isJsonObject(body.pageReviewPromptModes)) {
+    return [];
+  }
+  const known = new Set<string>(QUALITY_EFFORT_TIERS);
+  return Object.keys(body.pageReviewPromptModes)
+    .filter((tier) => !known.has(tier))
+    .map((tier) => `pageReviewPromptModes.${tier}`);
+}
+
 /** Establish the operator context once, before parsing or validating a body. */
 async function requireGenerationQualityOperator(request: FastifyRequest, reply: FastifyReply) {
   const actor = await requireOperatorActor(request, reply);
@@ -308,7 +350,11 @@ export const adminGenerationQualityRoutes: FastifyPluginAsync = async (fastify) 
     {
       attachValidation: true,
       onRequest: requireGenerationQualityOperator,
-      preValidation: refuseUnknownBodyKeys(PATCH_BODY_KEYS, UNKNOWN_FEATURE_ERROR, unknownGenerationModelPaths),
+      preValidation: refuseUnknownBodyKeys(
+        PATCH_BODY_KEYS,
+        UNKNOWN_FEATURE_ERROR,
+        (body) => [...unknownGenerationModelPaths(body), ...unknownPageReviewPromptModePaths(body)]
+      ),
       schema: { tags: ["admin"], body: patchGenerationQualityOpenApi }
     },
     async (request, reply) => {
@@ -316,10 +362,11 @@ export const adminGenerationQualityRoutes: FastifyPluginAsync = async (fastify) 
       if (!parsed.success) {
         return reply.code(400).send({ error: patchRejectionMessage(parsed.error.issues) });
       }
-      const { note, models, ...assignments } = parsed.data;
+      const { note, models, pageReviewPromptModes, ...assignments } = parsed.data;
       return withRevisionConflictReply(request, reply, async () => {
         const record = await appendGenerationQualityRevision(request.log, assignments, note, {
           ...(models ? { models } : {}),
+          ...(pageReviewPromptModes ? { pageReviewPromptModes } : {}),
           compiledModels,
           modelOptions
         });
@@ -350,7 +397,7 @@ export const adminGenerationQualityRoutes: FastifyPluginAsync = async (fastify) 
           request.log,
           cloneDefaults(),
           parsed.data.note?.trim() || "Reset to compiled defaults",
-          { compiledModels, modelOptions }
+          { resetPageReviewPromptModes: true, compiledModels, modelOptions }
         );
         request.log.info(
           { event: "generation_quality.reset", version: record.version },
@@ -476,6 +523,9 @@ function patchRejectionMessage(issues: readonly z.core.$ZodIssue[]): string {
   if (issue.path[0] === "note" && issue.code === "too_big") {
     return `${field}: ${NOTE_TOO_LONG_ERROR}`;
   }
+  if (issue.path[0] === "pageReviewPromptModes") {
+    return `${field}: Send each model-page-review prompt mode as normal or compact.`;
+  }
   if (isQualityFeatureId(issue.path[0])) {
     // `styleAuditor` when the value is not a list at all, `styleAuditor[0]`
     // when it is a list and one entry of it is not a tier.
@@ -572,6 +622,8 @@ async function appendGenerationQualityRevision(
   note: string | undefined,
   modelChange: {
     models?: GenerationModelsPatch | undefined;
+    pageReviewPromptModes?: PageReviewPromptModePatch | undefined;
+    resetPageReviewPromptModes?: boolean | undefined;
     resetModels?: boolean | undefined;
     compiledModels: GenerationTextModelRouting;
     modelOptions: readonly GenerationTextModelOption[];
@@ -587,6 +639,14 @@ async function appendGenerationQualityRevision(
     const baseVersion = current?.version ?? 0;
     try {
       const settings = mergeQualityFeatureSettings(current?.settings, assignments);
+      if (modelChange.pageReviewPromptModes) {
+        settings.pageReviewPromptModes = mergePageReviewPromptModes(
+          current?.settings,
+          modelChange.pageReviewPromptModes
+        );
+      } else if (modelChange.resetPageReviewPromptModes) {
+        settings.pageReviewPromptModes = { ...PAGE_REVIEW_PROMPT_MODE_DEFAULTS };
+      }
       if (modelChange.models) {
         settings.models = mergeGenerationModelPatch(
           current?.settings,
@@ -687,6 +747,25 @@ function mergeQualityFeatureSettings(
   return settings as Record<string, Prisma.InputJsonValue>;
 }
 
+function mergePageReviewPromptModes(
+  stored: unknown,
+  assignments: PageReviewPromptModePatch
+): Record<string, PageReviewPromptMode> {
+  const storedModes = isJsonObject(stored) && isJsonObject(stored.pageReviewPromptModes)
+    ? stored.pageReviewPromptModes
+    : {};
+  const modes: Record<string, PageReviewPromptMode> = {};
+  for (const [tier, mode] of Object.entries(storedModes)) {
+    if (typeof mode === "string" && (PAGE_REVIEW_PROMPT_MODES as readonly string[]).includes(mode)) {
+      modes[tier] = mode as PageReviewPromptMode;
+    }
+  }
+  for (const tier of QUALITY_EFFORT_TIERS) {
+    modes[tier] = assignments[tier] ?? modes[tier] ?? PAGE_REVIEW_PROMPT_MODE_DEFAULTS[tier];
+  }
+  return modes;
+}
+
 function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -707,6 +786,7 @@ function serializeGenerationQuality(
   return {
     version: record?.version ?? 0,
     settings: serializeQualityFeatureSettings(record?.settings),
+    pageReviewPromptModes: parsePageReviewPromptModes(record?.settings),
     models: resolveGenerationTextModelRouting(record?.settings, compiledModels),
     modelOptions,
     usingCompiledDefaults: record == null,

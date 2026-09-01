@@ -3,6 +3,7 @@
 // lookups below dragged puppeteer, sharp, openai and md-to-pdf in behind them.
 import { modelTierForInput } from "@book-maker/core/modelTiers";
 import {
+  parsePageReviewPromptModes,
   parseQualityFeatureSettings,
   qualityFeatureEnabled,
   type QualityFeatureId,
@@ -20,11 +21,17 @@ export async function loadQualitySettings(): Promise<QualityFeatureSettings> {
 }
 
 export async function loadQualityContext(input: CreateProjectInput) {
-  const settings = await loadQualitySettings();
+  const row = await prisma.generationQualityRevision.findFirst({
+    orderBy: { version: "desc" },
+    select: { settings: true }
+  });
+  const settings = parseQualityFeatureSettings(row?.settings);
+  const pageReviewPromptModes = parsePageReviewPromptModes(row?.settings);
   const tier = modelTierForInput(input);
   return {
     settings,
     tier,
+    pageReviewPromptMode: pageReviewPromptModes[tier],
     enabled: (feature: QualityFeatureId) => qualityFeatureEnabled(settings, feature, tier)
   };
 }

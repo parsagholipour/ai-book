@@ -10,6 +10,16 @@ import { isRecord, numberField, stringArrayField, stringField, booleanField, arr
 export * from "./mediaSettings.js";
 export * from "./plan.js";
 
+export const GROUNDING_STATUSES = [
+  "not_applicable",
+  "unverified_no_sources",
+  "verified",
+  "failed",
+  "unavailable"
+] as const;
+
+export type GroundingStatus = (typeof GROUNDING_STATUSES)[number];
+
 function summaryFromMarkdown(markdown: string | undefined): string {
   if (!markdown) {
     return "";
@@ -191,7 +201,13 @@ function normalizePageQualityReport(value: unknown): unknown {
       }
     : undefined;
 
-  const groundedOk = booleanField(unwrapped, ["groundedOk", "grounded_ok"]) ?? true;
+  const groundingStatusFromInput = stringField(unwrapped, ["groundingStatus", "grounding_status"]);
+  const groundedOk =
+    groundingStatusFromInput !== undefined
+      ? groundingStatusFromInput !== "failed"
+      : booleanField(unwrapped, ["groundedOk", "grounded_ok"]) ?? true;
+  const groundingStatus =
+    groundingStatusFromInput ?? (groundedOk ? "not_applicable" : "failed");
   const unsupportedClaims = stringArrayField(unwrapped, ["unsupportedClaims", "unsupported_claims"]) ?? [];
 
   return {
@@ -201,6 +217,7 @@ function normalizePageQualityReport(value: unknown): unknown {
     requiredRevisions,
     notes,
     groundedOk,
+    groundingStatus,
     unsupportedClaims,
     ...(checks ? { checks } : {})
   };
@@ -301,6 +318,7 @@ export const pageQualityReportSchema = z.preprocess(
     requiredRevisions: z.array(z.string()).default([]),
     notes: z.string().default(""),
     groundedOk: z.boolean().default(true),
+    groundingStatus: z.enum(GROUNDING_STATUSES).optional(),
     unsupportedClaims: z.array(z.string()).default([]),
     checks: z
       .object({

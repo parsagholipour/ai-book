@@ -141,6 +141,156 @@ describe("reviewPageDraft recency window", () => {
     expect(compacted.map((page) => page.index)).toEqual([2, 3, 4, 5, 6]);
     expect(compacted.every((page) => page.excerpt.length === 800)).toBe(true);
   });
+
+  it("compacts context to adjacent continuity while preserving the page brief and page scope", async () => {
+    const capture = capturingReviewModel({
+      approved: true,
+      score: 92,
+      issues: [],
+      requiredRevisions: [],
+      notes: "Approved.",
+      checks: {
+        placeholderFree: true,
+        promptLeakFree: true,
+        titleClean: true,
+        repetitionOk: true,
+        progressionOk: true,
+        styleNatural: true
+      }
+    });
+    const previousPages = Array.from({ length: 6 }, (_, index) => ({
+      index: index + 1,
+      title: `Prior ${index + 1}`,
+      markdown: `page-${index + 1} ${"x".repeat(1200)}`,
+      summary: `Summary ${index + 1}`
+    }));
+    const currentBrief = {
+      pageIndex: 7,
+      chapterIndex: 2,
+      purpose: "Force the irreversible choice.",
+      beat: "Jack signs the warrant in Mara's presence.",
+      requiredContinuity: ["The seal is already cracked."],
+      endingPressure: "The chapel bell exposes them."
+    };
+    const chapterBrief = {
+      chapterIndex: 2,
+      title: "The Warrant",
+      summary: "Jack chooses which promise to break.",
+      continuityFocus: ["The warrant stays visible."],
+      pages: [
+        { ...currentBrief, pageIndex: 6, purpose: "Set the choice.", beat: "Mara arrives." },
+        currentBrief,
+        { ...currentBrief, pageIndex: 8, purpose: "Pay the cost.", beat: "The guard enters." },
+        { ...currentBrief, pageIndex: 9, purpose: "Close the chapter.", beat: "Jack loses the key." }
+      ]
+    };
+
+    await reviewPageDraft({
+      input,
+      plan,
+      chapter: { index: 2, title: "The Warrant", summary: "A costly choice.", targetPages: 4, keyBeats: ["A very long duplicated chapter beat."] },
+      chapterBrief,
+      pageBrief: currentBrief,
+      chapterPageStart: 6,
+      chapterPageEnd: 9,
+      pageIndex: 7,
+      draft: {
+        title: "The Door Opens",
+        markdown: goodMarkdown(),
+        summary: "Jack signs and the bell rings.",
+        continuityNotes: []
+      },
+      previousPages,
+      nextPages: [{ index: 8, title: "The Guard", markdown: `guard ${"y".repeat(1200)}`, summary: "The guard enters." }],
+      continuityNotes: Array.from({ length: 12 }, (_, index) => `Continuity ${index + 1}`),
+      textModel: capture.model,
+      pageReviewPromptMode: "compact"
+    });
+
+    expect(capture.payload?.pageBrief).toEqual(currentBrief);
+    expect(capture.payload?.pageScope).toMatchObject({
+      globalPageIndex: 7,
+      totalBookPages: 10,
+      chapterPageStart: 6,
+      chapterPageEnd: 9,
+      chapterPageNumber: 2,
+      chapterPageCount: 4,
+      isFirstPageOfChapter: false,
+      isLastPageOfChapter: false
+    });
+    expect(capture.payload?.previousPages).toEqual([
+      expect.objectContaining({ index: 6, summary: "Summary 6" })
+    ]);
+    expect(capture.payload?.followingPages).toEqual([
+      expect.objectContaining({ index: 8, summary: "The guard enters." })
+    ]);
+    expect(((capture.payload?.previousPages ?? []) as Array<{ excerpt: string }>)[0]?.excerpt.length)
+      .toBeLessThanOrEqual(450);
+    expect(((capture.payload?.followingPages ?? []) as Array<{ excerpt: string }>)[0]?.excerpt.length)
+      .toBeLessThanOrEqual(450);
+    expect(capture.payload?.continuityNotes).toEqual([
+      "Continuity 7",
+      "Continuity 8",
+      "Continuity 9",
+      "Continuity 10",
+      "Continuity 11",
+      "Continuity 12"
+    ]);
+    expect(capture.payload?.chapter).not.toHaveProperty("keyBeats");
+    const scope = capture.payload?.pageScope as {
+      previousChapterPageBriefs: unknown[];
+      futureChapterPageBriefs: Array<{ pageIndex: number; reservedBeat: string }>;
+    };
+    expect(scope.previousChapterPageBriefs).toHaveLength(1);
+    expect(scope.futureChapterPageBriefs).toEqual([
+      { pageIndex: 8, reservedBeat: "Pay the cost. — The guard enters. — The chapel bell exposes them." },
+      { pageIndex: 9, reservedBeat: "Close the chapter. — Jack loses the key. — The chapel bell exposes them." }
+    ]);
+  });
+
+  it("keeps opening and final-page contracts in compact mode", async () => {
+    const onePageInput = { ...input, targetPages: 1 };
+    const onePagePlan = makeFallbackPlan(onePageInput);
+    const capture = capturingReviewModel({
+      approved: true,
+      score: 92,
+      issues: [],
+      requiredRevisions: [],
+      notes: "Approved.",
+      checks: {
+        placeholderFree: true,
+        promptLeakFree: true,
+        titleClean: true,
+        repetitionOk: true,
+        progressionOk: true,
+        styleNatural: true
+      }
+    });
+
+    await reviewPageDraft({
+      input: onePageInput,
+      plan: onePagePlan,
+      pageIndex: 1,
+      draft: {
+        title: "The Door Opens",
+        markdown: goodMarkdown(),
+        summary: "Jack crosses the threshold and completes his choice.",
+        continuityNotes: []
+      },
+      previousPages: [],
+      continuityNotes: [],
+      textModel: capture.model,
+      pageReviewPromptMode: "compact"
+    });
+
+    expect(capture.system).toContain("throat-clearing");
+    expect(capture.system).toContain("For a final page");
+    expect(capture.payload?.openingHook).toBe(onePagePlan.openingHook);
+    expect(capture.payload?.pageScope).toMatchObject({
+      globalPageIndex: 1,
+      totalBookPages: 1
+    });
+  });
 });
 
 describe("reviewPageDraft local-check policy", () => {

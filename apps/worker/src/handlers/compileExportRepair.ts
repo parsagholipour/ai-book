@@ -341,6 +341,7 @@ export async function repairPagesFromFinalQa(options: {
         chapterBrief,
         pageBrief,
         pageIndex,
+        qaCandidateNumber: 2,
         draft: {
           title: page.title,
           markdown: page.markdown,

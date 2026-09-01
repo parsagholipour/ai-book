@@ -125,8 +125,30 @@ describe("quality eval fixtures", () => {
       }
     );
     expect(merged.groundedOk).toBe(false);
+    expect(merged.groundingStatus).toBe("failed");
     expect(merged.approved).toBe(false);
     expect(merged.unsupportedClaims[0]).toMatch(/Invented Journal/);
+  });
+
+  it("records successful claim verification explicitly", () => {
+    const merged = withClaimVerification(
+      {
+        approved: true,
+        issues: [],
+        requiredRevisions: []
+      },
+      {
+        groundedOk: true,
+        unsupportedClaims: []
+      }
+    );
+
+    expect(merged).toMatchObject({
+      approved: true,
+      groundedOk: true,
+      groundingStatus: "verified",
+      unsupportedClaims: []
+    });
   });
 
   it("still fires the local slop regex", () => {

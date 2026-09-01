@@ -123,6 +123,14 @@ const detail: AdminGeneratedBookDetail = {
       costNote: "Incremental reasoning spend is included in the planning calls it modifies."
     }
   ],
+  qaRewriteTriggers: [
+    {
+      key: "claim_grounding+style",
+      reasons: ["claim_grounding", "style"],
+      calls: 3,
+      providerCostUsd: 0.42
+    }
+  ],
   purposes: [
     {
       key: "book.plan.raw",
@@ -226,6 +234,9 @@ describe("GeneratedBooksView", () => {
     expect(markup).toContain("Local page checks");
     expect(markup).toContain("Model page review");
     expect(markup).toContain("Deeper plan thinking");
+    expect(markup).toContain("Page QA rewrite triggers");
+    expect(markup).toContain("Claim grounding + Style");
+    expect(markup).toContain("Exact trigger combinations; calls and cost are counted once");
     expect(markup).toContain("$0.00001 directly attributable");
     expect(markup).toContain("Not separate");
     expect(markup).toContain("Purpose and model costs");

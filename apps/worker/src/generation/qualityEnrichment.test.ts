@@ -63,6 +63,16 @@ const input: CreateProjectInput = {
   }
 };
 
+const factualInput: CreateProjectInput = {
+  ...input,
+  prompt: "A scientific history of vaccines with current evidence.",
+  category: "SCIENCE",
+  mediaSettings: {
+    ...input.mediaSettings,
+    toneProfile: "scholarly"
+  }
+};
+
 const plan = {
   title: "The Seal",
   premise: "Jack must find the seal.",
@@ -132,6 +142,187 @@ function storyExtractEnabled() {
     enabled: (feature: string) => feature === "storyExtractAudit"
   };
 }
+
+function claimVerifierEnabled() {
+  return {
+    settings: {},
+    tier: "premium",
+    enabled: (feature: string) => feature === "claimVerifier"
+  };
+}
+
+describe("enrichPageQualityReport claim grounding", () => {
+  it("records claim verification as not applicable for a story", async () => {
+    const generateJson = vi.fn();
+
+    const result = await enrichPageQualityReport({
+      input,
+      plan,
+      pageIndex: 1,
+      draft,
+      report: { ...approvedReport, groundedOk: false },
+      previousPages: [],
+      researchNotes: ["Archive note: A source-backed detail."],
+      textModel: { generateJson } as unknown as TextModelAdapter,
+      projectId: "project-1",
+      quality: claimVerifierEnabled(),
+      storyState: { promises: [], facts: [], entities: {}, unanswered: [] },
+      styleExcerpts: []
+    });
+
+    expect(generateJson).not.toHaveBeenCalled();
+    expect(result.report).toMatchObject({
+      approved: true,
+      groundedOk: true,
+      groundingStatus: "not_applicable"
+    });
+  });
+
+  it("records missing evidence without calling the verifier or creating a rewrite reason", async () => {
+    const generateJson = vi.fn();
+
+    const result = await enrichPageQualityReport({
+      input: factualInput,
+      plan,
+      pageIndex: 1,
+      draft,
+      report: approvedReport,
+      previousPages: [],
+      researchNotes: [],
+      textModel: { generateJson } as unknown as TextModelAdapter,
+      projectId: "project-1",
+      quality: claimVerifierEnabled(),
+      storyState: { promises: [], facts: [], entities: {}, unanswered: [] },
+      styleExcerpts: []
+    });
+
+    expect(generateJson).not.toHaveBeenCalled();
+    expect(result.report).toMatchObject({
+      approved: true,
+      groundedOk: true,
+      groundingStatus: "unverified_no_sources",
+      unsupportedClaims: [],
+      issues: [],
+      requiredRevisions: []
+    });
+  });
+
+  it("does not treat blank research notes as source-backed evidence", async () => {
+    const generateJson = vi.fn();
+
+    const result = await enrichPageQualityReport({
+      input: factualInput,
+      plan,
+      pageIndex: 1,
+      draft,
+      report: approvedReport,
+      previousPages: [],
+      researchNotes: ["   "],
+      textModel: { generateJson } as unknown as TextModelAdapter,
+      projectId: "project-1",
+      quality: claimVerifierEnabled(),
+      storyState: { promises: [], facts: [], entities: {}, unanswered: [] },
+      styleExcerpts: []
+    });
+
+    expect(generateJson).not.toHaveBeenCalled();
+    expect(result.report.groundingStatus).toBe("unverified_no_sources");
+  });
+
+  it("keeps verifying factual pages when source-backed evidence is available", async () => {
+    const generateJson = vi.fn().mockResolvedValue({
+      data: { groundedOk: true, unsupportedClaims: [] },
+      text: "{}",
+      model: "test-model",
+      provider: "test"
+    });
+
+    const result = await enrichPageQualityReport({
+      input: factualInput,
+      plan,
+      pageIndex: 1,
+      draft,
+      report: approvedReport,
+      previousPages: [],
+      researchNotes: ["WHO vaccine history: Source-backed chronology."],
+      textModel: { generateJson } as unknown as TextModelAdapter,
+      projectId: "project-1",
+      quality: claimVerifierEnabled(),
+      storyState: { promises: [], facts: [], entities: {}, unanswered: [] },
+      styleExcerpts: []
+    });
+
+    expect(generateJson).toHaveBeenCalledOnce();
+    expect(result.report).toMatchObject({
+      approved: true,
+      groundedOk: true,
+      groundingStatus: "verified",
+      unsupportedClaims: []
+    });
+  });
+
+  it("keeps rejecting unsupported claims when source-backed evidence is available", async () => {
+    const generateJson = vi.fn().mockResolvedValue({
+      data: { groundedOk: false, unsupportedClaims: ["The invented 94% result."] },
+      text: "{}",
+      model: "test-model",
+      provider: "test"
+    });
+
+    const result = await enrichPageQualityReport({
+      input: factualInput,
+      plan,
+      pageIndex: 1,
+      draft,
+      report: approvedReport,
+      previousPages: [],
+      researchNotes: ["WHO vaccine history: Source-backed chronology."],
+      textModel: { generateJson } as unknown as TextModelAdapter,
+      projectId: "project-1",
+      quality: claimVerifierEnabled(),
+      storyState: { promises: [], facts: [], entities: {}, unanswered: [] },
+      styleExcerpts: []
+    });
+
+    expect(generateJson).toHaveBeenCalledOnce();
+    expect(result.report).toMatchObject({
+      approved: false,
+      groundedOk: false,
+      groundingStatus: "failed",
+      unsupportedClaims: ["The invented 94% result."]
+    });
+    expect(result.report.requiredRevisions).toContain("Ground or remove: The invented 94% result.");
+  });
+
+  it("records verifier outages as unavailable without rejecting the page", async () => {
+    const generateJson = vi.fn().mockRejectedValue(new Error("provider unavailable"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const result = await enrichPageQualityReport({
+      input: factualInput,
+      plan,
+      pageIndex: 1,
+      draft,
+      report: approvedReport,
+      previousPages: [],
+      researchNotes: ["WHO vaccine history: Source-backed chronology."],
+      textModel: { generateJson } as unknown as TextModelAdapter,
+      projectId: "project-1",
+      quality: claimVerifierEnabled(),
+      storyState: { promises: [], facts: [], entities: {}, unanswered: [] },
+      styleExcerpts: []
+    });
+    warn.mockRestore();
+
+    expect(generateJson).toHaveBeenCalledOnce();
+    expect(result.report).toMatchObject({
+      approved: true,
+      groundedOk: true,
+      groundingStatus: "unavailable",
+      unsupportedClaims: []
+    });
+  });
+});
 
 describe("mergeEntityAndStoryStateLines", () => {
   it("keeps both entity-state and story-state lines", () => {

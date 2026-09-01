@@ -326,7 +326,7 @@ export async function runPageQualityLoop(options: {
         chapterPageEnd: options.chapterPageEnd,
         chapterId: options.chapterId,
         pageBrief,
-        pageIndex: options.pageIndex,
+        pageIndex: options.pageIndex, qaCandidateNumber: nextRevision,
         draft,
         qualityReport: report,
         previousPages: options.previousPages,
@@ -337,8 +337,7 @@ export async function runPageQualityLoop(options: {
         context: options.reviseContext,
         ...(options.assertOwnership ? { assertOwnership: options.assertOwnership } : {})
       });
-      // The rebind is the whole of the repair's in-memory reach: this loop's
-      // remaining rewrites and reviews, and nothing the caller holds.
+      // Rebind only this loop's remaining rewrites and reviews; nothing the caller holds is mutated.
       pageBrief = repair.beat;
       chapterBrief = repair.chapterBrief;
       deferredBriefRepair = { fromRevision: nextRevision, chapterBrief: repair.chapterBrief, persist: repair.persist };
@@ -356,7 +355,8 @@ export async function runPageQualityLoop(options: {
         pageBrief,
         chapterPageStart: options.chapterPageStart,
         chapterPageEnd: options.chapterPageEnd,
-        pageIndex: options.pageIndex,
+        pageIndex: options.pageIndex, qaCandidateNumber: nextRevision,
+        ...(deferredBriefRepair ? { qaBriefRepaired: true } : {}),
         draft,
         report: pageRewriteReport(
           keepUserRequestApplied(report, options.userRequest),

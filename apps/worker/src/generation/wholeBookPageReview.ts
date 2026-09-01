@@ -58,6 +58,7 @@ export async function reviewWholeBookDraftPages(options: {
           input: options.input,
           plan: options.plan,
           pageIndex: pageDraft.index,
+          qaCandidateNumber: 2,
           draft,
           report,
           previousPages,

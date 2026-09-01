@@ -94,7 +94,17 @@ export async function enrichPageQualityReport(options: {
     );
   }
 
-  if (quality.enabled("claimVerifier") && hasResearchIntent(options.input)) {
+  const claimVerificationApplies = quality.enabled("claimVerifier") && hasResearchIntent(options.input);
+  // This seam receives the already URL-filtered notes from generationContext;
+  // blank strings still do not constitute evidence.
+  const hasSourceBackedResearchNotes = options.researchNotes.some((note) => note.trim().length > 0);
+  if (claimVerificationApplies && !hasSourceBackedResearchNotes) {
+    report = {
+      ...report,
+      groundedOk: true,
+      groundingStatus: "unverified_no_sources"
+    };
+  } else if (claimVerificationApplies) {
     try {
       const verification = await verifyPageClaims({
         textModel: options.textModel,
@@ -107,8 +117,19 @@ export async function enrichPageQualityReport(options: {
       if (isStopRequestedError(error)) {
         throw error;
       }
+      report = {
+        ...report,
+        groundedOk: true,
+        groundingStatus: "unavailable"
+      };
       console.warn(`Claim verifier skipped for project ${options.projectId} page ${options.pageIndex}`, error);
     }
+  } else {
+    report = {
+      ...report,
+      groundedOk: true,
+      groundingStatus: "not_applicable"
+    };
   }
 
   if (quality.enabled("styleAuditor") && styleExcerpts.length > 0) {

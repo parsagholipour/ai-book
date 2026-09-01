@@ -101,6 +101,8 @@ export type ProviderCostRow = {
   purpose: string | null;
   /** Present on project detail rows where one raw purpose can belong to different gates. */
   generation_job_type?: string | null;
+  /** Exact machine trigger set for page-QA rewrite rows; absent on legacy rows. */
+  qa_trigger_reasons?: string | null;
   provider: string | null;
   model: string | null;
   calls: number | null;

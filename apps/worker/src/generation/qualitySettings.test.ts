@@ -5,9 +5,12 @@ import {
   type TextModelAdapter
 } from "@book-maker/core";
 
-vi.mock("@book-maker/db", () => ({ prisma: {}, Prisma: {} }));
+const mockPrisma = vi.hoisted(() => ({
+  generationQualityRevision: { findFirst: vi.fn() }
+}));
+vi.mock("@book-maker/db", () => ({ prisma: mockPrisma, Prisma: {} }));
 
-import { applyPlanThinkingBoost } from "./qualitySettings.js";
+import { applyPlanThinkingBoost, loadQualityContext } from "./qualitySettings.js";
 import { LoggingTextModelAdapter } from "../providers/loggedAdapters.js";
 
 function routingWithPlanOverride() {
@@ -73,5 +76,29 @@ describe("applyPlanThinkingBoost", () => {
   it("leaves adapters without the toggle unchanged", () => {
     const adapter = new FakeTextModelAdapter();
     expect(() => applyPlanThinkingBoost(adapter, false)).not.toThrow();
+  });
+});
+
+describe("loadQualityContext page-review prompt mode", () => {
+  it("resolves compact mode from the current revision for the project's tier", async () => {
+    mockPrisma.generationQualityRevision.findFirst.mockResolvedValue({
+      settings: { pageReviewPromptModes: { premium: "compact" } }
+    });
+
+    const context = await loadQualityContext({
+      mediaSettings: { modelTier: "premium" }
+    } as never);
+
+    expect(context.pageReviewPromptMode).toBe("compact");
+  });
+
+  it("keeps normal mode for a legacy revision with no prompt-mode setting", async () => {
+    mockPrisma.generationQualityRevision.findFirst.mockResolvedValue({ settings: {} });
+
+    const context = await loadQualityContext({
+      mediaSettings: { modelTier: "premium" }
+    } as never);
+
+    expect(context.pageReviewPromptMode).toBe("normal");
   });
 });

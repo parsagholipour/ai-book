@@ -211,6 +211,8 @@ export async function repairPageBriefForRecovery(options: {
   chapterId?: string | null | undefined;
   pageBrief: PageProductionBeat;
   pageIndex: number;
+  /** Candidate the repaired assignment will brief; the original draft is 1. */
+  qaCandidateNumber?: number | undefined;
   draft: PageDraft;
   qualityReport: PageQualityReport;
   previousPages: PriorPageContext[];
@@ -242,6 +244,7 @@ export async function repairPageBriefForRecovery(options: {
     chapterPageStart: options.chapterPageStart,
     chapterPageEnd: options.chapterPageEnd,
     pageIndex: options.pageIndex,
+    qaCandidateNumber: options.qaCandidateNumber,
     draft: options.draft,
     report: options.qualityReport,
     previousPages: options.previousPages,

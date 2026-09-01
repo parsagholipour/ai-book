@@ -1,6 +1,6 @@
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { compactCount, count, duration, percent, usd, usdFine } from "./format.js";
-import type { CostKind, CostUsage, OperationCost, QualityGateCost } from "./types.js";
+import type { CostKind, CostUsage, OperationCost, QaRewriteTriggerCost, QualityGateCost } from "./types.js";
 
 export type GeneratedEconomicsDetail = {
   chargeCount: number;
@@ -16,6 +16,7 @@ export type GeneratedEconomicsDetail = {
   byKind: Array<CostUsage & { kind: CostKind }>;
   purposes: OperationCost[];
   qualityGates?: QualityGateCost[];
+  qaRewriteTriggers?: QaRewriteTriggerCost[];
 };
 
 export function GeneratedEconomicsDetailContent(props: {
@@ -79,6 +80,7 @@ export function GeneratedEconomicsDetailContent(props: {
       ) : null}
 
       {detail.qualityGates ? <QualityGateCosts gates={detail.qualityGates} /> : null}
+      {detail.qaRewriteTriggers ? <QaRewriteTriggerCosts triggers={detail.qaRewriteTriggers} /> : null}
 
       <div className="section-title generated-book-purpose-title">
         <h4>Purpose and model costs</h4>
@@ -116,6 +118,62 @@ export function GeneratedEconomicsDetailContent(props: {
                   </tr>
                 ))
               )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const QA_TRIGGER_LABELS: Record<string, string> = {
+  model_review: "Model review",
+  claim_grounding: "Claim grounding",
+  story_contradiction: "Story contradiction",
+  style: "Style",
+  local_check: "Local check",
+  smart_unslop: "Smart unslop",
+  reserved_beat: "Reserved beat",
+  brief_repair: "Brief repair"
+};
+
+function QaRewriteTriggerCosts(props: { triggers: QaRewriteTriggerCost[] }) {
+  const total = props.triggers.reduce((sum, trigger) => sum + trigger.providerCostUsd, 0);
+  return (
+    <div className="generated-book-quality-gates">
+      <div className="section-title generated-book-purpose-title">
+        <h4>Page QA rewrite triggers</h4>
+        <span className="muted admin-subtle">{usdFine(total)} rewrite spend</span>
+      </div>
+      <p className="muted generated-book-quality-note">
+        Exact trigger combinations; calls and cost are counted once even when a rewrite had multiple causes.
+      </p>
+      {props.triggers.length === 0 ? (
+        <p className="muted">No page QA rewrite calls were recorded.</p>
+      ) : (
+        <div className="admin-table-scroll generated-book-cost-scroll">
+          <table className="admin-table generated-book-quality-table">
+            <thead>
+              <tr>
+                <th>Trigger combination</th>
+                <th className="numeric">Calls</th>
+                <th className="numeric">Provider cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {props.triggers.map((trigger) => (
+                <tr key={trigger.key}>
+                  <td>
+                    <span className="cost-name">
+                      {trigger.reasons.length > 0
+                        ? trigger.reasons.map((reason) => QA_TRIGGER_LABELS[reason] ?? reason).join(" + ")
+                        : "Legacy / unattributed"}
+                    </span>
+                  </td>
+                  <td className="numeric">{count(trigger.calls)}</td>
+                  <td className="numeric">{usdFine(trigger.providerCostUsd)}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

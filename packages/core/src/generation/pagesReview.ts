@@ -1,4 +1,5 @@
 import type { TextModelAdapter } from "../adapters/types.js";
+import type { PageReviewPromptMode } from "./qualityGates.js";
 import { CONTINUITY_NOTE_PROMPT_LIMITS, continuityNotesForPrompt } from "../context/contextPack.js";
 import {
   targetLanguageGenerationGuidance,
@@ -26,6 +27,7 @@ import {
 import { runLocalFinalQa, runRequiredFinalQa } from "./pagesFinalLocalQa.js";
 import { isSourceIdentityOnlyIssue } from "./citationRepairPolicy.js";
 import { hasSmartUnslopCandidates } from "./smartUnslop.js";
+import { pageQaProviderCallMetadata, withPageQaTriggerReasons } from "./pageQaRewriteTelemetry.js";
 import {
   GROUNDED_FACTUALITY_RULE,
   IMAGE_PROMPT_CHARACTER_RULE,
@@ -78,10 +80,16 @@ export type ReviewPageOptions = {
   retrievedResearch?: string[] | undefined;
   /** Keep the model review but bypass configurable local checks; required invariants remain. */
   skipLocalChecks?: boolean | undefined;
+  /** Operator-selected context size for the model page reviewer. Defaults to the legacy full prompt. */
+  pageReviewPromptMode?: PageReviewPromptMode | undefined;
 };
 
 export type RevisePageOptions = ReviewPageOptions & {
   report: PageQualityReport;
+  /** Candidate produced by this rewrite; the original draft is candidate 1. */
+  qaCandidateNumber?: number | undefined;
+  /** The recovery planner repaired the assignment before this rewrite. */
+  qaBriefRepaired?: boolean | undefined;
   /** Approved edit instruction; authoritative over a stale page brief. */
   editInstruction?: string | undefined;
   /** Prompt-only character canon; never an additional edit requirement. */
@@ -131,6 +139,10 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
   const opening = openingContractFieldsForPage(options, "reviewer");
   const citation = citationContractFields(options.researchNotes ?? options.plan.researchNotes);
   const citationReviewRules = reviewerCitationRules(citation.payload.researchNotes.length > 0);
+  const compactPrompt = options.pageReviewPromptMode === "compact";
+  const reviewPageScope = compactPrompt
+    ? compactPageReviewScope(options)
+    : pageScopePayload(options);
 
   let result: { data: PageQualityReport };
   try {
@@ -183,7 +195,7 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
                 antiAiRules: options.plan.antiAiRules,
                 styleGuidance: styleGuidancePayload(options.input)
               },
-              chapter: options.chapter,
+              chapter: compactPrompt ? compactReviewChapter(options.chapter) : options.chapter,
               chapterBrief: chapterBriefPayloadForPageScope(options.chapterBrief),
               pageBrief: options.pageBrief
                 ? sanitizePageBriefForCitationContract(options.pageBrief, options.researchNotes ?? options.plan.researchNotes)
@@ -194,17 +206,34 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
               // same pair out of `buildPageInstruction`.
               ...opening.payload,
               ...citation.payload,
-              pageScope: pageScopePayload(options),
+              pageScope: reviewPageScope,
               pageIndex: options.pageIndex,
               draft: options.draft,
-              previousPages: compactPriorPages(options.previousPages, 5, 800),
+              previousPages: compactPriorPages(
+                options.previousPages,
+                compactPrompt ? 1 : 5,
+                compactPrompt ? 450 : 800
+              ),
               ...(options.nextPages && options.nextPages.length > 0
-                ? { followingPages: compactFollowingPages(options.nextPages, 2, 800) }
+                ? {
+                    followingPages: compactFollowingPages(
+                      options.nextPages,
+                      compactPrompt ? 1 : 2,
+                      compactPrompt ? 450 : 800
+                    )
+                  }
                 : {}),
               ...(options.styleExcerpts && options.styleExcerpts.length > 0
-                ? { styleExcerpts: options.styleExcerpts }
+                ? {
+                    styleExcerpts: compactPrompt
+                      ? options.styleExcerpts.slice(0, 1).map((excerpt) => excerpt.slice(0, 600))
+                      : options.styleExcerpts
+                  }
                 : {}),
-              continuityNotes: continuityNotesForPrompt(options.continuityNotes, CONTINUITY_NOTE_PROMPT_LIMITS.review),
+              continuityNotes: continuityNotesForPrompt(
+                options.continuityNotes,
+                compactPrompt ? 6 : CONTINUITY_NOTE_PROMPT_LIMITS.review
+              ),
               instruction:
                 options.nextPages && options.nextPages.length > 0
                   ? "Approve only if this is a finished, specific page that can appear in the final book without visible generation artifacts or repeated beats. followingPages is prose that already exists after this page: judge progression by whether this page leads into it without repeating it, not by whether the page resolves on its own."
@@ -251,7 +280,7 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
     filteredReport.onlyIgnoredRejection ||
     explicitlyNonBlockingReport ||
     (!filteredReport.hasRemainingDefectAfterStripping && guardedReport.approved && guardedReport.score >= 75);
-  return {
+  const reviewedReport = {
     ...guardedReport,
     approved,
     issues: approved && (filteredReport.onlyIgnoredRejection || explicitlyNonBlockingReport)
@@ -270,6 +299,50 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
       ...modelReport.checks
     }
   };
+  if (reviewedReport.approved) {
+    return reviewedReport;
+  }
+  return withPageQaTriggerReasons(reviewedReport, [
+    ...(!modelReport.approved || modelReport.score < 75 || guardrailDefects.length === 0
+      ? (["model_review"] as const)
+      : []),
+    ...(guardrailDefects.length > 0 ? (["reserved_beat"] as const) : [])
+  ]);
+}
+
+function compactReviewChapter(chapter: ChapterPlan | undefined) {
+  if (!chapter) return undefined;
+  return {
+    index: chapter.index,
+    title: chapter.title,
+    summary: chapter.summary,
+    targetPages: chapter.targetPages
+  };
+}
+
+/**
+ * Keep positional scope intact while turning the duplicated chapter-page maps
+ * into short continuity/reservation signatures. The authoritative pageBrief
+ * remains a separate, complete payload field.
+ */
+function compactPageReviewScope(options: ReviewPageOptions) {
+  const scope = pageScopePayload(options);
+  return {
+    ...scope,
+    previousChapterPageBriefs: scope.previousChapterPageBriefs.map((page) => ({
+      pageIndex: page.pageIndex,
+      completedBeat: compactReviewBeat(page.purpose, page.beat, page.endingPressure)
+    })),
+    futureChapterPageBriefs: scope.futureChapterPageBriefs.map((page) => ({
+      pageIndex: page.pageIndex,
+      reservedBeat: compactReviewBeat(page.purpose, page.beat, page.endingPressure)
+    }))
+  };
+}
+
+function compactReviewBeat(...parts: Array<string | undefined>): string {
+  const signature = parts.filter((part): part is string => Boolean(part?.trim())).join(" — ");
+  return signature.length <= 280 ? signature : `${signature.slice(0, 279)}…`;
 }
 
 const EXPLICITLY_NON_BLOCKING_FEEDBACK =
@@ -455,6 +528,15 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
   );
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "revise-page",
+    ...(options.qaCandidateNumber !== undefined
+      ? {
+          providerCallMetadata: pageQaProviderCallMetadata({
+            report: options.report,
+            candidateNumber: options.qaCandidateNumber,
+            ...(options.qaBriefRepaired ? { additionalReasons: ["brief_repair"] } : {})
+          })
+        }
+      : {}),
     temperature: Math.min(0.85, options.input.temperature),
     maxTokens: 3200,
     schema: pageDraftSchema,

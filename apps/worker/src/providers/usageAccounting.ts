@@ -1,5 +1,5 @@
-import type { GenerateTextOptions, ScriptTokenWeights, Usage } from "@book-maker/core";
-import { calculateTextGenerationCost, estimateTokensByScript } from "@book-maker/core";
+import type { GenerateTextOptions, ProviderCallMetadata, ScriptTokenWeights, Usage } from "@book-maker/core";
+import { PAGE_QA_TRIGGER_REASONS, calculateTextGenerationCost, estimateTokensByScript } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { jsonInputValue, jsonPayloadToRecord, serializeError } from "../runtime/serialization.js";
 
@@ -33,6 +33,7 @@ export async function recordProviderUsage(options: {
   liveUsageId?: string | undefined;
   fallbackPromptTokens?: number | null | undefined;
   fallbackOutputTokens?: number | null | undefined;
+  providerCallMetadata?: ProviderCallMetadata | undefined;
 }) {
   const exactPromptTokens = finiteTokenCount(options.usage?.promptTokens);
   const exactOutputTokens = finiteTokenCount(options.usage?.outputTokens);
@@ -74,6 +75,7 @@ export async function recordProviderUsage(options: {
     provisional,
     promptTokensEstimated,
     outputTokensEstimated,
+    ...boundedProviderCallMetadata(options.providerCallMetadata),
     ...(reasoningTokens !== null ? { reasoningTokens } : {})
   } satisfies Prisma.InputJsonValue;
 
@@ -115,6 +117,7 @@ export async function recordProviderUsageFromError(options: {
   error: unknown;
   liveUsageId?: string | undefined;
   fallbackPromptTokens?: number | null | undefined;
+  providerCallMetadata?: ProviderCallMetadata | undefined;
 }) {
   const providerUsage = providerUsageFromError(options.error);
   if (!providerUsage) {
@@ -131,7 +134,8 @@ export async function recordProviderUsageFromError(options: {
     durationMs: options.durationMs,
     usage: providerUsage.usage,
     liveUsageId: options.liveUsageId,
-    fallbackPromptTokens: options.fallbackPromptTokens
+    fallbackPromptTokens: options.fallbackPromptTokens,
+    providerCallMetadata: options.providerCallMetadata
   });
 }
 
@@ -169,7 +173,8 @@ export async function beginLiveTextUsage(options: {
           promptTokensEstimated: true,
           outputTokensEstimated: true,
           startedAt: options.startedAt,
-          maxTokens: options.options.maxTokens ?? null
+          maxTokens: options.options.maxTokens ?? null,
+          ...boundedProviderCallMetadata(options.options.providerCallMetadata)
         } satisfies Prisma.InputJsonValue
       },
       select: { id: true }
@@ -179,6 +184,34 @@ export async function beginLiveTextUsage(options: {
     console.error("Failed to start live provider token usage", error);
     return null;
   }
+}
+
+const PAGE_QA_TRIGGER_REASON_SET = new Set<string>(PAGE_QA_TRIGGER_REASONS);
+
+/** Runtime allow-listing keeps this metadata machine-only even across untyped callers. */
+function boundedProviderCallMetadata(value: ProviderCallMetadata | undefined): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  const raw = value as unknown as Record<string, unknown>;
+  const qaTriggerReasons = Array.isArray(raw.qaTriggerReasons)
+    ? [...new Set(raw.qaTriggerReasons.filter(
+        (reason): reason is string => typeof reason === "string" && PAGE_QA_TRIGGER_REASON_SET.has(reason)
+      ))]
+    : [];
+  const qaCandidateNumber = positiveInteger(raw.qaCandidateNumber);
+  const qaRewriteNumber = positiveInteger(raw.qaRewriteNumber, true);
+  if (qaTriggerReasons.length === 0 || qaCandidateNumber === null || qaRewriteNumber === null) {
+    return {};
+  }
+  return { qaTriggerReasons, qaCandidateNumber, qaRewriteNumber };
+}
+
+function positiveInteger(value: unknown, allowZero = false): number | null {
+  if (!Number.isInteger(value) || typeof value !== "number") {
+    return null;
+  }
+  return value >= (allowZero ? 0 : 1) ? value : null;
 }
 
 export async function maybeUpdateLiveTextOutput(options: {

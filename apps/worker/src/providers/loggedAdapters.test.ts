@@ -115,6 +115,29 @@ describe("LoggingTextModelAdapter.setPurposeOverridesEnabled", () => {
 });
 
 describe("LoggingTextModelAdapter live selection logging", () => {
+  it("persists bounded page-QA rewrite diagnostics without copying request content into provider metadata", async () => {
+    const logged = wrap(new FakeTextModelAdapter());
+
+    await logged.generateText({
+      messages: [{ role: "user", content: "Reader-facing draft content must stay out of metadata." }],
+      purpose: "revise-page",
+      providerCallMetadata: {
+        qaTriggerReasons: ["claim_grounding", "style"],
+        qaCandidateNumber: 3,
+        qaRewriteNumber: 2
+      }
+    } as Parameters<typeof logged.generateText>[0]);
+
+    expect(providerCallRows()).toHaveLength(1);
+    const metadata = providerCallRows()[0]!.metadata as Record<string, unknown>;
+    expect(metadata).toMatchObject({
+      qaTriggerReasons: ["claim_grounding", "style"],
+      qaCandidateNumber: 3,
+      qaRewriteNumber: 2
+    });
+    expect(JSON.stringify(metadata)).not.toContain("Reader-facing draft content");
+  });
+
   it("records the model bound for the call in its request log", async () => {
     const inner = new FakeTextModelAdapter();
     const delegate: TextModelAdapter = {

@@ -76,6 +76,11 @@ export {
   type RevisePageOptions
 } from "./pagesReview.js";
 export {
+  pageQaProviderCallMetadata,
+  pageQaTriggerReasonsForReport,
+  withPageQaTriggerReasons
+} from "./pageQaRewriteTelemetry.js";
+export {
   pinStyleExcerpts,
   sampleExcerptsFromInput,
   buildPageInstruction,

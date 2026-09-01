@@ -21,12 +21,40 @@ export type ChatMessage = {
   toolName?: string | undefined;
 };
 
+/** Machine-only causes that can trigger a page-QA rewrite provider call. */
+export const PAGE_QA_TRIGGER_REASONS = [
+  "model_review",
+  "claim_grounding",
+  "story_contradiction",
+  "style",
+  "local_check",
+  "smart_unslop",
+  "reserved_beat",
+  "brief_repair"
+] as const;
+
+export type PageQaTriggerReason = (typeof PAGE_QA_TRIGGER_REASONS)[number];
+
+/**
+ * A deliberately closed provider-log payload. It has no free-form string
+ * field, so page prose, reviewer feedback, and prompts cannot accidentally be
+ * copied into `ProviderCallLog.metadata` with the diagnostics.
+ */
+export type ProviderCallMetadata = {
+  qaTriggerReasons: PageQaTriggerReason[];
+  /** Candidate produced by this call; the original draft is candidate 1. */
+  qaCandidateNumber: number;
+  /** One less than the candidate number; the original draft has no rewrite. */
+  qaRewriteNumber: number;
+};
+
 export type GenerateTextOptions = {
   messages: ChatMessage[];
   temperature?: number;
   maxTokens?: number;
   purpose?: string;
   projectId?: string;
+  providerCallMetadata?: ProviderCallMetadata;
   onOutputTextChunk?: (chunk: string) => void | Promise<void>;
   /**
    * Best-effort cancellation of the in-flight provider request. Adapters that

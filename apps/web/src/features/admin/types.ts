@@ -160,7 +160,15 @@ export type AdminGeneratedBookDetail = {
   totals: CostUsage;
   byKind: Array<CostUsage & { kind: CostKind }>;
   purposes: OperationCost[];
+  qaRewriteTriggers: QaRewriteTriggerCost[];
   qualityGates: QualityGateCost[];
+};
+
+export type QaRewriteTriggerCost = {
+  key: string;
+  reasons: string[];
+  calls: number;
+  providerCostUsd: number;
 };
 
 export type QualityGateCost = {

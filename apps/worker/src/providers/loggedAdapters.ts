@@ -447,7 +447,8 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
           fallbackOutputTokens: Math.max(
             estimateTokenCountFromText(result.text),
             estimateTokenCountFromTextLength(responseCharacterCount)
-          )
+          ),
+          providerCallMetadata: options.providerCallMetadata
         });
         return result;
       }
@@ -511,7 +512,8 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
           fallbackOutputTokens: Math.max(
             estimateTokenCountFromText(result.text),
             estimateTokenCountFromTextLength(responseCharacterCount)
-          )
+          ),
+          providerCallMetadata: options.providerCallMetadata
         });
         return result;
       }
@@ -561,7 +563,8 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
           usage: result.usage,
           liveUsageId: accounting.liveUsageId,
           fallbackPromptTokens: accounting.promptTokens,
-          fallbackOutputTokens: estimateTokenCountFromText(result.text)
+          fallbackOutputTokens: estimateTokenCountFromText(result.text),
+          providerCallMetadata: options.providerCallMetadata
         });
         return result;
       }
