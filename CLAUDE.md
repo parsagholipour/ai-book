@@ -279,6 +279,7 @@ code in that area, however obvious the rule looks.
 - **One treatment scorer decides both the page-time gate and the manuscript audit, and it reads the chapter rather than the recency window.** → packages/core/src/generation/CLAUDE.md
 - **A local QA message names an earlier page only after the word `from`, because the final-QA repair harvests every other `page N` as a page to redraft.** → packages/core/src/generation/CLAUDE.md
 - **An analytical page owns its evidence anchors; a shared one is repaired like a near-duplicate beat and never blocks.** → packages/core/src/generation/CLAUDE.md
+- **A brief prompt names its JSON keys and shows the shape; prose alone has the model spelling them from the words.** → packages/core/src/generation/CLAUDE.md
 
 ### Characters, covers and illustrations
 

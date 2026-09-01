@@ -287,6 +287,44 @@ describe("chapter brief first-page contract", () => {
     expect(capture.payload?.openingHook).toBeUndefined();
   });
 
+  it("names every page key and shows the flat page shape, so the model does not invent keys from prose", async () => {
+    const laterChapter = chunkedPlan.chapters[chunkedPlan.chapters.length - 1]!;
+    const capture = capturingJsonModel(briefResponse([20, 21], laterChapter.index));
+
+    await generateChapterBrief({
+      input: chunkedInput,
+      plan: chunkedPlan,
+      chapter: laterChapter,
+      chapterPageStart: 20,
+      chapterPageEnd: 21,
+      textModel: capture.model
+    });
+
+    expect(capture.system).toMatch(
+      /pageIndex, chapterIndex, purpose, beat, requiredContinuity, endingPressure and optional imageMoment are its own top-level keys/
+    );
+    expect(capture.system).toMatch(/never nested inside beat or renamed/);
+    expect(capture.payload?.outputContract).toMatchObject({
+      chapterIndex: laterChapter.index,
+      title: expect.any(String),
+      summary: expect.any(String),
+      continuityFocus: [expect.any(String)]
+    });
+    expect(capture.payload?.outputContract?.pages).toEqual([
+      {
+        pageIndex: 20,
+        chapterIndex: laterChapter.index,
+        purpose: expect.any(String),
+        beat: expect.any(String),
+        requiredContinuity: [expect.any(String)],
+        endingPressure: expect.any(String),
+        imageMoment: expect.any(String)
+      }
+    ]);
+    expect(capture.payload?.instruction).toMatch(/shaped exactly like outputContract\.pages\[0\]/);
+    expect(capture.payload?.instruction).toMatch(/beat is a string .* never an object/);
+  });
+
   it("assigns no openingHook to an imported manuscript's opening chapter", async () => {
     const capture = capturingJsonModel(briefResponse([1, 2, 3], 1));
     const importedChunkedInput: CreateProjectInput = { ...importedInput, targetPages: 40 };
@@ -718,6 +756,46 @@ describe("evidence ledger on the page map", () => {
     expect(pages[1]).toMatchObject({ claim: "Radio turned rivalry into a script.", evidenceAnchors: ["Kigali radio"] });
     expect(pages[2]).not.toHaveProperty("claim");
     expect(pageMapForWholeBookDraft(briefs)[0]).toMatchObject({ evidenceAnchors: ["Bugesera land plots", "coffee price collapse"] });
+  });
+
+  it("shows claim and evidenceAnchors in an analytical chapter brief's outputContract and not in a story's", async () => {
+    const analyticalChunked: CreateProjectInput = { ...analyticalInput, targetPages: 40 };
+    const analyticalPlan = makeFallbackPlan(analyticalChunked);
+    const analyticalCapture = capturingJsonModel({
+      chapterIndex: analyticalPlan.chapters[0]!.index,
+      title: "Chapter",
+      summary: "Summary",
+      pages: [1, 2, 3].map((pageIndex) => modelPageBeat(pageIndex, analyticalPlan.chapters[0]!.index)),
+      continuityFocus: []
+    });
+    await generateChapterBrief({
+      input: analyticalChunked,
+      plan: analyticalPlan,
+      chapter: analyticalPlan.chapters[0]!,
+      chapterPageStart: 1,
+      chapterPageEnd: 3,
+      textModel: analyticalCapture.model
+    });
+    expect(analyticalCapture.payload?.outputContract?.pages?.[0]).toHaveProperty("evidenceAnchors");
+
+    const storyChunked: CreateProjectInput = { ...input, targetPages: 40 };
+    const storyPlan = makeFallbackPlan(storyChunked);
+    const storyCapture = capturingJsonModel({
+      chapterIndex: storyPlan.chapters[0]!.index,
+      title: "Chapter",
+      summary: "Summary",
+      pages: [1, 2, 3].map((pageIndex) => modelPageBeat(pageIndex, storyPlan.chapters[0]!.index)),
+      continuityFocus: []
+    });
+    await generateChapterBrief({
+      input: storyChunked,
+      plan: storyPlan,
+      chapter: storyPlan.chapters[0]!,
+      chapterPageStart: 1,
+      chapterPageEnd: 3,
+      textModel: storyCapture.model
+    });
+    expect(storyCapture.payload?.outputContract?.pages?.[0]).not.toHaveProperty("evidenceAnchors");
   });
 
   it("says nothing about the ledger to a story's map", async () => {

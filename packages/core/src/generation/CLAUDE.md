@@ -123,6 +123,21 @@ holds the event loop open and vitest will never exit.
   `MISSING_EVIDENCE_ANCHORS`, diagnostic and one per chapter, and drafts as every book did before
   the field. The schema omits absent keys rather than writing `undefined`, so a brief stored before
   the field parses byte-for-byte as it did under the `Chapter.productionBrief` compare-and-swap.
+- **A brief prompt names its JSON keys and shows the shape; prose alone has the model spelling
+  them from the words.** The chapter-brief prompt used to say only "Return one beat per page. Each
+  beat needs purpose, concrete action or explanation, required continuity, ending pressure, and
+  optional image moment" — no key ever named, no example shown — and once the strict acceptance
+  (`decodeGeneratedChapterBrief`) stopped inventing placeholders for what it could not read, every
+  one of the fourteen briefs rejected across three 2026-09-01 runs was a key the model had coined
+  from that sentence: `concreteActionOrExplanation`, `concreteAction`, `action_or_explanation`,
+  `ending_pressure`, or a `beat` object holding `purpose` and `action`. Each rejection is a full
+  re-ask at 0.2, so a sixteen-chapter book paid four extra calls. The prompt now carries the same
+  two things the whole-book map prompt always had: a system rule naming the seven keys and saying
+  they are top-level and never nested inside `beat`, and an `outputContract` in the payload
+  showing one page object (with the evidence-ledger keys when that mode applies, via
+  `evidenceLedgerOutputContract`). Widening the decoder's alias table was tried first and covered
+  only the nested four; naming the keys covers all fourteen, which is why the aliases stayed as
+  they were.
 
 ## Page 1's opening contract
 

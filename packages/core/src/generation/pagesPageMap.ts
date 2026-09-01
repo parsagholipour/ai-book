@@ -273,6 +273,12 @@ export async function generateChapterBrief(options: GenerateChapterBriefOptions)
             ...evidenceLedgerRules(options.input, options.plan, "producer"),
             "Return exactly one root JSON object with chapterIndex, title, summary, pages, and continuityFocus.",
             "Use pages for the page beat array; do not return pageBeats as the root shape.",
+            // The keys are named and shown because prose alone had the model
+            // inventing them from the words: "concrete action or explanation"
+            // came back as concreteActionOrExplanation, action_or_explanation,
+            // or a beat object holding purpose and action, and every one of
+            // those was rejected by the strict brief acceptance and re-asked.
+            "Each entry in pages is one flat page object shaped exactly like outputContract.pages[0]: pageIndex, chapterIndex, purpose, beat, requiredContinuity, endingPressure and optional imageMoment are its own top-level keys, spelled exactly that way, never nested inside beat or renamed.",
             ...OPENING_PAGE_SCOPE_RULES,
             ...citation.rules,
             ...firstPage.rules,
@@ -303,8 +309,26 @@ export async function generateChapterBrief(options: GenerateChapterBriefOptions)
                 end: options.chapterPageEnd,
                 globalPageIndexes: expectedPages
               },
+              outputContract: {
+                chapterIndex: contract.chapterIndex,
+                title: "The chapter's title.",
+                summary: "What the chapter accomplishes, in one short paragraph.",
+                pages: [
+                  {
+                    pageIndex: contract.pageRange.start,
+                    chapterIndex: contract.chapterIndex,
+                    purpose: "One sentence describing what this page must accomplish.",
+                    beat: "One concrete action, explanation, or story turn assigned to this page.",
+                    requiredContinuity: ["Continuity facts that must stay true on this page."],
+                    endingPressure: "The page's concrete handoff to the next page.",
+                    imageMoment: "Optional single visual moment for illustration.",
+                    ...evidenceLedgerOutputContract(options.input, options.plan)
+                  }
+                ],
+                continuityFocus: ["Continuity facts the whole chapter must keep straight."]
+              },
               instruction:
-                "Return one beat per page. Each beat needs purpose, concrete action or explanation, required continuity, ending pressure, and optional image moment."
+                "Return one page object for each of pageRange.globalPageIndexes, in order, shaped exactly like outputContract.pages[0]. purpose, beat, requiredContinuity, endingPressure, and optional imageMoment are top-level keys of every page object, and beat is a string holding the page's concrete action or explanation, never an object."
             },
             null,
             2
