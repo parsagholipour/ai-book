@@ -2990,6 +2990,25 @@ figcaption {
   font-size: 0.9rem;
 }
 
+.generated-book-quality-gates {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.generated-book-quality-note {
+  margin: -6px 0 0;
+  font-size: 0.8rem;
+}
+
+.generated-book-quality-table {
+  min-width: 520px;
+}
+
+.generated-book-quality-table th:first-child {
+  width: 70%;
+}
+
 .generated-book-cost-scroll {
   margin-top: -6px;
 }

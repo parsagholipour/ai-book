@@ -160,6 +160,15 @@ export type AdminGeneratedBookDetail = {
   totals: CostUsage;
   byKind: Array<CostUsage & { kind: CostKind }>;
   purposes: OperationCost[];
+  qualityGates: QualityGateCost[];
+};
+
+export type QualityGateCost = {
+  id: string;
+  label: string;
+  calls: number | null;
+  providerCostUsd: number | null;
+  costNote: string | null;
 };
 
 export type AdminGeneratedPlanSummary = {

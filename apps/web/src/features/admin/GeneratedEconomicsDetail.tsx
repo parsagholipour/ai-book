@@ -1,6 +1,6 @@
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { compactCount, count, duration, percent, usd, usdFine } from "./format.js";
-import type { CostKind, CostUsage, OperationCost } from "./types.js";
+import type { CostKind, CostUsage, OperationCost, QualityGateCost } from "./types.js";
 
 export type GeneratedEconomicsDetail = {
   chargeCount: number;
@@ -15,6 +15,7 @@ export type GeneratedEconomicsDetail = {
   totals: CostUsage;
   byKind: Array<CostUsage & { kind: CostKind }>;
   purposes: OperationCost[];
+  qualityGates?: QualityGateCost[];
 };
 
 export function GeneratedEconomicsDetailContent(props: {
@@ -77,6 +78,8 @@ export function GeneratedEconomicsDetailContent(props: {
         </p>
       ) : null}
 
+      {detail.qualityGates ? <QualityGateCosts gates={detail.qualityGates} /> : null}
+
       <div className="section-title generated-book-purpose-title">
         <h4>Purpose and model costs</h4>
         <span className="muted admin-subtle">{callStateSummary(detail.totals)}</span>
@@ -113,6 +116,55 @@ export function GeneratedEconomicsDetailContent(props: {
                   </tr>
                 ))
               )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QualityGateCosts(props: { gates: QualityGateCost[] }) {
+  const attributableCost = props.gates.reduce(
+    (total, gate) => total + (gate.providerCostUsd ?? 0),
+    0
+  );
+  return (
+    <div className="generated-book-quality-gates">
+      <div className="section-title generated-book-purpose-title">
+        <h4>Active quality gates</h4>
+        <span className="muted admin-subtle">
+          {count(props.gates.length)} active · {usdFine(attributableCost)} directly attributable
+        </span>
+      </div>
+      <p className="muted generated-book-quality-note">
+        Enabled for at least one generation run. Costs are lifetime provider spend from calls attributable to one gate.
+      </p>
+      {props.gates.length === 0 ? (
+        <p className="muted">No quality gates were active.</p>
+      ) : (
+        <div className="admin-table-scroll generated-book-cost-scroll">
+          <table className="admin-table generated-book-quality-table">
+            <thead>
+              <tr>
+                <th>Quality gate</th>
+                <th className="numeric">Calls</th>
+                <th className="numeric">Provider cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {props.gates.map((gate) => (
+                <tr key={gate.id}>
+                  <td>
+                    <span className="cost-name">{gate.label}</span>
+                    {gate.costNote ? <span className="muted admin-subtle">{gate.costNote}</span> : null}
+                  </td>
+                  <td className="numeric">{gate.calls === null ? "—" : count(gate.calls)}</td>
+                  <td className="numeric">
+                    {gate.providerCostUsd === null ? "Not separate" : usdFine(gate.providerCostUsd)}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

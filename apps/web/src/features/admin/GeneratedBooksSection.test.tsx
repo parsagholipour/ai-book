@@ -100,6 +100,29 @@ const detail: AdminGeneratedBookDetail = {
       audioSeconds: 65
     }
   ],
+  qualityGates: [
+    {
+      id: "pageLocalQa",
+      label: "Local page checks",
+      calls: 0,
+      providerCostUsd: 0,
+      costNote: "Deterministic checks; no provider call."
+    },
+    {
+      id: "pageModelReview",
+      label: "Model page review",
+      calls: 8,
+      providerCostUsd: 0.000012,
+      costNote: null
+    },
+    {
+      id: "planThinkingBoost",
+      label: "Deeper plan thinking",
+      calls: null,
+      providerCostUsd: null,
+      costNote: "Incremental reasoning spend is included in the planning calls it modifies."
+    }
+  ],
   purposes: [
     {
       key: "book.plan.raw",
@@ -172,7 +195,7 @@ describe("GeneratedBooksView", () => {
     expect(markup).not.toContain("Purpose and model costs");
   });
 
-  it("renders expanded economics, kind totals, raw purpose/model costs, and an understated-spend warning", () => {
+  it("renders expanded economics, active quality-gate costs, raw model costs, and an understated-spend warning", () => {
     const markup = renderToStaticMarkup(
       <GeneratedBooksView
         list={list}
@@ -199,6 +222,12 @@ describe("GeneratedBooksView", () => {
     expect(markup).toContain("Text");
     expect(markup).toContain("Images");
     expect(markup).toContain("Audio");
+    expect(markup).toContain("Active quality gates");
+    expect(markup).toContain("Local page checks");
+    expect(markup).toContain("Model page review");
+    expect(markup).toContain("Deeper plan thinking");
+    expect(markup).toContain("$0.00001 directly attributable");
+    expect(markup).toContain("Not separate");
     expect(markup).toContain("Purpose and model costs");
     expect(markup).toContain("book.plan.raw");
     expect(markup).toContain("gemini-3.5-flash");

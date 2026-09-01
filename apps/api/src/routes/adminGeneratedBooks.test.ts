@@ -8,6 +8,8 @@ const mockDb = vi.hoisted(() => ({
     user: { upsert: vi.fn() },
     mobileSession: { findUnique: vi.fn() },
     project: { count: vi.fn(), findMany: vi.fn(), findUnique: vi.fn() },
+    generationJob: { findMany: vi.fn() },
+    generationQualityRevision: { findMany: vi.fn() },
     $queryRawUnsafe: vi.fn(),
     $queryRaw: vi.fn()
   }
@@ -37,6 +39,8 @@ beforeEach(() => {
   mockDb.prisma.project.count.mockResolvedValue(0);
   mockDb.prisma.project.findMany.mockResolvedValue([]);
   mockDb.prisma.project.findUnique.mockResolvedValue(null);
+  mockDb.prisma.generationJob.findMany.mockResolvedValue([]);
+  mockDb.prisma.generationQualityRevision.findMany.mockResolvedValue([]);
   mockDb.prisma.$queryRawUnsafe.mockResolvedValue([]);
   mockDb.prisma.$queryRaw.mockResolvedValue([]);
 });

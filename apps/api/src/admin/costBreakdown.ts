@@ -99,6 +99,8 @@ export type AdminCostBreakdown = {
 export type ProviderCostRow = {
   kind: string | null;
   purpose: string | null;
+  /** Present on project detail rows where one raw purpose can belong to different gates. */
+  generation_job_type?: string | null;
   provider: string | null;
   model: string | null;
   calls: number | null;

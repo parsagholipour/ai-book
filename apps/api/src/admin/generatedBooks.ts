@@ -17,6 +17,10 @@ import {
   type ProviderCostRow
 } from "./costBreakdown.js";
 import { netSettledCredits, round2, type AdminWindow } from "./metrics.js";
+import {
+  qualityGateCostsForProject,
+  type QualityGateCost
+} from "./qualityGateCosts.js";
 
 export type GeneratedBookSummary = {
   id: string;
@@ -55,7 +59,18 @@ export type GeneratedBookDetail = {
   totals: CostUsage;
   byKind: KindCost[];
   purposes: OperationCost[];
+  qualityGates: QualityGateCost[];
 };
+
+const QUALITY_GATE_JOB_TYPES = [
+  "PLAN_BOOK",
+  "GENERATE_BOOK",
+  "GENERATE_PAGE",
+  "COMPILE_EXPORT",
+  "APPLY_BOOK_EDIT",
+  "REPLAN_BOOK",
+  "CONTINUE_BOOK"
+] as const;
 
 type ProjectEconomicsRow = {
   project_id: string;
@@ -124,15 +139,24 @@ export async function listGeneratedBooks(options: {
 export async function loadGeneratedBookDetail(projectId: string): Promise<GeneratedBookDetail | null> {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
-    select: { id: true, status: true }
+    select: { id: true, status: true, mediaSettings: true, updatedAt: true }
   });
   if (!project || project.status !== "COMPLETE") {
     return null;
   }
 
-  const [economicsByProject, costRows] = await Promise.all([
+  const [economicsByProject, costRows, qualityRuns, qualityRevisions] = await Promise.all([
     loadProjectEconomics([projectId]),
-    loadProjectCostRows(projectId)
+    loadProjectCostRows(projectId),
+    prisma.generationJob.findMany({
+      where: { projectId, type: { in: [...QUALITY_GATE_JOB_TYPES] } },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: { createdAt: true, startedAt: true }
+    }),
+    prisma.generationQualityRevision.findMany({
+      orderBy: [{ createdAt: "asc" }, { version: "asc" }],
+      select: { version: true, settings: true, createdAt: true }
+    })
   ]);
   const economics = economicsByProject.get(projectId) ?? economicsFromRow({
     project_id: projectId,
@@ -161,7 +185,14 @@ export async function loadGeneratedBookDetail(projectId: string): Promise<Genera
       : null,
     totals: breakdown.totals,
     byKind: breakdown.byKind,
-    purposes: breakdown.operations
+    purposes: breakdown.operations,
+    qualityGates: qualityGateCostsForProject({
+      mediaSettings: project.mediaSettings,
+      fallbackAt: project.updatedAt,
+      runs: qualityRuns,
+      revisions: qualityRevisions,
+      costRows
+    })
   };
 }
 
@@ -226,6 +257,7 @@ async function loadProjectCostRows(projectId: string): Promise<ProviderCostRow[]
         ELSE 'text'
       END AS kind,
       l.purpose AS purpose,
+      j.type::text AS generation_job_type,
       l.provider AS provider,
       l.model AS model,
       COUNT(*)::double precision AS calls,
@@ -256,7 +288,7 @@ async function loadProjectCostRows(projectId: string): Promise<ProviderCostRow[]
     FROM "ProviderCallLog" l
     LEFT JOIN "GenerationJob" j ON j.id = l."generationJobId"
     WHERE COALESCE(l."projectId", j."projectId") = ${projectId}
-    GROUP BY 1, 2, 3, 4
+    GROUP BY 1, 2, 3, 4, 5
   `;
 }
 
