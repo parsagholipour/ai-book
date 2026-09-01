@@ -55,7 +55,7 @@ import { keywordsFromTokens, overlapTokens, sharedRatio, shinglesFromTokens } fr
  * the capped draw keeps the beat detection flagged, so quoting it is accurate and
  * refusing to quote it would cost a later page its own note over a rewrite that
  * is never going to happen. That distinction is decidable mid-sweep only because
- * the slots go to the earliest findings — `findingsForRewrite` says why.
+ * the slots go to the earliest findings — `selectFindingsForRewriteCall` says why.
  *
  * **A refused match is held rather than dropped, because the rewrite it defers
  * to may never arrive.** A match naming a page being rewritten got nothing
@@ -255,8 +255,8 @@ function pauseForEventLoop(): Promise<void> {
  * every map in this suite's fixtures, and any book of 63 pages or fewer — pauses
  * not once and is exactly as synchronous as it was.
  *
- * **A pause is not a stop check and cannot become one here.** `bestEffortPass`
- * (`apps/worker/src/generation/bookState.ts`) rethrows `StopRequestedError` out
+ * **A pause is not a stop check and cannot become one here.** Production-map
+ * integrity in the worker rethrows `StopRequestedError` out of this call, but
  * of this call, but nothing inside the sweep can raise one: `packages/core` is
  * the leaf of the dependency graph and cannot see the worker's stop signal. A
  * reader's stop is therefore observed exactly where it was before, at the
@@ -286,7 +286,21 @@ function pauseForEventLoop(): Promise<void> {
  * compared is therefore either unsound or inert; how long the loop holds the
  * thread is what was actually wrong.
  */
-export async function findDuplicatePageBeats(briefs: ChapterBrief[]): Promise<DuplicateBeatFinding[]> {
+export type FindDuplicatePageBeatsOptions = {
+  /**
+   * How many of this sweep's findings are treated as pages about to be
+   * rewritten, which is what suppresses later pages from naming them.
+   * Default `MAX_BEAT_DEDUP_FINDINGS` preserves one-call rewrite naming.
+   * Full-map audit passes `0` so every collision is a first-class finding:
+   * a provider-call cap must not hide detection or classification.
+   */
+  rewriteSlotLimit?: number;
+};
+
+export async function findDuplicatePageBeats(
+  briefs: ChapterBrief[],
+  options: FindDuplicatePageBeatsOptions = {}
+): Promise<DuplicateBeatFinding[]> {
   // `flatMap` already answers with an array of its own, so this sorts a copy
   // without making a second one.
   const pages = briefs.flatMap((brief) => brief.pages).sort((first, second) => first.pageIndex - second.pageIndex);
@@ -351,11 +365,12 @@ export async function findDuplicatePageBeats(briefs: ChapterBrief[]): Promise<Du
     if (best) {
       // Whether this finding wins one of the rewrite call's slots is knowable
       // here, and only because the slots go to the earliest findings — see
-      // `findingsForRewrite`. A page that wins one is about to have its beat
+      // `selectFindingsForRewriteCall`. A page that wins one is about to have its beat
       // replaced and so may not be named by anything behind it; a page that
       // loses one keeps exactly the assignment quoted here, which makes it as
       // legitimate a target as a page nothing flagged.
-      const winsRewriteSlot = findings.length < MAX_BEAT_DEDUP_FINDINGS;
+      const rewriteSlotLimit = options.rewriteSlotLimit ?? MAX_BEAT_DEDUP_FINDINGS;
+      const winsRewriteSlot = rewriting.size < rewriteSlotLimit;
       findings.push(best);
       if (winsRewriteSlot) {
         rewriting.set(later, best);

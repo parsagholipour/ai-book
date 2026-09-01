@@ -228,6 +228,19 @@ describe("generateBookChapterWholePass", () => {
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
   });
 
+  it("does not reset durable book state when preparing chapter setups throws", async () => {
+    mocks.prepareChapterSetups.mockRejectedValue(
+      Object.assign(new Error("Production map integrity unresolved after 2 repair cycle(s)."), {
+        code: "PAGE_MAP_INTEGRITY_UNRESOLVED"
+      })
+    );
+
+    await expect(generateBookChapterWholePass(baseOptions(baseStrategy()))).rejects.toMatchObject({
+      code: "PAGE_MAP_INTEGRITY_UNRESOLVED"
+    });
+    expect(mocks.resetBookForDirectGeneration).not.toHaveBeenCalled();
+  });
+
   it("resumes at the chapter holding the first missing page instead of wiping the book", async () => {
     mocks.directResumeStateForContext.mockReturnValue({ kind: "resume", firstMissingPageIndex: 3 });
     mocks.priorPageContextsFromStored.mockReturnValue([pageDraft(1), pageDraft(2)]);

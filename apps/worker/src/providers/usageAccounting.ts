@@ -2,6 +2,7 @@ import type {
   ChapterBriefProviderCallMetadata,
   GenerateTextOptions,
   PageQaProviderCallMetadata,
+  ProductionMapRepairProviderCallMetadata,
   ProviderCallMetadata,
   ScriptTokenWeights,
   Usage
@@ -13,6 +14,9 @@ import {
   estimateTokensByScript,
   isChapterBriefProviderCallMetadata,
   isPageQaProviderCallMetadata,
+  isProductionMapRepairProviderCallMetadata,
+  MAX_BEAT_DEDUP_FINDINGS,
+  PRODUCTION_MAP_REPAIR_CYCLE_LIMIT,
   pageMapResponseViolationCodesFromError
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
@@ -225,10 +229,37 @@ export function boundedProviderCallMetadata(
   if (isChapterBriefProviderCallMetadata(value)) {
     return boundedChapterBriefMetadata(value, outcome) ?? {};
   }
+  if (isProductionMapRepairProviderCallMetadata(value)) {
+    return boundedProductionMapRepairMetadata(value);
+  }
   if (!isPageQaProviderCallMetadata(value)) {
     return {};
   }
   return boundedPageQaMetadata(value);
+}
+
+function boundedProductionMapRepairMetadata(
+  value: ProductionMapRepairProviderCallMetadata
+): Record<string, unknown> {
+  const cycle = positiveInteger(value.productionMapRepairCycle);
+  const batch = positiveInteger(value.productionMapRepairBatch);
+  const findingCount = positiveInteger(value.productionMapRepairFindingCount);
+  if (
+    cycle === null
+    || batch === null
+    || findingCount === null
+    || cycle > PRODUCTION_MAP_REPAIR_CYCLE_LIMIT
+    || findingCount > MAX_BEAT_DEDUP_FINDINGS
+    || value.productionMapRepairKind !== "sparse-page-patch"
+  ) {
+    return {};
+  }
+  return {
+    productionMapRepairCycle: cycle,
+    productionMapRepairBatch: batch,
+    productionMapRepairFindingCount: findingCount,
+    productionMapRepairKind: value.productionMapRepairKind
+  };
 }
 
 function boundedPageQaMetadata(value: PageQaProviderCallMetadata): Record<string, unknown> {

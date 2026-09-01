@@ -62,7 +62,18 @@ export type ChapterBriefProviderCallMetadata = {
   chapterBriefSchemaRepair?: boolean;
 };
 
-export type ProviderCallMetadata = PageQaProviderCallMetadata | ChapterBriefProviderCallMetadata;
+/** One sparse production-map repair call (at most twelve findings). */
+export type ProductionMapRepairProviderCallMetadata = {
+  productionMapRepairCycle: number;
+  productionMapRepairBatch: number;
+  productionMapRepairFindingCount: number;
+  productionMapRepairKind: "sparse-page-patch";
+};
+
+export type ProviderCallMetadata =
+  | PageQaProviderCallMetadata
+  | ChapterBriefProviderCallMetadata
+  | ProductionMapRepairProviderCallMetadata;
 
 export function isPageQaProviderCallMetadata(
   value: ProviderCallMetadata | undefined
@@ -74,6 +85,12 @@ export function isChapterBriefProviderCallMetadata(
   value: ProviderCallMetadata | undefined
 ): value is ChapterBriefProviderCallMetadata {
   return value !== undefined && "chapterBriefLogicalCallId" in value;
+}
+
+export function isProductionMapRepairProviderCallMetadata(
+  value: ProviderCallMetadata | undefined
+): value is ProductionMapRepairProviderCallMetadata {
+  return value !== undefined && "productionMapRepairCycle" in value;
 }
 
 /** Stamp physical attempt fields on chapter-brief provider-call metadata. */

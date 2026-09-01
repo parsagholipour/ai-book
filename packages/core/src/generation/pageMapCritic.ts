@@ -184,9 +184,9 @@ export const CHAPTER_CONTINUITY_FOCUS_LIMIT = 20;
  * while `QUALITY_FEATURE_DEFAULTS.pageMapCritic` was `["ultra", "premium"]` and
  * this merge only ever ran behind `critiquePageMap`. `beatDedup` defaults to all
  * four tiers and composes its patch in this shape (`beatDedupPatch`,
- * `pageBeatDedup.ts`) with both note lists empty, and `dedupeBriefBeats` merges
- * over **every** chapter brief the moment one collision is found anywhere in the
- * map — so an unconditional `slice` started silently deleting the 21st constraint
+ * `pageBeatDedup.ts`) with both note lists empty, and production-map integrity
+ * merges over chapter briefs when a sparse rewrite answers — so an unconditional
+ * `slice` started silently deleting the 21st constraint
  * onward from every chapter of a fast or balanced book, as a side effect of a
  * pass whose only intent was to rewrite two page beats. `ChapterBrief.continuityFocus`
  * has no cap of its own (`schemas/book.ts`), so those entries are ones the map's

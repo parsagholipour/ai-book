@@ -69,6 +69,7 @@ export {
 export {
   PageMapResponseInvalidError,
   decodeGeneratedChapterBrief,
+  isSubstantivePageAssignment,
   pageMapResponseViolationCodesFromError,
   type GeneratedChapterBriefContract
 } from "./generatedChapterBriefAcceptance.js";

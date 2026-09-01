@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { TextModelAdapter } from "../adapters/types.js";
+import type { ProductionMapRepairProviderCallMetadata, TextModelAdapter } from "../adapters/types.js";
 import type { ChapterBrief, PageProductionBeat } from "../schemas/book.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import {
@@ -121,7 +121,8 @@ export {
   MIN_BEAT_KEYWORDS,
   MIN_BEAT_SHINGLES,
   findDuplicatePageBeats,
-  type DuplicateBeatFinding
+  type DuplicateBeatFinding,
+  type FindDuplicatePageBeatsOptions
 } from "./pageBeatDedupDetect.js";
 
 /**
@@ -132,8 +133,10 @@ export {
  * longer existed, promising the next page a consequence of something that now
  * never happens. That is every page but the book's last, which
  * `withContractedEnding` substitutes for anyway. Refusing the partial patch is
- * cheap here: the caller degrades to `beatDedupPatch(findings)` and every
- * flagged page still gets its distinctness note.
+ * Refusing the partial patch is cheap here: the caller composes
+ * `beatDedupPatch(findings)` for notes, and Phase 02's integrity pass treats a
+ * failed rewrite as a reason to regenerate the chapter rather than to ship the
+ * corrupt map.
  *
  * `requiredContinuity` is the fourth field of an assignment and the one this
  * schema cannot demand. A page whose map wrote it no continuity has nothing to
@@ -216,8 +219,8 @@ function distinctnessLine(finding: DuplicateBeatFinding): string {
  * survive the pass. It survives whenever the rewrite does not, and that is
  * decided here rather than there: this function is reached with the surviving
  * rewrites from `dedupePageBeats`, with none at all when the provider call threw
- * (`dedupeBriefBeats` in `apps/worker/src/generation/bookState.ts` degrades to
- * `beatDedupPatch(findings)`), and each refusal was recorded against the very
+ * (Phase 02 then regenerates the chapter rather than treating the original map
+ * as clean), and each refusal was recorded against the very
  * page whose rewrite the sweep deferred to. So a finding with no rewrite hands
  * its `suppressedMatches` back — quoting the beat that page has just been
  * confirmed to keep, which is what makes them true — and a finding *with* a
@@ -364,48 +367,31 @@ function settledRefusals(
 }
 
 /**
- * The findings that win the rewrite call's capped slots: the earliest ones, in
+ * The findings that win one rewrite call's capped slots: the earliest ones, in
  * the order `findDuplicatePageBeats` produced them, which is page order.
  *
- * Ranking by score is the other candidate and it cannot be had for free. The
- * sweep refuses to name a page it is about to rewrite, and detection runs once,
- * so it has to answer "is this page being rewritten" at the moment it flags one.
- * Slots handed out in sweep order are answerable there; slots handed out by
- * score are known only after the last pair is scored, so a score-ranked cap
- * would have to either quote assignments that are being replaced or go back to
- * refusing every flagged page as a target — which costs the pages past the cap
- * the very notes this split exists to give them, for a ranking of the pages the
- * model sees. Earliest is also the rule the rest of the module already runs on:
- * the later page of a pair gives way because the earlier one is what the rest of
- * the book is written after, and by the same reading the earliest collisions are
- * the ones a rewrite is worth spending on. Every finding past the cap still gets
- * its distinctness note.
+ * This is a bound on one provider call, never on detection. Full-map audit
+ * returns every finding; the worker selects at most `MAX_BEAT_DEDUP_FINDINGS`
+ * of them for a single `dedupePageBeats` call.
  */
-function findingsForRewrite(findings: DuplicateBeatFinding[]): DuplicateBeatFinding[] {
-  return findings.slice(0, MAX_BEAT_DEDUP_FINDINGS);
+export function selectFindingsForRewriteCall(
+  findings: DuplicateBeatFinding[],
+  limit = MAX_BEAT_DEDUP_FINDINGS
+): DuplicateBeatFinding[] {
+  return findings.slice(0, limit);
 }
 
 /**
  * One bounded model call that rewrites the flagged beats. Throws on provider
- * failure — the caller degrades to `beatDedupPatch(findings)` alone, which
- * still puts the distinctness note on every colliding page for free.
+ * failure — Phase 02's integrity pass may then regenerate the chapter rather
+ * than treat the original map as clean.
  *
  * Every finding is answered in the patch; only the first `MAX_BEAT_DEDUP_FINDINGS`
- * of them are put to the model. The pages past that point are indistinguishable
- * from here on from a flagged page the model returned nothing for: they keep the
- * assignment they came in with, they stand in the set every rewrite has to be
- * fresh against, and they get their note.
+ * of them are put to the model. Callers that already selected a batch should pass
+ * at most twelve; this slice is the last bound on the prompt.
  *
  * **Findings are this call's whole reason to exist, so an empty list is a broken
- * caller rather than a quiet no-op.** It used to return an empty patch, which
- * read as a supported path and is not one: `dedupeBriefBeats`
- * (`apps/worker/src/generation/bookState.ts`) is the only caller and short-circuits
- * on an empty sweep before it gets here, because a call with nothing flagged is a
- * model call — spend, latency and a retry budget — that can only answer with
- * patches for pages nobody asked about, which the filter below then drops. It is
- * raised where the mistake is; the caller's `bestEffortPass` turns it into a
- * warning and the deterministic notes, which for no findings is the same empty
- * patch the guard used to return silently.
+ * caller rather than a quiet no-op.**
  *
  * `lastPageIndex` is the same number the caller hands `mergePageMapCriticPatch`,
  * so both halves of this pass agree on where the book ends.
@@ -416,8 +402,9 @@ export async function dedupePageBeats(options: {
   findings: DuplicateBeatFinding[];
   promises: string[];
   lastPageIndex: number;
+  providerCallMetadata?: ProductionMapRepairProviderCallMetadata;
 }): Promise<PageMapCriticPatch> {
-  const rewriting = findingsForRewrite(options.findings);
+  const rewriting = selectFindingsForRewriteCall(options.findings);
   if (rewriting.length === 0) {
     throw new Error("dedupePageBeats needs at least one finding; a clean sweep must not reach the rewrite call.");
   }
@@ -428,6 +415,7 @@ export async function dedupePageBeats(options: {
   });
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "dedupe-page-beats",
+    ...(options.providerCallMetadata ? { providerCallMetadata: options.providerCallMetadata } : {}),
     temperature: 0,
     // Room for `MAX_BEAT_DEDUP_FINDINGS` full patches, and a full patch is five
     // fields now that the continuity a rewrite keeps is quoted back with it and

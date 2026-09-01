@@ -234,6 +234,31 @@ export const rationBeat =
   "A Hamburg widow queues before dawn for turnips and counts the coupons her three children will not have by Friday.";
 
 /**
+ * One five-page chapter whose last page copies page 2: 20% affected, below
+ * `PRODUCTION_MAP_DENSE_CORRUPTION_THRESHOLD`.
+ */
+export function sparseFivePageCollisionBriefs(): ChapterBrief[] {
+  return withCopiedBeat(
+    [
+      {
+        chapterIndex: 1,
+        title: "The war at sea",
+        summary: "The naval war.",
+        continuityFocus: [],
+        pages: [
+          beat(1, 1, "Open inside the July crisis", "A telegram reaches Berlin while the fleet is already coaling."),
+          beat(2, 1, blockadePurpose, blockadeBeat),
+          beat(3, 1, uBoatPurpose, uBoatBeat),
+          beat(4, 1, "Show the turnip winter", "Rationing collapses into the turnip winter of 1916-17 in German cities."),
+          beat(5, 1, rationPurpose, rationBeat)
+        ]
+      }
+    ],
+    { from: 2, to: 5 }
+  );
+}
+
+/**
  * Six pages that collide with nothing, for the cases about what the *rewrite*
  * pass does with the findings it is handed rather than about detection. Those
  * findings are written by hand here for the reason `fake.test.ts` writes its

@@ -93,6 +93,15 @@ describe("findDuplicatePageBeats", () => {
     expect(findings[MAX_BEAT_DEDUP_FINDINGS + 1]!.earlierText).toContain("short of ore");
   });
 
+  it("does not hide later collisions when rewrite slots are disabled for full-map audit", async () => {
+    const findings = await findDuplicatePageBeats(saturatedBriefs(), { rewriteSlotLimit: 0 });
+    expect(findings.length).toBeGreaterThan(MAX_BEAT_DEDUP_FINDINGS);
+    expect(findings[MAX_BEAT_DEDUP_FINDINGS]).toMatchObject({
+      pageIndex: 15,
+      duplicateOfPageIndex: 2
+    });
+  });
+
   it("never names a page this same sweep is about to rewrite", async () => {
     const findings = await findDuplicatePageBeats(chainedBriefs());
 
@@ -174,11 +183,9 @@ describe("beatDedupPatch", () => {
   it("revives a refused match when no rewrite arrived for the page that refused it", async () => {
     const findings = await findDuplicatePageBeats(refusedMatchBriefs());
 
-    // The whole-call fallback: `dedupeBriefBeats` degrades to exactly this when
-    // the provider throws, so page 4 keeps the beat page 5 collided with — and
-    // page 5 used to come out of the pass with no rewrite and no note, holding
-    // the collision this pass was paid to remove, on a map nothing measures
-    // again.
+    // The whole-call note patch: every finding still gets a distinctness line
+    // when a rewrite never arrives. Phase 02 no longer ships that patch as a
+    // clean map; the integrity pass regenerates or throws instead.
     const patch = beatDedupPatch(findings);
 
     expect(patch.beatPatches.map((entry) => entry.pageIndex)).toEqual([4, 5]);

@@ -366,10 +366,17 @@ function isPageMapResponseViolation(value: unknown): value is PageMapResponseVio
 
 function substantiveValue(raw: string | undefined): string | undefined {
   const value = raw?.trim();
-  return value && isSubstantiveAssignment(value) ? value : undefined;
+  return value && isSubstantivePageAssignment(value) ? value : undefined;
 }
 
-function isSubstantiveAssignment(value: string): boolean {
+/**
+ * Whether a purpose, beat, or ending-pressure string is real assigned work
+ * rather than a generic production template or metadata-only placeholder.
+ * Phase 01 uses this to refuse generated chapter-brief fields; Phase 02 uses
+ * the same predicate on a finished map, including whole-book briefs that never
+ * passed `decodeGeneratedChapterBrief`.
+ */
+export function isSubstantivePageAssignment(value: string): boolean {
   const normalized = normalizeAssignment(value);
   if (!normalized) {
     return false;
@@ -450,13 +457,13 @@ function validateNormalizedPages(
     allowCompleteLocalPageNumbering: false
   });
   for (const page of pages) {
-    if (!isSubstantiveAssignment(page.purpose)) {
+    if (!isSubstantivePageAssignment(page.purpose)) {
       violations.push({ code: "PURPOSE_NOT_SUBSTANTIVE", indexes: [page.pageIndex] });
     }
-    if (!isSubstantiveAssignment(page.beat)) {
+    if (!isSubstantivePageAssignment(page.beat)) {
       violations.push({ code: "BEAT_NOT_SUBSTANTIVE", indexes: [page.pageIndex] });
     }
-    if (!isSubstantiveAssignment(page.endingPressure)) {
+    if (!isSubstantivePageAssignment(page.endingPressure)) {
       violations.push({ code: "ENDING_PRESSURE_NOT_SUBSTANTIVE", indexes: [page.pageIndex] });
     }
   }

@@ -140,7 +140,7 @@ export const QUALITY_FEATURES: Array<{
   {
     id: "beatDedup",
     label: "Page-beat dedup",
-    summary: "Deterministic near-duplicate beat detection over the page map; one cheap rewrite call only when a collision is found."
+    summary: "Deterministic near-duplicate beat detection over the page map; one cheap rewrite call only when a collision is found. Structural map integrity (coverage, generics, collisions) is mandatory on every tier and is not gated by this flag."
   },
   {
     id: "writerTools",

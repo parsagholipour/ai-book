@@ -250,6 +250,32 @@ describe("recordProviderUsage", () => {
     });
   });
 
+  it("keeps bounded production-map repair metadata and drops an over-limit batch", () => {
+    expect(boundedProviderCallMetadata({
+      productionMapRepairCycle: 1,
+      productionMapRepairBatch: 2,
+      productionMapRepairFindingCount: 12,
+      productionMapRepairKind: "sparse-page-patch"
+    })).toEqual({
+      productionMapRepairCycle: 1,
+      productionMapRepairBatch: 2,
+      productionMapRepairFindingCount: 12,
+      productionMapRepairKind: "sparse-page-patch"
+    });
+    expect(boundedProviderCallMetadata({
+      productionMapRepairCycle: 3,
+      productionMapRepairBatch: 1,
+      productionMapRepairFindingCount: 1,
+      productionMapRepairKind: "sparse-page-patch"
+    })).toEqual({});
+    expect(boundedProviderCallMetadata({
+      productionMapRepairCycle: 1,
+      productionMapRepairBatch: 1,
+      productionMapRepairFindingCount: 13,
+      productionMapRepairKind: "sparse-page-patch"
+    })).toEqual({});
+  });
+
   it("drops unbounded chapter-brief metadata while retaining the QA metadata branch", () => {
     expect(boundedProviderCallMetadata({
       ...chapterBriefMetadata(1),
