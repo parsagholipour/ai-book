@@ -36,11 +36,11 @@ function reviewPack(
   };
 }
 
-const pack = reviewPack([1, 2, 3], ["SAME_CHAPTER_TREATMENT_REPETITION"], true);
+const pack = reviewPack([1, 2, 3], ["RECAP_BACKTRACKING"], true);
 const otherPack = reviewPack([10, 11], ["CROSS_CHAPTER_CONCEPT_REPETITION"], false);
 
 const candidate: ManuscriptQualityIssue = manuscriptFinding({
-  code: "SAME_CHAPTER_TREATMENT_REPETITION",
+  code: "RECAP_BACKTRACKING",
   severity: "warning",
   message: "Pages 1-3 repeat a treatment.",
   guidance: "Review them.",

@@ -258,33 +258,26 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
     };
   }
 
+  // The model's verdict is the verdict. A deterministic guardrail used to sit
+  // here and veto an approval when the draft shared a few five-letter words
+  // with the next page's brief; measured over 1,200 shipped pages it fired on
+  // 76 the reviewer had approved at 88-94, so it was removed (2026-09-02).
   const modelReport = pageQualityReportSchema.parse(result.data);
-  const guardrailDefects = reviewerGuardrailDefects(options);
-  const guardedReport = {
-    ...modelReport,
-    approved: modelReport.approved && guardrailDefects.length === 0,
-    issues: [...guardrailDefects.map((defect) => defect.issue), ...modelReport.issues],
-    requiredRevisions: [
-      ...guardrailDefects.map((defect) => defect.requiredRevision),
-      ...modelReport.requiredRevisions
-    ]
-  };
-  const filteredReport = filterIgnoredReviewerComplaints(guardedReport);
+  const filteredReport = filterIgnoredReviewerComplaints(modelReport);
   const remainingFeedback = [...filteredReport.issues, ...filteredReport.requiredRevisions];
   const notesEndorseApproval =
-    /\b(?:approved|effectively|fulfills?|grounded|no (?:fabrication|progression issues?|repetition)|prose is (?:natural|specific)|avoids? (?:fabrication|invent\w*))\b/i.test(guardedReport.notes);
+    /\b(?:approved|effectively|fulfills?|grounded|no (?:fabrication|progression issues?|repetition)|prose is (?:natural|specific)|avoids? (?:fabrication|invent\w*))\b/i.test(modelReport.notes);
   const explicitlyNonBlockingReport =
-    guardrailDefects.length === 0 &&
-    guardedReport.score >= 75 &&
+    modelReport.score >= 75 &&
     filteredReport.issues.length > 0 &&
     !remainingFeedback.some(isExplicitlyBlockingFeedback) &&
     (remainingFeedback.every(isExplicitlyNonBlockingFeedback) || notesEndorseApproval);
   const approved =
     filteredReport.onlyIgnoredRejection ||
     explicitlyNonBlockingReport ||
-    (!filteredReport.hasRemainingDefectAfterStripping && guardedReport.approved && guardedReport.score >= 75);
+    (!filteredReport.hasRemainingDefectAfterStripping && modelReport.approved && modelReport.score >= 75);
   const reviewedReport = {
-    ...guardedReport,
+    ...modelReport,
     approved,
     issues: approved && (filteredReport.onlyIgnoredRejection || explicitlyNonBlockingReport)
       ? []
@@ -305,13 +298,9 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
   if (reviewedReport.approved) {
     return reviewedReport;
   }
-  return withPageQaTriggerReasons(reviewedReport, [
-    ...(!modelReport.approved || modelReport.score < 75 || guardrailDefects.length === 0
-      ? (["model_review"] as const)
-      : []),
-    ...(guardrailDefects.length > 0 ? (["reserved_beat"] as const) : [])
-  ]);
+  return withPageQaTriggerReasons(reviewedReport, ["model_review"]);
 }
+
 
 function compactReviewChapter(chapter: ChapterPlan | undefined) {
   if (!chapter) return undefined;
@@ -369,90 +358,6 @@ function isExplicitlyBlockingFeedback(feedback: string): boolean {
     normalized = normalized.replace(/\b(?:repeats?|repetit\w*)\b/gi, "");
   }
   return EXPLICITLY_BLOCKING_FEEDBACK.test(normalized);
-}
-
-type ReviewerGuardrailDefect = {
-  issue: string;
-  requiredRevision: string;
-};
-
-const RESERVED_BEAT_STOP_WORDS = new Set([
-  "about", "after", "again", "against", "along", "also", "among", "because", "before", "between",
-  "chapter", "close", "closes", "closing", "conclude", "concludes", "concluding", "could", "current",
-  "demonstrate", "final", "finish", "finishes", "finishing", "from", "have", "into", "itself", "later",
-  "page", "purpose", "should", "show", "shows", "showing", "single", "that", "their", "them", "then",
-  "there", "these", "they", "this", "those", "through", "toward", "under", "what", "when", "where",
-  "which", "while", "with", "without", "would"
-]);
-
-function reviewerGuardrailDefects(options: ReviewPageOptions): ReviewerGuardrailDefect[] {
-  const defects: ReviewerGuardrailDefect[] = [];
-  const reservedBeat = reservedClosingBeatDefect(options);
-  if (reservedBeat) {
-    defects.push(reservedBeat);
-  }
-  return defects;
-}
-
-function reservedClosingBeatDefect(options: ReviewPageOptions): ReviewerGuardrailDefect | undefined {
-  const nextPage = options.chapterBrief?.pages
-    .filter((page) => page.pageIndex > options.pageIndex)
-    .sort((left, right) => left.pageIndex - right.pageIndex)[0];
-  if (!nextPage || !/\b(?:clos\w*|conclud\w*|synthesi[sz]\w*)\b/i.test(`${nextPage.purpose} ${nextPage.beat}`)) {
-    return undefined;
-  }
-
-  const futureTerms = significantReviewTerms(`${nextPage.purpose} ${nextPage.beat}`);
-  const currentTerms = significantReviewTerms([
-    options.pageBrief?.purpose ?? "",
-    options.pageBrief?.beat ?? "",
-    ...(options.pageBrief?.requiredContinuity ?? [])
-  ].join(" "));
-  const distinctiveFutureTerms = [...futureTerms].filter((term) => !currentTerms.has(term));
-  const paragraphs = options.draft.markdown.split(/\n\s*\n/).filter((paragraph) => paragraph.trim());
-  if (paragraphs.length < 2) {
-    return undefined;
-  }
-
-  const paragraphMatches = paragraphs.map((paragraph) => {
-    const terms = significantReviewTerms(paragraph);
-    return distinctiveFutureTerms.filter((term) => terms.has(term));
-  });
-  const allMatches = new Set(paragraphMatches.flat());
-  const preConclusionMatches = new Set(paragraphMatches.slice(0, -1).flat());
-  if (allMatches.size < 3 || preConclusionMatches.size < 2) {
-    return undefined;
-  }
-
-  const concepts = [...allMatches].slice(0, 4).join(", ");
-  return {
-    issue: `The draft substantially restages the reserved closing beat for page ${nextPage.pageIndex}: it develops future-page concepts (${concepts}) before the concluding handoff and returns to them in the ending.`,
-    requiredRevision: `Keep page ${options.pageIndex} on its assigned beat and reserve the closing synthesis for page ${nextPage.pageIndex}; use only a short final handoff to that later problem.`
-  };
-}
-
-function significantReviewTerms(raw: string): Set<string> {
-  return new Set(
-    (raw.match(/[A-Za-z]{5,}/g) ?? [])
-      .map(normalizeReviewTerm)
-      .filter((term) => term.length >= 5 && !RESERVED_BEAT_STOP_WORDS.has(term))
-  );
-}
-
-function normalizeReviewTerm(raw: string): string {
-  let term = raw.toLowerCase();
-  if (term.endsWith("ies") && term.length > 5) {
-    term = `${term.slice(0, -3)}y`;
-  } else if (term.endsWith("ing") && term.length > 6) {
-    term = term.slice(0, -3);
-  } else if (term.endsWith("ed") && term.length > 5) {
-    term = term.slice(0, -2);
-  } else if (term.endsWith("s") && term.length > 5) {
-    term = term.slice(0, -1);
-  }
-  if (term.startsWith("settl")) return "settle";
-  if (term.startsWith("memor")) return "memory";
-  return term;
 }
 
 const FABRICATION_ONLY_CONCERN =

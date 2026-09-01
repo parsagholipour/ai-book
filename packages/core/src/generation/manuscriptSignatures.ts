@@ -70,9 +70,7 @@ export function chapterOf(page: ManuscriptIntegrityPage): number {
 
 /**
  * How far apart two pages may sit and still count as one chapter when neither
- * carries a chapter index. The page-time gate (`pagesTreatmentQa.ts`) asks the
- * same question of a draft that was handed no chapter range, and reads this
- * constant rather than spelling a second distance.
+ * carries a chapter index.
  */
 export const SAME_CHAPTER_FALLBACK_DISTANCE = 5;
 

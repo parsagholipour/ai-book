@@ -7,11 +7,7 @@ import {
 } from "./manuscriptQualityIssue.js";
 
 /** Finding codes whose clusters may be sent for targeted structural adjudication. */
-export const STRUCTURAL_REVIEW_CANDIDATE_CODES = [
-  "SAME_CHAPTER_TREATMENT_REPETITION",
-  "RECAP_BACKTRACKING",
-  "CROSS_CHAPTER_CONCEPT_REPETITION"
-] as const;
+export const STRUCTURAL_REVIEW_CANDIDATE_CODES = ["RECAP_BACKTRACKING", "CROSS_CHAPTER_CONCEPT_REPETITION"] as const;
 
 export const MANUSCRIPT_REVIEW_PACK_MAX_PAGES = 4;
 export const MANUSCRIPT_REVIEW_PACKS_PER_CALL = 3;

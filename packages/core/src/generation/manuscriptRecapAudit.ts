@@ -5,48 +5,24 @@ import {
   type ManuscriptQualityIssue
 } from "./manuscriptQualityIssue.js";
 import { REPETITION_MIN_PAGE_WORDS } from "./manuscriptLexicalRepetition.js";
-import {
-  chaptersSpannedBy,
-  pagesShareChapter,
-  setOverlap,
-  sharedTerms,
-  type CachedManuscriptPage
-} from "./manuscriptSignatures.js";
+import { chaptersSpannedBy, setOverlap, type CachedManuscriptPage } from "./manuscriptSignatures.js";
 
-const TREATMENT_ISSUE_CAP = 3;
+/**
+ * The recap-and-backtracking audit: pages that reintroduce an established
+ * concept, example or conclusion without advancing it. It is the survivor of
+ * a file that also held `SAME_CHAPTER_TREATMENT_REPETITION` and its
+ * `scoreTreatmentPair`. That scorer's subject test was named-entity overlap
+ * over an extractor that took every sentence-initial capitalised word as an
+ * entity, and its "causal chain" was two shared cue words such as "because"
+ * and "therefore"; run over 1,200 shipped pages it clustered whole chapters of
+ * distinct pages in every book, so it was removed on 2026-09-02 together with
+ * the page-time gate and the bulk-pass guidance built on it. `isRecap` below
+ * survived the same measurement without a single false hit, because each of
+ * its arms demands an explicit recap cue, a restated definition, or a page
+ * whose evidence is almost entirely contained in the earlier one.
+ */
+
 const RECAP_ISSUE_CAP = 3;
-
-type ScoredPair = {
-  left: number;
-  right: number;
-};
-
-export function sameChapterTreatmentIssues(cached: readonly CachedManuscriptPage[]): ManuscriptQualityIssue[] {
-  const pairs = scoreSameChapterPairs(cached);
-  const clusters = clusterIndexes(pairs.map((pair) => [pair.left, pair.right] as const), cached.length);
-  return clusters
-    .filter((cluster) => cluster.length >= 2)
-    .sort((left, right) => right.length - left.length)
-    .slice(0, TREATMENT_ISSUE_CAP)
-    .map((cluster) => {
-      const affected = cluster.map((index) => cached[index]!.page.index).sort((a, b) => a - b);
-      return manuscriptWarning(
-        "SAME_CHAPTER_TREATMENT_REPETITION",
-        `${affected.length} pages in the same chapter repeat the same subject, evidence, and conclusion.`,
-        "Keep the strongest treatment and make the other pages advance, challenge, or apply it with new evidence.",
-        affected,
-        {
-          metrics: {
-            occurrences: affected.length,
-            affectedPageRatio: ratio(affected.length, cached.length),
-            clusterCount: 1,
-            chaptersSpanned: chaptersSpannedBy(cached, affected)
-          },
-          evidence: evidenceForPages(cached.map((page) => ({ index: page.page.index, plain: page.plain })), affected)
-        }
-      );
-    });
-}
 
 export function recapBacktrackingIssues(
   cached: readonly CachedManuscriptPage[],
@@ -83,84 +59,6 @@ export function recapBacktrackingIssues(
         }
       );
     });
-}
-
-function scoreSameChapterPairs(cached: readonly CachedManuscriptPage[]): ScoredPair[] {
-  const pairs: ScoredPair[] = [];
-  for (let left = 0; left < cached.length; left += 1) {
-    for (let right = left + 1; right < cached.length; right += 1) {
-      const first = cached[left]!;
-      const second = cached[right]!;
-      if (!pagesShareChapter(first.page, second.page)) {
-        continue;
-      }
-      const scored = scoreTreatmentPair(first, second);
-      if (scored !== null) {
-        pairs.push({ left, right });
-      }
-    }
-  }
-  return pairs;
-}
-
-/**
- * What two pages of one chapter share when they are the same treatment: the
- * subject they both name, and which of evidence, causal chain and closing claim
- * repeated, with the terms that repeated so a rewrite can be told what to leave
- * behind.
- */
-export type TreatmentMatch = {
-  score: number;
-  evidenceRepeat: boolean;
-  causalRepeat: boolean;
-  conclusionRepeat: boolean;
-  sharedEntities: string[];
-  sharedEvidence: string[];
-  sharedCausal: string[];
-  sharedConclusion: string[];
-};
-
-/**
- * Whether two pages of one chapter are the same treatment — a shared subject
- * (named entities) plus repeated evidence, causal chain, or closing claim.
- *
- * Exported because the page-time gate (`pagesTreatmentQa.ts`) scores a draft
- * against its finished chapter siblings with this exact function, so what the
- * page loop rewrites and what this audit later reports cannot disagree. The
- * thresholds live here and nowhere else; the shared terms are named only once
- * a pair has cleared them.
- */
-export function scoreTreatmentPair(left: CachedManuscriptPage, right: CachedManuscriptPage): TreatmentMatch | null {
-  if (left.tokens.wordCount < REPETITION_MIN_PAGE_WORDS || right.tokens.wordCount < REPETITION_MIN_PAGE_WORDS) {
-    return null;
-  }
-  const subject = setOverlap(left.namedEntitySet, right.namedEntitySet);
-  const subjectStrong = subject.intersection >= 2 || (subject.jaccard >= 0.4 && subject.intersection >= 1);
-  if (!subjectStrong) {
-    return null;
-  }
-  const evidence = setOverlap(left.evidenceTerms, right.evidenceTerms);
-  const causal = setOverlap(left.causalTerms, right.causalTerms);
-  const conclusion = setOverlap(left.conclusionTerms, right.conclusionTerms);
-  const evidenceRepeat = evidence.intersection >= 4 && evidence.jaccard >= 0.28;
-  const causalRepeat = causal.intersection >= 2 && causal.jaccard >= 0.35;
-  const conclusionRepeat = conclusion.intersection >= 2 && conclusion.jaccard >= 0.35;
-  if (!(evidenceRepeat || causalRepeat || conclusionRepeat)) {
-    return null;
-  }
-  const distance = Math.abs(left.page.index - right.page.index);
-  const adjacency = distance <= 1 ? 1 : distance <= 2 ? 0.9 : distance <= 4 ? 0.75 : 0.55;
-  const nounBoost = subject.intersection >= 3 ? 1.15 : 1;
-  return {
-    score: (evidence.jaccard + causal.jaccard + conclusion.jaccard) * adjacency * nounBoost,
-    evidenceRepeat,
-    causalRepeat,
-    conclusionRepeat,
-    sharedEntities: sharedTerms(left.namedEntitySet, right.namedEntitySet),
-    sharedEvidence: sharedTerms(left.evidenceTerms, right.evidenceTerms),
-    sharedCausal: sharedTerms(left.causalTerms, right.causalTerms),
-    sharedConclusion: sharedTerms(left.conclusionTerms, right.conclusionTerms)
-  };
 }
 
 function isRecap(earlier: CachedManuscriptPage, later: CachedManuscriptPage, english: boolean): boolean {

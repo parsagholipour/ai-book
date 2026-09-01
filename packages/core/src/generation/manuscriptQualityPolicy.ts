@@ -7,7 +7,7 @@ import {
 } from "./manuscriptQualityIssue.js";
 
 /** Pages in one duplicate-treatment or recap cluster that make a blocking candidate. */
-export const DUPLICATE_TREATMENT_CLUSTER_BLOCKING_MIN_PAGES = 3;
+export const DUPLICATE_CLUSTER_BLOCKING_MIN_PAGES = 3;
 /** Share of manuscript pages one structural family must cover to be a blocking candidate. */
 export const STRUCTURAL_FAMILY_PAGE_RATIO_BLOCKING = 0.2;
 /** Sentence-opening family count that can become a warning candidate. */
@@ -41,17 +41,16 @@ export const PUBLICATION_CORROBORATION_CODES = [
 const PUBLICATION_CORROBORATION_CODE_SET = new Set<string>(PUBLICATION_CORROBORATION_CODES);
 
 /**
- * Spec blocking candidate: a duplicate-treatment or recap cluster of ≥3 pages.
- * Original corroboration families use page-share and occurrence-span instead.
+ * Spec blocking candidate: a recap cluster of ≥3 pages. Original corroboration
+ * families use page-share and occurrence-span instead.
+ * `SAME_CHAPTER_TREATMENT_REPETITION` sat beside it until 2026-09-02; the
+ * detector behind it was removed (see `manuscriptRecapAudit.ts`).
  */
-const DUPLICATE_TREATMENT_CLUSTER_CODES = new Set<string>([
-  "SAME_CHAPTER_TREATMENT_REPETITION",
-  "RECAP_BACKTRACKING"
-]);
+const DUPLICATE_CLUSTER_CODES = new Set<string>(["RECAP_BACKTRACKING"]);
 
 const SATURATION_FAMILY_CODES = new Set<string>([
   ...PUBLICATION_CORROBORATION_CODES,
-  ...DUPLICATE_TREATMENT_CLUSTER_CODES
+  ...DUPLICATE_CLUSTER_CODES
 ]);
 
 const CADENCE_CODES = new Set<string>(["SENTENCE_OPENING_CADENCE"]);
@@ -103,8 +102,8 @@ export function evaluateManuscriptBlockingPolicy(
     const occurrences = occurrencesOf(issue);
     const chapters = chaptersSpanned(issue);
     const saturatedCluster =
-      DUPLICATE_TREATMENT_CLUSTER_CODES.has(issue.code) &&
-      clusterPages(issue) >= DUPLICATE_TREATMENT_CLUSTER_BLOCKING_MIN_PAGES;
+      DUPLICATE_CLUSTER_CODES.has(issue.code) &&
+      clusterPages(issue) >= DUPLICATE_CLUSTER_BLOCKING_MIN_PAGES;
     const saturatedShare =
       SATURATION_FAMILY_CODES.has(issue.code) && ratio >= STRUCTURAL_FAMILY_PAGE_RATIO_BLOCKING;
     const saturatedSpan =

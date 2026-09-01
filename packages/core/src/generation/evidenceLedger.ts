@@ -12,12 +12,12 @@ import { inferWritingMode } from "./styleContract.js";
  * The beat-level dedup (`pageBeatDedupDetect.ts`) measures lexical overlap of
  * short purpose/beat strings, so three pages assigned adjacent facets of one
  * subject pass it and then reach for the same canonical examples and the same
- * conclusion — exactly what the manuscript audit reports afterwards as
- * `SAME_CHAPTER_TREATMENT_REPETITION`, whose signal is named entities plus
- * shared evidence terms. The ledger makes that signal a property of the
- * *assignment*: anchors are audited for overlap before drafting
- * (`productionMapAnchors.ts`), and every drafter is told which anchors its
- * page owns and which its siblings have reserved.
+ * conclusion. The ledger makes evidence a property of the *assignment*:
+ * anchors are audited for overlap before drafting (`productionMapAnchors.ts`),
+ * and every drafter is told which anchors its page owns and which its siblings
+ * have reserved. (A compile-time detector for the same fault,
+ * `SAME_CHAPTER_TREATMENT_REPETITION`, was removed on 2026-09-02 for false
+ * positives; the ledger is the surviving, assignment-side half.)
  *
  * It is gated by writing mode because a scene has no evidence anchors: a
  * narrative or children's book gets no rule and no field, and a plan that

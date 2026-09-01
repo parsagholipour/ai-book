@@ -12,14 +12,11 @@ function finalQa(issues: string[], requiredFixes: string[] = []) {
   return { approved: false, score: 40, issues, requiredFixes, notes: "" };
 }
 
-describe("extractRepairPageIndexes treatment issues", () => {
-  it("redrafts only the page that repeats a treatment, never the page that established it", () => {
-    // The local treatment gate (`pagesTreatmentQa.ts` in core) spells the
-    // earlier page as "(from page N)" for exactly this harvest.
-    const issue =
-      "Page 9: Page re-treats harappa, mohenjo-daro with the same evidence (chert, granary) and the same closing " +
-      "claim as an earlier page of this chapter (from page 7); advance, challenge, or apply that treatment with " +
-      "different evidence.";
+describe("extractRepairPageIndexes repetition issues", () => {
+  it("redrafts only the page that repeats an earlier one, never the page it repeats", () => {
+    // The local QA rules (`pagesLocalQa.ts` in core) spell the earlier page as
+    // "(from page N)" for exactly this harvest.
+    const issue = "Page 9: Page title repeats the title of the page before it (from page 7).";
 
     expect(extractRepairPageIndexes(finalQa([issue]), 12)).toEqual([9]);
     expect(messageTargetsPage(issue, 7, 12)).toBe(false);

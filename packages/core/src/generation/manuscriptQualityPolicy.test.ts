@@ -65,21 +65,6 @@ describe("evaluateManuscriptBlockingPolicy", () => {
     expect(diagnostics.wouldBlock).toBe(true);
   });
 
-  it("wouldBlocks a 4-page treatment cluster via the 3-page cluster rule", () => {
-    const issues = [
-      warning("SAME_CHAPTER_TREATMENT_REPETITION", [1, 2, 3, 4], {
-        occurrences: 4,
-        affectedPageRatio: 4 / 120,
-        chaptersSpanned: 1
-      })
-    ];
-    const { policy, diagnostics } = policyFor(issues, 120);
-
-    expect(policy.wouldBlock).toBe(true);
-    expect(policy.reasons).toEqual(["cluster"]);
-    expect(diagnostics.findings[0]?.wouldBlock).toBe(true);
-  });
-
   it("wouldBlocks the 40/120 hedge via page-share and occurrence-span, not the cluster floor", () => {
     const issues = [
       warning("SYMMETRICAL_HEDGING", Array.from({ length: 40 }, (_, offset) => offset + 1), {

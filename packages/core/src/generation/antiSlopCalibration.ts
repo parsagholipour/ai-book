@@ -1,7 +1,7 @@
 import { decodeGeneratedChapterBrief, PageMapResponseInvalidError } from "./generatedChapterBriefAcceptance.js";
-import { MANUSCRIPT_STRUCTURAL_AUDIT_DETECTOR_VERSION } from "./manuscriptQualityIssue.js";
+import { MANUSCRIPT_STRUCTURAL_AUDIT_DETECTOR_VERSION, type ManuscriptIntegrityPage } from "./manuscriptQualityIssue.js";
 import {
-  DUPLICATE_TREATMENT_CLUSTER_BLOCKING_MIN_PAGES,
+  DUPLICATE_CLUSTER_BLOCKING_MIN_PAGES,
   STRUCTURAL_FAMILY_PAGE_RATIO_BLOCKING,
   STRUCTURAL_OCCURRENCE_SPAN_BLOCKING_MIN_CHAPTERS,
   STRUCTURAL_OCCURRENCE_SPAN_BLOCKING_MIN_OCCURRENCES
@@ -23,7 +23,6 @@ import {
   mechanicsChapterBriefContract
 } from "./testing/generatedChapterBriefFixtures.js";
 import {
-  fourParaphrasedIndusWeightPages,
   indusSubjectDistinctEvidencePages,
   manuscriptWideSymmetricalHedgingPages,
   persianWithEnglishHedgeIslands
@@ -113,7 +112,7 @@ export const ANTI_SLOP_METRICS_FIELDS = [
 ] as const;
 
 export const ANTI_SLOP_SHADOW_PREVALENCE_THRESHOLDS = {
-  duplicateTreatmentClusterMinPages: DUPLICATE_TREATMENT_CLUSTER_BLOCKING_MIN_PAGES,
+  duplicateClusterMinPages: DUPLICATE_CLUSTER_BLOCKING_MIN_PAGES,
   structuralFamilyPageRatio: STRUCTURAL_FAMILY_PAGE_RATIO_BLOCKING,
   occurrenceSpanMinOccurrences: STRUCTURAL_OCCURRENCE_SPAN_BLOCKING_MIN_OCCURRENCES,
   occurrenceSpanMinChapters: STRUCTURAL_OCCURRENCE_SPAN_BLOCKING_MIN_CHAPTERS
@@ -230,14 +229,14 @@ export async function replayAntiSlopCalibration(): Promise<AntiSlopCalibrationRe
     detail: anchorAudit.findings.map((finding) => finding.code).join(",")
   });
 
-  fixtures.push(manuscriptFixture("known-failure:indus-paraphrase", "known-failure", fourParaphrasedIndusWeightPages(), {
-    expectFinding: "SAME_CHAPTER_TREATMENT_REPETITION"
-  }));
   fixtures.push(manuscriptFixture("known-failure:hedge-saturation", "known-failure", manuscriptWideSymmetricalHedgingPages(), {
     expectWouldBlock: true
   }));
+  // Four pages on one subject argued from distinct evidence. The treatment
+  // detector this fixture used to guard against is gone (2026-09-02); the
+  // fixture stays as the shared-subject case no surviving detector may block.
   fixtures.push(manuscriptFixture("clean:distinct-evidence", "clean", indusSubjectDistinctEvidencePages(), {
-    forbidFinding: "SAME_CHAPTER_TREATMENT_REPETITION"
+    expectCleanish: true
   }));
   fixtures.push(manuscriptFixture("clean:fiction-motif", "clean", fictionMotifPages(), { expectCleanish: true }));
   fixtures.push(
@@ -297,7 +296,7 @@ export function formatAntiSlopCalibrationCli(report: AntiSlopCalibrationReport):
 function manuscriptFixture(
   id: string,
   kind: AntiSlopFixtureKind,
-  pages: ReturnType<typeof fourParaphrasedIndusWeightPages>,
+  pages: ManuscriptIntegrityPage[],
   options: {
     expectFinding?: string;
     forbidFinding?: string;

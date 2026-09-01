@@ -32,7 +32,7 @@ function exportPage(index: number, markdown: string): ExportPageForRepair {
 }
 
 const candidate: ManuscriptQualityIssue = {
-  code: "SAME_CHAPTER_TREATMENT_REPETITION",
+  code: "RECAP_BACKTRACKING",
   severity: "warning",
   source: "deterministic",
   message: "Pages 1-3 repeat a treatment.",

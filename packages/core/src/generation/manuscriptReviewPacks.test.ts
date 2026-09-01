@@ -30,7 +30,7 @@ function candidate(
   extras: Partial<ManuscriptQualityIssue> = {}
 ): ManuscriptQualityIssue {
   return manuscriptFinding({
-    code: "SAME_CHAPTER_TREATMENT_REPETITION",
+    code: "RECAP_BACKTRACKING",
     severity: "warning",
     message: `Pages ${pages.join(", ")} repeat a treatment.`,
     guidance: "Review the cluster.",
@@ -66,7 +66,7 @@ describe("buildManuscriptReviewPacks", () => {
       pages[2]?.markdown,
       pages[3]?.markdown
     ]);
-    expect(packs[0]?.findingCodes).toEqual(["SAME_CHAPTER_TREATMENT_REPETITION"]);
+    expect(packs[0]?.findingCodes).toEqual(["RECAP_BACKTRACKING"]);
     expect(packs[0]?.question).toMatch(/canonical/i);
   });
 

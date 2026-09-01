@@ -8,13 +8,9 @@ import {
   buildManuscriptQualityReport,
   runDeterministicManuscriptChecks
 } from "./manuscriptQuality.js";
-import { plainMarkdown, tokenizePage } from "./manuscriptPageCache.js";
 import { replayDeterministicManuscriptChecks } from "./manuscriptReplay.js";
-import { cacheManuscriptPages } from "./manuscriptSignatures.js";
-import { scoreTreatmentPair } from "./manuscriptTreatmentAudit.js";
 import {
   bandhaRecapPages,
-  fourParaphrasedIndusWeightPages,
   indusSubjectDistinctEvidencePages,
   interiorRatherThanCadencePages,
   isolatedBalancedCaveatPages,
@@ -33,57 +29,10 @@ describe("manuscript structural audit", () => {
     expect(MANUSCRIPT_STRUCTURAL_AUDIT_DETECTOR_VERSION).toBe("manuscript-structural-audit-v1");
   });
 
-  it("forms one same-chapter cluster from four paraphrased historical treatments", () => {
-    const pages = fourParaphrasedIndusWeightPages();
-    const issues = runDeterministicManuscriptChecks({ pages, expectedPageCount: pages.length, language: "en" });
-    const treatment = issues.filter((issue) => issue.code === "SAME_CHAPTER_TREATMENT_REPETITION");
-
-    expect(treatment).toHaveLength(1);
-    expect(treatment[0]?.affectedPageIndexes).toEqual([1, 2, 3, 4]);
-    expect(treatment[0]?.metrics?.clusterCount).toBe(1);
-    expect(treatment[0]?.metrics?.occurrences).toBe(4);
-    expect(treatment[0]?.metrics?.wouldBlock).toBe(true);
-    expect(treatment[0]?.evidence?.length).toBeGreaterThanOrEqual(4);
-    expect(treatment[0]?.evidence?.every((entry) => entry.excerpt.length > 0 && entry.excerpt.length <= 140)).toBe(true);
-    expect(issues.map((issue) => issue.code)).not.toContain("NEAR_DUPLICATE_PAGES");
-    expect(issues.map((issue) => issue.code)).not.toContain("STRUCTURAL_SLOP_SATURATION");
-
-    const report = buildManuscriptQualityReport(issues, [], {
-      finalReviewRan: true,
-      manuscriptPageCount: pages.length
-    });
-    expect(report.state).toBe("review_recommended");
-    expect(report.diagnostics?.wouldBlock).toBe(true);
-    expect(report.diagnostics?.detectorVersion).toBe(MANUSCRIPT_STRUCTURAL_AUDIT_DETECTOR_VERSION);
-  });
-
-  it("names what a paraphrased pair shares, and answers null for a pair with distinct evidence", () => {
-    // The page-time gate (`pagesTreatmentQa.ts`) scores drafts with this exact
-    // function, so what it names here is what a rewrite instruction can say.
-    const cached = (pages: ReturnType<typeof fourParaphrasedIndusWeightPages>) =>
-      cacheManuscriptPages(
-        pages.map((page) => {
-          const plain = plainMarkdown(page.markdown);
-          return { page, plain, tokens: tokenizePage(plain) };
-        })
-      );
-    const [first, second] = cached(fourParaphrasedIndusWeightPages());
-    const match = scoreTreatmentPair(first!, second!);
-
-    // `plainMarkdown` reads a hyphen as markdown, so "Mohenjo-daro" is the entity "mohenjo".
-    expect(match?.sharedEntities).toEqual(expect.arrayContaining(["harappa", "mohenjo"]));
-    expect(match?.evidenceRepeat || match?.causalRepeat || match?.conclusionRepeat).toBe(true);
-    expect(match?.score).toBeGreaterThan(0);
-
-    const [distinctFirst, distinctSecond] = cached(indusSubjectDistinctEvidencePages());
-    expect(scoreTreatmentPair(distinctFirst!, distinctSecond!)).toBeNull();
-  });
-
   it("leaves a shared subject with distinct evidence and conclusions clean", () => {
     const pages = indusSubjectDistinctEvidencePages();
     const issues = runDeterministicManuscriptChecks({ pages, expectedPageCount: pages.length, language: "en" });
 
-    expect(issues.map((issue) => issue.code)).not.toContain("SAME_CHAPTER_TREATMENT_REPETITION");
     expect(issues.map((issue) => issue.code)).not.toContain("RECAP_BACKTRACKING");
   });
 
@@ -179,12 +128,12 @@ describe("manuscript structural audit", () => {
   });
 
   it("replays supplied pages without reading storage paths", () => {
-    const pages = fourParaphrasedIndusWeightPages();
+    const pages = bandhaRecapPages();
     const replayed = replayDeterministicManuscriptChecks({ pages, language: "en" });
 
     expect(replayed.elapsedMs).toBeGreaterThanOrEqual(0);
     expect(replayed.diagnostics.detectorVersion).toBe(MANUSCRIPT_STRUCTURAL_AUDIT_DETECTOR_VERSION);
-    expect(replayed.issues.some((issue) => issue.code === "SAME_CHAPTER_TREATMENT_REPETITION")).toBe(true);
+    expect(replayed.issues.some((issue) => issue.code === "RECAP_BACKTRACKING")).toBe(true);
   });
 
   it("audits 120 pages within the CI performance budget", () => {

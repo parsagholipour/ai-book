@@ -54,7 +54,7 @@ export {
   reviewRequiredPageQualityChecks,
   type LocalPageReviewOptions
 } from "./pagesLocalQa.js";
-export { treatmentGuidanceForDraft } from "./pagesTreatmentQa.js";
+
 export {
   SMART_UNSLOP_ISSUE_PREFIX,
   hasSmartUnslopCandidates,
@@ -208,12 +208,6 @@ export type PolishPageOptions = {
   continuityNotes: string[];
   researchNotes: string[];
   textModel: TextModelAdapter;
-  /**
-   * Lines a bulk pass adds when the chapter's own draft already treats this
-   * page's subject on an earlier page (`treatmentGuidanceForDraft`), so the
-   * first polish differentiates it instead of the QA loop paying a rewrite.
-   */
-  distinctnessGuidance?: string[] | undefined;
 };
 
 const DRAFT_PAGE_INDEX_KEYS = ["globalPageIndex", "globalIndex", "globalPage", "index", "pageIndex", "pageNumber", "page"];
@@ -564,7 +558,7 @@ export async function polishPageDraft(options: PolishPageOptions): Promise<PageD
             nextPages: compactPriorPages(options.nextPages, 3, 800),
             continuityNotes: continuityNotesForPrompt(options.continuityNotes, CONTINUITY_NOTE_PROMPT_LIMITS.bulkDraft),
             ...citation.payload,
-            instruction: [pageInstruction.text, ...(options.distinctnessGuidance ?? [])].join(" ")
+            instruction: pageInstruction.text
           },
           null,
           2

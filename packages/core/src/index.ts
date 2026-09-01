@@ -86,7 +86,7 @@ export * from "./generation/manuscriptQuality.js";
 export * from "./generation/manuscriptReviewPacks.js";
 export * from "./generation/manuscriptStructuralReview.js";
 export * from "./generation/manuscriptReplay.js";
-export { fourParaphrasedIndusWeightPages } from "./generation/testing/manuscriptStructuralAuditFixtures.js";
+export { bandhaRecapPages } from "./generation/testing/manuscriptStructuralAuditFixtures.js";
 export * from "./generation/cover.js";
 export * from "./generation/coverText.js";
 export * from "./generation/coverSource.js";

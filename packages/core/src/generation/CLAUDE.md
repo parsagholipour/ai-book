@@ -38,7 +38,7 @@ holds the event loop open and vitest will never exit.
 
 - [Page 1's opening contract](#page-1s-opening-contract)
 - [Style contract routing](#style-contract-routing)
-- [Treatment repetition and the evidence ledger](#treatment-repetition-and-the-evidence-ledger)
+- [Repetition gates and the evidence ledger](#repetition-gates-and-the-evidence-ledger)
 - [Whole-set edit adherence](#whole-set-edit-adherence)
 - [Best-of candidate sampling](#best-of-candidate-sampling)
 - [Covers](#covers)
@@ -78,37 +78,35 @@ holds the event loop open and vitest will never exit.
   `manuscript-structural-audit-v1`, `production-map-audit-v1`, `style-contract-v1`. Offline
   evaluation of the distilled corpus is `pnpm anti-slop:replay` (never `storage/` or live books).
 
-## Treatment repetition and the evidence ledger
+## Repetition gates and the evidence ledger
 
-- **One treatment scorer decides both the page-time gate and the manuscript audit, and it reads
-  the chapter rather than the recency window.** `SAME_CHAPTER_TREATMENT_REPETITION` is
-  `scoreTreatmentPair` (`manuscriptTreatmentAudit.ts`): named-entity overlap for the subject, then
-  shared evidence, causal or conclusion terms. It used to be module-private and to run only at
-  compile, after every page was durable — the book "The roots of conflict" finished with three
-  pages of one chapter flagged, and nothing upstream had measured the same thing: the local
-  repetition gate compares trigrams against the last five pages at near-verbatim thresholds, and
-  the reviewer sees a few hundred characters of prior prose. `pagesTreatmentQa.ts` now scores a
-  draft against the finished pages of its **own chapter** with that exported scorer, so a draft the
-  page loop passes is one the audit will pass, and one it fails is rewritten inside the page's
-  budget with the shared terms named. The candidates are the chapter range the caller was handed —
-  or, for a caller with none, `SAME_CHAPTER_FALLBACK_DISTANCE`, the audit's own answer — and never
-  "the five pages before this one", because three pages on adjacent facets of a subject is a
-  chapter-scoped fault. Finished-page signatures are memoized by object identity (every pass pushes
-  the object it saved once); the draft's is built once and only when a candidate exists. The
-  draft-then-polish pass scores the whole bulk draft per chapter before its sequential polish, which
-  is the one moment every page of a chapter is in hand, and hands each later re-treatment a
-  `distinctnessGuidance` line so the first polish differentiates it.
+- **A deterministic rule that can veto the model reviewer is measured against shipped pages before
+  it ships, and one that fires on pages the reviewer approved is removed, not tuned.** Three such
+  rules went on 2026-09-02, after a 120-page book spent 26 minutes in "Doing a final read-through"
+  with 22 pages stuck in `FAILED_QA` (every other recent book compiled in 0-5 minutes): the
+  reviewer's reserved-closing-beat guardrail in `pagesReview.ts` (three five-letter words shared
+  with the next page's brief — "reach, ghetto, occupation, agency" on a Holocaust chapter — vetoing
+  approvals scored 88-94), the page-time treatment gate in `pagesLocalQa.ts`, and the
+  `SAME_CHAPTER_TREATMENT_REPETITION` audit plus the bulk-pass `distinctnessGuidance` that shared
+  its `scoreTreatmentPair`. Replayed over 1,200 pages from ten shipped books, 1,177 of them
+  model-approved: the guardrail fired on 76 approved pages, the treatment gate on 295, and the audit
+  clustered whole chapters of distinct pages in every book. Its "subject" was named-entity overlap
+  over an extractor that took every sentence-initial capitalised word as an entity ("their",
+  "such", "once"), and its "causal chain" was two shared cue words ("because, therefore"). The
+  near-verbatim gate (`pagesRepetitionQa.ts`) and `RECAP_BACKTRACKING` (`manuscriptRecapAudit.ts`)
+  fired on none of those pages and stayed; the phrase-pattern detectors (`SYMMETRICAL_HEDGING`,
+  `SENTENCE_OPENING_CADENCE`) count literal matches and were not in question. The replay is the
+  standard for the next such rule: dump the pages of shipped books, run the rule, count hits on
+  approved pages. `pnpm anti-slop:replay` covers the distilled fixtures, never live books.
 - **A local QA message names an earlier page only after the word `from`, because the final-QA
   repair harvests every other `page N` as a page to redraft.** `runLocalFinalQa` prefixes
   `Page N:` and `extractRepairPageIndexesFromText` (`apps/worker/src/generation/finalQaPageTargets.ts`)
   collects every `page <digits>` in a message except a lone reference behind "from". Spelled
-  "repeats page 7", the page that *established* a treatment is redrafted beside the page that
-  repeated it. The treatment issue and the title rule both say `(from page N)`, and the listed
-  terms drop the words that pass reads as a complaint about the book's opening or ending
-  (`conclusion`, `ending`, `opening`…), which a shared conclusion cue routinely is.
+  "repeats page 7", the page that *established* a title or beat is redrafted beside the page that
+  repeated it. The title rule and the near-verbatim rule both say `(from page N)`.
 - **An analytical page owns its evidence anchors; a shared one is repaired like a near-duplicate
-  beat and never blocks.** `claim` and `evidenceAnchors` on `PageProductionBeat` are the compile
-  detector's signal made a property of the assignment (`evidenceLedger.ts`), asked of every brief
+  beat and never blocks.** `claim` and `evidenceAnchors` on `PageProductionBeat` make the evidence
+  a page argues from a property of the assignment (`evidenceLedger.ts`), asked of every brief
   producer and shown to every writer and the reviewer for `analytical-history` and `instructional`
   books only. Every explicit rebuild of a beat — `normalizeModelPageBeat`,
   `decodeGeneratedChapterBrief`, `pageMapForWholeBookDraft`, the whole-book citation sanitizer —

@@ -2,7 +2,14 @@
 
 ## Status
 
-Complete (code and tests). Live measurement not started.
+Superseded on 2026-09-02. The first live book through the page-time gate spent 26 minutes in
+final QA with 22 pages stuck in `FAILED_QA`; replayed over 1,200 pages from ten shipped books the
+gate rejected 295 model-approved pages and the compile audit clustered whole chapters of distinct
+pages in every book (sentence-initial words counted as named entities; two shared cue words counted
+as a causal chain). The page-time gate, `scoreTreatmentPair`, `SAME_CHAPTER_TREATMENT_REPETITION`
+and the bulk-pass `distinctnessGuidance` were removed. The evidence ledger (assignment-side
+anchors) stays. See `packages/core/src/generation/CLAUDE.md` → "Repetition gates and the evidence
+ledger". The notes below describe the removed implementation.
 
 ## Implemented
 

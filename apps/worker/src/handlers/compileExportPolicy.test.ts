@@ -70,7 +70,7 @@ import {
   CORROBORATED_STRUCTURAL_DUPLICATION,
   DETACHED_FROM_PROJECT_LIFECYCLE,
   EXPORT_REPAIR_FORMAT,
-  fourParaphrasedIndusWeightPages,
+  bandhaRecapPages,
   MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE,
   PRESENTATION_ONLY_RECOMPILE,
   PRESENTATION_RECOMPILE_FALLBACK_STATUS
@@ -302,8 +302,11 @@ describe("compileExport publication policy", () => {
     ).data.qualityReport;
   }
 
-  function withIndusManuscript(): void {
-    const indusPages = fourParaphrasedIndusWeightPages().map((page) => ({
+  // Three pages that restate one establishment with explicit recap cues, so
+  // the deterministic audit raises a RECAP_BACKTRACKING cluster for the
+  // structural review to adjudicate.
+  function withRecapManuscript(): void {
+    const recapPages = bandhaRecapPages().map((page) => ({
       id: `page-${page.index}`,
       index: page.index,
       title: page.title,
@@ -314,10 +317,10 @@ describe("compileExport publication policy", () => {
       images: [],
       chapter: { id: "ch-1", index: page.chapterIndex ?? 1 }
     }));
-    mocks.inputForPlanVersion.mockReturnValue({ ...input, targetPages: 4 });
+    mocks.inputForPlanVersion.mockReturnValue({ ...input, targetPages: 3 });
     mocks.prisma.project.findUnique.mockResolvedValue({
       ...projectRecord(),
-      pages: indusPages
+      pages: recapPages
     });
   }
 
@@ -332,16 +335,16 @@ describe("compileExport publication policy", () => {
 
   const duplicatedWeightsCluster = {
     canonicalPageIndex: 1,
-    duplicatePageIndexes: [2, 3, 4],
-    repeatedSubject: "Cubical chert weights as the same Indus administrative control of trade",
-    repeatedEvidence: "The 13.63 gram unit, granary cubes, and matching balance pans recur on each page",
-    repeatedConclusion: "Each page closes on administrative control of Indus trade through those weights",
+    duplicatePageIndexes: [2, 3],
+    repeatedSubject: "The bandha check dam as the same Bundelkhand irrigation store",
+    repeatedEvidence: "The stacked stone channels, the Banda dam, and the crest walk recur on each page",
+    repeatedConclusion: "Each page closes on the bandha as a local store rather than a royal canal",
     confidence: "high" as const,
     recommendedAction: "review" as const
   };
 
   it("still produces exports when a corroborated structural issue blocks publication", async () => {
-    withIndusManuscript();
+    withRecapManuscript();
     mockJsonByPurpose({ clusters: [duplicatedWeightsCluster] });
 
     await compileExport(job({ contentRevision: 4 }));
@@ -356,7 +359,7 @@ describe("compileExport publication policy", () => {
   });
 
   it("keeps advisory structural findings COMPLETE with review_recommended", async () => {
-    withIndusManuscript();
+    withRecapManuscript();
     mockJsonByPurpose({
       clusters: [{ ...duplicatedWeightsCluster, confidence: "medium" }]
     });
@@ -379,7 +382,7 @@ describe("compileExport publication policy", () => {
   });
 
   it("runs manuscript integrity when every optional quality feature is disabled", async () => {
-    withIndusManuscript();
+    withRecapManuscript();
     mockJsonByPurpose({ clusters: [duplicatedWeightsCluster] });
     mocks.loadQualityContext.mockResolvedValue({
       settings: {},
@@ -398,7 +401,7 @@ describe("compileExport publication policy", () => {
   });
 
   it("skips structural review when skipFinalReview is set", async () => {
-    withIndusManuscript();
+    withRecapManuscript();
     await compileExport(job({ contentRevision: 4, skipFinalReview: true }));
 
     const purposes = mocks.generateJsonWithRetry.mock.calls.map(
@@ -411,7 +414,7 @@ describe("compileExport publication policy", () => {
   });
 
   it("preserves deterministic findings when structural review fails and still exports", async () => {
-    withIndusManuscript();
+    withRecapManuscript();
     mocks.generateJsonWithRetry.mockImplementation(async (_model: unknown, options?: { purpose?: string }) => {
       if (options?.purpose === MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE) {
         throw new Error("model outage");
@@ -422,7 +425,7 @@ describe("compileExport publication policy", () => {
     await compileExport(job({ contentRevision: 4 }));
 
     const report = persistedQualityReport();
-    expect(report.issues.map((issue) => issue.code)).toContain("SAME_CHAPTER_TREATMENT_REPETITION");
+    expect(report.issues.map((issue) => issue.code)).toContain("RECAP_BACKTRACKING");
     expect(report.issues.map((issue) => issue.code)).not.toContain(CORROBORATED_STRUCTURAL_DUPLICATION);
     expect(report.state).not.toBe("passed");
     expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
@@ -431,7 +434,7 @@ describe("compileExport publication policy", () => {
   });
 
   it("lets a structural-review stop request escape", async () => {
-    withIndusManuscript();
+    withRecapManuscript();
     mocks.generateJsonWithRetry.mockImplementation(async (_model: unknown, options?: { purpose?: string }) => {
       if (options?.purpose === MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE) {
         throw new StopRequestedError();

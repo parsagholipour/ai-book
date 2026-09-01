@@ -8,55 +8,6 @@ function page(
   return { index, chapterIndex, title: `Page ${index}`, markdown };
 }
 
-const INDUS_WEIGHTS_A = [
-  "Cubical chert weights recovered at Harappa and Mohenjo-daro around 2600 BCE follow a repeated ratio across the citadel workshop.",
-  "The standardized weights therefore show administrative control of Indus trade, because merchants could not bargain past the stone cubes kept beside the granary.",
-  "A 13.63 gram unit recurs among the cubical chert stones, and the same balance pans appear in both Harappa and Mohenjo-daro.",
-  "Harappa's clerks recorded the stones in the sequence Mohenjo-daro used, which resulted in a shared market language.",
-  "The surviving weights prove that Indus officials constrained exchange rather than leaving measure to each household.",
-  "Craft debris around the citadel workshop matches the chert cubes, so the administrative system produced the trade standard.",
-  "Thus the evidence shows administrative control of Indus trade through cubical chert weights."
-].join(" ");
-
-const INDUS_WEIGHTS_B = [
-  "At Mohenjo-daro and Harappa, cubical chert stones dated near 2600 BCE keep the same ratio in the citadel workshop hoard.",
-  "Those standardized weights therefore show administrative control of Indus trade, because a merchant had to accept the cubes stored by the granary.",
-  "The 13.63 gram unit turns up again among cubical chert stones, and matching balance pans sit in Harappa as they do in Mohenjo-daro.",
-  "Clerks at Harappa listed the stones in Mohenjo-daro's order, which resulted in one market language along the Indus.",
-  "Surviving weights prove Indus officials constrained exchange instead of letting every household invent a measure.",
-  "Workshop debris beside the citadel still matches the chert cubes, so the administrative system produced that trade standard.",
-  "The evidence therefore shows administrative control of Indus trade by cubical chert weights."
-].join(" ");
-
-const INDUS_WEIGHTS_C = [
-  "Harappa and Mohenjo-daro both stored cubical chert weights around 2600 BCE, cut to a repeated ratio in the citadel workshop.",
-  "Standardized weights therefore show administrative control of Indus trade, because bargaining stopped at the stone cubes kept near the granary.",
-  "Cubical chert stones of 13.63 grams recur, and the balance pans from Harappa match those from Mohenjo-daro.",
-  "The sequence Harappa's clerks copied from Mohenjo-daro resulted in a shared market language.",
-  "Indus officials constrained exchange, as the surviving weights prove, rather than leaving measure to each household.",
-  "Chert cubes match craft debris around the citadel workshop, so the administrative system produced the trade standard.",
-  "Accordingly the evidence shows administrative control of Indus trade through those cubical chert weights."
-].join(" ");
-
-const INDUS_WEIGHTS_D = [
-  "Around 2600 BCE the citadel workshop at Harappa and at Mohenjo-daro issued cubical chert weights in a repeated ratio.",
-  "The standardized weights therefore show administrative control of Indus trade, because merchants met stone cubes stored by the granary.",
-  "Balance pans and cubical chert stones of 13.63 grams appear together in Harappa and in Mohenjo-daro.",
-  "Copying Mohenjo-daro's list at Harappa resulted in one market language for the Indus.",
-  "Households did not invent the measure: surviving weights prove Indus officials constrained exchange.",
-  "The administrative system produced the trade standard, since citadel workshop debris matches the chert cubes.",
-  "The evidence thus shows administrative control of Indus trade by cubical chert weights."
-].join(" ");
-
-export function fourParaphrasedIndusWeightPages(): ManuscriptIntegrityPage[] {
-  return [
-    page(1, INDUS_WEIGHTS_A),
-    page(2, INDUS_WEIGHTS_B),
-    page(3, INDUS_WEIGHTS_C),
-    page(4, INDUS_WEIGHTS_D)
-  ];
-}
-
 export function indusSubjectDistinctEvidencePages(): ManuscriptIntegrityPage[] {
   return [
     page(

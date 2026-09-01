@@ -507,67 +507,6 @@ describe("reviewPageDraft citation contract", () => {
     expect(capture.system).toMatch(/earlier page outside the supplied context may have established it/i);
   });
 
-  it("rejects a reserved closing-beat restage even when the model approves it", async () => {
-    const capture = capturingReviewModel({
-      approved: true,
-      score: 88,
-      issues: [],
-      requiredRevisions: [],
-      notes: "The final-page themes are only a setup."
-    });
-    const currentBrief = {
-      pageIndex: 2,
-      chapterIndex: 1,
-      purpose: "Assess the immediate administrative aftermath.",
-      beat: "Show how institutions resumed their work.",
-      requiredContinuity: ["Keep the focus on immediate administrative consequences."],
-      endingPressure: "Lead to the unresolved public argument."
-    };
-    const closingBrief = {
-      pageIndex: 3,
-      chapterIndex: 1,
-      purpose: "Close on accountability, memory, and the limits of a settled narrative.",
-      beat: "Conclude with accountability, memory, and the limits of a settled narrative.",
-      requiredContinuity: [],
-      endingPressure: "End with the work that remains."
-    };
-
-    const result = await reviewPageDraft({
-      input,
-      plan,
-      chapterBrief: {
-        chapterIndex: 1,
-        title: "The Unfinished Settlement",
-        summary: "Institutions resume while public memory remains disputed.",
-        pages: [currentBrief, closingBrief],
-        continuityFocus: []
-      },
-      pageBrief: currentBrief,
-      chapterPageStart: 2,
-      chapterPageEnd: 3,
-      pageIndex: 2,
-      draft: {
-        title: "After the Offices Reopened",
-        markdown: [
-          goodMarkdown(),
-          "Accountability soon displaced routine administration as the central public argument.",
-          "A settled narrative remained impossible while rival institutions disputed the limits of responsibility.",
-          "Memory therefore became the chapter's final measure of what remained unresolved."
-        ].join("\n\n"),
-        summary: "The page develops the closing synthesis before its assigned page.",
-        continuityNotes: []
-      },
-      previousPages: [],
-      continuityNotes: [],
-      researchNotes: [],
-      textModel: capture.model
-    });
-
-    expect(result.approved).toBe(false);
-    expect(result.issues[0]).toMatch(/restages the reserved closing beat for page 3/i);
-    expect(capture.system).toMatch(/endingPressure only authorizes a short concluding handoff/i);
-  });
-
   it("ignores a source-identity verdict that earlier pages may already support", async () => {
     const capture = capturingReviewModel({
       approved: false,

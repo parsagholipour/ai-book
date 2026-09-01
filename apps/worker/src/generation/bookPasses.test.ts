@@ -1,4 +1,3 @@
-import { fourParaphrasedIndusWeightPages } from "@book-maker/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChapterSetup } from "../runtime/jobTypes.js";
 
@@ -539,37 +538,6 @@ describe("generateBookDraftThenPolish", () => {
     expect(strategy.generateWholeBookDraft).not.toHaveBeenCalled();
     expect(strategy.polishPageDraft).not.toHaveBeenCalled();
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
-  });
-
-  it("polishes a page that re-treats an earlier page of its chapter with a distinctness line", async () => {
-    // Scored over the whole draft before the sequential polish, which only
-    // ever sees the pages before it; the later page gets the line, the page
-    // that established the treatment and the other chapter get none.
-    const [first, second] = fourParaphrasedIndusWeightPages();
-    const strategy = draftThenPolishStrategy();
-    strategy.generateWholeBookDraft.mockResolvedValue({
-      pages: [
-        { ...pageDraft(1), markdown: first!.markdown },
-        { ...pageDraft(2), markdown: second!.markdown },
-        pageDraft(3),
-        pageDraft(4)
-      ]
-    });
-
-    await generateBookDraftThenPolish(baseOptions(strategy));
-
-    const polishOptions = strategy.polishPageDraft.mock.calls.map(
-      (call) => call[0] as { pageIndex: number; distinctnessGuidance?: string[] }
-    );
-    const forPage = (pageIndex: number) => polishOptions.filter((options) => options.pageIndex === pageIndex);
-    expect(forPage(2)[0]?.distinctnessGuidance).toEqual([
-      expect.stringMatching(/^An earlier page of this chapter \(page 1\) already re-treats/)
-    ]);
-    for (const pageIndex of [1, 3, 4]) {
-      for (const options of forPage(pageIndex)) {
-        expect(options).not.toHaveProperty("distinctnessGuidance");
-      }
-    }
   });
 });
 

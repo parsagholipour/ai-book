@@ -21,7 +21,7 @@ import {
 } from "./manuscriptQualityPolicy.js";
 import { cacheManuscriptPages } from "./manuscriptSignatures.js";
 import { structuralSlopIssues } from "./manuscriptStructuralSlop.js";
-import { recapBacktrackingIssues, sameChapterTreatmentIssues } from "./manuscriptTreatmentAudit.js";
+import { recapBacktrackingIssues } from "./manuscriptRecapAudit.js";
 
 export {
   MANUSCRIPT_STRUCTURAL_AUDIT_DETECTOR_VERSION,
@@ -45,7 +45,7 @@ export {
   type ManuscriptQualityState
 } from "./manuscriptQualityIssue.js";
 export {
-  DUPLICATE_TREATMENT_CLUSTER_BLOCKING_MIN_PAGES,
+  DUPLICATE_CLUSTER_BLOCKING_MIN_PAGES,
   PUBLICATION_CORROBORATION_CODES,
   SENTENCE_OPENING_CLEAN_CORPUS_BASELINE,
   SENTENCE_OPENING_WARNING_BASELINE_MULTIPLIER,
@@ -221,7 +221,6 @@ export function runDeterministicManuscriptChecks(options: {
   issues.push(
     ...slop,
     ...publicationCorroborationError(slop),
-    ...sameChapterTreatmentIssues(cached),
     ...recapBacktrackingIssues(cached, { englishPhraseDetectors })
   );
   if (englishPhraseDetectors) {
