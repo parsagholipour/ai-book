@@ -2886,6 +2886,16 @@ figcaption {
   font-size: 0.75rem;
 }
 
+.admin-download-links {
+  display: inline-flex;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.admin-download-links a {
+  color: #23665d;
+}
+
 .admin-pager {
   display: flex;
   align-items: center;
@@ -3345,6 +3355,7 @@ figcaption {
 .answer-option:focus-visible,
 .cost-expander:focus-visible,
 .admin-linkish:focus-visible,
+.admin-download-links a:focus-visible,
 .voice-provider-option:focus-visible,
 .voice-model-option:focus-visible,
 .strategy-info-trigger:focus-visible {

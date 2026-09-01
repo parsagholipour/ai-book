@@ -1,12 +1,13 @@
 import { Fragment, useEffect, useState } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { apiUrl } from "../../api.js";
 import { Button } from "../shared/Button.js";
 import { GeneratedEconomicsDetailContent } from "./GeneratedEconomicsDetail.js";
 import { count, dateTime, percent, usd, usdFine } from "./format.js";
 import type { AdminGeneratedBookDetail, AdminGeneratedBookList } from "./types.js";
 import { useAdminGeneratedBookDetail, useAdminGeneratedBooks } from "./useAdminData.js";
 
-const COLUMNS = 7;
+const COLUMNS = 8;
 const PAGE_SIZE = 25;
 
 export function GeneratedBooksSection(props: { days: number }) {
@@ -93,6 +94,7 @@ export function GeneratedBooksView(props: GeneratedBooksViewProps) {
                 <th className="numeric">Provider cost</th>
                 <th className="numeric">Margin</th>
                 <th>Completed</th>
+                <th>Download</th>
               </tr>
             </thead>
             <tbody>
@@ -130,6 +132,12 @@ export function GeneratedBooksView(props: GeneratedBooksViewProps) {
                         <span className="muted admin-subtle">{percent(book.marginPercent)}</span>
                       </td>
                       <td>{dateTime(book.completedAt)}</td>
+                      <td>
+                        <span className="admin-download-links">
+                          <a href={apiUrl(`/api/admin/projects/${book.id}/export/pdf`)}>PDF</a>
+                          <a href={apiUrl(`/api/admin/projects/${book.id}/export/epub`)}>EPUB</a>
+                        </span>
+                      </td>
                     </tr>
                     {isOpen ? (
                       <tr id={detailId} className="admin-subrow generated-book-detail-row">

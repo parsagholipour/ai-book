@@ -24,6 +24,7 @@ import { closeQueue, reconcileUndispatchedGenerationJobs } from "./queue.js";
 import { adminAnalyticsRoutes } from "./routes/adminAnalytics.js";
 import { adminGenerationQualityRoutes } from "./routes/adminGenerationQuality.js";
 import { adminPricingRoutes } from "./routes/adminPricing.js";
+import { adminProjectExportRoutes } from "./routes/adminProjectExports.js";
 import { adminSafetyRoutes } from "./routes/adminSafety.js";
 import { projectRoutes } from "./routes/projects.js";
 
@@ -171,6 +172,7 @@ await app.register(mobileSafetyRoutes);
 await app.register(adminPricingRoutes);
 await app.register(adminSafetyRoutes);
 await app.register(adminGenerationQualityRoutes);
+await app.register(adminProjectExportRoutes);
 await app.register(adminAnalyticsRoutes);
 await app.register(projectRoutes);
 

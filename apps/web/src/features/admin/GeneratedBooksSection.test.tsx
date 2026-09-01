@@ -163,6 +163,9 @@ describe("GeneratedBooksView", () => {
     expect(markup).toContain("Generated books");
     expect(markup).toContain("A Finished Book");
     expect(markup).toContain("owner@example.com");
+    expect(markup).toContain("Download");
+    expect(markup).toContain('href="/api/admin/projects/book-1/export/pdf"');
+    expect(markup).toContain('href="/api/admin/projects/book-1/export/epub"');
     expect(markup).toContain('aria-expanded="false"');
     expect(markup).toContain('aria-controls="generated-book-detail-book-1"');
     expect(markup).not.toContain('id="generated-book-detail-book-1"');
