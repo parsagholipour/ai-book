@@ -68,16 +68,31 @@ function normalizePageProductionBeat(value: unknown): unknown {
     return value;
   }
 
+  // The evidence ledger (`generation/evidenceLedger.ts`) is optional, and an
+  // empty answer is the same as none: a beat without one carries no key at
+  // all, so a stored brief written before the fields existed parses exactly as
+  // it did and a `null` a model answered with cannot survive the spread below.
+  const claim = stringField(value, ["claim", "thesis", "centralClaim", "pageClaim"])?.trim();
+  const evidenceAnchors = nonEmptyStringArray(stringArrayField(value, ["evidenceAnchors", "anchors", "evidence"]));
+  const { claim: _claim, evidenceAnchors: _evidenceAnchors, ...rest } = value;
+
   return {
-    ...value,
+    ...rest,
     pageIndex: numberField(value, ["pageIndex", "pageNumber", "page", "index"]),
     chapterIndex: numberField(value, ["chapterIndex", "chapterNumber", "chapter"]) ?? 1,
     purpose: stringField(value, ["purpose", "goal", "objective"]),
     beat: stringField(value, ["beat", "action", "event", "description", "summary"]),
     requiredContinuity: arrayField(value, ["requiredContinuity", "continuity", "continuityNotes"]) ?? [],
     endingPressure: stringField(value, ["endingPressure", "nextPagePressure", "hook", "transition"]),
-    imageMoment: stringField(value, ["imageMoment", "visualMoment", "imagePrompt"])
+    imageMoment: stringField(value, ["imageMoment", "visualMoment", "imagePrompt"]),
+    ...(claim ? { claim } : {}),
+    ...(evidenceAnchors ? { evidenceAnchors } : {})
   };
+}
+
+function nonEmptyStringArray(values: string[] | undefined): string[] | undefined {
+  const trimmed = (values ?? []).map((value) => value.trim()).filter(Boolean);
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function normalizeChapterBrief(value: unknown): unknown {
@@ -294,7 +309,11 @@ export const pageProductionBeatSchema = z.preprocess(
     beat: z.string(),
     requiredContinuity: z.array(z.string()).default([]),
     endingPressure: z.string(),
-    imageMoment: z.string().optional()
+    imageMoment: z.string().optional(),
+    /** The one bounded claim an analytical page establishes; see `generation/evidenceLedger.ts`. */
+    claim: z.string().optional(),
+    /** The concrete cases, sources, dates or figures that page argues from. */
+    evidenceAnchors: z.array(z.string()).optional()
   })
 );
 

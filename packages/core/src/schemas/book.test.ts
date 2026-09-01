@@ -7,6 +7,7 @@ import {
   bookPlanSchema,
   bookPlanSchemaWithFallback,
   createProjectSchema,
+  pageProductionBeatSchema,
   pageQualityReportSchema
 } from "./book.js";
 
@@ -675,3 +676,32 @@ function minimalPlan(cadence: string) {
     }
   };
 }
+
+describe("pageProductionBeatSchema evidence ledger", () => {
+  const base = {
+    pageIndex: 4,
+    chapterIndex: 2,
+    purpose: "Show identity hardening under pressure",
+    beat: "Trace how radio and land disputes turned neighbours into enemies.",
+    endingPressure: "The checkpoint list is already written."
+  };
+
+  it("reads the claim and anchors under their aliases and trims them", () => {
+    const parsed = pageProductionBeatSchema.parse({
+      ...base,
+      thesis: "  Identity hardens fastest where scarcity and propaganda meet. ",
+      anchors: ["Kigali radio ", "", " Bugesera land plots"]
+    });
+
+    expect(parsed.claim).toBe("Identity hardens fastest where scarcity and propaganda meet.");
+    expect(parsed.evidenceAnchors).toEqual(["Kigali radio", "Bugesera land plots"]);
+  });
+
+  it("treats a blank claim or an empty anchor list as none, so an older brief parses as it always did", () => {
+    const parsed = pageProductionBeatSchema.parse({ ...base, claim: "   ", evidenceAnchors: [] });
+
+    expect(parsed.claim).toBeUndefined();
+    expect(parsed.evidenceAnchors).toBeUndefined();
+    expect(pageProductionBeatSchema.parse(base)).toMatchObject(base);
+  });
+});

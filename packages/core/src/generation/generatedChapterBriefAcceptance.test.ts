@@ -101,6 +101,23 @@ describe("decodeGeneratedChapterBrief", () => {
     }
   });
 
+  it("carries a page's claim and evidence anchors through decode under their aliases", () => {
+    const response = validGlobalChapterBriefResponse();
+    response.pages[0] = {
+      ...response.pages[0]!,
+      thesis: "Friction scales with the normal load, not the contact area.",
+      anchors: ["spring-scale trial 1", " brick on sandpaper "]
+    } as (typeof response.pages)[number];
+
+    const brief = decodeGeneratedChapterBrief(response, mechanicsChapterBriefContract);
+
+    expect(brief.pages[0]).toMatchObject({
+      claim: "Friction scales with the normal load, not the contact area.",
+      evidenceAnchors: ["spring-scale trial 1", "brick on sandpaper"]
+    });
+    expect(brief.pages[1]).not.toHaveProperty("claim");
+  });
+
   it("rejects every accepted field alias when it is returned as metadata instead of content", () => {
     const response = validGlobalChapterBriefResponse();
     const metadataOnlyPurposeAlias = "function";

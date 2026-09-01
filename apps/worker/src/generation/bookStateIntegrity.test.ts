@@ -337,6 +337,51 @@ describe("prepareChapterSetups production-map integrity", () => {
     expect(info.mock.calls.map((call) => String(call[0])).join("\n")).toContain("would_block");
     info.mockRestore();
   });
+
+  describe("evidence ledger", () => {
+  function anchorCollidingBriefs() {
+    const brief = distinctChapterBrief(1, 1, 5);
+    const pages = brief.pages as Array<(typeof brief.pages)[number] & { claim?: string; evidenceAnchors?: string[] }>;
+    for (const page of pages) {
+      page.claim = `Claim of page ${page.pageIndex}.`;
+      page.evidenceAnchors = [`Case ${page.pageIndex}`, `Ledger ${page.pageIndex}`];
+    }
+    pages[4]!.evidenceAnchors = ["Case 2", "Ledger 2"];
+    return [brief];
+  }
+
+  it("repairs a shared evidence anchor through the sparse rewrite and never blocks on it", async () => {
+    const briefs = anchorCollidingBriefs();
+    mocks.dedupePageBeats.mockImplementation(async ({ findings }: { findings: Array<{ pageIndex: number; duplicateOfPageIndex: number }> }) => ({
+      ...distinctPatch(findings.map((finding) => finding.pageIndex)),
+      beatPatches: findings.map((finding) => ({
+        ...distinctPatch([finding.pageIndex]).beatPatches[0]!,
+        replaceRequiredContinuity: true,
+        claim: "A fresh claim.",
+        evidenceAnchors: ["Fresh case", "Fresh ledger"]
+      }))
+    }));
+
+    const setups = await run(briefs);
+
+    expect(mocks.dedupePageBeats).toHaveBeenCalledTimes(1);
+    expect(mocks.dedupePageBeats.mock.calls[0]?.[0].findings).toMatchObject([{ pageIndex: 5, duplicateOfPageIndex: 2 }]);
+    expect(setups[0]?.brief?.pages[4]).toMatchObject({ evidenceAnchors: ["Fresh case", "Fresh ledger"] });
+  });
+
+  it("drafts with an anchor collision the rewrite could not clear instead of failing the book", async () => {
+    const briefs = anchorCollidingBriefs();
+    mocks.dedupePageBeats.mockResolvedValue(emptyPatch());
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+
+    const setups = await run(briefs);
+
+    expect(setups[0]?.brief?.pages[4]).toMatchObject({ evidenceAnchors: ["Case 2", "Ledger 2"] });
+    expect(mocks.dedupePageBeats).toHaveBeenCalledTimes(PRODUCTION_MAP_REPAIR_CYCLE_LIMIT);
+    expect(info.mock.calls.map((call) => String(call[0])).join("\n")).toContain("advisory_unresolved");
+    info.mockRestore();
+  });
+  });
 });
 
 describe("PageMapIntegrityUnresolvedError", () => {

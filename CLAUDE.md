@@ -276,6 +276,9 @@ code in that area, however obvious the rule looks.
 - **Nothing states page 1's opening contract in its own words: a prompt names an audience and gets the ban, the import exemption that silences it, and the hook fused to its payload key — or gets nothing.** → packages/core/src/generation/CLAUDE.md
 - **No best-of candidate samples hotter than the pass would have run at without candidates, and a band too narrow for the ladder compresses the step rather than widening the band.** → packages/core/src/generation/CLAUDE.md
 - **Page prompts take local style rules; distribution rules reach manuscript review only.** → packages/core/src/generation/CLAUDE.md
+- **One treatment scorer decides both the page-time gate and the manuscript audit, and it reads the chapter rather than the recency window.** → packages/core/src/generation/CLAUDE.md
+- **A local QA message names an earlier page only after the word `from`, because the final-QA repair harvests every other `page N` as a page to redraft.** → packages/core/src/generation/CLAUDE.md
+- **An analytical page owns its evidence anchors; a shared one is repaired like a near-duplicate beat and never blocks.** → packages/core/src/generation/CLAUDE.md
 
 ### Characters, covers and illustrations
 

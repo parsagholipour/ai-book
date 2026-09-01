@@ -501,3 +501,100 @@ describe("mergePageMapCriticPatch", () => {
     expect(merged[1]?.pages[1]?.endingPressure).not.toMatch(/Resolve the book's central promise/);
   });
 });
+
+describe("mergePageMapCriticPatch evidence ledger", () => {
+  const ledgered: ChapterBrief[] = briefs.map((brief) => ({
+    ...brief,
+    pages: brief.pages.map((page) => ({
+      ...page,
+      claim: `Claim of page ${page.pageIndex}.`,
+      evidenceAnchors: [`Anchor ${page.pageIndex}a`, `Anchor ${page.pageIndex}b`]
+    }))
+  }));
+
+  it("keeps a page's claim and anchors under a note-only patch", () => {
+    const merged = mergePageMapCriticPatch(
+      ledgered,
+      { ...emptyPatch, beatPatches: [{ pageIndex: 2, requiredContinuity: ["Stay distinct from page 1."] }] },
+      lastPageIndex
+    );
+
+    expect(merged[0]?.pages[1]).toMatchObject({ claim: "Claim of page 2.", evidenceAnchors: ["Anchor 2a", "Anchor 2b"] });
+  });
+
+  it("drops the old claim and anchors under a whole-assignment rewrite that names none", () => {
+    const merged = mergePageMapCriticPatch(
+      ledgered,
+      {
+        ...emptyPatch,
+        beatPatches: [
+          {
+            pageIndex: 2,
+            purpose: "Trace the ration book",
+            beat: "A Hamburg widow counts coupons.",
+            endingPressure: "Leave the ration book half empty.",
+            requiredContinuity: [],
+            replaceRequiredContinuity: true
+          }
+        ]
+      },
+      lastPageIndex
+    );
+
+    expect(merged[0]?.pages[1]).not.toHaveProperty("claim");
+    expect(merged[0]?.pages[1]).not.toHaveProperty("evidenceAnchors");
+    expect(merged[0]?.pages[0]).toMatchObject({ claim: "Claim of page 1." });
+  });
+
+  it("applies a fresh claim and anchors a rewrite returns", () => {
+    const merged = mergePageMapCriticPatch(
+      ledgered,
+      {
+        ...emptyPatch,
+        beatPatches: [
+          {
+            pageIndex: 2,
+            purpose: "Trace the ration book",
+            beat: "A Hamburg widow counts coupons.",
+            endingPressure: "Leave the ration book half empty.",
+            requiredContinuity: [],
+            replaceRequiredContinuity: true,
+            claim: "Rationing reached the kitchen before the front.",
+            evidenceAnchors: ["Hamburg ration books", "turnip winter"]
+          }
+        ]
+      },
+      lastPageIndex
+    );
+
+    expect(merged[0]?.pages[1]).toMatchObject({
+      claim: "Rationing reached the kitchen before the front.",
+      evidenceAnchors: ["Hamburg ration books", "turnip winter"]
+    });
+  });
+});
+
+describe("critiquePageMap evidence ledger", () => {
+  it("shows the critic each page's claim and anchors and tells it to patch a shared one, for an analytical book only", async () => {
+    const analytical: CreateProjectInput = {
+      ...book({ targetPages: 5 }).input,
+      prompt: "The roots of conflict across the twentieth century.",
+      category: "HISTORY"
+    };
+    const plan = makeFallbackPlan(analytical);
+    const ledgered: ChapterBrief[] = briefs.map((brief) => ({
+      ...brief,
+      pages: brief.pages.map((page) => ({ ...page, claim: `Claim ${page.pageIndex}.`, evidenceAnchors: [`Case ${page.pageIndex}`] }))
+    }));
+
+    const capture = capturingJsonModel(emptyPatch);
+    await critiquePageMap({ input: analytical, plan, textModel: capture.model, briefs: ledgered, promises: [] });
+    expect(capture.system).toMatch(/fresh claim and evidenceAnchors/);
+    expect(capture.payload?.pages?.[1]).toMatchObject({ claim: "Claim 2.", evidenceAnchors: ["Case 2"] });
+
+    const story = book({ targetPages: 5 });
+    const storyCapture = capturingJsonModel(emptyPatch);
+    await critiquePageMap({ ...story, textModel: storyCapture.model, briefs: ledgered, promises: [] });
+    expect(storyCapture.system).not.toMatch(/evidenceAnchors/);
+  });
+});

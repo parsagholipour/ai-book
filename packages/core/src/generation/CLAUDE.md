@@ -38,6 +38,7 @@ holds the event loop open and vitest will never exit.
 
 - [Page 1's opening contract](#page-1s-opening-contract)
 - [Style contract routing](#style-contract-routing)
+- [Treatment repetition and the evidence ledger](#treatment-repetition-and-the-evidence-ledger)
 - [Whole-set edit adherence](#whole-set-edit-adherence)
 - [Best-of candidate sampling](#best-of-candidate-sampling)
 - [Covers](#covers)
@@ -76,6 +77,52 @@ holds the event loop open and vitest will never exit.
   `runDeterministicManuscriptChecks`. Detector versions stay on reports:
   `manuscript-structural-audit-v1`, `production-map-audit-v1`, `style-contract-v1`. Offline
   evaluation of the distilled corpus is `pnpm anti-slop:replay` (never `storage/` or live books).
+
+## Treatment repetition and the evidence ledger
+
+- **One treatment scorer decides both the page-time gate and the manuscript audit, and it reads
+  the chapter rather than the recency window.** `SAME_CHAPTER_TREATMENT_REPETITION` is
+  `scoreTreatmentPair` (`manuscriptTreatmentAudit.ts`): named-entity overlap for the subject, then
+  shared evidence, causal or conclusion terms. It used to be module-private and to run only at
+  compile, after every page was durable — the book "The roots of conflict" finished with three
+  pages of one chapter flagged, and nothing upstream had measured the same thing: the local
+  repetition gate compares trigrams against the last five pages at near-verbatim thresholds, and
+  the reviewer sees a few hundred characters of prior prose. `pagesTreatmentQa.ts` now scores a
+  draft against the finished pages of its **own chapter** with that exported scorer, so a draft the
+  page loop passes is one the audit will pass, and one it fails is rewritten inside the page's
+  budget with the shared terms named. The candidates are the chapter range the caller was handed —
+  or, for a caller with none, `SAME_CHAPTER_FALLBACK_DISTANCE`, the audit's own answer — and never
+  "the five pages before this one", because three pages on adjacent facets of a subject is a
+  chapter-scoped fault. Finished-page signatures are memoized by object identity (every pass pushes
+  the object it saved once); the draft's is built once and only when a candidate exists. The
+  draft-then-polish pass scores the whole bulk draft per chapter before its sequential polish, which
+  is the one moment every page of a chapter is in hand, and hands each later re-treatment a
+  `distinctnessGuidance` line so the first polish differentiates it.
+- **A local QA message names an earlier page only after the word `from`, because the final-QA
+  repair harvests every other `page N` as a page to redraft.** `runLocalFinalQa` prefixes
+  `Page N:` and `extractRepairPageIndexesFromText` (`apps/worker/src/generation/finalQaPageTargets.ts`)
+  collects every `page <digits>` in a message except a lone reference behind "from". Spelled
+  "repeats page 7", the page that *established* a treatment is redrafted beside the page that
+  repeated it. The treatment issue and the title rule both say `(from page N)`, and the listed
+  terms drop the words that pass reads as a complaint about the book's opening or ending
+  (`conclusion`, `ending`, `opening`…), which a shared conclusion cue routinely is.
+- **An analytical page owns its evidence anchors; a shared one is repaired like a near-duplicate
+  beat and never blocks.** `claim` and `evidenceAnchors` on `PageProductionBeat` are the compile
+  detector's signal made a property of the assignment (`evidenceLedger.ts`), asked of every brief
+  producer and shown to every writer and the reviewer for `analytical-history` and `instructional`
+  books only. Every explicit rebuild of a beat — `normalizeModelPageBeat`,
+  `decodeGeneratedChapterBrief`, `pageMapForWholeBookDraft`, the whole-book citation sanitizer —
+  carries them by name through `evidenceLedgerFields`, because zod strips what a projection forgets;
+  `mergePageMapCriticPatch` drops them under a whole-assignment rewrite that names none, the
+  `imageMoment` rule again. `productionMapAnchors.ts` compares anchors folded (`foldCharacterName`
+  plus punctuation) on whole-phrase equality or ≥0.8 token containment with two tokens on the
+  smaller side, and `SHARED_EVIDENCE_ANCHORS` is a *sparse* finding with its own `beatFinding` — so
+  the bounded `dedupe-page-beats` rewrite is briefed against the owning sibling — that is never in
+  `BLOCKING_CODES` and never counts toward a dense chapter. One the two repair cycles cannot clear
+  drafts with its distinctness note (`advisory_unresolved`); a map that returned no ledger at all is
+  `MISSING_EVIDENCE_ANCHORS`, diagnostic and one per chapter, and drafts as every book did before
+  the field. The schema omits absent keys rather than writing `undefined`, so a brief stored before
+  the field parses byte-for-byte as it did under the `Chapter.productionBrief` compare-and-swap.
 
 ## Page 1's opening contract
 

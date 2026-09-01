@@ -5,13 +5,13 @@ import type { PageDraft, PageQualityReport } from "../schemas/book.js";
 import { isImportedManuscript } from "../schemas/mediaSettings.js";
 import type { FinalQaPage, ReviewPageOptions } from "./pages.js";
 import { skippedPageQualityReport } from "./pagesSkippedQualityReport.js";
+import { overlapTokens } from "./pageOverlap.js";
 import {
-  keywordsFromTokens,
-  overlapShingles,
-  overlapTokens,
-  sharedRatio,
-  shinglesFromTokens
-} from "./pageOverlap.js";
+  repeatedRecentPage,
+  sameChapterTreatmentMatch,
+  treatmentRepetitionIssue,
+  type SameChapterTreatmentMatch
+} from "./pagesTreatmentQa.js";
 import { PAGE_PROMPT_LEAK_PATTERNS, containsPromptLeak } from "./promptLeak.js";
 import {
   countReadableWords,
@@ -26,8 +26,9 @@ import {
  * the pattern tables they read a page against. Split out of pages.ts, which
  * re-exports the public pieces so `@book-maker/core` is unchanged; the prose
  * measurement every check here counts with is `proseShape.ts` next door, and
- * the overlap measurement the repetition gate shares with the plan-time beat
- * dedup is `pageOverlap.ts`.
+ * the two repetition gates — near-verbatim overlap shared with the plan-time
+ * beat dedup, and same-chapter treatment shared with the manuscript audit —
+ * are `pagesTreatmentQa.ts`.
  */
 
 export type LocalPageReviewOptions = Omit<ReviewPageOptions, "textModel">;
@@ -57,6 +58,7 @@ type LocalPageRuleContext = {
   adjacentPage: ReviewPageOptions["previousPages"][number] | undefined;
   normalizedDraftTitle: string;
   repeatedPage: ReviewPageOptions["previousPages"][number] | undefined;
+  treatmentMatch: SameChapterTreatmentMatch | undefined;
   kidsGuidance: ReturnType<typeof kidsReadingGuidanceForInput>;
   wordCount: number;
   minWords: number;
@@ -150,13 +152,20 @@ const LOCAL_PAGE_QUALITY_RULES = [
           normalizeTitle(adjacentPage.title) === normalizedDraftTitle
       ),
     ["titleClean", "repetitionOk"],
-    ({ adjacentPage }) => `Page title repeats adjacent page ${adjacentPage!.index}.`
+    // "(from page N)": the final-QA repair harvests every other `page N` in
+    // this message as a page to redraft — see `pagesTreatmentQa.ts`.
+    ({ adjacentPage }) => `Page title repeats the title of the page before it (from page ${adjacentPage!.index}).`
   ),
   pageRule(
     ({ repeatedPage }) => Boolean(repeatedPage),
     ["repetitionOk"],
     ({ repeatedPage }) =>
       `Page repeats or substantially overlaps the beat from page ${repeatedPage!.index}.`
+  ),
+  pageRule(
+    ({ treatmentMatch }) => Boolean(treatmentMatch),
+    ["repetitionOk"],
+    ({ treatmentMatch }) => treatmentRepetitionIssue(treatmentMatch!)
   ),
   pageRule(
     ({ wordCount, minWords }) => wordCount < minWords,
@@ -305,6 +314,10 @@ function localPageRuleContext(options: ReviewPageOptions): LocalPageRuleContext 
     recentPages.length > 0
       ? repeatedRecentPage(recentPages, currentBody, options.draft.summary)
       : undefined;
+  // The treatment gate reads the draft against its finished chapter siblings
+  // with the manuscript audit's own scorer, and skips every tokenization the
+  // same way when there are none.
+  const treatmentMatch = sameChapterTreatmentMatch(options);
 
   const kidsGuidance = kidsReadingGuidanceForInput(options.input);
   // countReadableWords is Unicode-aware; tokenize-based counts undercount or
@@ -321,32 +334,12 @@ function localPageRuleContext(options: ReviewPageOptions): LocalPageRuleContext 
     adjacentPage,
     normalizedDraftTitle: normalizeTitle(options.draft.title),
     repeatedPage,
+    treatmentMatch,
     kidsGuidance,
     wordCount,
     minWords,
     sentenceStats: kidsGuidance ? sentenceLengthStats(currentBody) : undefined
   };
-}
-
-function repeatedRecentPage(
-  recentPages: ReviewPageOptions["previousPages"],
-  currentBody: string,
-  currentSummary: string
-): ReviewPageOptions["previousPages"][number] | undefined {
-  if (recentPages.length === 0) {
-    return undefined;
-  }
-  const draftBodyShingles = overlapShingles(currentBody);
-  const draftSummaryTokens = overlapTokens(currentSummary);
-  const draftSummaryShingles = shinglesFromTokens(draftSummaryTokens);
-  const draftSummaryKeywords = keywordsFromTokens(draftSummaryTokens);
-  return recentPages.find((page) => {
-    const summaryTokens = overlapTokens(page.summary);
-    const bodySimilarity = sharedRatio(draftBodyShingles, overlapShingles(page.markdown));
-    const summarySimilarity = sharedRatio(draftSummaryShingles, shinglesFromTokens(summaryTokens));
-    const lexicalOverlap = sharedKeywordRatio(draftSummaryKeywords, keywordsFromTokens(summaryTokens));
-    return bodySimilarity >= 0.82 || summarySimilarity >= 0.72 || lexicalOverlap >= 0.78;
-  });
 }
 
 export function compactSummaryForQa(summary: string, maxLength: number): string {
@@ -412,29 +405,6 @@ function normalizeTitle(title: string): string {
     .replace(/[^\p{L}\p{N}\s'’]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-/**
- * Below this many distinct keywords a text is too short for the ratio to mean
- * anything: the denominator is the shorter side, so a four-keyword text that
- * happens to share three of them with a paragraph scores 0.75 without the two
- * saying remotely the same thing.
- */
-const MIN_OVERLAP_KEYWORDS = 4;
-
-/**
- * {@link sharedRatio} under that floor — the lexical half of the rule, kept
- * apart from the shingle half because only it has one. Thresholds stay with
- * each caller (`pageOverlap.ts` is the measurement): `pageBeatDedupDetect.ts`
- * spells its own floors instead, because a beat is one or two sentences where
- * a summary is a paragraph, so it needs a higher bar than this to mean the
- * same thing.
- */
-function sharedKeywordRatio(first: Set<string>, second: Set<string>): number {
-  if (first.size < MIN_OVERLAP_KEYWORDS || second.size < MIN_OVERLAP_KEYWORDS) {
-    return 0;
-  }
-  return sharedRatio(first, second);
 }
 
 function hasFormulaicProofLeap(text: string): boolean {

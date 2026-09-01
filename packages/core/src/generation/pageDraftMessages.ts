@@ -9,6 +9,7 @@ import {
   kidsReadingGuidancePayload
 } from "../prompting/readingLevel.js";
 import type { CreateProjectInput } from "../schemas/book.js";
+import { evidenceLedgerRules } from "./evidenceLedger.js";
 import { pageGetsInteriorIllustration } from "./illustrationSlots.js";
 import {
   GROUNDED_FACTUALITY_RULE,
@@ -163,6 +164,7 @@ export function buildPageDraftSystemContent(
         ]
       : []),
     "The current pageBrief is authoritative for its historical assignment; source-identity requirements are governed only by researchNotes and the citation rule. Chapter keyBeats and futureChapterPageBriefs are context only unless assigned to this page.",
+    ...evidenceLedgerRules(options.input, options.plan, "writer"),
     ...pageDraftImagePromptGuidance(options.input, options.pageIndex),
     ...targetLanguageGenerationGuidance(options.input.language),
     ...writerToneRules(options.input),

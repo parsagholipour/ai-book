@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
-import type { ChapterBrief } from "../schemas/book.js";
+import type { ChapterBrief, PageProductionBeat } from "../schemas/book.js";
+import { evidenceLedgerFields, evidenceLedgerRules } from "./evidenceLedger.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import {
   FIRST_PAGE_ENDING_PRESSURE,
@@ -49,6 +50,8 @@ const pageMapCriticBeatPatchSchema = z.object({
   beat: z.string().min(1).optional(),
   endingPressure: z.string().min(1).optional(),
   requiredContinuity: z.array(z.string().min(1)).optional(),
+  claim: z.string().min(1).optional(),
+  evidenceAnchors: z.array(z.string().min(1)).optional(),
   note: z.string().min(1).optional()
 });
 
@@ -141,7 +144,8 @@ export function mergePageMapCriticPatch(
           ? substitutedEndingPressure(page.pageIndex, lastPageIndex)
           : page.endingPressure);
       return {
-        ...page,
+        ...assignmentWithoutLedger(page),
+        ...ledgerAfterPatch(page, beatPatch),
         ...(beatPatch?.purpose ? { purpose: beatPatch.purpose } : {}),
         ...(beatPatch?.beat ? { beat: beatPatch.beat } : {}),
         ...(beatPatch?.imageMoment ? { imageMoment: beatPatch.imageMoment } : {}),
@@ -151,6 +155,31 @@ export function mergePageMapCriticPatch(
     }),
     continuityFocus: focusWithCriticNotes(brief.continuityFocus, patch)
   }));
+}
+
+/**
+ * The evidence ledger is the sixth and seventh field of an assignment and takes
+ * `imageMoment`'s rule: a whole-assignment rewrite (`replaceRequiredContinuity`)
+ * drops the claim and anchors written for the beat it replaced unless the patch
+ * supplies fresh ones, while a note-only patch leaves them standing. Spread
+ * `...page` first would have carried an old page's anchors under a fresh beat —
+ * the sibling collision the rewrite was paid to remove, reintroduced by the
+ * merge.
+ */
+function ledgerAfterPatch(
+  page: PageProductionBeat,
+  beatPatch: PageMapCriticBeatPatch | undefined
+): ReturnType<typeof evidenceLedgerFields> {
+  const kept = beatPatch?.replaceRequiredContinuity ? {} : evidenceLedgerFields(page);
+  return {
+    ...kept,
+    ...evidenceLedgerFields({ claim: beatPatch?.claim, evidenceAnchors: beatPatch?.evidenceAnchors })
+  };
+}
+
+function assignmentWithoutLedger(page: PageProductionBeat): Omit<PageProductionBeat, "claim" | "evidenceAnchors"> {
+  const { claim: _claim, evidenceAnchors: _evidenceAnchors, ...assignment } = page;
+  return assignment;
 }
 
 /**
@@ -248,6 +277,7 @@ export async function critiquePageMap(
           "You critique a whole-book page map.",
           "Return beat patches for duplicate purpose, missing endingPressure, or a promise that is never scheduled.",
           "Do not regenerate the map. Prefer an empty patch when the beats already progress.",
+          ...evidenceLedgerRules(options.input, options.plan, "critic"),
           "A beat patch for pageIndex 1 replaces the book's opening assignment, so it must satisfy the same first-page contract the map was written under:",
           ...firstPage.rules
         ].join(" ")
@@ -264,7 +294,8 @@ export async function critiquePageMap(
                 chapterIndex: page.chapterIndex,
                 purpose: page.purpose,
                 beat: page.beat,
-                endingPressure: page.endingPressure
+                endingPressure: page.endingPressure,
+                ...evidenceLedgerFields(page)
               }))
             )
           },

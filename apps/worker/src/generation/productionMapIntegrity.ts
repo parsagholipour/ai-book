@@ -9,6 +9,7 @@ import {
   auditProductionMap,
   chunkFindingsForRewriteCalls,
   dedupePageBeats,
+  evidenceLedgerWritingMode,
   mergePageMapCriticPatch,
   productionMapContractFromRanges,
   sparseRewriteFindingsFromAudit,
@@ -55,14 +56,15 @@ export async function enforceProductionMapIntegrity(options: {
       chapterIndex: setup.chapter.index,
       startPage: setup.startPage,
       endPage: setup.endPage
-    }))
+    })),
+    evidenceLedgerWritingMode(options.input, options.plan)
   );
   await writeProgress(options.generationJobId, "Checking production map integrity");
 
   let current = options.briefs;
   let lastAudit = await auditProductionMap(current, contract);
-  if (!lastAudit.blocking) {
-    logIntegrity({ outcome: "clean", cycle: 0, findingCodes: [], affectedPageIndexes: [], affectedChapterIndexes: [] });
+  if (!needsRepair(lastAudit)) {
+    logIntegrity(auditLog("clean", 0, lastAudit));
     return current;
   }
 
@@ -72,7 +74,7 @@ export async function enforceProductionMapIntegrity(options: {
       await writeProgress(options.generationJobId, `Regenerating chapter ${chapterIndex} production map`);
       current = await regenerateChapterOrKeep(current, chapterIndex, options, regenerated);
       lastAudit = await auditProductionMap(current, contract);
-      if (!lastAudit.blocking) {
+      if (!needsRepair(lastAudit)) {
         logIntegrity(auditLog("clean", cycle, lastAudit));
         return current;
       }
@@ -97,17 +99,25 @@ export async function enforceProductionMapIntegrity(options: {
         options
       });
       lastAudit = await auditProductionMap(current, contract);
-      if (!lastAudit.blocking) {
+      if (!needsRepair(lastAudit)) {
         logIntegrity(auditLog("clean", cycle, lastAudit, batchIndex + 1));
         return current;
       }
     }
 
     lastAudit = await auditProductionMap(current, contract);
-    if (!lastAudit.blocking) {
+    if (!needsRepair(lastAudit)) {
       logIntegrity(auditLog("clean", cycle, lastAudit));
       return current;
     }
+  }
+
+  // Only an advisory finding survived the cycles — a shared evidence anchor the
+  // rewrite could not clear. The page drafts with its distinctness note; the
+  // book is not failed over a ledger.
+  if (!lastAudit.blocking) {
+    logIntegrity(auditLog("advisory_unresolved", PRODUCTION_MAP_REPAIR_CYCLE_LIMIT, lastAudit));
+    return current;
   }
 
   await writeProgress(options.generationJobId, "Production map integrity unresolved");
@@ -121,6 +131,15 @@ export async function enforceProductionMapIntegrity(options: {
   }
   logIntegrity(auditLog("unresolved", PRODUCTION_MAP_REPAIR_CYCLE_LIMIT, lastAudit));
   throw unresolved;
+}
+
+/**
+ * Whether the map still has something the repair loop can act on: a blocking
+ * finding, or a sparse one — a shared evidence anchor is repaired through the
+ * same rewrite call as a near-duplicate beat without ever blocking.
+ */
+function needsRepair(audit: ProductionMapAudit): boolean {
+  return audit.blocking || audit.sparseFindings.length > 0;
 }
 
 async function regenerateChapterOrKeep(

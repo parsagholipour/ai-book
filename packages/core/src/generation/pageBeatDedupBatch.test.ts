@@ -177,3 +177,52 @@ describe("the batch rule's settle", () => {
     expect(patch.beatPatches.map((entry) => entry.beat)).toEqual([undefined, undefined, undefined]);
   });
 });
+
+describe("the rewrite call's evidence ledger", () => {
+  it("shows the model the flagged page's ledger beside its duplicate's, and carries a fresh one into the map", async () => {
+    const briefs = unrelatedBriefs().map((brief) => ({
+      ...brief,
+      pages: brief.pages.map((page) =>
+        page.pageIndex === 6 || page.pageIndex === 3
+          ? { ...page, claim: `Claim of page ${page.pageIndex}.`, evidenceAnchors: [`Case ${page.pageIndex}`, "shared case"] }
+          : page
+      )
+    }));
+    const capture = capturingJsonModel({
+      beatPatches: [
+        {
+          pageIndex: 6,
+          purpose: rationPurpose,
+          beat: rationBeat,
+          endingPressure: "Leave the ration book half empty.",
+          requiredContinuity: [],
+          claim: "Rationing reached the kitchen before the front.",
+          evidenceAnchors: ["Hamburg ration books", "turnip winter"]
+        }
+      ]
+    });
+
+    const patch = await dedupePageBeats({
+      textModel: capture.model,
+      briefs,
+      findings: findingsForPages([6]),
+      promises: [],
+      lastPageIndex: 6
+    });
+
+    expect(capture.system).toMatch(/fresh claim and two to four fresh evidenceAnchors/);
+    const flagged = capture.payload?.chapters?.[0]?.flaggedPages?.[0];
+    expect(flagged).toMatchObject({
+      pageIndex: 6,
+      claim: "Claim of page 6.",
+      evidenceAnchors: ["Case 6", "shared case"],
+      duplicateOf: { pageIndex: 3, claim: "Claim of page 3.", evidenceAnchors: ["Case 3", "shared case"] }
+    });
+    const merged = mergePageMapCriticPatch(briefs, patch, 6);
+    expect(merged[0]?.pages[5]).toMatchObject({
+      purpose: rationPurpose,
+      claim: "Rationing reached the kitchen before the front.",
+      evidenceAnchors: ["Hamburg ration books", "turnip winter"]
+    });
+  });
+});

@@ -9,6 +9,7 @@ import {
   chaptersSpannedBy,
   pagesShareChapter,
   setOverlap,
+  sharedTerms,
   type CachedManuscriptPage
 } from "./manuscriptSignatures.js";
 
@@ -102,7 +103,34 @@ function scoreSameChapterPairs(cached: readonly CachedManuscriptPage[]): ScoredP
   return pairs;
 }
 
-function scoreTreatmentPair(left: CachedManuscriptPage, right: CachedManuscriptPage): number | null {
+/**
+ * What two pages of one chapter share when they are the same treatment: the
+ * subject they both name, and which of evidence, causal chain and closing claim
+ * repeated, with the terms that repeated so a rewrite can be told what to leave
+ * behind.
+ */
+export type TreatmentMatch = {
+  score: number;
+  evidenceRepeat: boolean;
+  causalRepeat: boolean;
+  conclusionRepeat: boolean;
+  sharedEntities: string[];
+  sharedEvidence: string[];
+  sharedCausal: string[];
+  sharedConclusion: string[];
+};
+
+/**
+ * Whether two pages of one chapter are the same treatment — a shared subject
+ * (named entities) plus repeated evidence, causal chain, or closing claim.
+ *
+ * Exported because the page-time gate (`pagesTreatmentQa.ts`) scores a draft
+ * against its finished chapter siblings with this exact function, so what the
+ * page loop rewrites and what this audit later reports cannot disagree. The
+ * thresholds live here and nowhere else; the shared terms are named only once
+ * a pair has cleared them.
+ */
+export function scoreTreatmentPair(left: CachedManuscriptPage, right: CachedManuscriptPage): TreatmentMatch | null {
   if (left.tokens.wordCount < REPETITION_MIN_PAGE_WORDS || right.tokens.wordCount < REPETITION_MIN_PAGE_WORDS) {
     return null;
   }
@@ -123,7 +151,16 @@ function scoreTreatmentPair(left: CachedManuscriptPage, right: CachedManuscriptP
   const distance = Math.abs(left.page.index - right.page.index);
   const adjacency = distance <= 1 ? 1 : distance <= 2 ? 0.9 : distance <= 4 ? 0.75 : 0.55;
   const nounBoost = subject.intersection >= 3 ? 1.15 : 1;
-  return (evidence.jaccard + causal.jaccard + conclusion.jaccard) * adjacency * nounBoost;
+  return {
+    score: (evidence.jaccard + causal.jaccard + conclusion.jaccard) * adjacency * nounBoost,
+    evidenceRepeat,
+    causalRepeat,
+    conclusionRepeat,
+    sharedEntities: sharedTerms(left.namedEntitySet, right.namedEntitySet),
+    sharedEvidence: sharedTerms(left.evidenceTerms, right.evidenceTerms),
+    sharedCausal: sharedTerms(left.causalTerms, right.causalTerms),
+    sharedConclusion: sharedTerms(left.conclusionTerms, right.conclusionTerms)
+  };
 }
 
 function isRecap(earlier: CachedManuscriptPage, later: CachedManuscriptPage, english: boolean): boolean {

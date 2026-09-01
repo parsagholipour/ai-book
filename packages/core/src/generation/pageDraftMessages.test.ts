@@ -408,3 +408,60 @@ describe("forward context for an inserted page", () => {
     expect(followingPages?.map((page) => page.index)).toEqual([5, 6]);
   });
 });
+
+describe("evidence ledger in the draft prompt", () => {
+  function ledgerOptions(promptInput: CreateProjectInput): GeneratePageOptions {
+    return {
+      input: promptInput,
+      plan: makeFallbackPlan(promptInput),
+      pageIndex: 2,
+      previousSummaries: [],
+      previousPages: [],
+      continuityNotes: [],
+      researchNotes: [],
+      textModel: capturingJsonModel({}).model,
+      chapterBrief: {
+        chapterIndex: 1,
+        title: "Roots",
+        summary: "Why scarcity turns violent.",
+        continuityFocus: [],
+        pages: [
+          {
+            pageIndex: 1,
+            chapterIndex: 1,
+            purpose: "Open on scarcity",
+            beat: "Grain prices climb.",
+            requiredContinuity: [],
+            endingPressure: "The market closes.",
+            claim: "Scarcity alone rarely kills.",
+            evidenceAnchors: ["Bugesera land plots"]
+          },
+          {
+            pageIndex: 2,
+            chapterIndex: 1,
+            purpose: "Show the radio",
+            beat: "A broadcast names neighbours.",
+            requiredContinuity: [],
+            endingPressure: "The list is read out.",
+            claim: "Radio turned rivalry into a script.",
+            evidenceAnchors: ["Kigali radio"]
+          }
+        ]
+      }
+    };
+  }
+
+  it("tells an analytical page which anchors it owns and which its siblings reserve", () => {
+    const options = ledgerOptions({ ...input, category: "HISTORY", prompt: "The roots of conflict." });
+
+    expect(buildPageDraftSystemContent(options)).toMatch(/evidenceAnchors are its own evidence/);
+    expect(buildPageDraftUserPayload(options).pageScope.previousChapterPageBriefs[0]).toMatchObject({
+      claim: "Scarcity alone rarely kills.",
+      evidenceAnchors: ["Bugesera land plots"]
+    });
+  });
+
+  it("says nothing about the ledger to a story page", () => {
+    expect(buildPageDraftSystemContent(ledgerOptions(input))).not.toMatch(/evidenceAnchors/);
+  });
+});

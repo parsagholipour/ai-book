@@ -3,6 +3,7 @@ import { z } from "zod";
 import { FakeTextModelAdapter } from "./fake.js";
 import { dedupePageBeats, findDuplicatePageBeats, type DuplicateBeatFinding } from "../generation/pageBeatDedup.js";
 import { chapterBriefSchema, pageDraftSchema, pageProductionBeatSchema, type ChapterBrief } from "../schemas/book.js";
+import { auditProductionMap, productionMapContractFromRanges } from "../generation/productionMapAudit.js";
 
 const pageMapSchema = z.object({ pages: z.array(pageProductionBeatSchema).min(1) });
 
@@ -89,6 +90,34 @@ describe("dry-run page beats", () => {
     expect(briefs).toHaveLength(5);
     expect(new Set(beatTexts(briefs)).size).toBe(40);
     expect(await findDuplicatePageBeats(briefs)).toEqual([]);
+  });
+});
+
+describe("dry-run evidence ledger", () => {
+  // The offline twin of an analytical MOCK_AI run: every dry-run page carries a
+  // claim and two anchors, and the mandatory map audit that gates drafting
+  // finds nothing to repair — no shared anchor, no missing ledger, nothing
+  // blocking — on both brief producers' shapes.
+  it("carries a ledger on every page and audits clean under an analytical contract", async () => {
+    for (const briefs of [await dryRunChapterBriefs(40, 8), await dryRunPageMap(24, 6)]) {
+      const pages = briefs.flatMap((brief) => brief.pages);
+      expect(pages.every((page) => page.claim && page.evidenceAnchors?.length === 2)).toBe(true);
+
+      const audit = await auditProductionMap(
+        briefs,
+        productionMapContractFromRanges(
+          pages.length,
+          briefs.map((brief) => ({
+            chapterIndex: brief.chapterIndex,
+            startPage: Math.min(...brief.pages.map((page) => page.pageIndex)),
+            endPage: Math.max(...brief.pages.map((page) => page.pageIndex))
+          })),
+          "analytical-history"
+        )
+      );
+      expect(audit.blocking).toBe(false);
+      expect(audit.findings).toEqual([]);
+    }
   });
 });
 

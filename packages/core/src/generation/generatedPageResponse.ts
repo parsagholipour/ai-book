@@ -35,3 +35,7 @@ export const MODEL_PAGE_IMAGE_MOMENT_KEYS = [
   "imagePrompt",
   "illustrationMoment"
 ] as const;
+/** How a model spells a page's one bounded claim (the evidence ledger, `evidenceLedger.ts`). */
+export const MODEL_PAGE_CLAIM_KEYS = ["claim", "thesis", "centralClaim", "pageClaim"] as const;
+/** How a model spells the cases a page argues from. */
+export const MODEL_PAGE_EVIDENCE_ANCHOR_KEYS = ["evidenceAnchors", "anchors", "evidence"] as const;

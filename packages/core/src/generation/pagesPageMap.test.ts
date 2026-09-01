@@ -9,6 +9,7 @@ import {
   generateWholeBookPageMap,
   repairPageBrief
 } from "./pages.js";
+import { pageMapForWholeBookDraft } from "./pagesPageMap.js";
 
 /**
  * The first-page contract in the production map. Four paths brief page 1 — the
@@ -687,5 +688,44 @@ describe("page brief repair first-page contract", () => {
     await repairPageBrief({ ...repairOptions(1, plan), input: coolInput, textModel: cool.model });
 
     expect(cool.temperature).toBeCloseTo(coolInput.temperature, 10);
+  });
+});
+
+describe("evidence ledger on the page map", () => {
+  const analyticalInput: CreateProjectInput = {
+    ...input,
+    prompt: "The roots of conflict: why scarcity and identity turn into violence.",
+    category: "HISTORY",
+    targetPages: 3
+  };
+
+  it("asks an analytical map for claim and evidenceAnchors and reads them back under their aliases", async () => {
+    const capture = capturingJsonModel({
+      pages: [
+        { ...modelPageBeat(1, 1), thesis: "Scarcity alone rarely kills.", anchors: ["Bugesera land plots", "coffee price collapse"] },
+        { ...modelPageBeat(2, 1), claim: "Radio turned rivalry into a script.", evidenceAnchors: ["Kigali radio"] },
+        modelPageBeat(3, 1)
+      ]
+    });
+    const plan = makeFallbackPlan(analyticalInput);
+
+    const briefs = await generateWholeBookPageMap({ input: analyticalInput, plan, textModel: capture.model });
+
+    expect(capture.system).toMatch(/also return claim/);
+    expect(capture.payload?.outputContract?.pages?.[0]).toHaveProperty("evidenceAnchors");
+    const pages = briefs.flatMap((brief) => brief.pages);
+    expect(pages[0]).toMatchObject({ claim: "Scarcity alone rarely kills.", evidenceAnchors: ["Bugesera land plots", "coffee price collapse"] });
+    expect(pages[1]).toMatchObject({ claim: "Radio turned rivalry into a script.", evidenceAnchors: ["Kigali radio"] });
+    expect(pages[2]).not.toHaveProperty("claim");
+    expect(pageMapForWholeBookDraft(briefs)[0]).toMatchObject({ evidenceAnchors: ["Bugesera land plots", "coffee price collapse"] });
+  });
+
+  it("says nothing about the ledger to a story's map", async () => {
+    const capture = capturingJsonModel({ pages: [modelPageBeat(1, 1), modelPageBeat(2, 1), modelPageBeat(3, 1)] });
+
+    await generateWholeBookPageMap({ input, plan: makeFallbackPlan(input), textModel: capture.model });
+
+    expect(capture.system).not.toMatch(/evidenceAnchors/);
+    expect(capture.payload?.outputContract?.pages?.[0]).not.toHaveProperty("evidenceAnchors");
   });
 });

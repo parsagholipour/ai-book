@@ -40,7 +40,8 @@ import {
   type PriorPageContext,
   type ProviderSet,
   type WholeBookPageDraft,
-  seedStoryStateFromPromises
+  seedStoryStateFromPromises,
+  treatmentGuidanceForDraft
 } from "@book-maker/core";
 import { pageScope, Prisma, prisma, PAGE_SCOPE_PREFIX } from "@book-maker/db";
 
@@ -559,6 +560,12 @@ export async function generateBookDraftThenPolish(options: {
     }));
     pagesToPolish = draft.pages;
   }
+  // Scored over the whole draft while every page of a chapter is in hand,
+  // which the sequential polish below never is: a later page whose treatment
+  // the chapter's own draft already made on an earlier page polishes with a
+  // distinctness line, so the first polish differentiates it rather than the
+  // QA loop paying a rewrite to find out.
+  const distinctnessGuidance = treatmentGuidanceForDraft(rawPages, chapterSetups);
 
   await ensureCharacterReferenceAssets({
     projectId: options.projectId,
@@ -581,6 +588,7 @@ export async function generateBookDraftThenPolish(options: {
     const chapterBrief = setup?.brief;
     const pageBrief = chapterBrief?.pages.find((brief) => brief.pageIndex === pageDraft.index);
     const researchNotes = await loadResearchNotesForGeneration(options.projectId, options.strategy, setup?.chapter);
+    const guidance = distinctnessGuidance.get(pageDraft.index);
     const polished = await polishPageWithQualityGates({
       polishPageDraft,
       polishOptions: {
@@ -595,7 +603,8 @@ export async function generateBookDraftThenPolish(options: {
         nextPages: rawPages.filter((page) => page.index > pageDraft.index).slice(0, 3),
         continuityNotes,
         researchNotes,
-        textModel: options.providers.text
+        textModel: options.providers.text,
+        ...(guidance ? { distinctnessGuidance: guidance } : {})
       },
       providers: options.providers,
       input: effectiveInput

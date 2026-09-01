@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { ProductionMapRepairProviderCallMetadata, TextModelAdapter } from "../adapters/types.js";
 import type { ChapterBrief, PageProductionBeat } from "../schemas/book.js";
+import { evidenceLedgerFields } from "./evidenceLedger.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import {
   MAX_BEAT_DEDUP_FINDINGS,
@@ -180,7 +181,9 @@ const beatRewritePatchSchema = z.object({
         beat: z.string().min(1),
         endingPressure: z.string().min(1),
         requiredContinuity: z.array(z.string().min(1)).optional(),
-        imageMoment: z.string().min(1).optional()
+        imageMoment: z.string().min(1).optional(),
+        claim: z.string().min(1).optional(),
+        evidenceAnchors: z.array(z.string().min(1)).optional()
       })
     )
     .default([])
@@ -298,6 +301,9 @@ export function beatDedupPatch(
               beat: rewrite.beat,
               endingPressure: rewrite.endingPressure,
               ...(rewrite.imageMoment ? { imageMoment: rewrite.imageMoment } : {}),
+              // A rewrite is a whole assignment, so the ledger it returns moves
+              // with it and the old one is dropped by the merge (`pageMapCritic.ts`).
+              ...evidenceLedgerFields(rewrite),
               replaceRequiredContinuity: true
             }
           : {}),
@@ -452,6 +458,7 @@ export async function dedupePageBeats(options: {
           "Return requiredContinuity for every flagged page whose payload carries entries, empty if none of them survive, and invent nothing for it: the note telling the page to stay distinct from its duplicate is added for you.",
           "A flagged page arriving with an imageMoment is illustrated from that one visual moment, which was written for the beat you are replacing: return a fresh imageMoment drawn from the assignment you are writing, a single readable scene and not a summary of the page.",
           "Return no imageMoment for a flagged page whose payload carries none — that page is not illustrated and must not become illustrated here.",
+          "A flagged page arriving with a claim or evidenceAnchors argues from them: return a fresh claim and two to four fresh evidenceAnchors for the assignment you are writing, and never reuse an anchor that duplicateOf or an adjacent page carries. Return neither for a page whose payload carries none.",
           "Return a patch for every flagged page and for no other page."
         ].join(" ")
       },
@@ -604,9 +611,12 @@ type FlaggedPagePayload = {
    * ask for a replacement for a picture that does not exist.
    */
   imageMoment?: string;
+  /** The page's evidence ledger, present only when the map wrote one; see `evidenceLedger.ts`. */
+  claim?: string;
+  evidenceAnchors?: string[];
   isLastPageOfBook: boolean;
-  duplicateOf: { pageIndex: number; purpose: string; beat: string };
-  adjacentBeats: { pageIndex: number; beat: string }[];
+  duplicateOf: { pageIndex: number; purpose: string; beat: string; claim?: string; evidenceAnchors?: string[] };
+  adjacentBeats: { pageIndex: number; beat: string; evidenceAnchors?: string[] }[];
 };
 
 /**
@@ -666,13 +676,19 @@ function groupFlaggedPagesByChapter(options: {
       endingPressure: page?.endingPressure ?? "",
       requiredContinuity: page?.requiredContinuity ?? [],
       ...(imageMoment ? { imageMoment } : {}),
+      ...(page ? evidenceLedgerFields(page) : {}),
       isLastPageOfBook: finding.pageIndex === options.lastPageIndex,
       duplicateOf: {
         pageIndex: finding.duplicateOfPageIndex,
         purpose: earlier?.purpose ?? "",
-        beat: earlier?.beat ?? ""
+        beat: earlier?.beat ?? "",
+        ...(earlier ? evidenceLedgerFields(earlier) : {})
       },
-      adjacentBeats: neighbors.map((candidate) => ({ pageIndex: candidate.pageIndex, beat: candidate.beat }))
+      adjacentBeats: neighbors.map((candidate) => ({
+        pageIndex: candidate.pageIndex,
+        beat: candidate.beat,
+        ...(candidate.evidenceAnchors?.length ? { evidenceAnchors: candidate.evidenceAnchors } : {})
+      }))
     });
   }
   return [...groups.values()];

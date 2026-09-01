@@ -1,6 +1,8 @@
 import { range } from "../collections.js";
 import type { ChapterBrief, PageProductionBeat } from "../schemas/book.js";
+import type { WritingMode } from "../schemas/styleContract.js";
 import { isSubstantivePageAssignment } from "./generatedChapterBriefAcceptance.js";
+import { evidenceAnchorCollisionFindings, missingEvidenceAnchorFindings } from "./productionMapAnchors.js";
 import {
   MAX_BEAT_DEDUP_FINDINGS,
   findDuplicatePageBeats,
@@ -37,7 +39,9 @@ export const PRODUCTION_MAP_FINDING_CODES = [
   "CHAPTER_COVERAGE_UNEXPECTED",
   "GENERIC_ASSIGNMENT",
   "DUPLICATE_ASSIGNMENT_FINGERPRINT",
-  "NEAR_DUPLICATE_BEAT"
+  "NEAR_DUPLICATE_BEAT",
+  "SHARED_EVIDENCE_ANCHORS",
+  "MISSING_EVIDENCE_ANCHORS"
 ] as const;
 
 export type ProductionMapFindingCode = (typeof PRODUCTION_MAP_FINDING_CODES)[number];
@@ -51,6 +55,8 @@ export type ProductionMapChapterRange = {
 export type ProductionMapContract = {
   targetPages: number;
   chapters: ProductionMapChapterRange[];
+  /** The book's writing mode, which decides whether a page owes an evidence ledger. */
+  writingMode?: WritingMode;
 };
 
 export type ProductionMapFinding = {
@@ -90,7 +96,34 @@ const COVERAGE_CODES = new Set<ProductionMapFindingCode>([
   "CHAPTER_COVERAGE_UNEXPECTED"
 ]);
 
+/**
+ * Findings that make the map unfit to draft from — every code but the two
+ * evidence-ledger ones. A shared anchor is repaired through the sparse rewrite
+ * like a near-duplicate beat, but one that outlives the repair cycles drafts
+ * with its distinctness note rather than failing the book; a missing ledger is
+ * diagnostic only (`productionMapAnchors.ts`).
+ */
+const BLOCKING_CODES = new Set<ProductionMapFindingCode>([
+  ...COVERAGE_CODES,
+  "GENERIC_ASSIGNMENT",
+  "DUPLICATE_ASSIGNMENT_FINGERPRINT",
+  "NEAR_DUPLICATE_BEAT"
+]);
+
+/** Findings the sparse rewrite call repairs, page by page. */
 const ASSIGNMENT_CODES = new Set<ProductionMapFindingCode>([
+  "GENERIC_ASSIGNMENT",
+  "DUPLICATE_ASSIGNMENT_FINGERPRINT",
+  "NEAR_DUPLICATE_BEAT",
+  "SHARED_EVIDENCE_ANCHORS"
+]);
+
+/**
+ * Findings that count toward a chapter being *dense* — regenerated whole
+ * rather than patched. Shared anchors never do: a whole `generateChapterBrief`
+ * regeneration is the price of a chapter the beats themselves corrupted.
+ */
+const DENSITY_CODES = new Set<ProductionMapFindingCode>([
   "GENERIC_ASSIGNMENT",
   "DUPLICATE_ASSIGNMENT_FINGERPRINT",
   "NEAR_DUPLICATE_BEAT"
@@ -98,9 +131,10 @@ const ASSIGNMENT_CODES = new Set<ProductionMapFindingCode>([
 
 export function productionMapContractFromRanges(
   targetPages: number,
-  chapters: ProductionMapChapterRange[]
+  chapters: ProductionMapChapterRange[],
+  writingMode?: WritingMode
 ): ProductionMapContract {
-  return { targetPages, chapters };
+  return { targetPages, chapters, ...(writingMode ? { writingMode } : {}) };
 }
 
 /**
@@ -149,7 +183,14 @@ export async function auditProductionMap(
   const nearDuplicates = (await findDuplicatePageBeats(briefs, { rewriteSlotLimit: 0 })).map((finding) =>
     nearDuplicateFinding(finding, pageChapter)
   );
-  const findings = [...coverage, ...generic, ...fingerprints, ...nearDuplicates];
+  const findings = [
+    ...coverage,
+    ...generic,
+    ...fingerprints,
+    ...nearDuplicates,
+    ...evidenceAnchorCollisionFindings(briefs),
+    ...missingEvidenceAnchorFindings(briefs, contract.writingMode)
+  ];
   const byChapter = findingsByChapter(findings);
   const chapterClassifications = contract.chapters.map((chapter) => {
     const chapterFindings = byChapter.get(chapter.chapterIndex) ?? [];
@@ -191,7 +232,7 @@ export async function auditProductionMap(
   });
   return {
     version: PRODUCTION_MAP_AUDIT_VERSION,
-    blocking: findings.length > 0,
+    blocking: findings.some((finding) => BLOCKING_CODES.has(finding.code)),
     findings,
     chapterClassifications,
     sparseFindings,
@@ -479,7 +520,7 @@ function repairChapterIndexes(repairChapter: number, relatedChapter: number): nu
 }
 
 function assignmentPageIndexes(findings: ProductionMapFinding[]): number[] {
-  return findings.filter((finding) => ASSIGNMENT_CODES.has(finding.code)).flatMap((finding) => finding.pageIndexes);
+  return findings.filter((finding) => DENSITY_CODES.has(finding.code)).flatMap((finding) => finding.pageIndexes);
 }
 
 function genericFields(page: PageProductionBeat): string[] {

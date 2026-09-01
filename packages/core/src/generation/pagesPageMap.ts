@@ -16,11 +16,14 @@ import {
   pageMapResponseInvalidErrorFromSchemaError,
   type GeneratedChapterBriefContract
 } from "./generatedChapterBriefAcceptance.js";
+import { evidenceLedgerFields, evidenceLedgerOutputContract, evidenceLedgerRules } from "./evidenceLedger.js";
 import {
   MODEL_PAGE_ARRAY_KEYS,
   MODEL_PAGE_BEAT_KEYS,
+  MODEL_PAGE_CLAIM_KEYS,
   MODEL_PAGE_CONTINUITY_KEYS,
   MODEL_PAGE_ENDING_PRESSURE_KEYS,
+  MODEL_PAGE_EVIDENCE_ANCHOR_KEYS,
   MODEL_PAGE_IMAGE_MOMENT_KEYS,
   MODEL_PAGE_INDEX_KEYS,
   MODEL_PAGE_PURPOSE_KEYS
@@ -162,6 +165,7 @@ export async function generateWholeBookPageMap(options: GeneratePageMapOptions):
             "The targetPages value and provided chapterPageRanges are final; compress chapter beats as needed instead of adding pages.",
             "Never emit pageIndex values greater than targetPages.",
             "Each page beat object must include pageIndex, chapterIndex, purpose, beat, requiredContinuity, endingPressure, and optional imageMoment.",
+            ...evidenceLedgerRules(options.input, options.plan, "producer"),
             "Use global page indexes, not chapter-local page numbers.",
             ...OPENING_PAGE_SCOPE_RULES,
             ...citation.rules,
@@ -202,7 +206,8 @@ export async function generateWholeBookPageMap(options: GeneratePageMapOptions):
                     beat: "One concrete action, explanation, or story turn assigned to this page.",
                     requiredContinuity: ["Continuity facts that must stay true on this page."],
                     endingPressure: "The page's concrete handoff to the next page.",
-                    imageMoment: "Optional single visual moment for illustration."
+                    imageMoment: "Optional single visual moment for illustration.",
+                    ...evidenceLedgerOutputContract(options.input, options.plan)
                   }
                 ]
               },
@@ -265,6 +270,7 @@ export async function generateChapterBrief(options: GenerateChapterBriefOptions)
             "Create a practical chapter brief for the writer.",
             "Every page in the requested range must receive a distinct page beat.",
             "The beats must prevent filler, repetition, and generic endings.",
+            ...evidenceLedgerRules(options.input, options.plan, "producer"),
             "Return exactly one root JSON object with chapterIndex, title, summary, pages, and continuityFocus.",
             "Use pages for the page beat array; do not return pageBeats as the root shape.",
             ...OPENING_PAGE_SCOPE_RULES,
@@ -347,6 +353,7 @@ export async function repairPageBrief(options: RepairPageBriefOptions): Promise<
           "Keep the same pageIndex and chapterIndex.",
           "Preserve the book premise, audience, and chapter purpose, but you may discard original required examples, sources, metaphors, or ending pressure when QA says they cause repetition.",
           "The repaired beat must create a distinct new contribution beyond previousPages: a new textual analysis, concrete case, irreversible decision, practical consequence, or specific evidence path.",
+          ...evidenceLedgerRules(options.input, options.plan, "repair"),
           GROUNDED_FACTUALITY_RULE,
           ...citation.rules,
           ...(citation.payload.researchNotes.length === 0
@@ -656,7 +663,8 @@ export function pageMapForWholeBookDraft(chapterBriefs: ChapterBrief[]) {
         beat: page.beat,
         requiredContinuity: page.requiredContinuity,
         endingPressure: page.endingPressure,
-        imageMoment: page.imageMoment
+        imageMoment: page.imageMoment,
+        ...evidenceLedgerFields(page)
       }))
     )
     .sort((first, second) => first.pageIndex - second.pageIndex);
@@ -801,7 +809,11 @@ function normalizeModelPageBeat(
     endingPressure:
       stringField(record, [...MODEL_PAGE_ENDING_PRESSURE_KEYS]) ??
       "Leave a concrete reason for the next page to continue.",
-    ...(imageMoment ? { imageMoment } : {})
+    ...(imageMoment ? { imageMoment } : {}),
+    ...evidenceLedgerFields({
+      claim: stringField(record, [...MODEL_PAGE_CLAIM_KEYS]),
+      evidenceAnchors: stringArrayField(record, [...MODEL_PAGE_EVIDENCE_ANCHOR_KEYS])
+    })
   };
 }
 

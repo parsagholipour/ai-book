@@ -8,6 +8,7 @@ import { plannerToneGuidance, reviewerStyleGuidance, toneProfileFromMediaSetting
 import type { BookPlan, ChapterBrief, ChapterPlan, CreateProjectInput, PageProductionBeat } from "../schemas/book.js";
 import { isRecord, jsonRecord, mediaSettingsMobileRecord } from "../schemas/jsonCoercion.js";
 import { isImportedManuscript } from "../schemas/mediaSettings.js";
+import { evidenceLedgerFields } from "./evidenceLedger.js";
 import { BYLINE_IS_TYPESET_RULE } from "./markdown.js";
 import { rewriteReviewedEmptyNotesPageBrief } from "./pageBriefCitationRewrites.js";
 
@@ -237,7 +238,10 @@ function compactPageBriefForScope(page: PageProductionBeat) {
     chapterIndex: page.chapterIndex,
     purpose: page.purpose,
     beat: page.beat,
-    endingPressure: page.endingPressure
+    endingPressure: page.endingPressure,
+    // The sibling's reserved evidence, which is what the writer is told to
+    // leave alone (`evidenceLedger.ts`).
+    ...evidenceLedgerFields(page)
   };
 }
 

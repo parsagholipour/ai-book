@@ -13,6 +13,7 @@ import {
 } from "./productionMapAudit.js";
 import { mechanicsPage } from "./testing/generatedChapterBriefFixtures.js";
 import {
+  anchorCollidingBriefs,
   beat,
   blockadeBeat,
   blockadePurpose,
@@ -266,5 +267,42 @@ describe("auditProductionMap", () => {
     const batches = chunkFindingsForRewriteCalls(findings);
     expect(batches.map((batch) => batch.length)).toEqual([12, 12, 6]);
     expect(batches.flat().map((finding) => finding.pageIndex)).toEqual(findings.map((finding) => finding.pageIndex));
+  });
+});
+
+describe("auditProductionMap evidence ledger", () => {
+  it("routes a shared-anchor collision to the sparse rewrite without blocking or densifying the chapter", async () => {
+    const briefs = anchorCollidingBriefs();
+    const audit = await auditProductionMap(briefs, contractFor(briefs));
+
+    expect(audit.blocking).toBe(false);
+    expect(audit.findings.map((finding) => finding.code)).toEqual(["SHARED_EVIDENCE_ANCHORS"]);
+    expect(audit.denseChapterIndexes).toEqual([]);
+    expect(audit.chapterClassifications[0]?.classification).toBe("clean");
+    expect(audit.sparseFindings).toHaveLength(1);
+    // Briefed against the sibling that owns the anchors, not the nearest
+    // substantive predecessor the synthesized fallback would pick.
+    expect(sparseRewriteFindingsFromAudit(audit, briefs)).toMatchObject([{ pageIndex: 4, duplicateOfPageIndex: 2 }]);
+  });
+
+  it("reports a missing ledger only for a ledger-mode book, and never as blocking", async () => {
+    const briefs = distinctBriefs();
+    const silent = await auditProductionMap(briefs, contractFor(briefs));
+    const analytical = await auditProductionMap(briefs, { ...contractFor(briefs), writingMode: "analytical-history" });
+
+    expect(silent.findings).toEqual([]);
+    expect(analytical.blocking).toBe(false);
+    expect(analytical.sparseFindings).toEqual([]);
+    expect(analytical.findings).toMatchObject([{ code: "MISSING_EVIDENCE_ANCHORS", pageIndexes: [1, 2, 3, 4] }]);
+  });
+
+  it("still blocks on a near-duplicate beat beside an advisory anchor finding", async () => {
+    const briefs = sparseFivePageCollisionBriefs();
+    const audit = await auditProductionMap(briefs, { ...contractFor(briefs), writingMode: "instructional" });
+
+    expect(audit.blocking).toBe(true);
+    expect(audit.findings.map((finding) => finding.code)).toEqual(
+      expect.arrayContaining(["NEAR_DUPLICATE_BEAT", "MISSING_EVIDENCE_ANCHORS"])
+    );
   });
 });

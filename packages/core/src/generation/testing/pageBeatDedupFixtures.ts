@@ -350,3 +350,42 @@ export function capturingJsonModel(rawData: unknown): {
   };
   return capture;
 }
+
+/**
+ * Distinct beats whose evidence ledger collides: pages 2 and 4 of one chapter
+ * were assigned the same two cases to argue from. The beat dedup waves the pair
+ * through — nothing in the purpose or beat repeats — and only the anchor audit
+ * (`productionMapAnchors.ts`) can see it.
+ */
+export function anchorCollidingBriefs(): ChapterBrief[] {
+  return [
+    {
+      chapterIndex: 1,
+      title: "The roots of conflict",
+      summary: "Why scarcity and identity turn into violence.",
+      continuityFocus: [],
+      pages: [
+        {
+          ...beat(1, 1, "Open inside the July crisis", "A telegram reaches Berlin while the fleet is already coaling."),
+          claim: "A local crisis becomes a general one when mobilization timetables remove every pause.",
+          evidenceAnchors: ["Sarajevo assassination", "Russian mobilization order"]
+        },
+        {
+          ...beat(2, 1, "Explain how scarcity fuels conflict", "Show grain prices and land pressure driving the villages toward violence."),
+          claim: "Scarcity turns rivalry into violence only where an authority stops mediating it.",
+          evidenceAnchors: ["Bugesera land plots", "coffee price collapse", "Kigali radio"]
+        },
+        {
+          ...beat(3, 1, "Follow one U-boat patrol", "A single submarine crew hunts a convoy through fog off the Irish coast."),
+          claim: "Blockade warfare moved the front into the merchant lanes.",
+          evidenceAnchors: ["U-20 patrol log", "Lusitania sinking"]
+        },
+        {
+          ...beat(4, 1, "Show identity hardening under pressure", "Trace how radio and land disputes turned neighbours into enemies."),
+          claim: "Identity hardens fastest where scarcity and propaganda meet.",
+          evidenceAnchors: ["Kigali radio", "Bugesera land plots", "identity card checkpoints"]
+        }
+      ]
+    }
+  ];
+}

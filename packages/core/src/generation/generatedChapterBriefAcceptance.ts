@@ -6,12 +6,15 @@ import {
   MODEL_CHAPTER_INDEX_KEYS,
   MODEL_PAGE_ARRAY_KEYS,
   MODEL_PAGE_BEAT_KEYS,
+  MODEL_PAGE_CLAIM_KEYS,
   MODEL_PAGE_CONTINUITY_KEYS,
   MODEL_PAGE_ENDING_PRESSURE_KEYS,
+  MODEL_PAGE_EVIDENCE_ANCHOR_KEYS,
   MODEL_PAGE_IMAGE_MOMENT_KEYS,
   MODEL_PAGE_INDEX_KEYS,
   MODEL_PAGE_PURPOSE_KEYS
 } from "./generatedPageResponse.js";
+import { evidenceLedgerFields } from "./evidenceLedger.js";
 import { arrayLikeField, integerField, isRecord, stringArrayField, stringField } from "./pagesShared.js";
 
 export type GeneratedChapterBriefContract = {
@@ -58,6 +61,8 @@ const METADATA_TOKENS = new Set(
     ...MODEL_PAGE_CONTINUITY_KEYS,
     ...MODEL_PAGE_ENDING_PRESSURE_KEYS,
     ...MODEL_PAGE_IMAGE_MOMENT_KEYS,
+    ...MODEL_PAGE_CLAIM_KEYS,
+    ...MODEL_PAGE_EVIDENCE_ANCHOR_KEYS,
     ...CHAPTER_TITLE_KEYS,
     ...CHAPTER_SUMMARY_KEYS,
     ...CHAPTER_CONTINUITY_KEYS,
@@ -161,7 +166,9 @@ export function decodeGeneratedChapterBrief(
       beat: beat ?? "",
       requiredContinuity: assignment.requiredContinuity.map((continuity) => continuity.trim()),
       endingPressure: endingPressure ?? "",
-      ...(imageMoment?.trim() ? { imageMoment: imageMoment.trim() } : {})
+      ...(imageMoment?.trim() ? { imageMoment: imageMoment.trim() } : {}),
+      // Rebuilt field by field, so the ledger has to be carried by name.
+      ...evidenceLedgerFields(assignment)
     } satisfies PageProductionBeat;
   });
 
@@ -256,6 +263,8 @@ type GeneratedPageAssignment = {
   requiredContinuity: string[];
   endingPressure?: string;
   imageMoment?: string;
+  claim?: string;
+  evidenceAnchors?: string[];
 };
 
 type GeneratedPageResponse = {
@@ -296,13 +305,17 @@ function readGeneratedPageAssignment(value: unknown): GeneratedPageAssignment {
   const beat = stringField(record, [...MODEL_PAGE_BEAT_KEYS]);
   const endingPressure = stringField(record, [...MODEL_PAGE_ENDING_PRESSURE_KEYS]);
   const imageMoment = stringField(record, [...MODEL_PAGE_IMAGE_MOMENT_KEYS]);
+  const claim = stringField(record, [...MODEL_PAGE_CLAIM_KEYS]);
+  const evidenceAnchors = stringArrayField(record, [...MODEL_PAGE_EVIDENCE_ANCHOR_KEYS]);
   return {
     ...(pageIndex != null ? { pageIndex } : {}),
     ...(purpose != null ? { purpose } : {}),
     ...(beat != null ? { beat } : {}),
     requiredContinuity: stringArrayField(record, [...MODEL_PAGE_CONTINUITY_KEYS]) ?? [],
     ...(endingPressure != null ? { endingPressure } : {}),
-    ...(imageMoment != null ? { imageMoment } : {})
+    ...(imageMoment != null ? { imageMoment } : {}),
+    ...(claim != null ? { claim } : {}),
+    ...(evidenceAnchors != null ? { evidenceAnchors } : {})
   };
 }
 

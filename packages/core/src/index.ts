@@ -63,6 +63,8 @@ export * from "./generation/styleAuditor.js";
 export * from "./generation/pageMapCritic.js";
 export * from "./generation/pageBeatDedup.js";
 export * from "./generation/productionMapAudit.js";
+export * from "./generation/productionMapAnchors.js";
+export * from "./generation/evidenceLedger.js";
 export * from "./generation/writerTools.js";
 export * from "./generation/pages.js";
 export * from "./generation/bestOf.js";

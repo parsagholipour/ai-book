@@ -68,11 +68,19 @@ export function chapterOf(page: ManuscriptIntegrityPage): number {
   return page.chapterIndex ?? Math.ceil(page.index / 5);
 }
 
+/**
+ * How far apart two pages may sit and still count as one chapter when neither
+ * carries a chapter index. The page-time gate (`pagesTreatmentQa.ts`) asks the
+ * same question of a draft that was handed no chapter range, and reads this
+ * constant rather than spelling a second distance.
+ */
+export const SAME_CHAPTER_FALLBACK_DISTANCE = 5;
+
 export function pagesShareChapter(left: ManuscriptIntegrityPage, right: ManuscriptIntegrityPage): boolean {
   if (left.chapterIndex !== undefined && right.chapterIndex !== undefined) {
     return left.chapterIndex === right.chapterIndex;
   }
-  return Math.abs(left.index - right.index) < 5;
+  return Math.abs(left.index - right.index) < SAME_CHAPTER_FALLBACK_DISTANCE;
 }
 
 export function setOverlap(left: Set<string>, right: Set<string>): SetOverlap {
@@ -95,6 +103,24 @@ export function setOverlap(left: Set<string>, right: Set<string>): SetOverlap {
     jaccard: union === 0 ? 0 : intersection / union,
     containment
   };
+}
+
+/**
+ * The members both sets hold, in the smaller set's insertion order.
+ * `setOverlap` counts and this names; it is called only for a pair that has
+ * already cleared its thresholds, so the quadratic sweeps never allocate a
+ * list for a pair they drop.
+ */
+export function sharedTerms(left: Set<string>, right: Set<string>): string[] {
+  const smaller = left.size <= right.size ? left : right;
+  const larger = smaller === left ? right : left;
+  const shared: string[] = [];
+  for (const term of smaller) {
+    if (larger.has(term)) {
+      shared.push(term);
+    }
+  }
+  return shared;
 }
 
 export function cacheManuscriptPages(

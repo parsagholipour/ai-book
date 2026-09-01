@@ -42,6 +42,7 @@ import {
 } from "./pagesShared.js";
 import { pagePromptBookStyle } from "./styleContract.js";
 import { pageGetsInteriorIllustration } from "./illustrationSlots.js";
+import { evidenceLedgerFields, evidenceLedgerRules } from "./evidenceLedger.js";
 import { REWRITE_TEMPERATURE_CEILING, pageMapForRange, pageMapForWholeBookDraft } from "./pagesPageMap.js";
 
 export { shouldIllustratePage } from "./illustrationSlots.js";
@@ -53,6 +54,7 @@ export {
   reviewRequiredPageQualityChecks,
   type LocalPageReviewOptions
 } from "./pagesLocalQa.js";
+export { treatmentGuidanceForDraft } from "./pagesTreatmentQa.js";
 export {
   SMART_UNSLOP_ISSUE_PREFIX,
   hasSmartUnslopCandidates,
@@ -206,6 +208,12 @@ export type PolishPageOptions = {
   continuityNotes: string[];
   researchNotes: string[];
   textModel: TextModelAdapter;
+  /**
+   * Lines a bulk pass adds when the chapter's own draft already treats this
+   * page's subject on an earlier page (`treatmentGuidanceForDraft`), so the
+   * first polish differentiates it instead of the QA loop paying a rewrite.
+   */
+  distinctnessGuidance?: string[] | undefined;
 };
 
 const DRAFT_PAGE_INDEX_KEYS = ["globalPageIndex", "globalIndex", "globalPage", "index", "pageIndex", "pageNumber", "page"];
@@ -261,6 +269,7 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
           ...multiPageImagePromptGuidance(options.input, 1, options.input.targetPages),
           ...READER_FACING_PAGE_BRIEF_RULES,
           "Every page must add distinct progression; do not repeat the same scene, explanation, decision, or emotional beat across pages.",
+          ...evidenceLedgerRules(options.input, options.plan, "writer"),
           ...opening.rules,
           ...targetLanguageGenerationGuidance(options.input.language),
           ...writerToneRules(options.input)
@@ -340,6 +349,7 @@ export async function generateChapterDraft(options: GenerateChapterDraftOptions)
           ...citation.rules,
           "Do not mention AI, prompts, JSON, schemas, generation, or production instructions in reader-facing pages.",
           ...READER_FACING_PAGE_BRIEF_RULES,
+          ...evidenceLedgerRules(options.input, options.plan, "writer"),
           ...opening.rules,
           ...targetLanguageGenerationGuidance(options.input.language),
           ...writerToneRules(options.input)
@@ -417,6 +427,7 @@ export async function generateBatchDraft(options: GenerateBatchDraftOptions): Pr
           ...citation.rules,
           "Make each page advance a distinct beat and avoid repeating recent pages.",
           ...READER_FACING_PAGE_BRIEF_RULES,
+          ...evidenceLedgerRules(options.input, options.plan, "writer"),
           ...opening.rules,
           ...targetLanguageGenerationGuidance(options.input.language),
           ...writerToneRules(options.input)
@@ -519,6 +530,7 @@ export async function polishPageDraft(options: PolishPageOptions): Promise<PageD
           ...citation.rules,
           "Do not mention AI, prompts, JSON, schemas, generation, or production instructions.",
           ...READER_FACING_PAGE_BRIEF_RULES,
+          ...evidenceLedgerRules(options.input, options.plan, "writer"),
           ...pageDraftImagePromptGuidance(options.input, options.pageIndex),
           ...targetLanguageGenerationGuidance(options.input.language),
           ...writerToneRules(options.input)
@@ -552,7 +564,7 @@ export async function polishPageDraft(options: PolishPageOptions): Promise<PageD
             nextPages: compactPriorPages(options.nextPages, 3, 800),
             continuityNotes: continuityNotesForPrompt(options.continuityNotes, CONTINUITY_NOTE_PROMPT_LIMITS.bulkDraft),
             ...citation.payload,
-            instruction: pageInstruction.text
+            instruction: [pageInstruction.text, ...(options.distinctnessGuidance ?? [])].join(" ")
           },
           null,
           2
@@ -590,7 +602,8 @@ function sanitizedWholeBookPageMapForCitation(
         beat: entry.beat,
         requiredContinuity: entry.requiredContinuity,
         endingPressure: entry.endingPressure,
-        ...(entry.imageMoment ? { imageMoment: entry.imageMoment } : {})
+        ...(entry.imageMoment ? { imageMoment: entry.imageMoment } : {}),
+        ...evidenceLedgerFields(entry)
       },
       researchNotes
     );
@@ -602,7 +615,8 @@ function sanitizedWholeBookPageMapForCitation(
       beat: sanitized.beat,
       requiredContinuity: sanitized.requiredContinuity,
       endingPressure: sanitized.endingPressure,
-      imageMoment: sanitized.imageMoment ?? entry.imageMoment
+      imageMoment: sanitized.imageMoment ?? entry.imageMoment,
+      ...evidenceLedgerFields(sanitized)
     };
   });
 }

@@ -48,6 +48,7 @@ import {
   writerToneRules,
   type PriorPageContext
 } from "./pagesShared.js";
+import { evidenceLedgerRules } from "./evidenceLedger.js";
 import { localStyleInstructions, pagePromptBookStyle } from "./styleContract.js";
 
 /**
@@ -173,6 +174,7 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
             "Do not reject a page for omitting chapter keyBeats or futureChapterPageBriefs assigned to later pages.",
             "Compare the draft with futureChapterPageBriefs and reject it if it substantially performs, resolves, or restages a beat reserved for a later page. The current endingPressure only authorizes a short concluding handoff that opens the next problem; it does not authorize developing that problem earlier in the page. Multiple paragraphs developing a future page's purpose, or a conclusion delivering that future page's endingPressure, consume the reserved beat and must be rejected even if the prose calls this a setup.",
             "If pageScope.isLastPageOfChapter is false, do not require chapter closure or all chapter keyBeats on this page.",
+            ...evidenceLedgerRules(options.input, options.plan, "reviewer"),
             ...targetLanguageReviewGuidance(options.input.language),
             ...reviewerStyleRules(options.input),
             "Return one JSON object with approved (boolean), score (integer 0-100), issues (string array), requiredRevisions (string array), notes (string), and checks with placeholderFree, promptLeakFree, titleClean, repetitionOk, progressionOk, styleNatural booleans.",
@@ -332,11 +334,13 @@ function compactPageReviewScope(options: ReviewPageOptions) {
     ...scope,
     previousChapterPageBriefs: scope.previousChapterPageBriefs.map((page) => ({
       pageIndex: page.pageIndex,
-      completedBeat: compactReviewBeat(page.purpose, page.beat, page.endingPressure)
+      completedBeat: compactReviewBeat(page.purpose, page.beat, page.endingPressure, page.claim),
+      ...(page.evidenceAnchors ? { evidenceAnchors: page.evidenceAnchors } : {})
     })),
     futureChapterPageBriefs: scope.futureChapterPageBriefs.map((page) => ({
       pageIndex: page.pageIndex,
-      reservedBeat: compactReviewBeat(page.purpose, page.beat, page.endingPressure)
+      reservedBeat: compactReviewBeat(page.purpose, page.beat, page.endingPressure, page.claim),
+      ...(page.evidenceAnchors ? { evidenceAnchors: page.evidenceAnchors } : {})
     }))
   };
 }

@@ -28,7 +28,7 @@ import {
   manuscriptWideSymmetricalHedgingPages,
   persianWithEnglishHedgeIslands
 } from "./testing/manuscriptStructuralAuditFixtures.js";
-import { collidingBriefs } from "./testing/pageBeatDedupFixtures.js";
+import { anchorCollidingBriefs, collidingBriefs } from "./testing/pageBeatDedupFixtures.js";
 import {
   deliberateParallelChapterPages,
   fictionMotifPages,
@@ -204,6 +204,30 @@ export async function replayAntiSlopCalibration(): Promise<AntiSlopCalibrationRe
     kind: "known-failure",
     passed: audit.blocking,
     detail: audit.findings.map((finding) => finding.code).join(",")
+  });
+
+  // Distinct beats sharing an evidence ledger: found, routed to the sparse
+  // rewrite, and never blocking (`productionMapAnchors.ts`).
+  const anchored = anchorCollidingBriefs();
+  const anchorAudit = await auditProductionMap(
+    anchored,
+    productionMapContractFromRanges(
+      Math.max(...anchored.flatMap((brief) => brief.pages.map((page) => page.pageIndex))),
+      anchored.map((brief) => ({
+        chapterIndex: brief.chapterIndex,
+        startPage: Math.min(...brief.pages.map((page) => page.pageIndex)),
+        endPage: Math.max(...brief.pages.map((page) => page.pageIndex))
+      })),
+      "analytical-history"
+    )
+  );
+  fixtures.push({
+    id: "boundary:shared-evidence-anchors",
+    kind: "boundary",
+    passed:
+      !anchorAudit.blocking &&
+      anchorAudit.sparseFindings.some((finding) => finding.code === "SHARED_EVIDENCE_ANCHORS"),
+    detail: anchorAudit.findings.map((finding) => finding.code).join(",")
   });
 
   fixtures.push(manuscriptFixture("known-failure:indus-paraphrase", "known-failure", fourParaphrasedIndusWeightPages(), {
