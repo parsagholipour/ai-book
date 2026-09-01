@@ -1,5 +1,5 @@
 import Fastify from "fastify";
-import { QUALITY_FEATURE_DEFAULTS } from "@book-maker/core";
+import { OPENROUTER_GLM_53_FLASH_MODEL, QUALITY_FEATURE_DEFAULTS } from "@book-maker/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { adminGenerationQualityRoutes } from "./adminGenerationQuality.js";
 
@@ -19,6 +19,7 @@ describe("admin generation model routing", () => {
       GEMINI_API_KEY: "gemini-test-key",
       ALIBABA_API_KEY: "alibaba-test-key",
       OPENAI_API_KEY: "openai-test-key",
+      OPENROUTER_API_KEY: "openrouter-test-key",
       MOCK_AI: "false"
     });
     mockRequireOperatorActor.mockResolvedValue({ kind: "operator", userId: "local-admin" });
@@ -165,6 +166,50 @@ describe("admin generation model routing", () => {
     expect(save.json()).toMatchObject({
       models: {
         premium: { writer: { provider: "openai", model: "gpt-5.6-sol", thinkingEffort: "xhigh" } }
+      }
+    });
+    await app.close();
+  });
+
+  it("offers and saves OpenRouter GLM 5.3 Flash with supported reasoning effort", async () => {
+    mockStoredRevision(null);
+    const app = Fastify({ logger: false });
+    await app.register(adminGenerationQualityRoutes);
+
+    const catalogResponse = await app.inject({ method: "GET", url: "/api/admin/generation-quality" });
+    const catalog = (catalogResponse.json() as {
+      modelOptions: Array<{
+        provider: string;
+        model: string;
+        thinkingEfforts?: Array<{ value: string }>;
+        costs?: Array<{ inputPerMillion: number; outputPerMillion: number }>;
+      }>;
+    }).modelOptions;
+    const glm = catalog.find(
+      (option) => option.provider === "openrouter" && option.model === OPENROUTER_GLM_53_FLASH_MODEL
+    );
+    expect(glm?.thinkingEfforts?.map((effort) => effort.value)).toEqual(["low", "high", "max"]);
+    expect(glm?.costs).toEqual([
+      expect.objectContaining({ inputPerMillion: 0.075, outputPerMillion: 0.25, cacheHitPerMillion: 0.015 })
+    ]);
+
+    const save = await app.inject({
+      method: "PATCH",
+      url: "/api/admin/generation-quality",
+      payload: {
+        models: {
+          balanced: {
+            writer: { provider: "openrouter", model: OPENROUTER_GLM_53_FLASH_MODEL, thinkingEffort: "high" }
+          }
+        }
+      }
+    });
+    expect(save.statusCode).toBe(200);
+    expect(save.json()).toMatchObject({
+      models: {
+        balanced: {
+          writer: { provider: "openrouter", model: OPENROUTER_GLM_53_FLASH_MODEL, thinkingEffort: "high" }
+        }
       }
     });
     await app.close();

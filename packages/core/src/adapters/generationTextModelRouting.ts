@@ -373,6 +373,7 @@ function textProvider(value: unknown): value is TextModelSelection["provider"] {
   return (
     value === "deepseek" ||
     value === "deepinfra" ||
+    value === "openrouter" ||
     value === "gemini" ||
     value === "alibaba" ||
     value === "openai" ||

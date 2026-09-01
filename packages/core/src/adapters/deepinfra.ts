@@ -1,9 +1,9 @@
 import OpenAI from "openai";
-import type {
-  GenerateTextOptions,
-  Usage
-} from "./types.js";
-import { OpenAIChatCompletionsTextAdapter } from "./openAiChatCompletionsText.js";
+import {
+  OpenAIChatCompletionsTextAdapter,
+  openAiChatCompletionsRequestParameters,
+  usageFromOpenAiChatCompletions
+} from "./openAiChatCompletionsText.js";
 import { toOpenAiChatMessages } from "./openaiToolCalling.js";
 import {
   DEFAULT_DEEPINFRA_BASE_URL,
@@ -41,20 +41,13 @@ export class DeepInfraAdapter extends OpenAIChatCompletionsTextAdapter {
       model,
       provider: PROVIDER_ID,
       providerLabel: PROVIDER_LABEL,
-      requestParameters: standardRequestParameters,
+      requestParameters: openAiChatCompletionsRequestParameters,
       reasoningParameters: () => deepInfraReasoningConfig(thinkingEnabled, thinkingEffort),
       convertMessages: toOpenAiChatMessages,
-      usageFromResponse: usageFromDeepInfra,
+      usageFromResponse: usageFromOpenAiChatCompletions,
       includeUsageInTextStream: true
     });
   }
-}
-
-function standardRequestParameters(options: GenerateTextOptions): Record<string, unknown> {
-  return {
-    temperature: options.temperature,
-    max_tokens: options.maxTokens
-  };
 }
 
 function deepInfraReasoningConfig(enabled: boolean, effort: DeepInfraReasoningEffort | undefined) {
@@ -81,30 +74,3 @@ function deepInfraReasoningEffort(
   return "high";
 }
 
-function usageFromDeepInfra(usage: unknown): Usage | undefined {
-  if (!usage || typeof usage !== "object") {
-    return undefined;
-  }
-  const record = usage as { prompt_tokens?: number; completion_tokens?: number };
-  return {
-    promptTokens: record.prompt_tokens,
-    outputTokens: record.completion_tokens,
-    cacheHitTokens: deepInfraCacheHitTokens(usage)
-  };
-}
-
-function deepInfraCacheHitTokens(usage: unknown): number | undefined {
-  if (!usage || typeof usage !== "object") {
-    return undefined;
-  }
-  const record = usage as {
-    prompt_cache_hit_tokens?: unknown;
-    prompt_tokens_details?: { cached_tokens?: unknown };
-  };
-  if (typeof record.prompt_cache_hit_tokens === "number") {
-    return record.prompt_cache_hit_tokens;
-  }
-  return typeof record.prompt_tokens_details?.cached_tokens === "number"
-    ? record.prompt_tokens_details.cached_tokens
-    : undefined;
-}

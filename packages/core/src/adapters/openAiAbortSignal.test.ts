@@ -13,6 +13,8 @@ import {
 } from "./deepseek.js";
 import { AdapterJsonParseError, AdapterJsonValidationError } from "./json.js";
 import { OpenAICompatibleTextAdapter } from "./openaiCompatible.js";
+import { OpenRouterAdapter } from "./openrouter.js";
+import { OPENROUTER_GLM_53_FLASH_MODEL } from "./openrouterModels.js";
 import type { ChatMessage, TextModelAdapter, Usage } from "./types.js";
 
 type AdapterCase = {
@@ -83,6 +85,29 @@ const adapterCases: AdapterCase[] = [
       reasoning_effort: "max"
     },
     absentReasoningParameters: ["reasoning"],
+    includeUsageInTextStream: true
+  },
+  {
+    name: "OpenRouterAdapter",
+    create: () =>
+      new OpenRouterAdapter({
+        apiKey: "test-key",
+        model: OPENROUTER_GLM_53_FLASH_MODEL,
+        thinkingEffort: "high"
+      }),
+    provider: "openrouter",
+    model: OPENROUTER_GLM_53_FLASH_MODEL,
+    usagePayload: {
+      prompt_tokens: 7,
+      completion_tokens: 5,
+      prompt_tokens_details: { cached_tokens: 2 }
+    },
+    usage: { promptTokens: 7, outputTokens: 5, cacheHitTokens: 2 },
+    reasoningParameters: {
+      reasoning: { enabled: true, effort: "high" },
+      reasoning_effort: "high"
+    },
+    absentReasoningParameters: ["thinking"],
     includeUsageInTextStream: true
   },
   {

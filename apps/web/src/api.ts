@@ -122,7 +122,7 @@ export type ProjectInputSnapshot = {
 };
 
 export type TextModelSelection = {
-  provider: "deepseek" | "deepinfra" | "gemini" | "alibaba" | "openai" | "openai-compatible";
+  provider: "deepseek" | "deepinfra" | "openrouter" | "gemini" | "alibaba" | "openai" | "openai-compatible";
   model: string;
   thinkingBudget?: number;
   thinkingEnabled?: boolean;

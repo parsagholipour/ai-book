@@ -7,6 +7,8 @@ import { DeepSeekAdapter } from "./deepseek.js";
 import { FakeTextModelAdapter } from "./fake.js";
 import { GeminiTextAdapter } from "./gemini.js";
 import { OpenAITextAdapter } from "./openai.js";
+import { OpenRouterAdapter } from "./openrouter.js";
+import { OPENROUTER_GLM_53_FLASH_MODEL } from "./openrouterModels.js";
 import {
   createLiveGenerationTextModel,
   createProviders,
@@ -54,6 +56,9 @@ describe("text model provider selection", () => {
     );
     expect(createTextModelAdapter(config, { provider: "openai", model: "gpt-5.6-sol" })).toBeInstanceOf(
       OpenAITextAdapter
+    );
+    expect(createTextModelAdapter(config, { provider: "openrouter", model: OPENROUTER_GLM_53_FLASH_MODEL })).toBeInstanceOf(
+      OpenRouterAdapter
     );
     expect((createTextModelAdapter(config, { provider: "deepinfra", model: "mistral-small-latest" }) as any).model).toBe(
       "mistralai/Mistral-Small-3.2-24B-Instruct-2506"
@@ -115,6 +120,26 @@ describe("text model provider selection", () => {
           option.provider === "deepinfra" && option.model === "mistralai/Mistral-Small-3.2-24B-Instruct-2506"
       )
     ).toHaveLength(1);
+  });
+
+  it("exposes OpenRouter GLM 5.3 Flash only when configured", () => {
+    const configuredOptions = textModelOptions(testConfig({ OPENROUTER_API_KEY: "openrouter-key" }));
+    const unconfiguredOptions = textModelOptions(testConfig({ OPENROUTER_API_KEY: "" }));
+
+    expect(configuredOptions.filter((option) => option.provider === "openrouter")).toEqual([
+      expect.objectContaining({
+        provider: "openrouter",
+        model: OPENROUTER_GLM_53_FLASH_MODEL,
+        label: "GLM 5.3 Flash (OpenRouter)",
+        thinking: true,
+        thinkingEfforts: [
+          { value: "low", label: "Low" },
+          { value: "high", label: "High", default: true },
+          { value: "max", label: "Max" }
+        ]
+      })
+    ]);
+    expect(unconfiguredOptions.some((option) => option.provider === "openrouter")).toBe(false);
   });
 
   it("marks reasoning-capable text models as thinking options", () => {
@@ -376,13 +401,14 @@ function testConfig(overrides: NodeJS.ProcessEnv) {
     GEMINI_API_KEY: "gemini-key",
     ALIBABA_API_KEY: "alibaba-key",
     OPENAI_API_KEY: "openai-key",
+    OPENROUTER_API_KEY: "openrouter-key",
     MOCK_AI: "false",
     ...overrides
   });
 }
 
 function projectInput(
-  textModel: { provider: "deepseek" | "deepinfra" | "gemini" | "alibaba" | "openai"; model: string },
+  textModel: { provider: "deepseek" | "deepinfra" | "openrouter" | "gemini" | "alibaba" | "openai"; model: string },
   imageModel?: { provider: "gemini" | "alibaba"; model: string }
 ) {
   return createProjectSchema.parse({
@@ -403,7 +429,7 @@ function projectInput(
 
 function tierProjectInput(
   modelTier: "fast" | "balanced" | "premium" | "ultra",
-  textModel?: { provider: "deepseek" | "deepinfra" | "gemini" | "alibaba" | "openai"; model: string }
+  textModel?: { provider: "deepseek" | "deepinfra" | "openrouter" | "gemini" | "alibaba" | "openai"; model: string }
 ) {
   return createProjectSchema.parse({
     prompt: "A practical book about choosing the right generation model for long-form writing.",

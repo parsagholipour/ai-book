@@ -27,6 +27,8 @@ export * from "./adapters/alibaba.js";
 export * from "./adapters/deepseek.js";
 export * from "./adapters/deepinfraModels.js";
 export * from "./adapters/deepinfra.js";
+export * from "./adapters/openrouterModels.js";
+export * from "./adapters/openrouter.js";
 export * from "./adapters/openaiCompatible.js";
 export * from "./adapters/openaiModels.js";
 export * from "./adapters/openai.js";

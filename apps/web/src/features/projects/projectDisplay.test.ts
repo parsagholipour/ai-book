@@ -24,6 +24,17 @@ describe("project display helpers", () => {
     ).toBe("DeepInfra deepseek-ai/DeepSeek-V4-Pro (Medium Effort)");
   });
 
+  it("labels OpenRouter GLM text model selections", () => {
+    expect(modelProviderLabel("openrouter")).toBe("OpenRouter");
+    expect(
+      modelSelectionLabel({
+        provider: "openrouter",
+        model: "z-ai/glm-5.3-flash",
+        thinkingEffort: "high"
+      })
+    ).toBe("OpenRouter z-ai/glm-5.3-flash (High Effort)");
+  });
+
   it("labels Gemini effort-aware text model selections", () => {
     expect(
       modelSelectionLabel({

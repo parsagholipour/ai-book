@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { DEFAULT_ALIBABA_API_HOST, DEFAULT_ALIBABA_IMAGE_MODEL, DEFAULT_ALIBABA_TEXT_MODEL } from "./adapters/alibabaModels.js";
 import { DEFAULT_DEEPINFRA_BASE_URL, DEFAULT_DEEPINFRA_FAST_MODEL, DEFAULT_DEEPINFRA_MODEL } from "./adapters/deepinfraModels.js";
+import { DEFAULT_OPENROUTER_BASE_URL } from "./adapters/openrouterModels.js";
 import { normalizeGeminiImageModel } from "./adapters/geminiModels.js";
 import {
   LEGAL_SUPPORT_EMAIL,
@@ -44,6 +45,7 @@ const envSchema = z.object({
   RAILWAY_ENVIRONMENT: z.string().optional(),
   DEEPSEEK_API_KEY: z.string().optional(),
   DEEPINFRA_API_KEY: z.string().optional(),
+  OPENROUTER_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   GEMINI_API_KEY: z.string().optional(),
   ALIBABA_API_KEY: z.string().optional(),
@@ -56,6 +58,7 @@ const envSchema = z.object({
   DEEPINFRA_BASE_URL: z.string().url().default(DEFAULT_DEEPINFRA_BASE_URL),
   DEEPINFRA_MODEL: z.string().default(DEFAULT_DEEPINFRA_MODEL),
   DEEPINFRA_FAST_MODEL: z.string().default(DEFAULT_DEEPINFRA_FAST_MODEL),
+  OPENROUTER_BASE_URL: z.string().url().default(DEFAULT_OPENROUTER_BASE_URL),
   /** OpenAI-compatible local server (Ollama/vLLM/LM Studio) for zero-cost text generation. */
   LOCAL_TEXT_BASE_URL: z.string().url().optional(),
   LOCAL_TEXT_MODEL: z.string().optional(),

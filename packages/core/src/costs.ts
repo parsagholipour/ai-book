@@ -1,3 +1,4 @@
+import { OPENROUTER_GLM_53_FLASH_MODEL } from "./adapters/openrouterModels.js";
 import { qwen37FlashCostRates, qwen37FlashRateForPrompt } from "./qwen37FlashPricing.js";
 
 export type ProviderCostLog = {
@@ -415,6 +416,14 @@ const DEEPINFRA_MISTRAL_SMALL_RATE: TextRate = {
   outputPerMillion: 0.2
 };
 
+// OpenRouter billed card for z-ai/glm-5.3-flash as of 2026-09-02
+// (Z.ai 50% promo through 2026-09-09 16:00 UTC).
+const OPENROUTER_GLM_53_FLASH_RATE: TextRate = {
+  inputPerMillion: 0.075,
+  outputPerMillion: 0.25,
+  cacheHitPerMillion: 0.015
+};
+
 const GEMINI_IMAGE_COSTS_USD = new Map<string, number>([
   ["gemini-2.5-flash-image", 0.039],
   ["imagen-4.0-fast-generate-001", 0.02],
@@ -715,6 +724,13 @@ function resolveTextRateCard(
     return null;
   }
 
+  if (provider === "openrouter") {
+    if (isOpenRouterGlm53FlashModel(model)) {
+      return OPENROUTER_GLM_53_FLASH_RATE;
+    }
+    return null;
+  }
+
   if (provider === "alibaba" || provider === "qwen") {
     return ALIBABA_TEXT_RATES.get(model) ?? null;
   }
@@ -745,6 +761,10 @@ function isDeepInfraV4FlashModel(model: string): boolean {
 
 function isDeepInfraMistralSmallModel(model: string): boolean {
   return model === "mistralai/mistral-small-3.2-24b-instruct-2506" || model === "mistral-small-latest";
+}
+
+function isOpenRouterGlm53FlashModel(model: string): boolean {
+  return model === OPENROUTER_GLM_53_FLASH_MODEL;
 }
 
 function pickPeakOffPeak(rate: PeakOffPeakRate, billedAt: Date): TextRate {

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { describe, expect, it } from "vitest";
+import { OPENROUTER_GLM_53_FLASH_MODEL } from "../adapters/openrouterModels.js";
 import { BOOK_CATEGORIES } from "../categories.js";
 import {
   TONE_PROFILES,
@@ -275,6 +276,34 @@ describe("createProjectSchema", () => {
       model: "deepseek-ai/DeepSeek-V4-Pro",
       thinkingEnabled: true,
       thinkingEffort: "medium"
+    });
+  });
+
+  it("accepts an OpenRouter GLM text model variant in media settings", () => {
+    const input = createProjectSchema.parse({
+      prompt: "A practical book about choosing an AI model for planning and drafting.",
+      mediaSettings: {
+        fullIllustrations: true,
+        illustrationCadence: "template-driven",
+        includeCover: true,
+        coverTemplate: "auto",
+        finalReview: true,
+        generationStrategy: "chaptered-sequential",
+        textModel: {
+          provider: "openrouter",
+          model: OPENROUTER_GLM_53_FLASH_MODEL,
+          thinkingEnabled: true,
+          thinkingEffort: "high"
+        },
+        toneProfile: "neutral"
+      }
+    });
+
+    expect(input.mediaSettings.textModel).toEqual({
+      provider: "openrouter",
+      model: OPENROUTER_GLM_53_FLASH_MODEL,
+      thinkingEnabled: true,
+      thinkingEffort: "high"
     });
   });
 

@@ -96,6 +96,10 @@ export function providerConfigSnapshot() {
       baseURL: config.DEEPINFRA_BASE_URL,
       textModel: config.DEEPINFRA_MODEL,
       fastTextModel: config.DEEPINFRA_FAST_MODEL
+    },
+    openrouter: {
+      apiKeySet: Boolean(config.OPENROUTER_API_KEY),
+      baseURL: config.OPENROUTER_BASE_URL
     }
   };
 }

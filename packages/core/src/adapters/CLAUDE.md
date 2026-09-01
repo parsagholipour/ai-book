@@ -1,7 +1,7 @@
 # Provider adapters
 
 Every call to an outside model goes through here: Gemini, the OpenAI-compatible providers,
-Alibaba, DeepSeek, DeepInfra, plus routing (`textRouting.ts`, `modelTiers.ts`), fallback
+Alibaba, DeepSeek, DeepInfra, OpenRouter, plus routing (`textRouting.ts`, `modelTiers.ts`), fallback
 (`textFallback.ts`, `imageFallback.ts`) and `retry.ts`.
 
 `factory.ts` decides what a job gets. With `MOCK_AI=true` it returns the fakes in `fake.ts` —

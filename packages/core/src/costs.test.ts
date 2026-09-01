@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { OPENROUTER_GLM_53_FLASH_MODEL } from "./adapters/openrouterModels.js";
 import {
   calculateImageGenerationCost,
   calculateProjectCostSummary,
@@ -66,6 +67,10 @@ describe("provider cost calculation", () => {
       { inputPerMillion: 0.2, outputPerMillion: 0.8, label: "Over 256K prompt tokens" }
     ]);
     expect(textGenerationCostRates({ provider: "deepinfra", model: "unknown" })).toEqual([]);
+    expect(textGenerationCostRates({ provider: "openrouter", model: OPENROUTER_GLM_53_FLASH_MODEL })).toEqual([
+      { inputPerMillion: 0.075, outputPerMillion: 0.25, cacheHitPerMillion: 0.015 }
+    ]);
+    expect(textGenerationCostRates({ provider: "openrouter", model: "unknown" })).toEqual([]);
   });
 
   it("treats DeepSeek peak windows as [01:00, 04:00) and [06:00, 10:00) UTC on weekdays", () => {
@@ -139,6 +144,18 @@ describe("provider cost calculation", () => {
 
     expect(cost).toBe(0.175);
     expect(legacyAliasCost).toBe(0.175);
+  });
+
+  it("calculates OpenRouter GLM 5.3 Flash text cost with cache-hit pricing", () => {
+    expect(
+      calculateTextGenerationCost({
+        provider: "openrouter",
+        model: OPENROUTER_GLM_53_FLASH_MODEL,
+        promptTokens: 1_000_000,
+        cacheHitTokens: 100_000,
+        outputTokens: 500_000
+      })
+    ).toBe(0.194);
   });
 
   it("calculates GPT-5.6 family text cost across short and long context", () => {

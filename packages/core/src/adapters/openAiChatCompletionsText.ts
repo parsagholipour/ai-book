@@ -244,3 +244,41 @@ export abstract class OpenAIChatCompletionsTextAdapter implements TextModelAdapt
     }
   }
 }
+
+export function openAiChatCompletionsRequestParameters(
+  options: GenerateTextOptions
+): Record<string, unknown> {
+  return {
+    ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
+    ...(options.maxTokens !== undefined ? { max_tokens: options.maxTokens } : {})
+  };
+}
+
+export function usageFromOpenAiChatCompletions(usage: unknown): Usage | undefined {
+  if (!usage || typeof usage !== "object") {
+    return undefined;
+  }
+  const record = usage as { prompt_tokens?: number; completion_tokens?: number };
+  const cacheHitTokens = openAiChatCompletionsCacheHitTokens(usage);
+  return {
+    promptTokens: record.prompt_tokens,
+    outputTokens: record.completion_tokens,
+    ...(cacheHitTokens !== undefined ? { cacheHitTokens } : {})
+  };
+}
+
+function openAiChatCompletionsCacheHitTokens(usage: unknown): number | undefined {
+  if (!usage || typeof usage !== "object") {
+    return undefined;
+  }
+  const record = usage as {
+    prompt_cache_hit_tokens?: unknown;
+    prompt_tokens_details?: { cached_tokens?: unknown };
+  };
+  if (typeof record.prompt_cache_hit_tokens === "number") {
+    return record.prompt_cache_hit_tokens;
+  }
+  return typeof record.prompt_tokens_details?.cached_tokens === "number"
+    ? record.prompt_tokens_details.cached_tokens
+    : undefined;
+}

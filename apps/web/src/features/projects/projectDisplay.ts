@@ -88,6 +88,7 @@ export function modelSelectionLabel(selection: TextModelSelection | ImageModelSe
     "thinkingEffort" in selection &&
     (selection.provider === "deepseek" ||
       selection.provider === "deepinfra" ||
+      selection.provider === "openrouter" ||
       selection.provider === "gemini" ||
       selection.provider === "openai") &&
     selection.thinkingEffort
@@ -121,6 +122,9 @@ export function modelProviderLabel(provider: TextModelSelection["provider"] | Im
   }
   if (provider === "deepinfra") {
     return "DeepInfra";
+  }
+  if (provider === "openrouter") {
+    return "OpenRouter";
   }
   if (provider === "gemini") {
     return "Gemini";

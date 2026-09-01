@@ -2,6 +2,7 @@ import { z } from "zod";
 import { describe, expect, it } from "vitest";
 import { loadConfig } from "../config.js";
 import { generateJsonWithRetry } from "../generation/generateJsonWithRetry.js";
+import { OPENROUTER_GLM_53_FLASH_MODEL } from "./openrouterModels.js";
 import { unsupportedGenerateWithTools } from "./fake.js";
 import {
   LiveGenerationTextModelAdapter,
@@ -79,6 +80,22 @@ describe("generation text model routing", () => {
 
     expect(resolved.balanced.writer).toEqual(selected);
     expect(resolved.balanced.writerFallback).toEqual(defaults.balanced.writer);
+  });
+
+  it("keeps a stored OpenRouter GLM selection instead of falling back to compiled routing", () => {
+    const config = testConfig({ OPENROUTER_API_KEY: "openrouter-key" });
+    const defaults = compiledGenerationTextModelRouting(config, generationTextModelOptions(config));
+    const glm = {
+      provider: "openrouter" as const,
+      model: OPENROUTER_GLM_53_FLASH_MODEL,
+      thinkingEffort: "high" as const
+    };
+    const resolved = resolveGenerationTextModelRouting(
+      { models: { balanced: { writer: glm } } },
+      defaults
+    );
+
+    expect(resolved.balanced.writer).toEqual(glm);
   });
 
   it("uses Gemini flash-lite with thinkingBudget 0 when DeepSeek and DeepInfra are unavailable", () => {

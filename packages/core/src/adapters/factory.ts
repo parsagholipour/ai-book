@@ -6,6 +6,8 @@ import { geminiImageModelOptions } from "./geminiModels.js";
 import { AlibabaImageAdapter, AlibabaTextAdapter } from "./alibaba.js";
 import { DeepInfraAdapter } from "./deepinfra.js";
 import { DeepSeekAdapter } from "./deepseek.js";
+import { OpenRouterAdapter } from "./openrouter.js";
+import { openRouterTextModelOptions } from "./openrouterModels.js";
 import { OpenAITextAdapter } from "./openai.js";
 import { OpenAICompatibleTextAdapter } from "./openaiCompatible.js";
 import { openAITextModelOptions } from "./openaiModels.js";
@@ -167,6 +169,7 @@ export function textModelOptions(config: AppConfig): TextModelOption[] {
   return [
     ...deepSeekModelOptions(config),
     ...deepInfraModelOptions(config),
+    ...openRouterModelOptions(config),
     ...alibabaTextModelOptions(config.ALIBABA_TEXT_MODEL),
     ...openAITextModelOptions(),
     ...GEMINI_MAIN_TEXT_MODEL_OPTIONS,
@@ -232,6 +235,9 @@ export function textProviderConfigured(config: AppConfig, provider: TextModelSel
   if (provider === "deepinfra") {
     return Boolean(config.DEEPINFRA_API_KEY?.trim());
   }
+  if (provider === "openrouter") {
+    return Boolean(config.OPENROUTER_API_KEY?.trim());
+  }
   if (provider === "gemini") {
     return Boolean(config.GEMINI_API_KEY?.trim());
   }
@@ -268,6 +274,10 @@ function deepSeekModelOptions(config: AppConfig): TextModelOption[] {
 
 function deepInfraModelOptions(config: AppConfig): TextModelOption[] {
   return config.DEEPINFRA_API_KEY ? deepInfraTextModelOptions(config.DEEPINFRA_MODEL) : [];
+}
+
+function openRouterModelOptions(config: AppConfig): TextModelOption[] {
+  return config.OPENROUTER_API_KEY ? openRouterTextModelOptions() : [];
 }
 
 function localTextModelOptions(config: AppConfig): TextModelOption[] {
@@ -542,6 +552,15 @@ export function createTextModelAdapter(config: AppConfig, selection: TextModelSe
       apiKey: config.DEEPINFRA_API_KEY,
       baseURL: config.DEEPINFRA_BASE_URL,
       model: normalizeDeepInfraTextModel(selection.model),
+      thinkingEnabled: selection.thinkingEnabled,
+      thinkingEffort: selection.thinkingEffort
+    });
+  }
+  if (selection.provider === "openrouter") {
+    return new OpenRouterAdapter({
+      apiKey: config.OPENROUTER_API_KEY,
+      baseURL: config.OPENROUTER_BASE_URL,
+      model: selection.model,
       thinkingEnabled: selection.thinkingEnabled,
       thinkingEffort: selection.thinkingEffort
     });
