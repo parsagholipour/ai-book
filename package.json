@@ -21,6 +21,7 @@
     "covers:preview": "tsx scripts/preview-cover-designs.ts",
     "render:fixtures": "tsx scripts/render-book-fixtures.ts",
     "billing:audit-duplicates": "tsx scripts/audit-duplicate-generation-charges.ts",
+    "anti-slop:replay": "tsx scripts/replay-anti-slop-calibration.ts",
     "db:generate": "pnpm --filter @book-maker/db prisma generate",
     "db:migrate": "pnpm --filter @book-maker/db prisma migrate dev",
     "db:deploy": "pnpm --filter @book-maker/db prisma migrate deploy",

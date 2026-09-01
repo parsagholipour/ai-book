@@ -4,8 +4,10 @@ import type { ManuscriptReviewPack } from "./manuscriptReviewPacks.js";
 import {
   CORROBORATED_STRUCTURAL_DUPLICATION,
   corroborateStructuralReview,
+  structuralClusterFromIssue,
   StructuralReviewValidationError,
   tryValidateStructuralReviewResult,
+  unresolvedStructuralClusters,
   validateStructuralReviewResult,
   type StructuralReviewCluster
 } from "./manuscriptStructuralReview.js";
@@ -204,5 +206,43 @@ describe("corroborateStructuralReview", () => {
         candidateFindings: []
       })
     ).toEqual([]);
+  });
+
+  it("names canonical and duplicate pages on the corroborated issue", () => {
+    const issues = corroborateStructuralReview({
+      result: { clusters: [cluster()] },
+      packs: [pack],
+      candidateFindings: [candidate]
+    });
+    expect(issues[0]?.cluster).toEqual({ canonicalPageIndex: 1, duplicatePageIndexes: [2, 3] });
+    expect(unresolvedStructuralClusters(issues)).toEqual([
+      {
+        code: CORROBORATED_STRUCTURAL_DUPLICATION,
+        severity: "error",
+        canonicalPageIndex: 1,
+        duplicatePageIndexes: [2, 3]
+      }
+    ]);
+  });
+});
+
+describe("structuralClusterFromIssue", () => {
+  it("recovers canonical vs duplicates from a stored Phase 04 issue that only has evidence", () => {
+    const issue = manuscriptFinding({
+      code: CORROBORATED_STRUCTURAL_DUPLICATION,
+      severity: "error",
+      source: "model",
+      message: "Page 1 is the strongest treatment; pages 2, 3 repeat its subject.",
+      guidance: "Review the canonical page and the duplicates in Edit Mode.",
+      affectedPageIndexes: [1, 2, 3],
+      evidence: [
+        { pageIndex: 1, excerpt: "Cubical chert weights" },
+        { pageIndex: 2, excerpt: "The 13.63 gram unit" }
+      ]
+    });
+    expect(structuralClusterFromIssue(issue)).toEqual({
+      canonicalPageIndex: 1,
+      duplicatePageIndexes: [2, 3]
+    });
   });
 });

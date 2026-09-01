@@ -1,7 +1,9 @@
 import { z } from "zod";
 import {
   manuscriptFinding,
-  type ManuscriptQualityIssue
+  parseManuscriptQualityIssueCluster,
+  type ManuscriptQualityIssue,
+  type ManuscriptQualityIssueCluster
 } from "./manuscriptQualityIssue.js";
 import type { ManuscriptReviewPack } from "./manuscriptReviewPacks.js";
 
@@ -215,11 +217,66 @@ export function corroborateStructuralReview(options: {
         evidence: [
           { pageIndex: cluster.canonicalPageIndex, excerpt: cluster.repeatedSubject },
           { pageIndex: duplicates[0]!, excerpt: cluster.repeatedEvidence }
-        ]
+        ],
+        cluster: {
+          canonicalPageIndex: cluster.canonicalPageIndex,
+          duplicatePageIndexes: duplicates
+        }
       })
     );
   }
   return issues;
+}
+
+/**
+ * Canonical vs duplicate pages for an unresolved cluster. Prefers the
+ * structured field written at corroboration; recovers the same split from
+ * stored Phase 04 reports that only named the canonical page in evidence[0].
+ */
+export function structuralClusterFromIssue(
+  issue: Pick<ManuscriptQualityIssue, "code" | "affectedPageIndexes" | "cluster" | "evidence">
+): ManuscriptQualityIssueCluster | undefined {
+  if (issue.cluster) {
+    return parseManuscriptQualityIssueCluster(issue.cluster);
+  }
+  if (issue.code !== CORROBORATED_STRUCTURAL_DUPLICATION) {
+    return undefined;
+  }
+  const canonicalPageIndex = issue.evidence?.[0]?.pageIndex;
+  if (canonicalPageIndex === undefined || !Number.isInteger(canonicalPageIndex) || canonicalPageIndex <= 0) {
+    return undefined;
+  }
+  const duplicatePageIndexes = [
+    ...new Set(issue.affectedPageIndexes.filter((index) => index !== canonicalPageIndex))
+  ].sort((left, right) => left - right);
+  if (duplicatePageIndexes.length < 1) {
+    return undefined;
+  }
+  return { canonicalPageIndex, duplicatePageIndexes };
+}
+
+export function unresolvedStructuralClusters(
+  issues: readonly ManuscriptQualityIssue[]
+): Array<{
+  code: string;
+  severity: ManuscriptQualityIssue["severity"];
+  canonicalPageIndex: number;
+  duplicatePageIndexes: number[];
+}> {
+  return issues.flatMap((issue) => {
+    const cluster = structuralClusterFromIssue(issue);
+    if (!cluster) {
+      return [];
+    }
+    return [
+      {
+        code: issue.code,
+        severity: issue.severity,
+        canonicalPageIndex: cluster.canonicalPageIndex,
+        duplicatePageIndexes: cluster.duplicatePageIndexes
+      }
+    ];
+  });
 }
 
 export function structuralReviewBudgetExceededIssue(

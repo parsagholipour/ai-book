@@ -3,9 +3,11 @@ import { manuscriptFinding, type ManuscriptQualityIssue } from "./manuscriptQual
 import {
   DEFAULT_MANUSCRIPT_REVIEW_PACK_LIMITS,
   MANUSCRIPT_REVIEW_MAX_CALLS,
+  MANUSCRIPT_REVIEW_MAX_OUTPUT_TOKENS,
   MANUSCRIPT_REVIEW_PACK_MAX_PAGES,
   MANUSCRIPT_REVIEW_PACK_MAX_PROSE_CHARS,
   MANUSCRIPT_REVIEW_PACKS_PER_CALL,
+  MANUSCRIPT_REVIEW_TEMPERATURE,
   buildManuscriptReviewPacks,
   groupPacksForCalls,
   selectManuscriptReviewPacks,
@@ -119,6 +121,8 @@ describe("buildManuscriptReviewPacks", () => {
 
     const selection = selectManuscriptReviewPacks(pages, findings);
     expect(MANUSCRIPT_REVIEW_PACKS_PER_CALL * MANUSCRIPT_REVIEW_MAX_CALLS).toBe(6);
+    expect(MANUSCRIPT_REVIEW_MAX_OUTPUT_TOKENS).toBe(1800);
+    expect(MANUSCRIPT_REVIEW_TEMPERATURE).toBe(0);
     expect(selection.packs).toHaveLength(6);
     expect(selection.packs[0]?.wouldBlock).toBe(true);
     expect(selection.packs[0]?.pageIndexes).toEqual([13, 14]);

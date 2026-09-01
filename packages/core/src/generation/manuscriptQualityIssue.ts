@@ -18,6 +18,11 @@ export type ManuscriptQualityIssueEvidence = {
   excerpt: string;
 };
 
+export type ManuscriptQualityIssueCluster = {
+  canonicalPageIndex: number;
+  duplicatePageIndexes: number[];
+};
+
 export type ManuscriptQualityIssue = {
   code: string;
   severity: ManuscriptQualitySeverity;
@@ -27,6 +32,7 @@ export type ManuscriptQualityIssue = {
   affectedPageIndexes: number[];
   metrics?: ManuscriptQualityIssueMetrics;
   evidence?: ManuscriptQualityIssueEvidence[];
+  cluster?: ManuscriptQualityIssueCluster;
 };
 
 export type ManuscriptQualityFindingDiagnostic = {
@@ -72,7 +78,42 @@ export type ManuscriptFindingInput = {
   source?: ManuscriptQualitySource;
   metrics?: ManuscriptQualityIssueMetrics;
   evidence?: ManuscriptQualityIssueEvidence[];
+  cluster?: ManuscriptQualityIssueCluster;
 };
+
+export function parseManuscriptQualityIssueCluster(
+  value: unknown
+): ManuscriptQualityIssueCluster | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  if (!Number.isInteger(record.canonicalPageIndex) || Number(record.canonicalPageIndex) <= 0) {
+    return undefined;
+  }
+  if (!Array.isArray(record.duplicatePageIndexes)) {
+    return undefined;
+  }
+  const canonicalPageIndex = Number(record.canonicalPageIndex);
+  const duplicatePageIndexes = [
+    ...new Set(
+      record.duplicatePageIndexes.filter(
+        (index): index is number => Number.isInteger(index) && Number(index) > 0 && Number(index) !== canonicalPageIndex
+      )
+    )
+  ].sort((left, right) => left - right);
+  if (duplicatePageIndexes.length < 1) {
+    return undefined;
+  }
+  return { canonicalPageIndex, duplicatePageIndexes };
+}
+
+export function optionalIssueCluster(
+  value: unknown
+): { cluster: ManuscriptQualityIssueCluster } | Record<string, never> {
+  const cluster = parseManuscriptQualityIssueCluster(value);
+  return cluster ? { cluster } : {};
+}
 
 export function manuscriptFinding(input: ManuscriptFindingInput): ManuscriptQualityIssue {
   return {
@@ -83,7 +124,8 @@ export function manuscriptFinding(input: ManuscriptFindingInput): ManuscriptQual
     guidance: input.guidance,
     affectedPageIndexes: input.affectedPageIndexes,
     ...(input.metrics ? { metrics: input.metrics } : {}),
-    ...(input.evidence && input.evidence.length > 0 ? { evidence: input.evidence } : {})
+    ...(input.evidence && input.evidence.length > 0 ? { evidence: input.evidence } : {}),
+    ...optionalIssueCluster(input.cluster)
   };
 }
 
@@ -92,7 +134,7 @@ export function manuscriptError(
   message: string,
   guidance: string,
   affectedPageIndexes: number[],
-  extras?: Pick<ManuscriptFindingInput, "metrics" | "evidence">
+  extras?: Pick<ManuscriptFindingInput, "metrics" | "evidence" | "cluster">
 ): ManuscriptQualityIssue {
   return manuscriptFinding({
     code,
@@ -109,7 +151,7 @@ export function manuscriptWarning(
   message: string,
   guidance: string,
   affectedPageIndexes: number[],
-  extras?: Pick<ManuscriptFindingInput, "metrics" | "evidence">
+  extras?: Pick<ManuscriptFindingInput, "metrics" | "evidence" | "cluster">
 ): ManuscriptQualityIssue {
   return manuscriptFinding({
     code,

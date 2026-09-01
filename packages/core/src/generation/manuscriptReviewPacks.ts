@@ -18,6 +18,8 @@ export const MANUSCRIPT_REVIEW_PACKS_PER_CALL = 3;
 export const MANUSCRIPT_REVIEW_MAX_CALLS = 2;
 export const MANUSCRIPT_REVIEW_PACK_MAX_PROSE_CHARS = 4_000;
 export const MANUSCRIPT_REVIEW_PACK_MAX_SUMMARY_CHARS = 280;
+export const MANUSCRIPT_REVIEW_MAX_OUTPUT_TOKENS = 1_800;
+export const MANUSCRIPT_REVIEW_TEMPERATURE = 0;
 
 export type ManuscriptReviewPackLimits = {
   maxPagesPerPack: number;

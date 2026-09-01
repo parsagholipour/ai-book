@@ -1,4 +1,10 @@
-import { loadConfig, safePathPart, type JobStep } from "@book-maker/core";
+import {
+  loadConfig,
+  parseManuscriptQualityIssueCluster,
+  safePathPart,
+  structuralClusterFromIssue,
+  type JobStep
+} from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -101,6 +107,10 @@ export type ProjectQualityStatus = {
       pageIndex: number;
       excerpt: string;
     }>;
+    cluster?: {
+      canonicalPageIndex: number;
+      duplicatePageIndexes: number[];
+    };
   }>;
   affectedPageIndexes: number[];
   diagnostics?: {
@@ -320,6 +330,7 @@ export function normalizeProjectQuality(value: unknown): ProjectQualityStatus {
     const affectedPageIndexes = Array.isArray(issue.affectedPageIndexes)
       ? issue.affectedPageIndexes.filter((index): index is number => Number.isInteger(index) && Number(index) > 0)
       : [];
+    const evidenceFields = optionalQualityEvidence(issue.evidence);
     return [{
       code: issue.code,
       severity,
@@ -328,7 +339,13 @@ export function normalizeProjectQuality(value: unknown): ProjectQualityStatus {
       guidance: typeof issue.guidance === "string" ? issue.guidance : "Review the affected pages.",
       affectedPageIndexes,
       ...optionalQualityMetrics(issue.metrics),
-      ...optionalQualityEvidence(issue.evidence)
+      ...evidenceFields,
+      ...optionalQualityCluster({
+        code: issue.code,
+        affectedPageIndexes,
+        ...evidenceFields,
+        cluster: issue.cluster
+      })
     }];
   });
   const affectedPageIndexes = [
@@ -385,6 +402,22 @@ function optionalQualityEvidence(
     return [{ pageIndex: Number(record.pageIndex), excerpt: record.excerpt }];
   });
   return evidence.length > 0 ? { evidence } : {};
+}
+
+function optionalQualityCluster(issue: {
+  code: string;
+  affectedPageIndexes: number[];
+  evidence?: Array<{ pageIndex: number; excerpt: string }>;
+  cluster?: unknown;
+}): { cluster: NonNullable<ProjectQualityStatus["issues"][number]["cluster"]> } | Record<string, never> {
+  const stored = parseManuscriptQualityIssueCluster(issue.cluster);
+  const cluster = structuralClusterFromIssue({
+    code: issue.code,
+    affectedPageIndexes: issue.affectedPageIndexes,
+    ...(issue.evidence ? { evidence: issue.evidence } : {}),
+    ...(stored ? { cluster: stored } : {})
+  });
+  return cluster ? { cluster } : {};
 }
 
 function optionalQualityDiagnostics(

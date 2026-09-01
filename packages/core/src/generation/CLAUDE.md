@@ -70,6 +70,12 @@ holds the event loop open and vitest will never exit.
   coverage, generic assignment rejection, collision handling, deterministic audits, or publication
   grading — those live on `MANDATORY_INTEGRITY_CHECKS` and still run when every polish checkbox is
   off. `BOOK_MAKER_PRODUCTION_MAP_INTEGRITY=shadow` is a rollout switch, not a quality revision.
+  Phase 06 did **not** remove it: live precision gates are still unmeasured. Page-local overlap
+  (`pageOverlap.ts`, used by `pagesLocalQa` and `pageBeatDedupDetect`) and Smart Unslop are still
+  in use after the manuscript structural audit; they are not dead copies of
+  `runDeterministicManuscriptChecks`. Detector versions stay on reports:
+  `manuscript-structural-audit-v1`, `production-map-audit-v1`, `style-contract-v1`. Offline
+  evaluation of the distilled corpus is `pnpm anti-slop:replay` (never `storage/` or live books).
 
 ## Page 1's opening contract
 

@@ -29,7 +29,8 @@ import {
  * Callers get a complete, mutually distinct map or a typed throw. Progress
  * writes may degrade; detection, merge, and unresolved blocking findings may
  * not. `BOOK_MAKER_PRODUCTION_MAP_INTEGRITY=shadow` logs `would_block` and
- * keeps the prior draft-anyway behavior.
+ * keeps the prior draft-anyway behavior. Phase 06 did not remove this env:
+ * live precision gates are still unmeasured.
  */
 
 export const PRODUCTION_MAP_INTEGRITY_ENV = "BOOK_MAKER_PRODUCTION_MAP_INTEGRITY";

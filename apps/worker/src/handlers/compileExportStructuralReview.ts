@@ -3,6 +3,8 @@ import {
   generateJsonWithRetry,
   groupPacksForCalls,
   isStructuralReviewCandidate,
+  MANUSCRIPT_REVIEW_MAX_OUTPUT_TOKENS,
+  MANUSCRIPT_REVIEW_TEMPERATURE,
   MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE,
   manuscriptPromptStyleFields,
   selectManuscriptReviewPacks,
@@ -17,7 +19,7 @@ import {
 } from "@book-maker/core";
 import { isStopRequestedError, type ExportPageForRepair } from "../runtime/jobTypes.js";
 
-const STRUCTURAL_REVIEW_MAX_TOKENS = 1800;
+const STRUCTURAL_REVIEW_MAX_TOKENS = MANUSCRIPT_REVIEW_MAX_OUTPUT_TOKENS;
 
 export async function reviewManuscriptStructure(options: {
   pages: ExportPageForRepair[];
@@ -60,7 +62,7 @@ async function adjudicatePacks(options: {
   try {
     const result = await generateJsonWithRetry(options.textModel, {
       schema: structuralReviewResultSchema,
-      temperature: 0,
+      temperature: MANUSCRIPT_REVIEW_TEMPERATURE,
       maxTokens: STRUCTURAL_REVIEW_MAX_TOKENS,
       purpose: MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE,
       projectId: options.projectId,

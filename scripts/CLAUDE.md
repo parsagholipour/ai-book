@@ -64,6 +64,13 @@ found only by listing this directory.
 Anything that launches Chromium must go through the shared browser pool and must call
 `closeSharedBrowser()` when done, or the process will not exit.
 
+## Offline evaluation
+
+- `replay-anti-slop-calibration.ts` (`pnpm anti-slop:replay`) — distilled-fixture replay of the
+  anti-slop corpus (`replayAntiSlopCalibration`). No `storage/`, no live books. Exit 1 if a
+  fixture fails. Full manuscripts stay a local caller of `replayDeterministicManuscriptChecks`.
+
+
 ## Ops (all `--apply`-gated; they default to a dry run)
 
 - `audit-duplicate-generation-charges.ts` (`pnpm billing:audit-duplicates`) — duplicate credit
