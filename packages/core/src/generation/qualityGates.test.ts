@@ -71,17 +71,23 @@ describe("qualityFeatureEnabled", () => {
     expect(QUALITY_FEATURES.find((feature) => feature.id === "smartUnslop")).toEqual({
       id: "smartUnslop",
       label: "Smart unslop",
-      summary: "Finds significant deterministic slop candidates and, when Page QA rewrites is on, asks for a contextual minimal rewrite or an unchanged page."
+      summary: "Finds significant deterministic slop candidates and, when Page QA rewrites is on, asks for a contextual minimal rewrite or an unchanged page.",
+      pipelines: ["per-page", "composed"],
+      stage: "Page checks"
     });
     expect(QUALITY_FEATURES.find((feature) => feature.id === "compactPageDraftContext")).toEqual({
       id: "compactPageDraftContext",
       label: "Compact page-draft context",
-      summary: "Drafts from indexed summaries plus one bounded nearest-page handoff instead of five page excerpts."
+      summary: "Drafts from indexed summaries plus one bounded nearest-page handoff instead of five page excerpts.",
+      pipelines: ["per-page"],
+      stage: "Page draft"
     });
     expect(QUALITY_FEATURES.find((feature) => feature.id === "beatDedup")).toEqual({
       id: "beatDedup",
       label: "Page-beat rewrite (optional polish)",
-      summary: "One cheap rewrite call when a beat collision is found. Map integrity (coverage, generics, collisions) always runs and is not this checkbox."
+      summary: "One cheap rewrite call when a beat collision is found. Map integrity (coverage, generics, collisions) always runs and is not this checkbox.",
+      pipelines: ["per-page"],
+      stage: "Page map"
     });
   });
 

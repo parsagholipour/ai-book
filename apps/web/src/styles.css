@@ -3448,3 +3448,241 @@ figcaption {
   outline-offset: 2px;
   box-shadow: var(--interaction-focus-ring);
 }
+
+/* Pipeline awareness on the Quality tab and the project workspace */
+
+.pipeline-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 1px 8px;
+  border: 1px solid #bfd0c6;
+  color: #3f5a4d;
+  background: #eef5f0;
+  white-space: nowrap;
+}
+
+.pipeline-chip-composed {
+  border-color: #b9c6e8;
+  color: #2f4a8a;
+  background: #eef1fb;
+}
+
+.pipeline-chip-per-page {
+  border-color: #e2d3c0;
+  color: #8a4b2d;
+  background: #fbf6f0;
+}
+
+.pipeline-chip-planning {
+  border-color: #cfd6d2;
+  color: #4f5c56;
+  background: #f3f5f4;
+}
+
+.quality-gate-stage {
+  font-size: 11px;
+  font-weight: 600;
+  color: #65706b;
+  border: 1px solid #d7e0da;
+  border-radius: 6px;
+  padding: 1px 6px;
+}
+
+.quality-gate-group {
+  margin-top: 18px;
+}
+
+.quality-gate-group > h4 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.quality-gate-group > p {
+  margin: 0 0 10px;
+}
+
+.quality-gate-row.is-elsewhere {
+  opacity: 0.72;
+}
+
+.generation-pipeline-panel .pipeline-routing-table td.pipeline-cell {
+  font-size: 12px;
+}
+
+.pipeline-cell-composed {
+  background: #eef1fb;
+}
+
+.pipeline-cell-per-page {
+  background: #fbf6f0;
+}
+
+.pipeline-strategies {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.pipeline-strategy {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid #d7e0da;
+  border-radius: 10px;
+  background: #fbfdfb;
+}
+
+.pipeline-strategy code,
+.pipeline-stage code,
+.composition-forms code,
+.composition-detail code,
+.composition-strategy code {
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: #eef2ef;
+  margin-right: 4px;
+}
+
+.pipeline-stage-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.pipeline-stage-column h4 {
+  margin: 0 0 8px;
+}
+
+.pipeline-stage-column ol {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 10px;
+}
+
+.pipeline-stage {
+  border: 1px solid #d7e0da;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fbfdfb;
+}
+
+.pipeline-stage small {
+  display: block;
+  margin: 4px 0 6px;
+  color: #65706b;
+  line-height: 1.45;
+}
+
+.pipeline-stage-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 12px;
+  color: #4f5c56;
+  margin-top: 4px;
+}
+
+.pipeline-stage-meta b {
+  margin-right: 4px;
+}
+
+.pipeline-gate-chip {
+  display: inline-block;
+  font-size: 11px;
+  border: 1px solid #bfd0c6;
+  border-radius: 999px;
+  padding: 0 7px;
+  margin: 2px 4px 2px 0;
+  background: #f8fbf7;
+}
+
+.composition-section .composition-strategy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0 0 10px;
+}
+
+.composition-warning {
+  display: block;
+  width: 100%;
+  color: #8a4b2d;
+  font-size: 13px;
+}
+
+.composition-stance {
+  border: 1px solid #b9c6e8;
+  border-radius: 10px;
+  background: #f5f7fd;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+
+.composition-stance h4 {
+  margin: 0 0 8px;
+}
+
+.composition-stance p,
+.composition-stance div {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.composition-stance ul,
+.composition-detail ul,
+.composition-detail ol {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.composition-voice-sample {
+  margin: 8px 0 0;
+  padding: 10px 14px;
+  border-left: 3px solid #b9c6e8;
+  background: #ffffff;
+  white-space: pre-wrap;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.composition-table tbody tr {
+  cursor: pointer;
+}
+
+.composition-table tbody tr.is-open {
+  background: #f5f7fd;
+}
+
+.composition-forms {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.composition-detail {
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.composition-detail p {
+  margin: 4px 0;
+}
+
+.composition-detail small {
+  display: block;
+  color: #65706b;
+}

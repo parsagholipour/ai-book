@@ -109,6 +109,15 @@ describe("isSpeechProviderFallbackError", () => {
 });
 
 describe("isTextProviderFallbackError", () => {
+  it("falls back when a provider's input filter refuses the chapter", () => {
+    // Alibaba, verbatim, on a history chapter about genocide (composed-13-fast).
+    const refused = new Error(
+      '400 data: {"error":{"code":"data_inspection_failed","param":null,"message":"Input text data may contain inappropriate content.","type":"data_inspection_failed"}}'
+    );
+    expect(isTextProviderFallbackError(refused)).toBe(true);
+    expect(isTextProviderFallbackError(new ProviderHttpError("bad request", { status: 400 }))).toBe(false);
+  });
+
   it("allows availability failures but not deterministic request or output failures", () => {
     expect(isTextProviderFallbackError(new ProviderHttpError("provider unavailable", { status: 503 }))).toBe(true);
     expect(isTextProviderFallbackError(new ProviderHttpError("bad request", { status: 400 }))).toBe(false);

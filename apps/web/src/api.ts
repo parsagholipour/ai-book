@@ -373,9 +373,33 @@ export type BookPlan = {
     coverPrompt?: string;
     pageRules: string[];
   };
+  /** The author the composed-chapters pipeline writes as; absent on older plans until the pass writes one. */
+  authorStance?: unknown;
+};
+
+/** What the router chose for a project, resolved server-side because the router lives in core's barrel. */
+export type ResolvedGenerationStrategy = {
+  id: string;
+  label: string;
+  executionMode: string;
+  pipeline: "per-page" | "composed";
+  requestedId: string;
+  autoSelected: boolean;
+  switched: boolean;
+  warnings: string[];
 };
 
 export type ProjectDetails = Project & {
+  resolvedStrategy?: ResolvedGenerationStrategy;
+  chapters?: Array<{
+    id: string;
+    index: number;
+    title: string;
+    summary: string;
+    targetPages: number;
+    /** The derived brief; for composed books it carries `composition` and `report` beside the page beats. */
+    productionBrief?: unknown;
+  }>;
   pages: Array<{
     id: string;
     index: number;

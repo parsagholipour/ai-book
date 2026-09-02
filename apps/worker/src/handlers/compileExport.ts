@@ -62,6 +62,7 @@ import {
   markdownOpensOnCoverSheet,
   persistablePdfPageMapAfterRender,
   publicAssetUrl,
+  strategyComposesChapters,
   readerChapterFingerprint,
   resolvePublicImageUrl,
   normalizedCompilePublicationPolicy,
@@ -210,10 +211,15 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   // writes no status, and its row was created with `ownsQualityVerdict` false —
   // which is the column the API reads the book's verdict off — so the report
   // below stays on this job for an operator and never reaches the app.
+  // A composed book was read whole and line-edited chapter by chapter before it
+  // reached this compile; the per-page repair loop would re-template pages the
+  // editor deliberately left ending mid-argument. The deterministic manuscript
+  // audit and the targeted structural review below still run for it.
   const runFinalReview =
     !skipFinalReview &&
     !detachedRepair &&
     !presentationOnly &&
+    !strategyComposesChapters(strategy) &&
     (input.mediaSettings.finalReview || automaticFinalReview);
   if (runFinalReview) {
     await advanceJobStep(generationJobId, "qa", 25);

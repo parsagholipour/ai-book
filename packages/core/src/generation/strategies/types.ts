@@ -32,7 +32,8 @@ export type BookGenerationExecutionMode =
   | "whole-book"
   | "chapter-whole-pass"
   | "batch-window"
-  | "draft-then-polish";
+  | "draft-then-polish"
+  | "composed-chapters";
 
 export type BookGenerationStrategy = {
   readonly id: string;

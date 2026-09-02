@@ -67,6 +67,12 @@ export const MECHANICAL_TEXT_PURPOSES: ReadonlySet<string> = new Set([
   "audit-page-style",
   "critique-page-map",
   "dedupe-page-beats",
+  // Page titles, summaries and continuity notes for a chapter the composed-
+  // chapters pass has already written and paginated (`composedChapter.ts`).
+  "describe-pages",
+  // A forced choice between two drafts of one chapter (`chapterJudge.ts`); the
+  // pass hands it a fast-judgment adapter from another model family anyway.
+  "judge-chapter-drafts",
   // The copyright-safe image-prompt rewrite
   // (`generation/copyrightSafeImagePrompt.ts`): a strict-schema find-and-replace
   // that swaps protected names for generic descriptions and is forbidden from

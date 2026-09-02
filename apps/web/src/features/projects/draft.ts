@@ -258,6 +258,18 @@ export const DEFAULT_GENERATION_STRATEGIES: GenerationStrategyOption[] = [
     label: "Research map draft & polish",
     strengthScore: 10,
     recommendedPageRange: { min: 12, max: 80 }
+  },
+  {
+    id: "composed-chapters",
+    label: "Composed chapters",
+    strengthScore: 10,
+    recommendedPageRange: { min: 12, max: 600 }
+  },
+  {
+    id: "composed-chapters-research",
+    label: "Composed chapters (research-grounded)",
+    strengthScore: 10,
+    recommendedPageRange: { min: 12, max: 600 }
   }
 ];
 

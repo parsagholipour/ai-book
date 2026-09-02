@@ -1,6 +1,9 @@
+import { BOOK_CATEGORIES, type BookCategory } from "../../categories.js";
 import type { CreateProjectInput } from "../../schemas/book.js";
 import {
   CHAPTERED_SEQUENTIAL_STRATEGY_ID,
+  COMPOSED_CHAPTERS_RESEARCH_STRATEGY_ID,
+  COMPOSED_CHAPTERS_STRATEGY_ID,
   DRAFT_THEN_POLISH_STRATEGY_ID,
   PAGE_MAP_SEQUENTIAL_STRATEGY_ID,
   RESEARCH_GROUNDED_STRATEGY_ID,
@@ -46,6 +49,12 @@ export function autoStrategyIdForInput(input: CreateProjectInput): BookGeneratio
   }
   if (pages < 12) {
     return DRAFT_THEN_POLISH_STRATEGY_ID;
+  }
+  // The chapter is the unit of composition for every long book but a picture
+  // book, whose pages are real units with a picture each. See
+  // `.scratch/composed-chapters/spec.md` for the measurements behind this.
+  if (input.category !== "KIDS") {
+    return factual ? COMPOSED_CHAPTERS_RESEARCH_STRATEGY_ID : COMPOSED_CHAPTERS_STRATEGY_ID;
   }
   if (pages <= 40) {
     return factual ? RESEARCH_MAP_DRAFT_POLISH_STRATEGY_ID : DRAFT_THEN_POLISH_STRATEGY_ID;
@@ -100,5 +109,48 @@ export function resolveBookGenerationStrategy(input: CreateProjectInput): Resolv
     warnings: [
       `Strategy "${strategy.label}" supports ${min}-${max} pages but this book targets ${input.targetPages}; switched to "${fallback.label}".`
     ]
+  };
+}
+
+
+/** The page counts the routing matrix is sampled at: one inside each band the ladder above distinguishes. */
+export const ROUTING_MATRIX_PAGE_BANDS = [4, 8, 20, 60, 100, 160] as const;
+
+export type StrategyRoutingMatrix = {
+  pageBands: readonly number[];
+  rows: Array<{ category: BookCategory; strategyIds: BookGenerationStrategyId[] }>;
+};
+
+/**
+ * What "Auto" resolves to for every category at every page band, sampled
+ * through the real router with a bare prompt, so the console can show the
+ * ladder rather than restate it. A prompt carrying research words can move a
+ * non-research category onto the research variant; that is the one thing the
+ * matrix cannot show.
+ */
+export function autoStrategyRoutingMatrix(): StrategyRoutingMatrix {
+  return {
+    pageBands: ROUTING_MATRIX_PAGE_BANDS,
+    rows: BOOK_CATEGORIES.map((category) => ({
+      category,
+      strategyIds: ROUTING_MATRIX_PAGE_BANDS.map((targetPages) =>
+        autoStrategyIdForInput({
+          prompt: "",
+          category,
+          targetPages,
+          complexity: 5,
+          temperature: 0.8,
+          language: "en",
+          mediaSettings: {
+            fullIllustrations: false,
+            illustrationCadence: "template-driven",
+            includeCover: true,
+            coverTemplate: "auto",
+            finalReview: true,
+            toneProfile: "neutral"
+          }
+        })
+      )
+    }))
   };
 }

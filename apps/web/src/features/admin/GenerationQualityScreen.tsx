@@ -30,9 +30,11 @@ import {
   type ServerEffortTier
 } from "./GenerationQualityControls.js";
 import { GenerationQualityIntegrityPanel } from "./GenerationQualityIntegrityPanel.js";
+import { GenerationPipelinePanel, readGenerationPipelines, type GenerationPipelines } from "./GenerationPipelinePanel.js";
+import { QualityGateGroups, groupFeatureRows } from "./GenerationQualityGateGroups.js";
 
 /** An id core describes, or one only the server knows about yet — see `featureRows`. */
-type ServerFeatureId = QualityFeatureId | (string & {});
+export type ServerFeatureId = QualityFeatureId | (string & {});
 
 /**
  * The whole map a save has to carry, keyed by the ids core actually compiles.
@@ -65,10 +67,14 @@ type QualitySavePatch = {
   note?: string;
 };
 
-type QualityFeature = {
+export type QualityFeature = {
   id: ServerFeatureId;
   label: string;
   summary: string;
+  /** The pipelines whose books this gate changes; absent from an older server. */
+  pipelines?: string[];
+  /** Where in the pipeline it fires; absent from an older server. */
+  stage?: string;
 };
 
 export type GenerationQuality = {
@@ -79,6 +85,8 @@ export type GenerationQuality = {
   modelOptions: GenerationTextModelOption[];
   usingCompiledDefaults: boolean;
   features: QualityFeature[];
+  /** Strategies, routing and stages; null from a server that predates them. */
+  pipelines?: GenerationPipelines | null;
   note: string | null;
   updatedBy: string | null;
   updatedAt: string | null;
@@ -109,6 +117,9 @@ export function GenerationQualityScreen() {
   }, []);
 
   const rows = useMemo(() => (state ? featureRows(state) : []), [state]);
+  const groups = useMemo(() => groupFeatureRows(rows), [rows]);
+  const pipelines = state?.pipelines ?? null;
+  const gateLabels = useMemo(() => new Map(rows.map((row) => [row.id, row.label])), [rows]);
 
   const claim = useMemo(() => {
     if (!state || !draft || !modelDraft || !pageReviewPromptModeDraft) {
@@ -276,30 +287,10 @@ export function GenerationQualityScreen() {
                 setSaved(null);
               }}
             />
-            <ul className="quality-gate-list">
-              {rows.map((feature) => {
-                const assigned = draft[feature.id] ?? [];
-                const off = assigned.length === 0;
-                return (
-                  <li key={feature.id} className={`quality-gate-row${off ? " is-off" : ""}`}>
-                    <div>
-                      <strong>
-                        {feature.label}
-                        {off ? <span className="quality-gate-off">Off</span> : null}
-                      </strong>
-                      <small>{feature.summary}</small>
-                    </div>
-                    <QualityTierFieldset
-                      label={feature.label}
-                      assigned={assigned}
-                      disabled={busy}
-                      onToggle={(tier) => toggle(feature.id, tier)}
-                    />
-                  </li>
-                );
-              })}
-            </ul>
+            <QualityGateGroups groups={groups} draft={draft} busy={busy} onToggle={toggle} />
           </section>
+
+          {pipelines ? <GenerationPipelinePanel pipelines={pipelines} gateLabels={gateLabels} /> : null}
 
           <section className="tool-panel safety-settings-card">
             <div className="panel-title">
@@ -652,6 +643,9 @@ export function readQualityHead(value: unknown): GenerationQuality | null {
     modelOptions,
     usingCompiledDefaults: value.usingCompiledDefaults === true,
     features,
+    // Omitted rather than null when the server sent none, so a head from an
+    // older replica reads back byte-for-byte as it always did.
+    ...(readGenerationPipelines(value.pipelines) ? { pipelines: readGenerationPipelines(value.pipelines) } : {}),
     note: readNullableText(value.note),
     updatedBy: readNullableText(value.updatedBy),
     updatedAt: readNullableText(value.updatedAt)
@@ -698,11 +692,20 @@ function readFeatureCopy(value: unknown): QualityFeature[] | null {
     if (!isRecord(entry)) {
       return null;
     }
-    const { id, label, summary } = entry;
+    const { id, label, summary, pipelines, stage } = entry;
     if (typeof id !== "string" || typeof label !== "string" || typeof summary !== "string") {
       return null;
     }
-    features.push({ id, label, summary });
+    const knownPipelines = Array.isArray(pipelines)
+      ? pipelines.filter((pipeline): pipeline is string => typeof pipeline === "string")
+      : undefined;
+    features.push({
+      id,
+      label,
+      summary,
+      ...(knownPipelines && knownPipelines.length > 0 ? { pipelines: knownPipelines } : {}),
+      ...(typeof stage === "string" && stage ? { stage } : {})
+    });
   }
   return features;
 }

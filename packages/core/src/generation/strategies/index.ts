@@ -7,6 +7,7 @@ import {
   researchGroundedStrategy,
   researchMapDraftPolishStrategy
 } from "./advanced.js";
+import { composedChaptersResearchStrategy, composedChaptersStrategy } from "./composed.js";
 import { DEFAULT_BOOK_GENERATION_STRATEGY_ID } from "./ids.js";
 import type { BookGenerationStrategy } from "./types.js";
 import { wholeBookSinglePassStrategy } from "./wholeBook.js";
@@ -21,6 +22,7 @@ export {
   researchMapDraftPolishStrategy
 } from "./advanced.js";
 export { chapteredBookGenerationStrategy } from "./chaptered.js";
+export { composedChaptersResearchStrategy, composedChaptersStrategy, strategyComposesChapters } from "./composed.js";
 export { wholeBookSinglePassStrategy } from "./wholeBook.js";
 export * from "./ids.js";
 export * from "./router.js";
@@ -33,7 +35,9 @@ export const bookGenerationStrategies = [
   batchWindowStrategy,
   draftThenPolishStrategy,
   researchGroundedStrategy,
-  researchMapDraftPolishStrategy
+  researchMapDraftPolishStrategy,
+  composedChaptersStrategy,
+  composedChaptersResearchStrategy
 ] as const satisfies readonly BookGenerationStrategy[];
 
 export function getBookGenerationStrategy(id: string = DEFAULT_BOOK_GENERATION_STRATEGY_ID): BookGenerationStrategy {

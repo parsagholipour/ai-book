@@ -194,6 +194,13 @@ export const PAGE_PROMPT_LEAK_PATTERNS: readonly RegExp[] = [
   /generation instructions/i,
   /production instructions/i,
   /do not mention ai/i,
+  // Source-packet language: a writer given research notes wrote "according
+  // to the research brief", "the figures supplied for this period" and "as
+  // preserved in the material for this discussion" (composed-22/23).
+  /\b(?:the )?research (?:brief|record|notes|dossier|packet)\b/i,
+  /\b(?:the )?(?:supplied|provided) (?:evidence|record|material|estimate|figures?|notes|sources?)\b/i,
+  /\b(?:evidence|record|material|estimates?|figures?) (?:supplied|provided) for\b/i,
+  /\bmaterial for this (?:discussion|chapter|book)\b/i,
   ...MODEL_SELF_REFERENCE_PATTERNS
 ].map(folded);
 

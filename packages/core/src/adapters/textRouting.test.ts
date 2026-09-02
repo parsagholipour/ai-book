@@ -49,7 +49,17 @@ const PROSE_LANE_PURPOSES: ReadonlySet<string> = new Set([
   "creation-attachment-digest",
   "detect-language",
   "chapter-research",
-  "plan-research"
+  "plan-research",
+  // The composed-chapters strategy: the stance, the form plan, a whole chapter
+  // and its line edit are the tier's prose work; the manuscript read judges
+  // prose at book length and takes the same lane on purpose.
+  "author-stance",
+  "plan-chapter-forms",
+  "compose-chapter",
+  "edit-chapter",
+  "detemplate-chapter",
+  "read-manuscript",
+  "cut-chapter"
 ]);
 
 /** Model-call purposes are identifier-shaped; `purpose` is also a page brief's own field, whose values are sentences. */

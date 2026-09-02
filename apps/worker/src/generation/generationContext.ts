@@ -219,11 +219,14 @@ export async function loadResearchNotesForGeneration(
         })
       : Promise.resolve([]),
     prisma.researchSource.findMany({
-      where: { projectId, url: { not: null } },
+      // With a chapter to match against, every row of the project is read:
+      // each chapter's query stored its own brief and sources, and a recency
+      // window over ~150 rows (with createMany's one timestamp) is arbitrary.
+      where: chapter ? { projectId } : { projectId, url: { not: null } },
       orderBy: { createdAt: "desc" },
       // Semantic hits may point beyond the recency window; load the URL-backed
       // identity set needed to validate those hits, then return only topK.
-      ...(semantic ? {} : { take })
+      ...(semantic || chapter ? {} : { take })
     })
   ]);
   // The Sources back matter can cite only rows with a real URL. Keep the
@@ -241,9 +244,29 @@ export async function loadResearchNotesForGeneration(
   }
 
   const chapterTerms = searchableTerms(`${chapter.title} ${chapter.summary} ${chapter.keyBeats.join(" ")}`);
-  const matching = sources
+  // A chapter's own query carries its title, so its rows outrank every other
+  // chapter's; within a rank the brief comes first, then by shared terms. Word
+  // overlap alone put three chapters' briefs ahead of chapter 1's own.
+  // Another chapter's brief is 900 words of another chapter; with a flat
+  // bonus every brief outranked the chapter's own sources and each writer
+  // read sixteen briefs and no sources (composed-22, 14.7k words a payload).
+  const isBrief = (source: (typeof storedSources)[number]) => source.title === "Research brief";
+  const score = (source: (typeof storedSources)[number]): number => {
+    const own = source.query.includes(chapter.title);
+    const terms = searchableTerms(`${source.query} ${source.title} ${source.summary}`);
+    let shared = 0;
+    for (const term of chapterTerms) if (terms.has(term)) shared += 1;
+    if (own) return 1000 + (isBrief(source) ? 100 : 0) + shared;
+    return isBrief(source) ? -1 : shared;
+  };
+  const matching = storedSources
     .filter((source) => hasSharedSearchTerm(chapterTerms, `${source.query} ${source.title} ${source.summary}`))
-    .map((source) => `${source.title}: ${source.summary}`);
+    .map((source) => ({ source, score: score(source) }))
+    .filter(({ score }) => score >= 0)
+    .sort((a, b) => b.score - a.score)
+    // The brief goes in untitled: titled "Research brief" it was cited in the
+    // prose ("according to the research brief", composed-22).
+    .map(({ source }) => (isBrief(source) ? source.summary : `${source.title}: ${source.summary}`));
   const general = notes.filter((note) => !matching.includes(note)).slice(0, 4);
   return [...matching, ...general].slice(0, strategy.researchDepth + 4);
 }

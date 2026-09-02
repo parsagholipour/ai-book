@@ -387,3 +387,16 @@ function streamResponse(parts: string[]): AsyncIterable<Record<string, unknown>>
     yield { type: "response.completed", response: textResponse(parts.join("")) };
   })();
 }
+
+
+import { promptCacheKey } from "./openai.js";
+
+describe("promptCacheKey", () => {
+  it("is the same for two calls that share a system prefix and differs when the prefix differs", () => {
+    const shared = "You are writing the book as its author. ".repeat(100);
+    const a = promptCacheKey([{ role: "system", content: `${shared} Now chapter 1.` }]);
+    const b = promptCacheKey([{ role: "system", content: `${shared} Now chapter 2.` }]);
+    expect(a).toBe(b);
+    expect(promptCacheKey([{ role: "system", content: "Another book entirely." }])).not.toBe(a);
+  });
+});

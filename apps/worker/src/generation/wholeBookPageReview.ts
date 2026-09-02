@@ -9,7 +9,9 @@ import {
   type CreateProjectInput,
   type PageQualityReport,
   type PriorPageContext,
-  type TextModelAdapter
+  type TextModelAdapter,
+  composedPageQualityReport,
+  strategyComposesChapters
 } from "@book-maker/core";
 
 export type ReviewedWholeBookPage = {
@@ -48,6 +50,9 @@ export async function reviewWholeBookDraftPages(options: {
         textModel: options.textModel
       }
     });
+    if (strategyComposesChapters(options.strategy)) {
+      report = composedPageQualityReport(report);
+    }
 
     if (!report.approved && quality.enabled("pageQaRewrite")) {
       await updateJobProgress(options.generationJobId, {

@@ -15,6 +15,7 @@ import { PlanSection } from "../planning/PlanSection.js";
 import { normalizePlanMessages } from "../planning/planMessages.js";
 import type { NormalizedPlanQuestion, QuestionResponse } from "../planning/planQuestions.js";
 import { PreviewsSection } from "../previews/PreviewsSection.js";
+import { CompositionSection } from "./CompositionSection.js";
 import { Metric } from "../shared/Metric.js";
 import { formatLiveTokenCount } from "../shared/formatters.js";
 import { VoiceCallBar, VoiceCharactersPanel, VoiceRoomBar } from "../voice/VoiceComponents.js";
@@ -223,6 +224,8 @@ export function ProjectWorkspace(props: {
               onResumeProject={props.onResumeProject}
             />
           </div>
+
+          <CompositionSection details={props.selectedDetails} />
 
           <PreviewsSection
             selectedProject={selectedProject}

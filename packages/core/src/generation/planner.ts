@@ -21,6 +21,7 @@ import {
   type ToneProfile
 } from "../schemas/book.js";
 import { mediaSettingsMobileRecord } from "../schemas/jsonCoercion.js";
+import { PLANNER_AUTHOR_STANCE_GUIDANCE } from "./authorStance.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import { libraryCharactersFromMediaSettings } from "./libraryCharacters.js";
 import { planLibraryCharacterGuidance, reconcilePlanLibraryCharacters } from "./planLibraryCharacters.js";
@@ -103,6 +104,9 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
             "Return the plan fields at the JSON root; do not nest them under plan, data, or result.",
             "Plan real book chapters, not one titled chapter or section per generated page.",
             `The sum of chapter targetPages must equal exactly ${options.input.targetPages}.`,
+            ...(options.input.targetPages >= 40
+              ? ["Give each chapter six to nine pages: a chapter is written as one piece, and one twelve-page chapter comes back thinner than two of six."]
+              : []),
             "Do not create more chapters than targetPages, because every chapter must contain at least one page.",
             "For factual, scientific, historical, or research-grounded books, build the plan around source-backed claims and explicit uncertainty; do not invent studies, journals, institutes, experts, statistics, citations, or numeric findings.",
             "Treat researchContext as input-only evidence. Use it to ground the plan, but do not include a researchNotes field or reproduce its source records in your response; the server attaches them after planning.",
@@ -122,6 +126,7 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
             ...kidsReadingGuidanceLines(options.input),
             ...plannerToneGuidance(toneProfile),
             ...PLANNER_STYLE_CONTRACT_GUIDANCE,
+            ...PLANNER_AUTHOR_STANCE_GUIDANCE,
             // Last deliberately. Three earlier rules argue against a saved
             // character, each in a way recency decides: "write all book-facing
             // strings in <language>" (which translated the name), "for every
@@ -209,9 +214,7 @@ export function ensurePlanStyleContract(
     voiceGuide === plan.voiceGuide && antiAiRules === plan.antiAiRules
       ? plan
       : { ...plan, voiceGuide, antiAiRules };
-  return applyPlanStyleContract(candidate, {
-    ...(options.input ? { input: options.input, userPrompt: options.input.prompt } : {})
-  });
+  return applyPlanStyleContract(candidate, options.input ? { input: options.input, userPrompt: options.input.prompt } : {});
 }
 
 function appendUniqueRules(current: string[], additions: string[]): string[] {
@@ -256,6 +259,8 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
               BYLINE_IS_TYPESET_RULE,
               "For recurring characters, preserve or add concrete visualRules with stable silhouette, face, outfit, color palette, and distinctive details; illustration prompts must use exact recurring character names whenever those characters appear.",
               "Preserve or improve openingHook: one or two sentences committing to the concrete scene, claim, image, or question page 1 opens with - never meta framing like 'This book will...'.",
+              "Preserve authorStance unless the requested changes alter what the book argues or how it sounds; then revise it as a whole.",
+              ...PLANNER_AUTHOR_STANCE_GUIDANCE,
               ...targetLanguageGenerationGuidance(options.language),
               ...(options.input ? kidsReadingGuidanceLines(options.input) : []),
               ...plannerToneGuidance(toneProfile),
@@ -493,29 +498,68 @@ export async function expandChapterResearch(options: ExpandChapterResearchOption
 
   const queries = [
     ...options.plan.chapters.map((chapter) =>
-      [options.input.prompt, chapter.title, chapter.summary, ...chapter.keyBeats].filter(Boolean).join(" ")
+      // The plan's title, never `input.prompt`: for a chat-created book the
+      // prompt is the app's planning instruction ("Create the best-fitting book
+      // from the user's creation chat… Book type choice: Auto…"), and every
+      // chapter's research came back about lead magnets.
+      [options.plan.title, chapter.title, chapter.summary, ...chapter.keyBeats.slice(0, 2)].filter(Boolean).join(" ")
     ),
     ...options.plan.researchQueries
   ];
-  const uniqueQueries = uniqueStrings(queries).slice(0, cap);
+  // Every chapter is searched, and the cap bounds the sources kept *per
+  // query*. It used to cap the query list and then the flattened result list
+  // at the same number, so a 15-chapter book searched 12 chapters and kept 12
+  // sources — all from chapter 1's query — and every chapter's writer received
+  // the same twelve dictionary snippets while the search's own synthesised
+  // brief for each query was dropped on the floor (composed-7..21).
+  const uniqueQueries = uniqueStrings(queries);
+  const perQuery = Math.max(3, Math.min(RESEARCH_SOURCES_PER_QUERY, cap));
   const results = await Promise.allSettled(
     uniqueQueries.map((query) => options.research.search({ query, purpose: "chapter-research" }))
   );
 
-  return results
-    .flatMap((result) => {
-      if (result.status !== "fulfilled") {
-        return [];
-      }
-      return result.value.sources.map((source) => ({
+  return results.flatMap((result) => {
+    if (result.status !== "fulfilled") {
+      return [];
+    }
+    const brief = result.value.summary?.trim();
+    return [
+      // The brief first: what the search concluded across its sources, kept
+      // without a URL so it grounds the writer but is never cited as a source.
+      ...(brief ? [{ query: result.value.query, title: RESEARCH_BRIEF_TITLE, url: undefined, summary: brief, publishedAt: undefined }] : []),
+      ...result.value.sources.slice(0, perQuery).map((source) => ({
         query: result.value.query,
         title: source.title,
         url: source.url,
         summary: source.summary,
         publishedAt: source.publishedAt
-      }));
-    })
-    .slice(0, cap);
+      }))
+    ];
+  });
+}
+
+/** Sources kept per chapter query; a search returns 20–30 and the writer reads about a dozen notes. */
+export const RESEARCH_SOURCES_PER_QUERY = 8;
+/** The title of a query's synthesised brief row; it has no URL and is context, not a citation. */
+export const RESEARCH_BRIEF_TITLE = "Research brief";
+
+/**
+ * What a search engine should be asked about. A chat-created book's prompt is
+ * the app's planning instruction followed by the transcript, so the query used
+ * to be "Create the best-fitting book from the user's creation chat…" and every
+ * source came back about lead magnets; the reader's own first turn, or the
+ * "Original idea" line, is the subject.
+ */
+export function researchSubjectForPrompt(prompt: string): string {
+  const idea = /^Original idea:\s*(.+)$/m.exec(prompt)?.[1]?.trim();
+  if (idea) {
+    return idea.slice(0, 300);
+  }
+  const firstUserTurn = /(?:^|\n)\s*User:\s*(.+)/.exec(prompt)?.[1]?.trim();
+  if (firstUserTurn) {
+    return firstUserTurn.slice(0, 300);
+  }
+  return prompt.trim().slice(0, 300);
 }
 
 async function researchForPlan(
@@ -532,7 +576,7 @@ async function researchForPlan(
     return [];
   }
 
-  const queries = [...new Set([input.prompt, ...fallbackQueries])].slice(0, 3);
+  const queries = [...new Set([researchSubjectForPrompt(input.prompt), ...fallbackQueries.map(researchSubjectForPrompt)])].slice(0, 3);
   const results = await Promise.allSettled(queries.map((query) => adapter.search({ query, purpose: "plan-research" })));
 
   return results.flatMap((result) => {

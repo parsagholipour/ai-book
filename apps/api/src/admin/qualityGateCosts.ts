@@ -41,7 +41,9 @@ const DIRECT_COST_PURPOSES: Partial<Record<QualityFeatureId, ReadonlySet<string>
   styleAuditor: new Set(["audit-page-style"]),
   pageMapCritic: new Set(["critique-page-map"]),
   writerTools: new Set(["write-page-with-tools"]),
-  bestOfPolish: new Set(["polish-page", "judge-page-drafts"])
+  bestOfPolish: new Set(["polish-page", "judge-page-drafts"]),
+  chapterEditorPass: new Set(["edit-chapter"]),
+  manuscriptReadPass: new Set(["read-manuscript", "cut-chapter"])
 };
 
 const NON_SEPARATE_COST_NOTES: Partial<Record<QualityFeatureId, string>> = {
@@ -81,6 +83,40 @@ const INTEGRITY_COST_GATES = [
 ] as const;
 
 /**
+ * The composed-chapters stages that are not a checkbox: shown whenever a book
+ * spent under one of their purposes, so an operator sees what a composed book
+ * cost by stage rather than under a single "generation" total. The two stages
+ * that are checkboxes (`chapterEditorPass`, `manuscriptReadPass`) attribute
+ * through `DIRECT_COST_PURPOSES` like every other gate.
+ */
+const COMPOSED_STAGE_COST_GATES = [
+  {
+    id: "composed.author-stance",
+    label: "Author stance (composed chapters)",
+    purposes: new Set(["author-stance"]),
+    emptyNote: "The plan already carried a stance, so no call was made."
+  },
+  {
+    id: "composed.plan-chapter-forms",
+    label: "Chapter form plan (composed chapters)",
+    purposes: new Set(["plan-chapter-forms"]),
+    emptyNote: "No form-plan call in this window."
+  },
+  {
+    id: "composed.compose-chapter",
+    label: "Compose chapters (composed chapters)",
+    purposes: new Set(["compose-chapter", "judge-chapter-drafts"]),
+    emptyNote: "No chapter was composed in this window."
+  },
+  {
+    id: "composed.describe-pages",
+    label: "Paginate and describe (composed chapters)",
+    purposes: new Set(["describe-pages"]),
+    emptyNote: "No page descriptions in this window."
+  }
+] as const;
+
+/**
  * Gates enabled for at least one project generation run, paired with spend from
  * provider-call purposes that belong to one gate unambiguously.
  *
@@ -111,11 +147,16 @@ export function qualityGateCostsForProject(options: {
   ).map((feature) => gateCost(feature.id, feature.label, options.costRows));
 
   const integrity = INTEGRITY_COST_GATES.map((gate) => integrityCost(gate, options.costRows));
-  return [...integrity, ...polish];
+  // A book written page by page never spends under these purposes; rows that
+  // would only ever say "no call" are noise there, so they appear when the
+  // book took the composed pipeline at all.
+  const composed = COMPOSED_STAGE_COST_GATES.map((gate) => integrityCost(gate, options.costRows));
+  const composedRows = composed.some((row) => (row.calls ?? 0) > 0) ? composed : [];
+  return [...integrity, ...composedRows, ...polish];
 }
 
 function integrityCost(
-  gate: (typeof INTEGRITY_COST_GATES)[number],
+  gate: (typeof INTEGRITY_COST_GATES)[number] | (typeof COMPOSED_STAGE_COST_GATES)[number],
   rows: ProviderCostRow[]
 ): QualityGateCost {
   const matchingRows = rows.filter((row) => gate.purposes.has(row.purpose?.trim() ?? ""));

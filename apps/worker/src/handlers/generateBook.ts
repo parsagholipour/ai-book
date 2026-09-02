@@ -5,13 +5,14 @@ import {
   generateBookDraftThenPolish,
   generateBookWholePass
 } from "../generation/bookPasses.js";
+import { generateBookComposedChapters } from "../generation/composedChaptersPass.js";
 import { prepareChapterSetups } from "../generation/bookState.js";
 import { ensureCharacterReferenceAssets } from "../generation/characterReferences.js";
 import { strategyUsesSemanticMemory } from "../generation/embeddingWrites.js";
 import { embedResearchSourcesForProject } from "../generation/researchMemory.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { generateReplannedBook } from "../generation/replanEditCandidates.js";
-import { createLoggedProviders } from "../providers/loggedAdapters.js";
+import { createLoggedJudgeTextModel, createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
 import { enqueueWorkerJob, maybeEnqueueCompile, maybeEnqueueCover, parallelPageWaveSize } from "../runtime/dispatch.js";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
@@ -141,6 +142,18 @@ export async function generateBook(job: GenerateBookJob): Promise<JobCompletion>
         providers,
         strategy,
         generationJobId
+      });
+      return {};
+    case "composed-chapters":
+      await generateBookComposedChapters({
+        projectId,
+        planId,
+        input,
+        plan,
+        providers,
+        strategy,
+        generationJobId,
+        judgeTextModel: createLoggedJudgeTextModel(job, input)
       });
       return {};
     case "sequential-pages":

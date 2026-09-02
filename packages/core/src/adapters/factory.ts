@@ -439,14 +439,28 @@ function purposeOverrideAdapters(
   return overrides;
 }
 
+const COMPOSED_CHAPTER_THINKING_PURPOSES: ReadonlySet<string> = new Set([
+  "compose-chapter",
+  "edit-chapter",
+  "read-manuscript",
+  "plan-chapter-forms"
+]);
+
 export function elevatedThinkingSelection(
   base: TextModelSelection,
   tier: ModelTier,
   purpose: string | undefined,
   options: readonly GenerationTextModelOption[]
 ): TextModelSelection {
-  const isPlan = purpose === "plan-book";
+  // Composing and editing a whole chapter is the one prose call per chapter
+  // rather than one of six per page, so it earns the planner's thinking
+  // elevation on the tiers that pay for reasoning.
+  const isComposed = COMPOSED_CHAPTER_THINKING_PURPOSES.has(purpose ?? "");
+  const isPlan = purpose === "plan-book" || isComposed;
   const isUltraMap = tier === "ultra" && purpose === "generate-page-map";
+  // Balanced is left at its configured effort: "low" produced ~100 reasoning
+  // tokens a call and "medium" cost a third more time with no gain on the
+  // blind panel (composed-3 7.47 without, composed-4 6.90 with).
   if ((tier !== "premium" && tier !== "ultra") || (!isPlan && !isUltraMap)) {
     return base;
   }

@@ -63,6 +63,7 @@ import {
   ownedPlanWhere,
   ownedVoiceCharacterWhere,
   planInputForStrategy,
+  resolvedStrategyForConsole,
   projectBillingSummary,
   projectUpdateDataFromInput,
   safePathPart,
@@ -319,7 +320,8 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
       ...project,
       tokens: normalizeTokenUsage(tokenLogs._sum),
       cost,
-      billing: projectBillingSummary(project, cost)
+      billing: projectBillingSummary(project, cost),
+      resolvedStrategy: resolvedStrategyForConsole(project.currentPlan?.inputSnapshot, project)
     };
   });
 

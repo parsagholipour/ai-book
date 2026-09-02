@@ -5,7 +5,13 @@ import {
   QUALITY_EFFORT_TIERS,
   QUALITY_FEATURE_DEFAULTS,
   QUALITY_FEATURE_IDS,
+  GENERATION_PIPELINE_STAGES,
+  PLANNING_STAGES,
   QUALITY_FEATURES,
+  autoStrategyRoutingMatrix,
+  bookGenerationStrategies,
+  pipelineForStrategy,
+  type BookGenerationStrategy,
   compiledGenerationTextModelRouting,
   generationTextModelOptions,
   loadConfig,
@@ -791,6 +797,7 @@ function serializeGenerationQuality(
     modelOptions,
     usingCompiledDefaults: record == null,
     features: QUALITY_FEATURES,
+    pipelines: serializeGenerationPipelines(),
     note: record?.note ?? null,
     updatedBy: record?.updatedBy ?? null,
     updatedAt: record?.createdAt.toISOString() ?? null
@@ -821,4 +828,32 @@ function serializeQualityFeatureSettings(stored: unknown): Record<string, string
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+
+/**
+ * The pipelines behind the gate rows: every strategy and the pipeline it
+ * writes by, what "Auto" resolves to per category and page band, and each
+ * pipeline's stages with the purposes they spend under and the gates that
+ * switch them. Read-only, compiled from core, and what lets the console say
+ * which books a checkbox reaches instead of listing rows per tier alone.
+ */
+function serializeGenerationPipelines() {
+  return {
+    strategies: (bookGenerationStrategies as readonly BookGenerationStrategy[]).map((strategy) => ({
+      id: strategy.id,
+      label: strategy.label,
+      executionMode: strategy.executionMode,
+      pipeline: pipelineForStrategy(strategy),
+      strengthScore: strategy.strengthScore,
+      recommendedPageRange: strategy.recommendedPageRange,
+      researchDepth: strategy.researchDepth ?? null
+    })),
+    routing: autoStrategyRoutingMatrix(),
+    stages: {
+      planning: PLANNING_STAGES,
+      "per-page": GENERATION_PIPELINE_STAGES["per-page"],
+      composed: GENERATION_PIPELINE_STAGES.composed
+    }
+  };
 }

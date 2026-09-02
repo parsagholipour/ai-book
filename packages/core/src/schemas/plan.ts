@@ -70,6 +70,106 @@ const WRITING_COMPLEXITY_KEYS = [
   "readingLevel"
 ] as const;
 const OPENING_HOOK_KEYS = ["openingHook", "opening_hook", "hook"] as const;
+const AUTHOR_STANCE_KEYS = ["authorStance", "author_stance", "stance"] as const;
+
+/**
+ * The author the composed-chapters strategy writes as: what the book argues,
+ * the stands it takes, the habits it refuses, and a voice sample written as
+ * that author on a subject outside the book. See
+ * `generation/authorStance.ts`. Optional: the planner is asked for it, a plan
+ * without one has it generated at composition time, and a malformed answer
+ * degrades to "no stance" rather than failing the plan parse.
+ */
+const authorStanceObjectSchema = z.object({
+  thesis: z.string().min(1),
+  positions: z.array(z.string()).default([]),
+  refusals: z.array(z.string()).default([]),
+  voiceSample: z.string().min(1)
+});
+/**
+ * Tolerant on purpose: the planner was asked for positions "each naming what
+ * the author believes and the strongest rival view they reject", and the first
+ * live plan answered with `{ believes, rejects }` objects — which a string-only
+ * array silently dropped, so the book was composed with no positions at all.
+ * A stance the model spelled as objects, or under an alias, is read; one with
+ * no thesis or no voice sample is no stance.
+ */
+export const authorStanceSchema = z.preprocess(
+  (value) => normalizeAuthorStance(value) ?? value,
+  authorStanceObjectSchema
+);
+export type AuthorStance = z.infer<typeof authorStanceObjectSchema>;
+
+/** A stance line the model spelled as an object: its string fields joined, the rival view labelled. */
+function stanceLine(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    return value.trim() || undefined;
+  }
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  // The view the author holds, and only that. A planner that answered
+  // `{belief, rejects}` objects had `belief` missing from this list, so the
+  // fallback handed the writer the *rejected* views as its positions and one
+  // whole book was written rebutting them (composed-6).
+  const believes = stringField(value, [
+    "belief",
+    "believes",
+    "holds",
+    "assertion",
+    "position",
+    "claim",
+    "stand",
+    "text",
+    "statement",
+    "habit",
+    "refusal"
+  ])?.trim();
+  if (believes) {
+    return believes;
+  }
+  const rejectedKeys = new Set(["rejects", "against", "rival", "rejectedview", "rejected_view", "alternative", "reason", "why"]);
+  const strings = Object.entries(value)
+    .filter(([key, entry]) => !rejectedKeys.has(key.toLowerCase()) && typeof entry === "string" && entry.trim().length > 0)
+    .map(([, entry]) => (entry as string).trim());
+  return strings.length > 0 ? strings.join(" ") : undefined;
+}
+
+function stanceLines(value: unknown): string[] {
+  if (typeof value === "string") {
+    return cleanStyleRules(value);
+  }
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const entry of value) {
+    const line = stanceLine(entry);
+    if (line && !seen.has(line.toLowerCase())) {
+      seen.add(line.toLowerCase());
+      lines.push(line);
+    }
+  }
+  return lines;
+}
+
+function normalizeAuthorStance(value: unknown): AuthorStance | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const thesis = stringField(value, ["thesis", "argument", "spine"])?.trim();
+  const voiceSample = stringField(value, ["voiceSample", "voice_sample", "sample", "voice"])?.trim();
+  if (!thesis || !voiceSample) {
+    return undefined;
+  }
+  return {
+    thesis,
+    positions: stanceLines(firstPresentField(value, ["positions", "stands", "claims"])),
+    refusals: stanceLines(firstPresentField(value, ["refusals", "refuses", "avoids"])),
+    voiceSample
+  };
+}
 
 type PlanAliasedField = {
   readonly keys: readonly [string, ...string[]];
@@ -256,7 +356,8 @@ function normalizeBookPlan(value: unknown, fallback: PlanStyleSource | undefined
         // object or array must degrade to "no hook", not fail the whole parse.
         // Trimmed like every other string this file normalizes, and a hook that
         // trims away is no hook at all.
-        openingHook: stringField(unwrapped, [...OPENING_HOOK_KEYS])?.trim() || undefined
+        openingHook: stringField(unwrapped, [...OPENING_HOOK_KEYS])?.trim() || undefined,
+        authorStance: normalizeAuthorStance(firstPresentField(unwrapped, AUTHOR_STANCE_KEYS))
       },
       styleSource
     ),
@@ -496,6 +597,7 @@ const bookPlanObjectSchema = z.object({
   researchNotes: z.array(researchSourceSchema).default([]),
   promises: z.array(z.string()).default([]),
   openingHook: z.string().optional(),
+  authorStance: authorStanceSchema.optional(),
   illustrationPlan: illustrationPlanSchema
 });
 

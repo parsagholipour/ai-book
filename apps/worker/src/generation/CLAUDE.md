@@ -11,6 +11,39 @@ This is also where a compile decides whether it is allowed to *publish* what it 
 the subtlest thing the worker does. A compile can take minutes, and the project it started against
 may have been edited in the meantime.
 
+## Composed chapters
+
+- **A composed chapter's pages are written in one transaction, and a restart resumes at the first
+  chapter with none.** `composedChaptersPass.ts` runs the `composed-chapters` execution mode
+  (→ packages/core/src/generation/CLAUDE.md for why). Per chapter: compose, line-edit, paginate,
+  describe, then `stageComposedChapter` creates the chapter's PENDING rows and writes a *derived*
+  `Chapter.productionBrief` — one beat per page naming the section the cut fell in, the page's
+  summary as its beat, the facts it established as `requiredContinuity`, the chapter's landing
+  only on its last page — with the `composition` beside it, which every `chapterBriefSchema` parse
+  strips. The derived brief is what chat edits, continuation and restructuring read; the
+  `requiredContinuity` is how a finalize after a restart still publishes each page's continuity
+  notes. `composedResumeState` is pure: whole chapters count as done, a partial chapter's rows are
+  deleted and the chapter redone, all pages present with some PENDING means finalize, none PENDING
+  means queue the compile. Two model calls are in flight at most: chapter N is composed while N-1 is
+  edited and checkpointed, and N reads N-1's *draft* tail, so a rejection from the checkpoint is
+  caught on the next iteration's await and the run fails there, resumable.
+- **Finalize goes through the same staged publication as every other pass, with local checks
+  only.** `reviewWholeBookDraftPages` (deterministic rules; one revise on a prompt leak or
+  placeholder), then `stageGeneratedPageAndBrief` flips PENDING to COMPLETED — or GENERATING plus
+  `publishStagedGeneratedPage` for an illustration slot — and the story delta runs per page. The
+  compile skips its per-page final-QA repair loop for this mode (`strategyComposesChapters` in
+  `compileExport.ts`): the whole-manuscript read replaced it, and a per-page rewrite would
+  re-template pages the editor deliberately left ending mid-argument. The deterministic manuscript
+  audit and the targeted structural review still run. `chapterEditorPass` and `manuscriptReadPass`
+  are the two quality gates (default every tier); nothing else on the Quality tab reaches this
+  pass except `pageLocalQa`, `smartUnslop`, `pageQaRewrite` and `storyExtractAudit` at finalize.
+  The console's "How this book is written" panel reads what the pass leaves behind and nothing
+  else: a `report` beside each chapter's `composition` (form-plan source and kept issues, draft and
+  edited word counts, whether the editor changed the chapter, the manuscript read's notes and
+  whether the second edit applied) and, when the pass had to generate the author stance, that
+  stance written back onto the approved `PlanVersion.planningPackage` — best-effort, never fatal,
+  and never over a stance the plan already carried.
+
 ## Illustrated page publication
 
 - **The keeper, its generated asset, and terminal status share one ownership protocol.**

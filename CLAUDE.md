@@ -273,6 +273,8 @@ code in that area, however obvious the rule looks.
 
 ### Drafting and page quality
 
+- **For every long book but a picture book the chapter is the unit of composition, and a page is where the typesetter cut.** → packages/core/src/generation/CLAUDE.md + apps/worker/src/generation/CLAUDE.md
+- **A composed chapter has one landing, and variety is a property of the form plan, checked before any prose exists.** → packages/core/src/generation/CLAUDE.md
 - **Nothing states page 1's opening contract in its own words: a prompt names an audience and gets the ban, the import exemption that silences it, and the hook fused to its payload key — or gets nothing.** → packages/core/src/generation/CLAUDE.md
 - **No best-of candidate samples hotter than the pass would have run at without candidates, and a band too narrow for the ladder compresses the step rather than widening the band.** → packages/core/src/generation/CLAUDE.md
 - **Page prompts take local style rules; distribution rules reach manuscript review only.** → packages/core/src/generation/CLAUDE.md
@@ -280,6 +282,9 @@ code in that area, however obvious the rule looks.
 - **A local QA message names an earlier page only after the word `from`, because the final-QA repair harvests every other `page N` as a page to redraft.** → packages/core/src/generation/CLAUDE.md
 - **An analytical page owns its evidence anchors; a shared one is repaired like a near-duplicate beat and never blocks.** → packages/core/src/generation/CLAUDE.md
 - **A brief prompt names its JSON keys and shows the shape; prose alone has the model spelling them from the words.** → packages/core/src/generation/CLAUDE.md
+- **Every rule about shape the writer or editor is shown is performed on schedule, and the blind panel names the performance; content assignments are the only lever that moved.** → packages/core/src/generation/CLAUDE.md
+- **A composed draft that is not prose is recomposed once and then fails the job; it is never edited, paginated and published.** → packages/core/src/generation/CLAUDE.md
+- **The manuscript read returns notes, so a read that fails is a skipped read, never a failed book; and a provider's input filter refusing a chapter is a fallback, never a failed book.** → packages/core/src/generation/CLAUDE.md
 
 ### Characters, covers and illustrations
 

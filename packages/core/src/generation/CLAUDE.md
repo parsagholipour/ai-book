@@ -36,6 +36,7 @@ holds the event loop open and vitest will never exit.
 
 ## Index
 
+- [Composed chapters](#composed-chapters)
 - [Page 1's opening contract](#page-1s-opening-contract)
 - [Style contract routing](#style-contract-routing)
 - [Repetition gates and the evidence ledger](#repetition-gates-and-the-evidence-ledger)
@@ -47,6 +48,123 @@ holds the event loop open and vitest will never exit.
 - [Chapter apparatus](#chapter-apparatus)
 - [Library characters](#library-characters)
 - [Character reference selection](#character-reference-selection)
+
+## Composed chapters
+
+- **For every long book but a picture book the chapter is the unit of composition, and a page is
+  where the typesetter cut.** Two 120-page balanced books were blind-reviewed at 6.40 and 5.55/10
+  on 2026-09-02 (`.scratch/composed-chapters/spec.md`). The phrase scanner found one and four
+  candidates; the slop was shape: every page ran example → evidence limit → symmetrical
+  qualification → bounded conclusion, 23–31% of sentences were 4+ item lists, and five page-shape
+  signatures covered 76–78% of pages. That shape was *assigned* — every page brief carried a
+  bounded `claim`, `evidenceAnchors` and an `endingPressure` landing sentence, and the reviewer
+  rejected a page that developed the next page's reserved beat — then executed 120 times under ~25
+  prohibition sentences. The gates added between the two books bought +0.85 at 717 calls against
+  171, and every one of them is page-local or a literal phrase counter, so 120 individually approved
+  pages of identical architecture pass. `composed-chapters` (`strategies/composed.ts`, the
+  auto-router's choice for 12+ pages outside KIDS) composes a whole chapter in one prose call
+  (`composeChapter`, `composedChapter.ts`) from an author stance — thesis, positions, refusals and a
+  voice sample the writer imitates (`authorStance.ts`; the planner is asked for it, the pass
+  generates one when a plan lacks it) — and a chapter form plan; a line-editor call rewrites it
+  (`editChapter`); `paginateChapterMarkdown` (`chapterPagination.ts`) cuts it into exactly the
+  chapter's page count at paragraph boundaries, never inside a fence; `describeChapterPages`
+  supplies each page's title, summary, continuity notes and, for illustration slots, its image
+  prompt; `readManuscript` reads the finished book once and returns notes, never prose, for at most
+  ⌈chapters/3⌉ (≤6) chapters to re-edit. The compose and edit prompts carry no `antiAiRules`, no
+  page brief, no evidence ledger and no reserved-beat rule, on purpose: the user's own prompt and
+  the plan's `voiceGuide` ride along, the prohibition list does not. Both purposes take the
+  planner's thinking elevation on premium and ultra (`elevatedThinkingSelection`); `describe-pages`
+  is mechanical. Word budgets (`chapterWordBudget`) are sized so the printed book is as long as the
+  pages paid for: the per-page prompts' 160–420 guidance produced ~490 words a page in practice.
+- **A composed chapter has one landing, and variety is a property of the form plan, checked
+  before any prose exists.** `planChapterForms` (`chapterForms.ts`) is one call for the whole
+  book — so variety can be global — assigning each chapter 3–8 sections with a *form* from a
+  writing-mode palette (a scene narrated in time, a close reading of one source, a catalogue that
+  is allowed to read as a list, an open question left open, a quiet transition with no thesis…),
+  a subject, the cases it alone owns, and one `landing` for the chapter's final paragraph.
+  `compositionVarietyIssues` is the contract: no form over half a chapter or 40% of the book, no
+  form following itself, no two chapters with the same sequence, no two consecutive chapters
+  opening alike. It gets one repair call, then `rotateFormsForVariety`, and never blocks; a provider
+  failure drafts from the rotated fallback. A resumed run re-plans the remaining chapters against
+  the `fixed` compositions the finished chapters stored. This is where a deterministic check on
+  shape belongs — on the plan, where it is cheap and exact — not on the prose, where the 2026-09-02
+  replay showed such rules fire on approved pages. `share` accepts any positive number and is
+  renormalised, because models answer in percentages.
+- **Every rule about shape the writer or editor is shown is performed on schedule, and the blind
+  panel names the performance; content assignments are the only lever that moved.** Twenty-one
+  composed runs on 2026-09-02 (`.scratch/composed-chapters/spec.md`) hold the evidence. Three
+  independent Opus readers score each book blind; three replicates of one configuration on one plan
+  spread 0.67 (6.93–7.60), so a three-reader mean carries about ±0.4 and nothing under that is
+  readable. The balanced writer sits at ~7.3 and every book gets the same five complaints — the
+  "it shows X, not Y" couplet, the paired antithesis closer, one chapter architecture, the thesis
+  restated per chapter, recap tails — whether the prompt bans them, measures them into the editor,
+  rotates one stance position per chapter, cuts whole paragraphs the read named, hides the plan's
+  distribution rules, or is stripped to stance + forms + budget. Measured and rejected, one change
+  per run: position rotation (−1.0 with the stripped editor), the read-driven deletion-only cut
+  (kept as `cutChapter` + `deletionOnlyResult`, off), best-of-2 with a cross-family judge (settled
+  2 of 15 chapters; the judge never picks the panel's worse book but ties on most pairs under a
+  one-point gap), 480 against 520 words a page (7.32 vs 7.31), voiceGuide/continuityRules/promises
+  out of the writer payload (7.08 vs 7.32). Reasoning effort on the writer does nothing (low /
+  medium / high: 7.31 / 7.30 / 7.23). The writer *model* moves the panel — DeepSeek V4 Pro 7.67 and
+  Gemini 3.7 Flash 7.57 with engagement 7 where luna gets 5–6 — and both under-fill the pages,
+  DeepSeek with particulars it invented (`apps/worker/scripts/provenance-probe.ts`). The
+  deterministic prose counters (`proseMeasurements.ts`, `pnpm scorecard`) do not track what the
+  readers respond to and are diagnostics only. The harness is `scripts/dev-rerun-book.ts`
+  (`run --reuse-plan <projectId> --tier <tier>`, `retry`, `resume`, `export`) with
+  `scripts/dev-set-tier-writer.ts` for writer A/B through an appended quality revision and
+  `scripts/dev-stop-project.ts` to stop a book.
+- **A composed draft that is not prose is recomposed once and then fails the job; it is never
+  edited, paginated and published.** The fast tier's writer returned 12,005 words of a rotating
+  three-subject verb-chain with stray CJK tokens for one chapter (composed-13), the short-draft
+  retry fires only under 0.7× the minimum, the line edit paraphrased the loop, every page rule
+  passed, and the book published as COMPLETE at 2.8/10. `chapterDegeneracy`
+  (`chapterIntegrity.ts`) refuses a draft on any of three measures calibrated on the 231 chapters
+  of every run to that date — ≥40% of sentences opening on one three-word template repeated six
+  or more times (0.58 there, ≤0.26 anywhere else, a deliberate anaphora), more than 1.8× the
+  chapter's word maximum (2.8× there, ~1.3× at most elsewhere), more than two characters of a
+  script a Latin-script book is not written in (4 there, 0 elsewhere) — and the pass discards an
+  edited chapter that trips it for the draft. The fake adapter's canned chapter opens every
+  sentence on its turn number for this reason.
+- **The manuscript read returns notes, so a read that fails is a skipped read, never a failed
+  book; and a provider's input filter refusing a chapter is a fallback, never a failed book.**
+  Luna at effort high composed every chapter of composed-17 and then failed the whole book at the
+  read on `max_output_tokens`, because reasoning shares the read's output budget: `readManuscript`
+  now runs with 16k and degrades to `skipped` on any provider failure, with a cancellation still
+  propagating. Alibaba answered a chapter about genocide with
+  `400 data_inspection_failed: "Input text data may contain inappropriate content."`, a 400 was
+  final, and a paid fast-tier book failed at 62% with a fallback writer configured that runs a
+  different filter: `isProviderContentFilterError` (`adapters/retry.ts`) makes that a fallback.
+  Research notes reach the writer as "title: summary" and a search hit's title is often its bare
+  domain, so the writers are told never to name a website, domain or URL in prose.
+- **Every chapter's research is its own, and the writer never says where a fact came from.**
+  `expandChapterResearch` used to cap the query list and then the flattened result list at the same
+  number, so a 15-chapter book searched 12 chapters and kept 12 sources — all from chapter 1's query —
+  and every chapter's writer read the same twelve dictionary snippets while each search's own
+  synthesised brief was dropped. It now searches every chapter, keeps `RESEARCH_SOURCES_PER_QUERY`
+  sources per query and stores the brief as a URL-less "Research brief" row; the worker's
+  `loadResearchNotesForGeneration` reads the whole project's rows when it has a chapter to match, ranks
+  the chapter's own query first (its title is in the query), then the brief, then by shared terms, and
+  hands the brief over untitled — titled, it was cited ("according to the research brief"), and
+  "the figures supplied for this period" followed once the title went, so source-packet language is a
+  page leak (`PAGE_PROMPT_LEAK_PATTERNS`) and both writers are told the phrases they may not use. On
+  composed-7's plan the inputs fix and the plan-level assignments below moved six replicates to
+  7.20–7.60 (mean 7.45) from 7.17–7.43 at the same cost. Section counts are *assigned* per chapter
+  (`assignedSectionCount`, walking the range) because the planner asked to vary them returned four or
+  five everywhere; `compositionShapeIssues` are advisory to the repair call only, since
+  `settleFormVariety` cannot change a count. Composed pages fail only the two integrity rules in the
+  finalize review (`composedPageQualityReport`): a page is where the typesetter cut, and the dash rule
+  was rewriting one cut per book in isolation. The prompt's stable block comes first and OpenAI calls
+  carry a `prompt_cache_key`, correct for a prefix-caching provider; the gateway behind
+  `gpt-5.6-luna` caches whole prompts only (measured), so no saving is claimed.
+- **A quality gate names the pipelines it reaches, and the console shows a checkbox beside the
+  books it changes.** Every `QUALITY_FEATURES` entry carries `pipelines` (`planning`, `per-page`,
+  `composed`) and a `stage`; `pipelineStages.ts` lists each pipeline's stages with the provider
+  purposes they spend under and the gates that switch them, and `autoStrategyRoutingMatrix` samples
+  the real router per category and page band. `/api/admin/generation-quality` serves all three so
+  the console groups the rows by pipeline instead of listing them per tier alone — a row toggled
+  for a pipeline a tier's books never take used to change nothing and say nothing.
+  `pipelineStages.test.ts` holds the two lists to each other: a gate that names a pipeline appears
+  in one of that pipeline's stages, and a stage's gate names that pipeline.
 
 ## Style contract routing
 

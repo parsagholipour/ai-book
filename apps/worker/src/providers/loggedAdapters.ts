@@ -1,3 +1,4 @@
+import { createProviders as createCoreProviders } from "@book-maker/core";
 import { randomUUID } from "node:crypto";
 import {
   AlibabaImageAdapter,
@@ -826,4 +827,24 @@ class LoggingEmbeddingAdapter implements EmbeddingAdapter {
       throw error;
     }
   }
+}
+
+/**
+ * The judge for best-of-two chapter drafts: the Quality tab's fast-judgment
+ * route, which is a different model family from the tier's writer, logged and
+ * costed like every other call of the job. The writer judging its own drafts
+ * favours its own text; a second family does not.
+ */
+export function createLoggedJudgeTextModel(job: WorkerRuntimeJob, input: CreateProjectInput): TextModelAdapter {
+  const logger = createRunLogger(job);
+  const { generationJobId, projectId } = job.data;
+  const delegate = config.MOCK_AI
+    ? createCoreProviders(config, input).text
+    : createLiveGenerationTextModel(config, {
+        tier: modelTierForInput(input),
+        fastJudgments: true,
+        loadRouting: loadLiveGenerationTextRouting(logger),
+        onFallbackEvent: (event) => logger.append(`text.routing.${event.event}`, event).then(() => undefined)
+      });
+  return new LoggingTextModelAdapter(delegate, logger, generationJobId, projectId, loggedTextModel(input));
 }

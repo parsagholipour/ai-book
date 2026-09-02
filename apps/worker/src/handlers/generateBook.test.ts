@@ -34,7 +34,7 @@ vi.mock("../runtime/jobLifecycle.js", () => ({
   updateJobProgress: mocks.updateJobProgress
 }));
 vi.mock("../runtime/config.js", () => ({ config: {} }));
-vi.mock("../providers/loggedAdapters.js", () => ({ createLoggedProviders: () => ({}) }));
+vi.mock("../providers/loggedAdapters.js", () => ({ createLoggedProviders: () => ({}), createLoggedJudgeTextModel: () => ({}) }));
 vi.mock("../generation/bookHelpers.js", () => ({
   getProjectOrThrow: mocks.getProjectOrThrow,
   strategyForInput: mocks.strategyForInput

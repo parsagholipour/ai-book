@@ -3,12 +3,16 @@ import { mediaSettingsSchema } from "../../schemas/book.js";
 import { assertBookLikeMarkdown } from "../markdown.js";
 import { makeFallbackPlan } from "../../prompting/templates.js";
 import {
+  autoStrategyIdForInput,
   batchWindowStrategy,
   bookGenerationStrategies,
   chapterWholePassStrategy,
   chapteredBookGenerationStrategy,
+  composedChaptersResearchStrategy,
+  composedChaptersStrategy,
   draftThenPolishStrategy,
   getBookGenerationStrategy,
+  strategyComposesChapters,
   pageMapSequentialStrategy,
   researchGroundedStrategy,
   researchMapDraftPolishStrategy,
@@ -25,9 +29,13 @@ describe("book generation strategies", () => {
       batchWindowStrategy,
       draftThenPolishStrategy,
       researchGroundedStrategy,
-      researchMapDraftPolishStrategy
+      researchMapDraftPolishStrategy,
+      composedChaptersStrategy,
+      composedChaptersResearchStrategy
     ]);
     expect(getBookGenerationStrategy()).toBe(chapteredBookGenerationStrategy);
+    expect(getBookGenerationStrategy("composed-chapters")).toBe(composedChaptersStrategy);
+    expect(getBookGenerationStrategy("composed-chapters-research")).toBe(composedChaptersResearchStrategy);
     expect(getBookGenerationStrategy("chaptered-sequential")).toBe(chapteredBookGenerationStrategy);
     expect(getBookGenerationStrategy("whole-book-single-pass")).toBe(wholeBookSinglePassStrategy);
     expect(getBookGenerationStrategy("page-map-sequential")).toBe(pageMapSequentialStrategy);
@@ -82,6 +90,33 @@ describe("book generation strategies", () => {
     expect(researchMapDraftPolishStrategy.createChapterBriefs).toBeDefined();
     expect(researchMapDraftPolishStrategy.generateWholeBookDraft).toBeDefined();
     expect(researchMapDraftPolishStrategy.polishPageDraft).toBeDefined();
+  });
+
+  it("composes every long book but a picture book chapter by chapter", () => {
+    const base = {
+      prompt: "A book.",
+      complexity: 5,
+      temperature: 0.8,
+      language: "en",
+      mediaSettings: {
+        fullIllustrations: false,
+        illustrationCadence: "template-driven" as const,
+        includeCover: true,
+        coverTemplate: "auto" as const,
+        finalReview: true,
+        toneProfile: "neutral" as const
+      }
+    };
+    expect(autoStrategyIdForInput({ ...base, category: "HISTORY", targetPages: 120 })).toBe("composed-chapters-research");
+    expect(autoStrategyIdForInput({ ...base, category: "STORY", targetPages: 40 })).toBe("composed-chapters");
+    expect(autoStrategyIdForInput({ ...base, category: "BUSINESS", targetPages: 200 })).toBe("composed-chapters");
+    expect(autoStrategyIdForInput({ ...base, category: "KIDS", targetPages: 24 })).toBe("draft-then-polish");
+    expect(autoStrategyIdForInput({ ...base, category: "HISTORY", targetPages: 8 })).toBe("draft-then-polish");
+    expect(strategyComposesChapters(composedChaptersStrategy)).toBe(true);
+    expect(strategyComposesChapters(composedChaptersResearchStrategy)).toBe(true);
+    expect(strategyComposesChapters(pageMapSequentialStrategy)).toBe(false);
+    expect(composedChaptersResearchStrategy.researchDepth).toBe(12);
+    expect(Object.hasOwn(composedChaptersStrategy, "researchDepth")).toBe(false);
   });
 
   it("gives draft-then-polish an authoritative page map before whole-book drafting", () => {

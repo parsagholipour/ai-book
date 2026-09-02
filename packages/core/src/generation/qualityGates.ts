@@ -27,6 +27,24 @@ export const PAGE_REVIEW_PROMPT_MODE_DEFAULTS: PageReviewPromptModes = {
   fast: "normal"
 };
 
+/**
+ * Which pipeline a gate belongs to. `planning` runs before a strategy is
+ * chosen and so reaches every book; `per-page` is the page-map/page-draft/
+ * page-review pipeline (`sequential-pages`, `chapter-whole-pass`,
+ * `batch-window`, `draft-then-polish`, `whole-book`); `composed` is the
+ * composed-chapters pipeline. A row on the Quality tab that names only one of
+ * the last two changes nothing for a book the other pipeline wrote, which is
+ * what the console has to be able to say.
+ */
+export const QUALITY_PIPELINES = ["planning", "per-page", "composed"] as const;
+export type QualityPipeline = (typeof QUALITY_PIPELINES)[number];
+
+export const QUALITY_PIPELINE_LABELS: Record<QualityPipeline, string> = {
+  planning: "Every book (planning)",
+  "per-page": "Per-page pipeline",
+  composed: "Composed chapters"
+};
+
 export const QUALITY_FEATURE_IDS = [
   "pageLocalQa",
   "smartUnslop",
@@ -44,7 +62,9 @@ export const QUALITY_FEATURE_IDS = [
   "writerTools",
   "bestOfPolish",
   "planThinkingBoost",
-  "claimRetrieve"
+  "claimRetrieve",
+  "chapterEditorPass",
+  "manuscriptReadPass"
 ] as const;
 
 export type QualityFeatureId = (typeof QUALITY_FEATURE_IDS)[number];
@@ -58,37 +78,44 @@ export const MANDATORY_INTEGRITY_CHECKS = [
   {
     id: "generated-response-schema",
     label: "Generated-response schema validation",
-    summary: "Malformed chapter briefs and page maps fail before drafting."
+    summary: "Malformed chapter briefs and page maps fail before drafting.",
+    pipelines: ["per-page"]
   },
   {
     id: "page-map-coverage",
     label: "Page-map coverage and ordering",
-    summary: "The production map must cover the target book exactly, in order."
+    summary: "The production map must cover the target book exactly, in order.",
+    pipelines: ["per-page"]
   },
   {
     id: "generic-assignment-rejection",
     label: "Generic assignment rejection",
-    summary: "Placeholder purpose/beat/ending-pressure assignments cannot become briefs."
+    summary: "Placeholder purpose/beat/ending-pressure assignments cannot become briefs.",
+    pipelines: ["per-page"]
   },
   {
     id: "full-map-collision",
     label: "Full-map collision detection and resolution",
-    summary: "Near-duplicate beats are detected across the whole map and repaired or rejected."
+    summary: "Near-duplicate beats are detected across the whole map and repaired or rejected.",
+    pipelines: ["per-page"]
   },
   {
     id: "deterministic-page-integrity",
     label: "Deterministic page integrity",
-    summary: "Page-level structural integrity checks run before durable drafts."
+    summary: "Page-level structural integrity checks run before durable drafts.",
+    pipelines: ["per-page", "composed"]
   },
   {
     id: "deterministic-manuscript-audit",
     label: "Deterministic manuscript structural audit",
-    summary: "Detector manuscript-structural-audit-v1 always runs on outcome compiles."
+    summary: "Detector manuscript-structural-audit-v1 always runs on outcome compiles.",
+    pipelines: ["per-page", "composed"]
   },
   {
     id: "publication-state-grading",
     label: "Publication-state grading",
-    summary: "Quality-report state decides COMPLETE vs REVIEW_REQUIRED independently of polish gates."
+    summary: "Quality-report state decides COMPLETE vs REVIEW_REQUIRED independently of polish gates.",
+    pipelines: ["per-page", "composed"]
   }
 ] as const;
 
@@ -119,98 +146,156 @@ export const QUALITY_FEATURE_DEFAULTS: QualityFeatureSettings = {
   writerTools: ["ultra"],
   bestOfPolish: ["ultra"],
   planThinkingBoost: ["ultra", "premium"],
-  claimRetrieve: ["ultra"]
+  claimRetrieve: ["ultra"],
+  // Composed-chapters strategy only. One prose call per chapter each; the
+  // read is one call per book. Both replace the per-page review loop.
+  chapterEditorPass: ["ultra", "premium", "balanced", "fast"],
+  manuscriptReadPass: ["ultra", "premium", "balanced", "fast"]
 };
 
-export const QUALITY_FEATURES: Array<{
+export type QualityFeatureDescription = {
   id: QualityFeatureId;
   label: string;
   summary: string;
-}> = [
+  /** The pipelines whose books this gate can change. */
+  pipelines: readonly QualityPipeline[];
+  /** Where in that pipeline it fires, as the console labels it. */
+  stage: string;
+};
+
+export const QUALITY_FEATURES: QualityFeatureDescription[] = [
   {
     id: "pageLocalQa",
     label: "Local page checks",
-    summary: "Deterministic page checks for repetition, placeholders, prompt leaks, and formulaic prose."
+    summary: "Deterministic page checks for repetition, placeholders, prompt leaks, and formulaic prose.",
+    pipelines: ["per-page", "composed"],
+    stage: "Page checks"
   },
   {
     id: "smartUnslop",
     label: "Smart unslop",
-    summary: "Finds significant deterministic slop candidates and, when Page QA rewrites is on, asks for a contextual minimal rewrite or an unchanged page."
+    summary: "Finds significant deterministic slop candidates and, when Page QA rewrites is on, asks for a contextual minimal rewrite or an unchanged page.",
+    pipelines: ["per-page", "composed"],
+    stage: "Page checks"
   },
   {
     id: "pageModelReview",
     label: "Model page review",
-    summary: "Reviews each drafted page with the editor model after any enabled local checks."
+    summary: "Reviews each drafted page with the editor model after any enabled local checks.",
+    pipelines: ["per-page"],
+    stage: "Page review"
   },
   {
     id: "pageQaRewrite",
     label: "Page QA rewrites",
-    summary: "Revises and re-reviews pages that fail enabled page checks. Off keeps the first reviewed draft."
+    summary: "Revises and re-reviews pages that fail enabled page checks. Off keeps the first reviewed draft.",
+    pipelines: ["per-page", "composed"],
+    stage: "Page review"
   },
   {
     id: "finalBookQa",
     label: "Final book QA",
-    summary: "Optional chapter transitions, the final book review, and targeted repair before export. Deterministic manuscript audit and targeted structural review are mandatory integrity and are not this checkbox."
+    summary: "Optional chapter transitions, the final book review, and targeted repair before export. Deterministic manuscript audit and targeted structural review are mandatory integrity and are not this checkbox.",
+    pipelines: ["per-page"],
+    stage: "Compile"
   },
   {
     id: "storyExtractAudit",
     label: "Story extract + audit",
-    summary: "One cheap mechanical call per page to track promises, facts, and contradictions."
+    summary: "One cheap mechanical call per page to track promises, facts, and contradictions.",
+    pipelines: ["per-page", "composed"],
+    stage: "Page save"
   },
   {
     id: "planCritic",
     label: "Plan critic",
-    summary: "One cheap mechanical call per book that patches promises and repeated beats. Not a second planner."
+    summary: "One cheap mechanical call per book that patches promises and repeated beats. Not a second planner.",
+    pipelines: ["planning"],
+    stage: "Plan"
   },
   {
     id: "claimVerifier",
     label: "Claim verifier (factual books)",
-    summary: "Checks page claims against loaded research notes. Kids and fiction skip the call even when this is on."
+    summary: "Checks page claims against loaded research notes. Kids and fiction skip the call even when this is on.",
+    pipelines: ["per-page"],
+    stage: "Page review"
   },
   {
     id: "compactPageDraftContext",
     label: "Compact page-draft context",
-    summary: "Drafts from indexed summaries plus one bounded nearest-page handoff instead of five page excerpts."
+    summary: "Drafts from indexed summaries plus one bounded nearest-page handoff instead of five page excerpts.",
+    pipelines: ["per-page"],
+    stage: "Page draft"
   },
   {
     id: "styleExcerpts",
     label: "Style excerpts in the pack",
-    summary: "Pins two accepted-page excerpts (or import samples) beside the recency window. No model call."
+    summary: "Pins two accepted-page excerpts (or import samples) beside the recency window. No model call.",
+    pipelines: ["per-page"],
+    stage: "Page draft"
   },
   {
     id: "styleAuditor",
     label: "Style auditor",
-    summary: "One cheap mechanical call per page comparing prose to the pinned excerpts and voice guide."
+    summary: "One cheap mechanical call per page comparing prose to the pinned excerpts and voice guide.",
+    pipelines: ["per-page"],
+    stage: "Page review"
   },
   {
     id: "pageMapCritic",
     label: "Page-map critic",
-    summary: "One cheap mechanical call after the page map. Merges beat patches instead of regenerating the map."
+    summary: "One cheap mechanical call after the page map. Merges beat patches instead of regenerating the map.",
+    pipelines: ["per-page"],
+    stage: "Page map"
   },
   {
     id: "beatDedup",
     label: "Page-beat rewrite (optional polish)",
-    summary: "One cheap rewrite call when a beat collision is found. Map integrity (coverage, generics, collisions) always runs and is not this checkbox."
+    summary: "One cheap rewrite call when a beat collision is found. Map integrity (coverage, generics, collisions) always runs and is not this checkbox.",
+    pipelines: ["per-page"],
+    stage: "Page map"
   },
   {
     id: "writerTools",
     label: "Writer tools",
-    summary: "Ultra-only tool loop (lookup page / entity / research) with at most two tool rounds plus a finish."
+    summary: "Ultra-only tool loop (lookup page / entity / research) with at most two tool rounds plus a finish.",
+    pipelines: ["per-page"],
+    stage: "Page draft"
   },
   {
     id: "bestOfPolish",
     label: "Best-of-2 polish",
-    summary: "Samples two polish drafts and keeps the stronger one. Sequential page draft uses the same gate."
+    summary: "Samples two polish drafts and keeps the stronger one. Sequential page draft uses the same gate.",
+    pipelines: ["per-page"],
+    stage: "Page draft"
   },
   {
     id: "planThinkingBoost",
     label: "Deeper plan thinking",
-    summary: "Raises thinking budget on the existing plan-book call (and Ultra page-map). Not a second prose round."
+    summary: "Raises thinking budget on the existing plan-book call (and Ultra page-map). Not a second prose round.",
+    pipelines: ["planning"],
+    stage: "Plan"
   },
   {
     id: "claimRetrieve",
     label: "Failed-claim research retrieve",
-    summary: "When a factual page fails groundedOk, one embedding retrieve of stored research into the existing revise."
+    summary: "When a factual page fails groundedOk, one embedding retrieve of stored research into the existing revise.",
+    pipelines: ["per-page"],
+    stage: "Page review"
+  },
+  {
+    id: "chapterEditorPass",
+    label: "Chapter line edit (composed chapters)",
+    summary: "One editor call per composed chapter: cuts repeated caveats and restatements, varies paragraph shape, lets stated positions stand. Off keeps the first draft.",
+    pipelines: ["composed"],
+    stage: "Chapter edit"
+  },
+  {
+    id: "manuscriptReadPass",
+    label: "Whole-manuscript read (composed chapters)",
+    summary: "One read of the finished book returning per-chapter notes; at most a third of the chapters get a second line edit.",
+    pipelines: ["composed"],
+    stage: "Manuscript read"
   }
 ];
 

@@ -211,6 +211,27 @@ export function runLocalPageQualityChecks(options: ReviewPageOptions): PageQuali
  * operator disables configurable local QA. Generated page 1 must still honor
  * its opening contract; imported prose remains exempt.
  */
+/**
+ * A composed chapter's page is where the typesetter cut, so the page-shape
+ * rules (dash density, openers, progression) have nothing to say about it and
+ * a rewrite from them undoes composed prose in isolation — one page per book
+ * was being rewritten on the dash rule. Only the two integrity rules may fail
+ * such a page.
+ */
+export function composedPageQualityReport(report: PageQualityReport): PageQualityReport {
+  const approved = report.checks.placeholderFree && report.checks.promptLeakFree;
+  if (approved === report.approved) {
+    return report;
+  }
+  return {
+    ...report,
+    approved,
+    checks: { ...PASSING_PAGE_CHECKS, placeholderFree: report.checks.placeholderFree, promptLeakFree: report.checks.promptLeakFree },
+    issues: approved ? [] : report.issues,
+    requiredRevisions: approved ? [] : report.requiredRevisions
+  };
+}
+
 export function reviewRequiredPageQualityChecks(options: ReviewPageOptions): PageQualityReport {
   if (options.pageIndex !== 1) {
     return skippedPageQualityReport();

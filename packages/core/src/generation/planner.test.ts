@@ -725,3 +725,44 @@ describe("ensurePlanStyleContract", () => {
     expect(ensured.antiAiRules).toEqual(expect.arrayContaining(antiAiRules));
   });
 });
+
+
+import { RESEARCH_BRIEF_TITLE, RESEARCH_SOURCES_PER_QUERY, expandChapterResearch } from "./planner.js";
+import { makeFallbackPlan as fallbackPlanForResearch } from "../prompting/templates.js";
+
+/**
+ * A 15-chapter book used to search 12 chapters and keep 12 sources, all from
+ * chapter 1's query; every chapter's writer read the same dictionary lines.
+ */
+describe("expandChapterResearch", () => {
+  it("searches every chapter, keeps each query's brief first and caps sources per query", async () => {
+    const input = testInput({ prompt: "A history of aggression" });
+    const plan = fallbackPlanForResearch(input);
+    plan.chapters = Array.from({ length: 5 }, (_, index) => ({
+      index: index + 1,
+      title: `Chapter ${index + 1} on subject ${index + 1}`,
+      summary: `What chapter ${index + 1} covers.`,
+      keyBeats: [],
+      targetPages: 8
+    })) as typeof plan.chapters;
+    plan.researchQueries = [];
+    const queries: string[] = [];
+    const research = {
+      search: async ({ query }: { query: string }) => {
+        queries.push(query);
+        return {
+          query,
+          summary: `Brief for ${query}`,
+          sources: Array.from({ length: 20 }, (_, index) => ({ title: `Source ${index} for ${query}`, url: `https://x/${index}`, summary: `s${index}` }))
+        };
+      }
+    };
+    const sources = await expandChapterResearch({ input, plan, research: research as never, cap: 12 });
+    expect(queries).toHaveLength(5);
+    expect(sources.filter((source) => source.title === RESEARCH_BRIEF_TITLE)).toHaveLength(5);
+    expect(sources.filter((source) => source.title !== RESEARCH_BRIEF_TITLE)).toHaveLength(5 * RESEARCH_SOURCES_PER_QUERY);
+    expect(sources[0]!.title).toBe(RESEARCH_BRIEF_TITLE);
+    expect(sources[0]!.url).toBeUndefined();
+    expect(new Set(sources.map((source) => source.query)).size).toBe(5);
+  });
+});

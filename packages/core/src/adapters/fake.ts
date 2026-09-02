@@ -13,6 +13,7 @@ import { COVER_DESIGN_SELECTION_PURPOSE, DEFAULT_COVER_DESIGN_ID } from "../gene
 import { COPYRIGHT_SAFE_IMAGE_PROMPT_PURPOSE } from "../generation/copyrightSafeImagePrompt.js";
 import { MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE } from "../generation/manuscriptStructuralReview.js";
 import { dryRunDetail, dryRunPageBeat, rotate } from "./fakeDryRunBeats.js";
+import { fakeChapterForms, fakeComposedChapter, fakeDescribedPages, fakeCutChapter, fakeDetemplatedChapter } from "./fakeComposedChapters.js";
 import { fakeEditAdherence } from "./fakeEditAdherence.js";
 import { parseSchemaWithContext } from "./json.js";
 import type {
@@ -51,7 +52,14 @@ export class FakeTextModelAdapter implements TextModelAdapter {
   ) {}
 
   async generateText(options: GenerateTextOptions): Promise<TextResult> {
-    const text = `Drafted content for ${options.purpose ?? "book generation"}.`;
+    const text =
+      options.purpose === "detemplate-chapter"
+        ? fakeDetemplatedChapter(options)
+        : options.purpose === "cut-chapter"
+          ? fakeCutChapter(options)
+          : options.purpose === "compose-chapter" || options.purpose === "edit-chapter"
+        ? fakeComposedChapter(options)
+        : `Drafted content for ${options.purpose ?? "book generation"}.`;
     await options.onOutputTextChunk?.(text);
     return {
       text,
@@ -143,6 +151,10 @@ export class FakeTextModelAdapter implements TextModelAdapter {
         },
         contradictions: []
       };
+    }
+
+    if (options.purpose === "judge-chapter-drafts") {
+      return { winner: "A", reason: "Fake judge keeps the first draft." };
     }
 
     if (options.purpose === "critique-plan") {
@@ -341,6 +353,28 @@ export class FakeTextModelAdapter implements TextModelAdapter {
 
     if (options.purpose === MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE) {
       return { clusters: [] };
+    }
+
+    if (options.purpose === "author-stance") {
+      return {
+        thesis: "Every dry run argues that a deterministic book can still read as one author's.",
+        positions: ["Detail beats summary.", "One example carried through beats three named in passing."],
+        refusals: ["No paragraph ends by balancing two sides."],
+        voiceSample:
+          "The dry run keeps its own counsel. It names the thing in front of it, a wall or a ledger or a road, and lets the naming do the work. Short sentences carry facts. Longer ones, when they come, carry the turn a reader did not see coming and would not have believed if it had been announced first."
+      };
+    }
+
+    if (options.purpose === "plan-chapter-forms") {
+      return { chapters: fakeChapterForms(options) };
+    }
+
+    if (options.purpose === "describe-pages") {
+      return { pages: fakeDescribedPages(options) };
+    }
+
+    if (options.purpose === "read-manuscript") {
+      return { chapters: [], bookNotes: ["Fake read: no chapter needs a second pass."] };
     }
 
     if (options.purpose === "extract-voice-character-candidates") {

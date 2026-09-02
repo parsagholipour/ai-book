@@ -140,13 +140,22 @@ describe("admin generation quality settings", () => {
     expect(body.features).toContainEqual({
       id: "smartUnslop",
       label: "Smart unslop",
-      summary: expect.any(String)
+      summary: expect.any(String),
+      pipelines: ["per-page", "composed"],
+      stage: "Page checks"
     });
     expect(body.features).toContainEqual({
       id: "compactPageDraftContext",
       label: "Compact page-draft context",
-      summary: expect.any(String)
+      summary: expect.any(String),
+      pipelines: ["per-page"],
+      stage: "Page draft"
     });
+    const pipelines = (response.json() as { pipelines: { strategies: Array<{ id: string; pipeline: string }>; routing: { rows: unknown[] }; stages: Record<string, unknown[]> } }).pipelines;
+    expect(pipelines.strategies.find((strategy) => strategy.id === "composed-chapters")?.pipeline).toBe("composed");
+    expect(pipelines.strategies.find((strategy) => strategy.id === "page-map-sequential")?.pipeline).toBe("per-page");
+    expect(pipelines.routing.rows.length).toBeGreaterThan(5);
+    expect(Object.keys(pipelines.stages).sort()).toEqual(["composed", "per-page", "planning"]);
     await app.close();
   });
 

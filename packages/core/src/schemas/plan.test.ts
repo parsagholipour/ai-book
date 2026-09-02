@@ -474,3 +474,35 @@ function planWithContract() {
     }
   };
 }
+
+/**
+ * The planner was asked for believes/rejects pairs once, and the alias table
+ * had no `belief`: the fallback handed the writer the rejected views as its
+ * positions, and a whole book was written rebutting them.
+ */
+describe("plan authorStance positions", () => {
+  const stance = (positions: unknown[]) => ({
+    thesis: "Aggression has no timeless measure.",
+    positions,
+    refusals: ["Balancing both sides at the end of a section."],
+    voiceSample: Array.from({ length: 90 }, () => "word").join(" ")
+  });
+
+  it("keeps the held view of a belief/rejects pair and never the rejected one", () => {
+    const parsed = bookPlanSchema.parse({
+      ...planWithContract(),
+      authorStance: stance([
+        { belief: "Violence is organised before it is felt.", rejects: "The rival view that aggression is one timeless drive." },
+        { believes: "Records select what survives.", rejectedView: "That bones count the dead." },
+        { rejects: "That states only pacify." },
+        "Restraint emerges inside power."
+      ])
+    });
+    expect(parsed.authorStance?.positions).toEqual([
+      "Violence is organised before it is felt.",
+      "Records select what survives.",
+      "Restraint emerges inside power."
+    ]);
+    expect(JSON.stringify(parsed.authorStance)).not.toContain("rival view");
+  });
+});

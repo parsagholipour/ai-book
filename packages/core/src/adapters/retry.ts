@@ -152,9 +152,29 @@ export function isSpeechProviderFallbackError(error: unknown): boolean {
 }
 
 /** Availability failures that may be retried once through an operator-selected text fallback. */
+/**
+ * A provider's input filter refusing the text it was sent. Alibaba answers
+ * `400 data_inspection_failed: "Input text data may contain inappropriate
+ * content."` to a history chapter about genocide, and a 400 used to be final:
+ * a paid fast-tier book failed at 62% with a fallback writer configured that
+ * runs a different filter. For text the other provider is the answer.
+ */
+export function isProviderContentFilterError(error: unknown): boolean {
+  return collectErrorDescriptors(error).some(
+    (descriptor) =>
+      (descriptor.code !== undefined && /data_inspection_failed|content_filter/i.test(descriptor.code)) ||
+      descriptor.messages.some((message) =>
+        /data_inspection_failed|inappropriate content|content management policy|content_filter/i.test(message)
+      )
+  );
+}
+
 export function isTextProviderFallbackError(error: unknown): boolean {
   if (isStopOrAbortError(error)) {
     return false;
+  }
+  if (isProviderContentFilterError(error)) {
+    return true;
   }
   // A waitable TPM 429 belongs to withRecoverableNetworkRetry on the primary —
   // hopping would skip the cooldown. A spent daily quota is already not

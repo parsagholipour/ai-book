@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import OpenAI from "openai";
 import type { TextModelThinkingEffort } from "../schemas/book.js";
 import { parseJsonObject, parseSchemaWithContext, throwWithProviderUsage } from "./json.js";
@@ -206,6 +207,11 @@ export class OpenAITextAdapter implements TextModelAdapter {
       model: this.model,
       input,
       store: false,
+      // Every prose call of a book shares a long system prefix; without a
+      // routing key consecutive calls landed on different cache shards and
+      // 0 of 48 calls hit (composed-22). The key is the prefix's own digest,
+      // so it needs no plumbing and differs between books.
+      prompt_cache_key: promptCacheKey(input),
       ...(this.thinkingEffort !== "none" ? { include: ["reasoning.encrypted_content"] } : {}),
       ...(this.thinkingEffort ? { reasoning: { effort: this.thinkingEffort } } : {}),
       ...(options.temperature !== undefined && this.thinkingEffort === "none"
@@ -356,6 +362,13 @@ function responseText(response: ResponseRecord): string {
     })
     .join("\n")
     .trim();
+}
+
+export function promptCacheKey(input: unknown[]): string {
+  const first = input[0];
+  const content = isRecord(first) ? first.content : undefined;
+  const text = typeof content === "string" ? content : JSON.stringify(content ?? "");
+  return createHash("sha256").update(text.slice(0, 2500)).digest("hex").slice(0, 24);
 }
 
 function usageFromOpenAIResponse(usage: unknown): Usage | undefined {

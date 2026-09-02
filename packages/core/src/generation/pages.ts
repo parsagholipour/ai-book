@@ -49,6 +49,7 @@ export { shouldIllustratePage } from "./illustrationSlots.js";
 export { skippedPageQualityReport } from "./pagesSkippedQualityReport.js";
 
 export {
+  composedPageQualityReport,
   compactSummaryForQa,
   reviewPageDraftLocally,
   reviewRequiredPageQualityChecks,

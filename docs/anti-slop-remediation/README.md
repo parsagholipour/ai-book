@@ -1,5 +1,11 @@
 # Anti-Slop Remediation Plan
 
+> **2026-09-02 addendum.** Phases 01–07 shipped, and two 120-page books written under them were
+> blind-reviewed at 6.40 and 5.55/10 (naturalness 4.5 and 3.5). The slop they share is structural,
+> not lexical, and the page-brief architecture this plan hardened is what manufactures it. The
+> response is a different pipeline rather than an eighth phase: `.scratch/composed-chapters/spec.md`
+> and the `composed-chapters` strategy. Everything below still governs the per-page strategies.
+
 This folder contains the phased implementation plan for preventing polished but structurally repetitive books from passing generation and export quality controls.
 
 The plan is based on two observed failure classes:

@@ -7,6 +7,8 @@ import {
   isEnglishLanguage,
   mediaSettingsSchema,
   normalizeProjectLanguage,
+  pipelineForStrategy,
+  resolveBookGenerationStrategy,
   type AppConfig,
   type CreateProjectInput,
   type ProjectCostSummary
@@ -200,4 +202,24 @@ export function jsonPayloadToRecord(payload: unknown): Record<string, unknown> {
   }
 
   return payload as Record<string, unknown>;
+}
+
+/**
+ * The strategy the router would run this project under, for the console's
+ * "How this book is written" panel. Resolved here because the router lives in
+ * core's barrel, which the console may not import; the input is the approved
+ * plan's snapshot when there is one, else the project row.
+ */
+export function resolvedStrategyForConsole(inputSnapshot: unknown, project: ProjectStrategySource) {
+  const resolved = resolveBookGenerationStrategy(planInputForStrategy(inputSnapshot, project));
+  return {
+    id: resolved.strategy.id,
+    label: resolved.strategy.label,
+    executionMode: resolved.strategy.executionMode,
+    pipeline: pipelineForStrategy(resolved.strategy),
+    requestedId: resolved.requestedId,
+    autoSelected: resolved.autoSelected,
+    switched: resolved.switched,
+    warnings: resolved.warnings
+  };
 }

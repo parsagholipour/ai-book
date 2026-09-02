@@ -1,6 +1,27 @@
 import { describe, expect, it } from "vitest";
 import { MANUSCRIPT_PROMPT_LEAK_PATTERNS, PAGE_PROMPT_LEAK_PATTERNS, containsPromptLeak } from "./promptLeak.js";
 
+describe("source-packet language", () => {
+  it("is a page leak in every spelling the writers used, and plain history is not", () => {
+    for (const leak of [
+      "A warrior who took an enemy could gain honour and, according to the research brief, a route toward advancement.",
+      "The wider deportations displaced an estimated 1.5 million people, according to the research record supplied for this history.",
+      "One supplied estimate places global deaths at more than 65,000 a year.",
+      "The municipal record, as preserved in the material for this discussion, points towards moderation.",
+      "the figures supplied for this period"
+    ]) {
+      expect(containsPromptLeak(leak, PAGE_PROMPT_LEAK_PATTERNS), leak).toBe(true);
+    }
+    for (const fine of [
+      "The parish record for 1662 lists forty-one burials.",
+      "Estimates for the period vary between historians.",
+      "The ration was provided by the temple storehouse."
+    ]) {
+      expect(containsPromptLeak(fine, PAGE_PROMPT_LEAK_PATTERNS), fine).toBe(false);
+    }
+  });
+});
+
 function leaks(text: string): boolean {
   return containsPromptLeak(text, PAGE_PROMPT_LEAK_PATTERNS);
 }
