@@ -8,6 +8,17 @@ import type { AuthorStance, BookPlan, ChapterPlan, CreateProjectInput } from "..
 import { isRecord } from "../schemas/jsonCoercion.js";
 import { authorStancePromptLines, isNarrativeWritingMode } from "./authorStance.js";
 import { arcChapterLines, type BookArc } from "./bookArc.js";
+import {
+  CREATIVE_CONTRACT_RULES,
+  CREATIVE_RECONSTRUCTION_RULE,
+  materialLines,
+  materialPayload,
+  remainingBudget,
+  type ChapterMaterial,
+  type ComposeContract,
+  type ComposedChapterText
+} from "./composedChapterMaterial.js";
+export { CREATIVE_CONTRACT_RULES, type ChapterMaterial, type ComposeContract, type ComposedChapterText } from "./composedChapterMaterial.js";
 import {  compositionWriterLines, formPaletteFor, type ChapterComposition } from "./chapterForms.js";
 import { normalizeChapterMarkdown } from "./chapterPagination.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
@@ -107,9 +118,18 @@ export type ComposeChapterOptions = {
   temperature?: number | undefined;
   /** The second of two drafts takes a different way in; the OpenAI adapter drops temperature under any reasoning effort, so the variation has to be in the prompt. */
   variant?: "second" | undefined;
+  /**
+   * What the writer may draw on. `grounded` (the default) holds named evidence
+   * to researchNotes; `creative` lets the author write from their own
+   * knowledge of the subject, with quotation marks kept as a promise. Parsa's
+   * decision, 2026-09-03: the grounded contract starved every page of
+   * particulars and the panel's engagement sevens went to the writers that
+   * supplied their own.
+   */
+  contract?: ComposeContract | undefined;
+  /** Material-first: the chapter's episodes, its dossier of verbatim primary text, and a scene already written for its opening. */
+  material?: ChapterMaterial | undefined;
 };
-
-export type ComposedChapterText = { markdown: string; words: number; attempts: number };
 
 /** The pivots the blind readers quoted from the first composed book. */
 const STOCK_PIVOT_BAN =
@@ -266,6 +286,9 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
   const pages = options.chapterPageEnd - options.chapterPageStart + 1;
   const budget = chapterWordBudget(options.input, pages);
   const citation = citationContractFields(options.researchNotes.slice(0, 18));
+  // The opening scene, when one was composed first, is printed ahead of what
+  // this call writes, so the ask shrinks by its length.
+  const remaining = remainingBudget(budget, options.material?.scene?.words ?? 0);
   // The subtraction ablation (spec.md, "Fable opinion"): stance, forms,
   // material, budget and a handful of positive rules, none of the bans or
   // shape rules. Measured against the full prompt on one plan.
@@ -284,8 +307,9 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
           (rule) => !(options.arc && arcKindFor(options) !== "method" && rule.startsWith("State what a source shows"))
         )),
     ...(minimal ? [] : ["Do not open the chapter with a general claim about a common noun (\"A cannon was never only a cannon\")."]),
-    ...(minimal ? [] : reconstructionRule(narrative)),
+    ...(minimal ? [] : options.contract === "creative" ? (narrative ? [] : [CREATIVE_RECONSTRUCTION_RULE]) : reconstructionRule(narrative)),
     `Now chapter ${options.chapter.index}, "${options.chapter.title}".`,
+    ...materialLines(options),
     ...compositionWriterLines(options.composition, palette, budget.target),
     ...(options.variant === "second"
       ? [
@@ -297,8 +321,7 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
     // and the cut then removed chapter 7's own closing, so three blind readers
     // found the previous chapter's conclusion stranded under the next heading.
     "previousChapterTail is where the previous chapter stopped, already printed: this chapter opens on its own first section's material and neither resumes, summarises nor answers that paragraph. earlierChapters are digests of what the reader already knows, each with told: the cases, sources, scenes and people that chapter carried; anything in told may be named in passing and is never re-told, and its dates and figures are not repeated.",
-    GROUNDED_FACTUALITY_RULE,
-    ...citation.rules,
+    ...(options.contract === "creative" ? CREATIVE_CONTRACT_RULES : [GROUNDED_FACTUALITY_RULE, ...citation.rules]),
     // Research notes arrive as "title: summary" and a search hit's title is
     // often its bare domain, so a writer told to name only sources in the
     // notes wrote "the explanatory pages at psychstory.co.uk" (composed-17).
@@ -307,7 +330,7 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
     PROMPT_LEAK_BAN,
     ...targetLanguageGenerationGuidance(options.input.language),
     ...kidsReadingGuidanceLines(options.input),
-    `Write between ${budget.min} and ${budget.max} words and aim for ${budget.target}. The typesetter will divide the chapter into ${pages} pages of about ${budget.perPage} words; pages are not units of argument, so do not shape the prose around them.`,
+    `Write between ${remaining.min} and ${remaining.max} words and aim for ${remaining.target}. The typesetter will divide the chapter into ${pages} pages of about ${budget.perPage} words; pages are not units of argument, so do not shape the prose around them.`,
     "Return only the chapter's prose."
   ];
   const userPayload = {
@@ -334,6 +357,7 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
     ...(options.storyStateLines && options.storyStateLines.length > 0 ? { storyState: options.storyStateLines } : {}),
     characters: characterPayload(options.plan),
     ...citation.payload,
+    ...materialPayload(options),
     wordBudget: budget
   };
 
@@ -357,10 +381,10 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
     if (!best || words > best.words) {
       best = candidate;
     }
-    if (words >= budget.min * 0.7) {
+    if (words >= remaining.min * 0.7) {
       break;
     }
-    shortfall = `Your previous answer was ${words} words; the chapter needs at least ${budget.min}. Write the complete chapter.`;
+    shortfall = `Your previous answer was ${words} words; the chapter needs at least ${remaining.min}. Write the complete chapter.`;
   }
   if (!best || !best.markdown) {
     throw new Error(`Chapter ${options.chapter.index} came back empty.`);
@@ -566,7 +590,9 @@ export async function editChapter(options: EditChapterOptions): Promise<EditedCh
     // every rule about shape becomes a shape; on the same plan the book scored
     // 6.73 against 7.73 with them, so they stand (spec.md, iterations 8-10).
     "Reshape paragraphs wherever the draft is uniform: merge paragraphs that continue one movement into long ones of two hundred words or more, let a turn or a landing stand alone as a one- or two-sentence paragraph, and leave no run of paragraphs of the same length. Vary sentence length and openings the same way; no two consecutive paragraphs open on the same construction.",
-    "Where the author holds a position, let the prose commit: delete the counterweight that hedges a stated position. Add no new claim, example, or source. Use one spelling convention throughout, the one the book's title and premise use.",
+    options.contract === "creative"
+      ? "Where the author holds a position, let the prose commit: delete the counterweight that hedges a stated position. You may sharpen a particular the draft already carries; add no new episode or source. Use one spelling convention throughout, the one the book's title and premise use."
+      : "Where the author holds a position, let the prose commit: delete the counterweight that hedges a stated position. Add no new claim, example, or source. Use one spelling convention throughout, the one the book's title and premise use.",
     narrative
       ? "Only the chapter's final paragraph may reflect; every other paragraph ends on action, speech, or an image."
       : "Only the chapter's final paragraph lands an idea; every other paragraph ends where its matter ends, and not on a placed object for effect.",
@@ -582,8 +608,10 @@ export async function editChapter(options: EditChapterOptions): Promise<EditedCh
     draftWords < budget.target * EDITOR_EXTEND_BELOW_SHARE
       ? `The draft is ${draftWords} words and the chapter needs about ${budget.target} (never under ${budget.min}, never over ${budget.max}): develop the existing sections with more particular detail — the named person, the document, the place, the next thing that happened — rather than adding sections, generalising, or restating.`
       : `Return between ${budget.min} and ${budget.max} words; the draft is ${draftWords} words. Over ${budget.max}, cut.`,
-    GROUNDED_FACTUALITY_RULE,
-    ...citation.rules,
+    ...(options.contract === "creative" ? [CREATIVE_CONTRACT_RULES[1]!] : [GROUNDED_FACTUALITY_RULE, ...citation.rules]),
+    ...(options.material?.scene
+      ? [`The chapter opens with a scene of about ${options.material.scene.words} words that was written on purpose in a narrating register; keep it a scene — tighten it if you must, never turn it into summary or argument.`]
+      : []),
     // Research notes arrive as "title: summary" and a search hit's title is
     // often its bare domain, so a writer told to name only sources in the
     // notes wrote "the explanatory pages at psychstory.co.uk" (composed-17).

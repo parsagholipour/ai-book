@@ -27,7 +27,7 @@ if (mode === "feature") {
   const selection: Record<string, unknown> = { provider, model };
   for (const flag of flags) {
     const [key, value] = flag.split("=");
-    if (key && value !== undefined) selection[key] = value === "true" ? true : value === "false" ? false : value;
+    if (key && value !== undefined) selection[key] = value === "true" ? true : value === "false" ? false : /^\d+$/.test(value) ? Number(value) : value;
   }
   settings.models[tier] = { ...settings.models[tier], [role]: selection };
   note = `dev A/B: ${tier}.${role} → ${JSON.stringify(selection)}`;

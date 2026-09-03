@@ -64,7 +64,11 @@ export const QUALITY_FEATURE_IDS = [
   "planThinkingBoost",
   "claimRetrieve",
   "chapterEditorPass",
-  "manuscriptReadPass"
+  "manuscriptReadPass",
+  "creativeContract",
+  "materialFirst",
+  "coupletRewrite",
+  "chapterApparatus"
 ] as const;
 
 export type QualityFeatureId = (typeof QUALITY_FEATURE_IDS)[number];
@@ -150,7 +154,13 @@ export const QUALITY_FEATURE_DEFAULTS: QualityFeatureSettings = {
   // Composed-chapters strategy only. One prose call per chapter each; the
   // read is one call per book. Both replace the per-page review loop.
   chapterEditorPass: ["ultra", "premium", "balanced", "fast"],
-  manuscriptReadPass: ["ultra", "premium", "balanced", "fast"]
+  manuscriptReadPass: ["ultra", "premium", "balanced", "fast"],
+  // The 2026-09-03 quality ladder (opinion-fable-5). Off everywhere until a
+  // rung is measured; each is a content or contract change, not a gate.
+  creativeContract: [],
+  materialFirst: [],
+  coupletRewrite: [],
+  chapterApparatus: []
 };
 
 export type QualityFeatureDescription = {
@@ -296,6 +306,34 @@ export const QUALITY_FEATURES: QualityFeatureDescription[] = [
     summary: "One read of the finished book returning per-chapter notes; at most a third of the chapters get a second line edit.",
     pipelines: ["composed"],
     stage: "Manuscript read"
+  },
+  {
+    id: "creativeContract",
+    label: "Creative contract (composed chapters)",
+    summary: "The writer draws on its own knowledge for people, dates, documents and scenes instead of being held to the research notes; quotation marks stay a promise.",
+    pipelines: ["composed"],
+    stage: "Compose chapter"
+  },
+  {
+    id: "materialFirst",
+    label: "Material first: episodes and a primary-source dossier (composed chapters)",
+    summary: "Plans two or three episodes per chapter, fetches verbatim public-domain text for them, and composes each chapter around its episodes with a code-checked quote guard.",
+    pipelines: ["composed"],
+    stage: "Compose chapter"
+  },
+  {
+    id: "coupletRewrite",
+    label: "Couplet rewrite (composed chapters)",
+    summary: "A deterministic detector finds the negation-then-assertion sentence pairs; one line-edit call per chapter on the writer rewrites only those, accepted only when the pattern is gone and every name and number survives.",
+    pipelines: ["composed"],
+    stage: "Line edit"
+  },
+  {
+    id: "chapterApparatus",
+    label: "Chapter epigraphs from the dossier (composed chapters)",
+    summary: "Sets a verbatim, attributed epigraph from the chapter's primary-source dossier at the head of each chapter that has one, and lets no two consecutive chapters open on a told scene. No model call; needs Material first.",
+    pipelines: ["composed"],
+    stage: "Paginate and describe"
   }
 ];
 

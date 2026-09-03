@@ -371,6 +371,19 @@ async function exportRun(projectId: string, label: string, outDir: string, basel
     lines.push(`forms: ${chapter.forms.join(" > ")}`);
     lines.push(`landing: ${chapter.landing ?? ""}`);
     lines.push(`report: draft ${String(report.draftWords)} → edited ${String(report.editedWords)} words; editorChanged ${String(report.editorChanged)}; shapePass ${String(report.shapePassApplied)}; secondEdit ${String(report.secondEditApplied)}; paragraphCv ${Number(report.paragraphCv ?? 0).toFixed(2)}; formPlan ${String(report.formPlanSource)} (${(report.formPlanIssues as string[] | undefined)?.length ?? 0} issues)`);
+    const scene = report.scene as { words: number; episodeTitle: string } | undefined;
+    const dossierReport = report.dossier as { episodes: number; documents: number; excerpts: number } | undefined;
+    const quotes = report.quotes as { checked: number; verbatim: number; misattributed: number; stripped: number } | undefined;
+    const couplets = report.couplets as { found: number; rewritten: number } | undefined;
+    if (couplets) lines.push(`couplets: ${couplets.rewritten}/${couplets.found} rewritten`);
+    if (report.epigraph) lines.push("epigraph: set from the dossier");
+    if (report.contract || scene || dossierReport || quotes) {
+      lines.push(
+        `material: contract ${String(report.contract ?? "grounded")}${scene ? `; scene ${scene.words} words ("${scene.episodeTitle}")` : ""}${
+          dossierReport ? `; episodes ${dossierReport.episodes}, documents ${dossierReport.documents}, excerpts ${dossierReport.excerpts}` : ""
+        }${quotes ? `; quotes ${quotes.verbatim}/${quotes.checked} verbatim, ${quotes.misattributed} misattributed, ${quotes.stripped} stripped` : ""}`
+      );
+    }
     for (const call of chapter.calls) {
       const notes = (call.measurementNotes as string[] | undefined) ?? [];
       const reader = (call.readerNotes as string[] | undefined) ?? [];

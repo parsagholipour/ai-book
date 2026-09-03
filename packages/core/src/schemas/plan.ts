@@ -9,6 +9,7 @@ import {
   unwrapJsonObject
 } from "./jsonCoercion.js";
 import { bookArcSchema } from "./bookArc.js";
+import { bookDossierSchema, bookEpisodesSchema } from "./episodes.js";
 import { illustrationCadenceSchema } from "./mediaSettings.js";
 import {
   isWritingMode,
@@ -601,6 +602,9 @@ const bookPlanObjectSchema = z.object({
   authorStance: authorStanceSchema.optional(),
   /** The book's arc (generation/bookArc.ts). A stored arc that no longer parses is dropped, never a reason to fail the plan. */
   bookArc: z.preprocess((value) => (bookArcSchema.safeParse(value).success ? value : undefined), bookArcSchema.optional()),
+  /** Material-first (generation/episodes.ts, dossier.ts): stored beside the arc, dropped when they no longer parse. */
+  episodes: z.preprocess((value) => (bookEpisodesSchema.safeParse(value).success ? value : undefined), bookEpisodesSchema.optional()),
+  dossier: z.preprocess((value) => (bookDossierSchema.safeParse(value).success ? value : undefined), bookDossierSchema.optional()),
   illustrationPlan: illustrationPlanSchema
 });
 

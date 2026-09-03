@@ -17,6 +17,7 @@
 import { readFileSync } from "node:fs";
 import { basename, extname } from "node:path";
 import { measureProse } from "../packages/core/src/generation/proseMeasurements.js";
+import { coupletsPer1000Sentences } from "../packages/core/src/generation/coupletRewrite.js";
 
 type Page = { index: number; markdown: string };
 
@@ -39,6 +40,8 @@ type Scorecard = {
   distinctShapes: number;
   top5ShapeCoverage: number;
   negationContrastPer1000Sentences: number;
+  /** The tight couplet: a short negated sentence answered by a short "It …" sentence (coupletRewrite.ts). Ranks writers the way readers did. */
+  coupletsPer1000Sentences: number;
   generalisingCloserShare: number;
   pivotsPer1000Words: number;
 };
@@ -159,6 +162,7 @@ export function scorecardFor(pages: Page[]): Scorecard {
   const measured = measureProse(pages.map((page) => page.markdown).join("\n\n"));
   return {
     negationContrastPer1000Sentences: measured.negationContrast.per1000Sentences,
+    coupletsPer1000Sentences: coupletsPer1000Sentences(pages.map((page) => page.markdown).join("\n\n")),
     generalisingCloserShare: measured.generalisingClosers.share,
     pivotsPer1000Words: measured.words === 0 ? 0 : (measured.pivots.count / measured.words) * 1000,
     words: allWords.length,
@@ -227,6 +231,7 @@ function format(card: Scorecard): Record<string, string> {
     "paragraph-length CV": card.paragraphCv.toFixed(3),
     "paragraphs ending on a hedge": pct(card.hedgeEndingShare),
     "negation-correction /1000 sent.": card.negationContrastPer1000Sentences.toFixed(1),
+    "couplets /1000 sent.": card.coupletsPer1000Sentences.toFixed(1),
     "paragraphs ending on a truism": pct(card.generalisingCloserShare),
     "stock pivots /1000w": card.pivotsPer1000Words.toFixed(2),
     "pages measured": String(card.pages),

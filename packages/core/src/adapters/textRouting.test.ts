@@ -60,6 +60,13 @@ const PROSE_LANE_PURPOSES: ReadonlySet<string> = new Set([
   "detemplate-chapter",
   "read-manuscript",
   "cut-chapter",
+  // Material-first (opinion-fable-5): the episodes and the opening scene are
+  // the author's own choices and prose; the couplet rewrite is a line edit
+  // and takes the writer's lane like the other edits (Parsa, 2026-09-03: the
+  // edit stays on the selected model, never a second family).
+  "plan-episodes",
+  "compose-scene",
+  "rewrite-couplets",
   "architect-book",
   "rewrite-seams"
 ]);

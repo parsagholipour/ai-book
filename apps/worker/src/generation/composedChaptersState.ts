@@ -158,6 +158,18 @@ export type ComposedChapterReport = {
   shapePassApplied: boolean;
   /** Best-of-two: which draft the cross-family judge chose and whether both orders agreed. */
   bestOf?: { pick: number; agreed: boolean; reasons: string[] };
+  /** Material-first: the opening scene composed for the chapter. */
+  scene?: { words: number; episodeTitle: string } | undefined;
+  /** Material-first: what the dossier held for the chapter. */
+  dossier?: { episodes: number; documents: number; excerpts: number } | undefined;
+  /** The quote guard's count on the edited chapter: spans checked, verbatim in the dossier, hung on a dossier document without being in it, and stripped of their marks. */
+  quotes?: { checked: number; verbatim: number; misattributed: number; stripped: number } | undefined;
+  /** Which contract the writer wrote under. */
+  contract?: "grounded" | "creative" | undefined;
+  /** The couplet rewrite: pairs found in the edited chapter and pairs the editor's replacement was accepted for. */
+  couplets?: { found: number; rewritten: number } | undefined;
+  /** Whether an epigraph from the dossier was set at the chapter's head. */
+  epigraph?: boolean | undefined;
 };
 
 /**

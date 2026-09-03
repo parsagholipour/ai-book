@@ -98,19 +98,19 @@ export const COMPOSED_STAGES: readonly PipelineStage[] = [
     id: "compose",
     label: "Compose chapter",
     summary: "Two continuous drafts per chapter from the stance, the form plan, the previous chapter's tail and digests of earlier chapters; a fast cross-family judge reads the opening and closing of each and picks one, or the first when the two orders disagree.",
-    purposes: ["compose-chapter", "judge-chapter-drafts"],
+    purposes: ["compose-chapter", "judge-chapter-drafts", "plan-episodes", "extract-excerpts", "compose-scene"],
     lane: "prose",
     calls: "2 drafts and 2 judge calls per chapter, more when a draft is far too short",
-    gates: []
+    gates: ["creativeContract", "materialFirst"]
   },
   {
     id: "edit",
     label: "Line edit",
     summary: "An editor pass over the whole chapter: cut repeated caveats and restatements, vary paragraph shape, let stated positions stand.",
-    purposes: ["edit-chapter"],
+    purposes: ["edit-chapter", "rewrite-couplets"],
     lane: "prose",
     calls: "1 per chapter",
-    gates: ["chapterEditorPass"]
+    gates: ["chapterEditorPass", "coupletRewrite"]
   },
   {
     id: "describe",
@@ -119,7 +119,7 @@ export const COMPOSED_STAGES: readonly PipelineStage[] = [
     purposes: ["describe-pages"],
     lane: "mechanical",
     calls: "1 per chapter",
-    gates: []
+    gates: ["chapterApparatus"]
   },
   {
     id: "read",

@@ -44,26 +44,30 @@ import {
   type BookArc,
   bookArcSchema,
   mapWithConcurrency,
-  seamsSupported
+  seamsSupported,
+  chapterEpigraph,
+  withEpigraph,
+  checkQuoteProvenance,
+  composeScene,
+  episodesForChapter,
+  openingEpisode,
+  rewriteCouplets,
+  stripMisattributedQuotes,
+  type ChapterMaterial,
+  type ComposedScene
 } from "@book-maker/core";
-import { Prisma, prisma, pageScope } from "@book-maker/db";
+import { prepareBookMaterial } from "./composedChaptersMaterial.js";
+import { finalizePendingPages } from "./composedChaptersFinalize.js";
+import { Prisma, prisma } from "@book-maker/db";
 import { maybeEnqueueCompile, maybeEnqueueCover } from "../runtime/dispatch.js";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
-import type { ChapterSetup, IndexedPageDraft } from "../runtime/jobTypes.js";
+import type { ChapterSetup } from "../runtime/jobTypes.js";
 import { chapterSetupsForPlan } from "./bookHelpers.js";
 import { resetBookForDirectGeneration } from "./bookState.js";
 import { ensureCharacterReferenceAssets } from "./characterReferences.js";
 import { loadContinuityNotes, loadResearchNotesForGeneration } from "./generationContext.js";
-import {
-  GeneratedPagePublicationClaimLostError,
-  loadGeneratedPagePublicationSnapshot,
-  publishStagedGeneratedPage,
-  stageGeneratedPageAndBrief
-} from "./pagePublication.js";
-import { persistKeeperStoryDelta } from "./qualityEnrichment.js";
 import { loadQualityContext } from "./qualitySettings.js";
 import { loadProjectStoryState } from "./storyStateStore.js";
-import { reviewWholeBookDraftPages } from "./wholeBookPageReview.js";
 import {
   composedResumeState,
   loadComposedBookState,
@@ -158,6 +162,29 @@ export async function generateBookComposedChapters(options: {
       await persistBookArc(planId, arc, cut.applied ? cut.plan.chapters : undefined);
     }
   }
+
+  // The writer's contract and, material-first, the book's episodes and
+  // dossier: planned once per book and stored on the plan like the arc
+  // (`composedChaptersMaterial.ts`).
+  const { contract, episodes, dossier } = await prepareBookMaterial({ projectId, planId, input, plan, stance, textModel, quality, generationJobId });
+  const scenes = new Map<number, ComposedScene>();
+  // Under the apparatus flag no two consecutive chapters open on a scene:
+  // rung 3 of the 2026-09-03 ladder told an opening episode in 13–15
+  // chapters of 15 and the readers named "the same machine — a cinematic
+  // named-witness vignette" as a new template. The chapter without a scene
+  // still has its episodes and dossier; it opens on a document or a figure.
+  const rotateOpenings = quality.enabled("chapterApparatus");
+  const materialFor = (chapterIndex: number): ChapterMaterial | undefined => {
+    if (!episodes) return undefined;
+    const chapterEpisodes = episodesForChapter(episodes, chapterIndex);
+    if (chapterEpisodes.length === 0) return undefined;
+    const scene = scenes.get(chapterIndex);
+    return {
+      episodes: chapterEpisodes,
+      excerpts: dossier?.excerpts.filter((excerpt) => excerpt.chapterIndex === chapterIndex) ?? [],
+      ...(scene ? { scene } : {})
+    };
+  };
 
   const setups = chapterSetupsForPlan(plan, input.targetPages);
   const stored = await loadComposedBookState(projectId);
@@ -321,7 +348,9 @@ export async function generateBookComposedChapters(options: {
       continuityNotes: [...storedNotes, ...establishedNotes],
       researchNotes,
       storyStateLines: formatStoryStateLines(storyState),
-      textModel
+      textModel,
+      contract,
+      ...(materialFor(setup.chapter.index) ? { material: materialFor(setup.chapter.index) } : {})
     };
   };
 
@@ -343,6 +372,7 @@ export async function generateBookComposedChapters(options: {
       wordBudget: { min: budget.min, target: budget.target, max: budget.max },
       paragraphCv: 0,
       shapePassApplied: false,
+      contract,
       ...(arcSource ? { arc: arcSource } : {})
     };
   };
@@ -383,16 +413,77 @@ export async function generateBookComposedChapters(options: {
       }
       shapePassApplied = shapeNotes.length > 0;
     }
+    // The couplet rewrite: the pairs the detector finds, sent alone to the
+    // editor lane, accepted only when the pattern is gone (coupletRewrite.ts).
+    let couplets: ComposedChapterReport["couplets"];
+    if (quality.enabled("coupletRewrite")) {
+      await updateJobProgress(generationJobId, { message: `Breaking the couplets of chapter ${position}` });
+      try {
+        const rewritten = await rewriteCouplets({ input, plan, chapter: setup.chapter, markdown, textModel });
+        couplets = { found: rewritten.found, rewritten: rewritten.rewritten };
+        if (rewritten.changed) markdown = rewritten.markdown;
+      } catch (error) {
+        if (error instanceof Error && /stop|abort/i.test(error.name + error.message)) throw error;
+        console.warn("Couplet rewrite skipped", {
+          event: "generation.composed_chapters.couplet_rewrite_failed",
+          projectId,
+          chapterIndex: setup.chapter.index,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
     // Paragraph variety by merge, since no instruction produced it, and one
     // copy of any sentence the edits wrote twice.
     markdown = dropDuplicateSentences(varyParagraphs(markdown));
+    // The quote guard: every quoted span of eight words or more is checked
+    // against the chapter's dossier; a miss hung on a dossier document loses
+    // its marks, every other miss is counted and left (quoteProvenance.ts).
+    const material = materialFor(setup.chapter.index);
+    let quotes: ComposedChapterReport["quotes"];
+    if (material && material.excerpts.length > 0) {
+      const provenance = checkQuoteProvenance(markdown, material.excerpts);
+      const stripped = stripMisattributedQuotes(markdown, provenance);
+      markdown = stripped.markdown;
+      quotes = { checked: provenance.checked, verbatim: provenance.verbatim, misattributed: provenance.misattributed, stripped: stripped.stripped };
+      if (stripped.stripped > 0) {
+        console.warn("Quote guard stripped misattributed quotation marks", {
+          event: "generation.composed_chapters.quotes_stripped",
+          projectId,
+          chapterIndex: setup.chapter.index,
+          ...quotes
+        });
+      }
+    }
+    // The epigraph: verbatim from the dossier, attributed, ahead of the prose.
+    let epigraph = false;
+    if (quality.enabled("chapterApparatus") && material && material.excerpts.length > 0) {
+      const block = chapterEpigraph(material.excerpts);
+      if (block) {
+        markdown = withEpigraph(markdown, block);
+        epigraph = true;
+      }
+    }
     const pages = await describePages(setup, markdown);
     const bestOf = bestOfVerdicts.get(setup.chapter.index);
+    const scene = scenes.get(setup.chapter.index);
     const report: ComposedChapterReport = {
       ...reportFor(setup, countReadableWords(draftMarkdown), countReadableWords(markdown), editorChanged),
       paragraphCv: paragraphShapeReport(markdown).cv,
       shapePassApplied,
-      ...(bestOf ? { bestOf } : {})
+      ...(bestOf ? { bestOf } : {}),
+      ...(scene ? { scene: { words: scene.words, episodeTitle: scene.episodeTitle } } : {}),
+      ...(material
+        ? {
+            dossier: {
+              episodes: material.episodes.length,
+              documents: dossier?.documents.filter((document) => document.chapterIndex === setup.chapter.index).length ?? 0,
+              excerpts: material.excerpts.length
+            }
+          }
+        : {}),
+      ...(quotes ? { quotes } : {}),
+      ...(couplets ? { couplets } : {}),
+      ...(epigraph ? { epigraph } : {})
     };
     reports.set(setup.chapter.index, report);
     await stageComposedChapter({ projectId, chapterId, setup, composition: compositionFor(setup), pages, report, replace: false });
@@ -427,7 +518,34 @@ export async function generateBookComposedChapters(options: {
       progress: 22 + Math.round((offset / Math.max(todo.length, 1)) * 46),
       message: `Writing chapter ${position}`
     });
+    // Material-first: the chapter's opening episode is told first by a call
+    // whose only job is to narrate, then the chapter is composed to continue
+    // from it. The scene is printed ahead of the draft, so the degeneracy
+    // guard and the editor see the chapter as the reader will.
+    const openingMaterial = materialFor(setup.chapter.index);
+    const opening = openingMaterial ? openingEpisode(openingMaterial.episodes) : undefined;
+    const previousOpenedOnScene = scenes.has(setup.chapter.index - 1);
+    if (openingMaterial && opening && !(rotateOpenings && previousOpenedOnScene)) {
+      await updateJobProgress(generationJobId, { message: `Telling the opening episode of chapter ${position}` });
+      const scene = await composeScene({
+        input,
+        plan,
+        stance,
+        chapter: setup.chapter,
+        episode: opening,
+        excerpts: openingMaterial.excerpts,
+        contract,
+        textModel
+      });
+      if (scene) scenes.set(setup.chapter.index, scene);
+    }
     const composeOptions = await composeOptionsFor(setup, drafts);
+    const withScene = (draft: { markdown: string; words: number; attempts: number }) => {
+      const scene = scenes.get(setup.chapter.index);
+      if (!scene) return draft;
+      const markdown = `${scene.text}\n\n${draft.markdown}`;
+      return { ...draft, markdown, words: countReadableWords(markdown) };
+    };
     const candidates = judgeTextModel && COMPOSE_CANDIDATES > 1
       ? await Promise.all([
           composeChapter(composeOptions),
@@ -437,7 +555,7 @@ export async function generateBookComposedChapters(options: {
             temperature: Math.min(1, input.temperature + SECOND_CANDIDATE_TEMPERATURE_STEP)
           })
         ])
-      : [await composeChapter(composeOptions)];
+      : [withScene(await composeChapter(composeOptions))];
     let draft = candidates[0]!;
     // A draft that is not prose — a verb-chain loop, a runaway, a script the
     // book is not in — is composed once more and, if it comes back the same,
@@ -453,7 +571,7 @@ export async function generateBookComposedChapters(options: {
         chapterIndex: setup.chapter.index,
         reasons: degeneracy.reasons
       });
-      draft = await composeChapter({ ...composeOptions, variant: "second" });
+      draft = withScene(await composeChapter({ ...composeOptions, variant: "second" }));
       degeneracy = guard(draft.markdown);
       if (degeneracy.degenerate) {
         throw new Error(
@@ -645,127 +763,6 @@ export async function generateBookComposedChapters(options: {
  * passes use: deterministic local checks only (a prompt leak or placeholder
  * gets one revise), then COMPLETED, or GENERATING with an image job for an
  * illustration slot, with its continuity notes published beside it.
- */
-async function finalizePendingPages(options: {
-  projectId: string;
-  planId: string;
-  input: CreateProjectInput;
-  plan: BookPlan;
-  providers: ProviderSet;
-  strategy: BookGenerationStrategy;
-  generationJobId?: string | undefined;
-}): Promise<void> {
-  const { projectId, planId, input, plan, providers, strategy, generationJobId } = options;
-  const state = await loadComposedBookState(projectId);
-  const pending = state.pages.filter((page) => page.status === "PENDING");
-  if (pending.length === 0) {
-    return;
-  }
-  const notesByIndex = new Map<number, string[]>();
-  const chapterIdByIndex = new Map<number, string>();
-  for (const chapter of state.chapters) {
-    for (const [pageIndex, notes] of chapter.pageNotes) {
-      notesByIndex.set(pageIndex, notes);
-      chapterIdByIndex.set(pageIndex, chapter.id);
-    }
-  }
-  await advanceJobStep(generationJobId, "setup", 76, `Finalizing ${pending.length} pages`);
-  const drafts: IndexedPageDraft[] = pending.map((page) => ({
-    index: page.index,
-    title: page.title,
-    markdown: page.markdown,
-    summary: page.summary,
-    continuityNotes: notesByIndex.get(page.index) ?? [],
-    ...(page.imagePrompt ? { imagePrompt: page.imagePrompt } : {})
-  }));
-  const reviewed = await reviewWholeBookDraftPages({
-    input,
-    plan,
-    strategy,
-    textModel: providers.text,
-    pages: drafts,
-    generationJobId
-  });
-
-  let currentState = await loadProjectStoryState(projectId, plan.promises ?? []);
-  for (const [offset, page] of reviewed.entries()) {
-    const pageIndex = page.draft.index;
-    const existing = await loadGeneratedPagePublicationSnapshot(projectId, pageIndex);
-    if (!existing || existing.status !== "PENDING") {
-      continue;
-    }
-    const approved = page.qualityReport.approved;
-    const willIllustrate =
-      approved && Boolean(page.draft.imagePrompt) && strategy.shouldIllustratePage(input, plan, pageIndex);
-    const staged = await stageGeneratedPageAndBrief({
-      projectId,
-      chapterId: chapterIdByIndex.get(pageIndex) ?? null,
-      pageIndex,
-      draft: page.draft,
-      revision: page.revision,
-      qualityReport: page.qualityReport,
-      status: approved ? (willIllustrate ? "GENERATING" : "COMPLETED") : "FAILED_QA",
-      pendingBriefRepair: undefined,
-      existingPage: existing
-    });
-    if (approved && !willIllustrate && page.draft.continuityNotes.length > 0) {
-      await prisma.continuityNote.createMany({
-        data: page.draft.continuityNotes.map((body) => ({
-          projectId,
-          pageId: staged.id,
-          scope: pageScope(pageIndex),
-          body,
-          tags: ["page", String(pageIndex), strategy.id]
-        }))
-      });
-    }
-    if (willIllustrate) {
-      const publication = await publishStagedGeneratedPage({
-        projectId,
-        planId,
-        pageIndex,
-        draft: page.draft,
-        stagedPage: staged,
-        willIllustrate: true,
-        continuityTags: ["page", String(pageIndex), strategy.id]
-      });
-      if (publication === "enqueue-declined") {
-        return;
-      }
-      if (publication === "superseded") {
-        throw new GeneratedPagePublicationClaimLostError(pageIndex);
-      }
-    }
-    if (approved) {
-      const nextState = await persistKeeperStoryDelta({
-        projectId,
-        pageIndex,
-        draft: page.draft,
-        textModel: providers.text,
-        plan,
-        input,
-        previousExtract: null,
-        keeperWasRevised: page.revision > 1,
-        currentState
-      });
-      if (nextState) {
-        currentState = nextState;
-      }
-    }
-    if ((offset + 1) % 10 === 0) {
-      await updateJobProgress(generationJobId, {
-        progress: 76 + Math.round(((offset + 1) / reviewed.length) * 12),
-        message: `Finalized ${offset + 1}/${reviewed.length} pages`
-      });
-    }
-  }
-}
-
-/**
- * A stance the pass had to generate is written back onto the approved plan, so
- * the console can show the author the book was written as and a later
- * continuation or chat edit reads the same one. The merge keeps every other
- * field of the stored package byte for byte.
  */
 async function persistBookArc(planId: string, arc: BookArc, chapters: BookPlan["chapters"] | undefined): Promise<void> {
   try {

@@ -73,6 +73,8 @@ export const MECHANICAL_TEXT_PURPOSES: ReadonlySet<string> = new Set([
   // A forced choice between two drafts of one chapter (`chapterJudge.ts`); the
   // pass hands it a fast-judgment adapter from another model family anyway.
   "judge-chapter-drafts",
+  // Anchors into a primary-source window (`dossier.ts`): a lookup, not prose.
+  "extract-excerpts",
   // The copyright-safe image-prompt rewrite
   // (`generation/copyrightSafeImagePrompt.ts`): a strict-schema find-and-replace
   // that swaps protected names for generic descriptions and is forbidden from
