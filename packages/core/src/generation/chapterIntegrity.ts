@@ -14,8 +14,9 @@ import { countReadableWords } from "./proseShape.js";
  * the broken chapter, 0.26 on a DeepSeek chapter built on a deliberate
  * anaphora, 0.00 on every other), words against the chapter's own maximum
  * (2.8× there, never past ~1.3× elsewhere), and characters from a script the
- * book is not written in (4 there, 0 elsewhere). The script check runs only
- * for Latin-script target languages, where any such character is an error.
+ * book is not written in (4 there, 0 elsewhere then; a quoted foreign word is
+ * ordinary under the creative contract, so the ceiling is a run of forty). The
+ * script check runs only for Latin-script target languages.
  */
 export type ChapterDegeneracy = {
   degenerate: boolean;
@@ -29,7 +30,14 @@ const TEMPLATE_SHARE_CEILING = 0.4;
 const TEMPLATE_MIN_SENTENCES = 40;
 const TEMPLATE_MIN_REPEATS = 6;
 const RUNAWAY_LENGTH_FACTOR = 1.8;
-const FOREIGN_CHARACTER_CEILING = 2;
+// Two was the ceiling while no shipped chapter carried any foreign character.
+// Under the creative contract with a primary-source dossier a chapter quotes a
+// word in Arabic or Greek as a historian would — ladder-8 failed two paid
+// books on four and five characters (2026-09-04) — so the rule now asks for a
+// run of them: a chapter drifting into another script carries dozens, and the
+// verb-chain loop it was built for is caught by the template share and the
+// length before the script count.
+const FOREIGN_CHARACTER_CEILING = 40;
 
 export const LATIN_SCRIPT_LANGUAGES = new Set([
   "en", "fr", "de", "es", "it", "pt", "nl", "sv", "da", "no", "nb", "nn", "fi", "pl", "cs", "sk", "hu", "ro",

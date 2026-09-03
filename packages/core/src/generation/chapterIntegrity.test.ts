@@ -31,8 +31,12 @@ describe("chapterDegeneracy", () => {
     expect(verdict.reasons[0]).toContain("repeated three-word template");
     const runaway = chapterDegeneracy(prose.repeat(20), { maxWords: 1000, language: "en" });
     expect(runaway.reasons.some((reason) => reason.includes("against a maximum"))).toBe(true);
+    // A quoted word from another script is a historian's ordinary act, not degeneracy.
     const stray = chapterDegeneracy(`${prose} The tribute system imposes these limits, capping the索取 and 绞合 them.`, { maxWords: 5000, language: "en" });
-    expect(stray.degenerate).toBe(true);
+    expect(stray.degenerate).toBe(false);
     expect(stray.foreignCharacters).toBe(4);
+    const drift = chapterDegeneracy(`${prose} ${"朝貢制度は限界を課す。".repeat(6)}`, { maxWords: 5000, language: "en" });
+    expect(drift.degenerate).toBe(true);
+    expect(drift.reasons.some((reason) => reason.includes("script"))).toBe(true);
   });
 });
