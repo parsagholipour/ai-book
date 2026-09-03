@@ -285,6 +285,7 @@ code in that area, however obvious the rule looks.
 - **Every rule about shape the writer or editor is shown is performed on schedule, and the blind panel names the performance; content assignments are the only lever that moved.** → packages/core/src/generation/CLAUDE.md
 - **A composed draft that is not prose is recomposed once and then fails the job; it is never edited, paginated and published.** → packages/core/src/generation/CLAUDE.md
 - **The manuscript read returns notes, so a read that fails is a skipped read, never a failed book; and a provider's input filter refusing a chapter is a fallback, never a failed book.** → packages/core/src/generation/CLAUDE.md
+- **A prompt field present in every chapter is a template whatever it says, and withholding the thesis from a prompt is not withholding it from the prose.** → packages/core/src/generation/CLAUDE.md
 
 ### Characters, covers and illustrations
 

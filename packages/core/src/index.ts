@@ -76,6 +76,8 @@ export * from "./generation/composedChapter.js";
 export * from "./generation/proseMeasurements.js";
 export * from "./generation/chapterJudge.js";
 export * from "./generation/chapterIntegrity.js";
+export * from "./generation/bookArc.js";
+export * from "./generation/seams.js";
 export * from "./generation/pipelineStages.js";
 export * from "./generation/chapterShape.js";
 export { countReadableWords } from "./generation/proseShape.js";

@@ -31,7 +31,7 @@ const TEMPLATE_MIN_REPEATS = 6;
 const RUNAWAY_LENGTH_FACTOR = 1.8;
 const FOREIGN_CHARACTER_CEILING = 2;
 
-const LATIN_SCRIPT_LANGUAGES = new Set([
+export const LATIN_SCRIPT_LANGUAGES = new Set([
   "en", "fr", "de", "es", "it", "pt", "nl", "sv", "da", "no", "nb", "nn", "fi", "pl", "cs", "sk", "hu", "ro",
   "hr", "sl", "tr", "id", "ms", "vi", "et", "lv", "lt", "ca", "gl", "eu", "af", "sw", "tl", "is"
 ]);

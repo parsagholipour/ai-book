@@ -43,7 +43,7 @@ const DIRECT_COST_PURPOSES: Partial<Record<QualityFeatureId, ReadonlySet<string>
   writerTools: new Set(["write-page-with-tools"]),
   bestOfPolish: new Set(["polish-page", "judge-page-drafts"]),
   chapterEditorPass: new Set(["edit-chapter"]),
-  manuscriptReadPass: new Set(["read-manuscript", "cut-chapter"])
+  manuscriptReadPass: new Set(["read-manuscript", "cut-chapter", "rewrite-seams"])
 };
 
 const NON_SEPARATE_COST_NOTES: Partial<Record<QualityFeatureId, string>> = {

@@ -59,7 +59,9 @@ const PROSE_LANE_PURPOSES: ReadonlySet<string> = new Set([
   "edit-chapter",
   "detemplate-chapter",
   "read-manuscript",
-  "cut-chapter"
+  "cut-chapter",
+  "architect-book",
+  "rewrite-seams"
 ]);
 
 /** Model-call purposes are identifier-shaped; `purpose` is also a page brief's own field, whose values are sentences. */

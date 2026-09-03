@@ -5,6 +5,7 @@ import { makeFallbackPlan } from "../prompting/templates.js";
 import type { CreateProjectInput } from "../schemas/book.js";
 import { RHYTHM_EXEMPLAR, generateAuthorStance } from "./authorStance.js";
 import { formPaletteFor, fallbackChapterComposition } from "./chapterForms.js";
+import { bookArcSchema } from "./bookArc.js";
 import { paginateChapterMarkdown } from "./chapterPagination.js";
 import {
   COMPOSE_PROMPT_MODE,  chapterDigest,
@@ -49,6 +50,66 @@ describe("chapterWordBudget", () => {
 });
 
 describe("composeChapter", () => {
+  it("withholds the answer from a middle chapter under an arc: no thesis, premise, promises or positions reach its prompt", async () => {
+    const base = makeFallbackPlan(input);
+    const answer = "Offices give organised violence its reach and its targets.";
+    const plan = {
+      ...base,
+      premise: `The premise says it outright: ${answer}`,
+      promises: ["A promise that offices give organised violence its reach."],
+      chapters: [1, 2, 3, 4].map((index) => ({ index, title: `Chapter ${index}`, summary: `Chapter ${index} proves that offices give violence its reach.`, keyBeats: [], targetPages: 6 }))
+    };
+    const arc = bookArcSchema.parse({
+      question: "Whether organised violence follows temperament or offices?",
+      answer,
+      chapters: plan.chapters.map((chapter) => ({
+        index: chapter.index,
+        kind: chapter.index === 4 ? "resolution" : "case",
+        pages: 6,
+        job: { believesSoFar: "", does: `narrate: the episode of chapter ${chapter.index}.`, adds: "", leavesOpen: "" },
+        cast: []
+      }))
+    });
+    const stance = { thesis: answer, positions: ["A position naming offices and reach."], refusals: [], voiceSample: "A voice sample." };
+    const fake = new FakeTextModelAdapter(input);
+    const seen: GenerateTextOptions[] = [];
+    const recording = {
+      ...fake,
+      generateText: (options: GenerateTextOptions) => {
+        seen.push(options);
+        return fake.generateText(options);
+      }
+    } as unknown as FakeTextModelAdapter;
+    const chapter = plan.chapters[1]!;
+    const palette = formPaletteFor("analytical-history");
+    const fallback = fallbackChapterComposition({ chapter, startPage: 7, endPage: 12 }, palette, 1);
+    // The fallback composition quotes the chapter summary into its subjects; the model's plan sees the arc's job instead.
+    const composition = { ...fallback, sections: fallback.sections.map((section, offset) => ({ ...section, subject: `Subject ${offset + 1}`, owns: [] })) };
+    await composeChapter({
+      input,
+      plan,
+      stance,
+      arc,
+      chapter,
+      composition,
+      chapterPageStart: 7,
+      chapterPageEnd: 12,
+      earlierChapters: [],
+      continuityNotes: [],
+      researchNotes: [],
+      textModel: recording
+    });
+    const prompt = seen[0]!.messages.map((message) => message.content).join("\n");
+    expect(prompt).not.toContain(answer);
+    expect(prompt).not.toContain(plan.premise);
+    expect(prompt).not.toContain(plan.promises[0]!);
+    expect(prompt).not.toContain(stance.positions[0]!);
+    expect(prompt).not.toContain(chapter.summary);
+    expect(prompt).toContain(arc.question);
+    expect(prompt).toContain("narrate: the episode of chapter 2.");
+    expect(prompt).toContain("Do not state the book's answer");
+  });
+
   it("composes a chapter from the stance and form plan and returns paginatable prose", async () => {
     const { plan, chapter, composition } = setup();
     const fake = new FakeTextModelAdapter(input);

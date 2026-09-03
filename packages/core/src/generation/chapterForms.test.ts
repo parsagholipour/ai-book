@@ -9,7 +9,6 @@ import {
   normalizeChapterCompositions,
   planChapterForms,
   positionalIssues,
-  rotateFormsForVariety,
   rotatePositionsForVariety,
   settleFormVariety,
   sectionCountForPages,

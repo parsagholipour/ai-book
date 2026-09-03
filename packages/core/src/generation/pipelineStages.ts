@@ -89,7 +89,7 @@ export const COMPOSED_STAGES: readonly PipelineStage[] = [
     id: "forms",
     label: "Chapter form plan",
     summary: "Every chapter gets 3 to 8 sections with a form from the palette and one landing. Variety is checked deterministically; one repair call, then rotation.",
-    purposes: ["plan-chapter-forms"],
+    purposes: ["plan-chapter-forms", "architect-book"],
     lane: "prose",
     calls: "1 per book, plus at most 1 repair",
     gates: []
@@ -125,7 +125,7 @@ export const COMPOSED_STAGES: readonly PipelineStage[] = [
     id: "read",
     label: "Manuscript read",
     summary: "One read of the whole book returning notes; at most a third of the chapters, capped at six, get a second line edit.",
-    purposes: ["read-manuscript", "cut-chapter"],
+    purposes: ["read-manuscript", "cut-chapter", "rewrite-seams"],
     lane: "prose",
     calls: "1 per book, plus up to 6 edits",
     gates: ["manuscriptReadPass"]

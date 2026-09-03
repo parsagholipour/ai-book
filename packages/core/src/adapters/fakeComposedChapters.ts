@@ -151,3 +151,55 @@ export function fakeCutChapter(options: GenerateTextOptions): string {
   const paragraphs = draft.split(/\n\s*\n/).filter((paragraph) => paragraph.trim().length > 0);
   return paragraphs.length > 1 ? paragraphs.slice(0, -1).join("\n\n") : draft;
 }
+
+/** The canned arc: the plan's chapters, kinds cycled, pages as the plan had them, one job each. */
+export function fakeBookArc(options: GenerateJsonOptions<unknown>): unknown {
+  const user = options.messages.find((message) => message.role === "user")?.content ?? "";
+  let chapters: Array<{ index: number; title?: string; targetPages?: number }> = [];
+  try {
+    chapters = (JSON.parse(user) as { chapters?: typeof chapters }).chapters ?? [];
+  } catch {
+    chapters = [];
+  }
+  const kinds = ["method", "case", "document", "complication", "portrait", "argument", "case"];
+  return {
+    question: "Whether organised violence follows temperament or offices.",
+    opponent: { name: "A named opponent", work: "A published work", year: 2011, claim: "Its claim.", whereRight: "Where it is right.", whereTheBookBreaks: "Where the book breaks with it." },
+    answer: "Offices give violence its reach.",
+    turn: { chapterIndex: Math.max(1, Math.min(chapters.length, Math.ceil(chapters.length * 0.6))), trouble: "A crowd kills without an office.", repair: "The committee is the office." },
+    chapters: chapters.map((chapter, offset) => ({
+      index: chapter.index,
+      kind: offset === chapters.length - 1 ? "resolution" : kinds[offset % kinds.length],
+      pages: chapter.targetPages ?? 1,
+      job: {
+        believesSoFar: `What the reader believes after chapter ${chapter.index - 1}.`,
+        does: `establish: what chapter ${chapter.index} does.`,
+        adds: `What chapter ${chapter.index} adds.`,
+        leavesOpen: `What chapter ${chapter.index} leaves open.`
+      },
+      cast: [`Person ${chapter.index}`],
+      dispute: { sideA: { name: "Side A", claim: "claim A" }, sideB: { name: "Side B", claim: "claim B" }, atStake: "the stake" }
+    })),
+    proposal: "The proposal, in prose."
+  };
+}
+
+/** The canned seams: every paragraph returned unchanged, so the acceptance sees no replacement. */
+export function fakeSeams(options: GenerateJsonOptions<unknown>): unknown {
+  const user = options.messages.find((message) => message.role === "user")?.content ?? "";
+  try {
+    const chapters = (JSON.parse(user) as { chapters?: Array<{ index: number; opening: string; closing: string }> }).chapters ?? [];
+    // A visibly different seam per chapter that keeps every name and number, so
+    // the deterministic acceptance takes it and no two closings look alike.
+    const objects = ["a ledger", "a letter", "a map", "a count", "a name", "a door", "a road"];
+    return {
+      chapters: chapters.map((chapter) => ({
+        index: chapter.index,
+        opening: `${chapter.opening} Begin with ${objects[chapter.index % objects.length]}.`,
+        closing: `${chapter.closing} What stays open here is ${objects[(chapter.index + 3) % objects.length]}.`
+      }))
+    };
+  } catch {
+    return { chapters: [] };
+  }
+}

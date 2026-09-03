@@ -142,7 +142,12 @@ const chapterCompositionsResponseSchema = z.preprocess(
   z.object({ chapters: z.array(z.unknown()) })
 );
 
-export type ChapterFormRange = { chapter: ChapterPlan; startPage: number; endPage: number };
+export type ChapterFormRange = { chapter: ChapterPlan; startPage: number; endPage: number
+  /** The arc's kind for this chapter, when the book has an arc. */
+  kind?: string | undefined;
+  /** The arc's job for this chapter (`job.does`), which stands in for the plan's summary. */
+  job?: string | undefined;
+};
 
 /** One count per chapter, walking the range so consecutive chapters differ and the book uses the whole range. */
 export function assignedSectionCount(chapterIndex: number, pageCount: number): { min: number; max: number } {
@@ -611,6 +616,7 @@ export async function planChapterForms(options: PlanChapterFormsOptions): Promis
             "Variety rules, enforced after you answer: within a chapter no form takes more than half the sections and no form follows itself; no two chapters share the same form sequence; consecutive chapters do not open with the same form; across the book no form exceeds 40% of all sections; no form sits in the same position (first, second, third, last) in more than a third of the chapters, so a comparison or an argument comes first in some chapters and last in others; every chapter uses at least three distinct forms when it has three or more sections.",
             "Section counts per chapter are given as sectionCount; shares are fractions of the chapter's length and sum to 1. Vary the count from chapter to chapter across that range, and give every chapter one section that takes at least 40% of its length and one that takes under 15%, so no two chapters have the same silhouette.",
             "avoid names what earlier chapters already established that this chapter must not re-explain or re-argue.",
+            "Where a chapter carries kind, its forms serve it: a case chapter is mostly scenes and close readings of one episode, a document chapter is close readings of one text, a complication chapter ends on an open question, a portrait follows one person, an argument chapter carries an argument and a counterargument, a method chapter shows a procedure, a resolution closes with a verdict.",
             ...(repair
               ? [
                   "Your previous plan is in previousPlan and failed the checks listed in issues. Return a corrected complete plan for the same chapters that resolves every issue while keeping subjects and ownership."
@@ -636,12 +642,15 @@ export async function planChapterForms(options: PlanChapterFormsOptions): Promis
               chapters: open.map((range) => ({
                 chapterIndex: range.chapter.index,
                 title: range.chapter.title,
-                summary: range.chapter.summary,
+                // Under an arc the job stands in for the summary: the plan's summary says what the chapter proves.
+                summary: range.job ?? range.chapter.summary,
                 keyBeats: range.chapter.keyBeats,
                 pages: range.endPage - range.startPage + 1,
                 // Assigned, not requested: told to vary the count the planner returned
                 // 4 or 5 everywhere (composed-22); a count is a content assignment.
-                sectionCount: assignedSectionCount(range.chapter.index, range.endPage - range.startPage + 1)
+                sectionCount: assignedSectionCount(range.chapter.index, range.endPage - range.startPage + 1),
+                ...(range.kind ? { kind: range.kind } : {}),
+                ...(range.job ? { job: range.job } : {})
               })),
               ...(options.fixed && options.fixed.length > 0
                 ? {

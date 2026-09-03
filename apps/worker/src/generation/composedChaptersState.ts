@@ -138,6 +138,12 @@ export type ComposedPageRow = DescribedPage & { markdown: string };
  * the brief like it.
  */
 export type ComposedChapterReport = {
+  /** The seams call replaced this chapter's opening and/or closing. */
+  seamsApplied?: boolean | undefined;
+  /** Where the book's arc came from: stored on the plan, or planned by this run. */
+  arc?: "stored" | "model" | undefined;
+  /** What the manuscript read said about the whole book, kept on the first chapter's report. */
+  readMetrics?: { stopsDevelopingAt?: number | undefined; swappable?: number[] | undefined; answerStatedIn?: number[] | undefined } | undefined;
   formPlanSource: "model" | "repaired" | "rotated" | "fallback";
   formPlanIssues: string[];
   draftWords: number;
@@ -162,6 +168,18 @@ export type ComposedChapterReport = {
  */
 /** The read-driven deletion-only cut ran on composed-8/9 (6.73 on composed-7's plan); off until it is tested on its own. */
 export const READ_SECOND_EDITS = false;
+/**
+ * The book arc (core `bookArc.ts`): planned once per book, the pages re-cut
+ * by kind, the thesis withheld from the middle chapters. Arm 1 of the
+ * paradigm shift (spec.md, composed-24/25, 2026-09-03): nine readers scored
+ * it 7.39 against 7.46 for this default, engagement and pacing unmoved, and
+ * the read reported the answer stated in nearly every chapter regardless —
+ * the writer reconstructs it from the question. Off; the modules stay for
+ * the next arm.
+ */
+export const BOOK_ARC = false;
+/** Every chapter's first and last paragraph rewritten together after the read (core `seams.ts`); same arm, same verdict. */
+export const SEAMS_TOGETHER = false;
 /** Two drafts and a judge settled 2 of composed-7's 15 chapters at double the compose spend; the code path stays for a tier that earns it. */
 export const COMPOSE_CANDIDATES = 1;
 /** Paragraph-shape numbers to the editor: off for composed-8/9, which scored lower on the same plan; back on with composed-7's editor. */

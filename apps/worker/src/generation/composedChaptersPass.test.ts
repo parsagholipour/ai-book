@@ -329,7 +329,10 @@ describe("generateBookComposedChapters", () => {
     const edits = purposes.filter((purpose) => purpose === "edit-chapter").length;
     expect(edits).toBeGreaterThanOrEqual(plan.chapters.length);
     expect(edits).toBeLessThanOrEqual(plan.chapters.length * 2);
+    // Described once after the compose; the arc and the seams are off by default (composedChaptersState.ts).
     expect(purposes.filter((purpose) => purpose === "describe-pages")).toHaveLength(plan.chapters.length);
+    expect(purposes).not.toContain("architect-book");
+    expect(purposes).not.toContain("rewrite-seams");
     expect(purposes.filter((purpose) => purpose === "read-manuscript")).toHaveLength(1);
     expect(purposes).not.toContain("review-page");
     expect(purposes).not.toContain("generate-page");
@@ -353,9 +356,11 @@ describe("generateBookComposedChapters", () => {
     expect(typeof shaped.paragraphCv).toBe("number");
     expect(typeof shaped.shapePassApplied).toBe("boolean");
     expect(briefs[0]!.report.formPlanSource).toBe("model");
-    // The plan carried no stance, so the one the pass generated is written back onto it.
+    // The plan carried no stance, so the one the pass generated is written back onto it; no arc is planned by default.
     expect(mocks.prisma.planVersion.update).toHaveBeenCalledTimes(1);
     expect((store.planningPackage.authorStance as { thesis: string }).thesis).not.toBe("");
+    expect(store.planningPackage.bookArc).toBeUndefined();
+    expect(briefs.some((brief) => (brief.report as { seamsApplied?: boolean }).seamsApplied)).toBe(false);
 
     expect(store.pages).toHaveLength(input.targetPages);
     expect(store.pages.every((page) => page.status === "COMPLETED" && page.markdown.trim().length > 0)).toBe(true);

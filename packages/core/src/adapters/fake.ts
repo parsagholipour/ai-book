@@ -13,7 +13,7 @@ import { COVER_DESIGN_SELECTION_PURPOSE, DEFAULT_COVER_DESIGN_ID } from "../gene
 import { COPYRIGHT_SAFE_IMAGE_PROMPT_PURPOSE } from "../generation/copyrightSafeImagePrompt.js";
 import { MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE } from "../generation/manuscriptStructuralReview.js";
 import { dryRunDetail, dryRunPageBeat, rotate } from "./fakeDryRunBeats.js";
-import { fakeChapterForms, fakeComposedChapter, fakeDescribedPages, fakeCutChapter, fakeDetemplatedChapter } from "./fakeComposedChapters.js";
+import { fakeChapterForms, fakeComposedChapter, fakeDescribedPages, fakeBookArc, fakeCutChapter, fakeSeams, fakeDetemplatedChapter } from "./fakeComposedChapters.js";
 import { fakeEditAdherence } from "./fakeEditAdherence.js";
 import { parseSchemaWithContext } from "./json.js";
 import type {
@@ -153,6 +153,12 @@ export class FakeTextModelAdapter implements TextModelAdapter {
       };
     }
 
+    if (options.purpose === "architect-book") {
+      return fakeBookArc(options);
+    }
+    if (options.purpose === "rewrite-seams") {
+      return fakeSeams(options);
+    }
     if (options.purpose === "judge-chapter-drafts") {
       return { winner: "A", reason: "Fake judge keeps the first draft." };
     }

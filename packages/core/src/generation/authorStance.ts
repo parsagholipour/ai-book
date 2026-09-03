@@ -155,10 +155,16 @@ export function chapterPosition(stance: AuthorStance, chapterIndex: number): str
 export function authorStancePromptLines(
   stance: AuthorStance,
   mode: WritingMode,
-  options: { chapterIndex?: number | undefined } = {}
+  options: { chapterIndex?: number | undefined; exemplarOnly?: boolean | undefined } = {}
 ): string[] {
   const kind = isNarrativeWritingMode(mode) ? "story" : "book";
   const position = options.chapterIndex === undefined ? undefined : chapterPosition(stance, options.chapterIndex);
+  if (options.exemplarOnly) {
+    // Under a book arc the middle chapters never see the thesis or the positions.
+    return [
+      `A passage unrelated to this ${kind}, showing how paragraphs and sentences can move — a long narrated stretch, a two-sentence paragraph, a plain assertion, particulars throughout. Take its movement, never its subject or its sentences: "${RHYTHM_EXEMPLAR}"`
+    ];
+  }
   return [
     `You are this ${kind}'s author. What it argues underneath everything, which the prose never states outright: ${stance.thesis}`,
     ...(position

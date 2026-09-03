@@ -8,6 +8,7 @@ import {
   stringField,
   unwrapJsonObject
 } from "./jsonCoercion.js";
+import { bookArcSchema } from "./bookArc.js";
 import { illustrationCadenceSchema } from "./mediaSettings.js";
 import {
   isWritingMode,
@@ -598,6 +599,8 @@ const bookPlanObjectSchema = z.object({
   promises: z.array(z.string()).default([]),
   openingHook: z.string().optional(),
   authorStance: authorStanceSchema.optional(),
+  /** The book's arc (generation/bookArc.ts). A stored arc that no longer parses is dropped, never a reason to fail the plan. */
+  bookArc: z.preprocess((value) => (bookArcSchema.safeParse(value).success ? value : undefined), bookArcSchema.optional()),
   illustrationPlan: illustrationPlanSchema
 });
 

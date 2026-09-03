@@ -105,7 +105,7 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
             "Plan real book chapters, not one titled chapter or section per generated page.",
             `The sum of chapter targetPages must equal exactly ${options.input.targetPages}.`,
             ...(options.input.targetPages >= 40
-              ? ["Give each chapter six to nine pages: a chapter is written as one piece, and one twelve-page chapter comes back thinner than two of six."]
+              ? ["Give chapters different lengths, from three to fourteen pages: at least one long chapter that narrates a single case, one short chapter that reads a single document, and no run of chapters of the same length. A chapter is written as one piece."]
               : []),
             "Do not create more chapters than targetPages, because every chapter must contain at least one page.",
             "For factual, scientific, historical, or research-grounded books, build the plan around source-backed claims and explicit uncertainty; do not invent studies, journals, institutes, experts, statistics, citations, or numeric findings.",

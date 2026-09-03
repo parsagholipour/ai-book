@@ -919,3 +919,20 @@ checks between entries and awaited, rather than left running into `prisma.$disco
   the most recent plan's description of them. A caller whose sheets are already one plan's is
   unchanged by construction, which is why this is the fix rather than a second plan filter at the
   one call site that has no plan to filter by.
+
+- **A prompt field present in every chapter is a template whatever it says, and withholding the
+  thesis from a prompt is not withholding it from the prose.** Arm 1 of the "proposal-first"
+  paradigm (`bookArc.ts`, `seams.ts`, `manuscriptRead.ts`, `cutChapterTail`; worker flags
+  `BOOK_ARC`, `SEAMS_TOGETHER`, `READ_SECOND_EDITS` in `composedChaptersState.ts`, all off) gave
+  every chapter a kind, a job, a page count and — at first — a `dispute`; nine blind readers found
+  a new move in every chapter of every book ("two named scholars, each partly right, their
+  disagreement improves the question"), so the dispute reaches `argument` chapters only. With
+  every thesis field then withheld from the middle chapters (`premise` → the question, no
+  `promises`, the arc job for the summary, the form planner given the question and no positions;
+  `composedChapter.test.ts` renders a middle chapter's whole prompt and asserts it), the
+  manuscript read still reported the answer stated in 10–14 of 14 chapters: the writer
+  reconstructs it from the question and lands on it. Composed-25 scored 7.39 against 7.46 for the
+  iteration-23 default (`.scratch/composed-chapters/spec.md`), engagement and pacing unmoved. The
+  modules stay, tested, for the next arm; `arcChapterLines` also drops any job line sharing four
+  content words with the answer, and `applyBookArcPages` repairs a cut whose pages do not sum
+  (`repairArcPages`) rather than dropping the one axis the arc exists to test.

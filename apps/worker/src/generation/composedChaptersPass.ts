@@ -34,7 +34,17 @@ import {
   type TextModelAdapter,
   type EditedChapterText,
   chapterDegeneracy,
-  cutChapter
+  applyBookArcPages,
+  applySeam,
+  architectBook,
+  chapterSeams,
+  cutChapterTail,
+  planBookArc,
+  rewriteSeams,
+  type BookArc,
+  bookArcSchema,
+  mapWithConcurrency,
+  seamsSupported
 } from "@book-maker/core";
 import { Prisma, prisma, pageScope } from "@book-maker/db";
 import { maybeEnqueueCompile, maybeEnqueueCover } from "../runtime/dispatch.js";
@@ -66,6 +76,8 @@ import {
   storedPagesInRange,
   type ComposedPageRow,
   type ComposedChapterReport,
+  BOOK_ARC,
+  SEAMS_TOGETHER
 } from "./composedChaptersState.js";
 export { composedResumeState, derivedChapterBrief } from "./composedChaptersState.js";
 
@@ -99,9 +111,54 @@ export async function generateBookComposedChapters(options: {
   /** A judge from another model family; with one, every chapter is drafted twice and chosen. */
   judgeTextModel?: TextModelAdapter | undefined;
 }): Promise<void> {
-  const { projectId, planId, input, plan, providers, strategy, generationJobId, judgeTextModel } = options;
+  const { projectId, planId, input, providers, strategy, generationJobId, judgeTextModel } = options;
+  let plan = options.plan;
   const textModel = providers.text;
   const quality = await loadQualityContext(input);
+  await advanceJobStep(generationJobId, "briefs", 12, "Deciding the author's stance");
+  let stance = planAuthorStance(plan);
+  if (!stance) {
+    stance = await generateAuthorStance({ input, plan, textModel });
+    await persistGeneratedAuthorStance(planId, stance);
+  }
+  // The book's arc: planned once per book and stored on the plan together
+  // with its page cut, so a resumed run re-cuts the same pages; without an arc
+  // the pass runs as before. It comes before the chapter setups because the
+  // Chapter rows, the form plan and the word budgets are all derived from the
+  // cut — computed after them it reached only the prompts (developer review,
+  // 2026-09-03).
+  let arc = planBookArc(plan);
+  let arcSource: "stored" | "model" | undefined = arc ? "stored" : undefined;
+  if (!arc && BOOK_ARC) {
+    await updateJobProgress(generationJobId, { progress: 13, message: "Planning the book's arc" });
+    const architected = await architectBook({ input, plan, stance, textModel });
+    if (architected.arc) {
+      arc = architected.arc;
+      arcSource = "model";
+    } else {
+      console.warn("Book arc not produced; composing without one", {
+        event: "generation.composed_chapters.arc_not_produced",
+        projectId,
+        reason: architected.failure
+      });
+    }
+  }
+  if (arc) {
+    const cut = applyBookArcPages(plan, arc, input.targetPages);
+    if (cut.applied) {
+      plan = cut.plan;
+      arc = cut.arc;
+      if (cut.reason) {
+        console.warn("Book arc page cut repaired", { event: "generation.composed_chapters.arc_pages_repaired", projectId, reason: cut.reason });
+      }
+    } else {
+      console.warn("Book arc page cut not applied", { event: "generation.composed_chapters.arc_pages_not_applied", projectId, reason: cut.reason });
+    }
+    if (arcSource === "model") {
+      await persistBookArc(planId, arc, cut.applied ? cut.plan.chapters : undefined);
+    }
+  }
+
   const setups = chapterSetupsForPlan(plan, input.targetPages);
   const stored = await loadComposedBookState(projectId);
   const resume = composedResumeState({
@@ -149,13 +206,6 @@ export async function generateBookComposedChapters(options: {
   await ensureCharacterReferenceAssets({ projectId, planId, input, plan, providers, strategy, generationJobId });
   await maybeEnqueueCover(projectId, planId, input);
 
-  await advanceJobStep(generationJobId, "briefs", 12, "Deciding the author's stance");
-  let stance = planAuthorStance(plan);
-  if (!stance) {
-    stance = await generateAuthorStance({ input, plan, textModel });
-    await persistGeneratedAuthorStance(planId, stance);
-  }
-
   await updateJobProgress(generationJobId, { progress: 16, message: "Planning the shape of every chapter" });
   const fixed = stored.chapters
     .filter((chapter) => doneChapters.has(chapter.index) && chapter.composition)
@@ -163,8 +213,19 @@ export async function generateBookComposedChapters(options: {
   const forms = await planChapterForms({
     input,
     plan,
-    stance,
-    ranges: setups.map((setup) => ({ chapter: setup.chapter, startPage: setup.startPage, endPage: setup.endPage })),
+    // Under an arc the form planner sees the question and never the answer:
+    // its subjects and notes reach the writer.
+    stance: arc ? { ...stance, thesis: arc.question, positions: [] } : stance,
+    ranges: setups.map((setup) => {
+      const arcChapter = arc?.chapters.find((entry) => entry.index === setup.chapter.index);
+      return {
+        chapter: setup.chapter,
+        startPage: setup.startPage,
+        endPage: setup.endPage,
+        ...(arcChapter ? { kind: arcChapter.kind } : {}),
+        ...(arcChapter?.job.does ? { job: arcChapter.job.does } : {})
+      };
+    }),
     fixed,
     textModel
   });
@@ -249,6 +310,7 @@ export async function generateBookComposedChapters(options: {
       input,
       plan,
       stance,
+      ...(arc ? { arc } : {}),
       chapter: setup.chapter,
       composition: compositionFor(setup),
       chapterPageStart: setup.startPage,
@@ -280,7 +342,8 @@ export async function generateBookComposedChapters(options: {
       secondEditApplied: false,
       wordBudget: { min: budget.min, target: budget.target, max: budget.max },
       paragraphCv: 0,
-      shapePassApplied: false
+      shapePassApplied: false,
+      ...(arcSource ? { arc: arcSource } : {})
     };
   };
 
@@ -430,6 +493,46 @@ export async function generateBookComposedChapters(options: {
 
   if (quality.enabled("manuscriptReadPass") && setups.length > 1) {
     await updateJobProgress(generationJobId, { progress: 70, message: "Reading the whole manuscript" });
+    // Every chapter's first and last paragraph rewritten in one call, so the
+    // seams differ from each other; a paragraph the deterministic check refuses
+    // keeps the original. Changed chapters are re-described and re-staged.
+    const rewriteSeamsTogether = async (bookArc: BookArc, bookNotes: string[]) => {
+      const seamChapters = setups
+        .filter((setup) => finalText.has(setup.chapter.index))
+        .map((setup) => {
+          const kind = bookArc.chapters.find((entry) => entry.index === setup.chapter.index)?.kind;
+          return { index: setup.chapter.index, title: setup.chapter.title, ...(kind ? { kind } : {}), ...chapterSeams(finalText.get(setup.chapter.index)!) };
+        });
+      await updateJobProgress(generationJobId, { progress: 69, message: "Rewriting the chapter openings and closings together" });
+      const seams = await rewriteSeams({ input, plan, arc: bookArc, chapters: seamChapters, bookNotes, textModel });
+      if (seams.skipped) {
+        console.warn("Seams skipped", { event: "generation.composed_chapters.seams_skipped", projectId, reason: seams.skipped });
+        return;
+      }
+      console.warn("Seams rewritten", { event: "generation.composed_chapters.seams", projectId, accepted: seams.accepted, rejected: seams.rejected });
+      // The re-describes are independent, so they run three at a time; the
+      // staging after them is sequential because it writes page rows.
+      const described = await mapWithConcurrency(seams.replacements, 3, async (replacement) => {
+        const setup = setups.find((candidate) => candidate.chapter.index === replacement.index);
+        const chapterId = setup ? chapterIds.get(setup.chapter.index) : undefined;
+        const current = setup ? finalText.get(setup.chapter.index) : undefined;
+        if (!setup || !chapterId || !current) return undefined;
+        const seamed = applySeam(current, replacement);
+        if (seamed === current) return undefined;
+        return { setup, chapterId, current, seamed, pages: await describePages(setup, seamed) };
+      });
+      for (const entry of described) {
+        if (!entry) continue;
+        const { setup, chapterId, current, seamed, pages } = entry;
+        const previous = reports.get(setup.chapter.index) ?? reportFor(setup, countReadableWords(current), countReadableWords(seamed), false);
+        const report: ComposedChapterReport = { ...previous, seamsApplied: true };
+        reports.set(setup.chapter.index, report);
+        await stageComposedChapter({ projectId, chapterId, setup, composition: compositionFor(setup), pages, report, replace: true });
+        finalText.set(setup.chapter.index, seamed);
+        edges.set(setup.chapter.index, chapterEdges(seamed));
+        digests.set(setup.chapter.index, chapterDigest(pages.map((page) => page.summary)));
+      }
+    };
     const chaptersForRead = setups.map((setup) => {
       const markdown = finalText.get(setup.chapter.index) ?? "";
       return {
@@ -440,9 +543,22 @@ export async function generateBookComposedChapters(options: {
         measurements: notesForDraft(markdown)
       };
     });
-    const read = await readManuscript({ input, plan, stance, chapters: chaptersForRead, textModel });
+    const read = await readManuscript({ input, plan, stance, ...(arc ? { arc } : {}), chapters: chaptersForRead, textModel });
     if (read.skipped) {
       console.warn("Manuscript read skipped", { event: "generation.composed_chapters.read_skipped", projectId, reason: read.skipped });
+    }
+    if (read.stopsDevelopingAt !== undefined || read.swappable !== undefined || read.answerStatedIn !== undefined) {
+      const readMetrics = {
+        ...(read.stopsDevelopingAt !== undefined ? { stopsDevelopingAt: read.stopsDevelopingAt } : {}),
+        ...(read.swappable !== undefined ? { swappable: read.swappable } : {}),
+        ...(read.answerStatedIn !== undefined ? { answerStatedIn: read.answerStatedIn } : {})
+      };
+      console.warn("Manuscript read metrics", { event: "generation.composed_chapters.read_metrics", projectId, ...readMetrics });
+      const firstIndex = setups[0]?.chapter.index;
+      const firstReport = firstIndex === undefined ? undefined : reports.get(firstIndex);
+      if (firstIndex !== undefined && firstReport) {
+        reports.set(firstIndex, { ...firstReport, readMetrics });
+      }
     }
     // With second edits off, every chapter that drew notes still goes through
     // the loop below, whose unchanged-edit branch re-stages the brief with the
@@ -466,7 +582,7 @@ export async function generateBookComposedChapters(options: {
       // Deletion only: the read names the sentences, the cut removes them, and
       // `deletionOnlyResult` refuses anything the model wrote.
       const edited: EditedChapterText = READ_SECOND_EDITS
-        ? await cutChapter({
+        ? await cutChapterTail({
             ...(await composeOptionsFor(setup, new Map())),
             markdown: current,
             notes: entry.notes,
@@ -510,6 +626,12 @@ export async function generateBookComposedChapters(options: {
       finalText.set(setup.chapter.index, reshaped!);
       edges.set(setup.chapter.index, chapterEdges(reshaped!));
       digests.set(setup.chapter.index, chapterDigest(pages.map((page) => page.summary)));
+    }
+    // The seams come after the cuts: the read's notes quote the pre-seam
+    // paragraphs, so a closing replaced first would leave a cut nothing to
+    // find, or take away the paragraph the seams had just bought.
+    if (SEAMS_TOGETHER && arc && seamsSupported(input.language)) {
+      await rewriteSeamsTogether(arc, read.bookNotes);
     }
   }
 
@@ -645,6 +767,31 @@ async function finalizePendingPages(options: {
  * continuation or chat edit reads the same one. The merge keeps every other
  * field of the stored package byte for byte.
  */
+async function persistBookArc(planId: string, arc: BookArc, chapters: BookPlan["chapters"] | undefined): Promise<void> {
+  try {
+    const row = await prisma.planVersion.findUnique({ where: { id: planId }, select: { planningPackage: true } });
+    // A stored arc that parses stands; one that does not is repaired here,
+    // or every retry would re-architect, never persist, and resume "fresh".
+    if (!row || !isRecord(row.planningPackage) || bookArcSchema.safeParse(row.planningPackage.bookArc).success) {
+      return;
+    }
+    // The cut rides with the arc: the compile places chapter headings by the
+    // stored plan's targetPages, so rows cut one way under a plan cut another
+    // print headings mid-chapter.
+    await prisma.planVersion.update({
+      where: { id: planId },
+      data: {
+        planningPackage: { ...row.planningPackage, bookArc: arc, ...(chapters ? { chapters } : {}) } as unknown as Prisma.InputJsonValue
+      }
+    });
+  } catch (error) {
+    if (error instanceof Error && /stop/i.test(error.name)) {
+      throw error;
+    }
+    console.warn("Book arc was not persisted onto the plan", { event: "generation.composed_chapters.arc_not_persisted", planId, error });
+  }
+}
+
 async function persistGeneratedAuthorStance(planId: string, stance: AuthorStance): Promise<void> {
   try {
     const row = await prisma.planVersion.findUnique({ where: { id: planId }, select: { planningPackage: true } });

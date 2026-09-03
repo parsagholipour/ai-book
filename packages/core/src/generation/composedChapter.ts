@@ -6,8 +6,8 @@ import { targetLanguageGenerationGuidance, targetLanguagePayload } from "../prom
 import { kidsReadingGuidanceForInput, kidsReadingGuidanceLines } from "../prompting/readingLevel.js";
 import type { AuthorStance, BookPlan, ChapterPlan, CreateProjectInput } from "../schemas/book.js";
 import { isRecord } from "../schemas/jsonCoercion.js";
-import { isStopOrAbortError } from "../adapters/retry.js";
 import { authorStancePromptLines, isNarrativeWritingMode } from "./authorStance.js";
+import { arcChapterLines, type BookArc } from "./bookArc.js";
 import {  compositionWriterLines, formPaletteFor, type ChapterComposition } from "./chapterForms.js";
 import { normalizeChapterMarkdown } from "./chapterPagination.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
@@ -15,6 +15,14 @@ import { BYLINE_IS_TYPESET_RULE } from "./markdown.js";
 import { GROUNDED_FACTUALITY_RULE, IMAGE_PROMPT_CHARACTER_RULE, citationContractFields } from "./pagesShared.js";
 import { countReadableWords } from "./proseShape.js";
 import { inferWritingMode } from "./styleContract.js";
+export {
+  MANUSCRIPT_READ_MAX_WORDS,
+  READ_MANUSCRIPT_PURPOSE,
+  manuscriptReadEditCap,
+  readManuscript,
+  type ManuscriptChapterForRead,
+  type ManuscriptReadResult
+} from "./manuscriptRead.js";
 
 /**
  * The four provider calls of the composed-chapters strategy: compose a whole
@@ -29,10 +37,8 @@ import { inferWritingMode } from "./styleContract.js";
 export const COMPOSE_CHAPTER_PURPOSE = "compose-chapter";
 export const EDIT_CHAPTER_PURPOSE = "edit-chapter";
 export const DESCRIBE_PAGES_PURPOSE = "describe-pages";
-export const READ_MANUSCRIPT_PURPOSE = "read-manuscript";
 
 /** Beyond this the read is skipped rather than truncated: a read that saw half a book would flag the half it saw. */
-export const MANUSCRIPT_READ_MAX_WORDS = 110_000;
 /** 1,200 words was a third of the previous chapter, sent to both the compose and the edit call; 300 is its landing. */
 export const PREVIOUS_CHAPTER_TAIL_WORDS = 300;
 export const CHAPTER_DIGEST_MAX_CHARACTERS = 700;
@@ -80,6 +86,8 @@ export type ComposeChapterOptions = {
   input: CreateProjectInput;
   plan: BookPlan;
   stance: AuthorStance;
+  /** The book's arc: with it, a middle chapter writes from its job and never sees the thesis. */
+  arc?: BookArc | undefined;
   chapter: ChapterPlan;
   composition: ChapterComposition;
   chapterPageStart: number;
@@ -187,10 +195,16 @@ function positionLines(options: {
   return lines;
 }
 
-function bookPayload(plan: BookPlan, input: CreateProjectInput) {
+/**
+ * The book as the writer sees it. Under an arc, a middle chapter gets the
+ * book's question for its premise and no promises: composed-7's premise *is*
+ * the thesis, and the promises say where the book lands, so the stance lines
+ * withholding the answer were being handed it back one key over.
+ */
+function bookPayload(plan: BookPlan, input: CreateProjectInput, withheld: BookArc | undefined) {
   return {
     title: plan.title,
-    premise: plan.premise,
+    premise: withheld ? withheld.question : plan.premise,
     audience: plan.audience,
     category: input.category,
     subcategory: input.subcategory,
@@ -200,8 +214,20 @@ function bookPayload(plan: BookPlan, input: CreateProjectInput) {
     // either way. They stay.
     styleNotes: plan.voiceGuide,
     continuityRules: plan.continuityRules,
-    promises: plan.promises
+    ...(withheld ? {} : { promises: plan.promises })
   };
+}
+
+/** The arc, when this chapter is one the answer is withheld from. */
+function withheldArc(options: ComposeChapterOptions): BookArc | undefined {
+  return options.arc && !isFirstOrLastChapter(options) ? options.arc : undefined;
+}
+
+/** The chapter's summary as the writer sees it: the arc's job where the plan's summary would say what the chapter proves. */
+function chapterSummaryFor(options: ComposeChapterOptions): string {
+  const arc = withheldArc(options);
+  const job = arc?.chapters.find((entry) => entry.index === options.chapter.index)?.job.does;
+  return job || options.chapter.summary;
 }
 
 function characterPayload(plan: BookPlan) {
@@ -251,7 +277,12 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
     `You are writing the book "${options.plan.title}" as its author, one chapter at a time, each as one continuous piece of finished Markdown prose.`,
     ...stanceLinesFor(options),
     "Paragraphs only: no headings, no title line, no section labels, no page numbers or page breaks, no summary, no epigraph, no notes. Move between sections with a paragraph break and a change of register.",
-    ...(minimal ? [] : shapeRules(narrative)),
+    ...(minimal
+      ? []
+      : shapeRules(narrative).filter(
+          // Under an arc only a method chapter keeps the evidence-limit rule; the others' job is not to bound sources.
+          (rule) => !(options.arc && arcKindFor(options) !== "method" && rule.startsWith("State what a source shows"))
+        )),
     ...(minimal ? [] : ["Do not open the chapter with a general claim about a common noun (\"A cannon was never only a cannon\")."]),
     ...(minimal ? [] : reconstructionRule(narrative)),
     `Now chapter ${options.chapter.index}, "${options.chapter.title}".`,
@@ -282,11 +313,11 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
   const userPayload = {
     language: targetLanguagePayload(options.input.language),
     userPrompt: options.input.prompt,
-    book: bookPayload(options.plan, options.input),
+    book: bookPayload(options.plan, options.input, withheldArc(options)),
     chapter: {
       index: options.chapter.index,
       title: options.chapter.title,
-      summary: options.chapter.summary
+      summary: chapterSummaryFor(options)
     },
     chapterPosition: chapterPosition(options.plan, options.chapter, options.chapterPageStart, options.chapterPageEnd),
     composition: {
@@ -360,14 +391,48 @@ const ROTATE_STANCE_POSITIONS = false;
 
 function stanceLinesFor(options: ComposeChapterOptions): string[] {
   const mode = inferWritingMode(options.input, options.plan);
-  return authorStancePromptLines(
-    options.stance,
-    mode,
-    ROTATE_STANCE_POSITIONS ? { chapterIndex: options.chapter.index } : {}
-  );
+  if (options.arc && !isFirstOrLastChapter(options)) {
+    return [...authorStancePromptLines(options.stance, mode, { exemplarOnly: true }), ...arcChapterLines(options.arc, options.chapter.index)];
+  }
+  return [
+    ...authorStancePromptLines(options.stance, mode, ROTATE_STANCE_POSITIONS ? { chapterIndex: options.chapter.index } : {}),
+    ...(options.arc ? arcChapterLines(options.arc, options.chapter.index) : [])
+  ];
+}
+
+function isFirstOrLastChapter(options: ComposeChapterOptions): boolean {
+  const chapters = options.plan.chapters;
+  return options.chapter.index === chapters[0]?.index || options.chapter.index === chapters.at(-1)?.index;
+}
+
+function arcKindFor(options: ComposeChapterOptions): string | undefined {
+  return options.arc?.chapters.find((chapter) => chapter.index === options.chapter.index)?.kind;
 }
 
 export const CUT_CHAPTER_PURPOSE = "cut-chapter";
+
+/** The cut scoped to a chapter's tail: the read's notes name recap tails and closers, so the head is not sent. */
+export const CUT_TAIL_WORDS = 600;
+
+export async function cutChapterTail(
+  options: EditChapterOptions & { notes: string[]; bookNotes?: string[] | undefined }
+): Promise<EditedChapterText> {
+  const paragraphs = options.markdown.split(/\n\s*\n/);
+  let tailStart = paragraphs.length;
+  let words = 0;
+  while (tailStart > 1 && words < CUT_TAIL_WORDS) {
+    tailStart -= 1;
+    words += countReadableWords(paragraphs[tailStart] ?? "");
+  }
+  const head = paragraphs.slice(0, tailStart).join("\n\n");
+  const tail = paragraphs.slice(tailStart).join("\n\n");
+  const cut = await cutChapter({ ...options, markdown: tail });
+  if (!cut.changed) {
+    return { markdown: options.markdown, words: countReadableWords(options.markdown), attempts: cut.attempts, changed: false };
+  }
+  const markdown = head ? `${head}\n\n${cut.markdown}` : cut.markdown;
+  return { markdown, words: countReadableWords(markdown), attempts: cut.attempts, changed: true };
+}
 
 /** The cut may remove between half a percent and a quarter of the chapter. */
 const CUT_MIN_KEPT_SHARE = 0.75;
@@ -751,137 +816,6 @@ export async function describeChapterPages(options: {
       ...(imagePrompt ? { imagePrompt } : {})
     };
   });
-}
-
-export type ManuscriptChapterForRead = {
-  index: number;
-  title: string;
-  markdown: string;
-  /** What the plan said this chapter establishes; the read checks the chapter against it, the writer never sees it. */
-  expectedClaim?: string | undefined;
-  /** Deterministic measurements of this chapter with the sentences behind them (`measurementNotes`). */
-  measurements?: string[] | undefined;
-};
-
-export type ManuscriptReadResult = {
-  chapters: Array<{ chapterIndex: number; edit: boolean; notes: string[] }>;
-  bookNotes: string[];
-  skipped?: string;
-};
-
-/** A note the model wrote as an object — `{paragraph, change}`, `{note}` — is its string fields joined; the first live read failed validation on exactly that. */
-const readNoteSchema = z.preprocess((value) => {
-  if (typeof value === "string") return value;
-  if (isRecord(value)) {
-    return Object.values(value)
-      .filter((field): field is string => typeof field === "string" && field.trim().length > 0)
-      .join(": ");
-  }
-  return value;
-}, z.string());
-
-const manuscriptReadSchema = z.object({
-  chapters: z
-    .array(
-      z.object({
-        chapterIndex: z.number().int().positive(),
-        edit: z.boolean().default(false),
-        notes: z.array(readNoteSchema).default([])
-      })
-    )
-    .default([]),
-  bookNotes: z.array(readNoteSchema).default([])
-});
-
-export function manuscriptReadEditCap(chapterCount: number): number {
-  return Math.max(1, Math.min(12, chapterCount));
-}
-
-/**
- * One read of the whole book. It returns notes, never prose: the chapters it
- * flags go back through `editChapter` with the notes, capped so a read that
- * dislikes everything cannot rewrite the book.
- */
-export async function readManuscript(options: {
-  input: CreateProjectInput;
-  plan: BookPlan;
-  stance: AuthorStance;
-  chapters: ManuscriptChapterForRead[];
-  textModel: TextModelAdapter;
-}): Promise<ManuscriptReadResult> {
-  const totalWords = options.chapters.reduce((sum, chapter) => sum + countReadableWords(chapter.markdown), 0);
-  if (totalWords > MANUSCRIPT_READ_MAX_WORDS) {
-    return { chapters: [], bookNotes: [], skipped: `manuscript is ${totalWords} words; the read is capped at ${MANUSCRIPT_READ_MAX_WORDS}` };
-  }
-  const mode = inferWritingMode(options.input, options.plan);
-  const cap = manuscriptReadEditCap(options.chapters.length);
-  // The read returns notes, never prose, so a provider failure here is a
-  // skipped read and not a failed book: composed-17 composed every chapter and
-  // then failed at 70% on "OpenAI response was incomplete: max_output_tokens",
-  // because at effort high the reasoning shares this output budget. The
-  // budget is sized for that now; a cancellation still propagates.
-  let result: { data: z.infer<typeof manuscriptReadSchema> };
-  try {
-    result = await generateJsonWithRetry(options.textModel, {
-    purpose: READ_MANUSCRIPT_PURPOSE,
-    temperature: 0.3,
-    maxTokens: 16000,
-    schema: manuscriptReadSchema,
-    messages: [
-      {
-        role: "system",
-        content: [
-          "You are the acquiring editor reading the complete manuscript once, as a reader would, after every chapter has already had a line edit.",
-          "Return one JSON object with chapters (one entry per chapter: chapterIndex, edit, notes) and bookNotes.",
-          `Set edit to true for at most ${cap} chapters, the ones a reader would notice most, and only where deleting sentences or whole paragraphs would help: a case, scene, or conclusion another chapter already delivered (name both chapters); a claim of the book's restated in this chapter after an earlier chapter made it; a caveat about what the evidence cannot show, repeated after the chapter already made it; a closing paragraph that re-lists the chapter's cases or restates what the chapter showed; a one-sentence paragraph placed for effect. What follows the edit is deletion only, so do not flag what needs rewriting.`,
-          "Each chapter carries measurements: deterministic counts with the sentences behind them, for orientation. Where a chapter carries expectedClaim, the plan's own statement of what it should establish, say in a note if the chapter does not establish it.",
-          "notes are plain strings, one cut each, never objects.",
-          "Each note quotes the first six to ten words of the sentence or paragraph to delete and says why in a few words. A chapter with edit false still gets an empty notes array.",
-          "bookNotes: up to five sentences of the book's that recur across chapters in different words, each quoted once with the chapters that repeat it, for the cuts to act on.",
-          `The author's stance, which the chapters should honour: ${options.stance.thesis} Positions: ${options.stance.positions.join(" | ")}`,
-          ...(isNarrativeWritingMode(mode) ? ["This is fiction: judge scenes, not arguments."] : []),
-          ...targetLanguageGenerationGuidance(options.input.language)
-        ].join(" ")
-      },
-      {
-        role: "user",
-        content: JSON.stringify(
-          {
-            book: { title: options.plan.title, premise: options.plan.premise, audience: options.plan.audience },
-            chapters: options.chapters.map((chapter) => ({
-              chapterIndex: chapter.index,
-              title: chapter.title,
-              ...(chapter.expectedClaim ? { expectedClaim: chapter.expectedClaim } : {}),
-              ...(chapter.measurements && chapter.measurements.length > 0 ? { measurements: chapter.measurements } : {}),
-              text: chapter.markdown
-            })),
-            outputContract: {
-              chapters: [{ chapterIndex: 1, edit: false, notes: ["Paragraph beginning '…': cut the closing sentence."] }],
-              bookNotes: ["One observation about the whole book."]
-            }
-          },
-          null,
-          2
-        )
-      }
-    ]
-  });
-  } catch (error) {
-    if (isStopOrAbortError(error)) {
-      throw error;
-    }
-    return { chapters: [], bookNotes: [], skipped: `read failed: ${error instanceof Error ? error.message : String(error)}` };
-  }
-  const known = new Set(options.chapters.map((chapter) => chapter.index));
-  let edits = 0;
-  const chapters = result.data.chapters
-    .filter((entry) => known.has(entry.chapterIndex))
-    .map((entry) => {
-      const edit = entry.edit && entry.notes.length > 0 && edits < cap;
-      if (edit) edits += 1;
-      return { chapterIndex: entry.chapterIndex, edit, notes: entry.notes.map((note) => note.trim()).filter(Boolean) };
-    });
-  return { chapters, bookNotes: result.data.bookNotes };
 }
 
 /** A chapter's digest for later chapters: its page summaries, clipped. */
