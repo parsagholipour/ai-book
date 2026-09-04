@@ -192,3 +192,13 @@ describe("narration text pipeline", () => {
     expect(narration.chunks).toEqual([]);
   });
 });
+
+describe("figure blocks in narration", () => {
+  it("reads the prose around a figure and never its JSON", () => {
+    const fence = "```figure\n" + JSON.stringify({ kind: "bar", title: "Carts by decade", categories: ["1500"], series: [{ name: "Carts", values: [1] }], source: "The ledger" }) + "\n```";
+    expect(narrationParagraphs(`Prose before the figure.\n\n${fence}\n\nProse after the figure.`)).toEqual([
+      "Prose before the figure.",
+      "Prose after the figure."
+    ]);
+  });
+});

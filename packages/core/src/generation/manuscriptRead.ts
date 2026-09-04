@@ -7,7 +7,7 @@ import { isRecord } from "../schemas/jsonCoercion.js";
 import { isNarrativeWritingMode } from "./authorStance.js";
 import type { BookArc } from "./bookArc.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
-import { countReadableWords } from "./proseShape.js";
+import { figureStandInMarkdown, proseWordCount } from "./figures/figureBlocks.js";
 import { inferWritingMode } from "./styleContract.js";
 
 /**
@@ -89,7 +89,7 @@ export async function readManuscript(options: {
   chapters: ManuscriptChapterForRead[];
   textModel: TextModelAdapter;
 }): Promise<ManuscriptReadResult> {
-  const totalWords = options.chapters.reduce((sum, chapter) => sum + countReadableWords(chapter.markdown), 0);
+  const totalWords = options.chapters.reduce((sum, chapter) => sum + proseWordCount(chapter.markdown), 0);
   if (totalWords > MANUSCRIPT_READ_MAX_WORDS) {
     return { chapters: [], bookNotes: [], skipped: `manuscript is ${totalWords} words; the read is capped at ${MANUSCRIPT_READ_MAX_WORDS}` };
   }
@@ -138,7 +138,7 @@ export async function readManuscript(options: {
               title: chapter.title,
               ...(chapter.expectedClaim ? { expectedClaim: chapter.expectedClaim } : {}),
               ...(chapter.measurements && chapter.measurements.length > 0 ? { measurements: chapter.measurements } : {}),
-              text: chapter.markdown
+              text: figureStandInMarkdown(chapter.markdown)
             })),
             outputContract: {
               chapters: [{ chapterIndex: 1, edit: false, notes: ["Paragraph beginning '…': cut the closing sentence."] }],

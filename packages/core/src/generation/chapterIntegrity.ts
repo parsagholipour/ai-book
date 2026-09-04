@@ -1,4 +1,5 @@
 import { countReadableWords } from "./proseShape.js";
+import { figureFreeProse } from "./figures/figureBlocks.js";
 
 /**
  * Whether a composed chapter is prose at all. The fast tier's writer
@@ -59,8 +60,10 @@ export function chapterDegeneracy(
   options: { maxWords: number; language?: string | undefined }
 ): ChapterDegeneracy {
   const reasons: string[] = [];
-  const words = countReadableWords(markdown);
-  const openings = sentenceOpenings(markdown);
+  // A figure block is drawn, not read: its JSON is neither a sentence nor a script.
+  const prose = figureFreeProse(markdown);
+  const words = countReadableWords(prose);
+  const openings = sentenceOpenings(prose);
   const counts = new Map<string, number>();
   for (const opening of openings) {
     counts.set(opening, (counts.get(opening) ?? 0) + 1);
@@ -77,7 +80,7 @@ export function chapterDegeneracy(
     reasons.push(`${words} words against a maximum of ${options.maxWords}`);
   }
   const language = (options.language ?? "en").toLowerCase().split(/[-_]/)[0] ?? "en";
-  const foreignCharacters = LATIN_SCRIPT_LANGUAGES.has(language) ? (markdown.match(NON_LATIN_SCRIPT) ?? []).length : 0;
+  const foreignCharacters = LATIN_SCRIPT_LANGUAGES.has(language) ? (prose.match(NON_LATIN_SCRIPT) ?? []).length : 0;
   if (foreignCharacters > FOREIGN_CHARACTER_CEILING) {
     reasons.push(`${foreignCharacters} characters from a script the book is not written in`);
   }

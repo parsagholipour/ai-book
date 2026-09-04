@@ -1,5 +1,6 @@
 import {
   chapterCompositionSchema,
+  hasFigureFence,
   isRecord,
   type ChapterBrief,
   type ChapterComposition,
@@ -238,7 +239,7 @@ export function derivedChapterBrief(
       return {
         pageIndex: page.index,
         chapterIndex: setup.chapter.index,
-        purpose: `Part of the section "${section.subject}", written as a ${section.form}.`,
+        purpose: `Part of the section "${section.subject}", written as a ${section.form}.${hasFigureFence(page.markdown) ? " Carries the chapter's figure." : ""}`,
         beat: page.summary,
         requiredContinuity: page.continuityNotes,
         endingPressure: last

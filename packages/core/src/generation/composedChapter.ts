@@ -21,6 +21,9 @@ import {
 export { CREATIVE_CONTRACT_RULES, type ChapterMaterial, type ComposeContract, type ComposedChapterText } from "./composedChapterMaterial.js";
 import {  compositionWriterLines, formPaletteFor, type ChapterComposition } from "./chapterForms.js";
 import { normalizeChapterMarkdown } from "./chapterPagination.js";
+import { FIGURE_WORD_EQUIVALENT, figureFreeProse, figureStandInMarkdown, proseWordCount } from "./figures/figureBlocks.js";
+import { codeBlockRules } from "./codeBlockRules.js";
+import { figureComposeRules, figureEditRules, plannedFigures } from "./figures/figurePrompt.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import { BYLINE_IS_TYPESET_RULE } from "./markdown.js";
 import { GROUNDED_FACTUALITY_RULE, IMAGE_PROMPT_CHARACTER_RULE, citationContractFields } from "./pagesShared.js";
@@ -67,7 +70,11 @@ export const EDITOR_EXTEND_BELOW_SHARE = 0.92;
  * 120 paid for), so the ask sits above the printed density and the editor
  * extends anything that lands under `extendBelow`.
  */
-export function chapterWordBudget(input: CreateProjectInput, pageCount: number): ChapterWordBudget {
+export function chapterWordBudget(
+  input: CreateProjectInput,
+  pageCount: number,
+  options: { /** Words of prose the chapter's figures displace on the page. */ figureWords?: number | undefined } = {}
+): ChapterWordBudget {
   const pages = Math.max(1, pageCount);
   const kids = kidsReadingGuidanceForInput(input);
   const per = kids
@@ -82,7 +89,13 @@ export function chapterWordBudget(input: CreateProjectInput, pageCount: number):
         // 107–112 of 120 paid, 540 printed 124, 520 printed 120. Length made no
         // difference to the blind panel (480: 7.32, 520: 7.31, ×3 each).
         { min: 430, target: 520, max: 640 };
-  return { perPage: per.target, min: per.min * pages, target: per.target * pages, max: per.max * pages };
+  const displaced = Math.max(0, options.figureWords ?? 0);
+  return {
+    perPage: per.target,
+    min: Math.max(per.target, per.min * pages - displaced),
+    target: Math.max(per.target, per.target * pages - displaced),
+    max: Math.max(per.target, per.max * pages - displaced)
+  };
 }
 
 export type EarlierChapterDigest = {
@@ -149,6 +162,7 @@ function reconstructionRule(narrative: boolean): string[] {
 
 const PROMPT_LEAK_BAN =
   "Do not mention AI, prompts, plans, JSON, schemas, generation, sections, forms, or production instructions in the prose.";
+
 
 /**
  * How a chapter's final paragraph lands, rotated by chapter so no two
@@ -258,9 +272,14 @@ function characterPayload(plan: BookPlan) {
   }));
 }
 
+/**
+ * A reply wrapped whole in one fence is unwrapped; a chapter that merely
+ * starts with a figure block and ends with another is not, so only the
+ * info strings a wrapper carries are accepted, as `unwrapWholePageMarkdownFence` does.
+ */
 function unfence(text: string): string {
   const trimmed = text.trim();
-  const fenced = trimmed.match(/^```[a-zA-Z]*\s*\n([\s\S]*?)\n```\s*$/);
+  const fenced = trimmed.match(/^```(?:markdown|md|text|plain(?:text)?|prose)?[ \t]*\r?\n([\s\S]*?)\n```\s*$/i);
   return fenced ? fenced[1]! : trimmed;
 }
 
@@ -284,7 +303,7 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
   const narrative = isNarrativeWritingMode(mode);
   const palette = formPaletteFor(mode);
   const pages = options.chapterPageEnd - options.chapterPageStart + 1;
-  const budget = chapterWordBudget(options.input, pages);
+  const budget = chapterWordBudget(options.input, pages, { figureWords: plannedFigures(options.composition).length * FIGURE_WORD_EQUIVALENT });
   const citation = citationContractFields(options.researchNotes.slice(0, 18));
   // The opening scene, when one was composed first, is printed ahead of what
   // this call writes, so the ask shrinks by its length.
@@ -311,6 +330,8 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
     `Now chapter ${options.chapter.index}, "${options.chapter.title}".`,
     ...materialLines(options),
     ...compositionWriterLines(options.composition, palette, budget.target),
+    ...figureComposeRules(options.composition),
+    ...codeBlockRules(options.input, options.plan),
     ...(options.variant === "second"
       ? [
           "This is the second of two drafts of this chapter, to be judged against the first. Enter the first section by a different door than the obvious one, put the chapter's one sustained stretch in a different section than a first draft would, and let a different section carry the short paragraphs."
@@ -348,7 +369,8 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
         form: section.form,
         subject: section.subject,
         owns: section.owns,
-        ...(section.note ? { note: section.note } : {})
+        ...(section.note ? { note: section.note } : {}),
+        ...(section.figure ? { figure: section.figure } : {})
       }))
     },
     ...(options.previousChapterTail ? { previousChapterTail: options.previousChapterTail } : {}),
@@ -376,7 +398,7 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
       ]
     });
     const markdown = normalizeChapterMarkdown(unfence(result.text), { chapterTitle: options.chapter.title });
-    const words = countReadableWords(markdown);
+    const words = proseWordCount(markdown);
     const candidate = { markdown, words, attempts };
     if (!best || words > best.words) {
       best = candidate;
@@ -575,8 +597,8 @@ export async function editChapter(options: EditChapterOptions): Promise<EditedCh
   const narrative = isNarrativeWritingMode(mode);
   const palette = formPaletteFor(mode);
   const pages = options.chapterPageEnd - options.chapterPageStart + 1;
-  const budget = chapterWordBudget(options.input, pages);
-  const draftWords = countReadableWords(options.markdown);
+  const budget = chapterWordBudget(options.input, pages, { figureWords: plannedFigures(options.composition).length * FIGURE_WORD_EQUIVALENT });
+  const draftWords = proseWordCount(options.markdown);
   const citation = citationContractFields(options.researchNotes.slice(0, 18));
   const systemLines = [
     `You are the line editor for "${options.plan.title}", revising each chapter into its finished form in the author's own voice.`,
@@ -599,6 +621,8 @@ export async function editChapter(options: EditChapterOptions): Promise<EditedCh
     "Cut the \"It can show X. It cannot show Y.\" pair wherever it appears more than three times in the chapter, cut runs of rhetorical questions to one, and cut any list of four or more items to the one detail that matters unless the section is a catalogue or a procedure.",
     `Now chapter ${options.chapter.index}, "${options.chapter.title}".`,
     ...compositionWriterLines(options.composition, palette, budget.target),
+    ...figureEditRules(options.composition),
+    ...(/```/.test(options.markdown) ? ["Every fenced code block in the draft is returned byte for byte, its language tag included."] : []),
     ...(options.measurementNotes && options.measurementNotes.length > 0
       ? [`Measured on this draft, with the sentences that put each measure over its ceiling; rewrite those sentences and bring every measure under: ${options.measurementNotes.join(" || ")}`]
       : []),
@@ -736,7 +760,7 @@ function firstSentence(markdown: string): string {
 
 /** What a page is called and remembered as when the model could not say. */
 export function fallbackPageDescription(page: ChapterPageForDescription, illustrated: boolean): DescribedPage {
-  const sentence = firstSentence(page.markdown);
+  const sentence = firstSentence(figureFreeProse(page.markdown));
   const title = sentence.split(/\s+/).slice(0, 7).join(" ").replace(/[,;:.!?…]+$/u, "") || `Page ${page.index}`;
   return {
     index: page.index,
@@ -791,7 +815,8 @@ export async function describeChapterPages(options: {
                 illustrationPlan: options.plan.illustrationPlan,
                 characters: options.plan.characters,
                 illustratedPageIndexes: options.illustratedIndexes,
-                pages: options.pages,
+                // The describer reads prose and a stand-in, never a figure's JSON.
+                pages: options.pages.map((page) => ({ index: page.index, markdown: figureStandInMarkdown(page.markdown) })),
                 outputContract: {
                   pages: [
                     {

@@ -4,6 +4,8 @@ import { targetLanguageGenerationGuidance, targetLanguagePayload } from "../prom
 import type { AuthorStance, BookPlan, ChapterPlan, CreateProjectInput } from "../schemas/book.js";
 import { isRecord } from "../schemas/jsonCoercion.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
+import { FIGURE_FORM_PLAN_CONTRACT, FIGURE_FORM_PLAN_RULE } from "./figures/figurePrompt.js";
+import { figurePlanSchema } from "./figures/figureSpec.js";
 import { inferWritingMode, type WritingMode } from "./styleContract.js";
 
 /**
@@ -110,7 +112,9 @@ export const chapterSectionSchema = z.object({
   owns: z.array(z.string()).default([]),
   note: z.string().optional(),
   /** The question or unfinished business this section hands to the next: the seam the writer carries across. */
-  handoff: z.string().optional()
+  handoff: z.string().optional(),
+  /** A chart or flow diagram this section carries, assigned here for an eligible book and drawn at compile; see `figures/`. */
+  figure: figurePlanSchema.optional()
 });
 
 export const chapterCompositionSchema = z.object({
@@ -470,7 +474,7 @@ export function normalizeChapterCompositions(
   const byChapter = new Map<number, ChapterComposition>();
   if (parsed.success) {
     for (const candidate of parsed.data.chapters) {
-      const composition = chapterCompositionSchema.safeParse(candidate);
+      const composition = chapterCompositionSchema.safeParse(withoutUnreadableFigures(candidate));
       if (composition.success && !byChapter.has(composition.data.chapterIndex)) {
         byChapter.set(composition.data.chapterIndex, composition.data);
       }
@@ -516,6 +520,69 @@ export function normalizeChapterCompositions(
       avoid: source.avoid
     };
   });
+}
+
+/**
+ * A figure the planner spelled in a way the schema refuses is dropped from
+ * its section rather than costing the chapter its whole form plan.
+ */
+function withoutUnreadableFigures(candidate: unknown): unknown {
+  if (!isRecord(candidate) || !Array.isArray(candidate.sections)) return candidate;
+  return {
+    ...candidate,
+    sections: candidate.sections.map((section) => {
+      if (!isRecord(section) || section.figure === undefined || figurePlanSchema.safeParse(section.figure).success) return section;
+      const { figure: _unreadable, ...rest } = section;
+      return rest;
+    })
+  };
+}
+
+/** Three chapters in four may carry a figure. */
+export function figureCapFor(chapterCount: number): number {
+  return Math.ceil(chapterCount * 0.75);
+}
+
+/**
+ * At most one figure per chapter and `maxPerBook` across the book: the first
+ * section's figure wins its chapter, and chapters are kept by whether they
+ * name a source, then by order. Chapters in `keep` are never stripped. Never
+ * blocks, never touches forms, subjects or ownership.
+ */
+export function capFigures(
+  compositions: readonly ChapterComposition[],
+  options: { maxPerBook: number; keep?: ReadonlySet<number> | undefined }
+): ChapterComposition[] {
+  const onePerChapter: ChapterComposition[] = compositions.map((composition) => {
+    let seen = false;
+    return {
+      ...composition,
+      sections: composition.sections.map((section): ChapterSection => {
+        if (!section.figure) return section;
+        if (seen) {
+          const { figure: _second, ...rest } = section;
+          return rest;
+        }
+        seen = true;
+        return section;
+      })
+    };
+  });
+  const holders = onePerChapter.filter((composition) => composition.sections.some((section) => section.figure));
+  const ranked = [...holders].sort((left, right) => {
+    const keptLeft = options.keep?.has(left.chapterIndex) ? 1 : 0;
+    const keptRight = options.keep?.has(right.chapterIndex) ? 1 : 0;
+    const sourcedLeft = left.sections.some((section) => section.figure?.source) ? 1 : 0;
+    const sourcedRight = right.sections.some((section) => section.figure?.source) ? 1 : 0;
+    return keptRight - keptLeft || sourcedRight - sourcedLeft || left.chapterIndex - right.chapterIndex;
+  });
+  const keepIndexes = new Set(ranked.slice(0, Math.max(0, options.maxPerBook)).map((composition) => composition.chapterIndex));
+  for (const index of options.keep ?? []) keepIndexes.add(index);
+  return onePerChapter.map((composition) =>
+    keepIndexes.has(composition.chapterIndex)
+      ? composition
+      : { ...composition, sections: composition.sections.map(({ figure: _stripped, ...rest }): ChapterSection => rest) }
+  );
 }
 
 /**
@@ -572,6 +639,8 @@ export type PlanChapterFormsOptions = {
   ranges: readonly ChapterFormRange[];
   /** Chapters already composed on an earlier run: kept as they are, planned against. */
   fixed?: readonly ChapterComposition[] | undefined;
+  /** Whether this book may carry figures (`usesFigures` and the gate): the rule and the key reach the planner only then. */
+  figures?: boolean | undefined;
   textModel: TextModelAdapter;
 };
 
@@ -588,6 +657,12 @@ export async function planChapterForms(options: PlanChapterFormsOptions): Promis
   if (open.length === 0) {
     return { compositions: [...(options.fixed ?? [])], issues: [], source: "model" };
   }
+  // A disabled gate strips any figure the model volunteered; chapters already
+  // written keep theirs, since their pages already carry the block. The cap
+  // is a ceiling against a figure in every chapter, not a target: the first
+  // live book was an algorithms book that got one figure in eight chapters.
+  const capped = (compositions: ChapterComposition[]): ChapterComposition[] =>
+    capFigures(compositions, { maxPerBook: options.figures ? figureCapFor(options.ranges.length) : 0, keep: fixedIndexes });
   const merge = (planned: ChapterComposition[]): ChapterComposition[] =>
     options.ranges.map(
       (range) =>
@@ -612,6 +687,7 @@ export async function planChapterForms(options: PlanChapterFormsOptions): Promis
             "Each section's subject is concrete and specific to this book; owns lists the particular cases, sources, scenes, people or objects that section alone treats, and no two sections anywhere in the book own the same one.",
             "landing is the claim this chapter adds to the book's argument, particular to this chapter's cases: what the author concludes from them, in one sentence. It is never a restatement of the book's thesis, never a general statement about institutions, capacities or human nature, and never built as a negation and its correction (\"X did not simply A; it B\"). No two landings share a shape or a subject. The writer reasons toward it in the chapter's final paragraph rather than quoting it.",
             "Each section carries a handoff: the question or unfinished business it leaves for the next section, so the chapter reads as one argument in movements rather than a stack of separate essays. The last section's handoff is empty.",
+            ...(options.figures ? [FIGURE_FORM_PLAN_RULE] : []),
             "The final chapter is not a summary chapter whatever its title says: its sections are new material, and its landing is the author's own conclusion to the book, argued through the chapter's case rather than by re-listing the earlier chapters.",
             "Variety rules, enforced after you answer: within a chapter no form takes more than half the sections and no form follows itself; no two chapters share the same form sequence; consecutive chapters do not open with the same form; across the book no form exceeds 40% of all sections; no form sits in the same position (first, second, third, last) in more than a third of the chapters, so a comparison or an argument comes first in some chapters and last in others; every chapter uses at least three distinct forms when it has three or more sections.",
             "Section counts per chapter are given as sectionCount; shares are fractions of the chapter's length and sum to 1. Vary the count from chapter to chapter across that range, and give every chapter one section that takes at least 40% of its length and one that takes under 15%, so no two chapters have the same silhouette.",
@@ -674,7 +750,8 @@ export async function planChapterForms(options: PlanChapterFormsOptions): Promis
                         share: 0.3,
                         owns: ["A case, source, scene or person this section alone treats."],
                         handoff: "The question this section leaves for the next.",
-                        note: "Optional: anything the writer must know about this section."
+                        note: "Optional: anything the writer must know about this section.",
+                        ...(options.figures ? FIGURE_FORM_PLAN_CONTRACT : {})
                       }
                     ],
                     landing: "The claim this chapter adds to the book's argument, in one sentence.",
@@ -699,7 +776,7 @@ export async function planChapterForms(options: PlanChapterFormsOptions): Promis
       merge(open.map((range) => fallbackChapterComposition(range, palette, range.chapter.index))),
       palette
     );
-    return { compositions: fallback, issues: compositionVarietyIssues(fallback, palette, { thesis: options.stance?.thesis }), source: "fallback" };
+    return { compositions: capped(fallback), issues: compositionVarietyIssues(fallback, palette, { thesis: options.stance?.thesis }), source: "fallback" };
   }
   const thesis = options.stance?.thesis;
   let merged = merge(planned);
@@ -708,7 +785,7 @@ export async function planChapterForms(options: PlanChapterFormsOptions): Promis
   // deterministic settle below is not asked to clear them.
   const shape = compositionShapeIssues(merged);
   if (issues.length === 0 && shape.length === 0) {
-    return { compositions: merged, issues, source: "model" };
+    return { compositions: capped(merged), issues, source: "model" };
   }
   try {
     const repaired = normalizeChapterCompositions(
@@ -723,13 +800,13 @@ export async function planChapterForms(options: PlanChapterFormsOptions): Promis
       issues = repairedIssues;
     }
     if (issues.length === 0) {
-      return { compositions: merged, issues, source: "repaired" };
+      return { compositions: capped(merged), issues, source: "repaired" };
     }
   } catch (error) {
     if (isStopLike(error)) throw error;
   }
   const rotated = settleFormVariety(merged, palette);
-  return { compositions: rotated, issues: compositionVarietyIssues(rotated, palette, { thesis }), source: "rotated" };
+  return { compositions: capped(rotated), issues: compositionVarietyIssues(rotated, palette, { thesis }), source: "rotated" };
 }
 
 /** A stop must escape every best-effort catch here; it is recognised by name so this module stays free of worker imports. */
@@ -769,7 +846,10 @@ export function compositionPromptLines(composition: ChapterComposition, palette:
       const owns = section.owns.length > 0 ? ` Owns: ${section.owns.join("; ")}.` : "";
       const note = section.note ? ` Note: ${section.note}` : "";
       const handoff = section.handoff ? ` Hands to the next section: ${section.handoff}` : "";
-      return `Section ${index + 1}, form "${section.form}" (${rules.get(section.form) ?? "as its name says"})${share}: ${section.subject}.${owns}${handoff}${note}`;
+      const figure = section.figure
+        ? ` Figure: a ${section.figure.kind === "flow" ? "flow diagram" : `${section.figure.kind} chart`} showing ${section.figure.shows}${section.figure.source ? ` (from ${section.figure.source})` : ""}.`
+        : "";
+      return `Section ${index + 1}, form "${section.form}" (${rules.get(section.form) ?? "as its name says"})${share}: ${section.subject}.${owns}${handoff}${note}${figure}`;
     }),
     `The claim this chapter adds to the book's argument, which its final paragraph reasons toward in the author's voice: ${composition.landing}`,
     ...(composition.avoid.length > 0 ? [`Already established earlier in the book, not to be re-explained here: ${composition.avoid.join("; ")}`] : [])

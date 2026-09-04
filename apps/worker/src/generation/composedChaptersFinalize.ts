@@ -7,6 +7,7 @@ import {
 import { prisma, pageScope } from "@book-maker/db";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
 import type { IndexedPageDraft } from "../runtime/jobTypes.js";
+import { figureFreeDrafts, restoreFigures } from "./composedFigures.js";
 import { loadComposedBookState } from "./composedChaptersState.js";
 import {
   GeneratedPagePublicationClaimLostError,
@@ -47,7 +48,9 @@ export async function finalizePendingPages(options: {
     }
   }
   await advanceJobStep(generationJobId, "setup", 76, `Finalizing ${pending.length} pages`);
-  const drafts: IndexedPageDraft[] = pending.map((page) => ({
+  // Figures aside: the local checks, a revise and the story delta read prose;
+  // each page's blocks go back before it is staged (`composedFigures.ts`).
+  const pendingDrafts: IndexedPageDraft[] = pending.map((page) => ({
     index: page.index,
     title: page.title,
     markdown: page.markdown,
@@ -55,6 +58,7 @@ export async function finalizePendingPages(options: {
     continuityNotes: notesByIndex.get(page.index) ?? [],
     ...(page.imagePrompt ? { imagePrompt: page.imagePrompt } : {})
   }));
+  const { drafts, fencesByIndex } = figureFreeDrafts(pendingDrafts);
   const reviewed = await reviewWholeBookDraftPages({
     input,
     plan,
@@ -74,11 +78,12 @@ export async function finalizePendingPages(options: {
     const approved = page.qualityReport.approved;
     const willIllustrate =
       approved && Boolean(page.draft.imagePrompt) && strategy.shouldIllustratePage(input, plan, pageIndex);
+    const draft = restoreFigures(page.draft, fencesByIndex);
     const staged = await stageGeneratedPageAndBrief({
       projectId,
       chapterId: chapterIdByIndex.get(pageIndex) ?? null,
       pageIndex,
-      draft: page.draft,
+      draft,
       revision: page.revision,
       qualityReport: page.qualityReport,
       status: approved ? (willIllustrate ? "GENERATING" : "COMPLETED") : "FAILED_QA",
@@ -101,7 +106,7 @@ export async function finalizePendingPages(options: {
         projectId,
         planId,
         pageIndex,
-        draft: page.draft,
+        draft,
         stagedPage: staged,
         willIllustrate: true,
         continuityTags: ["page", String(pageIndex), strategy.id]

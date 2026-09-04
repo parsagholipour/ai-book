@@ -282,6 +282,7 @@ code in that area, however obvious the rule looks.
 - **A local QA message names an earlier page only after the word `from`, because the final-QA repair harvests every other `page N` as a page to redraft.** → packages/core/src/generation/CLAUDE.md
 - **An analytical page owns its evidence anchors; a shared one is repaired like a near-duplicate beat and never blocks.** → packages/core/src/generation/CLAUDE.md
 - **A brief prompt names its JSON keys and shows the shape; prose alone has the model spelling them from the words.** → packages/core/src/generation/CLAUDE.md
+- **A figure is a fenced block the compose call alone is shown, every later pass reads around, and the exporters draw.** → packages/core/src/generation/CLAUDE.md + apps/worker/src/generation/CLAUDE.md
 - **Every rule about shape the writer or editor is shown is performed on schedule, and the blind panel names the performance; content assignments are the only lever that moved.** → packages/core/src/generation/CLAUDE.md
 - **A composed draft that is not prose is recomposed once and then fails the job; it is never edited, paginated and published.** → packages/core/src/generation/CLAUDE.md
 - **The manuscript read returns notes, so a read that fails is a skipped read, never a failed book; and a provider's input filter refusing a chapter is a fallback, never a failed book.** → packages/core/src/generation/CLAUDE.md

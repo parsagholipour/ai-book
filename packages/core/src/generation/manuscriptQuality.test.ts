@@ -617,3 +617,21 @@ function unpaidPromise(): ManuscriptQualityIssue {
     affectedPageIndexes: [12]
   };
 }
+
+describe("figure blocks in the deterministic manuscript checks", () => {
+  it("reports the same issues with and without a figure on a page", () => {
+    const prose = (seed: string) =>
+      Array.from({ length: 5 }, (_, index) => `The ${seed} clerks counted the carts at the gate in ${1500 + index * 10}, and the ledger names every carrier who paid.`).join(" ");
+    const fence = "```figure\n" + JSON.stringify({ kind: "bar", title: "Carts by decade", categories: ["1500", "1510"], series: [{ name: "Carts", values: [120, 140] }], source: "The gate ledger" }) + "\n```";
+    const check = (second: string) =>
+      runDeterministicManuscriptChecks({
+        expectedPageCount: 2,
+        pages: [
+          { index: 1, title: "One", markdown: prose("northern") },
+          { index: 2, title: "Two", markdown: second }
+        ]
+      }).map((issue) => issue.code);
+    expect(check(`${prose("southern")}\n\n${fence}`)).toEqual(check(prose("southern")));
+    expect(check("```figure\n{\"kind\":\"bar\"}")).toContain("MALFORMED_MARKDOWN");
+  });
+});

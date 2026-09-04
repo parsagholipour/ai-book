@@ -3,7 +3,7 @@
  * collect everything needed to judge the result: the text, a step-by-step
  * trace of the run, and the structural scorecard.
  *
- *   pnpm exec tsx scripts/dev-rerun-book.ts run --source <projectId> --label <name> [--reuse-plan <projectId>] [--tier fast|balanced|premium|ultra] [--baseline <text file>]...
+ *   pnpm exec tsx scripts/dev-rerun-book.ts run --source <projectId> --label <name> [--reuse-plan <projectId>] [--tier fast|balanced|premium|ultra] [--cover design|ai|none] [--baseline <text file>]...
  *   pnpm exec tsx scripts/dev-rerun-book.ts resume --project <projectId> --label <name> [--baseline <file>]...
  *   pnpm exec tsx scripts/dev-rerun-book.ts retry --project <projectId> --label <name> [--baseline <file>]...
  *   pnpm exec tsx scripts/dev-rerun-book.ts export --project <projectId> --label <name> [--baseline <file>]...
@@ -17,6 +17,9 @@
  * because the operator path reserves no credits. Development only: it needs
  * the Docker stack (or a host stack) on the default ports and talks to the
  * worker container for run logs.
+ *
+ * A rerun takes the free designed cover unless `--cover ai` asks for a drawn
+ * one (Parsa, 2026-09-04): a test book's cover is provider spend for nothing.
  *
  * Output lands under `.scratch/composed-chapters/runs/<label>/`: `book.md`,
  * `pages.json`, `trace.md`, `trace.json`, `scorecard.txt`.
@@ -34,6 +37,8 @@ type Args = {
   source?: string | undefined;
   reusePlan?: string | undefined;
   tier?: string | undefined;
+  /** The cover's art source for the clone; `design` unless asked otherwise. */
+  cover: string;
   stancePositions?: string | undefined;
   project?: string | undefined;
   label: string;
@@ -48,13 +53,14 @@ function parseArgs(argv: string[]): Args {
   if (command !== "run" && command !== "resume" && command !== "retry" && command !== "export") {
     throw new Error("usage: dev-rerun-book.ts <run|resume|retry|export> --source <id> | --project <id> --label <name> [--baseline <file>]...");
   }
-  const args: Args = { command, label: "", baselines: [], outDir: ".scratch/composed-chapters/runs" };
+  const args: Args = { command, label: "", baselines: [], outDir: ".scratch/composed-chapters/runs", cover: "design" };
   for (let index = 1; index < argv.length; index += 1) {
     const flag = argv[index];
     const value = argv[index + 1];
     if (flag === "--source") args.source = value;
     else if (flag === "--reuse-plan") args.reusePlan = value;
     else if (flag === "--tier") args.tier = value;
+    else if (flag === "--cover" && value) args.cover = value;
     else if (flag === "--stance-positions") args.stancePositions = value;
     else if (flag === "--project") args.project = value;
     else if (flag === "--label") args.label = value ?? "";
@@ -77,7 +83,21 @@ function log(message: string): void {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function cloneProject(sourceId: string, label: string, tier?: string): Promise<{ projectId: string; inputSnapshot: Prisma.JsonValue }> {
+type MediaOverrides = { tier?: string | undefined; cover: string };
+
+/** A tier override rewrites modelTier, which is what routes the models (→ modelTierForInput); the cover source is `coverArtSourceFor`'s field. */
+function withMediaOverrides(mediaSettings: unknown, overrides: MediaOverrides): Record<string, unknown> {
+  const base = (mediaSettings && typeof mediaSettings === "object" ? mediaSettings : {}) as Record<string, unknown>;
+  return { ...base, ...(overrides.tier ? { modelTier: overrides.tier } : {}), coverArtSource: overrides.cover };
+}
+
+function withSnapshotOverrides(inputSnapshot: Prisma.JsonValue, overrides: MediaOverrides): Prisma.JsonValue {
+  if (!inputSnapshot || typeof inputSnapshot !== "object" || Array.isArray(inputSnapshot)) return inputSnapshot;
+  const snapshot = inputSnapshot as Record<string, unknown>;
+  return { ...snapshot, mediaSettings: withMediaOverrides(snapshot.mediaSettings, overrides) } as Prisma.JsonValue;
+}
+
+async function cloneProject(sourceId: string, label: string, overrides: MediaOverrides): Promise<{ projectId: string; inputSnapshot: Prisma.JsonValue }> {
   const source = await prisma.project.findUnique({ where: { id: sourceId } });
   if (!source) throw new Error(`Source project ${sourceId} not found`);
   const sourcePlan = await prisma.planVersion.findFirst({ where: { projectId: sourceId }, orderBy: { version: "desc" } });
@@ -96,15 +116,12 @@ async function cloneProject(sourceId: string, label: string, tier?: string): Pro
       complexity: source.complexity,
       temperature: source.temperature,
       language: source.language,
-      // A tier override rewrites modelTier, which is what routes the models (→ modelTierForInput).
-      mediaSettings: (tier
-        ? { ...((source.mediaSettings ?? {}) as Record<string, unknown>), modelTier: tier }
-        : source.mediaSettings) as Prisma.InputJsonValue,
+      mediaSettings: withMediaOverrides(source.mediaSettings, overrides) as Prisma.InputJsonValue,
       ...(source.templateId ? { templateId: source.templateId } : {})
     }
   });
-  log(`cloned ${sourceId} → ${project.id} ("${project.title}")`);
-  return { projectId: project.id, inputSnapshot: sourcePlan.inputSnapshot };
+  log(`cloned ${sourceId} → ${project.id} ("${project.title}"), cover ${overrides.cover}`);
+  return { projectId: project.id, inputSnapshot: withSnapshotOverrides(sourcePlan.inputSnapshot, overrides) };
 }
 
 async function queuePlan(projectId: string, inputSnapshot: Prisma.JsonValue): Promise<void> {
@@ -146,7 +163,7 @@ async function waitForJobs(projectId: string, types: string[], timeoutMs: number
   throw new Error(`Timed out waiting for ${types.join(",")} on ${projectId}`);
 }
 
-async function copyPlan(fromProjectId: string, projectId: string, tier?: string, stancePositions?: string): Promise<void> {
+async function copyPlan(fromProjectId: string, projectId: string, overrides: MediaOverrides, stancePositions?: string): Promise<void> {
   const source = await prisma.planVersion.findFirst({
     where: { projectId: fromProjectId, status: "APPROVED" },
     orderBy: { version: "desc" }
@@ -167,17 +184,9 @@ async function copyPlan(fromProjectId: string, projectId: string, tier?: string,
           })()
         : source.planningPackage) as Prisma.InputJsonValue,
       // The worker builds its input from this snapshot, not from the project
-      // row, so a tier override has to be written here too or the copied
-      // plan's tier routes the models (composed-12-fast ran on the balanced writer).
-      inputSnapshot: (tier && source.inputSnapshot && typeof source.inputSnapshot === "object"
-        ? {
-            ...(source.inputSnapshot as Record<string, unknown>),
-            mediaSettings: {
-              ...(((source.inputSnapshot as Record<string, unknown>).mediaSettings ?? {}) as Record<string, unknown>),
-              modelTier: tier
-            }
-          }
-        : source.inputSnapshot) as Prisma.InputJsonValue,
+      // row, so a tier or cover override has to be written here too or the
+      // copied plan's tier routes the models (composed-12-fast ran on the balanced writer).
+      inputSnapshot: withSnapshotOverrides(source.inputSnapshot, overrides) as Prisma.InputJsonValue,
       messages: source.messages as Prisma.InputJsonValue
     }
   });
@@ -423,12 +432,13 @@ async function main(): Promise<void> {
   let projectId = args.project;
   if (args.command === "run") {
     if (!args.source) throw new Error("--source is required for run");
-    const cloned = await cloneProject(args.source, args.label, args.tier);
+    const overrides: MediaOverrides = { tier: args.tier, cover: args.cover };
+    const cloned = await cloneProject(args.source, args.label, overrides);
     projectId = cloned.projectId;
     if (args.reusePlan) {
       // The same plan as an earlier run, so a comparison measures the writing
       // pipeline rather than a fresh planner's thesis.
-      await copyPlan(args.reusePlan, projectId, args.tier, args.stancePositions);
+      await copyPlan(args.reusePlan, projectId, overrides, args.stancePositions);
     } else {
       await queuePlan(projectId, cloned.inputSnapshot);
       await waitForJobs(projectId, ["PLAN_BOOK"], 20 * 60_000);

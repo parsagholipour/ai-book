@@ -7,6 +7,7 @@ import { scriptProfileForLanguage, type ScriptProfile } from "../prompting/scrip
 import { imageMarkdownRe, resolveBookImageAsset } from "./bookImageAssets.js";
 import { markdownLabels } from "./markdown.js";
 import { stripEmbeddedDocuments } from "./pdfDocument.js";
+import { expandFigureFences } from "./figures/figureHtml.js";
 
 const MIME_BY_EXT: Record<string, string> = {
   ".png": "image/png",
@@ -92,7 +93,7 @@ export async function generateBookEpub(markdown: string, options: GenerateBookEp
   const localizedMarkdown = await packageLocalImages(markdown, options, images);
   const chapters = splitIntoChapters(localizedMarkdown, options.title);
   const profile = scriptProfileForLanguage(options.language);
-  const chapterBodies = await Promise.all(chapters.map((chapter) => renderMarkdownToXhtml(chapter.markdown)));
+  const chapterBodies = await Promise.all(chapters.map((chapter) => renderMarkdownToXhtml(chapter.markdown, options.language)));
   const fragmentFiles = fragmentFileMap(
     chapterBodies.map((xhtml, index) => ({ fileName: `chapter-${index + 1}.xhtml`, xhtml }))
   );
@@ -321,8 +322,8 @@ function takeTrailingChapterOpener(lines: string[]): string[] {
   return lines.splice(anchorIndex);
 }
 
-async function renderMarkdownToXhtml(markdown: string): Promise<string> {
-  const html = await marked.parse(markdown, { async: true, gfm: true });
+async function renderMarkdownToXhtml(markdown: string, language: string | undefined): Promise<string> {
+  const html = await marked.parse(expandFigureFences(markdown, { language }), { async: true, gfm: true });
   // The same active markup the PDF drops. Nothing here renders on this machine,
   // so there is no server file to disclose — it is the reader's device that
   // would resolve an iframe or execute an event/URL attribute shipped inside a

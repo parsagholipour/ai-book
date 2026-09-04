@@ -1,5 +1,10 @@
 import {
   applyExactReplacement,
+  hasFigureFence,
+  mentionsFigure,
+  reinsertFigureFences,
+  stripFigureFences,
+  validateFigureFences,
   type BookGenerationStrategy,
   type BookPlan,
   type CreateProjectInput,
@@ -25,6 +30,9 @@ import { type QualityGateContext } from "./qualityEnrichment.js";
  * text edit. Shared by `draftTextEditCandidates`; lived on the replan handler
  * only because that is where the first caller grew.
  */
+
+const FIGURE_REWRITE_RULE =
+  "This page carries a figure as a fenced figure JSON block; change, replace or remove it as the request asks, otherwise return it byte for byte.";
 
 export function locallyPatchedPage(
   page: { title: string; markdown: string; summary: string; imagePrompt: string | null; qualityReport: unknown },
@@ -139,6 +147,11 @@ export async function rewritePageForUserRequest(options: {
   });
   const editInstruction = options.editInstruction?.trim() || options.request;
   const pageEditGuidance = options.pageEditGuidance?.trim();
+  // A figure block is kept out of a rewrite that is not about it: the model
+  // sees a stand-in and the block goes back beside the paragraph it followed.
+  // A request that names the figure sees the block and may change or drop it.
+  const figuresAside = hasFigureFence(options.page.markdown) && !mentionsFigure(editInstruction) ? stripFigureFences(options.page.markdown) : undefined;
+  const pageMarkdown = figuresAside ? figuresAside.prose : options.page.markdown;
   const report: PageQualityReport = {
     approved: false,
     score: 50,
@@ -150,7 +163,8 @@ export async function rewritePageForUserRequest(options: {
     requiredRevisions: [
       "Revise the existing page to satisfy the user's requested edit.",
       "Keep the same page role and overall book structure unless the request explicitly requires otherwise.",
-      "Return a complete replacement page draft, not a diff."
+      "Return a complete replacement page draft, not a diff.",
+      ...(hasFigureFence(options.page.markdown) && !figuresAside ? [FIGURE_REWRITE_RULE] : [])
     ],
     notes: "User-requested book edit.",
     groundedOk: true,
@@ -178,7 +192,7 @@ export async function rewritePageForUserRequest(options: {
       pageIndex: options.page.index,
       draft: {
         title: options.page.title,
-        markdown: options.page.markdown,
+        markdown: pageMarkdown,
         summary: options.page.summary,
         imagePrompt: options.page.imagePrompt ?? undefined,
         continuityNotes: []
@@ -247,7 +261,10 @@ export async function rewritePageForUserRequest(options: {
       await options.onPhase?.("draft");
     }
   });
-  return { ...outcome.draft, qualityReport: outcome.report };
+  const markdown = figuresAside
+    ? reinsertFigureFences(outcome.draft.markdown, figuresAside.fences)
+    : validateFigureFences(outcome.draft.markdown, { max: 1 }).markdown;
+  return { ...outcome.draft, markdown, qualityReport: outcome.report };
 }
 
 /**

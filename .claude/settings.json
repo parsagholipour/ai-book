@@ -27,18 +27,14 @@
       "Bash(ls:*)",
       "Bash(wc:*)",
       "Bash(find:*)",
-      "Bash(ps -eo pid,args)"
-    ],
-    "deny": [
-      "Read(./.env)",
-      "Read(./.env.*)",
-      "Read(./storage/**)"
+      "Bash(ps -eo pid,args)",
+      "Bash"
     ]
   },
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|NotebookEdit",
+        "matcher": "Read|Edit|Write|NotebookEdit",
         "hooks": [
           {
             "type": "command",

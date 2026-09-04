@@ -119,3 +119,30 @@ describe("varyParagraphs and dropDuplicateSentences", () => {
     expect(cleaned.split("The council met.").length - 1).toBe(2);
   });
 });
+
+describe("figure blocks in pagination", () => {
+  const fence =
+    "```figure\n" +
+    JSON.stringify({ kind: "bar", title: "Carts by decade", categories: ["1500", "1510"], series: [{ name: "Carts", values: [1, 2] }], source: "The ledger" }) +
+    "\n```";
+
+  it("weighs a figure as the prose it displaces and never splits it", () => {
+    const chapter = [paragraph(100, "a"), fence, paragraph(100, "b"), paragraph(100, "c")].join("\n\n");
+    const result = paginateChapterMarkdown(chapter, 2);
+    expect(result.pages[0]).toBe([paragraph(100, "a"), fence].join("\n\n"));
+    expect(result.pages[1]).toBe([paragraph(100, "b"), paragraph(100, "c")].join("\n\n"));
+    expect(result.wordCounts).toEqual([100, 200]);
+    expect(result.totalWords).toBe(440);
+    expect(paginateChapterMarkdown(fence, 3).pages.filter((page) => page.includes("```figure"))).toHaveLength(1);
+  });
+
+  it("hands the next chapter a tail with no figure in it", () => {
+    const tail = chapterTail([paragraph(30, "a"), fence].join("\n\n"), 10);
+    expect(tail).toBe(paragraph(30, "a"));
+  });
+
+  it("never merges a paragraph into a figure block or a stand-in line", () => {
+    const chapter = ["First paragraph here.", fence, "This continues the thought.", "[Figure: Carts by decade]", "This also continues."].join("\n\n");
+    expect(varyParagraphs(chapter).split("\n\n")).toHaveLength(5);
+  });
+});

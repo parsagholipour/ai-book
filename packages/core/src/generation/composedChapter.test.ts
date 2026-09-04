@@ -7,6 +7,7 @@ import { RHYTHM_EXEMPLAR, generateAuthorStance } from "./authorStance.js";
 import { formPaletteFor, fallbackChapterComposition } from "./chapterForms.js";
 import { bookArcSchema } from "./bookArc.js";
 import { paginateChapterMarkdown } from "./chapterPagination.js";
+import { proseWordCount } from "./figures/figureBlocks.js";
 import {
   COMPOSE_PROMPT_MODE,  chapterDigest,
   chapterWordBudget,
@@ -366,5 +367,90 @@ describe("deletionOnlyResult", () => {
   it("refuses an over-cut and an unchanged chapter", () => {
     expect(deletionOnlyResult(draft, draft.split("\n\n")[0]!)).toBeUndefined();
     expect(deletionOnlyResult(draft, draft)).toBeUndefined();
+  });
+});
+
+describe("figures in the compose and edit prompts", () => {
+  it("prices the figure into the budget", () => {
+    expect(chapterWordBudget(input, 8, { figureWords: 140 })).toEqual({ perPage: 520, min: 3300, target: 4020, max: 4980 });
+    expect(chapterWordBudget(input, 1, { figureWords: 10_000 })).toEqual({ perPage: 520, min: 520, target: 520, max: 520 });
+  });
+
+  it("shows the writer the syntax only in a chapter the plan gave a figure, and the editor one line about the stand-in", async () => {
+    const { plan, chapter, composition } = setup();
+    const stance = { thesis: "A thesis.", positions: ["A position."], refusals: [], voiceSample: "A voice sample." };
+    const fake = new FakeTextModelAdapter(input);
+    const seen: GenerateTextOptions[] = [];
+    const recording = {
+      ...fake,
+      generateText: (options: GenerateTextOptions) => {
+        seen.push(options);
+        return fake.generateText(options);
+      }
+    } as unknown as FakeTextModelAdapter;
+    const base = {
+      input,
+      plan,
+      stance,
+      chapter,
+      composition,
+      chapterPageStart: 1,
+      chapterPageEnd: chapter.targetPages,
+      earlierChapters: [],
+      continuityNotes: [],
+      researchNotes: [],
+      textModel: recording
+    };
+    const plain = await composeChapter(base);
+    expect(seen[0]!.messages[0]!.content).not.toContain("carries one figure");
+    expect(seen[0]!.messages[0]!.content).not.toContain("```figure");
+    expect(seen[0]!.messages[1]!.content).not.toContain('"figure"');
+    expect(plain.markdown).not.toContain("```figure");
+
+    const figured = {
+      ...composition,
+      sections: composition.sections.map((section, index) =>
+        index === 1 ? { ...section, figure: { kind: "flow" as const, shows: "how a cart is admitted", source: "the gate procedure" } } : section
+      )
+    };
+    const result = await composeChapter({ ...base, composition: figured });
+    const system = seen[1]!.messages[0]!.content;
+    expect(system).toContain("This chapter carries one figure, in section 2: a flow diagram showing how a cart is admitted (from the gate procedure).");
+    expect(system).toContain('"kind":"flow"');
+    expect(system).not.toContain('"kind":"bar"');
+    expect(seen[1]!.messages[1]!.content).toContain('"figure"');
+    expect(result.markdown).toContain("```figure");
+    expect(result.words).toBe(proseWordCount(result.markdown));
+
+    await editChapter({ ...base, composition: figured, markdown: "[Figure: How a cart is admitted]\n\nSome prose about the gate." });
+    expect(seen[2]!.messages[0]!.content).toContain("A line reading [Figure: …] marks where the chapter's figure sits");
+    await editChapter({ ...base, markdown: "Some prose about the gate." });
+    expect(seen[3]!.messages[0]!.content).not.toContain("[Figure:");
+  });
+});
+
+describe("code blocks in the compose and edit prompts", () => {
+  it("tells a book about code how to fence it, and no other book", async () => {
+    const { plan, chapter, composition } = setup();
+    const stance = { thesis: "A thesis.", positions: ["A position."], refusals: [], voiceSample: "A voice sample." };
+    const fake = new FakeTextModelAdapter(input);
+    const seen: GenerateTextOptions[] = [];
+    const recording = {
+      ...fake,
+      generateText: (options: GenerateTextOptions) => {
+        seen.push(options);
+        return fake.generateText(options);
+      }
+    } as unknown as FakeTextModelAdapter;
+    const base = { input, plan, stance, chapter, composition, chapterPageStart: 1, chapterPageEnd: chapter.targetPages, earlierChapters: [], continuityNotes: [], researchNotes: [], textModel: recording };
+    await composeChapter(base);
+    expect(seen[0]!.messages[0]!.content).not.toContain("syntax colouring");
+    const aboutCode = { ...input, prompt: "A practical guide to sorting algorithms in Python for working programmers." };
+    await composeChapter({ ...base, input: aboutCode });
+    expect(seen[1]!.messages[0]!.content).toContain("never tag a code block text");
+    await editChapter({ ...base, markdown: "Prose.\n\n```python\nprint(1)\n```" });
+    expect(seen[2]!.messages[0]!.content).toContain("returned byte for byte, its language tag included");
+    await editChapter({ ...base, markdown: "Prose only." });
+    expect(seen[3]!.messages[0]!.content).not.toContain("language tag included");
   });
 });

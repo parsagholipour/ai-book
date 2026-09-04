@@ -14,6 +14,9 @@ export type MarkdownLabels = {
   chapter: string;
   sources: string;
   illustration: string;
+  /** The caption label of a chart or diagram, and the word before its source line. */
+  figure: string;
+  source: string;
   bookCover: string;
   /**
    * The title page's byline word, written before the author's name. Languages
@@ -34,6 +37,8 @@ export const DEFAULT_MARKDOWN_LABELS: MarkdownLabels = {
   chapter: "Chapter",
   sources: "Sources",
   illustration: "Illustration",
+  figure: "Figure",
+  source: "Source",
   bookCover: "Book cover",
   by: "by"
 };
@@ -45,6 +50,8 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     chapter: "الفصل",
     sources: "المصادر",
     illustration: "رسم توضيحي",
+    figure: "شكل",
+    source: "المصدر",
     bookCover: "غلاف الكتاب",
     by: "بقلم"
   },
@@ -54,6 +61,8 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     chapter: "第",
     sources: "资料来源",
     illustration: "插图",
+    figure: "图",
+    source: "来源",
     bookCover: "书籍封面",
     by: "作者"
   },
@@ -63,6 +72,8 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     chapter: "Chapitre",
     sources: "Sources",
     illustration: "Illustration",
+    figure: "Figure",
+    source: "Source",
     bookCover: "Couverture du livre",
     by: "par"
   },
@@ -72,6 +83,8 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     chapter: "Kapitel",
     sources: "Quellen",
     illustration: "Illustration",
+    figure: "Abbildung",
+    source: "Quelle",
     bookCover: "Buchcover",
     by: "von"
   },
@@ -81,6 +94,8 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     chapter: "अध्याय",
     sources: "स्रोत",
     illustration: "चित्र",
+    figure: "आकृति",
+    source: "स्रोत",
     bookCover: "पुस्तक आवरण",
     by: "लेखक"
   },
@@ -90,6 +105,8 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     chapter: "Capitolo",
     sources: "Fonti",
     illustration: "Illustrazione",
+    figure: "Figura",
+    source: "Fonte",
     bookCover: "Copertina del libro",
     by: "di"
   },
@@ -99,6 +116,8 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     chapter: "第",
     sources: "出典",
     illustration: "挿絵",
+    figure: "図",
+    source: "出典",
     bookCover: "本の表紙",
     by: "著者"
   },
@@ -108,6 +127,8 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     chapter: "장",
     sources: "출처",
     illustration: "삽화",
+    figure: "그림",
+    source: "출처",
     bookCover: "책 표지",
     by: "저자"
   },
@@ -117,6 +138,8 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     chapter: "فصل",
     sources: "منابع",
     illustration: "تصویر",
+    figure: "شکل",
+    source: "منبع",
     bookCover: "جلد کتاب",
     by: "نوشتهٔ"
   },
@@ -126,6 +149,8 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     chapter: "Capítulo",
     sources: "Fontes",
     illustration: "Ilustração",
+    figure: "Figura",
+    source: "Fonte",
     bookCover: "Capa do livro",
     by: "por"
   },
@@ -135,6 +160,8 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     chapter: "Глава",
     sources: "Источники",
     illustration: "Иллюстрация",
+    figure: "Рисунок",
+    source: "Источник",
     bookCover: "Обложка книги",
     by: "автор"
   },
@@ -144,6 +171,8 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     chapter: "Capítulo",
     sources: "Fuentes",
     illustration: "Ilustración",
+    figure: "Figura",
+    source: "Fuente",
     bookCover: "Cubierta del libro",
     by: "por"
   },
@@ -153,6 +182,8 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     chapter: "Bölüm",
     sources: "Kaynaklar",
     illustration: "İllüstrasyon",
+    figure: "Şekil",
+    source: "Kaynak",
     bookCover: "Kitap kapağı",
     by: "yazan"
   },
@@ -162,6 +193,8 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     chapter: "باب",
     sources: "ذرائع",
     illustration: "تصویر",
+    figure: "شکل",
+    source: "ماخذ",
     bookCover: "کتاب کا سرورق",
     by: "تحریر"
   }

@@ -92,7 +92,7 @@ export const COMPOSED_STAGES: readonly PipelineStage[] = [
     purposes: ["plan-chapter-forms", "architect-book"],
     lane: "prose",
     calls: "1 per book, plus at most 1 repair",
-    gates: []
+    gates: ["figures"]
   },
   {
     id: "compose",

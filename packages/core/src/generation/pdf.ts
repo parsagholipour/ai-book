@@ -10,6 +10,7 @@ import { bookFontSetForLanguage, type BookFontSet } from "./bookFonts.js";
 import { codePointsOf, embedFontFaceCss } from "./fontEmbedding.js";
 import type { CompiledBookMarkdown } from "./markdown.js";
 import { BOOK_PAGE_TOP_MARGIN_PT, bookPdfCss } from "./pdfCss.js";
+import { expandFigureFences } from "./figures/figureHtml.js";
 import { BOOK_PDF_MEDIA_TYPE, BOOK_PDF_OPTIONS, buildBookPdfDocument } from "./pdfDocument.js";
 import {
   bookPageAnchorLinkNav,
@@ -221,8 +222,11 @@ export async function generateBookPdfWithPageMap(
     publicApiUrl: options.publicApiUrl,
     projectId: options.projectId
   });
+  // Figures after the markers (their offsets name positions in `book.md`) and
+  // before the font subset, so a chart's tick labels are in it.
+  const expanded = expandFigureFences(prepared, { language: options.language });
   const profile = scriptProfileForLanguage(options.language);
-  const fontCss = await loadBookPdfFontCss(bookFontSetForLanguage(options.language), prepared, profile);
+  const fontCss = await loadBookPdfFontCss(bookFontSetForLanguage(options.language), expanded, profile);
   const nav = plan
     ? bookPageAnchorLinkNav(plan.pageAnchors, {
         hasContents: plan.hasContents,
@@ -230,7 +234,7 @@ export async function generateBookPdfWithPageMap(
       })
     : undefined;
   const html = await buildBookPdfDocument({
-    markdown: prepared,
+    markdown: expanded,
     css: `${fontCss}\n${bookPdfCss(profile)}`,
     profile,
     ...(nav !== undefined ? { pageAnchorNav: nav } : {})

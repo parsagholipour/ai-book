@@ -94,6 +94,14 @@ function image(file: string): string {
  * script with no Latin fallback, the illustration path, the cover page, and the
  * dense Contents variant.
  */
+const LOREM =
+  "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. ";
+
+/** A figure block as the composed pass stores it: the tag and one line of JSON. */
+function figureFence(spec: Record<string, unknown>): string {
+  return "```figure\n" + JSON.stringify(spec) + "\n```";
+}
+
 const FIXTURES: ReadonlyArray<{ name: string; language: string; markdown: string }> = [
   {
     name: "text-only-en",
@@ -198,6 +206,227 @@ const FIXTURES: ReadonlyArray<{ name: string; language: string; markdown: string
       (_, index) =>
         `<li class="book-contents__item"><a class="book-contents__link" href="#c${index + 1}"><span class="book-contents__chapter">Chapter ${index + 1}</span><span class="book-contents__name">A Chapter Title Number ${index + 1}</span><span class="book-contents__leader"></span><span class="book-contents__page">${index * 2 + 3}</span></a></li>`
     ).join("\n")}\n</ul>\n</div>\n\n${paragraphs(15, "Chapter")}`
+  },
+  {
+    name: "figures",
+    language: "en",
+    markdown: [
+      "# Figures At Work",
+      "",
+      "## Chapter 1",
+      "",
+      LOREM.repeat(4).trim(),
+      "",
+      figureFence({
+        kind: "bar",
+        title: "Share of the workforce in farming",
+        categories: ["1900", "1950", "2000"],
+        series: [
+          { name: "United States", values: [41, 12, 2] },
+          { name: "France", values: [43, 27, 4] }
+        ],
+        unit: "%",
+        source: "Decennial censuses",
+        caption: "Farm work as a share of all employment."
+      }),
+      "",
+      LOREM.repeat(3).trim(),
+      "",
+      figureFence({
+        kind: "line",
+        title: "Grain price index, 1800 to 1850",
+        categories: ["1800", "1810", "1820", "1830", "1840", "1850"],
+        series: [
+          { name: "Wheat", values: [100, 128, 96, 88, 104, 91] },
+          { name: "Rye", values: [100, 117, 90, 82, 97, 85] }
+        ],
+        source: "Regional market records",
+        caption: "Indexed to 1800."
+      }),
+      "",
+      "## Chapter 2",
+      "",
+      LOREM.repeat(2).trim(),
+      "",
+      figureFence({
+        kind: "bar",
+        title: "Estimated operation counts for four lookup designs as record volume grows",
+        categories: ["1,000 records", "10,000 records", "100,000 records"],
+        series: [
+          { name: "Linear scan, one request", values: [1000, 10000, 100000] },
+          { name: "Repeated scan, 10,000 requests", values: [10000000, 100000000, 1000000000] },
+          { name: "Sort then query, 10,000 requests", values: [109657, 142877, 1760964] },
+          { name: "Hash index, 10,000 requests", values: [11000, 110000, 1100000] }
+        ],
+        unit: "estimated comparisons or operations",
+        source: "Worked customer-record service example",
+        caption: "Illustrative growth, not a benchmark."
+      }),
+      "",
+      LOREM.repeat(2).trim(),
+      "",
+      figureFence({
+        kind: "pie",
+        title: "Where the harvest went",
+        categories: ["Sold at market", "Kept for seed", "Paid in rent", "Eaten at home"],
+        series: [{ name: "Share", values: [42, 11, 19, 28] }],
+        unit: "%",
+        source: "An estate ledger",
+        caption: "One estate's harvest, an illustrative year."
+      }),
+      "",
+      figureFence({
+        kind: "bar",
+        orientation: "horizontal",
+        title: "Days from harvest to market by county",
+        categories: ["Upper valley parishes", "Lower valley parishes", "Coastal towns", "Highland farms"],
+        series: [{ name: "Days", values: [12, 9, 4, 21] }],
+        source: "Carriers' waybills"
+      }),
+      "",
+      LOREM.repeat(3).trim(),
+      "",
+      figureFence({
+        kind: "flow",
+        title: "How a cart is admitted at the north gate",
+        nodes: [
+          { id: "a", label: "Cart arrives", shape: "start" },
+          { id: "b", label: "Ledger checked" },
+          { id: "c", label: "Toll paid?", shape: "decision" },
+          { id: "d", label: "Sent to the tollhouse" },
+          { id: "e", label: "Admitted", shape: "end" }
+        ],
+        edges: [
+          { from: "a", to: "b" },
+          { from: "b", to: "c" },
+          { from: "c", to: "d", label: "No" },
+          { from: "d", to: "b" },
+          { from: "c", to: "e", label: "Yes" }
+        ],
+        source: "The gate procedure",
+        caption: "A cart waits until its toll is on the ledger."
+      }),
+      "",
+      LOREM.repeat(2).trim(),
+      "",
+      figureFence({
+        "kind": "flow",
+        "title": "Choosing a graph procedure",
+        "nodes": [
+                {
+                        "id": "start",
+                        "label": "Graph question",
+                        "shape": "start"
+                },
+                {
+                        "id": "reach",
+                        "label": "Reachability or hops?",
+                        "shape": "decision"
+                },
+                {
+                        "id": "bfs",
+                        "label": "Use BFS",
+                        "shape": "step"
+                },
+                {
+                        "id": "cycle",
+                        "label": "Cycle or prerequisites?",
+                        "shape": "decision"
+                },
+                {
+                        "id": "dfs",
+                        "label": "Use DFS",
+                        "shape": "step"
+                },
+                {
+                        "id": "dag",
+                        "label": "Acyclic dependency order",
+                        "shape": "decision"
+                },
+                {
+                        "id": "topo",
+                        "label": "Use topological order",
+                        "shape": "step"
+                },
+                {
+                        "id": "weighted",
+                        "label": "Weighted route",
+                        "shape": "decision"
+                },
+                {
+                        "id": "shortest",
+                        "label": "Use shortest path",
+                        "shape": "step"
+                },
+                {
+                        "id": "end",
+                        "label": "Validate changing graph",
+                        "shape": "end"
+                }
+        ],
+        "edges": [
+                {
+                        "from": "start",
+                        "to": "reach"
+                },
+                {
+                        "from": "reach",
+                        "to": "bfs",
+                        "label": "Yes"
+                },
+                {
+                        "from": "reach",
+                        "to": "cycle",
+                        "label": "No"
+                },
+                {
+                        "from": "cycle",
+                        "to": "dfs",
+                        "label": "Cycle"
+                },
+                {
+                        "from": "cycle",
+                        "to": "dag",
+                        "label": "Prerequisites"
+                },
+                {
+                        "from": "dag",
+                        "to": "topo",
+                        "label": "Yes"
+                },
+                {
+                        "from": "dag",
+                        "to": "weighted",
+                        "label": "No"
+                },
+                {
+                        "from": "weighted",
+                        "to": "shortest",
+                        "label": "Yes"
+                },
+                {
+                        "from": "bfs",
+                        "to": "end"
+                },
+                {
+                        "from": "dfs",
+                        "to": "end"
+                },
+                {
+                        "from": "topo",
+                        "to": "end"
+                },
+                {
+                        "from": "shortest",
+                        "to": "end"
+                }
+        ],
+        "source": "The graph decision procedure",
+        "caption": "Illustrative; the graph must be checked again when service relationships change."
+      }),
+      "",
+      LOREM.repeat(2).trim()
+    ].join("\n")
   }
 ];
 

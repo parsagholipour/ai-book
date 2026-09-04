@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
- * PreToolUse hook: refuse edits that are guaranteed to be thrown away.
+ * PreToolUse hook: refuse reads/edits that should never happen.
  *
- * `packages/db/src/generated/` is Prisma output and is gitignored. Editing it
- * looks like it works — the types change, the typecheck passes — right up until
- * the next `pnpm db:generate` or a fresh clone, where the change never existed.
- * The fix is always to change `prisma/schema.prisma` and regenerate.
+ * - Repo-root `.env` / `.env.*` hold provider tokens. A `Read()` deny rule for
+ *   those paths also blocks `cd; grep -A` of ordinary source, so this hook is
+ *   the gate instead.
+ * - `packages/db/src/generated/` is Prisma output and is gitignored. Editing it
+ *   looks like it works until the next `pnpm db:generate` or a fresh clone.
  *
  * Exit 2 blocks the tool call and hands the message to Claude.
- *
  * A hook that throws is worse than no hook, so anything unexpected exits 0.
  */
 
@@ -26,6 +26,11 @@ const BLOCKED = [
       "an edit here is silently lost on the next generate or a fresh clone."
   }
 ];
+
+/** Repo-root secrets. Path deny rules for these also block `cd; grep -A` of source. */
+function isEnvFile(rel) {
+  return rel === ".env" || rel.startsWith(".env.");
+}
 
 const readStdin = async () => {
   const chunks = [];
@@ -46,6 +51,13 @@ const main = async () => {
 
   const abs = isAbsolute(filePath) ? filePath : join(payload?.cwd ?? REPO, filePath);
   const rel = relative(REPO, abs).split("\\").join("/");
+
+  if (isEnvFile(rel)) {
+    process.stderr.write(
+      `${rel} holds provider tokens. Do not read or edit it; use the environment the process already has.\n`
+    );
+    return 2;
+  }
 
   const hit = BLOCKED.find((rule) => rel.startsWith(rule.prefix));
   if (!hit) return 0;

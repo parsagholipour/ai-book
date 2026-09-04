@@ -511,3 +511,35 @@ function zipCompressionMethods(archive: Buffer): Map<string, number> {
   }
   return methods;
 }
+
+describe("figures in the EPUB", () => {
+  it("draws a figure into the chapter as XHTML with every element closed and every label escaped", async () => {
+    const fence =
+      "```figure\n" +
+      JSON.stringify({
+        kind: "bar",
+        title: "Carts by decade",
+        categories: ["Q&A 1500", "1510"],
+        series: [{ name: "Carts", values: [120, 140] }],
+        source: "The ledger"
+      }) +
+      "\n```";
+    const zip = await JSZip.loadAsync(
+      await generateBookEpub(`# The Book\n\n## Chapter One\n\nProse before.\n\n${fence}\n\nProse after.`, {
+        title: "The Book",
+        author: "Test Author",
+        language: "en",
+        imageStorageDir,
+        publicApiUrl: "http://localhost:4001"
+      })
+    );
+    const chapters = zip.file(/chapter-\d+\.xhtml$/);
+    const withFigure = (await Promise.all(chapters.map((file) => file.async("string")))).find((xhtml) => xhtml.includes("<figure"));
+    expect(withFigure).toBeDefined();
+    expect(withFigure).toContain('<svg xmlns="http://www.w3.org/2000/svg"');
+    expect(withFigure).toContain("Q&amp;A 1500");
+    expect(withFigure).toContain("Source: The ledger");
+    expect(withFigure).not.toContain("```");
+    expect(withFigure).not.toMatch(/<(rect|line|path|circle|polygon)\b[^>]*[^/]>/);
+  });
+});

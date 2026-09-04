@@ -43,6 +43,17 @@ may have been edited in the meantime.
   whether the second edit applied) and, when the pass had to generate the author stance, that
   stance written back onto the approved `PlanVersion.planningPackage` — best-effort, never fatal,
   and never over a stance the plan already carried.
+- **A composed chapter's figures are checked once, right after the compose call, and taken out of
+  every pass after it.** `composedFigures.ts`: `validateComposedChapterFigures` drops an unreadable
+  or unplanned block (run log event `generation.composed_chapters.figure_dropped`) and re-serialises
+  the rest to the canonical line; `finishChapter` strips the blocks before the line edit and puts
+  them back just before the cut into pages, so the editor sees a stand-in, and the couplet rewrite,
+  the quote guard, the reshaping and the epigraph never meet the JSON; the read pass, its cut and
+  the seams get the same treatment; `finalizePendingPages` runs the local checks, a revise and the
+  story delta on figure-free drafts (`figureFreeDrafts`) and restores each page's blocks before it
+  is staged (`restoreFigures`). A chat rewrite (`textEditRewrite.ts`) does the same unless the
+  request names the figure, in which case the model sees the block and may change or drop it. The
+  derived brief says which page carries the figure, so chat and continuation know it is there.
 
 ## Illustrated page publication
 

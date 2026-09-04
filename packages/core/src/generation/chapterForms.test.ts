@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { FakeTextModelAdapter } from "../adapters/fake.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
 import type { CreateProjectInput } from "../schemas/book.js";
+import type { GenerateJsonOptions } from "../adapters/types.js";
 import {
+  capFigures,
+  figureCapFor,
   compositionVarietyIssues,
   fallbackChapterComposition,
   formPaletteFor,
@@ -201,5 +204,81 @@ describe("planChapterForms", () => {
       }
     } as unknown as FakeTextModelAdapter;
     await expect(planChapterForms({ input, plan, ranges: ranges(), textModel: stopping })).rejects.toBe(stop);
+  });
+});
+
+describe("figures in the form plan", () => {
+  const figure = (source: string) => ({ kind: "bar" as const, shows: "carts by decade", source });
+  const chapters = () =>
+    [1, 2, 3, 4].map((index) => {
+      const base = composition(index, ["scene", "argument", "catalogue"]);
+      return {
+        ...base,
+        sections: base.sections.map((section, at) => ({
+          ...section,
+          ...(at === 0 ? { figure: figure(index === 2 ? "" : "the ledger") } : at === 1 && index === 1 ? { figure: figure("a second one") } : {})
+        }))
+      };
+    });
+
+  it("keeps one figure per chapter and at most half the book's chapters, sourced ones first", () => {
+    const capped = capFigures(chapters(), { maxPerBook: 2 });
+    expect(capped[0]!.sections.filter((section) => section.figure)).toHaveLength(1);
+    expect(capped[0]!.sections[0]!.figure?.source).toBe("the ledger");
+    expect(capped.map((entry) => entry.sections.some((section) => section.figure))).toEqual([true, false, true, false]);
+    expect(capFigures(chapters(), { maxPerBook: 0 }).every((entry) => entry.sections.every((section) => !section.figure))).toBe(true);
+    expect(capFigures(chapters(), { maxPerBook: 1, keep: new Set([4]) }).map((entry) => entry.sections.some((section) => section.figure))).toEqual([
+      false,
+      false,
+      false,
+      true
+    ]);
+    expect(capped.map((entry) => entry.sections.map((section) => section.form))).toEqual(chapters().map((entry) => entry.sections.map((section) => section.form)));
+  });
+
+  it("shows the planner the figure rule and key only for an eligible book, and strips figures a disabled gate is handed", async () => {
+    const seen: GenerateJsonOptions<unknown>[] = [];
+    const fake = new FakeTextModelAdapter(input);
+    const recording = {
+      ...fake,
+      generateJson: (options: GenerateJsonOptions<unknown>) => {
+        seen.push(options);
+        return fake.generateJson(options);
+      }
+    } as unknown as FakeTextModelAdapter;
+    const cap = figureCapFor(ranges().length);
+    const withFigures = await planChapterForms({ input, plan: makeFallbackPlan(input), ranges: ranges(), textModel: recording, figures: true });
+    expect(seen[0]!.messages[0]!.content).toContain("carries figure — {kind: bar|line|pie, shows, source}");
+    expect(seen[0]!.messages[1]!.content).toContain('"figure"');
+    const kinds = withFigures.compositions.flatMap((entry) => entry.sections.filter((section) => section.figure).map((section) => section.figure!.kind));
+    expect(kinds).toEqual(["bar", "flow"].slice(0, Math.min(2, cap)));
+
+    seen.length = 0;
+    const without = await planChapterForms({ input, plan: makeFallbackPlan(input), ranges: ranges(), textModel: recording });
+    expect(seen[0]!.messages[0]!.content).not.toContain("figure");
+    expect(seen[0]!.messages[1]!.content).not.toContain("figure");
+    expect(without.compositions.every((entry) => entry.sections.every((section) => !section.figure))).toBe(true);
+  });
+
+  it("drops a figure the planner spelled unreadably without losing the chapter's plan", () => {
+    const raw = {
+      chapters: [
+        {
+          chapterIndex: 1,
+          throughLine: "t",
+          sections: [
+            { form: "scene", subject: "The first subject", owns: [], figure: { kind: "chart", shows: "x" } },
+            { form: "argument", subject: "The second subject", owns: [], figure: { kind: "line", shows: "y", source: "z" } },
+            { form: "catalogue", subject: "The third subject", owns: [] }
+          ],
+          landing: "l",
+          avoid: []
+        }
+      ]
+    };
+    const [first] = normalizeChapterCompositions(raw, ranges().slice(0, 1), palette);
+    expect(first!.sections[0]!.subject).toBe("The first subject");
+    expect(first!.sections[0]!.figure).toBeUndefined();
+    expect(first!.sections[1]!.figure).toEqual({ kind: "line", shows: "y", source: "z" });
   });
 });

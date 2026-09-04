@@ -68,7 +68,8 @@ export const QUALITY_FEATURE_IDS = [
   "creativeContract",
   "materialFirst",
   "coupletRewrite",
-  "chapterApparatus"
+  "chapterApparatus",
+  "figures"
 ] as const;
 
 export type QualityFeatureId = (typeof QUALITY_FEATURE_IDS)[number];
@@ -160,7 +161,10 @@ export const QUALITY_FEATURE_DEFAULTS: QualityFeatureSettings = {
   creativeContract: [],
   materialFirst: [],
   coupletRewrite: [],
-  chapterApparatus: []
+  chapterApparatus: [],
+  // No model call of its own: the form plan assigns the figure inside its
+  // one call, the writer emits the block, the exporters draw it.
+  figures: ["ultra", "premium", "balanced", "fast"]
 };
 
 export type QualityFeatureDescription = {
@@ -334,6 +338,13 @@ export const QUALITY_FEATURES: QualityFeatureDescription[] = [
     summary: "Sets a verbatim, attributed epigraph from the chapter's primary-source dossier at the head of each chapter that has one, and lets no two consecutive chapters open on a told scene. No model call; needs Material first.",
     pipelines: ["composed"],
     stage: "Paginate and describe"
+  },
+  {
+    id: "figures",
+    label: "Figures: charts and flow diagrams (composed chapters)",
+    summary: "Lets the form plan place one bar, line or pie chart or one flow diagram in up to half the chapters of an analytical, instructional or reference book; the writer emits a fenced figure block and the exporters draw it. No extra model call.",
+    pipelines: ["composed"],
+    stage: "Chapter form plan"
   }
 ];
 

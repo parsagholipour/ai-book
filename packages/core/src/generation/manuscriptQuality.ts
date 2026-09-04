@@ -1,4 +1,5 @@
 import { MANUSCRIPT_PROMPT_LEAK_PATTERNS, containsPromptLeak } from "./promptLeak.js";
+import { figureFreeProse } from "./figures/figureBlocks.js";
 import { sentenceOpeningCadenceIssues } from "./manuscriptCadence.js";
 import { englishPhraseDetectorsEnabled } from "./manuscriptLanguage.js";
 import {
@@ -198,7 +199,9 @@ export function runDeterministicManuscriptChecks(options: {
   // Strip and tokenize once per page. Near-duplicate comparison is n(n-1)/2,
   // and treatment/recap scoring reuses the same signatures instead of
   // rebuilding token sets inside pair loops.
-  const prepared = pages.map((page) => {
+  const prepared = pages.map((raw) => {
+    // Every measure below reads prose; a figure block is drawn, not read.
+    const page = { ...raw, markdown: figureFreeProse(raw.markdown) };
     const plain = plainMarkdown(page.markdown);
     return { page, plain, tokens: tokenizePage(plain) };
   });

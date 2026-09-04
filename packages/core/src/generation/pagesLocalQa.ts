@@ -1,4 +1,5 @@
 import type { TextModelAdapter } from "../adapters/types.js";
+import { figureFreeProse } from "./figures/figureBlocks.js";
 import { isSignpostingBookCategory } from "../categories.js";
 import { kidsReadingGuidanceForInput } from "../prompting/readingLevel.js";
 import type { PageDraft, PageQualityReport } from "../schemas/book.js";
@@ -274,8 +275,11 @@ function pageQualityReportForRules(
 }
 
 function localPageRuleContext(options: ReviewPageOptions): LocalPageRuleContext {
-  const text = `${options.draft.title}\n${options.draft.markdown}`;
-  const currentBody = options.draft.markdown.trim();
+  // A figure block is not prose: its JSON keys are not the page's words and
+  // its labels are not the page's opening (`figures/figureBlocks.ts`).
+  const markdown = figureFreeProse(options.draft.markdown);
+  const text = `${options.draft.title}\n${markdown}`;
+  const currentBody = markdown.trim();
   // The phrase tables below are written with literal single spaces, so a page
   // that hard-wraps mid-phrase — or a model that emits a double space — walked
   // past them. `splitSentences` (`proseShape.ts`) collapses whitespace before

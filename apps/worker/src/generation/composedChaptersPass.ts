@@ -5,7 +5,6 @@ import {
   chapterTail,
   chapterWordBudget,
   composeChapter,
-  countReadableWords,
   describeChapterPages,
   dropDuplicateSentences,
   editChapter,
@@ -24,6 +23,12 @@ import {
   readManuscript,
   sampleSentenceLeaks,
   varyParagraphs,
+  figureStandInMarkdown,
+  plannedFigures,
+  proseWordCount,
+  reinsertFigureFences,
+  stripFigureFences,
+  usesFigures,
   type AuthorStance,
   type BookGenerationStrategy,
   type BookPlan,
@@ -58,6 +63,7 @@ import {
 } from "@book-maker/core";
 import { prepareBookMaterial } from "./composedChaptersMaterial.js";
 import { finalizePendingPages } from "./composedChaptersFinalize.js";
+import { validateComposedChapterFigures } from "./composedFigures.js";
 import { Prisma, prisma } from "@book-maker/db";
 import { maybeEnqueueCompile, maybeEnqueueCover } from "../runtime/dispatch.js";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
@@ -237,6 +243,10 @@ export async function generateBookComposedChapters(options: {
   const fixed = stored.chapters
     .filter((chapter) => doneChapters.has(chapter.index) && chapter.composition)
     .map((chapter) => chapter.composition!);
+  // Figures: eligible books with the gate on. The planner sees the rule and
+  // the key only then, the writer sees the syntax only in a chapter the plan
+  // gave a figure, and every later pass sees prose (`composedFigures.ts`).
+  const figures = usesFigures(input, plan) && quality.enabled("figures");
   const forms = await planChapterForms({
     input,
     plan,
@@ -254,6 +264,7 @@ export async function generateBookComposedChapters(options: {
       };
     }),
     fixed,
+    figures,
     textModel
   });
   if (forms.issues.length > 0) {
@@ -382,7 +393,11 @@ export async function generateBookComposedChapters(options: {
     if (!chapterId) {
       throw new Error(`Chapter ${setup.chapter.index} has no row to write pages into.`);
     }
-    let markdown = draftMarkdown;
+    // Figures aside: every pass below reads and rewrites prose. The editor
+    // sees a stand-in line where each figure sits, the deterministic passes
+    // see nothing, and the blocks go back before the cut into pages.
+    const { prose: draftProse, fences } = stripFigureFences(draftMarkdown);
+    let markdown = draftProse;
     let editorChanged = false;
     let shapePassApplied = false;
     if (editorEnabled) {
@@ -390,11 +405,11 @@ export async function generateBookComposedChapters(options: {
       // One edit with everything measured on the draft: the second composed
       // book ran a cutting edit and then a reshaping edit that re-expanded
       // it, and the paragraphs came out the same size either way.
-      const shapeNotes = SHAPE_NOTES_TO_EDITOR ? paragraphShapeNotes(draftMarkdown) : [];
+      const shapeNotes = SHAPE_NOTES_TO_EDITOR ? paragraphShapeNotes(draftProse) : [];
       const edited = await editChapter({
         ...(await composeOptionsFor(setup, drafts)),
-        markdown: draftMarkdown,
-        measurementNotes: MEASUREMENT_NOTES_TO_EDITOR ? [...notesForDraft(draftMarkdown), ...shapeNotes] : []
+        markdown: draftProse,
+        measurementNotes: MEASUREMENT_NOTES_TO_EDITOR ? [...notesForDraft(draftProse), ...shapeNotes] : []
       });
       const editedDegeneracy = chapterDegeneracy(edited.markdown, {
         maxWords: chapterWordBudget(input, setup.endPage - setup.startPage + 1).max,
@@ -463,11 +478,12 @@ export async function generateBookComposedChapters(options: {
         epigraph = true;
       }
     }
+    markdown = reinsertFigureFences(markdown, fences);
     const pages = await describePages(setup, markdown);
     const bestOf = bestOfVerdicts.get(setup.chapter.index);
     const scene = scenes.get(setup.chapter.index);
     const report: ComposedChapterReport = {
-      ...reportFor(setup, countReadableWords(draftMarkdown), countReadableWords(markdown), editorChanged),
+      ...reportFor(setup, proseWordCount(draftMarkdown), proseWordCount(markdown), editorChanged),
       paragraphCv: paragraphShapeReport(markdown).cv,
       shapePassApplied,
       ...(bestOf ? { bestOf } : {}),
@@ -544,7 +560,7 @@ export async function generateBookComposedChapters(options: {
       const scene = scenes.get(setup.chapter.index);
       if (!scene) return draft;
       const markdown = `${scene.text}\n\n${draft.markdown}`;
-      return { ...draft, markdown, words: countReadableWords(markdown) };
+      return { ...draft, markdown, words: proseWordCount(markdown) };
     };
     const candidates = judgeTextModel && COMPOSE_CANDIDATES > 1
       ? await Promise.all([
@@ -590,8 +606,20 @@ export async function generateBookComposedChapters(options: {
       draft = candidates[verdict.pick] ?? draft;
       bestOfVerdicts.set(setup.chapter.index, verdict);
     }
-    drafts.set(setup.chapter.index, draft.markdown);
     const composition = compositionFor(setup);
+    // The figure blocks the writer returned, checked against the plan: an
+    // unreadable one is dropped, one beyond the planned count is dropped, a
+    // kept one is re-serialised to its canonical line.
+    draft = {
+      ...draft,
+      markdown: validateComposedChapterFigures({
+        markdown: draft.markdown,
+        planned: plannedFigures(composition).length,
+        projectId,
+        chapterIndex: setup.chapter.index
+      })
+    };
+    drafts.set(setup.chapter.index, draft.markdown);
     // Subjects only: the through-line reached the next chapter's writer through
     // this digest and was quoted there.
     provisionalDigests.set(setup.chapter.index, chapterDigest(composition.sections.map((section) => section.subject)));
@@ -619,7 +647,7 @@ export async function generateBookComposedChapters(options: {
         .filter((setup) => finalText.has(setup.chapter.index))
         .map((setup) => {
           const kind = bookArc.chapters.find((entry) => entry.index === setup.chapter.index)?.kind;
-          return { index: setup.chapter.index, title: setup.chapter.title, ...(kind ? { kind } : {}), ...chapterSeams(finalText.get(setup.chapter.index)!) };
+          return { index: setup.chapter.index, title: setup.chapter.title, ...(kind ? { kind } : {}), ...chapterSeams(figureStandInMarkdown(finalText.get(setup.chapter.index)!)) };
         });
       await updateJobProgress(generationJobId, { progress: 69, message: "Rewriting the chapter openings and closings together" });
       const seams = await rewriteSeams({ input, plan, arc: bookArc, chapters: seamChapters, bookNotes, textModel });
@@ -635,14 +663,16 @@ export async function generateBookComposedChapters(options: {
         const chapterId = setup ? chapterIds.get(setup.chapter.index) : undefined;
         const current = setup ? finalText.get(setup.chapter.index) : undefined;
         if (!setup || !chapterId || !current) return undefined;
-        const seamed = applySeam(current, replacement);
-        if (seamed === current) return undefined;
+        const { prose: currentProse, fences: currentFences } = stripFigureFences(current);
+        const seamedProse = applySeam(currentProse, replacement);
+        if (seamedProse === currentProse) return undefined;
+        const seamed = reinsertFigureFences(seamedProse, currentFences);
         return { setup, chapterId, current, seamed, pages: await describePages(setup, seamed) };
       });
       for (const entry of described) {
         if (!entry) continue;
         const { setup, chapterId, current, seamed, pages } = entry;
-        const previous = reports.get(setup.chapter.index) ?? reportFor(setup, countReadableWords(current), countReadableWords(seamed), false);
+        const previous = reports.get(setup.chapter.index) ?? reportFor(setup, proseWordCount(current), proseWordCount(seamed), false);
         const report: ComposedChapterReport = { ...previous, seamsApplied: true };
         reports.set(setup.chapter.index, report);
         await stageComposedChapter({ projectId, chapterId, setup, composition: compositionFor(setup), pages, report, replace: true });
@@ -699,16 +729,17 @@ export async function generateBookComposedChapters(options: {
       });
       // Deletion only: the read names the sentences, the cut removes them, and
       // `deletionOnlyResult` refuses anything the model wrote.
+      const { prose: currentProse, fences: currentFences } = stripFigureFences(current);
       const edited: EditedChapterText = READ_SECOND_EDITS
         ? await cutChapterTail({
             ...(await composeOptionsFor(setup, new Map())),
-            markdown: current,
+            markdown: currentProse,
             notes: entry.notes,
             bookNotes: read.bookNotes
           })
-        : { markdown: current, words: countReadableWords(current), attempts: 0, changed: false };
+        : { markdown: current, words: proseWordCount(current), attempts: 0, changed: false };
       const previous = reports.get(setup.chapter.index) ??
-        reportFor(setup, countReadableWords(current), countReadableWords(current), false);
+        reportFor(setup, proseWordCount(current), proseWordCount(current), false);
       const report: ComposedChapterReport = {
         ...previous,
         readNotes: entry.notes,
@@ -716,7 +747,7 @@ export async function generateBookComposedChapters(options: {
         ...(edited.changed ? { editedWords: edited.words, paragraphCv: paragraphShapeReport(edited.markdown).cv } : {})
       };
       reports.set(setup.chapter.index, report);
-      const reshaped = edited.changed ? dropDuplicateSentences(varyParagraphs(edited.markdown)) : undefined;
+      const reshaped = edited.changed ? reinsertFigureFences(dropDuplicateSentences(varyParagraphs(edited.markdown)), currentFences) : undefined;
       const pages = reshaped ? await describePages(setup, reshaped) : undefined;
       if (!pages) {
         // The notes are still worth keeping beside the chapter: the console

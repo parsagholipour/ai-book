@@ -165,6 +165,48 @@ holds the event loop open and vitest will never exit.
   for a pipeline a tier's books never take used to change nothing and say nothing.
   `pipelineStages.test.ts` holds the two lists to each other: a gate that names a pipeline appears
   in one of that pipeline's stages, and a stage's gate names that pipeline.
+- **A figure is a fenced block the compose call alone is shown, every later pass reads around, and
+  the exporters draw.** A bar, line or pie chart, or a flow diagram of a procedure, travels through
+  the manuscript as a ```` ```figure ```` block holding one line of JSON (`figures/figureSpec.ts`),
+  and nothing about it is an image asset, an image prompt or an illustration slot — which is what
+  keeps it off the per-image charge and the free-tier illustrated-book quota. The *decision* is the
+  form plan's: `chapterSectionSchema.figure`, asked for only when `usesFigures`
+  (`figures/figureEligibility.ts`: analytical, instructional and reference books, never KIDS) and
+  the `figures` gate agree, and capped by `capFigures` to one a chapter and three chapters in four
+  (`figureCapFor`) — a ceiling against a figure in every chapter, not a target: the first live book,
+  on algorithms, got one figure in eight chapters under a rule that said most sections carry none,
+  so the rule now invites a figure wherever the material is quantitative or procedural. The
+  writer sees the syntax and one example, of the planned kind, only in a chapter that was given a
+  figure (`figures/figurePrompt.ts`), so every other prompt in the book is byte-identical to a book
+  without figures — the rerun loop's rule that a prompt field present in every chapter is a
+  template. **Strings in a block are clipped, never refused**: that book's one figure was thrown
+  away whole because its `unit` ran two characters past a limit; only the counts (series,
+  categories, nodes, edges) are hard limits, since truncating data would draw a different chart. A
+  `scale: "log"` axis is there for values spanning orders of magnitude, which an operation-count
+  chart needs, and falls back to linear over a value at or below zero; the renderer takes it on its
+  own when the largest value is a thousand times the smallest, because the rerun's writer drew six
+  decades on a linear axis and three of four series were flat. Ticks past ten thousand are compact
+  (10K, 1M), the left margin follows the widest tick, and a unit longer than a sign gets a row of its
+  own above the plot — the first rendered chart clipped every tick to "0,000,000". In a flow
+  diagram, labels keep their words whole, a node's edges are spread along its side, and an edge
+  that skips a layer bows out past the column it would otherwise run through. The same book tagged every
+  code fence `text` and indented the rest, so highlight.js — which keys on the fence's language name
+  and is wired for the PDF only — coloured nothing; `codeBlockRules` in `composedChapter.ts` tells
+  a book about code (`bookMentionsCode`, a cue over the prompt and plan) to tag fences with the
+  language, and the editor is told to return a draft's fences byte for byte. Every call after the compose reads a stand-in line or nothing
+  (`figureStandInMarkdown`, `figureFreeProse` in `figures/figureBlocks.ts`) and the block goes back
+  beside the paragraph it followed (`reinsertFigureFences`); the paginator weighs it as
+  `FIGURE_WORD_EQUIVALENT`, never splits it, and hands the next chapter a tail with no block in it.
+  `expandFigureFences` (`figures/figureHtml.ts`) turns the block into inline SVG with inline styles
+  at render time — in `pdf.ts` after the anchor markers and before the font subset, in `epub.ts`
+  before marked — so `book.md` keeps the portable form, `BOOK_PDF_CSS` is untouched and the
+  geometry digest does not move, and an unreadable block is a missing figure, never a failed
+  compile. The SVG carries no `id` and no `<marker>` (two figures in one book, and
+  `neutralizeRenderedReservedIds`), self-closes every empty element (`toXhtml` closes six tag names
+  and no more), and inherits the embedded display face. No gate reads a figure: the local checks,
+  the manuscript audit, the review packs, the reader chapterisation and the degeneracy guard are
+  fence-blind at one seam each, and none was added — a rule that fires on a figure would be a rule
+  on shipped pages nobody replayed. The corpus fixture `figures` renders every kind.
 
 ## Style contract routing
 

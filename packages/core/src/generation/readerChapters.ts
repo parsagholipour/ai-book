@@ -419,6 +419,7 @@ function clipAtWord(text: string, limit: number): string {
 
 function plainText(markdown: string): string {
   return markdown
+    .replace(/```[\s\S]*?```/g, " ")
     .replace(/!\[[^\]]*]\([^)]+\)/g, "")
     .replace(/\[([^\]]+)]\([^)]+\)/g, "$1")
     .replace(/^#{1,6}\s+/gm, "")

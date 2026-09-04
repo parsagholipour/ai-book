@@ -821,3 +821,57 @@ describe("generateBookPdfWithPageMap", () => {
     expect(result.pdf.length).toBeGreaterThan(1000);
   }, 30_000);
 });
+
+describe("figures in the PDF", () => {
+  const tempDirs: string[] = [];
+  afterEach(async () => {
+    await Promise.all(tempDirs.map((dir) => rm(dir, { recursive: true, force: true })));
+    tempDirs.length = 0;
+  });
+  const itIfPdfTools = hasCommand("pdftotext") && hasCommand("pdfinfo") ? it : it.skip;
+
+  itIfPdfTools("draws a chart and a flow diagram on the page and keeps their labels in the text layer", async () => {
+    const imageStorageDir = join(tmpdir(), `book-pdf-figures-${randomUUID()}`);
+    tempDirs.push(imageStorageDir);
+    await mkdir(imageStorageDir, { recursive: true });
+    const outputPath = join(imageStorageDir, "book.pdf");
+    const bar =
+      "```figure\n" +
+      JSON.stringify({
+        kind: "bar",
+        title: "Share of the workforce in farming",
+        categories: ["1900", "1950", "2000"],
+        series: [{ name: "United States", values: [41, 12, 2] }],
+        unit: "%",
+        source: "US Census Bureau"
+      }) +
+      "\n```";
+    const flow =
+      "```figure\n" +
+      JSON.stringify({
+        kind: "flow",
+        title: "How a claim moves",
+        nodes: [
+          { id: "a", label: "Claim filed", shape: "start" },
+          { id: "b", label: "Assess and decide", shape: "end" }
+        ],
+        edges: [{ from: "a", to: "b" }],
+        source: "The procedure"
+      }) +
+      "\n```";
+
+    await generateBookPdf(`# The Book\n\nFirst page prose.\n\n${bar}\n\nMore prose.\n\n${flow}\n\nLast prose.`, {
+      imageStorageDir,
+      publicApiUrl: "http://localhost:4001",
+      outputPath
+    });
+
+    const text = execFileSync("pdftotext", [outputPath, "-"], { encoding: "utf8" });
+    expect(text).toContain("1950");
+    expect(text).toContain("Source: US Census Bureau");
+    expect(text).toContain("Claim filed");
+    expect(text).not.toContain("```");
+    expect(text).not.toContain('"kind"');
+    expect(execFileSync("pdfinfo", [outputPath], { encoding: "utf8" })).toMatch(/Pages:\s+1\b/);
+  }, 30_000);
+});

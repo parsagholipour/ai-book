@@ -1,3 +1,4 @@
+import { figureFreeProse, figureWordEquivalent, isFigureFenceBlock, isFigureStandIn, proseWordCount } from "./figures/figureBlocks.js";
 import { countReadableWords } from "./proseShape.js";
 
 /**
@@ -144,7 +145,8 @@ export function paginateChapterMarkdown(markdown: string, pageCount: number): Pa
     blocks = [...blocks.slice(0, largest), halves[0], halves[1], ...blocks.slice(largest + 1)];
   }
 
-  const words = blocks.map((block) => countReadableWords(block));
+  // A figure block weighs what it displaces on the page, not its JSON tokens.
+  const words = blocks.map((block) => (isFigureFenceBlock(block) ? figureWordEquivalent(block) : countReadableWords(block)));
   const totalWords = words.reduce((sum, count) => sum + count, 0);
   const result: string[][] = [];
   let cursor = 0;
@@ -186,14 +188,15 @@ export function paginateChapterMarkdown(markdown: string, pageCount: number): Pa
   const pageMarkdown = result.map((blocksOnPage) => blocksOnPage.join("\n\n"));
   return {
     pages: pageMarkdown,
-    wordCounts: pageMarkdown.map((page) => countReadableWords(page)),
+    wordCounts: pageMarkdown.map((page) => proseWordCount(page)),
     totalWords
   };
 }
 
 /** The last `wordLimit` words of a chapter, cut at a paragraph boundary when one falls inside the window. */
 export function chapterTail(markdown: string, wordLimit: number): string {
-  const blocks = chapterBlocks(markdown);
+  // The next chapter's writer is handed prose and never a figure's markup.
+  const blocks = chapterBlocks(figureFreeProse(markdown));
   const tail: string[] = [];
   let words = 0;
   // Whole paragraphs from the end until the limit is reached, so the paragraph
@@ -216,7 +219,9 @@ const CONTINUATION_CUE =
 const MAX_MERGED_WORDS = 340;
 
 function isProseParagraph(block: string): boolean {
-  return !/^\s*(?:```|[-*+]\s|\d+[.)]\s|>|#|\|)/.test(block) && !/[“"]/.test(block.slice(0, 2));
+  return (
+    !/^\s*(?:```|[-*+]\s|\d+[.)]\s|>|#|\|)/.test(block) && !/```/.test(block) && !isFigureStandIn(block) && !/[“"]/.test(block.slice(0, 2))
+  );
 }
 
 /**

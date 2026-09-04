@@ -57,7 +57,8 @@ const NON_SEPARATE_COST_NOTES: Partial<Record<QualityFeatureId, string>> = {
 const FREE_GATE_NOTES: Partial<Record<QualityFeatureId, string>> = {
   pageLocalQa: "Deterministic checks; no provider call.",
   compactPageDraftContext: "Context selection adds no separate provider call.",
-  styleExcerpts: "Prompt context only; no separate provider call."
+  styleExcerpts: "Prompt context only; no separate provider call.",
+  figures: "Planned inside the form-plan call and drawn at compile; no separate provider call."
 };
 
 const INTEGRITY_COST_GATES = [

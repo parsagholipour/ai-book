@@ -4,6 +4,7 @@ import {
   type BookEditPageContext,
   type BookEditProjectStage
 } from "../bookEditIntent.js";
+import { figureStandInMarkdown } from "@book-maker/core";
 import {
   type MobileBookEditOperationDto,
   type MobileBookEditOperationRecord,
@@ -658,7 +659,8 @@ export async function loadChatPageBodies(projectId: string, indexes: number[]): 
     where: { projectId, index: { in: indexes } },
     select: { index: true, markdown: true }
   });
-  return new Map(rows.map((row) => [row.index, row.markdown]));
+  // The chat reads prose and a stand-in where a figure sits, never the figure's JSON.
+  return new Map(rows.map((row) => [row.index, figureStandInMarkdown(row.markdown)]));
 }
 
 export function chatChaptersForProject(project: ProjectForChat): BookEditChapterContext[] {

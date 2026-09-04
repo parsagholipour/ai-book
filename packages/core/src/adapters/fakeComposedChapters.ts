@@ -29,20 +29,59 @@ function fakeComposedChapterPages(options: GenerateTextOptions): number {
   return 1;
 }
 
+/** The canned figure of the kind the form plan assigned, so the whole figure path runs under `MOCK_AI`. */
+function fakeFigureFence(kind: string): string {
+  const spec =
+    kind === "flow"
+      ? {
+          kind: "flow",
+          title: "How a cart is admitted at the north gate",
+          nodes: [
+            { id: "a", label: "Cart arrives", shape: "start" },
+            { id: "b", label: "Ledger checked" },
+            { id: "c", label: "Toll paid?", shape: "decision" },
+            { id: "d", label: "Sent to the tollhouse" },
+            { id: "e", label: "Admitted", shape: "end" }
+          ],
+          edges: [
+            { from: "a", to: "b" },
+            { from: "b", to: "c" },
+            { from: "c", to: "d", label: "No" },
+            { from: "d", to: "b" },
+            { from: "c", to: "e", label: "Yes" }
+          ],
+          source: "The gate procedure this chapter describes",
+          caption: "A cart waits until its toll is on the ledger."
+        }
+      : {
+          kind,
+          title: "Carts through the north gate by decade",
+          categories: ["1500", "1510", "1520"],
+          series: [{ name: "Carts", values: [120, 140, 95] }],
+          source: "The dry-run ledger",
+          caption: "Counted at the gate each spring."
+        };
+  return "```figure\n" + JSON.stringify(spec) + "\n```";
+}
+
 export function fakeComposedChapter(options: GenerateTextOptions): string {
   const pages = fakeComposedChapterPages(options);
   const user = options.messages.find((message) => message.role === "user")?.content ?? "";
   let chapterIndex = 1;
   let targetWords = pages * 430;
+  let figureKind: string | undefined;
   try {
     const payload = JSON.parse(user) as {
       chapter?: { index?: unknown };
       chapterPosition?: { index?: unknown };
       wordBudget?: { target?: unknown };
+      composition?: { sections?: Array<{ figure?: { kind?: unknown } }> };
     };
     const index = payload.chapter?.index ?? payload.chapterPosition?.index;
     if (typeof index === "number") chapterIndex = index;
     if (typeof payload.wordBudget?.target === "number") targetWords = payload.wordBudget.target;
+    const planned = payload.composition?.sections?.find((section) => section.figure)?.figure?.kind;
+    if (typeof planned === "string") figureKind = planned;
   } catch {
     // ignore
   }
@@ -61,6 +100,8 @@ export function fakeComposedChapter(options: GenerateTextOptions): string {
     const middle = `Nobody at stop ${n} explains ${detail}; it is simply there, and the page moves through it the way a reader would, noticing the one object that matters and leaving the rest where it lies.`;
     const short = `Beat ${n} lands. Stop ${n} ends on ${detail}.`;
     paragraphs.push(long, middle, short);
+    // The planned figure sits after the first paragraph that introduces it.
+    if (turn === 0 && figureKind) paragraphs.splice(1, 0, fakeFigureFence(figureKind));
     words += long.split(/\s+/).length + middle.split(/\s+/).length + short.split(/\s+/).length;
     if (turn > pages * 40) break;
   }
@@ -71,10 +112,18 @@ export function fakeChapterForms(options: GenerateJsonOptions<unknown>): unknown
   const user = options.messages.find((message) => message.role === "user")?.content ?? "";
   let chapters: Array<{ chapterIndex: number; title?: string; summary?: string; sectionCount?: { min: number; max: number } }> = [];
   let palette: Array<{ form: string }> = [];
+  let figures = false;
   try {
-    const payload = JSON.parse(user) as { chapters?: typeof chapters; palette?: typeof palette };
+    const payload = JSON.parse(user) as {
+      chapters?: typeof chapters;
+      palette?: typeof palette;
+      outputContract?: { chapters?: Array<{ sections?: Array<{ figure?: unknown }> }> };
+    };
     chapters = payload.chapters ?? [];
     palette = payload.palette ?? [];
+    // The key is shown only to an eligible book's planner; the fake answers it
+    // with one chart and one flow diagram so both renderers run.
+    figures = payload.outputContract?.chapters?.[0]?.sections?.[0]?.figure !== undefined;
   } catch {
     // ignore
   }
@@ -91,7 +140,12 @@ export function fakeChapterForms(options: GenerateJsonOptions<unknown>): unknown
         form: forms.length > 0 ? forms[(offset * 2 + index * 3) % forms.length] : "scene",
         subject: `${chapter.title ?? "The chapter"}: ${dryRunDetail(chapter.chapterIndex * 10 + index)}`,
         share: index === 0 ? 0.45 : index === count - 1 ? 0.1 : 0.45 / Math.max(1, count - 2),
-        owns: [dryRunDetail(chapter.chapterIndex * 10 + index)]
+        owns: [dryRunDetail(chapter.chapterIndex * 10 + index)],
+        ...(figures && index === 0 && offset === 0
+          ? { figure: { kind: "bar", shows: "carts through the north gate by decade", source: "the dry-run ledger" } }
+          : figures && index === 0 && offset === 1
+            ? { figure: { kind: "flow", shows: "how a cart is admitted at the gate", source: "the gate procedure this chapter describes" } }
+            : {})
       })),
       landing: `${chapter.title ?? `Chapter ${chapter.chapterIndex}`} ends at ${
         ["Vindolanda", "Corbridge", "Housesteads", "Chesters", "Birdoswald", "Carlisle", "Wallsend", "Eboracum"][offset % 8]

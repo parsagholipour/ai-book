@@ -315,3 +315,67 @@ describe("rewritePageForUserRequest style audit", () => {
     expect(mocks.auditPageStyle).toHaveBeenCalledTimes(4);
   });
 });
+
+describe("rewritePageForUserRequest with a figure on the page", () => {
+  const strategy = { revisePageDraft: vi.fn(), reviewPageDraft: vi.fn() };
+  const fence =
+    "```figure\n" +
+    JSON.stringify({ kind: "bar", title: "Carts by decade", categories: ["1500", "1510"], series: [{ name: "Carts", values: [120, 140] }], source: "The ledger" }) +
+    "\n```";
+  const pageMarkdown = `The clerks counted the carts.\n\n${fence}\n\nThe towns felt it first.`;
+  const options = (request: string) =>
+    ({
+      projectId: "project-1",
+      page: { id: "page-3", index: 3, title: "Page 3", markdown: pageMarkdown, summary: "Carts.", imagePrompt: null, chapterId: null, chapter: null },
+      input: { targetPages: 12, mediaSettings: {} },
+      plan: { title: "Book", chapters: [], voiceGuide: ["Warm and plain."] },
+      strategy,
+      providers: { text: {} },
+      request,
+      quality: pagePipelineQualityGates({ defaultFeatureEnabled: mocks.pageQualityEnabled, otherFeatureEnabled: mocks.qualityEnabled }),
+      generationJobId: "gj-1"
+    }) as never;
+  const sent = () => strategy.revisePageDraft.mock.calls[0]![0] as { draft: { markdown: string }; report: { requiredRevisions: string[] } };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.qualityEnabled.mockReturnValue(false);
+    mocks.pageQualityEnabled.mockReturnValue(true);
+    mocks.loadContinuityNotes.mockResolvedValue([]);
+    mocks.loadStyleLockPages.mockResolvedValue([]);
+    mocks.auditPageStyle.mockResolvedValue({ styleOk: true, styleIssues: [] });
+    mocks.prisma.page.findMany.mockResolvedValue([]);
+    strategy.reviewPageDraft.mockResolvedValue({ approved: true, score: 85, issues: [], requiredRevisions: [], notes: "", checks: { repetitionOk: true, progressionOk: true } });
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  it("keeps the figure out of a rewrite that is not about it and puts it back beside its paragraph", async () => {
+    strategy.revisePageDraft.mockResolvedValue({
+      title: "Page 3",
+      markdown: "The clerks counted the carts, slowly and twice.\n\nThe towns felt it first, then the farms.",
+      summary: "Carts.",
+      imagePrompt: null,
+      continuityNotes: []
+    });
+    const result = await rewritePageForUserRequest(options("make page 3 more dramatic"));
+    expect(sent().draft.markdown).toContain("[Figure: Carts by decade]");
+    expect(sent().draft.markdown).not.toContain("```figure");
+    expect(sent().report.requiredRevisions.join(" ")).not.toContain("fenced figure");
+    expect(result.markdown).toBe(`The clerks counted the carts, slowly and twice.\n\n${fence}\n\nThe towns felt it first, then the farms.`);
+  });
+
+  it("shows the block to a rewrite that names the figure and accepts its absence", async () => {
+    strategy.revisePageDraft.mockResolvedValue({
+      title: "Page 3",
+      markdown: "The clerks counted the carts.\n\nThe towns felt it first.",
+      summary: "Carts.",
+      imagePrompt: null,
+      continuityNotes: []
+    });
+    const result = await rewritePageForUserRequest(options("drop the chart"));
+    expect(sent().draft.markdown).toContain("```figure");
+    expect(sent().report.requiredRevisions.join(" ")).toContain("fenced figure JSON block");
+    expect(result.markdown).not.toContain("```figure");
+    expect(result.markdown).not.toContain("[Figure:");
+  });
+});

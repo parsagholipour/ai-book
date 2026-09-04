@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { defaultConfig } from "md-to-pdf/dist/lib/config.js";
 import { getHtml } from "md-to-pdf/dist/lib/get-html.js";
 import { compileBookMarkdownWithPageAnchors, type CompileMarkdownInput } from "./markdown.js";
+import { expandFigureFences } from "./figures/figureHtml.js";
 import { liftChapterAnchorsOntoHeadings } from "./pdfDocument.js";
 import {
   appendBookPageAnchorLinkNav,
@@ -465,5 +466,27 @@ describe("bookPageAnchorLinkNav", () => {
 
   it("returns nothing for an empty plan", () => {
     expect(bookPageAnchorLinkNav([], { hasContents: false, hasSources: false })).toBe("");
+  });
+});
+
+describe("a page opening on a figure", () => {
+  it("lands the page's destination on the figure element the block became", () => {
+    const fence =
+      "```figure\n" +
+      JSON.stringify({ kind: "bar", title: "Carts by decade", categories: ["1500", "1510"], series: [{ name: "Carts", values: [120, 140] }], source: "The ledger" }) +
+      "\n```";
+    const markdown = `Prose ending page one.\n\n${fence}\n\nProse of page two.`;
+    const offset = markdown.indexOf("```figure");
+    // The renderer's own order: markers into the markdown, figures expanded, then rendered and placed.
+    const html = placeBookPageAnchorIds(
+      neutralizeRenderedReservedIds(
+        render(expandFigureFences(injectBookPageAnchorMarkers(markdown, { pageAnchors: [{ pageIndex: 2, destName: "bp-2", markdownOffset: offset }] }), { language: "en" }))
+      )
+    );
+    expect(html).toMatch(/<figure[^>]*\sid="bp-2"/);
+    expect(html).not.toContain("<!--bp-2-->");
+    expect(html).toContain("<svg");
+    expect(html).not.toContain("```");
+    expect(html.match(/<p>/g)).toHaveLength(2);
   });
 });

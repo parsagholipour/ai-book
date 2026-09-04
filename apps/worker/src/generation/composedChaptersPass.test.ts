@@ -165,7 +165,7 @@ vi.mock("./wholeBookPageReview.js", () => ({
     }))
 }));
 
-import { FakeTextModelAdapter, makeFallbackPlan, type CreateProjectInput, type ProviderSet } from "@book-maker/core";
+import { FakeTextModelAdapter, figureCapFor, figureSpecSchema, makeFallbackPlan, type CreateProjectInput, type ProviderSet } from "@book-maker/core";
 import { composedChaptersStrategy } from "@book-maker/core";
 import { composedResumeState, derivedChapterBrief, generateBookComposedChapters } from "./composedChaptersPass.js";
 
@@ -452,5 +452,48 @@ describe("generateBookComposedChapters", () => {
     expect(purposes).not.toContain("edit-chapter");
     expect(purposes).not.toContain("read-manuscript");
     expect(store.pages).toHaveLength(input.targetPages);
+  });
+});
+
+describe("figures in the composed pass", () => {
+  const run = async () => {
+    const plan = makeFallbackPlan(input);
+    const { fake } = recordingFake();
+    await generateBookComposedChapters({
+      projectId: "project-1",
+      planId: "plan-1",
+      input,
+      plan,
+      providers: providersWith(fake),
+      strategy: composedChaptersStrategy,
+      generationJobId: "job-1"
+    });
+    return plan;
+  };
+  const briefs = () =>
+    store.chapters.map(
+      (chapter) => chapter.productionBrief as { pages: Array<{ purpose: string }>; composition: { sections: Array<{ figure?: unknown }> } }
+    );
+
+  it("carries each planned figure through the edit into exactly one stored page, canonical and without its stand-in", async () => {
+    const plan = await run();
+    const expected = Math.min(2, figureCapFor(plan.chapters.length));
+    const figured = store.pages.filter((page) => /```figure\n\{.*\}\n```/.test(page.markdown));
+    expect(figured).toHaveLength(expected);
+    for (const page of figured) {
+      const body = page.markdown.match(/```figure\n(.*)\n```/)![1]!;
+      expect(figureSpecSchema.safeParse(JSON.parse(body)).success).toBe(true);
+      expect(page.status).toBe("COMPLETED");
+    }
+    expect(store.pages.some((page) => /\[figure:/i.test(page.markdown))).toBe(false);
+    expect(briefs().filter((brief) => brief.composition.sections.some((section) => section.figure))).toHaveLength(expected);
+    expect(briefs().flatMap((brief) => brief.pages).filter((page) => page.purpose.includes("Carries the chapter's figure"))).toHaveLength(expected);
+  });
+
+  it("plans and stores no figure when the gate is off", async () => {
+    mocks.qualityEnabled.mockImplementation((feature: string) => feature !== "figures");
+    await run();
+    expect(store.pages.some((page) => page.markdown.includes("```figure"))).toBe(false);
+    expect(briefs().every((brief) => brief.composition.sections.every((section) => !section.figure))).toBe(true);
   });
 });
