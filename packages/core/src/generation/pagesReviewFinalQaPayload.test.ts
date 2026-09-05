@@ -105,4 +105,39 @@ describe("runFinalBookQa payload terminology", () => {
     expect(pageMap[0]?.summary).toMatch(/chapel door/);
     expect(JSON.stringify(capture.payload?.pageMap)).not.toMatch(/parish accounts across the table/);
   });
+
+  it("shows the opening page's figure as its stand-in line, never as JSON", async () => {
+    const fence =
+      "```figure\n" +
+      JSON.stringify({ kind: "bar", title: "Carts by decade", categories: ["1500", "1510"], series: [{ name: "Carts", values: [120, 140] }], source: "The gate ledger" }) +
+      "\n```";
+    const capture = capturingFinalQaModel({ approved: true, score: 92, issues: [], requiredFixes: [], notes: "Approved." });
+
+    await runFinalBookQa({
+      input,
+      plan,
+      pages: [
+        { index: 1, title: "The Wall Bell", markdown: `${chapelOpening()}\n\n${fence}\n\nThe bell rang twice.`, summary: '{"kind":"bar","title":"Carts by decade","categories":["1500"]}' },
+        {
+          index: 2,
+          title: "The Ledger Room",
+          markdown: `The ledger room smelled of tallow and wet wool. Mara spread the parish accounts across the table and set a candle at each corner so the columns would not swim. Jack read the entries twice. Somebody had paid the bell-ringer a full week's wage on a night the tower was supposed to be empty, and the signature under the payment was the priest's — dated two days after the priest had left for the coast.\n\n${fence}`,
+          summary: "Mara finds a payment the absent priest could not have signed."
+        }
+      ],
+      textModel: capture.model
+    });
+
+    const sent = JSON.stringify(capture.payload);
+    const openingPages = (capture.payload?.openingPages ?? []) as Array<{ markdown: string }>;
+    const pageMap = (capture.payload?.pageMap ?? []) as Array<{ summary: string }>;
+    expect(pageMap[0]?.summary).toMatch(/chapel door/i);
+    expect(pageMap[0]?.summary).not.toMatch(/\{|"kind"|```figure|"categories"/);
+    const opening = openingPages[0]?.markdown ?? "";
+    expect(opening).toContain("[Figure: Carts by decade]");
+    expect(opening).toContain("The bell rang twice.");
+    expect(sent).not.toContain("```figure");
+    expect(sent).not.toContain('"kind"');
+    expect(sent).not.toContain("gate ledger");
+  });
 });

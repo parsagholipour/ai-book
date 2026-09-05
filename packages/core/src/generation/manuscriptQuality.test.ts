@@ -632,6 +632,20 @@ describe("figure blocks in the deterministic manuscript checks", () => {
         ]
       }).map((issue) => issue.code);
     expect(check(`${prose("southern")}\n\n${fence}`)).toEqual(check(prose("southern")));
-    expect(check("```figure\n{\"kind\":\"bar\"}")).toContain("MALFORMED_MARKDOWN");
+    expect(check(`${prose("southern")}\n\n${fence}`)).not.toContain("MALFORMED_MARKDOWN");
+    expect(check(fence)).not.toContain("MALFORMED_MARKDOWN");
+    expect(check("```figure\n{\"kind\":\"bar\"}")).not.toContain("MALFORMED_MARKDOWN");
+  });
+
+  it("still flags an unmatched non-figure fence after figures are stripped", () => {
+    const fence = "```figure\n" + JSON.stringify({ kind: "bar", title: "Carts", categories: ["1500"], series: [{ name: "Carts", values: [120] }], source: "The gate ledger" }) + "\n```";
+    const unmatchedPython = "```python\nprint(1)";
+    const check = (markdown: string) =>
+      runDeterministicManuscriptChecks({
+        expectedPageCount: 1,
+        pages: [{ index: 1, title: "One", markdown }]
+      }).map((issue) => issue.code);
+    expect(check(unmatchedPython)).toContain("MALFORMED_MARKDOWN");
+    expect(check(`${fence}\n\n${unmatchedPython}`)).toContain("MALFORMED_MARKDOWN");
   });
 });

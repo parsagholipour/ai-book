@@ -9,15 +9,17 @@ import {
 } from "../prompting/language.js";
 import { kidsReadingGuidanceForInput } from "../prompting/readingLevel.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
-import type {
-  BookPlan,
-  ChapterBrief,
-  ChapterPlan,
-  CreateProjectInput,
-  PageDraft,
-  PageProductionBeat
+import {
+  pageDraftSchema,
+  type BookPlan,
+  type ChapterBrief,
+  type ChapterPlan,
+  type CreateProjectInput,
+  type PageDraft,
+  type PageProductionBeat
 } from "../schemas/book.js";
-import { pageDraftSchema } from "../schemas/book.js";
+import { figureFreeDraft } from "./figures/figureBlocks.js";
+import { finalizePageDraft, pageDraftSummary } from "./figures/figureDraftSummary.js";
 import { buildPageDraftMessages, pageDraftImagePromptGuidance } from "./pageDraftMessages.js";
 import {
   GROUNDED_FACTUALITY_RULE,
@@ -213,6 +215,17 @@ export type PolishPageOptions = {
 
 const DRAFT_PAGE_INDEX_KEYS = ["globalPageIndex", "globalIndex", "globalPage", "index", "pageIndex", "pageNumber", "page"];
 
+/**
+ * The bulk writers' pages, figure-free, as every single-page draft already is:
+ * figures are composed chapters' alone, and a whole-book, chapter or batch
+ * writer is never shown the syntax, so a fence in its reply is an invention
+ * and a stand-in line an echo. Applied at the parse, before the page set is
+ * normalised, so nothing downstream reads either.
+ */
+function figureFreePages(pages: WholeBookPageDraft[]): WholeBookPageDraft[] {
+  return pages.map((page) => finalizePageDraft(figureFreeDraft(page)));
+}
+
 const wholeBookDraftSchema = z.preprocess(
   normalizeWholeBookDraft,
   z.object({
@@ -238,7 +251,9 @@ export async function generatePageDraft(options: GeneratePageOptions): Promise<P
     messages: buildPageDraftMessages(options)
   });
 
-  return pageDraftSchema.parse(result.data);
+  // A page writer is never shown the figure syntax, so a fence in its draft is
+  // an invention and a stand-in line an echo; neither may reach the review.
+  return finalizePageDraft(figureFreeDraft(pageDraftSchema.parse(result.data)));
 }
 
 export async function generateWholeBookDraft(options: GenerateWholeBookOptions): Promise<WholeBookDraft> {
@@ -315,7 +330,7 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
   });
 
   const draft = wholeBookDraftSchema.parse(result.data);
-  const normalized = normalizeWholeBookPageSet(draft.pages, options.input.targetPages);
+  const normalized = normalizeWholeBookPageSet(figureFreePages(draft.pages), options.input.targetPages);
   return {
     pages: normalized.pages,
     pageSetDiagnostics: normalized.diagnostics
@@ -396,7 +411,7 @@ export async function generateChapterDraft(options: GenerateChapterDraftOptions)
   });
 
   return {
-    pages: normalizeDraftPageSubset(wholeBookDraftSchema.parse(result.data).pages, expectedPages, "Chapter draft")
+    pages: normalizeDraftPageSubset(figureFreePages(wholeBookDraftSchema.parse(result.data).pages), expectedPages, "Chapter draft")
   };
 }
 
@@ -474,7 +489,7 @@ export async function generateBatchDraft(options: GenerateBatchDraftOptions): Pr
   });
 
   return {
-    pages: normalizeDraftPageSubset(wholeBookDraftSchema.parse(result.data).pages, expectedPages, "Page batch", {
+    pages: normalizeDraftPageSubset(figureFreePages(wholeBookDraftSchema.parse(result.data).pages), expectedPages, "Page batch", {
       allowPartialPrefix: true
     })
   };
@@ -568,7 +583,7 @@ export async function polishPageDraft(options: PolishPageOptions): Promise<PageD
     ]
   });
 
-  return result.data;
+  return finalizePageDraft(figureFreeDraft(result.data));
 }
 
 function sanitizedChapterBriefForCitation(
@@ -712,7 +727,8 @@ function normalizeWholeBookPage(value: unknown, fallbackIndex: number): unknown 
   const markdown =
     stringField(record, ["markdown", "body", "content", "text", "pageMarkdown"]) ??
     (typeof value === "string" ? value : "");
-  const summary = stringField(record, ["summary", "synopsis", "pageSummary"]) ?? markdown.slice(0, 240);
+  const providedSummary = stringField(record, ["summary", "synopsis", "pageSummary"]);
+  const summary = pageDraftSummary(markdown, providedSummary);
   const continuityNotes = stringArrayField(record, ["continuityNotes", "continuity", "notes"]) ?? [];
   const imagePrompt = stringField(record, ["imagePrompt", "illustrationPrompt", "visualPrompt"]);
 

@@ -127,6 +127,122 @@ describe("applyExactReplacement", () => {
     expect(countExactMatches("aa aa aa", { from: "aa", to: "b" })).toBe(3);
     expect(countExactMatches("nothing here", { from: "zzz", to: "b" })).toBe(0);
   });
+
+  it("replaces the prose around a figure fence and leaves the fence JSON unchanged", () => {
+    const spec = {
+      kind: "bar",
+      title: "United States farm employment",
+      categories: ["1900", "United States", "2000"],
+      series: [{ name: "United States", values: [41, 12, 2] }],
+      unit: "%",
+      source: "US Census Bureau"
+    };
+    const fence = "```figure\n" + JSON.stringify(spec) + "\n```";
+    const markdown =
+      "Farm work in the United States fell as towns grew.\n\n" + fence + "\n\nThe census still listed the United States last.";
+    const replacement = { from: "United States", to: "Britain" };
+    const result = applyExactReplacement(markdown, replacement);
+    expect(result).toBe(
+      "Farm work in the Britain fell as towns grew.\n\n" + fence + "\n\nThe census still listed the Britain last."
+    );
+    expect(countExactMatches(markdown, replacement)).toBe(2);
+    expect(exactReplacementLineDiff(markdown, replacement)).toEqual([
+      {
+        before: "Farm work in the United States fell as towns grew.",
+        after: "Farm work in the Britain fell as towns grew."
+      },
+      {
+        before: "The census still listed the United States last.",
+        after: "The census still listed the Britain last."
+      }
+    ]);
+  });
+
+  it("leaves the whole markdown unchanged when the term appears only inside a figure fence", () => {
+    const spec = {
+      kind: "bar",
+      title: "United States farm employment",
+      categories: ["1900", "1950", "2000"],
+      series: [{ name: "United States", values: [41, 12, 2] }],
+      unit: "%",
+      source: "US Census Bureau"
+    };
+    const markdown =
+      "Farm work fell as towns grew.\n\n```figure\n" + JSON.stringify(spec) + "\n```\n\nThe census clerks wrote it down.";
+    const replacement = { from: "United States", to: "Britain" };
+    expect(applyExactReplacement(markdown, replacement)).toBe(markdown);
+    expect(countExactMatches(markdown, replacement)).toBe(0);
+    expect(exactReplacementLineDiff(markdown, replacement)).toEqual([]);
+  });
+
+  it("still replaces a term inside JSON that is not wrapped in a figure fence", () => {
+    const json =
+      '{"kind":"bar","title":"United States farm employment","series":[{"name":"United States"}]}';
+    expect(applyExactReplacement(`Talk of the United States.\n${json}`, { from: "United States", to: "Britain" })).toBe(
+      `Talk of the Britain.\n${json.replaceAll("United States", "Britain")}`
+    );
+  });
+
+  it("replaces the figure title in prose only and leaves the fence JSON unchanged", () => {
+    const title = "Share of the workforce in farming";
+    const spec = {
+      kind: "bar",
+      title,
+      categories: ["1900", "1950", "2000"],
+      series: [{ name: "Farm share", values: [41, 12, 2] }],
+      unit: "%",
+      source: "US Census Bureau"
+    };
+    const fence = "```figure\n" + JSON.stringify(spec) + "\n```";
+    const markdown =
+      `The chart is titled ${title}.\n\n` + fence + `\n\nSee ${title} again.`;
+    const replacement = { from: title, to: "Farming share" };
+    const result = applyExactReplacement(markdown, replacement);
+    expect(result).toBe(
+      "The chart is titled Farming share.\n\n" + fence + "\n\nSee Farming share again."
+    );
+    expect(countExactMatches(markdown, replacement)).toBe(2);
+    expect(exactReplacementLineDiff(markdown, replacement)).toEqual([
+      {
+        before: `The chart is titled ${title}.`,
+        after: "The chart is titled Farming share."
+      },
+      {
+        before: `See ${title} again.`,
+        after: "See Farming share again."
+      }
+    ]);
+  });
+
+  it("leaves the whole markdown unchanged when the needle is a figure title that appears only inside the fence", () => {
+    const title = "Share of the workforce in farming";
+    const spec = {
+      kind: "bar",
+      title,
+      categories: ["1900", "1950", "2000"],
+      series: [{ name: "Farm share", values: [41, 12, 2] }],
+      unit: "%",
+      source: "US Census Bureau"
+    };
+    const fence = "```figure\n" + JSON.stringify(spec) + "\n```";
+    const markdown =
+      "Farm work fell as towns grew.\n\n" + fence + "\n\nThe census clerks wrote it down.";
+    const replacement = { from: title, to: "Farming share" };
+    expect(applyExactReplacement(markdown, replacement)).toBe(markdown);
+    expect(countExactMatches(markdown, replacement)).toBe(0);
+    expect(exactReplacementLineDiff(markdown, replacement)).toEqual([]);
+  });
+
+  it("replaces the title in prose and copies a broken figure fence unchanged", () => {
+    const title = "Share of the workforce in farming";
+    const broken = "```figure\n" + `{"kind":"bar","title":"${title}",}\n` + "```";
+    const markdown = `See ${title}.\n\n${broken}`;
+    const replacement = { from: title, to: "Farming share" };
+    expect(applyExactReplacement(markdown, replacement)).toBe(
+      `See Farming share.\n\n${broken}`
+    );
+    expect(countExactMatches(markdown, replacement)).toBe(1);
+  });
 });
 
 describe("word boundaries", () => {

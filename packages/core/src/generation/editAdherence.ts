@@ -7,6 +7,8 @@ import {
   exactReplacementInstructionMatches,
   type ExactReplacement
 } from "./exactReplacement.js";
+import { figureStandInMarkdown, pageFigureSpecs } from "./figures/figureBlocks.js";
+import { mentionsFigure } from "./figures/figureMentions.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import {
   adherenceMessagesFit,
@@ -101,11 +103,16 @@ export async function reviewAppliedBookEdit(
   }
 
   const changedIndexes = options.afterPages.map((page) => page.index);
+  // A model call after the compose: the reviewer reads a figure as its
+  // stand-in line, unless the request is about the figure, in which case what
+  // the block now says is exactly what it is asked to check.
+  const figures = [...options.beforePages, ...options.afterPages].flatMap((page) => pageFigureSpecs(page.markdown));
+  const forReview = mentionsFigure(options.instruction, figures) ? options : figureBlindPages(options);
   try {
-    const wholeSetMessages = wholeSetReviewMessages(options);
+    const wholeSetMessages = wholeSetReviewMessages(forReview);
     const verdict = adherenceMessagesFit(wholeSetMessages)
-      ? await reviewWholeSet(options, wholeSetMessages)
-      : await reviewHierarchically(options);
+      ? await reviewWholeSet(forReview, wholeSetMessages)
+      : await reviewHierarchically(forReview);
     return normalizeVerdict(verdict, changedIndexes);
   } catch (error) {
     if (isCancellationError(error)) {
@@ -113,6 +120,11 @@ export async function reviewAppliedBookEdit(
     }
     return failClosedVerdict(changedIndexes);
   }
+}
+
+function figureBlindPages(options: ReviewAppliedBookEditOptions): ReviewAppliedBookEditOptions {
+  const standIn = (pages: EditAdherencePage[]) => pages.map((page) => ({ ...page, markdown: figureStandInMarkdown(page.markdown) }));
+  return { ...options, beforePages: standIn(options.beforePages), afterPages: standIn(options.afterPages) };
 }
 
 function wholeSetReviewMessages(options: ReviewAppliedBookEditOptions): ChatMessage[] {

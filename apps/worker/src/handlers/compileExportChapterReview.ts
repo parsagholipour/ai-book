@@ -1,5 +1,13 @@
 import { clipQualityText, clipQualityTextPrefix, clipQualityTextSuffix } from "../generation/exportQualityReview.js";
-import { generateJsonWithRetry, type BookPlan, type CreateProjectInput, type ManuscriptQualityIssue, type TextModelAdapter } from "@book-maker/core";
+import {
+  figureFreeProse,
+  generateJsonWithRetry,
+  pageDraftSummary,
+  type BookPlan,
+  type CreateProjectInput,
+  type ManuscriptQualityIssue,
+  type TextModelAdapter
+} from "@book-maker/core";
 import { isStopRequestedError, type ExportPageForRepair } from "../runtime/jobTypes.js";
 import { z } from "zod";
 
@@ -23,6 +31,10 @@ export const chapterQualityReviewSchema = z
 
 const SUMMARY_CHARS = 280;
 const TRANSITION_EXCERPT_CHARS = 1000;
+
+function figureFreeClip(text: string, clip: (value: string, limit: number) => string, limit: number): string {
+  return clip(figureFreeProse(text), limit);
+}
 
 export async function runBoundedChapterQualityReview(options: {
   input: CreateProjectInput;
@@ -54,7 +66,7 @@ export async function runBoundedChapterQualityReview(options: {
               label: "actual opening prose excerpt",
               pageIndex: first.index,
               title: first.title,
-              excerpt: clipQualityTextPrefix(first.markdown, TRANSITION_EXCERPT_CHARS)
+              excerpt: figureFreeClip(first.markdown, clipQualityTextPrefix, TRANSITION_EXCERPT_CHARS)
             }
           }
         : {}),
@@ -65,7 +77,7 @@ export async function runBoundedChapterQualityReview(options: {
               label: "actual closing prose excerpt",
               pageIndex: last.index,
               title: last.title,
-              excerpt: clipQualityTextSuffix(last.markdown, TRANSITION_EXCERPT_CHARS)
+              excerpt: figureFreeClip(last.markdown, clipQualityTextSuffix, TRANSITION_EXCERPT_CHARS)
             }
           }
         : {}),
@@ -74,7 +86,7 @@ export async function runBoundedChapterQualityReview(options: {
         label: "planning summary, not manuscript prose",
         pageIndex: page.index,
         title: page.title,
-        summary: clipQualityText(page.summary, SUMMARY_CHARS)
+        summary: clipQualityText(pageDraftSummary(page.markdown, page.summary), SUMMARY_CHARS)
       }))
     };
   });
@@ -95,14 +107,14 @@ export async function runBoundedChapterQualityReview(options: {
         ? {
             contentKind: "prose" as const,
             label: "actual chapter-end prose excerpt",
-            excerpt: clipQualityTextSuffix(lastPage.markdown, TRANSITION_EXCERPT_CHARS)
+            excerpt: figureFreeClip(lastPage.markdown, clipQualityTextSuffix, TRANSITION_EXCERPT_CHARS)
           }
         : { contentKind: "prose" as const, label: "actual chapter-end prose excerpt", excerpt: "" },
       opening: firstPage
         ? {
             contentKind: "prose" as const,
             label: "actual next-chapter-open prose excerpt",
-            excerpt: clipQualityTextPrefix(firstPage.markdown, TRANSITION_EXCERPT_CHARS)
+            excerpt: figureFreeClip(firstPage.markdown, clipQualityTextPrefix, TRANSITION_EXCERPT_CHARS)
           }
         : { contentKind: "prose" as const, label: "actual next-chapter-open prose excerpt", excerpt: "" }
     };

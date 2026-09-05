@@ -2,8 +2,10 @@ import {
   applyStoryDelta,
   auditPageStyle,
   extractStoryState,
+  figureFreeProse,
   hasResearchIntent,
   localStyleInstructions,
+  pageDraftSummary,
   unpaidPromiseIssues,
   verifyPageClaims,
   withClaimVerification,
@@ -23,6 +25,14 @@ import { loadProjectStoryState, persistPageStoryDelta, rebuildStoryStateFromPage
 import { loadQualityContext } from "./qualitySettings.js";
 import { isStopRequestedError } from "../runtime/jobTypes.js";
 import type { Prisma } from "@book-maker/db";
+
+/** Drops figure fences via `figureFreeProse` (no stand-in) and runs the summary through `pageDraftSummary`; this is not `figureFreeDraft`. */
+function figureFreeProseFields(draft: Pick<PageDraft, "markdown" | "summary">) {
+  return {
+    markdown: figureFreeProse(draft.markdown),
+    summary: pageDraftSummary(draft.markdown, draft.summary)
+  };
+}
 
 export type EnrichedPageReview = {
   report: PageQualityReport;
@@ -70,8 +80,7 @@ export async function enrichPageQualityReport(options: {
         textModel: options.textModel,
         pageIndex: options.pageIndex,
         title: options.draft.title,
-        markdown: options.draft.markdown,
-        summary: options.draft.summary,
+        ...figureFreeProseFields(options.draft),
         currentState: storyState
       });
       report = withStoryContradictions(report, extract.contradictions);
@@ -110,7 +119,7 @@ export async function enrichPageQualityReport(options: {
       const verification = await verifyPageClaims({
         textModel: options.textModel,
         pageIndex: options.pageIndex,
-        markdown: options.draft.markdown,
+        markdown: figureFreeProse(options.draft.markdown),
         researchNotes: options.researchNotes
       });
       report = withClaimVerification(report, verification);
@@ -137,7 +146,7 @@ export async function enrichPageQualityReport(options: {
     try {
       const audit = await auditPageStyle({
         textModel: options.textModel,
-        markdown: options.draft.markdown,
+        markdown: figureFreeProse(options.draft.markdown),
         voiceGuide: options.plan.voiceGuide,
         antiAiRules: localStyleInstructions(options.plan),
         styleExcerpts
@@ -216,7 +225,7 @@ export function revisedDraftStyleAuditor(options: {
     try {
       const audit = await auditPageStyle({
         textModel: options.textModel,
-        markdown: draft.markdown,
+        markdown: figureFreeProse(draft.markdown),
         voiceGuide: options.plan.voiceGuide,
         antiAiRules: localStyleInstructions(options.plan),
         styleExcerpts: options.styleExcerpts,
@@ -288,8 +297,7 @@ export async function keeperStoryExtractForSave(
         textModel: options.textModel,
         pageIndex: options.pageIndex,
         title: options.draft.title,
-        markdown: options.draft.markdown,
-        summary: options.draft.summary,
+        ...figureFreeProseFields(options.draft),
         currentState: options.currentState
       });
     } catch (error) {

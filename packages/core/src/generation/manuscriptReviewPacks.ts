@@ -6,6 +6,7 @@ import {
   type ManuscriptQualityIssueMetrics
 } from "./manuscriptQualityIssue.js";
 import { figureStandInMarkdown } from "./figures/figureBlocks.js";
+import { pageDraftSummary } from "./figures/figureDraftSummary.js";
 
 /** Finding codes whose clusters may be sent for targeted structural adjudication. */
 export const STRUCTURAL_REVIEW_CANDIDATE_CODES = ["RECAP_BACKTRACKING", "CROSS_CHAPTER_CONCEPT_REPETITION"] as const;
@@ -266,7 +267,9 @@ function neighborSummaries(
     if (!page) {
       return [];
     }
-    const summarySource = page.summary?.trim() || compactExcerpt(figureStandInMarkdown(page.markdown).replace(/\s+/g, " ").trim(), maxChars);
+    const cleaned = pageDraftSummary(page.markdown, page.summary).trim();
+    const summarySource =
+      cleaned || compactExcerpt(figureStandInMarkdown(page.markdown).replace(/\s+/g, " ").trim(), maxChars);
     const neighbor: ManuscriptReviewPackNeighbor = {
       contentKind: "summary",
       pageIndex,

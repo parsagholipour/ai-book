@@ -1,5 +1,6 @@
 import type { TextModelAdapter } from "../adapters/types.js";
 import { figureFreeProse } from "./figures/figureBlocks.js";
+import { pageDraftSummary } from "./figures/figureDraftSummary.js";
 import { isSignpostingBookCategory } from "../categories.js";
 import { kidsReadingGuidanceForInput } from "../prompting/readingLevel.js";
 import type { PageDraft, PageQualityReport } from "../schemas/book.js";
@@ -48,6 +49,7 @@ type LocalPageRuleContext = {
   options: ReviewPageOptions;
   text: string;
   currentBody: string;
+  currentSummary: string;
   flowingBody: string;
   flowingText: string;
   adjacentPage: ReviewPageOptions["previousPages"][number] | undefined;
@@ -188,7 +190,11 @@ const LOCAL_PAGE_QUALITY_RULES = [
   ),
   FIRST_PAGE_OPENING_QUALITY_RULE,
   pageRule(
-    ({ options }) => options.pageIndex === options.input.targetPages && hasVagueEnding(options.draft),
+    // The figure-free body and summary, not the draft: a chart's caption or
+    // source on the last page ("into the unknown", "the beginning") is not how
+    // the page ends, even when those phrases leaked into `draft.summary`.
+    ({ options, currentBody, currentSummary }) =>
+      options.pageIndex === options.input.targetPages && hasVagueEnding({ markdown: currentBody, summary: currentSummary }),
     ["progressionOk"],
     "Final page ending is too vague to resolve the book's central promise."
   )
@@ -280,6 +286,18 @@ function localPageRuleContext(options: ReviewPageOptions): LocalPageRuleContext 
   const markdown = figureFreeProse(options.draft.markdown);
   const text = `${options.draft.title}\n${markdown}`;
   const currentBody = markdown.trim();
+  // Later-pass summaries go through `pageDraftSummary`: a caption or
+  // `"kind"`/`categories` JSON that leaked into the summary — fenced or
+  // fence-free — is not the page's own words. `figureFreeProse` only strips
+  // fences, so a bare JSON blob would still feed last-page ending and the
+  // repetition gate. Only built when a reader will score it, so a page with
+  // nothing behind it that is not the book's last still reads the summary
+  // never, which is the short circuit `pagesLocalQaRepetition.test.ts`
+  // measures.
+  const currentSummary =
+    options.previousPages.length > 0 || options.pageIndex === options.input.targetPages
+      ? pageDraftSummary(options.draft.markdown, options.draft.summary)
+      : "";
   // The phrase tables below are written with literal single spaces, so a page
   // that hard-wraps mid-phrase — or a model that emits a double space — walked
   // past them. `splitSentences` (`proseShape.ts`) collapses whitespace before
@@ -323,11 +341,20 @@ function localPageRuleContext(options: ReviewPageOptions): LocalPageRuleContext 
   // and "nothing behind it" is page 1 of every book, the one page best-of drafts
   // several candidates of, plus every `reviewPageDraftLocally` the bulk
   // strategies make with no `previousPages` at all.
-  const recentPages = options.previousPages.slice(-5);
+  // The draft body is already figure-free above; predecessors still store
+  // the fence, so chart labels would otherwise score as the earlier page's
+  // words. Summaries go through `pageDraftSummary`: a leaked `"kind"` JSON
+  // blob — fenced or not — is not the earlier page's beat.
+  const recentPages = options.previousPages.slice(-5).map((page) => {
+    const { markdown, summary, ...rest } = page;
+    return {
+      ...rest,
+      markdown: figureFreeProse(markdown),
+      summary: pageDraftSummary(markdown, summary)
+    };
+  });
   const repeatedPage =
-    recentPages.length > 0
-      ? repeatedRecentPage(recentPages, currentBody, options.draft.summary)
-      : undefined;
+    recentPages.length > 0 ? repeatedRecentPage(recentPages, currentBody, currentSummary) : undefined;
 
   const kidsGuidance = kidsReadingGuidanceForInput(options.input);
   // countReadableWords is Unicode-aware; tokenize-based counts undercount or
@@ -339,6 +366,7 @@ function localPageRuleContext(options: ReviewPageOptions): LocalPageRuleContext 
     options,
     text,
     currentBody,
+    currentSummary,
     flowingBody,
     flowingText,
     adjacentPage,
@@ -379,7 +407,7 @@ export function compactPageMap(pages: FinalQaPage[]) {
   const compact = pages.map((page) => ({
     index: page.index,
     title: page.title,
-    summary: compactSummaryForQa(page.summary, summaryLimit)
+    summary: compactSummaryForQa(pageDraftSummary(page.markdown, page.summary), summaryLimit)
   }));
   if (compact.length <= 120) {
     return compact;
@@ -711,7 +739,7 @@ const OWN_UNIT_LINE_PATTERN =
 const LEADING_MARKDOWN_DECORATION_PATTERN = /^[\s#*_~`>+-]+/;
 const ATX_HEADING_LINE_PATTERN = /^\s{0,3}#{1,6}(?:\s|$)/;
 
-function hasVagueEnding(draft: PageDraft): boolean {
+function hasVagueEnding(draft: Pick<PageDraft, "markdown" | "summary">): boolean {
   // Collapsed for the same reason the phrase tables above are: these are
   // literal-space patterns, and "into the\nunknown" is the shape a page ends
   // on as often as not. Each half is collapsed on its own, so no phrase is

@@ -6,6 +6,7 @@ import {
   parseChapterBrief,
   toPriorPageContext
 } from "../generation/bookHelpers.js";
+import { holdFiguresAside } from "../generation/composedFigures.js";
 import { extractRepairPageIndexes, lastPageIndex } from "../generation/finalQaPageTargets.js";
 import { loadContinuityNotes } from "../generation/generationContext.js";
 import {
@@ -45,6 +46,7 @@ import { dispatchWorkerGenerationJob } from "../runtime/dispatch.js";
 import { currentGenerationAttemptId } from "../runtime/generationAttemptContext.js";
 import type { ExportPageForRepair } from "../runtime/jobTypes.js";
 import {
+  hasFigureFence,
   pagesForStyleExcerpts,
   pinStyleExcerpts,
   sampleExcerptsFromInput,
@@ -330,6 +332,16 @@ export async function repairPagesFromFinalQa(options: {
       .map(toPriorPageContext);
     const styleExcerpts = pinsStyleLock ? await styleLockFor(acceptedPreviousPages, page.index) : [];
     const finalQaReport = pageReportFromFinalQa(options.finalQa, pageIndex, lastPage);
+    // A composed page's figure is held aside so this rewrite, the loop's
+    // rewrites and reviews, and the story extract never see the JSON: the
+    // first revise is handed stand-in prose, `figures: "hold"` keeps those
+    // stand-ins (and strips invented fences) on every later revise, and restore
+    // after the extract puts the original blocks on the published draft. A
+    // page with no figure omits the key so a neighbour's stand-in echoed into
+    // the reply is still stripped. Every per-page rewrite would otherwise come
+    // back from core figure-free, so a page revised from its raw markdown lost
+    // its chart and shipped without it.
+    const heldFigures = hasFigureFence(page.markdown) ? holdFiguresAside(page.markdown) : undefined;
     let draft = await revisePageDraftWithRestart({
       strategy: options.strategy,
       generationJobId: options.generationJobId,
@@ -344,7 +356,7 @@ export async function repairPagesFromFinalQa(options: {
         qaCandidateNumber: 2,
         draft: {
           title: page.title,
-          markdown: page.markdown,
+          markdown: heldFigures ? heldFigures.prose : page.markdown,
           summary: page.summary,
           continuityNotes: []
         },
@@ -353,6 +365,7 @@ export async function repairPagesFromFinalQa(options: {
         continuityNotes,
         researchNotes: options.researchNotes,
         textModel: options.providers.text,
+        ...(heldFigures ? { figures: "hold" as const } : {}),
         ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
       }
     });
@@ -426,6 +439,7 @@ export async function repairPagesFromFinalQa(options: {
       deferBriefRepairPersistence: true,
       reviseContext: `Final QA repair for page ${pageIndex}`,
       quality: options.quality,
+      ...(heldFigures ? { figures: "hold" as const } : {}),
       ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
     });
     draft = outcome.draft;
@@ -473,6 +487,10 @@ export async function repairPagesFromFinalQa(options: {
       usesSemanticMemory
         ? await prepareEmbedding(draft.summary, options.providers.embedding)
         : null;
+    // From here on `draft` is the page as it is published: the figures go
+    // back beside the paragraphs they followed, after every model call above
+    // has read the prose as stand-ins rather than JSON.
+    if (heldFigures) draft = heldFigures.restore(draft);
 
     const imagePrompt = draft.imagePrompt ?? page.imagePrompt;
     const revision = (Number.isInteger(page.revision) ? page.revision : 0) + revisionAttempts;

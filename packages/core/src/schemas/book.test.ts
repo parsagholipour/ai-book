@@ -8,6 +8,7 @@ import {
   bookPlanSchema,
   bookPlanSchemaWithFallback,
   createProjectSchema,
+  pageDraftSchema,
   pageProductionBeatSchema,
   pageQualityReportSchema
 } from "./book.js";
@@ -705,6 +706,18 @@ function minimalPlan(cadence: string) {
     }
   };
 }
+
+describe("pageDraftSchema summaries", () => {
+  it("derives a missing summary", () => {
+    const fromProse = pageDraftSchema.parse({
+      title: "The Door Opens",
+      markdown:
+        "The chapel door had been painted black so many times that the grain underneath looked bruised. Jack pressed two fingers to the iron latch."
+    });
+    expect(fromProse.summary).toContain("The chapel door had been painted black");
+    expect(fromProse.summary.length).toBeLessThanOrEqual(243);
+  });
+});
 
 describe("pageProductionBeatSchema evidence ledger", () => {
   const base = {

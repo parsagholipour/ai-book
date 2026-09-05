@@ -7,7 +7,7 @@ import {
 import { prisma, pageScope } from "@book-maker/db";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
 import type { IndexedPageDraft } from "../runtime/jobTypes.js";
-import { figureFreeDrafts, restoreFigures } from "./composedFigures.js";
+import { restoreFigures, stripDraftFigures } from "./composedFigures.js";
 import { loadComposedBookState } from "./composedChaptersState.js";
 import {
   GeneratedPagePublicationClaimLostError,
@@ -58,7 +58,7 @@ export async function finalizePendingPages(options: {
     continuityNotes: notesByIndex.get(page.index) ?? [],
     ...(page.imagePrompt ? { imagePrompt: page.imagePrompt } : {})
   }));
-  const { drafts, fencesByIndex } = figureFreeDrafts(pendingDrafts);
+  const { drafts, fencesByIndex } = stripDraftFigures(pendingDrafts);
   const reviewed = await reviewWholeBookDraftPages({
     input,
     plan,

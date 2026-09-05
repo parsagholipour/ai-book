@@ -4,7 +4,7 @@ import { figureRenderContext } from "./figureHtml.js";
 import type { ChartFigureSpec, FlowFigureSpec } from "./figureSpec.js";
 import { renderChartSvg } from "./figureSvgCharts.js";
 import { layoutFlow, renderFlowSvg } from "./figureSvgFlow.js";
-import { formatFigureNumber, niceTicks, wrapLabel } from "./figureSvgShared.js";
+import { FIGURE_WIDTH, formatFigureNumber, niceTicks, wrapLabel } from "./figureSvgShared.js";
 
 const bar: ChartFigureSpec = {
   kind: "bar",
@@ -160,6 +160,66 @@ describe("number and text helpers", () => {
     expect(niceTicks(5, 5).length).toBeGreaterThan(1);
   });
 
+  it("never hangs or returns a non-finite tick, whatever the domain", () => {
+    // The end used to round up past Number.MAX_VALUE to Infinity, and the loop never ended.
+    for (const [low, high] of [
+      [0, Number.MAX_VALUE],
+      [-Number.MAX_VALUE, Number.MAX_VALUE],
+      [Number.MAX_VALUE / 3, Number.MAX_VALUE],
+      [Number.MAX_VALUE, Number.MAX_VALUE],
+      [-Number.MAX_VALUE, -Number.MAX_VALUE],
+      [0, Number.MIN_VALUE],
+      [Number.MIN_VALUE, Number.MIN_VALUE],
+      [0, 3e-12],
+      [Number.NaN, 4],
+      [1, Number.POSITIVE_INFINITY]
+    ] as const) {
+      const ticks = niceTicks(low, high);
+      expect(ticks.length).toBeGreaterThanOrEqual(2);
+      expect(ticks.length).toBeLessThanOrEqual(64);
+      expect(ticks.every((tick) => Number.isFinite(tick))).toBe(true);
+      expect(ticks[0]).not.toBe(ticks.at(-1));
+    }
+    // A domain below the old ten-decimal rounding keeps distinct ticks instead of collapsing to zero.
+    expect(niceTicks(0, 3e-12)).toEqual([0, 1e-12, 2e-12, 3e-12]);
+    // At FIGURE_LIMITS.value the nice step is smaller than the ULP, so += never advances.
+    const nearLimit = niceTicks(999999999999999.9, 1e15);
+    expect(nearLimit.length).toBeGreaterThanOrEqual(2);
+    expect(nearLimit.length).toBeLessThanOrEqual(64);
+    expect(nearLimit.every((tick) => Number.isFinite(tick))).toBe(true);
+    expect(new Set(nearLimit).size).toBeGreaterThanOrEqual(2);
+  });
+
+  it("draws a chart built directly with values the schema would refuse, rather than hanging or emitting non-finite geometry", () => {
+    const max = Number.MAX_VALUE;
+    const domains: number[][] = [
+      [1, max, 3],
+      [max, max, max],
+      [-max, -max, -max],
+      [-max, 0, max],
+      [Number.MIN_VALUE, 1, max],
+      [Number.MIN_VALUE, 1, 2],
+      [0, Number.MIN_VALUE, 0],
+      [-max, 1, 1]
+    ];
+    for (const values of domains) {
+      const base: ChartFigureSpec = { ...bar, unit: "", series: [{ name: "S", values }] };
+      const variants: ChartFigureSpec[] = [
+        base,
+        { ...base, kind: "line" },
+        { ...base, orientation: "horizontal" },
+        { ...base, scale: "linear" },
+        { ...base, scale: "log" },
+        { ...base, kind: "pie", series: [{ name: "S", values: values.map(Math.abs) }] }
+      ];
+      for (const spec of variants) {
+        const svg = renderChartSvg(spec, en);
+        expect(svg.startsWith("<svg "), JSON.stringify(spec)).toBe(true);
+        expect(svg, JSON.stringify(spec)).not.toMatch(/NaN|Infinity|∞/);
+      }
+    }
+  });
+
   it("wraps a label into lines and folds the overflow into an ellipsis", () => {
     expect(wrapLabel("Triage within 48 hours", 10, 3)).toEqual(["Triage", "within 48", "hours"]);
     expect(wrapLabel("one two three four five six", 9, 2)).toEqual(["one two", "three fo…"]);
@@ -218,6 +278,79 @@ describe("layoutFlow and renderFlowSvg", () => {
     expect(layout.edges.filter((edge) => edge.back)).toHaveLength(1);
     expect(renderFlowSvg(ring, en)).not.toMatch(UNCLOSED_EMPTY_ELEMENT);
   });
+
+  it("keeps a 14-node fan-out inside the 640-wide viewBox", () => {
+    const fanOut: FlowFigureSpec = {
+      kind: "flow",
+      title: "One source, thirteen next steps",
+      nodes: [
+        { id: "n0", label: "Decide the next hop", shape: "start" },
+        ...Array.from({ length: 13 }, (_, index) => ({ id: `n${index + 1}`, label: `Target ${index + 1}` }))
+      ],
+      edges: Array.from({ length: 13 }, (_, index) => ({ from: "n0", to: `n${index + 1}` })),
+      source: "A procedure"
+    };
+    const layout = layoutFlow(fanOut);
+    expect(layout.nodes).toHaveLength(14);
+    for (const node of layout.nodes) {
+      expect(node.x - node.w / 2).toBeGreaterThanOrEqual(-1e-6);
+      expect(node.x + node.w / 2).toBeLessThanOrEqual(FIGURE_WIDTH + 1e-6);
+      expect(node.x).toBeGreaterThanOrEqual(0);
+      expect(node.x).toBeLessThanOrEqual(FIGURE_WIDTH);
+    }
+    const svg = renderFlowSvg(fanOut, en);
+    expect(svg).toMatch(/viewBox="0 0 640 /);
+    const viewBox = svg.match(/viewBox="0 0 640 ([\d.]+)"/)!;
+    expect(Number(viewBox[1])).toBeGreaterThan(0);
+    expect(svg).toContain('style="display:block;width:100%;height:auto"');
+    expect(svg).not.toMatch(UNCLOSED_EMPTY_ELEMENT);
+  });
+
+  it("caps a 14-node chain at a page-sensible height", () => {
+    const chain: FlowFigureSpec = {
+      kind: "flow",
+      title: "Fourteen steps in a line",
+      nodes: Array.from({ length: 14 }, (_, index) => ({
+        id: `n${index}`,
+        label: `Step ${index + 1}`,
+        ...(index === 0 ? { shape: "start" as const } : index === 13 ? { shape: "end" as const } : {})
+      })),
+      edges: Array.from({ length: 13 }, (_, index) => ({ from: `n${index}`, to: `n${index + 1}` })),
+      source: "A procedure"
+    };
+    const layout = layoutFlow(chain);
+    expect(layout.layers).toBe(14);
+    // 720px at full column width is ~196mm on A4, under the 255mm content block; the old pitch ran to ~1398.
+    expect(layout.height).toBeLessThanOrEqual(720);
+    expect(layout.height).toBeLessThan(800);
+    const svg = renderFlowSvg(chain, en);
+    const viewBox = svg.match(/viewBox="0 0 640 ([\d.]+)"/)!;
+    expect(Number(viewBox[1])).toBeLessThanOrEqual(720);
+    expect(Number(viewBox[1])).toBe(Math.round(layout.height * 100) / 100);
+    expect(svg).not.toMatch(UNCLOSED_EMPTY_ELEMENT);
+  });
+
+  it("shrinks nodes rather than overlapping them in a 14-decision chain", () => {
+    const chain: FlowFigureSpec = {
+      kind: "flow",
+      title: "Fourteen decisions",
+      nodes: Array.from({ length: 14 }, (_, index) => ({
+        id: `n${index}`,
+        label: `Ask ${index + 1}`,
+        shape: "decision" as const
+      })),
+      edges: Array.from({ length: 13 }, (_, index) => ({ from: `n${index}`, to: `n${index + 1}` })),
+      source: "A procedure"
+    };
+    const layout = layoutFlow(chain);
+    expect(layout.height).toBeLessThanOrEqual(720);
+    const ordered = [...layout.nodes].sort((left, right) => left.y - right.y || left.x - right.x);
+    for (let index = 0; index < ordered.length - 1; index += 1) {
+      const upper = ordered[index]!;
+      const lower = ordered[index + 1]!;
+      expect(upper.y + upper.h / 2).toBeLessThanOrEqual(lower.y - lower.h / 2 + 1e-6);
+    }
+  });
 });
 
 describe("flow edges that share a node or skip a layer", () => {
@@ -253,5 +386,127 @@ describe("flow edges that share a node or skip a layer", () => {
     const controlX = Number(skipping.path.match(/C([\d.-]+) /)![1]);
     expect(Math.abs(controlX - startX(skipping))).toBeGreaterThan(100);
     expect(renderFlowSvg(fan, en)).not.toMatch(UNCLOSED_EMPTY_ELEMENT);
+  });
+
+  it("bows a sheet-edge skip out of the column instead of flattening it to the margin", () => {
+    // Four-wide layers fill the usable column, so the leftmost and rightmost
+    // nodes sit on the margin clampNodeToViewBox would pin an overflow to.
+    // Decision endpoints keep attach points on the column (no side spread).
+    const edgeSkip: FlowFigureSpec = {
+      kind: "flow",
+      title: "Edge skips",
+      nodes: [
+        { id: "left", label: "Left start", shape: "decision" },
+        { id: "a2", label: "A2" },
+        { id: "a3", label: "A3" },
+        { id: "right", label: "Right start", shape: "decision" },
+        { id: "leftMid", label: "Left mid" },
+        { id: "b2", label: "B2" },
+        { id: "b3", label: "B3" },
+        { id: "rightMid", label: "Right mid" },
+        { id: "leftEnd", label: "Left end", shape: "decision" },
+        { id: "c2", label: "C2" },
+        { id: "c3", label: "C3" },
+        { id: "rightEnd", label: "Right end", shape: "decision" }
+      ],
+      edges: [
+        { from: "left", to: "leftMid" },
+        { from: "leftMid", to: "leftEnd" },
+        { from: "left", to: "leftEnd" },
+        { from: "a2", to: "b2" },
+        { from: "b2", to: "c2" },
+        { from: "a3", to: "b3" },
+        { from: "b3", to: "c3" },
+        { from: "right", to: "rightMid" },
+        { from: "rightMid", to: "rightEnd" },
+        { from: "right", to: "rightEnd" }
+      ],
+      source: "A procedure"
+    };
+    const layout = layoutFlow(edgeSkip);
+    const byId = new Map(layout.nodes.map((node) => [node.id, node]));
+    const startX = (edge: (typeof layout.edges)[number]) => Number(edge.path.match(/^M([\d.-]+) /)![1]);
+    const cubic = (p0: number, p1: number, p2: number, p3: number, t: number) => {
+      const u = 1 - t;
+      return u * u * u * p0 + 3 * u * u * t * p1 + 3 * u * t * t * p2 + t * t * t * p3;
+    };
+    const skipPath = (path: string) => {
+      const match = path.match(/^M([\d.-]+) ([\d.-]+)C([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+)$/)!;
+      return {
+        x1: Number(match[1]),
+        y1: Number(match[2]),
+        c1x: Number(match[3]),
+        c1y: Number(match[4]),
+        c2x: Number(match[5]),
+        c2y: Number(match[6]),
+        x2: Number(match[7]),
+        y2: Number(match[8])
+      };
+    };
+    const missesBox = (path: string, node: (typeof layout.nodes)[number]) => {
+      const curve = skipPath(path);
+      for (let step = 1; step < 20; step += 1) {
+        const t = step / 20;
+        const x = cubic(curve.x1, curve.c1x, curve.c2x, curve.x2, t);
+        const y = cubic(curve.y1, curve.c1y, curve.c2y, curve.y2, t);
+        expect(Math.abs(x - node.x) < node.w / 2 && Math.abs(y - node.y) < node.h / 2).toBe(false);
+      }
+    };
+    const pathCoords = (path: string) => {
+      const out: { x: number; y: number }[] = [];
+      let x = 0;
+      let y = 0;
+      for (const match of path.matchAll(/([MLHVCS])([^MLHVCS]*)/g)) {
+        const nums = (match[2]!.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+        if (match[1] === "M" || match[1] === "L") {
+          x = nums[0]!;
+          y = nums[1]!;
+          out.push({ x, y });
+        } else if (match[1] === "C") {
+          for (let index = 0; index < nums.length; index += 2) out.push({ x: (x = nums[index]!), y: (y = nums[index + 1]!) });
+        } else if (match[1] === "H") out.push({ x: (x = nums[0]!), y });
+        else if (match[1] === "V") out.push({ x, y: (y = nums[0]!) });
+      }
+      return out;
+    };
+
+    expect(layout.width).toBeGreaterThan(FIGURE_WIDTH);
+    const leftSkip = layout.edges.find((edge) => edge.from === "left" && edge.to === "leftEnd")!;
+    const rightSkip = layout.edges.find((edge) => edge.from === "right" && edge.to === "rightEnd")!;
+    const leftBow = Math.abs(Number(leftSkip.path.match(/C([\d.-]+) /)![1]) - startX(leftSkip));
+    const rightBow = Math.abs(Number(rightSkip.path.match(/C([\d.-]+) /)![1]) - startX(rightSkip));
+    const expectedLeft = Math.max(byId.get("left")!.w, byId.get("leftEnd")!.w) / 2 + 40;
+    const expectedRight = Math.max(byId.get("right")!.w, byId.get("rightEnd")!.w) / 2 + 40;
+    expect(leftBow).toBeGreaterThan(100);
+    expect(rightBow).toBeGreaterThan(100);
+    expect(leftBow).toBeCloseTo(expectedLeft, 1);
+    expect(rightBow).toBeCloseTo(expectedRight, 1);
+    missesBox(leftSkip.path, byId.get("leftMid")!);
+    missesBox(rightSkip.path, byId.get("rightMid")!);
+
+    const inside = (x: number, y: number) => {
+      expect(x).toBeGreaterThanOrEqual(-1e-6);
+      expect(x).toBeLessThanOrEqual(layout.width + 1e-6);
+      expect(y).toBeGreaterThanOrEqual(-1e-6);
+      expect(y).toBeLessThanOrEqual(layout.height + 1e-6);
+    };
+    for (const node of layout.nodes) {
+      inside(node.x - node.w / 2, node.y - node.h / 2);
+      inside(node.x + node.w / 2, node.y + node.h / 2);
+    }
+    for (const edge of layout.edges) {
+      for (const point of pathCoords(edge.path)) inside(point.x, point.y);
+      for (const vertex of edge.arrow.split(" ")) {
+        const [x, y] = vertex.split(",");
+        inside(Number(x), Number(y));
+      }
+      inside(edge.labelAt.x, edge.labelAt.y);
+    }
+
+    const svg = renderFlowSvg(edgeSkip, en);
+    const viewBox = svg.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/)!;
+    expect(Number(viewBox[1])).toBeCloseTo(layout.width, 2);
+    expect(Number(viewBox[2])).toBeCloseTo(layout.height, 2);
+    expect(svg).not.toMatch(UNCLOSED_EMPTY_ELEMENT);
   });
 });

@@ -13,6 +13,7 @@ import { embedResearchSourcesForProject } from "../generation/researchMemory.js"
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { generateReplannedBook } from "../generation/replanEditCandidates.js";
 import { createLoggedJudgeTextModel, createLoggedProviders } from "../providers/loggedAdapters.js";
+import { createRunLogger } from "../providers/runLogging.js";
 import { config } from "../runtime/config.js";
 import { enqueueWorkerJob, maybeEnqueueCompile, maybeEnqueueCover, parallelPageWaveSize } from "../runtime/dispatch.js";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
@@ -153,7 +154,8 @@ export async function generateBook(job: GenerateBookJob): Promise<JobCompletion>
         providers,
         strategy,
         generationJobId,
-        judgeTextModel: createLoggedJudgeTextModel(job, input)
+        judgeTextModel: createLoggedJudgeTextModel(job, input),
+        runLog: createRunLogger(job)
       });
       return {};
     case "sequential-pages":

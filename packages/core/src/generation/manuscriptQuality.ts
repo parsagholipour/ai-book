@@ -201,8 +201,9 @@ export function runDeterministicManuscriptChecks(options: {
   // rebuilding token sets inside pair loops.
   const prepared = pages.map((raw) => {
     // Every measure below reads prose; a figure block is drawn, not read.
-    const page = { ...raw, markdown: figureFreeProse(raw.markdown) };
-    const plain = plainMarkdown(page.markdown);
+    const markdown = figureFreeProse(raw.markdown);
+    const page = { ...raw, markdown };
+    const plain = plainMarkdown(markdown);
     return { page, plain, tokens: tokenizePage(plain) };
   });
   const pageTexts = prepared.map(({ plain }) => plain);

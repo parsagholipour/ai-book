@@ -92,6 +92,96 @@ describe("runBoundedChapterQualityReview", () => {
     ]);
   });
 
+  it("sends figure-free opening and closing excerpts, not chart JSON", async () => {
+    generateJsonWithRetry.mockResolvedValue({ data: { issues: [] } });
+    const fence =
+      "```figure\n" +
+      JSON.stringify({
+        kind: "bar",
+        title: "Carts by decade",
+        categories: ["1500", "1510"],
+        series: [{ name: "Carts", values: [120, 140] }],
+        source: "The ledger"
+      }) +
+      "\n```";
+    const chapter1Prose = "The clerks counted the carts at the north gate and wrote every name in the ledger.";
+    const chapter2Prose = "The towns felt the change first, and the road out of town still carried the dust.";
+
+    await runBoundedChapterQualityReview(
+      baseOptions([
+        exportPage(1, {
+          chapter: { id: "ch-1", index: 1, productionBrief: null },
+          markdown: `${chapter1Prose}\n\n${fence}`,
+          summary: `Planning summary for the carts.\n\n${fence}`
+        }),
+        exportPage(2, {
+          chapter: { id: "ch-2", index: 2, productionBrief: null },
+          markdown: `${fence}\n\n${chapter2Prose}`
+        })
+      ])
+    );
+
+    const payload = JSON.parse(
+      (generateJsonWithRetry.mock.calls[0]![1] as { messages: Array<{ content: string }> }).messages[1]!.content
+    ) as {
+      chapters: Array<{
+        openingProse: { excerpt: string };
+        closingProse: { excerpt: string };
+        pageSummaries: Array<{ summary: string }>;
+      }>;
+      transitions: Array<{ ending: { excerpt: string }; opening: { excerpt: string } }>;
+    };
+    const excerpts = [
+      payload.chapters[0]?.openingProse.excerpt,
+      payload.chapters[0]?.closingProse.excerpt,
+      payload.chapters[1]?.openingProse.excerpt,
+      payload.chapters[1]?.closingProse.excerpt,
+      payload.transitions[0]?.ending.excerpt,
+      payload.transitions[0]?.opening.excerpt
+    ];
+    expect(excerpts[0]).toContain(chapter1Prose);
+    expect(excerpts[1]).toContain(chapter1Prose);
+    expect(excerpts[2]).toContain(chapter2Prose);
+    expect(excerpts[3]).toContain(chapter2Prose);
+    expect(excerpts[4]).toContain(chapter1Prose);
+    expect(excerpts[5]).toContain(chapter2Prose);
+    for (const excerpt of excerpts) {
+      expect(excerpt).not.toContain("```figure");
+      expect(excerpt).not.toContain('"kind"');
+      expect(excerpt).not.toContain('"categories"');
+      expect(excerpt).not.toContain('"series"');
+    }
+    const pageSummary = payload.chapters[0]?.pageSummaries[0]?.summary ?? "";
+    expect(pageSummary).toContain(chapter1Prose);
+    expect(pageSummary).not.toMatch(/Planning summary for the carts/);
+    expect(pageSummary).not.toContain("```figure");
+    expect(pageSummary).not.toContain('"kind"');
+    expect(pageSummary).not.toContain("Carts by decade");
+  });
+
+  it("does not send fence-free leaked figure JSON as a page summary", async () => {
+    generateJsonWithRetry.mockResolvedValue({ data: { issues: [] } });
+    const prose = "The clerks counted the carts at the north gate and wrote every name in the ledger.";
+    const leakedSummary = JSON.stringify({
+      kind: "line",
+      title: "Into the unknown",
+      categories: ["1900", "1910"],
+      series: [{ name: "Intake", values: [12, 40] }],
+      source: "What came next: the beginning of the record"
+    });
+
+    await runBoundedChapterQualityReview(baseOptions([exportPage(1, { markdown: prose, summary: leakedSummary })]));
+
+    const payload = JSON.parse(
+      (generateJsonWithRetry.mock.calls[0]![1] as { messages: Array<{ content: string }> }).messages[1]!.content
+    ) as { chapters: Array<{ pageSummaries: Array<{ summary: string }> }> };
+    const pageSummary = payload.chapters[0]?.pageSummaries[0]?.summary ?? "";
+    expect(pageSummary).toContain(prose);
+    expect(pageSummary).not.toContain('"kind"');
+    expect(pageSummary).not.toContain('"categories"');
+    expect(pageSummary).not.toContain("Into the unknown");
+  });
+
   it("treats a model failure as no issues, but still propagates a user stop", async () => {
     generateJsonWithRetry.mockRejectedValue(new Error("model outage"));
     await expect(runBoundedChapterQualityReview(baseOptions([exportPage(1)]))).resolves.toEqual([]);

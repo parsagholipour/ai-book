@@ -18,6 +18,8 @@ import type {
   PageQualityReport
 } from "../schemas/book.js";
 import { finalBookQaSchema, pageDraftSchema, pageQualityReportSchema } from "../schemas/book.js";
+import { figureFreeDraft, figureFreeProse, figureStandInMarkdown } from "./figures/figureBlocks.js";
+import { finalizePageDraft } from "./figures/figureDraftSummary.js";
 import {
   compactPageMap,
   compactSummaryForQa,
@@ -100,6 +102,14 @@ export type RevisePageOptions = ReviewPageOptions & {
   pageEditGuidance?: string | undefined;
   /** Concrete omissions from the preceding adherence verdict. */
   adherenceRepair?: string[] | undefined;
+  /**
+   * `keep`: chat rewrite whose request names the figure; draft may carry a fence.
+   * `hold`: holdFiguresAside path; strip invented fences, keep `[Figure: …]`
+   * stand-ins so later revises/reviews still see the stand-in.
+   * Absent: `figureFreeDraft` (fences and stand-ins gone) — generate-like
+   * revises and pages with no figure.
+   */
+  figures?: "keep" | "hold";
 };
 
 export type FinalQaPage = {
@@ -549,7 +559,13 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
     ]
   });
 
-  return pageDraftSchema.parse(result.data);
+  const draft = finalizePageDraft(pageDraftSchema.parse(result.data));
+  if (options.figures === "keep") return draft;
+  if (options.figures === "hold") {
+    const markdown = figureFreeProse(draft.markdown);
+    return markdown === draft.markdown ? draft : { ...draft, markdown };
+  }
+  return figureFreeDraft(draft);
 }
 
 /**
@@ -590,12 +606,15 @@ const FINAL_QA_OPENING_PAGE_CHARS = 14_000;
  * own index, so a complaint drawn from it names a page the repair can find.
  */
 function finalQaOpeningPages(pages: FinalQaPage[]) {
+  // The one place this reviewer is shown page prose; the pageMap rows are
+  // summaries. A post-compose call reads a figure block as its stand-in line,
+  // so a chart on the first page is "where it sits", never JSON to judge.
   return pages
     .filter((page) => page.index === 1)
     .map((page) => ({
       index: page.index,
       title: page.title,
-      markdown: compactSummaryForQa(page.markdown, FINAL_QA_OPENING_PAGE_CHARS)
+      markdown: compactSummaryForQa(figureStandInMarkdown(page.markdown), FINAL_QA_OPENING_PAGE_CHARS)
     }));
 }
 

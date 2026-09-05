@@ -7,11 +7,12 @@ import {
   findFigureFences,
   hasFigureFence,
   isFigureFenceBlock,
-  mentionsFigure,
   proseWordCount,
   reinsertFigureFences,
   stripFigureFences,
-  validateFigureFences
+  figureFreeDraft,
+  validateFigureFences,
+  figureAndStandInFreeProse
 } from "./figureBlocks.js";
 
 const spec = {
@@ -36,7 +37,19 @@ describe("findFigureFences", () => {
     expect(found[0]!.spec?.kind).toBe("bar");
     expect(chapter.slice(found[0]!.start, found[0]!.end)).toBe(fence);
     expect(findFigureFences("```python\nprint(1)\n```")).toHaveLength(0);
-    expect(findFigureFences("```figure\n{\"kind\":\"bar\"}\n\nno closer")).toHaveLength(0);
+    expect(findFigureFences("```figures\n{\"kind\":\"bar\"}\n```")).toHaveLength(0);
+    const unterminated = "```figure\n{\"kind\":\"bar\"}\n\nno closer";
+    const openFence = findFigureFences(unterminated)[0]!;
+    expect(findFigureFences(unterminated)).toHaveLength(1);
+    expect(openFence.closed).toBe(false);
+    expect(unterminated.slice(openFence.end)).toBe("\n\nno closer");
+    expect(hasFigureFence(unterminated)).toBe(true);
+    expect(figureFreeProse(unterminated)).toBe("no closer");
+    expect(stripFigureFences(unterminated).fences).toHaveLength(1);
+    const toEof = "```figure\n{\"kind\":\"bar\"}";
+    expect(findFigureFences(toEof)[0]!.end).toBe(toEof.length);
+    expect(figureFreeProse(toEof)).toBe("");
+    expect(findFigureFences("```figure json\n{\"kind\":\"bar\"}\n```")).toHaveLength(1);
     expect(hasFigureFence(chapter)).toBe(true);
     expect(hasFigureFence(before)).toBe(false);
   });
@@ -108,9 +121,24 @@ describe("stripFigureFences and reinsertFigureFences", () => {
     expect(restored).not.toMatch(/\[Figure:/i);
   });
 
-  it("returns prose byte for byte when there was nothing to put back", () => {
-    const prose = `${before}\n\n\n\n[Figure: stray]`;
+  it("drops a fence the pass invented beside the one it puts back", () => {
+    // The prose handed to the pass held stand-ins only, so a block in what came
+    // back is not ours; an unrelated rewrite used to store both.
+    const { fences } = stripFigureFences(chapter);
+    const invented = "```figure\n" + JSON.stringify({ ...spec, title: "An invented chart" }) + "\n```";
+    const restored = reinsertFigureFences(`${before}\n\n[Figure: Share of the workforce in farming]\n\n${invented}\n\n${after}`, fences);
+    expect(restored).toBe(`${before}\n\n${fence}\n\n${after}`);
+    const inventedFirst = reinsertFigureFences(`${invented}\n\n${before}\n\n${after}`, fences);
+    expect(inventedFirst.match(/```figure/g)).toHaveLength(1);
+    expect(inventedFirst).toContain(fence);
+    expect(inventedFirst).not.toContain("An invented chart");
+  });
+
+  it("returns prose byte for byte when there was nothing to put back and nothing model-facing in it", () => {
+    const prose = `${before}\n\n\n\n${after}`;
     expect(reinsertFigureFences(prose, [])).toBe(prose);
+    // With no figure of its own, a pass still has no business storing a fence or a stand-in.
+    expect(reinsertFigureFences(`${before}\n\n${fence}\n\n[Figure: stray]\n\n${after}`, [])).toBe(`${before}\n\n${after}`);
   });
 });
 
@@ -141,6 +169,42 @@ describe("validateFigureFences", () => {
     expect(canonical.kept).toBe(1);
     expect(validateFigureFences(before, { max: 1 }).markdown).toBe(before);
   });
+
+  it("drops an unterminated opener and a valid bar when a line was planned", () => {
+    const unterminated = `${before}\n\n\`\`\`figure\n{"kind":"bar"}\n\nno closer`;
+    const droppedOpen = validateFigureFences(unterminated, { max: 1 });
+    expect(droppedOpen.kept).toBe(0);
+    expect(droppedOpen.dropped[0]!.reason).toBe("unterminated");
+    expect(droppedOpen.markdown).toBe(`${before}\n\nno closer`);
+    const mismatch = validateFigureFences(chapter, { max: 1, kind: "line" });
+    expect(mismatch.kept).toBe(0);
+    expect(mismatch.dropped).toEqual([{ reason: "planned line, got bar", excerpt: expect.stringContaining("Share of the workforce in farming") }]);
+    expect(mismatch.markdown).toBe(`${before}\n\n${after}\n\nA closing paragraph about the harvest and the road out of town.`);
+    const lineSpec = { ...spec, kind: "line" as const };
+    const lineFence = "```figure\n" + JSON.stringify(lineSpec) + "\n```";
+    const matching = validateFigureFences(`${before}\n\n${lineFence}\n\n${after}`, { max: 1, kind: "line" });
+    expect(matching.kept).toBe(1);
+    expect(matching.dropped).toEqual([]);
+  });
+});
+
+describe("figureAndStandInFreeProse", () => {
+  it("removes the block and any stand-in line a per-page writer echoed, and leaves other prose byte for byte", () => {
+    expect(figureAndStandInFreeProse(`${before}\n\n${fence}\n\n[Figure: Share of the workforce in farming]\n\n${after}`)).toBe(`${before}\n\n${after}`);
+    expect(figureAndStandInFreeProse(`${before}\n\n  [figure: anything]  \n\n${after}`)).toBe(`${before}\n\n${after}`);
+    const plain = `${before}\n\n${after}\n\n\`\`\`python\nprint(1)\n\`\`\``;
+    expect(figureAndStandInFreeProse(plain)).toBe(plain);
+    expect(figureAndStandInFreeProse("A sentence that mentions [Figure: one] inline stays.")).toBe("A sentence that mentions [Figure: one] inline stays.");
+  });
+});
+
+describe("figureFreeDraft", () => {
+  it("returns the same draft object when there is nothing to remove, and a figure-free copy otherwise", () => {
+    const clean = { title: "T", markdown: `${before}\n\n${after}`, summary: "s" };
+    expect(figureFreeDraft(clean)).toBe(clean);
+    const dirty = { ...clean, markdown: `${before}\n\n${fence}\n\n[Figure: x]\n\n${after}` };
+    expect(figureFreeDraft(dirty)).toEqual(clean);
+  });
 });
 
 describe("figureWordEquivalent", () => {
@@ -160,15 +224,5 @@ describe("figureWordEquivalent", () => {
     expect(figureWordEquivalent(flow(12))).toBe(210);
     expect(figureWordEquivalent(flow(2))).toBe(100);
     expect(figureWordEquivalent("plain words here")).toBe(3);
-  });
-});
-
-describe("mentionsFigure", () => {
-  it("reads the words a reader uses for the figure in several languages", () => {
-    expect(mentionsFigure("drop the chart")).toBe(true);
-    expect(mentionsFigure("Make the diagram simpler")).toBe(true);
-    expect(mentionsFigure("نمودار را حذف کن")).toBe(true);
-    expect(mentionsFigure("make it more vivid")).toBe(false);
-    expect(mentionsFigure("plot twist please")).toBe(true);
   });
 });

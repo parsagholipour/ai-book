@@ -36,7 +36,9 @@ export const FIGURE_LIMITS = {
   label: 80,
   nodeLabel: 60,
   edgeLabel: 24,
-  unit: 60
+  unit: 60,
+  /** The largest magnitude a chart value may have; past it the writer picks a unit. Keeps every axis computation finite. */
+  value: 1e15
 } as const;
 
 /**
@@ -82,6 +84,16 @@ export const chartFigureSchema = z
       }
       if (series.values.some((value) => !Number.isFinite(value))) {
         context.addIssue({ code: "custom", path: ["series", index, "values"], message: "holds a value that is not a finite number" });
+      } else if (series.values.some((value) => Math.abs(value) > FIGURE_LIMITS.value)) {
+        // Not clipped like a string: a clipped value draws a different chart.
+        // The renderer's tick arithmetic overflows to Infinity near
+        // Number.MAX_VALUE, and a number this size is one the writer should
+        // have expressed in a unit.
+        context.addIssue({
+          code: "custom",
+          path: ["series", index, "values"],
+          message: `holds a value beyond ${FIGURE_LIMITS.value.toExponential(0)} in magnitude; express it in a larger unit`
+        });
       }
     }
     if (spec.kind === "bar" && spec.categories.length > FIGURE_LIMITS.barCategories) {

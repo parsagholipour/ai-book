@@ -61,6 +61,8 @@ import {
 } from "../runtime/jobTypes.js";
 import {
   bookPlanSchema,
+  figureStandInMarkdown,
+  pageDraftSummary,
   createProviders,
   generateJsonWithRetry,
   formatStoryStateLines,
@@ -667,12 +669,16 @@ export async function continuationOutlineWithModel(options: {
   language: string;
   textModel: TextModelAdapter;
 }): Promise<ContinuationOutline> {
+  // A figure block on a trailing page reads as its stand-in line: the outline
+  // is a model call after the compose, like every other.
   const excerpt = options.trailingPages
     .slice(-2)
-    .map((page) => `Page ${page.index} — ${page.title}\n${page.markdown}`)
+    .map((page) => `Page ${page.index} — ${page.title}\n${figureStandInMarkdown(page.markdown)}`)
     .join("\n\n")
     .slice(-6000);
-  const recentSummaries = options.trailingPages.map((page) => `${page.index}: ${page.summary}`).join("\n");
+  const recentSummaries = options.trailingPages
+    .map((page) => `${page.index}: ${pageDraftSummary(page.markdown, page.summary)}`)
+    .join("\n");
   try {
     const result = await generateJsonWithRetry(options.textModel, {
       purpose: "generate-chapter-brief",

@@ -84,7 +84,15 @@ function axisOf(spec: ChartFigureSpec): ValueAxis {
     let low = Math.floor(Math.log10(smallest) + 1e-9);
     // A value sitting on the lowest tick would draw a bar of no height.
     if (10 ** low >= smallest) low -= 1;
-    const high = Math.max(low + 1, Math.ceil(Math.log10(Math.max(...values)) - 1e-9));
+    // Both ends held to the decades a double can hold: below 10^-323 a tick is
+    // zero and its logarithm -Infinity, above 10^308 the tick itself is
+    // Infinity. The schema refuses such values; the renderer is reachable
+    // with a spec built directly and still has to return finite geometry.
+    low = Math.max(-323, low);
+    const high = Math.min(308, Math.max(low + 1, Math.ceil(Math.log10(Math.max(...values)) - 1e-9)));
+    // A flat domain at the top decade clamps `high` down onto `low`; an axis is
+    // at least one decade, so the floor gives way rather than the ceiling.
+    if (high <= low) low = high - 1;
     const decades = high - low;
     const every = decades > 8 ? Math.ceil(decades / 8) : 1;
     const ticks: number[] = [];
@@ -99,7 +107,12 @@ function axisOf(spec: ChartFigureSpec): ValueAxis {
   const ticks = niceTicks(Math.min(0, ...values), Math.max(0, ...values));
   const min = ticks[0]!;
   const max = ticks.at(-1)!;
-  const fraction = (value: number) => (value - min) / (max - min);
+  // Over a domain wider than a double — a mixed-sign extreme — the span is
+  // Infinity and the top value's distance from the floor is Infinity too, so
+  // the ratio is NaN. Halving both keeps every difference finite.
+  const scale = Number.isFinite(max - min) ? 1 : 0.5;
+  const span = max * scale - min * scale;
+  const fraction = (value: number) => (value * scale - min * scale) / span;
   return { ticks, fraction, baseline: fraction(Math.max(min, Math.min(0, max))) };
 }
 
@@ -140,10 +153,26 @@ function horizontalBarPath(y: number, left: number, right: number, height: numbe
   return `M${round(right)} ${round(y)}H${round(left + r)}Q${round(left)} ${round(y)} ${round(left)} ${round(y + r)}V${round(y + height - r)}Q${round(left)} ${round(y + height)} ${round(left + r)} ${round(y + height)}H${round(right)}Z`;
 }
 
-function renderVerticalBars(spec: ChartFigureSpec, context: FigureRenderContext): string {
+/**
+ * The frame a vertical-axis chart is drawn in: the value axis up the left, the
+ * categories along the bottom. Shared by the bar and line renderers so the
+ * tick grid, the axis margin, the unit row and the baseline are one geometry —
+ * a fix to either used to have to be made twice.
+ */
+type VerticalFrame = {
+  plot: Plot;
+  /** Where a value sits on the page. */
+  y: (value: number) => number;
+  /** The page y of zero, or of the lowest tick when the axis never reaches zero. */
+  baseline: number;
+  /** The legend, the tick grid and labels, and the unit row: drawn before the marks. */
+  svg: string;
+};
+
+function verticalFrame(spec: ChartFigureSpec, context: FigureRenderContext, legendKind: "swatch" | "line"): VerticalFrame {
   const axis = axisOf(spec);
   const left = axisMargin(axis, spec, context);
-  const legendBlock = legend(spec, context, left, MARGIN.top + 10, "swatch");
+  const legendBlock = legend(spec, context, left, MARGIN.top + 10, legendKind);
   const plot: Plot = {
     left,
     right: FIGURE_WIDTH - MARGIN.right,
@@ -158,6 +187,17 @@ function renderVerticalBars(spec: ChartFigureSpec, context: FigureRenderContext)
   }
   parts.push(unitLabel(spec, context, plot.left, plot.top - 7, "left"));
   const baseline = plot.bottom - axis.baseline * (plot.bottom - plot.top);
+  return { plot, y, baseline, svg: parts.join("") };
+}
+
+/** The axis line across the plot at the baseline; the bars draw under it, the lines over it. */
+function baselineRule(plot: Plot, baseline: number): string {
+  return `<line x1="${round(plot.left)}" y1="${round(baseline)}" x2="${round(plot.right)}" y2="${round(baseline)}" stroke="${FIGURE_INK.axis}" stroke-width="1"/>`;
+}
+
+function renderVerticalBars(spec: ChartFigureSpec, context: FigureRenderContext): string {
+  const { plot, y, baseline, svg } = verticalFrame(spec, context, "swatch");
+  const parts: string[] = [svg];
   const groupWidth = (plot.right - plot.left) / spec.categories.length;
   const count = spec.series.length;
   const barWidth = Math.max(3, Math.min(BAR_MAX_WIDTH, (groupWidth * 0.72 - (count - 1) * BAR_GAP) / count));
@@ -178,7 +218,7 @@ function renderVerticalBars(spec: ChartFigureSpec, context: FigureRenderContext)
       parts.push(svgText({ x: plot.left + categoryIndex * groupWidth + groupWidth / 2, y: plot.bottom + 16 + lineIndex * 13, text: line, size: TICK_SIZE, profile: context.profile, align: "middle" }));
     }
   }
-  parts.push(`<line x1="${round(plot.left)}" y1="${round(baseline)}" x2="${round(plot.right)}" y2="${round(baseline)}" stroke="${FIGURE_INK.axis}" stroke-width="1"/>`);
+  parts.push(baselineRule(plot, baseline));
   return `${svgOpen({ height: CHART_HEIGHT, label: `${context.labels.figure}: ${spec.title}` })}${parts.join("")}</svg>`;
 }
 
@@ -225,27 +265,11 @@ function renderHorizontalBars(spec: ChartFigureSpec, context: FigureRenderContex
 }
 
 function renderLines(spec: ChartFigureSpec, context: FigureRenderContext): string {
-  const axis = axisOf(spec);
-  const left = axisMargin(axis, spec, context);
-  const legendBlock = legend(spec, context, left, MARGIN.top + 10, "line");
-  const plot: Plot = {
-    left,
-    right: FIGURE_WIDTH - MARGIN.right,
-    top: MARGIN.top + legendBlock.rows * LEGEND_ROW + (legendBlock.rows > 0 ? 8 : 6) + (hasUnitRow(spec) ? LEGEND_ROW : 0),
-    bottom: CHART_HEIGHT - MARGIN.bottom
-  };
-  const y = (value: number) => plot.bottom - axis.fraction(value) * (plot.bottom - plot.top);
+  const { plot, y, baseline, svg } = verticalFrame(spec, context, "line");
   const points = spec.categories.length;
   const inset = 14;
   const x = (index: number) => (points === 1 ? (plot.left + plot.right) / 2 : plot.left + inset + (index * (plot.right - plot.left - inset * 2)) / (points - 1));
-  const parts: string[] = [legendBlock.svg];
-  for (const tick of axis.ticks) {
-    parts.push(`<line x1="${round(plot.left)}" y1="${round(y(tick))}" x2="${round(plot.right)}" y2="${round(y(tick))}" stroke="${FIGURE_INK.grid}" stroke-width="1"/>`);
-    parts.push(svgText({ x: plot.left - 8, y: y(tick) + 4, text: tickLabel(tick, spec, context), size: TICK_SIZE, profile: context.profile, align: "right", fill: FIGURE_INK.muted }));
-  }
-  parts.push(unitLabel(spec, context, plot.left, plot.top - 7, "left"));
-  const baseline = plot.bottom - axis.baseline * (plot.bottom - plot.top);
-  parts.push(`<line x1="${round(plot.left)}" y1="${round(baseline)}" x2="${round(plot.right)}" y2="${round(baseline)}" stroke="${FIGURE_INK.axis}" stroke-width="1"/>`);
+  const parts: string[] = [svg, baselineRule(plot, baseline)];
   const every = Math.max(1, Math.ceil(points / 8));
   for (const [index, category] of spec.categories.entries()) {
     if (index % every !== 0 && index !== points - 1) continue;

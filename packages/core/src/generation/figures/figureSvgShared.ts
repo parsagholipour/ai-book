@@ -79,25 +79,65 @@ export function formatTickNumber(value: number, profile: ScriptProfile): string 
   return localizeDigits(text, profile.numerals);
 }
 
-/** Round tick values covering [min, max], about `count` of them; a flat domain is widened by one unit. */
+/** More ticks than a chart could ever ask for: the loop below is bounded by this, never by the arithmetic. */
+const MAX_TICKS = 64;
+
+/** Two finite endpoints that are actually distinct, even when `toPrecision` would collapse them. */
+function finiteDistinctPair(low: number, high: number): [number, number] {
+  if (Number.isFinite(low) && Number.isFinite(high) && low !== high) return [low, high];
+  const origin = Number.isFinite(low) ? low : Number.isFinite(high) ? high : 0;
+  const pad = Math.max(1, Number.EPSILON * Math.max(Math.abs(origin), 1));
+  if (Number.isFinite(origin + pad) && origin + pad !== origin) return [origin, origin + pad];
+  if (Number.isFinite(origin - pad) && origin - pad !== origin) return [origin - pad, origin];
+  return [0, 1];
+}
+
+/**
+ * Round tick values covering [min, max], about `count` of them; a flat domain
+ * is widened by one unit. Never hangs and never returns fewer than two finite
+ * values: the schema bounds a chart's values (`FIGURE_LIMITS.value`), but the
+ * renderer is reachable with a spec built directly, and a domain near
+ * `Number.MAX_VALUE` used to round its end up to Infinity and loop forever.
+ * Near `1e15` a "nice" step can be smaller than the float ULP, so `value += step`
+ * never advances — stop and fall back rather than fill 64 identical ticks.
+ */
 export function niceTicks(min: number, max: number, count = 5): number[] {
   let low = Math.min(min, max);
   let high = Math.max(min, max);
   if (!Number.isFinite(low) || !Number.isFinite(high)) return [0, 1];
   if (high === low) {
-    high = low + Math.max(1, Math.abs(low) || 1);
+    // Widen by the value's own size, downward when upward would overflow.
+    const pad = Math.max(1, Math.abs(low) || 1);
+    if (Number.isFinite(low + pad)) high = low + pad;
+    else low -= pad;
   }
+  const domain = finiteDistinctPair(low, high);
   const rawStep = (high - low) / Math.max(1, count - 1);
+  if (!Number.isFinite(rawStep) || rawStep <= 0) return domain;
   const magnitude = 10 ** Math.floor(Math.log10(rawStep));
   const residual = rawStep / magnitude;
-  const step = (residual >= 7 ? 10 : residual >= 3 ? 5 : residual >= 1.5 ? 2 : 1) * magnitude;
-  const start = Math.floor(low / step) * step;
-  const end = Math.ceil(high / step) * step;
-  const ticks: number[] = [];
-  for (let value = start; value <= end + step / 2; value += step) {
-    ticks.push(Number(value.toFixed(10)));
+  let step = (residual >= 7 ? 10 : residual >= 3 ? 5 : residual >= 1.5 ? 2 : 1) * magnitude;
+  const minAdvance = Number.EPSILON * Math.max(Math.abs(low), Math.abs(high), 1);
+  if (Number.isFinite(minAdvance) && minAdvance > 0) step = Math.max(step, minAdvance);
+  // The small epsilon keeps a bound that is an exact multiple of the step from
+  // gaining a tick to float drift: 3e-12 / 1e-12 is not always 3.
+  const start = Math.floor(low / step + 1e-9) * step;
+  const end = Math.ceil(high / step - 1e-9) * step;
+  if (!Number.isFinite(step) || step <= 0 || !Number.isFinite(start) || !Number.isFinite(end)) {
+    return domain;
   }
-  return ticks;
+  const ticks: number[] = [];
+  let value = start;
+  while (value <= end + step / 2 && ticks.length < MAX_TICKS) {
+    // Twelve significant digits, not ten decimals: a domain below 1e-10 has
+    // ticks of its own, and 0.30000000000000004 is still 0.3.
+    const tick = Number(value.toPrecision(12));
+    if (Number.isFinite(tick) && (ticks.length === 0 || tick !== ticks[ticks.length - 1])) ticks.push(tick);
+    const next = value + step;
+    if (!Number.isFinite(next) || next === value) break;
+    value = next;
+  }
+  return ticks.length >= 2 && ticks[0] !== ticks[ticks.length - 1] ? ticks : domain;
 }
 
 const WIDE_CHARACTER = /[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\ufe30-\ufe4f\uff00-\uffef]/;
@@ -178,6 +218,7 @@ export function round(value: number): string {
   return (Math.round(value * 100) / 100).toString();
 }
 
-export function svgOpen(options: { height: number; label: string }): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${FIGURE_WIDTH} ${round(options.height)}" role="img" aria-label="${escapeXml(options.label)}" font-family="${escapeXml(FIGURE_FONT_FAMILY)}" style="display:block;width:100%;height:auto">`;
+export function svgOpen(options: { height: number; label: string; width?: number }): string {
+  const width = options.width ?? FIGURE_WIDTH;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${round(width)} ${round(options.height)}" role="img" aria-label="${escapeXml(options.label)}" font-family="${escapeXml(FIGURE_FONT_FAMILY)}" style="display:block;width:100%;height:auto">`;
 }

@@ -1,6 +1,7 @@
 import { chapterSetupForPage, loadContinuityNotes, loadResearchNotesForGeneration } from "./generationContext.js";
 import { resolveEditPromptContext } from "./editOperationContext.js";
 import { styleExcerptsForPage, toPriorPageContext } from "./bookHelpers.js";
+import { pageFigureRewrite, pageFigureRewriteForDraft } from "./composedFigures.js";
 import { prepareChapterSetups } from "./bookState.js";
 import {
   prepareDeferredPageStoryContext,
@@ -364,7 +365,8 @@ async function generateOwnedReplannedBook(options: {
       continuityNotes: pageContinuityNotes,
       researchNotes,
       styleExcerpts,
-      assertLease: options.assertLease
+      assertLease: options.assertLease,
+      plantSource: true
     });
     candidates.set(pageIndex, candidate);
     inMemoryContinuityNotes.push(...candidate.draft.continuityNotes);
@@ -513,8 +515,15 @@ async function reviewReplanCandidate(options: {
   researchNotes: string[];
   styleExcerpts: string[];
   assertLease: () => Promise<void>;
+  plantSource: boolean;
 }): Promise<ReplanCandidate> {
   await options.assertLease();
+  const { draft: attached, rewrite } = pageFigureRewriteForDraft(
+    { ...options.draft, index: options.pageIndex },
+    options.sourcePage?.markdown,
+    options.editInstruction,
+    options.plantSource
+  );
   const reviewed = await reviewAndSaveGeneratedPage({
     projectId: options.projectId,
     planId: options.planId,
@@ -522,7 +531,7 @@ async function reviewReplanCandidate(options: {
     plan: options.plan,
     providers: options.providers,
     strategy: options.strategy,
-    draft: { ...options.draft, index: options.pageIndex },
+    draft: rewrite.prose === attached.markdown ? attached : { ...attached, markdown: rewrite.prose },
     chapterId: null,
     chapter: options.setup.chapter,
     chapterBrief: options.setup.brief,
@@ -535,6 +544,7 @@ async function reviewReplanCandidate(options: {
     ...(options.characterContext ? { characterContext: options.characterContext } : {}),
     maxCandidates: 1,
     assertOwnership: options.assertLease,
+    ...(rewrite.figures ? { figures: rewrite.figures } : {}),
     ...(options.sourcePage
       ? {
           settledPageToReplace: {
@@ -563,7 +573,7 @@ async function reviewReplanCandidate(options: {
     pageIndex: options.pageIndex,
     setup: options.setup,
     sourcePage: options.sourcePage,
-    draft: reviewed.candidate.draft,
+    draft: rewrite.restore(reviewed.candidate.draft),
     qualityReport: reviewed.candidate.qualityReport,
     previousPages: options.previousPages,
     continuityNotes: options.continuityNotes,
@@ -631,6 +641,7 @@ async function repairReplanCandidates(options: {
       const previousPages = candidateContexts(options.candidates, candidate.pageIndex);
       const continuityNotes = replanCandidateContinuityNotes(candidate, options.candidates);
       await options.assertLease();
+      const rewrite = pageFigureRewrite(candidate.draft.markdown, options.editInstruction);
       const draft = await revisePageDraftWithRestart({
         strategy: options.strategy,
         generationJobId: options.generationJobId,
@@ -641,7 +652,10 @@ async function repairReplanCandidates(options: {
           chapter: candidate.setup.chapter,
           chapterBrief: candidate.setup.brief,
           pageIndex: candidate.pageIndex,
-          draft: candidate.draft,
+          draft:
+            rewrite.prose === candidate.draft.markdown
+              ? candidate.draft
+              : { ...candidate.draft, markdown: rewrite.prose },
           report: repairReport(candidate.qualityReport, adherenceRepair),
           editInstruction: options.editInstruction,
           ...(options.characterContext ? { characterContext: options.characterContext } : {}),
@@ -650,6 +664,7 @@ async function repairReplanCandidates(options: {
           continuityNotes,
           researchNotes: candidate.researchNotes,
           textModel: options.providers.text,
+          ...(rewrite.figures ? { figures: rewrite.figures } : {}),
           ...(candidate.styleExcerpts.length ? { styleExcerpts: candidate.styleExcerpts } : {})
         }
       });
@@ -664,7 +679,8 @@ async function repairReplanCandidates(options: {
         continuityNotes,
         researchNotes: candidate.researchNotes,
         styleExcerpts: candidate.styleExcerpts,
-        assertLease: options.assertLease
+        assertLease: options.assertLease,
+        plantSource: !rewrite.keep
       });
       options.candidates.set(candidate.pageIndex, repaired);
       revisedSoFar += 1;

@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   rebuildStoryStateFromPages: vi.fn(),
   persistPageStoryDelta: vi.fn(),
   extractStoryState: vi.fn(),
+  verifyPageClaims: vi.fn(),
   auditPageStyle: vi.fn()
 }));
 
@@ -30,15 +31,18 @@ vi.mock("./storyStateStore.js", () => ({
 }));
 vi.mock("@book-maker/core", async () => {
   const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
+  mocks.verifyPageClaims.mockImplementation(actual.verifyPageClaims);
   return {
     ...actual,
     extractStoryState: mocks.extractStoryState,
+    verifyPageClaims: mocks.verifyPageClaims,
     auditPageStyle: mocks.auditPageStyle
   };
 });
 
 import {
   enrichPageQualityReport,
+  keeperStoryExtractForSave,
   mergeEntityAndStoryStateLines,
   persistKeeperStoryDelta,
   revisedDraftStyleAuditor
@@ -86,6 +90,17 @@ const draft: PageDraft = {
   summary: "Jack pays the promise.",
   continuityNotes: []
 };
+
+const figureFence =
+  "```figure\n" +
+  JSON.stringify({
+    kind: "bar",
+    title: "Carts by decade",
+    categories: ["1500", "1510"],
+    series: [{ name: "Carts", values: [120, 140] }],
+    source: "The ledger"
+  }) +
+  "\n```";
 
 const approvedReport: PageQualityReport = {
   approved: true,
@@ -149,6 +164,40 @@ function claimVerifierEnabled() {
     tier: "premium",
     enabled: (feature: string) => feature === "claimVerifier"
   };
+}
+
+function styleAuditorEnabled() {
+  return {
+    settings: {},
+    tier: "balanced",
+    enabled: (feature: string) => feature === "styleAuditor"
+  };
+}
+
+function draftWithFigureFence(): PageDraft {
+  return {
+    ...draft,
+    markdown: `Jack found the seal.\n\n${figureFence}\n\nHe closed the vault.`
+  };
+}
+
+const figureJsonSummary = JSON.stringify({
+  kind: "bar",
+  title: "Carts by decade",
+  categories: ["1500", "1510"],
+  series: [{ name: "Carts", values: [120, 140] }],
+  source: "The ledger"
+});
+
+function expectFigureBlindExtract(extracted: { markdown: string; summary: string }, storedDraft: PageDraft) {
+  expect(extracted.markdown).toBe("Jack found the seal.\n\nHe closed the vault.");
+  expect(extracted.markdown).not.toContain("```figure");
+  expect(extracted.summary).not.toContain("```figure");
+  expect(extracted.summary).not.toContain('"kind"');
+  expect(extracted.summary).not.toContain('"categories"');
+  expect(extracted.summary).not.toContain('"series"');
+  expect(storedDraft.markdown).toContain("```figure");
+  expect(storedDraft.markdown).toContain('"kind":"bar"');
 }
 
 describe("enrichPageQualityReport claim grounding", () => {
@@ -322,6 +371,34 @@ describe("enrichPageQualityReport claim grounding", () => {
       unsupportedClaims: []
     });
   });
+
+  it("verifies claims from figure-free prose while the stored draft still has the fence", async () => {
+    mocks.verifyPageClaims.mockClear();
+    mocks.verifyPageClaims.mockResolvedValueOnce({ groundedOk: true, unsupportedClaims: [] });
+    const storedDraft = draftWithFigureFence();
+
+    await enrichPageQualityReport({
+      input: factualInput,
+      plan,
+      pageIndex: 1,
+      draft: storedDraft,
+      report: approvedReport,
+      previousPages: [],
+      researchNotes: ["WHO vaccine history: Source-backed chronology."],
+      textModel: {} as TextModelAdapter,
+      projectId: "project-1",
+      quality: claimVerifierEnabled(),
+      storyState: { promises: [], facts: [], entities: {}, unanswered: [] },
+      styleExcerpts: []
+    });
+
+    expect(mocks.verifyPageClaims).toHaveBeenCalledOnce();
+    const verified = mocks.verifyPageClaims.mock.calls[0]![0] as { markdown: string };
+    expect(verified.markdown).toBe("Jack found the seal.\n\nHe closed the vault.");
+    expect(verified.markdown).not.toContain("```figure");
+    expect(storedDraft.markdown).toContain("```figure");
+    expect(storedDraft.markdown).toContain('"kind":"bar"');
+  });
 });
 
 describe("mergeEntityAndStoryStateLines", () => {
@@ -443,12 +520,6 @@ describe("enrichPageQualityReport unpaid promises", () => {
 });
 
 describe("revisedDraftStyleAuditor", () => {
-  const styleAuditorEnabled = () => ({
-    settings: {},
-    tier: "balanced",
-    enabled: (feature: string) => feature === "styleAuditor"
-  });
-
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -547,6 +618,176 @@ describe("revisedDraftStyleAuditor", () => {
     const pageFour = makeAuditor();
     await pageFour!(4, draft, approvedReport);
     expect(mocks.auditPageStyle).toHaveBeenCalledTimes(3);
+  });
+
+  it("audits a revised draft from figure-free prose while the stored draft still has the fence", async () => {
+    mocks.auditPageStyle.mockResolvedValue({ styleOk: true, styleIssues: [] });
+    const storedDraft = draftWithFigureFence();
+    const auditor = revisedDraftStyleAuditor({
+      projectId: "project-1",
+      plan,
+      textModel: {} as TextModelAdapter,
+      styleExcerpts: ["excerpt"],
+      quality: styleAuditorEnabled()
+    });
+
+    await auditor!(3, storedDraft, approvedReport);
+
+    expect(mocks.auditPageStyle).toHaveBeenCalledOnce();
+    const audited = mocks.auditPageStyle.mock.calls[0]![0] as { markdown: string };
+    expect(audited.markdown).toBe("Jack found the seal.\n\nHe closed the vault.");
+    expect(audited.markdown).not.toContain("```figure");
+    expect(storedDraft.markdown).toContain("```figure");
+    expect(storedDraft.markdown).toContain('"kind":"bar"');
+  });
+});
+
+describe("keeperStoryExtractForSave", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.extractStoryState.mockResolvedValue(extractPayingP1);
+  });
+
+  it("extracts story from figure-free prose while the stored draft still has the fence", async () => {
+    const storedDraft = draftWithFigureFence();
+
+    await keeperStoryExtractForSave({
+      projectId: "project-1",
+      pageIndex: 1,
+      draft: storedDraft,
+      textModel: {} as TextModelAdapter,
+      plan,
+      input,
+      previousExtract: null,
+      keeperWasRevised: true,
+      currentState: openPromiseState,
+      quality: storyExtractEnabled()
+    });
+
+    expect(mocks.extractStoryState).toHaveBeenCalledOnce();
+    const extracted = mocks.extractStoryState.mock.calls[0]![0] as { markdown: string; summary: string };
+    expectFigureBlindExtract(extracted, storedDraft);
+    expect(extracted.summary).toBe("Jack pays the promise.");
+    expect(storedDraft.summary).toBe("Jack pays the promise.");
+  });
+
+  it("derives extract summary from figure-free prose when the stored summary carries figure JSON", async () => {
+    const storedDraft: PageDraft = {
+      ...draftWithFigureFence(),
+      summary: figureJsonSummary
+    };
+
+    await keeperStoryExtractForSave({
+      projectId: "project-1",
+      pageIndex: 1,
+      draft: storedDraft,
+      textModel: {} as TextModelAdapter,
+      plan,
+      input,
+      previousExtract: null,
+      keeperWasRevised: true,
+      currentState: openPromiseState,
+      quality: storyExtractEnabled()
+    });
+
+    expect(mocks.extractStoryState).toHaveBeenCalledOnce();
+    const extracted = mocks.extractStoryState.mock.calls[0]![0] as { markdown: string; summary: string };
+    expectFigureBlindExtract(extracted, storedDraft);
+    expect(extracted.summary).toBe("Jack found the seal. He closed the vault.");
+    expect(storedDraft.summary).toBe(figureJsonSummary);
+  });
+});
+
+describe("enrichPageQualityReport story extract", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.extractStoryState.mockResolvedValue(extractPayingP1);
+  });
+
+  it("extracts story from figure-free prose while the stored draft still has the fence", async () => {
+    const storedDraft = draftWithFigureFence();
+
+    await enrichPageQualityReport({
+      input,
+      plan,
+      pageIndex: 1,
+      draft: storedDraft,
+      report: approvedReport,
+      previousPages: [],
+      researchNotes: [],
+      textModel: {} as TextModelAdapter,
+      projectId: "project-1",
+      quality: storyExtractEnabled(),
+      storyState: openPromiseState,
+      styleExcerpts: []
+    });
+
+    expect(mocks.extractStoryState).toHaveBeenCalledOnce();
+    const extracted = mocks.extractStoryState.mock.calls[0]![0] as { markdown: string; summary: string };
+    expectFigureBlindExtract(extracted, storedDraft);
+    expect(extracted.summary).toBe("Jack pays the promise.");
+    expect(storedDraft.summary).toBe("Jack pays the promise.");
+  });
+
+  it("derives extract summary from figure-free prose when the stored summary carries figure JSON", async () => {
+    const storedDraft: PageDraft = {
+      ...draftWithFigureFence(),
+      summary: figureJsonSummary
+    };
+
+    await enrichPageQualityReport({
+      input,
+      plan,
+      pageIndex: 1,
+      draft: storedDraft,
+      report: approvedReport,
+      previousPages: [],
+      researchNotes: [],
+      textModel: {} as TextModelAdapter,
+      projectId: "project-1",
+      quality: storyExtractEnabled(),
+      storyState: openPromiseState,
+      styleExcerpts: []
+    });
+
+    expect(mocks.extractStoryState).toHaveBeenCalledOnce();
+    const extracted = mocks.extractStoryState.mock.calls[0]![0] as { markdown: string; summary: string };
+    expectFigureBlindExtract(extracted, storedDraft);
+    expect(extracted.summary).toBe("Jack found the seal. He closed the vault.");
+    expect(storedDraft.summary).toBe(figureJsonSummary);
+  });
+});
+
+describe("enrichPageQualityReport style auditor", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.auditPageStyle.mockResolvedValue({ styleOk: true, styleIssues: [] });
+  });
+
+  it("audits figure-free prose while the stored draft still has the fence", async () => {
+    const storedDraft = draftWithFigureFence();
+
+    await enrichPageQualityReport({
+      input,
+      plan,
+      pageIndex: 1,
+      draft: storedDraft,
+      report: approvedReport,
+      previousPages: [],
+      researchNotes: [],
+      textModel: {} as TextModelAdapter,
+      projectId: "project-1",
+      quality: styleAuditorEnabled(),
+      storyState: openPromiseState,
+      styleExcerpts: ["Jack opened the vault in a quiet, close voice."]
+    });
+
+    expect(mocks.auditPageStyle).toHaveBeenCalledOnce();
+    const audited = mocks.auditPageStyle.mock.calls[0]![0] as { markdown: string };
+    expect(audited.markdown).toBe("Jack found the seal.\n\nHe closed the vault.");
+    expect(audited.markdown).not.toContain("```figure");
+    expect(storedDraft.markdown).toContain("```figure");
+    expect(storedDraft.markdown).toContain('"kind":"bar"');
   });
 });
 

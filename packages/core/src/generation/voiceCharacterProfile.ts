@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { uniqueStrings } from "../collections.js";
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
+import { figureFreeProse } from "./figures/figureBlocks.js";
+import { pageDraftSummary } from "./figures/figureDraftSummary.js";
 
 export const voiceAgeBandSchema = z.enum(["child", "teen", "young_adult", "adult", "elder"]);
 export const voiceGenderPresentationSchema = z.enum(["feminine", "masculine", "neutral", "unknown"]);
@@ -216,8 +218,12 @@ function genderEvidenceForCharacter(
   }
 
   for (const page of pages) {
-    collectGenderEvidence(page.summary ?? "", matchers, evidenceByCharacter);
-    collectGenderEvidence(page.markdown ?? "", matchers, evidenceByCharacter);
+    collectGenderEvidence(pageDraftSummary(page.markdown, page.summary), matchers, evidenceByCharacter);
+    // A figure block is not prose: a series named after a character, a
+    // category label or a caption is not a sentence about them. Removed rather
+    // than shown as its stand-in, since a `[Figure: title]` line could name a
+    // character too.
+    collectGenderEvidence(figureFreeProse(page.markdown ?? ""), matchers, evidenceByCharacter);
   }
 
   return evidenceByCharacter.get(targetKey) ?? emptyGenderEvidence();

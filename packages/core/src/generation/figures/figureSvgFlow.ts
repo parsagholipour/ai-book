@@ -15,7 +15,12 @@ const LAYER_PITCH = 100;
 const NODE_GAP = 24;
 const BACK_CHANNEL = 28;
 const MAX_BACK_CHANNELS = 3;
-const MIN_NODE_WIDTH = 84;
+/**
+ * A `<figure>` is `break-inside:avoid`. A4 content is ~255mm tall; at full
+ * column width a 640×720 drawing is ~196mm, which still leaves room for the
+ * caption. The old 14-layer pitch of 100 ran to ~1398px and spilled the page.
+ */
+const MAX_FLOW_HEIGHT = 720;
 const LABEL_SIZE = 12;
 const LINE_HEIGHT = 14;
 const MAX_LABEL_LINES = 3;
@@ -60,6 +65,35 @@ export type FlowLayout = { width: number; height: number; layers: number; nodes:
 
 function average(values: number[]): number {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+/** Scale a layer so nodes + gaps fit `usable`. Never floors to a minimum width that would overflow. */
+function fitLayer(widths: number[], usable: number): { scale: number; gap: number } {
+  const total = widths.reduce((sum, width) => sum + width, 0);
+  const gapCount = Math.max(0, widths.length - 1);
+  if (widths.length === 0 || total <= 0) return { scale: 1, gap: NODE_GAP };
+  if (gapCount === 0) return { scale: total > usable ? usable / total : 1, gap: 0 };
+  const preferredGaps = NODE_GAP * gapCount;
+  if (total + preferredGaps <= usable) return { scale: 1, gap: NODE_GAP };
+  if (preferredGaps < usable) return { scale: (usable - preferredGaps) / total, gap: NODE_GAP };
+  // Gaps themselves overflow: shrink them until the row fits, then scale nodes if zero gap is still too wide.
+  if (total <= usable) return { scale: 1, gap: (usable - total) / gapCount };
+  return { scale: usable / total, gap: 0 };
+}
+
+function clampNodeToViewBox(node: FlowLayoutNode): void {
+  if (node.w > FIGURE_WIDTH) node.w = FIGURE_WIDTH;
+  const half = node.w / 2;
+  if (node.x - half < 0) node.x = half;
+  if (node.x + half > FIGURE_WIDTH) node.x = FIGURE_WIDTH - half;
+}
+
+const SKIP_EDGE_INSET = 4;
+
+/** Half-width plus gutter, signed toward the nearer sheet edge. Zero only when the edge does not skip. */
+function skipEdgeBow(from: FlowLayoutNode, to: FlowLayoutNode, columnCenter: number): number {
+  if (to.layer - from.layer < 2) return 0;
+  return (from.x <= columnCenter ? -1 : 1) * (Math.max(from.w, to.w) / 2 + 40);
 }
 
 export function layoutFlow(spec: FlowFigureSpec): FlowLayout {
@@ -139,29 +173,42 @@ export function layoutFlow(spec: FlowFigureSpec): FlowLayout {
   const channels = Math.min(MAX_BACK_CHANNELS, back.size);
   const reserved = channels > 0 ? 16 + channels * BACK_CHANNEL : 0;
   const usable = FIGURE_WIDTH - 2 * MARGIN - reserved;
+  // The last layer's back edges drop below their node before turning, so the sheet leaves room for them.
+  const backRoom = channels > 0 ? 16 : 0;
+  const fixed = 2 * MARGIN + 66;
+  const naturalHeight = fixed + backRoom + Math.max(0, layerCount - 1) * LAYER_PITCH;
+  const height = Math.min(MAX_FLOW_HEIGHT, naturalHeight);
+  const extra = height < fixed + backRoom ? Math.max(0, height - fixed) : backRoom;
+  const pitch = layerCount > 1 ? Math.max(0, (height - fixed - extra) / (layerCount - 1)) : LAYER_PITCH;
   const nodes: FlowLayoutNode[] = spec.nodes.map((node, index) => {
     const shape = node.shape ?? "step";
     return { id: node.id, label: node.label, shape, x: 0, y: 0, w: NODE_SIZES[shape].w, h: NODE_SIZES[shape].h, layer: layer[index]!, lines: [] };
   });
+  // Compressed pitch used to be smaller than a decision diamond, so a 14-layer
+  // chain of those overlapped even though the viewBox was capped.
+  const maxH = Math.max(...nodes.map((node) => node.h), 1);
+  if (layerCount > 1 && pitch > 0 && maxH + 8 > pitch) {
+    const scaleH = Math.max(0.35, (pitch - 8) / maxH);
+    for (const node of nodes) node.h *= scaleH;
+  }
   for (const [layerIndex, members] of layers.entries()) {
     const widths = members.map((node) => nodes[node]!.w);
-    const gaps = NODE_GAP * Math.max(0, members.length - 1);
     const total = widths.reduce((sum, width) => sum + width, 0);
-    const scale = total + gaps > usable ? Math.max(MIN_NODE_WIDTH / Math.max(...widths), (usable - gaps) / total) : 1;
-    const scaledTotal = total * scale + gaps;
+    const { scale, gap } = fitLayer(widths, usable);
+    const gapCount = Math.max(0, members.length - 1);
+    const scaledTotal = total * scale + gap * gapCount;
     let cursor = MARGIN + Math.max(0, (usable - scaledTotal) / 2);
     for (const node of members) {
       const entry = nodes[node]!;
       entry.w = entry.w * scale;
       entry.x = cursor + entry.w / 2;
-      entry.y = MARGIN + 33 + layerIndex * LAYER_PITCH;
+      entry.y = MARGIN + 33 + layerIndex * pitch;
+      clampNodeToViewBox(entry);
       const usableChars = Math.max(6, Math.floor(((entry.shape === "decision" ? entry.w * 0.72 : entry.w) - 14) / 6.6));
       entry.lines = wrapLabel(entry.label, usableChars, MAX_LABEL_LINES);
-      cursor += entry.w + NODE_GAP;
+      cursor += entry.w + gap;
     }
   }
-  // The last layer's back edges drop below their node before turning, so the sheet leaves room for them.
-  const height = MARGIN + (layerCount - 1) * LAYER_PITCH + 66 + (channels > 0 ? 16 : 0) + MARGIN;
 
   // Where an edge leaves and enters a box: a node's forward edges are spread
   // along its bottom, ordered by where they go, and a target's along its top,
@@ -181,13 +228,43 @@ export function layoutFlow(spec: FlowFigureSpec): FlowLayout {
     const span = node.w * 0.5;
     return -span / 2 + (span * index) / (ordered.length - 1);
   };
+  const forwardGeom = (key: number, edge: (typeof edges)[number]) => {
+    const from = nodes[edge.from]!;
+    const to = nodes[edge.to]!;
+    return {
+      from,
+      to,
+      x1: from.x + spread(outgoing.get(edge.from) ?? [], key, from, (other) => nodes[other.to]!.x),
+      y1: from.y + from.h / 2,
+      x2: to.x + spread(incoming2.get(edge.to) ?? [], key, to, (other) => nodes[other.from]!.x),
+      y2: to.y - to.h / 2
+    };
+  };
+
+  // Keep the unclamped skip-edge bow. If a control would leave 4..width-4,
+  // grow the sheet and shift the column rather than flattening the curve
+  // back through the boxes it was meant to miss.
+  let padLeft = 0;
+  let padRight = 0;
+  for (const [key, edge] of edges.entries()) {
+    if (back.has(key)) continue;
+    const { from, to, x1, x2 } = forwardGeom(key, edge);
+    const bow = skipEdgeBow(from, to, FIGURE_WIDTH / 2);
+    if (bow === 0) continue;
+    for (const control of [x1 + bow, x2 + bow]) {
+      padLeft = Math.max(padLeft, SKIP_EDGE_INSET - control);
+      padRight = Math.max(padRight, control - (FIGURE_WIDTH - SKIP_EDGE_INSET));
+    }
+  }
+  const width = FIGURE_WIDTH + padLeft + padRight;
+  if (padLeft > 0) for (const node of nodes) node.x += padLeft;
 
   let channel = 0;
   const laidOut: FlowLayoutEdge[] = edges.map((edge, key) => {
     const from = nodes[edge.from]!;
     const to = nodes[edge.to]!;
     if (back.has(key)) {
-      const cx = FIGURE_WIDTH - MARGIN - reserved + 16 + Math.min(channel, channels - 1) * BACK_CHANNEL;
+      const cx = padLeft + FIGURE_WIDTH - MARGIN - reserved + 16 + Math.min(channel, channels - 1) * BACK_CHANNEL;
       channel += 1;
       // Out of the bottom of the source, not its side: a side exit runs
       // straight through whatever sits to its right in the same layer.
@@ -205,20 +282,15 @@ export function layoutFlow(spec: FlowFigureSpec): FlowLayout {
         labelAt: { x: cx + 4, y: (below + to.y) / 2 + 4 }
       };
     }
-    const x1 = from.x + spread(outgoing.get(edge.from) ?? [], key, from, (other) => nodes[other.to]!.x);
-    const y1 = from.y + from.h / 2;
-    const x2 = to.x + spread(incoming2.get(edge.to) ?? [], key, to, (other) => nodes[other.from]!.x);
-    const y2 = to.y - to.h / 2;
+    const { x1, y1, x2, y2 } = forwardGeom(key, edge);
     const ym = (y1 + y2) / 2;
-    // An edge that skips a layer bows out past the column it would otherwise
-    // run through, toward whichever side of the sheet has the room.
-    const skips = to.layer - from.layer >= 2;
-    const bow = skips ? (from.x <= FIGURE_WIDTH / 2 ? -1 : 1) * (Math.max(from.w, to.w) / 2 + 40) : 0;
-    const path = skips
-      ? `M${round(x1)} ${round(y1)}C${round(x1 + bow)} ${round(y1 + 40)} ${round(x2 + bow)} ${round(y2 - 40)} ${round(x2)} ${round(y2)}`
-      : Math.abs(x1 - x2) < 1
-        ? `M${round(x1)} ${round(y1)}L${round(x2)} ${round(y2)}`
-        : `M${round(x1)} ${round(y1)}C${round(x1)} ${round(ym)} ${round(x2)} ${round(ym)} ${round(x2)} ${round(y2)}`;
+    const bow = skipEdgeBow(from, to, padLeft + FIGURE_WIDTH / 2);
+    const path =
+      bow !== 0
+        ? `M${round(x1)} ${round(y1)}C${round(x1 + bow)} ${round(y1 + 40)} ${round(x2 + bow)} ${round(y2 - 40)} ${round(x2)} ${round(y2)}`
+        : Math.abs(x1 - x2) < 1
+          ? `M${round(x1)} ${round(y1)}L${round(x2)} ${round(y2)}`
+          : `M${round(x1)} ${round(y1)}C${round(x1)} ${round(ym)} ${round(x2)} ${round(ym)} ${round(x2)} ${round(y2)}`;
     return {
       from: from.id,
       to: to.id,
@@ -229,7 +301,7 @@ export function layoutFlow(spec: FlowFigureSpec): FlowLayout {
       labelAt: { x: (x1 + x2) / 2 + bow * 0.75 + 6, y: ym + 4 }
     };
   });
-  return { width: FIGURE_WIDTH, height, layers: layerCount, nodes, edges: laidOut };
+  return { width, height, layers: layerCount, nodes, edges: laidOut };
 }
 
 function nodeShape(node: FlowLayoutNode): string {
@@ -264,9 +336,15 @@ export function renderFlowSvg(spec: FlowFigureSpec, context: FigureRenderContext
     const label = edge.label?.trim();
     if (!label) continue;
     const width = estimateTextWidth(label, 11) + 8;
-    parts.push(`<rect x="${round(edge.labelAt.x - 4)}" y="${round(edge.labelAt.y - 11)}" width="${round(width)}" height="14" rx="2" fill="${FIGURE_INK.surface}"/>`);
+    const x = Math.min(layout.width - width + 4, Math.max(4, edge.labelAt.x));
+    const y = Math.min(layout.height - 3, Math.max(11, edge.labelAt.y));
+    parts.push(`<rect x="${round(x - 4)}" y="${round(y - 11)}" width="${round(width)}" height="14" rx="2" fill="${FIGURE_INK.surface}"/>`);
     const direction = context.profile.direction === "rtl" ? ' direction="rtl" unicode-bidi="embed"' : "";
-    parts.push(`<text x="${round(edge.labelAt.x)}" y="${round(edge.labelAt.y)}" font-size="11" fill="${FIGURE_INK.secondary}" text-anchor="${context.profile.direction === "rtl" ? "end" : "start"}"${direction}>${escapeXml(label)}</text>`);
+    parts.push(`<text x="${round(x)}" y="${round(y)}" font-size="11" fill="${FIGURE_INK.secondary}" text-anchor="${context.profile.direction === "rtl" ? "end" : "start"}"${direction}>${escapeXml(label)}</text>`);
   }
-  return `${svgOpen({ height: layout.height, label: `${context.labels.figure}: ${spec.title}` })}${parts.join("")}</svg>`;
+  return `${svgOpen({
+    height: layout.height,
+    width: layout.width,
+    label: `${context.labels.figure}: ${spec.title}`
+  })}${parts.join("")}</svg>`;
 }

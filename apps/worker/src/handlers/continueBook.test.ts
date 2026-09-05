@@ -3,179 +3,52 @@ import type { Job } from "bullmq";
 import {
   ATOMIC_CANDIDATES_CONTINUATION_PROTOCOL,
   CONTINUATION_PUBLICATION_PROTOCOL_FIELD,
-  PRE_EDIT_PROJECT_STATUS,
-  type EditAdherenceVerdict
+  PRE_EDIT_PROJECT_STATUS
 } from "@book-maker/core";
 import { EDIT_ADHERENCE_FAILED } from "@book-maker/core/editFailure";
 
-const mocks = vi.hoisted(() => ({
-  prisma: {
-    bookEditOperation: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
-    project: { update: vi.fn() },
-    planVersion: { findUnique: vi.fn() },
-    page: { findMany: vi.fn(), findFirst: vi.fn() },
-    chapter: { findMany: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
-    $transaction: vi.fn()
-  },
-  tx: {
-    $executeRawUnsafe: vi.fn(),
-    bookEditOperation: { update: vi.fn(), findUnique: vi.fn() },
-    generationJob: { updateMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
-    generationAttempt: { updateMany: vi.fn() },
-    page: { deleteMany: vi.fn(), createMany: vi.fn(), findMany: vi.fn(), update: vi.fn() },
-    chapter: { deleteMany: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
-    continuityNote: { createMany: vi.fn() },
-    character: { findMany: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn() },
-    location: { findMany: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn() },
-    embedding: { deleteMany: vi.fn() },
-    project: { update: vi.fn() },
-    planVersion: { update: vi.fn(), create: vi.fn(), delete: vi.fn(), deleteMany: vi.fn() }
-  },
-  getProjectOrThrow: vi.fn(),
-  invalidateProjectExports: vi.fn(),
-  nextPlanVersion: vi.fn(),
-  maybeEnqueueCompile: vi.fn(),
-  generateJsonWithRetry: vi.fn(),
-  generatePageDraft: vi.fn(),
-  reviewAndSaveGeneratedPage: vi.fn(),
-  revisePageDraftWithRestart: vi.fn(),
-  reviewAppliedBookEdit: vi.fn(),
-  waitForTextEditLease: vi.fn(),
-  waitForTextEditLeaseCompletion: vi.fn(),
-  assertTextEditLeaseTx: vi.fn(),
-  completeTextEditLease: vi.fn(),
-  startTextEditLeaseHeartbeat: vi.fn(),
-  heartbeatAssertHeld: vi.fn(),
-  heartbeatStop: vi.fn(),
-  continuationFollowUpCompletion: vi.fn(),
-  qualityEnabled: vi.fn((_feature: string): boolean => false),
-  styleExcerptsForPage: vi.fn(
-    async (options: { quality: { enabled: (feature: string) => boolean } }): Promise<string[]> =>
-      options.quality.enabled("styleExcerpts") ? ["opening-voice"] : []
-  )
-}));
-
-vi.mock("@book-maker/db", async () => ({
-  prisma: mocks.prisma,
-  Prisma: {},
-  MANUSCRIPT_PUBLICATION_TRANSACTION_OPTIONS: { timeout: 30_000, maxWait: 10_000 },
-  ...(await import("../testing/dbScopeMocks.js")).dbScopeMocks()
-}));
-vi.mock("../runtime/dispatch.js", () => ({ maybeEnqueueCompile: mocks.maybeEnqueueCompile }));
-vi.mock("../runtime/jobLifecycle.js", () => ({ advanceJobStep: vi.fn() }));
-vi.mock("../generation/textEditLease.js", () => {
-  class TextEditLeaseLostError extends Error {}
-  return {
-    assertTextEditLeaseTx: mocks.assertTextEditLeaseTx,
-    completeTextEditLease: mocks.completeTextEditLease,
-    isTextEditLeaseLostError: (error: unknown) => error instanceof TextEditLeaseLostError,
-    startTextEditLeaseHeartbeat: mocks.startTextEditLeaseHeartbeat,
-    TextEditLeaseLostError,
-    waitForTextEditLease: mocks.waitForTextEditLease,
-    waitForTextEditLeaseCompletion: mocks.waitForTextEditLeaseCompletion
-  };
-});
-vi.mock("../generation/continuationFollowUp.js", () => ({
-  continuationFollowUpClassifier: (classifier: unknown, identity: Record<string, unknown>) => ({
-    ...(classifier && typeof classifier === "object" ? classifier : {}),
-    continuationFollowUp: {
-      planVersionId: identity.planVersionId,
-      publicationRevision: identity.publicationRevision,
-      fallbackStatus: identity.fallbackStatus,
-      completedSteps: []
-    }
-  }),
-  continuationFollowUpIdentityFromClassifier: (
-    classifier: { continuationFollowUp?: Record<string, unknown> } | null,
-    scope: Record<string, unknown>
-  ) => classifier?.continuationFollowUp
-    ? { ...scope, ...classifier.continuationFollowUp }
-    : null,
-  continuationFollowUpCompletion: mocks.continuationFollowUpCompletion
-}));
-vi.mock("../runtime/config.js", () => ({ config: {} }));
-vi.mock("../providers/loggedAdapters.js", () => ({ createLoggedProviders: () => ({ text: {} }) }));
-vi.mock("../generation/bookHelpers.js", () => ({
-  getProjectOrThrow: mocks.getProjectOrThrow,
-  invalidateProjectExports: mocks.invalidateProjectExports,
-  nextPlanVersion: mocks.nextPlanVersion,
-  planInputSnapshot: (input: unknown) => input,
-  strategyForInput: () => ({ generatePageDraft: mocks.generatePageDraft }),
-  styleExcerptsForPage: mocks.styleExcerptsForPage,
-  toPriorPageContext: (page: { index: number; title: string; summary: string }) => ({
-    index: page.index,
-    title: page.title,
-    summary: page.summary
-  })
-}));
-vi.mock("../generation/generationContext.js", () => ({
-  loadContinuityNotes: async () => [],
-  loadResearchNotesForGeneration: async () => []
-}));
-vi.mock("../generation/pageReview.js", () => ({
-  reviewAndSaveGeneratedPage: mocks.reviewAndSaveGeneratedPage,
-  revisePageDraftWithRestart: mocks.revisePageDraftWithRestart
-}));
-vi.mock("./importBookSupport.js", () => ({ importStyleProfileFromMediaSettings: () => null }));
-vi.mock("../generation/projectInput.js", () => ({
-  inputForPlanVersion: (_project: unknown, snapshot: unknown) => ({
-    targetPages: (snapshot as { targetPages?: number })?.targetPages ?? 10,
-    temperature: 0.7,
-    language: "en",
-    mediaSettings: {}
-  })
-}));
-vi.mock("../generation/qualitySettings.js", () => ({
-  loadQualityContext: async () => ({
-    settings: {},
-    tier: "balanced",
-    enabled: (feature: string) => mocks.qualityEnabled(feature)
-  }),
-  applyPlanThinkingBoost: vi.fn()
-}));
+vi.mock("@book-maker/db", async () => (await import("./testing/continueBookMocks.js")).dbModuleMock());
+vi.mock("../runtime/dispatch.js", async () => (await import("./testing/continueBookMocks.js")).dispatchModuleMock());
+vi.mock("../runtime/jobLifecycle.js", async () => (await import("./testing/continueBookMocks.js")).jobLifecycleModuleMock());
+vi.mock("../generation/textEditLease.js", async () => (await import("./testing/continueBookMocks.js")).textEditLeaseModuleMock());
+vi.mock(
+  "../generation/continuationFollowUp.js",
+  async () => (await import("./testing/continueBookMocks.js")).continuationFollowUpModuleMock()
+);
+vi.mock("../runtime/config.js", async () => (await import("./testing/continueBookMocks.js")).configModuleMock());
+vi.mock("../providers/loggedAdapters.js", async () => (await import("./testing/continueBookMocks.js")).loggedAdaptersModuleMock());
+vi.mock("../generation/bookHelpers.js", async () => (await import("./testing/continueBookMocks.js")).bookHelpersModuleMock());
+vi.mock(
+  "../generation/generationContext.js",
+  async () => (await import("./testing/continueBookMocks.js")).generationContextModuleMock()
+);
+vi.mock("../generation/pageReview.js", async () => (await import("./testing/continueBookMocks.js")).pageReviewModuleMock());
+vi.mock("./importBookSupport.js", async () => (await import("./testing/continueBookMocks.js")).importBookSupportModuleMock());
+vi.mock("../generation/projectInput.js", async () => (await import("./testing/continueBookMocks.js")).projectInputModuleMock());
+vi.mock("../generation/qualitySettings.js", async () => (await import("./testing/continueBookMocks.js")).qualitySettingsModuleMock());
 vi.mock("@book-maker/core", async () => {
   const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
-  return {
-    ...actual,
-    bookPlanSchema: { parse: (value: unknown) => value },
-    createProviders: () => ({}),
-    generateJsonWithRetry: mocks.generateJsonWithRetry,
-    reviewAppliedBookEdit: mocks.reviewAppliedBookEdit
-  };
+  return { ...actual, ...(await import("./testing/continueBookMocks.js")).coreModuleOverrides() };
 });
 
 import { continueBook } from "./continueBook.js";
 import { LEGACY_CHARACTER_CONTEXT_PREFIX } from "../generation/editOperationContext.js";
 import { TextEditLeaseLostError } from "../generation/textEditLease.js";
+import {
+  GENERATION_JOB_ID,
+  REQUEST,
+  adherenceVerdict,
+  appliedOperationUpdate,
+  basePlan,
+  baseProject,
+  mocks,
+  projectUpdateData,
+  resetContinueBookMocks,
+  revisionIncrementWrites,
+  trailingPage,
+  writtenContinuityNotes
+} from "./testing/continueBookMocks.js";
 
-const basePlan = {
-  premise: "A tale.",
-  voiceGuide: "Warm.",
-  characters: [],
-  locations: [],
-  promises: [],
-  chapters: [
-    { index: 1, title: "One", summary: "s1", targetPages: 5, keyBeats: [] },
-    { index: 2, title: "Two", summary: "s2", targetPages: 5, keyBeats: [] }
-  ]
-};
-
-/** Every continuity note the publication wrote, however many statements it took. */
-const writtenContinuityNotes = (): Array<Record<string, unknown>> =>
-  (mocks.tx.continuityNote.createMany.mock.calls as Array<[{ data: Array<Record<string, unknown>> }]>)
-    .flatMap(([call]) => call.data);
-
-const appliedOperationUpdate = (): Record<string, unknown> | undefined =>
-  (mocks.tx.bookEditOperation.update.mock.calls as Array<[{ data: Record<string, unknown> }]>).map(([call]) => call.data)
-    .find((data) => data.status === "APPLIED");
-
-const REQUEST = "Add two more chapters";
-const GENERATION_JOB_ID = "generation-job-1";
-const adherenceVerdict = (overrides: Partial<EditAdherenceVerdict> = {}): EditAdherenceVerdict => ({
-  basis: "reviewed", satisfied: true, confidence: 1,
-  missingRequirements: [], contradictions: [], pageIndexesToRevise: [],
-  ...overrides
-});
 // The columns the API writes before the job is dispatched. `projectId`, `kind`
 // and the durable job link are what `continuationDeliveryProtocol` checks
 // before this handler writes anything, and the classifier marker is what
@@ -219,140 +92,7 @@ const job = (data: Record<string, unknown> = {}) =>
 const legacyJob = (data: Record<string, unknown> = {}) =>
   ({ id: "job-1", data: jobData(data) }) as unknown as Job;
 
-const baseProject = {
-  id: "project-1",
-  currentPlanId: "plan-base",
-  targetPages: 10,
-  title: "Book",
-  language: "en",
-  mediaSettings: {},
-  status: "COMPLETE"
-};
-
-function mockTransactions() {
-  mocks.prisma.$transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => run(mocks.tx));
-}
-
-function trailingPage(index: number) {
-  return { index, title: `Page ${index}`, markdown: "Text.", summary: `Summary ${index}.` };
-}
-
-function projectUpdateData(): Array<Record<string, unknown>> {
-  return [...mocks.prisma.project.update.mock.calls, ...mocks.tx.project.update.mock.calls].map(
-    (call) => (call[0] as { data: Record<string, unknown> }).data
-  );
-}
-
-function revisionIncrementWrites(): Array<Record<string, unknown>> {
-  return projectUpdateData().filter(
-    (data) => (data.contentRevision as { increment?: number } | undefined)?.increment === 1
-  );
-}
-
-beforeEach(() => {
-  vi.clearAllMocks();
-  mocks.qualityEnabled.mockReturnValue(false);
-  mockTransactions();
-  mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({ ...baseOperation });
-  mocks.prisma.bookEditOperation.update.mockResolvedValue({});
-  mocks.prisma.bookEditOperation.updateMany.mockResolvedValue({ count: 1 });
-  mocks.prisma.project.update.mockResolvedValue({});
-  mocks.waitForTextEditLease.mockResolvedValue({ outcome: "acquired", phase: "draft" });
-  mocks.waitForTextEditLeaseCompletion.mockResolvedValue("completed");
-  mocks.assertTextEditLeaseTx.mockResolvedValue({ status: "ACTIVE", classifier: {} });
-  mocks.completeTextEditLease.mockResolvedValue(true);
-  mocks.startTextEditLeaseHeartbeat.mockReturnValue({
-    assertHeld: mocks.heartbeatAssertHeld,
-    stop: mocks.heartbeatStop
-  });
-  mocks.heartbeatAssertHeld.mockResolvedValue(undefined);
-  mocks.heartbeatStop.mockResolvedValue(undefined);
-  mocks.getProjectOrThrow.mockResolvedValue(baseProject);
-  mocks.prisma.planVersion.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) =>
-    where.id === "plan-base"
-      ? { id: "plan-base", inputSnapshot: { targetPages: 10 }, planningPackage: basePlan }
-      : where.id === "plan-stranded"
-        ? { id: "plan-stranded", messages: [{ role: "user", content: `Continue the book: ${REQUEST}` }] }
-        : null
-  );
-  // No stranded rows unless a test says otherwise.
-  mocks.prisma.chapter.findMany.mockResolvedValue([]);
-  mocks.prisma.page.findMany.mockImplementation(async (args: { where: Record<string, unknown> }) => {
-    if (args.where.chapterId) {
-      return [{ index: 11 }, { index: 12 }];
-    }
-    if (args.where.status === "COMPLETED" && !args.where.index) {
-      return [trailingPage(10), trailingPage(9)];
-    }
-    return [];
-  });
-  mocks.prisma.page.findFirst.mockResolvedValue({ index: 10 });
-  mocks.prisma.chapter.findFirst.mockResolvedValue({ index: 2 });
-  mocks.prisma.chapter.findUnique.mockResolvedValue({ id: "ch-new" });
-  mocks.prisma.chapter.update.mockResolvedValue({});
-  mocks.generateJsonWithRetry.mockResolvedValue({
-    data: { chapters: [{ title: "New chapter", summary: "Fresh.", keyBeats: [] }] }
-  });
-  mocks.nextPlanVersion.mockResolvedValue(4);
-  mocks.tx.planVersion.create.mockResolvedValue({ id: "plan-new" });
-  mocks.tx.bookEditOperation.findUnique.mockResolvedValue({ publicationRevision: 1, classifier: {} });
-  mocks.tx.generationJob.updateMany.mockResolvedValue({ count: 1 });
-  mocks.tx.generationJob.findUnique.mockResolvedValue({ steps: null });
-  mocks.tx.generationJob.update.mockResolvedValue({});
-  mocks.tx.generationAttempt.updateMany.mockResolvedValue({ count: 1 });
-  mocks.tx.project.update.mockImplementation(async (args: { select?: { currentPlanId?: boolean; contentRevision?: boolean } }) =>
-    args.select?.currentPlanId
-      ? { currentPlanId: "plan-new" }
-      : args.select?.contentRevision
-        ? { contentRevision: 1 }
-        : {}
-  );
-  mocks.tx.chapter.create.mockResolvedValue({ id: "ch-new" });
-  mocks.tx.$executeRawUnsafe.mockResolvedValue(1);
-  mocks.tx.character.findMany.mockResolvedValue([]);
-  mocks.tx.location.findMany.mockResolvedValue([]);
-  mocks.tx.page.findMany.mockImplementation(async ({ where }: { where: { index: { in: number[] } } }) =>
-    where.index.in.map((index) => ({ id: `new-page-${index}`, index }))
-  );
-  mocks.generatePageDraft.mockResolvedValue({ title: "Draft", markdown: "Draft text.", summary: "Draft summary." });
-  mocks.reviewAndSaveGeneratedPage.mockImplementation(
-    async ({ draft }: { draft: { index: number; title: string; markdown: string; summary: string } }) => {
-      const candidate = {
-        draft: { ...draft, continuityNotes: [] },
-        qualityReport: { approved: true, score: 90, issues: [], requiredRevisions: [], notes: "" }
-      };
-      return {
-        page: {
-        index: draft.index,
-        title: `Page ${draft.index}`,
-        markdown: "Saved.",
-        summary: `Saved ${draft.index}.`
-        },
-        candidate
-      };
-    }
-  );
-  mocks.reviewAppliedBookEdit.mockResolvedValue(adherenceVerdict());
-  mocks.revisePageDraftWithRestart.mockImplementation(
-    async ({ reviseOptions }: { reviseOptions: { draft: Record<string, unknown> } }) => ({
-      ...reviseOptions.draft,
-      markdown: "Repaired continuation."
-    })
-  );
-  mocks.invalidateProjectExports.mockResolvedValue(undefined);
-  mocks.maybeEnqueueCompile.mockResolvedValue("compile");
-  mocks.continuationFollowUpCompletion.mockImplementation(
-    (identity: { projectId: string; planVersionId: string }) => ({
-      durableCompletionCommitted: true,
-      lifecycleCompletionCommitted: true,
-      retryFollowUpOnRedelivery: true,
-      afterJobCompleted: async () => {
-        await mocks.invalidateProjectExports(identity.projectId);
-        await mocks.maybeEnqueueCompile(identity.projectId, identity.planVersionId);
-      }
-    })
-  );
-});
+beforeEach(() => resetContinueBookMocks(baseOperation));
 
 describe("continueBook redelivery fence", () => {
   it("cleans a crashed delivery's stranded append instead of appending on top", async () => {
@@ -425,6 +165,43 @@ describe("continueBook redelivery fence", () => {
       expect.objectContaining({ pageId: "new-page-12", body: "Appended fact 12." })
     ]);
     expect(mocks.tx.embedding.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("shows the outline a trailing page's figure as its stand-in", async () => {
+    const fence =
+      "```figure\n" +
+      JSON.stringify({ kind: "bar", title: "Carts by decade", categories: ["1500", "1510"], series: [{ name: "Carts", values: [120, 140] }], source: "The ledger" }) +
+      "\n```";
+    mocks.prisma.page.findMany.mockImplementation(async (args: { where: Record<string, unknown> }) => {
+      if (args.where.chapterId) {
+        return [{ index: 11 }, { index: 12 }];
+      }
+      if (args.where.status === "COMPLETED" && !args.where.index) {
+        return [
+          {
+            ...trailingPage(10),
+            markdown: `The clerks counted.\n\n${fence}\n\nThe towns felt it.`,
+            summary: '{"kind":"bar","title":"Carts by decade","categories":["1500"]}'
+          },
+          trailingPage(9)
+        ];
+      }
+      return [];
+    });
+    // The page writer's own drafts come back from core figure-free
+    // (`figureFreeDraft`, covered in core); the outline is the other model
+    // call this handler makes, and it cuts its excerpt from the stored page.
+    await continueBook(job());
+
+    const outlineCall = mocks.generateJsonWithRetry.mock.calls[0]![1] as { messages: Array<{ content: string }> };
+    const payload = JSON.parse(outlineCall.messages[1]!.content) as {
+      finalPagesExcerpt: string;
+      recentPageSummaries: string;
+    };
+    expect(payload.finalPagesExcerpt).toContain("[Figure: Carts by decade]");
+    expect(payload.finalPagesExcerpt).not.toContain("```figure");
+    expect(payload.recentPageSummaries).toContain("The clerks counted. The towns felt it.");
+    expect(payload.recentPageSummaries).not.toMatch(/"kind"|```figure|Carts by decade/);
   });
 
   it("refuses to guess when chapters past the plan belong to no known continuation", async () => {

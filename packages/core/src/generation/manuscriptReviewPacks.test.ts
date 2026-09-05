@@ -92,6 +92,31 @@ describe("buildManuscriptReviewPacks", () => {
     expect(packs[0]?.detectorEvidence.every((entry) => entry.contentKind === "detector_evidence")).toBe(true);
   });
 
+  it("does not send fence-free figure JSON as a neighboring summary", () => {
+    const leakedSummary = JSON.stringify({
+      kind: "bar",
+      title: "Carts by decade",
+      categories: ["1500", "1510"],
+      series: [{ name: "Carts", values: [120, 140] }],
+      source: "The ledger"
+    });
+    const pages = [1, 2, 3, 4, 5].map((index) =>
+      page(
+        index,
+        `Actual manuscript prose for page ${index} about the citadel workshop.`,
+        index === 1 ? { summary: leakedSummary } : {}
+      )
+    );
+    const packs = buildManuscriptReviewPacks(pages, [candidate([2, 3, 4])]);
+    const page1 = packs[0]?.neighbors.find((entry) => entry.pageIndex === 1);
+    const page5 = packs[0]?.neighbors.find((entry) => entry.pageIndex === 5);
+
+    expect(page1?.summary).not.toContain('"kind"');
+    expect(page1?.summary).not.toContain("```figure");
+    expect(page1?.summary).not.toContain("Carts by decade");
+    expect(page5?.summary).toMatch(/Planning summary/);
+  });
+
   it("produces no pack for clean findings", () => {
     const pages = [1, 2].map((index) => page(index, `A distinct useful page ${index}.`));
     expect(

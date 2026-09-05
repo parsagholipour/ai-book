@@ -2,6 +2,8 @@ import { z } from "zod";
 import { isStopOrAbortError } from "../adapters/retry.js";
 import { runToolLoop, type ToolLoopTool } from "../adapters/toolLoop.js";
 import { pageDraftSchema, type PageDraft } from "../schemas/book.js";
+import { figureFreeDraft, figureStandInMarkdown } from "./figures/figureBlocks.js";
+import { finalizePageDraft, pageDraftSummary } from "./figures/figureDraftSummary.js";
 import { buildPageDraftMessages } from "./pageDraftMessages.js";
 import type { GeneratePageOptions } from "./pagesShared.js";
 import type { StoryState } from "./storyState.js";
@@ -111,8 +113,11 @@ export async function generatePageDraftWithWriterTools(
         const page =
           previousPages.find((candidate) => candidate.index === pageIndex) ??
           (options.lookupStoredPage ? await options.lookupStoredPage(pageIndex) : null);
+        // This tool is the model-facing boundary for whatever the callback
+        // reads off storage, so a figure block on a stored page is shown as its
+        // stand-in line here — the writer is never handed the JSON to imitate.
         return page
-          ? { index: page.index, title: page.title, summary: page.summary, excerpt: page.markdown.slice(0, 900) }
+          ? { index: page.index, title: page.title, summary: pageDraftSummary(page.markdown, page.summary), excerpt: figureStandInMarkdown(page.markdown).slice(0, 900) }
           : noSuchPage;
       }
     },
@@ -177,7 +182,7 @@ export async function generatePageDraftWithWriterTools(
       }
     });
     if (result.status === "finished" && result.finish) {
-      return pageDraftSchema.parse(result.finish);
+      return finalizePageDraft(figureFreeDraft(pageDraftSchema.parse(result.finish)));
     }
   } catch (error) {
     // A cancellation is not a failure to recover from: `search_memory` reaches

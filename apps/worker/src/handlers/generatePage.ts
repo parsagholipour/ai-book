@@ -258,6 +258,8 @@ export async function generatePage(job: GeneratePageJob) {
       if (index >= page.index) {
         return null;
       }
+      // A raw storage read: the `lookup_page` tool in core (`writerTools.ts`)
+      // is the model-facing boundary and shows a figure block as its stand-in.
       const stored = await prisma.page.findFirst({
         where: { projectId, index, status: "COMPLETED" },
         select: { index: true, title: true, summary: true, markdown: true }

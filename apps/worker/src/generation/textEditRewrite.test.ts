@@ -360,8 +360,40 @@ describe("rewritePageForUserRequest with a figure on the page", () => {
     const result = await rewritePageForUserRequest(options("make page 3 more dramatic"));
     expect(sent().draft.markdown).toContain("[Figure: Carts by decade]");
     expect(sent().draft.markdown).not.toContain("```figure");
+    expect((sent() as { figures?: string }).figures).toBe("hold");
     expect(sent().report.requiredRevisions.join(" ")).not.toContain("fenced figure");
     expect(result.markdown).toBe(`The clerks counted the carts, slowly and twice.\n\n${fence}\n\nThe towns felt it first, then the farms.`);
+  });
+
+  it("keeps a request that merely says plot or figure figure-blind, and puts the block back unchanged", async () => {
+    // "the plot twist" is a story, not a chart: the exception is for a request
+    // that names the chart or diagram, so this one sees the stand-in only.
+    strategy.revisePageDraft.mockResolvedValue({
+      title: "Page 3",
+      markdown: "The clerks counted the carts, and one of them was lying.\n\n[Figure: Carts by decade]\n\nThe towns felt it first.",
+      summary: "Carts.",
+      imagePrompt: null,
+      continuityNotes: []
+    });
+    const result = await rewritePageForUserRequest(options("strengthen the plot twist on page 3"));
+    expect(sent().draft.markdown).toContain("[Figure: Carts by decade]");
+    expect(sent().draft.markdown).not.toContain("```figure");
+    expect((sent() as { figures?: string }).figures).toBe("hold");
+    expect(sent().report.requiredRevisions.join(" ")).not.toContain("fenced figure");
+    expect(result.markdown).toBe(`The clerks counted the carts, and one of them was lying.\n\n${fence}\n\nThe towns felt it first.`);
+  });
+
+  it("shows the block to a rewrite that quotes the figure's own title", async () => {
+    strategy.revisePageDraft.mockResolvedValue({
+      title: "Page 3",
+      markdown: `The clerks counted the carts.\n\n${fence}\n\nThe towns felt it first.`,
+      summary: "Carts.",
+      imagePrompt: null,
+      continuityNotes: []
+    });
+    await rewritePageForUserRequest(options("give Carts by Decade a caption about the tolls"));
+    expect(sent().draft.markdown).toContain("```figure");
+    expect((sent() as { figures?: string }).figures).toBe("keep");
   });
 
   it("shows the block to a rewrite that names the figure and accepts its absence", async () => {
@@ -377,5 +409,64 @@ describe("rewritePageForUserRequest with a figure on the page", () => {
     expect(sent().report.requiredRevisions.join(" ")).toContain("fenced figure JSON block");
     expect(result.markdown).not.toContain("```figure");
     expect(result.markdown).not.toContain("[Figure:");
+  });
+
+  it("drops a second figure the model invented beside the one it puts back", async () => {
+    // The model saw a stand-in only, so a fence in its reply is an invention;
+    // the reinsert used to store the original and the invention side by side.
+    const invented = "```figure\n" + JSON.stringify({ kind: "pie", title: "Invented", categories: ["a"], series: [{ name: "S", values: [1] }], source: "nowhere" }) + "\n```";
+    strategy.revisePageDraft.mockResolvedValue({
+      title: "Page 3",
+      markdown: `The clerks counted the carts, slowly.\n\n[Figure: Carts by decade]\n\n${invented}\n\nThe towns felt it first.`,
+      summary: "Carts.",
+      imagePrompt: null,
+      continuityNotes: []
+    });
+    const result = await rewritePageForUserRequest(options("make page 3 more dramatic"));
+    expect(result.markdown).toBe(`The clerks counted the carts, slowly.\n\n${fence}\n\nThe towns felt it first.`);
+    expect((sent() as { figures?: string }).figures).toBe("hold");
+  });
+
+  it("asks core to keep figures only on the rewrite that names one, on every revise the loop spends", async () => {
+    strategy.revisePageDraft.mockResolvedValue({
+      title: "Page 3",
+      markdown: `The clerks counted the carts.\n\n${fence}\n\nThe towns felt it first.`,
+      summary: "Carts.",
+      imagePrompt: null,
+      continuityNotes: []
+    });
+    const rejected = { approved: false, score: 40, issues: ["Flat."], requiredRevisions: ["Sharpen."], notes: "", checks: { repetitionOk: true, progressionOk: false } };
+    const approved = { approved: true, score: 85, issues: [], requiredRevisions: [], notes: "", checks: { repetitionOk: true, progressionOk: true } };
+    strategy.reviewPageDraft.mockResolvedValueOnce(rejected).mockResolvedValue(approved);
+    await rewritePageForUserRequest(options("redraw the chart as a pie"));
+    const revises = strategy.revisePageDraft.mock.calls.map((call) => (call[0] as { figures?: string }).figures);
+    expect(revises.length).toBeGreaterThanOrEqual(2);
+    expect(revises.every((figures) => figures === "keep")).toBe(true);
+
+    // A page that never had a figure asks for nothing: core strips whatever the model invents.
+    strategy.revisePageDraft.mockClear();
+    strategy.reviewPageDraft.mockResolvedValue(approved);
+    const plain = options("make page 3 more dramatic");
+    (plain as { page: { markdown: string } }).page.markdown = "The clerks counted the carts.\n\nThe towns felt it first.";
+    await rewritePageForUserRequest(plain);
+    expect(sent()).not.toHaveProperty("figures");
+    expect(sent().report.requiredRevisions.join(" ")).not.toContain("fenced figure");
+  });
+
+  it("asks core to hold figures on the unnamed rewrite, on every revise the loop spends", async () => {
+    strategy.revisePageDraft.mockResolvedValue({
+      title: "Page 3",
+      markdown: "The clerks counted the carts.\n\n[Figure: Carts by decade]\n\nThe towns felt it first.",
+      summary: "Carts.",
+      imagePrompt: null,
+      continuityNotes: []
+    });
+    const rejected = { approved: false, score: 40, issues: ["Flat."], requiredRevisions: ["Sharpen."], notes: "", checks: { repetitionOk: true, progressionOk: false } };
+    const approved = { approved: true, score: 85, issues: [], requiredRevisions: [], notes: "", checks: { repetitionOk: true, progressionOk: true } };
+    strategy.reviewPageDraft.mockResolvedValueOnce(rejected).mockResolvedValue(approved);
+    await rewritePageForUserRequest(options("make page 3 more dramatic"));
+    const revises = strategy.revisePageDraft.mock.calls.map((call) => (call[0] as { figures?: string }).figures);
+    expect(revises.length).toBeGreaterThanOrEqual(2);
+    expect(revises.every((figures) => figures === "hold")).toBe(true);
   });
 });

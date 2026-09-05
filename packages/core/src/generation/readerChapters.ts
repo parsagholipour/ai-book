@@ -4,6 +4,7 @@ import type { TextModelAdapter } from "../adapters/types.js";
 import { targetLanguageGenerationGuidance, targetLanguagePayload } from "../prompting/language.js";
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
 import { isRecord } from "../schemas/jsonCoercion.js";
+import { figureFreeProse } from "./figures/figureBlocks.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import type { MarkdownPage, ReaderChapter } from "./markdown.js";
 
@@ -417,9 +418,13 @@ function clipAtWord(text: string, limit: number): string {
   return `${clipped.slice(0, lastSpace > 40 ? lastSpace : limit).trim()}…`;
 }
 
+/**
+ * A figure block is not page text; a code block is — a book about code counts
+ * its listings toward the chapterization threshold and may open an excerpt on
+ * one, as it always has.
+ */
 function plainText(markdown: string): string {
-  return markdown
-    .replace(/```[\s\S]*?```/g, " ")
+  return figureFreeProse(markdown)
     .replace(/!\[[^\]]*]\([^)]+\)/g, "")
     .replace(/\[([^\]]+)]\([^)]+\)/g, "$1")
     .replace(/^#{1,6}\s+/gm, "")

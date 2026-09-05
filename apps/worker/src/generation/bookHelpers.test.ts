@@ -18,7 +18,7 @@ vi.mock("../runtime/jobLifecycle.js", () => ({ updateJobProgress: vi.fn() }));
 // The final-QA verdict rules this file used to cover moved out with the code:
 // they are pure text and live in `finalQaPageTargets.test.ts`, which needs no
 // module mocks at all.
-import { loadPageTextSnapshot, styleExcerptsForPage } from "./bookHelpers.js";
+import { loadPageTextSnapshot, styleExcerptsForPage, toPriorPageContext } from "./bookHelpers.js";
 
 const input = { mediaSettings: {} } as CreateProjectInput;
 
@@ -85,6 +85,29 @@ describe("styleExcerptsForPage", () => {
     expect(mocks.prisma.page.findMany).not.toHaveBeenCalled();
     expect(excerpts[0]).toContain("opening-voice");
     expect(excerpts[1]).toContain("second-voice");
+  });
+});
+
+describe("toPriorPageContext", () => {
+  it("reads a stored page's figure block as its stand-in line and a page without one byte for byte", () => {
+    const fence =
+      "```figure\n" +
+      JSON.stringify({ kind: "bar", title: "Carts by decade", categories: ["1500", "1510"], series: [{ name: "Carts", values: [120, 140] }], source: "The ledger" }) +
+      "\n```";
+    const stored = {
+      index: 7,
+      title: "Carts",
+      markdown: `The clerks counted.\n\n${fence}\n\nThe towns felt it.`,
+      summary: '{"kind":"bar","title":"Carts by decade","categories":["1500"]}'
+    };
+    expect(toPriorPageContext(stored)).toEqual({
+      index: 7,
+      title: "Carts",
+      markdown: "The clerks counted.\n\n[Figure: Carts by decade]\n\nThe towns felt it.",
+      summary: "The clerks counted. The towns felt it."
+    });
+    const plain = { index: 8, title: "Towns", markdown: "The towns felt it.\n\n```python\nprint(1)\n```", summary: "Towns." };
+    expect(toPriorPageContext(plain).markdown).toBe(plain.markdown);
   });
 });
 

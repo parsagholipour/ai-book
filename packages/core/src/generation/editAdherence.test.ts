@@ -254,6 +254,37 @@ describe("reviewAppliedBookEdit", () => {
     expect(verdict.basis).toBe("reviewed");
   });
 
+  it("reads a figure as its stand-in unless the request names the figure", async () => {
+    const fence =
+      "```figure\n" +
+      JSON.stringify({ kind: "bar", title: "Carts by decade", categories: ["1500", "1510"], series: [{ name: "Carts", values: [120, 140] }], source: "The ledger" }) +
+      "\n```";
+    const pages = (markdown: string) => [{ index: 3, title: "Three", markdown, summary: "Carts." }];
+    const review = async (instruction: string) => {
+      const { model, generateJson } = modelReturning({ satisfied: true, confidence: 1, missingRequirements: [], contradictions: [], pageIndexesToRevise: [] });
+      await reviewAppliedBookEdit({
+        instruction,
+        beforePages: pages(`Old prose.\n\n${fence}`),
+        afterPages: pages(`New prose.\n\n${fence}`),
+        textModel: model
+      });
+      return generateJson.mock.calls[0]![0].messages[1]!.content;
+    };
+    const blind = await review("Make page 3 more dramatic.");
+    expect(blind).toContain("[Figure: Carts by decade]");
+    expect(blind).not.toContain("```figure");
+    const aware = await review("Turn the chart on page 3 into a pie.");
+    expect(aware).toContain("```figure");
+    expect(aware).not.toContain("[Figure:");
+    // Naming the figure by its own title is naming the figure.
+    const byTitle = await review("Give Carts by decade a caption about the tolls.");
+    expect(byTitle).toContain("```figure");
+    // A person is not a chart: the head-noun rule keeps the reviewer figure-blind.
+    const person = await review("Make the figure in the doorway on page 3 more menacing.");
+    expect(person).toContain("[Figure: Carts by decade]");
+    expect(person).not.toContain("```figure");
+  });
+
   it("reports a computed exact replacement as reviewed", async () => {
     const { model } = modelReturning({});
     const verdict = await reviewAppliedBookEdit({

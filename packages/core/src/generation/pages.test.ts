@@ -146,17 +146,6 @@ describe("page quality review", () => {
     expect(page.continuityNotes).toEqual(["Jack has a scar over his left eyebrow."]);
   });
 
-  it("derives a page draft summary when the model omits it", () => {
-    const page = pageDraftSchema.parse({
-      title: "The Door Opens",
-      markdown: goodMarkdown(),
-      continuityNotes: []
-    });
-
-    expect(page.summary).toContain("The chapel door had been painted black");
-    expect(page.summary.length).toBeLessThanOrEqual(243);
-  });
-
   it("includes recent page excerpts and final-page resolution guidance in draft prompts", async () => {
     let request: GenerateJsonOptions<unknown> | undefined;
     const promptInput = {

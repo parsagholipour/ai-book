@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
 import { uniqueStrings } from "../collections.js";
+import { figureFreeProse } from "./figures/figureBlocks.js";
+import { pageDraftSummary } from "./figures/figureDraftSummary.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
 import {
@@ -521,8 +523,13 @@ function pageSampleChunks(pages: VoiceCharacterPageSample[]): VoiceCharacterMode
 }
 
 function pageModelSamples(page: VoiceCharacterPageSample): VoiceCharacterModelPageSample[] {
-  const summary = normalizePageText(page.summary ?? "");
-  const excerpt = normalizePageText(page.markdown ?? "");
+  const summary = normalizePageText(pageDraftSummary(page.markdown, page.summary));
+  // A figure block is removed rather than replaced by its stand-in: these
+  // passes read prose for who speaks in it and never edit or return the page,
+  // so a chart is noise and a `[Figure: …]` line is one more thing to mistake
+  // for a name. Removed before the whitespace collapse, which the fence regex
+  // needs line structure for, so the chunk budget measures what is sent.
+  const excerpt = normalizePageText(figureFreeProse(page.markdown ?? ""));
   const baseSize = JSON.stringify({
     index: page.index,
     title: page.title,

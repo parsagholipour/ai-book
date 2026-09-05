@@ -47,6 +47,7 @@ function setup() {
 describe("chapterWordBudget", () => {
   it("sizes the chapter so the printed book is as long as the pages paid for", () => {
     expect(chapterWordBudget(input, 8)).toEqual({ perPage: 520, min: 3440, target: 4160, max: 5120 });
+    expect(chapterWordBudget(input, 1)).toEqual({ perPage: 520, min: 520, target: 520, max: 640 });
   });
 });
 
@@ -373,7 +374,10 @@ describe("deletionOnlyResult", () => {
 describe("figures in the compose and edit prompts", () => {
   it("prices the figure into the budget", () => {
     expect(chapterWordBudget(input, 8, { figureWords: 140 })).toEqual({ perPage: 520, min: 3300, target: 4020, max: 4980 });
-    expect(chapterWordBudget(input, 1, { figureWords: 10_000 })).toEqual({ perPage: 520, min: 520, target: 520, max: 520 });
+    expect(chapterWordBudget(input, 1, { figureWords: 140 })).toEqual({ perPage: 520, min: 380, target: 380, max: 500 });
+    expect(chapterWordBudget(input, 1, { figureWords: 10_000 })).toEqual({ perPage: 520, min: 0, target: 0, max: 0 });
+    const science = { ...input, category: "SCIENCE" as const };
+    expect(chapterWordBudget(science, 1, { figureWords: 140 })).toEqual({ perPage: 380, min: 240, target: 240, max: 340 });
   });
 
   it("shows the writer the syntax only in a chapter the plan gave a figure, and the editor one line about the stand-in", async () => {

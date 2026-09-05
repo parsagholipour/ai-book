@@ -21,7 +21,16 @@
  * re-derives the same substitution and calls it satisfied. A boundary-free
  * replacement is not "computable enough to skip the model", it is a splice
  * inside words the reader never named.
+ *
+ * It also skips every **figure fence**. The block is JSON the exporters draw,
+ * not prose, and a whole-page walk used to rewrite titles, categories and
+ * series inside it — a rename of a country in the paragraph also renamed the
+ * chart. Naming the title is the chat rewrite (`figures: "keep"`), not this
+ * free path. Preview (API) and apply (worker) both call through here, so the
+ * skip lives on this walk rather than only in the worker.
  */
+
+import { mapFigureRegions } from "./figures/figureBlocks.js";
 
 export type ExactReplacement = {
   from: string;
@@ -178,7 +187,7 @@ export function applyExactReplacement(text: string, replacement: ExactReplacemen
   if (!replacement.from) {
     return text;
   }
-  return mapOccurrences(text, replacement.from, Boolean(replacement.preserveCase), (match) =>
+  return mapOccurrencesOutsideFigures(text, replacement, (match) =>
     replacement.preserveCase ? matchCase(match, replacement.to) : replacement.to
   ).text;
 }
@@ -187,7 +196,7 @@ export function countExactMatches(text: string, replacement: ExactReplacement): 
   if (!replacement.from) {
     return 0;
   }
-  return mapOccurrences(text, replacement.from, Boolean(replacement.preserveCase), (match) => match).count;
+  return mapOccurrencesOutsideFigures(text, replacement, (match) => match).count;
 }
 
 export function hasExactMatch(text: string, replacement: ExactReplacement): boolean {
@@ -209,14 +218,21 @@ export function exactReplacementLineDiff(
   if (!replacement.from) {
     return [];
   }
+  // Apply to the whole page first: a JSON line inside a fence is not itself a
+  // fence, so a per-line walk would still rewrite the chart on the preview card.
+  const afterText = applyExactReplacement(text, replacement);
+  const beforeLines = text.split(/\r?\n/);
+  const afterLines = afterText.split(/\r?\n/);
   const changed: Array<{ before: string; after: string }> = [];
-  for (const line of text.split(/\r?\n/)) {
+  const lineCount = Math.min(beforeLines.length, afterLines.length);
+  for (let index = 0; index < lineCount; index += 1) {
     if (changed.length >= limit) {
       break;
     }
-    const after = applyExactReplacement(line, replacement);
-    if (after !== line) {
-      changed.push({ before: line, after });
+    const before = beforeLines[index]!;
+    const after = afterLines[index]!;
+    if (after !== before) {
+      changed.push({ before, after });
     }
   }
   return changed;
@@ -275,6 +291,30 @@ function stopsAtWordBoundaries(text: string, start: number, end: number, needle:
     return false;
   }
   return true;
+}
+
+/**
+ * The same occurrence walk as `mapOccurrences`, but only over the slices
+ * between figure fences. Every fence is copied opener-through-closer, so apply
+ * and count still cannot disagree, and a page with no fence is the old walk.
+ */
+function mapOccurrencesOutsideFigures(
+  text: string,
+  replacement: ExactReplacement,
+  render: (match: string) => string
+): { text: string; count: number } {
+  const fold = Boolean(replacement.preserveCase);
+  let count = 0;
+  const rewritten = mapFigureRegions(
+    text,
+    (span) => {
+      const mapped = mapOccurrences(span, replacement.from, fold, render);
+      count += mapped.count;
+      return mapped.text;
+    },
+    (fence) => fence.raw
+  );
+  return { text: rewritten, count };
 }
 
 /**

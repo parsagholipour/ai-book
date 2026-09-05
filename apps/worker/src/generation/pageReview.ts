@@ -204,6 +204,8 @@ export async function runPageQualityLoop(options: {
   characterContext?: string | undefined;
   /** Supplemental page-local guidance kept beside the authoritative userRequest. */
   pageEditGuidance?: string | undefined;
+  /** Forwarded to every revise this loop spends; see `RevisePageOptions.figures`. */
+  figures?: "keep" | "hold";
   retrieveResearch?: ((draft: PageDraft, report: PageQualityReport) => Promise<string[]>) | undefined;
   /**
    * Per-rewrite progress reporting, in the caller's own style. The loop hands
@@ -366,6 +368,7 @@ export async function runPageQualityLoop(options: {
         ...(options.userRequest ? { editInstruction: options.userRequest } : {}),
         ...(options.characterContext ? { characterContext: options.characterContext } : {}),
         ...(options.pageEditGuidance ? { pageEditGuidance: options.pageEditGuidance } : {}),
+        ...(options.figures ? { figures: options.figures } : {}),
         previousPages: options.previousPages,
         ...(options.nextPages && options.nextPages.length > 0 ? { nextPages: options.nextPages } : {}),
         continuityNotes: options.continuityNotes,
@@ -532,26 +535,10 @@ export type SavedGeneratedPage = {
 };
 
 /**
- * Reviews a drafted page, saves the keeper, and publishes everything the *next*
- * pages read back from it: the keeper's story delta, its continuity notes, its
- * entity state and its page embedding.
- *
- * That tail is why `assertOwnership` exists and why the function is shaped in
- * two halves. A structural insert drafts under a durable delivery lease
- * (`generation/structuralPageLease.ts`) which a stalled delivery can lose to a
- * replacement mid-page, and the tail used to run entirely between the caller's
- * fences: the fence sat before the page upsert and the caller's next one after
- * the whole function, with a story-extract model call, an embedding call and
- * four writes in between. A loser therefore published semantic state into a book
- * another delivery owned, and later pages consumed it — the winner's manuscript
- * carrying the loser's facts, notes and vectors, none of which the reader will
- * ever see on a page. The page row itself is the one thing that does not matter
- * there: it is keyed on project+index and the winner drafts the same ids.
- *
- * So every provider call the tail owes happens first, holding its result in
- * memory and writing nothing; then one assertion; then only writes, with
- * nothing slow between them. A delivery that has lost the lease stands down at
- * an assertion having published none of it.
+ * Reviews a drafted page, saves the keeper, and publishes the keeper's story
+ * delta, continuity notes, entity state and embedding. Provider calls first,
+ * then one ownership assertion, then only writes — a lost lease publishes
+ * none of that tail. See generation/CLAUDE.md.
  */
 export async function reviewAndSaveGeneratedPage(options: {
   projectId: string;
@@ -603,6 +590,7 @@ export async function reviewAndSaveGeneratedPage(options: {
   characterContext?: string | undefined;
   /** Let an operation-level retry loop own the candidate budget. */
   maxCandidates?: number | undefined;
+  figures?: "keep" | "hold";
 }): Promise<SavedGeneratedPage> {
   // Pin optimistic ownership before any review/rewrite provider call. A retry
   // of an already-settled page replays nothing, while a row that changes under
@@ -710,6 +698,7 @@ export async function reviewAndSaveGeneratedPage(options: {
     quality,
     ...(options.editInstruction ? { userRequest: options.editInstruction } : {}),
     ...(options.characterContext ? { characterContext: options.characterContext } : {}),
+    ...(options.figures ? { figures: options.figures } : {}),
     ...(styleExcerpts.length > 0 ? { styleExcerpts } : {}),
     ...(quality.enabled("claimRetrieve")
       ? {

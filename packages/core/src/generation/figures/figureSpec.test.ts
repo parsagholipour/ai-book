@@ -81,6 +81,14 @@ describe("parseFigureSpec", () => {
     expect(direct.success).toBe(false);
   });
 
+  it("refuses a value past the magnitude a chart can be drawn at, rather than clipping it", () => {
+    // Number.MAX_VALUE parsed as valid and sent the tick generator into an
+    // infinite loop; a value that size belongs in a larger unit.
+    expect(errorOf({ ...bar, series: [{ name: "S", values: [1, Number.MAX_VALUE, 3] }] })).toMatch(/larger unit/);
+    expect(errorOf({ ...bar, series: [{ name: "S", values: [1, -2e15, 3] }] })).toMatch(/larger unit/);
+    expect(parseFigureSpec(JSON.stringify({ ...bar, series: [{ name: "S", values: [1, 1e15, -1e15] }] })).spec?.kind).toBe("bar");
+  });
+
   it("holds a flow diagram to consistent ids", () => {
     expect(errorOf({ ...flow, nodes: [...flow.nodes, { id: "a", label: "Again" }] })).toMatch(/used twice/);
     expect(errorOf({ ...flow, edges: [...flow.edges, { from: "a", to: "zz" }] })).toMatch(/does not exist/);

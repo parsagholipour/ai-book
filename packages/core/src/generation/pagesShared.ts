@@ -9,6 +9,8 @@ import type { BookPlan, ChapterBrief, ChapterPlan, CreateProjectInput, PageProdu
 import { isRecord, jsonRecord, mediaSettingsMobileRecord } from "../schemas/jsonCoercion.js";
 import { isImportedManuscript } from "../schemas/mediaSettings.js";
 import { evidenceLedgerFields } from "./evidenceLedger.js";
+import { figureStandInMarkdown } from "./figures/figureBlocks.js";
+import { pageDraftSummary } from "./figures/figureDraftSummary.js";
 import { BYLINE_IS_TYPESET_RULE } from "./markdown.js";
 import { rewriteReviewedEmptyNotesPageBrief } from "./pageBriefCitationRewrites.js";
 
@@ -278,12 +280,18 @@ export function compactFollowingPages(pages: PriorPageContext[], count: number, 
   return compactPageContexts(pages.slice(0, count), excerptLength);
 }
 
+/**
+ * Every prior-page excerpt a prompt is shown. A page from a composed chapter
+ * may carry a figure block, and a page writer shown its JSON has a thing to
+ * imitate, so the excerpt is cut from the stand-in form; a page without one
+ * is the same string it was. Summaries go through `pageDraftSummary`.
+ */
 function compactPageContexts(pages: PriorPageContext[], excerptLength: number) {
   return pages.map((page) => ({
     index: page.index,
     title: page.title,
-    summary: page.summary,
-    excerpt: page.markdown.slice(0, excerptLength)
+    summary: pageDraftSummary(page.markdown, page.summary),
+    excerpt: figureStandInMarkdown(page.markdown).slice(0, excerptLength)
   }));
 }
 
@@ -318,8 +326,11 @@ export function pinStyleExcerpts(
   excerptLength = 400
 ): string[] {
   const seen = new Set<number>();
+  // The style lock is prose, so a figure block on page 1 or 2 is read as its
+  // stand-in line, the same as every other excerpt a prompt is shown.
   const fromPages = [...pages]
     .sort((left, right) => left.index - right.index)
+    .map((page) => ({ index: page.index, markdown: figureStandInMarkdown(page.markdown) }))
     .filter((page) => {
       if (seen.has(page.index) || page.markdown.trim().length <= 40) {
         return false;

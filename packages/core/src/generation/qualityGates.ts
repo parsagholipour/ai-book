@@ -342,7 +342,7 @@ export const QUALITY_FEATURES: QualityFeatureDescription[] = [
   {
     id: "figures",
     label: "Figures: charts and flow diagrams (composed chapters)",
-    summary: "Lets the form plan place one bar, line or pie chart or one flow diagram in up to half the chapters of an analytical, instructional or reference book; the writer emits a fenced figure block and the exporters draw it. No extra model call.",
+    summary: "Lets the form plan place one bar, line or pie chart or one flow diagram in up to three chapters in four of an analytical, instructional or reference book; the writer emits a fenced figure block and the exporters draw it. No extra model call.",
     pipelines: ["composed"],
     stage: "Chapter form plan"
   }

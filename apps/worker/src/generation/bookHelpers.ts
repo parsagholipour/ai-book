@@ -5,6 +5,8 @@ import { finalQaMessagesForPage } from "./finalQaPageTargets.js";
 import {
   chapterBriefSchema,
   exportProvenancePaths,
+  figureStandInMarkdown,
+  pageDraftSummary,
   imageRenderProvenance,
   missingStyleLockIndexes,
   normalizePlanPageTargets,
@@ -153,12 +155,19 @@ export async function loadPageTextSnapshot(projectId: string): Promise<PageTextS
   });
 }
 
+/**
+ * A stored page as a prompt's prior-page context. Every field is model-facing
+ * and nothing built from it is stored, so a figure block a composed chapter
+ * left on the page is read as its stand-in line here: the outline, the page
+ * writer, the reviewer and the style lock all take their excerpts from this,
+ * and a fenced JSON object shown to a page writer is a thing to imitate.
+ */
 export function toPriorPageContext(page: { index: number; title: string; markdown: string; summary: string }): PriorPageContext {
   return {
     index: page.index,
     title: page.title,
-    markdown: page.markdown,
-    summary: page.summary
+    markdown: figureStandInMarkdown(page.markdown),
+    summary: pageDraftSummary(page.markdown, page.summary)
   };
 }
 

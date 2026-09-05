@@ -90,11 +90,19 @@ export function chapterWordBudget(
         // difference to the blind panel (480: 7.32, 520: 7.31, ×3 each).
         { min: 430, target: 520, max: 640 };
   const displaced = Math.max(0, options.figureWords ?? 0);
+  // Floor the no-figure chapter first (a one-page chapter still asks for a
+  // full page of prose), then subtract figure words. Flooring at `per.target`
+  // *after* the subtraction left a one-page figured chapter at 520 with no
+  // deduction; flooring at `per.min` still ate 50 of the 140. A figure is
+  // already on the page, so the prose ask may sit below `per.min`.
+  const baseMin = Math.max(per.target, per.min * pages);
+  const baseTarget = Math.max(per.target, per.target * pages);
+  const baseMax = Math.max(per.target, per.max * pages);
   return {
     perPage: per.target,
-    min: Math.max(per.target, per.min * pages - displaced),
-    target: Math.max(per.target, per.target * pages - displaced),
-    max: Math.max(per.target, per.max * pages - displaced)
+    min: Math.max(0, baseMin - displaced),
+    target: Math.max(0, baseTarget - displaced),
+    max: Math.max(0, baseMax - displaced)
   };
 }
 

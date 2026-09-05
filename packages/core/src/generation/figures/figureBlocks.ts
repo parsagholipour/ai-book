@@ -1,5 +1,5 @@
 import { countReadableWords } from "../proseShape.js";
-import { FIGURE_FENCE_TAG, canonicalFigureFence, parseFigureSpec, type FigureSpec } from "./figureSpec.js";
+import { FIGURE_FENCE_TAG, canonicalFigureFence, parseFigureSpec, type FigureKind, type FigureSpec } from "./figureSpec.js";
 
 /**
  * Finding, hiding and restoring figure blocks in chapter and page markdown.
@@ -18,56 +18,113 @@ export const FIGURE_WORD_EQUIVALENT = 140;
 
 const OPENER = "```" + FIGURE_FENCE_TAG;
 
-/** A fresh regex per call: a shared global regex carries `lastIndex` between callers. */
-function figureFenceRe(): RegExp {
-  return new RegExp("^[ \\t]{0,3}" + OPENER + "[ \\t]*\\r?\\n([\\s\\S]*?)\\r?\\n[ \\t]{0,3}```[ \\t]*$", "gm");
+/**
+ * A fresh regex per call: a shared global regex carries `lastIndex` between
+ * callers. `figure` is the fence language; an info string after it still
+ * counts (` ```figure json `). `(?![\p{L}])` keeps ` ```figures ` out.
+ */
+function figureOpenerRe(): RegExp {
+  return new RegExp("^[ \\t]{0,3}" + OPENER + "(?![\\p{L}])[^\\r\\n]*(?:\\r?\\n|$)", "gmu");
 }
 
-const WHOLE_FENCE_RE = new RegExp("^" + OPENER + "[ \\t]*\\r?\\n[\\s\\S]*?\\r?\\n```[ \\t]*$");
-const STAND_IN_RE = /^[ \t]*\[figure:[^\n]*\][ \t]*$/i;
+function figureCloserRe(): RegExp {
+  return /^[ \t]{0,3}```[ \t]*$/gm;
+}
+
+const STAND_IN_PATTERN = "^[ \\t]*\\[figure:[^\\n]*\\][ \\t]*$";
+/** A fresh regex per call: a shared global regex carries `lastIndex` between callers. */
+function standInLineRe(flags: string): RegExp {
+  return new RegExp(STAND_IN_PATTERN, flags);
+}
 const TITLE_KEY_RE = /"title"\s*:\s*"((?:[^"\\]|\\.)*)"/;
 
 export type FigureFence = {
-  /** The whole block, opener to closer, as it sits in the markdown. */
+  /** The whole block, opener to closer (or to the next blank line, next opener or EOF when unterminated). */
   raw: string;
   body: string;
   start: number;
   end: number;
+  /** False when the opener never met a closer before the next fence, blank paragraph, or EOF. */
+  closed: boolean;
   /** The parsed figure when the body is one; a parsed body is what the renderer draws. */
   spec: FigureSpec | undefined;
   /** What the figure is called, for the stand-in: the parsed title, else the JSON's title key, else nothing. */
   title: string | undefined;
 };
 
+function nextFigureOpener(markdown: string, from: number): { start: number; bodyStart: number } | undefined {
+  const openerRe = figureOpenerRe();
+  openerRe.lastIndex = from;
+  const match = openerRe.exec(markdown);
+  if (!match || match.index === undefined) return undefined;
+  return { start: match.index, bodyStart: match.index + match[0].length };
+}
+
+function fenceBodyEnd(markdown: string, closerAt: number, bodyStart: number): number {
+  let bodyEnd = closerAt;
+  if (bodyEnd > bodyStart && markdown[bodyEnd - 1] === "\n") {
+    bodyEnd -= 1;
+    if (bodyEnd > bodyStart && markdown[bodyEnd - 1] === "\r") bodyEnd -= 1;
+  }
+  return bodyEnd;
+}
+
+/** First blank line after the opener, else the next figure opener or EOF. */
+function unterminatedFenceEnd(markdown: string, bodyStart: number, hardLimit: number): number {
+  const region = markdown.slice(bodyStart, hardLimit);
+  const blank = region.search(/\r?\n[ \t]*\r?\n/);
+  return blank < 0 ? hardLimit : bodyStart + blank;
+}
+
 export function findFigureFences(markdown: string): FigureFence[] {
   const fences: FigureFence[] = [];
-  for (const match of markdown.matchAll(figureFenceRe())) {
-    const body = match[1] ?? "";
+  let from = 0;
+  while (from < markdown.length) {
+    const opener = nextFigureOpener(markdown, from);
+    if (!opener) break;
+    const next = nextFigureOpener(markdown, opener.bodyStart);
+    const hardLimit = next?.start ?? markdown.length;
+    const region = markdown.slice(opener.bodyStart, hardLimit);
+    const closer = figureCloserRe().exec(region);
+    const closed = Boolean(closer);
+    const closerAt = closer ? opener.bodyStart + closer.index : 0;
+    // An unclosed fence is its own paragraph, not the rest of the chapter: a
+    // missing closer used to run to EOF and validation then dropped every
+    // following page of prose with it.
+    const end = closer ? closerAt + closer[0].length : unterminatedFenceEnd(markdown, opener.bodyStart, hardLimit);
+    const body = markdown.slice(
+      opener.bodyStart,
+      closer ? fenceBodyEnd(markdown, closerAt, opener.bodyStart) : end
+    );
     const parsed = parseFigureSpec(body);
     const title = parsed.spec?.title ?? body.match(TITLE_KEY_RE)?.[1]?.replace(/\\(.)/g, "$1");
     fences.push({
-      raw: match[0],
+      raw: markdown.slice(opener.start, end),
       body,
-      start: match.index ?? 0,
-      end: (match.index ?? 0) + match[0].length,
+      start: opener.start,
+      end,
+      closed,
       spec: parsed.spec,
       title: title?.replace(/\s+/g, " ").trim() || undefined
     });
+    from = end > opener.start ? end : opener.start + 1;
   }
   return fences;
 }
 
 export function hasFigureFence(markdown: string): boolean {
-  return figureFenceRe().test(markdown);
+  return figureOpenerRe().test(markdown);
 }
 
 /** Whether a blank-line-separated block is exactly one figure fence. */
 export function isFigureFenceBlock(block: string): boolean {
-  return WHOLE_FENCE_RE.test(block.trim());
+  const trimmed = block.trim();
+  const fences = findFigureFences(trimmed);
+  return fences.length === 1 && fences[0]!.start === 0 && fences[0]!.end === trimmed.length;
 }
 
 export function isFigureStandIn(block: string): boolean {
-  return STAND_IN_RE.test(block.trim());
+  return standInLineRe("i").test(block.trim());
 }
 
 /** The line a prose pass sees where a figure sits. Model-facing only; the manuscript never stores it. */
@@ -80,24 +137,64 @@ function collapseBlankLines(markdown: string): string {
   return markdown.replace(/\r\n?/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+/**
+ * One walk of the prose around figure fences. `figureFreeProse` drops the
+ * blocks, `figureStandInMarkdown` replaces them, and an exact replacement
+ * rewrites only the spans — three callers, one cursor.
+ */
+export function mapFigureRegions(
+  markdown: string,
+  mapProse: (span: string) => string,
+  mapFence: (fence: FigureFence) => string
+): string {
+  const fences = findFigureFences(markdown);
+  if (fences.length === 0) return mapProse(markdown);
+  let cursor = 0;
+  let out = "";
+  for (const fence of fences) {
+    out += mapProse(markdown.slice(cursor, fence.start));
+    out += mapFence(fence);
+    cursor = fence.end;
+  }
+  return out + mapProse(markdown.slice(cursor));
+}
+
 /** The markdown with every figure block removed: what a measure reads. */
 export function figureFreeProse(markdown: string): string {
-  if (!hasFigureFence(markdown)) return markdown;
-  return collapseBlankLines(markdown.replace(figureFenceRe(), ""));
+  const rewritten = mapFigureRegions(markdown, (span) => span, () => "");
+  return rewritten === markdown ? markdown : collapseBlankLines(rewritten);
 }
 
 /** The markdown with every figure block replaced by its stand-in line: what a read-only prose call sees. */
 export function figureStandInMarkdown(markdown: string): string {
   if (!hasFigureFence(markdown)) return markdown;
-  const fences = findFigureFences(markdown);
-  let cursor = 0;
-  let out = "";
-  for (const fence of fences) {
-    out += markdown.slice(cursor, fence.start) + figureStandIn(fence.title);
-    cursor = fence.end;
-  }
-  out += markdown.slice(cursor);
-  return collapseBlankLines(out);
+  return collapseBlankLines(mapFigureRegions(markdown, (span) => span, (fence) => figureStandIn(fence.title)));
+}
+
+/**
+ * The markdown with every figure block and every stand-in line removed: what a
+ * per-page path may store. Only a composed chapter is written with the
+ * syntax, so a block in a page draft is a fabrication, and a stand-in is
+ * model-facing — a page writer shown one in a neighbour's excerpt may echo it.
+ */
+export function figureAndStandInFreeProse(markdown: string): string {
+  const prose = figureFreeProse(markdown);
+  const standIn = standInLineRe("gim");
+  if (!standIn.test(prose)) return prose;
+  standIn.lastIndex = 0;
+  return collapseBlankLines(prose.replace(standIn, ""));
+}
+
+/**
+ * A per-page model draft as the pipeline may use it: `figureAndStandInFreeProse` over its
+ * markdown, the same object when there was nothing to remove. Applied where
+ * the draft is parsed (`generatePageDraft`, `polishPageDraft`,
+ * `revisePageDraft`, the tools writer), so no review, audit or revision after
+ * it ever reads a figure a page writer invented.
+ */
+export function figureFreeDraft<Draft extends { markdown: string }>(draft: Draft): Draft {
+  const markdown = figureAndStandInFreeProse(draft.markdown);
+  return markdown === draft.markdown ? draft : { ...draft, markdown };
 }
 
 /** Readable words of the prose alone: a chart's JSON keys are not words the chapter wrote. */
@@ -147,7 +244,7 @@ export function stripFigureFences(markdown: string): { prose: string; fences: An
   return { prose: figureStandInMarkdown(markdown), fences };
 }
 
-function normalisedLine(text: string): string {
+export function normalisedFigureText(text: string): string {
   return text.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
@@ -192,17 +289,20 @@ function bestMatch(blocks: readonly string[], target: string): number {
  * Puts the figures back into prose a pass has rewritten. A stand-in the pass
  * kept is replaced where it stands; a figure whose stand-in is gone goes back
  * after the paragraph it followed, else before the one it preceded, else at
- * the end. Every stand-in line the pass echoed is removed, so nothing
- * model-facing reaches the manuscript. No figures: the prose comes back
- * byte for byte.
+ * the end. Every stand-in line the pass echoed is removed, and so is every
+ * fence the pass invented — the prose it was handed held stand-ins only, so a
+ * block in what came back is not one of ours, and an unrelated rewrite used
+ * to store the original beside the invention. Nothing model-facing reaches
+ * the manuscript. Prose with nothing to remove and nothing to put back comes
+ * back byte for byte.
  */
 export function reinsertFigureFences(prose: string, fences: readonly AnchoredFigureFence[]): string {
-  if (fences.length === 0) return prose;
-  const blocks = splitBlocks(prose);
+  if (fences.length === 0) return figureAndStandInFreeProse(prose);
+  const blocks = splitBlocks(figureFreeProse(prose));
   const pending: AnchoredFigureFence[] = [];
   for (const fence of fences) {
-    const key = normalisedLine(fence.standIn);
-    const at = blocks.findIndex((block) => isFigureStandIn(block) && normalisedLine(block) === key);
+    const key = normalisedFigureText(fence.standIn);
+    const at = blocks.findIndex((block) => isFigureStandIn(block) && normalisedFigureText(block) === key);
     if (at >= 0) {
       blocks[at] = fence.fence;
     } else {
@@ -232,12 +332,15 @@ export type FigureValidation = {
 };
 
 /**
- * Every figure block a chapter came back with, checked: an unreadable one is
- * removed, a valid one is re-serialised to its canonical single line with a
- * blank line on either side, and any beyond `max` is removed as over the
- * plan. A chapter whose blocks are already canonical comes back byte for byte.
+ * Every figure block a chapter came back with, checked: an unterminated or
+ * unreadable one is removed, a valid one whose kind is not the planned kind
+ * is removed when a kind was given, a valid one is re-serialised to its
+ * canonical single line with a blank line on either side, and any beyond
+ * `max` is removed as over the plan. A chapter whose blocks are already
+ * canonical comes back byte for byte. Chat rewrites pass `{ max: 1 }` with
+ * no kind and keep today's count-only behaviour.
  */
-export function validateFigureFences(markdown: string, options: { max: number }): FigureValidation {
+export function validateFigureFences(markdown: string, options: { max: number; kind?: FigureKind }): FigureValidation {
   const fences = findFigureFences(markdown);
   if (fences.length === 0) {
     return { markdown, kept: 0, dropped: [] };
@@ -251,8 +354,14 @@ export function validateFigureFences(markdown: string, options: { max: number })
     const parsed = fence.spec ? { spec: fence.spec } : parseFigureSpec(fence.body);
     const excerpt = fence.body.replace(/\s+/g, " ").trim().slice(0, 120);
     let replacement: string;
-    if (!parsed.spec) {
+    if (!fence.closed) {
+      dropped.push({ reason: "unterminated", excerpt });
+      replacement = "";
+    } else if (!parsed.spec) {
       dropped.push({ reason: parsed.error ?? "unreadable", excerpt });
+      replacement = "";
+    } else if (options.kind !== undefined && parsed.spec.kind !== options.kind) {
+      dropped.push({ reason: `planned ${options.kind}, got ${parsed.spec.kind}`, excerpt });
       replacement = "";
     } else if (kept >= options.max) {
       dropped.push({ reason: options.max === 0 ? "no figure was planned for this chapter" : "over the planned count", excerpt });
@@ -281,10 +390,8 @@ export function figureWordEquivalent(figure: FigureSpec | string): number {
   return Math.min(320, Math.max(100, Math.round((FIGURE_WORD_EQUIVALENT * layers) / 4)));
 }
 
-const FIGURE_WORDS =
-  /\b(?:chart|figure|graph|diagram|flowchart|plot|infographic)s?\b|نمودار|شکل|جدول|gráfic|graphique|diagramm|grafico|график|диаграмм|图表|图|グラフ|図|차트|그래프/iu;
-
-/** Whether a reader's edit request is about the figure itself, so a rewrite may change or drop it. */
-export function mentionsFigure(text: string): boolean {
-  return FIGURE_WORDS.test(text);
+/** The figures a page carries, parsed; the ones a request may name by title. */
+export function pageFigureSpecs(markdown: string): FigureSpec[] {
+  if (!hasFigureFence(markdown)) return [];
+  return findFigureFences(markdown).flatMap((fence) => (fence.spec ? [fence.spec] : []));
 }

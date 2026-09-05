@@ -355,6 +355,68 @@ describe("voice character helpers", () => {
     ]);
   });
 
+  it("shows neither pass a figure block a composed page carries, and keeps the prose around it", async () => {
+    const spec = { kind: "bar", title: "Carts by decade", categories: ["1500", "1510"], series: [{ name: "Carts", values: [120, 140] }], source: "The ledger" };
+    const fence = "```figure\n" + JSON.stringify(spec) + "\n```";
+    const before = "Lina counted the carts at the north gate while Captain Orlo read the ledger aloud.";
+    const after = "The towns felt the change first, Orlo said, and Lina wrote it down.";
+    const sent: string[] = [];
+    const textModel: TextModelAdapter = {
+      async generateText() {
+        return { text: "text", model: "recording-model", provider: "recording" };
+      },
+      async generateJson(options) {
+        sent.push(...options.messages.map((message) => message.content));
+        const data =
+          options.purpose === "extract-voice-character-candidates"
+            ? { characters: [] }
+            : {
+                personality: ["Curious"],
+                goals: ["Stay faithful to the book."],
+                relationships: [],
+                knownFacts: ["Known from supplied pages."],
+                speakingStyle: ["Conversational."],
+                spoilerBoundaries: ["Avoid later spoilers unless asked."],
+                greeting: "Hello.",
+                voiceProfile: { ageBand: "adult", genderPresentation: "neutral", energy: "medium", warmth: "medium", pace: "medium", formality: "balanced" }
+              };
+        return { data: options.schema.parse(data), text: JSON.stringify(data), model: "recording-model", provider: "recording" };
+      },
+      async *streamText() {
+        yield "stream";
+      },
+      generateWithTools: unsupportedGenerateWithTools
+    };
+    const leakedSummary = JSON.stringify(spec);
+    const pages = [{ index: 1, markdown: `${before}\n\n${fence}\n\n${after}`, summary: leakedSummary }];
+
+    // The fallback extraction: a story-like book whose plan names no characters.
+    await extractVoiceCharacterCandidates({ input, plan: { ...plan, characters: [] }, pages, textModel });
+    await buildVoiceCharacterPersona({ input, plan, candidate: candidatesFromPlanCharacters(input, plan)[0]!, pages, textModel });
+
+    expect(sent.length).toBeGreaterThanOrEqual(2);
+    const pageChunks = sent
+      .filter((content) => content.includes("pageChunk"))
+      .flatMap(
+        (content) =>
+          (JSON.parse(content) as { pageChunk: { pages: Array<{ excerpt: string; summary: string }> } }).pageChunk
+            .pages
+      );
+    expect(pageChunks.length).toBeGreaterThanOrEqual(2);
+    for (const page of pageChunks) {
+      expect(page.excerpt).toBe(`${before} ${after}`);
+      expect(page.summary).not.toContain("```figure");
+      expect(page.summary).not.toContain('"kind"');
+      expect(page.summary).not.toContain("Carts by decade");
+    }
+    for (const content of sent) {
+      expect(content).not.toContain("```figure");
+      expect(content).not.toContain("Carts by decade");
+      expect(content).not.toContain('"kind"');
+      expect(content).not.toContain("[Figure:");
+    }
+  });
+
   it("splits long voice page context without clipping text", async () => {
     const pageChunks: Array<{
       index: number;
@@ -561,6 +623,81 @@ describe("voice character helpers", () => {
       // One sentence names Parsa; the three after it are about someone else.
       // Carrying his name forward handed him all of their pronouns.
       expect(refine("unknown")).toBe("unknown");
+    });
+
+    it("reads no evidence out of a figure block, however it names the character", () => {
+      // A chart on the page: its series, labels and caption name Parsa with
+      // the opposite pronouns to the prose. The block is not prose about him.
+      const fence =
+        "```figure\n" +
+        JSON.stringify({
+          kind: "bar",
+          title: "Parsa and her sisters",
+          categories: ["Parsa said she was calm", "Parsa knew she was right", "Parsa took her coat"],
+          series: [{ name: "Parsa, she and her", values: [1, 2, 3] }],
+          source: "Parsa: she said her ledger was her own",
+          caption: "Parsa said she was calm; she and her sister agreed."
+        }) +
+        "\n```";
+      const prose = "Parsa said he was calm. Parsa knew he was right. Parsa took his coat.";
+      const candidate = {
+        name: "Parsa",
+        role: "Master",
+        description: "Someone.",
+        traits: [],
+        visualRules: [],
+        source: "PLAN" as const,
+        voiceProfile: {
+          ageBand: "adult" as const,
+          genderPresentation: "unknown" as const,
+          energy: "medium" as const,
+          warmth: "medium" as const,
+          pace: "medium" as const,
+          formality: "balanced" as const
+        }
+      };
+      const inferred = (markdown: string) =>
+        refineVoiceCharacterCandidatesWithPageSamples([candidate], [{ index: 1, title: "One", summary: "", markdown }])[0]!
+          .voiceProfile.genderPresentation;
+      expect(inferred(`${prose}\n\n${fence}\n\nThe towns felt it first.`)).toBe("masculine");
+      expect(inferred(`${prose}\n\n${fence}\n\nThe towns felt it first.`)).toBe(inferred(`${prose}\n\nThe towns felt it first.`));
+      // The block alone fills in nothing.
+      expect(inferred(`The clerks counted the carts.\n\n${fence}`)).toBe("unknown");
+    });
+
+    it("reads no evidence out of leaked feminine figure JSON in a page summary", () => {
+      const leakedSummary = JSON.stringify({
+        kind: "bar",
+        title: "Parsa and her sisters",
+        categories: ["Parsa said she was calm", "Parsa knew she was right", "Parsa took her coat"],
+        series: [{ name: "Parsa, she and her", values: [1, 2, 3] }],
+        source: "Parsa: she said her ledger was her own",
+        caption: "Parsa said she was calm; she and her sister agreed."
+      });
+      const prose = "Parsa said he was calm. Parsa knew he was right. Parsa took his coat.";
+      const candidate = {
+        name: "Parsa",
+        role: "Master",
+        description: "Someone.",
+        traits: [],
+        visualRules: [],
+        source: "PLAN" as const,
+        voiceProfile: {
+          ageBand: "adult" as const,
+          genderPresentation: "unknown" as const,
+          energy: "medium" as const,
+          warmth: "medium" as const,
+          pace: "medium" as const,
+          formality: "balanced" as const
+        }
+      };
+      const inferred = (markdown: string, summary: string) =>
+        refineVoiceCharacterCandidatesWithPageSamples([candidate], [{ index: 1, title: "One", summary, markdown }])[0]!
+          .voiceProfile.genderPresentation;
+      expect(inferred(prose, leakedSummary)).toBe("masculine");
+      expect(inferred(prose, leakedSummary)).toBe(inferred(prose, ""));
+      expect(inferred("", leakedSummary)).toBe("unknown");
+      expect(inferred("", leakedSummary)).not.toBe("feminine");
     });
   });
 

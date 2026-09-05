@@ -106,6 +106,43 @@ describe("createReaderChaptersForExport", () => {
     }
   });
 
+  it("counts a code listing as page text toward chapterization and a figure block as none", async () => {
+    // Eight pages of forty words is well under the word threshold; what the
+    // fenced blocks hold decides whether the model is asked at all.
+    const prose = Array.from({ length: 40 }, (_, wordIndex) => `word-${wordIndex}`).join(" ");
+    const listing = "```python\n" + Array.from({ length: 220 }, (_, index) => `total = total + ${index}`).join("\n") + "\n```";
+    const figure =
+      "```figure\n" +
+      JSON.stringify({
+        kind: "bar",
+        title: "A chart",
+        categories: Array.from({ length: 16 }, (_, index) => `category number ${index} with several words in its label`),
+        series: [{ name: "Series", values: Array.from({ length: 16 }, (_, index) => index) }],
+        source: "A source with a good many words in it so the block is not short",
+        caption: "A caption with a good many words in it so the block is not short either"
+      }) +
+      "\n```";
+    const pagesWith = (block: string): MarkdownPage[] =>
+      Array.from({ length: 8 }, (_, index) => ({
+        index: index + 1,
+        title: `Page ${index + 1}`,
+        summary: `Summary ${index + 1}.`,
+        markdown: `${prose}\n\n${block}\n\n${prose}`
+      }));
+    const input = inputForPages(8);
+
+    const withFigures = new ThrowingTextModel();
+    const { chapters } = await createReaderChaptersForExport({ input, plan: makeFallbackPlan(input), pages: pagesWith(figure), textModel: withFigures });
+    expect(withFigures.calls).toBe(0);
+    expect(chapters).toEqual([]);
+
+    const withListings = new StaticJsonTextModel({ chapters: [] });
+    await createReaderChaptersForExport({ input, plan: makeFallbackPlan(input), pages: pagesWith(listing), textModel: withListings });
+    expect(withListings.calls).toBe(1);
+    // And the excerpt the model is shown keeps the listing's text.
+    expect(String(withListings.lastPayload)).toContain("total = total + 0");
+  });
+
   it("does not chapterize short manuscripts", async () => {
     const input = inputForPages(4);
     const textModel = new ThrowingTextModel();
@@ -200,6 +237,8 @@ describe("readerChapterFingerprint", () => {
 
 class StaticJsonTextModel implements TextModelAdapter {
   calls = 0;
+  /** The user payload of the last JSON call, for a test that reads what the model was shown. */
+  lastPayload: unknown;
 
   constructor(private readonly data: unknown) {}
 
@@ -213,6 +252,7 @@ class StaticJsonTextModel implements TextModelAdapter {
 
   async generateJson<T>(options: GenerateJsonOptions<T>): Promise<JsonResult<T>> {
     this.calls += 1;
+    this.lastPayload = options.messages.map((message) => message.content).join("\n");
     const data = options.schema.parse(this.data);
     return {
       data,

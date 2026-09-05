@@ -1,5 +1,8 @@
 import { z } from "zod";
 import { isRecord, numberField, stringArrayField, stringField, booleanField, arrayField, unwrapJsonObject } from "./jsonCoercion.js";
+import { summaryFromMarkdown } from "../pageSummary.js";
+
+export { summaryFromMarkdown } from "../pageSummary.js";
 
 /**
  * Page and QA schemas. The project-input cluster lives in mediaSettings.ts and
@@ -20,29 +23,6 @@ export const GROUNDING_STATUSES = [
 
 export type GroundingStatus = (typeof GROUNDING_STATUSES)[number];
 
-function summaryFromMarkdown(markdown: string | undefined): string {
-  if (!markdown) {
-    return "";
-  }
-
-  const plain = markdown
-    .replace(/!\[[^\]]*]\([^)]+\)/g, "")
-    .replace(/\[([^\]]+)]\([^)]+\)/g, "$1")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/[*_`>#]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (plain.length <= 240) {
-    return plain;
-  }
-
-  const clipped = plain.slice(0, 240);
-  const lastSpace = clipped.lastIndexOf(" ");
-  const end = lastSpace > 160 ? lastSpace : 240;
-  return `${clipped.slice(0, end).trim()}...`;
-}
-
 function normalizePageDraft(value: unknown): unknown {
   const unwrapped = unwrapJsonObject(["pageDraft", "draft", "page", "data", "result"])(value);
   if (!isRecord(unwrapped)) {
@@ -51,13 +31,13 @@ function normalizePageDraft(value: unknown): unknown {
 
   const title = stringField(unwrapped, ["title", "pageTitle", "heading"]);
   const markdown = stringField(unwrapped, ["markdown", "body", "content", "text", "pageMarkdown"]);
-  const summary = stringField(unwrapped, ["summary", "synopsis", "pageSummary"]);
+  const providedSummary = stringField(unwrapped, ["summary", "synopsis", "pageSummary"]);
   const imagePrompt = stringField(unwrapped, ["imagePrompt", "illustrationPrompt", "visualPrompt"]);
 
   return {
     title,
     markdown,
-    summary: summary ?? summaryFromMarkdown(markdown),
+    summary: providedSummary ?? summaryFromMarkdown(markdown),
     continuityNotes: stringArrayField(unwrapped, ["continuityNotes", "continuity"]) ?? [],
     ...(imagePrompt ? { imagePrompt } : {})
   };

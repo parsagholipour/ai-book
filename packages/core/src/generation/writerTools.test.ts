@@ -397,6 +397,49 @@ describe("generatePageDraftWithWriterTools", () => {
     expect(lookupStoredPage).toHaveBeenCalledWith(5);
   });
 
+  it("hands the model a stored page's figure as its stand-in line, never the block", async () => {
+    const fence =
+      "```figure\n" +
+      JSON.stringify({ kind: "bar", title: "Carts by decade", categories: ["1500", "1510"], series: [{ name: "Carts", values: [120, 140] }], source: "The ledger" }) +
+      "\n```";
+    const storedPage = {
+      index: 5,
+      title: "Carts",
+      markdown: `The clerks counted the carts.\n\n${fence}\n\nThe towns felt it first.`,
+      summary: '{"kind":"bar","title":"Carts by decade","categories":["1500","1510"]}'
+    };
+    const lookupStoredPage = vi.fn(async (pageIndex: number) => (pageIndex === 5 ? storedPage : null));
+    await generatePageDraftWithWriterTools({
+      ...draftOptions({
+        lookupStoredPage,
+        pageIndex: 10,
+        previousPages: [
+          {
+            index: 1,
+            title: "The Checkpoint",
+            markdown: "At the checkpoint, Jack showed the guard the cracked seal.",
+            summary: "Jack passes the checkpoint by refusing to hide the seal."
+          }
+        ]
+      }),
+      storyState,
+      fallback: async () => {
+        throw new Error("fallback should not run");
+      }
+    });
+
+    const lookupPage = toolFromLoop("lookup_page");
+    const result = (await lookupPage?.execute({ pageIndex: 5 })) as { excerpt: string; summary: string };
+    expect(result).toEqual({
+      index: 5,
+      title: storedPage.title,
+      summary: "The clerks counted the carts. The towns felt it first.",
+      excerpt: "The clerks counted the carts.\n\n[Figure: Carts by decade]\n\nThe towns felt it first."
+    });
+    expect(result.excerpt).not.toContain("```figure");
+    expect(result.summary).not.toMatch(/"kind"|```figure/);
+  });
+
   it("executes search_memory against the injected callback", async () => {
     const searchStoredMemory = vi.fn(async () => ["Page 4: …"]);
     await generatePageDraftWithWriterTools({

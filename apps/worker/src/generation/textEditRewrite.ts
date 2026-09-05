@@ -1,10 +1,5 @@
 import {
   applyExactReplacement,
-  hasFigureFence,
-  mentionsFigure,
-  reinsertFigureFences,
-  stripFigureFences,
-  validateFigureFences,
   type BookGenerationStrategy,
   type BookPlan,
   type CreateProjectInput,
@@ -17,6 +12,7 @@ import {
 import { prisma } from "@book-maker/db";
 
 import { parseChapterBrief, styleExcerptsForPage, toPriorPageContext } from "./bookHelpers.js";
+import { pageFigureRewrite } from "./composedFigures.js";
 import { loadContinuityNotes } from "./generationContext.js";
 import {
   reviewPageWithQualityGates,
@@ -149,9 +145,14 @@ export async function rewritePageForUserRequest(options: {
   const pageEditGuidance = options.pageEditGuidance?.trim();
   // A figure block is kept out of a rewrite that is not about it: the model
   // sees a stand-in and the block goes back beside the paragraph it followed.
-  // A request that names the figure sees the block and may change or drop it.
-  const figuresAside = hasFigureFence(options.page.markdown) && !mentionsFigure(editInstruction) ? stripFigureFences(options.page.markdown) : undefined;
-  const pageMarkdown = figuresAside ? figuresAside.prose : options.page.markdown;
+  // A request that names the figure sees the block and may change or drop it —
+  // the one per-page call whose drafts keep a figure (`figures: "keep"`, on
+  // this revise and on every revise the loop below spends). A held-aside
+  // rewrite passes `figures: "hold"` so later revises and reviews still see
+  // the stand-in (invented fences are stripped). A page that never had a figure
+  // omits the key and comes back figure-free. `pageFigureRewrite` decides and
+  // restores so this path and the replan adherence revise cannot spell it twice.
+  const rewrite = pageFigureRewrite(options.page.markdown, editInstruction);
   const report: PageQualityReport = {
     approved: false,
     score: 50,
@@ -164,7 +165,7 @@ export async function rewritePageForUserRequest(options: {
       "Revise the existing page to satisfy the user's requested edit.",
       "Keep the same page role and overall book structure unless the request explicitly requires otherwise.",
       "Return a complete replacement page draft, not a diff.",
-      ...(hasFigureFence(options.page.markdown) && !figuresAside ? [FIGURE_REWRITE_RULE] : [])
+      ...(rewrite.keep ? [FIGURE_REWRITE_RULE] : [])
     ],
     notes: "User-requested book edit.",
     groundedOk: true,
@@ -192,7 +193,7 @@ export async function rewritePageForUserRequest(options: {
       pageIndex: options.page.index,
       draft: {
         title: options.page.title,
-        markdown: pageMarkdown,
+        markdown: rewrite.prose,
         summary: options.page.summary,
         imagePrompt: options.page.imagePrompt ?? undefined,
         continuityNotes: []
@@ -202,6 +203,7 @@ export async function rewritePageForUserRequest(options: {
       ...(options.characterContext ? { characterContext: options.characterContext } : {}),
       ...(pageEditGuidance ? { pageEditGuidance } : {}),
       ...(options.adherenceRepair?.length ? { adherenceRepair: options.adherenceRepair } : {}),
+      ...(rewrite.figures ? { figures: rewrite.figures } : {}),
       previousPages: priorPageContext,
       continuityNotes,
       textModel: options.providers.text,
@@ -256,15 +258,18 @@ export async function rewritePageForUserRequest(options: {
     userRequest: editInstruction,
     ...(options.characterContext ? { characterContext: options.characterContext } : {}),
     ...(pageEditGuidance ? { pageEditGuidance } : {}),
+    ...(rewrite.figures ? { figures: rewrite.figures } : {}),
     ...(styleExcerpts.length > 0 ? { styleExcerpts } : {}),
     onRewrite: async () => {
       await options.onPhase?.("draft");
     }
   });
-  const markdown = figuresAside
-    ? reinsertFigureFences(outcome.draft.markdown, figuresAside.fences)
-    : validateFigureFences(outcome.draft.markdown, { max: 1 }).markdown;
-  return { ...outcome.draft, markdown, qualityReport: outcome.report };
+  // The page's own block goes back where it was (and a block the model
+  // invented beside it is dropped by the reinsert); a rewrite that named the
+  // figure keeps at most the one it returned; a held-aside rewrite still has
+  // its stand-in until restore; a page that never had a figure is already
+  // figure-free from core. `pageFigureRewrite.restore` is all three.
+  return { ...rewrite.restore(outcome.draft), qualityReport: outcome.report };
 }
 
 /**

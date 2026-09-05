@@ -64,6 +64,7 @@ import {
 import { prepareBookMaterial } from "./composedChaptersMaterial.js";
 import { finalizePendingPages } from "./composedChaptersFinalize.js";
 import { validateComposedChapterFigures } from "./composedFigures.js";
+import type { RunLogger } from "../providers/runLogging.js";
 import { Prisma, prisma } from "@book-maker/db";
 import { maybeEnqueueCompile, maybeEnqueueCover } from "../runtime/dispatch.js";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
@@ -120,8 +121,10 @@ export async function generateBookComposedChapters(options: {
   generationJobId?: string | undefined;
   /** A judge from another model family; with one, every chapter is drafted twice and chosen. */
   judgeTextModel?: TextModelAdapter | undefined;
+  /** The job's run log, for the events a rerun is measured from; the provider calls log through their own decorators. */
+  runLog?: Pick<RunLogger, "append">;
 }): Promise<void> {
-  const { projectId, planId, input, providers, strategy, generationJobId, judgeTextModel } = options;
+  const { projectId, planId, input, providers, strategy, generationJobId, judgeTextModel, runLog } = options;
   let plan = options.plan;
   const textModel = providers.text;
   const quality = await loadQualityContext(input);
@@ -595,30 +598,41 @@ export async function generateBookComposedChapters(options: {
         );
       }
     }
+    const composition = compositionFor(setup);
+    const planned = plannedFigures(composition);
+    // The figure blocks the writer returned, checked against the plan: an
+    // unreadable one is dropped, one beyond the planned count is dropped, a
+    // kept one is re-serialised to its canonical line. The same check on
+    // every compose candidate, so best-of never scores raw fences: judging
+    // is prose rhythm, so it sees the stand-in, not the JSON, and only after
+    // those drops.
+    const figureOptions = {
+      planned: planned.length,
+      ...(planned[0] ? { kind: planned[0].kind } : {}),
+      projectId,
+      chapterIndex: setup.chapter.index,
+      ...(runLog ? { runLog } : {})
+    };
+    const markdowns =
+      judgeTextModel && candidates.length === 2
+        ? candidates.map((candidate) => candidate.markdown)
+        : [draft.markdown];
+    const validated = await Promise.all(
+      markdowns.map((markdown) => validateComposedChapterFigures({ ...figureOptions, markdown }))
+    );
     if (judgeTextModel && candidates.length === 2) {
       const verdict = await judgeChapterDrafts({
         input,
         plan,
         chapter: setup.chapter,
-        drafts: candidates.map((candidate) => candidate.markdown),
+        drafts: validated.map(figureStandInMarkdown),
         judge: judgeTextModel
       });
-      draft = candidates[verdict.pick] ?? draft;
+      draft = { ...(candidates[verdict.pick] ?? draft), markdown: validated[verdict.pick] ?? validated[0]! };
       bestOfVerdicts.set(setup.chapter.index, verdict);
+    } else {
+      draft = { ...draft, markdown: validated[0]! };
     }
-    const composition = compositionFor(setup);
-    // The figure blocks the writer returned, checked against the plan: an
-    // unreadable one is dropped, one beyond the planned count is dropped, a
-    // kept one is re-serialised to its canonical line.
-    draft = {
-      ...draft,
-      markdown: validateComposedChapterFigures({
-        markdown: draft.markdown,
-        planned: plannedFigures(composition).length,
-        projectId,
-        chapterIndex: setup.chapter.index
-      })
-    };
     drafts.set(setup.chapter.index, draft.markdown);
     // Subjects only: the through-line reached the next chapter's writer through
     // this digest and was quoted there.
