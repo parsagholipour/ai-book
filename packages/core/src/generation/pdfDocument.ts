@@ -5,6 +5,7 @@ import type { PDFOptions } from "puppeteer";
 import { defaultConfig } from "md-to-pdf/dist/lib/config.js";
 import { getHtml } from "md-to-pdf/dist/lib/get-html.js";
 import type { ScriptProfile } from "../prompting/script.js";
+import { retagColorlessCodeFences } from "./retagColorlessCodeFences.js";
 import {
   appendBookPageAnchorLinkNav,
   neutralizeRenderedReservedIds,
@@ -130,7 +131,7 @@ export async function buildBookPdfDocument(options: BookPdfDocumentOptions): Pro
     // then plant the real chapter's id behind a copy Chrome resolves first.
     neutralizeRenderedReservedIds(
       stripEmbeddedDocuments(
-        getHtml(options.markdown, {
+        getHtml(retagColorlessCodeFences(options.markdown), {
           ...defaultConfig,
           document_title: "",
           body_class: []

@@ -3,8 +3,13 @@ import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
 /**
  * How a book about code fences its code. The first algorithms book tagged
  * every fence `text` and indented the rest, so highlight.js — which keys on
- * the fence's language name and is wired for the PDF only — coloured
- * nothing. Shown only to a book about code, so no other book's prompt moves.
+ * the fence's language name — coloured nothing. Shown only to a book about
+ * code, so no other book's prompt moves.
+ *
+ * The prompt is not the lock: the last 8-page algorithms book used the
+ * whole-book writer, which never saw these lines, and still wrote `text`.
+ * `retagColorlessCodeFences` remaps those tags before the PDF and EPUB
+ * render, so colour does not depend on the model obeying.
  */
 
 const CODE_CUE =

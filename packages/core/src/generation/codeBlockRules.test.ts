@@ -30,5 +30,6 @@ describe("codeBlockRules", () => {
     const [rule] = codeBlockRules(algorithms, makeFallbackPlan(algorithms));
     expect(rule).toContain("never tag a code block text");
     expect(rule).toContain("never indented with spaces");
+    expect(rule).toContain("tag pseudocode as pseudocode");
   });
 });

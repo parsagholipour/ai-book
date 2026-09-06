@@ -18,6 +18,7 @@ import {
   type PageDraft,
   type PageProductionBeat
 } from "../schemas/book.js";
+import { codeBlockRules } from "./codeBlockRules.js";
 import { figureFreeDraft } from "./figures/figureBlocks.js";
 import { finalizePageDraft, pageDraftSummary } from "./figures/figureDraftSummary.js";
 import { buildPageDraftMessages, pageDraftImagePromptGuidance } from "./pageDraftMessages.js";
@@ -282,7 +283,8 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
           ...evidenceLedgerRules(options.input, options.plan, "writer"),
           ...opening.rules,
           ...targetLanguageGenerationGuidance(options.input.language),
-          ...writerToneRules(options.input)
+          ...writerToneRules(options.input),
+          ...codeBlockRules(options.input, options.plan)
         ].join(" ")
       },
       {
@@ -362,7 +364,8 @@ export async function generateChapterDraft(options: GenerateChapterDraftOptions)
           ...evidenceLedgerRules(options.input, options.plan, "writer"),
           ...opening.rules,
           ...targetLanguageGenerationGuidance(options.input.language),
-          ...writerToneRules(options.input)
+          ...writerToneRules(options.input),
+          ...codeBlockRules(options.input, options.plan)
         ].join(" ")
       },
       {
@@ -440,7 +443,8 @@ export async function generateBatchDraft(options: GenerateBatchDraftOptions): Pr
           ...evidenceLedgerRules(options.input, options.plan, "writer"),
           ...opening.rules,
           ...targetLanguageGenerationGuidance(options.input.language),
-          ...writerToneRules(options.input)
+          ...writerToneRules(options.input),
+          ...codeBlockRules(options.input, options.plan)
         ].join(" ")
       },
       {
@@ -543,7 +547,8 @@ export async function polishPageDraft(options: PolishPageOptions): Promise<PageD
           ...evidenceLedgerRules(options.input, options.plan, "writer"),
           ...pageDraftImagePromptGuidance(options.input, options.pageIndex),
           ...targetLanguageGenerationGuidance(options.input.language),
-          ...writerToneRules(options.input)
+          ...writerToneRules(options.input),
+          ...codeBlockRules(options.input, options.plan)
         ].join(" ")
       },
       {

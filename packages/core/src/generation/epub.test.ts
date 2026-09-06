@@ -438,16 +438,51 @@ describe("generateBookEpub", () => {
     const chapter = await zip.file("OEBPS/chapter-1.xhtml")!.async("string");
     expect(chapter).toContain('xml:lang="fa"');
     expect(chapter).toContain('dir="rtl"');
-    expect(chapter).toContain('<pre dir="ltr"><code dir="ltr">');
+    expect(chapter).toMatch(/<pre dir="ltr"><code dir="ltr"[^>]*>/);
+    expect(chapter).toMatch(/<span class="hljs-keyword">/);
 
     const nav = await zip.file("OEBPS/nav.xhtml")!.async("string");
     expect(nav).toContain("<h1>\u0641\u0647\u0631\u0633\u062a</h1>");
 
     const css = await zip.file("OEBPS/styles.css")!.async("string");
+    expect(css).toContain(".hljs-keyword");
     expect(css).not.toContain("direction:");
     expect(css).not.toContain("unicode-bidi:");
     // No italic face exists, so Chrome must not be allowed to fake one.
     expect(css).toContain("font-style: normal");
+  });
+
+  it("colours a text-tagged listing that is code, the way the last algorithms book was stored", async () => {
+    // Algorithms That Still Matter (cmtplwqsl00112ttar0r24dvs) wrote both
+    // listings as ```text. highlight.js maps that to plaintext, so the EPUB
+    // printed a monochrome block even though the highlighter was wired.
+    const zip = await JSZip.loadAsync(
+      await generateBookEpub(
+        [
+          "# Algorithms",
+          "",
+          "```text",
+          "while left < right:",
+          "    middle = left + (right - left) // 2",
+          "    if values[middle] < target:",
+          "        left = middle + 1",
+          "    else:",
+          "        right = middle",
+          "```"
+        ].join("\n"),
+        {
+          title: "Algorithms",
+          language: "en",
+          imageStorageDir,
+          publicApiUrl: "http://localhost:4001"
+        }
+      )
+    );
+
+    const chapter = await zip.file("OEBPS/chapter-1.xhtml")!.async("string");
+    expect(chapter).toMatch(/<span class="hljs-keyword">/);
+    expect(chapter).toMatch(/class="hljs python"/);
+    expect(chapter).not.toMatch(/class="hljs text"/);
   });
 
   it("reads a stored code as readily as a stored label", async () => {

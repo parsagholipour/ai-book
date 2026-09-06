@@ -5,8 +5,10 @@ import JSZip from "jszip";
 import { marked } from "marked";
 import { scriptProfileForLanguage, type ScriptProfile } from "../prompting/script.js";
 import { imageMarkdownRe, resolveBookImageAsset } from "./bookImageAssets.js";
+import { highlightHtmlCodeBlocks } from "./highlightHtmlCodeBlocks.js";
 import { markdownLabels } from "./markdown.js";
-import { stripEmbeddedDocuments } from "./pdfDocument.js";
+import { retagColorlessCodeFences } from "./retagColorlessCodeFences.js";
+import { bookPdfBaseStylesheetPaths, stripEmbeddedDocuments } from "./pdfDocument.js";
 import { expandFigureFences } from "./figures/figureHtml.js";
 
 const MIME_BY_EXT: Record<string, string> = {
@@ -134,7 +136,7 @@ export async function generateBookEpub(markdown: string, options: GenerateBookEp
   </rootfiles>
 </container>`
   );
-  zip.file("OEBPS/styles.css", epubCss(profile));
+  zip.file("OEBPS/styles.css", `${epubCss(profile)}\n${await readFile(bookPdfBaseStylesheetPaths().highlightCss, "utf8")}`);
   zip.file(
     "OEBPS/nav.xhtml",
     navXhtml(
@@ -323,12 +325,15 @@ function takeTrailingChapterOpener(lines: string[]): string[] {
 }
 
 async function renderMarkdownToXhtml(markdown: string, language: string | undefined): Promise<string> {
-  const html = await marked.parse(expandFigureFences(markdown, { language }), { async: true, gfm: true });
+  const html = await marked.parse(expandFigureFences(retagColorlessCodeFences(markdown), { language }), {
+    async: true,
+    gfm: true
+  });
   // The same active markup the PDF drops. Nothing here renders on this machine,
   // so there is no server file to disclose — it is the reader's device that
   // would resolve an iframe or execute an event/URL attribute shipped inside a
   // book they opened.
-  return toXhtml(stripEmbeddedDocuments(html));
+  return toXhtml(stripEmbeddedDocuments(highlightHtmlCodeBlocks(html)));
 }
 
 /** Self-closes void elements so the output parses as XHTML. */

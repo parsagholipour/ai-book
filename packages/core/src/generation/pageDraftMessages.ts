@@ -9,6 +9,7 @@ import {
   kidsReadingGuidancePayload
 } from "../prompting/readingLevel.js";
 import type { CreateProjectInput } from "../schemas/book.js";
+import { codeBlockRules } from "./codeBlockRules.js";
 import { evidenceLedgerRules } from "./evidenceLedger.js";
 import { pageGetsInteriorIllustration } from "./illustrationSlots.js";
 import {
@@ -168,6 +169,7 @@ export function buildPageDraftSystemContent(
     ...pageDraftImagePromptGuidance(options.input, options.pageIndex),
     ...targetLanguageGenerationGuidance(options.input.language),
     ...writerToneRules(options.input),
+    ...codeBlockRules(options.input, options.plan),
     ...extraSystemLines
   ].join(" ");
 }

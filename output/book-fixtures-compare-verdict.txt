@@ -1,0 +1,18 @@
+Typography compare 2026-09-06
+HEAD 74ec564c5639 vs working tree (colourless-fence retag before getHtml)
+
+poppler: pdfinfo + pdftoppm present
+exit codes: baseline 0, working-tree 0, compare 0
+
+cjk                  4p  worst page 0 0.0000%  identical
+cover-first          3p  worst page 0 0.0000%  identical
+fifteen-chapters     8p  worst page 0 0.0000%  identical
+figures              5p  worst page 0 0.0000%  identical
+illustrated-en      16p  worst page 0 0.0000%  identical
+persian-rtl          6p  worst page 0 0.0000%  identical
+rich-blocks          2p  worst page 0 0.0000%  identical
+text-only-en         4p  worst page 0 0.0000%  identical
+title-page-en        3p  worst page 0 0.0000%  identical
+
+OK: no layout drift
+No PAGE COUNT / PAGE SIZE drift. Digests and pdf.test.ts page counts should not change.

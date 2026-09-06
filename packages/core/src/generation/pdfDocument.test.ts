@@ -72,6 +72,43 @@ describe("buildBookPdfDocument", () => {
     expect(html).toContain('class="hljs js"');
   });
 
+  it("colours a text-tagged listing that is code, the way the last algorithms book was stored", async () => {
+    // Algorithms That Still Matter (cmtplwqsl00112ttar0r24dvs) wrote both
+    // listings as ```text. highlight.js maps that to plaintext, so the PDF
+    // printed a monochrome block even though the highlighter was wired.
+    const html = await buildBookPdfDocument({
+      markdown: [
+        "# Algorithms",
+        "",
+        "```text",
+        "while left < right:",
+        "    middle = left + (right - left) // 2",
+        "    if values[middle] < target:",
+        "        left = middle + 1",
+        "    else:",
+        "        right = middle",
+        "```"
+      ].join("\n"),
+      css: "",
+      profile: latin
+    });
+
+    expect(html).toMatch(/<span class="hljs-keyword">/);
+    expect(html).toMatch(/class="hljs python"/);
+    expect(html).not.toMatch(/class="hljs text"/);
+  });
+
+  it("leaves a text-tagged letter as plaintext", async () => {
+    const html = await buildBookPdfDocument({
+      markdown: "# Letters\n\n```text\nDear committee,\nThank you for your letter of 12 June.\n```",
+      css: "",
+      profile: latin
+    });
+
+    expect(html).not.toMatch(/<span class="hljs-keyword">/);
+    expect(html).toMatch(/class="hljs text"/);
+  });
+
   it("leaves an English document's html tag bare, as md-to-pdf did", async () => {
     const html = await buildBookPdfDocument({ markdown: "Text.", css: "", profile: latin });
 

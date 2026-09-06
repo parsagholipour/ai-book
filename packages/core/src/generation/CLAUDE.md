@@ -211,11 +211,16 @@ holds the event loop open and vitest will never exit.
   diagram, labels keep their words whole, a node's edges are spread along its side, an edge
   that skips a layer bows out past the column it would otherwise run through, `svgOpen` takes the
   sheet width rather than patching the viewBox string, and a chain taller than an A4 content block
-  is capped (`MAX_FLOW_HEIGHT` 720) with nodes scaled to fit. The same book tagged every
+  is capped (`MAX_FLOW_HEIGHT` 720) with nodes scaled to fit.   The same book tagged every
   code fence `text` and indented the rest, so highlight.js — which keys on the fence's language name
-  and is wired for the PDF only — coloured nothing; `codeBlockRules` in `composedChapter.ts` tells
-  a book about code (`bookMentionsCode`, a cue over the prompt and plan) to tag fences with the
-  language, and the editor is told to return a draft's fences byte for byte. Every call after the compose reads a stand-in line or nothing
+  — coloured nothing; `codeBlockRules` tells every writer of a book about code (`bookMentionsCode`,
+  a cue over the prompt and plan) to tag real code with a language name and tag
+  pseudocode as `pseudocode`, and the composed editor is told
+  to return a draft's fences byte for byte. That prompt is not the lock: an 8-page algorithms book
+  used the whole-book writer, which had never seen the rule, and still wrote `text`.
+  `retagColorlessCodeFences` (`retagColorlessCodeFences.ts`) remaps only a colourless tag such as `text` or an empty tag whose body looks
+  like code before the PDF and EPUB render, so colour does not depend on the model obeying; an
+  explicit `pseudocode` fence stays plaintext. Every call after the compose reads a stand-in line or nothing
   (`figureStandInMarkdown`, `figureFreeProse` in `figures/figureBlocks.ts`) and the block goes back
   beside the paragraph it followed (`reinsertFigureFences`); that includes every prior-page excerpt
   a page prompt is shown (`compactPriorPages`, `pinStyleExcerpts` in `pagesShared.ts`; summaries in that compact go through `pageDraftSummary`) and every

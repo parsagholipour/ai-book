@@ -18,6 +18,7 @@ import type {
   PageQualityReport
 } from "../schemas/book.js";
 import { finalBookQaSchema, pageDraftSchema, pageQualityReportSchema } from "../schemas/book.js";
+import { codeBlockRules } from "./codeBlockRules.js";
 import { figureFreeDraft, figureFreeProse, figureStandInMarkdown } from "./figures/figureBlocks.js";
 import { finalizePageDraft } from "./figures/figureDraftSummary.js";
 import {
@@ -506,7 +507,8 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
           "The current pageBrief is authoritative for its historical assignment; source-identity requirements are governed only by researchNotes and the citation rule. Do not import futureChapterPageBriefs or later chapter keyBeats unless they are explicitly assigned to this page.",
           IMAGE_PROMPT_CHARACTER_RULE,
           ...targetLanguageGenerationGuidance(options.input.language),
-          ...writerToneRules(options.input)
+          ...writerToneRules(options.input),
+          ...codeBlockRules(options.input, options.plan)
         ].join(" ")
       },
       {
