@@ -25,7 +25,7 @@ import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
  */
 export const REWRITE_COUPLETS_PURPOSE = "rewrite-couplets";
 
-export const COUPLET_MAX_PAIRS_PER_CHAPTER = 18;
+export const COUPLET_MAX_PAIRS_PER_CHAPTER = 12;
 const FIRST_MAX_WORDS = 18;
 const SECOND_MAX_WORDS = 22;
 /** The assert-then-retract pair runs longer than the classic couplet on both sides. */
@@ -57,7 +57,8 @@ export type Couplet = {
   second: string;
 };
 
-function splitSentences(paragraph: string): string[] {
+/** The couplet detector's own sentence split, shared with `disclaimerCap.ts`; named apart from `proseMeasurements`' export. */
+export function splitCoupletSentences(paragraph: string): string[] {
   return paragraph
     .split(/(?<=[.!?][”"’')\]]?)\s+(?=[A-Z“"‘'([])/)
     .map((sentence) => sentence.trim())
@@ -97,7 +98,7 @@ export function findCouplets(markdown: string): Couplet[] {
   const paragraphs = markdown.split(/\n\s*\n/);
   paragraphs.forEach((paragraph, index) => {
     if (/^\s*(?:#|>|[-*]\s|\d+\.\s|```)/.test(paragraph)) return;
-    const sentences = splitSentences(paragraph);
+    const sentences = splitCoupletSentences(paragraph);
     const push = (kind: CoupletKind, text: string, first: string, second: string) => {
       couplets.push({ id: `c${couplets.length + 1}`, paragraph: index, kind, text, first, second });
     };
@@ -128,7 +129,7 @@ export function findCouplets(markdown: string): Couplet[] {
 }
 
 function sentenceCount(markdown: string): number {
-  return markdown.split(/\n\s*\n/).reduce((sum, paragraph) => sum + splitSentences(paragraph).length, 0);
+  return markdown.split(/\n\s*\n/).reduce((sum, paragraph) => sum + splitCoupletSentences(paragraph).length, 0);
 }
 
 /** Sentences per thousand that open a classic couplet — the scorecard's series, unchanged. */
@@ -143,7 +144,8 @@ export function antithesesPer1000Sentences(markdown: string): number {
   return total === 0 ? 0 : (findCouplets(markdown).length / total) * 1000;
 }
 
-function anchors(text: string): Set<string> {
+/** Capitalised words and numbers that must survive a rewrite, minus the sentence-opening function words; shared with `disclaimerCap.ts`. */
+export function coupletAnchors(text: string): Set<string> {
   const found = new Set<string>();
   for (const match of text.matchAll(/\b[A-Z][\p{L}’'-]+|\b\d[\d,.]*\b/gu)) {
     const token = match[0].replace(/[’']s$/, "");
@@ -154,10 +156,28 @@ function anchors(text: string): Set<string> {
 }
 
 /**
+ * The shapes a pair collapses into when the model folds two sentences into
+ * one and loses the sense: a trailing relative clause carrying the second
+ * sentence's content ("…, whose evidence required interpretation beyond
+ * sentences"), or a participial tail standing in for the negation ("with no
+ * speaking", "doing no"). Readers of three books named those sentences as
+ * garbled while every anchor of the original was still present, so the
+ * anchors are not the whole of the acceptance.
+ */
+const FOLDED_RELATIVE_TAIL = /,\s+(?:whose|which|and which|and whose)\s/i;
+const PARTICIPIAL_STAND_IN = /\sdoing no\s|\swith no \w+ing\b/i;
+/** A single folded sentence longer than this is the collapse, not a rewrite. */
+const FOLDED_SENTENCE_MAX_WORDS = 30;
+const SENTENCE_TERMINATOR = /[.!?…؟。][”"’')\]]?$/u;
+/** A sentence that stops on the word before its own content. */
+const DANGLING_TAIL = /\b(?:whose|which|that|of|to|with|and|but|for|in|on|by)\s*[.!?…؟。][”"’')\]]?$/iu;
+
+/**
  * Whether a replacement may stand in for the hit: no antithesis of its own in
- * any of the four shapes, no bare balancing on a semicolon, every anchor of
- * the original present, between 0.6 and 1.6 times its length, and prose (no
- * list, no heading, no quotation marks the original did not have).
+ * any of the four shapes, no bare balancing on a semicolon, no folded relative
+ * clause where a second sentence was, every anchor of the original present,
+ * between 0.6 and 1.6 times its length, and prose (no list, no heading, no
+ * quotation marks the original did not have) that ends on a finished sentence.
  */
 export function acceptCoupletRewrite(couplet: Couplet, replacement: string): boolean {
   const text = replacement.replace(/\s+/g, " ").trim();
@@ -166,17 +186,25 @@ export function acceptCoupletRewrite(couplet: Couplet, replacement: string): boo
   const originalWords = wordCount(original);
   const words = wordCount(text);
   if (words < originalWords * 0.6 || words > originalWords * 1.6) return false;
-  const sentences = splitSentences(text);
+  const sentences = splitCoupletSentences(text);
   for (let at = 0; at + 1 < sentences.length; at += 1) {
     if (isCouplet(sentences[at]!, sentences[at + 1]!)) return false;
     if (isAssertRetract(sentences[at]!, sentences[at + 1]!)) return false;
   }
   if (SEMICOLON_RETRACTION.test(text) || WITHOUT_PROVING.test(text)) return false;
+  if (PARTICIPIAL_STAND_IN.test(text)) return false;
+  // A pair folded into one long sentence, its second half hung on a relative clause.
+  if (couplet.second && sentences.length <= 1) {
+    if (words > FOLDED_SENTENCE_MAX_WORDS) return false;
+    if (FOLDED_RELATIVE_TAIL.test(text)) return false;
+  }
+  const last = sentences.at(-1) ?? text;
+  if (!SENTENCE_TERMINATOR.test(last) || DANGLING_TAIL.test(last)) return false;
   if (/;\s*(?:the other|the second|it)\b/i.test(text)) return false;
   if (/^\s*(?:#|>|[-*]\s|\d+\.\s)/.test(text)) return false;
   if (/[“”"]/.test(text) && !/[“”"]/.test(original)) return false;
-  const required = anchors(original);
-  const present = anchors(text);
+  const required = coupletAnchors(original);
+  const present = coupletAnchors(text);
   for (const anchor of required) {
     if (!present.has(anchor)) return false;
   }

@@ -55,6 +55,8 @@ import {
   composeScene,
   episodesForChapter,
   openingEpisode,
+  capParagraphFinalDisclaimers,
+  episodeAnchors,
   rewriteCouplets,
   stripMisattributedQuotes,
   type ChapterMaterial,
@@ -462,6 +464,7 @@ export async function generateBookComposedChapters(options: {
     // The couplet rewrite: the pairs the detector finds, sent alone to the
     // editor lane, accepted only when the pattern is gone (coupletRewrite.ts).
     let couplets: ComposedChapterReport["couplets"];
+    let disclaimers: ComposedChapterReport["disclaimers"];
     if (quality.enabled("coupletRewrite")) {
       await updateJobProgress(generationJobId, { message: `Breaking the couplets of chapter ${position}` });
       try {
@@ -477,6 +480,11 @@ export async function generateBookComposedChapters(options: {
           error: error instanceof Error ? error.message : String(error)
         });
       }
+      // The same pass's deterministic half: the paragraph-final epistemic-limit
+      // disclaimers, capped at every third one and never below the floor.
+      const capped = capParagraphFinalDisclaimers(markdown, { minWords: chapterWordBudget(input, setup.endPage - setup.startPage + 1).min });
+      markdown = capped.markdown;
+      disclaimers = { found: capped.found, removed: capped.removed, words: capped.words };
     }
     // Paragraph variety by merge, since no instruction produced it, and one
     // copy of any sentence the edits wrote twice.
@@ -522,7 +530,7 @@ export async function generateBookComposedChapters(options: {
     // The epigraph: verbatim from the dossier, attributed, ahead of the prose.
     let epigraph = false;
     if (quality.enabled("chapterApparatus") && material && material.excerpts.length > 0) {
-      const block = chapterEpigraph(material.excerpts);
+      const block = chapterEpigraph(material.excerpts, { body: markdown, anchors: episodeAnchors(material.episodes) });
       if (block) {
         markdown = withEpigraph(markdown, block);
         epigraph = true;
@@ -549,6 +557,7 @@ export async function generateBookComposedChapters(options: {
         : {}),
       ...(quotes ? { quotes } : {}),
       ...(couplets ? { couplets } : {}),
+      ...(disclaimers ? { disclaimers } : {}),
       ...(epigraph ? { epigraph } : {}),
       ...(evidence ? { evidence } : {})
     };

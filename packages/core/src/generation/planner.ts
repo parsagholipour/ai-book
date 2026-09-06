@@ -104,8 +104,10 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
             "Return the plan fields at the JSON root; do not nest them under plan, data, or result.",
             "Plan real book chapters, not one titled chapter or section per generated page.",
             `The sum of chapter targetPages must equal exactly ${options.input.targetPages}.`,
+            // Five, not three: a three-page chapter of 1,350 words read as a stub
+            // beside its neighbours to every reader of the 6 September books.
             ...(options.input.targetPages >= 40
-              ? ["Give chapters different lengths, from three to fourteen pages: at least one long chapter that narrates a single case, one short chapter that reads a single document, and no run of chapters of the same length. A chapter is written as one piece."]
+              ? ["Give chapters different lengths, from five to fourteen pages: at least one long chapter that narrates a single case, one short chapter that reads a single document, and no run of chapters of the same length. A chapter is written as one piece."]
               : []),
             // Three blind readers of the same book found chapters 13-14 re-narrating
             // the cases of chapters 1-2, because the outline asked them to.

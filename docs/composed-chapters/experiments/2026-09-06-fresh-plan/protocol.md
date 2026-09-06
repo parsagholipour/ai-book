@@ -137,3 +137,17 @@ Prediction: engagement toward 7 with scenes in about half the chapters; pacing a
 applying and the disclaimer share halved; a book mean above 7.63. Pre-registered readouts: scenes told, cuts
 applied and words removed, disclaimer sentences removed, hedge-ending share, generalising-closer share,
 open-question endings, the three criteria.
+
+## Candidate 9, registered after candidate 8 scored 7.50 (7.5 / 7.7 / 7.3; slop resistance 7.0, engagement 6.0, pacing 5.67)
+
+Candidate 8 asked for scene episodes in eleven chapters and told none: the nonfiction scene call returns before
+any request unless the dossier holds an excerpt for the episode, and its prompt returns empty when the passage
+does not describe it. Fresh plans have excerpts in two or three chapters. Rung 5a told eight scenes (engagement
+7.0), rung 3 one in every chapter (7.22). **Intervention:** under the creative contract a nonfiction chapter with
+no excerpt is told from what the record makes likely, with the reconstruction grammar and the contract's
+own-knowledge rule, minimum 300 words kept; the strict rule stays for the grounded contract and for any chapter
+with an excerpt; the apparatus rotation still forbids two consecutive scene openings. Second change: the planner's
+chapter length floor rises from three to five pages. Everything else as candidate 8. Prediction: told scenes in
+about half the chapters, engagement toward 7, the same-sitting mean above 7.63; risk: reconstructed particulars
+the rubric does not fact-check (the Zong class), which the summary flagged and the user's "8+" instruction
+accepts.

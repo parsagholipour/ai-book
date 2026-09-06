@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 7,
+    "slopResistance": 7
+  },
+  "overall": 7.5,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The wound establishes a violent encounter more securely than it establishes its circumstances.",
+      "judgment": "The book's governing move in one sentence: evidence is separated from the story it invites, and the whole argument follows from this."
+    },
+    {
+      "quote": "A cemetery is therefore not a census of aggression.",
+      "judgment": "Compressed, memorable, and does real analytic work about sampling bias rather than merely sounding wise."
+    },
+    {
+      "quote": "Nataruk records care amid aggression, and Shanidar records aggression amid care.",
+      "judgment": "Elegant chiasmus, but also the template for dozens of later paired-case summaries that become predictable."
+    },
+    {
+      "quote": "The researchers treated the children's conduct as evidence of their anger.",
+      "judgment": "An internal contradiction: the surrounding pages insist the Bobo study measured imitation, not anger, and this line reverses the chapter's own claim."
+    },
+    {
+      "quote": "The contrast concerns different degrees and forms of material concentration among villages, including those that were unorganised and those that were organised.",
+      "judgment": "Clumsy, near-vacuous sentence of the kind that recurs whenever a comparison is retrofitted with balancing clauses."
+    },
+    {
+      "quote": "Stability in Hingham emerged as one of coercion’s successful results.",
+      "judgment": "Syntactically awkward and abstract where the surrounding Domesday material is otherwise concrete and well handled."
+    },
+    {
+      "quote": "History begins where the weather record ends: with people deciding what another person may claim, keep, or survive.",
+      "judgment": "Effective chapter close, though it belongs to a large family of aphoristic terminal sentences that arrive on schedule."
+    },
+    {
+      "quote": "Bodies set possibilities, while history decides which possibilities acquire names, allies, weapons, and rules.",
+      "judgment": "The biology chapter's argument stated with genuine precision; the strongest single formulation of the book's thesis after chapter 1."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The epistemic negation couplet: an assertion of what a source establishes immediately paired with a list of what it leaves unestablished. It is the book's chief discipline and also its chief tic, appearing several times per chapter and often more than once per page.",
+      "instances": [
+        "It establishes injury, weapon force, and the inclusion of a harmed person within a mortuary tradition, while leaving war, a hereditary warrior class, and a society organised around attack unestablished.",
+        "The bones preserve exposure to violence more securely than the purpose behind it."
+      ]
+    },
+    {
+      "pattern": "Re-declaration of the reactive/planned aggression distinction. The taxonomy is introduced in chapter 1 and then restated, with fresh phrasing but no added content, in nearly every subsequent chapter.",
+      "instances": [
+        "The distinction is analytical rather than moral.",
+        "Planning concerns the organisation of action; reactivity concerns the perceived trigger."
+      ]
+    },
+    {
+      "pattern": "Two-case juxtaposition resolved by a symmetrical antithesis. Each chapter pairs cases and closes the comparison with a balanced X-does-this/Y-does-that sentence, so the reasoning arrives in a fixed rhythm regardless of the material.",
+      "instances": [
+        "Nataruk records care amid aggression, and Shanidar records aggression amid care.",
+        "The first document concentrates injury into a schedule; the second concentrates war into a territorial narrative."
+      ]
+    },
+    {
+      "pattern": "The \"no single object carried one inevitable consequence\" disclaimer, used to end sections about walls, laws, records and technologies, sometimes recycled almost verbatim across chapters.",
+      "instances": [
+        "No wall or tablet carried one inevitable consequence.",
+        "No wall, seal, or court carried one inevitable consequence."
+      ]
+    },
+    {
+      "pattern": "Aphoristic terminal sentence. Sections and chapters almost never simply stop; they land on a short, cadenced maxim, which flattens the difference between an argued conclusion and a rhetorical exit.",
+      "instances": [
+        "The ground held crops, houses, graves, and boundaries; people made those things reasons to fight.",
+        "but bone alone cannot tell us who chose mercy."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely serious book with an unusually disciplined thesis: aggression is a species capacity whose conversion into practice is decided by institutions, and the historian's task is to keep each source's claim proportionate to what it can bear. That argument is stated well in chapter 1 and then honestly executed across fourteen chapters that climb from Chinchorro burials and Jebel Sahaba to Hammurabi, Njal's Saga, Domesday, Wannsee and the Sahel, with two well-placed thematic chapters on biology and climate before a conclusion that names the evidence that would overturn it. The case selection is specific, the methodological reasoning is often excellent, and the prose is clean, cool and consistent in register. Its weaknesses are redundancy and monotony rather than error: the same epistemic caveat, the same reactive/planned taxonomy and the same paired-case antithesis recur so often that the middle chapters read as variations on a fixed template, paragraph shapes almost never vary, and every section lands on an aphorism. Chapter 4 is markedly underweight beside chapters 7 and 9, some sentences are visibly retrofitted with balancing clauses until they lose their sense, and one passage in the Bobo chapter contradicts its own argument. Surface slop is low — no listicles, no stock pivots, no marketing diction — but structural sloppiness is real: the shapes repeat. Trimming perhaps fifteen per cent of the hedging and varying the closing move would take this from admirable to genuinely good."
+}

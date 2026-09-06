@@ -115,6 +115,23 @@ describe("the chapterFocus option", () => {
     expect(result.episodes?.chapters.every((chapter) => chapter.focus === undefined)).toBe(true);
   });
 
+  it("assigns scenes by material on the unfocused path only", async () => {
+    // One told scene in twelve chapters, engagement 6.0 against 7.0: the legacy
+    // scene call runs on a `scene` or `portrait` episode, and the planner
+    // returned documents and figures nearly everywhere.
+    const unfocused = scriptedDevelopmentModel([noFocusAnswer]);
+    await planEpisodes({ input: developmentInput, plan, stance, textModel: unfocused.model, focus: false });
+    const system = systemPrompt(unfocused.calls[0]!);
+    expect(system).toContain("a datable event with a named participant in a named place");
+    expect(system).toContain("at least half the chapters carry one scene");
+    expect(system).toContain("never a scene in every chapter");
+    expect(system).not.toContain("A scene is optional.");
+    const focused = scriptedDevelopmentModel([noFocusAnswer]);
+    await planEpisodes({ input: developmentInput, plan, stance, textModel: focused.model, focus: true });
+    expect(systemPrompt(focused.calls[0]!)).toContain("A scene is optional.");
+    expect(systemPrompt(focused.calls[0]!)).not.toContain("at least half the chapters carry one scene");
+  });
+
   it("keeps the focused prompt when the option is omitted or true", async () => {
     const omitted = scriptedDevelopmentModel([noFocusAnswer]);
     await planEpisodes({ input: developmentInput, plan, stance, textModel: omitted.model });

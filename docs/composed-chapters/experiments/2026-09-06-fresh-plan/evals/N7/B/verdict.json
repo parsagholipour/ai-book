@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 7.2,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A wound identifies an event. A pattern of wounds raises a question about a community.",
+      "judgment": "The book's governing claim stated with real economy in its opening chapter; it earns the epigrammatic form here."
+    },
+    {
+      "quote": "Marble cracked when it struck the paving stones.",
+      "judgment": "The narrative set-pieces that open most chapters are genuinely well made, concrete and unhurried."
+    },
+    {
+      "quote": "A cannon without ammunition was a monument, not a weapon.",
+      "judgment": "Compression at its best: the whole logistics argument of Chapter 7 folded into eight words."
+    },
+    {
+      "quote": "The tablet gives us a legal imagination, not a census of aggression.",
+      "judgment": "The source-criticism is consistently rigorous and is the book's strongest intellectual habit."
+    },
+    {
+      "quote": "Predictability is not justice.",
+      "judgment": "A rare moment of edge; most of the analytic prose declines this kind of directness."
+    },
+    {
+      "quote": "The cemetery communicated through bodies, burial positions, implements, and the relation between them, whose evidence required interpretation beyond sentences.",
+      "judgment": "Opaque and syntactically damaged; reads like a rewrite that lost its original verb, and it sits on page one."
+    },
+    {
+      "quote": "The image presents a transfer of authority, with the scribe handing no finished book to the ruler.",
+      "judgment": "One of several awkward negations grafted onto a clause ('with X doing no Y'), a tic that recurs and obscures rather than qualifies."
+    },
+    {
+      "quote": "The eye-for-eye penalty applies when one confronts another of the same broad rank, its scope extending to neither every body in Babylon nor every relation between them.",
+      "judgment": "Same construction again; the qualification is correct but the sentence has been twisted to avoid a plain 'it does not apply to'."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The paired-antithesis closer: a paragraph or section ends on a balanced sentence in which an institution restrains one violence while authorising another. It is the book's single most repeated rhetorical shape, appearing in almost every chapter.",
+      "instances": [
+        "State regulation narrows some private violence by authorizing other forms of violence.",
+        "Centralization narrows some violence and enlarges other violence."
+      ]
+    },
+    {
+      "pattern": "The 'X supplies pressure; Y determines the outcome' semicolon formula, used to reassert the book's thesis after each case rather than letting the case carry it.",
+      "instances": [
+        "The environment supplies pressure; custom and leadership determine whether pressure becomes a request, departure, raid, or attack.",
+        "The body supplies capacities and vulnerabilities; social arrangements determine much of what those capacities can do."
+      ]
+    },
+    {
+      "pattern": "The evidentiary disclaimer refrain: nearly every source is followed by a near-identical reminder that it records concern or imagination rather than frequency. Sound the first four times, mechanical by the tenth.",
+      "instances": [
+        "A detailed rule records a concern, not a frequency.",
+        "The tablet gives us a legal imagination, not a census of aggression."
+      ]
+    },
+    {
+      "pattern": "The 'neither X is sufficient / neither case supports' rebuttal move, deployed as the standard transition out of every comparison into the chapter's methodological summing-up.",
+      "instances": [
+        "Neither site makes scarcity sufficient.",
+        "Neither case supports the belief that institutions automatically produce peace."
+      ]
+    },
+    {
+      "pattern": "The enumerated chain: a list of four to six actors or objects each assigned one clause, used to convert an argument into a procession. Effective once per chapter, but it appears several times per chapter.",
+      "instances": [
+        "The seal identifies who may collect; the ledger records what is owed; the map defines the territory; the rifle punishes refusal; the scale converts labour into revenue.",
+        "Soldiers searched, officers sorted, clerks recorded, merchants purchased, ships carried, and magistrates in Rome displayed."
+      ]
+    }
+  ],
+  "summary": "This is a serious, well-informed history of aggression built on close reading of a dozen well-chosen primary sources, from Jebel Sahaba and Domesday to Wannsee, Srebrenica, Montgomery and Belfast. Its thesis — that an act of harm is legible only alongside the institutions that make it possible, intelligible and repeatable — is genuinely sustained across twelve chapters, and its source-criticism is disciplined and often excellent, repeatedly refusing inferences the evidence cannot carry. The narrative openings (Corinth, the Bengal famine, the Wannsee villa, Rosa Parks on the Cleveland Avenue bus) are strong reportage and the best writing in the book. Against that, the analytic passages are formally repetitive: paired antitheses, semicolon 'X supplies pressure; Y determines' constructions, enumerated chains, and a frequency-disclaimer refrain recur so regularly that chapters begin to feel machined to one template, and Chapter 9 on Hammurabi largely re-argues ground already covered by the Ur-Nammu material in Chapter 3, as Chapter 12 re-narrates Bobo and Robbers Cave from Chapter 10. A scattering of syntactically damaged sentences — awkward 'with X doing no Y' negations, one badly broken sentence on the first page, and two mangled epigraphs — suggests an editing pass that left seams. The result is substantive and intellectually honest, but it needs a redundancy pass and a line edit before it reads as finished."
+}

@@ -152,3 +152,56 @@ describe("the broadened antithesis detector", () => {
     ).toBe(false);
   });
 });
+
+describe("a replacement that folds the pair into one garbled sentence", () => {
+  const pair = [
+    "The cemetery did not speak in sentences.",
+    "Its evidence lay in bodies, burial positions, implements, and the relation between them."
+  ].join(" ");
+  const couplet = findCouplets(pair)[0]!;
+
+  it("is the classic couplet the readers quoted", () => {
+    expect(couplet.kind).toBe("classic");
+    expect(couplet.text).toBe(pair);
+  });
+
+  it("refuses the fold onto a relative clause, however intact the anchors", () => {
+    expect(
+      acceptCoupletRewrite(
+        couplet,
+        "The cemetery communicated through bodies, burial positions, implements, and the relation between them, whose evidence required interpretation beyond sentences."
+      )
+    ).toBe(false);
+  });
+
+  it("keeps a clean two-sentence replacement of the same pair", () => {
+    expect(
+      acceptCoupletRewrite(
+        couplet,
+        "The cemetery held its evidence in bodies, burial positions, implements, and the relation between them. None of it came in sentences."
+      )
+    ).toBe(true);
+  });
+
+  it("refuses a replacement that stops on a relative pronoun", () => {
+    expect(
+      acceptCoupletRewrite(couplet, "The cemetery kept its evidence in bodies, burial positions, implements, and the relation between them, whose")
+    ).toBe(false);
+    expect(
+      acceptCoupletRewrite(couplet, "The cemetery kept its evidence in bodies, burial positions, implements, and the relation between them, whose.")
+    ).toBe(false);
+  });
+
+  it("keeps a twenty-six word single sentence with no relative clause", () => {
+    const replacement =
+      "The cemetery kept its evidence in the bodies themselves, in the burial positions, in the implements laid beside them, and in the relation among all three.";
+    expect(replacement.split(/\s+/).filter(Boolean)).toHaveLength(26);
+    expect(acceptCoupletRewrite(couplet, replacement)).toBe(true);
+  });
+
+  it("refuses a participial stand-in for the negation, whatever the kind", () => {
+    expect(acceptCoupletRewrite(couplet, "The cemetery held its evidence in bodies and burial positions, with no speaking of its own at all.")).toBe(false);
+    const semicolon = findCouplets("Context narrows possibilities; it rarely supplies motive.")[0]!;
+    expect(acceptCoupletRewrite(semicolon, "Context narrows the possibilities a reader may entertain, doing no work on the motive itself.")).toBe(false);
+  });
+});

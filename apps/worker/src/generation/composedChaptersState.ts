@@ -175,6 +175,8 @@ export type ComposedChapterReport = {
   contract?: "grounded" | "creative" | undefined;
   /** The couplet rewrite: pairs found in the edited chapter and pairs the editor's replacement was accepted for. */
   couplets?: { found: number; rewritten: number } | undefined;
+  /** The paragraph-final disclaimer cap: candidates found, sentences deleted and the words they took. */
+  disclaimers?: { found: number; removed: number; words: number } | undefined;
   /** Whether an epigraph from the dossier was set at the chapter's head. */
   epigraph?: boolean | undefined;
   /** The prose-evidence review: findings on the composed chapter, targeted repairs spent, what still stands, and findings dropped as unlocatable. */

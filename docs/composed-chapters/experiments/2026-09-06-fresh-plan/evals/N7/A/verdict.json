@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 7,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 7.0,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A wound identifies an event. A pattern of wounds raises a question about a community.",
+      "judgment": "Compact statement of the book's governing method, earned by the preceding evidence rather than asserted."
+    },
+    {
+      "quote": "A ruined household became a missing return.",
+      "judgment": "Excellent compression: the fiscal translation of suffering rendered in six words."
+    },
+    {
+      "quote": "A cannon without ammunition was a monument, not a weapon.",
+      "judgment": "Concrete and memorable; the chapter's logistics argument in one line."
+    },
+    {
+      "quote": "The command structure made murder scalable. It also made responsibility traceable.",
+      "judgment": "Sharp analytic payoff at Srebrenica, though the paired-antithesis cadence is by now the book's default closer."
+    },
+    {
+      "quote": "The cemetery communicated through bodies, burial positions, implements, and the relation between them, whose evidence required interpretation beyond sentences.",
+      "judgment": "Garbled and near-meaningless; a sentence that survived into the finished text without a clear referent."
+    },
+    {
+      "quote": "The image presents a transfer of authority, with the scribe handing no finished book to the ruler.",
+      "judgment": "Incoherent: a scribe who was never introduced appears only to be negated."
+    },
+    {
+      "quote": "Although the communities Rome ruled possessed their own laws, languages, economies, and political memories, civilisation here meant bringing culture to people presumed to lack it.",
+      "judgment": "Syntactically broken concession; the subordinate clause never connects to the claim it modifies."
+    },
+    {
+      "quote": "Nor does the sequence reveal how often these injuries occurred.",
+      "judgment": "Sound caution, but the twelfth iteration of a disclaimer the book has already made in every prior chapter."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "A source-critical frequency disclaimer near the end of nearly every case study: the record shows what could be imagined or regulated, never how often it happened.",
+      "instances": [
+        "The tablet gives us a legal imagination, not a census of aggression.",
+        "Nor does the sequence reveal how often these injuries occurred."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis as the standard analytic conclusion: an institution restrains one form of violence precisely by authorising another.",
+      "instances": [
+        "State regulation narrows some private violence by authorizing other forms of violence.",
+        "Centralization narrows some violence and enlarges other violence."
+      ]
+    },
+    {
+      "pattern": "The \"material pressure did not decide\" pivot, in which a named condition is granted and then denied agency in favour of human choice.",
+      "instances": [
+        "but a changed environment did not itself lift a weapon.",
+        "That possibility fits the broad setting, but it does not turn weather into an attacker."
+      ]
+    },
+    {
+      "pattern": "Short aphoristic negation used to close a section, in the shape \"X is not Y\".",
+      "instances": [
+        "Predictability is not justice.",
+        "Shared space was not shared purpose."
+      ]
+    },
+    {
+      "pattern": "Uniform chapter architecture: a narrated scene in the present tense of the event, then a second and third comparison case, then a generalising coda that names the chapter's abstraction.",
+      "instances": [
+        "The first boundaries were neither walls nor instincts alone. They were maintained by memory, defended by force, and sometimes crossed by ritual.",
+        "The weapon changed the path between decision and injury while the reasons for choosing that path persisted."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely accomplished work of comparative history, organised around a clear and disciplined thesis: an act of harm is legible only through the source that preserved it, and the scale and meaning of aggression are supplied by the institutions that make it possible, repeatable and rewardable. The case selection is unusually specific and well handled - Jebel Sahaba, Domesday, Ur-Nammu, Corinth, Bengal 1770, the Congo rubber concessions, Constantinople, Wannsee, Srebrenica, Montgomery, Belfast - and the reasoning consistently separates observation from inference rather than asserting a pattern. The voice is steady and adult throughout, and the narrative openings (Corinth, Murshidabad, the Bobo doll room, the Cleveland Avenue bus) are the strongest writing in the book. The costs are pacing and shape: every chapter runs the same circuit of scene, comparison, third case and generalising coda, and the same three rhetorical moves - the frequency disclaimer, the restrains-one-authorises-another antithesis, and the \"the condition did not choose\" pivot - recur so often that the second half becomes predictable at the paragraph level. A small number of sentences are simply broken and should have been caught. With compression, variation of chapter form, and a line edit for the handful of garbled sentences, this would be a strong book; as it stands it is uniform where it should be various."
+}

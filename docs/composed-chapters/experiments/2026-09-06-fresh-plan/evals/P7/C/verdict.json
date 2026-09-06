@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 7,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 7
+  },
+  "overall": 7.3,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The wound is not a metaphor: it is a hole, a broken edge, and a foreign object held by the skull long after the person who suffered it had disappeared.",
+      "judgment": "A strong opening: concrete, unsentimental, and it announces the book's method of refusing figurative comfort."
+    },
+    {
+      "quote": "A capacity is not an act, and an act is not a pattern.",
+      "judgment": "The controlling distinction of the whole book, stated compactly and then genuinely honoured across fourteen chapters."
+    },
+    {
+      "quote": "Bones ask what happened to bodies. Artifacts ask what tools and practices were available.",
+      "judgment": "The evidence-ladder passage is the book's best analytic scaffolding and it pays off in later chapters."
+    },
+    {
+      "quote": "To be heard, she had to make a case for being heard.",
+      "judgment": "Rare moment where the argument compresses into a sentence with real force; the book needed many more of these."
+    },
+    {
+      "quote": "Nataruk records care amid aggression, and Shanidar records aggression amid care.",
+      "judgment": "A manufactured chiasmus that inverts what the surrounding pages actually established about each site; symmetry chosen over accuracy."
+    },
+    {
+      "quote": "The contrast concerns different degrees and forms of material concentration among villages, including those that were unorganised and those that were organised.",
+      "judgment": "Genuinely garbled: the qualifying clause says nothing, and several comparable seams appear where two case studies are being welded together."
+    },
+    {
+      "quote": "The researchers treated the children's conduct as evidence of their anger.",
+      "judgment": "Contradicts the paragraphs on either side, which are careful that the Bobo study measured imitation and not anger; a lapse in an otherwise disciplined chapter."
+    },
+    {
+      "quote": "History begins where the weather record ends: with people deciding what another person may claim, keep, or survive.",
+      "judgment": "Effective chapter landing, though it is the book's stock closing move — an aphorism restating the same capacity/practice split."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Symmetrical negative hedge as chapter or section closer: an assertion is retracted in one direction and then in the other, so the paragraph ends where it began.",
+      "instances": [
+        "Nor does the absence of similar wounds in every grave establish tranquillity.",
+        "Neither shows that settlement makes violence inevitable."
+      ]
+    },
+    {
+      "pattern": "Every chapter is built as a two- or three-site juxtaposition, and the pairing is announced in an antithetical or chiastic sentence before the evidence is weighed.",
+      "instances": [
+        "Nataruk records care amid aggression, and Shanidar records aggression amid care.",
+        "Nataruk preserves a compressed episode of collective violence; Shanidar preserves a longer history of dependence and treatment."
+      ]
+    },
+    {
+      "pattern": "The dominant sentence shape is negation — 'X does not / cannot Y' — used so often that the prose argues mostly by subtraction and rarely commits forward.",
+      "instances": [
+        "Bone does not preserve intention.",
+        "A railway timetable cannot authorise deportation."
+      ]
+    },
+    {
+      "pattern": "A source-limitation refrain: the record 'shows' one thing 'while leaving' a list of nouns 'unestablished' or 'unidentified'. Epistemically admirable, but repeated dozens of times in identical syntax.",
+      "instances": [
+        "while leaving war, a hereditary warrior class, and a society organised around attack unestablished",
+        "while leaving the assailants, any command structure, and the victims’ role in defending their own settlement unidentified"
+      ]
+    },
+    {
+      "pattern": "Isolated one-sentence paragraphs deployed as rhythm markers at the same point in each chapter's arc, carrying an aphorism rather than new information.",
+      "instances": [
+        "The wound establishes a violent encounter more securely than it establishes its circumstances.",
+        "An order became more than a sentence when another office knew what to do with it."
+      ]
+    }
+  ],
+  "summary": "This is a serious, evidence-disciplined history of aggression that argues a single controlled thesis: violence is a human capacity whose conversion into practice is decided by resources, categories, authority and permission, and the reactive/planned distinction is sustained from Chinchorro skulls to Wannsee and Hiroshima. The reasoning is the book's outstanding quality — it repeatedly names what a bone, a tablet, a plea roll or a regression can and cannot support, and it refuses the determinist shortcuts it sets up. Against that, the execution is monotonous: nearly every chapter is a paired-case comparison closed by a symmetrical hedge, negation is the default sentence shape, and the same caveat about evidentiary limits is restated at length far past the point of persuasion. Proportion is also off — Chapter 4 is a two-page stub beside Chapters 7 and 9, which sprawl — and engagement suffers because scenes (Gunnar at Lithend, Grim at Canterbury, the Bobo room) are summarised rather than carried. Sentence-level craft is competent and occasionally excellent, but a handful of sentences are garbled or contradict their own paragraphs, and the name 'John of Ball' recurs where 'John Ball' is meant. Lexical AI-slop is low; the slop that remains is structural — templated architecture, manufactured antitheses, aphoristic landings — and cutting perhaps fifteen per cent of the repeated qualification would lift the book considerably."
+}

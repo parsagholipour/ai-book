@@ -396,6 +396,25 @@ export function rotatePositionsForVariety(compositions: readonly ChapterComposit
   return result;
 }
 
+/**
+ * At most two chapters may end on `open-question`: three Opus readers heard every chapter close on the same
+ * unanswered two-clause question. A later one swaps its last two sections. Pure and idempotent.
+ */
+export function capOpenQuestionEndings(compositions: readonly ChapterComposition[], palette: readonly SectionForm[] = ANALYTICAL_FORMS): ChapterComposition[] {
+  let ending = 0;
+  return compositions.map((composition) => {
+    const sections = composition.sections.map((section) => ({ ...section }));
+    const last = sections.length - 1;
+    if (sections[last]?.form !== "open-question") return composition;
+    ending += 1;
+    if (ending <= 2) return composition;
+    const swap = last === 0 ? palette.find((form) => form.id !== "open-question")?.id : sections[last - 1]!.form;
+    if (last > 0) sections[last - 1]!.form = "open-question";
+    if (swap) sections[last]!.form = swap;
+    return { ...composition, sections };
+  });
+}
+
 /** Forms and positions rotated in turn until the non-positional contract holds, bounded. */
 export function settleFormVariety(
   compositions: readonly ChapterComposition[],
@@ -408,7 +427,7 @@ export function settleFormVariety(
     if (remaining.length === 0) break;
     current = rotateFormsForVariety(current, palette);
   }
-  return current;
+  return capOpenQuestionEndings(current, palette);
 }
 
 /** A composition nothing came back for: forms rotated by chapter offset, subjects from the plan. */

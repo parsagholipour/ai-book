@@ -1,0 +1,607 @@
+{
+  "title": "Aggression Across Time",
+  "premise": "A source-conscious historical survey of human aggressiveness across eras and regions, examining how violence has been shaped by social organization, material conditions, political authority, technology, cultural norms, and individual behavior. The book distinguishes aggression from warfare, coercion, punishment, exploitation, and structural harm while acknowledging that historical evidence is uneven and that no single cause explains every episode.",
+  "audience": "General readers curious about history, human behavior, and the changing forms of conflict.",
+  "chapters": [
+    {
+      "index": 1,
+      "title": "Naming the Human Problem",
+      "summary": "Defines aggression as a historical object of study and separates interpersonal harm, warfare, coercion, punishment, exploitation, and structural violence. Establishes why records of violence are uneven and why apparent changes across time require careful comparison.",
+      "keyBeats": [
+        "Introduce the distinction between aggressive behavior, organized warfare, and institutional coercion.",
+        "Explain how chronicles, laws, burials, art, administrative records, and demographic evidence reveal different aspects of violence.",
+        "Set out the book's central dimensions: motive, organization, target, scale, legitimacy, and technology.",
+        "Introduce the problem of silence in historical sources, including the under-recording of domestic and marginalized people's experiences."
+      ],
+      "targetPages": 8
+    },
+    {
+      "index": 2,
+      "title": "Small Groups, Kinship, and the First Boundaries",
+      "summary": "Examines how mobile communities and early settled societies could combine cooperation within a group with suspicion or violence across group boundaries. The chapter presents environmental pressure, kinship obligations, reputation, and retaliation as interacting conditions rather than universal causes.",
+      "keyBeats": [
+        "Introduce evidence used to discuss interpersonal violence and conflict before extensive written records.",
+        "Explain how kinship can provide protection while also extending obligations of revenge.",
+        "Examine the effects of settlement, storage, seasonal scarcity, and competition over access to land or water.",
+        "Introduce the role of ritual, display, and reputation in making aggression meaningful to a group.",
+        "Show why evidence from one archaeological region cannot stand for all early societies."
+      ],
+      "targetPages": 11
+    },
+    {
+      "index": 3,
+      "title": "Cities, Laws, and Authorized Force",
+      "summary": "Explores the emergence of cities and states as systems that could suppress some private violence while authorizing punishment, war, and unequal control. Laws are read as evidence of anxieties and institutions, not as direct measurements of everyday behavior.",
+      "keyBeats": [
+        "Introduce the city as a setting where strangers, property, status, and authority require formal regulation.",
+        "Read selected legal provisions as evidence of ranked penalties, bodily harm, debt, family control, and state enforcement.",
+        "Explain how centralized authority can limit vendetta while expanding the scale of organized coercion.",
+        "Distinguish the existence of a law from proof that the prohibited behavior was common."
+      ],
+      "targetPages": 7
+    },
+    {
+      "index": 4,
+      "title": "Rome and the Business of Conquest",
+      "summary": "Narrates a single extended case: Rome's expansion from a regional power into an imperial state. The chapter follows how military organization, political competition, taxation, enslavement, citizenship, geography, and material rewards interacted across one historical trajectory without treating Roman expansion as a model for all empires.",
+      "keyBeats": [
+        "Introduce Rome's early military and political setting as a bounded case rather than a universal stage of development.",
+        "Trace how elite competition and public honors could reward military success.",
+        "Follow the transformation of conquest into land, revenue, captives, administrative control, and new political claims.",
+        "Examine how Roman citizenship and provincial governance combined inclusion, hierarchy, and force.",
+        "Show how resistance, negotiation, local alliances, and imperial retaliation shaped the case.",
+        "Assess the limits of literary sources that celebrate victory and understate the experience of conquered populations."
+      ],
+      "targetPages": 14
+    },
+    {
+      "index": 5,
+      "title": "Honor, Faith, and the Legitimate Blow",
+      "summary": "Studies the cultural systems that define when aggression is honorable, shameful, sacred, or criminal. It compares selected historical settings without assuming that honor cultures, religious belief, or patriarchy operate identically across regions.",
+      "keyBeats": [
+        "Introduce honor as a social relationship involving reputation, rank, insult, and public recognition.",
+        "Examine how religious language can condemn violence, authorize it, or place conditions on its use.",
+        "Analyze gendered expectations surrounding protection, obedience, dominance, and retaliation.",
+        "Show how communities distinguish permitted force from illegitimate cruelty.",
+        "Introduce the problem of reading ideals and prescriptions as evidence of actual conduct."
+      ],
+      "targetPages": 9
+    },
+    {
+      "index": 6,
+      "title": "Hunger, Wealth, and Unequal Risk",
+      "summary": "Investigates the material conditions associated with conflict, including resource competition, poverty, trade, extraction, slavery, and economic inequality. It emphasizes that scarcity and wealth do not mechanically produce violence; institutions and political choices shape their effects.",
+      "keyBeats": [
+        "Introduce the difference between material stress, economic motive, and political mobilization.",
+        "Examine how land, food, labor, trade routes, and taxable wealth can become objects of conflict.",
+        "Distinguish evidence linking poverty or commodity dependence to conflict from claims about inequality alone.",
+        "Show how elites and institutions distribute the risks and rewards of aggression unevenly."
+      ],
+      "targetPages": 6
+    },
+    {
+      "index": 7,
+      "title": "Weapons, Distance, and the Organization of Harm",
+      "summary": "Traces how military technologies alter the organization, range, speed, and visibility of aggression from early weapons through gunpowder, industrial warfare, and remote systems. Technology is treated as a force that changes possibilities while remaining dependent on logistics, institutions, and decisions.",
+      "keyBeats": [
+        "Introduce the relationship between weapons, training, supply, fortification, and political organization.",
+        "Examine how gunpowder changed siege warfare, battlefield risk, and the balance between armor and firearms.",
+        "Trace the industrial transformation of production, transport, artillery, and mass mobilization.",
+        "Explain how mechanization and air power increased distance between decision-makers and victims.",
+        "Introduce cyber and informational operations as forms of pressure whose harms and boundaries require careful definition."
+      ],
+      "targetPages": 12
+    },
+    {
+      "index": 8,
+      "title": "States, Nations, and Mass Mobilization",
+      "summary": "Explores the modern state's capacity to classify populations, mobilize citizens, police borders, and organize violence at unprecedented scale. The chapter focuses on institutions and political narratives rather than presenting modernity as a simple rise or fall in aggression.",
+      "keyBeats": [
+        "Introduce bureaucracy, censuses, passports, taxation, and conscription as tools that can organize both protection and exclusion.",
+        "Examine nationalism and the construction of enemies through education, propaganda, and public ceremony.",
+        "Show how industrial administration connects factories, railways, armies, prisons, and civilian populations.",
+        "Distinguish battlefield violence, state terror, ethnic persecution, and genocide as related but analytically distinct forms.",
+        "Explain why official records can be simultaneously abundant and deliberately deceptive."
+      ],
+      "targetPages": 10
+    },
+    {
+      "index": 9,
+      "title": "A Law Read Closely: The Code of Hammurabi",
+      "summary": "Reads a single surviving legal document as a compact historical object. The chapter moves through its prologue, selected provisions, penalties, social distinctions, and royal claims while explaining what the text can and cannot establish about everyday violence in ancient Babylonia.",
+      "keyBeats": [
+        "Introduce the document's material and political setting without treating its prologue as a neutral description.",
+        "Read selected provisions concerning bodily injury, property, household authority, labor, and status.",
+        "Examine how graduated penalties encode social hierarchy.",
+        "Close by identifying the limits of using one legal text to reconstruct ordinary behavior."
+      ],
+      "targetPages": 5
+    },
+    {
+      "index": 10,
+      "title": "Bodies, Brains, and Learned Aggression",
+      "summary": "Brings historical interpretation into dialogue with research on biology, development, cognition, social learning, and environmental stress. It presents these factors as interacting possibilities and avoids converting population-level associations into predictions about individuals or societies.",
+      "keyBeats": [
+        "Introduce the distinction between reactive aggression and planned or instrumental aggression.",
+        "Explain how brain systems, hormones, development, and inherited variation may influence behavior without determining it.",
+        "Examine social learning, hostile interpretations, trauma, and exposure to violence as developmental influences.",
+        "Discuss heat, crowding, noise, alcohol, and deprivation as conditional stressors rather than universal triggers.",
+        "Clarify why findings about contemporary behavior cannot be transferred directly to distant historical populations.",
+        "Set explicit boundaries around what behavioral research can contribute to historical explanation."
+      ],
+      "targetPages": 13
+    },
+    {
+      "index": 11,
+      "title": "When Order Breaks",
+      "summary": "Examines civil conflict, state failure, occupation, displacement, and the breakdown of ordinary restraints. The chapter focuses on how institutions, identities, fear, opportunity, and retaliation can interact when authority becomes contested.",
+      "keyBeats": [
+        "Introduce the difference between weak institutions, contested sovereignty, and total administrative collapse.",
+        "Show how rumors, insecurity, armed groups, and forced movement alter calculations of risk.",
+        "Examine how group histories and dehumanizing categories can make aggression appear defensive or necessary.",
+        "Trace how ordinary officials, neighbors, soldiers, and opportunists can occupy different roles within the same conflict.",
+        "Discuss why post-conflict testimony and official archives may disagree about responsibility and sequence.",
+        "Introduce the long afterlife of displacement, trauma, property loss, and remembered grievance."
+      ],
+      "targetPages": 12
+    },
+    {
+      "index": 12,
+      "title": "What History Can and Cannot Explain",
+      "summary": "Synthesizes the survey's findings without claiming a single law of human aggression. It compares the explanatory reach of biology, environment, economy, culture, political institutions, and technology, then closes with a bounded account of how historical conditions make some forms of harm more likely and others less legitimate or less available.",
+      "keyBeats": [
+        "Synthesize the recurring interaction between human capacities, institutions, material conditions, identities, and decisions.",
+        "Clarify why changes in recorded violence may reflect changes in behavior, recording, population, state power, or all four.",
+        "Compare the different meanings of aggression across interpersonal, domestic, imperial, economic, informational, and military settings.",
+        "State what the historical record supports about variation, continuity, and uncertainty.",
+        "End with a measured account of responsibility that preserves human agency without denying structural constraint."
+      ],
+      "targetPages": 13
+    }
+  ],
+  "promises": [
+    "The book will define the central terms before using them comparatively.",
+    "The book will follow one extended historical case in depth rather than presenting only disconnected examples.",
+    "The book will read one historical legal document closely and show both its value and its limits.",
+    "The book will connect historical evidence with behavioral and social research without treating either field as sufficient on its own.",
+    "The book will explain how institutions can restrain some forms of aggression while organizing others.",
+    "The conclusion will offer a bounded account of what historical comparison can explain and where uncertainty remains."
+  ],
+  "locations": [
+    {
+      "name": "Early settled communities",
+      "rules": [],
+      "description": "A flexible comparative setting for discussing archaeology, settlement, storage, kinship, and resource pressure without inventing a single representative village."
+    },
+    {
+      "name": "Rome and its provinces",
+      "rules": [],
+      "description": "The bounded historical setting for the extended case in Chapter 4, moving between Rome, military frontiers, provincial cities, roads, estates, and conquered communities."
+    },
+    {
+      "name": "Industrial and modern war zones",
+      "rules": [],
+      "description": "A comparative setting for railways, factories, trenches, administrative offices, cities, and communication networks in the modern chapters."
+    }
+  ],
+  "questions": [],
+  "characters": [],
+  "voiceGuide": [
+    "Use clear, chronological prose for general readers without flattening regional differences.",
+    "Treat aggression as a category requiring definition rather than as a synonym for war or cruelty.",
+    "Anchor claims in identifiable historical evidence and distinguish documented facts from interpretation.",
+    "State uncertainty plainly when records are partial, retrospective, propagandistic, or disputed.",
+    "Move between individual behavior, group conflict, institutions, economies, environments, and technologies without making one level explain everything.",
+    "Use concrete scenes, laws, weapons, settlements, campaigns, and records before drawing broader conclusions.",
+    "Keep the tone measured and humane when discussing conquest, enslavement, massacre, and suffering."
+  ],
+  "antiAiRules": [
+    "Do not invent citations, studies, historians, statistics, quotations, archaeological findings, or source identities.",
+    "Do not treat research summaries as proof of a claim beyond what they explicitly support.",
+    "Do not present a theory as settled when the evidence is contested or correlational.",
+    "Do not collapse different regions or eras into a single story of progress, decline, or human nature.",
+    "Do not use warfare as the only measure of aggression; include interpersonal, political, economic, cultural, and structural forms where the evidence warrants it.",
+    "Avoid proof-leap transitions such as 'This is not a coincidence', 'no accident', 'hidden in plain sight', and 'the truth is' unless directly quoted or genuinely necessary.",
+    "Do not stack adjacent contrast sentences that jump from a fact to a sweeping conclusion; earn claims with evidence, context, or qualification.",
+    "Avoid repeated binary-reversal constructions such as 'X is not A. It is B.'",
+    "Use em dashes and en dashes sparingly; prefer clean punctuation.",
+    "Replace inflated abstractions with specific people, places, objects, institutions, dates, or bounded claims.",
+    "Do not repeat the same analytical framework for every period or region.",
+    "Do not make uncertainty performative; qualify only where the available evidence requires it.",
+    "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages.",
+    "Avoid generic end-of-chapter summaries that merely restate the chapter title.",
+    "Tie factual claims to the evidence available for the page and label interpretation as interpretation.",
+    "Compare regions or eras only after naming the dimensions being compared and acknowledging major differences.",
+    "Prefer named places, dates, objects, records, and institutions over abstract claims.",
+    "State uncertainty when sources are incomplete, biased, disputed, or not directly comparable.",
+    "Do not invent evidence, citations, studies, experts, or source identities.",
+    "Do not mention planning, drafting, AI, prompts, schemas, or production instructions in the manuscript.",
+    "Avoid unsupported proof-leap transitions; do not jump from a local fact to a sweeping conclusion without evidence on this page.",
+    "Avoid generic conclusions and visible prompt scaffolding in reader-facing prose.",
+    "Use uncertainty only where the evidence on this page requires it.",
+    "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages."
+  ],
+  "openingHook": "A settlement on the edge of a changing landscape becomes the first question: when people fight over food, status, land, or fear, which part of the conflict belongs to human impulses, and which part belongs to the world they have built?",
+  "writingMode": "analytical-history",
+  "authorStance": {
+    "thesis": "Human aggressiveness has appeared in many historical forms, but its scale, targets, legitimacy, and consequences have been repeatedly shaped by institutions, resources, social norms, political incentives, and available technologies.",
+    "refusals": [
+      "The author refuses to explain every historical conflict with one biological, economic, or cultural cause.",
+      "The author refuses to treat casualty counts as a complete measure of human aggressiveness.",
+      "The author refuses to turn disputed evidence into confident historical fact.",
+      "The author refuses to end chapters with a vague claim that history simply repeats itself."
+    ],
+    "positions": [
+      "Aggression is a broad category that includes more than battlefield violence.",
+      "Historical societies have often regulated aggression within groups while directing it toward outsiders.",
+      "States can restrain interpersonal violence and organize violence on a larger scale at the same time.",
+      "Material pressure matters, but it becomes violent through institutions, identities, decisions, and expectations.",
+      "Modern technology changes the reach and distance of aggression without removing older motives such as fear, status, profit, and belonging."
+    ],
+    "voiceSample": "In 1914, a railway timetable could carry a government decision from Berlin to a frontier faster than a cavalry officer once crossed a province. The printed page looked administrative: columns, stations, departures, arrivals. Alongside it stood the practical problem of moving men, horses, rifles, food, and medical supplies toward a border whose villages had their own names and harvests.\n\nAt Verdun in 1916, steel arrived in quantities that altered the meaning of shelter. A concrete wall, a trench corner, or a fold in the ground could decide whether a body remained visible after the next barrage. The artillery crews often saw no individual opponent. Their work passed through maps, coordinates, clocks, and orders before it reached the field.\n\nIn 1945, the photograph of a mushroom cloud over Hiroshima compressed several kinds of distance into one image. The aircraft was far above the city. The people below could not see the men who had selected the target. The document that followed was a report, while the burned streets supplied evidence of a different kind. Between those objects stood a chain of laboratories, factories, commanders, and political choices."
+  },
+  "researchNotes": [
+    {
+      "url": "https://medium.com/global-science-news/the-evolution-of-aggression-from-physical-violence-to-economic-and-informational-pressure-8978e458e499",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "medium.com",
+      "summary": "While aggression is a fundamental aspect of human interaction, its expression has evolved from overt physical violence to more subtle and sophisticated forms. Aggression can be categorized as:\n*   **Physical Violence:** Historically dominant in ancient societies for resolving conflicts, securing resources, and asserting power. *   **Economic and Informational Aggression:** Modern forms like economic sanctions and informational manipulation, which achieve dominance and control with less direct confrontation. Historical Manifestations:**\n*   **Ancient Societies:** Physical violence was common in"
+    },
+    {
+      "url": "http://institutecsr.iksi.ac.rs/124/1/n.drndarevic.pdf",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "iksi.ac.rs",
+      "summary": "Definitions and Forms of Aggression:**\nAggression is generally defined as any behavior intended to harm or injure others."
+    },
+    {
+      "url": "https://leakeyfoundation.org/the-roots-of-human-aggression/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "leakeyfoundation.org",
+      "summary": "It can range from mild verbal anger to severe physical violence, including murder, wars, and genocide. *   **War as a Central Evolutionary Heritage:** Some researchers argue that there is little evidence for widespread warfare and extensive inter-group conflict until relatively recently in human history, suggesting that war is not a central part of our evolutionary heritage."
+    },
+    {
+      "url": "https://www.livescience.com/5333-evolution-human-aggression.html",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "livescience.com",
+      "summary": "It can range from mild verbal anger to severe physical violence, including murder, wars, and genocide. *   **Evolutionary Adaptations:** Aggressive behavior may have evolved in species where it increased individual survival or reproduction, depending on environmental, social, reproductive, and historical circumstances."
+    },
+    {
+      "url": "https://researchoutreach.org/articles/developing-nature-human-aggression-psychological-traits-evolved/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "researchoutreach.org",
+      "summary": "*   **Proactive (Planned) Aggression:** A calculated and manipulative form of aggression. *   **Reactive (Impulsive) Aggression:** Impulsive rage in response to provocation."
+    },
+    {
+      "url": "https://publications.kon.org/urc/v13/holschuh.html",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "kon.org",
+      "summary": "*   **Structural Aggression:** Hidden within the structure of a society, such as inequalities that can lead to direct violence. *   **State Failure:** New wars can arise from state failure, and structural inequalities can lead to direct violence due to feelings of social disadvantage."
+    },
+    {
+      "url": "https://genesysdefense.com/intl/the-evolution-of-military-technology-from-traditional-warfare-to-advanced-systems/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "genesysdefense.com",
+      "summary": "Early humans used basic weapons for hunting and self-defense, which evolved into more sophisticated tools like swords, spears, catapults, and battering rams in ancient civilizations. *   **Medieval to Modern Warfare:** The advent of gunpowder in the 9th century revolutionized warfare, leading to cannons and handguns by the 14th century, making traditional armor and fortifications less effective. The Industrial Revolution further transformed military technology with mass production, rifled muskets, artillery, and ironclad warships."
+    },
+    {
+      "url": "https://www.britannica.com/technology/military-technology",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "britannica.com",
+      "summary": "*   **20th Century and Beyond:** World War I saw innovations like chemical warfare and tanks, while World War II brought radar, jet aircraft, and the atomic bomb. More recently, cyber warfare and cyber defense have emerged."
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/History_of_military_technology",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "wikipedia.org",
+      "summary": "*   **20th Century and Beyond:** World War I saw innovations like chemical warfare and tanks, while World War II brought radar, jet aircraft, and the atomic bomb."
+    },
+    {
+      "url": "https://psychology.town/advanced-social/theories-explaining-aggression-models/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "psychology.town",
+      "summary": "*   **Biological and Evolutionary Factors:**\n*   **Innate Drives:** Sigmund Freud proposed a destructive \"death instinct\" (Thanatos) that, when redirected outward, manifests as aggression towards others. *   **Psychological Factors:**\n*   **Frustration-Aggression Hypothesis:** This theory posits that aggression is a natural outcome of frustration, caused by the blocking of goal-directed behavior. *   **Social Learning Theory:** Aggression is not innate but acquired through observing others, as demonstrated by Albert Bandura's Bobo doll experiment. Vicarious reinforcement plays a central role."
+    },
+    {
+      "url": "https://www.hawaii.edu/powerkills/CIP.CHAP2.HTM",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "hawaii.edu",
+      "summary": "*   **Biological and Evolutionary Factors:**\n*   **Innate Drives:** Sigmund Freud proposed a destructive \"death instinct\" (Thanatos) that, when redirected outward, manifests as aggression towards others. Ethologist Konrad Lorenz also supported an instinctual view of human aggression."
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Death_drive",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "wikipedia.org",
+      "summary": "*   **Biological and Evolutionary Factors:**\n*   **Innate Drives:** Sigmund Freud proposed a destructive \"death instinct\" (Thanatos) that, when redirected outward, manifests as aggression towards others."
+    },
+    {
+      "url": "https://www.beyondintractability.org/essay/aggression",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "beyondintractability.org",
+      "summary": "*   **Biological and Evolutionary Factors:**\n*   **Innate Drives:** Sigmund Freud proposed a destructive \"death instinct\" (Thanatos) that, when redirected outward, manifests as aggression towards others. *   **Psychological Factors:**\n*   **Frustration-Aggression Hypothesis:** This theory posits that aggression is a natural outcome of frustration, caused by the blocking of goal-directed behavior."
+    },
+    {
+      "url": "https://www.perlego.com/index/psychology/evolution-of-human-aggression",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "perlego.com",
+      "summary": "Ethologist Konrad Lorenz also supported an instinctual view of human aggression. *   **Aggression as Solely Innate:** While instinctual theories exist, social learning theory offers a contrasting view, suggesting aggression is a learned behavior rather than purely innate."
+    },
+    {
+      "url": "https://newbrainnutrition.com/a-violent-history-how-genes-and-environment-influence-aggression/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "newbrainnutrition.com",
+      "summary": "*   **Evolutionary Adaptations:** Aggressive behavior may have evolved in species where it increased individual survival or reproduction, depending on environmental, social, reproductive, and historical circumstances."
+    },
+    {
+      "url": "https://labs.la.utexas.edu/buss/files/2015/09/evolutionofaggression2006.pdf",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "utexas.edu",
+      "summary": "Humans, like chimpanzees, form aggressive, male-bonded coalitions for group-on-group warfare. \"Cultures of honor\" can lead to status loss if aggression is not displayed when insulted."
+    },
+    {
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8284101/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "nih.gov",
+      "summary": "This association is prominent across the animal kingdom, suggesting a strong biological basis. Hormonal influences, particularly testosterone, contribute to aggressive behavior, especially in males seeking mates, social status, food, and territory."
+    },
+    {
+      "url": "https://psychology.town/advanced-social/causes-of-aggressive-behaviour/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "psychology.town",
+      "summary": "*   **Brain and Hormones:** Aggression is a brain phenomenon involving subcortical structures (amygdala, hypothalamus) and the prefrontal cortex. Hormonal influences, particularly testosterone, contribute to aggressive behavior, especially in males seeking mates, social status, food, and territory. Brain dysfunction or injury, especially to the frontal lobe, can increase aggression. *   **Environmental Factors:**\n*   **Climate:** High ambient temperatures increase irritability and impulsive behavior, and studies show a correlation between heat and increased physical assaults and violent crime"
+    },
+    {
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC3696520/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "nih.gov",
+      "summary": "*   **Genetics:** Approximately 50% of the variance in aggressive behavior is explained by genetic influences."
+    },
+    {
+      "url": "https://yvpc.sph.umich.edu/connection-genes-environment-violence/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "umich.edu",
+      "summary": "Specific genes, such as a deficient activity of monoamine oxidase A (MAOA), can increase the risk of violence, particularly when combined with childhood trauma."
+    },
+    {
+      "url": "https://www.ebsco.com/research-starters/psychology/frustration-aggression-theory",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "ebsco.com",
+      "summary": "*   **Psychological Factors:**\n*   **Frustration-Aggression Hypothesis:** This theory posits that aggression is a natural outcome of frustration, caused by the blocking of goal-directed behavior."
+    },
+    {
+      "url": "https://www.fordham.edu/student-life/deans-of-students-and-student-life/caring-for-students/responding-to-a-students-threatening-behavior/factors-contributing-to-aggressive-behavior/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "fordham.edu",
+      "summary": "*   **Individual Differences:** Factors like a history of physical fighting, drug or alcohol abuse, controlling others, excessive need for attention, low self-worth, and early childhood abuse or neglect are associated with aggressive behavior. Witnessing violence at home, in the community, or in media can contribute to aggressive behavior."
+    },
+    {
+      "url": "https://www.ovid.com/00000487-199602000-00003",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "ovid.com",
+      "summary": "*   **Cognitive Structures:** Children develop cognitive structures, including interpretations of reality like attributions of hostility, that make aggression probable. *   **Group Identity:** A history of aggression between groups can make aggression seem normal, appropriate, or even desirable for resolving differences. Devaluation of other groups, perpetuated in culture, can lead to violence."
+    },
+    {
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9510521/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "nih.gov",
+      "summary": "*   **Societal and Cultural Factors:**\n*   **Social Structures:** Hierarchical social structures can emerge to control in-group aggression and mobilize against external threats. In early hunter-gatherer tribes, cooperation was paramount, and in-group aggression was ostracized in egalitarian societies."
+    },
+    {
+      "url": "https://www.wellbeingminder.com.au/single-post/cultural-norms-of-anger-a-historical-perspective-past-normalisation-of-anger",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "wellbeingminder.com.au",
+      "summary": "*   **Cultural Norms:** The normalization of anger has deep historical roots in many cultures, particularly patriarchal societies where dominance and control were valued. *   **Societal Expectations and Upbringing:** Parenting styles and cultural norms can tacitly endorse anger as a means of asserting authority."
+    },
+    {
+      "url": "https://opentext.uoregon.edu/socialpsychology/chapter/personal-and-cultural-influences-on-aggression/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "uoregon.edu",
+      "summary": "\"Cultures of honor\" can lead to status loss if aggression is not displayed when insulted."
+    },
+    {
+      "url": "https://pesd.princeton.edu/node/386",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "princeton.edu",
+      "summary": "*   **Economic Factors:**\n*   **Resource Competition:** Historically, tribes fought for hunting grounds and food supply. *   **Imperialism and Wealth:** The Roman Empire expanded through military conquests to gain slaves, revenues, and material wealth. Imperialism and access to distant markets are common economic causes of international wars."
+    },
+    {
+      "url": "https://www.licorne-gulf.com/post/war-and-wealth-the-historical-ties-between-conflict-and-economics",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "licorne-gulf.com",
+      "summary": "Nations engage in conflict to secure resources and territory. *   **Imperialism and Wealth:** The Roman Empire expanded through military conquests to gain slaves, revenues, and material wealth."
+    },
+    {
+      "url": "https://hhi.harvard.edu/publications/economics-and-violent-conflict",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "harvard.edu",
+      "summary": "*   **Poverty and Economic Growth:** Poverty is a main factor in civil wars. Economic growth is associated with lower levels of conflict, and policies promoting growth can act as conflict prevention. *   **Primary Commodity Dependence:** Countries dependent on the sale of primary commodities are more likely to experience wars. *   **Economic Inequality as a Direct Cause of Conflict:** Statistical research has not found systematic evidence for a direct relationship between economic inequality and violent conflict, though qualitative studies suggest otherwise."
+    },
+    {
+      "url": "https://www.lidsen.com/journals/aeer/aeer-04-02-034",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "lidsen.com",
+      "summary": "*   **Environmental Factors:**\n*   **Climate:** High ambient temperatures increase irritability and impulsive behavior, and studies show a correlation between heat and increased physical assaults and violent crime rates. Climate change, leading to increased heat, migration, and resource scarcity, is expected to raise risk factors for aggression. *   **Resource Scarcity:** Poor pre- and post-natal nutrition and resource scarcity are predictors of later violent behavior."
+    },
+    {
+      "url": "https://pubmed.ncbi.nlm.nih.gov/7085589/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "nih.gov",
+      "summary": "*   **Crowding and Noise:** These physical environmental conditions have been consistently identified as aggression-promoting stressors."
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Killer_ape_theory",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "wikipedia.org",
+      "summary": "*   **\"Killer Ape Theory\":** This theory, which posits that war and interpersonal aggression were the driving force behind human evolution, has largely unraveled. Subsequent research indicates that chimpanzees and bonobos may exhibit aggressive behavior far more often than humans."
+    }
+  ],
+  "styleContract": {
+    "localRules": [
+      {
+        "id": "do-not-invent-citations-studies-historians-stati",
+        "instruction": "Do not invent citations, studies, historians, statistics, quotations, archaeological findings, or source identities."
+      },
+      {
+        "id": "do-not-treat-research-summaries-as-proof-of-a-cl",
+        "instruction": "Do not treat research summaries as proof of a claim beyond what they explicitly support."
+      },
+      {
+        "id": "do-not-present-a-theory-as-settled-when-the-evid",
+        "instruction": "Do not present a theory as settled when the evidence is contested or correlational."
+      },
+      {
+        "id": "do-not-collapse-different-regions-or-eras-into-a",
+        "instruction": "Do not collapse different regions or eras into a single story of progress, decline, or human nature."
+      },
+      {
+        "id": "do-not-use-warfare-as-the-only-measure-of-aggres",
+        "instruction": "Do not use warfare as the only measure of aggression; include interpersonal, political, economic, cultural, and structural forms where the evidence warrants it."
+      },
+      {
+        "id": "avoid-proof-leap-transitions-such-as-this-is-not",
+        "instruction": "Avoid proof-leap transitions such as 'This is not a coincidence', 'no accident', 'hidden in plain sight', and 'the truth is' unless directly quoted or genuinely necessary."
+      },
+      {
+        "id": "do-not-stack-adjacent-contrast-sentences-that-ju",
+        "instruction": "Do not stack adjacent contrast sentences that jump from a fact to a sweeping conclusion; earn claims with evidence, context, or qualification."
+      },
+      {
+        "id": "avoid-repeated-binary-reversal-constructions-suc",
+        "instruction": "Avoid repeated binary-reversal constructions such as 'X is not A. It is B.'"
+      },
+      {
+        "id": "use-em-dashes-and-en-dashes-sparingly-prefer-cle",
+        "instruction": "Use em dashes and en dashes sparingly; prefer clean punctuation."
+      },
+      {
+        "id": "replace-inflated-abstractions-with-specific-peop",
+        "instruction": "Replace inflated abstractions with specific people, places, objects, institutions, dates, or bounded claims."
+      },
+      {
+        "id": "do-not-repeat-the-same-analytical-framework-for-",
+        "instruction": "Do not repeat the same analytical framework for every period or region."
+      },
+      {
+        "id": "do-not-make-uncertainty-performative-qualify-onl",
+        "instruction": "Do not make uncertainty performative; qualify only where the available evidence requires it."
+      },
+      {
+        "id": "do-not-mention-ai-prompts-plans-json-schemas-gen",
+        "instruction": "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages."
+      },
+      {
+        "id": "avoid-generic-end-of-chapter-summaries-that-mere",
+        "instruction": "Avoid generic end-of-chapter summaries that merely restate the chapter title."
+      },
+      {
+        "id": "source-bound-claims",
+        "instruction": "Tie factual claims to the evidence available for the page and label interpretation as interpretation."
+      },
+      {
+        "id": "bounded-comparison",
+        "instruction": "Compare regions or eras only after naming the dimensions being compared and acknowledging major differences."
+      },
+      {
+        "id": "documentary-specificity",
+        "instruction": "Prefer named places, dates, objects, records, and institutions over abstract claims."
+      },
+      {
+        "id": "uncertainty-with-purpose",
+        "instruction": "State uncertainty when sources are incomplete, biased, disputed, or not directly comparable."
+      },
+      {
+        "id": "no-invented-evidence",
+        "instruction": "Do not invent evidence, citations, studies, experts, or source identities."
+      },
+      {
+        "id": "no-prompt-leaks",
+        "instruction": "Do not mention planning, drafting, AI, prompts, schemas, or production instructions in the manuscript."
+      },
+      {
+        "id": "no-proof-leap",
+        "instruction": "Avoid unsupported proof-leap transitions; do not jump from a local fact to a sweeping conclusion without evidence on this page."
+      },
+      {
+        "id": "no-generic-conclusion",
+        "instruction": "Avoid generic conclusions and visible prompt scaffolding in reader-facing prose."
+      },
+      {
+        "id": "uncertainty-where-earned",
+        "instruction": "Use uncertainty only where the evidence on this page requires it."
+      },
+      {
+        "id": "prompt-leak-ban",
+        "instruction": "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages."
+      }
+    ],
+    "distributionRules": [
+      {
+        "id": "vary-chapter-endings",
+        "instruction": "End chapters variously with a document limit, an unresolved historical tension, a consequence, or a bounded claim rather than repeating the same caveat."
+      },
+      {
+        "id": "selective-lenses",
+        "instruction": "Use only the analytical lens relevant to each page instead of repeating a complete causal framework."
+      },
+      {
+        "id": "advance-not-repeat",
+        "instruction": "Reintroduce a concept only when the later treatment adds evidence, changes its scale, or reveals a meaningful limitation."
+      },
+      {
+        "id": "global-balance",
+        "instruction": "Review the completed manuscript for regional imbalance, overreliance on warfare, and accidental repetition of the same historical examples."
+      },
+      {
+        "id": "vary-caveat-endings",
+        "instruction": "Do not use the same caveat construction as the default ending across chapters."
+      },
+      {
+        "id": "select-relevant-lens",
+        "instruction": "Choose only the analytical lens relevant to a page rather than repeating the complete comparison grid."
+      },
+      {
+        "id": "allow-bounded-conclusions",
+        "instruction": "Let some pages commit to a bounded conclusion instead of balancing every cause symmetrically."
+      },
+      {
+        "id": "reintroduce-only-when-advancing",
+        "instruction": "Reintroduce a concept only when the later treatment advances, challenges, or applies it."
+      }
+    ]
+  },
+  "continuityRules": [
+    "Keep aggression, violence, warfare, coercion, punishment, exploitation, and structural harm analytically distinct unless a chapter explicitly explains their overlap.",
+    "Mark every historical example with its region and approximate period before drawing comparisons.",
+    "Separate primary evidence, later interpretation, and the book's own bounded inference.",
+    "Do not carry a case from one chapter as a new key beat in another; later references may be brief callbacks only.",
+    "When evidence is uncertain, name the source limitation rather than filling the gap with plausible detail.",
+    "Do not treat a legal text, military chronicle, archaeological pattern, or research finding as a complete account of lived experience."
+  ],
+  "researchQueries": [
+    "How do historians define and distinguish aggression, violence, warfare, coercion, and structural violence?",
+    "What archaeological evidence can support cautious claims about interpersonal violence and organized conflict in early societies?",
+    "How should the Code of Hammurabi be used as evidence, and what are the limits of interpreting its provisions?",
+    "What factors shaped Roman expansion, military organization, provincial governance, enslavement, and resistance?",
+    "How have honor cultures, religious institutions, gender norms, and legitimacy shaped aggression in different historical settings?",
+    "What does reliable research support about poverty, economic growth, commodity dependence, inequality, and violent conflict?",
+    "How did gunpowder, industrial production, transport, communications, air power, nuclear weapons, and cyber systems change organized violence?",
+    "What evidence supports claims about social learning, trauma, hormones, brain systems, genetics, climate, crowding, and aggression?",
+    "How do historians distinguish state failure, civil war, ethnic persecution, genocide, occupation, and organized crime?",
+    "What are the main uncertainties in comparing violence across eras with unequal records and changing populations?"
+  ],
+  "illustrationPlan": {
+    "cadence": "manual",
+    "pageRules": [
+      "Use maps, documents, objects, architecture, and environments more often than portraits.",
+      "Every historical scene must state its region and period in the image brief.",
+      "Do not depict unnamed generic people as representatives of an entire civilization.",
+      "Avoid graphic injury unless a specific source and page purpose require it.",
+      "Do not place invented quotations or readable fake writing inside images.",
+      "Use exact historical labels for documents, weapons, cities, and institutions when they appear.",
+      "Keep visual comparisons between eras separated by clear captions or layout."
+    ],
+    "coverPrompt": "A restrained historical collage showing a weathered legal tablet, a city wall, a road leading toward an industrial skyline, and a small map-like network of routes. No text, no author name, no sensational gore, and no single era presented as the whole of human history.",
+    "globalStyle": "Restrained documentary history: maps, artifacts, documents, built environments, tools, and clearly labeled historical scenes. Use muted natural colors, readable composition, and no invented spectacle.",
+    "characterReferencePrompts": []
+  },
+  "writingComplexity": 5
+}

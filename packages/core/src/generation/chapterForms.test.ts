@@ -5,6 +5,7 @@ import type { CreateProjectInput } from "../schemas/book.js";
 import type { GenerateJsonOptions } from "../adapters/types.js";
 import {
   capFigures,
+  capOpenQuestionEndings,
   figureCapFor,
   compositionVarietyIssues,
   fallbackChapterComposition,
@@ -120,6 +121,45 @@ describe("rotateFormsForVariety", () => {
     expect(rotated.map((chapter) => chapter.sections.map((section) => section.subject))).toEqual(
       plan.map((chapter) => chapter.sections.map((section) => section.subject))
     );
+  });
+});
+
+describe("capOpenQuestionEndings", () => {
+  const ending = (chapterIndex: number) => composition(chapterIndex, ["scene", "mechanism", "open-question"]);
+
+  it("keeps two chapters ending on an open question and moves the rest off the landing", () => {
+    const plan = [ending(1), ending(2), ending(3), ending(4)];
+    const capped = capOpenQuestionEndings(plan, palette);
+    expect(capped.map((chapter) => chapter.sections.at(-1)!.form)).toEqual([
+      "open-question",
+      "open-question",
+      "mechanism",
+      "mechanism"
+    ]);
+    // The form survives; only its position moved.
+    expect(capped[2]!.sections.map((section) => section.form)).toEqual(["scene", "open-question", "mechanism"]);
+    expect(capped.map((chapter) => chapter.sections.map((section) => section.subject))).toEqual(
+      plan.map((chapter) => chapter.sections.map((section) => section.subject))
+    );
+  });
+
+  it("replaces the form outright in a one-section chapter and is pure and idempotent", () => {
+    const plan = [ending(1), ending(2), composition(3, ["open-question"])];
+    const capped = capOpenQuestionEndings(plan, palette);
+    expect(capped[2]!.sections[0]!.form).toBe(palette.find((form) => form.id !== "open-question")!.id);
+    expect(capOpenQuestionEndings(capped, palette)).toEqual(capped);
+    expect(plan[2]!.sections[0]!.form).toBe("open-question");
+  });
+
+  it("leaves a plan that never lands on an open question alone", () => {
+    const plan = [composition(1, ["open-question", "scene"]), composition(2, ["scene", "argument"])];
+    expect(capOpenQuestionEndings(plan, palette)).toEqual(plan);
+  });
+
+  it("is applied by settleFormVariety", () => {
+    const plan = Array.from({ length: 5 }, (_, index) => ending(index + 1));
+    const settled = settleFormVariety(plan, palette);
+    expect(settled.filter((chapter) => chapter.sections.at(-1)!.form === "open-question").length).toBeLessThanOrEqual(2);
   });
 });
 

@@ -88,6 +88,7 @@ export * from "./generation/quoteProvenance.js";
 export * from "./generation/composeScene.js";
 export * from "./generation/coupletRewrite.js";
 export * from "./generation/chapterApparatus.js";
+export * from "./generation/disclaimerCap.js";
 export * from "./generation/composedChapterMaterial.js";
 export * from "./generation/figures/figureSpec.js";
 export * from "./generation/figures/figureBlocks.js";

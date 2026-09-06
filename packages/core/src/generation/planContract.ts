@@ -67,13 +67,24 @@ export function stanceIsMethodShaped(stance: { thesis: string; positions: readon
 }
 
 /**
+ * A voice-guide line that is a rule about *shape* — where a chapter, section or
+ * paragraph ends, opens or how long it runs. "Vary chapter endings. Some should
+ * close on a bounded conclusion, some on an unresolved question…" was shown on
+ * every compose call, and three Opus readers heard it performed on schedule:
+ * chapters ending on an unanswered question in the same two-clause shape. Rules
+ * about tone and about what carries the narrative stay; rules about shape do not.
+ */
+const SHAPE_RULE_PATTERN =
+  /\b(chapter|section|paragraph)s?\b[^.]{0,60}\b(end|ends|ending|endings|close|closes|closing|open|opens|opening|openings|begin|begins|length|lengths|shape|shapes)\b|\b(end|close|open|begin)\s+(each|every|some|most|a|the)\s+(chapter|section|paragraph)\b|\bvary\b[^.]{0,40}\b(endings|openings|closings|paragraph|sentence)/i;
+
+/**
  * The voice-guide lines a per-chapter call may see. Taking styleNotes out
  * wholesale measured worse (composed-20); only the method rules are withheld.
  * A guide made entirely of method rules is kept as it is, because a chapter
  * with no style notes at all is the arm that was already measured.
  */
 export function chapterStyleNotes(voiceGuide: readonly string[]): string[] {
-  const kept = voiceGuide.filter((line) => !isMethodShaped(line, { keywords: true }));
+  const kept = voiceGuide.filter((line) => !isMethodShaped(line, { keywords: true }) && !SHAPE_RULE_PATTERN.test(line));
   return kept.length > 0 ? kept : [...voiceGuide];
 }
 
@@ -190,8 +201,15 @@ function sharedEpisodeTokens(left: EpisodeTokens, right: EpisodeTokens): { share
   for (const token of left.document) {
     if (identityHas(right, token)) shared.add(token);
   }
+  // A word either episode files under `place` is a place wherever else it
+  // appears: "The London Coroners' Rolls" and "The Decline of Homicide in
+  // London" are two cases in one city, and the city is in both titles.
   const strong = [...shared].filter(
-    (token) => !EPISODE_WEAK_TOKENS.has(token) && (left.name.has(token) || right.name.has(token))
+    (token) =>
+      !EPISODE_WEAK_TOKENS.has(token) &&
+      (left.name.has(token) || right.name.has(token)) &&
+      !left.place.has(token) &&
+      !right.place.has(token)
   );
   return { shared: [...shared], strong };
 }
@@ -207,8 +225,9 @@ function sharedEpisodeTokens(left: EpisodeTokens, right: EpisodeTokens): { share
  * stripped four legitimate episodes because Geoffrey Parker wrote the modern
  * history cited for two different wartime cases, and because one book title
  * said "Journey" where another chapter's place said "India". `strong` is the
- * subset a title or a person names, and a collision needs one: a shared token
- * that reaches the set only through the places is a shared country, not a case.
+ * subset a title or a person names and neither episode files as a place, and a
+ * collision needs one: a token either side calls a place is a shared city or
+ * country wherever else it is written, not a shared case.
  */
 export function episodeCollisions(episodes: BookEpisodes): EpisodeCollision[] {
   const chapters = [...episodes.chapters].sort((left, right) => left.index - right.index);

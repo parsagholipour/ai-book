@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 7,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.7,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Low",
+  "highlights": [
+    {
+      "quote": "The wound establishes a violent encounter more securely than it establishes its circumstances.",
+      "judgment": "The book's governing move stated in one line on its first page: evidence is allowed to reach exactly as far as it reaches, no further."
+    },
+    {
+      "quote": "A cemetery is therefore not a census of aggression. It is a meeting point between injury, survival, burial, preservation, and excavation.",
+      "judgment": "Excellent methodological precision — it names the sampling problem rather than gesturing at complexity."
+    },
+    {
+      "quote": "Bones ask what happened to bodies. Artifacts ask what tools and practices were available.",
+      "judgment": "The evidence-ladder framing is genuinely useful architecture and is honoured, not just announced, across later chapters."
+    },
+    {
+      "quote": "The ground held crops, houses, graves, and boundaries; people made those things reasons to fight.",
+      "judgment": "Strong close: concrete nouns doing the argumentative work, and the anti-determinist thesis landed without abstraction."
+    },
+    {
+      "quote": "A document can be violent without being a weapon in the hand.",
+      "judgment": "The Wannsee chapter's sharpest sentence, earned by the preceding analysis of euphemism and jurisdiction."
+    },
+    {
+      "quote": "The researchers treated the children's conduct as evidence of their anger.",
+      "judgment": "Internally inconsistent: the surrounding paragraphs insist the Bobo study measured imitation, not anger — a leftover sentence that contradicts its own chapter."
+    },
+    {
+      "quote": "Nataruk records care amid aggression, and Shanidar records aggression amid care.",
+      "judgment": "Elegant, but it is the first of many chiastic paired antitheses that become the book's most predictable rhetorical tic."
+    },
+    {
+      "quote": "History begins where the weather record ends: with people deciding what another person may claim, keep, or survive.",
+      "judgment": "A fine chapter-closing aphorism — and an instance of the closing-aphorism habit that nearly every chapter repeats."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Each case study is closed with a negative-clause disclaimer telling the reader what the evidence does not establish, almost always as the paragraph's last sentence.",
+      "instances": [
+        "Nor does the absence of similar wounds in every grave establish tranquillity.",
+        "Neither shows that settlement makes violence inevitable."
+      ]
+    },
+    {
+      "pattern": "The reactive/planned aggression distinction is re-introduced and re-explained in nearly every chapter rather than being built on, producing a recap loop across the book.",
+      "instances": [
+        "The distinction is analytical rather than moral.",
+        "Planning concerns the organisation of action; reactivity concerns the perceived trigger."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis and chiasmus used as the default figure for any contrast between two sources or two forces.",
+      "instances": [
+        "Nataruk records care amid aggression, and Shanidar records aggression amid care.",
+        "Violence is one form of coercion; coercion is not always visible as bodily violence."
+      ]
+    },
+    {
+      "pattern": "A near-verbatim 'no single object carried one inevitable consequence' formula is reused as the anti-determinist stopper in different chapters.",
+      "instances": [
+        "No wall or tablet carried one inevitable consequence.",
+        "No wall, seal, or court carried one inevitable consequence."
+      ]
+    },
+    {
+      "pattern": "Chapters end on a balanced aphoristic sentence that abstracts away from the case just examined, giving the book a uniform terminal cadence.",
+      "instances": [
+        "Bodies set possibilities, while history decides which possibilities acquire names, allies, weapons, and rules.",
+        "Until such evidence appears, the record supports neither an innocent humanity nor an inevitably violent one."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined book about human aggression, arguing across fourteen chapters that violence is a capacity whose realisation is decided by institutions, categories, permissions and evidence-generating processes rather than by an invariant nature. The thesis is genuinely sustained: from the Chinchorro skull through Jebel Sahaba, Talheim, Ebla, Hammurabi, Njal's Saga, Domesday, London plea rolls, St Bartholomew's Day, Wannsee, the Bobo doll, testosterone reviews, the Sahel, and Levellers, each case is made to test the same question, and the epistemic self-restraint is the book's chief distinction and pleasure. Its weaknesses are structural and rhythmic rather than intellectual: chapter 4 is a two-page stub beside chapters that run four or five times as long; the reactive/planned distinction is re-derived so often that it becomes a recap loop; and the caution that is the book's virtue hardens into a template of paired antitheses, 'this shows X, it does not show Y' disclaimers, and balanced aphoristic closers that dull the prose over 54,000 words. Engagement suffers accordingly — only the Njal's Saga and Becket chapters carry narrative momentum. There is at least one internally contradictory sentence in the Bobo chapter, and a few source attributions read as garbled. With a pass that trims the repeated methodological throat-clearing, rebalances chapter 4, and varies the terminal cadences, this would be publishable non-fiction of real quality."
+}

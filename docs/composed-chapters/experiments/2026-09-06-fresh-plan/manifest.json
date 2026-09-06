@@ -35,6 +35,18 @@
    "arm": "new",
    "sha256": "7188c022307eb4ed7c27c0693c9cd73e4e9d78af1fe8aa642ad2fa9b85852885",
    "words": 52396
+  },
+  "P7": {
+   "sourceLabel": "readers-prescription-8",
+   "arm": "new",
+   "sha256": "3931281c51dd2ca0721676fac09397ce78676f6a8a3462b296ec8dcbbde62f0b",
+   "words": 53864
+  },
+  "N7": {
+   "sourceLabel": "creative-scenes-9",
+   "arm": "new",
+   "sha256": "a52d52156408ae7045697902bce683fa048066b2b6f09fd363f09772a7805b3a",
+   "words": 53016
   }
  }
 }

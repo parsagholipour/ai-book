@@ -216,3 +216,14 @@ live revision 50) and the couplet rewrite broadened to the assert-then-retract, 
 4.6 and 10.6); only one told scene and one applied cut, because the planner chose documents over scenes and the
 legacy draft sat at its length floor. Readers: paragraph-final disclaimers, "unresolved question" endings, a foil
 repeated in four chapters, one thin chapter, two bad epigraphs. See the report's candidate-7b section.
+
+**Candidates 8 and 9, same sitting.** Candidate 8 (six deterministic changes aimed at 7b's reader complaints:
+scenes assigned by material, a 570-word ask so the read's cuts apply, at most two open-question endings, shape
+rules withheld from chapter prompts, a paragraph-final disclaimer cap, epigraph guards) read **7.50** (7.5 / 7.7 /
+7.3) with slop resistance 7.0, the first above 6.5; engagement 6.0 and pacing 5.67 remain, and no scene was told
+because the nonfiction scene call needs a dossier excerpt and fresh plans have almost none. Candidate 9 told the
+scenes from the record's likelihood under the creative contract: **7.07** — the openings praised, engagement
+6.33, structure and slop down as the scene-then-cases shape became the template again and one plan re-trod its
+own cases. Reverted; the five-page chapter floor kept; the couplet rewrite's acceptance tightened against the
+sentence merges readers now catch. Best measured state: candidate 8's configuration, the one committed after the
+7.4 checkpoint. Full record: [experiments/2026-09-06-fresh-plan/report.md](experiments/2026-09-06-fresh-plan/report.md).

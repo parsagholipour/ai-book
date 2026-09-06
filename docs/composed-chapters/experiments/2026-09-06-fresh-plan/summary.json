@@ -345,6 +345,144 @@
         6.9,
         7.7
       ]
+    },
+    {
+      "code": "P7",
+      "sourceLabel": "readers-prescription-8",
+      "arm": "new",
+      "sha256": "3931281c51dd2ca0721676fac09397ce78676f6a8a3462b296ec8dcbbde62f0b",
+      "words": 53864,
+      "readers": [
+        {
+          "reader": "A",
+          "overall": 7.5,
+          "thesis": 9,
+          "structure": 8,
+          "depth": 8,
+          "reasoning": 8,
+          "clarity": 8,
+          "voice": 8,
+          "engagement": 6,
+          "pacing": 6,
+          "craft": 7,
+          "slopResistance": 7
+        },
+        {
+          "reader": "B",
+          "overall": 7.7,
+          "thesis": 9,
+          "structure": 7,
+          "depth": 8,
+          "reasoning": 9,
+          "clarity": 9,
+          "voice": 8,
+          "engagement": 6,
+          "pacing": 6,
+          "craft": 8,
+          "slopResistance": 7
+        },
+        {
+          "reader": "C",
+          "overall": 7.3,
+          "thesis": 9,
+          "structure": 7,
+          "depth": 8,
+          "reasoning": 9,
+          "clarity": 8,
+          "voice": 7,
+          "engagement": 6,
+          "pacing": 5,
+          "craft": 7,
+          "slopResistance": 7
+        }
+      ],
+      "readerCount": 3,
+      "means": {
+        "overall": 7.5,
+        "thesis": 9,
+        "structure": 7.333333333333333,
+        "depth": 8,
+        "reasoning": 8.666666666666666,
+        "clarity": 8.333333333333334,
+        "voice": 7.666666666666667,
+        "engagement": 6,
+        "pacing": 5.666666666666667,
+        "craft": 7.333333333333333,
+        "slopResistance": 7
+      },
+      "readerRange": [
+        7.3,
+        7.7
+      ]
+    },
+    {
+      "code": "N7",
+      "sourceLabel": "creative-scenes-9",
+      "arm": "new",
+      "sha256": "a52d52156408ae7045697902bce683fa048066b2b6f09fd363f09772a7805b3a",
+      "words": 53016,
+      "readers": [
+        {
+          "reader": "A",
+          "overall": 7,
+          "thesis": 8,
+          "structure": 7,
+          "depth": 8,
+          "reasoning": 8,
+          "clarity": 7,
+          "voice": 8,
+          "engagement": 6,
+          "pacing": 5,
+          "craft": 7,
+          "slopResistance": 6
+        },
+        {
+          "reader": "B",
+          "overall": 7.2,
+          "thesis": 8,
+          "structure": 7,
+          "depth": 8,
+          "reasoning": 8,
+          "clarity": 8,
+          "voice": 7,
+          "engagement": 7,
+          "pacing": 6,
+          "craft": 7,
+          "slopResistance": 6
+        },
+        {
+          "reader": "C",
+          "overall": 7,
+          "thesis": 8,
+          "structure": 6,
+          "depth": 8,
+          "reasoning": 8,
+          "clarity": 8,
+          "voice": 8,
+          "engagement": 6,
+          "pacing": 5,
+          "craft": 7,
+          "slopResistance": 6
+        }
+      ],
+      "readerCount": 3,
+      "means": {
+        "overall": 7.066666666666666,
+        "thesis": 8,
+        "structure": 6.666666666666667,
+        "depth": 8,
+        "reasoning": 8,
+        "clarity": 7.666666666666667,
+        "voice": 7.666666666666667,
+        "engagement": 6.333333333333333,
+        "pacing": 5.333333333333333,
+        "craft": 7,
+        "slopResistance": 6
+      },
+      "readerRange": [
+        7,
+        7.2
+      ]
     }
   ],
   "arms": {
@@ -391,39 +529,39 @@
       "bookStandardDeviation": null
     },
     "new": {
-      "completeBooks": 3,
+      "completeBooks": 5,
       "means": {
-        "overall": 7.088888888888889,
-        "thesis": 8.444444444444445,
-        "structure": 7.555555555555555,
-        "depth": 7.333333333333333,
-        "reasoning": 8.666666666666666,
-        "clarity": 8.444444444444445,
-        "voice": 6.777777777777778,
-        "engagement": 5.444444444444445,
-        "pacing": 4.888888888888888,
-        "craft": 7.333333333333333,
-        "slopResistance": 6.0
+        "overall": 7.166666666666667,
+        "thesis": 8.466666666666667,
+        "structure": 7.333333333333333,
+        "depth": 7.6,
+        "reasoning": 8.533333333333333,
+        "clarity": 8.266666666666667,
+        "voice": 7.133333333333334,
+        "engagement": 5.733333333333333,
+        "pacing": 5.133333333333333,
+        "craft": 7.266666666666667,
+        "slopResistance": 6.2
       },
       "bookRange": [
         6.866666666666666,
-        7.4
+        7.5
       ],
-      "bookStandardDeviation": 0.27755546659548475
+      "bookStandardDeviation": 0.2708012801545322
     }
   },
   "validationIssues": [],
   "newMinusBaseline": {
-    "overall": -0.011111111111111072,
-    "thesis": 0.11111111111111072,
-    "structure": -0.1111111111111116,
-    "depth": 0.0,
-    "reasoning": 0.33333333333333215,
-    "clarity": 0.11111111111111072,
-    "voice": -0.22222222222222232,
-    "engagement": 0.1111111111111116,
-    "pacing": -0.44444444444444464,
-    "craft": 0.0,
-    "slopResistance": 0.0
+    "overall": 0.06666666666666732,
+    "thesis": 0.13333333333333286,
+    "structure": -0.3333333333333339,
+    "depth": 0.2666666666666666,
+    "reasoning": 0.1999999999999993,
+    "clarity": -0.06666666666666643,
+    "voice": 0.13333333333333375,
+    "engagement": 0.40000000000000036,
+    "pacing": -0.20000000000000018,
+    "craft": -0.06666666666666643,
+    "slopResistance": 0.20000000000000018
   }
 }

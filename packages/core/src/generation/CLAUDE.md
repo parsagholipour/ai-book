@@ -141,6 +141,24 @@ holds the event loop open and vitest will never exit.
   the writer's own register (23 negation contrasts per 1,000 sentences at rung 5, 31–43 on every focused-path
   book) and the strict reconstruction rule's cost in told scenes (rung 5a: 8 scenes, engagement 7.0; candidates
   3, 5, 6: none, engagement 5.0–5.3) are not its business.
+- **A nonfiction scene needs a passage of the record, and a fresh plan rarely has one; telling it anyway was
+  measured and reverted.** `composeScene` returns before any call when the chapter's dossier holds no excerpt for
+  the episode, so `readers-prescription-8` asked for scene episodes in eleven chapters, made two calls (both on an
+  unrelated excerpt, both empty) and told none, while rung 5a, on the Wikisource-friendly old outline, told eight.
+  `creative-scenes-9` let the creative contract tell a scene from what the record makes likely: six scenes, "the
+  strongest writing in the book", engagement 6.0 → 6.33 — and 7.07 against 7.50 without them, because the scene
+  → cases → coda shape became the chapter template again (rung 3's finding) and two chapters re-trod cases the
+  collision rule cannot see (Ur-Nammu then Hammurabi share no proper noun). The excerpt gate stays; the lever on
+  engagement for a fresh plan is retrieval that reaches its episodes, not a licence to reconstruct.
+- **A code-accepted rewrite can keep every anchor and lose the sense, and the readers of three books caught it.**
+  The broadened antithesis rewrite (`coupletRewrite.ts`: assert-then-retract, semicolon retraction, "without
+  proving", cap 12) took those forms off the page (0.9 and 2.2 per 1,000 sentences against 4.6 and 10.6) and
+  candidate 8 read slop resistance 7.0; it also produced "The cemetery communicated through bodies, burial
+  positions, implements, and the relation between them, whose evidence required interpretation beyond sentences"
+  from a clean two-sentence pair, and "with X doing no Y". `acceptCoupletRewrite` now refuses a two-sentence pair
+  merged into one long sentence on a relative clause, the "doing no" and "with no …ing" shapes, and a replacement
+  that ends on a relative pronoun, preposition or conjunction. Read the couplet report's `rewritten` count beside
+  the readers' craft score before raising the cap.
 - **A composed draft that is not prose is recomposed once and then fails the job; it is never
   edited, paginated and published.** The fast tier's writer returned 12,005 words of a rotating
   three-subject verb-chain with stray CJK tokens for one chapter (composed-13), the short-draft

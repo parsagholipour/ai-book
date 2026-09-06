@@ -168,3 +168,42 @@ one foil ("the timeless-aggression thesis") dispatched in four chapters, a thin 
 never quoted, and two epigraphs that are body sentences or OCR fragments. This is the state committed on
 6 September at the user's request ("commit the 7.4 for now"); candidate 8, targeting those five complaints
 deterministically, is registered in `protocol.md` and was set aside uncommitted.
+
+## Candidates 8 and 9: the readers' prescription, then told scenes — 7.50 and 7.07
+
+**Candidate 8** (`readers-prescription-8`, project `cmtpd68ev0000ugg0gak500jt`, `candidate-8.json`) added six
+deterministic changes aimed one-for-one at 7b's reader complaints: scene episodes assigned by material (the
+planner gave 11 of 14 chapters one), the compose ask raised from 520 to 570 words a page so the read's cuts could
+apply (6 of 14 chapters cut, against 1 of 12), at most two chapters ending on the `open-question` form, voice-guide
+shape rules withheld from chapter prompts like the method rules, a deterministic cap on paragraph-final
+disclaimer sentences (8 removed — the detector is narrower than the readers' perception of the hedge), and
+epigraph guards. 120 pages, 53,750 words, 111 PDF pages, 37 minutes, $0.53. Three fresh Opus readers: **7.5 / 7.7 /
+7.3, mean 7.50** — thesis 9.0, depth 8.0, slop resistance **7.0** (the first book of the programme above 6.5),
+engagement 6.0, pacing 5.67. Zero validation issues. The readers still name the negation couplet, the
+reactive/planned taxonomy re-declared in every chapter, paired antitheses and aphoristic closers, a three-page
+chapter as a stub, and scenes "summarised rather than carried": eleven scene episodes produced two scene calls and
+no scene, because the nonfiction scene call returns before any request unless the dossier holds an excerpt for
+the episode, and fresh plans have excerpts in two or three chapters (rung 5a, on the Wikisource-friendly old
+outline, told eight).
+
+**Candidate 9** (`creative-scenes-9`, project `cmtperbv90000jag00l2h155b`, `candidate-9.json`) let a chapter with
+no excerpt be told from what the record makes likely under the creative contract, and raised the planner's chapter
+floor to five pages. Six scenes told (every other chapter, as the apparatus rotation requires), hedge-ending share
+0.069 (the lowest of any book), paragraph-shape variety the highest. Readers: **7.0 / 7.2 / 7.0, mean 7.07**. The
+openings are "the strongest writing in the book" and engagement moved 6.0 → 6.33; structure fell to 6.67 (chapter
+9 on Hammurabi re-treads chapter 3's Ur-Nammu material, chapter 12 re-narrates chapter 10's Bobo and Robbers Cave
+— no shared proper noun for the collision rule), slop back to 6.0 ("every chapter runs the same circuit of scene,
+comparison, third case and generalising coda", the rung-3 template), clarity and craft down on garbled sentences.
+One of those was traced: the couplet rewrite turned "The cemetery did not speak in sentences. Its evidence lay in
+bodies, burial positions, implements, and the relation between them." into one clause hanging on "whose", and the
+code accepted it because every anchor survived. Decision: the scene rule is reverted, the five-page floor stays,
+and the rewrite's acceptance now refuses single-sentence merges with a relative clause and the "doing no" shapes
+the readers quote, with the per-chapter cap lowered from 18 to 12.
+
+Across the sitting: 6.87 → 7.00 → 7.40 → 7.50 → 7.07, against rung 5's 7.63. The plan-level defects are gone
+(no reader of candidates 6–9 names a distinction assigned as a chapter's payoff, and the cross-chapter revisits
+the collision rule can see are gone); what the readers name now is the balanced writer's own register — the
+epistemic couplet, the paired antithesis, the aphoristic closer, the taxonomy restated — and the two criteria it
+holds at 6, engagement and pacing. The told scene, the one lever that moved engagement on the old outline, moved
+it a third of a point here and cost structure and slop. Candidate 8's state is the best measured configuration
+and is the one to commit.

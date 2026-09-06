@@ -50,7 +50,15 @@ const METHOD_VOICE_LINES = [
 
 const PLAIN_VOICE_LINES = [
   "Use clear historical prose for general readers, with concrete scenes, artifacts, institutions, and decisions carrying the explanation.",
-  "Vary chapter endings. Some should close on a bounded conclusion, some on an unresolved question, and some on a document or scene that changes the reader's perspective."
+  "Keep the tone humane and unsensational when describing injury, death, conquest, and trauma."
+];
+
+// Rules about *shape* — where a chapter, section or paragraph ends, opens or how
+// long it runs — which the writer performs on schedule when it is shown one.
+const SHAPE_VOICE_LINES = [
+  "Vary chapter endings. Some should close on a bounded conclusion, some on an unresolved question, and some on a document or scene that changes the reader's perspective.",
+  "Open each chapter on a document rather than a summary.",
+  "Vary paragraph lengths across the chapter."
 ];
 
 describe("isMethodShaped", () => {
@@ -92,8 +100,23 @@ describe("chapterStyleNotes", () => {
     expect(chapterStyleNotes([...PLAIN_VOICE_LINES, ...METHOD_VOICE_LINES])).toEqual(PLAIN_VOICE_LINES);
   });
 
+  it("withholds a rule about shape, which the writer performs on schedule", () => {
+    expect(chapterStyleNotes([...PLAIN_VOICE_LINES, ...SHAPE_VOICE_LINES])).toEqual(PLAIN_VOICE_LINES);
+  });
+
+  it("leaves the method rule's own lines to the method rule", () => {
+    // Both are already withheld by `isMethodShaped`, and stay withheld: the
+    // first on "rather than", the second on the keyword "interpretation".
+    const carried =
+      "Let places, objects, bodies, settlements, laws, and documents carry the narrative rather than relying on sweeping abstractions.";
+    const analytical =
+      "Write as a clear analytical history for intelligent general readers, using concrete episodes before broad interpretation.";
+    expect(chapterStyleNotes([...PLAIN_VOICE_LINES, carried, analytical])).toEqual(PLAIN_VOICE_LINES);
+  });
+
   it("never returns an empty list", () => {
     expect(chapterStyleNotes(METHOD_VOICE_LINES)).toEqual(METHOD_VOICE_LINES);
+    expect(chapterStyleNotes(SHAPE_VOICE_LINES)).toEqual(SHAPE_VOICE_LINES);
     expect(chapterStyleNotes([])).toEqual([]);
   });
 });
@@ -165,7 +188,9 @@ describe("episodeCollisions", () => {
     expect(collisions[0]!.earlier.chapterIndex).toBe(1);
     expect(collisions[0]!.later.chapterIndex).toBe(14);
     expect(collisions[0]!.shared).toEqual(expect.arrayContaining(["Nataruk", "Kenya", "Lahr"]));
-    expect(collisions[0]!.strong).toEqual(expect.arrayContaining(["Nataruk", "Lahr"]));
+    // "Nataruk", "Turkana" and "Kenya" are places on both sides; the excavators
+    // named in one episode's person field and the other's document are strong.
+    expect(collisions[0]!.strong.sort()).toEqual(["Lahr", "Marta", "Mirazón"]);
   });
 
   it("flags the Haitian Declaration taken twice", () => {
@@ -226,27 +251,52 @@ describe("episodeCollisions", () => {
     expect(collisions[0]!.shared.sort()).toEqual(["Jewish", "Nazi", "Nuremberg"]);
     // "Nazi" and "Jewish" are weak, so this is reported and never dropped.
     expect(collisions[0]!.strong).toEqual(["Nuremberg"]);
+    expect(applyFocusContract(bookEpisodesSchema.parse({
+      chapters: [
+        { index: 8, episodes: [{ title: "The Nuremberg Laws and Nazi Jewish policy", kind: "document", document: "Reichsgesetzblatt I (1935)" }] },
+        {
+          index: 12,
+          episodes: [
+            { title: "Nazi Jewish policy at Wannsee", kind: "document", document: "The Wannsee protocol, read at the Nuremberg trials" },
+            { title: "The Einsatzgruppen reports", kind: "document", document: "Ereignismeldungen UdSSR" }
+          ]
+        }
+      ]
+    })).dropped).toEqual([]);
   });
 
-  it("reports a one-strong-token collision but never drops for it", () => {
-    // Two different London cases: the shared "England" is a place, so only
-    // "London" is strong, and one strong token is a note to the planner.
+  it("does not flag two cases in one city, even when the city is in both titles", () => {
+    // The relaunched run dropped the second of these: "London" is in both
+    // titles and both places, so it is a city rather than a case.
     const episodes = bookEpisodesSchema.parse({
       chapters: [
-        { index: 8, episodes: [{ title: "The London Coroners' Rolls", kind: "document", place: "London, England" }] },
         {
-          index: 10,
+          index: 8,
           episodes: [
-            { title: "The German Air Raids on London", kind: "scene", place: "London, England" },
-            { title: "The Clydebank Blitz", kind: "scene", place: "Clydebank, Scotland" }
+            {
+              title: "The London Coroners' Rolls",
+              kind: "document",
+              person: "The coroners and victims recorded in medieval London",
+              place: "London, England",
+              document: "Barbara A. Hanawalt, Crime and Conflict in English Communities, 1300-1348 (1979)"
+            }
+          ]
+        },
+        {
+          index: 11,
+          episodes: [
+            {
+              title: "The Decline of Homicide in London",
+              kind: "figure",
+              person: "Manuel Eisner",
+              place: "London, England",
+              document: "Manuel Eisner, \"Modernization, Self-Control and Lethal Violence in Western Europe,\" British Journal of Criminology (2001)."
+            }
           ]
         }
       ]
     });
-    const collisions = episodeCollisions(episodes);
-    expect(collisions).toHaveLength(1);
-    expect(collisions[0]!.shared.sort()).toEqual(["England", "London"]);
-    expect(collisions[0]!.strong).toEqual(["London"]);
+    expect(episodeCollisions(episodes)).toEqual([]);
     expect(applyFocusContract(episodes).dropped).toEqual([]);
   });
 

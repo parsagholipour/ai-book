@@ -91,10 +91,11 @@ export function chapterWordBudget(
       }
     : isDiagramFriendlyBookCategory(input.category)
       ? { min: 300, target: 380, max: 480 }
-      : // A printed page holds about 490 words of this prose: 480 a page printed
-        // 107–112 of 120 paid, 540 printed 124, 520 printed 120. Length made no
-        // difference to the blind panel (480: 7.32, 520: 7.31, ×3 each).
-        { min: 430, target: 520, max: 640 };
+      : // A printed page holds ~490 words of this prose: 480 a page printed 107–112 of 120
+        // paid, 540 printed 124, 520 printed 120, and length made no difference to the blind
+        // panel (480: 7.32, 520: 7.31, ×3 each). But at ~87% delivery 520 sat the book on its
+        // floor and the read's cuts could not apply; 570 lands ~10% above it for them to spend.
+        { min: 430, target: 570, max: 640 };
   const displaced = Math.max(0, options.figureWords ?? 0);
   // Floor the no-figure chapter first (a one-page chapter still asks for a
   // full page of prose), then subtract figure words. Flooring at `per.target`

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 6,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 7.0,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A wound identifies an event. A pattern of wounds raises a question about a community.",
+      "judgment": "Crisp, genuinely load-bearing statement of the book's governing distinction — but it also inaugurates a two-sentence aphoristic closer the book will reuse dozens of times."
+    },
+    {
+      "quote": "A detailed rule records a concern, not a frequency.",
+      "judgment": "The book's best single move: a disciplined source-critical rule that keeps legal texts from being read as social statistics."
+    },
+    {
+      "quote": "Its brevity gives the grant its administrative force: a few lines could alter the legal description of millions of people.",
+      "judgment": "Precise and non-obvious; the Caracalla section shows the book at its analytic strongest, reading scale off a document's form."
+    },
+    {
+      "quote": "The seal identifies who may collect; the ledger records what is owed; the map defines the territory; the rifle punishes refusal; the scale converts labour into revenue.",
+      "judgment": "Concrete and vivid enumeration that earns its abstraction — though the same five-clause chain shape recurs in almost every chapter."
+    },
+    {
+      "quote": "The cemetery communicated through bodies, burial positions, implements, and the relation between them, whose evidence required interpretation beyond sentences.",
+      "judgment": "A garbled, near-meaningless sentence on the book's second page; several such editing artifacts survive into the finished text."
+    },
+    {
+      "quote": "Food somewhere in the province did not place it within reach of people who had lost their coins, animals, tools, and credit.",
+      "judgment": "Broken syntax (the subject and object have collapsed) obscures what should be the Bengal chapter's central entitlement argument."
+    },
+    {
+      "quote": "Although the communities Rome ruled possessed their own laws, languages, economies, and political memories, civilisation here meant bringing culture to people presumed to lack it.",
+      "judgment": "A non sequitur concessive: the clause and its main clause do not actually oppose each other, and the sentence reads as a stitched-together revision."
+    },
+    {
+      "quote": "The command structure made murder scalable. It also made responsibility traceable.",
+      "judgment": "Effective in isolation, but exemplary of the templated closer — short declarative, then a symmetrical 'It also' reversal — that ends section after section."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The 'restrains one form of violence while authorising another' antithesis, restated as a chapter's conclusion nearly every time an institution appears.",
+      "instances": [
+        "State regulation narrows some private violence by authorizing other forms of violence.",
+        "Centralization narrows some violence and enlarges other violence."
+      ]
+    },
+    {
+      "pattern": "The frequency disclaimer: every chapter pauses to say that the source records a concern, a category or a possibility but not a rate. Correct each time, and by the fourth chapter entirely predictable.",
+      "instances": [
+        "A detailed rule records a concern, not a frequency.",
+        "Nor does the sequence reveal how often these injuries occurred."
+      ]
+    },
+    {
+      "pattern": "The 'chain' enumeration: a process is broken into a sequence of short parallel clauses, one per link, and then named as a chain. Used for conquest, revenue, artillery, deportation, extraction and legal procedure alike.",
+      "instances": [
+        "Conquest changed possession. Changed possession altered local obligations.",
+        "The seal identifies who may collect; the ledger records what is owed; the map defines the territory; the rifle punishes refusal; the scale converts labour into revenue."
+      ]
+    },
+    {
+      "pattern": "Fixed chapter architecture: two or three case studies narrated in turn, then an explicitly announced 'the comparison' paragraph that lists what each case can and cannot support.",
+      "instances": [
+        "The comparison with Crow Creek remains uneven.",
+        "The comparison also complicates the claim that firearms made combat impersonal."
+      ]
+    },
+    {
+      "pattern": "Balanced two-clause summary sentence in which body/biology is set against society/institution, deployed whenever a section needs to end without committing.",
+      "instances": [
+        "The body supplies capacities and vulnerabilities; social arrangements determine much of what those capacities can do.",
+        "It protects the record from the crime while preserving the crime’s instructions."
+      ]
+    }
+  ],
+  "summary": "This is a serious, evidentially disciplined history of aggression organised around a single defensible thesis: an act of harm is legible only through the institutions that authorise, record, price and reward it, and every claim must stay inside the trace that survives. The case material is specific and well handled — Jebel Sahaba, Domesday, Ur-Nammu, Corinth and Gaul, the Congo rubber concessions, the Constantinople artillery train, Wannsee and the Talat orders, Srebrenica, Montgomery, Belfast — and the source criticism is consistently better than the genre norm, refusing to convert a legal schedule or a founding document into a measure of behaviour. The voice is austere, cool and unmistakably consistent. Its costs are structural and rhythmic: chapter 9 backtracks to 1754 BCE after chapter 8 has reached Rwanda and largely re-treads chapter 3's Mesopotamian ground, and every chapter runs the same machine — narrated case, second case, announced comparison, frequency disclaimer, chain enumeration, balanced closer — so that by the midpoint a reader can predict the shape of a paragraph before reading it. Sentence-level craft is generally good but pocked with garbled or stitched-together clauses that a copy-editor should have caught. There is little stock AI vocabulary, but the templating, the paired antitheses and the aphoristic two-sentence closers are heavy enough to register as machine-shaped rhythm rather than authorial habit."
+}
