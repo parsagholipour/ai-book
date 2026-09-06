@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 6,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 7.1,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The violence entered the skeleton as puncture, fracture, or dislocation, not as a story with motives attached.",
+      "judgment": "Excellent compression of the book's epistemic thesis into a concrete image; the prose earns its abstraction."
+    },
+    {
+      "quote": "A tablet narrows reality to a quantity or obligation; the stele expands it into universal order. Both make violence durable.",
+      "judgment": "Sharp analytic pairing, but also the book's single most repeated rhetorical move, used dozens of times."
+    },
+    {
+      "quote": "Scarcity becomes killing when an authority, group, or armed party can decide who must move, who may enter, or whose access to a bank or fishing ground can be defended.",
+      "judgment": "The central claim stated with real precision; unfortunately it is restated in near-identical form in Ch. 2 and again later."
+    },
+    {
+      "quote": "Two days after the barefoot procession, the assault began.",
+      "judgment": "Broken seam: no barefoot procession has been mentioned, and the paragraph silently jumps from the 1204 sack of Constantinople to the 1099 siege of Jerusalem."
+    },
+    {
+      "quote": "Six centuries after the dedication Durán described, another public ceremony at Cajamarca began with fewer than two hundred Spanish soldiers",
+      "judgment": "A dangling reference to a Durán passage that does not exist in the text, attached to a chronological figure that is plainly wrong."
+    },
+    {
+      "quote": "The Magdeburg Bamberger chronicle presents this experience from another angle.",
+      "judgment": "Two sources conflated into one non-existent title — a compositional artifact in an otherwise scrupulous evidentiary chapter."
+    },
+    {
+      "quote": "The people who killed at Talheim did not require a ministry, standing army, or written order.",
+      "judgment": "Fine calibration of scale: organization without offices, argued rather than asserted."
+    },
+    {
+      "quote": "The Peers inquiry still found decisions made by particular people. Soldiers refused, hesitated, reported, or participated.",
+      "judgment": "The book's best moment of self-correction, refusing to let its own institutional thesis absorb individual agency."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter opens with a cinematic reconstructed scene (present-tense sensory detail, a named figure, weather and dust), then pivots abruptly to documentary analysis. The scene is almost never returned to.",
+      "instances": [
+        "Cleomedes son of Lycomedes stood outside the wall of Melos in the autumn of 416 BCE while Athenian ships lay pulled up along the shore",
+        "The first ram struck the wall of Lachish just after sunrise, when the limestone still held the night's cold."
+      ]
+    },
+    {
+      "pattern": "The paired antithesis \"A does X; B does Y\" (often with a third sentence collapsing them) as the standard closing cadence of a section.",
+      "instances": [
+        "A wound on a skull records an injury. A ration tablet records an obligation that may have fed the person who inflicted one. A fortification records fear and a schedule of labour.",
+        "A tribute roll transforms conquest into an obligation. A military costume transforms a prisoner into a warrior's achievement. A mound transforms commanded labour into ancestral permanence."
+      ]
+    },
+    {
+      "pattern": "An epistemic-limit sentence terminating nearly every subsection: the record shows X but cannot show Y. Individually admirable, collectively a tic that flattens dozens of different arguments into one shape.",
+      "instances": [
+        "It described what happened to the bodies more securely than what the attackers intended.",
+        "The record makes the relationship visible without turning it into a private story."
+      ]
+    },
+    {
+      "pattern": "The book's thesis (institutions, not impulses, make violence durable and countable) is restated as a standalone aphorism at the end of most chapters, so the argument accumulates emphasis rather than development.",
+      "instances": [
+        "The weapon enlarged the possible violence; the record decided whose labour would make that enlargement real.",
+        "Mexica violence appears larger partly because the state counted more of it."
+      ]
+    },
+    {
+      "pattern": "Procedural chain enumerations — a demand passing through four to seven named offices in a single paragraph — used as the analytic engine in at least six chapters, with near-identical syntax each time.",
+      "instances": [
+        "A section committee gathered a complaint; a police office checked a name; a commissioner issued or sought a warrant; a prison received the accused",
+        "The post commandant entered the quantity in a register and sent the rubber by canoe, caravan, or steamer to district headquarters."
+      ]
+    }
+  ],
+  "summary": "This is a serious, disciplined work of comparative history with a genuine and sustained thesis: organized violence scales not through impulse but through records, offices, and the administrative forms that make people countable, and the archive that preserves those forms also constrains what can be compared. The specificity is real — Nataruk, Jebel Sahaba, the timar register, the malikane, the indelningsverket, the Wannsee minutes — and the handling of evidence is consistently cautious in a way that reads as expertise rather than hedging, repeatedly distinguishing what a source establishes from what it merely suggests. The prose is austere, controlled, and free of the usual AI diction; there are no stock transitions or breezy signposts. What holds it back is shape rather than substance. The chapter template (vivid reconstructed scene, then a document, then what the document cannot say, then an institutional moral) is identical across fifteen chapters, the thesis is restated aphoristically far more often than it is developed, and the paired-antithesis cadence becomes audible by Chapter 5. There are also concrete compositional failures: Chapter 6 jumps unmarked from the 1204 sack of Constantinople back to the 1099 siege of Jerusalem and narrates that assault twice, and at least three dangling references point at passages that were never written. The book also lacks an introduction and ends mid-argument on the Good Friday Agreement with no conclusion, so the accumulated case is never gathered. Fix the broken seams, cut roughly a fifth of the thesis restatements, and vary the chapter architecture, and this would be publishable non-fiction."
+}

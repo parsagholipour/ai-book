@@ -1,5 +1,5 @@
 import { PRE_EDIT_PROJECT_STATUS } from "@book-maker/core";
-import { prisma } from "@book-maker/db";
+import { Prisma, prisma } from "@book-maker/db";
 import { startGenerationAttempt } from "@book-maker/db/billing";
 import { dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
 import { type MobileBookEditOperationRecord } from "./dto.js";
@@ -154,13 +154,13 @@ async function retryPageRewriteOperation(options: RetryOptions): Promise<RetryRe
     };
   }
 
+  const { billingLedgerEntryId: _previousLedgerEntryId, ...originalRequest } = payload;
   const retryPayload = {
-    ...payload,
+    ...originalRequest,
     operationId: operation.id,
     retryOfGenerationJobId: operation.generationJobId,
     [PRE_EDIT_PROJECT_STATUS]: settledStatusBeforeEdit(project.status)
   };
-  delete retryPayload.billingLedgerEntryId;
 
   const started = await startGenerationAttempt({
     userId: options.userId,
@@ -202,7 +202,7 @@ async function retryPageRewriteOperation(options: RetryOptions): Promise<RetryRe
           retryRequestId: options.requestId,
           nextRetryAt: null,
           error: null,
-          adherenceAudit: null,
+          adherenceAudit: Prisma.JsonNull,
           generationJobId: job.id,
           ledgerEntryId: ledgerEntry?.id ?? null,
           creditsCharged: sourceAttempt.quotedCredits

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.5,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The first fact is physical: bone was broken. The second is historical: several people with severe injuries were placed together. Between those facts and a story about the attack lies the work of interpretation.",
+      "judgment": "Excellent opening move \u2014 the book's whole method is enacted rather than announced, on a concrete object."
+    },
+    {
+      "quote": "A tablet did not swing a spear. It made the spear-bearer provisionable.",
+      "judgment": "The book's best sentence: compressed, original phrasing that carries the argument about administration and force."
+    },
+    {
+      "quote": "Plausibility is not evidence.",
+      "judgment": "Characteristic epigrammatic discipline; effective once, but the aphoristic-closer habit recurs to diminishing returns."
+    },
+    {
+      "quote": "The Bastille fell because a crowd made authority answerable to the streets. The terror grew when the revolutionary state learned to make the streets answerable to its definition of authority.",
+      "judgment": "Elegant chiasmus and a genuine synthesis of the chapter \u2014 but it is one of a dozen near-identical mirrored chapter closers."
+    },
+    {
+      "quote": "Gunpowder did not fight by itself.",
+      "judgment": "A one-sentence paragraph deployed for emphasis; the move is legitimate but the proposition is the book's most over-repeated claim in new costume."
+    },
+    {
+      "quote": "Drought does not command a massacre. A firearm does not select an enemy. Poverty does not write a policy.",
+      "judgment": "Tricolon of the same negation formula used since chapter 1 \u2014 by chapter 15 the pattern reads as template rather than argument."
+    },
+    {
+      "quote": "The colony's population was divided by legal status, colour, birthplace, wealth, and political expectation... The Code Noir provided a framework for Catholic instruction, masters' authority, and punishment",
+      "judgment": "Saint-Domingue is set up almost identically in chapters 8 and 10; cross-chapter redundancy that a revision should cut."
+    },
+    {
+      "quote": "The accords could establish the police. They could not predetermine the police culture that followed.",
+      "judgment": "A capable paragraph ending, but a weak final sentence for a 53,000-word book \u2014 the volume stops rather than concludes."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Negation-then-correction couplet ('X did not do A; it did B') used as the default engine of every analytical paragraph, chapter after chapter.",
+      "instances": [
+        "A burial is an act after death; it is not a transcript of the killing.",
+        "The train helped deport European Jews across long distances, but its tracks did not select the passengers."
+      ]
+    },
+    {
+      "pattern": "Identical chapter architecture: one artifact or site rendered forensically, then its procedure enumerated, then a paired comparison with a distant case, then a catalogue of instruments, then a 'cannot be reduced to one cause' close.",
+      "instances": [
+        "Nataruk and Jebel Sahaba share a material language without describing the same social event.",
+        "Algeria and Afghanistan differed in religion, geography, colonial status, and international setting. Yet sanctuary, taxation, intelligence, and coercion linked the daily conduct of both conflicts."
+      ]
+    },
+    {
+      "pattern": "A single thesis restated in fresh vocabulary at the end of nearly every chapter: material pressure supplies force, institutions supply direction.",
+      "instances": [
+        "Institutions and ideas about belonging give pressure and technology their destructive direction.",
+        "The crop supplied pressure. Colonial rule supplied the means by which pressure reached a child, a field, or a traveller."
+      ]
+    },
+    {
+      "pattern": "Mirrored antithetical closers built on reversed word order or a swapped subject/object pair.",
+      "instances": [
+        "Where the Stele of the Vultures counted victory through fallen enemies, the Warka Vase counted ordered plenty through bearers and goods.",
+        "Sennacherib had made violence the center of the relationship. Esarhaddon sought to make restoration perform the same work."
+      ]
+    },
+    {
+      "pattern": "Enumerated procedural chains ('First\u2026 Second\u2026 Third\u2026' or a semicolon list of steps) used to convert every institution into the same ladder from decision to harm.",
+      "instances": [
+        "The sequence can be stated plainly. Surplus made stored grain possible. Stored grain made regular rations possible.",
+        "First, a colonial authority defined a need... Fourth, police or soldiers made the demand credible."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, source-critical global history of organized violence, built chapter by chapter from concrete artifacts \u2014 the Talheim skulls, the Stele of the Vultures, an Ur III ration tablet, the Coyolxauhqui Stone, the Zong insurance case, the Wannsee Protocol \u2014 and governed by a consistent methodological thesis: material pressure and technology enlarge capacity, while institutions and categories of belonging supply direction. The reasoning is genuinely good; the writing repeatedly names what its evidence cannot bear, and the specificity of names, dates and procedures is high throughout with no padding by generic abstraction. Its weakness is uniformity. Every chapter runs the same shape (forensic vignette, procedure, paired comparison, catalogue of instruments, refusal of a single cause), and the argument advances almost entirely through one rhetorical device, the negation-then-correction couplet, which by the later chapters reads as machinery rather than thought. Pacing suffers accordingly, with cross-chapter redundancy (Saint-Domingue, the Zong, the flower wars) and a fifteenth chapter that dissipates into El Salvador instead of closing the book's case. Prose quality is high and the voice never breaks; what it needs is variation of paragraph and chapter shape, compression of the middle chapters, and a real conclusion. Slop here is structural rather than lexical \u2014 no stock AI diction, but strongly templated moves and paired antitheses."
+}

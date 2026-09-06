@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 9,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 7,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 8.1,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A police arrest, a street fight, and a court hearing belong to the same chain only when we identify what each part did.",
+      "judgment": "Chapter 1 states the book's governing analytic in a single concrete sentence; the whole volume then honours it."
+    },
+    {
+      "quote": "A cemetery is a selection before it is a sample.",
+      "judgment": "Compressed, genuinely earned methodological insight — the strongest kind of line in the book."
+    },
+    {
+      "quote": "Law did not restrain violence here. It taught violence how to persist.",
+      "judgment": "Excellent as a single closer, but symptomatic: the negate-then-assert antithesis is the book's default rhetorical gear."
+    },
+    {
+      "quote": "In Uruk, the counted ration carried command outward. At Arslantepe, the building gathered command inward.",
+      "judgment": "Comparison used analytically rather than decoratively; the chiasmus earns its symmetry here."
+    },
+    {
+      "quote": "A railway timetable began with a timetable.",
+      "judgment": "An outright defect — a garbled sentence surviving into the finished chapter opening."
+    },
+    {
+      "quote": "The horse made the distance possible. It did not decide the destination.",
+      "judgment": "Effective section hinge, but one of roughly a dozen near-identical aphoristic paragraph-closers across the book."
+    },
+    {
+      "quote": "They decide whether a prisoner is an enemy, whether a petition deserves an answer, whether a plantation can be reformed...",
+      "judgment": "Dangling antecedent at the end of Chapter 10; the pronoun has no available referent, a rare lapse in an otherwise precise text."
+    },
+    {
+      "quote": "Violence in history is organized before it is felt: someone decides who may be harmed, and that decision leaves a record.",
+      "judgment": "The closing thesis lands because the preceding fifteen chapters actually demonstrated it, not merely asserted it."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The epistemic-limits move: every artifact is introduced, read, then told what it 'does not' or 'cannot' establish. Intellectually admirable, but deployed hundreds of times in identical grammar, so by the middle chapters the reader can predict the sentence before it arrives.",
+      "instances": [
+        "It does show that production had entered a system in which obligations could be calculated above the household.",
+        "The bones show trajectories more securely than they show plans."
+      ]
+    },
+    {
+      "pattern": "Two-scholar dialectic per chapter: a maximalist and a minimalist are named, each is 'right' about something, and the chapter refuses to rank them. The move is honest but becomes a fixed slot in the template.",
+      "instances": [
+        "Keeley asks the record to correct a romantic image of peaceful pre-state life. Fry asks the record not to become a new image of universal savagery.",
+        "Geoffrey Parker is right that gunpowder warfare increased the demands placed on states... Jeremy Black is right that the pattern was uneven."
+      ]
+    },
+    {
+      "pattern": "Negate-then-assert paired antithesis as the standard sentence rhythm, usually two clipped sentences replacing one.",
+      "instances": [
+        "Payment did not end coercion. It placed coercion on a schedule.",
+        "The rules do not erase violence. They regularize it."
+      ]
+    },
+    {
+      "pattern": "Aphoristic one-line paragraph closer ending a section, often a paradox or an inversion.",
+      "instances": [
+        "A city could survive and lose independence. A city could surrender and still be destroyed.",
+        "Violence followed judgment."
+      ]
+    },
+    {
+      "pattern": "Chapter endings deferred into an open question rather than a conclusion, signalled by 'remains open' / 'remains unsettled' / 'That question'.",
+      "instances": [
+        "That question remains open.",
+        "Whether comparison can describe that unevenness without turning it into a new progress story remains unsettled."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely accomplished work of historical argument: a single thesis — that aggression becomes historically consequential only when institutions give it schedules, offices, records and permissions — is stated in Chapter 1 through a court record and then tested, refined and never abandoned across fifteen chapters spanning Jebel Sahaba to Gacaca. The evidence is specific, dated and named rather than gestural, and the reasoning is unusually disciplined about what each kind of trace (bone, relief, papyrus, register, protocol, dataset) can and cannot bear; the sustained refusal to let numbers like Juvayni's Merv figure or the Congo mortality estimates do work they cannot do is a real intellectual achievement. Prose is precise and cool, and the voice is consistent to a fault. The costs are rhythmic rather than substantive: the negate-then-assert antithesis, the two-scholars-are-each-right dialectic, the aphoristic section closer and the deferred closing question recur so regularly that the chapters begin to feel machined to one shape, and engagement flags in the middle stretch because tonal register never varies — no anger, no surprise, no change of pace. There are also two small textual defects (a garbled opening sentence in Chapter 12's second section and a dangling pronoun at the close of Chapter 10). Light revision — varying the closing formula, cutting perhaps a fifth of the epistemic-caution sentences, and letting one or two chapters move at a different speed — would bring it very close to publishable."
+}

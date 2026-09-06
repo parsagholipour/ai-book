@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.1,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The sabres belonged to individual riders. The decision to put riders among the crowd belonged to an office.",
+      "judgment": "The book's controlling idea stated early, concretely, and without abstraction — its single best move."
+    },
+    {
+      "quote": "The evidence supports a violent collective event. It does not identify the speech made before it, the grievance carried into it, or the person who gave the first order.",
+      "judgment": "Exemplary evidentiary discipline; the text repeatedly refuses inferences its sources cannot carry."
+    },
+    {
+      "quote": "A soldier on the wall bent over the merlon with a jar in both hands. He tipped it towards the tower. An Assyrian archer below raised his bow, drew, and released. The arrow entered the man's throat. He dropped the jar first.",
+      "judgment": "The narrative openings are genuinely well made — concrete, unadorned, physically legible."
+    },
+    {
+      "quote": "The arithmetic looked moderate because violence had already been made measurable.",
+      "judgment": "A closing epigram that earns itself; the Dolben Act chapter is the book's strongest analytic sequence."
+    },
+    {
+      "quote": "The Girsu workers' village preserved ration lists in which barley was issued by status and task... In c. 2450 BCE, Eannatum of Lagash defeated Umma, restored the boundary, and the Stele of the Vultures says that he piled the bodies of Umma's men in the fields.",
+      "judgment": "A tacked-on evidence-citation paragraph that ends the chapter with no rhetorical function — the same artifact recurs at the end of chapters 2, 5, 7, 10, 12, 13 and 14."
+    },
+    {
+      "quote": "The barons shall elect twenty-five of their number to keep, and cause to be observed with all their might, the peace and liberties granted and confirmed to them by this charter. Any man who so desires may take an oath...",
+      "judgment": "Raw Magna Carta text dumped unquoted and unattributed into the final paragraph of chapter 6; the seam between source and prose has failed outright."
+    },
+    {
+      "quote": "“The King was forced to beg in the molt humble terms to have his beard ʃhaved, and after three days delay it was _ - The Queen req requeʃte which the inhuman wretches refuʃed.”",
+      "judgment": "An uncorrected OCR-garbled epigraph opening chapter 10; chapter 14's epigraph is similarly a mangled fragment."
+    },
+    {
+      "quote": "Violence opened the process; paperwork made it durable.",
+      "judgment": "One of dozens of near-identical two-clause thesis restatements ('The sword opened the arrangement, while the clerk... made it last'; 'Movement opened the door. Offices determined who entered'); the insight is real but the formula is worn smooth by repetition."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Symmetrical two-case comparison as the mandatory middle of every chapter: two sites or states are introduced, held apart with 'X did A; Y did B', then reconciled with a sentence declaring both administrative.",
+      "instances": [
+        "In Kenya, the camp removed a person from movement and communication. In Algeria, the bureau mapped movement and communication so French officers could decide where force should fall.",
+        "Maya warfare at Bonampak made the political person of the ruler prominent. Moche ritual at Huaca de la Luna made the huaca, its images, and its successive platforms prominent."
+      ]
+    },
+    {
+      "pattern": "Negation-then-correction sentence shape ('It was not X; it was Y' / 'X did not do A. It did B'), used as the default engine of nearly every paragraph turn.",
+      "instances": [
+        "The Tokugawa government did not simply abolish guns. It regulated their manufacture and movement...",
+        "The Yuan dynasty, founded in 1271, did not become peaceful; it became capable of extracting revenue through a more elaborate state."
+      ]
+    },
+    {
+      "pattern": "Aphoristic single-sentence paragraph deployed as a section closer, arriving on schedule rather than where the argument peaks.",
+      "instances": [
+        "A list can be a weapon even when it names no blade.",
+        "The relief gives that decision a face."
+      ]
+    },
+    {
+      "pattern": "Rhetorical question posed to open or pivot a section, most often left deliberately unanswered so the chapter can end on epistemic modesty.",
+      "instances": [
+        "Did the yam restrain predation by replacing improvised requisition with a schedule, or did it extend predation by making requisition permanent and imperial?",
+        "Did firearms produce centralised states, or did states already moving towards centralisation learn to use firearms as one more instrument?"
+      ]
+    },
+    {
+      "pattern": "Substantial topic duplication across chapters, with the same argument re-derived at similar length rather than cross-referenced.",
+      "instances": [
+        "Giulio Douhet argued after the First World War that aircraft could pass over armies and fortifications to strike populations and industrial centres (ch. 9) / Giulio Douhet argued after the war that air power could bypass armies and strike populations directly (ch. 12).",
+        "The Armenian deportations and the Temporary Law are narrated at length in ch. 12 and then again in ch. 13; Rwanda's roadblocks and identity cards are narrated three times, in chs. 13, 14 and 15."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined work of comparative history built on one clear and productive thesis: aggression acquires reach, duration and scale not from anger but from offices — the classification, register, ration list, quota, timetable and warrant that convert a decision into a body's fate. The research texture is dense and specific across fifteen chapters and five millennia, the epistemic manners are excellent (the text repeatedly names what its sources cannot establish), and the narrative openings — Peterloo, Lachish, the Bastille — are genuinely well written. Its weaknesses are structural rather than verbal. Every chapter runs the same machine: scene, case, paired comparison, symmetrical antithesis, aphoristic closer, unanswered rhetorical question; the thesis is restated in near-identical two-clause form perhaps forty times; and at 55,000 words the book proceeds at one unvarying speed with real duplication (Douhet, the Armenian deportations, Rwanda, Vicksburg each treated twice or more). Production artifacts survive into the text: several chapters end with a bolted-on evidence-citation sentence, chapter 6 closes by dumping unquoted Magna Carta text, and two epigraphs are garbled OCR. There is also no introduction or conclusion framing the argument as a book rather than a sequence. Cut roughly a fifth for redundancy, vary the chapter architecture, strip the artifacts, and this would be publishable non-fiction; as it stands it needs moderate revision."
+}

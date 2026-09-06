@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 5,
+    "depth": 5,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 6,
+    "engagement": 4,
+    "pacing": 3,
+    "craft": 6,
+    "slopResistance": 4
+  },
+  "overall": 5.7,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Archaeology may preserve a wound without a name. Administrative writing may preserve a name without a wound.",
+      "judgment": "The book's governing insight, stated with real economy; this is the thesis working at its best."
+    },
+    {
+      "quote": "The bones carry recurrence, but not a calendar of recurrence.",
+      "judgment": "Precise, memorable formulation of the evidentiary limit the chapter has actually demonstrated."
+    },
+    {
+      "quote": "Violence may open a political order; writing may help it last.",
+      "judgment": "Strong sentence, but also typical of the paired-antithesis closer the book reaches for at the end of nearly every section."
+    },
+    {
+      "quote": "A wound is not a war. A cemetery records the dead without functioning as a census.",
+      "judgment": "Effective chapter landing, though the aphoristic-couplet ending is by now a fully predictable move."
+    },
+    {
+      "quote": "It gives strong evidence for an imperial language of exemplary punishment and royal possession, but weaker evidence for the full social experience of Lachish’s capture.",
+      "judgment": "Sound reasoning, but the strong-evidence/weak-evidence seesaw is executed identically dozens of times across the book."
+    },
+    {
+      "quote": "The passage does not establish that the proposal was put into operation or that a station actually drew labour and animals from those units.",
+      "judgment": "The caveat has become an incantation; four consecutive paragraphs in this chapter end on the same disclaimer."
+    },
+    {
+      "quote": "The sequence before 1206 remains partly unspecified in the passages preserved here.",
+      "judgment": "Meta-language about the author's own source packet leaks into the prose repeatedly, breaking the book's historical frame."
+    },
+    {
+      "quote": "no second independent early-state case has been placed beside it in a way that would support a general law",
+      "judgment": "The book audits its own dossier on the page; this is scaffolding that should never have reached a reader."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Symmetrical concede-and-withhold hedge: every claim is immediately matched by a sentence saying what the source does not establish. It is the book's one rhetorical engine and it fires several times per page.",
+      "instances": [
+        "It gives strong evidence for an imperial language of exemplary punishment and royal possession, but weaker evidence for the full social experience of Lachish’s capture.",
+        "The record establishes a change in political and physical control, while the conflicting stories prevent a precise reconstruction of the entry itself."
+      ]
+    },
+    {
+      "pattern": "Aphoristic paired-antithesis closer at the end of a section or chapter, usually two short clauses in balanced apposition.",
+      "instances": [
+        "A wound is not a war. A cemetery records the dead without functioning as a census.",
+        "Violence may open a political order; writing may help it last."
+      ]
+    },
+    {
+      "pattern": "Meta-reference to the supplied source packet (\"the passages preserved here\", \"the passages used here\", \"in the evidence used here\"), which addresses the compilation rather than the subject.",
+      "instances": [
+        "The sequence before 1206 remains partly unspecified in the passages preserved here.",
+        "It does not identify those soldiers as the Force Publique or establish the composition of that force from the passages used here."
+      ]
+    },
+    {
+      "pattern": "Whole-chapter duplication: Chapter 7 re-narrates Chapter 6's Mongol material (genealogy, Temüjin's rise, Ögedei's post stations, Wells on Kublai's successor states) with new wording and no acknowledgement.",
+      "instances": [
+        "The story of Temüjin begins before the title by which he became known.",
+        "The story of Temüjin begins in a register that is neither administrative nor securely chronological."
+      ]
+    },
+    {
+      "pattern": "Catalogue passages of one-sentence paragraphs on the frame \"X appears in Y\" or \"X supplied Z\", substituting an inventory for argument.",
+      "instances": [
+        "Ritual authority appears at Huaca de la Luna in the elevation of platforms, the labour of corporate groups, the repeated rebuilding after El Niño rains, and the murals that connect divinity with rulership, warfare, and sacrifice.",
+        "Practice appears in the bodies, the construction stages, the feast described in the Codex, and the killings those bodies and words make historically present."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely coherent book with an unusual and defensible thesis: that aggression, injury, coercion, raiding, warfare and atrocity are non-interchangeable categories, and that each surviving record can carry only one of them. The reasoning is disciplined, the prose is clean and unpretentious, and individual formulations about what bone, monument and ledger can each hold are excellent. But the method that makes the argument coherent also flattens the book: nearly every paragraph performs the same concede-and-withhold move, so fifteen chapters of very different material sound identical, and the reader learns the shape of the next sentence long before the end of Chapter 3. The evidentiary base is thin and visible as such — a small dossier of quoted summaries, with the compilation itself repeatedly named on the page (\"the passages preserved here\") and Chapter 7 re-telling Chapter 6's Mongol material almost entirely. Diction is not machine-stock, but the templated hedges, symmetrical antitheses and aphoristic couplet closers are strong structural slop. It needs a hard pass to cut the duplicate chapter, strip the self-referential source talk, and vary the paragraph engine before it would read as a book rather than a procedure."
+}

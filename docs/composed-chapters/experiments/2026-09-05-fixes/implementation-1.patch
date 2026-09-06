@@ -1,0 +1,3432 @@
+diff --git a/apps/api/src/mobile/bookEditOperationRetries.test.ts b/apps/api/src/mobile/bookEditOperationRetries.test.ts
+index 9d76df9..765b6bc 100644
+--- a/apps/api/src/mobile/bookEditOperationRetries.test.ts
++++ b/apps/api/src/mobile/bookEditOperationRetries.test.ts
+@@ -71,7 +71,7 @@ describe("mobile page rewrite retries", () => {
+       headers: bearer("token-a"),
+       payload: {
+         requestId: "retry-page-rewrite-0001",
+-        retryToken: generationRecoveryQuote(failed.generationAttempts[0]).retryToken
++        retryToken: generationRecoveryQuote(failed.generationAttempts[0]!).retryToken
+       }
+     });
+ 
+diff --git a/apps/api/src/mobile/bookEditOperationRetries.ts b/apps/api/src/mobile/bookEditOperationRetries.ts
+index 840caf0..76c1c31 100644
+--- a/apps/api/src/mobile/bookEditOperationRetries.ts
++++ b/apps/api/src/mobile/bookEditOperationRetries.ts
+@@ -1,5 +1,5 @@
+ import { PRE_EDIT_PROJECT_STATUS } from "@book-maker/core";
+-import { prisma } from "@book-maker/db";
++import { Prisma, prisma } from "@book-maker/db";
+ import { startGenerationAttempt } from "@book-maker/db/billing";
+ import { dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
+ import { type MobileBookEditOperationRecord } from "./dto.js";
+@@ -154,13 +154,13 @@ async function retryPageRewriteOperation(options: RetryOptions): Promise<RetryRe
+     };
+   }
+ 
++  const { billingLedgerEntryId: _previousLedgerEntryId, ...originalRequest } = payload;
+   const retryPayload = {
+-    ...payload,
++    ...originalRequest,
+     operationId: operation.id,
+     retryOfGenerationJobId: operation.generationJobId,
+     [PRE_EDIT_PROJECT_STATUS]: settledStatusBeforeEdit(project.status)
+   };
+-  delete retryPayload.billingLedgerEntryId;
+ 
+   const started = await startGenerationAttempt({
+     userId: options.userId,
+@@ -202,7 +202,7 @@ async function retryPageRewriteOperation(options: RetryOptions): Promise<RetryRe
+           retryRequestId: options.requestId,
+           nextRetryAt: null,
+           error: null,
+-          adherenceAudit: null,
++          adherenceAudit: Prisma.JsonNull,
+           generationJobId: job.id,
+           ledgerEntryId: ledgerEntry?.id ?? null,
+           creditsCharged: sourceAttempt.quotedCredits
+diff --git a/apps/api/src/projectStatus.ts b/apps/api/src/projectStatus.ts
+index 787d903..b98bd7a 100755
+--- a/apps/api/src/projectStatus.ts
++++ b/apps/api/src/projectStatus.ts
+@@ -430,7 +430,7 @@ function optionalQualityDiagnostics(
+   if (typeof record.detectorVersion !== "string" || typeof record.wouldBlock !== "boolean" || !Array.isArray(record.findings)) {
+     return {};
+   }
+-  const findings = record.findings.flatMap((entry) => {
++  const findings = record.findings.flatMap((entry): NonNullable<ProjectQualityStatus["diagnostics"]>["findings"] => {
+     if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+       return [];
+     }
+diff --git a/apps/worker/src/generation/CLAUDE.md b/apps/worker/src/generation/CLAUDE.md
+index ee858fe..d512c4d 100644
+--- a/apps/worker/src/generation/CLAUDE.md
++++ b/apps/worker/src/generation/CLAUDE.md
+@@ -44,16 +44,58 @@ may have been edited in the meantime.
+   stance written back onto the approved `PlanVersion.planningPackage` — best-effort, never fatal,
+   and never over a stance the plan already carried.
+ - **A composed chapter's figures are checked once, right after the compose call, and taken out of
+-  every pass after it.** `composedFigures.ts`: `validateComposedChapterFigures` drops an unreadable
+-  or unplanned block (run log event `generation.composed_chapters.figure_dropped`) and re-serialises
++  every pass after it.** `composedFigures.ts`: `validateComposedChapterFigures` drops an unreadable,
++  unterminated or unplanned block — over the count, or the wrong kind when a kind was planned
++  (run log event `generation.composed_chapters.figure_dropped`) — and re-serialises
+   the rest to the canonical line; `finishChapter` strips the blocks before the line edit and puts
+   them back just before the cut into pages, so the editor sees a stand-in, and the couplet rewrite,
+   the quote guard, the reshaping and the epigraph never meet the JSON; the read pass, its cut and
+   the seams get the same treatment; `finalizePendingPages` runs the local checks, a revise and the
+-  story delta on figure-free drafts (`figureFreeDrafts`) and restores each page's blocks before it
++  story delta on figure-free drafts (`stripDraftFigures`) and restores each page's blocks before it
+   is staged (`restoreFigures`). A chat rewrite (`textEditRewrite.ts`) does the same unless the
+   request names the figure, in which case the model sees the block and may change or drop it. The
+   derived brief says which page carries the figure, so chat and continuation know it is there.
++  The run log line is written through the `runLog` the pass is handed (`createRunLogger(job)` in
++  `generateBook.ts`), never through `console.warn` alone: the JSONL under `runs/` is what a rerun is
++  measured from, and the first implementation's event reached only stdout.
++- **Every per-page path reads a stored figure as its stand-in and stores no figure of its own.**
++  `toPriorPageContext` (`bookHelpers.ts`) is where a stored page becomes a prompt's prior-page
++  context, so the block becomes `[Figure: title]` there and the summary is run through
++  `pageDraftSummary` — for the page writer, the reviewer, the
++  style lock, the continuation outline (`continuationOutlineWithModel` cuts its excerpt the same
++  way, and its `recentPageSummaries` the same summary helper) and every rewrite path; core's `compactPageContexts` (`compactPriorPages` / `compactFollowingPages`) and `pinStyleExcerpts` do it again for a
++  context built in memory, and `reviewAppliedBookEdit` reads its before and after pages the same
++  way unless the instruction names the figure. The first implementation sent the raw JSON to the
++  continuation's outline and page writer. The other direction lives in core, where the draft is
++  parsed: `generatePageDraft`, `polishPageDraft`, `revisePageDraft` and the tools writer return
++  `figureFreeDraft` — a fence in a page writer's reply is a fabrication and a stand-in line an echo
++  of a neighbour's excerpt — so nothing in this package strips a draft after the fact. The first
++  fix did (`continuationPageDraft`, a strip at the end of `textEditRewrite.ts`), and every review,
++  audit and revision between the model and that strip had already read the invention. Replan
++  generate is figure-free the same way; `pageFigureRewriteForDraft` plants the source page's fences
++  onto that new prose (`reinsertFigureFences`: stand-in, else after the matching anchor, else before
++  the follower, else at the end) and then keep-or-holds them. First generate plants; after a keep
++  revise it does not — keep at most one fence from what came back, so a clean omit stays omitted.
++  Chat (`textEditRewrite.ts`) and replan
++  (`reviewReplanCandidate`) both go through `pageFigureRewrite` (replan via that helper) in
++  `composedFigures.ts`, so the keep-or-hold decision and the restore cannot be spelled twice.
++  `reviewAndSaveGeneratedPage` forwards `figures` into `runPageQualityLoop` the way the loop already
++  forwards it to every revise. Restore runs after review returns, not before: the reviewer and a
++  later loop revise see stand-ins on hold (or the block on keep), and a default figure-free revise
++  cannot strip the chart. The one per-page call allowed a figure is a rewrite whose request names
++  the page's figure: `figures: "keep"` on the revise and on the quality loop, keeping at most one
++  block from what comes back. A rewrite that is not about the figure holds the block aside — stand-in
++  prose, `figures: "hold"` so later revises strip invented fences but keep the `[Figure: …]`
++  stand-in, and `restore` puts the original block back beside the paragraph it followed. The compile's
++  final-QA repair (`compileExportRepair.ts`) always holds with `holdFiguresAside` and never runs the
++  mention test: the first revise is shown stand-in prose, later revises and reviews keep that stand-in
++  via `figures: "hold"`, and `restore` puts the original blocks back on the published draft. A page
++  with no figure omits the key, so a neighbour's stand-in echoed into the reply is still stripped. It
++  has to: core's figure-free revise meant a page repaired from its raw markdown came back without its
++  chart and shipped that way, and although `compileExport.ts` skips this loop for a composed book,
++  that gate reads the strategy off the *current* input, so a continuation that moves `targetPages` or
++  a routing change sends the same stored pages through it. Parse-time `figureFreeDraft` on a replan
++  generate or adherence revise would otherwise publish the rebuilt page without its chart.
+ 
+ ## Illustrated page publication
+ 
+diff --git a/apps/worker/src/generation/composedChaptersFinalize.ts b/apps/worker/src/generation/composedChaptersFinalize.ts
+index 470fae1..f470938 100644
+--- a/apps/worker/src/generation/composedChaptersFinalize.ts
++++ b/apps/worker/src/generation/composedChaptersFinalize.ts
+@@ -2,7 +2,8 @@ import {
+   type BookGenerationStrategy,
+   type BookPlan,
+   type CreateProjectInput,
+-  type ProviderSet
++  type ProviderSet,
++  chapterCaseEvidence, reviewChapterCaseEvidence
+ } from "@book-maker/core";
+ import { prisma, pageScope } from "@book-maker/db";
+ import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
+@@ -68,6 +69,21 @@ export async function finalizePendingPages(options: {
+     generationJobId
+   });
+ 
++  // A local leak repair is another writer. Check its changed case assertions before publishing any page.
++  const reviewedByIndex = new Map(reviewed.map((page) => [page.draft.index, page.draft.markdown]));
++  let start = 1;
++  for (const chapter of plan.chapters) {
++    const end = start + chapter.targetPages;
++    const pages = state.pages.filter((page) => page.index >= start && page.index < end);
++    const changed = pages.some((page) => reviewedByIndex.has(page.index) && reviewedByIndex.get(page.index) !== drafts.find((draft) => draft.index === page.index)?.markdown);
++    if (changed) {
++      const markdown = pages.map((page) => reviewedByIndex.get(page.index) ?? page.markdown).join("\n\n");
++      const issues = await reviewChapterCaseEvidence({ markdown, packets: plan.dossier?.evidencePackets ?? chapterCaseEvidence(plan, chapter.index), textModel: providers.text });
++      if (issues.length) throw new Error(`Final page repair introduced unsupported claims in chapter ${chapter.index}: ${issues.join("; ")}`);
++    }
++    start = end;
++  }
++
+   let currentState = await loadProjectStoryState(projectId, plan.promises ?? []);
+   for (const [offset, page] of reviewed.entries()) {
+     const pageIndex = page.draft.index;
+@@ -142,10 +158,3 @@ export async function finalizePendingPages(options: {
+     }
+   }
+ }
+-
+-/**
+- * A stance the pass had to generate is written back onto the approved plan, so
+- * the console can show the author the book was written as and a later
+- * continuation or chat edit reads the same one. The merge keeps every other
+- * field of the stored package byte for byte.
+- */
+diff --git a/apps/worker/src/generation/composedChaptersMaterial.ts b/apps/worker/src/generation/composedChaptersMaterial.ts
+index 0797d7a..399f73a 100644
+--- a/apps/worker/src/generation/composedChaptersMaterial.ts
++++ b/apps/worker/src/generation/composedChaptersMaterial.ts
+@@ -14,17 +14,19 @@ import {
+   type BookPlan,
+   type ComposeContract,
+   type CreateProjectInput,
+-  type TextModelAdapter
++  type TextModelAdapter,
++  type PrimarySourceSearch
+ } from "@book-maker/core";
+ import { Prisma, prisma } from "@book-maker/db";
++import { fetchSourceDocument as primarySourceFetch } from "./sourceDocumentFetch.js";
+ import { updateJobProgress } from "../runtime/jobLifecycle.js";
+ import type { loadQualityContext } from "./qualitySettings.js";
+ 
+ /**
+  * Material-first, the worker's half: the writer's contract and the book's
+  * episodes and dossier, planned once per book and stored on the plan like
+- * the arc, so a resumed run composes from the same material. Every failure
+- * here degrades to composing without material; none fails the book. Split
++ * the arc, so a resumed run composes from the same material. Legacy failures degrade to composing without material; the evidence-required
++ * caller rejects an insufficient dossier before drafting. Split
+  * from `composedChaptersPass.ts` for the 900-line budget.
+  */
+ export type BookMaterial = {
+@@ -40,21 +42,25 @@ export async function prepareBookMaterial(options: {
+   plan: BookPlan;
+   stance: AuthorStance;
+   textModel: TextModelAdapter;
++  searchSources?: PrimarySourceSearch | undefined;
+   quality: Awaited<ReturnType<typeof loadQualityContext>>;
+   generationJobId?: string | undefined;
++  /** A new development run gathers material even when the legacy experiment flag is off. */
++  evidenceRequired?: boolean | undefined;
++  persist?: boolean | undefined;
+ }): Promise<BookMaterial> {
+   const { projectId, planId, input, plan, stance, textModel, quality, generationJobId } = options;
+   const contract: ComposeContract = quality.enabled("creativeContract") ? "creative" : "grounded";
+   let episodes: BookEpisodes | undefined;
+   let dossier: BookDossier | undefined;
+-  if (quality.enabled("materialFirst")) {
++  if (quality.enabled("materialFirst") || options.evidenceRequired) {
+     episodes = planEpisodesFromPlan(plan);
+     if (!episodes) {
+       await updateJobProgress(generationJobId, { progress: 14, message: "Planning the book's episodes" });
+-      const planned = await planEpisodes({ input, plan, stance, textModel });
++      const planned = await planEpisodes({ input, plan, stance, textModel, evidenceRequired: options.evidenceRequired });
+       if (planned.episodes) {
+         episodes = planned.episodes;
+-        await persistPlanField(planId, "episodes", episodes, (value) => bookEpisodesSchema.safeParse(value).success);
++        if (options.persist !== false) await persistPlanField(planId, "episodes", episodes, (value) => bookEpisodesSchema.safeParse(value).success);
+       } else {
+         console.warn("Episodes not produced; composing without material", {
+           event: "generation.composed_chapters.episodes_not_produced",
+@@ -78,7 +84,9 @@ export async function prepareBookMaterial(options: {
+             episodes: episodesForChapter(plannedEpisodes, chapter.index),
+             textModel,
+             fetch: primarySourceFetch,
++            searchSources: options.searchSources,
+             deadline: dossierDeadline,
++            evidence: options.evidenceRequired,
+             log: (event, detail) => console.warn("Dossier step", { event: `generation.composed_chapters.${event}`, projectId, ...detail })
+           })
+         );
+@@ -86,8 +94,8 @@ export async function prepareBookMaterial(options: {
+           excerpts: chapterDossiers.flatMap((entry) => entry.excerpts),
+           documents: chapterDossiers.flatMap((entry) => entry.documents)
+         };
+-        await persistPlanField(planId, "dossier", dossier, (value) => bookDossierSchema.safeParse(value).success);
+-        await recordDossierSources(projectId, dossier);
++        if (options.persist !== false) await persistPlanField(planId, "dossier", dossier, (value) => bookDossierSchema.safeParse(value).success);
++        if (options.persist !== false) await recordDossierSources(projectId, dossier);
+       }
+     }
+   }
+@@ -118,7 +126,7 @@ async function persistPlanField(planId: string, field: "episodes" | "dossier", v
+ }
+ 
+ /** The dossier's documents as research rows, so the Sources list can cite them; the summary is the document's own first excerpt. */
+-async function recordDossierSources(projectId: string, dossier: BookDossier): Promise<void> {
++export async function recordDossierSources(projectId: string, dossier: BookDossier): Promise<void> {
+   const seen = new Set<string>();
+   const rows = dossier.documents.flatMap((document) => {
+     if (!document.url || seen.has(document.url)) return [];
+@@ -140,16 +148,5 @@ async function recordDossierSources(projectId: string, dossier: BookDossier): Pr
+ /** Eight minutes for a whole book's dossier: past it, chapters still waiting get what was found and no more. */
+ const DOSSIER_TIME_BUDGET_MS = 10 * 60 * 1000;
+ 
+-/** The repositories are fetched with a timeout and an identifying agent; a non-200 is an empty text, never a throw the dossier has to catch. */
+-async function primarySourceFetch(url: string): Promise<{ status: number; text: string }> {
+-  const response = await fetch(url, {
+-    // Wikimedia's policy: a user agent that says who is asking and how to reach them.
+-    headers: { "user-agent": "ai-book-maker/1.0 (https://ravanix.app; primary-source dossier of public-domain text; contact: 12parsaaa@gmail.com)" },
+-    signal: AbortSignal.timeout(10_000)
+-  });
+-  if (!response.ok) {
+-    console.warn("Primary source request refused", { event: "generation.composed_chapters.dossier.http_status", status: response.status, url: url.slice(0, 120) });
+-  }
+-  return { status: response.status, text: response.ok ? await response.text() : "" };
+-}
+-
++/** The same bounded reader handles repository APIs, public HTML records, and source PDFs. */
++export { fetchSourceDocument as primarySourceFetch } from "./sourceDocumentFetch.js";
+diff --git a/apps/worker/src/generation/composedChaptersPass.test.ts b/apps/worker/src/generation/composedChaptersPass.test.ts
+index b001e39..5028687 100644
+--- a/apps/worker/src/generation/composedChaptersPass.test.ts
++++ b/apps/worker/src/generation/composedChaptersPass.test.ts
+@@ -69,6 +69,10 @@ const mocks = vi.hoisted(() => {
+     project: { update: vi.fn(async () => ({})) },
+     planVersion: {
+       findUnique: vi.fn(async () => ({ planningPackage: store.planningPackage })),
++      updateMany: vi.fn(async (args: { data: { planningPackage: unknown } }) => {
++        store.planningPackage = args.data.planningPackage as Record<string, unknown>;
++        return { count: 1 };
++      }),
+       update: vi.fn(async (args: { data: { planningPackage: unknown } }) => {
+         store.planningPackage = args.data.planningPackage as Record<string, unknown>;
+         return {};
+@@ -105,6 +109,7 @@ const mocks = vi.hoisted(() => {
+     }),
+     publishStagedGeneratedPage: vi.fn(async () => "completed"),
+     persistKeeperStoryDelta: vi.fn(async () => null),
++    developmentEnabled: false,
+     qualityEnabled: vi.fn((_feature: string): boolean => true)
+   };
+ });
+@@ -150,7 +155,7 @@ vi.mock("./pagePublication.js", () => ({
+ }));
+ vi.mock("./qualityEnrichment.js", () => ({ persistKeeperStoryDelta: mocks.persistKeeperStoryDelta }));
+ vi.mock("./qualitySettings.js", () => ({
+-  loadQualityContext: async () => ({ tier: "balanced", enabled: mocks.qualityEnabled, settings: {}, pageReviewPromptMode: "normal" })
++  loadQualityContext: async () => ({ tier: "balanced", enabled: (feature: string) => ["bookDevelopment", "caseEvidence", "developmentalEdit"].includes(feature) ? mocks.developmentEnabled : mocks.qualityEnabled(feature), settings: {}, pageReviewPromptMode: "normal" })
+ }));
+ vi.mock("./storyStateStore.js", async () => {
+   const core = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
+@@ -165,7 +170,7 @@ vi.mock("./wholeBookPageReview.js", () => ({
+     }))
+ }));
+ 
+-import { FakeTextModelAdapter, figureCapFor, figureSpecSchema, makeFallbackPlan, type CreateProjectInput, type ProviderSet } from "@book-maker/core";
++import { FakeTextModelAdapter, caseEvidencePacketSchema, figureCapFor, figureSpecSchema, makeFallbackPlan, type CreateProjectInput, type ProviderSet } from "@book-maker/core";
+ import { composedChaptersStrategy } from "@book-maker/core";
+ import { composedResumeState, derivedChapterBrief, generateBookComposedChapters } from "./composedChaptersPass.js";
+ 
+@@ -213,6 +218,7 @@ beforeEach(() => {
+   store.planningPackage = { title: "Plan" };
+   vi.clearAllMocks();
+   mocks.qualityEnabled.mockImplementation(() => true);
++  mocks.developmentEnabled = false;
+ });
+ 
+ describe("composedResumeState", () => {
+@@ -497,3 +503,53 @@ describe("figures in the composed pass", () => {
+     expect(briefs().every((brief) => brief.composition.sections.every((section) => !section.figure))).toBe(true);
+   });
+ });
++
++
++describe("developed nonfiction manuscript integration", () => {
++  it("finishes staged chapters through development and final editing once, then resumes without repeating them", async () => {
++    mocks.developmentEnabled = true;
++    mocks.qualityEnabled.mockImplementation((feature) => !["figures", "coupletRewrite", "chapterApparatus"].includes(feature));
++    const chapters = [1, 2].map((index) => ({ index, title: `Trial ${index}`, summary: `Finding ${index}`, keyBeats: [`Evidence ${index}`], targetPages: 12 }));
++    const packets = chapters.map((chapter) => caseEvidencePacketSchema.parse({
++      id: `case-${chapter.index}`, sourceChapterIndex: chapter.index, reviewVersion: 1,
++      episode: { title: `Test case ${chapter.index}`, kind: "document", document: `Test record ${chapter.index}` },
++      claims: [{ id: "a", text: "First finding", kind: "fact", excerptIds: ["e"] }, { id: "b", text: "Second finding", kind: "fact", excerptIds: ["e"] }],
++      sequence: [], disagreements: [], unknowns: ["No scene is documented"],
++      excerpts: [{ id: "e", chapterIndex: chapter.index, episodeTitle: `Test case ${chapter.index}`, documentTitle: "Test record", documentUrl: "https://example.org/test", text: "A test record of two separate findings." }]
++    }));
++    const plan = {
++      ...makeFallbackPlan(input), chapters,
++      authorStance: { thesis: "The evidence changes the finding.", positions: ["Findings can change", "A verdict can be reopened"], refusals: [], voiceSample: "The clerk carried the court record into the next room. ".repeat(10) },
++      episodes: { chapters: chapters.map((chapter, i) => ({ index: chapter.index, episodes: [packets[i]!.episode] })) },
++      dossier: { excerpts: packets.flatMap((packet) => packet.excerpts), documents: [], evidencePackets: packets },
++      bookDevelopment: { version: 1 as const, question: "What changes a finding?", answer: "The evidence changes the finding.", coverage: [{ id: "evidence", requirement: "Examine findings" }], chapters: chapters.map((chapter, i) => ({ ...chapter, contribution: `New inference ${chapter.index}`, requires: i ? [1] : [], covers: ["evidence"], caseIds: [packets[i]!.id], callbacks: [] })) }
++    };
++    store.planningPackage = structuredClone(plan);
++    const { fake, purposes } = recordingFake();
++    const json = fake.generateJson.bind(fake);
++    const text = fake.generateText.bind(fake);
++    fake.generateJson = async (options) => {
++      const data = options.purpose === "plan-developmental-edit" ? { groups: [] } : options.purpose === "review-chapter-evidence" ? { issues: [] } : undefined;
++      if (!data) return json(options);
++      purposes.push(options.purpose!);
++      return { data: options.schema.parse(data), text: JSON.stringify(data), provider: "fixture", model: "fixture" };
++    };
++    fake.generateText = async (options) => {
++      if (options.purpose !== "compose-chapter") return text(options);
++      purposes.push(options.purpose);
++      const markdown = Array.from({ length: 600 }, (_, i) => `Record ${i} supplies another detail about the disputed original judgment.`).join("\n\n");
++      return { text: markdown, provider: "fixture", model: "fixture" };
++    };
++    const args = { projectId: "project-1", planId: "plan-1", input, plan, providers: providersWith(fake), strategy: composedChaptersStrategy };
++    await generateBookComposedChapters(args);
++    expect(store.pages).toHaveLength(24);
++    expect(store.pages.every((page) => page.status === "COMPLETED")).toBe(true);
++    expect(purposes.filter((purpose) => purpose === "plan-developmental-edit")).toHaveLength(1);
++    expect(purposes).not.toContain("read-manuscript");
++    expect(purposes.indexOf("edit-chapter")).toBeGreaterThan(purposes.indexOf("plan-developmental-edit"));
++    expect(store.planningPackage.developmentalEdit).toMatchObject({ version: 1, appliedGroups: [] });
++    const before = [...purposes];
++    await generateBookComposedChapters(args);
++    expect(purposes).toEqual(before);
++  });
++});
+diff --git a/apps/worker/src/generation/composedChaptersPass.ts b/apps/worker/src/generation/composedChaptersPass.ts
+index 754e126..270148f 100644
+--- a/apps/worker/src/generation/composedChaptersPass.ts
++++ b/apps/worker/src/generation/composedChaptersPass.ts
+@@ -1,3 +1,4 @@
++import { config } from "../runtime/config.js";
+ import {
+   PREVIOUS_CHAPTER_TAIL_WORDS,
+   chapterDigest,
+@@ -11,7 +12,6 @@ import {
+   formatStoryStateLines,
+   judgeChapterDrafts,
+   generateAuthorStance,
+-  isRecord,
+   measureProse,
+   measurementNotes,
+   paginateChapterMarkdown,
+@@ -29,7 +29,6 @@ import {
+   reinsertFigureFences,
+   stripFigureFences,
+   usesFigures,
+-  type AuthorStance,
+   type BookGenerationStrategy,
+   type BookPlan,
+   type ChapterComposition,
+@@ -47,7 +46,6 @@ import {
+   planBookArc,
+   rewriteSeams,
+   type BookArc,
+-  bookArcSchema,
+   mapWithConcurrency,
+   seamsSupported,
+   chapterEpigraph,
+@@ -59,13 +57,16 @@ import {
+   rewriteCouplets,
+   stripMisattributedQuotes,
+   type ChapterMaterial,
+-  type ComposedScene
++  type ComposedScene,
++  chapterCaseEvidence, supportsBookDevelopment, reviewChapterCaseEvidence
+ } from "@book-maker/core";
++import { persistBookArc, persistGeneratedAuthorStance, prepareComposedDevelopment } from "./composedPreparation.js";
+ import { prepareBookMaterial } from "./composedChaptersMaterial.js";
+ import { finalizePendingPages } from "./composedChaptersFinalize.js";
++import { runComposedDevelopmentalEdit } from "./composedDevelopmentalEdit.js";
+ import { validateComposedChapterFigures } from "./composedFigures.js";
+ import type { RunLogger } from "../providers/runLogging.js";
+-import { Prisma, prisma } from "@book-maker/db";
++import { prisma } from "@book-maker/db";
+ import { maybeEnqueueCompile, maybeEnqueueCover } from "../runtime/dispatch.js";
+ import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
+ import type { ChapterSetup } from "../runtime/jobTypes.js";
+@@ -134,6 +135,12 @@ export async function generateBookComposedChapters(options: {
+     stance = await generateAuthorStance({ input, plan, textModel });
+     await persistGeneratedAuthorStance(planId, stance);
+   }
++  const originalState = await loadComposedBookState(projectId);
++  plan = await prepareComposedDevelopment({ projectId, planId, input, plan, stance, textModel, quality, hasPages: originalState.pages.length > 0, generationJobId,
++    searchSources: async (query) => (await providers.research.search({ query, projectId, purpose: "case-source-search" })).sources.flatMap((source) => source.url ? [{ title: source.title, url: source.url }] : [])
++  });
++  stance = planAuthorStance(plan) ?? stance;
++  if (plan.bookDevelopment || plan.dossier?.evidencePackets?.length) await runLog?.append("generation.composed_chapters.development_prepared", { projectId, chapters: plan.chapters.length, casePackets: plan.dossier?.evidencePackets?.length ?? 0, excludedCases: plan.dossier?.excludedCases?.length ?? 0, replanned: Boolean(plan.bookDevelopment) });
+   // The book's arc: planned once per book and stored on the plan together
+   // with its page cut, so a resumed run re-cuts the same pages; without an arc
+   // the pass runs as before. It comes before the chapter setups because the
+@@ -175,7 +182,9 @@ export async function generateBookComposedChapters(options: {
+   // The writer's contract and, material-first, the book's episodes and
+   // dossier: planned once per book and stored on the plan like the arc
+   // (`composedChaptersMaterial.ts`).
+-  const { contract, episodes, dossier } = await prepareBookMaterial({ projectId, planId, input, plan, stance, textModel, quality, generationJobId });
++  const { contract, episodes, dossier } = plan.dossier?.evidencePackets
++    ? { contract: "grounded" as const, episodes: plan.episodes, dossier: plan.dossier }
++    : await prepareBookMaterial({ projectId, planId, input, plan, stance, textModel, quality, generationJobId });
+   const scenes = new Map<number, ComposedScene>();
+   // Under the apparatus flag no two consecutive chapters open on a scene:
+   // rung 3 of the 2026-09-03 ladder told an opening episode in 13–15
+@@ -186,17 +195,20 @@ export async function generateBookComposedChapters(options: {
+   const materialFor = (chapterIndex: number): ChapterMaterial | undefined => {
+     if (!episodes) return undefined;
+     const chapterEpisodes = episodesForChapter(episodes, chapterIndex);
+-    if (chapterEpisodes.length === 0) return undefined;
++    const evidencePackets = chapterCaseEvidence(plan, chapterIndex);
++    if (chapterEpisodes.length === 0 && evidencePackets.length === 0) return undefined;
+     const scene = scenes.get(chapterIndex);
+     return {
+       episodes: chapterEpisodes,
+       excerpts: dossier?.excerpts.filter((excerpt) => excerpt.chapterIndex === chapterIndex) ?? [],
++      ...(dossier?.evidencePackets ? { evidencePackets } : {}),
+       ...(scene ? { scene } : {})
+     };
+   };
+ 
+   const setups = chapterSetupsForPlan(plan, input.targetPages);
+   const stored = await loadComposedBookState(projectId);
++  const developmentalEditing = !config.MOCK_AI && supportsBookDevelopment(input, plan) && quality.enabled("developmentalEdit") && stored.pages.every((page) => page.status === "PENDING");
+   const resume = composedResumeState({
+     ranges: setups.map((setup) => ({
+       chapterIndex: setup.chapter.index,
+@@ -403,7 +415,7 @@ export async function generateBookComposedChapters(options: {
+     let markdown = draftProse;
+     let editorChanged = false;
+     let shapePassApplied = false;
+-    if (editorEnabled) {
++    if (editorEnabled && !developmentalEditing) {
+       await updateJobProgress(generationJobId, { message: `Editing chapter ${position}` });
+       // One edit with everything measured on the draft: the second composed
+       // book ran a cutting edit and then a reshaping edit that re-expanded
+@@ -453,6 +465,17 @@ export async function generateBookComposedChapters(options: {
+     // Paragraph variety by merge, since no instruction produced it, and one
+     // copy of any sentence the edits wrote twice.
+     markdown = dropDuplicateSentences(varyParagraphs(markdown));
++    const evidencePackets = chapterCaseEvidence(plan, setup.chapter.index);
++    if (evidencePackets.length) {
++      const issues = await reviewChapterCaseEvidence({ markdown, packets: evidencePackets, textModel });
++      if (issues.length) {
++        const repaired = await editChapter({ ...(await composeOptionsFor(setup, drafts)), markdown, allowExtension: false, readerNotes: issues });
++        const remaining = await reviewChapterCaseEvidence({ markdown: repaired.markdown, packets: evidencePackets, textModel });
++        if (chapterDegeneracy(repaired.markdown, { maxWords: Math.ceil(proseWordCount(markdown) * 1.1), language: input.language }).degenerate) throw new Error(`Chapter ${setup.chapter.index} evidence repair failed prose integrity.`);
++        if (remaining.length) throw new Error(`Chapter ${setup.chapter.index} still has unsupported case claims: ${remaining.join("; ")}`);
++        markdown = repaired.markdown;
++      }
++    }
+     // The quote guard: every quoted span of eight words or more is checked
+     // against the chapter's dossier; a miss hung on a dossier document loses
+     // its marks, every other miss is counted and left (quoteProvenance.ts).
+@@ -553,6 +576,7 @@ export async function generateBookComposedChapters(options: {
+         chapter: setup.chapter,
+         episode: opening,
+         excerpts: openingMaterial.excerpts,
++        evidencePackets: openingMaterial.evidencePackets,
+         contract,
+         textModel
+       });
+@@ -651,7 +675,14 @@ export async function generateBookComposedChapters(options: {
+     await pendingFinish;
+   }
+ 
+-  if (quality.enabled("manuscriptReadPass") && setups.length > 1) {
++  if (developmentalEditing) {
++    await runComposedDevelopmentalEdit({
++      projectId, planId, input, plan, textModel, setups, chapterIds, finalText, reports,
++      compositionFor, composeOptionsFor, describePages, lineEdit: editorEnabled, generationJobId
++    });
++  }
++
++  if (!developmentalEditing && quality.enabled("manuscriptReadPass") && setups.length > 1) {
+     await updateJobProgress(generationJobId, { progress: 70, message: "Reading the whole manuscript" });
+     // Every chapter's first and last paragraph rewritten in one call, so the
+     // seams differ from each other; a paragraph the deterministic check refuses
+@@ -802,56 +833,3 @@ export async function generateBookComposedChapters(options: {
+   await advanceJobStep(generationJobId, "enqueue", 90, "Queueing export");
+   await maybeEnqueueCompile(projectId, planId);
+ }
+-
+-/**
+- * Every PENDING page becomes terminal through the staged publication the other
+- * passes use: deterministic local checks only (a prompt leak or placeholder
+- * gets one revise), then COMPLETED, or GENERATING with an image job for an
+- * illustration slot, with its continuity notes published beside it.
+- */
+-async function persistBookArc(planId: string, arc: BookArc, chapters: BookPlan["chapters"] | undefined): Promise<void> {
+-  try {
+-    const row = await prisma.planVersion.findUnique({ where: { id: planId }, select: { planningPackage: true } });
+-    // A stored arc that parses stands; one that does not is repaired here,
+-    // or every retry would re-architect, never persist, and resume "fresh".
+-    if (!row || !isRecord(row.planningPackage) || bookArcSchema.safeParse(row.planningPackage.bookArc).success) {
+-      return;
+-    }
+-    // The cut rides with the arc: the compile places chapter headings by the
+-    // stored plan's targetPages, so rows cut one way under a plan cut another
+-    // print headings mid-chapter.
+-    await prisma.planVersion.update({
+-      where: { id: planId },
+-      data: {
+-        planningPackage: { ...row.planningPackage, bookArc: arc, ...(chapters ? { chapters } : {}) } as unknown as Prisma.InputJsonValue
+-      }
+-    });
+-  } catch (error) {
+-    if (error instanceof Error && /stop/i.test(error.name)) {
+-      throw error;
+-    }
+-    console.warn("Book arc was not persisted onto the plan", { event: "generation.composed_chapters.arc_not_persisted", planId, error });
+-  }
+-}
+-
+-async function persistGeneratedAuthorStance(planId: string, stance: AuthorStance): Promise<void> {
+-  try {
+-    const row = await prisma.planVersion.findUnique({ where: { id: planId }, select: { planningPackage: true } });
+-    if (!row || !isRecord(row.planningPackage) || isRecord(row.planningPackage.authorStance)) {
+-      return;
+-    }
+-    await prisma.planVersion.update({
+-      where: { id: planId },
+-      data: { planningPackage: { ...row.planningPackage, authorStance: stance } as unknown as Prisma.InputJsonValue }
+-    });
+-  } catch (error) {
+-    if (error instanceof Error && /stop/i.test(error.name)) {
+-      throw error;
+-    }
+-    console.warn("Generated author stance was not persisted onto the plan", {
+-      event: "generation.composed_chapters.stance_not_persisted",
+-      planId,
+-      error
+-    });
+-  }
+-}
+diff --git a/apps/worker/src/generation/composedChaptersState.ts b/apps/worker/src/generation/composedChaptersState.ts
+index a53c6d6..2a4cd44 100644
+--- a/apps/worker/src/generation/composedChaptersState.ts
++++ b/apps/worker/src/generation/composedChaptersState.ts
+@@ -139,6 +139,12 @@ export type ComposedPageRow = DescribedPage & { markdown: string };
+  * the brief like it.
+  */
+ export type ComposedChapterReport = {
++  developmentalEdit?: {
++    appliedGroups: string[];
++    rejectedGroups: Array<{ id: string; reason: string }>;
++    beforeWords: number;
++    afterWords: number;
++  } | undefined;
+   /** The seams call replaced this chapter's opening and/or closing. */
+   seamsApplied?: boolean | undefined;
+   /** Where the book's arc came from: stored on the plan, or planned by this run. */
+diff --git a/apps/worker/src/generation/pageReview.test.ts b/apps/worker/src/generation/pageReview.test.ts
+index 75d85d4..3ebac95 100644
+--- a/apps/worker/src/generation/pageReview.test.ts
++++ b/apps/worker/src/generation/pageReview.test.ts
+@@ -1,177 +1,7 @@
+ import { beforeEach, describe, expect, it, vi } from "vitest";
+-import type { PageQualityReport } from "@book-maker/core";
+-import {
+-  balancedPagePipelineQualityContext,
+-  pagePipelineQualityGates
+-} from "../testing/qualityGateFixtures.js";
+-
+-const mocks = vi.hoisted(() => ({
+-  prisma: {
+-    $transaction: vi.fn(),
+-    page: { findUnique: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
+-    continuityNote: { createMany: vi.fn() },
+-    chapter: { findUnique: vi.fn(), updateMany: vi.fn() }
+-  },
+-  enqueueWorkerJob: vi.fn(),
+-  updateJobProgress: vi.fn(),
+-  prepareEmbedding: vi.fn(),
+-  writePreparedEmbedding: vi.fn(),
+-  updateEntityStateFromPage: vi.fn(),
+-  loadContinuityNotes: vi.fn(),
+-  loadResearchNotesForGeneration: vi.fn(),
+-  retrieveSemanticResearchNotes: vi.fn(),
+-  keeperStoryExtractForSave: vi.fn(),
+-  persistStoryExtract: vi.fn(),
+-  // Controllable: `reviewAndSaveGeneratedPage` pins its excerpts out of
+-  // whatever this returns, and the whole of finding C is that it used to load
+-  // nothing at all.
+-  loadStyleLockPages: vi.fn(
+-    async (
+-      _projectId?: string,
+-      _pageIndex?: number,
+-      _recencyPages?: Array<Record<string, unknown>>
+-    ): Promise<Array<Record<string, unknown>>> => []
+-  ),
+-  enrichPageQualityReport: vi.fn(),
+-  // The style audit's provider boundary. `withStyleAudit` above it stays real.
+-  auditPageStyle: vi.fn(),
+-  qualityEnabled: vi.fn((_feature: string): boolean => false)
+-}));
+-
+-/**
+- * The enrichment pass is stubbed, but the excerpts it is *handed* are not
+- * incidental: they are the pin this function derives once and hands to the
+- * enrichment pass and the review loop alike, so the tests below read them off
+- * the call rather than off the answer.
+- */
+-const stubbedEnrichment = async ({ report }: { report: unknown }) => ({
+-  report,
+-  extract: null,
+-  storyState: { promises: [], facts: [], entities: {}, unanswered: [] }
+-});
+-
+-vi.mock("@book-maker/db", async () => ({
+-  prisma: mocks.prisma,
+-  Prisma: {},
+-  ...(await import("../testing/dbScopeMocks.js")).dbScopeMocks()
+-}));
+-vi.mock("../runtime/dispatch.js", () => ({ enqueueWorkerJob: mocks.enqueueWorkerJob }));
+-vi.mock("../runtime/jobLifecycle.js", () => ({ updateJobProgress: mocks.updateJobProgress }));
+-vi.mock("./embeddingWrites.js", () => ({
+-  prepareEmbedding: mocks.prepareEmbedding,
+-  writePreparedEmbedding: mocks.writePreparedEmbedding,
+-  // Mirrors the real predicate so fixtures choose their mode explicitly.
+-  strategyUsesSemanticMemory: (strategy: { executionMode?: string }) =>
+-    strategy?.executionMode === "sequential-pages"
+-}));
+-vi.mock("./entityState.js", () => ({ updateEntityStateFromPage: mocks.updateEntityStateFromPage }));
+-vi.mock("./researchMemory.js", () => ({
+-  retrieveSemanticResearchNotes: mocks.retrieveSemanticResearchNotes
+-}));
+-vi.mock("./generationContext.js", () => ({
+-  loadContinuityNotes: mocks.loadContinuityNotes,
+-  loadResearchNotesForGeneration: mocks.loadResearchNotesForGeneration
+-}));
+-vi.mock("./qualitySettings.js", () => ({
+-  loadQualityContext: async () =>
+-    balancedPagePipelineQualityContext({ otherFeatureEnabled: mocks.qualityEnabled }),
+-  applyPlanThinkingBoost: vi.fn()
+-}));
+-vi.mock("./qualityEnrichment.js", async () => {
+-  const actual = await vi.importActual<typeof import("./qualityEnrichment.js")>("./qualityEnrichment.js");
+-  return {
+-    enrichPageQualityReport: mocks.enrichPageQualityReport,
+-    // The real factory: whether the handler builds an auditor at all, and out
+-    // of which excerpts, is exactly what the style-audit tests below measure.
+-    revisedDraftStyleAuditor: actual.revisedDraftStyleAuditor,
+-    keeperStoryExtractForSave: mocks.keeperStoryExtractForSave,
+-    persistStoryExtract: mocks.persistStoryExtract
+-  };
+-});
+-vi.mock("@book-maker/core", async () => {
+-  const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
+-  return { ...actual, auditPageStyle: mocks.auditPageStyle };
+-});
+-vi.mock("./bookHelpers.js", async () => {
+-  const { pagesForStyleExcerpts, pinStyleExcerpts, sampleExcerptsFromInput } = await vi.importActual<
+-    typeof import("@book-maker/core")
+-  >("@book-maker/core");
+-  return {
+-    formatQualityFailure: () => "quality failure detail",
+-    loadStyleLockPages: mocks.loadStyleLockPages,
+-    parseChapterBrief: (value: unknown) => (value ? value : undefined),
+-    // The real pin, the mocked loader: so the suite still observes
+-    // `loadStyleLockPages` while the helper under test is the same composition.
+-    styleExcerptsForPage: async (options: {
+-      projectId: string;
+-      pageIndex: number;
+-      recencyPages: Array<{ index: number; title: string; markdown: string; summary: string }>;
+-      input: Parameters<typeof sampleExcerptsFromInput>[0];
+-      quality: { enabled: (feature: string) => boolean };
+-    }) => {
+-      if (!options.quality.enabled("styleExcerpts")) {
+-        return [];
+-      }
+-      const lockPages = (await mocks.loadStyleLockPages(
+-        options.projectId,
+-        options.pageIndex,
+-        options.recencyPages
+-      )) as Array<{ index: number; title: string; markdown: string; summary: string }>;
+-      return pinStyleExcerpts(
+-        pagesForStyleExcerpts(options.recencyPages, lockPages),
+-        sampleExcerptsFromInput(options.input)
+-      );
+-    }
+-  };
+-});
+-
+-import {
+-  reviewAndSaveGeneratedPage,
+-  runPageQualityLoop
+-} from "./pageReview.js";
+-import { pageQaCandidatesFor } from "./tuning.js";
+-
+-/** The candidate budget the fixtures run under: no tier recorded is balanced. */
+-const BALANCED_CANDIDATES = pageQaCandidatesFor({ mediaSettings: {} } as never);
+-
+-const report = (score: number, overrides: Partial<PageQualityReport> = {}): PageQualityReport =>
+-  ({
+-    approved: false,
+-    score,
+-    issues: [],
+-    requiredRevisions: [],
+-    notes: "",
+-    checks: { repetitionOk: true, progressionOk: true },
+-    ...overrides
+-  }) as unknown as PageQualityReport;
+-
+-const draftNamed = (name: string) => ({
+-  title: name,
+-  markdown: `${name} text.`,
+-  summary: `${name} summary.`,
+-  continuityNotes: [] as string[]
+-});
+-const qualityGates = (...enabled: string[]) =>
+-  pagePipelineQualityGates({ additionalFeatures: enabled });
+-/** A page long enough for `pinStyleExcerpts` to accept it as a style anchor. */
+-const anchorPage = (index: number, voice: string) => ({
+-  index,
+-  title: `Page ${index}`,
+-  markdown: `${voice} ${"prose ".repeat(20)}`,
+-  summary: `Summary ${index}`
+-});
+-
+-beforeEach(() => {
+-  // Set here rather than in each suite's own `beforeEach`, which clears calls
+-  // but keeps implementations: one test's excerpts or verdict would otherwise
+-  // be the next one's default.
+-  mocks.enrichPageQualityReport.mockImplementation(stubbedEnrichment);
+-  mocks.auditPageStyle.mockResolvedValue({ styleOk: true, styleIssues: [] });
+-  mocks.qualityEnabled.mockReturnValue(false);
+-  mocks.loadStyleLockPages.mockResolvedValue([]);
+-  mocks.loadResearchNotesForGeneration.mockResolvedValue([]);
+-  mocks.retrieveSemanticResearchNotes.mockResolvedValue([]);
+-});
++import { PageQualityReport } from "@book-maker/core";
++import { stubbedEnrichment, mocks, BALANCED_CANDIDATES, report, draftNamed, qualityGates, anchorPage } from "./testing/pageReviewHarness.js";
++import { reviewAndSaveGeneratedPage, runPageQualityLoop } from "./pageReview.js";
+ 
+ describe("runPageQualityLoop style audit", () => {
+   /** The excerpts a caller pins once and the loop is expected to reuse whole. */
+@@ -679,255 +509,3 @@ describe("reviewAndSaveGeneratedPage", () => {
+     expect(mocks.auditPageStyle).toHaveBeenCalledTimes(4);
+   });
+ });
+-
+-describe("reviewAndSaveGeneratedPage ownership fence", () => {
+-  // The structural-insert shape: a delivery drafting under a durable lease that
+-  // a replacement can take over mid-page. Everything the save publishes after
+-  // the page row — the story delta, the continuity notes, the entity state and
+-  // the embedding — is read back by *later* pages, so a delivery that has lost
+-  // the book must leave none of it behind. The page row itself is the winner's
+-  // to redo: it is keyed on project+index and the winner drafts the same ids.
+-  const strategy = {
+-    id: "test-strategy",
+-    executionMode: "sequential-pages",
+-    reviewPageDraft: vi.fn(),
+-    revisePageDraft: vi.fn(),
+-    repairPageBrief: vi.fn(),
+-    shouldIllustratePage: vi.fn()
+-  };
+-
+-  const storyExtract = { storyDelta: { facts: ["The robin flew."] }, contradictions: [] };
+-
+-  const fencedOptions = (assertOwnership: () => Promise<void>, overrides: Record<string, unknown> = {}) =>
+-    ({
+-      projectId: "project-1",
+-      planId: "plan-1",
+-      input: { mediaSettings: {} },
+-      plan: { title: "Book", chapters: [] },
+-      providers: { text: {}, embedding: {} },
+-      strategy,
+-      draft: { ...draftNamed("First"), index: 3, imagePrompt: "A robin", continuityNotes: ["The robin is named Pip."] },
+-      chapterId: null,
+-      previousPages: [],
+-      generationJobId: "gj-1",
+-      assertOwnership,
+-      ...overrides
+-    }) as never;
+-
+-  const recoveryBeat = (beat: string) => ({
+-    pageIndex: 3,
+-    chapterIndex: 1,
+-    purpose: beat,
+-    beat,
+-    requiredContinuity: [] as string[],
+-    endingPressure: ""
+-  });
+-
+-  const keptBriefRepairOptions = (assertOwnership: () => Promise<void>) => {
+-    const originalBeat = recoveryBeat("Repeat the opening");
+-    const repairedBeat = recoveryBeat("Reveal the hidden stair");
+-    const chapterBrief = {
+-      chapterIndex: 1,
+-      title: "The stair",
+-      summary: "A hidden route opens.",
+-      continuityFocus: [] as string[],
+-      pages: [originalBeat]
+-    };
+-    const rejected = report(40, { checks: { repetitionOk: false, progressionOk: true } as never });
+-    strategy.reviewPageDraft
+-      // Initial review, then both ordinary rewrites: all still blame the brief.
+-      .mockResolvedValueOnce(rejected)
+-      .mockResolvedValueOnce(rejected)
+-      .mockResolvedValueOnce(rejected)
+-      // Balanced recovery is candidate four; this is the kept repaired draft.
+-      .mockResolvedValueOnce(report(90, { approved: true }));
+-    strategy.revisePageDraft.mockResolvedValue(draftNamed("Recovered"));
+-    strategy.repairPageBrief.mockResolvedValue(repairedBeat);
+-    return {
+-      options: fencedOptions(assertOwnership, { chapterId: "chapter-1", chapterBrief }),
+-      chapterBrief,
+-      repairedBeat
+-    };
+-  };
+-
+-  /** Every write the page save publishes for later pages to read back. */
+-  const expectNothingPublished = () => {
+-    expect(mocks.persistStoryExtract).not.toHaveBeenCalled();
+-    expect(mocks.prisma.continuityNote.createMany).not.toHaveBeenCalled();
+-    expect(mocks.updateEntityStateFromPage).not.toHaveBeenCalled();
+-    expect(mocks.writePreparedEmbedding).not.toHaveBeenCalled();
+-    expect(mocks.enqueueWorkerJob).not.toHaveBeenCalled();
+-  };
+-
+-  /** Holds for the first `holdFor` barriers, then reports takeover. */
+-  const fenceLostAfter = (holdFor: number) => {
+-    let barriers = 0;
+-    return vi.fn(async () => {
+-      barriers += 1;
+-      if (barriers > holdFor) {
+-        throw new Error("Structural page edit delivery lost its durable lease");
+-      }
+-    });
+-  };
+-
+-  beforeEach(() => {
+-    vi.clearAllMocks();
+-    mocks.prisma.$transaction.mockImplementation(
+-      async (run: (tx: typeof mocks.prisma) => Promise<unknown>) => run(mocks.prisma)
+-    );
+-    mocks.loadContinuityNotes.mockResolvedValue([]);
+-    mocks.prisma.page.findUnique.mockResolvedValue(null);
+-    mocks.prisma.page.create.mockResolvedValue({ id: "page-row-1", revision: 1 });
+-    mocks.prisma.page.updateMany.mockResolvedValue({ count: 1 });
+-    mocks.enqueueWorkerJob.mockResolvedValue({ id: "image-job" });
+-    strategy.shouldIllustratePage.mockReturnValue(true);
+-    strategy.reviewPageDraft.mockResolvedValue(report(90, { approved: true }));
+-    mocks.keeperStoryExtractForSave.mockResolvedValue(storyExtract);
+-    mocks.prepareEmbedding.mockResolvedValue({ vectorLiteral: "[0.1,0.2]", error: null });
+-  });
+-
+-  it("publishes the whole tail while the fence holds, and asks it three times", async () => {
+-    const fence = fenceLostAfter(Number.POSITIVE_INFINITY);
+-
+-    await reviewAndSaveGeneratedPage(fencedOptions(fence));
+-
+-    // Before the page stage, before the provider calls, and before the writes.
+-    expect(fence).toHaveBeenCalledTimes(3);
+-    expect(mocks.persistStoryExtract).toHaveBeenCalledWith(expect.objectContaining({ extract: storyExtract }));
+-    expect(mocks.prisma.continuityNote.createMany).toHaveBeenCalledTimes(1);
+-    expect(mocks.updateEntityStateFromPage).toHaveBeenCalledTimes(1);
+-    expect(mocks.writePreparedEmbedding).toHaveBeenCalledTimes(1);
+-    expect(mocks.enqueueWorkerJob).toHaveBeenCalledTimes(1);
+-  });
+-
+-  it("spends no provider call and publishes nothing when ownership goes right after the page stage", async () => {
+-    // Lost before the story extract: the barrier after the stage is what stops
+-    // a delivery that no longer owns the book paying for state it may not write.
+-    const fence = fenceLostAfter(1);
+-
+-    await expect(reviewAndSaveGeneratedPage(fencedOptions(fence))).rejects.toThrow("lost its durable lease");
+-
+-    expect(mocks.prisma.page.create).toHaveBeenCalledTimes(1);
+-    expect(mocks.keeperStoryExtractForSave).not.toHaveBeenCalled();
+-    expect(mocks.prepareEmbedding).not.toHaveBeenCalled();
+-    expectNothingPublished();
+-  });
+-
+-  it("publishes nothing when ownership goes during the provider calls, after the model answered", async () => {
+-    // Lost after the model call, before the write: the extract and the vector
+-    // are in hand, and the publish barrier is what keeps them out of the book.
+-    const fence = fenceLostAfter(2);
+-
+-    await expect(reviewAndSaveGeneratedPage(fencedOptions(fence))).rejects.toThrow("lost its durable lease");
+-
+-    expect(mocks.keeperStoryExtractForSave).toHaveBeenCalledTimes(1);
+-    expect(mocks.prepareEmbedding).toHaveBeenCalledTimes(1);
+-    expectNothingPublished();
+-  });
+-
+-  it("does not even save the page when ownership is already gone before the stage", async () => {
+-    const fence = fenceLostAfter(0);
+-
+-    await expect(reviewAndSaveGeneratedPage(fencedOptions(fence))).rejects.toThrow("lost its durable lease");
+-
+-    expect(mocks.prisma.page.create).not.toHaveBeenCalled();
+-    expect(mocks.keeperStoryExtractForSave).not.toHaveBeenCalled();
+-    expectNothingPublished();
+-  });
+-
+-  it("keeps both the repaired chapter brief and page behind the publication fence", async () => {
+-    // This is the old split-write window. The repair's post-model stand-down
+-    // succeeds, then a replacement takes the structural lease before the page
+-    // publication barrier. Previously the loop had already committed the
+-    // chapter CAS here, leaving its repaired assignment durable while this
+-    // delivery's page never landed.
+-    const fence = fenceLostAfter(1);
+-    const { options } = keptBriefRepairOptions(fence);
+-
+-    await expect(reviewAndSaveGeneratedPage(options)).rejects.toThrow("lost its durable lease");
+-
+-    expect(strategy.repairPageBrief).toHaveBeenCalledTimes(1);
+-    expect(fence).toHaveBeenCalledTimes(2);
+-    expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
+-    expect(mocks.prisma.page.create).not.toHaveBeenCalled();
+-    expect(mocks.prisma.chapter.findUnique).not.toHaveBeenCalled();
+-    expect(mocks.prisma.chapter.updateMany).not.toHaveBeenCalled();
+-    expectNothingPublished();
+-  });
+-
+-  it("publishes a kept page and its repaired chapter brief on one transaction client", async () => {
+-    const fence = fenceLostAfter(Number.POSITIVE_INFINITY);
+-    const { options, chapterBrief, repairedBeat } = keptBriefRepairOptions(fence);
+-    const tx = {
+-      page: { create: vi.fn().mockResolvedValue({ id: "page-row-1", revision: 4 }) },
+-      chapter: {
+-        findUnique: vi.fn().mockResolvedValue({ productionBrief: chapterBrief }),
+-        updateMany: vi.fn().mockResolvedValue({ count: 1 })
+-      }
+-    };
+-    mocks.prisma.$transaction.mockImplementationOnce(
+-      async (run: (client: typeof tx) => Promise<unknown>) => run(tx)
+-    );
+-
+-    const saved = await reviewAndSaveGeneratedPage(options);
+-
+-    expect(saved.repairedChapterBrief?.pages).toEqual([repairedBeat]);
+-    expect(tx.page.create).toHaveBeenCalledTimes(1);
+-    expect(tx.chapter.findUnique).toHaveBeenCalledTimes(1);
+-    expect(tx.chapter.updateMany).toHaveBeenCalledTimes(1);
+-    expect(tx.page.create.mock.invocationCallOrder[0]!).toBeLessThan(
+-      tx.chapter.findUnique.mock.invocationCallOrder[0]!
+-    );
+-    // Neither half escapes onto the root client around the transaction.
+-    expect(mocks.prisma.page.create).not.toHaveBeenCalled();
+-    expect(mocks.prisma.chapter.findUnique).not.toHaveBeenCalled();
+-    expect(mocks.prisma.chapter.updateMany).not.toHaveBeenCalled();
+-  });
+-
+-  it("rolls the kept page back when the repaired brief loses every transaction CAS", async () => {
+-    const fence = fenceLostAfter(Number.POSITIVE_INFINITY);
+-    const { options, chapterBrief } = keptBriefRepairOptions(fence);
+-    const movingBrief = (label: string) => ({ ...chapterBrief, continuityFocus: [label] });
+-    let stagedPage: Record<string, unknown> | null = null;
+-    let durablePage: Record<string, unknown> | null = null;
+-    const tx = {
+-      page: {
+-        create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+-          stagedPage = data;
+-          return { id: "page-row-1", revision: 4 };
+-        })
+-      },
+-      chapter: {
+-        findUnique: vi
+-          .fn()
+-          .mockResolvedValueOnce({ productionBrief: movingBrief("Sibling A") })
+-          .mockResolvedValueOnce({ productionBrief: movingBrief("Sibling B") })
+-          .mockResolvedValueOnce({ productionBrief: movingBrief("Sibling C") }),
+-        updateMany: vi.fn().mockResolvedValue({ count: 0 })
+-      }
+-    };
+-    mocks.prisma.$transaction.mockImplementationOnce(
+-      async (run: (client: typeof tx) => Promise<unknown>) => {
+-        const result = await run(tx);
+-        durablePage = stagedPage;
+-        return result;
+-      }
+-    );
+-
+-    const save = reviewAndSaveGeneratedPage(options);
+-
+-    await expect(save).rejects.toMatchObject({
+-      name: "ChapterBriefPublicationRejectedError",
+-      chapterId: "chapter-1",
+-      outcome: "lost-race"
+-    });
+-    expect(tx.page.create).toHaveBeenCalledTimes(1);
+-    expect(tx.chapter.updateMany).toHaveBeenCalledTimes(3);
+-    expect(durablePage).toBeNull();
+-    // Rejection means there is no returned `repairedChapterBrief` for a caller
+-    // to adopt, and neither half escaped through the root client.
+-    expect(mocks.prisma.page.create).not.toHaveBeenCalled();
+-    expect(mocks.prisma.chapter.updateMany).not.toHaveBeenCalled();
+-    expectNothingPublished();
+-  });
+-});
+diff --git a/apps/worker/src/generation/wholeBookPageReview.ts b/apps/worker/src/generation/wholeBookPageReview.ts
+index 171d5e4..e5dac4a 100644
+--- a/apps/worker/src/generation/wholeBookPageReview.ts
++++ b/apps/worker/src/generation/wholeBookPageReview.ts
+@@ -4,6 +4,7 @@ import { reviewPageWithQualityGates } from "./pageReview.js";
+ import { loadQualityContext } from "./qualitySettings.js";
+ import {
+   hasSmartUnslopCandidates,
++  CASE_EVIDENCE_WRITER_RULES,
+   type BookGenerationStrategy,
+   type BookPlan,
+   type CreateProjectInput,
+@@ -64,6 +65,10 @@ export async function reviewWholeBookDraftPages(options: {
+           plan: options.plan,
+           pageIndex: pageDraft.index,
+           qaCandidateNumber: 2,
++          ...(options.plan.dossier?.evidencePackets?.length ? {
++            researchNotes: [...options.plan.researchNotes.map((note) => `${note.title} (${note.url ?? ""}): ${note.summary}`), ...options.plan.dossier.evidencePackets.map((packet) => JSON.stringify(packet))],
++            pageEditGuidance: CASE_EVIDENCE_WRITER_RULES.join(" ")
++          } : {}),
+           draft,
+           report,
+           previousPages,
+diff --git a/apps/worker/src/handlers/restructurePages.test.ts b/apps/worker/src/handlers/restructurePages.test.ts
+index 050f813..3862d71 100644
+--- a/apps/worker/src/handlers/restructurePages.test.ts
++++ b/apps/worker/src/handlers/restructurePages.test.ts
+@@ -1,286 +1,9 @@
+-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+-import type { Job } from "bullmq";
+-
+-const mocks = vi.hoisted(() => ({
+-  projectRow: { id: "project-1", currentPlanId: "plan-1", status: "EDITING", targetPages: 6, contentRevision: 7 },
+-  prisma: {
+-    bookEditOperation: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+-    project: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+-    planVersion: { findUnique: vi.fn() },
+-    page: {
+-      findMany: vi.fn(),
+-      findUnique: vi.fn(),
+-      createMany: vi.fn(),
+-      updateMany: vi.fn(),
+-      deleteMany: vi.fn(),
+-      count: vi.fn()
+-    },
+-    chapter: { updateMany: vi.fn() },
+-    imageAsset: { updateMany: vi.fn() },
+-    $transaction: vi.fn()
+-  },
+-  applyStructuralPageChange: vi.fn(),
+-  leaseClaim: { outcome: "acquired", phase: "tail", application: null } as Record<string, unknown>,
+-  waitForStructuralPageLease: vi.fn(async () => mocks.leaseClaim),
+-  waitForStructuralPageLeaseCompletion: vi.fn(),
+-  heartbeatAssertHeld: vi.fn(),
+-  heartbeatStop: vi.fn(),
+-  startStructuralPageLeaseHeartbeat: vi.fn(() => ({ assertHeld: mocks.heartbeatAssertHeld, stop: mocks.heartbeatStop })),
+-  completeStructuralPageLease: vi.fn(),
+-  markStructuralPageLeaseApplied: vi.fn(),
+-  settleSkippedStructuralPageLeaseTx: vi.fn(),
+-  renewStructuralPageLeaseTx: vi.fn(),
+-  claimAppliedEditPublication: vi.fn(),
+-  restoreEditProjectStatus: vi.fn(),
+-  reviewAndSaveGeneratedPage: vi.fn(),
+-  reviewAppliedBookEdit: vi.fn(),
+-  generatePageDraft: vi.fn(),
+-  maybeEnqueueCompile: vi.fn(),
+-  invalidateProjectExports: vi.fn(),
+-  compensateStructuralPageChangeTx: vi.fn(),
+-  revertStructuralPageChange: vi.fn(),
+-  rebuildProjectStoryState: vi.fn(),
+-  rebuildRolledBackProjectStoryState: vi.fn(),
+-  refundSkippedEditOperation: vi.fn(),
+-  refundUnwrittenEditPages: vi.fn(),
+-  releaseStructuralPageLease: vi.fn(),
+-  redeliverWorkerGenerationJob: vi.fn()
+-}));
+-
+-vi.mock("@book-maker/db", () => ({
+-  prisma: mocks.prisma,
+-  Prisma: { DbNull: Symbol("DbNull") },
+-  PAGE_RESTRUCTURE_TRANSACTION_OPTIONS: { timeout: 30_000, maxWait: 10_000 },
+-  compensateStructuralPageChangeTx: mocks.compensateStructuralPageChangeTx,
+-  revertStructuralPageChange: mocks.revertStructuralPageChange
+-}));
+-vi.mock("../generation/pageRestructure.js", () => ({
+-  applyStructuralPageChange: mocks.applyStructuralPageChange
+-}));
+-vi.mock("../generation/structuralPageLease.js", () => ({
+-  waitForStructuralPageLease: mocks.waitForStructuralPageLease,
+-  waitForStructuralPageLeaseCompletion: mocks.waitForStructuralPageLeaseCompletion,
+-  startStructuralPageLeaseHeartbeat: mocks.startStructuralPageLeaseHeartbeat,
+-  completeStructuralPageLease: mocks.completeStructuralPageLease,
+-  markStructuralPageLeaseApplied: mocks.markStructuralPageLeaseApplied,
+-  settleSkippedStructuralPageLeaseTx: mocks.settleSkippedStructuralPageLeaseTx,
+-  renewStructuralPageLeaseTx: mocks.renewStructuralPageLeaseTx,
+-  releaseStructuralPageLease: mocks.releaseStructuralPageLease,
+-  StructuralPageLeaseLostError: class StructuralPageLeaseLostError extends Error {},
+-  isStructuralPageLeaseLostError: () => false
+-}));
+-vi.mock("../generation/editProjectStatus.js", () => ({
+-  claimAppliedEditPublication: mocks.claimAppliedEditPublication,
+-  restoreEditProjectStatus: mocks.restoreEditProjectStatus
+-}));
+-vi.mock("../generation/pageReview.js", () => ({
+-  reviewAndSaveGeneratedPage: mocks.reviewAndSaveGeneratedPage
+-}));
+-vi.mock("../generation/bookHelpers.js", () => ({
+-  getProjectOrThrow: async () => ({ ...mocks.projectRow }),
+-  invalidateProjectExports: mocks.invalidateProjectExports,
+-  strategyForInput: () => ({ generatePageDraft: mocks.generatePageDraft }),
+-  styleExcerptsForPage: async () => [],
+-  toPriorPageContext: (page: { index: number; title: string; markdown: string; summary: string }) => ({
+-    index: page.index,
+-    title: page.title,
+-    markdown: page.markdown,
+-    summary: page.summary
+-  })
+-}));
+-vi.mock("../generation/generationContext.js", () => ({
+-  loadContinuityNotes: async () => [],
+-  loadResearchNotesForGeneration: async () => []
+-}));
+-vi.mock("../generation/embeddingWrites.js", () => ({
+-  prepareEmbedding: vi.fn(),
+-  strategyUsesSemanticMemory: () => false,
+-  writePreparedEmbedding: vi.fn()
+-}));
+-vi.mock("../generation/qualityEnrichment.js", () => ({
+-  keeperStoryExtractForSave: async () => null,
+-  persistStoryExtract: vi.fn()
+-}));
+-vi.mock("../generation/projectInput.js", () => ({ inputForPlanVersion: () => ({ targetPages: 6 }) }));
+-vi.mock("../generation/qualitySettings.js", () => ({ loadQualityContext: async () => ({ enabled: () => false }) }));
+-vi.mock("../generation/storyStateStore.js", () => ({
+-  loadProjectStoryState: async () => ({}),
+-  rebuildProjectStoryState: mocks.rebuildProjectStoryState,
+-  rebuildRolledBackProjectStoryState: mocks.rebuildRolledBackProjectStoryState
+-}));
+-vi.mock("../providers/loggedAdapters.js", () => ({ createLoggedProviders: () => ({ text: {} }) }));
+-vi.mock("../runtime/config.js", () => ({ config: {} }));
+-vi.mock("../runtime/dispatch.js", () => ({
+-  maybeEnqueueCompile: mocks.maybeEnqueueCompile,
+-  redeliverWorkerGenerationJob: mocks.redeliverWorkerGenerationJob
+-}));
+-vi.mock("../runtime/jobLifecycle.js", () => ({
+-  advanceJobStep: vi.fn(),
+-  refundSkippedEditOperation: mocks.refundSkippedEditOperation,
+-  refundUnwrittenEditPages: mocks.refundUnwrittenEditPages
+-}));
+-vi.mock("../runtime/durableEditCompletion.js", () => ({ claimDurableEditCompletionTx: async () => true, settleDurableEditAttemptTx: async () => true }));
+-vi.mock("@book-maker/core", async () => {
+-  const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
+-  return {
+-    ...actual,
+-    bookPlanSchema: { parse: () => ({ chapters: [], promises: [] }) },
+-    createProviders: () => ({}),
+-    reviewAppliedBookEdit: mocks.reviewAppliedBookEdit
+-  };
+-});
+-
++import { describe, expect, it, vi } from "vitest";
+ import { PRE_EDIT_PROJECT_STATUS } from "@book-maker/core";
++import { mocks, job, insertJob, pages, application, unshiftedClaim, expectSettled } from "./testing/restructurePagesHarness.js";
+ import { restructurePages } from "./restructurePages.js";
+ 
+-const job = (data: Record<string, unknown>) => ({ data, id: "job-1" }) as unknown as Job;
+-
+-const insertJob = (payload: Record<string, unknown> = {}) =>
+-  job({
+-    projectId: "project-1",
+-    operationId: "op-1",
+-    request: "Add 2 pages after page 3",
+-    planId: "plan-1",
+-    structuralEdit: { action: "insert", anchorPageIndex: 3, pageIndexes: [], pageCount: 2 },
+-    ...payload
+-  });
+-
+-const pages = (count: number) =>
+-  Array.from({ length: count }, (_value, offset) => ({
+-    id: `page-${offset + 1}`,
+-    index: offset + 1,
+-    chapterId: null
+-  }));
+-
+-const approvedReport = {
+-  approved: true,
+-  score: 90,
+-  issues: [],
+-  requiredRevisions: [],
+-  notes: "Approved",
+-  groundedOk: true,
+-  unsupportedClaims: [],
+-  checks: {
+-    placeholderFree: true,
+-    promptLeakFree: true,
+-    titleClean: true,
+-    repetitionOk: true,
+-    progressionOk: true,
+-    styleNatural: true
+-  }
+-};
+-
+-const application = (overrides: Record<string, unknown> = {}) => ({
+-  action: "insert",
+-  pageOrderBefore: pages(6).map((page) => ({ pageId: page.id, index: page.index, chapterId: page.chapterId })),
+-  insertedPageIds: ["page-new-1", "page-new-2"],
+-  removedPages: [],
+-  basePlanVersionId: "plan-1",
+-  newPlanVersionId: "plan-2",
+-  previousTargetPages: 6,
+-  previousChapterTargetPages: {},
+-  appliedAt: "2026-08-15T00:00:00.000Z",
+-  ...overrides
+-});
+-
+-const unshiftedClaim = { outcome: "acquired", phase: "draft", application: null };
+-
+-const expectSettled = (reason: string) => {
+-  expect(mocks.settleSkippedStructuralPageLeaseTx).toHaveBeenCalledWith(mocks.prisma, "op-1", expect.any(String));
+-  expect(mocks.prisma.bookEditOperation.update).toHaveBeenCalledWith(
+-    expect.objectContaining({ data: { classifier: expect.objectContaining({ structuralSkipped: reason }) } })
+-  );
+-};
+-
+ describe("restructurePages", () => {
+-  beforeEach(() => {
+-    vi.clearAllMocks();
+-    mocks.projectRow.status = "EDITING";
+-    mocks.projectRow.contentRevision = 7;
+-    mocks.prisma.project.update.mockImplementation(async ({ data }: { data: { status?: string; contentRevision?: { increment: number } } }) => {
+-      if (typeof data.status === "string") {
+-        mocks.projectRow.status = data.status;
+-      }
+-      if (data.contentRevision) mocks.projectRow.contentRevision += data.contentRevision.increment;
+-      return { ...mocks.projectRow };
+-    });
+-    mocks.prisma.project.findUnique.mockImplementation(async () => ({ ...mocks.projectRow }));
+-    mocks.prisma.$transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) =>
+-      run(mocks.prisma)
+-    );
+-    mocks.prisma.bookEditOperation.updateMany.mockResolvedValue({ count: 1 });
+-    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({
+-      id: "op-1", status: "ACTIVE", classifier: {}, publicationRevision: 7
+-    });
+-    mocks.prisma.planVersion.findUnique.mockResolvedValue({
+-      id: "plan-1",
+-      inputSnapshot: {},
+-      planningPackage: {}
+-    });
+-    mocks.prisma.page.findMany.mockResolvedValue(pages(6));
+-    mocks.prisma.page.count.mockResolvedValue(2);
+-    mocks.prisma.page.updateMany.mockResolvedValue({ count: 1 });
+-    mocks.prisma.page.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => ({
+-      id: where.id, index: where.id.endsWith("1") ? 4 : 5, chapterId: null, chapter: null
+-    }));
+-    mocks.applyStructuralPageChange.mockResolvedValue({
+-      outcome: "applied",
+-      application: application()
+-    });
+-    mocks.leaseClaim = { outcome: "acquired", phase: "tail", application: null };
+-    mocks.completeStructuralPageLease.mockResolvedValue(true);
+-    mocks.markStructuralPageLeaseApplied.mockImplementation(async ({ affectedPageIndexes }) => {
+-      await mocks.prisma.bookEditOperation.update({
+-        where: { id: "op-1" },
+-        data: { status: "APPLIED", affectedPageIndexes, appliedAt: new Date() }
+-      });
+-      return 8;
+-    });
+-    mocks.settleSkippedStructuralPageLeaseTx.mockResolvedValue({ classifier: {} });
+-    mocks.renewStructuralPageLeaseTx.mockResolvedValue({
+-      status: "ACTIVE",
+-      classifier: { structuralApplication: application() }
+-    });
+-    mocks.claimAppliedEditPublication.mockResolvedValue(true);
+-    mocks.restoreEditProjectStatus.mockResolvedValue(true);
+-    mocks.generatePageDraft.mockResolvedValue({ title: "New", markdown: "Body.", summary: "S.", continuityNotes: [] });
+-    mocks.reviewAndSaveGeneratedPage.mockImplementation(async ({ draft }) => ({
+-      page: { index: draft.index, title: draft.title, markdown: draft.markdown, summary: draft.summary },
+-      candidate: { draft, qualityReport: approvedReport }
+-    }));
+-    mocks.reviewAppliedBookEdit.mockResolvedValue({
+-      satisfied: true,
+-      confidence: 0.99,
+-      missingRequirements: [],
+-      contradictions: [],
+-      pageIndexesToRevise: []
+-    });
+-    mocks.maybeEnqueueCompile.mockResolvedValue("compile");
+-    mocks.compensateStructuralPageChangeTx.mockResolvedValue({ outcome: "compensated", currentPlanId: "plan-1" });
+-    mocks.revertStructuralPageChange.mockResolvedValue({ currentPlanId: "plan-1" });
+-    mocks.rebuildProjectStoryState.mockResolvedValue({});
+-    mocks.rebuildRolledBackProjectStoryState.mockResolvedValue({});
+-    mocks.prisma.project.updateMany.mockImplementation(
+-      async ({ where, data }: { where: { status?: string | { not: string } }; data: { status?: string } }) => {
+-        const wanted = where.status;
+-        const matches =
+-          wanted === undefined
+-            ? true
+-            : typeof wanted === "string"
+-              ? mocks.projectRow.status === wanted
+-              : mocks.projectRow.status !== wanted.not;
+-        if (!matches) return { count: 0 };
+-        if (typeof data.status === "string") {
+-          mocks.projectRow.status = data.status;
+-        }
+-        return { count: 1 };
+-      }
+-    );
+-    mocks.refundSkippedEditOperation.mockResolvedValue(undefined);
+-    mocks.refundUnwrittenEditPages.mockResolvedValue(undefined);
+-  });
+-  afterEach(() => vi.clearAllMocks());
+-
+   it("never shifts twice when a redelivery finds the stamp already committed", async () => {
+     // The dangerous case. The stamp is written in the same transaction as the
+     // shift, so finding it means the shift landed — and shifting again would
+@@ -682,226 +405,4 @@ describe("restructurePages", () => {
+     expect(mocks.revertStructuralPageChange).not.toHaveBeenCalled();
+   });
+ 
+-  it("puts the book back and fails the operation when drafting dies", async () => {
+-    mocks.prisma.$transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) =>
+-      run(mocks.prisma)
+-    );
+-    mocks.generatePageDraft.mockRejectedValue(new Error("model outage"));
+-
+-    await expect(restructurePages(insertJob(), { id: "op-1", status: "QUEUED", classifier: {} })).rejects.toThrow(
+-      "model outage"
+-    );
+-
+-    expect(mocks.compensateStructuralPageChangeTx).toHaveBeenCalledWith(mocks.prisma, {
+-      projectId: "project-1",
+-      operationId: "op-1",
+-      expectedLeaseToken: expect.any(String),
+-      expectedAppliedAt: "2026-08-15T00:00:00.000Z"
+-    });
+-    expect(mocks.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 30_000, maxWait: 10_000 });
+-    expect(mocks.prisma.bookEditOperation.updateMany).toHaveBeenCalledWith(
+-      expect.objectContaining({ where: { id: "op-1", status: "APPLIED" } })
+-    );
+-  });
+-
+-  it("does not let a stale delivery roll back after another owner takes over", async () => {
+-    mocks.generatePageDraft.mockRejectedValue(new Error("old delivery resumed"));
+-    mocks.compensateStructuralPageChangeTx.mockResolvedValue({ outcome: "lost" });
+-
+-    await expect(restructurePages(insertJob(), { id: "op-1", status: "ACTIVE", classifier: {} })).resolves.toEqual({});
+-
+-    expect(mocks.revertStructuralPageChange).not.toHaveBeenCalled();
+-    expect(mocks.compensateStructuralPageChangeTx).toHaveBeenCalledOnce();
+-    expect(mocks.waitForStructuralPageLeaseCompletion).toHaveBeenCalledWith("op-1");
+-  });
+-
+-  it("settles rather than requeueing when nothing is left to resume", async () => {
+-    mocks.generatePageDraft.mockRejectedValue(new Error("old delivery resumed"));
+-    mocks.compensateStructuralPageChangeTx.mockResolvedValue({ outcome: "lost" });
+-    // Nothing settles it and no stamp is left to resume, so a requeue would only
+-    // reproduce this verdict forever with the charge never handed back.
+-    mocks.waitForStructuralPageLeaseCompletion.mockResolvedValue("abandoned");
+-
+-    await expect(restructurePages(insertJob({ generationJobId: "gj-1" }), {
+-      id: "op-1", status: "ACTIVE", classifier: {}
+-    })).rejects.toThrow("old delivery resumed");
+-    expect(mocks.redeliverWorkerGenerationJob).not.toHaveBeenCalled();
+-  });
+-  it("hands the exact stamp and lease to the shared durable compensation", async () => {
+-    mocks.prisma.$transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) =>
+-      run(mocks.prisma)
+-    );
+-    mocks.prisma.bookEditOperation.findUnique
+-      .mockResolvedValueOnce({ id: "op-1", status: "ACTIVE", classifier: { structuralEdit: { action: "insert" } } })
+-      .mockResolvedValue({
+-        id: "op-1",
+-        status: "ACTIVE",
+-        classifier: { structuralEdit: { action: "insert" }, structuralApplication: application() }
+-      });
+-    mocks.generatePageDraft.mockRejectedValue(new Error("model outage"));
+-
+-    await expect(restructurePages(insertJob(), { id: "op-1", status: "QUEUED", classifier: {} })).rejects.toThrow(
+-      "model outage"
+-    );
+-
+-    expect(mocks.compensateStructuralPageChangeTx).toHaveBeenCalledWith(mocks.prisma, {
+-      projectId: "project-1",
+-      operationId: "op-1",
+-      expectedLeaseToken: expect.any(String),
+-      expectedAppliedAt: "2026-08-15T00:00:00.000Z"
+-    });
+-  });
+-
+-  it("keeps the stamp when the revert itself fails, because nothing was put back", async () => {
+-    mocks.prisma.$transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) =>
+-      run(mocks.prisma)
+-    );
+-    mocks.compensateStructuralPageChangeTx.mockRejectedValueOnce(new Error("deadlock"));
+-    mocks.generatePageDraft.mockRejectedValue(new Error("model outage"));
+-
+-    await expect(
+-      restructurePages(insertJob({ generationJobId: "gj-1" }), { id: "op-1", status: "QUEUED", classifier: {} })
+-    ).rejects.toThrow(/requeued to resume/);
+-
+-    expect(mocks.prisma.bookEditOperation.update).not.toHaveBeenCalled();
+-    expect(mocks.releaseStructuralPageLease).toHaveBeenCalledWith("op-1", expect.any(String));
+-    expect(mocks.redeliverWorkerGenerationJob).toHaveBeenCalledWith("gj-1");
+-  });
+-
+-  it("keeps a delivered edit when the recompile cannot be queued", async () => {
+-    mocks.prisma.$transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) =>
+-      run(mocks.prisma)
+-    );
+-    mocks.maybeEnqueueCompile.mockRejectedValue(new Error("Redis is down"));
+-
+-    await restructurePages(insertJob(), { id: "op-1", status: "QUEUED", classifier: {} });
+-
+-    expect(mocks.compensateStructuralPageChangeTx).not.toHaveBeenCalled();
+-    expect(mocks.prisma.bookEditOperation.update).toHaveBeenCalledWith(
+-      expect.objectContaining({ data: expect.objectContaining({ status: "APPLIED" }) })
+-    );
+-    expect(mocks.restoreEditProjectStatus).toHaveBeenCalledWith(
+-      mocks.prisma, "project-1", "op-1", "COMPLETE"
+-    );
+-  });
+-
+-  it("does not fail a finished book when a redelivery cannot queue the recompile", async () => {
+-    mocks.maybeEnqueueCompile.mockRejectedValue(new Error("Redis is down"));
+-
+-    await restructurePages(insertJob(), { id: "op-1", status: "APPLIED", classifier: {} });
+-
+-    expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
+-    expect(mocks.prisma.project.update).not.toHaveBeenCalledWith(
+-      expect.objectContaining({ data: expect.objectContaining({ contentRevision: { increment: 1 } }) })
+-    );
+-    expect(mocks.restoreEditProjectStatus).toHaveBeenCalledWith(
+-      mocks.prisma, "project-1", "op-1", "COMPLETE"
+-    );
+-  });
+-
+-  it("rolls back a partly surviving insert instead of settling a partial page set", async () => {
+-    // A five-page insert whose first delivery died mid-drafting, and whose
+-    // interrupted attempt left only two of the five rows in the book. The
+-    // recorded set is indivisible: a subset is not a live stamp, and reviewing
+-    // or settling only the survivors would claim adherence for an edit that
+-    // was never fully applied.
+-    const partial = application({ insertedPageIds: ["new-1", "new-2", "new-3", "new-4", "new-5"] });
+-    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({
+-      id: "op-1",
+-      status: "ACTIVE",
+-      classifier: { structuralApplication: partial }
+-    });
+-    mocks.applyStructuralPageChange.mockResolvedValue({
+-      outcome: "resumed",
+-      phase: "draft",
+-      application: partial
+-    });
+-    mocks.prisma.page.count.mockResolvedValue(2);
+-    mocks.prisma.page.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) =>
+-      where.id === "new-1" || where.id === "new-2"
+-        ? { id: where.id, index: where.id === "new-1" ? 4 : 5, chapterId: null, chapter: null }
+-        : null
+-    );
+-    mocks.prisma.page.findMany.mockImplementation(async ({ where }: { where: Record<string, unknown> }) =>
+-      where.id === undefined ? pages(6) : [{ index: 4 }, { index: 5 }]
+-    );
+-    const logged = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+-    await expect(
+-      restructurePages(insertJob(), { id: "op-1", status: "ACTIVE", classifier: {} })
+-    ).rejects.toThrow("Structural insert is missing 3 of 5 recorded pages");
+-
+-    // The unlocked classifier refuses the subset; the locked look answers
+-    // `resumed` (stamp still on the row) rather than shifting twice.
+-    expect(mocks.waitForStructuralPageLease).not.toHaveBeenCalled();
+-    expect(mocks.applyStructuralPageChange).toHaveBeenCalledTimes(1);
+-    expect(mocks.reviewAndSaveGeneratedPage).not.toHaveBeenCalled();
+-    expect(mocks.reviewAppliedBookEdit).not.toHaveBeenCalled();
+-    expect(mocks.prisma.page.updateMany).not.toHaveBeenCalled();
+-    expect(mocks.refundUnwrittenEditPages).not.toHaveBeenCalled();
+-    expect(mocks.markStructuralPageLeaseApplied).not.toHaveBeenCalled();
+-    expect(mocks.compensateStructuralPageChangeTx).toHaveBeenCalledWith(mocks.prisma, {
+-      projectId: "project-1",
+-      operationId: "op-1",
+-      expectedLeaseToken: expect.any(String),
+-      expectedAppliedAt: partial.appliedAt
+-    });
+-    expect(mocks.prisma.bookEditOperation.update).not.toHaveBeenCalledWith(
+-      expect.objectContaining({ data: expect.objectContaining({ status: "APPLIED" }) })
+-    );
+-    // The run log is the debugging artifact: three ids the book no longer holds
+-    // may not be skipped in silence, and a subset is not logged as a live stamp.
+-    expect(
+-      logged.mock.calls.filter((call) => String(call[0]).includes("no longer holds")).length
+-    ).toBe(3);
+-    expect(logged.mock.calls.some((call) => String(call[0]).includes("survives only in part"))).toBe(false);
+-    logged.mockRestore();
+-  });
+-
+-  it("does not refund a second time when that settlement is redelivered", async () => {
+-    // The redelivery of an APPLIED insert takes the idempotent tail and nothing
+-    // else — no drafting, and so no second look at what the pages cost. The
+-    // ledger holds the same guarantee underneath (`reversesEntryId` is claimed
+-    // once), but the handler must not be relying on it.
+-    const partial = application({ insertedPageIds: ["new-1", "new-2", "new-3", "new-4", "new-5"] });
+-
+-    await restructurePages(insertJob(), {
+-      id: "op-1",
+-      status: "APPLIED",
+-      classifier: { structuralApplication: partial }
+-    });
+-
+-    expect(mocks.refundUnwrittenEditPages).not.toHaveBeenCalled();
+-    expect(mocks.reviewAndSaveGeneratedPage).not.toHaveBeenCalled();
+-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", undefined, {
+-      contentRevision: 7,
+-      requireContentRevisionMatch: true
+-    });
+-  });
+-
+-  it("never settles an insert as a partial delivery", async () => {
+-    // No shortfall to price: the recorded set is indivisible (see above), so an
+-    // insert delivers every page it billed or none, and the one that cannot is
+-    // refunded *whole* by `markFailed` rather than by the difference.
+-    await restructurePages(insertJob(), { id: "op-1", status: "QUEUED", classifier: {} });
+-
+-    expect(mocks.reviewAndSaveGeneratedPage).toHaveBeenCalledTimes(2);
+-    expect(mocks.refundUnwrittenEditPages).not.toHaveBeenCalled();
+-  });
+-
+-  it("asks again under the lock when a stamp outlived the pages it recorded", async () => {
+-    // Belt to the transaction's braces: a stamp whose inserted pages are gone
+-    // is not resumed on its own word. It goes back through the shift's own
+-    // transaction, where the lease CAS decides under the operation row's lock.
+-    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({
+-      id: "op-1",
+-      status: "ACTIVE",
+-      classifier: { structuralApplication: application() }
+-    });
+-    mocks.prisma.page.count.mockResolvedValue(0);
+-
+-    await restructurePages(insertJob(), { id: "op-1", status: "ACTIVE", classifier: {} });
+-
+-    expect(mocks.applyStructuralPageChange).toHaveBeenCalledTimes(1);
+-    expect(mocks.reviewAndSaveGeneratedPage).toHaveBeenCalledTimes(2);
+-  });
+ });
+diff --git a/packages/core/src/adapters/textRouting.test.ts b/packages/core/src/adapters/textRouting.test.ts
+index 5120659..e003afc 100644
+--- a/packages/core/src/adapters/textRouting.test.ts
++++ b/packages/core/src/adapters/textRouting.test.ts
+@@ -68,7 +68,9 @@ const PROSE_LANE_PURPOSES: ReadonlySet<string> = new Set([
+   "compose-scene",
+   "rewrite-couplets",
+   "architect-book",
+-  "rewrite-seams"
++  "rewrite-seams",
++  "develop-book-plan", "review-book-development", "build-case-evidence", "verify-case-evidence",
++  "review-chapter-evidence", "plan-developmental-edit", "rewrite-developmental-sections"
+ ]);
+ 
+ /** Model-call purposes are identifier-shaped; `purpose` is also a page brief's own field, whose values are sentences. */
+diff --git a/packages/core/src/costs.ts b/packages/core/src/costs.ts
+index fe64d3a..9a4ad8f 100644
+--- a/packages/core/src/costs.ts
++++ b/packages/core/src/costs.ts
+@@ -1,3 +1,7 @@
++import {
++  GEMINI_TEXT_RATES, OPENAI_TEXT_RATES, ALIBABA_TEXT_RATES, DEEPSEEK_V4_FLASH_RATES, DEEPSEEK_V4_PRO_RATES, DEEPINFRA_V4_FLASH_RATE, DEEPINFRA_V4_PRO_RATE, DEEPINFRA_MISTRAL_SMALL_RATE, OPENROUTER_GLM_53_FLASH_RATE,
++  type TextRate, type TieredTextRate, type PeakOffPeakRate
++} from "./textCostRates.js";
+ import { OPENROUTER_GLM_53_FLASH_MODEL } from "./adapters/openrouterModels.js";
+ import { qwen37FlashCostRates, qwen37FlashRateForPrompt } from "./qwen37FlashPricing.js";
+ 
+@@ -31,399 +35,15 @@ export type ProjectCostSummary = {
+   unpricedAudioCalls: number;
+ };
+ 
+-type TextRate = {
+-  inputPerMillion: number;
+-  outputPerMillion: number;
+-  cacheHitPerMillion?: number;
+-  cacheWritePerMillion?: number;
+-};
+-
+ /** Token prices shown by operator routing controls, in the same units used by settlement. */
+ export type TextGenerationCostRate = TextRate & {
+   label?: string;
+ };
+ 
+-type TieredTextRate = {
+-  thresholdPromptTokens: number;
+-  belowOrEqual: TextRate;
+-  above: TextRate;
+-};
+-
+ const TOKENS_PER_MILLION = 1_000_000;
+ const COST_PRECISION = 1_000_000;
+ const DEFAULT_IMAGE_SIZE_TIER = "1k";
+ 
+-const GEMINI_TEXT_RATES = new Map<string, TextRate | TieredTextRate>([
+-  [
+-    "gemini-3.7-flash",
+-    {
+-      inputPerMillion: 0.75,
+-      outputPerMillion: 3.75,
+-      cacheHitPerMillion: 0.075
+-    }
+-  ],
+-  [
+-    "gemini-3.5-flash",
+-    {
+-      inputPerMillion: 1.5,
+-      outputPerMillion: 9,
+-      cacheHitPerMillion: 0.15
+-    }
+-  ],
+-  [
+-    "gemini-3-flash-preview",
+-    {
+-      inputPerMillion: 0.5,
+-      outputPerMillion: 3,
+-      cacheHitPerMillion: 0.05
+-    }
+-  ],
+-  [
+-    "gemini-3.1-flash-lite",
+-    {
+-      inputPerMillion: 0.25,
+-      outputPerMillion: 1.5,
+-      cacheHitPerMillion: 0.025
+-    }
+-  ],
+-  [
+-    "gemini-3.1-pro-preview",
+-    {
+-      thresholdPromptTokens: 200_000,
+-      belowOrEqual: {
+-        inputPerMillion: 2,
+-        outputPerMillion: 12,
+-        cacheHitPerMillion: 0.2
+-      },
+-      above: {
+-        inputPerMillion: 4,
+-        outputPerMillion: 18,
+-        cacheHitPerMillion: 0.4
+-      }
+-    }
+-  ],
+-  [
+-    "gemini-2.5-pro",
+-    {
+-      thresholdPromptTokens: 200_000,
+-      belowOrEqual: {
+-        inputPerMillion: 1.25,
+-        outputPerMillion: 10,
+-        cacheHitPerMillion: 0.125
+-      },
+-      above: {
+-        inputPerMillion: 2.5,
+-        outputPerMillion: 15,
+-        cacheHitPerMillion: 0.25
+-      }
+-    }
+-  ],
+-  [
+-    "gemini-2.5-flash",
+-    {
+-      inputPerMillion: 0.3,
+-      outputPerMillion: 2.5,
+-      cacheHitPerMillion: 0.03
+-    }
+-  ],
+-  [
+-    "gemini-2.5-flash-lite",
+-    {
+-      inputPerMillion: 0.1,
+-      outputPerMillion: 0.4,
+-      cacheHitPerMillion: 0.01
+-    }
+-  ]
+-]);
+-
+-const GPT_5_NANO_RATE: TextRate = { inputPerMillion: 0.05, outputPerMillion: 0.4, cacheHitPerMillion: 0.005 };
+-
+-const OPENAI_TEXT_RATES = new Map<string, TextRate | TieredTextRate>([
+-  [
+-    "gpt-5.6-sol",
+-    {
+-      thresholdPromptTokens: 272_000,
+-      belowOrEqual: {
+-        inputPerMillion: 4,
+-        outputPerMillion: 20,
+-        cacheHitPerMillion: 0.4,
+-        cacheWritePerMillion: 5
+-      },
+-      above: { inputPerMillion: 8, outputPerMillion: 30, cacheHitPerMillion: 0.8, cacheWritePerMillion: 10 }
+-    }
+-  ],
+-  [
+-    "gpt-5.6-terra",
+-    {
+-      thresholdPromptTokens: 272_000,
+-      belowOrEqual: {
+-        inputPerMillion: 2,
+-        outputPerMillion: 12,
+-        cacheHitPerMillion: 0.2,
+-        cacheWritePerMillion: 2.5
+-      },
+-      above: { inputPerMillion: 4, outputPerMillion: 18, cacheHitPerMillion: 0.4, cacheWritePerMillion: 5 }
+-    }
+-  ],
+-  [
+-    "gpt-5.6-luna",
+-    {
+-      thresholdPromptTokens: 272_000,
+-      belowOrEqual: {
+-        inputPerMillion: 0.2,
+-        outputPerMillion: 1.2,
+-        cacheHitPerMillion: 0.02,
+-        cacheWritePerMillion: 0.25
+-      },
+-      above: { inputPerMillion: 0.4, outputPerMillion: 1.8, cacheHitPerMillion: 0.04, cacheWritePerMillion: 0.5 }
+-    }
+-  ],
+-  ["gpt-5-nano", GPT_5_NANO_RATE],
+-  ["gpt-5-nano-2025-08-07", GPT_5_NANO_RATE]
+-]);
+-
+-const ALIBABA_TEXT_RATES = new Map<string, TextRate | TieredTextRate>([
+-  [
+-    "qwen3.8-max",
+-    {
+-      inputPerMillion: 2,
+-      outputPerMillion: 6,
+-      cacheHitPerMillion: 0.25
+-    }
+-  ],
+-  [
+-    "qwen3.7-plus",
+-    {
+-      thresholdPromptTokens: 256_000,
+-      belowOrEqual: {
+-        inputPerMillion: 0.4,
+-        outputPerMillion: 1.6
+-      },
+-      above: {
+-        inputPerMillion: 1.2,
+-        outputPerMillion: 4.8
+-      }
+-    }
+-  ],
+-  [
+-    "qwen3.7-plus-2026-05-26",
+-    {
+-      thresholdPromptTokens: 256_000,
+-      belowOrEqual: {
+-        inputPerMillion: 0.4,
+-        outputPerMillion: 1.6
+-      },
+-      above: {
+-        inputPerMillion: 1.2,
+-        outputPerMillion: 4.8
+-      }
+-    }
+-  ],
+-  [
+-    "qwen3.5-plus",
+-    {
+-      thresholdPromptTokens: 256_000,
+-      belowOrEqual: {
+-        inputPerMillion: 0.4,
+-        outputPerMillion: 2.4
+-      },
+-      above: {
+-        inputPerMillion: 0.5,
+-        outputPerMillion: 3
+-      }
+-    }
+-  ],
+-  [
+-    "qwen3.5-plus-2026-02-15",
+-    {
+-      thresholdPromptTokens: 256_000,
+-      belowOrEqual: {
+-        inputPerMillion: 0.4,
+-        outputPerMillion: 2.4
+-      },
+-      above: {
+-        inputPerMillion: 0.5,
+-        outputPerMillion: 3
+-      }
+-    }
+-  ],
+-  [
+-    "qwen-plus",
+-    {
+-      thresholdPromptTokens: 256_000,
+-      belowOrEqual: {
+-        inputPerMillion: 0.4,
+-        outputPerMillion: 1.2
+-      },
+-      above: {
+-        inputPerMillion: 1.2,
+-        outputPerMillion: 3.6
+-      }
+-    }
+-  ],
+-  [
+-    "qwen-plus-latest",
+-    {
+-      thresholdPromptTokens: 256_000,
+-      belowOrEqual: {
+-        inputPerMillion: 0.4,
+-        outputPerMillion: 1.2
+-      },
+-      above: {
+-        inputPerMillion: 1.2,
+-        outputPerMillion: 3.6
+-      }
+-    }
+-  ],
+-  [
+-    "qwen-plus-2025-12-01",
+-    {
+-      thresholdPromptTokens: 256_000,
+-      belowOrEqual: {
+-        inputPerMillion: 0.4,
+-        outputPerMillion: 1.2
+-      },
+-      above: {
+-        inputPerMillion: 1.2,
+-        outputPerMillion: 3.6
+-      }
+-    }
+-  ],
+-  [
+-    "qwen-plus-2025-09-11",
+-    {
+-      thresholdPromptTokens: 256_000,
+-      belowOrEqual: {
+-        inputPerMillion: 0.4,
+-        outputPerMillion: 1.2
+-      },
+-      above: {
+-        inputPerMillion: 1.2,
+-        outputPerMillion: 3.6
+-      }
+-    }
+-  ],
+-  [
+-    "qwen-plus-2025-07-28",
+-    {
+-      thresholdPromptTokens: 256_000,
+-      belowOrEqual: {
+-        inputPerMillion: 0.4,
+-        outputPerMillion: 1.2
+-      },
+-      above: {
+-        inputPerMillion: 1.2,
+-        outputPerMillion: 3.6
+-      }
+-    }
+-  ],
+-  [
+-    "qwen-plus-2025-07-14",
+-    {
+-      inputPerMillion: 0.4,
+-      outputPerMillion: 1.2
+-    }
+-  ],
+-  [
+-    "qwen-plus-2025-04-28",
+-    {
+-      inputPerMillion: 0.4,
+-      outputPerMillion: 1.2
+-    }
+-  ],
+-  [
+-    "qwen-plus-2025-01-25",
+-    {
+-      inputPerMillion: 0.4,
+-      outputPerMillion: 1.2
+-    }
+-  ],
+-  [
+-    "qwen3.5-flash",
+-    {
+-      inputPerMillion: 0.1,
+-      outputPerMillion: 0.4
+-    }
+-  ],
+-  [
+-    "qwen3.5-flash-2026-02-23",
+-    {
+-      inputPerMillion: 0.1,
+-      outputPerMillion: 0.4
+-    }
+-  ],
+-  [
+-    "qwen-flash",
+-    {
+-      thresholdPromptTokens: 256_000,
+-      belowOrEqual: {
+-        inputPerMillion: 0.05,
+-        outputPerMillion: 0.4
+-      },
+-      above: {
+-        inputPerMillion: 0.25,
+-        outputPerMillion: 2
+-      }
+-    }
+-  ],
+-  [
+-    "qwen-flash-2025-07-28",
+-    {
+-      thresholdPromptTokens: 256_000,
+-      belowOrEqual: {
+-        inputPerMillion: 0.05,
+-        outputPerMillion: 0.4
+-      },
+-      above: {
+-        inputPerMillion: 0.25,
+-        outputPerMillion: 2
+-      }
+-    }
+-  ]
+-]);
+-
+-type PeakOffPeakRate = {
+-  offPeak: TextRate;
+-  peak: TextRate;
+-};
+-
+-// Official DeepSeek V4 card as of 2026-08-16. Off-peak is half of peak.
+-// Peak: 01:00–04:00 and 06:00–10:00 UTC, Monday–Friday.
+-const DEEPSEEK_V4_FLASH_RATES: PeakOffPeakRate = {
+-  offPeak: { inputPerMillion: 0.22, outputPerMillion: 0.66, cacheHitPerMillion: 0.007 },
+-  peak: { inputPerMillion: 0.44, outputPerMillion: 1.32, cacheHitPerMillion: 0.014 }
+-};
+-
+-const DEEPSEEK_V4_PRO_RATES: PeakOffPeakRate = {
+-  offPeak: { inputPerMillion: 0.66, outputPerMillion: 1.98, cacheHitPerMillion: 0.022 },
+-  peak: { inputPerMillion: 1.32, outputPerMillion: 3.96, cacheHitPerMillion: 0.044 }
+-};
+-
+-const DEEPINFRA_V4_FLASH_RATE: TextRate = {
+-  inputPerMillion: 0.1,
+-  outputPerMillion: 0.2,
+-  cacheHitPerMillion: 0.02
+-};
+-
+-const DEEPINFRA_V4_PRO_RATE: TextRate = {
+-  inputPerMillion: 1.3,
+-  outputPerMillion: 2.6,
+-  cacheHitPerMillion: 0.1
+-};
+-
+-const DEEPINFRA_MISTRAL_SMALL_RATE: TextRate = {
+-  inputPerMillion: 0.075,
+-  outputPerMillion: 0.2
+-};
+-
+-// OpenRouter billed card for z-ai/glm-5.3-flash as of 2026-09-02
+-// (Z.ai 50% promo through 2026-09-09 16:00 UTC).
+-const OPENROUTER_GLM_53_FLASH_RATE: TextRate = {
+-  inputPerMillion: 0.075,
+-  outputPerMillion: 0.25,
+-  cacheHitPerMillion: 0.015
+-};
+-
+ const GEMINI_IMAGE_COSTS_USD = new Map<string, number>([
+   ["gemini-2.5-flash-image", 0.039],
+   ["imagen-4.0-fast-generate-001", 0.02],
+diff --git a/packages/core/src/generation/CLAUDE.md b/packages/core/src/generation/CLAUDE.md
+index daf15d6..a711469 100644
+--- a/packages/core/src/generation/CLAUDE.md
++++ b/packages/core/src/generation/CLAUDE.md
+@@ -181,21 +181,70 @@ holds the event loop open and vitest will never exit.
+   without figures — the rerun loop's rule that a prompt field present in every chapter is a
+   template. **Strings in a block are clipped, never refused**: that book's one figure was thrown
+   away whole because its `unit` ran two characters past a limit; only the counts (series,
+-  categories, nodes, edges) are hard limits, since truncating data would draw a different chart. A
++  categories, nodes, edges) and the magnitude of a value (`FIGURE_LIMITS.value`, 1e15) are hard
++  limits, since truncating data would draw a different chart — a value that size belongs in a
++  larger unit, and `Number.MAX_VALUE` used to parse as valid and round the axis end up to Infinity,
++  which `niceTicks` looped on forever; the tick generator is bounded on its own now
++  (`figureSvgShared.ts`), because the renderer is reachable with a spec built directly. A
+   `scale: "log"` axis is there for values spanning orders of magnitude, which an operation-count
+   chart needs, and falls back to linear over a value at or below zero; the renderer takes it on its
+   own when the largest value is a thousand times the smallest, because the rerun's writer drew six
+   decades on a linear axis and three of four series were flat. Ticks past ten thousand are compact
+   (10K, 1M), the left margin follows the widest tick, and a unit longer than a sign gets a row of its
+   own above the plot — the first rendered chart clipped every tick to "0,000,000". In a flow
+-  diagram, labels keep their words whole, a node's edges are spread along its side, and an edge
+-  that skips a layer bows out past the column it would otherwise run through. The same book tagged every
++  diagram, labels keep their words whole, a node's edges are spread along its side, an edge
++  that skips a layer bows out past the column it would otherwise run through, `svgOpen` takes the
++  sheet width rather than patching the viewBox string, and a chain taller than an A4 content block
++  is capped (`MAX_FLOW_HEIGHT` 720) with nodes scaled to fit. The same book tagged every
+   code fence `text` and indented the rest, so highlight.js — which keys on the fence's language name
+   and is wired for the PDF only — coloured nothing; `codeBlockRules` in `composedChapter.ts` tells
+   a book about code (`bookMentionsCode`, a cue over the prompt and plan) to tag fences with the
+   language, and the editor is told to return a draft's fences byte for byte. Every call after the compose reads a stand-in line or nothing
+   (`figureStandInMarkdown`, `figureFreeProse` in `figures/figureBlocks.ts`) and the block goes back
+-  beside the paragraph it followed (`reinsertFigureFences`); the paginator weighs it as
++  beside the paragraph it followed (`reinsertFigureFences`); that includes every prior-page excerpt
++  a page prompt is shown (`compactPriorPages`, `pinStyleExcerpts` in `pagesShared.ts`; summaries in that compact go through `pageDraftSummary`) and every
++  deterministic rule that reads a page (`pagesLocalQa.ts` reads the figure-free body throughout,
++  the final page's ending included; `readerChapters.ts` strips the figure fence and only the figure
++  fence, since a code listing is page text).   A per-page draft carries no figure and no stand-in
++  from the moment it is parsed — `figureFreeDraft` in `generatePageDraft`, `polishPageDraft`,
++  `revisePageDraft` and the tools writer — because only the compose call is ever shown the syntax
++  and a strip at the end of a path leaves every review and revision between reading the invention;
++  `RevisePageOptions.figures: "keep"` is the chat rewrite whose request names
++  the figure, and `figures: "hold"` is the holdFiguresAside path (unnamed chat rewrite, final-QA
++  repair): strip invented fences, keep `[Figure: …]` stand-ins so later revises and reviews still
++  see the stand-in. Absent, `revisePageDraft` still returns `figureFreeDraft`. And *names* is `mentionsFigure` (`figures/figureMentions.ts`), biased toward precision because a miss keeps the
++  block aside and puts it back unchanged (the chat can re-ask) while a false hit hands the model the
++  JSON and lets it change or drop a figure nobody asked about. The free exact-replacement walk copies
++  fences byte for byte. A word that names a chart and nothing
++  else fires alone (chart, graph, diagram, flowchart, infographic, histogram, and the qualified chart
++  vocabulary: axis labels, tick labels, legend entries, data series); "figure" and "graphic" fire
++  only as the head of an artifact phrase — a determiner, then the end of the text or a sentence, or
++  a **whitelisted** continuation (as, into, smaller, on page…) — never by a blacklist of person
++  continuations, since "this figure skating passage" walked through one and "this figure, a man in
++  grey" is an appositive; "plot", "legend", "axis", شکل, 图, 図 and график count only qualified,
++  because each is a story, a myth, an axle, a shape, a map or a schedule first.   With the page's own
++  specs (`pageFigureSpecs`) a request that quotes a figure's title as a whole phrase of three or
++  more characters counts too — a substring of a longer word does not, so "regrowth" is not a name for a figure titled "Growth"; its
++  categories and series names never do, since "describe 1950 more vividly" is about the prose.
++  European chart words are bounded by Unicode letters, so "photographique" does not name a
++  graphique. An opener with no closer, or with an info string after the tag, is still a figure
++  attempt: the unclosed span ends at the next blank line so dropping it does not take the rest of
++  the chapter, `validateFigureFences` drops it, and the planned kind is enforced when one was passed.
++  `reinsertFigureFences` drops any fence the pass invented, since the prose it was handed held
++  stand-ins only, and `reviewAppliedBookEdit` reads pages as stand-ins unless the instruction names
++  the figure.   The two reads of a stored page that are neither a prior-page context nor a review get
++  the same treatment where they meet the model: the writer's `lookup_page` tool (`writerTools.ts`)
++  cuts its excerpt from the stand-in form and its summary through `pageDraftSummary`, whatever the injected storage callback returns, and the
++  voice-character passes (`voiceCharacters.ts`) sample `figureFreeProse` before collapsing
++  whitespace, since a pass that only reads for who speaks has no use for a chart or its stand-in,
++  while their summaries — and the gender-inference page summaries beside them
++  (`voiceCharacterProfile.ts`) — go through `pageDraftSummary`, so a series named after a character
++  cannot vote on their pronouns. The final whole-book QA (`finalQaOpeningPages` in `pagesReview.ts`)
++  is shown page 1 as its stand-in form and its page map is `pageDraftSummary` of each page
++  (`compactPageMap`); so are chapter-review `pageSummaries` and `manuscriptReviewPacks` neighbor
++  summaries. And figures are composed chapters' alone in the other direction too: the whole-book,
++  chapter and batch writers (`generateWholeBookDraft`, `generateChapterDraft`, `generateBatchDraft`)
++  pass every page through `figureFreeDraft` at the parse, before the page set is normalised; the paginator weighs it as
+   `FIGURE_WORD_EQUIVALENT`, never splits it, and hands the next chapter a tail with no block in it.
+   `expandFigureFences` (`figures/figureHtml.ts`) turns the block into inline SVG with inline styles
+   at render time — in `pdf.ts` after the anchor markers and before the font subset, in `epub.ts`
+@@ -204,9 +253,11 @@ holds the event loop open and vitest will never exit.
+   compile. The SVG carries no `id` and no `<marker>` (two figures in one book, and
+   `neutralizeRenderedReservedIds`), self-closes every empty element (`toXhtml` closes six tag names
+   and no more), and inherits the embedded display face. No gate reads a figure: the local checks,
+-  the manuscript audit, the review packs, the reader chapterisation and the degeneracy guard are
++  the manuscript audit, the review packs, the reader chapterisation, the degeneracy guard and the
++  compile's bounded chapter-transition review (`compileExportChapterReview.ts` in the worker) are
+   fence-blind at one seam each, and none was added — a rule that fires on a figure would be a rule
+-  on shipped pages nobody replayed. The corpus fixture `figures` renders every kind.
++  on shipped pages nobody replayed, and a figure cannot fire a chapter-coherence rule. The corpus
++  fixture `figures` renders every kind.
+ 
+ ## Style contract routing
+ 
+diff --git a/packages/core/src/generation/composeScene.ts b/packages/core/src/generation/composeScene.ts
+index 90aa8a6..015b729 100644
+--- a/packages/core/src/generation/composeScene.ts
++++ b/packages/core/src/generation/composeScene.ts
+@@ -1,7 +1,8 @@
+ import type { TextModelAdapter } from "../adapters/types.js";
+ import { targetLanguageGenerationGuidance, targetLanguagePayload } from "../prompting/language.js";
+ import type { BookPlan, ChapterPlan, CreateProjectInput } from "../schemas/book.js";
+-import type { ChapterEpisode, DossierExcerpt } from "../schemas/episodes.js";
++import type { ChapterEpisode, DossierExcerpt, CaseEvidencePacket } from "../schemas/episodes.js";
++import { CASE_EVIDENCE_WRITER_RULES } from "./caseEvidence.js";
+ import type { AuthorStance } from "../schemas/plan.js";
+ import { authorStancePromptLines } from "./authorStance.js";
+ import { normalizeChapterMarkdown } from "./chapterPagination.js";
+@@ -38,19 +39,24 @@ export async function composeScene(options: {
+   contract: ComposeContract;
+   textModel: TextModelAdapter;
+   targetWords?: number | undefined;
++  evidencePackets?: readonly CaseEvidencePacket[] | undefined;
+ }): Promise<ComposedScene | undefined> {
+   const target = options.targetWords ?? SCENE_TARGET_WORDS;
+   const mode = inferWritingMode(options.input, options.plan);
+   const excerpts = options.excerpts.filter((excerpt) => !excerpt.episodeTitle || excerpt.episodeTitle === options.episode.title);
++  const packets = options.evidencePackets?.filter((packet) => packet.episode.title === options.episode.title);
++  if (options.evidencePackets && (!packets?.length || !packets.some((packet) => packet.sequence.length >= 2))) return undefined;
+   const systemLines = [
+     `You are writing the opening of chapter ${options.chapter.index}, "${options.chapter.title}", of the book "${options.plan.title}", as its author.`,
+     ...authorStancePromptLines(options.stance, mode, { exemplarOnly: true }),
+-    `Tell one episode as a scene in time: ${options.episode.title}. A named person in a named place on a day, doing, seeing and saying; the reader is there. Tell it — do not argue it, do not explain what it means, do not say what the chapter or the book will make of it. Begin inside the episode, not before it, and end on its last event, not on a reflection.`,
++    packets?.length
++      ? `Narrate the documented sequence of ${options.episode.title} through the recorded choices and consequences. Use only actors, actions and dates supported by caseEvidence. Dialogue or sensory detail may appear only when a supplied passage records it. Do not add a cinematic setting or speculate to meet the length target.`
++      : `Tell one episode as a scene in time: ${options.episode.title}. A named person in a named place on a day, doing, seeing and saying; the reader is there. Tell it — do not argue it, do not explain what it means, do not say what the chapter or the book will make of it. Begin inside the episode, not before it, and end on its last event, not on a reflection.`,
+     excerpts.length > 0
+       ? "`dossier` holds verbatim passages from the record of this episode. Quote from them with quotation marks and the document named — a phrase, a line, a whole passage where it is better than anything you could write — and put quotation marks around nothing else."
+       : "Quotation marks are a promise: put them only around words you are confident were said or written in that form.",
+     ...(options.contract === "creative" ? [CREATIVE_CONTRACT_RULES[0]!] : ["Use the episode's document and the research notes; do not invent named people or documents."]),
+-    "Where you reconstruct rather than report, let the grammar say so once — \"would have\", \"by his own account\", \"as the register has it\" — and then tell it plainly.",
++    ...(packets?.length ? CASE_EVIDENCE_WRITER_RULES : ["Where you reconstruct rather than report, let the grammar say so once — \"would have\", \"by his own account\", \"as the register has it\" — and then tell it plainly."]),
+     `Write between ${Math.round(target * 0.75)} and ${Math.round(target * 1.3)} words, aiming for ${target}. Paragraphs of visibly different lengths; no heading, no title, no summary, no epigraph. Return only the scene's prose.`,
+     ...targetLanguageGenerationGuidance(options.input.language)
+   ];
+@@ -74,7 +80,8 @@ export async function composeScene(options: {
+           }))
+         }
+       : {}),
+-    chapter: { title: options.chapter.title, summary: options.chapter.summary }
++    chapter: { title: options.chapter.title, summary: options.chapter.summary },
++    ...(packets?.length ? { caseEvidence: packets } : {})
+   };
+   let best: ComposedScene | undefined;
+   for (let attempt = 0; attempt < 2; attempt += 1) {
+diff --git a/packages/core/src/generation/composedChapter.ts b/packages/core/src/generation/composedChapter.ts
+index 2c031a0..24b4577 100644
+--- a/packages/core/src/generation/composedChapter.ts
++++ b/packages/core/src/generation/composedChapter.ts
+@@ -8,6 +8,8 @@ import type { AuthorStance, BookPlan, ChapterPlan, CreateProjectInput } from "..
+ import { isRecord } from "../schemas/jsonCoercion.js";
+ import { authorStancePromptLines, isNarrativeWritingMode } from "./authorStance.js";
+ import { arcChapterLines, type BookArc } from "./bookArc.js";
++import { chapterDevelopmentLines } from "./bookDevelopment.js";
++import { CASE_EVIDENCE_WRITER_RULES } from "./caseEvidence.js";
+ import {
+   CREATIVE_CONTRACT_RULES,
+   CREATIVE_RECONSTRUCTION_RULE,
+@@ -334,9 +336,10 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
+           (rule) => !(options.arc && arcKindFor(options) !== "method" && rule.startsWith("State what a source shows"))
+         )),
+     ...(minimal ? [] : ["Do not open the chapter with a general claim about a common noun (\"A cannon was never only a cannon\")."]),
+-    ...(minimal ? [] : options.contract === "creative" ? (narrative ? [] : [CREATIVE_RECONSTRUCTION_RULE]) : reconstructionRule(narrative)),
++    ...(minimal || options.material?.evidencePackets?.length ? [] : options.contract === "creative" ? (narrative ? [] : [CREATIVE_RECONSTRUCTION_RULE]) : reconstructionRule(narrative)),
+     `Now chapter ${options.chapter.index}, "${options.chapter.title}".`,
+     ...materialLines(options),
++    ...chapterDevelopmentLines(options.plan, options.chapter.index),
+     ...compositionWriterLines(options.composition, palette, budget.target),
+     ...figureComposeRules(options.composition),
+     ...codeBlockRules(options.input, options.plan),
+@@ -359,7 +362,7 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
+     PROMPT_LEAK_BAN,
+     ...targetLanguageGenerationGuidance(options.input.language),
+     ...kidsReadingGuidanceLines(options.input),
+-    `Write between ${remaining.min} and ${remaining.max} words and aim for ${remaining.target}. The typesetter will divide the chapter into ${pages} pages of about ${budget.perPage} words; pages are not units of argument, so do not shape the prose around them.`,
++    `Write between ${remaining.min} and ${remaining.max} words and aim for ${options.plan.bookDevelopment ? Math.min(remaining.max, Math.ceil(remaining.target / 0.87)) : remaining.target}. The typesetter will divide the chapter into ${pages} pages of about ${budget.perPage} words; pages are not units of argument, so do not shape the prose around them.`,
+     "Return only the chapter's prose."
+   ];
+   const userPayload = {
+@@ -411,7 +414,7 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
+     if (!best || words > best.words) {
+       best = candidate;
+     }
+-    if (words >= remaining.min * 0.7) {
++    if (words >= remaining.min * (options.plan.bookDevelopment ? 1 : 0.7)) {
+       break;
+     }
+     shortfall = `Your previous answer was ${words} words; the chapter needs at least ${remaining.min}. Write the complete chapter.`;
+@@ -423,6 +426,8 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
+ }
+ 
+ export type EditChapterOptions = ComposeChapterOptions & {
++  /** Structural editing allocates length across the book; a line edit cannot pad a chapter. */
++  allowExtension?: boolean | undefined;
+   markdown: string;
+   /** Notes from the whole-manuscript read, when this is the second pass. */
+   readerNotes?: string[] | undefined;
+@@ -637,10 +642,13 @@ export async function editChapter(options: EditChapterOptions): Promise<EditedCh
+     ...(options.readerNotes && options.readerNotes.length > 0
+       ? [`A reader of the whole manuscript left these notes on this chapter; they outrank every keep-rule above, so act on each one: ${options.readerNotes.join(" | ")}`]
+       : []),
+-    draftWords < budget.target * EDITOR_EXTEND_BELOW_SHARE
++    options.allowExtension === false
++      ? "This is a final line edit. Improve clarity and sentence craft while preserving substantive content and its evidence. Do not add facts, sections, examples or explanation to fill a length target. Do not undo a developmental cut or move. Keep the draft's length within ten percent unless readerNotes explicitly requires a factual correction."
++      : draftWords < budget.target * EDITOR_EXTEND_BELOW_SHARE
+       ? `The draft is ${draftWords} words and the chapter needs about ${budget.target} (never under ${budget.min}, never over ${budget.max}): develop the existing sections with more particular detail — the named person, the document, the place, the next thing that happened — rather than adding sections, generalising, or restating.`
+       : `Return between ${budget.min} and ${budget.max} words; the draft is ${draftWords} words. Over ${budget.max}, cut.`,
+     ...(options.contract === "creative" ? [CREATIVE_CONTRACT_RULES[1]!] : [GROUNDED_FACTUALITY_RULE, ...citation.rules]),
++    ...(options.material?.evidencePackets?.length ? CASE_EVIDENCE_WRITER_RULES : []),
+     ...(options.material?.scene
+       ? [`The chapter opens with a scene of about ${options.material.scene.words} words that was written on purpose in a narrating register; keep it a scene — tighten it if you must, never turn it into summary or argument.`]
+       : []),
+@@ -672,6 +680,7 @@ export async function editChapter(options: EditChapterOptions): Promise<EditedCh
+             ...(options.measurementNotes && options.measurementNotes.length > 0 ? { measurementNotes: options.measurementNotes } : {}),
+             ...(options.readerNotes && options.readerNotes.length > 0 ? { readerNotes: options.readerNotes } : {}),
+             ...citation.payload,
++            ...materialPayload(options),
+             wordBudget: budget
+           },
+           null,
+diff --git a/packages/core/src/generation/composedChapterMaterial.ts b/packages/core/src/generation/composedChapterMaterial.ts
+index 18d94c0..f8b17b8 100644
+--- a/packages/core/src/generation/composedChapterMaterial.ts
++++ b/packages/core/src/generation/composedChapterMaterial.ts
+@@ -1,5 +1,6 @@
+ import type { ChapterWordBudget } from "./composedChapter.js";
+-import type { ChapterEpisode, DossierExcerpt } from "../schemas/episodes.js";
++import type { ChapterEpisode, DossierExcerpt, CaseEvidencePacket } from "../schemas/episodes.js";
++import { CASE_EVIDENCE_WRITER_RULES } from "./caseEvidence.js";
+ 
+ /**
+  * Material-first, as the writer sees it: the contract it writes under, the
+@@ -13,6 +14,7 @@ export type ComposeContract = "grounded" | "creative";
+ export type ChapterMaterial = {
+   episodes: readonly ChapterEpisode[];
+   excerpts: readonly DossierExcerpt[];
++  evidencePackets?: readonly CaseEvidencePacket[] | undefined;
+   /** The opening scene, composed by `composeScene` before the chapter and printed ahead of it. */
+   scene?: { text: string; words: number; episodeTitle: string } | undefined;
+ };
+@@ -53,10 +55,12 @@ export function remainingBudget(budget: ChapterWordBudget, sceneWords: number):
+  */
+ export function materialLines(options: { material?: ChapterMaterial | undefined }): string[] {
+   const material = options.material;
+-  if (!material || material.episodes.length === 0) return [];
++  if (!material) return [];
+   const lines = [
+     "This chapter is built from the episodes in `episodes`: each is a person, a place, a date and a document from the record, and the chapter's sections are made from them — an episode told in time, a document read closely, a figure worked through — with the argument arising from the material rather than the material illustrating the argument. Give each episode a real stretch of the chapter, not a mention."
+   ];
++  if (material.episodes.length === 0) lines.length = 0;
++  if (material.evidencePackets?.length) lines.push(...CASE_EVIDENCE_WRITER_RULES);
+   if (material.excerpts.length > 0) {
+     lines.push(
+       "`dossier` holds verbatim passages from primary sources, each with the document it comes from. Quote from them — a phrase, a sentence, up to a whole passage — with quotation marks and the document named, wherever a passage says something better than you could; these are the only words you put quotation marks around. Paraphrase the rest of what they say freely."
+@@ -72,7 +76,7 @@ export function materialLines(options: { material?: ChapterMaterial | undefined
+ 
+ export function materialPayload(options: { material?: ChapterMaterial | undefined }) {
+   const material = options.material;
+-  if (!material || material.episodes.length === 0) return {};
++  if (!material) return {};
+   return {
+     episodes: material.episodes.map((episode) => ({
+       title: episode.title,
+@@ -83,6 +87,7 @@ export function materialPayload(options: { material?: ChapterMaterial | undefine
+       document: episode.document,
+       why: episode.why
+     })),
++    ...(material.evidencePackets?.length ? { caseEvidence: material.evidencePackets } : {}),
+     ...(material.excerpts.length > 0
+       ? {
+           dossier: material.excerpts.map((excerpt) => ({
+@@ -98,4 +103,3 @@ export function materialPayload(options: { material?: ChapterMaterial | undefine
+     ...(material.scene ? { openingScene: material.scene.text } : {})
+   };
+ }
+-
+diff --git a/packages/core/src/generation/dossier.ts b/packages/core/src/generation/dossier.ts
+index 67c36ab..bc17e31 100644
+--- a/packages/core/src/generation/dossier.ts
++++ b/packages/core/src/generation/dossier.ts
+@@ -1,10 +1,11 @@
+ import { z } from "zod";
++import { isStopOrAbortError } from "../adapters/retry.js";
+ import type { TextModelAdapter } from "../adapters/types.js";
+ import { targetLanguageGenerationGuidance, targetLanguagePayload } from "../prompting/language.js";
+ import type { ChapterPlan, CreateProjectInput } from "../schemas/book.js";
+ import type { ChapterEpisode, DossierExcerpt } from "../schemas/episodes.js";
+ import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
+-import { fetchPrimaryText, searchPrimarySources, textLooksLikeLanguage, type PrimarySourceCandidate, type PrimarySourceFetch } from "./primarySources.js";
++import { fetchPrimaryText, searchPrimarySources, textLooksLikeLanguage, type PrimarySourceCandidate, type PrimarySourceFetch, type PrimarySourceSearch } from "./primarySources.js";
+ import { foldQuoteText } from "./quoteProvenance.js";
+ 
+ /**
+@@ -205,6 +206,7 @@ export async function extractExcerpts(options: {
+   windows: readonly DossierWindow[];
+   documents: readonly DossierDocument[];
+   textModel: TextModelAdapter;
++  evidence?: boolean | undefined;
+   log?: ((event: string, detail: Record<string, unknown>) => void) | undefined;
+ }): Promise<DossierExcerpt[]> {
+   if (options.windows.length === 0) return [];
+@@ -221,7 +223,9 @@ export async function extractExcerpts(options: {
+         role: "system",
+         content: [
+           `You are choosing passages from primary sources for chapter ${options.chapter.index}, "${options.chapter.title}". Each window in windows is a stretch of a document's own text.`,
+-          "Choose up to six passages of 30 to 300 words that bear on one of the chapter's episodes and would be worth quoting: a voice, an order, an oath, a figure, a description of something seen. A passage is one continuous stretch of a window. Skip a window that has nothing quotable.",
++          options.evidence
++            ? "Choose up to six passages of 30 to 300 words that establish the episode's actors, consequential events, chronology, quantities, decisions, outcome, or disagreement. Include ordinary factual prose, not only quotable lines. Preserve the context needed to distinguish an allegation from a finding. A passage is one continuous stretch of a window. Skip irrelevant windows."
++            : "Choose up to six passages of 30 to 300 words that bear on one of the chapter's episodes and would be worth quoting: a voice, an order, an oath, a figure, a description of something seen. A passage is one continuous stretch of a window. Skip a window that has nothing quotable.",
+           "Report each passage as its first six to eight words and its last six to eight words, copied exactly from the window — never paraphrased, never the whole passage. speaker: who wrote or said it, if the window says. episodeTitle: which episode it serves.",
+           "Return one JSON object shaped exactly like outputContract.",
+           ...targetLanguageGenerationGuidance(options.input.language)
+@@ -299,9 +303,13 @@ export async function buildChapterDossier(options: {
+   episodes: readonly ChapterEpisode[];
+   textModel: TextModelAdapter;
+   fetch: PrimarySourceFetch;
++  searchSources?: PrimarySourceSearch | undefined;
+   log?: ((event: string, detail: Record<string, unknown>) => void) | undefined;
+   /** Epoch ms after which no further search or fetch starts: the dossier is a bounded step, never the book's clock. */
+   deadline?: number | undefined;
++  evidence?: boolean | undefined;
++  /** A bounded second retrieval uses the next planned query instead of repeating the failed search. */
++  queryOffset?: number | undefined;
+ }): Promise<ChapterDossier> {
+   const documents: DossierDocument[] = [];
+   const seenUrls = new Set<string>();
+@@ -314,13 +322,15 @@ export async function buildChapterDossier(options: {
+     }
+     // One search per episode: Wikimedia answers about thirty requests a
+     // minute, and a book's dossier has to fit in its budget.
+-    const queries = episode.searchQueries.filter(Boolean).slice(0, 1);
++    const queryOffset = options.queryOffset ?? 0;
++    const queries = episode.searchQueries.filter(Boolean).slice(queryOffset, queryOffset + 1);
+     if (queries.length === 0 && episode.document) queries.push(`${episode.document} ${episode.person}`.trim());
+     const candidates: PrimarySourceCandidate[] = [];
+     for (const query of queries) {
+       try {
+-        candidates.push(...(await searchPrimarySources(query, { fetch: options.fetch, language: options.input.language, limit: 2 })));
++        candidates.push(...(await searchPrimarySources(query, { fetch: options.fetch, language: options.input.language, limit: 2, search: options.evidence ? options.searchSources : undefined })));
+       } catch (error) {
++        if (isStopOrAbortError(error)) throw error;
+         log("dossier.search_failed", { query, error: error instanceof Error ? error.message : String(error) });
+       }
+     }
+@@ -374,7 +384,7 @@ export async function buildChapterDossier(options: {
+   let excerpts: DossierExcerpt[] = [];
+   if (kept.length > 0) {
+     try {
+-      excerpts = await extractExcerpts({ input: options.input, chapter: options.chapter, episodes: options.episodes, windows: kept, documents, textModel: options.textModel, log });
++      excerpts = await extractExcerpts({ input: options.input, chapter: options.chapter, episodes: options.episodes, windows: kept, documents, textModel: options.textModel, evidence: options.evidence, log });
+     } catch (error) {
+       if (error instanceof Error && /stop|abort/i.test(error.name + error.message)) throw error;
+       log("dossier.extract_failed", { chapterIndex: options.chapter.index, error: error instanceof Error ? error.message : String(error) });
+diff --git a/packages/core/src/generation/episodes.ts b/packages/core/src/generation/episodes.ts
+index 257a7f1..85f0320 100644
+--- a/packages/core/src/generation/episodes.ts
++++ b/packages/core/src/generation/episodes.ts
+@@ -55,6 +55,8 @@ export async function planEpisodes(options: {
+   plan: BookPlan;
+   stance: AuthorStance;
+   textModel: TextModelAdapter;
++  evidenceRequired?: boolean | undefined;
++  feedback?: string[] | undefined;
+ }): Promise<PlanEpisodesResult> {
+   try {
+     const result = await generateJsonWithRetry(options.textModel, {
+@@ -67,8 +69,9 @@ export async function planEpisodes(options: {
+           role: "system",
+           content: [
+             `You are the author of "${options.plan.title}", filling the shoebox before writing a word: for every chapter of the plan, the two or three episodes the chapter will be made from.`,
+-            "An episode is a particular: one named person or body, in one named place, on one date or in one short span, recorded in one document a reader could go and read — a letter, a chronicle, a roll, a statute, a treaty, a trial record, a register, a speech, a memoir, an inscription. It is never a theme, a period or a generalisation. Prefer episodes whose document is in print before 1930 and likely to be online in a public repository (Wikisource, Project Gutenberg, the Internet Archive), because the book will quote from the document itself.",
+-            "kind says what the chapter will do with it: scene (an event told in time), document (a text read closely), figure (a number or a table worked through), dispute (two named people or works that disagree about it), portrait (one person followed). Give each chapter at least one scene or portrait; vary the kinds across the book.",
++            "An episode is a particular documented case, event, worked result or text relevant to this book. It is never a theme, a period or a generalisation. Identify a document the reader could consult. Prefer accessible original records or authoritative expositions; do not force historical anecdotes into an instructional or technical book. Public repositories include Wikisource, Project Gutenberg and the Internet Archive.",
++            "kind says what the chapter will do with it: scene (an event told in time), document (a text read closely), figure (a number or a table worked through), dispute (two named people or works that disagree about it), portrait (one person followed). Choose the treatment the evidence supports. A scene is optional.",
++            ...(options.evidenceRequired ? ["Every central case must subsequently pass source verification. Select cases with accessible substantive documentation, not famous names used as decoration. If feedback names unavailable cases, choose different documented material serving the same requested coverage."] : []),
+             "searchQueries: two or three searches that would find the document's own text in a library catalogue — its title, its author, a distinctive phrase — never a topic. why: one sentence on what the episode lets the chapter show.",
+             "Return one JSON object shaped exactly like outputContract, with one entry per chapter of the plan in the plan's order and the plan's index numbers.",
+             ...targetLanguageGenerationGuidance(options.input.language)
+@@ -81,6 +84,7 @@ export async function planEpisodes(options: {
+               language: targetLanguagePayload(options.input.language),
+               book: { title: options.plan.title, premise: options.plan.premise, audience: options.plan.audience },
+               stance: { thesis: options.stance.thesis, positions: options.stance.positions },
++              ...(options.feedback ? { feedback: options.feedback } : {}),
+               chapters: options.plan.chapters.map((chapter) => ({
+                 index: chapter.index,
+                 title: chapter.title,
+diff --git a/packages/core/src/generation/pagesReview.test.ts b/packages/core/src/generation/pagesReview.test.ts
+index 8d6bf4f..e98dcdf 100644
+--- a/packages/core/src/generation/pagesReview.test.ts
++++ b/packages/core/src/generation/pagesReview.test.ts
+@@ -1,101 +1,10 @@
+ import { describe, expect, it } from "vitest";
+-import { unsupportedGenerateWithTools } from "../adapters/fake.js";
+-import type { TextModelAdapter } from "../adapters/types.js";
+ import { CONTINUITY_NOTE_PROMPT_LIMITS } from "../context/contextPack.js";
+ import { makeFallbackPlan } from "../prompting/templates.js";
+-import type { CreateProjectInput, PageQualityReport } from "../schemas/book.js";
+-import { revisePageDraft, reviewPageDraft, runFinalBookQa } from "./pagesReview.js";
+-import { GROUNDED_FACTUALITY_RULE } from "./pagesShared.js";
++import { PageQualityReport } from "../schemas/book.js";
++import { revisePageDraft, reviewPageDraft } from "./pagesReview.js";
+ import { SMART_UNSLOP_ISSUE_PREFIX } from "./smartUnslop.js";
+-
+-const input: CreateProjectInput = {
+-  prompt: "Jack The Martyr, a character-led story about sacrifice and consequence.",
+-  category: "STORY",
+-  targetPages: 10,
+-  complexity: 5,
+-  temperature: 0.8,
+-  language: "en",
+-  mediaSettings: {
+-    fullIllustrations: true,
+-    illustrationCadence: "template-driven",
+-    includeCover: true,
+-    coverTemplate: "auto",
+-    finalReview: true,
+-    toneProfile: "neutral" as const
+-  }
+-};
+-
+-/**
+- * The provenance an imported manuscript carries — `mediaSettings.mobile.import`,
+- * written by the import route and carried through `planInputSnapshot` into the
+- * plan version's input snapshot, which is what `compileExport` rebuilds `input`
+- * from before it runs final QA. Only that record separates it from `input`.
+- */
+-const importedInput: CreateProjectInput = {
+-  ...input,
+-  mediaSettings: {
+-    ...input.mediaSettings,
+-    mobile: { bookType: "custom", import: { importId: "imp_1", fileName: "chapel.docx", format: "docx" } }
+-  }
+-};
+-
+-const plan = makeFallbackPlan(input);
+-
+-function goodMarkdown(): string {
+-  return [
+-    "The chapel door had been painted black so many times that the grain underneath looked bruised. Jack pressed two fingers to the iron latch and felt it tremble before anyone touched it from the other side.",
+-    "",
+-    '"You promised you would wait," Mara said from the stairwell.',
+-    "",
+-    "Jack did not turn. The folded warrant in his coat had already warmed against his ribs, and the red wax seal had cracked where his thumb kept worrying it. Inside the chapel, someone dragged a chair across stone. That small sound decided him. He lifted the latch, stepped through, and let Mara see the scar over his left eyebrow catch the candlelight."
+-  ].join("\n");
+-}
+-
+-/**
+- * A page-1 draft long enough to have overrun the old 4,000-character opening
+- * cap. `goodMarkdown` is ~700 characters, so the padding is what carries it
+- * past both the old ceiling and the new one.
+- */
+-function paddedOpening(minLength: number): string {
+-  const parts = [goodMarkdown()];
+-  let entry = 0;
+-  while (parts.join("\n\n").length < minLength) {
+-    entry += 1;
+-    parts.push(
+-      `The clerk wrote entry ${entry} into the parish ledger, pressed the blotter flat over the ink, and counted ${entry + 4} coins back into the tin before he let himself look at the chapel door again.`
+-    );
+-  }
+-  return parts.join("\n\n");
+-}
+-
+-function capturingReviewModel(rawData: unknown): {
+-  model: TextModelAdapter;
+-  payload?: Record<string, unknown>;
+-  system?: string;
+-} {
+-  const capture: { model: TextModelAdapter; payload?: Record<string, unknown>; system?: string } = {
+-    model: {
+-      async generateText() {
+-        return { text: "", model: "test-model", provider: "test" };
+-      },
+-      async generateJson(options) {
+-        capture.system = options.messages[0]?.content ?? "";
+-        capture.payload = JSON.parse(options.messages[1]?.content ?? "{}") as Record<string, unknown>;
+-        return {
+-          data: options.schema.parse(rawData),
+-          text: JSON.stringify(rawData),
+-          model: "test-model",
+-          provider: "test"
+-        };
+-      },
+-      async *streamText() {
+-        yield "";
+-      },
+-      generateWithTools: unsupportedGenerateWithTools
+-    }
+-  };
+-  return capture;
+-}
++import { input, importedInput, plan, goodMarkdown, capturingReviewModel } from "./testing/pagesReviewFixtures.js";
+ 
+ describe("reviewPageDraft recency window", () => {
+   it("keeps a 5-page recency window of 800-character excerpts", async () => {
+@@ -483,555 +392,6 @@ describe("reviewPageDraft continuity notes", () => {
+   });
+ });
+ 
+-describe("reviewPageDraft first-page rule", () => {
+-  const approvedReport = {
+-    approved: true,
+-    score: 92,
+-    issues: [],
+-    requiredRevisions: [],
+-    notes: "Approved.",
+-    checks: {
+-      placeholderFree: true,
+-      promptLeakFree: true,
+-      titleClean: true,
+-      repetitionOk: true,
+-      progressionOk: true,
+-      styleNatural: true
+-    }
+-  };
+-
+-  function capturingReviewModelWithSystem(rawData: unknown): {
+-    model: TextModelAdapter;
+-    payload?: Record<string, unknown>;
+-    systemPrompt?: string;
+-  } {
+-    const capture: { model: TextModelAdapter; payload?: Record<string, unknown>; systemPrompt?: string } = {
+-      model: {
+-        async generateText() {
+-          return { text: "", model: "test-model", provider: "test" };
+-        },
+-        async generateJson(options) {
+-          capture.systemPrompt = options.messages[0]?.content ?? "";
+-          capture.payload = JSON.parse(options.messages[1]?.content ?? "{}") as Record<string, unknown>;
+-          return {
+-            data: options.schema.parse(rawData),
+-            text: JSON.stringify(rawData),
+-            model: "test-model",
+-            provider: "test"
+-          };
+-        },
+-        async *streamText() {
+-          yield "";
+-        },
+-        generateWithTools: unsupportedGenerateWithTools
+-      }
+-    };
+-    return capture;
+-  }
+-
+-  it("tells the reviewer to reject throat-clearing first pages and hands it the plan's openingHook", async () => {
+-    const capture = capturingReviewModelWithSystem(approvedReport);
+-    const hookPlan = { ...plan, openingHook: "Jack is mid-climb over the chapel wall when the bell starts." };
+-
+-    await reviewPageDraft({
+-      input,
+-      plan: hookPlan,
+-      chapter: hookPlan.chapters[0],
+-      pageIndex: 1,
+-      draft: {
+-        title: "The Wall Bell",
+-        markdown: goodMarkdown(),
+-        summary: "Jack is caught mid-climb when the chapel bell starts.",
+-        continuityNotes: []
+-      },
+-      previousPages: [],
+-      continuityNotes: [],
+-      textModel: capture.model
+-    });
+-
+-    expect(capture.systemPrompt).toMatch(/first page, reject throat-clearing or meta openings/i);
+-    expect(capture.payload?.openingHook).toBe(hookPlan.openingHook);
+-
+-    await reviewPageDraft({
+-      input,
+-      plan: hookPlan,
+-      chapter: hookPlan.chapters[0],
+-      pageIndex: 7,
+-      draft: {
+-        title: "The Door Opens",
+-        markdown: goodMarkdown(),
+-        summary: "Jack crosses the threshold and commits to a dangerous choice.",
+-        continuityNotes: []
+-      },
+-      previousPages: [],
+-      continuityNotes: [],
+-      textModel: capture.model
+-    });
+-
+-    expect(capture.payload?.openingHook).toBeUndefined();
+-  });
+-
+-  it("hands final book QA the book's opening page as written", async () => {
+-    const capture = capturingReviewModelWithSystem({
+-      approved: true,
+-      score: 92,
+-      issues: [],
+-      requiredFixes: [],
+-      notes: "Approved."
+-    });
+-    const qaInput = { ...input, targetPages: 2 };
+-    const pages = [
+-      {
+-        index: 1,
+-        title: "The Wall Bell",
+-        markdown: goodMarkdown(),
+-        summary: "Jack is caught mid-climb when the chapel bell starts ringing across the courtyard."
+-      },
+-      {
+-        index: 2,
+-        title: "The Ledger Room",
+-        markdown: [
+-          "The ledger room smelled of tallow and wet wool. Mara spread the parish accounts across the table and set a candle at each corner so the columns would not swim.",
+-          "",
+-          "Jack read the entries twice. Somebody had paid the bell-ringer a full week's wage on a night the tower was supposed to be empty, and the signature under the payment was the priest's — dated two days after the priest had left for the coast. Mara circled it without a word and slid the page across the table toward him."
+-        ].join("\n"),
+-        summary: "Mara finds a payment in the parish accounts that the absent priest could not have signed."
+-      }
+-    ];
+-
+-    await runFinalBookQa({
+-      input: qaInput,
+-      plan,
+-      pages,
+-      textModel: capture.model
+-    });
+-
+-    expect(capture.systemPrompt).toMatch(/openingPages carries the book's first page as written/i);
+-    const openingPages = capture.payload?.openingPages as Array<{ index: number; markdown: string }>;
+-    expect(openingPages.map((page) => page.index)).toEqual([1]);
+-    expect(openingPages[0]?.markdown).toBe(goodMarkdown());
+-    expect(capture.payload?.instruction).toMatch(/openingPages is the book's first page as written/i);
+-  });
+-
+-  const ledgerPage = {
+-    index: 2,
+-    title: "The Ledger Room",
+-    markdown: [
+-      "The ledger room smelled of tallow and wet wool. Mara spread the parish accounts across the table and set a candle at each corner so the columns would not swim.",
+-      "",
+-      "Jack read the entries twice. Somebody had paid the bell-ringer a full week's wage on a night the tower was supposed to be empty, and the signature under the payment was the priest's — dated two days after the priest had left for the coast. Mara circled it without a word and slid the page across the table toward him."
+-    ].join("\n"),
+-    summary: "Mara finds a payment in the parish accounts that the absent priest could not have signed."
+-  };
+-
+-  const approvedFinalQa = { approved: true, score: 92, issues: [], requiredFixes: [], notes: "Approved." };
+-
+-  it("keeps page 2 out of openingPages, because only page 1 can be repaired from an opening verdict", async () => {
+-    // "The second page repeats the first page's opening image" carries no
+-    // digit, so the repair pass finds no page number and its opening heuristic
+-    // adds index 1: page 2 is never redrafted, the repair changes nothing, and
+-    // the next final QA rejects the same book again. The reviewer is therefore
+-    // shown only the page a rejection can act on - page 2 stays in the pageMap,
+-    // whose rows carry their own index for a complaint to name.
+-    const capture = capturingReviewModelWithSystem(approvedFinalQa);
+-
+-    await runFinalBookQa({
+-      input: { ...input, targetPages: 2 },
+-      plan,
+-      pages: [
+-        {
+-          index: 1,
+-          title: "The Wall Bell",
+-          markdown: goodMarkdown(),
+-          summary: "Jack is caught mid-climb when the chapel bell starts ringing across the courtyard."
+-        },
+-        ledgerPage
+-      ],
+-      textModel: capture.model
+-    });
+-
+-    expect(JSON.stringify(capture.payload?.openingPages)).not.toContain("ledger room");
+-    const pageMap = capture.payload?.pageMap as Array<{ index: number }>;
+-    expect(pageMap.map((page) => page.index)).toEqual([1, 2]);
+-    // The rule, the instruction and the payload have to agree, or the reviewer
+-    // is invited to place a complaint the repair pass cannot follow.
+-    expect(capture.systemPrompt).toMatch(/give any other page's issue the page number pageMap records/i);
+-    expect(capture.payload?.instruction).toMatch(/only page an opening verdict is about/i);
+-  });
+-
+-  it("sends a dense opening page whole rather than cutting it mid-sentence", async () => {
+-    // The cap was 4,000 characters while the prompt called the excerpt the
+-    // full opening, so a complexity-9 page 1 arrived stopping mid-sentence and
+-    // the reviewer rejected the book for an opening the book does not have.
+-    const capture = capturingReviewModelWithSystem(approvedFinalQa);
+-    const opening = paddedOpening(9_000);
+-    expect(opening.length).toBeGreaterThan(4_000);
+-
+-    await runFinalBookQa({
+-      input: { ...input, targetPages: 2 },
+-      plan,
+-      pages: [
+-        {
+-          index: 1,
+-          title: "The Wall Bell",
+-          markdown: opening,
+-          summary: "Jack is caught mid-climb when the chapel bell starts ringing across the courtyard."
+-        },
+-        ledgerPage
+-      ],
+-      textModel: capture.model
+-    });
+-
+-    const openingPages = capture.payload?.openingPages as Array<{ index: number; markdown: string }>;
+-    expect(openingPages[0]?.markdown).toBe(opening);
+-    expect(openingPages[0]?.markdown).not.toContain("…");
+-  });
+-
+-  /**
+-   * A weak first page whose author is the reader: the exact sentence
+-   * `hasWeakFirstPageOpening` (pagesLocalQa.ts) rejects, long enough to clear
+-   * every other local gate so the only thing that can stop it is the opening
+-   * rule.
+-   */
+-  const authorsOpeningPage = {
+-    index: 1,
+-    title: "August Water",
+-    markdown: [
+-      "Have you ever wondered why your tap water tastes different in August? I did, for eleven summers, before I finally carried a jar of it up the hill to the treatment works and asked the duty engineer to explain himself over a cup of tea.",
+-      "",
+-      "He put the jar on the windowsill where the light could get at it, told me the reservoir turns over in the heat, and then drew the whole business on the back of a delivery note: the intake, the settling tanks, the contact time that decides how much chlorine survives the trip to my kitchen. It took him nine minutes and I have never tasted the water the same way since."
+-    ].join("\n"),
+-    summary: "The author carries a jar of August tap water to the treatment works and gets the reservoir explained."
+-  };
+-
+-  it("leaves an imported manuscript's opening to its author, in the payload and in the rule text", async () => {
+-    // The control first: in a generated book the local gate rejects this page
+-    // and `runFinalBookQa` returns before the model is ever called. That early
+-    // return is what the import exemption removes - so an exemption spelled
+-    // only in the local gate handed the author's first sentence to a reviewer
+-    // instructed to reject it, and a pageless opening verdict is filed against
+-    // page 1 by `extractRepairPageIndexes`, which model-rewrites that line.
+-    const generated = capturingReviewModelWithSystem(approvedFinalQa);
+-    const generatedReport = await runFinalBookQa({
+-      input: { ...input, targetPages: 2 },
+-      plan,
+-      pages: [authorsOpeningPage, ledgerPage],
+-      textModel: generated.model
+-    });
+-
+-    expect(generatedReport.approved).toBe(false);
+-    expect(generated.systemPrompt).toBeUndefined();
+-
+-    const imported = capturingReviewModelWithSystem(approvedFinalQa);
+-    const importedReport = await runFinalBookQa({
+-      input: { ...importedInput, targetPages: 2 },
+-      plan,
+-      pages: [authorsOpeningPage, ledgerPage],
+-      textModel: imported.model
+-    });
+-
+-    // The import reaches the model call - that is the whole hazard - and the
+-    // model is given neither the rule nor the prose to apply it to.
+-    expect(importedReport.approved).toBe(true);
+-    expect(imported.systemPrompt).toBeDefined();
+-    expect(imported.systemPrompt).not.toMatch(/reject the book when the opening is meta/i);
+-    expect(imported.systemPrompt).not.toMatch(/openingPages/);
+-    expect(imported.payload?.openingPages).toBeUndefined();
+-    expect(JSON.stringify(imported.payload)).not.toContain("Have you ever wondered");
+-    // What the opening rule carried for every other page still has to be said.
+-    expect(imported.systemPrompt).toMatch(/give every issue the page number pageMap records/i);
+-    expect(imported.payload?.instruction).toMatch(/Give every issue the page number pageMap records/);
+-  });
+-
+-  it("keeps the provenance-only opening invariant when configurable final local QA is skipped", async () => {
+-    const generated = capturingReviewModelWithSystem(approvedFinalQa);
+-    const generatedReport = await runFinalBookQa({
+-      input: { ...input, targetPages: 2 },
+-      plan,
+-      pages: [authorsOpeningPage, ledgerPage],
+-      textModel: generated.model,
+-      skipLocalChecks: true
+-    });
+-
+-    expect(generatedReport.approved).toBe(false);
+-    expect(generatedReport.issues).toContain(
+-      "Page 1: First page opens with a generic or meta hook instead of a concrete one."
+-    );
+-    expect(generated.systemPrompt).toBeUndefined();
+-
+-    const imported = capturingReviewModelWithSystem(approvedFinalQa);
+-    const importedReport = await runFinalBookQa({
+-      input: { ...importedInput, targetPages: 2 },
+-      plan,
+-      pages: [authorsOpeningPage, ledgerPage],
+-      textModel: imported.model,
+-      skipLocalChecks: true
+-    });
+-
+-    expect(importedReport.approved).toBe(true);
+-    expect(imported.systemPrompt).toBeDefined();
+-  });
+-
+-  it("drops the first-page opening rule for an imported manuscript's page-1 repair", async () => {
+-    // The page reviewer has the same fork: a repair redrafts page 1 and this
+-    // reviewer judges the result, so an import that reached the repair pass at
+-    // all was judged against a rule its author was never given.
+-    const generated = capturingReviewModelWithSystem(approvedReport);
+-    await reviewPageDraft({
+-      input,
+-      plan,
+-      chapter: plan.chapters[0],
+-      pageIndex: 1,
+-      draft: {
+-        title: "The Wall Bell",
+-        markdown: goodMarkdown(),
+-        summary: "Jack is caught mid-climb when the chapel bell starts.",
+-        continuityNotes: []
+-      },
+-      previousPages: [],
+-      continuityNotes: [],
+-      textModel: generated.model
+-    });
+-
+-    expect(generated.systemPrompt).toMatch(/first page, reject throat-clearing or meta openings/i);
+-
+-    const imported = capturingReviewModelWithSystem(approvedReport);
+-    await reviewPageDraft({
+-      input: importedInput,
+-      plan,
+-      chapter: plan.chapters[0],
+-      pageIndex: 1,
+-      draft: {
+-        title: "The Wall Bell",
+-        markdown: goodMarkdown(),
+-        summary: "Jack is caught mid-climb when the chapel bell starts.",
+-        continuityNotes: []
+-      },
+-      previousPages: [],
+-      continuityNotes: [],
+-      textModel: imported.model
+-    });
+-
+-    expect(imported.systemPrompt).toBeDefined();
+-    expect(imported.systemPrompt).not.toMatch(/first page, reject throat-clearing or meta openings/i);
+-  });
+-
+-  it("names the openingHook it hands the reviewer, as delivery rather than echo", async () => {
+-    // The payload key shipped with no rule naming it, next to pageBrief - and
+-    // the natural reading of an unlabelled field ("the page must match it")
+-    // contradicts what `buildPageInstruction` tells the writer, which is to
+-    // deliver the hook "without echoing its wording". A correctly transformed
+-    // page 1 could be rejected for not reproducing it.
+-    const hookPlan = { ...plan, openingHook: "Jack is mid-climb over the chapel wall when the bell starts." };
+-    const capture = capturingReviewModelWithSystem(approvedReport);
+-
+-    await reviewPageDraft({
+-      input,
+-      plan: hookPlan,
+-      chapter: hookPlan.chapters[0],
+-      pageIndex: 1,
+-      draft: {
+-        title: "The Wall Bell",
+-        markdown: goodMarkdown(),
+-        summary: "Jack is caught mid-climb when the chapel bell starts.",
+-        continuityNotes: []
+-      },
+-      previousPages: [],
+-      continuityNotes: [],
+-      textModel: capture.model
+-    });
+-
+-    expect(capture.payload?.openingHook).toBe(hookPlan.openingHook);
+-    expect(capture.systemPrompt).toMatch(/openingHook is the plan's commitment to how this book opens/i);
+-    expect(capture.systemPrompt).toMatch(/never require it to reproduce, quote, or echo the hook's wording/i);
+-
+-    await reviewPageDraft({
+-      input,
+-      plan: hookPlan,
+-      chapter: hookPlan.chapters[0],
+-      pageIndex: 7,
+-      draft: {
+-        title: "The Door Opens",
+-        markdown: goodMarkdown(),
+-        summary: "Jack crosses the threshold and commits to a dangerous choice.",
+-        continuityNotes: []
+-      },
+-      previousPages: [],
+-      continuityNotes: [],
+-      textModel: capture.model
+-    });
+-
+-    // The rule and the key leave together, so no page is shown one without the
+-    // other.
+-    expect(capture.payload?.openingHook).toBeUndefined();
+-    expect(capture.systemPrompt).not.toMatch(/openingHook/);
+-  });
+-
+-  it("names no openingHook to the reviewer or the reviser on an imported manuscript's page 1", async () => {
+-    // The hook rides the import exemption for the reason this pair makes
+-    // visible. A fresh import's plan has no `openingHook` at all
+-    // (`synthesizeImportedBookPlan`); one appears only when a later replan
+-    // invents it from the premise, having never read page 1. Told to judge
+-    // whether page 1 delivers it, this reviewer rejects the author's own opening
+-    // - and the only repair for that verdict is `revisePageDraft`, which was
+-    // being handed the same invented hook as an instruction to rewrite the
+-    // author's sentence into it.
+-    const hookPlan = { ...plan, openingHook: "Jack is mid-climb over the chapel wall when the bell starts." };
+-    const review = capturingReviewModelWithSystem(approvedReport);
+-
+-    await reviewPageDraft({
+-      input: importedInput,
+-      plan: hookPlan,
+-      chapter: hookPlan.chapters[0],
+-      pageIndex: 1,
+-      draft: {
+-        title: "The Wall Bell",
+-        markdown: goodMarkdown(),
+-        summary: "Jack is caught mid-climb when the chapel bell starts.",
+-        continuityNotes: []
+-      },
+-      previousPages: [],
+-      continuityNotes: [],
+-      textModel: review.model
+-    });
+-
+-    expect(review.systemPrompt).toBeDefined();
+-    expect(review.systemPrompt).not.toMatch(/openingHook/);
+-    expect(review.payload?.openingHook).toBeUndefined();
+-    expect(JSON.stringify(review.payload)).not.toContain(hookPlan.openingHook);
+-
+-    const revise = capturingReviewModelWithSystem({
+-      title: "The Wall Bell",
+-      markdown: goodMarkdown(),
+-      summary: "Jack is caught mid-climb when the chapel bell starts.",
+-      continuityNotes: []
+-    });
+-
+-    await revisePageDraft({
+-      input: importedInput,
+-      plan: hookPlan,
+-      chapter: hookPlan.chapters[0],
+-      pageIndex: 1,
+-      draft: {
+-        title: "The Wall Bell",
+-        markdown: goodMarkdown(),
+-        summary: "Jack is caught mid-climb when the chapel bell starts.",
+-        continuityNotes: []
+-      },
+-      // The failure that reaches page 1 of an import is never about its opening:
+-      // the opening rule is silenced for it in both reviewers, so what lands
+-      // here is repetition, a prompt leak, or a reader's own edit request.
+-      report: {
+-        ...approvedReport,
+-        approved: false,
+-        score: 40,
+-        issues: ["Repeats a phrase from page 3."],
+-        requiredRevisions: ["Replace the repeated phrasing."],
+-        groundedOk: true,
+-        unsupportedClaims: []
+-      },
+-      previousPages: [],
+-      continuityNotes: [],
+-      textModel: revise.model
+-    });
+-
+-    expect(revise.payload?.openingHook).toBeUndefined();
+-    expect(String(revise.payload?.instruction)).not.toMatch(/openingHook/);
+-    expect(JSON.stringify(revise.payload)).not.toContain(hookPlan.openingHook);
+-  });
+-
+-  it("marks an opening page it still has to shorten, and says the marker is not a defect", async () => {
+-    const capture = capturingReviewModelWithSystem(approvedFinalQa);
+-    const opening = paddedOpening(20_000);
+-
+-    await runFinalBookQa({
+-      input: { ...input, targetPages: 2 },
+-      plan,
+-      pages: [
+-        {
+-          index: 1,
+-          title: "The Wall Bell",
+-          markdown: opening,
+-          summary: "Jack is caught mid-climb when the chapel bell starts ringing across the courtyard."
+-        },
+-        ledgerPage
+-      ],
+-      textModel: capture.model
+-    });
+-
+-    const openingPages = capture.payload?.openingPages as Array<{ index: number; markdown: string }>;
+-    expect(openingPages[0]?.markdown.length).toBeLessThanOrEqual(14_000);
+-    expect(openingPages[0]?.markdown.endsWith("…")).toBe(true);
+-    // The cut is only survivable because both prompts name it, the way they
+-    // already name the pageMap's own shortening.
+-    expect(capture.systemPrompt).toMatch(/openingPages excerpt ends with an ellipsis/i);
+-    expect(capture.payload?.instruction).toMatch(/openingPages excerpts may end with …/);
+-  });
+-});
+-
+-describe("revisePageDraft first-page hook", () => {
+-  const rejection: PageQualityReport = {
+-    approved: false,
+-    score: 45,
+-    issues: ["First page opens with a generic or meta hook instead of a concrete one."],
+-    requiredRevisions: ["Open inside the scene the plan commits to."],
+-    notes: "Local quality checks rejected the page.",
+-    groundedOk: true,
+-    unsupportedClaims: [],
+-    checks: {
+-      placeholderFree: true,
+-      promptLeakFree: true,
+-      titleClean: true,
+-      repetitionOk: true,
+-      progressionOk: true,
+-      styleNatural: false
+-    }
+-  };
+-
+-  function reviseOptions(pageIndex: number, hookPlan: typeof plan, textModel: TextModelAdapter) {
+-    return {
+-      input,
+-      plan: hookPlan,
+-      chapter: hookPlan.chapters[0],
+-      pageIndex,
+-      draft: {
+-        title: "The Wall Bell",
+-        markdown: goodMarkdown(),
+-        summary: "Jack is caught mid-climb when the chapel bell starts.",
+-        continuityNotes: []
+-      },
+-      report: rejection,
+-      previousPages: [],
+-      continuityNotes: [],
+-      textModel
+-    };
+-  }
+-
+-  it("hands the reviser the openingHook its own instruction names, on page 1 only", async () => {
+-    // `buildPageInstruction` tells the writer to deliver "the plan's
+-    // openingHook". The revision payload carried no such key, so the rewrite
+-    // of the page most likely to need the hook was pointed at nothing.
+-    const hookPlan = { ...plan, openingHook: "Jack is mid-climb over the chapel wall when the bell starts." };
+-    const capture = capturingReviewModel({
+-      title: "The Wall Bell",
+-      markdown: goodMarkdown(),
+-      summary: "Jack is caught mid-climb when the chapel bell starts.",
+-      continuityNotes: []
+-    });
+-
+-    await revisePageDraft(reviseOptions(1, hookPlan, capture.model));
+-
+-    expect(capture.payload?.openingHook).toBe(hookPlan.openingHook);
+-    expect(capture.payload?.instruction).toMatch(/openingHook/);
+-    expect(capture.system).toContain(GROUNDED_FACTUALITY_RULE);
+-    expect(capture.payload?.instruction).toContain(GROUNDED_FACTUALITY_RULE);
+-
+-    await revisePageDraft(reviseOptions(7, hookPlan, capture.model));
+-
+-    expect(capture.payload?.openingHook).toBeUndefined();
+-  });
+-});
+-
+ describe("revisePageDraft conditional Smart unslop", () => {
+   it("does not inject Smart unslop instructions for another quality gate", async () => {
+     const draft = {
+diff --git a/packages/core/src/generation/pipelineStages.ts b/packages/core/src/generation/pipelineStages.ts
+index c321367..c82cda3 100644
+--- a/packages/core/src/generation/pipelineStages.ts
++++ b/packages/core/src/generation/pipelineStages.ts
+@@ -88,25 +88,25 @@ export const COMPOSED_STAGES: readonly PipelineStage[] = [
+   {
+     id: "forms",
+     label: "Chapter form plan",
+-    summary: "Every chapter gets 3 to 8 sections with a form from the palette and one landing. Variety is checked deterministically; one repair call, then rotation.",
+-    purposes: ["plan-chapter-forms", "architect-book"],
++    summary: "After research-led replanning when enabled, every chapter gets 3 to 8 sections with a form from the palette and one landing. Variety is checked deterministically; one repair call, then rotation.",
++    purposes: ["plan-chapter-forms", "architect-book", "develop-book-plan", "review-book-development"],
+     lane: "prose",
+-    calls: "1 per book, plus at most 1 repair",
+-    gates: ["figures"]
++    calls: "1 form plan plus at most 1 repair; research-led development adds up to 2 proposals and 2 reviews",
++    gates: ["figures", "bookDevelopment"]
+   },
+   {
+     id: "compose",
+     label: "Compose chapter",
+-    summary: "Two continuous drafts per chapter from the stance, the form plan, the previous chapter's tail and digests of earlier chapters; a fast cross-family judge reads the opening and closing of each and picks one, or the first when the two orders disagree.",
+-    purposes: ["compose-chapter", "judge-chapter-drafts", "plan-episodes", "extract-excerpts", "compose-scene"],
++    summary: "A continuous chapter from the stance, form plan, prior chapters and researched cases. Evidence-required runs extract and review case claims from source passages before drafting, then check the written claims.",
++    purposes: ["compose-chapter", "judge-chapter-drafts", "plan-episodes", "case-source-search", "extract-excerpts", "compose-scene", "build-case-evidence", "verify-case-evidence", "review-chapter-evidence"],
+     lane: "prose",
+-    calls: "2 drafts and 2 judge calls per chapter, more when a draft is far too short",
+-    gates: ["creativeContract", "materialFirst"]
++    calls: "1 draft per chapter, up to 1 length retry; evidence adds extraction, packet reviews and prose checks, with bounded research retries",
++    gates: ["creativeContract", "materialFirst", "caseEvidence"]
+   },
+   {
+     id: "edit",
+     label: "Line edit",
+-    summary: "An editor pass over the whole chapter: cut repeated caveats and restatements, vary paragraph shape, let stated positions stand.",
++    summary: "A chapter line edit after developmental changes when enabled, with no automatic padding. Legacy runs retain their original chapter edit order.",
+     purposes: ["edit-chapter", "rewrite-couplets"],
+     lane: "prose",
+     calls: "1 per chapter",
+@@ -124,11 +124,11 @@ export const COMPOSED_STAGES: readonly PipelineStage[] = [
+   {
+     id: "read",
+     label: "Manuscript read",
+-    summary: "One read of the whole book returning notes; at most a third of the chapters, capped at six, get a second line edit.",
+-    purposes: ["read-manuscript", "cut-chapter", "rewrite-seams"],
++    summary: "For nonfiction, bounded section deletions, moves and rewrites across chapters within a whole-book word budget. When developmental editing is off, the legacy read returns notes.",
++    purposes: ["read-manuscript", "cut-chapter", "rewrite-seams", "plan-developmental-edit", "rewrite-developmental-sections"],
+     lane: "prose",
+-    calls: "1 per book, plus up to 6 edits",
+-    gates: ["manuscriptReadPass"]
++    calls: "1 full-text proposal plus up to 6 linked section rewrites; final line edits and descriptions run per chapter",
++    gates: ["manuscriptReadPass", "developmentalEdit"]
+   },
+   {
+     id: "finalize",
+diff --git a/packages/core/src/generation/primarySources.test.ts b/packages/core/src/generation/primarySources.test.ts
+index 38b3bcb..e448643 100644
+--- a/packages/core/src/generation/primarySources.test.ts
++++ b/packages/core/src/generation/primarySources.test.ts
+@@ -99,3 +99,31 @@ describe("primarySources", () => {
+     expect(Date.now() - started).toBeGreaterThanOrEqual(50);
+   });
+ });
++
++it("retrieves public archive OCR when its filename differs from the item identifier", async () => {
++  const calls: string[] = [];
++  const text = await fetchPrimaryText({ host: "archive", title: "The Casement Report", author: "Roger Casement", year: "1904", url: "https://archive.org/details/the-casement-report", textUrl: "https://archive.org/download/the-casement-report/the-casement-report_djvu.txt" }, async (url) => {
++    calls.push(url);
++    if (url === "https://archive.org/metadata/the-casement-report") return { status: 200, text: JSON.stringify({ files: [{ name: "caesement report_djvu.txt", format: "DjVuTXT" }] }) };
++    if (url === "https://archive.org/download/the-casement-report/caesement%20report_djvu.txt") return { status: 200, text: "The commissioner recorded the testimony." };
++    return { status: 404, text: "" };
++  });
++  expect(text).toBe("The commissioner recorded the testimony.");
++  expect(calls).toContain("https://archive.org/metadata/the-casement-report");
++});
++
++it("keeps unavailable archive items empty and never treats private files or metadata as source prose", async () => {
++  for (const metadata of [
++    { files: [] },
++    { files: [{ name: "private_djvu.txt", format: "DjVuTXT", private: true }] },
++    { is_dark: true, files: [{ name: "hidden_djvu.txt", format: "DjVuTXT" }] }
++  ]) {
++    const urls: string[] = [];
++    const text = await fetchPrimaryText({ host: "archive", title: "Unavailable", author: "", year: "1904", url: "https://archive.org/details/item", textUrl: "https://archive.org/download/item/item_djvu.txt" }, async (url) => {
++      urls.push(url);
++      return url.includes("/metadata/") ? { status: 200, text: JSON.stringify(metadata) } : { status: 404, text: "" };
++    });
++    expect(text).toBe("");
++    expect(urls).toHaveLength(2);
++  }
++});
+diff --git a/packages/core/src/generation/primarySources.ts b/packages/core/src/generation/primarySources.ts
+index 7755b7b..8804fcb 100644
+--- a/packages/core/src/generation/primarySources.ts
++++ b/packages/core/src/generation/primarySources.ts
+@@ -1,18 +1,14 @@
++import { isStopOrAbortError } from "../adapters/retry.js";
++
+ /**
+- * Public-domain primary text, by repository API, for the material-first
+- * dossier (`dossier.ts`). Three hosts and one shape: a search returns
+- * candidates with a plain-text URL, and `fetchPrimaryText` returns the
+- * document's text with the repository's own boilerplate stripped. Licence is a
+- * property of the host — Gutenberg and Wikisource publish only free text, and
+- * archive.org is taken only for works dated before 1930 or carrying a public
+- * licence URL — so nothing here asks a model whether a text may be used.
+- *
+- * `PrimarySourceFetch` is injected so the worker can put a timeout and a
+- * user-agent on it and the tests can fake it; this module makes no network
+- * call of its own.
++ * Source-document discovery and text extraction for the material-first dossier.
++ * The three catalogue adapters retain their public-domain filters. Optional web
++ * discovery supplies document URLs; only fetched document text becomes evidence,
++ * never a search provider's summary. The worker owns bounded network access and
++ * PDF extraction through the injected fetcher. This module performs no IO itself.
+  */
+ 
+-export type PrimarySourceHost = "wikisource" | "gutenberg" | "archive";
++export type PrimarySourceHost = "wikisource" | "gutenberg" | "archive" | "web";
+ 
+ export type PrimarySourceCandidate = {
+   host: PrimarySourceHost;
+@@ -25,7 +21,29 @@ export type PrimarySourceCandidate = {
+   year: string;
+ };
+ 
+-export type PrimarySourceFetch = (url: string) => Promise<{ status: number; text: string }>;
++export type PrimarySourceFetch = (url: string) => Promise<{ status: number; text: string; contentType?: string }>;
++/** Discovery supplies addresses only. A provider summary can never become a source passage. */
++export type PrimarySourceSearch = (query: string) => Promise<Array<{ title: string; url: string }>>;
++
++export function publicSourceUrl(value: string): string | undefined {
++  try {
++    const url = new URL(value);
++    const host = url.hostname.toLowerCase();
++    if (!/^https?:$/.test(url.protocol) || url.username || url.password ||
++      !host.includes(".") || /^(?:\d+\.){3}\d+$/.test(host) || host.includes(":") ||
++      /(?:^|\.)(?:localhost|local|internal|test)$/.test(host)) return undefined;
++    url.hash = "";
++    return url.href;
++  } catch { return undefined; }
++}
++
++async function discoverSourceDocuments(query: string, search: PrimarySourceSearch, limit: number): Promise<PrimarySourceCandidate[]> {
++  const found = await search(query);
++  return found.flatMap((source): PrimarySourceCandidate[] => {
++    const url = publicSourceUrl(source.url);
++    return url ? [{ host: "web", title: source.title, url, textUrl: url, author: "", year: "" }] : [];
++  }).slice(0, limit);
++}
+ 
+ export const PRIMARY_TEXT_MAX_CHARS = 600_000;
+ const ARCHIVE_PUBLIC_DOMAIN_BEFORE = 1930;
+@@ -78,7 +96,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
+ /** Only Wikimedia asks for serial requests; the other hosts answer in parallel and a slow one must not queue the rest. */
+ const THROTTLED_HOST = /wikisource\.org$|wikipedia\.org$|wikimedia\.org$/i;
+ 
+-export async function throttledFetch(fetchImpl: PrimarySourceFetch, url: string): Promise<{ status: number; text: string }> {
++export async function throttledFetch(fetchImpl: PrimarySourceFetch, url: string): ReturnType<PrimarySourceFetch> {
+   const host = hostOf(url);
+   if (!THROTTLED_HOST.test(host)) {
+     return fetchImpl(url);
+@@ -202,10 +220,11 @@ export async function searchArchive(query: string, options: { fetch: PrimarySour
+ /** All three hosts for one query, deduplicated by text URL, Wikisource first (it holds documents, the others hold books). */
+ export async function searchPrimarySources(
+   query: string,
+-  options: { fetch: PrimarySourceFetch; language: string; limit?: number | undefined }
++  options: { fetch: PrimarySourceFetch; language: string; limit?: number | undefined; search?: PrimarySourceSearch | undefined }
+ ): Promise<PrimarySourceCandidate[]> {
+   const limit = options.limit ?? 3;
+   const settled = await Promise.allSettled([
++    ...(options.search ? [discoverSourceDocuments(query, options.search, limit)] : []),
+     searchWikisource(query, { fetch: options.fetch, language: options.language, limit }),
+     searchGutenberg(query, { fetch: options.fetch, language: options.language, limit }),
+     searchArchive(query, { fetch: options.fetch, limit })
+@@ -213,7 +232,10 @@ export async function searchPrimarySources(
+   const seen = new Set<string>();
+   const merged: PrimarySourceCandidate[] = [];
+   for (const result of settled) {
+-    if (result.status !== "fulfilled") continue;
++    if (result.status !== "fulfilled") {
++      if (isStopOrAbortError(result.reason)) throw result.reason;
++      continue;
++    }
+     for (const candidate of result.value) {
+       if (seen.has(candidate.textUrl)) continue;
+       seen.add(candidate.textUrl);
+@@ -334,15 +356,44 @@ export function textLooksLikeLanguage(text: string, language: string): boolean {
+   return hits / tokens.length >= 0.06;
+ }
+ 
++/** Archive identifiers do not determine filenames: resolve a missing OCR file from the item's own manifest. */
++async function archiveTextFallback(candidate: PrimarySourceCandidate, fetchImpl: PrimarySourceFetch): Promise<{ status: number; text: string }> {
++  const unavailable = { status: 404, text: "" };
++  let item: URL;
++  try { item = new URL(candidate.url); } catch { return unavailable; }
++  if (item.hostname !== "archive.org" || !/^\/details\/[^/]+\/?$/.test(item.pathname)) return unavailable;
++  const identifier = item.pathname.split("/")[2]!;
++  const metadata = record(await fetchJson(fetchImpl, `https://archive.org/metadata/${identifier}`));
++  if (!metadata || metadata.is_dark || !Array.isArray(metadata.files)) return unavailable;
++  const files = metadata.files.flatMap((entry) => {
++    const file = record(entry);
++    const name = str(file?.name);
++    if (file?.private || !name || /[\\/]/.test(name) || !(/_djvu\.txt$/i.test(name) || (file?.format === "Text" && /\.txt$/i.test(name)))) return [];
++    return [name];
++  }).sort((a, b) => Number(/_djvu\.txt$/i.test(b)) - Number(/_djvu\.txt$/i.test(a)) || a.localeCompare(b));
++  for (const name of files.slice(0, 2)) {
++    const url = `https://archive.org/download/${identifier}/${encodeURIComponent(name)}`;
++    if (url === candidate.textUrl) continue;
++    const response = await throttledFetch(fetchImpl, url);
++    if (response.status === 200 && response.text) return response;
++  }
++  return unavailable;
++}
++
+ /** The document's text, capped, with the repository's own boilerplate removed; empty when the host has no plain text for it. */
+ export async function fetchPrimaryText(
+   candidate: PrimarySourceCandidate,
+   fetchImpl: PrimarySourceFetch,
+   maxChars: number = PRIMARY_TEXT_MAX_CHARS
+ ): Promise<string> {
+-  const response = await throttledFetch(fetchImpl, candidate.textUrl);
++  let response = await throttledFetch(fetchImpl, candidate.textUrl);
++  if (candidate.host === "archive" && response.status === 404) response = await archiveTextFallback(candidate, fetchImpl);
+   if (response.status !== 200 || !response.text) return "";
+   let text = response.text;
++  if (candidate.host === "web") {
++    if (response.contentType?.includes("html") || /^\s*(?:<!doctype|<html)/i.test(text)) text = htmlToText(text);
++    return normalizePrimaryText(text).slice(0, maxChars);
++  }
+   if (candidate.host === "wikisource") {
+     let parsed: WikisourceParse | undefined;
+     try {
+diff --git a/packages/core/src/generation/qualityGates.ts b/packages/core/src/generation/qualityGates.ts
+index d853a13..f924c6e 100644
+--- a/packages/core/src/generation/qualityGates.ts
++++ b/packages/core/src/generation/qualityGates.ts
+@@ -65,6 +65,9 @@ export const QUALITY_FEATURE_IDS = [
+   "claimRetrieve",
+   "chapterEditorPass",
+   "manuscriptReadPass",
++  "bookDevelopment",
++  "caseEvidence",
++  "developmentalEdit",
+   "creativeContract",
+   "materialFirst",
+   "coupletRewrite",
+@@ -156,6 +159,9 @@ export const QUALITY_FEATURE_DEFAULTS: QualityFeatureSettings = {
+   // read is one call per book. Both replace the per-page review loop.
+   chapterEditorPass: ["ultra", "premium", "balanced", "fast"],
+   manuscriptReadPass: ["ultra", "premium", "balanced", "fast"],
++  bookDevelopment: ["ultra", "premium", "balanced", "fast"],
++  caseEvidence: ["ultra", "premium", "balanced", "fast"],
++  developmentalEdit: ["ultra", "premium", "balanced", "fast"],
+   // The 2026-09-03 quality ladder (opinion-fable-5). Off everywhere until a
+   // rung is measured; each is a content or contract change, not a gate.
+   creativeContract: [],
+@@ -311,6 +317,21 @@ export const QUALITY_FEATURES: QualityFeatureDescription[] = [
+     pipelines: ["composed"],
+     stage: "Manuscript read"
+   },
++  {
++    id: "bookDevelopment", label: "Research-led book planning",
++    summary: "Before a new nonfiction manuscript starts, redesigns chapter count, order and scope while checking requested coverage and distinct contributions. Requires reviewed case evidence even if that separate gate is off. Stored plans resume unchanged.",
++    pipelines: ["composed"], stage: "Book development"
++  },
++  {
++    id: "caseEvidence", label: "Evidence for major cases",
++    summary: "Builds and independently checks case claims against retrieved passages, retries missing research, and checks the resulting prose before publication.",
++    pipelines: ["composed"], stage: "Case evidence"
++  },
++  {
++    id: "developmentalEdit", label: "Developmental manuscript edit",
++    summary: "A bounded edit of overlapping sections across nonfiction chapters, with source-backed replacements, coordinated moves and a whole-book word budget before the final line edit; replaces the legacy notes-only read for these runs.",
++    pipelines: ["composed"], stage: "Developmental edit"
++  },
+   {
+     id: "creativeContract",
+     label: "Creative contract (composed chapters)",
+diff --git a/packages/core/src/index.ts b/packages/core/src/index.ts
+index d269d2a..1663512 100755
+--- a/packages/core/src/index.ts
++++ b/packages/core/src/index.ts
+@@ -80,6 +80,9 @@ export * from "./generation/bookArc.js";
+ export * from "./generation/seams.js";
+ export * from "./generation/episodes.js";
+ export * from "./generation/dossier.js";
++export * from "./generation/caseEvidence.js";
++export * from "./generation/bookDevelopment.js";
++export * from "./generation/developmentalEdit.js";
+ export * from "./generation/primarySources.js";
+ export * from "./generation/quoteProvenance.js";
+ export * from "./generation/composeScene.js";
+diff --git a/packages/core/src/schemas/episodes.ts b/packages/core/src/schemas/episodes.ts
+index 7de5d6b..fd5c536 100644
+--- a/packages/core/src/schemas/episodes.ts
++++ b/packages/core/src/schemas/episodes.ts
+@@ -59,8 +59,33 @@ export const dossierExcerptSchema = z.object({
+ });
+ export type DossierExcerpt = z.infer<typeof dossierExcerptSchema>;
+ 
++export const evidenceClaimSchema = z.object({
++  id: z.string().min(1),
++  text: z.string().trim().min(1),
++  kind: z.enum(["fact", "event", "interpretation"]),
++  excerptIds: z.array(z.string().min(1)).min(1)
++});
++
++/** Claims reviewed against retrieved passages; this does not assert that a source is infallible. */
++export const caseEvidencePacketSchema = z.object({
++  id: z.string().min(1),
++  sourceChapterIndex: z.number().int().positive(),
++  episode: chapterEpisodeSchema,
++  claims: z.array(evidenceClaimSchema).min(2).max(16),
++  sequence: z.array(z.string()),
++  disagreements: z.array(z.string()),
++  unknowns: z.array(z.string()),
++  excerpts: z.array(dossierExcerptSchema).min(1),
++  reviewVersion: z.literal(1)
++});
++export type CaseEvidencePacket = z.infer<typeof caseEvidencePacketSchema>;
++
+ export const bookDossierSchema = z.object({
+   excerpts: z.array(dossierExcerptSchema).default([]),
++  evidencePackets: z.array(caseEvidencePacketSchema).optional(),
++  excludedCases: z.array(z.object({ chapterIndex: z.number().int().positive(), title: z.string(), reason: z.string() })).optional(),
++  /** Missing material is input to replanning; the old outline does not dictate case ownership. */
++  researchGaps: z.array(z.object({ chapterIndex: z.number().int().positive(), reason: z.string().min(1) })).optional(),
+   /** Documents searched and fetched, for the Sources list and the trace. */
+   documents: z
+     .array(z.object({ title: z.string(), url: z.string().default(""), host: z.string().default(""), chapterIndex: z.number().int().positive(), words: z.number().int().nonnegative().default(0) }))
+diff --git a/packages/core/src/schemas/plan.ts b/packages/core/src/schemas/plan.ts
+index fa7bcf7..0b428ca 100644
+--- a/packages/core/src/schemas/plan.ts
++++ b/packages/core/src/schemas/plan.ts
+@@ -9,6 +9,7 @@ import {
+   unwrapJsonObject
+ } from "./jsonCoercion.js";
+ import { bookArcSchema } from "./bookArc.js";
++import { bookDevelopmentSchema } from "./bookDevelopment.js";
+ import { bookDossierSchema, bookEpisodesSchema } from "./episodes.js";
+ import { illustrationCadenceSchema } from "./mediaSettings.js";
+ import {
+@@ -602,9 +603,11 @@ const bookPlanObjectSchema = z.object({
+   authorStance: authorStanceSchema.optional(),
+   /** The book's arc (generation/bookArc.ts). A stored arc that no longer parses is dropped, never a reason to fail the plan. */
+   bookArc: z.preprocess((value) => (bookArcSchema.safeParse(value).success ? value : undefined), bookArcSchema.optional()),
++  // Unlike optional legacy annotations, a malformed persisted structural plan must not vanish on resume.
++  bookDevelopment: bookDevelopmentSchema.optional(),
+   /** Material-first (generation/episodes.ts, dossier.ts): stored beside the arc, dropped when they no longer parse. */
+   episodes: z.preprocess((value) => (bookEpisodesSchema.safeParse(value).success ? value : undefined), bookEpisodesSchema.optional()),
+-  dossier: z.preprocess((value) => (bookDossierSchema.safeParse(value).success ? value : undefined), bookDossierSchema.optional()),
++  dossier: z.preprocess((value) => ((isRecord(value) && "evidencePackets" in value) || bookDossierSchema.safeParse(value).success ? value : undefined), bookDossierSchema.optional()),
+   illustrationPlan: illustrationPlanSchema
+ });
+ 
+@@ -623,7 +626,7 @@ export function bookPlanSchemaWithFallback(fallback: BookPlan) {
+ export function bookPlanModelOutputSchemaWithFallback(fallback: BookPlan) {
+   return z.preprocess(
+     normalizeBookPlanWithFallback(fallback),
+-    bookPlanObjectSchema.omit({ researchNotes: true })
++    bookPlanObjectSchema.omit({ researchNotes: true, bookDevelopment: true, episodes: true, dossier: true })
+   );
+ }
+ 

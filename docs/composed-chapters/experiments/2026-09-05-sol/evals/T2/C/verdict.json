@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 6,
+    "clarity": 9,
+    "voice": 7,
+    "engagement": 8,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 4
+  },
+  "overall": 7.1,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "High",
+  "highlights": [
+    {
+      "quote": "The hand can be similar; the world directing it is not.",
+      "judgment": "A crisp formulation of the book's central claim that institutions direct and enlarge human aggression."
+    },
+    {
+      "quote": "A valley emptied of houses is not a written confession.",
+      "judgment": "Memorable compression of the manuscript's careful distinction between material evidence and inferred motive."
+    },
+    {
+      "quote": "Silence could be produced by an order, but also by the expectation of an order.",
+      "judgment": "Strong sentence-level craft turns censorship into an observable institutional mechanism."
+    },
+    {
+      "quote": "A person with a name, address, trade, and family could still be persecuted, but an office handling the case encountered some trace of an individual.",
+      "judgment": "The concrete contrast between person and administrative trace gives the Holocaust chapter analytical and moral precision."
+    },
+    {
+      "quote": "A man named Muhammad, a clerk from the quarter near the Friday mosque, would have seen the heaps form beside the irrigation channels and the corpses carried away from the road so that the living could pass.",
+      "judgment": "The invented named witness creates immediacy but blurs the manuscript's otherwise careful boundary between evidence and reconstruction."
+    },
+    {
+      "quote": "The question remains open because the same tribunal could regularise killing, the same decree could free and conscript, and the same crowd that spared one prisoner could kill another before the authorities arrived.",
+      "judgment": "The qualification is sound, but this recurring open-question cadence repeatedly delays synthesis at chapter endings."
+    },
+    {
+      "quote": "It does not need to turn “scarcity” into a personality or “identity” into a hidden force.",
+      "judgment": "This precisely rejects abstract causation and states the book's process-tracing method in accessible language."
+    },
+    {
+      "quote": "What history can support is narrower and more useful.",
+      "judgment": "The closing claim is intellectually disciplined, though its aphoristic shape repeats a familiar manuscript-wide rhetorical move."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "A compact object-versus-office antithesis repeatedly restates the thesis that material capacity requires institutional direction.",
+      "instances": [
+        "The weapon supplied force; an office selected its target.",
+        "The object supplied movement. An office supplied direction."
+      ]
+    },
+    {
+      "pattern": "Administrative chains are rendered as rhythmic lists of prerequisites, often using repeated sentence openings.",
+      "instances": [
+        "A wall required commands before it could protect. A ration required a clerk before it could feed. A boundary required a claimant before it could become a reason for war.",
+        "Each transition needed an office, a worker, a calculation, and a power authorised to command."
+      ]
+    },
+    {
+      "pattern": "Archaeological caution is expressed through epigrammatic limits on what objects and absences can prove.",
+      "instances": [
+        "A valley emptied of houses is not a written confession.",
+        "A point in a rib speaks of force. A grave speaks of treatment."
+      ]
+    },
+    {
+      "pattern": "Immersive scenes introduce undocumented individual actions or perceptions to animate sparse records.",
+      "instances": [
+        "A man named Muhammad, a clerk from the quarter near the Friday mosque, would have seen the heaps form beside the irrigation channels and the corpses carried away from the road so that the living could pass.",
+        "The captive looked toward the eastern edge of the city, where the sun had cleared the water."
+      ]
+    },
+    {
+      "pattern": "Chapter-level synthesis often ends by posing an unresolved institutional question.",
+      "instances": [
+        "The question remains open: how can a history recognise the patterned preparation of mass violence while preserving the contingency of the decision that turns classification into murder?",
+        "When a powerful state calculates that violence is worth the diplomatic cost, can international norms restrain it before the calculation changes?"
+      ]
+    }
+  ],
+  "summary": "The manuscript advances a strong, coherent thesis: human aggression becomes historically consequential through institutions that classify targets, organise resources, and authorise force. Its chronological progression is ambitious and often illuminating, with unusually wide comparative reach and a disciplined concern for unequal archives, causal sequence, and contingency. The main weakness is evidentiary and rhetorical: invented scene details sometimes exceed the record, while recurring object-office contrasts, triplets, recap loops, and aphoristic endings make chapters feel generated from the same template. A substantial compression pass, clearer marking or removal of reconstructed details, and more varied chapter architecture would make the book considerably more authoritative and distinctive."
+}

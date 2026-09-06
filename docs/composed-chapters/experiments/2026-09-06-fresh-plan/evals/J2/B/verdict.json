@@ -1,0 +1,92 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.6,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The bone does not contain the direction of intention. It contains the direction of force.",
+      "judgment": "Exemplary epistemic discipline: the book's habit of naming precisely what a piece of evidence can and cannot carry."
+    },
+    {
+      "quote": "No marching army is required for coercion to begin. The ration list already distinguishes those who issue from those who receive.",
+      "judgment": "The central thesis executed at its best - compressed, concrete, and earned by the Uruk material preceding it."
+    },
+    {
+      "quote": "Their differences show why evidence must be read according to what it preserves.",
+      "judgment": "A genuine methodological claim, but stated in the flat summarising register the book falls back on at every chapter seam."
+    },
+    {
+      "quote": "In 1789, John James Audubon painted the famous image often called *The Zong Massacre*",
+      "judgment": "A garbled and self-contradicting sentence (the attribution is wrong and the clause that follows undoes it) in an otherwise scrupulous evidentiary book."
+    },
+    {
+      "quote": "The Dar al-Hadith al-Nuriyya in Damascus, founded in 1172 after Nur al-Din’s death had already occurred",
+      "judgment": "Internally incoherent against the chapter's own later date for that death; a lapse the surrounding prose's care makes conspicuous."
+    },
+    {
+      "quote": "The stone was wet when Narmer’s men carried it into the open court at Nekhen.",
+      "judgment": "The dramatised openings are the book's strongest engagement device - sensory, restrained, free of costume-drama diction."
+    },
+    {
+      "quote": "The promise did not last beyond the counting of the people.",
+      "judgment": "Effective as a single line, but one of dozens of identically placed one-sentence pivot paragraphs; the device is over-used to the point of tic."
+    },
+    {
+      "quote": "Machinery enlarged the hand, but political authority chose where it would close.",
+      "judgment": "A polished aphoristic closer that also shows the templating problem: nearly every chapter ends on this same rhetorical shape."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "A one-sentence paragraph dropped between analytic blocks as a rhetorical pivot or hinge. It recurs several times per chapter, in every chapter, and its regularity makes the emphasis stop registering.",
+      "instances": [
+        "The religious reputation had to survive contact with administration.",
+        "The army was being turned into a body capable of acting together.",
+        "The first great movement was civilian flight.",
+        "A population appears as the object of a command."
+      ]
+    },
+    {
+      "pattern": "The \"neither case fits\" refusal formula: two paired case studies are set out, then a sentence declines the obvious binary before restating the institutional thesis. It is the book's default transition into every chapter's closing movement.",
+      "instances": [
+        "Neither case fits a simple contrast between barbarian raiders and settled states.",
+        "Neither case fits the picture of an enraged population suddenly losing control.",
+        "Neither case fits the picture of nomads who only raided and moved on."
+      ]
+    },
+    {
+      "pattern": "The symmetrical antithesis \"X supplies A; it does not supply B\", used to concede a rival explanation and then subordinate it to institutions. The concession is never allowed to alter the thesis, so the move reads as ritual rather than argument.",
+      "instances": [
+        "Biology helps explain readiness for fear and anger. It does not explain the office that changes fear into a roster.",
+        "Technology enlarges what a government or army can do; it does not supply the political reason for doing it."
+      ]
+    },
+    {
+      "pattern": "Identical chapter architecture across all fifteen chapters: a dramatised cold-open scene in past-tense sensory detail, an analytic pivot, two or three paired comparanda, a refusal of the simple reading, and an aphoristic closer restating the office thesis. The uniformity flattens pacing and makes chapters interchangeable in shape.",
+      "instances": [
+        "The four men stood beneath the painted beams of the chapter house at Canterbury on 30 December 1170",
+        "The stone was wet when Narmer’s men carried it into the open court at Nekhen."
+      ]
+    },
+    {
+      "pattern": "Chapter-terminal thesis restatement that names the same catalogue of institutional nouns (offices, roads, registers, taxes, walls) in a closing cadence, so the book's single argument is re-announced fifteen times rather than developed.",
+      "instances": [
+        "not an eruption from human nature, but a chain in which stores, offices, bodies, walls, and sanctioned targets became parts of the same work.",
+        "The order travelled. So did the refusal."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually coherent world history of organised aggression, argued from a single strong thesis: violence becomes historically decisive not through impulse, technology, or scarcity but through offices that classify a population, authorise harm, and make the authorisation repeatable. The evidentiary handling is the book's best quality - it is consistently explicit about what a healed skull, a royal stele, a chronicle, or a ration tablet can and cannot support, and it declines several available overreadings rather than taking them. The prose is clear, cool, and free of the usual lexical AI tells; there is no hype vocabulary, and the dramatised chapter openings are genuinely well observed. The weakness is architectural sameness. Every chapter runs the same circuit - scene, pivot, two paired comparanda, a \"neither case fits\" refusal, an aphoristic closer restating the thesis - and the one-sentence hinge paragraph appears so often that its emphasis stops landing; by the later chapters the argument is being re-announced rather than advanced, which costs the book on pacing and slop resistance. A small number of factual and internal-consistency lapses (the Zong painting attribution, the Nur al-Din foundation date) sit oddly against the surrounding scrupulousness. With varied chapter shapes, fewer terminal restatements, and a fact pass, this would be publishable non-fiction."
+}

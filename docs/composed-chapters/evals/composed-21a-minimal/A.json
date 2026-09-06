@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 6,
+    "reasoning": 7,
+    "clarity": 8,
+    "voice": 6,
+    "engagement": 5,
+    "pacing": 4,
+    "craft": 7,
+    "slopResistance": 4
+  },
+  "overall": 6.2,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Soil keeps bodies more readily than motives.",
+      "judgment": "The book's best line: compressed, concrete, and it states the whole epistemic programme in seven words \u2014 but almost nothing else in 15 chapters risks this kind of writing."
+    },
+    {
+      "quote": "The account becomes stronger by becoming narrower.",
+      "judgment": "A genuine methodological thesis, argued rather than asserted, and it governs the book's handling of Jebel Sahaba, Merv and the Thirty Years' War alike."
+    },
+    {
+      "quote": "The language is cold because it performs a conversion. A person becomes an object of freight; a killing becomes a disposal; a decision becomes an average; an insurance dispute becomes the visible form in which violence survives.",
+      "judgment": "The Zong reading is the book's analytic high point \u2014 form and content are made to explain each other instead of merely coexisting."
+    },
+    {
+      "quote": "The office did not replace hatred. It gave hatred procedures.",
+      "judgment": "Rare instance where the recurring institutions-not-instincts claim earns an aphorism instead of a paragraph of hedging."
+    },
+    {
+      "quote": "Technology changes the organisation and reach of violence; it does not decide whether a disputed resource will be shared or seized.",
+      "judgment": "Sound, but this exact proposition is restated in essentially every chapter, so by Chapter 7 it reads as a refrain rather than an argument."
+    },
+    {
+      "quote": "A city could make private violence harder while making public violence more powerful.",
+      "judgment": "The book's default sentence shape \u2014 a balanced restraint/enlargement antithesis \u2014 deployed so consistently that its analytic force decays into cadence."
+    },
+    {
+      "quote": "None of these objects gives a complete history of early war.",
+      "judgment": "Typical of a disclaimer habit: the book spends enormous wordage saying what its evidence cannot show, often three or four times per case, crowding out what it can."
+    },
+    {
+      "quote": "Jebel Sahaba, by contrast, offers a collective burial whose injuries have been studied as a pattern.",
+      "judgment": "Appears after the two-site comparison has already been summarised and closed twice \u2014 visible seam where the chapter loops back on material it had finished."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The negation-then-substitution formula: 'X does not tell us A; it tells us B.' Used as the default analytic move in every chapter, hundreds of times, until the reader can predict the second clause from the first.",
+      "instances": [
+        "It does not tell us who threatened them.",
+        "It shows that resources could be converted into entries that an administration could track."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis of restraint and enlargement \u2014 an institution suppresses one kind of violence while enabling another \u2014 stated as the closing beat of a section rather than demonstrated with a case.",
+      "instances": [
+        "The institution that restrained one aggressor might empower another.",
+        "The capacity to reduce one kind of violence did not prevent the creation of another kind on a wider scale."
+      ]
+    },
+    {
+      "pattern": "The four-factor coda: institutions / technology / economic pressure / ideas of belonging, recited in that order to close a chapter, with the same verdict each time (institutions direct, technology enables, economics sharpens, ideas assign).",
+      "instances": [
+        "Institutions directed force toward defence, tribute, ritual, punishment, expansion, or incorporation. Technologies enlarged its reach and regularized its supply without deciding why it was used.",
+        "Institutions made actions possible; political ideas assigned them meaning; human choices directed them toward particular populations."
+      ]
+    },
+    {
+      "pattern": "Numbered or sequenced 'mechanism' passages that convert a historical process into an abstract procedural ladder, with no named person, date or quantity inside them.",
+      "instances": [
+        "The mechanism can be described step by step. First, a resource becomes seasonally valuable.",
+        "South African pass laws developed through changing colonial and later state arrangements, but their function can be followed in sequence. First, the state classified populations by race and legal status."
+      ]
+    },
+    {
+      "pattern": "Chapter-closing inventory: a list of the chapter's exhibits re-walked in a single elegiac paragraph, each item given a 'leaves us with' or 'still' construction.",
+      "instances": [
+        "The Stele of the Vultures leaves us with a field of bodies and a claim of rightful victory. The Standard of Ur leaves us with ranked movement",
+        "The mountain at Behistun still presents a king above the defeated. The reliefs from Lachish still arrange a city's fall into an ordered spectacle."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely coherent book: a fifteen-chapter global history of organised violence built on one sustained argument \u2014 that capacity (technology, surplus, mobility) never determines purpose, and that institutions, legal categories and ideas of belonging are what convert pressure into harm. The evidential discipline is unusual and admirable; the author repeatedly marks the edge of what a burial, a stele, a ration tablet or an insurance claim can support, and the strongest chapters (the Zong and Barbados material, Wannsee and Rwanda, the Mongol logistics chapter) make institutional form itself the object of analysis rather than a backdrop. The costs are pacing and voice. The same analytic move \u2014 negate a naive reading, substitute a narrower one, then balance restraint against enlargement \u2014 is performed so relentlessly that chapters plateau early and then restate themselves; several, notably Chapters 2 and 5, visibly loop back over comparisons they had already closed. Almost nothing is quoted, counted or dated with precision, and no historian is argued with by name beyond Rud\u00e9 and Pinker, so 'depth' consists of range rather than of pressure applied at any single point. The prose is clean, unpretentious and free of chatty AI mannerism, but its uniform paragraph shape, symmetrical hedging and identical chapter-closing inventories give it a machined regularity that a reader feels well before the halfway point. Cutting perhaps a quarter of the disclaimers and letting a few cases run at full narrative width would raise this from a competent survey to a book with a pulse."
+}

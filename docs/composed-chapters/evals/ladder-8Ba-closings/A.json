@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 7,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.6,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Violence is organised before it is counted, and counted again before it becomes history.",
+      "judgment": "The book's governing claim, stated early and earned by the Nataruk/Stockholm/UCDP sequence that precedes it; a genuinely strong thesis sentence."
+    },
+    {
+      "quote": "The absence of an office that recorded harm may be why the past seems quieter than it was.",
+      "judgment": "Excellent: converts an evidentiary limitation into an argument rather than a hedge, and it does real work for the pre-state chapter."
+    },
+    {
+      "quote": "A fracture with smooth remodelling at its edges, new bone bridging the break, or a depression in a skull surrounded by mature tissue belongs to an earlier period of life.",
+      "judgment": "Concrete, technically disciplined specificity; the forensic passages are among the book's best writing."
+    },
+    {
+      "quote": "The army begins as handwriting.",
+      "judgment": "A fine one-line landing — but it is the same landing the book performs dozens of times, and its recurrence blunts each instance."
+    },
+    {
+      "quote": "The relief threatens; the list specifies. One turns defeat into fear, the other turns submission into a schedule.",
+      "judgment": "Representative of the book's dominant rhetorical unit: the paired antithesis, deployed so systematically it becomes a tic rather than an insight."
+    },
+    {
+      "quote": "In Rome, the Lex Gabinia, as Cicero later discussed legislation and public authority, belonged to a world where sanctioned force could be distinguished from private retaliation.",
+      "judgment": "A non-sequitur wedged into a forensic-osteology passage; several such source-insertions read as obligations discharged rather than evidence used."
+    },
+    {
+      "quote": "The room smelled of coffee and cigarette smoke.",
+      "judgment": "The dramatised set-pieces invent sensory detail, which sits badly against a book that elsewhere refuses to let a skeleton imply a motive."
+    },
+    {
+      "quote": "“The interesting and extremely important discoveries that have been made at Lachish last year and the year before by the skill and perseverance of Mr.”",
+      "judgment": "A truncated, meaningless epigraph; the chapter epigraphs generally are arbitrary and occasionally broken."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The paired antithesis as the default closing move of nearly every section: two cases set side by side, then a two-clause sentence that assigns each its opposite function.",
+      "instances": [
+        "One brings a homicide close to a face; the other gives organized killing a geography.",
+        "One system could turn a stranger into kin; the other more consistently turned a defeated town into a contributor to an imperial centre."
+      ]
+    },
+    {
+      "pattern": "The thesis restated as an aphorism about offices/records/classification, in slightly varied form, at the end of section after section — rhetorically satisfying once, a recap loop by chapter 12.",
+      "instances": [
+        "Violence opened the door. The office that followed decided how long it stayed open.",
+        "The institution did not always command the blow; it made the person available to be struck."
+      ]
+    },
+    {
+      "pattern": "A fixed evidential ritual per case study: describe artefact/site → list what it establishes → list what it cannot establish → name the institution that fills the gap. Delivered in near-identical phrasing across fifteen chapters.",
+      "instances": [
+        "The excavation gives access to acts rather than motives.",
+        "The archaeological record can follow the blow. It must work harder to recover the decision."
+      ]
+    },
+    {
+      "pattern": "A dramatised, present-tense-feeling narrative scene bolted to a chapter (usually the end, sometimes the start), with invented sensory and interior detail that the book's own epistemics disallow.",
+      "instances": [
+        "The cannon began before noon, from the ridge above Frankenhausen, and the peasants saw the smoke lift white against the Harz.",
+        "The bells of Vladimir were ringing before sunrise on 7 February 1238, though no one was pulling the ropes."
+      ]
+    },
+    {
+      "pattern": "Rhetorical questions used to open or pivot a section, then answered with the same institutional thesis — a stock pivot rather than a genuine opening of the problem.",
+      "instances": [
+        "Did mobility lessen repeated violence, or did it merely leave fewer durable traces of violence that occurred?",
+        "Did the Indus cities restrain royal warfare, or did their rulers represent power in a language we cannot read?"
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined work of comparative history with a single clear argument — that aggression acquires scale through offices, records and classification rather than through temperament — and it sustains that argument across fifteen chapters and five continents without losing hold of it. The specificity is real: Nataruk's fractures, Ur III ration tablets, the Wannsee protocol's euphemisms, Kono's diamond pits, and the Sierra Leone testimony are handled with genuine care for what each source can and cannot support, and the prose is clean, precise and almost never padded. The costs are structural rather than verbal. The chapters are additive rather than developmental — chapter 12 makes the same move as chapter 3 with newer evidence — and the thesis is restated in aphoristic form so often that the last third reads as confirmation rather than inquiry. Two devices dominate to the point of template: the paired antithesis that closes nearly every section, and the dramatised scene appended to each chapter, whose invented interiors contradict the evidentiary restraint the book preaches everywhere else. Rival explanations (scarcity, technology, decline) are raised only to be dismissed in the same shape each time, and the epigraphs are arbitrary or, in one case, a broken fragment. Trim the recap sentences, vary the section endings, cut or justify half the set-pieces, and this would be close to publishable."
+}

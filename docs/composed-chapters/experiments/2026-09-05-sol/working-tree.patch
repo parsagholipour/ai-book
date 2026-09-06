@@ -1,0 +1,1103 @@
+diff --git a/apps/worker/src/generation/CLAUDE.md b/apps/worker/src/generation/CLAUDE.md
+index ee858fe..d512c4d 100644
+--- a/apps/worker/src/generation/CLAUDE.md
++++ b/apps/worker/src/generation/CLAUDE.md
+@@ -44,16 +44,58 @@ may have been edited in the meantime.
+   stance written back onto the approved `PlanVersion.planningPackage` — best-effort, never fatal,
+   and never over a stance the plan already carried.
+ - **A composed chapter's figures are checked once, right after the compose call, and taken out of
+-  every pass after it.** `composedFigures.ts`: `validateComposedChapterFigures` drops an unreadable
+-  or unplanned block (run log event `generation.composed_chapters.figure_dropped`) and re-serialises
++  every pass after it.** `composedFigures.ts`: `validateComposedChapterFigures` drops an unreadable,
++  unterminated or unplanned block — over the count, or the wrong kind when a kind was planned
++  (run log event `generation.composed_chapters.figure_dropped`) — and re-serialises
+   the rest to the canonical line; `finishChapter` strips the blocks before the line edit and puts
+   them back just before the cut into pages, so the editor sees a stand-in, and the couplet rewrite,
+   the quote guard, the reshaping and the epigraph never meet the JSON; the read pass, its cut and
+   the seams get the same treatment; `finalizePendingPages` runs the local checks, a revise and the
+-  story delta on figure-free drafts (`figureFreeDrafts`) and restores each page's blocks before it
++  story delta on figure-free drafts (`stripDraftFigures`) and restores each page's blocks before it
+   is staged (`restoreFigures`). A chat rewrite (`textEditRewrite.ts`) does the same unless the
+   request names the figure, in which case the model sees the block and may change or drop it. The
+   derived brief says which page carries the figure, so chat and continuation know it is there.
++  The run log line is written through the `runLog` the pass is handed (`createRunLogger(job)` in
++  `generateBook.ts`), never through `console.warn` alone: the JSONL under `runs/` is what a rerun is
++  measured from, and the first implementation's event reached only stdout.
++- **Every per-page path reads a stored figure as its stand-in and stores no figure of its own.**
++  `toPriorPageContext` (`bookHelpers.ts`) is where a stored page becomes a prompt's prior-page
++  context, so the block becomes `[Figure: title]` there and the summary is run through
++  `pageDraftSummary` — for the page writer, the reviewer, the
++  style lock, the continuation outline (`continuationOutlineWithModel` cuts its excerpt the same
++  way, and its `recentPageSummaries` the same summary helper) and every rewrite path; core's `compactPageContexts` (`compactPriorPages` / `compactFollowingPages`) and `pinStyleExcerpts` do it again for a
++  context built in memory, and `reviewAppliedBookEdit` reads its before and after pages the same
++  way unless the instruction names the figure. The first implementation sent the raw JSON to the
++  continuation's outline and page writer. The other direction lives in core, where the draft is
++  parsed: `generatePageDraft`, `polishPageDraft`, `revisePageDraft` and the tools writer return
++  `figureFreeDraft` — a fence in a page writer's reply is a fabrication and a stand-in line an echo
++  of a neighbour's excerpt — so nothing in this package strips a draft after the fact. The first
++  fix did (`continuationPageDraft`, a strip at the end of `textEditRewrite.ts`), and every review,
++  audit and revision between the model and that strip had already read the invention. Replan
++  generate is figure-free the same way; `pageFigureRewriteForDraft` plants the source page's fences
++  onto that new prose (`reinsertFigureFences`: stand-in, else after the matching anchor, else before
++  the follower, else at the end) and then keep-or-holds them. First generate plants; after a keep
++  revise it does not — keep at most one fence from what came back, so a clean omit stays omitted.
++  Chat (`textEditRewrite.ts`) and replan
++  (`reviewReplanCandidate`) both go through `pageFigureRewrite` (replan via that helper) in
++  `composedFigures.ts`, so the keep-or-hold decision and the restore cannot be spelled twice.
++  `reviewAndSaveGeneratedPage` forwards `figures` into `runPageQualityLoop` the way the loop already
++  forwards it to every revise. Restore runs after review returns, not before: the reviewer and a
++  later loop revise see stand-ins on hold (or the block on keep), and a default figure-free revise
++  cannot strip the chart. The one per-page call allowed a figure is a rewrite whose request names
++  the page's figure: `figures: "keep"` on the revise and on the quality loop, keeping at most one
++  block from what comes back. A rewrite that is not about the figure holds the block aside — stand-in
++  prose, `figures: "hold"` so later revises strip invented fences but keep the `[Figure: …]`
++  stand-in, and `restore` puts the original block back beside the paragraph it followed. The compile's
++  final-QA repair (`compileExportRepair.ts`) always holds with `holdFiguresAside` and never runs the
++  mention test: the first revise is shown stand-in prose, later revises and reviews keep that stand-in
++  via `figures: "hold"`, and `restore` puts the original blocks back on the published draft. A page
++  with no figure omits the key, so a neighbour's stand-in echoed into the reply is still stripped. It
++  has to: core's figure-free revise meant a page repaired from its raw markdown came back without its
++  chart and shipped that way, and although `compileExport.ts` skips this loop for a composed book,
++  that gate reads the strategy off the *current* input, so a continuation that moves `targetPages` or
++  a routing change sends the same stored pages through it. Parse-time `figureFreeDraft` on a replan
++  generate or adherence revise would otherwise publish the rebuilt page without its chart.
+ 
+ ## Illustrated page publication
+ 
+diff --git a/apps/worker/src/generation/composedChaptersFinalize.ts b/apps/worker/src/generation/composedChaptersFinalize.ts
+index 470fae1..f470938 100644
+--- a/apps/worker/src/generation/composedChaptersFinalize.ts
++++ b/apps/worker/src/generation/composedChaptersFinalize.ts
+@@ -2,7 +2,8 @@ import {
+   type BookGenerationStrategy,
+   type BookPlan,
+   type CreateProjectInput,
+-  type ProviderSet
++  type ProviderSet,
++  chapterCaseEvidence, reviewChapterCaseEvidence
+ } from "@book-maker/core";
+ import { prisma, pageScope } from "@book-maker/db";
+ import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
+@@ -68,6 +69,21 @@ export async function finalizePendingPages(options: {
+     generationJobId
+   });
+ 
++  // A local leak repair is another writer. Check its changed case assertions before publishing any page.
++  const reviewedByIndex = new Map(reviewed.map((page) => [page.draft.index, page.draft.markdown]));
++  let start = 1;
++  for (const chapter of plan.chapters) {
++    const end = start + chapter.targetPages;
++    const pages = state.pages.filter((page) => page.index >= start && page.index < end);
++    const changed = pages.some((page) => reviewedByIndex.has(page.index) && reviewedByIndex.get(page.index) !== drafts.find((draft) => draft.index === page.index)?.markdown);
++    if (changed) {
++      const markdown = pages.map((page) => reviewedByIndex.get(page.index) ?? page.markdown).join("\n\n");
++      const issues = await reviewChapterCaseEvidence({ markdown, packets: plan.dossier?.evidencePackets ?? chapterCaseEvidence(plan, chapter.index), textModel: providers.text });
++      if (issues.length) throw new Error(`Final page repair introduced unsupported claims in chapter ${chapter.index}: ${issues.join("; ")}`);
++    }
++    start = end;
++  }
++
+   let currentState = await loadProjectStoryState(projectId, plan.promises ?? []);
+   for (const [offset, page] of reviewed.entries()) {
+     const pageIndex = page.draft.index;
+@@ -142,10 +158,3 @@ export async function finalizePendingPages(options: {
+     }
+   }
+ }
+-
+-/**
+- * A stance the pass had to generate is written back onto the approved plan, so
+- * the console can show the author the book was written as and a later
+- * continuation or chat edit reads the same one. The merge keeps every other
+- * field of the stored package byte for byte.
+- */
+diff --git a/apps/worker/src/generation/composedChaptersMaterial.ts b/apps/worker/src/generation/composedChaptersMaterial.ts
+index 0797d7a..40c971e 100644
+--- a/apps/worker/src/generation/composedChaptersMaterial.ts
++++ b/apps/worker/src/generation/composedChaptersMaterial.ts
+@@ -23,8 +23,8 @@ import type { loadQualityContext } from "./qualitySettings.js";
+ /**
+  * Material-first, the worker's half: the writer's contract and the book's
+  * episodes and dossier, planned once per book and stored on the plan like
+- * the arc, so a resumed run composes from the same material. Every failure
+- * here degrades to composing without material; none fails the book. Split
++ * the arc, so a resumed run composes from the same material. Legacy failures degrade to composing without material; the evidence-required
++ * caller rejects an insufficient dossier before drafting. Split
+  * from `composedChaptersPass.ts` for the 900-line budget.
+  */
+ export type BookMaterial = {
+@@ -42,19 +42,22 @@ export async function prepareBookMaterial(options: {
+   textModel: TextModelAdapter;
+   quality: Awaited<ReturnType<typeof loadQualityContext>>;
+   generationJobId?: string | undefined;
++  /** A new development run gathers material even when the legacy experiment flag is off. */
++  evidenceRequired?: boolean | undefined;
++  persist?: boolean | undefined;
+ }): Promise<BookMaterial> {
+   const { projectId, planId, input, plan, stance, textModel, quality, generationJobId } = options;
+   const contract: ComposeContract = quality.enabled("creativeContract") ? "creative" : "grounded";
+   let episodes: BookEpisodes | undefined;
+   let dossier: BookDossier | undefined;
+-  if (quality.enabled("materialFirst")) {
++  if (quality.enabled("materialFirst") || options.evidenceRequired) {
+     episodes = planEpisodesFromPlan(plan);
+     if (!episodes) {
+       await updateJobProgress(generationJobId, { progress: 14, message: "Planning the book's episodes" });
+-      const planned = await planEpisodes({ input, plan, stance, textModel });
++      const planned = await planEpisodes({ input, plan, stance, textModel, evidenceRequired: options.evidenceRequired });
+       if (planned.episodes) {
+         episodes = planned.episodes;
+-        await persistPlanField(planId, "episodes", episodes, (value) => bookEpisodesSchema.safeParse(value).success);
++        if (options.persist !== false) await persistPlanField(planId, "episodes", episodes, (value) => bookEpisodesSchema.safeParse(value).success);
+       } else {
+         console.warn("Episodes not produced; composing without material", {
+           event: "generation.composed_chapters.episodes_not_produced",
+@@ -79,6 +82,7 @@ export async function prepareBookMaterial(options: {
+             textModel,
+             fetch: primarySourceFetch,
+             deadline: dossierDeadline,
++            evidence: options.evidenceRequired,
+             log: (event, detail) => console.warn("Dossier step", { event: `generation.composed_chapters.${event}`, projectId, ...detail })
+           })
+         );
+@@ -86,8 +90,8 @@ export async function prepareBookMaterial(options: {
+           excerpts: chapterDossiers.flatMap((entry) => entry.excerpts),
+           documents: chapterDossiers.flatMap((entry) => entry.documents)
+         };
+-        await persistPlanField(planId, "dossier", dossier, (value) => bookDossierSchema.safeParse(value).success);
+-        await recordDossierSources(projectId, dossier);
++        if (options.persist !== false) await persistPlanField(planId, "dossier", dossier, (value) => bookDossierSchema.safeParse(value).success);
++        if (options.persist !== false) await recordDossierSources(projectId, dossier);
+       }
+     }
+   }
+@@ -118,7 +122,7 @@ async function persistPlanField(planId: string, field: "episodes" | "dossier", v
+ }
+ 
+ /** The dossier's documents as research rows, so the Sources list can cite them; the summary is the document's own first excerpt. */
+-async function recordDossierSources(projectId: string, dossier: BookDossier): Promise<void> {
++export async function recordDossierSources(projectId: string, dossier: BookDossier): Promise<void> {
+   const seen = new Set<string>();
+   const rows = dossier.documents.flatMap((document) => {
+     if (!document.url || seen.has(document.url)) return [];
+@@ -141,7 +145,7 @@ async function recordDossierSources(projectId: string, dossier: BookDossier): Pr
+ const DOSSIER_TIME_BUDGET_MS = 10 * 60 * 1000;
+ 
+ /** The repositories are fetched with a timeout and an identifying agent; a non-200 is an empty text, never a throw the dossier has to catch. */
+-async function primarySourceFetch(url: string): Promise<{ status: number; text: string }> {
++export async function primarySourceFetch(url: string): Promise<{ status: number; text: string }> {
+   const response = await fetch(url, {
+     // Wikimedia's policy: a user agent that says who is asking and how to reach them.
+     headers: { "user-agent": "ai-book-maker/1.0 (https://ravanix.app; primary-source dossier of public-domain text; contact: 12parsaaa@gmail.com)" },
+@@ -152,4 +156,3 @@ async function primarySourceFetch(url: string): Promise<{ status: number; text:
+   }
+   return { status: response.status, text: response.ok ? await response.text() : "" };
+ }
+-
+diff --git a/apps/worker/src/generation/composedChaptersPass.test.ts b/apps/worker/src/generation/composedChaptersPass.test.ts
+index b001e39..5028687 100644
+--- a/apps/worker/src/generation/composedChaptersPass.test.ts
++++ b/apps/worker/src/generation/composedChaptersPass.test.ts
+@@ -69,6 +69,10 @@ const mocks = vi.hoisted(() => {
+     project: { update: vi.fn(async () => ({})) },
+     planVersion: {
+       findUnique: vi.fn(async () => ({ planningPackage: store.planningPackage })),
++      updateMany: vi.fn(async (args: { data: { planningPackage: unknown } }) => {
++        store.planningPackage = args.data.planningPackage as Record<string, unknown>;
++        return { count: 1 };
++      }),
+       update: vi.fn(async (args: { data: { planningPackage: unknown } }) => {
+         store.planningPackage = args.data.planningPackage as Record<string, unknown>;
+         return {};
+@@ -105,6 +109,7 @@ const mocks = vi.hoisted(() => {
+     }),
+     publishStagedGeneratedPage: vi.fn(async () => "completed"),
+     persistKeeperStoryDelta: vi.fn(async () => null),
++    developmentEnabled: false,
+     qualityEnabled: vi.fn((_feature: string): boolean => true)
+   };
+ });
+@@ -150,7 +155,7 @@ vi.mock("./pagePublication.js", () => ({
+ }));
+ vi.mock("./qualityEnrichment.js", () => ({ persistKeeperStoryDelta: mocks.persistKeeperStoryDelta }));
+ vi.mock("./qualitySettings.js", () => ({
+-  loadQualityContext: async () => ({ tier: "balanced", enabled: mocks.qualityEnabled, settings: {}, pageReviewPromptMode: "normal" })
++  loadQualityContext: async () => ({ tier: "balanced", enabled: (feature: string) => ["bookDevelopment", "caseEvidence", "developmentalEdit"].includes(feature) ? mocks.developmentEnabled : mocks.qualityEnabled(feature), settings: {}, pageReviewPromptMode: "normal" })
+ }));
+ vi.mock("./storyStateStore.js", async () => {
+   const core = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
+@@ -165,7 +170,7 @@ vi.mock("./wholeBookPageReview.js", () => ({
+     }))
+ }));
+ 
+-import { FakeTextModelAdapter, figureCapFor, figureSpecSchema, makeFallbackPlan, type CreateProjectInput, type ProviderSet } from "@book-maker/core";
++import { FakeTextModelAdapter, caseEvidencePacketSchema, figureCapFor, figureSpecSchema, makeFallbackPlan, type CreateProjectInput, type ProviderSet } from "@book-maker/core";
+ import { composedChaptersStrategy } from "@book-maker/core";
+ import { composedResumeState, derivedChapterBrief, generateBookComposedChapters } from "./composedChaptersPass.js";
+ 
+@@ -213,6 +218,7 @@ beforeEach(() => {
+   store.planningPackage = { title: "Plan" };
+   vi.clearAllMocks();
+   mocks.qualityEnabled.mockImplementation(() => true);
++  mocks.developmentEnabled = false;
+ });
+ 
+ describe("composedResumeState", () => {
+@@ -497,3 +503,53 @@ describe("figures in the composed pass", () => {
+     expect(briefs().every((brief) => brief.composition.sections.every((section) => !section.figure))).toBe(true);
+   });
+ });
++
++
++describe("developed nonfiction manuscript integration", () => {
++  it("finishes staged chapters through development and final editing once, then resumes without repeating them", async () => {
++    mocks.developmentEnabled = true;
++    mocks.qualityEnabled.mockImplementation((feature) => !["figures", "coupletRewrite", "chapterApparatus"].includes(feature));
++    const chapters = [1, 2].map((index) => ({ index, title: `Trial ${index}`, summary: `Finding ${index}`, keyBeats: [`Evidence ${index}`], targetPages: 12 }));
++    const packets = chapters.map((chapter) => caseEvidencePacketSchema.parse({
++      id: `case-${chapter.index}`, sourceChapterIndex: chapter.index, reviewVersion: 1,
++      episode: { title: `Test case ${chapter.index}`, kind: "document", document: `Test record ${chapter.index}` },
++      claims: [{ id: "a", text: "First finding", kind: "fact", excerptIds: ["e"] }, { id: "b", text: "Second finding", kind: "fact", excerptIds: ["e"] }],
++      sequence: [], disagreements: [], unknowns: ["No scene is documented"],
++      excerpts: [{ id: "e", chapterIndex: chapter.index, episodeTitle: `Test case ${chapter.index}`, documentTitle: "Test record", documentUrl: "https://example.org/test", text: "A test record of two separate findings." }]
++    }));
++    const plan = {
++      ...makeFallbackPlan(input), chapters,
++      authorStance: { thesis: "The evidence changes the finding.", positions: ["Findings can change", "A verdict can be reopened"], refusals: [], voiceSample: "The clerk carried the court record into the next room. ".repeat(10) },
++      episodes: { chapters: chapters.map((chapter, i) => ({ index: chapter.index, episodes: [packets[i]!.episode] })) },
++      dossier: { excerpts: packets.flatMap((packet) => packet.excerpts), documents: [], evidencePackets: packets },
++      bookDevelopment: { version: 1 as const, question: "What changes a finding?", answer: "The evidence changes the finding.", coverage: [{ id: "evidence", requirement: "Examine findings" }], chapters: chapters.map((chapter, i) => ({ ...chapter, contribution: `New inference ${chapter.index}`, requires: i ? [1] : [], covers: ["evidence"], caseIds: [packets[i]!.id], callbacks: [] })) }
++    };
++    store.planningPackage = structuredClone(plan);
++    const { fake, purposes } = recordingFake();
++    const json = fake.generateJson.bind(fake);
++    const text = fake.generateText.bind(fake);
++    fake.generateJson = async (options) => {
++      const data = options.purpose === "plan-developmental-edit" ? { groups: [] } : options.purpose === "review-chapter-evidence" ? { issues: [] } : undefined;
++      if (!data) return json(options);
++      purposes.push(options.purpose!);
++      return { data: options.schema.parse(data), text: JSON.stringify(data), provider: "fixture", model: "fixture" };
++    };
++    fake.generateText = async (options) => {
++      if (options.purpose !== "compose-chapter") return text(options);
++      purposes.push(options.purpose);
++      const markdown = Array.from({ length: 600 }, (_, i) => `Record ${i} supplies another detail about the disputed original judgment.`).join("\n\n");
++      return { text: markdown, provider: "fixture", model: "fixture" };
++    };
++    const args = { projectId: "project-1", planId: "plan-1", input, plan, providers: providersWith(fake), strategy: composedChaptersStrategy };
++    await generateBookComposedChapters(args);
++    expect(store.pages).toHaveLength(24);
++    expect(store.pages.every((page) => page.status === "COMPLETED")).toBe(true);
++    expect(purposes.filter((purpose) => purpose === "plan-developmental-edit")).toHaveLength(1);
++    expect(purposes).not.toContain("read-manuscript");
++    expect(purposes.indexOf("edit-chapter")).toBeGreaterThan(purposes.indexOf("plan-developmental-edit"));
++    expect(store.planningPackage.developmentalEdit).toMatchObject({ version: 1, appliedGroups: [] });
++    const before = [...purposes];
++    await generateBookComposedChapters(args);
++    expect(purposes).toEqual(before);
++  });
++});
+diff --git a/apps/worker/src/generation/composedChaptersPass.ts b/apps/worker/src/generation/composedChaptersPass.ts
+index 754e126..a2ec184 100644
+--- a/apps/worker/src/generation/composedChaptersPass.ts
++++ b/apps/worker/src/generation/composedChaptersPass.ts
+@@ -1,3 +1,4 @@
++import { config } from "../runtime/config.js";
+ import {
+   PREVIOUS_CHAPTER_TAIL_WORDS,
+   chapterDigest,
+@@ -11,7 +12,6 @@ import {
+   formatStoryStateLines,
+   judgeChapterDrafts,
+   generateAuthorStance,
+-  isRecord,
+   measureProse,
+   measurementNotes,
+   paginateChapterMarkdown,
+@@ -29,7 +29,6 @@ import {
+   reinsertFigureFences,
+   stripFigureFences,
+   usesFigures,
+-  type AuthorStance,
+   type BookGenerationStrategy,
+   type BookPlan,
+   type ChapterComposition,
+@@ -47,7 +46,6 @@ import {
+   planBookArc,
+   rewriteSeams,
+   type BookArc,
+-  bookArcSchema,
+   mapWithConcurrency,
+   seamsSupported,
+   chapterEpigraph,
+@@ -59,13 +57,16 @@ import {
+   rewriteCouplets,
+   stripMisattributedQuotes,
+   type ChapterMaterial,
+-  type ComposedScene
++  type ComposedScene,
++  chapterCaseEvidence, supportsBookDevelopment, reviewChapterCaseEvidence
+ } from "@book-maker/core";
++import { persistBookArc, persistGeneratedAuthorStance, prepareComposedDevelopment } from "./composedPreparation.js";
+ import { prepareBookMaterial } from "./composedChaptersMaterial.js";
+ import { finalizePendingPages } from "./composedChaptersFinalize.js";
++import { runComposedDevelopmentalEdit } from "./composedDevelopmentalEdit.js";
+ import { validateComposedChapterFigures } from "./composedFigures.js";
+ import type { RunLogger } from "../providers/runLogging.js";
+-import { Prisma, prisma } from "@book-maker/db";
++import { prisma } from "@book-maker/db";
+ import { maybeEnqueueCompile, maybeEnqueueCover } from "../runtime/dispatch.js";
+ import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
+ import type { ChapterSetup } from "../runtime/jobTypes.js";
+@@ -134,6 +135,10 @@ export async function generateBookComposedChapters(options: {
+     stance = await generateAuthorStance({ input, plan, textModel });
+     await persistGeneratedAuthorStance(planId, stance);
+   }
++  const originalState = await loadComposedBookState(projectId);
++  plan = await prepareComposedDevelopment({ projectId, planId, input, plan, stance, textModel, quality, hasPages: originalState.pages.length > 0, generationJobId });
++  stance = planAuthorStance(plan) ?? stance;
++  if (plan.bookDevelopment || plan.dossier?.evidencePackets?.length) await runLog?.append("generation.composed_chapters.development_prepared", { projectId, chapters: plan.chapters.length, casePackets: plan.dossier?.evidencePackets?.length ?? 0, excludedCases: plan.dossier?.excludedCases?.length ?? 0, replanned: Boolean(plan.bookDevelopment) });
+   // The book's arc: planned once per book and stored on the plan together
+   // with its page cut, so a resumed run re-cuts the same pages; without an arc
+   // the pass runs as before. It comes before the chapter setups because the
+@@ -175,7 +180,9 @@ export async function generateBookComposedChapters(options: {
+   // The writer's contract and, material-first, the book's episodes and
+   // dossier: planned once per book and stored on the plan like the arc
+   // (`composedChaptersMaterial.ts`).
+-  const { contract, episodes, dossier } = await prepareBookMaterial({ projectId, planId, input, plan, stance, textModel, quality, generationJobId });
++  const { contract, episodes, dossier } = plan.dossier?.evidencePackets
++    ? { contract: "grounded" as const, episodes: plan.episodes, dossier: plan.dossier }
++    : await prepareBookMaterial({ projectId, planId, input, plan, stance, textModel, quality, generationJobId });
+   const scenes = new Map<number, ComposedScene>();
+   // Under the apparatus flag no two consecutive chapters open on a scene:
+   // rung 3 of the 2026-09-03 ladder told an opening episode in 13–15
+@@ -186,17 +193,20 @@ export async function generateBookComposedChapters(options: {
+   const materialFor = (chapterIndex: number): ChapterMaterial | undefined => {
+     if (!episodes) return undefined;
+     const chapterEpisodes = episodesForChapter(episodes, chapterIndex);
+-    if (chapterEpisodes.length === 0) return undefined;
++    const evidencePackets = chapterCaseEvidence(plan, chapterIndex);
++    if (chapterEpisodes.length === 0 && evidencePackets.length === 0) return undefined;
+     const scene = scenes.get(chapterIndex);
+     return {
+       episodes: chapterEpisodes,
+       excerpts: dossier?.excerpts.filter((excerpt) => excerpt.chapterIndex === chapterIndex) ?? [],
++      ...(dossier?.evidencePackets ? { evidencePackets } : {}),
+       ...(scene ? { scene } : {})
+     };
+   };
+ 
+   const setups = chapterSetupsForPlan(plan, input.targetPages);
+   const stored = await loadComposedBookState(projectId);
++  const developmentalEditing = !config.MOCK_AI && supportsBookDevelopment(input, plan) && quality.enabled("developmentalEdit") && stored.pages.every((page) => page.status === "PENDING");
+   const resume = composedResumeState({
+     ranges: setups.map((setup) => ({
+       chapterIndex: setup.chapter.index,
+@@ -403,7 +413,7 @@ export async function generateBookComposedChapters(options: {
+     let markdown = draftProse;
+     let editorChanged = false;
+     let shapePassApplied = false;
+-    if (editorEnabled) {
++    if (editorEnabled && !developmentalEditing) {
+       await updateJobProgress(generationJobId, { message: `Editing chapter ${position}` });
+       // One edit with everything measured on the draft: the second composed
+       // book ran a cutting edit and then a reshaping edit that re-expanded
+@@ -453,6 +463,17 @@ export async function generateBookComposedChapters(options: {
+     // Paragraph variety by merge, since no instruction produced it, and one
+     // copy of any sentence the edits wrote twice.
+     markdown = dropDuplicateSentences(varyParagraphs(markdown));
++    const evidencePackets = chapterCaseEvidence(plan, setup.chapter.index);
++    if (evidencePackets.length) {
++      const issues = await reviewChapterCaseEvidence({ markdown, packets: evidencePackets, textModel });
++      if (issues.length) {
++        const repaired = await editChapter({ ...(await composeOptionsFor(setup, drafts)), markdown, allowExtension: false, readerNotes: issues });
++        const remaining = await reviewChapterCaseEvidence({ markdown: repaired.markdown, packets: evidencePackets, textModel });
++        if (chapterDegeneracy(repaired.markdown, { maxWords: Math.ceil(proseWordCount(markdown) * 1.1), language: input.language }).degenerate) throw new Error(`Chapter ${setup.chapter.index} evidence repair failed prose integrity.`);
++        if (remaining.length) throw new Error(`Chapter ${setup.chapter.index} still has unsupported case claims: ${remaining.join("; ")}`);
++        markdown = repaired.markdown;
++      }
++    }
+     // The quote guard: every quoted span of eight words or more is checked
+     // against the chapter's dossier; a miss hung on a dossier document loses
+     // its marks, every other miss is counted and left (quoteProvenance.ts).
+@@ -553,6 +574,7 @@ export async function generateBookComposedChapters(options: {
+         chapter: setup.chapter,
+         episode: opening,
+         excerpts: openingMaterial.excerpts,
++        evidencePackets: openingMaterial.evidencePackets,
+         contract,
+         textModel
+       });
+@@ -651,7 +673,14 @@ export async function generateBookComposedChapters(options: {
+     await pendingFinish;
+   }
+ 
+-  if (quality.enabled("manuscriptReadPass") && setups.length > 1) {
++  if (developmentalEditing) {
++    await runComposedDevelopmentalEdit({
++      projectId, planId, input, plan, textModel, setups, chapterIds, finalText, reports,
++      compositionFor, composeOptionsFor, describePages, lineEdit: editorEnabled, generationJobId
++    });
++  }
++
++  if (!developmentalEditing && quality.enabled("manuscriptReadPass") && setups.length > 1) {
+     await updateJobProgress(generationJobId, { progress: 70, message: "Reading the whole manuscript" });
+     // Every chapter's first and last paragraph rewritten in one call, so the
+     // seams differ from each other; a paragraph the deterministic check refuses
+@@ -802,56 +831,3 @@ export async function generateBookComposedChapters(options: {
+   await advanceJobStep(generationJobId, "enqueue", 90, "Queueing export");
+   await maybeEnqueueCompile(projectId, planId);
+ }
+-
+-/**
+- * Every PENDING page becomes terminal through the staged publication the other
+- * passes use: deterministic local checks only (a prompt leak or placeholder
+- * gets one revise), then COMPLETED, or GENERATING with an image job for an
+- * illustration slot, with its continuity notes published beside it.
+- */
+-async function persistBookArc(planId: string, arc: BookArc, chapters: BookPlan["chapters"] | undefined): Promise<void> {
+-  try {
+-    const row = await prisma.planVersion.findUnique({ where: { id: planId }, select: { planningPackage: true } });
+-    // A stored arc that parses stands; one that does not is repaired here,
+-    // or every retry would re-architect, never persist, and resume "fresh".
+-    if (!row || !isRecord(row.planningPackage) || bookArcSchema.safeParse(row.planningPackage.bookArc).success) {
+-      return;
+-    }
+-    // The cut rides with the arc: the compile places chapter headings by the
+-    // stored plan's targetPages, so rows cut one way under a plan cut another
+-    // print headings mid-chapter.
+-    await prisma.planVersion.update({
+-      where: { id: planId },
+-      data: {
+-        planningPackage: { ...row.planningPackage, bookArc: arc, ...(chapters ? { chapters } : {}) } as unknown as Prisma.InputJsonValue
+-      }
+-    });
+-  } catch (error) {
+-    if (error instanceof Error && /stop/i.test(error.name)) {
+-      throw error;
+-    }
+-    console.warn("Book arc was not persisted onto the plan", { event: "generation.composed_chapters.arc_not_persisted", planId, error });
+-  }
+-}
+-
+-async function persistGeneratedAuthorStance(planId: string, stance: AuthorStance): Promise<void> {
+-  try {
+-    const row = await prisma.planVersion.findUnique({ where: { id: planId }, select: { planningPackage: true } });
+-    if (!row || !isRecord(row.planningPackage) || isRecord(row.planningPackage.authorStance)) {
+-      return;
+-    }
+-    await prisma.planVersion.update({
+-      where: { id: planId },
+-      data: { planningPackage: { ...row.planningPackage, authorStance: stance } as unknown as Prisma.InputJsonValue }
+-    });
+-  } catch (error) {
+-    if (error instanceof Error && /stop/i.test(error.name)) {
+-      throw error;
+-    }
+-    console.warn("Generated author stance was not persisted onto the plan", {
+-      event: "generation.composed_chapters.stance_not_persisted",
+-      planId,
+-      error
+-    });
+-  }
+-}
+diff --git a/apps/worker/src/generation/composedChaptersState.ts b/apps/worker/src/generation/composedChaptersState.ts
+index a53c6d6..2a4cd44 100644
+--- a/apps/worker/src/generation/composedChaptersState.ts
++++ b/apps/worker/src/generation/composedChaptersState.ts
+@@ -139,6 +139,12 @@ export type ComposedPageRow = DescribedPage & { markdown: string };
+  * the brief like it.
+  */
+ export type ComposedChapterReport = {
++  developmentalEdit?: {
++    appliedGroups: string[];
++    rejectedGroups: Array<{ id: string; reason: string }>;
++    beforeWords: number;
++    afterWords: number;
++  } | undefined;
+   /** The seams call replaced this chapter's opening and/or closing. */
+   seamsApplied?: boolean | undefined;
+   /** Where the book's arc came from: stored on the plan, or planned by this run. */
+diff --git a/apps/worker/src/generation/wholeBookPageReview.ts b/apps/worker/src/generation/wholeBookPageReview.ts
+index 171d5e4..e5dac4a 100644
+--- a/apps/worker/src/generation/wholeBookPageReview.ts
++++ b/apps/worker/src/generation/wholeBookPageReview.ts
+@@ -4,6 +4,7 @@ import { reviewPageWithQualityGates } from "./pageReview.js";
+ import { loadQualityContext } from "./qualitySettings.js";
+ import {
+   hasSmartUnslopCandidates,
++  CASE_EVIDENCE_WRITER_RULES,
+   type BookGenerationStrategy,
+   type BookPlan,
+   type CreateProjectInput,
+@@ -64,6 +65,10 @@ export async function reviewWholeBookDraftPages(options: {
+           plan: options.plan,
+           pageIndex: pageDraft.index,
+           qaCandidateNumber: 2,
++          ...(options.plan.dossier?.evidencePackets?.length ? {
++            researchNotes: [...options.plan.researchNotes.map((note) => `${note.title} (${note.url ?? ""}): ${note.summary}`), ...options.plan.dossier.evidencePackets.map((packet) => JSON.stringify(packet))],
++            pageEditGuidance: CASE_EVIDENCE_WRITER_RULES.join(" ")
++          } : {}),
+           draft,
+           report,
+           previousPages,
+diff --git a/packages/core/src/adapters/textRouting.test.ts b/packages/core/src/adapters/textRouting.test.ts
+index 5120659..e003afc 100644
+--- a/packages/core/src/adapters/textRouting.test.ts
++++ b/packages/core/src/adapters/textRouting.test.ts
+@@ -68,7 +68,9 @@ const PROSE_LANE_PURPOSES: ReadonlySet<string> = new Set([
+   "compose-scene",
+   "rewrite-couplets",
+   "architect-book",
+-  "rewrite-seams"
++  "rewrite-seams",
++  "develop-book-plan", "review-book-development", "build-case-evidence", "verify-case-evidence",
++  "review-chapter-evidence", "plan-developmental-edit", "rewrite-developmental-sections"
+ ]);
+ 
+ /** Model-call purposes are identifier-shaped; `purpose` is also a page brief's own field, whose values are sentences. */
+diff --git a/packages/core/src/generation/CLAUDE.md b/packages/core/src/generation/CLAUDE.md
+index daf15d6..a711469 100644
+--- a/packages/core/src/generation/CLAUDE.md
++++ b/packages/core/src/generation/CLAUDE.md
+@@ -181,21 +181,70 @@ holds the event loop open and vitest will never exit.
+   without figures — the rerun loop's rule that a prompt field present in every chapter is a
+   template. **Strings in a block are clipped, never refused**: that book's one figure was thrown
+   away whole because its `unit` ran two characters past a limit; only the counts (series,
+-  categories, nodes, edges) are hard limits, since truncating data would draw a different chart. A
++  categories, nodes, edges) and the magnitude of a value (`FIGURE_LIMITS.value`, 1e15) are hard
++  limits, since truncating data would draw a different chart — a value that size belongs in a
++  larger unit, and `Number.MAX_VALUE` used to parse as valid and round the axis end up to Infinity,
++  which `niceTicks` looped on forever; the tick generator is bounded on its own now
++  (`figureSvgShared.ts`), because the renderer is reachable with a spec built directly. A
+   `scale: "log"` axis is there for values spanning orders of magnitude, which an operation-count
+   chart needs, and falls back to linear over a value at or below zero; the renderer takes it on its
+   own when the largest value is a thousand times the smallest, because the rerun's writer drew six
+   decades on a linear axis and three of four series were flat. Ticks past ten thousand are compact
+   (10K, 1M), the left margin follows the widest tick, and a unit longer than a sign gets a row of its
+   own above the plot — the first rendered chart clipped every tick to "0,000,000". In a flow
+-  diagram, labels keep their words whole, a node's edges are spread along its side, and an edge
+-  that skips a layer bows out past the column it would otherwise run through. The same book tagged every
++  diagram, labels keep their words whole, a node's edges are spread along its side, an edge
++  that skips a layer bows out past the column it would otherwise run through, `svgOpen` takes the
++  sheet width rather than patching the viewBox string, and a chain taller than an A4 content block
++  is capped (`MAX_FLOW_HEIGHT` 720) with nodes scaled to fit. The same book tagged every
+   code fence `text` and indented the rest, so highlight.js — which keys on the fence's language name
+   and is wired for the PDF only — coloured nothing; `codeBlockRules` in `composedChapter.ts` tells
+   a book about code (`bookMentionsCode`, a cue over the prompt and plan) to tag fences with the
+   language, and the editor is told to return a draft's fences byte for byte. Every call after the compose reads a stand-in line or nothing
+   (`figureStandInMarkdown`, `figureFreeProse` in `figures/figureBlocks.ts`) and the block goes back
+-  beside the paragraph it followed (`reinsertFigureFences`); the paginator weighs it as
++  beside the paragraph it followed (`reinsertFigureFences`); that includes every prior-page excerpt
++  a page prompt is shown (`compactPriorPages`, `pinStyleExcerpts` in `pagesShared.ts`; summaries in that compact go through `pageDraftSummary`) and every
++  deterministic rule that reads a page (`pagesLocalQa.ts` reads the figure-free body throughout,
++  the final page's ending included; `readerChapters.ts` strips the figure fence and only the figure
++  fence, since a code listing is page text).   A per-page draft carries no figure and no stand-in
++  from the moment it is parsed — `figureFreeDraft` in `generatePageDraft`, `polishPageDraft`,
++  `revisePageDraft` and the tools writer — because only the compose call is ever shown the syntax
++  and a strip at the end of a path leaves every review and revision between reading the invention;
++  `RevisePageOptions.figures: "keep"` is the chat rewrite whose request names
++  the figure, and `figures: "hold"` is the holdFiguresAside path (unnamed chat rewrite, final-QA
++  repair): strip invented fences, keep `[Figure: …]` stand-ins so later revises and reviews still
++  see the stand-in. Absent, `revisePageDraft` still returns `figureFreeDraft`. And *names* is `mentionsFigure` (`figures/figureMentions.ts`), biased toward precision because a miss keeps the
++  block aside and puts it back unchanged (the chat can re-ask) while a false hit hands the model the
++  JSON and lets it change or drop a figure nobody asked about. The free exact-replacement walk copies
++  fences byte for byte. A word that names a chart and nothing
++  else fires alone (chart, graph, diagram, flowchart, infographic, histogram, and the qualified chart
++  vocabulary: axis labels, tick labels, legend entries, data series); "figure" and "graphic" fire
++  only as the head of an artifact phrase — a determiner, then the end of the text or a sentence, or
++  a **whitelisted** continuation (as, into, smaller, on page…) — never by a blacklist of person
++  continuations, since "this figure skating passage" walked through one and "this figure, a man in
++  grey" is an appositive; "plot", "legend", "axis", شکل, 图, 図 and график count only qualified,
++  because each is a story, a myth, an axle, a shape, a map or a schedule first.   With the page's own
++  specs (`pageFigureSpecs`) a request that quotes a figure's title as a whole phrase of three or
++  more characters counts too — a substring of a longer word does not, so "regrowth" is not a name for a figure titled "Growth"; its
++  categories and series names never do, since "describe 1950 more vividly" is about the prose.
++  European chart words are bounded by Unicode letters, so "photographique" does not name a
++  graphique. An opener with no closer, or with an info string after the tag, is still a figure
++  attempt: the unclosed span ends at the next blank line so dropping it does not take the rest of
++  the chapter, `validateFigureFences` drops it, and the planned kind is enforced when one was passed.
++  `reinsertFigureFences` drops any fence the pass invented, since the prose it was handed held
++  stand-ins only, and `reviewAppliedBookEdit` reads pages as stand-ins unless the instruction names
++  the figure.   The two reads of a stored page that are neither a prior-page context nor a review get
++  the same treatment where they meet the model: the writer's `lookup_page` tool (`writerTools.ts`)
++  cuts its excerpt from the stand-in form and its summary through `pageDraftSummary`, whatever the injected storage callback returns, and the
++  voice-character passes (`voiceCharacters.ts`) sample `figureFreeProse` before collapsing
++  whitespace, since a pass that only reads for who speaks has no use for a chart or its stand-in,
++  while their summaries — and the gender-inference page summaries beside them
++  (`voiceCharacterProfile.ts`) — go through `pageDraftSummary`, so a series named after a character
++  cannot vote on their pronouns. The final whole-book QA (`finalQaOpeningPages` in `pagesReview.ts`)
++  is shown page 1 as its stand-in form and its page map is `pageDraftSummary` of each page
++  (`compactPageMap`); so are chapter-review `pageSummaries` and `manuscriptReviewPacks` neighbor
++  summaries. And figures are composed chapters' alone in the other direction too: the whole-book,
++  chapter and batch writers (`generateWholeBookDraft`, `generateChapterDraft`, `generateBatchDraft`)
++  pass every page through `figureFreeDraft` at the parse, before the page set is normalised; the paginator weighs it as
+   `FIGURE_WORD_EQUIVALENT`, never splits it, and hands the next chapter a tail with no block in it.
+   `expandFigureFences` (`figures/figureHtml.ts`) turns the block into inline SVG with inline styles
+   at render time — in `pdf.ts` after the anchor markers and before the font subset, in `epub.ts`
+@@ -204,9 +253,11 @@ holds the event loop open and vitest will never exit.
+   compile. The SVG carries no `id` and no `<marker>` (two figures in one book, and
+   `neutralizeRenderedReservedIds`), self-closes every empty element (`toXhtml` closes six tag names
+   and no more), and inherits the embedded display face. No gate reads a figure: the local checks,
+-  the manuscript audit, the review packs, the reader chapterisation and the degeneracy guard are
++  the manuscript audit, the review packs, the reader chapterisation, the degeneracy guard and the
++  compile's bounded chapter-transition review (`compileExportChapterReview.ts` in the worker) are
+   fence-blind at one seam each, and none was added — a rule that fires on a figure would be a rule
+-  on shipped pages nobody replayed. The corpus fixture `figures` renders every kind.
++  on shipped pages nobody replayed, and a figure cannot fire a chapter-coherence rule. The corpus
++  fixture `figures` renders every kind.
+ 
+ ## Style contract routing
+ 
+diff --git a/packages/core/src/generation/composeScene.ts b/packages/core/src/generation/composeScene.ts
+index 90aa8a6..015b729 100644
+--- a/packages/core/src/generation/composeScene.ts
++++ b/packages/core/src/generation/composeScene.ts
+@@ -1,7 +1,8 @@
+ import type { TextModelAdapter } from "../adapters/types.js";
+ import { targetLanguageGenerationGuidance, targetLanguagePayload } from "../prompting/language.js";
+ import type { BookPlan, ChapterPlan, CreateProjectInput } from "../schemas/book.js";
+-import type { ChapterEpisode, DossierExcerpt } from "../schemas/episodes.js";
++import type { ChapterEpisode, DossierExcerpt, CaseEvidencePacket } from "../schemas/episodes.js";
++import { CASE_EVIDENCE_WRITER_RULES } from "./caseEvidence.js";
+ import type { AuthorStance } from "../schemas/plan.js";
+ import { authorStancePromptLines } from "./authorStance.js";
+ import { normalizeChapterMarkdown } from "./chapterPagination.js";
+@@ -38,19 +39,24 @@ export async function composeScene(options: {
+   contract: ComposeContract;
+   textModel: TextModelAdapter;
+   targetWords?: number | undefined;
++  evidencePackets?: readonly CaseEvidencePacket[] | undefined;
+ }): Promise<ComposedScene | undefined> {
+   const target = options.targetWords ?? SCENE_TARGET_WORDS;
+   const mode = inferWritingMode(options.input, options.plan);
+   const excerpts = options.excerpts.filter((excerpt) => !excerpt.episodeTitle || excerpt.episodeTitle === options.episode.title);
++  const packets = options.evidencePackets?.filter((packet) => packet.episode.title === options.episode.title);
++  if (options.evidencePackets && (!packets?.length || !packets.some((packet) => packet.sequence.length >= 2))) return undefined;
+   const systemLines = [
+     `You are writing the opening of chapter ${options.chapter.index}, "${options.chapter.title}", of the book "${options.plan.title}", as its author.`,
+     ...authorStancePromptLines(options.stance, mode, { exemplarOnly: true }),
+-    `Tell one episode as a scene in time: ${options.episode.title}. A named person in a named place on a day, doing, seeing and saying; the reader is there. Tell it — do not argue it, do not explain what it means, do not say what the chapter or the book will make of it. Begin inside the episode, not before it, and end on its last event, not on a reflection.`,
++    packets?.length
++      ? `Narrate the documented sequence of ${options.episode.title} through the recorded choices and consequences. Use only actors, actions and dates supported by caseEvidence. Dialogue or sensory detail may appear only when a supplied passage records it. Do not add a cinematic setting or speculate to meet the length target.`
++      : `Tell one episode as a scene in time: ${options.episode.title}. A named person in a named place on a day, doing, seeing and saying; the reader is there. Tell it — do not argue it, do not explain what it means, do not say what the chapter or the book will make of it. Begin inside the episode, not before it, and end on its last event, not on a reflection.`,
+     excerpts.length > 0
+       ? "`dossier` holds verbatim passages from the record of this episode. Quote from them with quotation marks and the document named — a phrase, a line, a whole passage where it is better than anything you could write — and put quotation marks around nothing else."
+       : "Quotation marks are a promise: put them only around words you are confident were said or written in that form.",
+     ...(options.contract === "creative" ? [CREATIVE_CONTRACT_RULES[0]!] : ["Use the episode's document and the research notes; do not invent named people or documents."]),
+-    "Where you reconstruct rather than report, let the grammar say so once — \"would have\", \"by his own account\", \"as the register has it\" — and then tell it plainly.",
++    ...(packets?.length ? CASE_EVIDENCE_WRITER_RULES : ["Where you reconstruct rather than report, let the grammar say so once — \"would have\", \"by his own account\", \"as the register has it\" — and then tell it plainly."]),
+     `Write between ${Math.round(target * 0.75)} and ${Math.round(target * 1.3)} words, aiming for ${target}. Paragraphs of visibly different lengths; no heading, no title, no summary, no epigraph. Return only the scene's prose.`,
+     ...targetLanguageGenerationGuidance(options.input.language)
+   ];
+@@ -74,7 +80,8 @@ export async function composeScene(options: {
+           }))
+         }
+       : {}),
+-    chapter: { title: options.chapter.title, summary: options.chapter.summary }
++    chapter: { title: options.chapter.title, summary: options.chapter.summary },
++    ...(packets?.length ? { caseEvidence: packets } : {})
+   };
+   let best: ComposedScene | undefined;
+   for (let attempt = 0; attempt < 2; attempt += 1) {
+diff --git a/packages/core/src/generation/composedChapter.ts b/packages/core/src/generation/composedChapter.ts
+index 2c031a0..24b4577 100644
+--- a/packages/core/src/generation/composedChapter.ts
++++ b/packages/core/src/generation/composedChapter.ts
+@@ -8,6 +8,8 @@ import type { AuthorStance, BookPlan, ChapterPlan, CreateProjectInput } from "..
+ import { isRecord } from "../schemas/jsonCoercion.js";
+ import { authorStancePromptLines, isNarrativeWritingMode } from "./authorStance.js";
+ import { arcChapterLines, type BookArc } from "./bookArc.js";
++import { chapterDevelopmentLines } from "./bookDevelopment.js";
++import { CASE_EVIDENCE_WRITER_RULES } from "./caseEvidence.js";
+ import {
+   CREATIVE_CONTRACT_RULES,
+   CREATIVE_RECONSTRUCTION_RULE,
+@@ -334,9 +336,10 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
+           (rule) => !(options.arc && arcKindFor(options) !== "method" && rule.startsWith("State what a source shows"))
+         )),
+     ...(minimal ? [] : ["Do not open the chapter with a general claim about a common noun (\"A cannon was never only a cannon\")."]),
+-    ...(minimal ? [] : options.contract === "creative" ? (narrative ? [] : [CREATIVE_RECONSTRUCTION_RULE]) : reconstructionRule(narrative)),
++    ...(minimal || options.material?.evidencePackets?.length ? [] : options.contract === "creative" ? (narrative ? [] : [CREATIVE_RECONSTRUCTION_RULE]) : reconstructionRule(narrative)),
+     `Now chapter ${options.chapter.index}, "${options.chapter.title}".`,
+     ...materialLines(options),
++    ...chapterDevelopmentLines(options.plan, options.chapter.index),
+     ...compositionWriterLines(options.composition, palette, budget.target),
+     ...figureComposeRules(options.composition),
+     ...codeBlockRules(options.input, options.plan),
+@@ -359,7 +362,7 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
+     PROMPT_LEAK_BAN,
+     ...targetLanguageGenerationGuidance(options.input.language),
+     ...kidsReadingGuidanceLines(options.input),
+-    `Write between ${remaining.min} and ${remaining.max} words and aim for ${remaining.target}. The typesetter will divide the chapter into ${pages} pages of about ${budget.perPage} words; pages are not units of argument, so do not shape the prose around them.`,
++    `Write between ${remaining.min} and ${remaining.max} words and aim for ${options.plan.bookDevelopment ? Math.min(remaining.max, Math.ceil(remaining.target / 0.87)) : remaining.target}. The typesetter will divide the chapter into ${pages} pages of about ${budget.perPage} words; pages are not units of argument, so do not shape the prose around them.`,
+     "Return only the chapter's prose."
+   ];
+   const userPayload = {
+@@ -411,7 +414,7 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
+     if (!best || words > best.words) {
+       best = candidate;
+     }
+-    if (words >= remaining.min * 0.7) {
++    if (words >= remaining.min * (options.plan.bookDevelopment ? 1 : 0.7)) {
+       break;
+     }
+     shortfall = `Your previous answer was ${words} words; the chapter needs at least ${remaining.min}. Write the complete chapter.`;
+@@ -423,6 +426,8 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
+ }
+ 
+ export type EditChapterOptions = ComposeChapterOptions & {
++  /** Structural editing allocates length across the book; a line edit cannot pad a chapter. */
++  allowExtension?: boolean | undefined;
+   markdown: string;
+   /** Notes from the whole-manuscript read, when this is the second pass. */
+   readerNotes?: string[] | undefined;
+@@ -637,10 +642,13 @@ export async function editChapter(options: EditChapterOptions): Promise<EditedCh
+     ...(options.readerNotes && options.readerNotes.length > 0
+       ? [`A reader of the whole manuscript left these notes on this chapter; they outrank every keep-rule above, so act on each one: ${options.readerNotes.join(" | ")}`]
+       : []),
+-    draftWords < budget.target * EDITOR_EXTEND_BELOW_SHARE
++    options.allowExtension === false
++      ? "This is a final line edit. Improve clarity and sentence craft while preserving substantive content and its evidence. Do not add facts, sections, examples or explanation to fill a length target. Do not undo a developmental cut or move. Keep the draft's length within ten percent unless readerNotes explicitly requires a factual correction."
++      : draftWords < budget.target * EDITOR_EXTEND_BELOW_SHARE
+       ? `The draft is ${draftWords} words and the chapter needs about ${budget.target} (never under ${budget.min}, never over ${budget.max}): develop the existing sections with more particular detail — the named person, the document, the place, the next thing that happened — rather than adding sections, generalising, or restating.`
+       : `Return between ${budget.min} and ${budget.max} words; the draft is ${draftWords} words. Over ${budget.max}, cut.`,
+     ...(options.contract === "creative" ? [CREATIVE_CONTRACT_RULES[1]!] : [GROUNDED_FACTUALITY_RULE, ...citation.rules]),
++    ...(options.material?.evidencePackets?.length ? CASE_EVIDENCE_WRITER_RULES : []),
+     ...(options.material?.scene
+       ? [`The chapter opens with a scene of about ${options.material.scene.words} words that was written on purpose in a narrating register; keep it a scene — tighten it if you must, never turn it into summary or argument.`]
+       : []),
+@@ -672,6 +680,7 @@ export async function editChapter(options: EditChapterOptions): Promise<EditedCh
+             ...(options.measurementNotes && options.measurementNotes.length > 0 ? { measurementNotes: options.measurementNotes } : {}),
+             ...(options.readerNotes && options.readerNotes.length > 0 ? { readerNotes: options.readerNotes } : {}),
+             ...citation.payload,
++            ...materialPayload(options),
+             wordBudget: budget
+           },
+           null,
+diff --git a/packages/core/src/generation/composedChapterMaterial.ts b/packages/core/src/generation/composedChapterMaterial.ts
+index 18d94c0..f8b17b8 100644
+--- a/packages/core/src/generation/composedChapterMaterial.ts
++++ b/packages/core/src/generation/composedChapterMaterial.ts
+@@ -1,5 +1,6 @@
+ import type { ChapterWordBudget } from "./composedChapter.js";
+-import type { ChapterEpisode, DossierExcerpt } from "../schemas/episodes.js";
++import type { ChapterEpisode, DossierExcerpt, CaseEvidencePacket } from "../schemas/episodes.js";
++import { CASE_EVIDENCE_WRITER_RULES } from "./caseEvidence.js";
+ 
+ /**
+  * Material-first, as the writer sees it: the contract it writes under, the
+@@ -13,6 +14,7 @@ export type ComposeContract = "grounded" | "creative";
+ export type ChapterMaterial = {
+   episodes: readonly ChapterEpisode[];
+   excerpts: readonly DossierExcerpt[];
++  evidencePackets?: readonly CaseEvidencePacket[] | undefined;
+   /** The opening scene, composed by `composeScene` before the chapter and printed ahead of it. */
+   scene?: { text: string; words: number; episodeTitle: string } | undefined;
+ };
+@@ -53,10 +55,12 @@ export function remainingBudget(budget: ChapterWordBudget, sceneWords: number):
+  */
+ export function materialLines(options: { material?: ChapterMaterial | undefined }): string[] {
+   const material = options.material;
+-  if (!material || material.episodes.length === 0) return [];
++  if (!material) return [];
+   const lines = [
+     "This chapter is built from the episodes in `episodes`: each is a person, a place, a date and a document from the record, and the chapter's sections are made from them — an episode told in time, a document read closely, a figure worked through — with the argument arising from the material rather than the material illustrating the argument. Give each episode a real stretch of the chapter, not a mention."
+   ];
++  if (material.episodes.length === 0) lines.length = 0;
++  if (material.evidencePackets?.length) lines.push(...CASE_EVIDENCE_WRITER_RULES);
+   if (material.excerpts.length > 0) {
+     lines.push(
+       "`dossier` holds verbatim passages from primary sources, each with the document it comes from. Quote from them — a phrase, a sentence, up to a whole passage — with quotation marks and the document named, wherever a passage says something better than you could; these are the only words you put quotation marks around. Paraphrase the rest of what they say freely."
+@@ -72,7 +76,7 @@ export function materialLines(options: { material?: ChapterMaterial | undefined
+ 
+ export function materialPayload(options: { material?: ChapterMaterial | undefined }) {
+   const material = options.material;
+-  if (!material || material.episodes.length === 0) return {};
++  if (!material) return {};
+   return {
+     episodes: material.episodes.map((episode) => ({
+       title: episode.title,
+@@ -83,6 +87,7 @@ export function materialPayload(options: { material?: ChapterMaterial | undefine
+       document: episode.document,
+       why: episode.why
+     })),
++    ...(material.evidencePackets?.length ? { caseEvidence: material.evidencePackets } : {}),
+     ...(material.excerpts.length > 0
+       ? {
+           dossier: material.excerpts.map((excerpt) => ({
+@@ -98,4 +103,3 @@ export function materialPayload(options: { material?: ChapterMaterial | undefine
+     ...(material.scene ? { openingScene: material.scene.text } : {})
+   };
+ }
+-
+diff --git a/packages/core/src/generation/dossier.ts b/packages/core/src/generation/dossier.ts
+index 67c36ab..612937f 100644
+--- a/packages/core/src/generation/dossier.ts
++++ b/packages/core/src/generation/dossier.ts
+@@ -205,6 +205,7 @@ export async function extractExcerpts(options: {
+   windows: readonly DossierWindow[];
+   documents: readonly DossierDocument[];
+   textModel: TextModelAdapter;
++  evidence?: boolean | undefined;
+   log?: ((event: string, detail: Record<string, unknown>) => void) | undefined;
+ }): Promise<DossierExcerpt[]> {
+   if (options.windows.length === 0) return [];
+@@ -221,7 +222,9 @@ export async function extractExcerpts(options: {
+         role: "system",
+         content: [
+           `You are choosing passages from primary sources for chapter ${options.chapter.index}, "${options.chapter.title}". Each window in windows is a stretch of a document's own text.`,
+-          "Choose up to six passages of 30 to 300 words that bear on one of the chapter's episodes and would be worth quoting: a voice, an order, an oath, a figure, a description of something seen. A passage is one continuous stretch of a window. Skip a window that has nothing quotable.",
++          options.evidence
++            ? "Choose up to six passages of 30 to 300 words that establish the episode's actors, consequential events, chronology, quantities, decisions, outcome, or disagreement. Include ordinary factual prose, not only quotable lines. Preserve the context needed to distinguish an allegation from a finding. A passage is one continuous stretch of a window. Skip irrelevant windows."
++            : "Choose up to six passages of 30 to 300 words that bear on one of the chapter's episodes and would be worth quoting: a voice, an order, an oath, a figure, a description of something seen. A passage is one continuous stretch of a window. Skip a window that has nothing quotable.",
+           "Report each passage as its first six to eight words and its last six to eight words, copied exactly from the window — never paraphrased, never the whole passage. speaker: who wrote or said it, if the window says. episodeTitle: which episode it serves.",
+           "Return one JSON object shaped exactly like outputContract.",
+           ...targetLanguageGenerationGuidance(options.input.language)
+@@ -302,6 +305,9 @@ export async function buildChapterDossier(options: {
+   log?: ((event: string, detail: Record<string, unknown>) => void) | undefined;
+   /** Epoch ms after which no further search or fetch starts: the dossier is a bounded step, never the book's clock. */
+   deadline?: number | undefined;
++  evidence?: boolean | undefined;
++  /** A bounded second retrieval uses the next planned query instead of repeating the failed search. */
++  queryOffset?: number | undefined;
+ }): Promise<ChapterDossier> {
+   const documents: DossierDocument[] = [];
+   const seenUrls = new Set<string>();
+@@ -314,7 +320,8 @@ export async function buildChapterDossier(options: {
+     }
+     // One search per episode: Wikimedia answers about thirty requests a
+     // minute, and a book's dossier has to fit in its budget.
+-    const queries = episode.searchQueries.filter(Boolean).slice(0, 1);
++    const queryOffset = options.queryOffset ?? 0;
++    const queries = episode.searchQueries.filter(Boolean).slice(queryOffset, queryOffset + 1);
+     if (queries.length === 0 && episode.document) queries.push(`${episode.document} ${episode.person}`.trim());
+     const candidates: PrimarySourceCandidate[] = [];
+     for (const query of queries) {
+@@ -374,7 +381,7 @@ export async function buildChapterDossier(options: {
+   let excerpts: DossierExcerpt[] = [];
+   if (kept.length > 0) {
+     try {
+-      excerpts = await extractExcerpts({ input: options.input, chapter: options.chapter, episodes: options.episodes, windows: kept, documents, textModel: options.textModel, log });
++      excerpts = await extractExcerpts({ input: options.input, chapter: options.chapter, episodes: options.episodes, windows: kept, documents, textModel: options.textModel, evidence: options.evidence, log });
+     } catch (error) {
+       if (error instanceof Error && /stop|abort/i.test(error.name + error.message)) throw error;
+       log("dossier.extract_failed", { chapterIndex: options.chapter.index, error: error instanceof Error ? error.message : String(error) });
+diff --git a/packages/core/src/generation/episodes.ts b/packages/core/src/generation/episodes.ts
+index 257a7f1..85f0320 100644
+--- a/packages/core/src/generation/episodes.ts
++++ b/packages/core/src/generation/episodes.ts
+@@ -55,6 +55,8 @@ export async function planEpisodes(options: {
+   plan: BookPlan;
+   stance: AuthorStance;
+   textModel: TextModelAdapter;
++  evidenceRequired?: boolean | undefined;
++  feedback?: string[] | undefined;
+ }): Promise<PlanEpisodesResult> {
+   try {
+     const result = await generateJsonWithRetry(options.textModel, {
+@@ -67,8 +69,9 @@ export async function planEpisodes(options: {
+           role: "system",
+           content: [
+             `You are the author of "${options.plan.title}", filling the shoebox before writing a word: for every chapter of the plan, the two or three episodes the chapter will be made from.`,
+-            "An episode is a particular: one named person or body, in one named place, on one date or in one short span, recorded in one document a reader could go and read — a letter, a chronicle, a roll, a statute, a treaty, a trial record, a register, a speech, a memoir, an inscription. It is never a theme, a period or a generalisation. Prefer episodes whose document is in print before 1930 and likely to be online in a public repository (Wikisource, Project Gutenberg, the Internet Archive), because the book will quote from the document itself.",
+-            "kind says what the chapter will do with it: scene (an event told in time), document (a text read closely), figure (a number or a table worked through), dispute (two named people or works that disagree about it), portrait (one person followed). Give each chapter at least one scene or portrait; vary the kinds across the book.",
++            "An episode is a particular documented case, event, worked result or text relevant to this book. It is never a theme, a period or a generalisation. Identify a document the reader could consult. Prefer accessible original records or authoritative expositions; do not force historical anecdotes into an instructional or technical book. Public repositories include Wikisource, Project Gutenberg and the Internet Archive.",
++            "kind says what the chapter will do with it: scene (an event told in time), document (a text read closely), figure (a number or a table worked through), dispute (two named people or works that disagree about it), portrait (one person followed). Choose the treatment the evidence supports. A scene is optional.",
++            ...(options.evidenceRequired ? ["Every central case must subsequently pass source verification. Select cases with accessible substantive documentation, not famous names used as decoration. If feedback names unavailable cases, choose different documented material serving the same requested coverage."] : []),
+             "searchQueries: two or three searches that would find the document's own text in a library catalogue — its title, its author, a distinctive phrase — never a topic. why: one sentence on what the episode lets the chapter show.",
+             "Return one JSON object shaped exactly like outputContract, with one entry per chapter of the plan in the plan's order and the plan's index numbers.",
+             ...targetLanguageGenerationGuidance(options.input.language)
+@@ -81,6 +84,7 @@ export async function planEpisodes(options: {
+               language: targetLanguagePayload(options.input.language),
+               book: { title: options.plan.title, premise: options.plan.premise, audience: options.plan.audience },
+               stance: { thesis: options.stance.thesis, positions: options.stance.positions },
++              ...(options.feedback ? { feedback: options.feedback } : {}),
+               chapters: options.plan.chapters.map((chapter) => ({
+                 index: chapter.index,
+                 title: chapter.title,
+diff --git a/packages/core/src/generation/pipelineStages.ts b/packages/core/src/generation/pipelineStages.ts
+index c321367..80192c7 100644
+--- a/packages/core/src/generation/pipelineStages.ts
++++ b/packages/core/src/generation/pipelineStages.ts
+@@ -88,25 +88,25 @@ export const COMPOSED_STAGES: readonly PipelineStage[] = [
+   {
+     id: "forms",
+     label: "Chapter form plan",
+-    summary: "Every chapter gets 3 to 8 sections with a form from the palette and one landing. Variety is checked deterministically; one repair call, then rotation.",
+-    purposes: ["plan-chapter-forms", "architect-book"],
++    summary: "After research-led replanning when enabled, every chapter gets 3 to 8 sections with a form from the palette and one landing. Variety is checked deterministically; one repair call, then rotation.",
++    purposes: ["plan-chapter-forms", "architect-book", "develop-book-plan", "review-book-development"],
+     lane: "prose",
+-    calls: "1 per book, plus at most 1 repair",
+-    gates: ["figures"]
++    calls: "1 form plan plus at most 1 repair; research-led development adds up to 2 proposals and 2 reviews",
++    gates: ["figures", "bookDevelopment"]
+   },
+   {
+     id: "compose",
+     label: "Compose chapter",
+-    summary: "Two continuous drafts per chapter from the stance, the form plan, the previous chapter's tail and digests of earlier chapters; a fast cross-family judge reads the opening and closing of each and picks one, or the first when the two orders disagree.",
+-    purposes: ["compose-chapter", "judge-chapter-drafts", "plan-episodes", "extract-excerpts", "compose-scene"],
++    summary: "A continuous chapter from the stance, form plan, prior chapters and researched cases. Evidence-required runs extract and review case claims from source passages before drafting, then check the written claims.",
++    purposes: ["compose-chapter", "judge-chapter-drafts", "plan-episodes", "extract-excerpts", "compose-scene", "build-case-evidence", "verify-case-evidence", "review-chapter-evidence"],
+     lane: "prose",
+-    calls: "2 drafts and 2 judge calls per chapter, more when a draft is far too short",
+-    gates: ["creativeContract", "materialFirst"]
++    calls: "1 draft per chapter, up to 1 length retry; evidence adds extraction, packet reviews and prose checks, with bounded research retries",
++    gates: ["creativeContract", "materialFirst", "caseEvidence"]
+   },
+   {
+     id: "edit",
+     label: "Line edit",
+-    summary: "An editor pass over the whole chapter: cut repeated caveats and restatements, vary paragraph shape, let stated positions stand.",
++    summary: "A chapter line edit after developmental changes when enabled, with no automatic padding. Legacy runs retain their original chapter edit order.",
+     purposes: ["edit-chapter", "rewrite-couplets"],
+     lane: "prose",
+     calls: "1 per chapter",
+@@ -124,11 +124,11 @@ export const COMPOSED_STAGES: readonly PipelineStage[] = [
+   {
+     id: "read",
+     label: "Manuscript read",
+-    summary: "One read of the whole book returning notes; at most a third of the chapters, capped at six, get a second line edit.",
+-    purposes: ["read-manuscript", "cut-chapter", "rewrite-seams"],
++    summary: "For nonfiction, bounded section deletions, moves and rewrites across chapters within a whole-book word budget. When developmental editing is off, the legacy read returns notes.",
++    purposes: ["read-manuscript", "cut-chapter", "rewrite-seams", "plan-developmental-edit", "rewrite-developmental-sections"],
+     lane: "prose",
+-    calls: "1 per book, plus up to 6 edits",
+-    gates: ["manuscriptReadPass"]
++    calls: "1 full-text proposal plus up to 6 linked section rewrites; final line edits and descriptions run per chapter",
++    gates: ["manuscriptReadPass", "developmentalEdit"]
+   },
+   {
+     id: "finalize",
+diff --git a/packages/core/src/generation/qualityGates.ts b/packages/core/src/generation/qualityGates.ts
+index d853a13..f924c6e 100644
+--- a/packages/core/src/generation/qualityGates.ts
++++ b/packages/core/src/generation/qualityGates.ts
+@@ -65,6 +65,9 @@ export const QUALITY_FEATURE_IDS = [
+   "claimRetrieve",
+   "chapterEditorPass",
+   "manuscriptReadPass",
++  "bookDevelopment",
++  "caseEvidence",
++  "developmentalEdit",
+   "creativeContract",
+   "materialFirst",
+   "coupletRewrite",
+@@ -156,6 +159,9 @@ export const QUALITY_FEATURE_DEFAULTS: QualityFeatureSettings = {
+   // read is one call per book. Both replace the per-page review loop.
+   chapterEditorPass: ["ultra", "premium", "balanced", "fast"],
+   manuscriptReadPass: ["ultra", "premium", "balanced", "fast"],
++  bookDevelopment: ["ultra", "premium", "balanced", "fast"],
++  caseEvidence: ["ultra", "premium", "balanced", "fast"],
++  developmentalEdit: ["ultra", "premium", "balanced", "fast"],
+   // The 2026-09-03 quality ladder (opinion-fable-5). Off everywhere until a
+   // rung is measured; each is a content or contract change, not a gate.
+   creativeContract: [],
+@@ -311,6 +317,21 @@ export const QUALITY_FEATURES: QualityFeatureDescription[] = [
+     pipelines: ["composed"],
+     stage: "Manuscript read"
+   },
++  {
++    id: "bookDevelopment", label: "Research-led book planning",
++    summary: "Before a new nonfiction manuscript starts, redesigns chapter count, order and scope while checking requested coverage and distinct contributions. Requires reviewed case evidence even if that separate gate is off. Stored plans resume unchanged.",
++    pipelines: ["composed"], stage: "Book development"
++  },
++  {
++    id: "caseEvidence", label: "Evidence for major cases",
++    summary: "Builds and independently checks case claims against retrieved passages, retries missing research, and checks the resulting prose before publication.",
++    pipelines: ["composed"], stage: "Case evidence"
++  },
++  {
++    id: "developmentalEdit", label: "Developmental manuscript edit",
++    summary: "A bounded edit of overlapping sections across nonfiction chapters, with source-backed replacements, coordinated moves and a whole-book word budget before the final line edit; replaces the legacy notes-only read for these runs.",
++    pipelines: ["composed"], stage: "Developmental edit"
++  },
+   {
+     id: "creativeContract",
+     label: "Creative contract (composed chapters)",
+diff --git a/packages/core/src/index.ts b/packages/core/src/index.ts
+index d269d2a..1663512 100755
+--- a/packages/core/src/index.ts
++++ b/packages/core/src/index.ts
+@@ -80,6 +80,9 @@ export * from "./generation/bookArc.js";
+ export * from "./generation/seams.js";
+ export * from "./generation/episodes.js";
+ export * from "./generation/dossier.js";
++export * from "./generation/caseEvidence.js";
++export * from "./generation/bookDevelopment.js";
++export * from "./generation/developmentalEdit.js";
+ export * from "./generation/primarySources.js";
+ export * from "./generation/quoteProvenance.js";
+ export * from "./generation/composeScene.js";
+diff --git a/packages/core/src/schemas/episodes.ts b/packages/core/src/schemas/episodes.ts
+index 7de5d6b..a265cc5 100644
+--- a/packages/core/src/schemas/episodes.ts
++++ b/packages/core/src/schemas/episodes.ts
+@@ -59,8 +59,31 @@ export const dossierExcerptSchema = z.object({
+ });
+ export type DossierExcerpt = z.infer<typeof dossierExcerptSchema>;
+ 
++export const evidenceClaimSchema = z.object({
++  id: z.string().min(1),
++  text: z.string().trim().min(1),
++  kind: z.enum(["fact", "event", "interpretation"]),
++  excerptIds: z.array(z.string().min(1)).min(1)
++});
++
++/** Claims reviewed against retrieved passages; this does not assert that a source is infallible. */
++export const caseEvidencePacketSchema = z.object({
++  id: z.string().min(1),
++  sourceChapterIndex: z.number().int().positive(),
++  episode: chapterEpisodeSchema,
++  claims: z.array(evidenceClaimSchema).min(2).max(16),
++  sequence: z.array(z.string()),
++  disagreements: z.array(z.string()),
++  unknowns: z.array(z.string()),
++  excerpts: z.array(dossierExcerptSchema).min(1),
++  reviewVersion: z.literal(1)
++});
++export type CaseEvidencePacket = z.infer<typeof caseEvidencePacketSchema>;
++
+ export const bookDossierSchema = z.object({
+   excerpts: z.array(dossierExcerptSchema).default([]),
++  evidencePackets: z.array(caseEvidencePacketSchema).optional(),
++  excludedCases: z.array(z.object({ chapterIndex: z.number().int().positive(), title: z.string(), reason: z.string() })).optional(),
+   /** Documents searched and fetched, for the Sources list and the trace. */
+   documents: z
+     .array(z.object({ title: z.string(), url: z.string().default(""), host: z.string().default(""), chapterIndex: z.number().int().positive(), words: z.number().int().nonnegative().default(0) }))
+diff --git a/packages/core/src/schemas/plan.ts b/packages/core/src/schemas/plan.ts
+index fa7bcf7..0b428ca 100644
+--- a/packages/core/src/schemas/plan.ts
++++ b/packages/core/src/schemas/plan.ts
+@@ -9,6 +9,7 @@ import {
+   unwrapJsonObject
+ } from "./jsonCoercion.js";
+ import { bookArcSchema } from "./bookArc.js";
++import { bookDevelopmentSchema } from "./bookDevelopment.js";
+ import { bookDossierSchema, bookEpisodesSchema } from "./episodes.js";
+ import { illustrationCadenceSchema } from "./mediaSettings.js";
+ import {
+@@ -602,9 +603,11 @@ const bookPlanObjectSchema = z.object({
+   authorStance: authorStanceSchema.optional(),
+   /** The book's arc (generation/bookArc.ts). A stored arc that no longer parses is dropped, never a reason to fail the plan. */
+   bookArc: z.preprocess((value) => (bookArcSchema.safeParse(value).success ? value : undefined), bookArcSchema.optional()),
++  // Unlike optional legacy annotations, a malformed persisted structural plan must not vanish on resume.
++  bookDevelopment: bookDevelopmentSchema.optional(),
+   /** Material-first (generation/episodes.ts, dossier.ts): stored beside the arc, dropped when they no longer parse. */
+   episodes: z.preprocess((value) => (bookEpisodesSchema.safeParse(value).success ? value : undefined), bookEpisodesSchema.optional()),
+-  dossier: z.preprocess((value) => (bookDossierSchema.safeParse(value).success ? value : undefined), bookDossierSchema.optional()),
++  dossier: z.preprocess((value) => ((isRecord(value) && "evidencePackets" in value) || bookDossierSchema.safeParse(value).success ? value : undefined), bookDossierSchema.optional()),
+   illustrationPlan: illustrationPlanSchema
+ });
+ 
+@@ -623,7 +626,7 @@ export function bookPlanSchemaWithFallback(fallback: BookPlan) {
+ export function bookPlanModelOutputSchemaWithFallback(fallback: BookPlan) {
+   return z.preprocess(
+     normalizeBookPlanWithFallback(fallback),
+-    bookPlanObjectSchema.omit({ researchNotes: true })
++    bookPlanObjectSchema.omit({ researchNotes: true, bookDevelopment: true, episodes: true, dossier: true })
+   );
+ }
+ 

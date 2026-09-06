@@ -1,0 +1,54 @@
+{
+  "scores": { "thesis": 8, "structure": 5, "depth": 5, "reasoning": 7, "clarity": 8, "voice": 8, "engagement": 4, "pacing": 3, "craft": 7, "slopResistance": 4 },
+  "overall": 5.9,
+  "readiness": "Needs major revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    { "quote": "All violent acts are aggressive, but not all aggressive acts are violent.", "judgment": "The definitional spine of Chapter 1 stated with real economy; the conceptual apparatus is the book's strongest asset." },
+    { "quote": "Archaeology may preserve a wound without a name. Administrative writing may preserve a name without a wound.", "judgment": "Elegant and genuinely illuminating chiasmus — but also the template from which dozens of weaker symmetrical pairs are cut." },
+    { "quote": "The stele is a public argument made from the victor’s side.", "judgment": "Compact source criticism that earns its place; the Lagash chapter is the book's best-argued." },
+    { "quote": "A wound is not a war. A cemetery records the dead without functioning as a census.", "judgment": "A crisp closer, yet it exemplifies the aphoristic two-beat ending that terminates nearly every chapter." },
+    { "quote": "The record does not establish the extent of implementation, the number of stations, or the precise burdens carried by the communities assigned to them.", "judgment": "Scrupulous, but this sentence-shape recurs so often that epistemic caution becomes filler rather than argument." },
+    { "quote": "The story of Temüjin begins before the title by which he became known.", "judgment": "Chapter 6 opens the Mongol material — which Chapter 7 then opens again from the same source, a genuine structural duplication." },
+    { "quote": "Its walls were not the work of a single moment.", "judgment": "Concrete, well-turned framing of Huaca de la Luna; the Americas chapter shows what the book can do when it stays with material detail." },
+    { "quote": "Violence may open a political order; writing may help it last.", "judgment": "Memorable, but a paired antithesis of exactly the kind the manuscript reaches for whenever a section needs closing." }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The negation-then-affirmation couplet (\"the record does not establish X … it does show Y\") used as the default paragraph engine, several times per page in every chapter.",
+      "instances": [
+        "The record does not establish the extent of implementation, the number of stations, or the precise burdens carried by the communities assigned to them.",
+        "Nor does it establish how many people were displaced, killed, enslaved, or absorbed as Mongol power expanded."
+      ]
+    },
+    {
+      "pattern": "Chapters and sections close on a short aphoristic pair or antithesis rather than on a developed conclusion.",
+      "instances": [
+        "A wound is not a war. A cemetery records the dead without functioning as a census.",
+        "Violence may open a political order; writing may help it last."
+      ]
+    },
+    {
+      "pattern": "A rhetorical question is used as the pivot into each chapter's second movement, then answered by restating the evidential limits already stated.",
+      "instances": [
+        "What kind of violence enters a record when a king asks these questions?",
+        "What did the allotment system feel like to the people whose farms sustained it?"
+      ]
+    },
+    {
+      "pattern": "Symmetrical two-case comparison in which each source is assigned one half of a balanced sentence, repeated as the standard cross-chapter linkage.",
+      "instances": [
+        "One record helped expose a concessionary regime; the other helps reveal how a colonial government attempted to break a rebellion.",
+        "One document preserves an observer’s interpretation of insecurity, while the other preserves a ruler’s proposed answer to the burdens of distance."
+      ]
+    },
+    {
+      "pattern": "Wholesale material duplication across chapters: the Secret History of the Mongols narrative and Ögedei's post-station speech are presented twice, in Chapters 6 and 7, with near-identical framing.",
+      "instances": [
+        "The story of Temüjin begins before the title by which he became known.",
+        "The story of Temüjin begins in a register that is neither administrative nor securely chronological."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, intellectually serious manuscript with a genuine controlling thesis: that aggression, injury, coercion, raiding, warfare and atrocity are non-interchangeable categories, and that each surviving record can answer only the question it was built to answer. Chapter 1 does real conceptual work, and the Lagash, Assyria/Cyrus and Zong chapters show how much a source-critical method can extract from a single document. But the method hardens into a template: virtually every paragraph runs the same negation-then-affirmation couplet, every section pivots on a rhetorical question, and every chapter closes on a balanced aphorism, so the book restates its epistemic caution far more often than it advances an argument. The evidence base is also thin and unevenly declared — much of it web summaries, an encyclopaedia entry, and H. G. Wells — which forces the prose to substitute scruple for substance. Two chapters duplicate the same Mongol material at length, which alone puts the manuscript short of publishable order. Voice, clarity and sentence craft are strong; pacing, redundancy control and reader engagement are the failures, and the templating is severe enough to read as machine-shaped structure even though the diction is free of the usual AI tells."
+}

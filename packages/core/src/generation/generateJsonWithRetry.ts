@@ -47,6 +47,11 @@ export async function generateJsonWithRetry<T>(
   const bound = await bindTextModelCall(textModel, generateOptions.purpose);
 
   let schemaRepair = false;
+  // A reply cut off by its output budget is the same reply, not a wrong one:
+  // it is asked for once more at a wider budget, outside the repair count. A
+  // develop-book-plan schema repair ran out of 16k tokens and failed a paid
+  // book (development-fixes-3a-retry, 2026-09-05).
+  let widened = false;
   for (let attempt = 0; ; attempt += 1) {
     try {
       return await bound.adapter.generateJson(withPhysicalAttemptMetadata(
@@ -57,6 +62,12 @@ export async function generateJsonWithRetry<T>(
         schemaRepair
       ));
     } catch (error) {
+      if (!widened && nextOptions.maxTokens !== undefined && isOutputBudgetExhausted(error)) {
+        widened = true;
+        attempt -= 1;
+        nextOptions = { ...nextOptions, maxTokens: Math.ceil(nextOptions.maxTokens * OUTPUT_BUDGET_WIDENING) };
+        continue;
+      }
       if (attempt >= repairAttempts || !isRepairableJsonError(error)) {
         throw error;
       }
@@ -64,6 +75,13 @@ export async function generateJsonWithRetry<T>(
       nextOptions = repairOptions(generateOptions, error);
     }
   }
+}
+
+const OUTPUT_BUDGET_WIDENING = 1.5;
+
+/** The provider said the reply stopped at `max_output_tokens` (the Responses API counts reasoning against it), rather than returning a broken one. */
+export function isOutputBudgetExhausted(error: unknown): boolean {
+  return error instanceof Error && /max_output_tokens|output budget/i.test(error.message) && !isSchemaValidationError(error);
 }
 
 function withPhysicalAttemptMetadata<T>(

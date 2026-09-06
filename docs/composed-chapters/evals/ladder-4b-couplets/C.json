@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 9,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 7,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.9,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Low",
+  "highlights": [
+    {
+      "quote": "A roadblock is an object made out of people, wood, wire, paper, and permission.",
+      "judgment": "Compresses the book's whole argument into one concrete image; the best kind of sentence here."
+    },
+    {
+      "quote": "The weapon opened the territory, but the tablet kept it.",
+      "judgment": "Sharp and earned in context, but it is also the book's single most-repeated rhetorical shape — a two-clause antithesis used as a paragraph exit."
+    },
+    {
+      "quote": "Habimana described her as moving “like someone who had forgotten where the ground ended,” a phrase preserved in the interview transcript.",
+      "judgment": "The dramatized openings sometimes attach quotation-level precision to scenes and named individuals whose sourcing cannot be checked from the text; this is the manuscript's main evidentiary risk."
+    },
+    {
+      "quote": "Interpretation becomes social only after these physical steps have been made.",
+      "judgment": "Excellent methodological discipline: the archaeology chapter teaches a procedure for reading wounds before it draws any social conclusion."
+    },
+    {
+      "quote": "The Xiongnu’s power rested on mobile pastoral production, mounted warfare, alliances, raids, and the authority of the chanyu, as an outside army pressing against a fixed wall could not account for.",
+      "judgment": "Syntactically broken — one of several sentences that read as damaged by revision rather than composed."
+    },
+    {
+      "quote": "The office did not replace emotion. It gave emotion a list.",
+      "judgment": "Effective as a single closer, but the same short-sentence aphoristic landing recurs at the end of chapter after chapter."
+    },
+    {
+      "quote": "Still, a question remains beneath every percentage drawn from prehistoric bone: percentage of whom?",
+      "judgment": "The missing-denominator passage is genuinely original analysis and the strongest reasoning sequence in the book."
+    },
+    {
+      "quote": "Their differences constitute the historical evidence, revealing the pattern through variation.",
+      "judgment": "Abstract filler where the surrounding prose is concrete; the comparison sections lapse into this register when the evidence runs thin."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter opens with a novelistic reconstructed scene (weather, named minor figures, dialogue, a one-line dramatic beat set off as its own paragraph) before any argument begins.",
+      "instances": [
+        "The water clock had already begun to run when Socrates entered the court below the Areopagus.",
+        "The mist had lifted from the fields above Naseby by six o’clock on Saturday, 14 June 1645, and Sir Thomas Fairfax could see the king’s army drawn out along the ridge."
+      ]
+    },
+    {
+      "pattern": "A rigid mid-chapter machine: two cases are set side by side, their differences enumerated in parallel sentences, then declared to be more informative than any single ranking of aggressiveness.",
+      "instances": [
+        "Jebel Sahaba records recurrent injury in a river corridor where mobile groups repeatedly encountered one another. Crow Creek records the destruction of a defended agricultural settlement...",
+        "Early Dynastic Mesopotamia and the Shang polity of northern China developed organised violence under different conditions, and their differences are more informative than any claim that cities everywhere followed one path."
+      ]
+    },
+    {
+      "pattern": "A steelman-then-limit move, almost always signalled by a concessive opener followed by a 'cannot explain' or 'does not explain' rebuttal.",
+      "instances": [
+        "The market-determinist account begins from a powerful fact: European consumers wanted sugar... Demand alone, however, cannot explain the different forms taken by coercion in Barbados, Jamaica, and the wider Atlantic.",
+        "The strongest case for treating colonial violence as a story of technology and economic appetite alone would point to the machine gun, the railway, quinine... Yet the weapon did not choose the target."
+      ]
+    },
+    {
+      "pattern": "Chapters and sections land on a paired-antithesis couplet of two short sentences, one negating the other's agent.",
+      "instances": [
+        "The price of sugar set the pressure. Men and governments built the machine that applied it.",
+        "Technology gives a decision range and speed. An institution points it."
+      ]
+    },
+    {
+      "pattern": "The same thesis-sentence is restated in each chapter with only the nouns swapped — pressure/scarcity/technology supplies the conditions, an office supplies the target.",
+      "instances": [
+        "The environment increased the stakes; social decisions converted pressure into wounds.",
+        "Industrial capacity supplied speed and reach. Political choice supplied the target."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely accomplished work of comparative history: a single controlling argument — that aggression is a human capacity but organised violence requires offices, records, supplies and authorisation — is carried across fifteen chapters from Nataruk to Srebrenica without slackening or contradicting itself. The specificity is unusual (ration tablets, tahrir registers, paiza tablets, the general-average doctrine in the Zong case, battle-death coding thresholds), and the methodological chapters on reading wounds and on the missing demographic denominator are original enough to stand alone. Its weaknesses are architectural rather than verbal: every chapter runs the same four-part machine — dramatized scene, term-by-term unpacking, paired case comparison, steelman-and-limit — and closes on a two-sentence antithetical couplet, so that by chapter ten the reader can predict the shape of a paragraph before reading it. The reconstructed openings also assign quoted speech, names and sensory detail to scenes whose sourcing the text cannot substantiate, which sits uneasily beside the book's own strict evidentiary standards. A handful of sentences are syntactically damaged, and the comparison sections thin into abstraction when the evidence is weaker. Word-level AI tells are rare; the slop that is present is structural and could be largely removed by varying the chapter template and cutting perhaps a third of the closers."
+}

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.5,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The changed decree did not dissolve Athenian rule. It altered the number and identity of those whom Athens authorized itself to kill.",
+      "judgment": "Strong: the book's governing insight stated early, concretely, without moralizing."
+    },
+    {
+      "quote": "A ration assigned once may reflect a meal; a ration assigned again and again to a category of workers suggests a continuing body of people whose time and sustenance were being organized by an institution.",
+      "judgment": "Excellent evidentiary reasoning — shows how an inference is actually built from a mundane artifact."
+    },
+    {
+      "quote": "The people disappear grammatically before they disappear physically.",
+      "judgment": "The book's sharpest single sentence; earns its aphorism because the surrounding analysis of Wannsee euphemism has paid for it."
+    },
+    {
+      "quote": "A census-like gaze did not humanize the population. It made the population available to power.",
+      "judgment": "Effective, but an instance of the paired-antithesis closer the book reaches for far too often."
+    },
+    {
+      "quote": "That sentence should remain near every interpretation of prehistoric massacre.",
+      "judgment": "Defect: a dangling referent — no such sentence precedes it. A visible composition seam mid-chapter."
+    },
+    {
+      "quote": "The evidence does establish the character of the campaign: a rebellion formed against an imposed order, and an administration answered by attacking the material conditions that allowed resistance to continue.",
+      "judgment": "The emphatic 'does' answers a concession that was cut; chapter 11 then ends without synthesis."
+    },
+    {
+      "quote": "It supplied labor. … It supplied surveillance. … It supplied money. … It supplied discipline. … It supplied warning systems. … It supplied absence.",
+      "judgment": "A six-beat anaphoric list compressed into one undifferentiated wall of paragraph; the device is good, the typography and pacing are not."
+    },
+    {
+      "quote": "The cemetery does not contain a weapon rack, a commander's account, or a boundary map.",
+      "judgment": "Concrete negative inventory — characteristic of the book's best epistemic discipline, before the same move hardens into formula."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The 'shows X but cannot show Y' epistemic couplet, deployed on nearly every artifact in every chapter. Intellectually honest the first dozen times; by mid-book it is the book's default sentence shape and drains suspense from each new case.",
+      "instances": [
+        "The cemetery can support the inference that several people were attacked by weapons in more than one episode. It cannot tell us that a sovereign power mobilized them",
+        "The plan does not prove what every voyage looked like, and it cannot supply the words of those confined below. It does show the form of a calculation that made confinement repeatable."
+      ]
+    },
+    {
+      "pattern": "Chiastic 'the same X that A also B' antithesis used as the analytic climax of a section.",
+      "instances": [
+        "The same office that punishes a murderer may recruit a conscript. The same storehouse that prevents famine may supply a siege.",
+        "The same enlarged reach that allowed governments to feed armies allowed them to classify populations and regulate movement."
+      ]
+    },
+    {
+      "pattern": "A one-sentence dramatic paragraph dropped between long analytic blocks as a rhythm break. Several are fine; several assert a beat the surrounding text has not earned.",
+      "instances": [
+        "The bones resist so clean a sequence.",
+        "Juvaini's account ends before the dead can speak for themselves."
+      ]
+    },
+    {
+      "pattern": "The Pinker–Morris–Scott triad re-litigated with near-identical concessive phrasing in chapters 1, 3, 9 and 14, so the book's central disagreement is restated rather than advanced.",
+      "instances": [
+        "Pinker is right that violence varies dramatically across time, and that wider moral circles, commerce, literacy, and more predictable law can alter incentives.",
+        "Pinker is right to insist that violence varies greatly across time and that stronger governments can reduce certain forms of private violence."
+      ]
+    },
+    {
+      "pattern": "The chapter machine: open on one artifact or scene, anatomize it, list its silences, set it against a paired counter-case, then close with a catalogue or a balanced maxim. Chapters 2, 4, 5, 7, 9, 11 and 12 follow the sequence almost step for step.",
+      "instances": [
+        "Across these cases, the catalogue grows unevenly. Nataruk supplies a lakeshore group with lethal injuries… None is a scale for prehistoric aggression. Each is a different instrument.",
+        "Across the Americas, the traces are uneven, but they form a demanding catalogue. There are sacrificial accounts… There are skull racks… There are Maya captive monuments…"
+      ]
+    }
+  ],
+  "summary": "This is a genuinely serious book with a clear and sustained thesis: aggression becomes historically consequential only when institutions — stores, lists, roads, offices, images, cards — make it repeatable, so a decline in one measured form of violence never settles the general question. The argument is carried chronologically from Mytilene to Kibuye with real specificity of case and unusual discipline about what each artifact can bear, and the prose is clean, unhurried and free of the usual lexical tells; sentence by sentence it reads like a competent academic monograph rather than generated text. The weakness is structural rather than verbal. One epistemic couplet ('shows this, cannot show that') and one rhetorical figure (the chiastic 'the same X that A also B') do most of the analytic work in all fifteen chapters, the chapter template is near-identical from case to comparison to catalogue, and the Pinker–Morris–Scott dispute is restated four times in almost the same words. Pacing suffers further from very long merged paragraphs and from a handful of visible composition seams — a dangling 'That sentence' with no antecedent, an emphatic 'does establish' answering a concession that is missing, chapters 11 and 13 stopping rather than closing. Light revision — varying the epistemic move, breaking the walls of text, repairing the seams, and cutting two of the four Pinker passages — would raise this considerably; the substance underneath is sound."
+}

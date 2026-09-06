@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.6,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A wound is an event in a body. It is not automatically an event between groups.",
+      "judgment": "The book's controlling distinction stated with real economy; this is the argumentative spine and it earns its place early."
+    },
+    {
+      "quote": "The first cities did not cure aggression. They gave it offices, rations, walls, formations, and names.",
+      "judgment": "Effective chapter landing, but it is also the book's most repeated formal move: negation plus a five-item noun list, deployed at nearly every chapter close."
+    },
+    {
+      "quote": "A report intended to show military efficiency could therefore turn a human body into a receipt.",
+      "judgment": "Best single sentence in the book — the Congo chapter's whole thesis compressed into one concrete image."
+    },
+    {
+      "quote": "Aggression is the broadest term used here. It means behavior intended to cause harm to another person who is motivated to avoid that harm.",
+      "judgment": "Definitions are laid out with textbook precision and then actually used for fifteen chapters, which is rarer than it sounds."
+    },
+    {
+      "quote": "The grave is a sample, sometimes an unusually grave sample, and samples do not become populations merely because their contents are dramatic.",
+      "judgment": "An unintended pun on 'grave' in an otherwise humourless register; a copy-editing miss that briefly derails a serious point."
+    },
+    {
+      "quote": "the surviving account summarized in the evidence does not establish every movement that produced the exchange",
+      "judgment": "One of several phrases ('the material available here', 'the research note gives a range', 'the figures commonly associated with this transformation') that leak the source-dossier behind the prose and break the authorial illusion."
+    },
+    {
+      "quote": "Hassig's interpretation is powerful because it restores the centrality of warfare and captive-taking without allowing the conquest-era narrative to dictate their meaning.",
+      "judgment": "Hassig is invoked as a settled interlocutor without ever having been introduced — a continuity slip in an otherwise scrupulous historiographical apparatus."
+    },
+    {
+      "quote": "It cannot reveal the complete motive of every killer or survivor. It cannot recreate every road not taken.",
+      "judgment": "The book's final paragraph loses its antecedent: 'It' has no referent after the preceding sentence's plural subjects, leaving the closing cadence grammatically stranded."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Negation-then-affirmation as the default sentence engine ('It does not X. It does Y.'), used many hundreds of times and in nearly every paragraph of exposition. It produces admirable precision at first and metronomic predictability by chapter six.",
+      "instances": [
+        "The monument does not simply remember an event. It teaches how to read it.",
+        "Administration did not make deportation humane. It made a violent act durable across distance."
+      ]
+    },
+    {
+      "pattern": "Every chapter is built to one template: an object or scene, a long caution about what it cannot prove, a catalogue of qualifications, two named historians set in tension, an explicit 'X is right about A; Y is right about B' arbitration, then a short aphoristic closer set off on its own line.",
+      "instances": [
+        "Parker is right about connection. Black is right about unevenness.",
+        "Morgan is right to make conquest intelligible through the Mongol state; Weatherford is right to insist that the state generated connections beyond the battlefield."
+      ]
+    },
+    {
+      "pattern": "The archive-silence caveat — 'the record is strongest where power speaks and weakest where the subjected answer back' — is restated in essentially identical form in at least ten chapters. It is the book's thesis about evidence, but it is asserted far more often than it is developed.",
+      "instances": [
+        "The administrative record is strongest where imperial power speaks and weakest where subjected people answer back.",
+        "The record is strongest at the level of offices and quantities."
+      ]
+    },
+    {
+      "pattern": "Serial noun-lists of five to eight items used as a rhythmic closer, standing in for analysis of how the items relate.",
+      "instances": [
+        "harvest, collection, storage, measurement, assignment, movement, and repair",
+        "ration cards, identity papers, pension forms, railway tickets, factory notices, and worn uniforms"
+      ]
+    },
+    {
+      "pattern": "Material is recycled across chapters in near-identical wording rather than being cross-referenced, inflating length without adding argument.",
+      "instances": [
+        "The Barbados Code of 1661 defined enslaved people as “goods and Chattels” and authorized owners extensive powers of punishment, including mutilation and burning alive.",
+        "at least 300 enslaved people were required to work 763 acres"
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined global history of organized violence, built on one sustained and genuinely productive distinction: aggression is an act, while institutions are what give harm reach, repetition and memory. Each chapter anchors itself in a concrete object — a burial floor, a ration tablet, a stele, a slave-ship diagram, an arsenal register, a deportation protocol, an armistice table — and works outward with real epistemic care about what the object can and cannot support, which is the book's chief intellectual virtue. The historiographical staging (Pinker against Keeley and Fry, Hall against Burbank, Parker against Black, Rudé against Schama, Browning against Goldhagen) keeps the survey argumentative rather than encyclopaedic, and the prose is clean, precise and almost entirely free of the usual lexical AI tells. What limits it is form rather than content: the chapters are cut to one template, the negation-then-affirmation sentence recurs with metronomic regularity, the archive-silence caveat is restated far past the point of diminishing return, and the arbitrations between historians too often settle on 'both are right', blunting the argumentative edge. Smaller flaws — an uninvited Hassig, a dangling pronoun in the final paragraph, several phrases that leak the underlying source dossier ('the research note gives a range') — are the kind a firm copy-edit would remove. With compression of roughly a fifth, deliberate variation of chapter shape, and sharper verdicts, this would be publishable serious nonfiction."
+}

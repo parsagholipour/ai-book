@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 7,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 6.8,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The army began with the clerk who knew which granary could be opened.",
+      "judgment": "The book's controlling idea compressed into one concrete, earned image; among its best sentences."
+    },
+    {
+      "quote": "Bone is an archive, but a selective one. A healed fracture records survival because living tissue had time to repair itself.",
+      "judgment": "Excellent evidentiary reasoning: the method is explained through the material rather than asserted."
+    },
+    {
+      "quote": "The crew continued until 54 people had been thrown into the Atlantic. That evening, the Zong's log recorded the ship's position and the weather.",
+      "judgment": "Restraint used to devastating effect; the Zong sequence is the strongest sustained narrative in the book."
+    },
+    {
+      "quote": "Anger may ignite any of them, while none requires that anger to persist.",
+      "judgment": "Sharp definitional work in Chapter 1 that sets up the whole argument."
+    },
+    {
+      "quote": "On 399 BCE, Socrates was tried at Athens, convicted by the jurors, sentenced to death, and told them...",
+      "judgment": "Ungrammatical and mechanical; nearly every chapter ends with this same bolted-on dated-fact-plus-citation sentence."
+    },
+    {
+      "quote": "By his own account, Amakusa Shiro became a symbolic leader for the insurgents, but surviving sources turn him quickly into an enemy to be destroyed.",
+      "judgment": "Incoherent attribution (no such account exists, and the clause contradicts the next); a residue of unedited generation."
+    },
+    {
+      "quote": "The Portuguese attack seized the office that controlled the port and attached its revenue to a new external power, introducing religious hostility into a peaceful commercial world.",
+      "judgment": "Contradicts the surrounding paragraphs, which have just argued the Swahili coast was neither peaceful nor purely commercial."
+    },
+    {
+      "quote": "He placed killing among inherited forms of kingship, ritual obligation, dynastic memory, and sacred exchange.",
+      "judgment": "Dangling pronoun with no referent in the preceding sentences; sentence-level polish lapses recur at chapter joints."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The same thesis is restated in near-identical wording at the close of nearly every section, producing a recap loop across 55,000 words: violence is enabled by offices, not temperament.",
+      "instances": [
+        "Violence became larger because administration made it repeatable.",
+        "The weapon travelled across these worlds, but the institution pointed it."
+      ]
+    },
+    {
+      "pattern": "Chapter architecture is templated: opening set-piece scene, then a numbered or listed catalogue of evidence types/instruments, then a two-case comparison, then an epistemic-limits passage, then a formulaic dated closing sentence with a source.",
+      "instances": [
+        "The archaeological record offers a deliberate catalogue of signs, each useful when joined to the others.",
+        "The gunpowder state can be read as a catalogue of dependencies."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis as the default sentence engine ('not X but Y' / 'the difference lay in'), used so often that comparisons stop registering as insight.",
+      "instances": [
+        "The contrast is not between peaceful Catalhoyuk and warlike Jericho.",
+        "The contrast is not between a violent Jamaica and a peaceful Guiana."
+      ]
+    },
+    {
+      "pattern": "Symmetrical hedging that concedes and re-concedes the same limits of evidence, often twice within a page.",
+      "instances": [
+        "The bones establish the breadth of the killing more securely than its purpose.",
+        "Osteology can establish violence more securely than motive."
+      ]
+    },
+    {
+      "pattern": "Uniform paragraph shape: four to six declarative sentences of similar length, ending on a short summarising clause, with almost no variation in rhythm, no digression, and few connectives between paragraphs.",
+      "instances": [
+        "The grave is a decision about the dead. It says that these bodies belonged together, though it does not say whether they died together.",
+        "The weapon became part of an inventory before it became an instrument of violence."
+      ]
+    }
+  ],
+  "summary": "This is a serious, well-informed comparative history of organised aggression whose single argument - that anger is universal while institutions decide what anger can do - is stated clearly in Chapter 1 and defended with genuinely specific evidence from Talheim to Cartagena. Its strengths are real: unusually concrete case material, honest handling of what bones, monuments, inscriptions and colonial archives can and cannot support, and a sober, consistent authorial voice that resists both moralising and the usual generative-prose tics of diction. The weaknesses are structural rather than verbal. Every chapter is built on the same template (scene, catalogue, paired comparison, limits caveat, bolted-on dated closing sentence), the thesis is restated in near-identical phrasing dozens of times, and the paragraph rhythm almost never varies, so the middle chapters - especially the gunpowder chapter - read as accumulation rather than argument. Sentence-level lapses cluster at chapter seams: dangling pronouns, a claim about the Swahili coast that contradicts its own paragraph, an ungrammatical 'On 399 BCE', and closing citations that read as apparatus rather than prose. With aggressive cutting for redundancy, varied chapter architecture, and a pass over the seams, it would be a strong book; as it stands it needs moderate revision."
+}

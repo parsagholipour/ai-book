@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 7,
+    "clarity": 8,
+    "voice": 6,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.2,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Human aggressiveness supplies the underlying physical capacity to inflict harm, but institutions, technologies, and social identities determine when that capacity is activated, whom it targets, and how far it reaches.",
+      "judgment": "The book's controlling thesis, stated early, precisely, and genuinely honored by every subsequent chapter."
+    },
+    {
+      "quote": "Bone records only the impacts that strike with sufficient blunt force to fracture the cranium or bite deeply enough into bone to score its mineral matrix, leaving the soft-tissue trauma that ended many ancient lives invisible to the osteologist.",
+      "judgment": "Exemplary methodological self-restraint \u2014 the book repeatedly argues about what its evidence cannot show, which is rare and earns trust."
+    },
+    {
+      "quote": "The Reichsbahn charged the SS four pfennigs per track-kilometre for each adult passenger and two pfennigs for children under ten, while guards and children under four travelled free.",
+      "judgment": "Specificity doing argumentative work: the tariff schedule proves the bureaucratic-absorption claim better than any adjective could."
+    },
+    {
+      "quote": "How much of the apparent rise and fall of prehistoric conflict reflects genuine shifts in how human communities chose to organize their societies, and how much reflects only the accidental chemistry of the ground in which their dead were buried?",
+      "judgment": "A well-earned closing question \u2014 but the identical rhetorical-question closer recurs in at least four other chapters, blunting its force."
+    },
+    {
+      "quote": "Three miles north of Wadi Halfa on the eastern terrace of the Nile, Fred Wendorf and his excavation team spent the winter months of 1965 clearing sixty-one skeletons ... / On a low sandstone ridge rising above the eastern bank of the Nile, just north of Wadi Halfa ... Fred Wendorf's excavation team began clearing the drift sand ... in the winter of 1965.",
+      "judgment": "Chapters 1 and 2 open with near-identical retellings of the same excavation, with inconsistent trauma counts (twenty-one vs twenty-four vs over forty individuals) \u2014 the clearest structural defect in the book."
+    },
+    {
+      "quote": "The killings were brutal, but their structure was overtly legalistic. The participants saw themselves as magistrates of survival",
+      "judgment": "Genuinely sharp analysis: the September Massacres read as procedure rather than frenzy, which is the thesis proved on hard material."
+    },
+    {
+      "quote": "Norris Farms 36, Illinois: a fourteenth-century cemetery containing two hundred and sixty burials, where one-third of the skeletons show lethal trauma from triangular flint arrowheads",
+      "judgment": "Chapter 5 collapses for eleven consecutive paragraphs into a colon-headed museum catalogue with no connective reasoning \u2014 evidence stacked rather than argued."
+    },
+    {
+      "quote": "The ledger recorded thirty-four floggings that morning. It recorded no names.",
+      "judgment": "The book's best single sentence-pair: the argument compressed into a rhythm rather than restated."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The negation-then-substitution formula ('this was not spontaneous rage / it was an administrative operation'), used to pivot from vignette to analysis in essentially every chapter, often several times per chapter.",
+      "instances": [
+        "The ledger of the *Hannibal* did not record an outburst of spontaneous fury. The deaths on the crossing were produced by the institutional machinery of royal charters and maritime insurance",
+        "The violence at Jebel Sahaba was not an eruption of innate human bloodlust across an open landscape. It was the product of ecological confinement"
+      ]
+    },
+    {
+      "pattern": "A one-sentence standalone paragraph inserted as a hinge between long expository blocks, appearing dozens of times and giving the prose a metronomic long/short/long shape.",
+      "instances": [
+        "The system operated because every post, wagon, horse, and ration was measured against the physical limits of the steppe.",
+        "The villa on the Wannsee did not mark the start of the killings."
+      ]
+    },
+    {
+      "pattern": "Chapter architecture is identical throughout: dated archival vignette with named clerk and physical props \u2192 a straw counter-position attributed to 'a common line of reasoning' or 'an influential line of thought' \u2192 refutation by institutional evidence \u2192 paired regional comparison \u2192 a summarizing closer restating the thesis in new nouns.",
+      "instances": [
+        "A common line of reasoning treats aggression as an invariant biological constant operating across human history.",
+        "an influential line of thought maintains that the technological evolution of firearms was the fundamental engine of historical violence in this era"
+      ]
+    },
+    {
+      "pattern": "Two-region symmetrical comparisons used as the analytical engine, always resolving into a balanced antithesis rather than an asymmetric or messy verdict.",
+      "instances": [
+        "In Mesopotamia, ecological competition over finite water channels ... In Egypt, a unique riverine ecology enabled early political consolidation",
+        "Where the European powers were caught in an interstate competition that rewarded continuous tactical and technological expansion, the Tokugawa shogunate preserved its authority by freezing the social hierarchy"
+      ]
+    },
+    {
+      "pattern": "Section- and chapter-closing rhetorical questions that suspend rather than advance the argument, and are never answered.",
+      "instances": [
+        "If the violence of the trade was organized as an engine of profit, why did its administrators rely so consistently on rituals of terror that exceeded any simple economic need to preserve their human property?",
+        "Does modern counterinsurgency inevitably consume the legal foundations of the state that deploys it, or can an irregular conflict be contained through administrative reform and selective force?"
+      ]
+    }
+  ],
+  "summary": "This is a substantial, unusually well-evidenced global history of organized violence, built on a clear and consistently applied thesis: biology supplies the capacity for harm while institutions decide its scale, targets and reach. Its greatest strength is granular specificity \u2014 ration tallies, tariff rates, statute clauses, named clerks \u2014 deployed as argument rather than decoration, together with an honest recurring account of what skeletal, epigraphic and archival records cannot support. The macro-structure is sound and chronologically coherent, though Chapters 1 and 2 duplicate the Jebel Sahaba excavation with conflicting figures, and Chapter 5 degenerates into an undigested catalogue of sites. The prose is precise and often excellent at sentence level, but the voice is uniformly impersonal and the book leans hard on a small set of moves: the 'not rage, but administration' antithesis, the one-line hinge paragraph, the straw counter-position, the symmetrical two-region comparison, and the unanswered closing question. Those tics are the main source of its templated feel; engagement and pacing suffer most, since every chapter arrives with the same rhythm and lands on the same restated conclusion. With the duplicate opening resolved, Chapter 5 rewritten as prose, and the antithesis formula thinned by half, this would be close to publishable."
+}

@@ -1,5 +1,6 @@
 import type { ChapterWordBudget } from "./composedChapter.js";
-import type { ChapterEpisode, DossierExcerpt } from "../schemas/episodes.js";
+import type { ChapterEpisode, ChapterFocus, DossierExcerpt, CaseEvidencePacket } from "../schemas/episodes.js";
+import { CASE_EVIDENCE_WRITER_RULES } from "./caseEvidence.js";
 
 /**
  * Material-first, as the writer sees it: the contract it writes under, the
@@ -13,9 +14,40 @@ export type ComposeContract = "grounded" | "creative";
 export type ChapterMaterial = {
   episodes: readonly ChapterEpisode[];
   excerpts: readonly DossierExcerpt[];
+  evidencePackets?: readonly CaseEvidencePacket[] | undefined;
   /** The opening scene, composed by `composeScene` before the chapter and printed ahead of it. */
   scene?: { text: string; words: number; episodeTitle: string } | undefined;
+  /** Episodes whose full treatment belongs to another chapter: named so the writer refers to them rather than retelling them. */
+  reservedCases?: ReadonlyArray<{ chapterIndex: number; episodes: ReadonlyArray<Pick<ChapterEpisode, "title" | "person" | "place" | "date" | "document">> }> | undefined;
+  /** The chapter's own explanatory question, planned with its episodes: with one, the chapter writes from it and not from the book's thesis. */
+  focus?: ChapterFocus | undefined;
 };
+
+/** The routing line for `reservedCases`: nothing when no other chapter owns a case. */
+export function caseReservationLines(options: { material?: ChapterMaterial | undefined }): string[] {
+  if (!options.material?.reservedCases?.length) return [];
+  return [
+    "reservedCases names episodes whose full treatment belongs to another chapter. Refer to them only briefly when a comparison adds something this chapter needs; do not narrate them again. Develop the mechanisms, decisions, consequences and source details of this chapter's own episodes instead."
+  ];
+}
+
+/**
+ * The chapter's focus as the writer and the editor see it: the question, the
+ * concrete things to work out, and what the reader already knows. Nothing when
+ * the chapter has no focus.
+ */
+export function chapterFocusLines(options: { material?: ChapterMaterial | undefined }): string[] {
+  const focus = options.material?.focus;
+  if (!focus) return [];
+  return [
+    `This chapter investigates: ${focus.question}`,
+    // An empty contribution is no assigned payoff at all: the plan contract
+    // blanks one that was a distinction between two readings, and a distinction
+    // handed to the writer as the chapter's payoff is performed in every paragraph.
+    `Develop these concrete questions from its material, carrying each explanation far enough to show its parts: ${focus.investigation.join(" | ")}.${focus.contribution.trim() ? ` The new contribution is ${focus.contribution}; earn it through the chapter rather than announcing or repeating it.` : ""}`,
+    `Already established for this reader: ${focus.alreadyEstablished.join(" | ") || "Nothing yet"}. Start from that knowledge. Keep every paragraph doing new work on this chapter's question; the broad thesis is not an additional conclusion to attach to each example. Source qualification belongs where it changes an inference, once, not after every observation.`
+  ];
+}
 
 /**
  * The creative contract's rules, in place of the grounded factuality rule and
@@ -30,7 +62,24 @@ export const CREATIVE_CONTRACT_RULES = [
 export const CREATIVE_RECONSTRUCTION_RULE =
   "A scene may be told as it happened: a named person in a named place on a day, with what they saw, said and did, reconstructed from what the record makes likely. Where you reconstruct rather than report, let the grammar say so once — \"would have\", \"by his own account\", \"as the register has it\" — and then tell it plainly. Never present an invented person as a real one; a type (\"a clerk of the customs house\") is named as a type.";
 
+/** In place of the creative reconstruction rule for a focused nonfiction chapter: three blind readers found invented particulars in every scene opening. */
+export const FOCUSED_RECONSTRUCTION_RULE =
+  "When narrating a real event, use only actions and descriptions supported by a supplied passage for scene-level details. Do not invent dialogue, private thoughts, remembered objects, gestures or sensory effects. General historical knowledge can supply contextual facts and explanation, but a plausible detail is not a witnessed fact. If the record supports only a short account, write that account and continue the chapter’s explanation.";
+
 export type ComposedChapterText = { markdown: string; words: number; attempts: number };
+
+/**
+ * In place of the shape rules and the per-section form quotas for a focused
+ * nonfiction chapter: three readers found every chapter doing a three-case
+ * tour, source caveats, then a comparative recap. Positive rules only; the
+ * structure follows the investigation and the weight of its evidence.
+ */
+export function focusedProgressionLines(): string[] {
+  return [
+    "Let the reader follow the people, events, documents and reasoning far enough to understand what happened and why. Keep consequential sequences together; explain a mechanism where its result becomes puzzling, and introduce a comparison where it changes the answer.",
+    "Use the chapter's full word budget for substantive development. A paragraph advances the account with an event, decision, evidence, inference or consequence. Write paragraphs and sentences at the length that work needs; a short turn does not need an aphorism or an explanatory recap."
+  ];
+}
 
 
 /** The chapter's budget less the scene already written for it. */
@@ -46,6 +95,20 @@ export function remainingBudget(budget: ChapterWordBudget, sceneWords: number): 
 }
 
 /**
+ * System lines for the editor pass. The editor needs the case evidence rules,
+ * case reservations and the chapter's focus, but not the compose-time
+ * opening-scene instructions that materialLines() adds.
+ */
+export function materialEditLines(options: { material?: ChapterMaterial | undefined }): string[] {
+  return [
+    ...chapterFocusLines(options),
+    ...(options.material?.focus ? [FOCUSED_RECONSTRUCTION_RULE] : []),
+    ...(options.material?.evidencePackets?.length ? CASE_EVIDENCE_WRITER_RULES : []),
+    ...caseReservationLines(options),
+  ];
+}
+
+/**
  * Material-first: the writer's lines about the chapter's episodes, its
  * dossier and the scene already written. Content assignments per chapter,
  * never a shape rule, and named in the payload keys (`episodes`, `dossier`,
@@ -53,10 +116,16 @@ export function remainingBudget(budget: ChapterWordBudget, sceneWords: number): 
  */
 export function materialLines(options: { material?: ChapterMaterial | undefined }): string[] {
   const material = options.material;
-  if (!material || material.episodes.length === 0) return [];
+  if (!material) return [];
   const lines = [
-    "This chapter is built from the episodes in `episodes`: each is a person, a place, a date and a document from the record, and the chapter's sections are made from them — an episode told in time, a document read closely, a figure worked through — with the argument arising from the material rather than the material illustrating the argument. Give each episode a real stretch of the chapter, not a mention."
+    material.focus
+      ? "episodes is the material available for this chapter, not a checklist of equally long case studies. Follow the investigation through the material that answers it. Give a consequential sequence, a difficult explanation or a revealing passage the space it needs; a supporting case can enter briefly. Each return to an episode must add an event, evidence or inference, not repeat its earlier conclusion. The chapter need not end by comparing or re-listing its cases."
+      : "This chapter is built from the episodes in `episodes`: each is a person, a place, a date and a document from the record, and the chapter's sections are made from them — an episode told in time, a document read closely, a figure worked through — with the argument arising from the material rather than the material illustrating the argument. Give each episode a real stretch of the chapter, not a mention."
   ];
+  if (material.episodes.length === 0) lines.length = 0;
+  lines.push(...chapterFocusLines(options));
+  lines.push(...caseReservationLines(options));
+  if (material.evidencePackets?.length) lines.push(...CASE_EVIDENCE_WRITER_RULES);
   if (material.excerpts.length > 0) {
     lines.push(
       "`dossier` holds verbatim passages from primary sources, each with the document it comes from. Quote from them — a phrase, a sentence, up to a whole passage — with quotation marks and the document named, wherever a passage says something better than you could; these are the only words you put quotation marks around. Paraphrase the rest of what they say freely."
@@ -72,7 +141,7 @@ export function materialLines(options: { material?: ChapterMaterial | undefined 
 
 export function materialPayload(options: { material?: ChapterMaterial | undefined }) {
   const material = options.material;
-  if (!material || material.episodes.length === 0) return {};
+  if (!material) return {};
   return {
     episodes: material.episodes.map((episode) => ({
       title: episode.title,
@@ -83,6 +152,16 @@ export function materialPayload(options: { material?: ChapterMaterial | undefine
       document: episode.document,
       why: episode.why
     })),
+    ...(material.focus ? { focus: material.focus } : {}),
+    ...(material.reservedCases?.length
+      ? {
+          reservedCases: material.reservedCases.map((entry) => ({
+            chapterIndex: entry.chapterIndex,
+            episodes: entry.episodes.map(({ title, person, place, date, document }) => ({ title, person, place, date, document }))
+          }))
+        }
+      : {}),
+    ...(material.evidencePackets?.length ? { caseEvidence: material.evidencePackets } : {}),
     ...(material.excerpts.length > 0
       ? {
           dossier: material.excerpts.map((excerpt) => ({
@@ -98,4 +177,3 @@ export function materialPayload(options: { material?: ChapterMaterial | undefine
     ...(material.scene ? { openingScene: material.scene.text } : {})
   };
 }
-

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 7,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 5
+  },
+  "overall": 7.3,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The forensic record narrows possibilities; it does not turn possibilities into motives.",
+      "judgment": "A precise early statement of the book’s governing discipline: evidence constrains explanation without completing it."
+    },
+    {
+      "quote": "Discussion does not make the policy peaceful; it organises the path by which force will be used.",
+      "judgment": "This compact formulation lucidly connects deliberation to institutional violence without confusing procedure with restraint."
+    },
+    {
+      "quote": "Confirmation of an act does not validate the category through which a conqueror explained an entire society.",
+      "judgment": "An incisive distinction between factual corroboration and the ideological interpretation placed upon it."
+    },
+    {
+      "quote": "An army can be too large for its treasury and still be powerful enough to take from the countryside.",
+      "judgment": "Specific causal compression gives the fiscal argument force while keeping the civilian consequence visible."
+    },
+    {
+      "quote": "Violence could open a corridor, but it could not by itself maintain the road.",
+      "judgment": "A memorable synthesis of the book’s thesis about conquest and administration, though it exemplifies the manuscript’s repeated aphoristic closers."
+    },
+    {
+      "quote": "The categories overlap without collapsing.",
+      "judgment": "Clear in isolation, but representative of a recurring abstract formula that is reiterated more often than the argument requires."
+    },
+    {
+      "quote": "A policy can be clear in destination while incomplete in procedure.",
+      "judgment": "A valuable analytical distinction, but the polished maxim risks making a complex evidentiary judgment sound more settled than its support."
+    },
+    {
+      "quote": "The evidence of refusal is thinner than the evidence of obedience.",
+      "judgment": "A strong methodological caution that corrects any easy celebration of agency and acknowledges the archive’s asymmetry."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Chapters conclude subsections with polished antithetical maxims that clarify the thesis but become predictable.",
+      "instances": [
+        "The forensic record narrows possibilities; it does not turn possibilities into motives.",
+        "Violence could open a corridor, but it could not by itself maintain the road."
+      ]
+    },
+    {
+      "pattern": "The prose repeatedly distinguishes what evidence can establish from the interpretive category imposed upon it.",
+      "instances": [
+        "The document remains useful when its evidence is not confused with its verdict.",
+        "The evidence does not permit a choice between the gun and the state."
+      ]
+    },
+    {
+      "pattern": "Administrative records are treated as active components of coercion rather than passive descriptions.",
+      "instances": [
+        "The paper helped determine whether violence would be rewarded, beyond merely describing it.",
+        "Administrative language made continuity possible even when the men who had entered the attack had not survived."
+      ]
+    },
+    {
+      "pattern": "Paired identities compress institutional contradictions into balanced formulations.",
+      "instances": [
+        "The army is both employer and predator.",
+        "Naram-Sin’s kingship was personal and bureaucratic at once."
+      ]
+    },
+    {
+      "pattern": "Late-chapter questions preserve uncertainty but recur as a conspicuous structural device.",
+      "instances": [
+        "Does ideology organise fear, or does repeated danger make an ideology seem true?",
+        "Can the two cases be compared without making one the standard for the other?"
+      ]
+    }
+  ],
+  "summary": "The manuscript sustains a coherent and persuasive thesis: aggression becomes historically consequential through institutions that classify, organise, transmit, and remember violence. Its chronological architecture is strong, and the comparative case studies repeatedly distinguish evidence, policy, implementation, consequence, and agency with unusual care. The main weakness is accumulation: chapters often rerun the same administrative mechanism and close sections with similarly balanced maxims, slowing the argument and making the voice feel templated despite substantial historical specificity. Moderate revision should cut recap loops, vary argumentative cadence, and qualify a few polished causal claims whose certainty exceeds the support supplied within the text."
+}

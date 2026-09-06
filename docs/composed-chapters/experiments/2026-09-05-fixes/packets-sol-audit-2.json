@@ -1,0 +1,27 @@
+[
+  {
+    "sampleId": "R1",
+    "usable": false,
+    "defects": [
+      {
+        "dimension": "case relevance",
+        "quote": "The resulting fashionable ideas concerning precivilized warfare are the products of discrimination, then, not ignorance or prevarication.",
+        "reason": "The episode title identifies the case as war before agriculture, but neither passage discusses agriculture or limits the compared societies to a preagricultural setting. The passages concern precivilized, primitive, prehistoric, and non-Western warfare more broadly, so the title adds an unsupported defining feature to the case."
+      }
+    ],
+    "summary": "Substantive defect: the episode title narrows the case to war before agriculture without passage support. The why and all seven claims otherwise accurately attribute Keeley's arguments, preserve the comparative scope and qualifications, and are fully entailed. The empty sequence is appropriate because the passages provide conclusions rather than a chronology. No separate harmless metadata edit is needed."
+  },
+  {
+    "sampleId": "R2",
+    "usable": false,
+    "defects": [
+      {
+        "dimension": "event chronology",
+        "claimId": "c4",
+        "quote": "should at least have the Olympic victor\u2019s reward of maintenance in the Prytaneum. Or why should he propose any counter-penalty when he does not know whether death, which Anytus proposes, is a good or an evil?",
+        "reason": "The sequence puts c5 before c4, but the summarized penalty proceeding presents the Prytaneum proposal first and then Socrates' reflection that he does not know whether death is good or evil. This is an order of the underlying proposals and reasoning, not merely paragraph or reporting order."
+      }
+    ],
+    "summary": "Substantive defect: the sequence reverses c4 and c5. The seven individual claims otherwise preserve Jowett's attribution and are entailed by the passage, including the uncertainty about death and the final bracketed condemnation. The unknowns properly limit charges, votes, dialogue, motives, date, and place. No separate harmless metadata edit is needed."
+  }
+]

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 5
+  },
+  "overall": 6.8,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The sabres belonged to individual riders. The decision to put riders among the crowd belonged to an office.",
+      "judgment": "The book's controlling idea stated with unusual economy; a genuinely good thesis sentence early."
+    },
+    {
+      "quote": "The axe is evidence of capacity. The grave's arrangement is evidence of action. Neither identifies the authority that ordered the attack.",
+      "judgment": "Exemplary evidentiary discipline, but also the book's most repeated rhetorical shape: a paired antithesis capped by a negation."
+    },
+    {
+      "quote": "Scarcity could make contact dangerous, but it did not aim an arrow.",
+      "judgment": "Sharp, memorable, and a fair rebuke to environmental determinism; among the strongest lines in the book."
+    },
+    {
+      "quote": "A sheep became a line in an account before it became meat in a kitchen or an offering at an altar.",
+      "judgment": "Concrete and well-earned; the Ur III chapter is the book at its most specific and least templated."
+    },
+    {
+      "quote": "The Girsu workers' village preserved ration lists in which barley was issued by status and task, while dependent-labour records tied food to assigned work...",
+      "judgment": "A terminal citation-stub that ends the chapter; several chapters close on these flat, unintegrated source summaries rather than on an argument."
+    },
+    {
+      "quote": "The King was forced to beg in the molt humble terms to have his beard ſaved, and after three days delay it was _ - The Queen req requeſte",
+      "judgment": "Uncorrected OCR garbage used as a chapter epigraph; a visible production defect on the page a reader meets first."
+    },
+    {
+      "quote": "Did the yam restrain predation by replacing improvised requisition with a schedule, or did it extend predation by making requisition permanent and imperial?",
+      "judgment": "The book's habitual pivot: pose a two-sided question, decline to answer, declare it open. Effective once, deadening by the fifth chapter."
+    },
+    {
+      "quote": "Violence opened the process; paperwork made it durable.",
+      "judgment": "A crisp aphorism, but essentially the same sentence the book has already written in a dozen other costumes."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Rigid chapter template: cinematic set-piece opener, two paired case studies, an explicit 'the difference lies in...' comparison paragraph, a catalogue of material indicators, an open question, then a citation-stub last line.",
+      "instances": [
+        "Henry Hunt stood on a chair in St Peter's Field at noon on Monday, 16 August 1819, holding his hat in one hand.",
+        "The ram struck the lower wall of Lachish just after sunrise, and the sound came back from the stone houses inside the city."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis used as a paragraph closer, almost always two clauses balanced across a semicolon or full stop.",
+      "instances": [
+        "One ruler made terror a language of sovereignty; the other made remorse part of the sovereign's public identity.",
+        "The first record reveals the expansion of a judicial office. The second reveals conflict distributed through social ties."
+      ]
+    },
+    {
+      "pattern": "The 'X can do A; it cannot do B' negation formula, deployed to gesture at epistemic humility.",
+      "instances": [
+        "Such evidence can clarify pressure. It cannot issue a command.",
+        "The soil preserves outcomes, not a scale on which all societies can be placed."
+      ]
+    },
+    {
+      "pattern": "Rhetorical question as section hinge, frequently followed by an explicit refusal to answer ('the question remains open').",
+      "instances": [
+        "What disappears when the record is thin?",
+        "What kind of violence follows when people must move to survive but the state profits from keeping them in place?"
+      ]
+    },
+    {
+      "pattern": "The single thesis restated in near-identical wording across every chapter, so that later chapters read as fresh cases attached to an already-settled conclusion.",
+      "instances": [
+        "Violence reached both societies through offices, households, armies, and claims upon land.",
+        "Commands, borders, records, and economic demands gave aggression a durable structure."
+      ]
+    }
+  ],
+  "summary": "This is a serious, disciplined world history of organised violence built on one clear and well-sustained argument: aggression acquires reach not from anger but from offices, records, classification and supply. The specificity is genuinely impressive across fifteen chapters and five continents, and the epistemic manners are unusually good, with the book repeatedly marking what a skull, a tablet, a relief or a commission report cannot establish. Prose is clear and precise, and the lexical markers of AI writing are largely absent. What weakens it is shape rather than substance: every chapter runs the same template, the thesis is restated so often that the later chapters feel like appendices, and the argument's characteristic move is a paired antithesis capped by a negation, repeated hundreds of times. Several chapters end on unintegrated citation stubs, some paragraphs are visibly fused, and at least one epigraph is uncorrected OCR noise. A firm structural edit, cutting perhaps a fifth of the restatement and varying the chapter architecture, would raise this considerably."
+}

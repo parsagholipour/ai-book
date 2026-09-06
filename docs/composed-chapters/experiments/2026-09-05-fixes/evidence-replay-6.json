@@ -1,0 +1,692 @@
+{
+  "runId": "evidence-replay-6-1788586517515",
+  "results": [
+    {
+      "attempt": "development-1a",
+      "caseId": "case-6-2",
+      "title": "The First Crusade at Jerusalem",
+      "expectedIdentity": true,
+      "rebuilt": {
+        "packet": {
+          "id": "case-6-2",
+          "sourceChapterIndex": 6,
+          "episode": {
+            "title": "The First Crusade at Jerusalem",
+            "kind": "scene",
+            "person": "Unknown author of The Greek and Eastern Churches",
+            "place": "Jerusalem",
+            "date": "1099–1100",
+            "document": "The Greek and Eastern Churches, Part 1, Division 2, Chapter 7",
+            "why": "The chapter narrates the First Crusade's advance to Jerusalem, the city's capture, the Crusaders' religious procession, successor leadership, return, and political relations with the Greek emperor.",
+            "searchQueries": []
+          },
+          "claims": [
+            {
+              "id": "c1",
+              "text": "The main Crusader army proceeded to Antioch, which fell after a fearful siege in which both sides suffered very heavily, according to the passage.",
+              "kind": "event",
+              "excerptIds": [
+                "ch6-x2"
+              ]
+            },
+            {
+              "id": "c2",
+              "text": "Jerusalem was surrounded, besieged, and taken on July 15, 1099, according to the passage.",
+              "kind": "event",
+              "excerptIds": [
+                "ch6-x2"
+              ]
+            },
+            {
+              "id": "c3",
+              "text": "After Jerusalem was taken, the Crusaders made their way with lighted torches to the Holy Sepulchre among scenes of blood, according to the passage.",
+              "kind": "event",
+              "excerptIds": [
+                "ch6-x2"
+              ]
+            },
+            {
+              "id": "c4",
+              "text": "Part of the supposed cross was recovered and borne with singing in procession to \"the temple,\" according to the passage.",
+              "kind": "event",
+              "excerptIds": [
+                "ch6-x2"
+              ]
+            },
+            {
+              "id": "c5",
+              "text": "Godfrey of Bouillon was elected king of Jerusalem; although he declined the title as unworthy, he accepted actual rule, according to the passage.",
+              "kind": "fact",
+              "excerptIds": [
+                "ch6-x3"
+              ]
+            },
+            {
+              "id": "c6",
+              "text": "Godfrey of Bouillon died the next year, according to the passage.",
+              "kind": "event",
+              "excerptIds": [
+                "ch6-x3"
+              ]
+            },
+            {
+              "id": "c7",
+              "text": "After Godfrey died, his brother Baldwin was summoned from Edessa to succeed him and was crowned at Bethlehem in 1100, according to the passage.",
+              "kind": "event",
+              "excerptIds": [
+                "ch6-x3"
+              ]
+            },
+            {
+              "id": "c8",
+              "text": "The mass of surviving Crusaders returned home after accomplishing the end of their vow, according to the passage.",
+              "kind": "event",
+              "excerptIds": [
+                "ch6-x4"
+              ]
+            }
+          ],
+          "sequence": [],
+          "disagreements": [],
+          "unknowns": [
+            "The passages do not establish the detailed experiences, words, motives, or actions of noncombatants during the capture of Jerusalem.",
+            "The passages do not establish precise casualty numbers or the number of people involved in the siege and capture of Jerusalem, although they state that both sides suffered very heavily at Antioch.",
+            "The passages do not establish the precise sequence of military actions within the siege beyond stating that Jerusalem was surrounded, besieged, and taken on July 15, 1099.",
+            "The passages do not establish whether the reported recovery of the supposed cross was historically verified."
+          ],
+          "excerpts": [
+            {
+              "id": "ch6-x1",
+              "chapterIndex": 6,
+              "episodeTitle": "The First Crusade at Jerusalem",
+              "documentTitle": "The Greek and Eastern Churches/Part 1/Division 2/Chapter 7",
+              "documentUrl": "https://en.wikisource.org/wiki/The_Greek_and_Eastern_Churches%2FPart_1%2FDivision_2%2FChapter_7",
+              "host": "wikisource",
+              "author": "",
+              "year": "",
+              "speaker": "Unknown author of The Greek and Eastern Churches",
+              "text": "Peter and his horde of peasants were too impatient to wait for the lords and knights who were coming together in military array. Without any organisation or commissariat the simple multitude set out for their tremendous walk in the spring of the year 1096. After they had crossed Austria and passed the confines of civilisation, they still had 600 miles of forest and wilderness to traverse in Hungary and Bulgaria before they could reach Constantinople. They came on like a swarm of locusts eating up the countries they passed through. We can neither blame them nor the people of these lauds when we see that raids of hunger provoked retaliation and slaughter. The multitude was divided into two parts for better provisioning—half under Peter, and half under another leader, Walter the Penniless. They were in a pitiable plight when they reached Thrace, and all might have perished if the Emperor Alexius had not sent to rescue them. We can understand with what disgust the citizens of Constantinople viewed the approach of the ragged host. Alexius was glad to ship them across the Bosphorus as quickly as possible. There they would have been killed outright, if it had not been for the",
+              "words": 201
+            },
+            {
+              "id": "ch6-x2",
+              "chapterIndex": 6,
+              "episodeTitle": "The First Crusade at Jerusalem",
+              "documentTitle": "The Greek and Eastern Churches/Part 1/Division 2/Chapter 7",
+              "documentUrl": "https://en.wikisource.org/wiki/The_Greek_and_Eastern_Churches%2FPart_1%2FDivision_2%2FChapter_7",
+              "host": "wikisource",
+              "author": "",
+              "year": "",
+              "speaker": "Unknown author of The Greek and Eastern Churches",
+              "text": "In August a more regular army followed, under Hugh the Great, Count of Vermandois; Robert of Normandy, the eldest son of William the Conqueror; Stephen of Chartres, said to own as many castles as there are days of the year; Raymond of many titles; Bohemond, son of Robert Guiscard; Tancred, the perfect knight of chivalry celebrated in Tasso 's poem; but, above all, Godfrey of Bouillon, Duke of Lorraine, a man who combined a spirit of genuine, unselfish religious devotion with the talents of a great general. Even this army was ill-organised under its several leaders, and the undisciplined footmen immensely outnumbered the knights on horseback. Like the ragged regiments of their precursors, these troops also came through Germany and Hungary, and were admitted into Constantinople with fear and suspicion. Crossing the Hellespont, they defeated the Turks at Nicæa. Then they divided. One body struck off east under Baldwin and conquered Edessa. The main army proceeded to Antioch, which fell after a fearful siege, both sides having suffered very heavily. [ 4 ] At length Jerusalem was surrounded, besieged, and taken (July 15, 1099). [ 5 ] Then, with lighted torches, but still among scenes of blood, the Crusaders made their way to the goal of their difficult undertaking—the Holy Sepulchre. Part of the supposed cross, still contained in its silver casket, was recovered and borne with singing in procession to \"the temple.\" \"And all the people went after, which wept for pitie, as much as if they had seen the Saviour Jesus Christ still hanging on the Cross. They all held them for much recompense of a great treasure that our Lord had thus discovered.\"",
+              "words": 276
+            },
+            {
+              "id": "ch6-x3",
+              "chapterIndex": 6,
+              "episodeTitle": "The First Crusade at Jerusalem",
+              "documentTitle": "The Greek and Eastern Churches/Part 1/Division 2/Chapter 7",
+              "documentUrl": "https://en.wikisource.org/wiki/The_Greek_and_Eastern_Churches%2FPart_1%2FDivision_2%2FChapter_7",
+              "host": "wikisource",
+              "author": "",
+              "year": "",
+              "speaker": "Unknown author of The Greek and Eastern Churches",
+              "text": "Godfrey of Bouillon was elected king of Jerusalem; and, though he declined the honour of the title as unworthy to hold it, he accepted the actual rule. [ 7 ] Godfrey died the next year, and his brother Baldwin, when summoned from Edessa to succeed him, being less scrupulous, allowed himself to be crowned at Bethlehem ( a.d. 1100). Thus there was founded the Latin kingdom of Jerusalem.",
+              "words": 68
+            },
+            {
+              "id": "ch6-x4",
+              "chapterIndex": 6,
+              "episodeTitle": "The First Crusade at Jerusalem",
+              "documentTitle": "The Greek and Eastern Churches/Part 1/Division 2/Chapter 7",
+              "documentUrl": "https://en.wikisource.org/wiki/The_Greek_and_Eastern_Churches%2FPart_1%2FDivision_2%2FChapter_7",
+              "host": "wikisource",
+              "author": "",
+              "year": "",
+              "speaker": "Unknown author of The Greek and Eastern Churches",
+              "text": "The sequel is an anti-climax. Having accomplished the end of their vow, the mass of the surviving Crusaders returned home, and the leaders who remained in charge of the chief cities that had been captured—Jerusalem, Antioch, and Edessa—found to their dismay that they were left stranded, like shipwrecked sailors on three desert islands. Both politically and ecclesiastically their position was altogether anomalous. They had formally submitted to the Greek emperor as the condition of being permitted to pass through his territory; but in reality they showed him no fealty whatever, but behaved as foreign princes colonising a land that they had won by the sword. This was the political position. The ecclesiastical was not more satisfactory. They were now in the region of the Eastern Church; yet they owned allegiance to the pope, whose supremacy that Church did not recognise and who had denounced it as heretical. In the eyes of the patriarch of Constantinople the Crusaders were both schismatics and heretics. Their subsequent conduct did not lead the Greek Church to view them with favour; for they abandoned themselves to the pleasures and luxuries of Oriental life. A Latin patriarchate was founded at Jerusalem, with Dagobert, a haughty, ambitious prelate, as its first occupant, having four archbishoprics and a number of bishoprics under him.",
+              "words": 215
+            }
+          ],
+          "reviewVersion": 2
+        }
+      }
+    },
+    {
+      "attempt": "development-1a",
+      "caseId": "case-1-1",
+      "title": "The Trial of Socrates",
+      "expectedIdentity": true,
+      "rebuilt": {
+        "packet": {
+          "id": "case-1-1",
+          "sourceChapterIndex": 1,
+          "episode": {
+            "title": "Socrates' Conviction and Penalty Discussion in Plato's Apology",
+            "kind": "scene",
+            "person": "Socrates; Anytus",
+            "place": "",
+            "date": "",
+            "document": "E. D. Jowett's introduction to Plato's Apology",
+            "why": "The passage summarizes Socrates' conviction, Anytus's proposed death penalty, and Socrates' discussion of alternative penalties and their moral status.",
+            "searchQueries": [
+              "Plato Apology Jowett introduction penalty Prytaneum",
+              "Socrates Apology Anytus death penalty thirty minae"
+            ]
+          },
+          "claims": [
+            {
+              "id": "c1",
+              "text": "According to E. D. Jowett's summary of Plato's Apology, Socrates is convicted.",
+              "kind": "event",
+              "excerptIds": [
+                "ch1-x1"
+              ]
+            },
+            {
+              "id": "c2",
+              "text": "After Socrates is convicted, Anytus proposes death as the penalty.",
+              "kind": "event",
+              "excerptIds": [
+                "ch1-x1"
+              ]
+            },
+            {
+              "id": "c3",
+              "text": "In response to the proposed penalty, Socrates suggests that he should receive the Olympic victor's reward of maintenance in the Prytaneum.",
+              "kind": "event",
+              "excerptIds": [
+                "ch1-x1"
+              ]
+            },
+            {
+              "id": "c4",
+              "text": "Socrates says that he does not know whether death is a good or an evil.",
+              "kind": "fact",
+              "excerptIds": [
+                "ch1-x1"
+              ]
+            },
+            {
+              "id": "c5",
+              "text": "Socrates says that imprisonment and exile are evils.",
+              "kind": "interpretation",
+              "excerptIds": [
+                "ch1-x1"
+              ]
+            },
+            {
+              "id": "c6",
+              "text": "Socrates says that loss of money might be no evil, but that he has none to give.",
+              "kind": "fact",
+              "excerptIds": [
+                "ch1-x1"
+              ]
+            },
+            {
+              "id": "c7",
+              "text": "Socrates proposes that the penalty be one mina, or thirty minae if his friends wish, with his friends as securities.",
+              "kind": "event",
+              "excerptIds": [
+                "ch1-x1"
+              ]
+            },
+            {
+              "id": "c8",
+              "text": "The passage states that Socrates is condemned to death.",
+              "kind": "event",
+              "excerptIds": [
+                "ch1-x1"
+              ]
+            }
+          ],
+          "sequence": [],
+          "disagreements": [],
+          "unknowns": [
+            "The passage does not establish the details of the charges, the trial proceedings, the jury's vote, or the legal basis of the conviction.",
+            "The passage does not establish Socrates's motives, emotions, or private thoughts beyond the positions attributed to him in the summary.",
+            "The passage does not establish the exact wording of any dialogue by Anytus or Socrates beyond the summarized proposals and statements.",
+            "The passage does not establish whether Socrates was physically imprisoned, exiled, or executed."
+          ],
+          "excerpts": [
+            {
+              "id": "ch1-x1",
+              "chapterIndex": 1,
+              "episodeTitle": "Socrates' Conviction and Penalty Discussion in Plato's Apology",
+              "documentTitle": "Apology (Jowett)/Introduction",
+              "documentUrl": "https://en.wikisource.org/wiki/Apology_(Jowett)%2FIntroduction",
+              "host": "wikisource",
+              "author": "",
+              "year": "",
+              "speaker": "E. D. Jowett, summarizing Plato's Apology",
+              "text": "As he expected, and probably intended, he is convicted. And now the tone of the speech, instead of being more conciliatory, becomes more lofty and commanding. Anytus proposes death as the penalty: and what counter-proposition shall he make? He, the benefactor of the Athenian people, whose whole life has been spent in doing them good, should at least have the Olympic victor’s reward of maintenance in the Prytaneum. Or why should he propose any counter-penalty when he does not know whether death, which Anytus proposes, is a good or an evil? And he is certain that imprisonment is an evil, exile is an evil. Loss of money might be no evil, but then he has none to give; perhaps he can make up a mina. Let that be the penalty, or, if his friends wish, thirty minae; for which they will be excellent securities. [He is condemned to death.] He is an old man already,",
+              "words": 155
+            }
+          ],
+          "reviewVersion": 2
+        }
+      }
+    },
+    {
+      "attempt": "development-1a",
+      "caseId": "case-12-1",
+      "title": "The Armenian Deportations during World War I",
+      "expectedIdentity": true,
+      "rebuilt": {
+        "packet": {
+          "id": "case-12-1",
+          "sourceChapterIndex": 12,
+          "episode": {
+            "title": "The Armenian Deportations described by Morgenthau",
+            "kind": "document",
+            "person": "Henry Morgenthau Sr.",
+            "place": "Constantinople and the Ottoman interior",
+            "date": "",
+            "document": "Ambassador Morgenthau's Story, Chapter 25",
+            "why": "Morgenthau describes the arrest and deportation of Armenians, Talaat's stated security rationale, the policy's official adoption, and his own impressions of Talaat.",
+            "searchQueries": [
+              "Henry Morgenthau Ambassador's Story Chapter 25",
+              "Ambassador Morgenthau's Story Armenian deportations",
+              "Morgenthau memoir Armenian deportations"
+            ]
+          },
+          "claims": [
+            {
+              "id": "c1",
+              "text": "In early April, Ottoman authorities arrested about two hundred Armenians in Constantinople and sent them into the interior.",
+              "kind": "event",
+              "excerptIds": [
+                "ch12-x1"
+              ]
+            },
+            {
+              "id": "c2",
+              "text": "Many of the Armenians deported in early April were educational and social leaders or prominent figures in industry and finance, according to Morgenthau.",
+              "kind": "fact",
+              "excerptIds": [
+                "ch12-x1"
+              ]
+            },
+            {
+              "id": "c3",
+              "text": "Talaat told Morgenthau that the government was acting in self-defense because he feared Armenian leaders in Constantinople were corresponding with the Russians and might start an insurrection against the central government.",
+              "kind": "fact",
+              "excerptIds": [
+                "ch12-x1"
+              ]
+            },
+            {
+              "id": "c4",
+              "text": "Talaat said that sending the Armenians to Angora and other interior towns was the safest plan.",
+              "kind": "fact",
+              "excerptIds": [
+                "ch12-x1"
+              ]
+            },
+            {
+              "id": "c5",
+              "text": "Talaat denied that the deportations were part of a general concerted scheme to remove Constantinople's Armenian population and said that the Armenian masses in the city would not be disturbed.",
+              "kind": "fact",
+              "excerptIds": [
+                "ch12-x1"
+              ]
+            },
+            {
+              "id": "c6",
+              "text": "Every morning, uncoded cablegrams received in Constantinople were forwarded to Talaat, who read them before allowing them to continue to their destinations; Morgenthau wrote that ambassadors' cablegrams apparently were not exempt, while ciphered messages were not interfered with.",
+              "kind": "event",
+              "excerptIds": [
+                "ch12-x2"
+              ]
+            },
+            {
+              "id": "c7",
+              "text": "Morgenthau recorded the impression that Talaat was the most implacable enemy of the Armenians and that Talaat desired to crush them.",
+              "kind": "interpretation",
+              "excerptIds": [
+                "ch12-x2"
+              ]
+            },
+            {
+              "id": "c8",
+              "text": "Talaat told Morgenthau that the Union and Progress Committee had carefully considered the matter and officially adopted the policy being pursued, adding that the deportations resulted from prolonged and careful deliberation rather than a hasty decision.",
+              "kind": "fact",
+              "excerptIds": [
+                "ch12-x2"
+              ]
+            }
+          ],
+          "sequence": [],
+          "disagreements": [],
+          "unknowns": [
+            "The passages do not establish the year in which the stated early-April arrests and deportations occurred.",
+            "The passages do not establish the exact number of Armenians arrested or the total number deported.",
+            "The passages do not establish whether the deported Armenians reached or entered Angora or any other particular interior town.",
+            "The passages do not establish the full scope, duration, or subsequent consequences of the deportations.",
+            "The passages do not establish the identities of the arrested or deported Armenians beyond their described social prominence.",
+            "The passages do not establish Talaat's private motives beyond the explanations and impressions reported in the passages."
+          ],
+          "excerpts": [
+            {
+              "id": "ch12-x1",
+              "chapterIndex": 12,
+              "episodeTitle": "The Armenian Deportations described by Morgenthau",
+              "documentTitle": "Ambassador Morgenthau's Story/Chapter 25",
+              "documentUrl": "https://en.wikisource.org/wiki/Ambassador_Morgenthau's_Story%2FChapter_25",
+              "host": "wikisource",
+              "author": "",
+              "year": "",
+              "speaker": "Henry Morgenthau Sr.",
+              "text": "In early April the authorities arrested about two hundred Armenians in Constantinople and sent them into the interior. Many of those who were then deported were educational and social leaders and men who were prominent in industry and in finance. I knew many of these men and therefore felt a personal interest in their misfortunes. But when I spoke to Talaat about their expulsion, he replied that the Government was acting in self-defense. The Armenians at Van, he said, had already shown their abilities as revolutionists; he knew that these leaders in Constantinople were corresponding with the Russians and he had every reason to fear that they would start an insurrection against the Central Government. The safest plan, therefore, was to send them to Angora and other interior towns. Talaat denied that this was part of any general concerted scheme to rid the city of its Armenian population, and insisted that the Armenian masses in Constantinople would not be disturbed.",
+              "words": 160
+            },
+            {
+              "id": "ch12-x2",
+              "chapterIndex": 12,
+              "episodeTitle": "The Armenian Deportations described by Morgenthau",
+              "documentTitle": "Ambassador Morgenthau's Story/Chapter 25",
+              "documentUrl": "https://en.wikisource.org/wiki/Ambassador_Morgenthau's_Story%2FChapter_25",
+              "host": "wikisource",
+              "author": "",
+              "year": "",
+              "speaker": "Henry Morgenthau Sr.",
+              "text": "This statement was the literal truth. Every morning all uncoded cablegrams received in Constantinople were forwarded to Talaat, who read them, before consenting to their being forwarded to their destinations. Even the cablegrams of the ambassadors were apparently not exempt, though, of course, the ciphered messages were not interfered with. Ordinarily I might have protested against this infringement of my rights, but Talaat's engaging frankness about pilfering my correspondence and in even waving my own cablegrams in my face gave me an excellent opening to introduce the forbidden subject. But on this occasion, as on many others, Talaat was evasive and non-committal and showed much hostility to the interest which the American people were manifesting in the Armenians. He explained his policy on the ground that the Armenians were in constant correspondence with the Russians. The definite conviction which these conversations left upon my mind was that Talaat was the most implacable enemy of this persecuted race. \"He gave me the impression,\" such is the entry which I find in my diary on August 3d, \"that Talaat is the one who desires to crush the poor Armenians.\" He told me that the Union and Progress Committee had carefully considered the matter in all its details and that the policy which was being pursued was that which they had officially adopted. He said that I must not get the idea that the deportations had been decided upon hastily; in reality, they were the result of prolonged and careful deliberation.",
+              "words": 248
+            }
+          ],
+          "reviewVersion": 2
+        }
+      }
+    },
+    {
+      "attempt": "development-1a",
+      "caseId": "case-13-1",
+      "title": "The Wannsee Protocol",
+      "expectedIdentity": true,
+      "rebuilt": {
+        "packet": {
+          "id": "case-13-1",
+          "sourceChapterIndex": 13,
+          "episode": {
+            "title": "The Wannsee Protocol",
+            "kind": "document",
+            "person": "Reinhard Heydrich",
+            "place": "",
+            "date": "",
+            "document": "Wannsee Protocol",
+            "why": "The protocol records coordination among central offices, deportation measures, forced labor in the East, and the projected elimination of Jews through the final solution.",
+            "searchQueries": []
+          },
+          "claims": [
+            {
+              "id": "c1",
+              "text": "The Wannsee Protocol records that Heydrich reported the Reich Marshal had appointed him delegate for preparations for the final solution of the Jewish question in Europe.",
+              "kind": "event",
+              "excerptIds": [
+                "ch13-x1"
+              ]
+            },
+            {
+              "id": "c2",
+              "text": "The discussion was called to clarify fundamental questions and to initiate common action by all central offices immediately concerned with the final solution of the Jewish question in Europe.",
+              "kind": "fact",
+              "excerptIds": [
+                "ch13-x1"
+              ]
+            },
+            {
+              "id": "c3",
+              "text": "Between the takeover of power and 31 October 1941, 537,000 Jews were sent out of the country, according to the protocol.",
+              "kind": "fact",
+              "excerptIds": [
+                "ch13-x2"
+              ]
+            },
+            {
+              "id": "c4",
+              "text": "The Reichsführer-SS and Chief of the German Police prohibited Jewish emigration because of the dangers of emigration in wartime and the possibilities of the East.",
+              "kind": "event",
+              "excerptIds": [
+                "ch13-x2"
+              ]
+            },
+            {
+              "id": "c5",
+              "text": "The protocol states that, under proper guidance, Jews were to be allocated for appropriate labor in the East as part of the final solution.",
+              "kind": "interpretation",
+              "excerptIds": [
+                "ch13-x3"
+              ]
+            },
+            {
+              "id": "c6",
+              "text": "The protocol states that able-bodied Jews, separated according to sex, would be taken in large work columns to the East for road work, during which action a large portion would doubtless be eliminated by natural causes.",
+              "kind": "interpretation",
+              "excerptIds": [
+                "ch13-x3"
+              ]
+            },
+            {
+              "id": "c7",
+              "text": "The planned sequence was that Europe would be combed from west to east, with Germany proper including the Protectorate of Bohemia and Moravia handled first; the evacuated Jews would first be sent group by group to so-called transit ghettos and then transported to the East.",
+              "kind": "interpretation",
+              "excerptIds": [
+                "ch13-x3"
+              ]
+            }
+          ],
+          "sequence": [],
+          "disagreements": [],
+          "unknowns": [
+            "The passages do not establish the conference's exact date or location.",
+            "The passages do not identify all participants or describe any dialogue beyond Heydrich's reported statement.",
+            "The passages do not establish whether the projected measures described in the protocol were fully implemented, or when and how each measure was carried out.",
+            "The passages do not establish the identities of the central offices involved or the specific meaning of the phrase “treated accordingly.”"
+          ],
+          "excerpts": [
+            {
+              "id": "ch13-x1",
+              "chapterIndex": 13,
+              "episodeTitle": "The Wannsee Protocol",
+              "documentTitle": "Wannsee Protocol",
+              "documentUrl": "https://en.wikisource.org/wiki/Wannsee_Protocol",
+              "host": "wikisource",
+              "author": "",
+              "year": "",
+              "speaker": "Reinhard Heydrich, as recorded in the Wannsee Protocol",
+              "text": "At the beginning of the discussion Chief of the Security Police and of the SD, SS-Obergruppenführer Heydrich, reported that the Reich Marshal had appointed him delegate for the preparations for the final solution of the Jewish question in Europe and pointed out that this discussion had been called for the purpose of clarifying fundamental questions. The wish of the Reich Marshal to have a draft sent to him concerning organizational, factual and material interests in relation to the final solution of the Jewish question in Europe makes necessary an initial common action of all central offices immediately concerned with these questions",
+              "words": 101
+            },
+            {
+              "id": "ch13-x2",
+              "chapterIndex": 13,
+              "episodeTitle": "The Wannsee Protocol",
+              "documentTitle": "Wannsee Protocol",
+              "documentUrl": "https://en.wikisource.org/wiki/Wannsee_Protocol",
+              "host": "wikisource",
+              "author": "",
+              "year": "",
+              "speaker": "Wannsee Protocol",
+              "text": "In spite of these difficulties, 537,000 Jews were sent out of the country between the takeover of power and the deadline of 31 October 1941. Of these approximately 360,000 were in Germany proper on 30 January 1933 approximately 147,000 were in Austria (Ostmark) on 15 March 1939 approximately 30,000 were in the Protectorate of Bohemia and Moravia on 15 March 1939. The Jews themselves, or their Jewish political organizations, financed the emigration. In order to avoid impoverished Jews' remaining behind, the principle was followed that wealthy Jews have to finance the emigration of poor Jews; this was arranged by imposing a suitable tax, i.e., an emigration tax, which was used for financial arrangements in connection with the emigration of poor Jews and was imposed according to income. Apart from the necessary Reichsmark exchange, foreign currency had to presented at the time of landing. In order to save foreign exchange held by Germany, the foreign Jewish financial organizations were - with the help of Jewish organizations in Germany - made responsible for arranging an adequate amount of foreign currency. Up to 30 October 1941, these foreign Jews donated a total of around 9,500,000 dollars. In the meantime the Reichsführer-SS and Chief of the German Police had prohibited emigration of Jews due to the dangers of an emigration in wartime and due to the possibilities of the East.",
+              "words": 226
+            },
+            {
+              "id": "ch13-x3",
+              "chapterIndex": 13,
+              "episodeTitle": "The Wannsee Protocol",
+              "documentTitle": "Wannsee Protocol",
+              "documentUrl": "https://en.wikisource.org/wiki/Wannsee_Protocol",
+              "host": "wikisource",
+              "author": "",
+              "year": "",
+              "speaker": "Wannsee Protocol",
+              "text": "Under proper guidance, in the course of the final solution the Jews are to be allocated for appropriate labor in the East. Able-bodied Jews, separated according to sex, will be taken in large work columns to these areas for work on roads, in the course of which action doubtless a large portion will be eliminated by natural causes. The possible final remnant will, since it will undoubtedly consist of the most resistant portion, have to be treated accordingly, because it is the product of natural selection and would, if released, act as a the seed of a new Jewish revival (see the experience of history.) In the course of the practical execution of the final solution, Europe will be combed through from west to east. Germany proper, including the Protectorate of Bohemia and Moravia, will have to be handled first due to the housing problem and additional social and political necessities. The evacuated Jews will first be sent, group by group, to so-called transit ghettos, from which they will be transported to the East.",
+              "words": 174
+            }
+          ],
+          "reviewVersion": 2
+        }
+      }
+    },
+    {
+      "attempt": "development-1a-retry",
+      "caseId": "case-2-3",
+      "title": "War before agriculture in ethnographic comparison",
+      "expectedIdentity": true,
+      "rebuilt": {
+        "failure": "Case identity: the supporting anchors do not resolve to exact source passages"
+      }
+    },
+    {
+      "attempt": "development-1a-retry",
+      "caseId": "case-3-1",
+      "title": "The Standard Inscription of Gudea",
+      "expectedIdentity": false,
+      "rebuilt": {
+        "failure": "Case identity: The passage supports reports about Gudea, but does not identify the proposed Standard Inscription or Gudea's Cylinders; it is a secondary burial discussion."
+      }
+    },
+    {
+      "attempt": "development-1a-retry",
+      "caseId": "case-4-3",
+      "title": "The revolt of the Jews against Rome",
+      "expectedIdentity": true,
+      "rebuilt": {
+        "packet": {
+          "id": "case-4-3",
+          "sourceChapterIndex": 4,
+          "episode": {
+            "title": "Josephus's account of the Jewish revolt against Rome",
+            "kind": "scene",
+            "person": "Flavius Josephus",
+            "place": "Judaea and neighboring Syrian cities, including Scythopolis and Damascus",
+            "date": "",
+            "document": "The Life of Flavius Josephus",
+            "why": "Josephus describes attempted resistance, defeat under Gessius and Cestius, hopes of conquering the Romans, violence against Jews in Syrian cities, and his interpretation that necessity compelled the war.",
+            "searchQueries": [
+              "The Life of Flavius Josephus Wikisource",
+              "Flavius Josephus Life full text",
+              "Josephus Life Gessius Cestius Scythopolis"
+            ]
+          },
+          "claims": [
+            {
+              "id": "c1",
+              "text": "Josephus says that he tried to stop the tumultuous people, urged them to change their minds, and failed to persuade them.",
+              "kind": "event",
+              "excerptIds": [
+                "ch4-x3"
+              ]
+            },
+            {
+              "id": "c2",
+              "text": "Josephus states that Gessius, together with Cestius, was defeated and that many of those with him fell.",
+              "kind": "event",
+              "excerptIds": [
+                "ch4-x4"
+              ]
+            },
+            {
+              "id": "c3",
+              "text": "Josephus interprets the defeat of Gessius and Cestius as leading supporters of the war to hope that they would finally conquer the Romans.",
+              "kind": "interpretation",
+              "excerptIds": [
+                "ch4-x4"
+              ]
+            },
+            {
+              "id": "c4",
+              "text": "Josephus states that inhabitants of neighboring Syrian cities seized Jews living among them, along with their wives and children, and killed them despite their having made no attempt to revolt from the Romans or shown hatred or treacherous designs toward the Syrians.",
+              "kind": "event",
+              "excerptIds": [
+                "ch4-x4"
+              ]
+            },
+            {
+              "id": "c5",
+              "text": "At Scythopolis, according to Josephus, the inhabitants forced Jews living there to fight against Jewish attackers from outside.",
+              "kind": "event",
+              "excerptIds": [
+                "ch4-x4"
+              ]
+            },
+            {
+              "id": "c6",
+              "text": "According to Josephus, after the Jews at Scythopolis had helped defeat the attackers from outside, the inhabitants killed those Jewish fellow citizens and confederates, who numbered many ten thousands [13,000].",
+              "kind": "event",
+              "excerptIds": [
+                "ch4-x4"
+              ]
+            },
+            {
+              "id": "c7",
+              "text": "Josephus states that the Jews' war with the Romans was not voluntary and that, for the most part, necessity forced them to enter it.",
+              "kind": "interpretation",
+              "excerptIds": [
+                "ch4-x4"
+              ]
+            },
+            {
+              "id": "c8",
+              "text": "Josephus states that the Jews who inhabited Damascus underwent similar miseries to those described for Jews in the neighboring Syrian cities.",
+              "kind": "event",
+              "excerptIds": [
+                "ch4-x4"
+              ]
+            }
+          ],
+          "sequence": [],
+          "disagreements": [],
+          "unknowns": [
+            "The passages do not establish the identities of the people referred to as the “tumultuous persons” or the full circumstances of the innovations Josephus says had begun.",
+            "The passages do not establish the specific location or date of Josephus's attempted intervention.",
+            "The passages do not establish the location or date of Gessius and Cestius's defeat.",
+            "The passages do not identify the Jewish attackers who came from outside Scythopolis or provide the exact circumstances of their attack.",
+            "The passages do not provide further details about the killings in Damascus beyond the general statement that its Jewish inhabitants suffered similar miseries."
+          ],
+          "excerpts": [
+            {
+              "id": "ch4-x3",
+              "chapterIndex": 4,
+              "episodeTitle": "Josephus's account of the Jewish revolt against Rome",
+              "documentTitle": "The Life of Flavius Josephus",
+              "documentUrl": "https://en.wikisource.org/wiki/The_Life_of_Flavius_Josephus",
+              "host": "wikisource",
+              "author": "",
+              "year": "",
+              "speaker": "Josephus",
+              "text": "And now I perceived innovations were already begun, and that there were a great many very much elevated in hopes of a revolt from the Romans. I therefore endeavored to put a stop to these tumultuous persons, and persuaded them to change their minds; and laid before their eyes against whom it was that they were going to fight, and told them that they were inferior to the Romans not only in martial skill, but also in good fortune; and desired them not rashly, and after the most foolish manner, to bring on the dangers of the most terrible mischiefs upon their country, upon their families, and upon themselves. And this I said with vehement exhortation, because I foresaw that the end of such a war would be most unfortunate to us. But I could not persuade them; for the madness of desperate men was quite too hard for me.",
+              "words": 150
+            },
+            {
+              "id": "ch4-x4",
+              "chapterIndex": 4,
+              "episodeTitle": "Josephus's account of the Jewish revolt against Rome",
+              "documentTitle": "The Life of Flavius Josephus",
+              "documentUrl": "https://en.wikisource.org/wiki/The_Life_of_Flavius_Josephus",
+              "host": "wikisource",
+              "author": "",
+              "year": "",
+              "speaker": "Josephus",
+              "text": "But, upon his coming and fighting, he was beaten, and a great many of those that were with him fell. And this disgrace which Gessius [with Cestius] received, became the calamity of our whole nation; for those that were fond of the war were so far elevated with this success, that they had hopes of finally conquering the Romans. Of which war another occasion was ministered; which was this: - Those that dwelt in the neighboring cities of Syria seized upon such Jews as dwelt among them, with their wives and children, and slew them, when they had not the least occasion of complaint against them; for they did neither attempt any innovation or revolt from the Romans, nor had they given any marks of hatred or treacherous designs towards the Syrians. But what was done by the inhabitants of Scythopolis was the most impious and most highly criminal of all; [ 6 ] for when the Jews their enemies came upon them from without, they forced the Jews that were among them to bear arms against their own countrymen, which it is unlawful for us to do; [ 7 ] and when, by their assistance, they had joined battle with those who attacked them, and had beaten them, after that victory they forgot the assurances they had given these their fellow citizens and confederates, and slew them all, being in number many ten thousands [13,000]. The like miseries were undergone by those Jews that were the inhabitants of Damascus. But we have given a more accurate account of these things in the books of the Jewish war. I only mention them now, because I would demonstrate to my readers, that the Jews' war with the Romans was not voluntary, but that, for the main, they were forced by necessity to enter into it.",
+              "words": 304
+            }
+          ],
+          "reviewVersion": 2
+        }
+      }
+    },
+    {
+      "attempt": "development-1a-retry",
+      "caseId": "case-5-3",
+      "title": "The Iroquois Mourning War",
+      "expectedIdentity": false,
+      "rebuilt": {
+        "failure": "Case identity: The passages mention Colden and his book but do not establish the Iroquois mourning-war practice, its functions, or a specific account of it."
+      }
+    }
+  ],
+  "failures": [
+    "War before agriculture in ethnographic comparison: rebuilt packet Case identity: the supporting anchors do not resolve to exact source passages"
+  ]
+}

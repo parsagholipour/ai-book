@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.7,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The record is therefore less like a window opened directly onto a quarrel than like a mould into which the quarrel has been pressed.",
+      "judgment": "Excellent controlling image for the book's source-critical thesis, earned rather than decorative."
+    },
+    {
+      "quote": "A blow could be personal. The system that required the blow was not.",
+      "judgment": "Strong, compressed statement of the argument — but also the book's most overused rhetorical shape (paired antithesis as chapter-section closer)."
+    },
+    {
+      "quote": "The clay tablet was small. The chain behind it was not.",
+      "judgment": "Same two-beat antithesis template as above, three chapters earlier; the device is stamped, not discovered."
+    },
+    {
+      "quote": "Religion was the primary cause of medieval violence.",
+      "judgment": "A bare, unattributed assertion opening a paragraph that then dismantles it; reads as an editorial artifact rather than a signposted steel-man, and briefly contradicts the book's own voice."
+    },
+    {
+      "quote": "Uruk's tablets, the Ur III ration records, and Lagash's stele show three stages of that transformation: production became countable, service became assignable, and violence became representable as legitimate rule. It gave that impulse offices, stores, walls, orders, and a claim to endure.",
+      "judgment": "Fine tricolon undercut by a dangling 'that impulse' with no antecedent — a visible seam at a chapter ending."
+    },
+    {
+      "quote": "The archaeological record can show a wound more readily than it can show a peace.",
+      "judgment": "Genuinely good aphorism, and one that does real analytical work about sampling bias rather than merely sounding wise."
+    },
+    {
+      "quote": "A regulation speaks downward, and its silence about the governed can be mistaken for their absence. The absence is manufactured.",
+      "judgment": "Sharp reading of a colonial document; the book is at its best when it interrogates a specific text this closely."
+    },
+    {
+      "quote": "The document's danger lies precisely in its calmness: a sentence can move from a meeting room into registries, transport orders, confiscations, and guarded trains without changing its bureaucratic grammar.",
+      "judgment": "The Wannsee analysis is the book's strongest chapter-level payoff, joining prose control to moral seriousness without overreaching."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter is scaffolded on exactly one named scholarly dispute, adjudicated with a 'neither absorbs the other / the disagreement improves the question' move. Predictable enough to anticipate by chapter three.",
+      "instances": [
+        "Allsen and Sneath disagree over emphasis, but their disagreement improves the question.",
+        "The two readings meet at the fortress and separate over the source of its force... Neither question can absorb the other."
+      ]
+    },
+    {
+      "pattern": "The 'X establishes A; it does not establish B' epistemic caveat, repeated at nearly every evidential turn until it becomes a tic rather than a discipline.",
+      "instances": [
+        "It establishes that a group living without a state could participate in lethal collective violence. It does not establish how frequently such violence occurred",
+        "The Talheim pit can establish that a group was killed and deposited together. It cannot, by itself, identify the attackers, explain their motive"
+      ]
+    },
+    {
+      "pattern": "Short aphoristic one-sentence paragraphs used as section pivots or closers, isolated for weight.",
+      "instances": [
+        "Bones widen it again.",
+        "The furnace made violence durable."
+      ]
+    },
+    {
+      "pattern": "Symmetrical two-clause antithesis as the standard cadence for a conclusion ('A did X. B did not.' / 'One did X; the other did Y.').",
+      "instances": [
+        "The political map was broken. Social life was not.",
+        "Railways made armies faster. Administration made them repeatable."
+      ]
+    },
+    {
+      "pattern": "Numbered or ordinal step-throughs of a mechanism ('First came... Next came... Then came...') that flatten distinct historical settings into one procedural template.",
+      "instances": [
+        "The first step was assessment... Next came collection.",
+        "First comes mobility... Second comes territorial familiarity... Third comes seasonal aggregation... Fourth comes resource stress."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined comparative history whose thesis — that aggression becomes historically consequential only when offices, records, and commands connect a decision to a population — is stated early, tested against genuinely varied evidence, and carried intact across fifteen chapters with real cross-referencing rather than decorative callbacks. Its greatest strengths are source criticism and reasoning: the book repeatedly distinguishes what a bone, a relief, a ration tablet, a rubber regulation, or a revised set of minutes can and cannot support, and it refuses the easy scales (Pinker's decline, Keeley's ubiquity) without dissolving into agnosticism. Prose is clean, concrete, and free of the cheap AI register — no listicles, no false urgency, no chatty asides — and the Wannsee, Congo, and Barbados chapters achieve real analytical force. The weaknesses are architectural rather than sentence-level: one named scholarly duel per chapter, an evidential caveat formula repeated hundreds of times, and a heavy reliance on isolated aphoristic closers and symmetrical two-clause antitheses give the book a stamped, machine-regular rhythm that dulls engagement over 1,150 lines. Several chapters also end abruptly on a minor case (Crow Creek, the Batavian revolt) rather than landing, and there are visible seams — a dangling 'that impulse', an unattributed 'Religion was the primary cause of medieval violence' opening a rebuttal paragraph. With variation in chapter architecture, pruning of the caveat refrain, and repaired chapter endings, this would be a publishable synthesis."
+}

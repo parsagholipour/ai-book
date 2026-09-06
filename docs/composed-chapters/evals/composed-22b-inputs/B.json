@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.6,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A person could strike another person without a state. A state could turn a person into a target without striking him itself. Those forms of aggression belong in the same history because their difference lies in the institution that gives them reach.",
+      "judgment": "Crisp early statement of the controlling thesis; earns its place, though it is the first of many paired-antithesis closers."
+    },
+    {
+      "quote": "The arrowhead reached the bone only after a boundary had been drawn.",
+      "judgment": "Genuinely good compression \u2014 the archaeology chapter's best sentence, and it does argumentative work rather than decorating."
+    },
+    {
+      "quote": "The hand was both a body part and a receipt.",
+      "judgment": "Exactly the kind of specific, unforced image the book's argument needs; among the strongest lines in the manuscript."
+    },
+    {
+      "quote": "The wider Armenian deportations of 1915 produced death marches and the displacement of an estimated 1.5 million Armenians, according to the research record supplied for this history.",
+      "judgment": "A drafting artifact leaking into the prose; 'the research record supplied for this history' has no meaning for a reader and recurs several times."
+    },
+    {
+      "quote": "Ruggiu pleaded guilty in 2000 and was sentenced by the tribunal in 2003 to twelve years\u2019 imprisonment. The supplied record does not establish further sentencing details, so the secure account is narrower",
+      "judgment": "Epistemic caution is a virtue of the book, but here it becomes visible scaffolding \u2014 the narrator apologising for its own sources."
+    },
+    {
+      "quote": "It leaves more paper, not necessarily more aggression.",
+      "judgment": "Sharp, concise, and central; shows the voice at its best when it stops balancing clauses."
+    },
+    {
+      "quote": "Can an empire sustain difference without repeatedly turning difference into a test of obedience? If accommodation depends on submission, and submission is secured by the threat of deportation, siege, or exemplary punishment, when does the instrument that preserves order begin to create the identity that resists it?",
+      "judgment": "A representative chapter-ending rhetorical question; individually effective, but nearly every chapter closes on the same move, which drains it of force."
+    },
+    {
+      "quote": "The wall does not close history. It keeps the names where power once tried to remove them.",
+      "judgment": "A dignified ending that lands the thesis on a concrete site, though it is also the book's fifteenth aphoristic two-sentence closer."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Negation-then-assertion antithesis ('X was not A; it was B' / 'The difference is not\u2026 it is\u2026') used as the default sentence engine, often several times per page.",
+      "instances": [
+        "The difference is one of organisation and political relationship, not moral seriousness.",
+        "The comparison is not between a peaceful Jericho and a warlike Mohenjo-daro."
+      ]
+    },
+    {
+      "pattern": "Every chapter closes on a rhetorical question or a two-sentence aphorism restating the institutional thesis, so the endings become interchangeable.",
+      "instances": [
+        "When early rulers raised walls and monuments, were they building the visible shell of permanent armies, or were armies only one possible use of a broader power over labour?",
+        "The unresolved question is why one institution becomes a barrier against denunciation while another turns denunciation into a licence to harm."
+      ]
+    },
+    {
+      "pattern": "The 'office / institution / record decides the meaning' formula is restated as a closing beat in nearly every section rather than developed, producing a recap loop across fifteen chapters.",
+      "instances": [
+        "The weapon did not determine the political result. The office that received the captive did.",
+        "A gun could help conquer a city, guard a castle, or remain under official supervision. Its meaning came from the office that directed it."
+      ]
+    },
+    {
+      "pattern": "Source-caveat paragraphs of near-identical shape (the record shows X, cannot show Y, and its silence is itself evidence) appended to almost every case study.",
+      "instances": [
+        "The record\u2019s silence did not make the violence disappear. It showed which consequences the new government needed to preserve.",
+        "A compromised record is not an empty one."
+      ]
+    },
+    {
+      "pattern": "Uniform paragraph architecture: a concrete artefact or date opens, three to five expository sentences of equal length follow, and an abstract generalisation lands last \u2014 with almost no variation in rhythm, no dialogue, no scene, and no first-person or authorial aside anywhere in the book.",
+      "instances": [
+        "The date 1642 must be held together with the setting.",
+        "A tribute page asks the eye to move across repeated forms."
+      ]
+    }
+  ],
+  "summary": "This is an unusually disciplined and genuinely coherent work of comparative history, organised around a single sustained claim: that aggression acquires its scale, its targets and its afterlife from the offices, records and classifications that take possession of it. The argument is carried from Jebel Sahaba to Villa Grimaldi without slackening, the case material is specific and well chosen (Uruk tablets, the Zong insurance claim, the Wannsee table, the Rettig files), and the handling of evidence is admirably self-aware about what bone, court record and chronicle can each support. Clarity and sentence-level control are high, and the voice is consistent and adult. The costs are pacing and monotony: the prose runs almost entirely on paired antitheses and negation-then-assertion, every chapter ends on the same aphorism or rhetorical question, and the central formula is restated far more often than it is complicated, so a reader can predict the last sentence of a paragraph from its second. A few drafting artefacts ('according to the research record supplied for this history') survive into the text and should go. With variation in cadence, pruned recaps, and a handful of chapter endings that do something other than pose a question, this would be publishable as it stands."
+}

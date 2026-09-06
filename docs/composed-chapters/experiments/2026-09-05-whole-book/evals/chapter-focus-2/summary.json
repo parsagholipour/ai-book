@@ -1,0 +1,27 @@
+{
+  "scores": {
+    "A": 6.7,
+    "B": 6.8,
+    "C": 7.1
+  },
+  "mean": 6.866666666666666,
+  "verbatimQuotesVerified": 54,
+  "criterionMeans": {
+    "thesis": 8.333333333333334,
+    "structure": 8,
+    "depth": 7.666666666666667,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 6.333333333333333,
+    "engagement": 6.333333333333333,
+    "pacing": 4.666666666666667,
+    "craft": 7,
+    "slopResistance": 4.333333333333333
+  },
+  "pass": false,
+  "coverageChaptersPerReader": {
+    "A": 15,
+    "B": 15,
+    "C": 15
+  }
+}

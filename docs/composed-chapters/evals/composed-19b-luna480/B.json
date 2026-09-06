@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.2,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A wound is not anger. Aggression, in the working sense used here, is behaviour intended to harm another person who is motivated to avoid that harm.",
+      "judgment": "Excellent early move: the definitional apparatus is introduced through an object rather than a glossary, and it earns the whole book's method."
+    },
+    {
+      "quote": "Silence is evidence of preservation and discovery before it becomes evidence of peace.",
+      "judgment": "Genuinely sharp epistemic formulation \u2014 one of the few aphorisms that pays for itself."
+    },
+    {
+      "quote": "It shows power learning to travel through cities.",
+      "judgment": "A chapter-closing aphorism of a type the book uses roughly fifteen times; individually good, cumulatively a tic."
+    },
+    {
+      "quote": "There was no wall at the horizon, but there was nowhere to go.",
+      "judgment": "The book's best single sentence; the isolated one-line paragraph is also a repeated dramatic device."
+    },
+    {
+      "quote": "The register preserved an administrative afterlife for objects that battlefield narratives would leave behind. It made failure countable.",
+      "judgment": "Strong original observation drawn from a genuinely unglamorous source \u2014 the Tophane artillery registers \u2014 and the kind of specificity the book does best."
+    },
+    {
+      "quote": "The category did the work. It converted refusal into evidence of belonging to an enemy camp.",
+      "judgment": "Precise and chilling, but it restates a claim already made verbatim in four earlier chapters."
+    },
+    {
+      "quote": "Violence did not replace government. It furnished government with examples, labour, territory, and a vocabulary of obedience.",
+      "judgment": "Representative of the book's default sentence shape \u2014 negation, full stop, positive reformulation \u2014 which recurs hundreds of times."
+    },
+    {
+      "quote": "The scale of harm followed the reach of the city, the tribute system, the alliance, the road, and the imperial story that made each seem rightful.",
+      "judgment": "Competent, but it is the same thesis-restating summary clause that closes nearly every section, and the reader has met it long before chapter 5."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The 'not X; it is Y' antithetical reformulation as the default sentence and paragraph engine, often followed by a second symmetrical pair.",
+      "instances": [
+        "The settlement did not remove anger. It gave anger a boundary.",
+        "Fiscal machinery did not replace coercion; it gave coercion a schedule, a scale, and a vocabulary."
+      ]
+    },
+    {
+      "pattern": "The 'this source cannot bear that weight' caution, applied to virtually every artifact \u2014 valuable the first ten times, thereafter a reflex that consumes paragraphs without advancing the argument.",
+      "instances": [
+        "The record may show that people were harmed. It may not show how often comparable harm occurred among those whose bodies, houses, memories, or testimonies left no surviving trace.",
+        "Ibn al-Athir's testimony is more secure as evidence of the event's perceived magnitude... it does not supply a reliable total for every person killed."
+      ]
+    },
+    {
+      "pattern": "Identical chapter architecture: open on one concrete object or scene, describe it at length, pivot to a second contrasting case, then close on an abstract restatement of the book's single thesis about institutions and reach.",
+      "instances": [
+        "The evidence supports no simple rise or fall in human aggressiveness. It shows power learning to travel through cities.",
+        "Ships, statutes, patrols, mills, fields, treaties, and markets gave it reach, changed its organisation, and determined whom it could reach."
+      ]
+    },
+    {
+      "pattern": "The 'their differences are the evidence' comparative disclaimer, used to close nearly every juxtaposition rather than to produce a new claim from it.",
+      "instances": [
+        "Their differences are the evidence, not an inconvenience to be smoothed away.",
+        "Their differences are the evidence. Restraint was made from procedures, expectations, records, offices, and decisions that answered particular dangers."
+      ]
+    },
+    {
+      "pattern": "Catalogue sentences \u2014 long asyndetic or comma-chained lists of institutions and artifacts standing in for analysis of any one of them.",
+      "instances": [
+        "It worked through contracts, taxes, pass systems, courts, chiefs, police, schools, missions, companies, and armies, with each office extending or correcting the others.",
+        "A soldier might be transported by timetable, supplied by a shell factory, and replaced through a conscription list."
+      ]
+    }
+  ],
+  "summary": "This is a serious, disciplined global history of aggression organised around a clear and consistently prosecuted thesis: harm's scale, direction and durability are made by institutions, categories, technology and archives rather than by a constant human nature, and every trace must be read at the scale at which it was produced. The specificity is impressive and largely unforced \u2014 Jebel Sahaba's lithic points, Hamoukar's sling bullets, the Tophane artillery registers, the Wuchale translation dispute, the Wannsee estimate of eleven million \u2014 and the source criticism is genuinely good, culminating in a fair-minded engagement with Elias and Pinker in the final chapter. The prose is clean, precise and free of the obvious contemporary AI tells; there are no listicles, no rhetorical questions to the reader, no breezy transitions. What undermines it is monotony rather than error: fifteen chapters execute the same architecture, and the argument is restated at the close of nearly every section, so that by the midpoint the reader is being told a thing already conceded five chapters earlier. The sentence-level habit of paired antithesis ('not X; it is Y'), the aphoristic chapter closers, and the near-uniform paragraph shape produce a templated texture that reads as manufactured even where each individual sentence is well made. Cut perhaps a fifth of the recapitulation, vary the chapter form, and let a few comparisons yield conclusions instead of disclaimers, and this would be a strong book."
+}

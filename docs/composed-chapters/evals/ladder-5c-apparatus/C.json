@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 9,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 9,
+    "slopResistance": 7
+  },
+  "overall": 8.0,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Aggression is a useful word only when it is made to carry less.",
+      "judgment": "The book's controlling move stated with unusual economy; it earns the definitional taxonomy that follows."
+    },
+    {
+      "quote": "A person may strike in anger. A household may raid. A state may punish. An army may wage war. A regime may organise atrocity. The hand can be similar; the world directing it is not.",
+      "judgment": "Strong close to Chapter 1, but the escalating-list-plus-aphorism shape becomes the default ending for nearly every chapter."
+    },
+    {
+      "quote": "A ration is a small administrative decision. It says that a person belongs to a category, that food is held elsewhere, and that an official may release a measured amount according to a schedule.",
+      "judgment": "Best kind of writing here: an ordinary document opened up until the political mechanism is visible."
+    },
+    {
+      "quote": "The wound begins the inquiry; it does not settle the institution behind it.",
+      "judgment": "Elegant, and typical of a semicolon-antithesis formula the book performs hundreds of times until it reads as a tic."
+    },
+    {
+      "quote": "A woman named Rābiʿa was found with two children in a bakery near the Bāb Sanjān. The oven had gone cold. She told the interpreter that her husband had been killed at the first sorting and asked to be taken to him.",
+      "judgment": "Invented particulars presented flatly as fact, in a book whose entire argument is about not overreading evidence — a real integrity fault."
+    },
+    {
+      "quote": "The first bones had come from the riverbank in 1997, when an amateur archaeologist named Detlef Jantzen found a human upper-arm bone",
+      "judgment": "Factual/internal inconsistency: the same name is given to both the state archaeologist directing the 2009 trench and the 1997 amateur finder."
+    },
+    {
+      "quote": "The bones establish a violent meeting; they do not identify its command.",
+      "judgment": "Exemplary epistemic discipline — the book consistently says what a source can and cannot carry."
+    },
+    {
+      "quote": "History cannot promise that people will choose restraint next time. It cannot identify a universal human appetite for violence, because the past contains submission, refusal, care, bargaining, and killing, often within the same town and year.",
+      "judgment": "A closing chapter that actually argues its methodological limits rather than swelling into uplift; among the strongest endings in the book."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter opens with a novelistic, present-tense-feeling reconstructed scene (a trench, a tomb, an altar, a battlefield, a compound, a crematorium) before pivoting to comparative analysis. The device is vivid once and becomes a formula by Chapter 5.",
+      "instances": [
+        "The trowel struck something that was not stone.",
+        "Oliver Cromwell was lifting his hat when the first royalist guns opened from the ridge above Naseby."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis of the form 'X establishes A; it does not establish B' — the book's signature sentence, used at nearly every evidentiary turn.",
+      "instances": [
+        "The material record supports mass killing in a defended settlement; it does not supply a single motive.",
+        "The object's shape narrows the possibilities; it does not name the purpose."
+      ]
+    },
+    {
+      "pattern": "Chapters close with a triadic roll-call of the chapter's cases followed by a short aphoristic verdict sentence.",
+      "instances": [
+        "Hamoukar supplies the burned settlement, Lagash the named enemy, and Mohenjo-daro the difficult silence.",
+        "Plantation violence endured through profit, but profit operated through laws, ships, courts, names, weapons, and claims about who was entitled to command whom. In the Atlantic world, the ledger was never alone."
+      ]
+    },
+    {
+      "pattern": "A mid-chapter 'catalogue' section that enumerates a taxonomy in uniform paragraph blocks — one signal or stage per paragraph, each with the same concede-then-qualify shape. Informative but flattens the prose rhythm.",
+      "instances": [
+        "A catalogue of archaeological signs begins with fortifications... Weapon caches form a second sign... Burn layers offer a third signal... Population dispersal patterns provide a fourth sign",
+        "Selection came first... Then came concentration... At the destination, provincial officials distributed land, tools, seed, housing, or rations"
+      ]
+    },
+    {
+      "pattern": "The thesis is restated near-verbatim at the end of each chapter — the object supplies force, the office supplies direction — so the argument accumulates repetition rather than development.",
+      "instances": [
+        "The weapon supplied force; an office selected its target.",
+        "The object supplied movement. An office supplied direction."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely accomplished comparative history with a single, unusually well-held thesis: that aggression is a family of acts whose reach is made by offices, records and institutions rather than by an invariant human impulse. The evidentiary discipline is its greatest strength — the book repeatedly names what a cemetery, a stele, a coroner's file or a saga can and cannot support, and refuses the false symmetry that comparative work usually manufactures. Prose is clean, unhurried and free of the usual lexical AI tells; the voice is consistent across fifteen chapters and the archival detail is specific and concrete. The costs are structural rather than verbal: every chapter runs the same machine — reconstructed scene, comparison, taxonomic catalogue, triadic roll-call, aphoristic closer — and the paired-antithesis sentence is used so relentlessly that by the second half it reads as a mannerism rather than an argument. Two further problems deserve an editor: invented novelistic particulars (a named woman in a Merv bakery, a clerk's ink reeds) are presented as fact inside a book whose whole ethic is not overreading the record, and Chapter 1 gives one name to two different archaeologists. Light revision — varying chapter architecture, thinning the antithesis and the closing formulas, and marking or removing the fabricated detail — would leave a strong book."
+}

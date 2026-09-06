@@ -1,0 +1,44 @@
+You are taking over implementation and live validation in this shared checkout. The user explicitly said: “Pass tasks to Claude code Fable 5 in extra high now. Don't burn so much tokens. Just manage.” Use Fable 5 at xhigh; do the substantive work autonomously, while the parent only coordinates. Do not ask permission for already authorized fixes or paid benchmark runs. Do not commit, push, deploy, or message anyone.
+
+Task: finish fixing all blockers reported in docs/composed-chapters/experiments/2026-09-05-sol/report.md, then test real book generation and report measured improvement. The user earlier requested three blind Sol assessors per book; retain Sol for literary assessment by writing an ASSESSMENT_READY.md with artifact paths for the parent to dispatch. You may use Fable subagents for independent bounded diagnosis, but avoid duplicate investigation or concurrent edits. Keep concise progress in .scratch/claude-development-fixes/status.md and a final report in result.md. Update status only when material changes occur. Parent won't edit production while you own it.
+
+Read root/relevant CLAUDE.md instructions. The entire dirty checkout is intentional previous work. Preserve unrelated .scratch/figures/spec.md and preexisting CLAUDE changes. Core has no db/apps dependencies. Every production model/research call must go through logged providers. Every generation/edit/review stays on the configured tier writer (balanced gpt-5.6-luna low); do not change production routing or gates to improve the benchmark. Sol is for independent assessment only. No TS source/test file over 900 lines. Full pnpm check required after final code changes; avoid unnecessary repeated full runs.
+
+CURRENT LIVE RUN — DO NOT edit apps/packages or tests while it is active (Docker nodemon restarts on changes):
+- project cmtnwyp3d0000fwg07qgd68uo; approved plan cmtnwyp3n0001fwg0h5vz0del
+- generation job cmtnx6j3k0000zig0o9y4ei1g; label development-fixes-1a-retry
+- driver running via parent exec session 96986. It will export automatically on success. Do not launch a duplicate driver/job.
+- trace storage/books/cmtnwyp3d0000fwg07qgd68uo/runs/cmtnx6j3k0000zig0o9y4ei1g-generate-book.jsonl
+- stdout docs/composed-chapters/experiments/2026-09-05-fixes/development-fixes-1a-retry.log
+- Last seen 05:15 UTC: all 15 chapters completed dossier extraction, now checking evidence (~11 builds/10 reviews so far). No errors in this retry. Freeze corresponds to implementation-2.json/tar.gz in experiment directory.
+- Worker container ai-book-maker-worker-1 uses bind mount /app, DB host port55432, Redis6379. Do not start a second worker. Two ancient June ACTIVE DB jobs are unrelated; leave them alone.
+- A previous job cmtnwyp4a0002fwg0mmh03k0z on this project was stopped by the operator after source-download timeout caused whole-job recovery. It has zero pages and is exported as development-fixes-1a. Preserve all attempts/failures; never score an incomplete book.
+
+ALREADY FIXED, don't redo:
+1. prepareVerifiedCases has coverage book/chapter. Book mode passes accepted evidence pool and explicit researchGaps to developBookPlan before requiring a case in each OLD chapter. New plan still must preserve every coverage requirement, evidence ownership, callbacks, total pages, and semantic progression. Zero packets still fails.
+2. PrimarySourceSearch injected through material/preparation/evidence/dossier uses logged research provider to discover URLs beyond Wikisource/Gutenberg/Archive. Actual HTML/text/PDF downloaded, never search summaries. sourceDocumentFetch owns bounded public DNS/IP/redirect/bytes/time/PDF reader. Own AbortSignal timeout now returns504/empty, genuine caller abort propagates. Actual Yale/Gutenberg network smoke passed. Original Archive OCR filename fix remains.
+3. caseEvidenceReview.ts independently checks case identity vs incidental biography, canonical source metadata, exact short anchors, claims, sequence, disagreements, unknowns. Empty lists cannot fail solely from model's false polarity. Bad anchors or incomplete claim adjudication get one reviewer retry; factual defects get one extraction repair and fresh review. Build/review output budget12k (Luna exhausted lower budgets). Wrong Gudea inscription and Iroquois mourning-war fixtures rejected.
+4. API TS errors fixed (retry payload ledger field/Prisma.JsonNull, test assertion, validated findings union). Four oversized files split (core rate catalogue+page-review tests; worker page-review+restructure tests with shared harnesses). CLAUDE gotcha index reconciled. Preserve all original test cases.
+5. Full check-3.log PASSES ALL7 GATES: 6706 tests pass,5skip; typecheck/lint/sizes/gotchas/subpaths/subpath-tests/tests. The earlier failing check logs are retained for diagnosis.
+
+REMAINING EVIDENCE QUALITY WORK:
+The parent ran paid diagnostic replays of eight accepted packets from old failed runs, and fresh Sol audits. All files under docs/composed-chapters/experiments/2026-09-05-fixes/.
+- replay-evidence*.ts scripts use live logged production writer in worker Docker; not production modules.
+- Evidence replays1-3 fixed identity/anchor/budget errors. Sol audit1+2 still found entry overclaim, unsupported title qualifier, and chronology errors.
+- candidate-evidence-rules.json contains a generic experimental addition: atomic claims, adversarial entailment, explicit temporal support, canonical title qualifiers. replay-evidence-4.ts injects these at the logged adapter boundary without editing production. Result evidence-replay-4.json:8/8 expected decisions (6 rebuilt,2 wrong cases rejected).
+- Fresh blind Sol audit of these six is packets-sol-audit-3.json (input packets-audit-3-input.json). Four usable; remaining defects:
+  K1 First Crusade: unsupported c6→c8 sequence (return home vs founding patriarchate); unknown says source differs from proposed episode AFTER canonical metadata has already been corrected, so provenance statement now stale. All individual claims pass.
+  K7 Josephus: unsupported c6→c7 sequence (general Syrian city killings vs Scythopolis); all individual claims pass.
+- Candidate rules NOT yet applied to production. Need resolve these errors, not merely suppress Sol findings. Parent suggestions, not requirements: sequence is a chain that manufactures adjacent relations; be conservative and keep explicit temporal facts in individually supported claims or represent only evidenced partial relations. Do not keep inferred total order. Canonical metadata correction must be coherent with unknowns; review final packet, not only input before metadata mutation. Avoid case-specific string patches or endless prompt tuning. Keep reviewer on production writer. Sol assessments are evidence, not an infallible oracle; flag unsupported order without asserting an alternative from paragraph order.
+
+BENCHMARK / COMMANDS:
+Protocol and manifest in experiment dir; original protocol ../2026-09-05-sol/protocol.md. Same120-page English15-chapter Aggression Through Time coverage inventory, balanced. Planned3 completed new replicates,3Sol readers each, unchanged rubric docs/composed-chapters/rubrics/blind-rubric.md. Old same-day Sol means: rung5 baseline three books mean7.1889; composed7 reference7.6667. Historical Opus scores not comparable. Preserve superseded implementation attempts separately, don't discard a completed low score.
+Start fresh replica:
+pnpm exec tsx scripts/dev-rerun-book.ts run --source cmtjbz54o000w6rjyvzewwqj4 --label <unique> --reuse-plan cmtjlkn0z0000g8g08zbzxerc --tier balanced --stance-positions docs/composed-chapters/rubrics/stance-positions-flat.json --out docs/composed-chapters/runs
+Retry after diagnosed/fixed failure:
+pnpm exec tsx scripts/dev-rerun-book.ts retry --project <id> --label <unique> --out docs/composed-chapters/runs
+Export failed attempt explicitly with export command. To stop ONLY an experiment project when needed: pnpm exec tsx scripts/dev-stop-project.ts <projectId>. Wait for the worker to settle before production edits; do not interrupt a live run casually.
+
+Persist immutable implementation hashes/snapshots for each revision, update manifest/diagnostics/report and docs README/development-pipeline-2026-09-05.md. Current docs contain historical failure statements and appended follow-up progress; make the final state clear. Do not claim quality improvement or crossing8 until completed books are assessed. If downstream live integration fails, reproduce, fix, test, retain attempt, and continue. Full generation/developmental edit has not yet run successfully. Do not stop at unit tests or after only starting a background command.
+
+Keep user cost and parent tokens low: concise status file, bounded focused tests, reuse captured passages, no duplicate live jobs. Begin by inspecting the active run and the two remaining Sol findings while code is frozen. Own the task to completion; ask parent only for Sol dispatch or a true blocker.

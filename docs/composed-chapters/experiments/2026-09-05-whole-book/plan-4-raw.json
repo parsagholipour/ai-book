@@ -1,0 +1,366 @@
+{
+  "title": "Aggression Across Time",
+  "premise": "A source-conscious historical survey of human aggressiveness across regions and eras, examining how ecology, population density, political organization, inequality, technology, institutions, cultural norms, and individual behavior have shaped when violence intensifies, changes form, or declines. The book distinguishes interpersonal violence from organized warfare and avoids treating any single period, society, or biological factor as a complete explanation.",
+  "bookType": "general_history_survey",
+  "audience": "General readers curious about history who want a clear, geographically broad account without assuming that human aggression has followed one simple upward or downward path.",
+  "writingComplexity": 6,
+  "voiceGuide": [
+    "Write as a clear, measured historical survey for intelligent general readers.",
+    "Use concrete places, material conditions, institutions, artifacts, and documented events before offering interpretation.",
+    "Distinguish interpersonal aggression, ritualized violence, raiding, warfare, state coercion, colonial violence, and mass killing.",
+    "Treat archaeological traces, written records, demographic estimates, and modern behavioral research as different kinds of evidence with different limits.",
+    "Present causal explanations as historically bounded and comparative rather than universal.",
+    "Use moderate confidence, naming uncertainty when the surviving evidence cannot support a firm conclusion.",
+    "Vary the scale of attention: move from a household or artifact to a settlement, polity, region, or world system only when the evidence supports the move.",
+    "Let transitions arise from changing conditions and documented continuities rather than from sweeping claims about human nature."
+  ],
+  "antiAiRules": [
+    "Do not invent sources, citations, studies, experts, dates, casualty totals, quotations, archaeological sites, or research findings.",
+    "Do not treat the supplied research context as a complete bibliography; verify claims against attached sources during drafting and flag unsupported specifics.",
+    "Do not collapse aggression, violence, war, homicide, domination, punishment, and coercion into one interchangeable category.",
+    "Do not describe prehistoric people as inherently peaceful, savage, or warlike without specifying the evidence and its limits.",
+    "Avoid proof-leap transitions such as 'This is not a coincidence', 'no accident', 'hidden in plain sight', and 'the truth is' unless directly quoted or genuinely necessary.",
+    "Avoid repeated binary reversals such as 'X is not A. It is B.' State the supported interpretation directly.",
+    "Do not stack adjacent contrast sentences that jump from a local fact to a sweeping conclusion.",
+    "Use em dashes and en dashes sparingly; prefer clean punctuation.",
+    "Replace inflated abstractions with particular people, places, institutions, objects, or documented practices.",
+    "Do not imply that correlation proves causation when discussing agriculture, inequality, climate, hormones, technology, state formation, or crime trends.",
+    "Do not use a single European trajectory as a template for all regions.",
+    "Do not end every chapter with a balanced both-sides formula, a generic lesson, or a promise that history repeats itself.",
+    "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing prose.",
+    "Do not use modern psychological language as though it maps perfectly onto ancient categories.",
+    "Keep claims about biological influences bounded, especially where evidence concerns present-day behavior rather than long-term historical change."
+  ],
+  "questions": [],
+  "openingHook": "At Nataruk, near the western shore of Lake Turkana, archaeologists found the remains of people killed roughly ten thousand years ago. The bones open a question that no single massacre can answer: under what conditions does human aggression become private violence, group conflict, or organized war?",
+  "authorStance": {
+    "thesis": "Human aggressiveness has appeared across the human past, but its scale and form have been repeatedly reshaped by living conditions, social organization, institutions, technology, and cultural expectations.",
+    "positions": [
+      "Aggression is a flexible human capacity whose expression changes with circumstances.",
+      "Organized warfare depends on collective arrangements that differ from individual anger or personal violence.",
+      "Agriculture, urbanization, and state formation created new opportunities for cooperation as well as new opportunities for coercion and large-scale conflict.",
+      "Technological development can expand the reach of violence while institutions can constrain who may use it and against whom.",
+      "Historical evidence shows variation rather than one universal curve of progress or decline."
+    ],
+    "refusals": [
+      "The author refuses to explain every historical conflict through one master cause.",
+      "The author refuses to use a dramatic example as proof of a global pattern.",
+      "The author refuses to treat uncertainty as a reason to abandon bounded conclusions.",
+      "The author refuses to end chapters by repeating the book's thesis in abstract language."
+    ],
+    "voiceSample": "In 1914, a railway timetable hung beside the ticket office at Sarajevo station while mobilization orders moved through ministries and barracks across Europe. A telegraph cable could carry a decision from Vienna to a provincial command post before a local newspaper had described the assassination of Archduke Franz Ferdinand. At Verdun in 1916, the road behind the front filled with trucks, shells, stretcher bearers, and men carrying water toward a landscape where artillery had erased familiar landmarks. The steel helmet, the railway wagon, and the field telephone belonged to different parts of the same system. In 1945, a photograph from Hiroshima showed a city reduced to shadows, roof tiles, and fragments of household life. The paper lantern, the school uniform, and the laboratory instrument acquired new meanings within a weapon that could cross a boundary between military calculation and civilian existence. At the Hague in 1949, diplomats placed rules around prisoners, civilians, and wounded soldiers after two world wars had exposed the reach of industrial power. The clauses on paper could not restore Warsaw, Coventry, or Nanjing, yet the document recorded an effort to make restraint part of international practice. Each object carries a history of decisions made elsewhere: a timetable, a truck, a cable, a photograph, a clause.",
+    "chapters": [
+      {
+        "index": 1,
+        "title": "What Counts as Aggression?",
+        "summary": "Define the book's working distinctions before the historical survey begins. Separate individual aggression from collective violence, homicide from warfare, and evidence of injury from evidence of motive. Explain why the historical record is uneven and why comparisons across eras require caution.",
+        "targetPages": 8,
+        "keyBeats": [
+          "Open with the Nataruk remains and the limits of interpreting a prehistoric massacre.",
+          "Introduce the distinctions among aggression, violence, warfare, coercion, and state punishment.",
+          "Explain how archaeology, written records, demographic data, and modern behavioral research answer different questions.",
+          "Establish that variation across societies matters as much as continuity across time.",
+          "Close with the comparative questions that will guide the survey: who could use force, against whom, for what purpose, and under what constraints?"
+        ]
+      },
+      {
+        "index": 2,
+        "title": "Before Cities: Foragers, Settlers, and Uneven Evidence",
+        "summary": "Examine evidence from Paleolithic and early Holocene societies without turning sparse remains into a universal story about human nature. Compare interpersonal attacks, massacres, cooperation, mobility, and the material conditions that shaped exposure to conflict.",
+        "targetPages": 10,
+        "keyBeats": [
+          "Discuss the difference between an isolated violent death and organized collective killing.",
+          "Use evidence from Nataruk and other prehistoric contexts only with clear limits on interpretation.",
+          "Contrast mobile lifeways with more settled communities where resources, territory, and stored food could become defensible.",
+          "Address the problem of preservation bias and the unequal archaeological visibility of violence.",
+          "Show why the presence of violence does not establish that violence was constant or dominant."
+        ]
+      },
+      {
+        "index": 3,
+        "title": "Fields, Herds, and Stored Wealth",
+        "summary": "Trace how agriculture and pastoralism changed the stakes of conflict in selected regions. Consider land, labor, food storage, inheritance, raiding, cooperation, and the possibility that settled production intensified some forms of violence while reducing others.",
+        "targetPages": 7,
+        "keyBeats": [
+          "Explain why agricultural change should be treated as a set of regional transitions rather than one global event.",
+          "Examine defensible resources, population density, and labor demands as possible contributors to organized conflict.",
+          "Include the tension between farming's cooperative requirements and its unequal vulnerabilities.",
+          "Compare local raiding with more durable systems of domination.",
+          "End by showing why production economies created both institutions of peace and targets for coercion."
+        ]
+      },
+      {
+        "index": 4,
+        "title": "The City, the Palace, and the First Armies",
+        "summary": "Narrate one continuous case centered on the rise of an early urban state in Mesopotamia, using the case to follow how walls, taxation, hierarchy, writing, labor, and military organization could turn local competition into durable political violence. Keep the narrative grounded in documented evidence and mark where interpretation remains debated.",
+        "targetPages": 14,
+        "keyBeats": [
+          "Open with the administrative world of an early city: grain, labor, walls, officials, and records.",
+          "Follow how surplus and settlement created reasons to defend territory and organize force.",
+          "Show how rulers represented violence through monuments, titles, prisoners, and claims of order.",
+          "Trace the relationship among taxation, labor obligations, fortification, and campaigning.",
+          "Pause over what palace records reveal and what they conceal about ordinary people.",
+          "Contrast state-sponsored warfare with violence outside formal institutions.",
+          "End the case by distinguishing the existence of an army from proof that all urban life was militarized."
+        ]
+      },
+      {
+        "index": 5,
+        "title": "Honor, Kinship, and the Reach of Law",
+        "summary": "Explore how kin groups, status systems, feud, legal codes, and political authority shaped personal violence from the ancient Mediterranean and Near East to other historically documented societies. Emphasize that law could restrain violence, authorize it, or redistribute its use.",
+        "targetPages": 9,
+        "keyBeats": [
+          "Introduce honor and kinship as social frameworks rather than timeless psychological motives.",
+          "Compare feud, compensation, punishment, and royal justice without treating them as interchangeable.",
+          "Show how written law can reveal official ideals more clearly than everyday enforcement.",
+          "Discuss the distinction between violence that authorities condemned and violence they claimed to regulate.",
+          "Connect local conflict to the expanding reach of courts, armies, and taxation."
+        ]
+      },
+      {
+        "index": 6,
+        "title": "Empires and the Management of Force",
+        "summary": "Survey how imperial systems used armies, roads, tribute, deportation, borders, and administrative categories to extend authority across diverse populations. Compare coercive conquest with the institutions that made long-distance rule possible.",
+        "targetPages": 6,
+        "keyBeats": [
+          "Define empire as a political arrangement, not a single style of violence.",
+          "Examine conquest, tribute, garrisons, and negotiated local rule.",
+          "Show how infrastructure could support both military movement and economic integration.",
+          "Address the selective survival of imperial records and official narratives.",
+          "End with the question of whether centralized power concentrated violence or reduced some forms of local conflict."
+        ]
+      },
+      {
+        "index": 7,
+        "title": "Sacred Orders, Expanding Frontiers",
+        "summary": "Move across the medieval and early modern worlds to examine how religion, political legitimacy, commerce, migration, and frontier conditions shaped conflict. Avoid treating faith as a single cause; focus on institutions, interests, identities, and the circumstances in which sacred language authorized force.",
+        "targetPages": 11,
+        "keyBeats": [
+          "Compare religious legitimation with material and political motives rather than reducing one to the other.",
+          "Examine frontier raiding, conquest, and settlement as different patterns of violence.",
+          "Consider how trade routes could generate both interdependence and competition.",
+          "Include the role of law, ritual, diplomacy, and hostage-taking in limiting or organizing conflict.",
+          "Trace how expanding states classified populations and made some forms of violence administratively possible.",
+          "Use regional comparison to avoid presenting one medieval experience as universal."
+        ]
+      },
+      {
+        "index": 8,
+        "title": "A Document from the Edge of Empire",
+        "summary": "Read a single historical document as a compact record of coercion, fear, administration, and self-justification. The chapter should stay with the document, its language, its intended audience, and its silences rather than becoming a general survey.",
+        "targetPages": 5,
+        "keyBeats": [
+          "Identify the document's date, setting, author or issuing authority when securely known, and intended audience.",
+          "Read its descriptions of enemies, subjects, punishment, obligation, or protection closely.",
+          "Separate what the document directly states from what historians infer.",
+          "Consider the people absent from the document and the institutional purpose behind its wording.",
+          "End with a bounded interpretation of what one document can and cannot show."
+        ]
+      },
+      {
+        "index": 9,
+        "title": "Gunpowder, Commerce, and Colonial Power",
+        "summary": "Examine the early modern transformation of force through firearms, maritime expansion, commercial competition, colonial rule, and changing state capacity. Treat technology as an amplifier whose effects depended on organization, resources, and political purpose.",
+        "targetPages": 13,
+        "keyBeats": [
+          "Explain why a weapon changes warfare only when institutions can supply, train, transport, and deploy it.",
+          "Connect maritime commerce and imperial expansion without treating commerce as inherently peaceful or violent.",
+          "Examine colonial violence through conquest, forced labor, dispossession, and administrative classification.",
+          "Compare violence at the frontier with violence in metropolitan centers.",
+          "Discuss the growth of fiscal and military systems that made sustained campaigns possible.",
+          "Show how legal language could both challenge and authorize domination.",
+          "Prepare the transition to industrialized warfare by following the expanding scale of logistics."
+        ]
+      },
+      {
+        "index": 10,
+        "title": "The Industrial Battlefield",
+        "summary": "Read industrialization as a transformation of scale, speed, supply, communication, and lethality. Follow railways, factories, conscription, artillery, telegraphy, and mass administration into the warfare of the nineteenth and early twentieth centuries.",
+        "targetPages": 4,
+        "keyBeats": [
+          "Open with the material chain connecting a factory, railway, depot, and battlefield.",
+          "Explain why industrial capacity altered the duration and reach of war.",
+          "Distinguish technological capability from political decisions about mobilization and targets.",
+          "End with the civilian consequences that made total-war systems historically distinctive."
+        ]
+      },
+      {
+        "index": 11,
+        "title": "The Century of Mass Violence",
+        "summary": "Survey the world wars, revolutionary violence, genocidal projects, colonial wars, and state terror of the twentieth century while resisting a single total for all forms of harm. Explain how ideology, bureaucracy, industrial capacity, propaganda, emergency powers, and international systems interacted.",
+        "targetPages": 12,
+        "keyBeats": [
+          "Define mass violence by organization, scale, target selection, and administrative reach.",
+          "Compare battlefield deaths with civilian killing, famine caused by policy, displacement, and political terror.",
+          "Show how modern states could mobilize protection and destruction through the same bureaucratic capacities.",
+          "Discuss propaganda and classification as tools that shaped who could be attacked or excluded.",
+          "Use carefully bounded examples from multiple regions rather than a Eurocentric sequence.",
+          "Address the danger of treating the twentieth century as proof that technology alone causes atrocity.",
+          "Close by introducing the evidence for declining homicide in some settings alongside continuing war and repression."
+        ]
+      },
+      {
+        "index": 12,
+        "title": "Why Some Violence Declined",
+        "summary": "Investigate evidence for long-term declines in interpersonal violence in parts of Europe and elsewhere, while distinguishing homicide trends from war, colonial violence, domestic abuse, and state coercion. Explore policing, courts, state capacity, social norms, economic change, and measurement limits.",
+        "targetPages": 10,
+        "keyBeats": [
+          "Explain what homicide records can measure and what they leave out.",
+          "Examine the relationship among courts, policing, monopolies on legitimate force, and private retaliation.",
+          "Discuss changing norms around bodily harm, honor, punishment, and public order.",
+          "Keep regional variation visible and avoid presenting a single civilizing trajectory.",
+          "Compare declining interpersonal violence with episodes of imperial and state violence.",
+          "End with a carefully bounded account of what historical decline claims can support."
+        ]
+      },
+      {
+        "index": 13,
+        "title": "Biology, Environment, and the Social Brain",
+        "summary": "Bring historical evidence into conversation with research on temperament, threat response, self-control, hormones, genetics, development, and social learning. Clarify what modern behavioral research can illuminate about aggression and what it cannot establish about ancient or global history.",
+        "targetPages": 3,
+        "keyBeats": [
+          "Separate biological predispositions from fixed historical destinies.",
+          "Explain that modern findings about individuals do not directly measure ancient population behavior.",
+          "Consider environment, stress, learning, institutions, and cultural expectations as interacting influences.",
+          "End by returning to the book's central position: capacities become historical patterns through social conditions."
+        ]
+      },
+      {
+        "index": 14,
+        "title": "A Variable Human Past",
+        "summary": "Synthesize the survey without flattening its regional and chronological differences. Revisit the major influences on aggression, identify the strongest and weakest conclusions, and leave readers with a historically grounded account of variation, constraint, and human choice.",
+        "targetPages": 11,
+        "keyBeats": [
+          "Gather the recurring factors: ecology, density, inequality, production, institutions, technology, identity, and norms.",
+          "Show that the same factor can support cooperation in one setting and coercion in another.",
+          "Distinguish explanations that account for opportunity, organization, motive, and restraint.",
+          "Name the major uncertainties created by incomplete records and unequal evidence.",
+          "Reject both a myth of permanent savagery and a myth of automatic progress.",
+          "Close on the practical historical insight that violence changes when the arrangements around people change."
+        ]
+      }
+    ],
+    "characters": [],
+    "locations": [
+      {
+        "name": "Nataruk",
+        "description": "An archaeological site near Lake Turkana in Kenya used to introduce the evidence and uncertainty surrounding prehistoric collective violence."
+      },
+      {
+        "name": "Early Mesopotamian city-states",
+        "description": "A case-study setting for examining urban administration, surplus, fortification, taxation, labor, and organized force."
+      },
+      {
+        "name": "Industrial European battlefronts",
+        "description": "A comparative setting for tracing factories, railways, artillery, conscription, communications, and civilian exposure during industrialized war."
+      }
+    ],
+    "continuityRules": [
+      "Keep aggression, violence, warfare, homicide, coercion, punishment, and mass killing analytically distinct.",
+      "Use BCE and CE consistently, with approximate dates only when the evidence requires approximation.",
+      "Do not generalize from one region to all societies without explicit comparative support.",
+      "Distinguish direct evidence from interpretation and mark unresolved scholarly disagreement.",
+      "Keep the Nataruk opening focused on what the site demonstrates and what it cannot demonstrate.",
+      "Treat the Mesopotamian chapter as one continuous case rather than a sequence of unrelated examples.",
+      "Do not repeat the same example as proof of different claims unless the later use adds a new dimension.",
+      "Keep modern behavioral research in its proper scope and do not use it as retroactive proof of ancient motives."
+    ],
+    "researchQueries": [
+      "How do archaeologists distinguish interpersonal violence, massacre, and organized warfare in prehistoric contexts?",
+      "What regional evidence connects agriculture, settlement, stored wealth, population density, and organized violence?",
+      "How did early cities, taxation, fortification, writing, labor systems, and armies interact in Mesopotamia?",
+      "How did kinship, feud, compensation, law, punishment, and state authority shape interpersonal violence?",
+      "How did imperial administration, tribute, deportation, infrastructure, and frontier conditions organize coercion?",
+      "How did religion, commerce, migration, and political legitimacy influence conflict in medieval and early modern societies?",
+      "How did firearms, maritime expansion, colonial rule, and fiscal-military states alter the reach of violence?",
+      "How did industrial production, railways, telegraphy, conscription, and logistics transform warfare?",
+      "What evidence supports or qualifies claims about twentieth-century mass violence across regions?",
+      "What explains documented declines in homicide in some societies, and what forms of violence do those measures exclude?",
+      "What can current research on biology, development, stress, self-control, and social learning contribute to a history of aggression?",
+      "Which claims about human aggression remain uncertain because of uneven records, measurement problems, or contested interpretation?"
+    ],
+    "promises": [
+      "The book will distinguish personal aggression from organized warfare and state violence.",
+      "The book will show why agriculture and settlement could increase both cooperation and conflict.",
+      "The book will follow one early urban case in depth rather than relying only on panoramic summary.",
+      "The book will read one historical document closely as evidence of coercion and administrative self-justification.",
+      "The book will explain how industrial systems changed the scale and reach of violence.",
+      "The book will account for evidence of declining interpersonal violence without claiming that history follows a single path toward peace.",
+      "The book will connect biological and psychological influences to historical conditions without reducing history to biology.",
+      "The conclusion will offer a bounded explanation of why aggression varies across societies and eras."
+    ],
+    "illustrationPlan": {
+      "cadence": "manual",
+      "globalStyle": " restrained historical nonfiction visuals: archival textures, archaeological objects, maps, landscapes, architectural remains, documents, and material details; no sensational gore, heroic battle imagery, or invented historical scenes presented as documentary fact",
+      "coverPrompt": "A restrained historical survey cover showing layered evidence of human conflict across time: an archaeological fragment, a city wall, a historical document, a railway line, and a distant modern skyline arranged as a thoughtful visual progression; muted earth, charcoal, rust, and parchment tones; no invented people, no gore, no text inside the image.",
+      "characterReferencePrompts": [],
+      "pageRules": [
+        "Prefer maps, artifacts, buildings, landscapes, documents, diagrams, and material systems over dramatized battle scenes.",
+        "Label reconstructed scenes as reconstructions when used.",
+        "Do not invent identifiable historical individuals or quotations in illustrations.",
+        "Avoid graphic injury, dehumanizing caricature, and imagery that equates a population with violence.",
+        "Use regional specificity in architecture, clothing, tools, terrain, and objects when a visual is requested.",
+        "Do not place explanatory text inside an illustration unless it is a clearly labeled map, chart, or document facsimile."
+      ]
+    },
+    "writingMode": "analytical-history",
+    "styleContract": {
+      "localRules": [
+        {
+          "id": "source-bounded-claims",
+          "instruction": "Every factual page claim must be supportable by attached research or clearly marked as an interpretation, with no invented evidence."
+        },
+        {
+          "id": "specific-before-general",
+          "instruction": "Begin explanations with a particular place, object, record, event, or documented pattern before drawing a broader conclusion."
+        },
+        {
+          "id": "separate-categories",
+          "instruction": "Keep interpersonal aggression, homicide, warfare, coercion, punishment, and mass violence distinct on the page where the distinction matters."
+        },
+        {
+          "id": "bounded-causation",
+          "instruction": "Use language that matches the evidence, distinguishing causes, contributing conditions, associations, and plausible interpretations."
+        },
+        {
+          "id": "uncertainty-with-purpose",
+          "instruction": "State uncertainty when it changes the reader's understanding of a claim, not as a repetitive disclaimer."
+        },
+        {
+          "id": "no-presentism",
+          "instruction": "Avoid projecting modern categories, motives, or moral language onto historical actors without explaining the historical context."
+        },
+        {
+          "id": "no-sensationalism",
+          "instruction": "Describe suffering precisely and respectfully without graphic embellishment or spectacle."
+        }
+      ],
+      "distributionRules": [
+        {
+          "id": "vary-scale",
+          "instruction": "Distribute attention among households, settlements, states, empires, regions, and global systems rather than repeating one scale."
+        },
+        {
+          "id": "vary-page-function",
+          "instruction": "Alternate narrative case material, close reading, comparison, explanation, and synthesis so every page does not perform the same analytical task."
+        },
+        {
+          "id": "avoid-single-curve",
+          "instruction": "Do not organize the whole manuscript around a single upward or downward curve of violence."
+        },
+        {
+          "id": "regional-balance",
+          "instruction": "Use regional comparison where it clarifies a claim, but do not force every chapter into a complete world survey."
+        },
+        {
+          "id": "nonrepetitive-endings",
+          "instruction": "Vary chapter endings among an unresolved question, a qualified conclusion, a transition in scale, a document's silence, and a concrete historical consequence."
+        },
+        {
+          "id": "advance-concepts",
+          "instruction": "Reintroduce a concept only when a later chapter changes, tests, or complicates its earlier meaning."
+        }
+      ]
+    }
+  }
+}

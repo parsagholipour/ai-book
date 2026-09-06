@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 7,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 8.0,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The story is plausible. The bones do not supply its sequence.",
+      "judgment": "Compressed, disciplined statement of the book's core epistemic move: plausibility is not evidence."
+    },
+    {
+      "quote": "The pit is powerful evidence of killing. It is poor evidence for a census.",
+      "judgment": "Excellent one-line calibration of what an archaeological site can and cannot bear; the strongest recurring habit of mind in the book."
+    },
+    {
+      "quote": "The siege gun was the visible end of a bureaucratic sentence.",
+      "judgment": "The thesis made into an image rather than restated as a proposition; among the best sentences in the manuscript."
+    },
+    {
+      "quote": "Murder became possible because no single office had to describe the whole act.",
+      "judgment": "The Wannsee chapter's argument earned line by line through the protocol's own verbs, not asserted."
+    },
+    {
+      "quote": "A battle-death series sees the bullet and may miss the broken road.",
+      "judgment": "Turns a methodological objection to quantitative peace research into a concrete, memorable test."
+    },
+    {
+      "quote": "The ram moved again.",
+      "judgment": "The scene-setting openings use short paragraphs well, but this staccato beat recurs across chapters until it reads as a device rather than a decision."
+    },
+    {
+      "quote": "Every weapon in this book was pointed by an institution, whether the institution was a palace, a company, a colonial department, or a party apparatus.",
+      "judgment": "A clean synthesis, though by chapter 15 the reader has met this claim in some form roughly forty times; the closing chapter mostly recapitulates."
+    },
+    {
+      "quote": "The new weapon changed the problem without solving it.",
+      "judgment": "Typical of a templated aphoristic pivot dropped as a standalone paragraph — true, but the chapter has already demonstrated it and the sentence adds only rhythm."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Terminal antithesis: a claim granted in one sentence and bounded in the next by a negation (\"establishes X. It does not Y\"). Intellectually honest, but deployed as the default closing cadence of nearly every evidentiary paragraph.",
+      "instances": [
+        "The points establish danger at close historical range. They do not announce a commander.",
+        "The grave preserves the wound."
+      ]
+    },
+    {
+      "pattern": "Chapter- or section-ending rhetorical question that reframes the evidence as an open problem about archives rather than about violence.",
+      "instances": [
+        "Did the early state increase violence, or did it increase the chances that violence would survive as evidence?",
+        "Did violence increase because frontier peoples were more aggressive, or because fragmented political power made raiding the most practical way to obtain wealth, security, and recognition?"
+      ]
+    },
+    {
+      "pattern": "The paired-case comparison, in which two societies or sources are set side by side and resolved in a balanced \"one ... ; the other ...\" clause. Nearly every chapter contains at least one such diptych, and they close in the same shape.",
+      "instances": [
+        "One system made separation a principle of relationship; the other made incorporation a means of imperial order.",
+        "One archive makes conflict look like a chain of encounters; the other makes it look like an administrative flow."
+      ]
+    },
+    {
+      "pattern": "The \"scarcity became killing\" formula — a fixed refrain used to subordinate ecological explanation to institutional decision, repeated verbatim in its opening clause across widely separated chapters.",
+      "instances": [
+        "Scarcity became killing where someone could decide that another household’s field, animals, or storehouse was available for seizure.",
+        "Scarcity became killing where an authority had already decided who could be dispossessed."
+      ]
+    },
+    {
+      "pattern": "The violence/administration couplet: a two-clause sentence in which force opens a situation and bureaucracy settles it, used as the punchline of conquest episodes from Assyria to Baghdad.",
+      "instances": [
+        "Terror announced the terms. Administration collected them.",
+        "Violence opened the city, while administration determined what could be carried forward."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely coherent book: its thesis — that organised harm is produced by offices, records and jurisdictions rather than by a constant human appetite, and that surviving archives distort which violence we can see — is stated in chapter 1 and tested, not merely repeated, across fifteen chronologically arranged chapters. The evidential handling is unusually careful for a work of this scope: it distinguishes antemortem from perimortem trauma at Jebel Sahaba, refuses to let Talheim become a census, reads the Wannsee protocol's verbs rather than its reputation, and separates what a battle-death series counts from what it cannot. Prose is precise, concrete, and largely free of filler; the reconstructed openings (Socrates, Lachish, the Zong, the September prison gates, the Somme) are researched down to the object and give each chapter real narrative pull. The costs are pacing and sameness of move. Paragraphs converge on the same closing cadences — the granted-then-bounded antithesis, the balanced two-case diptych, the aphoristic single-sentence paragraph, the chapter-ending rhetorical question — and the institutional refrain is restated so often that chapter 15 reads mostly as recapitulation. Trimming perhaps a fifth of the summative sentences and varying the terminal rhythm would lift it from very good to excellent; nothing about the argument or the research needs rebuilding."
+}

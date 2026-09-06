@@ -1,0 +1,40 @@
+{
+ "createdAt": "2026-09-06T02:25:56Z",
+ "sourceProject": "cmtjbz54o000w6rjyvzewwqj4",
+ "writerTier": "balanced",
+ "qualityRevision": 49,
+ "assessorModel": "claude-opus (Agent tool, model=opus)",
+ "readersPerBook": 3,
+ "candidates": {
+  "J2": {
+   "sourceLabel": "ladder-5a-apparatus",
+   "arm": "reference",
+   "sha256": "3026686c1b004465e0df50c5a74eab97a47e1445a3559cf7b8144d4936344a34",
+   "words": 56471
+  },
+  "R4": {
+   "sourceLabel": "material-progression-3",
+   "arm": "baseline",
+   "sha256": "cf73d869b41ee3c575c82c6a9e82be639116334d0ac43762670e0c67a2ea3ce8",
+   "words": 60331
+  },
+  "J5": {
+   "sourceLabel": "fresh-plan-5",
+   "arm": "new",
+   "sha256": "68d797c2fbda816f7958deede7e14a7b674b6b3e1daab77a4979d1c70f55521a",
+   "words": 56726
+  },
+  "T6": {
+   "sourceLabel": "plan-contract-6",
+   "arm": "new",
+   "sha256": "d75dbe860851b8960de246553747595657ca9e0717acc1ca5f709f975b6b6689",
+   "words": 58614
+  },
+  "P3": {
+   "sourceLabel": "legacy-cuts-7b",
+   "arm": "new",
+   "sha256": "7188c022307eb4ed7c27c0693c9cd73e4e9d78af1fe8aa642ad2fa9b85852885",
+   "words": 52396
+  }
+ }
+}

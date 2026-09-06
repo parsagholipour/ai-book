@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.4,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A person could strike another person without a state. A state could turn a person into a target without striking him itself. Those forms of aggression belong in the same history because their difference lies in the institution that gives them reach.",
+      "judgment": "The book's thesis stated with real economy \u2014 but also the prototype of the paired-antithesis closer it will reuse dozens of times."
+    },
+    {
+      "quote": "It leaves more paper, not necessarily more aggression.",
+      "judgment": "Excellent compressed source-criticism; the single best sentence about why state violence looks more organised than community violence."
+    },
+    {
+      "quote": "Soldiers were expected to account for cartridges, and severed hands could be used to demonstrate that ammunition had been spent against supposed enemies... The hand was both a body part and a receipt.",
+      "judgment": "Where the argument earns itself: a concrete case in which bookkeeping literally produces mutilation."
+    },
+    {
+      "quote": "The wider Armenian deportations of 1915 produced death marches and the displacement of an estimated 1.5 million Armenians, according to the research record supplied for this history.",
+      "judgment": "A provenance leak: the manuscript refers to its own source dossier, breaking the historian's voice and appearing at least three times."
+    },
+    {
+      "quote": "At Nataruk, the remains of 27 people, including six children, were found near a former lagoon... A later critique questioned whether some trauma occurred after deposition... The disagreement shows that the conclusion depends on timing, preservation, spatial relations, and assumptions about what an attack should leave behind.",
+      "judgment": "Genuine methodological honesty \u2014 the book repeatedly names the dispute rather than picking the dramatic reading."
+    },
+    {
+      "quote": "The account places people together at a settlement and describes a confrontation; it does not preserve the sequence of gestures, words, motives, or injuries. That narrowness is useful.",
+      "judgment": "The opening spends nearly thirty paragraphs meditating on two documents whose content is admittedly almost unknown; the hedging substitutes for material."
+    },
+    {
+      "quote": "Geography supplied openings; political choices gave them form.",
+      "judgment": "Crisp, but one of scores of semicolon antitheses used as a paragraph terminator; the device stops registering by Chapter 7."
+    },
+    {
+      "quote": "Can an empire sustain difference without repeatedly turning difference into a test of obedience?",
+      "judgment": "Chapters end again and again on an unanswered rhetorical question \u2014 a habit that reads as gravitas but defers the argument."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Negation-then-assertion definition ('X is not Y. It is Z.'), used as the default way to introduce almost every concept.",
+      "instances": [
+        "\u201cMurder\u201d is not a neutral synonym for death. It identifies a death as wrongful and attributes responsibility to a person or persons.",
+        "The hole in the argument is elsewhere: \"A settlement was not merely a collection of houses. It was a place where kinship, exchange, residence, and authority overlapped.\""
+      ]
+    },
+    {
+      "pattern": "Aphoristic paired-antithesis closer at the end of a section, usually contrasting an object with the office behind it.",
+      "instances": [
+        "A massacre would leave bodies; deportation leaves a population available for use elsewhere.",
+        "The archive and the monument worked together: one organised resources, the other organised meaning."
+      ]
+    },
+    {
+      "pattern": "The same thesis restated as a section-final moral, chapter after chapter, with only the nouns changed.",
+      "instances": [
+        "The weapon did not determine the political result. The office that received the captive did.",
+        "A gun could help conquer a city, guard a castle, or remain under official supervision. Its meaning came from the office that directed it."
+      ]
+    },
+    {
+      "pattern": "Fixed chapter architecture: two case documents read closely, then an explicit paired comparison, then a catalogue of four to six 'instruments', then an open question.",
+      "instances": [
+        "Pre-state archaeology supplies a vocabulary of recurring signs. Fortifications are one entry... Cranial injuries form another entry... Projectile points supply a harder edge... Burned settlements complete the catalogue.",
+        "A pass system began with paper... A concession company began with a charter or contract... A punitive expedition began with a report of disobedience... A mission school began with a timetable... A boundary survey began with a line drawn across a map."
+      ]
+    },
+    {
+      "pattern": "A straw opposition set up so the book can reject it \u2014 'the difference is not between a peaceful X and a violent Y' \u2014 rather than engaging a real rival explanation.",
+      "instances": [
+        "The comparison is not between a peaceful Jericho and a warlike Mohenjo-daro.",
+        "The difference is not between a society with rules and one without them."
+      ]
+    }
+  ],
+  "summary": "A disciplined, unusually coherent global history arguing that aggression's scale, target and durability are set by institutions \u2014 offices, categories, records \u2014 rather than by any fixed human disposition, and that the surviving evidence is itself an artefact of those institutions. The argument is sustained across all fifteen chapters and closed honestly in the last, which refuses monocausal readings of ecology, inequality, technology, identity, leadership and contingency; the source criticism (Jebel Sahaba, Nataruk, the Military Revolution debate, intentionalism versus functionalism) is genuinely careful. Sentence by sentence the prose is precise, cool and often memorable, and the lexical slop markers are essentially absent. The trouble is structural: every chapter runs the same machine \u2014 two documents read closely, a paired comparison, a catalogue of instruments, an unanswered question \u2014 and the thesis is restated as an aphoristic antithesis so often that its force decays well before the halfway point. Redundancy, not error, is the main editorial problem, compounded by a few breaks in voice where the text refers to its own 'research record supplied for this history.' With aggressive cutting and deliberate variation of chapter shape it would be a strong book; as it stands the reader learns the template faster than the argument develops."
+}

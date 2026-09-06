@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.4,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A wound is an event in a body. It is not automatically an event between groups.",
+      "judgment": "The book's governing distinction, stated early and with real economy; it earns the methodological caution that follows for 15 chapters."
+    },
+    {
+      "quote": "The first cities did not cure aggression. They gave it offices, rations, walls, formations, and names.",
+      "judgment": "Genuinely good closing cadence, but it is also the book's signature move — negate, then supply a five-item noun list — and it recurs to the point of formula."
+    },
+    {
+      "quote": "A report intended to show military efficiency could therefore turn a human body into a receipt.",
+      "judgment": "The strongest single sentence in the book: the thesis about bureaucratised harm compressed into one concrete image."
+    },
+    {
+      "quote": "the Fatimid Maghreb records, in the material available here, a pattern of frontier coercion",
+      "judgment": "A leak of the drafting apparatus into the prose; 'the material available here', 'the surviving account summarized in the evidence' and 'the research note gives a range' all break the historian's voice."
+    },
+    {
+      "quote": "The grave is a sample, sometimes an unusually grave sample, and samples do not become populations merely because their contents are dramatic.",
+      "judgment": "An unintended pun that wrecks an otherwise careful sentence — evidence that the copy-edit pass was uneven."
+    },
+    {
+      "quote": "It cannot reveal the complete motive of every killer or survivor. It cannot recreate every road not taken.",
+      "judgment": "In the final chapter this anaphoric run has lost its grammatical subject across a paragraph break; the strongest rhetorical passage is also the most broken one."
+    },
+    {
+      "quote": "Someone had to determine the quantity required. Someone had to locate the materials. Someone had to inspect the result.",
+      "judgment": "Where specificity fails, the book substitutes an abstract procedural chant; several chapters have one of these placeholder paragraphs."
+    },
+    {
+      "quote": "Nataruk and Talheim make episode visible; Jebel Sahaba makes recurrence visible; Crow Creek reminds us that similar mortuary forms can occur in societies separated by time and circumstance.",
+      "judgment": "Comparative discipline done well — differentiated cases held apart rather than fused into one prehistoric war."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The staged historians' duel: every chapter recruits two named scholars with opposed emphases, weighs them, and issues a verdict, often with the word 'verdict' or 'I agree/I side'. By chapter five the reader can predict the paragraph's arrival.",
+      "instances": [
+        "Parker is right about connection. Black is right about unevenness. I would not resolve the dispute by choosing technology over administration",
+        "I therefore side with Kaeuper against any account that treats medieval violence primarily as political disorder."
+      ]
+    },
+    {
+      "pattern": "The concessive negation formula — 'X shows A. It does not show B.' — used as the default paragraph-closer several hundred times across the book. It is the source of both the book's credibility and most of its bloat.",
+      "instances": [
+        "The injury is not only evidence of an act. It is evidence of an interval.",
+        "The number of bodies can establish concentration. It cannot establish motive."
+      ]
+    },
+    {
+      "pattern": "One-line paragraphs used as inter-section pivots, isolated for aphoristic weight, usually to hand off from one artifact to the next.",
+      "instances": [
+        "The royal image was a lesson.",
+        "A ledger does not travel evenly across a landscape."
+      ]
+    },
+    {
+      "pattern": "Paired antithetical sentences with matched syntax, deployed as the standard rhetorical unit rather than reserved for emphasis.",
+      "instances": [
+        "The raid disrupted a place. The campaign tried to rearrange its future.",
+        "A peace agreement is not a human instinct. Neither is a genocide."
+      ]
+    },
+    {
+      "pattern": "Cross-chapter recap of earlier evidence in near-identical wording, so that later chapters re-teach material rather than assume it.",
+      "instances": [
+        "The Barbados Code of 1661 defined enslaved people as “goods and Chattels” and authorized owners extensive powers of punishment, including mutilation and burning alive.",
+        "On the Codrington plantations, owned by the Society for the Propagation of the Gospel after Christopher Codrington's bequest in 1710, at least 300 enslaved people were required to work 763 acres."
+      ]
+    }
+  ],
+  "summary": "This is a serious, chronologically ordered global history whose thesis — that aggression is a constant human capacity while institutions decide its scale, targets and meaning — is stated in chapter one, tested against artefacts in every chapter, and re-examined methodologically in chapter fifteen. Its distinctive strength is evidentiary discipline: the book repeatedly refuses to let a wound become a war or a monument become a report, and it names what each source can and cannot carry. The prose is clean, concrete and free of the usual lexical tells; the sourcing is specific (Jebel Sahaba's sixty-one skeletons, Codrington's 763 acres, the Yuan relay's 1,519 stations), and comparisons are held apart rather than flattened. Against that, the book is structurally templated to a degree that becomes visible early: an artefact, a careful reading, a duel between two named historians, a verdict, an aphoristic closer, with 'X shows A; it does not show B' as the reflex sentence. The result is slow reading with heavy redundancy, uniform paragraph shapes and little tonal variation across four hundred pages of argument. A few passages leak the drafting process ('in the material available here', 'the research note gives a range'), and the final chapter contains a paragraph that has lost its grammatical subject — signs that trimming and a close copy-edit are still owed."
+}

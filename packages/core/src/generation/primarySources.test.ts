@@ -99,3 +99,31 @@ describe("primarySources", () => {
     expect(Date.now() - started).toBeGreaterThanOrEqual(50);
   });
 });
+
+it("retrieves public archive OCR when its filename differs from the item identifier", async () => {
+  const calls: string[] = [];
+  const text = await fetchPrimaryText({ host: "archive", title: "The Casement Report", author: "Roger Casement", year: "1904", url: "https://archive.org/details/the-casement-report", textUrl: "https://archive.org/download/the-casement-report/the-casement-report_djvu.txt" }, async (url) => {
+    calls.push(url);
+    if (url === "https://archive.org/metadata/the-casement-report") return { status: 200, text: JSON.stringify({ files: [{ name: "caesement report_djvu.txt", format: "DjVuTXT" }] }) };
+    if (url === "https://archive.org/download/the-casement-report/caesement%20report_djvu.txt") return { status: 200, text: "The commissioner recorded the testimony." };
+    return { status: 404, text: "" };
+  });
+  expect(text).toBe("The commissioner recorded the testimony.");
+  expect(calls).toContain("https://archive.org/metadata/the-casement-report");
+});
+
+it("keeps unavailable archive items empty and never treats private files or metadata as source prose", async () => {
+  for (const metadata of [
+    { files: [] },
+    { files: [{ name: "private_djvu.txt", format: "DjVuTXT", private: true }] },
+    { is_dark: true, files: [{ name: "hidden_djvu.txt", format: "DjVuTXT" }] }
+  ]) {
+    const urls: string[] = [];
+    const text = await fetchPrimaryText({ host: "archive", title: "Unavailable", author: "", year: "1904", url: "https://archive.org/details/item", textUrl: "https://archive.org/download/item/item_djvu.txt" }, async (url) => {
+      urls.push(url);
+      return url.includes("/metadata/") ? { status: 200, text: JSON.stringify(metadata) } : { status: 404, text: "" };
+    });
+    expect(text).toBe("");
+    expect(urls).toHaveLength(2);
+  }
+});

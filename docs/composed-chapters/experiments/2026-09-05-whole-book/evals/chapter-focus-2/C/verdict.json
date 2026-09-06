@@ -1,0 +1,85 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 9,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 7,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.5,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The forensic record narrows possibilities; it does not turn possibilities into motives.",
+      "judgment": "This crisply states the book's strongest methodological discipline: evidence limits inference."
+    },
+    {
+      "quote": "Climate is a setting in which choices occur, not a motive preserved inside a rib or a projectile point.",
+      "judgment": "The sentence combines conceptual precision, memorable imagery, and appropriate resistance to monocausal certainty."
+    },
+    {
+      "quote": "Confirmation of an act does not validate the category through which a conqueror explained an entire society.",
+      "judgment": "This is a strong, economical distinction between evidence and an interested source's interpretation."
+    },
+    {
+      "quote": "The plantation depended on a chain in which ownership, shipping, credit, colonial government, parish records, courts, and markets made one another useful, with cruelty everywhere.",
+      "judgment": "Specific institutions are synthesized into a forceful explanation without erasing the human violence."
+    },
+    {
+      "quote": "The question is not whether violence disappeared. It is who was exposed to it, which institutions could conceal it, and which forms of harm the available measures were prepared to see.",
+      "judgment": "The book productively challenges narrow measurement while keeping the alternatives concrete."
+    },
+    {
+      "quote": "There were still choices.",
+      "judgment": "The isolated aphoristic emphasis is rhetorically effective once, but exemplifies a repeatedly used dramatic cadence."
+    },
+    {
+      "quote": "“there is abundant proof to show the most biased mind, that President Jefferson Davis and General Robert E.”",
+      "judgment": "This visibly truncated epigraph is confusing and undercuts the otherwise polished final chapter."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The prose repeatedly marks the exact inferential limit of a source or object.",
+      "instances": [
+        "It does not establish armies, permanent war leaders, or a settled system of warfare at Nataruk.",
+        "The image does not establish how many people died in the Lullubi campaign or show the ordinary consequences for villages in the Zagros."
+      ]
+    },
+    {
+      "pattern": "Institutional explanations are frequently compressed into parallel causal chains.",
+      "instances": [
+        "The palace supplied soldiers; the army secured or enlarged the palace’s claims; officials converted fields and labour into provisions; royal images converted victory into legitimacy.",
+        "The state supplied the claim, the company supplied the target, the Force Publique supplied the threat, and the report supplied a measure by which superiors judged the result."
+      ]
+    },
+    {
+      "pattern": "Chapters repeatedly crystallize arguments in short, contrastive aphorisms.",
+      "instances": [
+        "The forensic record narrows possibilities; it does not turn possibilities into motives.",
+        "Violence could open a corridor, but it could not by itself maintain the road."
+      ]
+    },
+    {
+      "pattern": "Multi-case chapters often recap their cases in matched, syntactically parallel sentences.",
+      "instances": [
+        "Ötzi offers the body of a victim and the material trace of a weapon. Hammurabi offers rules that sort injury by status and responsibility. Thucydides offers a constructed account of political speech preceding military action.",
+        "The Code Noir shows authorisation at the level of clauses. The Zong shows what happened when a commercial decision entered court. Equiano shows how a person moved through the same world without becoming identical to its categories."
+      ]
+    },
+    {
+      "pattern": "The manuscript repeatedly rejects single-factor explanations with terse negations before rebuilding a systemic account.",
+      "instances": [
+        "Population alone cannot explain this transformation.",
+        "Divine kingship did not feed an army."
+      ]
+    }
+  ],
+  "summary": "The manuscript advances a clear and unusually coherent thesis: violence gains reach, durability, and meaning through institutions, while evidence must not be made to claim more than it can support. Its chronological architecture and recurring comparisons are ambitious, specific, and generally well reasoned, with especially strong source criticism and attention to administrative chains. The chief weakness is accumulation: chapters repeatedly use the same source-limit pivot, three-case synthesis, balanced qualification, and aphoristic closer, producing substantial redundancy and a detectable template beneath the scholarship. The voice is controlled and often elegant, but the uniform cadence and recurring conceptual vocabulary reduce surprise and pace, while the malformed final epigraph needs correction. Moderate revision should compress repeated methodological reminders, vary chapter architecture, and preserve the manuscript's caution rather than converting polished synthesis into greater certainty."
+}

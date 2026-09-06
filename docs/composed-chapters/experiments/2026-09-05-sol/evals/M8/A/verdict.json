@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 9,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 8,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 5
+  },
+  "overall": 7.8,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The archive does not distribute evidence according to the importance of the violence.",
+      "judgment": "This concise formulation anchors the book's strongest methodological insight about preservation bias."
+    },
+    {
+      "quote": "The pit is powerful evidence of killing. It is poor evidence for a census.",
+      "judgment": "A memorable distinction turns archaeological caution into lucid, forceful prose."
+    },
+    {
+      "quote": "The ledger and the spear belonged to one chain.",
+      "judgment": "This neatly crystallizes the central thesis linking administration, extraction, and organized force."
+    },
+    {
+      "quote": "The pattern was institutional without being fully commanded.",
+      "judgment": "The sentence captures a genuinely useful middle category for explaining crowd violence."
+    },
+    {
+      "quote": "Historical comparison supports a layered account in which conditions load the field and decisions direct the force.",
+      "judgment": "The conclusion synthesizes the survey into a coherent, qualified causal model."
+    },
+    {
+      "quote": "The story is plausible. The bones do not supply its sequence.",
+      "judgment": "The sharp restraint is effective, though this clipped aphoristic cadence recurs often enough to feel mannered."
+    },
+    {
+      "quote": "The new weapon changed the problem without solving it.",
+      "judgment": "This is clear but generic, exemplifying the manuscript's repeated standalone aphoristic transitions."
+    },
+    {
+      "quote": "One house in the district of the Forum held a Greek official and his family.",
+      "judgment": "The vivid Constantinople reconstruction reads as specific reportage even though the surrounding prose does not establish a source for this household-level scene."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Short standalone aphorisms punctuate and simplify longer evidentiary discussions.",
+      "instances": [
+        "The story is plausible. The bones do not supply its sequence.",
+        "The new weapon changed the problem without solving it."
+      ]
+    },
+    {
+      "pattern": "Chapters repeatedly contrast what an artifact or record reveals with what it cannot establish.",
+      "instances": [
+        "A point in the body identifies an act of penetration. It does not by itself identify a raid, a feud, an ambush, or a battle.",
+        "The figure is not a census of suffering."
+      ]
+    },
+    {
+      "pattern": "Material objects are linked to offices through compact chain metaphors.",
+      "instances": [
+        "The ledger and the spear belonged to one chain.",
+        "The siege gun was the visible end of a bureaucratic sentence."
+      ]
+    },
+    {
+      "pattern": "Comparisons recur in a balanced formula that identifies resemblance and then preserves difference.",
+      "instances": [
+        "The contrast between Talheim and Çatalhöyük is not a scale from peaceful to violent.",
+        "What links the cases is the political production of a target and the enlistment of offices, media, soldiers, and civilians. What separates them is the form those powers took."
+      ]
+    },
+    {
+      "pattern": "Chapter endings often leave the reader with an unresolved question about measurement or archival visibility.",
+      "instances": [
+        "Did the early state increase violence, or did it increase the chances that violence would survive as evidence?",
+        "The unresolved task is to decide whether the falling number describes less harm, less detectable harm, or a world that has learned to move much of its violence outside the count."
+      ]
+    }
+  ],
+  "summary": "This is an ambitious, conceptually coherent history of aggression as organized through institutions, offices, classifications, logistics, and archives rather than as a fixed human essence. Its strongest chapters combine vivid cases with careful distinctions between what evidence shows and what historians infer, and the final synthesis makes the comparative method explicit. The enormous range is handled with unusual clarity, but the book repeatedly returns to the same chain-of-command thesis, balanced contrast, archival caveat, and aphoristic closer, slowing the later chapters and giving the prose a templated rhythm. Several cinematic openings also present precise gestures, dialogue, or household details with greater certainty than the internal sourcing warrants. Moderate revision should compress recurring explanations, vary chapter architecture, and distinguish documented scene detail from plausible reconstruction."
+}

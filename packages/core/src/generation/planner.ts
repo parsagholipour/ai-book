@@ -107,6 +107,9 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
             ...(options.input.targetPages >= 40
               ? ["Give chapters different lengths, from three to fourteen pages: at least one long chapter that narrates a single case, one short chapter that reads a single document, and no run of chapters of the same length. A chapter is written as one piece."]
               : []),
+            // Three blind readers of the same book found chapters 13-14 re-narrating
+            // the cases of chapters 1-2, because the outline asked them to.
+            "At most one chapter synthesizes or concludes; every other chapter's keyBeats name material that chapter introduces, and no keyBeat of any chapter revisits, returns to or re-examines an earlier chapter's case — a callback is one sentence, not a beat.",
             "Do not create more chapters than targetPages, because every chapter must contain at least one page.",
             "For factual, scientific, historical, or research-grounded books, build the plan around source-backed claims and explicit uncertainty; do not invent studies, journals, institutes, experts, statistics, citations, or numeric findings.",
             "Treat researchContext as input-only evidence. Use it to ground the plan, but do not include a researchNotes field or reproduce its source records in your response; the server attaches them after planning.",
@@ -127,6 +130,7 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
             ...plannerToneGuidance(toneProfile),
             ...PLANNER_STYLE_CONTRACT_GUIDANCE,
             ...PLANNER_AUTHOR_STANCE_GUIDANCE,
+            'chapters is a required nonempty array at the JSON root, one object per chapter with index, title, summary, targetPages, and keyBeats. authorStance closes after thesis, positions, refusals, and voiceSample: chapters, characters, locations, promises, illustrationPlan, and every other plan field are siblings of authorStance, never inside it.',
             // Last deliberately. Three earlier rules argue against a saved
             // character, each in a way recency decides: "write all book-facing
             // strings in <language>" (which translated the name), "for every

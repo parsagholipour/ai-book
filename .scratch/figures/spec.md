@@ -21,7 +21,8 @@ approved pages.
 
 ## What shipped
 
-- `packages/core/src/generation/figures/`: `figureSpec.ts` (zod, limits, canonical one-line JSON),
+- `packages/core/src/generation/figures/`: `figureSpec.ts` (zod, limits: strings clip; counts and
+  value magnitude (`FIGURE_LIMITS.value`, 1e15) are hard; canonical one-line JSON),
   `figureBlocks.ts` (find, stand-in, strip/reinsert by anchor, validate, word equivalent),
   `figureSvgCharts.ts`, `figureSvgFlow.ts` (layered layout, back edges down a channel),
   `figureSvgShared.ts` (validated 4-colour palette, locale digits, RTL text), `figureHtml.ts`
@@ -30,14 +31,26 @@ approved pages.
 - Form plan: `chapterSectionSchema.figure`, `capFigures`, rule + key only when eligible.
 - Compose: syntax and one example of the planned kind only in a figured chapter; budget minus 140
   words per figure; words counted on prose only.
-- Worker: `composedFigures.ts`; validate after compose; strip before the edit, reinsert before the
-  cut; finalize on figure-free drafts, restore before staging; chat rewrite keeps the figure unless
-  the request names it.
+- Worker: `composedFigures.ts`; after compose, `validateFigureFences` drops an unreadable or
+  unterminated block, a block over the planned count, and — when a kind was planned — a valid
+  block of the wrong kind; survivors are re-serialised to the canonical line; strip before the
+  edit, reinsert before the cut; finalize on figure-free drafts, restore before staging; chat
+  rewrite keeps the figure unless the request names it; a replan adherence revise holds or keeps
+  the same way.
 - Render: `pdf.ts` (after anchors, before font subset) and `epub.ts` (before marked). Inline styles;
   no CSS change. Fixture `figures` in `scripts/render-book-fixtures.ts`.
 - Gate `figures` (composed, Chapter form plan, free), default on every tier.
-- Fence-blind seams: `pagesLocalQa`, `manuscriptQuality`, `manuscriptReviewPacks`, `readerChapters`,
-  `chapterIntegrity`, `manuscriptRead`, `describeChapterPages`, `chapterTail`, `projectChat`.
+- Fence-blind seams: `pagesLocalQa`, `manuscriptQuality`, `manuscriptReviewPacks`, `readerChapters`
+  (figure fences only; a language-tagged listing is page text), `chapterIntegrity`, `manuscriptRead`,
+  `describeChapterPages`, `chapterTail`, `projectChat`, `voiceCharacters`, `voiceCharacterProfile`,
+  `compileExportChapterReview` (chapter-transition excerpts; figure fences only),
+  `editAdherence` / `reviewAppliedBookEdit` (stand-ins unless the instruction names the figure,
+  same keep-unless-named as chat; markdown, not a later-pass `pageDraftSummary` site).
+  Later-pass summaries go through `pageDraftSummary` (`toPriorPageContext`, `lookup_page`,
+  `compactPageMap`, `compactPriorPages`, continuation `recentPageSummaries`, chapter-review `pageSummaries`,
+  voiceCharacters summaries, voiceCharacterProfile summaries, manuscriptReviewPacks neighbor
+  summaries). A chat rewrite keeps the figure unless the
+  request names it — including a title of three or more characters quoted as a whole phrase.
 
 ## Not done
 
@@ -58,8 +71,12 @@ honesty of the charts and the flow layout by eye before turning the gate on for 
   cap raised from half the chapters to three in four (`figureCapFor`).
 - The writer wrote the block. The validator dropped it: `unit: Too big: expected string to have <=24
   characters` (run log event `figure_dropped`). Strings are now clipped with an ellipsis instead of
-  refused; counts stay hard. The chart it wrote (10,000 → 1,000,000 records, linear scan against a
-  hash lookup) needs a log axis, so `scale: "log"` was added and named in the writer's rule.
+  refused; counts stay hard, and so does a value's magnitude (`FIGURE_LIMITS.value`, 1e15) — clipping
+  a value draws a different chart, and a number that size belongs in a larger unit. `Number.MAX_VALUE`
+  used to parse as valid and sent `niceTicks` into an infinite loop; the tick generator is bounded on
+  its own now (`figureSvgShared.ts`), because a spec can be built directly. The chart it wrote
+  (10,000 → 1,000,000 records, linear scan against a hash lookup) needs a log axis, so `scale: "log"`
+  was added and named in the writer's rule.
 - Code: three fences, all tagged `text`, plus thirteen indented code lines; highlight.js maps `text`
   to plaintext, so nothing was coloured although the highlighter works (the `rich-blocks` fixture's
   `js` fence renders coloured). `codeBlockRules` now tells a book about code to tag fences with the
@@ -79,7 +96,8 @@ honesty of the charts and the flow layout by eye before turning the gate on for 
   (compact ticks + adaptive margin), a 35-character unit overlapping the top tick (unit row), a
   linear axis over six decades (auto log at a 1000:1 ratio), diamond labels broken mid-word
   (whole-word wrap), edges into one node drawn as one line and layer-skipping edges running through
-  boxes (spread attach points, bowed skip edges). The book's chart and graph flow are now in the
-  `figures` fixture.
+  boxes (spread attach points, bowed skip edges), a 14-layer chain spilling the A4 content block
+  (`MAX_FLOW_HEIGHT` 720; nodes scale to fit rather than a min-width that overflows). The book's
+  chart and graph flow are now in the `figures` fixture.
 - Harness: `dev-rerun-book.ts` takes the designed cover by default (`--cover ai` to draw one); this
   run's AI cover had completed 35 s after launch, before the instruction arrived.

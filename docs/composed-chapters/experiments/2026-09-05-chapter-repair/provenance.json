@@ -1,0 +1,341 @@
+{
+  "builder": "build_revision.py",
+  "inputs": {
+    "source-blocks.json": "749aad0739bd4ae608b68512068f587261dd199d4c5366fcc830ffbf45cd482e",
+    "edit-plan.json": "17a5ed1c94c70a5cfe70285132f17f7fbb30f3f02ea5be779e484f5aa8146f09"
+  },
+  "operations": [
+    {
+      "id": "6.00",
+      "sourceBlocks": [
+        "6.00"
+      ],
+      "operation": "replace",
+      "text": "## Chapter 6: Lindisfarne, Faith, and Alarm",
+      "reason": "Title now names the distinct case; Mongol coverage moves wholly to Chapter 7."
+    },
+    {
+      "id": "6.09",
+      "sourceBlocks": [
+        "6.09",
+        "6.14"
+      ],
+      "operation": "replace",
+      "text": "In 793, Lindisfarne became the object of a Viking raid, and Alcuin of York responded from a position shaped by religious learning and political connection. He was a priest, scholar, and adviser to Charlemagne; he had been born in Yorkshire, and after a visit to the pope became acquainted with the Frankish emperor and worked as head of the school in Aachen. The account says that Alcuin was greatly disturbed by the raid. It also records his aid to the Christian faith in Northumbria through oils sent for ceremonies, without specifying the relationship between that aid and the raid.",
+      "reason": "Remove dangling comparison; retain the original explicit uncertainty about the relationship between aid and raid."
+    },
+    {
+      "id": "6.10",
+      "sourceBlocks": [
+        "6.10"
+      ],
+      "operation": "copy"
+    },
+    {
+      "id": "6.11",
+      "sourceBlocks": [
+        "6.11"
+      ],
+      "operation": "copy"
+    },
+    {
+      "id": "6.12",
+      "sourceBlocks": [
+        "6.12"
+      ],
+      "operation": "copy"
+    },
+    {
+      "id": "6.13",
+      "sourceBlocks": [
+        "6.13"
+      ],
+      "operation": "copy"
+    },
+    {
+      "id": "6.15",
+      "sourceBlocks": [
+        "6.15"
+      ],
+      "operation": "copy"
+    },
+    {
+      "id": "6.18",
+      "sourceBlocks": [
+        "6.18"
+      ],
+      "operation": "copy"
+    },
+    {
+      "id": "6.19",
+      "sourceBlocks": [
+        "6.19"
+      ],
+      "operation": "copy"
+    },
+    {
+      "id": "7.00",
+      "sourceBlocks": [
+        "7.00"
+      ],
+      "operation": "copy"
+    },
+    {
+      "id": "7.01",
+      "sourceBlocks": [
+        "7.01"
+      ],
+      "operation": "copy"
+    },
+    {
+      "id": "7.02",
+      "sourceBlocks": [
+        "7.02",
+        "6.01",
+        "6.02"
+      ],
+      "operation": "replace",
+      "text": "The story of Temüjin begins in a register that is neither administrative nor securely chronological. *The Secret History of the Mongols* opens with a semi-mythical genealogy in which a blue-grey wolf and a fallow doe become the ancestors of Batachiqan, and, eleven generations later, Alan Gua, a widow abandoned by her in-laws, bears three sons after a supernatural glowing figure enters through the smoke-hole of her ger. The youngest of those sons, Bodonchar, is presented as the founder of the Borjigin line.\n\nOnly after this genealogy does the narrative turn towards Temüjin, whose mother Hoelun had been kidnapped by his father Yesügei, whose father was later murdered, and whose early years were marked by hardship, conflict, and plots. The description dates his birth to around 1160. The title Genghis Khan appears only in 1206, after the long movement from exposed household to recognised ruler.",
+      "reason": "Retain the single fullest genealogy plus the unique widowhood, abandonment and approximate birth-date details from Chapter 6; split at the change from genealogy to biography."
+    },
+    {
+      "id": "7.03",
+      "sourceBlocks": [
+        "7.03",
+        "6.03"
+      ],
+      "operation": "replace",
+      "text": "The genealogy gives descent a political language. It does not describe a population passively waiting for a state; it presents a lineage whose authority is made meaningful through remembered separation, endurance, and exceptional origin. Descent alone, however, does not account for Temüjin’s rise. The surviving description places him among conflicts against him, wars, and plots, while the later account, as Mark Cartwright describes it, gives “particular attention to how Genghis subdued and made alliances with the many different tribes of the Asian steppe.” Alliance and subjugation belong in the same sentence because the narrative itself joins them. Temüjin’s power grew through relationships that could be altered by defeat, loyalty, incorporation, and the distribution of command. The work’s attention to Temüjin’s conflicts before 1206 preserves the instability beneath the later name. Authority had to be built among people who had reasons to resist, bargain, or attach themselves elsewhere.",
+      "reason": "Preserve the direct Cartwright quotation once with attribution."
+    },
+    {
+      "id": "7.04",
+      "sourceBlocks": [
+        "7.04",
+        "7.06"
+      ],
+      "operation": "replace",
+      "text": "The word “incorporation” can conceal as much as it clarifies if it suggests consent where the evidence describes subduing. The account names conquest and alliance without providing the specific tribes, locations, or numbers involved; it does not describe a peaceful federation in which every group entered on equal terms. That limited knowledge still permits a precise inference: political expansion depended on converting the results of conflict into continuing relations. A defeated group might be removed from an opposing alignment, attached to a new command, or included within a wider order whose strength rested on the threat of renewed force. The particular route taken in each case remains unknown, but the distinction between a battle and the political consequences of a battle is clear. A rider can cross open ground quickly; an empire has to make messages arrive.",
+      "reason": "Keep consent/coercion distinction and ongoing political relations; remove speculative alternatives and use the existing transition once. Parent seam review also removes the adjacent repeated conquest-and-alliance formulation without adding claims. After blind review, restore the conditional examples of post-conflict incorporation and their explicit uncertainty."
+    },
+    {
+      "id": "7.07",
+      "sourceBlocks": [
+        "7.07",
+        "6.23"
+      ],
+      "operation": "replace",
+      "text": "Ögedei Khan’s proposal for post stations begins with an administrative complaint. Messengers hurry, but their haste forces them to go around the people, and the running of the messengers is slow. “And it is a suffering for the nation and the people.” In the wording preserved from *The Secret History of the Mongols*, he asks whether the problem might be settled by “bringing forth keepers of post stations and keepers of post horses from the diverse thousands of the diverse quarters” and by establishing “seats and seats of post stations.” The proposal offers practical substitutions: fixed places instead of improvised passage, designated keepers instead of requisition from whoever happens to be encountered, and assigned horses instead of a messenger’s uncertain search for transport.",
+      "reason": "Carry the distinct direct quotation from Chapter 6 into its one postal treatment."
+    },
+    {
+      "id": "7.08",
+      "sourceBlocks": [
+        "7.08"
+      ],
+      "operation": "copy"
+    },
+    {
+      "id": "7.25-local-variation",
+      "sourceBlocks": [
+        "7.25"
+      ],
+      "operation": "replace",
+      "text": "A station might exist in one corridor and fail in another. A duty might be enforced regularly for a time and fall unevenly on households.",
+      "reason": "Blind reader flagged loss of spatial/temporal variability in implementation; restore these conditional possibilities without representing them as observed outcomes."
+    },
+    {
+      "id": "7.10",
+      "sourceBlocks": [
+        "7.10"
+      ],
+      "operation": "copy"
+    },
+    {
+      "id": "7.11",
+      "sourceBlocks": [
+        "7.11"
+      ],
+      "operation": "copy"
+    },
+    {
+      "id": "7.17",
+      "sourceBlocks": [
+        "7.17"
+      ],
+      "operation": "replace",
+      "text": "Conquest prizes the sudden concentration of force. Administration, as Ögedei describes it, would depend on repeated arrival.",
+      "reason": "Both blind readers identified this temporal distinction as a substantive explanatory loss. Restore it verbatim without its redundant recap."
+    },
+    {
+      "id": "7.13",
+      "sourceBlocks": [
+        "7.13"
+      ],
+      "operation": "copy"
+    },
+    {
+      "id": "7.25",
+      "sourceBlocks": [
+        "7.25"
+      ],
+      "operation": "replace",
+      "text": "The post-station proposal does not establish how many people were displaced, killed, enslaved, or absorbed as Mongol power expanded. Population change cannot be inferred from the existence of a messenger route.",
+      "reason": "Retain the population-inference limit once; remove the repeated postal inventory and hypothetical implementation failures."
+    },
+    {
+      "id": "7.20",
+      "sourceBlocks": [
+        "7.20"
+      ],
+      "operation": "copy"
+    },
+    {
+      "id": "6.28",
+      "sourceBlocks": [
+        "6.28"
+      ],
+      "operation": "copy"
+    },
+    {
+      "id": "7.21",
+      "sourceBlocks": [
+        "7.21"
+      ],
+      "operation": "copy"
+    },
+    {
+      "id": "7.22",
+      "sourceBlocks": [
+        "7.22",
+        "6.30",
+        "6.31"
+      ],
+      "operation": "replace",
+      "text": "The later distribution of Mongol power makes that separation unavoidable. Wells describes, at Kublai’s death, a main empire with Peking as its capital and including China and Mongolia, a Kipchak empire in Russia, an Ilkhan empire in Persia founded by Hulagu, a Siberian state, and a separate state called “Great Turkey” in Turkestan. He also records that an army under the Sultan of Egypt defeated Ketboga in Palestine in 1260 and stopped the Mongols from entering Africa. His conclusion is that the impulse of conquest had passed its zenith and that the later story became one of division and decay. Whatever the limits of that broad narrative, it shows that expansion did not produce one undifferentiated political body. Conquest generated separated centres, successor states, and new relations with local populations. Communication can enlarge political reach; it cannot by itself settle who holds authority.",
+      "reason": "Preserve Hulagu from Chapter 6 and its conclusion about the limit of communication for political unity; keep Wells attribution."
+    }
+  ],
+  "emittedBlockCount": 26,
+  "sourceBlocksNotEmittedUnchanged": [
+    "6.00",
+    "6.01",
+    "6.02",
+    "6.03",
+    "6.04",
+    "6.05",
+    "6.06",
+    "6.07",
+    "6.08",
+    "6.09",
+    "6.14",
+    "6.16",
+    "6.17",
+    "6.20",
+    "6.21",
+    "6.22",
+    "6.23",
+    "6.24",
+    "6.25",
+    "6.26",
+    "6.27",
+    "6.29",
+    "6.30",
+    "6.31",
+    "6.32",
+    "6.33",
+    "6.34",
+    "6.35",
+    "6.36",
+    "6.37",
+    "6.38",
+    "7.02",
+    "7.03",
+    "7.04",
+    "7.05",
+    "7.06",
+    "7.07",
+    "7.09",
+    "7.12",
+    "7.14",
+    "7.15",
+    "7.16",
+    "7.17",
+    "7.18",
+    "7.19",
+    "7.22",
+    "7.23",
+    "7.24",
+    "7.25",
+    "7.26"
+  ],
+  "sourceBlocksNotEmittedUnchangedBreakdown": {
+    "replacedOrMerged": [
+      "6.00",
+      "6.01",
+      "6.02",
+      "6.03",
+      "6.09",
+      "6.14",
+      "6.23",
+      "6.30",
+      "6.31",
+      "7.02",
+      "7.03",
+      "7.04",
+      "7.06",
+      "7.07",
+      "7.17",
+      "7.22",
+      "7.25"
+    ],
+    "dropped": [
+      "6.04",
+      "6.05",
+      "6.06",
+      "6.07",
+      "6.08",
+      "6.16",
+      "6.17",
+      "6.20",
+      "6.21",
+      "6.22",
+      "6.24",
+      "6.25",
+      "6.26",
+      "6.27",
+      "6.29",
+      "6.32",
+      "6.33",
+      "6.34",
+      "6.35",
+      "6.36",
+      "6.37",
+      "6.38",
+      "7.05",
+      "7.09",
+      "7.12",
+      "7.14",
+      "7.15",
+      "7.16",
+      "7.18",
+      "7.19",
+      "7.23",
+      "7.24",
+      "7.26"
+    ]
+  },
+  "wordCounts": {
+    "original": 5811,
+    "revised": 2136
+  },
+  "sha256": {
+    "original": "3396276ab7779a1ea559fd20a8c49f0647544e734cbdd31cabcf7b9a1b65f870",
+    "revised": "7613e5c682b93f5734c3b2801035ab0fc917d679e032ae1009a2cfe3c03b5436"
+  },
+  "definitions": {
+    "original": "all source blocks in file order, joined with two newlines, one trailing newline",
+    "wordCount": "len(text.split())",
+    "sha256": "over UTF-8 bytes; 'revised' matches the bytes written to revised.md"
+  }
+}

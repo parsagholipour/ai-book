@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "originalSha256": "3396276ab7779a1ea559fd20a8c49f0647544e734cbdd31cabcf7b9a1b65f870",
+  "revisedSha256": "7613e5c682b93f5734c3b2801035ab0fc917d679e032ae1009a2cfe3c03b5436",
+  "originalWords": 5811,
+  "revisedWords": 2136,
+  "reductionPercent": 63.2,
+  "editPlanSha256": "17a5ed1c94c70a5cfe70285132f17f7fbb30f3f02ea5be779e484f5aa8146f09",
+  "evaluation": "Final text receives nonblind amendment verification only. Blind score provenance is in evaluated-v1/frozen.json."
+}

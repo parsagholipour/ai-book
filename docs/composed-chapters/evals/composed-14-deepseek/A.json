@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 5
+  },
+  "overall": 7.6,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The fine was recorded in the same hand as the brawl, on the same membrane, by the same clerk who had spent the morning listening to the butcher and the prior's servant tell their versions of the fight.",
+      "judgment": "Superb opening move: the thesis about institutions is carried by a physical detail rather than asserted."
+    },
+    {
+      "quote": "The railway did not kill anyone. It delivered people to the places where killing happened, and it did so on time.",
+      "judgment": "The book at its best \u2014 flat, exact, morally loaded without editorializing."
+    },
+    {
+      "quote": "A massacre is a rare event, and rare events are precisely the ones most likely to leave a trace.",
+      "judgment": "Genuine methodological insight, developed rather than dropped; the archaeology chapter's evidence discipline is a real strength."
+    },
+    {
+      "quote": "The Mesopotamian kings built their power on grain and walls; the Moche lords built theirs on prisoners and blood, and the two strategies produced different kinds of violence",
+      "judgment": "Elegant comparison, but symptomatic: the book resolves nearly every comparison into a balanced two-clause antithesis."
+    },
+    {
+      "quote": "The motives were the same. The capacity was new.",
+      "judgment": "Aphoristic closer of a kind the book reaches for repeatedly to end an argument it has already made discursively."
+    },
+    {
+      "quote": "The absence of evidence is not evidence of absence, but it is also not evidence of presence.",
+      "judgment": "Stock epistemic formula, and the surrounding paragraph restates it three more ways \u2014 the recap habit in miniature."
+    },
+    {
+      "quote": "\u00c9mile Dutemple, processing military supply orders at the Gare de l'Est in 1870, was part of the same railway network that the Wannsee participants would later use",
+      "judgment": "Internal contradiction: Chapter 12 sets Dutemple's clerkship on 31 August 1914; the summarizing chapter misdates its own witness."
+    },
+    {
+      "quote": "The chapter has moved from a single document to a mechanism to an argument to a comparison, and the movement has been deliberate.",
+      "judgment": "The manuscript announces its own outline \u2014 the clearest tell that chapters were built from a fixed template."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Identical thesis-formula closer: the chapter ends by reciting the same list of causal nouns and denying 'timeless human aggressiveness'.",
+      "instances": [
+        "colonial rule was a specific historical phenomenon, shaped by specific institutions, resources, technologies, identities, and choices, and that the violence of colonial rule was not the expression of a timeless human aggressiveness",
+        "industrial war was a specific historical phenomenon, shaped by specific institutions, resources, technologies, identities, and choices, and that its violence was not the expression of a timeless human aggressiveness"
+      ]
+    },
+    {
+      "pattern": "Fixed chapter architecture: archival-object overture \u2192 step-by-step 'mechanism' \u2192 named straw-man claim \u2192 paired comparison \u2192 summarizing verdict. Openings are near-interchangeable in shape.",
+      "instances": [
+        "The Arsenal of the Republic of Venice kept a register unlike anything a medieval state had produced.",
+        "In the archives of the Belgian Ministry of Foreign Affairs there is a printed form, two pages, dated 1891"
+      ]
+    },
+    {
+      "pattern": "Negation-then-correction antithesis ('It was not X; it was Y') used as the default sentence engine, sometimes several times per paragraph.",
+      "instances": [
+        "The battle is not chaos; it is a composition.",
+        "The crowd was not a mob in Burke's sense. It was a group of people with identifiable occupations, with a specific grievance, and with a plan of action."
+      ]
+    },
+    {
+      "pattern": "Symmetrical 'X was real, but Y was also real' hedge that concedes both sides and settles nothing.",
+      "instances": [
+        "The violence of the Mongol conquests was real, but the administration that followed the conquests was just as real",
+        "The conquest was real, and the violence was real, but the result was not destruction."
+      ]
+    },
+    {
+      "pattern": "Explicit meta-narration of what the chapter has demonstrated, followed by a restatement of material already argued at length.",
+      "instances": [
+        "The chapter has shown both violence and restraint, and the conditions for each remain contested.",
+        "The chapter has shown both decline and persistence."
+      ]
+    }
+  ],
+  "summary": "This is an unusually accomplished manuscript: a fifteen-chapter argument that human aggressiveness is constant enough to be uninteresting, and that what varies \u2014 and therefore what history can explain \u2014 is the institutional, ecological and technological capacity to organize harm. The thesis is stated early, tested rather than asserted, and genuinely carried by evidence: Aylsham court rolls, Nataruk and Talheim, ration lists from Uruk, the Behistun inscription, the Brookes diagram, the Libro delle Galleazze, a Burgundian petition over hay and chickens, the Wannsee protocol. Source criticism is the book's real subject and its finest feature; it consistently asks what a document was for before asking what it says, and it refuses to resolve disputes the evidence cannot resolve. The prose is clear, unadorned and adult, with almost none of the commercial-AI register \u2014 no rhetorical questions, no second person, no 'in today's world'. What holds it back is shape rather than substance: chapters are built from a visible template, arguments are staged against named-but-flattened straw men, comparisons resolve into balanced antitheses, and nearly every chapter closes by restating the thesis in the same list of nouns, sometimes after announcing its own outline. Add a dating contradiction about its own witness (Dutemple in 1914 and 1870) and mild over-hedging, and the result needs a structural edit for redundancy and formula rather than any rewriting of its ideas."
+}

@@ -278,15 +278,22 @@ code in that area, however obvious the rule looks.
 - **Nothing states page 1's opening contract in its own words: a prompt names an audience and gets the ban, the import exemption that silences it, and the hook fused to its payload key — or gets nothing.** → packages/core/src/generation/CLAUDE.md
 - **No best-of candidate samples hotter than the pass would have run at without candidates, and a band too narrow for the ladder compresses the step rather than widening the band.** → packages/core/src/generation/CLAUDE.md
 - **Page prompts take local style rules; distribution rules reach manuscript review only.** → packages/core/src/generation/CLAUDE.md
-- **A deterministic rule that can veto the model reviewer is measured against shipped pages before it ships, and one that fires on approved pages is removed, not tuned.** → packages/core/src/generation/CLAUDE.md
+- **A deterministic rule that can veto the model reviewer is measured against shipped pages before it ships, and one that fires on pages the reviewer approved is removed, not tuned.** → packages/core/src/generation/CLAUDE.md
 - **A local QA message names an earlier page only after the word `from`, because the final-QA repair harvests every other `page N` as a page to redraft.** → packages/core/src/generation/CLAUDE.md
 - **An analytical page owns its evidence anchors; a shared one is repaired like a near-duplicate beat and never blocks.** → packages/core/src/generation/CLAUDE.md
 - **A brief prompt names its JSON keys and shows the shape; prose alone has the model spelling them from the words.** → packages/core/src/generation/CLAUDE.md
+- **A reply cut off by its output budget is asked for once more at a wider budget, outside the repair count.** → packages/core/src/generation/CLAUDE.md
 - **A figure is a fenced block the compose call alone is shown, every later pass reads around, and the exporters draw.** → packages/core/src/generation/CLAUDE.md + apps/worker/src/generation/CLAUDE.md
+- **Every per-page path reads a stored figure as its stand-in and stores no figure of its own.** → apps/worker/src/generation/CLAUDE.md
 - **Every rule about shape the writer or editor is shown is performed on schedule, and the blind panel names the performance; content assignments are the only lever that moved.** → packages/core/src/generation/CLAUDE.md
+- **A plan field that names a distinction as the chapter's payoff is a couplet assignment, so the contract on it is checked before the first prose call.** → packages/core/src/generation/CLAUDE.md
 - **A composed draft that is not prose is recomposed once and then fails the job; it is never edited, paginated and published.** → packages/core/src/generation/CLAUDE.md
 - **The manuscript read returns notes, so a read that fails is a skipped read, never a failed book; and a provider's input filter refusing a chapter is a fallback, never a failed book.** → packages/core/src/generation/CLAUDE.md
 - **A prompt field present in every chapter is a template whatever it says, and withholding the thesis from a prompt is not withholding it from the prose.** → packages/core/src/generation/CLAUDE.md
+- **An evidence packet carries no model-ordered chronology, and an unknown is never about provenance.** → packages/core/src/generation/CLAUDE.md
+- **A developed plan's thesis is its answer by construction, never a string the model is asked to copy.** → packages/core/src/generation/CLAUDE.md
+- **The deterministic contract gates a developed plan; the model review's objections are recorded, and a synthesis chapter inherits its prerequisites' cases.** → packages/core/src/generation/CLAUDE.md
+- **A composed chapter's unsupported case claims are repaired twice, then recorded and flagged for review; a prose-review quote that resolves to nothing is re-asked once, then dropped.** → apps/worker/src/generation/CLAUDE.md + packages/core/src/generation/CLAUDE.md
 
 ### Characters, covers and illustrations
 
@@ -398,7 +405,6 @@ code in that area, however obvious the rule looks.
 - **A costless call has four different causes and the Costs tab splits all four.** → apps/api/src/admin/CLAUDE.md
 - **"Revenue" is two different numbers and the dashboard shows both.** → apps/api/src/admin/CLAUDE.md
 - **A reversal is an amount, not a boolean.** → apps/api/src/admin/CLAUDE.md
-- **Integrity is not a quality-gate checkbox, and its provider calls stay attributable when every polish box is off.** → packages/core/src/generation/CLAUDE.md
 
 ### Local stack
 

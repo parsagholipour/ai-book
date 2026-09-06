@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 7.2,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The changed decree did not dissolve Athenian rule. It altered the number and identity of those whom Athens authorized itself to kill.",
+      "judgment": "Excellent opening payoff: the Mytilene narrative is converted into the book's governing claim without editorializing."
+    },
+    {
+      "quote": "The city was made legible by being emptied. People who had lived among one another as neighbors became a set of bodies to be counted, divided, and assigned.",
+      "judgment": "Strong specific formulation of the thesis at Merv; the abstraction is earned by the preceding sequence."
+    },
+    {
+      "quote": "The plan is orderly. Its lines are straight, its compartments legible, its dimensions apparently controlled. There is no storm in the image, no shouted command, and no scene of beating. The violence appears as design.",
+      "judgment": "Best passage in the book: description does the analytic work, and the closing clause lands without a stock pivot."
+    },
+    {
+      "quote": "The people disappear grammatically before they disappear physically.",
+      "judgment": "A genuinely earned aphorism about Wannsee euphemism, precise rather than decorative."
+    },
+    {
+      "quote": "The bones resist so clean a sequence.",
+      "judgment": "One of many one-line dramatic paragraphs dropped between long blocks; individually effective, collectively a tic."
+    },
+    {
+      "quote": "That sentence should remain near every interpretation of prehistoric massacre.",
+      "judgment": "A compositional fault: the demonstrative has no antecedent sentence, exposing seams in the assembly of Chapter 2."
+    },
+    {
+      "quote": "It shows that ecological pressure may accompany recurrent attacks, but it does not make scarcity a sufficient cause. It shows that collective violence can include people who were not combatants, but it does not identify the intentions of those who attacked them.",
+      "judgment": "The book's signature epistemic move, here in bare triplicate; the caution is sound but the syntax is mechanical."
+    },
+    {
+      "quote": "The 1913 Native Lands Act in Kenya can be read as a document that converted land from lived relation into administrable property.",
+      "judgment": "Internally the argument is coherent, but the naming and placement of the statute sit oddly beside the chapter's otherwise exact citation habits."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The 'evidence establishes X but cannot establish Y' antithesis, used to close nearly every evidentiary section in all fifteen chapters. It is the book's chief intellectual virtue and its chief formal monotony.",
+      "instances": [
+        "The cemetery can support the inference that several people were attacked by weapons in more than one episode. It cannot tell us that a sovereign power mobilized them",
+        "The battle shows how colonial power failed under changed political and military conditions; it does not provide a complete measure of suffering or a universal model of decolonization."
+      ]
+    },
+    {
+      "pattern": "A short, isolated, aphoristic paragraph inserted as a beat between long analytic blocks — usually five to twelve words, often a flat declarative reversal.",
+      "instances": [
+        "One body cannot settle the question. The cluster can.",
+        "A reserve boundary could outlast the officer who drew it."
+      ]
+    },
+    {
+      "pattern": "The scholar-triangulation ritual: Pinker is conceded, then bounded by Morris and Scott (or Parker/Black, Rudé, Gleditsch), in the same conceding-then-qualifying order.",
+      "instances": [
+        "Pinker is right that violence varies dramatically across time... The early city shows the other side of the same fact",
+        "Pinker is right to insist that violence varies greatly across time and that stronger governments can reduce certain forms of private violence. He is also right that commerce, literacy..."
+      ]
+    },
+    {
+      "pattern": "The administrative-chain enumeration: an itemized ladder of offices and objects that converts a person into a target or a resource, restated at the same rhythm in many chapters.",
+      "instances": [
+        "Purchase made a person an investment. Transport made separation an economic route. The ledger made the investment legible. The overseer made labor observable.",
+        "A card identifies. An official summons. A broadcast names. A roadblock stops. A group attacks."
+      ]
+    },
+    {
+      "pattern": "The 'silence as evidence' consolation, invoked whenever a source omits victims' voices, with almost identical wording across widely separated chapters.",
+      "instances": [
+        "The painted surface is rich in posture and sparse in explanation. Its silence is part of its evidence.",
+        "The silence is not evidence that the inhabitants felt nothing. It is evidence of how the record was made."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely accomplished comparative history of organized violence, built on a clear and consistently held thesis: aggression becomes durable and far-reaching when it passes through political organization — stores, lists, walls, offices, roads, classifications — rather than through any fixed human appetite. The chapter sequence is well engineered, each chapter anchored in one or two concrete artifacts (the Mytilenean debate, Jebel Sahaba, the Narmer Palette, the Lachish reliefs, Bonampak, Merv, the Somerset judgment and the Brookes plan, the Wannsee Protocol, the church at Kibuye), and the evidentiary discipline is unusually honest about what bones, reliefs and perpetrator documents can and cannot support. Prose is clean, unhurried, and free of the usual generative tells: no breezy transitions, no marketing cadence, few empty abstractions. The weaknesses are formal rather than substantive. The same three or four rhetorical machines run in every chapter — the 'establishes X, cannot establish Y' antithesis, the isolated aphoristic one-line paragraph, the Pinker-concede-then-bound ritual, the itemized administrative ladder — until argument begins to feel performed on schedule, and the middle of most chapters flattens into catalogue with uniform paragraph shapes and little narrative pull. A few seams show (an orphaned demonstrative in Chapter 2, a misnamed statute in Chapter 11). Light revision aimed at varying the closing moves, cutting perhaps fifteen percent of the epistemic hedging, and restoring narrative momentum inside chapters would lift this to a genuinely publishable work."
+}

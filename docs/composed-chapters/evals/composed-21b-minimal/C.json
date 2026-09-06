@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 7,
+    "engagement": 5,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 5
+  },
+  "overall": 7.1,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Violence rarely arrives in a historical record with its name already attached.",
+      "judgment": "Excellent opening: states the book's method-first thesis in one concrete image rather than an abstraction."
+    },
+    {
+      "quote": "His account is therefore narrow, but its narrowness is the condition under which the episode can be known.",
+      "judgment": "The book's best habit \u2014 turning a source's limitation into an analytical asset \u2014 expressed with real economy."
+    },
+    {
+      "quote": "Order in finance did not oppose violence. It provided violence with a reliable calendar.",
+      "judgment": "A genuinely earned aphorism; the metaphor does analytical work instead of decorating a paragraph."
+    },
+    {
+      "quote": "Jebel Sahaba should remain a graveyard before it becomes an emblem.",
+      "judgment": "Sharp, memorable, and it names the interpretive discipline the whole book is arguing for."
+    },
+    {
+      "quote": "Connected worlds are not necessarily humane worlds. They are worlds in which consequences travel farther.",
+      "judgment": "Effective on its own but symptomatic: nearly every chapter ends on this same two-beat aphoristic cadence."
+    },
+    {
+      "quote": "There was alliance made through mourning: the Haudenosaunee condolence ceremony.",
+      "judgment": "Opens an anaphoric run of nine 'There was/There were' paragraphs that substitutes cataloguing for analysis and flattens four distinct polities into one rhythm."
+    },
+    {
+      "quote": "The skeletal evidence from \u00c7atalh\u00f6y\u00fck includes injuries and other bodily conditions used to discuss interpersonal violence, health, work, and the pressures of settled life.",
+      "judgment": "Evidence handled at one remove: the sentence gestures at data without naming a single finding, a weakness recurring wherever archaeology is cited."
+    },
+    {
+      "quote": "It does not measure the aggressiveness of prehistoric people, explain why the attacks occurred, or establish that violence dominated their society.",
+      "judgment": "The signature triple-negative disclaimer; the book runs this construction dozens of times, and by the middle chapters the caveats outweigh the claims."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "A near-verbatim 'technology extends reach but supplies no motive' paragraph appears in almost every chapter, restating a point already established in Chapter 1.",
+      "instances": [
+        "Technology changed reach without supplying motive.",
+        "Technology altered this reach without supplying the motive."
+      ]
+    },
+    {
+      "pattern": "Nearly every source is assessed by the same two-clause template: it does not tell us X; it does tell us Y. The rhythm becomes the book's default sentence rather than a considered move.",
+      "instances": [
+        "It shows that bodies were penetrated; it does not say whether the attackers understood themselves as defending a resource, avenging an injury, expelling strangers, or taking advantage of a moment of weakness.",
+        "They tell us that things were being counted and assigned; they do not automatically tell us whether a delivery was accepted willingly, contested, delayed, or extracted under threat."
+      ]
+    },
+    {
+      "pattern": "Every paired comparison closes by refusing to rank the two cases on a single scale \u2014 a legitimate methodological point converted into a chapter-ending reflex.",
+      "instances": [
+        "These cases do not provide a scale running from primitive violence to civilised restraint.",
+        "These forms cannot be ranked on a single scale."
+      ]
+    },
+    {
+      "pattern": "Symmetrical antithesis on order and harm, restraint and magnification, recycled as the summarising sentence of dozens of sections.",
+      "instances": [
+        "Order and harm can be produced by the same institutions.",
+        "Order and harm were often produced by the same administrative instruments."
+      ]
+    },
+    {
+      "pattern": "A cascading 'who / against whom / at whose expense' interrogative used as the standard pivot from description to analysis.",
+      "instances": [
+        "The question is who may use force, against whom, under what justification, and with what means of enforcement.",
+        "The relevant question is whether violence declined for particular people, in particular places, through particular institutions, and at whose expense."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, intellectually serious history whose thesis \u2014 that aggression takes its shape from institutions, records and categories rather than from a fixed human nature \u2014 is stated clearly in Chapter 1 and genuinely sustained across fifteen chapters and a wide geographic range. Its reasoning is its strongest asset: it consistently distinguishes what a source can bear from what a reader wants it to say, engages real scholarly disputes (Elias, Parker, Rud\u00e9, intentionalism versus functionalism, Pinker's decline thesis) fairly, and refuses cheap verdicts. The prose is precise, grammatically assured, and occasionally excellent, with several earned aphorisms and strong chapter openings built around a single concrete object. The severe problem is redundancy: the same half-dozen analytical moves \u2014 the technology-supplies-no-motive paragraph, the it-does-not-tell-us/it-does-tell-us couplet, the refusal to rank two cases on one scale, the order-and-harm antithesis \u2014 recur so mechanically that later chapters read as reinstantiations of a template with new proper nouns, and evidence is often described in summary rather than quoted or specified. Voice is consistent but impersonal, and the relentless hedging drains rhetorical momentum well before the end. With aggressive cutting of the repeated caveat machinery and more concrete evidentiary detail, this could be very good; as it stands the argument is sound and the delivery is over-patterned."
+}

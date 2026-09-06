@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 7,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 7,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 4
+  },
+  "overall": 7.0,
+  "readiness": "Needs major revision",
+  "slopSeverity": "High",
+  "highlights": [
+    {
+      "quote": "The violence has a chain of custody.",
+      "judgment": "This compact formulation gives the book its strongest and most durable conceptual frame."
+    },
+    {
+      "quote": "The force outside the city arrives with an argument about reputation, order, and necessity.",
+      "judgment": "The sentence precisely joins material coercion to the language that legitimates it."
+    },
+    {
+      "quote": "The environment explains why people met; it does not explain why one group attacked another.",
+      "judgment": "A clear, disciplined distinction prevents ecological context from becoming mechanical causation."
+    },
+    {
+      "quote": "The system required a title, a ledger, a patrol, a parish, a ship, and a court, instead of depending on one violent man.",
+      "judgment": "Concrete institutional nouns make the central thesis vivid and persuasive."
+    },
+    {
+      "quote": "The cannon fired.",
+      "judgment": "The abrupt beat is rhetorically effective, but it belongs to a cinematic reconstruction whose surrounding sensory details are not sourced within the text."
+    },
+    {
+      "quote": "Hagendorf would have remembered the ring because it was so large: iron keys, brass keys, a little wooden tag tied to one of them.",
+      "judgment": "The speculative interior claim and invented-looking physical specificity undermine the manuscript's otherwise careful treatment of provenance."
+    },
+    {
+      "quote": "The promise was exact. Bullets would become water.",
+      "judgment": "The clipped repetition creates tension, but it also exemplifies the recurring staged cadence used in multiple chapter openings."
+    },
+    {
+      "quote": "The weapon comprised the gun or rifle, the timetable, the order, the register, and the decision that gave each one a person to reach.",
+      "judgment": "This forceful synthesis also shows how often later chapters recast the same thesis through enumerated administrative chains."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "A material instrument is subordinated to the institution that directs it.",
+      "instances": [
+        "The rifle mattered. So did the list.",
+        "Weapons altered the price and possibilities of violence; offices decided who would pay."
+      ]
+    },
+    {
+      "pattern": "Paired negation turns causal qualification into a repeated rhetorical template.",
+      "instances": [
+        "The institution does not replace human feeling; it gives feeling reach, continuity, and permission.",
+        "The musket made the janissary system more useful without creating it."
+      ]
+    },
+    {
+      "pattern": "Administrative records are contrasted with bodily experience.",
+      "instances": [
+        "The number was impersonal, but the decision to count it belonged to the state that continued the war.",
+        "A legal record could make a dead person disappear into the word “cargo.”"
+      ]
+    },
+    {
+      "pattern": "Chapters repeatedly close by restating that institutions extend the reach of aggression.",
+      "instances": [
+        "Human beings brought aggression into these worlds; those worlds determined how far it could travel.",
+        "The registers, taxes, weapons, and commands carried aggression farther than any soldier could carry it alone."
+      ]
+    },
+    {
+      "pattern": "Short aphoristic pivots punctuate long explanatory passages.",
+      "instances": [
+        "Profit supplied the incentive. Government supplied permission and means.",
+        "The sword stands behind the register in this record."
+      ]
+    }
+  ],
+  "summary": "The manuscript advances a strong, coherent thesis: aggression acquires historical reach when institutions classify targets, organise resources, and distribute responsibility. Its comparative range is impressive, and its best passages reason carefully from source type, provenance, and administrative mechanism rather than treating violence as an undifferentiated human impulse. The argument is substantially overextended, however, with recurring chains, paired qualifications, and aphoristic chapter conclusions repeating the same insight across many hundreds of pages. More seriously, cinematic scenes at Cajamarca, Magdeburg, and Nandete introduce dialogue, sensory detail, and inferred memory with no internal evidentiary warrant, conflicting with the book's own insistence on source limits. A major revision should remove or explicitly frame those reconstructions, compress repeated exposition, and let the strongest cases carry more argumentative weight."
+}

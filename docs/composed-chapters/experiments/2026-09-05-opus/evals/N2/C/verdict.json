@@ -1,0 +1,54 @@
+{
+  "scores": { "thesis": 9, "structure": 8, "depth": 8, "reasoning": 9, "clarity": 9, "voice": 8, "engagement": 7, "pacing": 6, "craft": 8, "slopResistance": 7 },
+  "overall": 7.9,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    { "quote": "The mark is physical. Its meaning has to be recovered from history.", "judgment": "Opening pair states the book's method in two clauses; economical and genuinely programmatic." },
+    { "quote": "The question remains open: when the records grow thin, are we seeing less violence, a different violence, or merely weaker preservation?", "judgment": "An honest evidentiary question that the following chapters actually honour rather than quietly abandon." },
+    { "quote": "Its unity was made by commands, roads, armies, and titles; its everyday life was made by bargains.", "judgment": "Compressed, well-earned synthesis of the Mongol chapter's argument about design versus local negotiation." },
+    { "quote": "Sugar made exploitation profitable. Law made it inheritable. Ships widened its reach.", "judgment": "Rhythmic triad that does real analytic work, but also shows the book's habit of resolving argument into parallel clauses." },
+    { "quote": "A date is a boundary, not a motive.", "judgment": "One of many one-line aphoristic paragraphs used as chapter punctuation; effective once, formulaic by the fifth occurrence." },
+    { "quote": "The crowd had many hands. So did the state.", "judgment": "Stock paired-antithesis closer; the chapter had already made this point more precisely in prose." },
+    { "quote": "Technology changes the reach of aggression without supplying its purpose.", "judgment": "The book's central claim, but stated almost verbatim in at least four later chapters, which flattens it into a refrain." },
+    { "quote": "The people subject to that relationship did not become less human because a scribe counted them. They became more exposed to decisions made far away.", "judgment": "Strong sentence-level craft: moral force delivered without editorialising." }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The technology-doesn't-supply-motive refrain, restated near-identically as a chapter's analytic pivot",
+      "instances": [
+        "Technology widened possibilities without determining purpose.",
+        "Technology altered each situation without supplying its motives."
+      ]
+    },
+    {
+      "pattern": "The economic-pressure disclaimer, deployed once per chapter in the same syntactic frame",
+      "instances": [
+        "Economic pressure alone does not explain the pattern.",
+        "Economic pressure alone cannot account for the different forms of violence."
+      ]
+    },
+    {
+      "pattern": "A methodological caveat about comparison, appearing as its own paragraph in nearly every chapter",
+      "instances": [
+        "Comparison becomes useful when it follows the specific operation rather than assuming that every empire meant the same thing by rule.",
+        "Comparison is useful when it keeps the machinery and aims of each case in view."
+      ]
+    },
+    {
+      "pattern": "A short rhetorical question set alone as a paragraph, immediately answered by a deflationary reply",
+      "instances": [
+        "What did a soldier see?",
+        "Was Cahokia ruled through fear?"
+      ]
+    },
+    {
+      "pattern": "Single-sentence aphoristic paragraphs used as section breaks and closers",
+      "instances": [
+        "The wire carried power because named offices stood at its ends.",
+        "Truth spoken in public did not automatically become reconciliation."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, source-conscious global history of organised violence whose thesis — that aggression acquires scale through records, offices, law and infrastructure rather than through temperament, and that technology extends reach without supplying purpose — is stated early and genuinely carried through fifteen chapters. Its strengths are real: concrete anchoring cases (Jebel Sahaba, the Stele of the Vultures, the 1662 Virginia statute, Wannsee, the Kigali roadblocks), consistent attention to what each kind of source can and cannot show, and prose that is clear, unhurried and almost free of cliché at the phrase level. The weaknesses are structural rather than verbal. Nearly every chapter runs the same circuit — two or three cases, a comparison, a caveat against collapsing them, a disclaimer that scarcity or technology alone explains nothing — so that the argument stops developing around the middle and begins recurring; paragraph lengths and shapes are unusually uniform, and the book leans hard on one-line aphoristic paragraphs and paired antitheses for punctuation. Engagement suffers accordingly: the tone is steady to the point of monotone, and the reader is rarely surprised by where a chapter goes. With cuts to the repeated methodological refrains and more variation in chapter architecture, this would be publishable serious non-fiction; as it stands it needs light revision for redundancy and rhythm."
+}

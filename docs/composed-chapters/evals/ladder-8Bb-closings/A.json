@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.6,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "An injury is not yet a rate, a battle is not yet a society, and a grave is not yet a measure of human nature.",
+      "judgment": "Crisp statement of the book's methodological thesis, though the tricolon-of-negations is a shape the book reuses far too often."
+    },
+    {
+      "quote": "The first organised wars began there: not when a spear struck, but in the prior act of making a population answerable to a count.",
+      "judgment": "The controlling argument stated with real force; also the archetype of the aphoristic closer that ends nearly every section."
+    },
+    {
+      "quote": "Prisoners were not said to be killed; they were said to diminish.",
+      "judgment": "Best sentence in the book: the euphemism analysis of Wannsee earns its brevity."
+    },
+    {
+      "quote": "Merv's fall was remembered as a massacre because so many people died, but it was also a census in violent form.",
+      "judgment": "Genuine analytic insight, specific to its evidence rather than recycled from the thesis."
+    },
+    {
+      "quote": "Mesopotamia often makes its king loud; Dholavira makes its infrastructure speak.",
+      "judgment": "Elegant, but an instance of the paired-antithesis reflex that fires several times per chapter."
+    },
+    {
+      "quote": "“Is he Kalingan?” he asked. The officer bowed. “Yes, Majesty.”",
+      "judgment": "Invented dialogue in an otherwise scrupulously source-critical book; the fictionalised set pieces sit uneasily beside the evidentiary discipline elsewhere."
+    },
+    {
+      "quote": "The file and the rifle belonged to the same government.",
+      "judgment": "A one-line paragraph used as a drumbeat; effective once, but the book deploys this isolated-epigram move repeatedly."
+    },
+    {
+      "quote": "A railway map, a household register, a factory ledger, a telegraph key, and a conscription list looked harmless when separated. Their force appeared when an office connected them.",
+      "judgment": "Clear and well-made, yet the fifteenth restatement of a claim already proved in chapters 3, 4, 7 and 11."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter is assembled from the same three-part module: a case study, a documentary object read closely, then a paragraph converting the object into the book's single thesis about offices and counting.",
+      "instances": [
+        "The tablet did not need to contain a weapon to belong to the history of war. It supplied the conditions under which weapons could be used repeatedly.",
+        "The clerk issued the paper, the collector recorded arrears, the police officer made the arrest, and the court confirmed the obligation."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis as the default closing cadence — two clauses of parallel length in which the second inverts or completes the first.",
+      "instances": [
+        "One method attacked the political geography of a province. The other occupied it.",
+        "The line on the map was quiet; its enforcement was not."
+      ]
+    },
+    {
+      "pattern": "A straw explanation is raised, granted a paragraph of sympathetic force, then subordinated to institutions — the same dialectic staged in most chapters.",
+      "instances": [
+        "The Armenian deportations of 1915 appear to support a different account. Here the decisive forces seem to be hatred, fear, and Turkish nationalism.",
+        "Identity alone appears to explain the attack because the gunmen were Muslims from Pakistan… Identity did work."
+      ]
+    },
+    {
+      "pattern": "Cinematic present-tense-feeling vignettes with invented sensory detail bolted to the end (or occasionally the start) of a chapter, doing no argumentative work and breaking the analytical register.",
+      "instances": [
+        "On the last day of work, the crew covered the exposed graves with clean sand, and the numbered flint point from the child’s shoulder was placed in its paper envelope.",
+        "A runner arrived with orders to return to the front line, and Sassoon climbed down among the dead."
+      ]
+    },
+    {
+      "pattern": "Triads and catalogues of nouns used to signal institutional density, so frequently that they stop registering as evidence and read as texture.",
+      "instances": [
+        "Roads, mines, dams, and salvage projects expose some landscapes while political borders, dense vegetation, and limited funding leave others almost untouched.",
+        "Recruitment, training, transport, communication, targeting, killing, arrest, investigation, and punishment formed a sequence carried by organizations."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, genuinely learned book with one clear and well-defended thesis: aggression becomes historically consequential when an office can name, count, classify and supply — so the register, the ration list and the deportation order belong to the history of violence as much as the weapon does. The case material is dense, geographically wide, and handled with unusual source-critical care; the book is consistently better at saying what its evidence cannot show than most popular history, and the Wannsee, Merv and Behistun readings are excellent. Its weaknesses are architectural rather than factual. Chapters are built from an identical module, the thesis is restated in near-identical wording dozens of times, and the prose closes almost every section on a paired antithesis or an aphorism, which flattens the reading experience across 55,000 words. The dramatised set pieces — invented dialogue for Ashoka, sensory detail at Jebel Sahaba — conflict with the evidentiary scruple the book otherwise insists on. Sentence-level craft is high and the voice never wobbles, but the uniformity of paragraph shape and rhetorical cadence is itself the main slop signal. With aggressive compression, varied chapter architecture, and removal or reframing of the fictionalised scenes, this would be publishable."
+}

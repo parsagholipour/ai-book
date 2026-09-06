@@ -1,0 +1,41 @@
+{
+  "genre": "prose",
+  "prose_paragraphs": 64,
+  "flags": [
+    {
+      "metric": "silhouette_penalty",
+      "value": 4.918,
+      "threshold": ">= 1.0",
+      "severity": "soft",
+      "detail": "The document's idea arrangement matches a templated AI silhouette (preview-then-fulfill, rotating scaffold openers, recap loop).",
+      "suggestion": "Rearrange around the actual argument instead of a symmetric outline; cut previews and the closing recap."
+    },
+    {
+      "metric": "callback_content",
+      "value": 0.906,
+      "threshold": "human fence 0.3 (weight 1.5)",
+      "severity": "soft",
+      "detail": "callback_content at 0.906 clears the human upper fence 0.3.",
+      "suggestion": "The ending loops back to opening vocabulary; end on a concrete final point."
+    }
+  ],
+  "flagged": {
+    "silhouette_penalty": true,
+    "callback_content": true
+  },
+  "metrics": {
+    "scaffold_opener_share": 0.0,
+    "role_entropy_bits": -0.0,
+    "heading_preview": null,
+    "preview_fulfillment": 0.097,
+    "callback_content": 0.906
+  },
+  "contributions": {
+    "scaffold_opener_share": 0.0,
+    "role_entropy_bits": 0.0,
+    "heading_preview": null,
+    "preview_fulfillment": 0.388,
+    "callback_content": 4.53
+  },
+  "penalty": 4.918
+}

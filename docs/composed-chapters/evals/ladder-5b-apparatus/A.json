@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 9,
+    "engagement": 8,
+    "pacing": 7,
+    "craft": 9,
+    "slopResistance": 7
+  },
+  "overall": 8.3,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Low",
+  "highlights": [
+    {
+      "quote": "The archive does not distribute evidence according to the importance of the violence. It preserves what institutions, environments, and observers were equipped to notice.",
+      "judgment": "The book's second thesis stated with unusual economy; it governs the source criticism in every chapter."
+    },
+    {
+      "quote": "The pit is powerful evidence of killing. It is poor evidence for a census.",
+      "judgment": "Excellent compression — but this exact antithetical two-sentence closer recurs so often it becomes a tic."
+    },
+    {
+      "quote": "Murder became possible because no single office had to describe the whole act.",
+      "judgment": "The Wannsee chapter's strongest sentence: argument and image fused, earned by the preceding analysis of jurisdiction."
+    },
+    {
+      "quote": "The bodies therefore record recurrence, not simply one final disaster.",
+      "judgment": "Reasoning done properly — the antemortem/perimortem distinction is used to constrain an inference, not decorate it."
+    },
+    {
+      "quote": "A blow struck in anger might have lasted an instant... Concealment required further movement.",
+      "judgment": "Fine analytical move: turns a legal record into a claim about how violence acquires duration."
+    },
+    {
+      "quote": "Every weapon in this book was pointed by an institution, whether the institution was a palace, a company, a colonial department, or a party apparatus.",
+      "judgment": "Clear thesis restatement, though by chapter 15 the reader has met this proposition in fifteen variants."
+    },
+    {
+      "quote": "Did the early state increase violence, or did it increase the chances that violence would survive as evidence?",
+      "judgment": "Intellectually honest, but the rhetorical-question-then-decline-to-answer move closes chapter after chapter."
+    },
+    {
+      "quote": "In London, a century and a quarter after the death of John Hayes, the same vocabulary of guilt gathered around a different scene",
+      "judgment": "A rare botched transition: the sentence points forward to the 1722 Hayes case it is supposedly dated from, leaving the chronology incoherent."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Chapter-closing rhetorical question that reframes the evidence problem and is then deliberately left unresolved.",
+      "instances": [
+        "were the preserved massacres rare eruptions in communities that usually settled disputes, or are they the surviving peaks of a much wider low-level conflict whose victims left no mark?",
+        "How destructive were the Mongols compared with other conquerors, and how much of their apparent exceptionalism comes from the kind of records their empire produced?"
+      ]
+    },
+    {
+      "pattern": "Paired-case comparison late in each chapter, introduced by a sentence declaring the two cases unlike and then chiastically balanced.",
+      "instances": [
+        "One system made separation a principle of relationship; the other made incorporation a means of imperial order.",
+        "Kenya made land scarcity reinforce the tax. Indochina made the commune itself a labour register."
+      ]
+    },
+    {
+      "pattern": "One-sentence or two-sentence aphoristic paragraph dropped between long analytical blocks as a beat of emphasis.",
+      "instances": [
+        "The story is plausible. The bones do not supply its sequence.",
+        "The new weapon changed the problem without solving it."
+      ]
+    },
+    {
+      "pattern": "The 'X supplied A; institutions supplied B' formula used to adjudicate cause, repeated across periods with the nouns swapped.",
+      "instances": [
+        "Social anger supplied force; institutions had already supplied the categories.",
+        "Fear supplied urgency; political offices supplied categories; the sections supplied bodies; the prison supplied victims."
+      ]
+    },
+    {
+      "pattern": "Cinematic reconstructed set-piece opening (present-tense-feeling narration, weather, named minor actors, sensory detail) followed by an abrupt pivot to institutional analysis.",
+      "instances": [
+        "The five hundred and one jurors were already seated when Socrates came into the court beside the Royal Stoa in Athens.",
+        "The guns stopped at 7.30 on the morning of 1 July 1916, and Sir Douglas Haig was standing over a map at Château de Beauquesne"
+      ]
+    }
+  ],
+  "summary": "This is a genuinely accomplished work of comparative history: a single, clearly held thesis — that violence is organised by offices, and that the archive records only what its institutions were equipped to notice — is pursued across fifteen chapters from Jebel Sahaba to Colombia without drifting or collapsing into platitude. The specificity is exceptional (named registers, dated campaigns, quantities, methodological caveats about trauma timing, deportation counts and battle-death denominators), and the reasoning is consistently careful about what a given source can and cannot support. Sentence-level craft is high and the voice — cool, exact, unhurried, almost entirely free of stock connectives and hype — holds for 55,000 words. The weakness is architectural repetition rather than filler: nearly every chapter runs the same circuit of immersive set-piece, source critique, paired-case comparison, and unresolved closing question, and the thesis is restated in so many parallel formulations ('X supplied force; institutions supplied the categories') that the last four chapters deliver diminishing returns. A light revision that varies the chapter shape, prunes the aphoristic one-line paragraphs, and fixes stray transitional errors such as the John Hayes dating would leave very little to fault."
+}

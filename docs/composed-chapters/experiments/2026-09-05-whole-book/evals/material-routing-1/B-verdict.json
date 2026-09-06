@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 7,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 4
+  },
+  "overall": 7.1,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "High",
+  "highlights": [
+    {
+      "quote": "The violence has a chain of custody.",
+      "judgment": "This compact formulation gives the book its coherent and productive central thesis."
+    },
+    {
+      "quote": "A demand backed by force can present itself as a description of the world rather than as a proposal about how the world should be arranged.",
+      "judgment": "A precise, insightful account of how coercive power disguises choice as realism."
+    },
+    {
+      "quote": "The collection is a selection produced by survival, death, burial, discovery, excavation, and preservation.",
+      "judgment": "The archaeological discussion handles evidentiary limits with admirable specificity."
+    },
+    {
+      "quote": "A legal record could make a dead person disappear into the word “cargo.” Equiano made the word answer for what it concealed.",
+      "judgment": "The prose here joins archival analysis, moral force, and memorable cadence."
+    },
+    {
+      "quote": "The army is a body; the god is the hand that closes it; Eannatum is the human ruler through whom divine judgment becomes territorial fact.",
+      "judgment": "A vivid and analytically controlled reading of visual propaganda."
+    },
+    {
+      "quote": "The mechanism that supplied the janissaries began far from the barracks of Istanbul.",
+      "judgment": "The sentence exemplifies the book's strength in tracing violence backward through institutions and logistics."
+    },
+    {
+      "quote": "The factories made the decision practicable. The railway made it sustainable. Conscription supplied the men who served the guns.",
+      "judgment": "Effective compression, though variations of this causal chain recur too often across the manuscript."
+    },
+    {
+      "quote": "The rifle mattered. So did the list.",
+      "judgment": "A sharp aphoristic close that also typifies the manuscript's overuse of polished binary summations."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Chapters repeatedly distinguish individual force from the institutions that extend it.",
+      "instances": [
+        "The institution does not replace human feeling; it gives feeling reach, continuity, and permission.",
+        "Bureaucracy did not replace aggression with calculation. It gave calculation a means to direct aggression."
+      ]
+    },
+    {
+      "pattern": "Material or environmental capacity is separated from the political decision that directs it.",
+      "instances": [
+        "The environment explains why people met; it does not explain why one group attacked another.",
+        "Railways, telegraphs, and registers enlarged reach, but the office using them supplied direction."
+      ]
+    },
+    {
+      "pattern": "Administrative sequences accumulate concrete nouns to show a chain of custody.",
+      "instances": [
+        "The system required a title, a ledger, a patrol, a parish, a ship, and a court, instead of depending on one violent man.",
+        "From a conference table to a killing site required orders, lists, police escorts, railway schedules, guards, reception procedures, confiscation teams, and workers assigned to remove bodies and belongings."
+      ]
+    },
+    {
+      "pattern": "Comparative pivots use balanced antitheses to prevent unlike cases from collapsing into equivalence.",
+      "instances": [
+        "A fist and a fleet can both injure; they do not produce the same world around the injury.",
+        "One system restrained the movement of weapons; the other reorganised the movement of people and food."
+      ]
+    },
+    {
+      "pattern": "Chapter conclusions repeatedly convert a concrete object into an aphorism about state power.",
+      "instances": [
+        "The sword stands behind the register in this record.",
+        "The rifle mattered. So did the list."
+      ]
+    }
+  ],
+  "summary": "The manuscript advances a compelling thesis: aggression acquires historical scale when institutions classify targets, coordinate means, and distribute responsibility. Its chronological architecture is lucid, and the strongest chapters combine close reading of records with careful limits on what those records can prove. The wide range of cases is intellectually ambitious, though some vividly narrated openings contain detail whose evidentiary basis is not established within the prose. Across fifteen chapters, the same causal lesson is restated through similar chains, balanced contrasts, and aphoristic closers, producing heavy redundancy and a conspicuously templated rhythm. A moderate revision should compress repeated explanations, vary chapter architecture, and distinguish sourced reconstruction more clearly from dramatized scene-setting."
+}

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 5
+  },
+  "overall": 7.0,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Violence in history is organised before it is felt: an institution decides who may be harmed, and its decision leaves a record.",
+      "judgment": "The book's thesis, stated cleanly at the end of chapter 1 and genuinely carried through all fifteen chapters; a real controlling idea rather than a theme."
+    },
+    {
+      "quote": "A wound is an event; a homicide is a legal conclusion. Between them stand the surgeon's description, the witness's memory, the coroner's questions, and the verdict written by a clerk.",
+      "judgment": "Best kind of writing here: the methodological point is made through the actual apparatus of a specific inquest rather than asserted."
+    },
+    {
+      "quote": "First comes a trace: a wound, a burned layer, a missing population, a confiscated field, or a list of prisoners. Next comes attribution... Then comes classification... Finally comes comparison with other cases.",
+      "judgment": "Genuinely useful procedural scaffolding, but also the template the book then re-performs in nearly every chapter with different nouns."
+    },
+    {
+      "quote": "The absence of a projectile is evidence about the surviving ground before it is evidence about the lives once lived there.",
+      "judgment": "Excellent epistemic discipline about silence in the archaeological record; the chapter earns its caution instead of hedging reflexively."
+    },
+    {
+      "quote": "The German state did not simply unleash hatred. It gave hatred addresses.",
+      "judgment": "Sharp, but symptomatic: almost every chapter lands on an aphoristic closer of this exact shape, which drains the individual instances of force."
+    },
+    {
+      "quote": "On the walls at Luxor, the inscription says that the king found himself alone... The stone gives his cry to Amun: “Where art thou, my father Amun?” It also gives the god's answer, though no god's voice was heard above the horses.",
+      "judgment": "The dramatised chapter openings are vividly done, but the book never confronts the tension between inventing Ramesses' or Harold's last minutes and its own strict rules about what a source may be made to say."
+    },
+    {
+      "quote": "He was a ruler who made war one duty among many that could be entered on a tablet, as well as a warrior king.",
+      "judgment": "One of a handful of sentences where a clause looks bolted on after the fact; the tacked-on “as well as” inverts the emphasis the paragraph wants."
+    },
+    {
+      "quote": "Iceland made the feud negotiable; France made it prosecutable.",
+      "judgment": "Elegant, and the fiftieth instance of the same paired-antithesis cadence used to close a comparison; the device stops registering long before the last chapter."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter opens with a present-tense-feeling dramatised scene (a named figure, weather, objects, dialogue), which then breaks off into an analytic essay with an explicit hinge sentence. Fifteen chapters, fifteen identical entrances.",
+      "instances": [
+        "The jurors had taken their seats when Socrates stood in the court of the Archon Basileus... A market quarrel leaves a different trail.",
+        "The paper was on General Lothar von Trotha's table at Okahandja on 2 October 1904, held flat by a revolver, a brass inkwell, and the map of the Waterberg... The rider carried more than an order into the Omaheke."
+      ]
+    },
+    {
+      "pattern": "Chapters and sections close on a compressed aphorism restating the institutional thesis, usually two clauses balanced against each other.",
+      "instances": [
+        "The gun made coercion more extensive, but an office still had to decide whom to coerce.",
+        "Its roads carried the authority that had organised its violence."
+      ]
+    },
+    {
+      "pattern": "The “not merely X, but Y” / “X did not do A; it did B” correction formula is the default engine of every analytic paragraph, so argument arrives as a series of denials of positions nobody in the text holds.",
+      "instances": [
+        "Indirect rule was therefore not the absence of force. It was force placed behind an existing office.",
+        "Baghdad was not simply burned in a moment of rage; it was entered, sorted, and appropriated."
+      ]
+    },
+    {
+      "pattern": "Cases are presented in graded ladders of three or four (feud / raid / expedition / extermination; Iceland / Corsica; Rwanda / Sierra Leone), each ladder closed by a sentence assigning each rung a one-word destination.",
+      "instances": [
+        "The feud relies on kinship; the raid on mobility and selective seizure; the expedition on imperial jurisdiction; the exterminatory campaign on the decision to destroy a population's means of survival",
+        "Rwanda chose proximity under judicial pressure; Sierra Leone chose testimony under a negotiated peace."
+      ]
+    },
+    {
+      "pattern": "Source-caution boilerplate: numbers are refused, then the refusal is generalised in a near-identical sentence, chapter after chapter.",
+      "instances": [
+        "Later chroniclers give enormous figures for the dead, but those numbers cannot be treated as a census.",
+        "Some later accounts give totals in the tens of thousands, even eighty thousand victims; modern historians generally treat those figures as rhetorical or administrative exaggerations rather than an exact count."
+      ]
+    }
+  ],
+  "summary": "This is a serious, well-informed comparative history organised around one genuine thesis — that harm becomes historically legible only after an office has named, sorted and recorded it — and it sustains that thesis across fifteen chapters and a very wide evidentiary range without collapsing into either moralising or relativism. Its best quality is epistemic: it repeatedly shows how a claim is built from a trace, marks where the trace stops, and refuses figures its sources cannot support. Sentence-level craft is high and the voice is unusually consistent, cool and unshowy. The costs are structural rather than verbal. Every chapter enters through the same dramatised set-piece and exits through the same balanced aphorism; the argument accretes cases rather than developing, so chapter 15 largely restates chapter 1 with Elias and Pinker attached; and the “not X but Y” correction is so pervasive that whole analytic stretches read as one rhythm at one pitch. There is also an unexamined tension between the invented interiority of the openings and the book's own strictures about what a record may be made to say. It needs compression and structural variation more than it needs rewriting."
+}

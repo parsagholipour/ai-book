@@ -1,0 +1,258 @@
+{
+  "title": "Aggression Across Time",
+  "premise": "A source-conscious historical survey of human aggressiveness across regions and eras, examining how ecology, population density, political organization, inequality, technology, institutions, cultural norms, and individual behavior have shaped when violence intensifies, changes form, or declines. The book distinguishes interpersonal violence from organized warfare and avoids treating any single period, society, or biological factor as a complete explanation.",
+  "audience": "General readers curious about history who want a clear, geographically broad account without assuming that human aggression has followed one simple upward or downward path.",
+  "writingComplexity": 6,
+  "voiceGuide": [
+    "Write as a clear, measured historical survey for intelligent general readers.",
+    "Use concrete places, material conditions, institutions, artifacts, and documented events before offering interpretation.",
+    "Distinguish interpersonal aggression, ritualized violence, raiding, warfare, state coercion, colonial violence, and mass killing.",
+    "Treat archaeological traces, written records, demographic estimates, and modern behavioral research as different kinds of evidence with different limits.",
+    "Present causal explanations as historically bounded and comparative rather than universal.",
+    "Use moderate confidence, naming uncertainty when the surviving evidence cannot support a firm conclusion.",
+    "Vary the scale of attention: move from a household or artifact to a settlement, polity, region, or world system only when the evidence supports the move.",
+    "Let transitions arise from changing conditions and documented continuities rather than from sweeping claims about human nature."
+  ],
+  "antiAiRules": [
+    "Do not invent sources, citations, studies, experts, dates, casualty totals, quotations, archaeological sites, or research findings.",
+    "Do not treat the supplied research context as a complete bibliography; verify claims against attached sources during drafting and flag unsupported specifics.",
+    "Do not collapse aggression, violence, war, homicide, domination, punishment, and coercion into one interchangeable category.",
+    "Do not describe prehistoric people as inherently peaceful, savage, or warlike without specifying the evidence and its limits.",
+    "Avoid proof-leap transitions such as 'This is not a coincidence', 'no accident', 'hidden in plain sight', and 'the truth is' unless directly quoted or genuinely necessary.",
+    "Avoid repeated binary reversals such as 'X is not A. It is B.' State the supported interpretation directly.",
+    "Do not stack adjacent contrast sentences that jump from a local fact to a sweeping conclusion.",
+    "Use em dashes and en dashes sparingly; prefer clean punctuation.",
+    "Replace inflated abstractions with particular people, places, institutions, objects, or documented practices.",
+    "Do not imply that correlation proves causation when discussing agriculture, inequality, climate, hormones, technology, state formation, or crime trends.",
+    "Do not use a single European trajectory as a template for all regions.",
+    "Do not end every chapter with a balanced both-sides formula, a generic lesson, or a promise that history repeats itself.",
+    "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing prose.",
+    "Do not use modern psychological language as though it maps perfectly onto ancient categories.",
+    "Keep claims about biological influences bounded, especially where evidence concerns present-day behavior rather than long-term historical change."
+  ],
+  "writingMode": "analytical-history",
+  "styleContract": {
+    "localRules": [
+      {
+        "id": "do-not-add-genre-assumptions-that-the-user-did-n",
+        "instruction": "Do not add genre assumptions that the user did not request."
+      },
+      {
+        "id": "avoid-proof-leap-transitions-such-as-this-is-not",
+        "instruction": "Avoid proof-leap transitions such as 'This is not a coincidence', 'no accident', 'hidden in plain sight', and 'the truth is' unless directly quoted or genuinely necessary."
+      },
+      {
+        "id": "do-not-stack-adjacent-contrast-sentences-that-ju",
+        "instruction": "Do not stack adjacent contrast sentences that jump from a fact to a sweeping conclusion; earn the claim with evidence, scene, context, or qualification."
+      },
+      {
+        "id": "avoid-binary-reversal-scaffolds-such-as-x-is-not",
+        "instruction": "Avoid binary-reversal scaffolds such as 'X is not A. It is B.' State B directly unless both halves are needed for a precise correction or distinction, and do not repeat the construction across nearby pages."
+      },
+      {
+        "id": "use-em-dashes-and-en-dashes-sparingly-when-a-das",
+        "instruction": "Use em dashes and en dashes sparingly; when a dash is ornamental, prefer a period, comma, colon, or a cleaner sentence."
+      },
+      {
+        "id": "replace-inflated-abstractions-with-concrete-exam",
+        "instruction": "Replace inflated abstractions with concrete examples, precise claims, or human-sized uncertainty."
+      },
+      {
+        "id": "preserve-the-user-s-thesis-and-intended-edge-but",
+        "instruction": "Preserve the user's thesis and intended edge, but do not make unsupported interpretive claims sound proven."
+      },
+      {
+        "id": "in-reader-facing-prose-avoid-sounding-like-a-mod",
+        "instruction": "In reader-facing prose, avoid sounding like a model explaining its own conclusion."
+      },
+      {
+        "id": "no-proof-leap",
+        "instruction": "Avoid unsupported proof-leap transitions; do not jump from a local fact to a sweeping conclusion without evidence on this page."
+      },
+      {
+        "id": "no-invented-evidence",
+        "instruction": "Do not invent evidence, citations, studies, experts, or source identities."
+      },
+      {
+        "id": "no-generic-conclusion",
+        "instruction": "Avoid generic conclusions and visible prompt scaffolding in reader-facing prose."
+      },
+      {
+        "id": "uncertainty-where-earned",
+        "instruction": "Use uncertainty only where the evidence on this page requires it."
+      },
+      {
+        "id": "prompt-leak-ban",
+        "instruction": "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages."
+      }
+    ],
+    "distributionRules": [
+      {
+        "id": "vary-caveat-endings",
+        "instruction": "Do not use the same caveat construction as the default ending across chapters."
+      },
+      {
+        "id": "select-relevant-lens",
+        "instruction": "Choose only the analytical lens relevant to a page rather than repeating the complete comparison grid."
+      },
+      {
+        "id": "allow-bounded-conclusions",
+        "instruction": "Let some pages commit to a bounded conclusion instead of balancing every cause symmetrically."
+      },
+      {
+        "id": "reintroduce-only-when-advancing",
+        "instruction": "Reintroduce a concept only when the later treatment advances, challenges, or applies it."
+      }
+    ]
+  },
+  "questions": [],
+  "chapters": [
+    {
+      "index": 1,
+      "title": "Chapter 1: Opening",
+      "summary": "Develop the book's central idea through a distinct movement of the outline while preserving continuity with the approved plan.",
+      "targetPages": 12,
+      "keyBeats": [
+        "Open with a concrete scene or question.",
+        "Advance one clear idea, conflict, or discovery.",
+        "End with a reason to continue."
+      ]
+    },
+    {
+      "index": 2,
+      "title": "Chapter 2: Development",
+      "summary": "Develop the book's central idea through a distinct movement of the outline while preserving continuity with the approved plan.",
+      "targetPages": 12,
+      "keyBeats": [
+        "Open with a concrete scene or question.",
+        "Advance one clear idea, conflict, or discovery.",
+        "End with a reason to continue."
+      ]
+    },
+    {
+      "index": 3,
+      "title": "Chapter 3: Perspective",
+      "summary": "Develop the book's central idea through a distinct movement of the outline while preserving continuity with the approved plan.",
+      "targetPages": 12,
+      "keyBeats": [
+        "Open with a concrete scene or question.",
+        "Advance one clear idea, conflict, or discovery.",
+        "End with a reason to continue."
+      ]
+    },
+    {
+      "index": 4,
+      "title": "Chapter 4: Resolution",
+      "summary": "Develop the book's central idea through a distinct movement of the outline while preserving continuity with the approved plan.",
+      "targetPages": 12,
+      "keyBeats": [
+        "Open with a concrete scene or question.",
+        "Advance one clear idea, conflict, or discovery.",
+        "End with a reason to continue."
+      ]
+    },
+    {
+      "index": 5,
+      "title": "Chapter 5: Opening",
+      "summary": "Develop the book's central idea through a distinct movement of the outline while preserving continuity with the approved plan.",
+      "targetPages": 12,
+      "keyBeats": [
+        "Open with a concrete scene or question.",
+        "Advance one clear idea, conflict, or discovery.",
+        "End with a reason to continue."
+      ]
+    },
+    {
+      "index": 6,
+      "title": "Chapter 6: Development",
+      "summary": "Develop the book's central idea through a distinct movement of the outline while preserving continuity with the approved plan.",
+      "targetPages": 12,
+      "keyBeats": [
+        "Open with a concrete scene or question.",
+        "Advance one clear idea, conflict, or discovery.",
+        "End with a reason to continue."
+      ]
+    },
+    {
+      "index": 7,
+      "title": "Chapter 7: Perspective",
+      "summary": "Develop the book's central idea through a distinct movement of the outline while preserving continuity with the approved plan.",
+      "targetPages": 12,
+      "keyBeats": [
+        "Open with a concrete scene or question.",
+        "Advance one clear idea, conflict, or discovery.",
+        "End with a reason to continue."
+      ]
+    },
+    {
+      "index": 8,
+      "title": "Chapter 8: Resolution",
+      "summary": "Develop the book's central idea through a distinct movement of the outline while preserving continuity with the approved plan.",
+      "targetPages": 12,
+      "keyBeats": [
+        "Open with a concrete scene or question.",
+        "Advance one clear idea, conflict, or discovery.",
+        "End with a reason to continue."
+      ]
+    },
+    {
+      "index": 9,
+      "title": "Chapter 9: Opening",
+      "summary": "Develop the book's central idea through a distinct movement of the outline while preserving continuity with the approved plan.",
+      "targetPages": 12,
+      "keyBeats": [
+        "Open with a concrete scene or question.",
+        "Advance one clear idea, conflict, or discovery.",
+        "End with a reason to continue."
+      ]
+    },
+    {
+      "index": 10,
+      "title": "Chapter 10: Development",
+      "summary": "Develop the book's central idea through a distinct movement of the outline while preserving continuity with the approved plan.",
+      "targetPages": 12,
+      "keyBeats": [
+        "Open with a concrete scene or question.",
+        "Advance one clear idea, conflict, or discovery.",
+        "End with a reason to continue."
+      ]
+    }
+  ],
+  "characters": [],
+  "locations": [],
+  "continuityRules": [
+    "Do not contradict established names, relationships, chronology, or visual details.",
+    "When a new recurring detail appears, add it to continuity notes."
+  ],
+  "researchQueries": [],
+  "promises": [],
+  "openingHook": "At Nataruk, near the western shore of Lake Turkana, archaeologists found the remains of people killed roughly ten thousand years ago. The bones open a question that no single massacre can answer: under what conditions does human aggression become private violence, group conflict, or organized war?",
+  "authorStance": {
+    "thesis": "Human aggressiveness has appeared across the human past, but its scale and form have been repeatedly reshaped by living conditions, social organization, institutions, technology, and cultural expectations.",
+    "positions": [
+      "Aggression is a flexible human capacity whose expression changes with circumstances.",
+      "Organized warfare depends on collective arrangements that differ from individual anger or personal violence.",
+      "Agriculture, urbanization, and state formation created new opportunities for cooperation as well as new opportunities for coercion and large-scale conflict.",
+      "Technological development can expand the reach of violence while institutions can constrain who may use it and against whom.",
+      "Historical evidence shows variation rather than one universal curve of progress or decline."
+    ],
+    "refusals": [
+      "The author refuses to explain every historical conflict through one master cause.",
+      "The author refuses to use a dramatic example as proof of a global pattern.",
+      "The author refuses to treat uncertainty as a reason to abandon bounded conclusions.",
+      "The author refuses to end chapters by repeating the book's thesis in abstract language."
+    ],
+    "voiceSample": "In 1914, a railway timetable hung beside the ticket office at Sarajevo station while mobilization orders moved through ministries and barracks across Europe. A telegraph cable could carry a decision from Vienna to a provincial command post before a local newspaper had described the assassination of Archduke Franz Ferdinand. At Verdun in 1916, the road behind the front filled with trucks, shells, stretcher bearers, and men carrying water toward a landscape where artillery had erased familiar landmarks. The steel helmet, the railway wagon, and the field telephone belonged to different parts of the same system. In 1945, a photograph from Hiroshima showed a city reduced to shadows, roof tiles, and fragments of household life. The paper lantern, the school uniform, and the laboratory instrument acquired new meanings within a weapon that could cross a boundary between military calculation and civilian existence. At the Hague in 1949, diplomats placed rules around prisoners, civilians, and wounded soldiers after two world wars had exposed the reach of industrial power. The clauses on paper could not restore Warsaw, Coventry, or Nanjing, yet the document recorded an effort to make restraint part of international practice. Each object carries a history of decisions made elsewhere: a timetable, a truck, a cable, a photograph, a clause."
+  },
+  "illustrationPlan": {
+    "cadence": "manual",
+    "globalStyle": "visual style requested by the user prompt",
+    "coverPrompt": "Cover illustration for Create the best-fitting book from the user's creation chat: Create the best-fitting book from the user's creation chat. Decide the real book shape during planning; do not rely on the neutral project category.\nBook type choice: Auto - decide during planning\nCreation chat: Assistant: Hi! Tell me about the book you want to make. Describe your idea in a sentence or two, or tap an example to start.\nUser: Write a book on human aggressiveness in different areas in history and what affected it\nAssistant: Great topic \u2014 a history of human aggressiveness and what influenced it across different eras. To shape the book well, I need to know who it's for.\nUser: A broad historical survey across eras and regions\nAssistant: A broad historical survey of human aggressiveness across eras and regions \u2014 great scope. I'll structure it around key periods and the forces that shaped conflict in each.\nArtifact: Book\nAudience or reader: General readers curious about history\nPromise or story shape: A broad historical survey of human aggressiveness across eras and regions, exploring what influenced it\nTone or vibe: clear and fitted to the intended book shape\nPlanning instruction: choose the most appropriate shape directly, such as children's fable, short story, workbook, practical guide, client tool, offer guide, or lead magnet, based on the chat history.",
+    "characterReferencePrompts": [],
+    "pageRules": [
+      "Keep recurring characters visually consistent.",
+      "Make each illustration readable as a single scene.",
+      "Avoid text inside images unless this is a labeled diagram."
+    ]
+  }
+}

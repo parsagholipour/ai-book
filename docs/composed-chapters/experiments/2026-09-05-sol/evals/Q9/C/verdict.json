@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 9,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 8,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 8.0,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The mark is physical. Its meaning has to be recovered from history.",
+      "judgment": "A crisp opening statement of the book's governing method: material evidence becomes meaningful only through context."
+    },
+    {
+      "quote": "These are working distinctions, not five levels on a ladder.",
+      "judgment": "The prose establishes usable categories without forcing unlike violence into a false evolutionary scale."
+    },
+    {
+      "quote": "Administration did not create the desire to command. It gave command a longer memory.",
+      "judgment": "This memorable formulation turns an abstract institutional claim into a precise account of how records extend coercion."
+    },
+    {
+      "quote": "A city without writing is not a city without politics, but its politics cannot be reconstructed by pretending that a missing inscription is present.",
+      "judgment": "The manuscript is at its best when it states evidentiary limits this plainly and concretely."
+    },
+    {
+      "quote": "The mother’s body carried the legal cost.",
+      "judgment": "A forceful sentence condenses the gendered legal and economic logic of hereditary slavery without losing the human stakes."
+    },
+    {
+      "quote": "The object did not contain its political use.",
+      "judgment": "This restates a central claim clearly, but by Chapter 12 the technology-versus-purpose distinction has already recurred too often."
+    },
+    {
+      "quote": "The crowd had many hands. So did the state.",
+      "judgment": "The aphorism is effective locally, though it exemplifies the manuscript's frequent reliance on balanced, quotable closers."
+    },
+    {
+      "quote": "If historical knowledge improves those choices, it will do so without predicting violence as weather.",
+      "judgment": "The closing image appropriately limits history's predictive power while preserving its practical value."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Technology is repeatedly separated from human purpose in a compact object-versus-choice formulation.",
+      "instances": [
+        "Technology changes the reach of aggression without supplying its purpose.",
+        "Technology widened possibilities without determining purpose."
+      ]
+    },
+    {
+      "pattern": "Economic pressure is introduced and then denied the status of a sufficient cause.",
+      "instances": [
+        "Economic pressure enters these histories through concrete needs and unequal choices.",
+        "Economic pressure alone does not explain the pattern."
+      ]
+    },
+    {
+      "pattern": "Roads serve as a recurring double-use example, carrying commerce or protection and also coercive force.",
+      "instances": [
+        "A road moved troops, but it also moved reports.",
+        "A road reduced travel time for a merchant and shortened the march of troops."
+      ]
+    },
+    {
+      "pattern": "The state is repeatedly shown restraining one scale of violence while authorizing or enlarging another.",
+      "instances": [
+        "States did not simply replace private violence with peace; they reduced some forms of local uncertainty while making other forms of harm more organised and persistent.",
+        "State power could restrain some private violence while licensing other violence on a larger scale."
+      ]
+    },
+    {
+      "pattern": "Chapter-level conclusions often use balanced antitheses to deny inevitability while preserving causal reach.",
+      "instances": [
+        "A date is a boundary, not a motive.",
+        "Total mobilization was a demand, not a condition achieved uniformly by every person."
+      ]
+    }
+  ],
+  "summary": "The manuscript advances a coherent and persuasive thesis: aggression is historically organized through institutions, identities, technologies, and political choices rather than adequately explained by timeless human nature or linear progress. Its chronological structure carries that thesis across an exceptional range of cases, and its close attention to what different sources can and cannot establish gives the comparisons intellectual discipline. The prose is clear, humane, and often memorable, with especially strong transitions from material traces or administrative records to lived consequences. The main weakness is cumulative repetition: economic pressure, technological reach, state restraint, evidentiary limits, and paired antitheses recur in highly similar paragraph sequences, making several chapters feel longer and more uniform than their argument requires. A moderate revision that cuts recap loops, varies chapter architecture, and trusts established claims would substantially improve pacing and distinctiveness without changing the book's core argument."
+}

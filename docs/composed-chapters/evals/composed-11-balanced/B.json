@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 5
+  },
+  "overall": 6.9,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Bone records contact between force and body; it does not preserve the full choreography of a fight.",
+      "judgment": "Excellent compression of the book's epistemic thesis into a concrete image; craft at its best."
+    },
+    {
+      "quote": "Violence here was communication with a body count.",
+      "judgment": "Rare flash of rhetorical bite in an otherwise level register; the book would benefit from more such risk."
+    },
+    {
+      "quote": "The people in the grave left no statements, names, or account of the event in which they died.",
+      "judgment": "Strong opening discipline \u2014 establishes the evidentiary constraint that governs all fifteen chapters."
+    },
+    {
+      "quote": "A person can harm another without displaying anger. A person can feel anger without harming anyone.",
+      "judgment": "Clear conceptual distinction, but the perfectly mirrored pair is the book's most overused rhetorical shape."
+    },
+    {
+      "quote": "The material object does not determine the human motive. Political decisions give it a place in a chain of force.",
+      "judgment": "The central claim, stated well \u2014 but restated in near-identical form in at least eight chapters."
+    },
+    {
+      "quote": "War had crossed the sea without an invading army.",
+      "judgment": "An isolated one-line paragraph used as a manufactured beat; the device recurs and reads as templated punctuation rather than earned emphasis."
+    },
+    {
+      "quote": "Explicit verbs alone might conceal the violence, because the protocol rarely names the act its language organizes.",
+      "judgment": "Logically garbled \u2014 the sentence appears to argue against itself; a rare but conspicuous lapse in an otherwise precise text."
+    },
+    {
+      "quote": "The machine extended the hand; the state, the commander, the clerk, and the idea of belonging gave it direction.",
+      "judgment": "Elegant aphoristic closer, but the chapter-ending aphorism is so consistently placed that its arrival stops surprising."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Negation-then-assertion couplet ('It does not do A. It does B.') used as the default sentence engine, several times per page.",
+      "instances": [
+        "The excavation did not restore the scene. It made a more disciplined kind of scene possible",
+        "Technology extends a decision; it does not make the decision."
+      ]
+    },
+    {
+      "pattern": "Every chapter closes on the same thesis restatement: institutions restrain small-scale violence while enabling large-scale violence.",
+      "instances": [
+        "Early modern states could restrain private violence by policing roads, disciplining soldiers, and subordinating local armed elites. They could also make larger violence repeatable",
+        "These arrangements restrained some violence while enabling other violence on a larger scale."
+      ]
+    },
+    {
+      "pattern": "Recap-by-inventory: a catalogue of the chapter's exhibits, listed in apposition, near the end of the chapter.",
+      "instances": [
+        "The relevant inventory includes a wampum belt used in condolence, a timber palisade at Cahokia, a labour obligation under the Inca, and the roads that joined provincial communities to Cusco.",
+        "The severed hand before Nsala, the emir's court under British supervision, the restricted citizenship of the Four Communes, the cotton field abandoned during Maji Maji"
+      ]
+    },
+    {
+      "pattern": "The source-caveat formula 'The record shows X. It does not show Y.', applied to nearly every piece of evidence, so the caution becomes ritual rather than argument.",
+      "instances": [
+        "The record shows the fall of the city and the destruction of its ruling house. It does not show a securely countable total of deaths.",
+        "The bones support a conclusion about harmful force and death; they provide less secure access to the emotional state or social purpose of those who inflicted it."
+      ]
+    },
+    {
+      "pattern": "Single-sentence paragraph dropped in as a dramatic beat, always declarative and abstract.",
+      "instances": [
+        "The factory made destructive force repeatable.",
+        "A figure can be responsibly estimated and still remain an estimate."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely accomplished chronological survey of organised human aggression, held together by a clear and consistently earned thesis: violence is directed by institutions, categories of belonging, and political decisions, not by a constant quantity of human aggressiveness, and neither technology nor scarcity settles what people do. The evidentiary discipline is the book's chief virtue \u2014 each chapter is anchored in named sites, documents and artefacts (Talheim, Jebel Sahaba, the Standard of Ur, Bit-Zatti, the Florentine Codex, the Zong, Tophane, Wannsee, Nyarubuye, Srebrenica), and the text repeatedly marks what its sources cannot support rather than overreaching. Prose is clean, precise and free of clich\u00e9 at the word level, and the fifteen-chapter arc progresses coherently from prehistory to drones and platform propaganda. The weakness is monotony of shape rather than of substance: nearly every paragraph runs topic-claim, evidence, then a mirrored negation-and-assertion closer, and every chapter lands on a restatement of the same restraint-versus-enlargement formula, so the book teaches its thesis long before it stops proving it. Pacing suffers most \u2014 the last four chapters could lose a fifth of their length to redundancy control with no loss of argument \u2014 and the relentless symmetrical hedging flattens engagement and gives the voice, admirable as it is, a machine-even cadence. With aggressive cutting of the recap loops and variation in paragraph architecture, this would be close to publishable non-fiction."
+}

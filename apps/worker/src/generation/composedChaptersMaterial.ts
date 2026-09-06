@@ -14,17 +14,19 @@ import {
   type BookPlan,
   type ComposeContract,
   type CreateProjectInput,
-  type TextModelAdapter
+  type TextModelAdapter,
+  type PrimarySourceSearch
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
+import { fetchSourceDocument as primarySourceFetch } from "./sourceDocumentFetch.js";
 import { updateJobProgress } from "../runtime/jobLifecycle.js";
 import type { loadQualityContext } from "./qualitySettings.js";
 
 /**
  * Material-first, the worker's half: the writer's contract and the book's
  * episodes and dossier, planned once per book and stored on the plan like
- * the arc, so a resumed run composes from the same material. Every failure
- * here degrades to composing without material; none fails the book. Split
+ * the arc, so a resumed run composes from the same material. Legacy failures degrade to composing without material; the evidence-required
+ * caller rejects an insufficient dossier before drafting. Split
  * from `composedChaptersPass.ts` for the 900-line budget.
  */
 export type BookMaterial = {
@@ -40,21 +42,34 @@ export async function prepareBookMaterial(options: {
   plan: BookPlan;
   stance: AuthorStance;
   textModel: TextModelAdapter;
+  searchSources?: PrimarySourceSearch | undefined;
   quality: Awaited<ReturnType<typeof loadQualityContext>>;
   generationJobId?: string | undefined;
+  /** A new development run gathers material even when the legacy experiment flag is off. */
+  evidenceRequired?: boolean | undefined;
+  persist?: boolean | undefined;
 }): Promise<BookMaterial> {
   const { projectId, planId, input, plan, stance, textModel, quality, generationJobId } = options;
   const contract: ComposeContract = quality.enabled("creativeContract") ? "creative" : "grounded";
   let episodes: BookEpisodes | undefined;
   let dossier: BookDossier | undefined;
-  if (quality.enabled("materialFirst")) {
+  if (quality.enabled("materialFirst") || options.evidenceRequired) {
     episodes = planEpisodesFromPlan(plan);
     if (!episodes) {
       await updateJobProgress(generationJobId, { progress: 14, message: "Planning the book's episodes" });
-      const planned = await planEpisodes({ input, plan, stance, textModel });
+      // The chapter focus is the `chapterFocus` gate's: off, the episodes
+      // carry no question and the chapter composes from the stance.
+      const planned = await planEpisodes({ input, plan, stance, textModel, evidenceRequired: options.evidenceRequired, focus: quality.enabled("chapterFocus") });
+      if (planned.contract) {
+        console.warn("Episode plan contract", {
+          event: "generation.composed_chapters.focus_contract",
+          projectId,
+          ...planned.contract
+        });
+      }
       if (planned.episodes) {
         episodes = planned.episodes;
-        await persistPlanField(planId, "episodes", episodes, (value) => bookEpisodesSchema.safeParse(value).success);
+        if (options.persist !== false) await persistPlanField(planId, "episodes", episodes, (value) => bookEpisodesSchema.safeParse(value).success);
       } else {
         console.warn("Episodes not produced; composing without material", {
           event: "generation.composed_chapters.episodes_not_produced",
@@ -78,7 +93,9 @@ export async function prepareBookMaterial(options: {
             episodes: episodesForChapter(plannedEpisodes, chapter.index),
             textModel,
             fetch: primarySourceFetch,
+            searchSources: options.searchSources,
             deadline: dossierDeadline,
+            evidence: options.evidenceRequired,
             log: (event, detail) => console.warn("Dossier step", { event: `generation.composed_chapters.${event}`, projectId, ...detail })
           })
         );
@@ -86,8 +103,8 @@ export async function prepareBookMaterial(options: {
           excerpts: chapterDossiers.flatMap((entry) => entry.excerpts),
           documents: chapterDossiers.flatMap((entry) => entry.documents)
         };
-        await persistPlanField(planId, "dossier", dossier, (value) => bookDossierSchema.safeParse(value).success);
-        await recordDossierSources(projectId, dossier);
+        if (options.persist !== false) await persistPlanField(planId, "dossier", dossier, (value) => bookDossierSchema.safeParse(value).success);
+        if (options.persist !== false) await recordDossierSources(projectId, dossier);
       }
     }
   }
@@ -118,7 +135,7 @@ async function persistPlanField(planId: string, field: "episodes" | "dossier", v
 }
 
 /** The dossier's documents as research rows, so the Sources list can cite them; the summary is the document's own first excerpt. */
-async function recordDossierSources(projectId: string, dossier: BookDossier): Promise<void> {
+export async function recordDossierSources(projectId: string, dossier: BookDossier): Promise<void> {
   const seen = new Set<string>();
   const rows = dossier.documents.flatMap((document) => {
     if (!document.url || seen.has(document.url)) return [];
@@ -140,16 +157,5 @@ async function recordDossierSources(projectId: string, dossier: BookDossier): Pr
 /** Eight minutes for a whole book's dossier: past it, chapters still waiting get what was found and no more. */
 const DOSSIER_TIME_BUDGET_MS = 10 * 60 * 1000;
 
-/** The repositories are fetched with a timeout and an identifying agent; a non-200 is an empty text, never a throw the dossier has to catch. */
-async function primarySourceFetch(url: string): Promise<{ status: number; text: string }> {
-  const response = await fetch(url, {
-    // Wikimedia's policy: a user agent that says who is asking and how to reach them.
-    headers: { "user-agent": "ai-book-maker/1.0 (https://ravanix.app; primary-source dossier of public-domain text; contact: 12parsaaa@gmail.com)" },
-    signal: AbortSignal.timeout(10_000)
-  });
-  if (!response.ok) {
-    console.warn("Primary source request refused", { event: "generation.composed_chapters.dossier.http_status", status: response.status, url: url.slice(0, 120) });
-  }
-  return { status: response.status, text: response.ok ? await response.text() : "" };
-}
-
+/** The same bounded reader handles repository APIs, public HTML records, and source PDFs. */
+export { fetchSourceDocument as primarySourceFetch } from "./sourceDocumentFetch.js";

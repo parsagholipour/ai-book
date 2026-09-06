@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 5,
+    "pacing": 4,
+    "craft": 7,
+    "slopResistance": 5
+  },
+  "overall": 7.0,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The archive is a surviving arrangement of attention, not a census of aggression.",
+      "judgment": "The book's governing idea in one line \u2014 precise, earned, and better than most of the aphorisms it sits among."
+    },
+    {
+      "quote": "A channel can conceal coercion more effectively than a monument that displays it.",
+      "judgment": "Genuinely original comparative insight (Dujiangyan against the Stele of the Vultures) that does analytic work rather than decorating a transition."
+    },
+    {
+      "quote": "A healed fracture is first a change in tissue: the broken surface has been repaired, and the repair may have left a callus, altered shape, or another sign that the person survived for some time after the injury.",
+      "judgment": "The Chapter 2 nine-step method from bone to claim is the book's best sustained reasoning: it shows the inference rather than asserting it."
+    },
+    {
+      "quote": "The table's neatness makes its violence easier to miss. A country becomes a line; a line becomes a number; a number becomes a population awaiting action.",
+      "judgment": "Rare moment where rhetorical escalation is licensed by the document under discussion; the prose finally raises its voice without losing control."
+    },
+    {
+      "quote": "Technology alters reach without supplying motive.",
+      "judgment": "A true and central claim \u2014 but it is restated in some form in nearly every chapter, and repetition drains it of force."
+    },
+    {
+      "quote": "It shows that Assyrian rulers wished to be seen as terrifying and victorious. They do not describe what every campaign did, and they cannot establish that fear alone maintained the empire.",
+      "judgment": "The book's default sentence shape: assert a modest positive, then two symmetrical denials. Rigorous once, mechanical by the fiftieth occurrence."
+    },
+    {
+      "quote": "A registration entry could become a claim on a family.",
+      "judgment": "One of several orphaned one-sentence paragraphs used as aphoristic punctuation; the device is conspicuous and reads as manufactured emphasis."
+    },
+    {
+      "quote": "A court may preserve a name. A satellite image may preserve a roofline. A community may preserve a warning long enough for people to cross a bridge before gunmen arrive.",
+      "judgment": "An effective close, though it deploys the same anaphoric triple-list cadence the book has already used to end many chapters."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The evidentiary see-saw: every claim is immediately paired with a symmetrical denial of what the evidence cannot show. It is the book's intellectual virtue and its most exhausting tic, appearing several times per page in all fifteen chapters.",
+      "instances": [
+        "Both sites support the conclusion that lethal interpersonal violence occurred among small-scale communities long before written states, standing armies, or administrative records. Neither supports a simple estimate of how aggressive all people were at the time.",
+        "The photographs do not offer the private thoughts of every official involved, but they make disappearance materially difficult to deny."
+      ]
+    },
+    {
+      "pattern": "Chapter and section openings all begin in medias res with a named artifact, site, or document, then widen to method. The uniformity makes chapter starts interchangeable and removes any sense that a chapter had to begin where it does.",
+      "instances": [
+        "The Stele of the Vultures begins with a boundary rather than a battlefield.",
+        "The Syrian Archive was built from fragments: a video uploaded from a phone, a photograph copied across several accounts..."
+      ]
+    },
+    {
+      "pattern": "Four-item recap catalogues that close a section by listing each case and what it 'records' or 'shows', in parallel clauses. This substitutes inventory for synthesis.",
+      "instances": [
+        "Cahokia's palisade records collective labour and guarded space. Bonampak's murals record a court's celebration of military success. Wari defensive sites record elevated control and difficult approaches. Moche vessels record the ceremonial ordering of capture.",
+        "Uruk's tablets show that urban surplus could be counted and allocated. Dholavira shows that large-scale planning and enclosure could exist without a securely visible conquest tradition."
+      ]
+    },
+    {
+      "pattern": "The tool-without-motive formula, restated with a new object in nearly every chapter: technology or administration enlarges reach while politics supplies purpose.",
+      "instances": [
+        "None of these tools supplied a motive. Their effects depended on who controlled them, how people moved, and what kinds of enemies a community recognised.",
+        "A railway timetable could move a division; it could not decide that Leuven should be punished."
+      ]
+    },
+    {
+      "pattern": "Isolated one-sentence paragraphs deployed as aphoristic beats between long analytic blocks, often stating an abstraction the surrounding prose has already established.",
+      "instances": [
+        "Prediction could be another form of pressure.",
+        "The line could be crossed, but not always without cost."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, unusually well-sourced global history of organized violence, structured chronologically from Pleistocene burials to Syrian open-source verification, and held together by a consistent methodological thesis: aggression is not a constant human quantity but a set of acts whose scale and meaning are made by institutions, and evidence must never be stretched beyond what its form can bear. The reasoning is the book's great strength \u2014 it repeatedly shows the route from mark to meaning (the skeletal-trauma method in Chapter 2, the identification-confiscation-deportation chain in Chapter 13) rather than asserting conclusions, and the specificity of sites, documents, and named actors is consistently high. The voice is austere, controlled, and entirely consistent across fifteen chapters. The costs are serious: the same epistemic gesture \u2014 'this shows X; it does not establish Y' \u2014 recurs several times per page for sixty thousand words, chapter openings and section closes follow near-identical templates, and the tool-supplies-reach-not-motive claim is restated with a new object in every chapter. The result is low reader engagement and weak concision control; the argument is complete by Chapter 4 and thereafter mostly re-instantiated. It is not machine-generic prose, but its uniform paragraph shapes, paired antitheses, symmetrical hedges, and orphaned aphoristic one-liners are templated enough to register as medium-severity slop, and the manuscript would need a substantial variety-and-compression pass before publication."
+}

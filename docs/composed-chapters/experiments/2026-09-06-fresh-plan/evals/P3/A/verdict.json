@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.6,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "One record is rich in classification and poor in ordinary voices; the other is rich in physical traces and poor in intentions.",
+      "judgment": "Elegant compression of the book's core method — but also the template for a chiastic antithesis the book reuses dozens of times."
+    },
+    {
+      "quote": "Nataruk supports a claim about lethal interpersonal violence more securely than a claim about motive.",
+      "judgment": "Model epistemic discipline: the claim is calibrated to the evidence rather than to the drama of the site."
+    },
+    {
+      "quote": "The absence of a projectile is not the absence of a shot.",
+      "judgment": "Crisp, memorable statement of the preservation problem that does real analytic work."
+    },
+    {
+      "quote": "The battlefield opened the territory; the record occupied it.",
+      "judgment": "Genuinely strong aphorism about the paperwork of conquest — though the paired-clause closer becomes a habitual cadence."
+    },
+    {
+      "quote": "Human aggression had acquired an architecture large enough to hide its authors without removing their choices.",
+      "judgment": "The industrial-force chapter's best sentence: it names diffusion of responsibility without excusing it."
+    },
+    {
+      "quote": "A record can preserve a child’s name and still lose the child.",
+      "judgment": "Rare moment where the archival theme reaches emotional force rather than restating itself."
+    },
+    {
+      "quote": "The evidence is powerful at the level of event and limited at the level of motive.",
+      "judgment": "True and useful the first time; by chapter 11 the same proposition has been restated in a dozen guises, which is where pacing fails."
+    },
+    {
+      "quote": "That limitation narrows the claim without destroying it.",
+      "judgment": "Typical of the book's reflexive hedge-and-rescue rhythm, which drains momentum when it arrives every few paragraphs."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The bounded-claim couplet: a source is said to support one thing 'more securely' than another, or to establish X while leaving Y unreachable. It is the book's single most repeated sentence-machine and appears in every chapter.",
+      "instances": [
+        "Nataruk supports a claim about lethal interpersonal violence more securely than a claim about motive.",
+        "The bones establish harm more securely than they establish the sequence of events that produced it."
+      ]
+    },
+    {
+      "pattern": "Chapters and sections close by naming an explicitly 'unresolved question', often phrased with the same words, so the ending gesture is predictable long before it arrives.",
+      "instances": [
+        "The unresolved question is which consideration controls the moment when a household decides that another death is necessary.",
+        "The unresolved question is how far these classifications changed conduct during campaigns."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis as closer: two symmetrical clauses divided by a semicolon, each assigning one virtue and one lack. It is a real strength of the prose used past the point of variety.",
+      "instances": [
+        "The battlefield opened the territory; the record occupied it.",
+        "Archaeology makes recurrence visible; ethnography makes response visible."
+      ]
+    },
+    {
+      "pattern": "Enumerated recap sequences that restate the chapter's argument as an ordered list of stages ('First came... Then came... Finally came'), converting analysis already delivered into a summary the reader has just read.",
+      "instances": [
+        "First came the army.",
+        "Then came the campaign itself."
+      ]
+    },
+    {
+      "pattern": "A named foil, the 'timeless-aggression thesis', is set up and knocked down in nearly identical terms in several chapters, always conceding that anger and fear recur before denying that recurrence means sameness.",
+      "instances": [
+        "These distinctions answer the timeless-aggression thesis, the recurring interpretation that human aggression is a fixed, universal force expressing itself in much the same way everywhere.",
+        "The timeless-aggression thesis is right that fear, anger, and competition recur."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined history of aggression that argues one thesis consistently across twelve chapters: recurring human capacities for harm are organised into radically different forms by law, rank, authority, technology and the kinds of evidence each society leaves behind. Its reasoning is the strongest thing about it — observation is repeatedly separated from inference, sources are read for what they were made to do, and claims are trimmed to fit what the record can bear. The prose is clean and the historian's voice is consistent and adult, with no lexical AI tics, vivid case material (Nataruk, Jericho, the Stele of the Vultures, Njal's Saga, the Gordon Riots, S-21) and some genuinely fine sentences. The book's failing is repetition of shape rather than of content: the same bounded-claim couplet, the same paired-antithesis closer, the same 'unresolved question' ending and the same rehearsed foil recur so regularly that chapters begin to feel interchangeable in rhythm even when their evidence is fresh, and the constant epistemic hedging costs the book pace and emotional grip. Two chapters (the paired soldiers' letters, and the ordered recaps at the end of the state-formation material) are noticeably thinner than the rest, and the chapter epigraphs are poorly chosen — one merely reprints a sentence quoted verbatim in the body, another is an irrelevant fragment about Portland clergymen. Light revision aimed at varying cadence, cutting perhaps fifteen per cent of the caveat sentences, and replacing the epigraphs would leave a strong book."
+}

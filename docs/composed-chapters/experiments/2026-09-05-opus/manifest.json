@@ -1,0 +1,41 @@
+{
+ "createdAt": "2026-09-05T06:15:00Z",
+ "sourceProject": "cmtjbz54o000w6rjyvzewwqj4",
+ "reusePlanProject": "cmtjlkn0z0000g8g08zbzxerc",
+ "writerTier": "balanced",
+ "qualityRevision": 48,
+ "assessorModel": "claude-opus (Agent tool, model=opus)",
+ "readersPerBook": 3,
+ "candidates": {
+  "N2": {
+   "sourceLabel": "composed-7",
+   "arm": "reference",
+   "sha256": "850396c091aa1eeb96f07f1620cbd5d1b4d2a6c7ef2cc607ce07a56e5b816976",
+   "words": 52884
+  },
+  "V2": {
+   "sourceLabel": "ladder-5a-apparatus",
+   "arm": "baseline",
+   "sha256": "3026686c1b004465e0df50c5a74eab97a47e1445a3559cf7b8144d4936344a34",
+   "words": 56471
+  },
+  "V8": {
+   "sourceLabel": "ladder-5b-apparatus",
+   "arm": "baseline",
+   "sha256": "60ddd04e4e00c59e6ccfb99f5f136399f23761f4ada22bac4957650092d4b652",
+   "words": 52939
+  },
+  "L7": {
+   "sourceLabel": "ladder-5c-apparatus",
+   "arm": "baseline",
+   "sha256": "8e36c4a8bc269cdde3b2476e2da5badda5da64f19b7e070a6b0cb06665659559",
+   "words": 59472
+  },
+  "P7": {
+   "sourceLabel": "development-fixes-1d",
+   "arm": "new",
+   "sha256": "0c7896a911f5814cdbb0a94dca5d65823e8268e8d0a6779b20642180b8b7f851",
+   "words": 52119
+  }
+ }
+}

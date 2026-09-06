@@ -131,7 +131,10 @@ export function GeneratedBooksView(props: GeneratedBooksViewProps) {
                         {usdFine(book.marginUsd)}
                         <span className="muted admin-subtle">{percent(book.marginPercent)}</span>
                       </td>
-                      <td>{dateTime(book.completedAt)}</td>
+                      <td>
+                        {dateTime(book.completedAt)}
+                        {book.status === "REVIEW_REQUIRED" ? <span className="muted admin-subtle">needs review</span> : null}
+                      </td>
                       <td>
                         <span className="admin-download-links">
                           <a href={apiUrl(`/api/admin/projects/${book.id}/export/pdf`)}>PDF</a>

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 7
+  },
+  "overall": 7.0,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A broken bone that knitted under the skin records pain, care, and survival, but not the quarrel, accident, raid, or punishment that caused it.",
+      "judgment": "Strong opening: the book's methodological thesis is dramatized through an object rather than announced."
+    },
+    {
+      "quote": "Roman law was not asking only how much blood had been spilled. It was asking whether a body had been damaged, whether an insult had been offered, whether property had been taken, and whether the parties stood as free persons or slaves.",
+      "judgment": "Excellent: reasoning stays inside the source's own categories instead of importing modern ones."
+    },
+    {
+      "quote": "Administration did not create the desire to command. It gave command a longer memory.",
+      "judgment": "The book's best single formulation, and a genuinely useful compression of the Mesopotamia chapter."
+    },
+    {
+      "quote": "The euphemism places killing inside a sequence of labour, exhaustion, selection, and disappearance.",
+      "judgment": "Close reading of the Wannsee Protocol that earns its conclusion from the document's grammar."
+    },
+    {
+      "quote": "Technology changes the reach of aggression without supplying its purpose.",
+      "judgment": "True, and stated well here in Chapter 1 — but restated in near-identical words in at least five later chapters, which is the book's central redundancy problem."
+    },
+    {
+      "quote": "A date is a boundary, not a motive.",
+      "judgment": "One of many one-sentence aphoristic paragraphs deployed on schedule as a chapter beat; the device is formulaic even when the sentence is good."
+    },
+    {
+      "quote": "What did a soldier see?",
+      "judgment": "The planted rhetorical question recurs at fixed structural positions ('Was Cahokia ruled through fear?', 'Where, then, did the boundary lie?'), so it reads as scaffolding rather than curiosity."
+    },
+    {
+      "quote": "The crowd had many hands. So did the state.",
+      "judgment": "A paired-antithesis closer of exactly the kind the book reaches for dozens of times; effective once, wearying by Chapter 10."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Negation-then-correction as the dominant sentence engine: 'X did not do A. It did B.' It appears many times per chapter and flattens syntactic variety.",
+      "instances": [
+        "The first cities did not invent aggression. They changed its reach.",
+        "This was adaptation, not repentance."
+      ]
+    },
+    {
+      "pattern": "Identical chapter close: after the cases are compared, a paragraph restates the master thesis (institutions and categories, not nature or technology, direct violence). Every chapter lands the same way.",
+      "instances": [
+        "What changed was the ability of particular rulers and offices to direct labour, preserve decisions, and connect resources to force.",
+        "None of these outcomes followed from scarcity or technology alone. They required decisions about jurisdiction, belonging, labour, punishment, and the value assigned to lives beyond the ruling community."
+      ]
+    },
+    {
+      "pattern": "The 'economic pressure alone is insufficient' move is performed as a scheduled section in nearly every chapter, in almost the same wording each time.",
+      "instances": [
+        "Yet pressure does not move directly from an empty granary or a low wage to a wound.",
+        "Economic pressure alone cannot account for the different forms of violence."
+      ]
+    },
+    {
+      "pattern": "Source-limitation disclaimer paragraph attached to every case study, usually just before the comparison; the caution is genuine but its placement is templated and it consumes a large share of the word count.",
+      "instances": [
+        "The wounds show that people were attacked. They do not provide a transcript of the quarrel, name the attackers, or establish whether the victims belonged to one settlement.",
+        "The source records the agreement, its institutional reforms, and the international role; it does not permit an account of what every Salvadoran felt as weapons were surrendered."
+      ]
+    },
+    {
+      "pattern": "Isolated one-line paragraph used as a rhythmic beat, typically an aphorism or a rhetorical question, roughly two to four per chapter and always at the same structural junctures.",
+      "instances": [
+        "The skeleton is not a written account.",
+        "Production followed policy."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, unusually consistent work of comparative history built on one clear argument: aggression becomes large-scale through records, offices, categories and authorized force, while technology extends reach without supplying purpose. Its real strength is evidentiary reasoning — the book habitually asks what each source was made to do, refuses to convert death tolls into moral comparisons, and keeps Jebel Sahaba, the Twelve Tables, the Wannsee Protocol and Kigali roadblocks inside their own institutional worlds. Sentences are clean, the register is steady, and there is almost none of the lexical tell-tale slop (no stock openers, no listicle rhetoric, no motivational closers). The problems are structural rather than verbal. The thesis is restated at the close of every chapter and in most sections within them, the 'economic pressure alone' and 'source limits' passages are performed on schedule, and the negation-correction sentence and the one-line aphoristic beat are used so often that the paragraphs become interchangeable in shape. Depth is broad rather than deep: the cases are largely consensus scholarship, and the originality lies in framing rather than in any claim the reader could argue with. A hard cut of twenty to thirty percent, plus deliberate variation of chapter architecture, would move it close to publishable."
+}

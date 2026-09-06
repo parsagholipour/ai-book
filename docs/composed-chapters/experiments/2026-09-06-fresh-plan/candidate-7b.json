@@ -1,0 +1,112 @@
+{
+  "candidate": "7b",
+  "label": "legacy-cuts-7b",
+  "status": "assessed-below-target",
+  "writer": {
+    "model": "gpt-5.6-luna",
+    "tier": "balanced",
+    "thinkingEffort": "low"
+  },
+  "qualityRevision": 50,
+  "liveFlags": {
+    "chapterFocus": "off (compiled default)",
+    "manuscriptReadCuts": "on for balanced"
+  },
+  "sourceProject": "cmtjbz54o000w6rjyvzewwqj4",
+  "reusePlan": false,
+  "intervention": "Same as candidate 7 (rung-5 composition path via chapterFocus off; whole-chapter deletion-only read cuts; couplet rewrite broadened to assert-then-retract, semicolon retraction and without-proving), relaunched after the collision rule was refined (document-only overlap never counts; place-filed tokens never strong; a drop needs two strong tokens).",
+  "projectId": "cmtpb81zh0000cyg0yv6c3aex",
+  "planId": "cmtpbalbf00036kp21xxu2d5d",
+  "generationJobId": "cmtpbamqy0002cyg0zontzzm1",
+  "plan": {
+    "title": "The Many Faces of Human Aggression",
+    "chapters": 12,
+    "pageSum": 120,
+    "targets": [
+      8,
+      11,
+      7,
+      14,
+      9,
+      12,
+      6,
+      13,
+      10,
+      9,
+      11,
+      10
+    ],
+    "stanceRegenerated": true,
+    "contract": {
+      "reasked": true,
+      "collisionsBefore": 1,
+      "collisionsAfter": 1,
+      "dropped": [
+        "ch2 The Nataruk Skeletons (true revisit of chapter 1)",
+        "ch11 The End of the Icelandic Feud System (vs chapter 5 Njal, borderline)",
+        "ch11 The Decline of Homicide in London (false positive on London/England, fixed afterwards)"
+      ]
+    }
+  },
+  "execution": {
+    "words": 52301,
+    "storedPages": 120,
+    "pdfPages": 106,
+    "generationMinutes": 28,
+    "generationExportCalls": 81,
+    "generationExportProviderCostUsd": 0.45779999999999993,
+    "productionFilesVerifiedUnchanged": 580,
+    "allCallsLuna": true,
+    "toldScenes": 1,
+    "chaptersWithExcerpts": 4,
+    "verbatimQuotes": 10,
+    "cutChapterCalls": 7,
+    "cutsApplied": 1,
+    "cutWordsRemoved": 681,
+    "wordsAboveFloor": "about 700 (52,301 vs 51,600) — the legacy path drafts short and the floor left no room to cut",
+    "coupletRewrite": "found 11–26 per chapter, rewritten 6–15",
+    "antithesisCounts": {
+      "semicolonRetractPer1000": 0.9,
+      "assertRetractPer1000": 2.2,
+      "negationContrastPer1000": 35.5,
+      "abstractNounPer1000": 7.8,
+      "hedgeEndingShare": 0.14,
+      "generalisingCloserShare": 0.43
+    },
+    "qualityReport": {
+      "state": "review_recommended",
+      "issues": [
+        "warning:SYMMETRICAL_HEDGING"
+      ]
+    }
+  },
+  "result": {
+    "code": "P3",
+    "scores": {
+      "A": 7.6,
+      "B": 7.7,
+      "C": 6.9
+    },
+    "mean": 7.4,
+    "criterionMeans": {
+      "thesis": 8.666666666666666,
+      "structure": 7.666666666666667,
+      "depth": 7.666666666666667,
+      "reasoning": 8.666666666666666,
+      "clarity": 8.666666666666666,
+      "voice": 7.333333333333333,
+      "engagement": 6,
+      "pacing": 5.333333333333333,
+      "craft": 7.666666666666667,
+      "slopResistance": 6.333333333333333
+    },
+    "validationIssues": 0,
+    "pass": false,
+    "sameSitting": {
+      "ladder-5a-apparatus (J2)": 7.633333333333333,
+      "material-progression-3 (R4)": 7.1,
+      "fresh-plan-5 (J5)": 6.866666666666666,
+      "plan-contract-6 (T6)": 7
+    }
+  }
+}

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 7,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 7,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 4
+  },
+  "overall": 7.0,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "High",
+  "highlights": [
+    {
+      "quote": "The bone does not contain the direction of intention. It contains the direction of force.",
+      "judgment": "A lucid distinction between physical evidence and inferred motive that anchors the book’s method."
+    },
+    {
+      "quote": "War did not replace administration. It used administration.",
+      "judgment": "This concise formulation captures the central thesis with unusual force and precision."
+    },
+    {
+      "quote": "Machinery enlarged the hand, but political authority chose where it would close.",
+      "judgment": "A memorable synthesis of the manuscript’s argument about capacity, institutions, and political purpose."
+    },
+    {
+      "quote": "The order travelled. So did the refusal.",
+      "judgment": "The compressed cadence gives the colonial chapter a strong, earned ending."
+    },
+    {
+      "quote": "Protection and destruction are presented as paired services of kingship.",
+      "judgment": "The analysis is incisive, though the paired-antithesis form recurs so often that it becomes predictable."
+    },
+    {
+      "quote": "In each case, the crowd mattered. It was never the whole government.",
+      "judgment": "This is clear and conceptually useful, but it exemplifies the repeated aphoristic correction used throughout."
+    },
+    {
+      "quote": "The Dar al-Hadith al-Nuriyya in Damascus, founded in 1172 after Nur al-Din’s death had already occurred, preserved his name as a patron of religious learning.",
+      "judgment": "This creates an internal chronological contradiction because the chapter later dates Nur al-Din’s death to 1174."
+    },
+    {
+      "quote": "The future will still turn on decisions made by people at desks, in meeting rooms, at checkpoints, and before crowds.",
+      "judgment": "A thematically apt conclusion, but its polished list and aphoristic closure reflect the manuscript’s heavily patterned rhetoric."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Short corrective sentences repeatedly shift agency from an object or event to the institution around it.",
+      "instances": [
+        "The clay commanded no one by itself.",
+        "The legal dispute did not create the massacre, and the absence of a murder trial did not erase the dead."
+      ]
+    },
+    {
+      "pattern": "Material infrastructure is repeatedly defined through a balanced double use.",
+      "instances": [
+        "A road could serve a market and an army without changing its stones.",
+        "A wampum belt recorded a relation; it did not register a tax."
+      ]
+    },
+    {
+      "pattern": "Rhythmic enumerations compress causal chains into memorable formulas.",
+      "instances": [
+        "First came force. Then came survival. Then came repair.",
+        "assemble, count, select, search, and kill"
+      ]
+    },
+    {
+      "pattern": "The prose repeatedly limits an inference through an explicit ‘not’ construction.",
+      "instances": [
+        "A horn mounted on a wall is an object in a house, not a report of a raid.",
+        "collective death is not automatically warfare in the later sense of a campaign planned by officials, supplied through stores, and conducted for territorial conquest."
+      ]
+    },
+    {
+      "pattern": "Sections and chapters often close with polished, aphoristic statements of agency.",
+      "instances": [
+        "The order travelled. So did the refusal.",
+        "The future will still turn on decisions made by people at desks, in meeting rooms, at checkpoints, and before crowds."
+      ]
+    }
+  ],
+  "summary": "The manuscript advances a strong, coherent thesis: aggression becomes historically consequential through institutions that classify targets, authorize force, and extend its reach. Its chronological architecture is ambitious and generally effective, and its close readings of artifacts, records, laws, and logistical systems repeatedly produce sharp insights. The breadth is also a liability: chapters repeatedly return to the same means-versus-ends distinction through similar corrective pivots, balanced antitheses, administrative chains, and aphoristic closers, making the latter half feel substantially more repetitive than cumulative. Moderate revision should cut recap loops, vary chapter architecture, distinguish documented detail from reconstructed scenes more clearly, and repair internal inconsistencies."
+}

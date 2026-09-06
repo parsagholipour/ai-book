@@ -1,0 +1,54 @@
+{
+  "scores": { "thesis": 9, "structure": 8, "depth": 8, "reasoning": 8, "clarity": 9, "voice": 8, "engagement": 7, "pacing": 6, "craft": 8, "slopResistance": 6 },
+  "overall": 7.7,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    { "quote": "The archive does not distribute evidence according to the importance of the violence.", "judgment": "The book's real argumentative engine, stated cleanly and honoured throughout rather than dropped after chapter 1." },
+    { "quote": "The story is plausible. The bones do not supply its sequence.", "judgment": "Exemplary epistemic discipline in nine words; also the first instance of a two-beat aphorism the book reuses too often." },
+    { "quote": "Murder became possible because no single office had to describe the whole act.", "judgment": "The strongest single sentence in the book: the thesis and the Wannsee evidence fuse without editorialising." },
+    { "quote": "A battle-death series sees the bullet and may miss the broken road.", "judgment": "Concrete, earned metaphor doing genuine methodological work against Pinker-style counts." },
+    { "quote": "Its bronze-covered head withdrew into the shelter of the frame, then drove forward again, the wheels grinding on the packed earth of the siege ramp.", "judgment": "The reconstructed scene openings are physically observed and unsentimental — the manuscript's best writing." },
+    { "quote": "The conquered people did not become the conquered city’s ruler.", "judgment": "An isolated one-line paragraph whose portentous placement outruns its meaning; a template beat filled with near-tautology." },
+    { "quote": "Terror announced the terms. Administration collected them.", "judgment": "Effective, but it is the paired-antithesis closer that ends dozens of sections across the book." },
+    { "quote": "The evidence is strongest when it identifies the arrangements that made violence possible and the decisions that interrupted them; it becomes weaker when it treats those arrangements as a forecast.", "judgment": "A genuinely disciplined ending that refuses the prophecy its subject invites." }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Chapters and sections close on a rhetorical either/or question about whether violence rose or only became visible — the same question restated with new nouns.",
+      "instances": [
+        "Did the early state increase violence, or did it increase the chances that violence would survive as evidence?",
+        "Did violence increase because frontier peoples were more aggressive, or because fragmented political power made raiding the most practical way to obtain wealth, security, and recognition?"
+      ]
+    },
+    {
+      "pattern": "A matched-pair comparison paragraph, built as two parallel clauses naming one place each, is used to close nearly every case study.",
+      "instances": [
+        "In the Congo, the concession boundary directed labour towards rubber. In South Africa, the land boundary directed labour towards mines and farms.",
+        "Kenya’s hut tax pushed people into the labour market; Indochina’s corvée took labour directly to the project."
+      ]
+    },
+    {
+      "pattern": "A one-sentence paragraph dropped between long analytic blocks as a rhetorical drum-beat; frequent enough to become a tic rather than emphasis.",
+      "instances": [
+        "The ram moved again.",
+        "The new weapon changed the problem without solving it."
+      ]
+    },
+    {
+      "pattern": "Aphoristic antithesis in two short sentences, usually contrasting what evidence shows with what it cannot show.",
+      "instances": [
+        "The pit is powerful evidence of killing. It is poor evidence for a census.",
+        "Josephus preserves the human catastrophe; the arch preserves the state’s possession of its meaning."
+      ]
+    },
+    {
+      "pattern": "The word \"office\" is made to carry the argument almost every time, so causal explanation flattens into one repeated noun.",
+      "instances": [
+        "Each office joined force to a different social arrangement.",
+        "Their disagreement over emphasis does not remove the office that decided the city’s fate."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely coherent global history of organised violence built on one controlling claim — that harm is produced and made visible by institutions, and that every archive records only what its makers were equipped to notice — and the claim is carried, tested and complicated across fifteen chapters rather than merely restated. The evidence handling is unusually disciplined for a survey: Jebel Sahaba, Talheim, the Zong, Wannsee and the Briggs Plan are each read for what the source could and could not have recorded, and the book repeatedly refuses totals it cannot support. Prose is clear, concrete and free of the usual generic abstraction; the reconstructed openings (Lachish, the Zong, La Force, the Somme) are the strongest writing and give an otherwise analytic book real narrative pull. The weakness is architectural sameness: nearly every chapter runs scene → source critique → paired comparison → aphoristic couplet → open rhetorical question, and the two-beat antithesis and the isolated one-line paragraph recur until they read as mannerism rather than emphasis. The word \"office\" also does too much explanatory work, so distinct mechanisms in Assyria, Barbados and Rwanda are described in near-identical vocabulary. Light revision — varying chapter endings, cutting perhaps a fifth of the one-line beats, and diversifying the causal vocabulary — would lift it considerably; the substance is already publishable."
+}

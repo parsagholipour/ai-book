@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 6,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.1,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The stones do not settle the dispute. They make it unavoidable.",
+      "judgment": "Elegant, but the first of dozens of two-beat aphoristic closers that become a reflex rather than a device."
+    },
+    {
+      "quote": "Scarcity supplies pressure; storage supplies a target.",
+      "judgment": "Genuinely sharp compression of the book's central mechanism \u2014 pressure is not permission."
+    },
+    {
+      "quote": "A perimortem fracture, made around the time of death, may have bevelled edges, a particular pattern of breakage, or a position in the body that fits a blow or projectile wound.",
+      "judgment": "Strong opening chapter: teaches an inferential method rather than asserting a conclusion, and earns the caution that follows."
+    },
+    {
+      "quote": "At Jebel Sahaba, approximately forty-five percent of the individuals showed evidence of trauma. The injuries included embedded lithic projectile points, cut marks, and fractures made near the time of death.",
+      "judgment": "Chapter 2 re-narrates this site nearly verbatim from Chapter 1; the redundancy costs a whole opening section."
+    },
+    {
+      "quote": "Its power lay in ordinary procedures. A tablet was issued, a ration measured, a group assigned, and a task completed under supervision.",
+      "judgment": "The Uruk material is the book's best chapter \u2014 abstraction is cashed out in a concrete administrative sequence."
+    },
+    {
+      "quote": "Parliament's number did not stand outside the violence. It entered the ship and arranged the people inside it.",
+      "judgment": "The Brookes/Dolben Act reading is the most original argument in the book: regulation as an instrument of the thing regulated."
+    },
+    {
+      "quote": "Gunpowder did not give violence its purpose. Institutions gave a weapon a campaign, a campaign a supply system, and a supply system access to civilians who had never chosen the war.",
+      "judgment": "Well made, but it is the thesis restated in the same syntax used to close at least a dozen other chapters and sections."
+    },
+    {
+      "quote": "The absence of a body has no single meaning. It may indicate care, exposure, transport, destruction, or simple failure of preservation.",
+      "judgment": "Scrupulous \u2014 yet this symmetrical-hedge shape ('it may be X; it may also be Y') recurs so often that caution starts reading as a template."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter and most sections terminate in a short antithetical or aphoristic sentence pair restating the institutions-not-instincts thesis.",
+      "instances": [
+        "The stones do not settle the dispute. They make it unavoidable.",
+        "The river supplied the setting; it did not supply the decision."
+      ]
+    },
+    {
+      "pattern": "A two-case comparison scaffold: pair A and pair B are introduced, declared not to sit on a ladder or reflect national character, and then resolved with a 'the difference lies in...' verdict sentence.",
+      "instances": [
+        "Nataruk and Crow Creek should not be placed on a ladder from primitive skirmish to developed warfare.",
+        "The difference was not that Britain governed gently while France governed harshly."
+      ]
+    },
+    {
+      "pattern": "A formal steelman block that concedes the rival explanation's force in one paragraph, then reverses with a 'The evidence supports part of that account' / 'But' pivot to the same institutional conclusion.",
+      "instances": [
+        "A persuasive case can be made that imperial rule often brought a peace unavailable to smaller political communities.",
+        "Labor scarcity offers a serious explanation for plantation violence."
+      ]
+    },
+    {
+      "pattern": "A numbered-in-prose procedural ladder \u2014 assessment, office, document, enforcement \u2014 used to convert a topic into a chain of administrative steps, in nearly identical syntax across chapters.",
+      "instances": [
+        "The steps were plain: draw a boundary, assign a district, appoint an officer, require a document or payment, and send police when the requirement was unmet.",
+        "A war tax filled a treasury, a contractor purchased supplies, a magazine stored them, a roll identified soldiers, and a road carried the result to a front."
+      ]
+    },
+    {
+      "pattern": "Symmetrical epistemic hedging in which an object is said to show one narrow thing and pointedly not another, in the same 'X records A; it does not record B' frame.",
+      "instances": [
+        "A projectile point tells us about a weapon; a cache of standardised points may tell us about production and supply.",
+        "The graves record bodies, locations, and changes in burial. ... It cannot by itself disclose what every official knew at each earlier moment."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, unusually well-controlled global history of organised violence built on one clear and well-defended claim: aggression acquires scale not from human temperament but from offices, records, supply chains and categories that decide who may be harmed. The evidentiary handling is its greatest strength \u2014 the opening chapter's account of how a bone injury becomes a claim about warfare, the Uruk ration tablets, and the reading of the Dolben Act as regulation that enters the slave ship rather than restraining it are genuinely good historical writing. Sentence-level craft is high and the register never slips. The costs are structural: nearly every chapter runs the same machine \u2014 scene or object, mechanism, paired case comparison, steelmanned rival explanation, concession, thesis restated as an antithetical closer \u2014 so that by the middle chapters the reader can predict a section's last sentence from its first, and Chapter 2 openly re-narrates Chapter 1's cemetery. Voice is consistent but impersonal to the point of anonymity, engagement relies almost entirely on the interest of the material, and the argument does not develop across fifteen chapters so much as accumulate confirming instances. Verbal slop is largely absent; structural slop \u2014 templated architecture, symmetrical hedges, aphoristic closers, uniform paragraph shapes \u2014 is the real problem, and fixing it is an editing job on repetition and chapter design rather than a rewrite."
+}

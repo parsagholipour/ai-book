@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 5
+  },
+  "overall": 7.2,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A demographic gap is a question before it is a conclusion.",
+      "judgment": "Strength: compresses the book's evidentiary discipline into one clean, earned sentence."
+    },
+    {
+      "quote": "Its physical condition remained, while its administrative meaning changed with the record that received it.",
+      "judgment": "Strength: precise formulation of the thesis that classification, not the act, produces the historical object."
+    },
+    {
+      "quote": "The sword in a quarrel and the sword in an army may be physically similar; the second belongs to a chain of decisions that reaches beyond the person holding it.",
+      "judgment": "Strength: concrete image doing real analytic work rather than decorating it."
+    },
+    {
+      "quote": "The rifle did not determine the quota. The quota gave the rifle its task.",
+      "judgment": "Mixed: sharp on first appearance, but this exact chiasmus recurs across at least eight chapters and becomes a tic."
+    },
+    {
+      "quote": "Technology changes what can be done, not what must be wanted.",
+      "judgment": "Weakness: aphoristic closer of a kind the book reaches for constantly; the epigram substitutes for the argument it should summarize."
+    },
+    {
+      "quote": "The machine widened the possible field of action. It did not select the enemy.",
+      "judgment": "Weakness: in the final chapter the book is still restating a proposition established in chapter 2, with no added complication."
+    },
+    {
+      "quote": "The first step in the violence at Nataruk was exposure. ... The second step was distance. ... Third came the collapse of individual defence.",
+      "judgment": "Weakness: the numbered-stage scaffold is imposed on evidence that the text elsewhere admits cannot support a sequence."
+    },
+    {
+      "quote": "The differences between them are not noise surrounding a universal human impulse. They are the explanation.",
+      "judgment": "Strength: the closing turn genuinely lands the fifteen-chapter argument, and earns its epigrammatic form."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Tool-versus-intention chiasmus: a technology is granted reach and immediately denied agency, in near-identical two-clause form, in almost every chapter.",
+      "instances": [
+        "The tool did not create hostility. It altered the range at which hostility could be imposed",
+        "Horses did not decide that Baghdad should be attacked, nor did the bow determine whether a city would be offered terms."
+      ]
+    },
+    {
+      "pattern": "Evidentiary hedge as paragraph closer: a source is described, then a sentence beginning 'It does not' / 'The evidence does not permit' withdraws the inference. Valuable epistemics, but deployed with metronomic regularity, often several times per page.",
+      "instances": [
+        "It does not establish a constant level of aggression among all mobile communities",
+        "The evidence does not permit a single portrait of every Persian official in Egypt."
+      ]
+    },
+    {
+      "pattern": "Enumerated 'first / second / third came' staging of an episode the text has just conceded is unreconstructable, giving speculative reconstruction the cadence of documented sequence.",
+      "instances": [
+        "The first step at Crow Creek was aggregation inside a settled community.",
+        "First came military vulnerability. ... Then came labour. ... Taxation followed settlement."
+      ]
+    },
+    {
+      "pattern": "Chain-of-links recap paragraph near each chapter's end, relisting the chapter's nouns in a cascade of clauses joined by semicolons or short sentences.",
+      "instances": [
+        "Food supports labour, labour builds protection, protection supports expansion, and expansion produces bodies that rulers display as proof of order.",
+        "The map directed the post; the post supervised the recruiter; the recruiter supplied the quota; the quota produced the patrol"
+      ]
+    },
+    {
+      "pattern": "Symmetrical 'order and harm from the same office' antithesis, restating the protection/coercion paradox in balanced clauses whenever a state appears.",
+      "instances": [
+        "Order and coercion were often delivered through the same office.",
+        "Order and harm were often produced by the same office."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, genuinely learned comparative history whose thesis \u2014 that aggression's scale, targets and meaning are made by institutions, classification and resources rather than by weapons or by human nature \u2014 is stated early, tested against fifteen chapters of well-chosen cases, and landed convincingly at the end. The sourcing is specific and the epistemic manners are excellent: the book habitually distinguishes what a grave, a ration tablet, a chronicle or a casualty series can bear from what it cannot, and it repeatedly refuses inferences a lesser book would take. Sentence-level prose is clean, unhurried and largely free of lexical AI tells; the voice is consistent and adult. The serious weakness is redundancy of shape rather than of fact: the argument arrives in the same three or four moves in every chapter \u2014 artifact described, inference offered, symmetrical hedge, tool-does-not-choose chiasmus, aphoristic closer \u2014 so that by chapter ten the reader can predict a paragraph's last sentence from its first. Paragraphs are uniformly sized and uniformly structured, chapters end on epigrams, and the numbered 'first step / second step' reconstructions impose sequence where the book has just denied one. Cutting perhaps a fifth of the text and varying the argumentative rhythm would raise a strong manuscript to an excellent one."
+}

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 9,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.8,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Aggression is a useful word only when it is made to carry less.",
+      "judgment": "The book's governing move stated with real economy: the thesis is a demand for definitional discipline, not a slogan, and the chapter then honours it by building a working typology."
+    },
+    {
+      "quote": "The form is strongest where skin, bone, blood and time can be entered by a trained hand. Terror inside an apartment cannot be measured in the same units.",
+      "judgment": "Excellent source-criticism turned into prose; the coroner's form is read as an argument rather than a fact-container, which is the book's most original habit."
+    },
+    {
+      "quote": "Four traces can establish an attack without establishing a kingdom, a commander, or a permanent state of war.",
+      "judgment": "Model of calibrated inference — the archaeology chapter consistently states what the evidence licenses and what it does not, and this restraint is the book's strongest intellectual asset."
+    },
+    {
+      "quote": "A man named Muhammad, a clerk from the quarter near the Friday mosque, would have seen the heaps form beside the irrigation channels... after the third name the paper was blackened by mud and blood, and he stopped.",
+      "judgment": "Invented character in a work that elsewhere polices evidence ferociously; the conditional 'would have seen' does not cover the fabricated ink reeds and the third name, and this contradicts the book's own methodological creed."
+    },
+    {
+      "quote": "Detlef Jantzen stopped in the wet trench at Weltzin... The first bones had come from the riverbank in 1997, when an amateur archaeologist named Detlef Jantzen found a human upper-arm bone",
+      "judgment": "Internal contradiction inside four paragraphs of the opening: the same name is both the 2009 excavation director and the 1997 amateur finder, an unforced error in the book's first pages."
+    },
+    {
+      "quote": "A piece of window glass blinded the young Vincent Coleman, a railway dispatcher at the Richmond station, who nevertheless remained at his telegraph key long enough to warn an incoming train away from the harbour.",
+      "judgment": "Self-defeating sentence: a blinded man staying at a key is asserted without explanation, and the following paragraph's careful caveat about disputed wordings does not repair the physical implausibility introduced here."
+    },
+    {
+      "quote": "The hand can be similar; the world directing it is not.",
+      "judgment": "Fine as one chapter's landing, but this exact antithetical cadence closes roughly a dozen chapters, and the device stops being emphasis and becomes a template."
+    },
+    {
+      "quote": "Rebellion there was an assault on a colonial economy that had already organised daily violence, emerging under emergency law amid a prison massacre.",
+      "judgment": "A fused, semantically broken sentence — the trailing clause belongs to the Paris comparison, not to Saint-Domingue — and several such clause-collisions recur in the later chapters."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter opens with a novelistic set-piece reconstruction (weather, hands, small objects, named minor actors) before the analytic register begins. The device is powerful once and predictable by chapter four, and it repeatedly supplies sensory detail no source could hold.",
+      "instances": [
+        "A crane fly rested on the handle of his trowel. Someone had laid a metre scale on the spoil heap, and its red and white divisions showed through the rain.",
+        "Cromwell dismounted beside a captured gun. His hat was gone, and dust had whitened his beard."
+      ]
+    },
+    {
+      "pattern": "Chapter closers are aphoristic paired antitheses of the shape 'the object did X; the office did Y'. The idea is the book's thesis, but the syntax is nearly invariant, producing a recap loop at chapter scale.",
+      "instances": [
+        "The object supplied movement. An office supplied direction.",
+        "At Tophane, an office made artillery available; in Württemberg, the same kind of organised reach emptied villages that had never chosen the war."
+      ]
+    },
+    {
+      "pattern": "The 'not X but Y' / 'X does not A; it B' correction formula is the default analytic sentence, used several times per page across all fifteen chapters.",
+      "instances": [
+        "The bones establish a violent meeting; they do not identify its command.",
+        "Climate does not pull a trigger. It changes the value of places and the cost of moving away."
+      ]
+    },
+    {
+      "pattern": "A fixed three-beat chapter architecture: dramatised episode, then two or three document readings (a register, a code, a chronicle), then an explicit paired comparison that restates the institutional thesis. Individual chapters are well made, but the shape never varies, so the book's later halves feel pre-solved.",
+      "instances": [
+        "Hamoukar supplies the burned settlement, Lagash the named enemy, and Mohenjo-daro the difficult silence.",
+        "Both campaigns made civilians legible through registration and surveillance. One relied heavily on urban torture against a population denied equal citizenship; the other combined emergency law, resettlement, intelligence, and a political path towards decolonisation."
+      ]
+    },
+    {
+      "pattern": "Long fused paragraphs in which two or three distinct arguments are welded without a break, occasionally producing dangling or misattached clauses. This is concentrated in the later chapters and reads like joined drafts.",
+      "instances": [
+        "That silence has tempted readers to call the Indus civilisation peaceful. The label is too large for the evidence... Nor do the walls settle the matter.",
+        "The protocol preserves the administrative genealogy of removal: exclusion, displacement, and a wider solution, while leaving un narrated the confiscations, forced sales, street violence, and bureaucratic humiliations that made emigration desperate."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely accomplished comparative history whose thesis — that aggression is a family of acts whose reach and targets are made by offices, records and permissions rather than by a constant human substance — is stated early, tested against unequal bodies of evidence, and carried without drift through fifteen chapters from Tollense to Benghazi. Its best quality is epistemic: it is unusually disciplined about what a bone, a stele, a ration tablet, a coroner's form or a chronicle can and cannot license, and it repeatedly refuses conclusions its own sources will not bear. The prose is clean, concrete and consistently voiced, and the document-reading passages (the Wannsee table, the Barbados code, the Tophane inventory, the Native Land Act) are the strongest writing in the book. Against this stand three real problems: a fixed chapter template (dramatised opening, document trio, paired comparison, antithetical closer) that turns the thesis into a recap loop by the midpoint; novelistic openings that invent named individuals and sensory detail in a book whose whole argument is about evidentiary restraint; and a scatter of internal errors and fused, semantically broken sentences, mostly in the later chapters. Pacing suffers most — several chapters run long past the point where their comparison has been made. With trimming, a de-templated set of chapter endings, and a pass to remove or explicitly frame the invented micro-scenes, this would be publishable serious nonfiction."
+}

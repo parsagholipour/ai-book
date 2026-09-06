@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.9,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The record is therefore less like a window opened directly onto a quarrel than like a mould into which the quarrel has been pressed.",
+      "judgment": "Precise, non-generic image that states the book's governing method in one line; among its best sentences."
+    },
+    {
+      "quote": "The clay tablet was small. The chain behind it was not.",
+      "judgment": "Effective as a single beat, but this two-clause aphoristic closer is deployed so often it becomes a tic rather than an accent."
+    },
+    {
+      "quote": "A quota answers the first question numerically. It does not need to describe a beating to prepare one.",
+      "judgment": "The book's strongest analytic move: showing how administrative language manufactures violence without naming it."
+    },
+    {
+      "quote": "Equality inside the group and violence outside it are not logical opposites.",
+      "judgment": "Compact, genuinely useful correction of a common assumption; earned by the Boehm/Turkana material preceding it."
+    },
+    {
+      "quote": "The bones narrow the alternatives without selecting one.",
+      "judgment": "Exemplary epistemic discipline — but nearly identical formulations recur dozens of times, and the caution stops paying interest."
+    },
+    {
+      "quote": "England's armed forces tripled between 1550 and 1780, according to the account of the early modern military transformation.",
+      "judgment": "A weak seam: an unnamed source cited as 'the account', which reads as a gap where a citation should sit."
+    },
+    {
+      "quote": "Since 1945, civil conflicts have caused more than twenty-five million deaths according to the figures summarized here",
+      "judgment": "Same problem at a load-bearing moment — the chapter's central quantitative claim rests on an unspecified 'figures summarized here'."
+    },
+    {
+      "quote": "Its clearest answer is narrower and more demanding: aggression becomes consequential through choices made in particular conditions, and the offices, leaders, tools, and identities that make those choices possible can be contested before they become fate.",
+      "judgment": "A real conclusion that follows from fifteen chapters of argument rather than restating them; the book earns its last sentence."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The signature epistemic antithesis — an artifact is said to establish X and then explicitly denied the power to establish Y. It structures nearly every section of every chapter and is the book's dominant rhythm.",
+      "instances": [
+        "It establishes that a group living without a state could participate in lethal collective violence. It does not establish how frequently such violence occurred",
+        "The Talheim pit can establish that a group was killed and deposited together. It cannot, by itself, identify the attackers, explain their motive"
+      ]
+    },
+    {
+      "pattern": "The scholar-pair adjudication: two named historians are set in opposition, each is granted a portion of the truth, and the disagreement is declared productive rather than resolved. This appears in essentially every chapter, with interchangeable phrasing.",
+      "instances": [
+        "Allsen and Sneath disagree over emphasis, but their disagreement improves the question.",
+        "McNeill is right to insist that military competition altered political possibilities. Tilly is right to insist that those possibilities depended upon bargaining and extraction."
+      ]
+    },
+    {
+      "pattern": "One-sentence aphoristic paragraphs used as section hinges — short, balanced, often two clauses in antithesis, sitting alone between long analytical blocks.",
+      "instances": [
+        "The political map was broken. Social life was not.",
+        "Railways made armies faster. Administration made them repeatable."
+      ]
+    },
+    {
+      "pattern": "The enumerated administrative chain: a coercive system is decomposed into a numbered or serially-marked sequence of steps (assessment, collection, storage, transport, drill), then reassembled to show each link enabling the next. Powerful once; used as the default explanatory shape in at least six chapters.",
+      "instances": [
+        "The first step was assessment. ... Next came collection. ... Corvée labor extended the same process from food to time.",
+        "First came revenue. ... From revenue came procurement. ... The next step was storage. ... Transport then joined the system. ... Drill converted equipment into collective action."
+      ]
+    },
+    {
+      "pattern": "Chapters that stop rather than land: after a sustained argument the chapter ends on a subordinate comparative case with no return to the chapter's own opening artifact or claim.",
+      "instances": [
+        "The revolt ended through settlement rather than a clear Roman transformation of Batavian identity. ... the Rhine frontier continued as a zone where local peoples, soldiers, traders, and imperial officials met under unequal terms.",
+        "Serbia endured demographic losses that altered the country's population and social structure after the war. ... the obligations transferred to those who remained."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined history of organized violence whose thesis — that harm acquires scale and durability when offices, records and commands connect a decision to a population — is stated in chapter one and genuinely worked through fifteen chapters, with real cross-references (Uruk's ration tablets recalled at the Mongol relay stations and again at Tophane and Wannsee) rather than decorative callbacks. Its specificity is high: named sites, dates, figures, and live historiographical disputes handled with fairness and without straw men. The prose is clear, cool and consistent, and the epistemic care about what a bone, a relief, a regulation or a register can and cannot support is the book's intellectual signature. That signature is also its main weakness: the can/cannot antithesis, the two-scholars-both-right adjudication, the numbered administrative chain, and the isolated aphoristic one-liner recur with such regularity that later chapters feel performed rather than discovered, and the constant hedging costs momentum and words. Several chapters end on a trailing comparative case instead of landing, and two load-bearing statistics are attributed only to 'the account' or 'the figures summarized here'. With the caveats pruned by a third, the closers rationed, and the chapter endings rewritten, this would be publishable trade-academic history."
+}

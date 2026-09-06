@@ -20,7 +20,7 @@ RUN corepack enable
 # `init: true`.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
-    chromium ca-certificates fonts-liberation fonts-noto-core fonts-noto-color-emoji tini \
+    chromium ca-certificates fonts-liberation fonts-noto-core fonts-noto-color-emoji tini poppler-utils \
   && rm -rf /var/lib/apt/lists/*
 
 FROM base AS dev

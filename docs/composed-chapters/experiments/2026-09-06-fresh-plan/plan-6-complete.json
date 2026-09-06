@@ -1,0 +1,1461 @@
+{
+  "title": "Aggression Through Time",
+  "bookArc": {
+    "turn": {
+      "repair": "Compare different source types, identify uncertainty specifically, and make only claims proportionate to the surviving evidence.",
+      "trouble": "The evidence is uneven and often records rulers, victims, or exceptional events more clearly than ordinary life.",
+      "chapterIndex": 12
+    },
+    "answer": "Human aggression is a persistent human capacity whose expression depends on institutions, resources, social learning, political authority, technology, and the meanings communities assign to threat and legitimacy.",
+    "chapters": [
+      {
+        "job": {
+          "adds": "A concrete early injury and the book's central question.",
+          "does": "Separates key categories and introduces the evidentiary problem.",
+          "leavesOpen": "Whether broader conditions can be inferred from fragmentary evidence.",
+          "believesSoFar": "The reader sees why aggression cannot be measured by one simple historical scale."
+        },
+        "cast": [],
+        "kind": "method",
+        "index": 1,
+        "pages": 8,
+        "dispute": {
+          "sideA": {
+            "name": "Simple human-nature account",
+            "claim": "Aggression is a fixed trait that explains the historical record."
+          },
+          "sideB": {
+            "name": "Contextual historical account",
+            "claim": "Aggression changes form with social and material conditions."
+          },
+          "atStake": "Whether history can explain variation without denying human capacity for violence."
+        }
+      },
+      {
+        "job": {
+          "adds": "Nataruk and the distinction between encounter, raiding, and warfare.",
+          "does": "Tests the evidence from mobile communities and early settlements.",
+          "leavesOpen": "How settlement and resource changes affected later conflict.",
+          "believesSoFar": "Early violence may be real but difficult to scale from individual remains to whole societies."
+        },
+        "cast": [],
+        "kind": "case",
+        "index": 2,
+        "pages": 11,
+        "dispute": {
+          "sideA": {
+            "name": "Prehistoric peace narrative",
+            "claim": "Small-scale societies were generally peaceful."
+          },
+          "sideB": {
+            "name": "Prehistoric violence narrative",
+            "claim": "Early societies were dominated by warfare."
+          },
+          "atStake": "How much can sparse archaeological evidence support about social patterns."
+        }
+      },
+      {
+        "job": {
+          "adds": "A conditional account of how material arrangements can create conflict opportunities.",
+          "does": "Examines agriculture, surplus, inequality, and fixed communities.",
+          "leavesOpen": "How political institutions organized those opportunities.",
+          "believesSoFar": "Settlement and storage changed what could be defended, seized, and controlled."
+        },
+        "cast": [],
+        "kind": "argument",
+        "index": 3,
+        "pages": 7,
+        "dispute": {
+          "sideA": {
+            "name": "Agricultural determinism",
+            "claim": "Agriculture directly caused a universal rise in violence."
+          },
+          "sideB": {
+            "name": "Conditional account",
+            "claim": "Agriculture altered conditions while outcomes varied by community."
+          },
+          "atStake": "Whether correlation can be treated as a complete explanation."
+        }
+      },
+      {
+        "job": {
+          "adds": "The institutional infrastructure of ancient warfare.",
+          "does": "Follows walls, weapons, administration, and imperial power.",
+          "leavesOpen": "How law and political language made force legitimate.",
+          "believesSoFar": "States can turn local conflict into organized, durable coercion."
+        },
+        "cast": [],
+        "kind": "case",
+        "index": 4,
+        "pages": 13,
+        "dispute": {
+          "sideA": {
+            "name": "Technology-first account",
+            "claim": "Weapons created organized warfare by themselves."
+          },
+          "sideB": {
+            "name": "Institutional account",
+            "claim": "Weapons mattered through states, logistics, and authority."
+          },
+          "atStake": "Whether material capacity or political organization best explains scale."
+        }
+      },
+      {
+        "job": {
+          "adds": "The distinction between prohibited violence and authorized coercion.",
+          "does": "Reads legal provisions and punishment as records of social order.",
+          "leavesOpen": "How ordinary people negotiated honor, kinship, and retaliation.",
+          "believesSoFar": "Law can regulate violence while preserving unequal authority."
+        },
+        "cast": [],
+        "kind": "document",
+        "index": 5,
+        "pages": 9,
+        "dispute": {
+          "sideA": {
+            "name": "Law as restraint",
+            "claim": "Formal rules mainly reduce violence."
+          },
+          "sideB": {
+            "name": "Law as authority",
+            "claim": "Rules can also organize and legitimize coercion."
+          },
+          "atStake": "What legal order reveals about the boundary between violence and governance."
+        }
+      },
+      {
+        "job": {
+          "adds": "A sustained example of logistics, intimidation, deportation, and victorious memory.",
+          "does": "Narrates the Nineveh case from mobilization through representation and aftermath.",
+          "leavesOpen": "How local relationships and social meanings shaped conflict beyond imperial records.",
+          "believesSoFar": "Imperial violence depends on more than battlefield force."
+        },
+        "cast": [],
+        "kind": "case",
+        "index": 6,
+        "pages": 14,
+        "dispute": {
+          "sideA": {
+            "name": "Imperial record",
+            "claim": "Royal victory demonstrates the order and legitimacy of conquest."
+          },
+          "sideB": {
+            "name": "Critical reconstruction",
+            "claim": "The record is political testimony that must be read against its silences."
+          },
+          "atStake": "Whose account becomes history when the conqueror controls the archive."
+        }
+      },
+      {
+        "job": {
+          "adds": "The value of narrow evidence and the questions it cannot answer.",
+          "does": "Reads one securely sourced letter or report closely.",
+          "leavesOpen": "How honor, kinship, and reconciliation operated across different settings.",
+          "believesSoFar": "A small document can reveal lived pressure without representing an entire frontier."
+        },
+        "cast": [],
+        "kind": "document",
+        "index": 7,
+        "pages": 6,
+        "dispute": {
+          "sideA": {
+            "name": "Documentary confidence",
+            "claim": "A surviving document gives direct access to historical reality."
+          },
+          "sideB": {
+            "name": "Contextual reading",
+            "claim": "Every document has a position, purpose, and missing context."
+          },
+          "atStake": "How close reading can remain useful without pretending to completeness."
+        }
+      },
+      {
+        "job": {
+          "adds": "The social mechanisms that turn insult into retaliation or reconciliation.",
+          "does": "Compares honor, kinship, feud, mediation, and compensation.",
+          "leavesOpen": "How moral and religious language classified legitimate enemies.",
+          "believesSoFar": "Social reputation can escalate conflict and also create routes toward settlement."
+        },
+        "cast": [],
+        "kind": "portrait",
+        "index": 8,
+        "pages": 12,
+        "dispute": {
+          "sideA": {
+            "name": "Honor as violence",
+            "claim": "Honor cultures naturally produce endless retaliation."
+          },
+          "sideB": {
+            "name": "Honor as regulation",
+            "claim": "Honor systems can also define limits and support mediation."
+          },
+          "atStake": "Whether the same social value can organize both aggression and restraint."
+        }
+      },
+      {
+        "job": {
+          "adds": "The moral vocabulary through which violence is authorized or limited.",
+          "does": "Examines religious and political naming of enemies.",
+          "leavesOpen": "How modern technologies and empires extended coercion across distance.",
+          "believesSoFar": "Belief systems give violence meaning but do not operate apart from institutions and interests."
+        },
+        "cast": [],
+        "kind": "argument",
+        "index": 9,
+        "pages": 10,
+        "dispute": {
+          "sideA": {
+            "name": "Belief-centered account",
+            "claim": "Religious ideas primarily cause collective violence."
+          },
+          "sideB": {
+            "name": "Situated account",
+            "claim": "Beliefs shape meaning within political and material conditions."
+          },
+          "atStake": "How explanation can respect conviction without treating it as a solitary cause."
+        }
+      },
+      {
+        "job": {
+          "adds": "A documented case of coercion reaching across geographic distance.",
+          "does": "Connects weapons, empire, bureaucracy, commerce, and classification.",
+          "leavesOpen": "How mass violence and civilian exposure changed in the twentieth century.",
+          "believesSoFar": "Modern capacity makes violence more distant and administratively scalable."
+        },
+        "cast": [],
+        "kind": "case",
+        "index": 10,
+        "pages": 9,
+        "dispute": {
+          "sideA": {
+            "name": "Technology-driven account",
+            "claim": "New weapons inevitably produce more violence."
+          },
+          "sideB": {
+            "name": "Political-use account",
+            "claim": "Technology changes reach through decisions and institutions."
+          },
+          "atStake": "Whether capacity can be separated from the systems that deploy it."
+        }
+      },
+      {
+        "job": {
+          "adds": "The problems of counting, archiving, testimony, and civilian vulnerability.",
+          "does": "Studies one documented twentieth-century episode and its contested memory.",
+          "leavesOpen": "What conclusions can responsibly be drawn across the whole survey.",
+          "believesSoFar": "Modern mass violence reflects administration and ideology as well as weaponry."
+        },
+        "cast": [],
+        "kind": "case",
+        "index": 11,
+        "pages": 11,
+        "dispute": {
+          "sideA": {
+            "name": "Progress narrative",
+            "claim": "Modernity steadily reduced violence."
+          },
+          "sideB": {
+            "name": "Catastrophe narrative",
+            "claim": "Modernity mainly magnified violence."
+          },
+          "atStake": "How to assess uneven historical change without forcing a single trend."
+        }
+      },
+      {
+        "job": {
+          "adds": "A bounded answer to the book's central question.",
+          "does": "Synthesizes the historical conditions that activate, organize, justify, and restrain violence.",
+          "leavesOpen": "The continuing task of building institutions capable of restraint.",
+          "believesSoFar": "No single cause explains aggression across the cases."
+        },
+        "cast": [],
+        "kind": "resolution",
+        "index": 12,
+        "pages": 10,
+        "dispute": {
+          "sideA": {
+            "name": "Single-cause explanation",
+            "claim": "One biological, material, or cultural factor governs aggression."
+          },
+          "sideB": {
+            "name": "Historical interaction",
+            "claim": "Aggression takes shape through interacting conditions and choices."
+          },
+          "atStake": "What a responsible generalization about human aggression can mean."
+        }
+      }
+    ],
+    "opponent": {
+      "name": "The single-cause story",
+      "work": "A composite claim found in popular accounts of human violence",
+      "claim": "Human beings are inherently violent, or one transformation such as agriculture, technology, or civilization explains the historical pattern.",
+      "whereRight": "Human beings possess real capacities for aggression, and major changes in settlement, technology, and political organization can alter the opportunities for violence.",
+      "whereTheBookBreaks": "The historical record shows varied combinations of aggression, cooperation, restraint, and coercion; no single cause explains the differences across regions and eras."
+    },
+    "proposal": "Present the book as a 120-page analytical history rather than a lead magnet: twelve source-conscious chapters, one sustained Nineveh case, one close reading of a single document, and a final bounded synthesis.",
+    "question": "How have changing social, material, and political conditions shaped the forms and scale of human aggression across history?"
+  },
+  "premise": "A source-conscious historical survey of human aggressiveness across eras and regions, examining how social organization, resources, institutions, culture, technology, and circumstance have influenced both violence and restraint. The book distinguishes individual aggression from organized warfare and treats the surviving evidence as uneven rather than as a simple story of progress or decline.",
+  "audience": "General readers curious about history who want a clear, balanced account of human aggression across eras and regions.",
+  "chapters": [
+    {
+      "index": 1,
+      "title": "What Counts as Aggression?",
+      "summary": "Establish the book's distinctions and open with early physical evidence while showing why the historical record cannot provide a simple timeline of human violence.",
+      "keyBeats": [
+        "Open with a healed injury on an ancient human skull and the limited conclusions that injury permits.",
+        "Distinguish aggression, interpersonal violence, organized warfare, coercion, and defensive action.",
+        "Introduce the survival bias of archaeological and written evidence.",
+        "Set up the central question: which social and material conditions alter the expression of aggression?"
+      ],
+      "targetPages": 8
+    },
+    {
+      "index": 2,
+      "title": "Before Armies and Kingdoms",
+      "summary": "Examine evidence from mobile communities and early settlements without treating either way of life as uniformly peaceful or violent.",
+      "keyBeats": [
+        "Present the Nataruk remains as evidence of a specific violent encounter, with careful attention to what the site cannot establish.",
+        "Compare individual conflict, small-scale raiding, and organized warfare as different historical problems.",
+        "Consider mobility, food storage, kinship, and access to territory as possible conditions affecting conflict.",
+        "Show how sparse remains make population-wide claims difficult."
+      ],
+      "targetPages": 11
+    },
+    {
+      "index": 3,
+      "title": "Fields, Surplus, and Unequal Power",
+      "summary": "Trace how settled agriculture and stored resources changed the opportunities for coercion, while resisting a single-cause account of violence.",
+      "keyBeats": [
+        "Introduce stored food, fixed settlements, and property claims as new objects of protection and contest.",
+        "Explain why agricultural expansion may correlate with some forms of conflict without proving a universal increase.",
+        "Examine emerging inequality and dependence through concrete settlement and burial evidence.",
+        "End with the distinction between conditions that permit violence and motives that justify it."
+      ],
+      "targetPages": 7
+    },
+    {
+      "index": 4,
+      "title": "Bronze, Walls, and the First States",
+      "summary": "Follow the institutional growth of warfare through fortified places, weapons, administration, and political authority in the ancient Near East and neighboring regions.",
+      "keyBeats": [
+        "Introduce fortified settlements and weapon technologies as material signs of organized threat.",
+        "Show how rulers used records, taxation, labor, and public monuments to organize coercive power.",
+        "Read royal victory narratives alongside their purpose as political documents.",
+        "Compare the administrative capacity of states with the uneven experience of people living under them."
+      ],
+      "targetPages": 13
+    },
+    {
+      "index": 5,
+      "title": "Law, Punishment, and the Authorized Blow",
+      "summary": "Read legal and political documents as records of both violence and attempts to regulate it.",
+      "keyBeats": [
+        "Open with a surviving legal provision concerning injury, status, or compensation.",
+        "Distinguish law's description of violence from law's authorization of punishment.",
+        "Examine how rank, gender, citizenship, enslavement, and household authority shaped whose aggression counted as legitimate.",
+        "Show how formal restraint can coexist with severe institutional violence."
+      ],
+      "targetPages": 9
+    },
+    {
+      "index": 6,
+      "title": "A City at War: The Siege of Nineveh",
+      "summary": "Narrate one extended case of organized violence through the Assyrian imperial record, material remains, and the limits of victorious testimony. The chapter treats the siege and its aftermath as a single case rather than as a general survey.",
+      "keyBeats": [
+        "Locate Nineveh within the Assyrian imperial system and its relationship to tributary communities.",
+        "Introduce the royal inscriptions and reliefs as deliberate instruments of intimidation and memory.",
+        "Follow the movement from mobilization and siege to capture, punishment, deportation, and administrative incorporation.",
+        "Contrast the empire's self-presentation with the silences and partial traces left by defeated populations.",
+        "Identify what this case reveals about communication, fear, logistics, and state power without generalizing to all ancient warfare."
+      ],
+      "targetPages": 14
+    },
+    {
+      "index": 7,
+      "title": "A Letter from the Frontier",
+      "summary": "Read one historical document closely as a window onto fear, obligation, and local conflict, keeping the document's perspective and missing context visible.",
+      "keyBeats": [
+        "Introduce a single frontier letter or administrative report and identify its author, recipient, date, and survival context when securely known.",
+        "Follow the document's immediate concern: threat, retaliation, desertion, requisition, or protection.",
+        "Separate the writer's description from the historian's interpretation.",
+        "End with the unanswered questions created by the document's narrow viewpoint."
+      ],
+      "targetPages": 6
+    },
+    {
+      "index": 8,
+      "title": "Honor, Kinship, and Retaliation",
+      "summary": "Examine how social reputation, kin obligations, feud, and reconciliation could intensify or contain aggression in different historical settings.",
+      "keyBeats": [
+        "Introduce honor as a local social relationship rather than a timeless psychological trait.",
+        "Show how kinship could support retaliation and also impose duties of mediation.",
+        "Compare a documented feud or dispute with institutions that redirected revenge into compensation or arbitration.",
+        "Explain how gendered expectations and social rank shaped public interpretations of insult and response.",
+        "Keep the comparison bounded by differences in sources and social organization."
+      ],
+      "targetPages": 12
+    },
+    {
+      "index": 9,
+      "title": "Religion, Rule, and the Moral Naming of Enemies",
+      "summary": "Explore how religious and political language classified violence, sacrifice, punishment, conquest, and defense without reducing belief to a simple cause of war.",
+      "keyBeats": [
+        "Introduce a concrete inscription, ritual setting, sermon, or legal text that assigns moral meaning to conflict.",
+        "Distinguish religious justification from the logistical and political conditions that made violence possible.",
+        "Examine how enemy categories were created and how insiders were disciplined.",
+        "Show cases where religious institutions restrained violence as well as cases where they authorized it."
+      ],
+      "targetPages": 10
+    },
+    {
+      "index": 10,
+      "title": "Guns, Empires, and Distant Violence",
+      "summary": "Trace how expanding empires, firearms, commerce, bureaucracy, and racial classification altered the scale and distance of coercion in the early modern and modern worlds.",
+      "keyBeats": [
+        "Open with a weapon, map, ledger, or administrative order that connects distant decisions to local violence.",
+        "Show how technology changes capacity without determining political use.",
+        "Examine colonial classification, forced labor, displacement, or state punishment through a documented case.",
+        "Distinguish battlefield violence from structural coercion and the limits of retrospective comparison."
+      ],
+      "targetPages": 9
+    },
+    {
+      "index": 11,
+      "title": "The Twentieth Century's Uneven Record",
+      "summary": "Assess mass warfare, genocide, state terror, and changing civilian exposure while avoiding a single verdict that the modern age is simply more or less violent.",
+      "keyBeats": [
+        "Introduce one documented episode through survivor testimony, official records, or material evidence with clear provenance.",
+        "Explain how industrial administration and communication could expand the reach of violence.",
+        "Contrast mass mobilization with efforts to regulate war and protect civilians.",
+        "Address why casualty counts, archives, and political memory produce different pictures of the period."
+      ],
+      "targetPages": 11
+    },
+    {
+      "index": 12,
+      "title": "What Changes Aggression?",
+      "summary": "Synthesize the cases into a cautious account of how institutions, resources, social learning, technology, ecology, and historical memory shape aggressive behavior and organized violence.",
+      "keyBeats": [
+        "Compare the distinct mechanisms introduced across the book rather than repeating every case.",
+        "Clarify what the historical record supports about context-sensitive aggression and what remains unresolved.",
+        "Separate biological capacity from social activation, political organization, and moral permission.",
+        "Return to the opening question with a bounded answer that preserves variation across eras and regions.",
+        "Close with the practical historical insight that restraint is built, contested, and vulnerable rather than automatic."
+      ],
+      "targetPages": 10
+    }
+  ],
+  "episodes": {
+    "chapters": [
+      {
+        "focus": {
+          "question": "How can a historian identify aggression in early physical remains without turning one injury into a history of human violence?",
+          "contribution": "The injuries of Shanidar 1 and Çatalhöyük individuals show that ancient people survived and sometimes died from bodily violence, while the archaeological record preserves the event more securely than its motive or social frequency.",
+          "investigation": [
+            "Which injuries on Shanidar 1 and Çatalhöyük skeletons were healed, fatal, or compatible with accidents?",
+            "What anatomical patterns support an inference of interpersonal blows, and what alternative causes remain possible?",
+            "How do burial context, sample size, and preservation affect the move from an individual case to a population claim?"
+          ],
+          "alreadyEstablished": []
+        },
+        "index": 1,
+        "episodes": [
+          {
+            "why": "The healed cranial injuries let the chapter work out how repeated bodily trauma can be documented while leaving the assailant, motive, and population-wide frequency uncertain; sustained treatment.",
+            "date": "c. 7100–5700 BCE",
+            "kind": "figure",
+            "place": "Çatalhöyük, Anatolia",
+            "title": "Trepanation and blunt-force injury at Çatalhöyük",
+            "person": "Excavated individual from Çatalhöyük",
+            "document": "Ian Hodder, ed., Çatalhöyük: The Leopard's Tale, excavation reports and skeletal analyses",
+            "searchQueries": [
+              "Ian Hodder Çatalhöyük The Leopard's Tale Internet Archive",
+              "Çatalhöyük human remains cranial trauma report",
+              "Çatalhöyük skeletal injuries excavation report"
+            ]
+          },
+          {
+            "why": "Shanidar 1 supplies a concrete case in which severe injury, survival, and care must be reconstructed from bones; brief supporting use.",
+            "date": "c. 45,000 years ago",
+            "kind": "figure",
+            "place": "Shanidar Cave, Iraqi Kurdistan",
+            "title": "The Shanidar 1 skeleton",
+            "person": "Shanidar 1",
+            "document": "Ralph S. Solecki, Shanidar: The First Flower People, excavation report",
+            "searchQueries": [
+              "Ralph Solecki Shanidar The First Flower People Internet Archive",
+              "Shanidar 1 skeleton injuries report",
+              "Shanidar Cave excavation report Solecki"
+            ]
+          }
+        ]
+      },
+      {
+        "focus": {
+          "question": "How did mobile communities experience and organize lethal group violence before states and standing armies?",
+          "contribution": "At Nataruk and Jebel Sahaba, attacks involving projectile weapons produced multiple deaths and repeated traumatic injuries among mobile or semi-mobile communities, with local access to people and resources shaping when violence occurred.",
+          "investigation": [
+            "What weapons and wound locations appear at Nataruk and Jebel Sahaba, and what sequence of attack do they imply?",
+            "How many individuals show trauma, and what do burial patterns and dating say about repeated or single episodes?",
+            "What alternatives—flight, negotiation, seasonal movement, or access to water and fishing grounds—were available to the people involved?",
+            "What logistical scale is suggested by the weapons and number of victims?"
+          ],
+          "alreadyEstablished": [
+            "A single injury cannot by itself reveal motive or population-wide behavior.",
+            "Archaeological preservation is uneven."
+          ]
+        },
+        "index": 2,
+        "episodes": [
+          {
+            "why": "Nataruk permits a sustained reconstruction of a lethal encounter involving bound or incapacitated victims, projectile wounds, and varied injuries, making local competition over people and resources concrete.",
+            "date": "c. 10,500–9,500 BCE",
+            "kind": "scene",
+            "place": "Nataruk, Lake Turkana, Kenya",
+            "title": "The Nataruk massacre",
+            "person": "The Nataruk dead",
+            "document": "Marta Mirazón Lahr et al., “Inter-group violence among early Holocene hunter-gatherers of West Turkana, Kenya,” Nature 529 (2016)",
+            "searchQueries": [
+              "Marta Mirazón Lahr Inter-group violence West Turkana Nature 2016",
+              "Nataruk massacre Nature article full text",
+              "Nataruk skeletal remains projectile injuries report"
+            ]
+          },
+          {
+            "why": "The cemetery's repeated projectile injuries and clustered burials let the chapter compare recurring violence with seasonal mobility and environmental stress; sustained comparison.",
+            "date": "c. 13,400–18,600 years ago",
+            "kind": "figure",
+            "place": "Jebel Sahaba, Nile Valley",
+            "title": "The Jebel Sahaba cemetery",
+            "person": "Individuals buried at Jebel Sahaba",
+            "document": "Isabelle Crevecoeur et al., “New insights on interpersonal violence in Late Pleistocene Western Upper Egypt,” Scientific Reports (2021)",
+            "searchQueries": [
+              "Isabelle Crevecoeur Jebel Sahaba Scientific Reports 2021",
+              "Jebel Sahaba cemetery projectile injuries report",
+              "Jebel Sahaba human remains excavation study"
+            ]
+          }
+        ]
+      },
+      {
+        "focus": {
+          "question": "How did settled food production and fixed communities change the targets, vulnerabilities, and social organization of violence?",
+          "contribution": "The burning of Abu Hureyra and the Talheim mass grave show that settled communities made concentrated stores, houses, and kin groups available for attack, turning agricultural investments into both resources and liabilities.",
+          "investigation": [
+            "What evidence at Abu Hureyra dates the destruction and identifies stored food, houses, and routes of access?",
+            "How many victims were placed at Talheim, what injuries did they bear, and what does kinship analysis reveal about the attacked group?",
+            "Which resources and settlement features could attackers seize, defend, or destroy?",
+            "What decisions about flight, concealment, defense, or retaliation can be inferred from the sequence of destruction?"
+          ],
+          "alreadyEstablished": [
+            "Mobile communities could suffer lethal group attacks.",
+            "The record does not automatically reveal attackers' motives."
+          ]
+        },
+        "index": 3,
+        "episodes": [
+          {
+            "why": "The settlement's abandonment and burning let the chapter trace stored food, settlement vulnerability, and the consequences of attack through a specific archaeological sequence; sustained treatment.",
+            "date": "c. 9300 BCE",
+            "kind": "scene",
+            "place": "Abu Hureyra, northern Syria",
+            "title": "The destruction of Abu Hureyra",
+            "person": "The inhabitants of Abu Hureyra",
+            "document": "Andrew M. T. Moore, Gordon C. Hillman, and Anthony J. Legge, Village on the Euphrates: From Foraging to Farming at Abu Hureyra",
+            "searchQueries": [
+              "Moore Hillman Legge Village on the Euphrates Abu Hureyra Internet Archive",
+              "Abu Hureyra destruction 9300 BCE excavation report",
+              "Village on the Euphrates Abu Hureyra full text"
+            ]
+          },
+          {
+            "why": "Talheim's mass grave and kinship results connect agricultural settlement, group identity, and a violent episode whose participants can be counted and biologically related; brief comparison.",
+            "date": "c. 5000 BCE",
+            "kind": "figure",
+            "place": "Talheim, Germany",
+            "title": "The massacre at Talheim",
+            "person": "The Talheim victims",
+            "document": "Christoph Haak et al., “Ancient DNA reveals kinship and social organization at the Early Neolithic site of Talheim,” PLOS ONE (2008)",
+            "searchQueries": [
+              "Talheim mass grave ancient DNA PLOS ONE 2008",
+              "Talheim massacre excavation report",
+              "Christoph Haak Talheim kinship social organization"
+            ]
+          }
+        ]
+      },
+      {
+        "focus": {
+          "question": "How did early states convert taxation, administration, weapons, and royal authority into durable military power?",
+          "contribution": "Sennacherib's capture of Lachish and Ramesses II's Kadesh campaign show rulers using taxation, organized labor, specialized forces, and monumental records to turn episodic fighting into durable imperial authority.",
+          "investigation": [
+            "How were troops, siege equipment, supplies, and labor assembled for Lachish and Kadesh?",
+            "What decisions followed reconnaissance, intelligence failure, resistance, and surrender?",
+            "How did Sennacherib and Ramesses II record casualties, victory, tribute, and political consequences?",
+            "What do fortifications, chariot forces, deportations, and inscriptions reveal about the costs imposed on subject populations?"
+          ],
+          "alreadyEstablished": [
+            "Local material pressure can create incentives for conflict without determining the decision to attack.",
+            "A victorious record is also a political document."
+          ]
+        },
+        "index": 4,
+        "episodes": [
+          {
+            "why": "Lachish supplies a richly documented sequence of imperial mobilization, siege engineering, capture, deportation, and public representation; sustained treatment.",
+            "date": "701 BCE",
+            "kind": "scene",
+            "place": "Lachish, Judah",
+            "title": "The siege of Lachish",
+            "person": "Sennacherib and the defenders of Lachish",
+            "document": "British Museum, Room XXVIII reliefs and Taylor Prism of Sennacherib",
+            "searchQueries": [
+              "British Museum Lachish relief Sennacherib",
+              "Taylor Prism Sennacherib Lachish text",
+              "Sennacherib siege Lachish relief full text"
+            ]
+          },
+          {
+            "why": "The poem and reliefs show how a ruler's administration, intelligence failures, chariot forces, and commemorative claims turned a contested battle into state propaganda; sustained comparison.",
+            "date": "1274 BCE",
+            "kind": "document",
+            "place": "Kadesh, northern Levant",
+            "title": "The Kadesh campaign",
+            "person": "Ramesses II and the Egyptian army",
+            "document": "The Poem of Pentaur and Battle Reliefs of Ramesses II at Karnak, Luxor, and Abu Simbel",
+            "searchQueries": [
+              "Poem of Pentaur Kadesh Wikisource",
+              "Ramesses II Battle of Kadesh relief inscription",
+              "Battle of Kadesh Egyptian inscription translation"
+            ]
+          }
+        ]
+      },
+      {
+        "focus": {
+          "question": "How did legal systems classify bodily harm, assign its costs, and authorize some forms of coercion?",
+          "contribution": "The Codes of Hammurabi, the Twelve Tables, and Justinian's Code show legal authorities pricing injuries by status and defining state punishment as legitimate power.",
+          "investigation": [
+            "What punishments or payments do Hammurabi's provisions assign for the same injury across social ranks?",
+            "When do the Twelve Tables permit retaliation, settlement, or public intervention?",
+            "How does the Justinian Code define criminal authority and the state's right to punish?",
+            "What do the texts prescribe for enslaved people, women, dependants, citizens, and elites?",
+            "How did legal remedies alter incentives for private revenge and official violence?"
+          ],
+          "alreadyEstablished": [
+            "Institutions can restrain violence while also directing it.",
+            "Law is a record of prescription, not a complete census of behavior."
+          ]
+        },
+        "index": 5,
+        "episodes": [
+          {
+            "why": "The homicide, injury, and status provisions let the chapter read how a ruler converts private harm into graded compensation and punishment; sustained close reading.",
+            "date": "c. 1750 BCE",
+            "kind": "document",
+            "place": "Babylon",
+            "title": "The homicide provisions of the Code of Hammurabi",
+            "person": "Hammurabi",
+            "document": "The Code of Hammurabi, Louvre stele, translated by L. W. King",
+            "searchQueries": [
+              "L W King Code of Hammurabi Wikisource",
+              "Code of Hammurabi Louvre stele translation",
+              "Hammurabi laws injury compensation text"
+            ]
+          },
+          {
+            "why": "The fragments show how Roman law formalized injury, retaliation, and status-dependent remedies in a civic order; brief supporting use.",
+            "date": "c. 451–450 BCE",
+            "kind": "document",
+            "place": "Rome",
+            "title": "The Twelve Tables on assault and retaliation",
+            "person": "Roman decemvirs",
+            "document": "The Twelve Tables, reconstructed in Aulus Gellius and later Roman legal citations",
+            "searchQueries": [
+              "Twelve Tables assault injury translation Wikisource",
+              "Aulus Gellius Twelve Tables text",
+              "Roman Twelve Tables law of injury compensation"
+            ]
+          },
+          {
+            "why": "Justinian's compilation demonstrates how imperial law simultaneously restricts unauthorized violence and authorizes state punishment, extending the chapter's legal comparison; brief supporting use.",
+            "date": "529–534 CE",
+            "kind": "document",
+            "place": "Constantinople",
+            "title": "The Justinian Code on legitimate coercion",
+            "person": "Justinian I",
+            "document": "The Codex Justinianus, translated in the Corpus Juris Civilis",
+            "searchQueries": [
+              "Codex Justinianus translation Internet Archive",
+              "Justinian Code criminal punishment text",
+              "Corpus Juris Civilis Codex English translation"
+            ]
+          }
+        ]
+      },
+      {
+        "focus": {
+          "question": "How did Assyria make fear, siege, deportation, and administrative incorporation work together as an imperial system?",
+          "contribution": "The fall of Nineveh in 612 BCE and the deportation records of Tiglath-pileser III show an empire using siege, population transfer, and administrative resettlement to make coercion continue after conquest.",
+          "investigation": [
+            "How were armies, siege operations, communications, and tribute organized around Nineveh?",
+            "What sequence links rebellion, coalition attack, breach, flight, and the destruction of the capital?",
+            "How many deportees do Assyrian records claim, where were they sent, and what labor or tax needs did movement serve?",
+            "How do the Babylonian Chronicle and Assyrian inscriptions allocate responsibility and describe the aftermath?"
+          ],
+          "alreadyEstablished": [
+            "Lachish showed how one imperial siege joined military force to intimidation and incorporation.",
+            "Royal records present violence for political purposes."
+          ]
+        },
+        "index": 6,
+        "episodes": [
+          {
+            "why": "The chronicle, city archaeology, and Assyrian administrative setting permit a sustained account of coalition warfare, siege logistics, imperial collapse, and the aftermath for a capital city.",
+            "date": "612 BCE",
+            "kind": "scene",
+            "place": "Nineveh, Assyria",
+            "title": "The fall of Nineveh",
+            "person": "Sin-shar-ishkun, Nabopolassar, and Cyaxares",
+            "document": "The Babylonian Chronicle of the Fall of Nineveh, BM 21901, translated in A. K. Grayson, Assyrian and Babylonian Chronicles",
+            "searchQueries": [
+              "Babylonian Chronicle Fall of Nineveh BM 21901 translation",
+              "A K Grayson Assyrian Babylonian Chronicles Nineveh",
+              "Nineveh 612 BCE archaeological destruction report"
+            ]
+          },
+          {
+            "why": "The deportation numbers and administrative destinations show how conquest became population management after the battlefield; brief supporting use.",
+            "date": "745–727 BCE",
+            "kind": "figure",
+            "place": "Nimrud and the Assyrian Empire",
+            "title": "The Assyrian deportation lists from Nimrud",
+            "person": "Assyrian deportees recorded under Tiglath-pileser III",
+            "document": "Tiglath-pileser III's royal inscriptions, translated in Daniel D. Luckenbill, Ancient Records of Assyria and Babylonia",
+            "searchQueries": [
+              "Daniel Luckenbill Ancient Records Assyria Tiglath-pileser III Internet Archive",
+              "Tiglath-pileser III deportation inscription translation",
+              "Nimrud deportation lists Assyrian royal inscriptions"
+            ]
+          }
+        ]
+      },
+      {
+        "focus": {
+          "question": "What does a frontier letter reveal about how threat, obligation, and protection were negotiated in daily life?",
+          "contribution": "Vindolanda Tablet 291 records a frontier community converting fear of attack into requests for patrols and supplies, while P. Oxy. 1673 shows an Egyptian correspondent negotiating the costs of military authority.",
+          "investigation": [
+            "Who wrote Vindolanda Tablet 291, to whom, and what patrol, supply, or security problem required action?",
+            "What response could the recipient realistically authorize, and what resources were available at the fort?",
+            "How does P. Oxy. 1673 describe requisition, complaint, or protection in the writer's immediate circumstances?",
+            "Which verbs, forms of address, and omissions reveal the writer's relationship to official power?"
+          ],
+          "alreadyEstablished": [
+            "A document's viewpoint is narrower than the whole event.",
+            "Frontier coercion depends on administrative resources as well as danger."
+          ]
+        },
+        "index": 7,
+        "episodes": [
+          {
+            "why": "The letter's request concerning patrols, supplies, and local threats lets the chapter follow how fear became an immediate administrative demand at a frontier; sustained close reading.",
+            "date": "c. 100 CE",
+            "kind": "document",
+            "place": "Vindolanda, northern Britain",
+            "title": "The Vindolanda tablet on frontier security",
+            "person": "Octavius, writer of Vindolanda Tablet 291",
+            "document": "Vindolanda Tablet 291, translated in Alan K. Bowman and J. D. Thomas, The Vindolanda Writing-Tablets",
+            "searchQueries": [
+              "Vindolanda Tablet 291 translation Bowman Thomas",
+              "Vindolanda writing tablets Internet Archive",
+              "Vindolanda Tablet 291 frontier security text"
+            ]
+          },
+          {
+            "why": "The papyrus gives a named civilian's encounter with official demands and protection, showing how frontier coercion entered ordinary correspondence; brief supporting use.",
+            "date": "c. 117–138 CE",
+            "kind": "document",
+            "place": "Roman Egypt",
+            "title": "The Hunt's Priscus letter",
+            "person": "Priscus",
+            "document": "P. Oxy. 1673, an Oxyrhynchus papyrus letter concerning a military requisition",
+            "searchQueries": [
+              "P Oxy 1673 Priscus translation",
+              "Oxyrhynchus papyrus 1673 Priscus letter",
+              "Papyri Oxyrhynchus 1673 military requisition"
+            ]
+          }
+        ]
+      },
+      {
+        "focus": {
+          "question": "When did honor and kinship turn injury into feud, and how did compensation and mediation redirect retaliation?",
+          "contribution": "In Njal's Saga, insults and killings draw kin into escalating retaliation until legal mediation breaks the sequence, while Anglo-Saxon wergild laws convert comparable injuries into ranked financial obligations.",
+          "investigation": [
+            "What insult, injury, and kin obligation begin the sequence in Njal's Saga?",
+            "Which actors choose revenge, settlement, arbitration, or legal appeal, and what rewards or risks shape those choices?",
+            "How do the Anglo-Saxon wergild schedules price injuries by rank and relationship?",
+            "What consequences follow when compensation fails, including deaths, outlawry, property loss, and reconciliation?"
+          ],
+          "alreadyEstablished": [
+            "Law can redirect private violence without eliminating coercion.",
+            "Social meanings of aggression are historically situated."
+          ]
+        },
+        "index": 8,
+        "episodes": [
+          {
+            "why": "The saga follows insult, killing, compensation, arbitration, and renewed retaliation across a long sequence, allowing sustained analysis of how kin obligations both escalate and contain violence.",
+            "date": "c. 990–1010 CE; saga written c. 1280",
+            "kind": "scene",
+            "place": "Iceland",
+            "title": "The Icelandic feud in Njal's Saga",
+            "person": "Njáll Þorgeirsson, Gunnar Hámundarson, and their kin",
+            "document": "Njal's Saga, translated by George Webbe Dasent, Project Gutenberg",
+            "searchQueries": [
+              "George Webbe Dasent Njal's Saga Project Gutenberg",
+              "Njal's Saga full text feud arbitration",
+              "Njals saga English translation Internet Archive"
+            ]
+          },
+          {
+            "why": "The wergild and injury schedules offer a compact institutional counterpoint to saga retaliation by assigning monetary values to bodies and ranks; brief supporting use.",
+            "date": "c. 600–1016 CE",
+            "kind": "document",
+            "place": "Kent and England",
+            "title": "The Anglo-Saxon compensation laws",
+            "person": "King Æthelberht of Kent and later Anglo-Saxon legislators",
+            "document": "The Laws of Æthelberht and Anglo-Saxon laws, translated in F. L. Attenborough, The Laws of the Earliest English Kings",
+            "searchQueries": [
+              "Attenborough Laws of the Earliest English Kings Internet Archive",
+              "Laws of Æthelberht wergild translation",
+              "Anglo Saxon laws compensation injury text"
+            ]
+          }
+        ]
+      },
+      {
+        "focus": {
+          "question": "How did religious and political language classify violence as punishment, defense, conquest, or sacred duty?",
+          "contribution": "The Cyrus Cylinder, Augustine's writings, and Fulcher of Chartres show rulers and religious authorities turning conquest and warfare into morally legible acts of restoration, discipline, or salvation.",
+          "investigation": [
+            "Which titles, accusations, rituals, and promises does the Cyrus Cylinder use to classify Babylon's previous and new rulers?",
+            "How does Augustine define authority, intention, discipline, and permissible force?",
+            "What words and rewards in Fulcher's account transform armed travel into penitential obligation?",
+            "How were insiders disciplined and enemies named in each document, and what political work did those categories perform?"
+          ],
+          "alreadyEstablished": [
+            "Political organization supplies the capacity for violence.",
+            "Moral language can authorize as well as restrain coercion."
+          ]
+        },
+        "index": 9,
+        "episodes": [
+          {
+            "why": "The cylinder shows a conqueror presenting regime change, religious restoration, and political obedience as moral repair, permitting close study of enemy naming and legitimacy; sustained treatment.",
+            "date": "539 BCE",
+            "kind": "document",
+            "place": "Babylon",
+            "title": "The Cyrus Cylinder and the conquest of Babylon",
+            "person": "Cyrus II",
+            "document": "The Cyrus Cylinder, British Museum, translated by Irving Finkel",
+            "searchQueries": [
+              "British Museum Cyrus Cylinder translation Irving Finkel",
+              "Cyrus Cylinder full text Wikisource",
+              "Cyrus conquest Babylon inscription translation"
+            ]
+          },
+          {
+            "why": "Augustine's arguments show how Christian moral language could condemn private violence while permitting disciplined public force under authority; sustained close reading.",
+            "date": "c. 400–420 CE",
+            "kind": "document",
+            "place": "Hippo Regius",
+            "title": "Augustine on just war",
+            "person": "Augustine of Hippo",
+            "document": "Augustine, Contra Faustum Manichaeum, Book XXII, and Epistle 189, translations in Philip Schaff's Nicene and Post-Nicene Fathers",
+            "searchQueries": [
+              "Augustine Contra Faustum Book XXII Project Gutenberg",
+              "Augustine Epistle 189 just war translation",
+              "Philip Schaff Augustine writings Internet Archive"
+            ]
+          },
+          {
+            "why": "Fulcher's account records the rhetoric that framed armed pilgrimage as penitence and enemy conflict as sacred duty, adding a later case of moral mobilization; brief supporting use.",
+            "date": "1095",
+            "kind": "scene",
+            "place": "Clermont, France",
+            "title": "The First Crusade at Clermont",
+            "person": "Pope Urban II and the assembled clergy and laity",
+            "document": "Fulcher of Chartres, Historia Hierosolymitana, Book I, translated by Francis Rita Ryan",
+            "searchQueries": [
+              "Fulcher of Chartres Historia Hierosolymitana Project Gutenberg",
+              "Pope Urban II Clermont speech Fulcher translation",
+              "First Crusade Fulcher of Chartres full text"
+            ]
+          }
+        ]
+      },
+      {
+        "focus": {
+          "question": "How did firearms, commerce, bureaucracy, and racial classification extend coercion across imperial distances?",
+          "contribution": "Cortés's conquest, the Congo rubber regime, and the Amritsar massacre show imperial systems joining distant finance and administration to firearms, forced labor, and officially sanctioned punishment.",
+          "investigation": [
+            "How did Cortés acquire allies, firearms, ships, supplies, and siege positions, and what consequences followed for Tenochtitlan?",
+            "What quotas, accounting practices, and enforcement mechanisms linked Congo rubber to concession profits?",
+            "How many rounds were fired at Amritsar, what orders governed them, and how did the Hunter Committee calculate casualties?",
+            "What legal and racial classifications enabled officials to treat colonial subjects as labor, targets, or populations to discipline?"
+          ],
+          "alreadyEstablished": [
+            "Technology increases capacity but does not choose political ends.",
+            "State coercion can be structural as well as battlefield violence."
+          ]
+        },
+        "index": 10,
+        "episodes": [
+          {
+            "why": "Cortés's letter links firearms, alliances, tribute, siege, epidemic disruption, and imperial reporting in one documented colonial episode; sustained treatment.",
+            "date": "1519–1521",
+            "kind": "scene",
+            "place": "Mexico-Tenochtitlan and central Mexico",
+            "title": "The conquest of the Aztec Empire",
+            "person": "Hernán Cortés and Moctezuma II",
+            "document": "Hernán Cortés, Second Letter to Charles V, translated by J. Bayard Morris",
+            "searchQueries": [
+              "Hernan Cortes Second Letter to Charles V Project Gutenberg",
+              "Cortes second letter conquest Mexico full text",
+              "Cortes letters Charles V Internet Archive"
+            ]
+          },
+          {
+            "why": "Morel's compiled reports, quotas, accounts, and photographs show how commercial accounting and colonial administration connected distant profit to forced labor and punishment; sustained comparison.",
+            "date": "1890s–1908",
+            "kind": "document",
+            "place": "Congo Free State",
+            "title": "The Congo Free State rubber regime",
+            "person": "Edmund Dene Morel and Congo concession officials",
+            "document": "E. D. Morel, King Leopold's Rule in Africa, Internet Archive",
+            "searchQueries": [
+              "E D Morel King Leopold's Rule in Africa Internet Archive",
+              "King Leopold Congo rubber quotas Morel full text",
+              "Congo Free State forced labor report Morel"
+            ]
+          },
+          {
+            "why": "The official inquiry provides orders, ammunition figures, casualty estimates, and testimony for a modern case of bureaucratically authorized colonial force; brief supporting use.",
+            "date": "13 April 1919",
+            "kind": "scene",
+            "place": "Amritsar, India",
+            "title": "The Amritsar massacre",
+            "person": "Reginald Dyer and the crowd at Jallianwala Bagh",
+            "document": "Report of the Disorders Inquiry Committee (Hunter Committee), 1920",
+            "searchQueries": [
+              "Hunter Committee Report Jallianwala Bagh Internet Archive",
+              "Report Disorders Inquiry Committee 1919 Amritsar full text",
+              "Reginald Dyer Jallianwala Bagh inquiry report"
+            ]
+          }
+        ]
+      },
+      {
+        "focus": {
+          "question": "How did twentieth-century states industrialize mass violence, and what institutions arose in response to the civilian costs?",
+          "contribution": "The destruction of Vilna's Jews and the bombing of Hiroshima show twentieth-century states applying administrative classification and industrial delivery to civilian populations, prompting the 1949 Geneva Convention's expanded protections.",
+          "investigation": [
+            "What sequence of registration, ghettoization, deportation, killing, and resistance appears in the Vilna record?",
+            "What targeting alternatives, delivery systems, casualty estimates, and postwar assessments shaped the Hiroshima decision?",
+            "How do survivor testimony, official reports, and demographic records produce different casualty and responsibility accounts?",
+            "Which protections in the 1949 Fourth Geneva Convention directly answer practices documented in wartime occupation and mass killing?"
+          ],
+          "alreadyEstablished": [
+            "Modern institutions can enlarge the reach of organized violence.",
+            "Official records and casualty counts are shaped by political purposes and survival."
+          ]
+        },
+        "index": 11,
+        "episodes": [
+          {
+            "why": "Vilna's ghettoization, shootings, deportations, local collaboration, and resistance provide a documented sequence linking administrative classification to mass murder and survival; sustained treatment.",
+            "date": "1941–1944",
+            "kind": "scene",
+            "place": "Vilna, German-occupied Lithuania",
+            "title": "The destruction of the Jews of Vilna",
+            "person": "Yitzhak Zuckerman and Jewish survivors of Vilna",
+            "document": "Yitzhak Zuckerman, A Surplus of Memory: Chronicle of the Warsaw Ghetto Uprising, and the United States Holocaust Memorial Museum's Vilna archival collection",
+            "searchQueries": [
+              "Vilna ghetto destruction archival documents USHMM",
+              "Yitzhak Zuckerman A Surplus of Memory Internet Archive",
+              "Vilna Holocaust Einsatzgruppen documents translation"
+            ]
+          },
+          {
+            "why": "Hiroshima permits a worked account of targeting decisions, industrial delivery, immediate casualties, and postwar evaluation at the intersection of state power and civilian exposure; sustained comparison.",
+            "date": "6 August 1945",
+            "kind": "scene",
+            "place": "Hiroshima, Japan",
+            "title": "The atomic bombing of Hiroshima",
+            "person": "Harry S. Truman, Paul Tibbets, and Hiroshima survivors",
+            "document": "Harry S. Truman's radio report, the U.S. Strategic Bombing Survey Hiroshima and Nagasaki report, and Hiroshima survivor testimonies",
+            "searchQueries": [
+              "United States Strategic Bombing Survey Hiroshima Nagasaki report Internet Archive",
+              "Harry Truman radio report Hiroshima 1945 text",
+              "Hiroshima survivor testimony archive"
+            ]
+          },
+          {
+            "why": "The convention records a postwar attempt to translate mass civilian suffering into enforceable limits on occupation, detention, and attack; brief supporting use.",
+            "date": "12 August 1949",
+            "kind": "document",
+            "place": "Geneva",
+            "title": "The Geneva Convention of 1949",
+            "person": "States party to the Geneva Conventions",
+            "document": "The Geneva Convention relative to the Protection of Civilian Persons in Time of War, International Committee of the Red Cross",
+            "searchQueries": [
+              "1949 Fourth Geneva Convention ICRC full text",
+              "Geneva Convention protection civilians 1949 Internet Archive",
+              "Fourth Geneva Convention text Wikisource"
+            ]
+          }
+        ]
+      },
+      {
+        "focus": {
+          "question": "Which mechanisms best explain changes in aggression when the comparison includes both genocidal escalation and negotiated restraint?",
+          "contribution": "Rwanda's 1994 genocide, the Good Friday Agreement, and England's long homicide decline show that administrative mobilization can rapidly intensify killing while credible power-sharing, policing, and social restraints can redirect conflict toward lower violence.",
+          "investigation": [
+            "At what points did Rwandan officials, militias, neighbors, and foreign governments choose mobilization, compliance, rescue, flight, or non-intervention?",
+            "What quantities of weapons, administrative orders, broadcasts, and displaced people shaped the genocide's reach?",
+            "Which provisions of the Good Friday Agreement changed incentives through power-sharing, consent, policing, prisoner release, and constitutional guarantees?",
+            "What patterns and breaks appear in Eisner's homicide series, and how do they relate to courts, policing, urbanization, and social discipline?",
+            "What does the combined material show about the conditions under which institutions activate aggression or make restraint credible?"
+          ],
+          "alreadyEstablished": [
+            "Human beings possess capacities for both aggression and cooperation.",
+            "Institutions, resources, technology, and moral language shape the direction and scale of violence.",
+            "Historical cases vary and do not yield a single universal trend."
+          ]
+        },
+        "index": 12,
+        "episodes": [
+          {
+            "why": "Rwanda tests the book's mechanisms by showing how propaganda, local administration, weapons, fear, and international withdrawal combined while many people still resisted participation; sustained treatment.",
+            "date": "April–July 1994",
+            "kind": "scene",
+            "place": "Rwanda",
+            "title": "The Rwandan genocide and the collapse of restraint",
+            "person": "Rwandan civilians, local officials, and perpetrators in Kigali and Butare",
+            "document": "Human Rights Watch, Leave None to Tell the Story: Genocide in Rwanda",
+            "searchQueries": [
+              "Human Rights Watch Leave None to Tell the Story Rwanda Internet Archive",
+              "Rwanda genocide local administration documents 1994",
+              "Leave None to Tell the Story full text"
+            ]
+          },
+          {
+            "why": "The agreement tests whether institutions can redirect a long conflict through consent, power-sharing, prisoner provisions, policing reform, and constitutional guarantees; sustained comparison.",
+            "date": "10 April 1998",
+            "kind": "document",
+            "place": "Northern Ireland",
+            "title": "The 1998 Good Friday Agreement",
+            "person": "British and Irish governments, Northern Irish parties, and negotiators",
+            "document": "The Agreement Reached in the Multi-Party Negotiations, UK Government archive",
+            "searchQueries": [
+              "1998 Agreement Reached in the Multi-Party Negotiations full text",
+              "Good Friday Agreement UK government archive",
+              "Belfast Agreement 1998 text Internet Archive"
+            ]
+          },
+          {
+            "why": "Eisner's county and national homicide series tests whether changing institutions, social discipline, and state capacity correlate with reduced interpersonal killing; brief worked figure.",
+            "date": "1200–2000",
+            "kind": "figure",
+            "place": "England",
+            "title": "The decline of homicide in England",
+            "person": "Manuel Eisner's reconstructed homicide series",
+            "document": "Manuel Eisner, “Modernization, Self-Control and Lethal Violence,” British Journal of Criminology 41 (2001)",
+            "searchQueries": [
+              "Manuel Eisner Modernization Self-Control Lethal Violence 2001",
+              "English homicide rates 1200 2000 Eisner table",
+              "Modernization Self-Control and Lethal Violence PDF"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "promises": [
+    "The book will distinguish human capacity for aggression from the historical conditions that activate, organize, or restrain it.",
+    "The Nataruk evidence will be interpreted cautiously rather than used as proof of a universal prehistoric pattern.",
+    "The long Nineveh case will show how organized violence depends on institutions, communication, logistics, and representation.",
+    "A single historical document will reveal both the value and the severe limits of close reading.",
+    "The conclusion will explain what can be said across eras and regions without pretending that one trend fits all cases."
+  ],
+  "subtitle": "Human violence, cooperation, and the conditions that shape them",
+  "locations": [
+    {
+      "name": "Nataruk, Kenya",
+      "rules": [
+        "Describe skeletal evidence precisely and avoid adding motives that the remains cannot establish.",
+        "Keep the site's date and interpretation tied to verified research sources.",
+        "Do not use Nataruk as a universal baseline for prehistoric violence."
+      ],
+      "description": "An archaeological site near the western shore of Lake Turkana associated with a prehistoric violent encounter. The site is treated as a specific, contested evidentiary context rather than as a representative portrait of all hunter-gatherers."
+    },
+    {
+      "name": "Nineveh",
+      "rules": [
+        "Distinguish Assyrian royal inscriptions and reliefs from independent accounts or archaeological evidence.",
+        "Name the political purpose of imperial representations when discussing them.",
+        "Avoid presenting Nineveh as a complete or neutral record of Assyrian violence."
+      ],
+      "description": "The Assyrian imperial capital used in the long case chapter to examine siege warfare, royal representation, deportation, administration, and the uneven survival of historical voices."
+    },
+    {
+      "name": "An ancient frontier archive",
+      "rules": [
+        "Identify the chosen document and its provenance before drafting the chapter.",
+        "Do not invent missing names, dates, locations, or motives.",
+        "Keep the chapter focused on what the document says, implies, and leaves unknown."
+      ],
+      "description": "A carefully sourced documentary setting for the single-document chapter, representing the narrow viewpoint of a surviving letter or administrative report rather than a fully reconstructed community."
+    },
+    {
+      "name": "A modern archive and memorial landscape",
+      "rules": [
+        "Select one fully sourced episode before page generation.",
+        "Separate testimony, administrative records, later scholarship, and memorial interpretation.",
+        "Avoid combining unrelated events into a fictional composite case."
+      ],
+      "description": "A composite planning location for documented twentieth-century evidence, including official records, testimony, physical sites, and public memory, to be replaced by a verified case during research and drafting."
+    }
+  ],
+  "questions": [],
+  "characters": [],
+  "voiceGuide": [
+    "Use clear historical prose for general readers, defining archaeological, anthropological, and psychological terms when they first appear.",
+    "Move from concrete evidence to bounded interpretation, separating what a source shows from what historians infer.",
+    "Treat aggression, violence, warfare, coercion, and self-defense as related but distinct categories.",
+    "Present competing explanations fairly without forcing every case into a single universal theory.",
+    "Use moderate confidence and explicit uncertainty when evidence is sparse, disputed, damaged, or shaped by survival and reporting bias.",
+    "Let places, objects, bodies, settlements, laws, and documents carry the narrative rather than relying on sweeping abstractions.",
+    "Keep the tone humane and unsensational when describing injury, death, conquest, and trauma.",
+    "Show that cooperation, negotiation, kinship, ritual, and restraint existed alongside aggression in every period covered."
+  ],
+  "antiAiRules": [
+    "Do not invent studies, journals, institutes, experts, statistics, citations, archaeological sites, quotations, or numeric findings.",
+    "Do not treat the supplied research summaries as sufficient proof for claims that require checking against primary or authoritative scholarly sources.",
+    "Do not imply that agriculture, biology, technology, poverty, gender, or hierarchy has one universal effect on aggression.",
+    "Avoid proof-leap transitions such as \"This is not a coincidence,\" \"no accident,\" \"hidden in plain sight,\" and \"the truth is\" unless directly quoted or genuinely necessary.",
+    "Do not stack a local fact beside a sweeping conclusion without explaining the evidence and limits of the connection.",
+    "Avoid repeated binary reversals such as \"X is not A. It is B.\" State the qualified claim directly.",
+    "Use em dashes and en dashes sparingly; prefer commas, periods, colons, or cleaner sentence structure.",
+    "Replace inflated abstractions with concrete examples, precise claims, and human-sized uncertainty.",
+    "Do not reduce historical actors to violent or peaceful peoples as fixed collective traits.",
+    "Do not turn one massacre, skull injury, law, or artifact into a measure of an entire society's aggression.",
+    "Do not mention AI, prompts, plans, schemas, generation, or production instructions in reader-facing pages.",
+    "Avoid generic chapter endings that merely repeat that history is complex.",
+    "Use caveats when evidence requires them, not as automatic padding.",
+    "Introduce the material evidence, textual record, or documented context before interpreting what it may indicate about aggression.",
+    "Keep interpersonal aggression, raiding, warfare, punishment, domination, and self-defense distinct when the distinction changes the argument.",
+    "Describe causes as interacting conditions or plausible influences unless the evidence establishes a stronger relationship.",
+    "State whether uncertainty comes from limited evidence, survival bias, contested interpretation, or conflicting sources.",
+    "Use specific people, objects, places, and decisions to make history legible without graphic excess or melodrama.",
+    "Avoid presenting one region as the default human story; identify the geographic and cultural limits of each case.",
+    "Avoid unsupported proof-leap transitions; do not jump from a local fact to a sweeping conclusion without evidence on this page.",
+    "Do not invent evidence, citations, studies, experts, or source identities.",
+    "Avoid generic conclusions and visible prompt scaffolding in reader-facing prose.",
+    "Use uncertainty only where the evidence on this page requires it.",
+    "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages."
+  ],
+  "openingHook": "At Nataruk, on the shore of Kenya's Lake Turkana, a human skeleton preserves the trace of a violent encounter that ended thousands of years ago. The injury raises a question the bone cannot answer by itself: what conditions turned conflict into an attack?",
+  "writingMode": "analytical-history",
+  "authorStance": {
+    "thesis": "Human aggression takes many forms, but its scale and direction are shaped decisively by the social arrangements, material pressures, institutions, and meanings through which people live.",
+    "refusals": [
+      "I refuse to describe whole peoples or periods as naturally violent or naturally peaceful.",
+      "I refuse to turn one archaeological site or written account into a measure of humanity as a whole.",
+      "I refuse to end a chapter with a symmetrical list of causes when the evidence supports a more specific conclusion.",
+      "I refuse to use graphic suffering as a substitute for historical explanation."
+    ],
+    "positions": [
+      "People have long possessed both the capacity for aggression and the capacity for cooperation.",
+      "Organized violence becomes more durable when institutions can gather resources, assign enemies, and reward or compel participation.",
+      "Material pressure can intensify conflict, but it does not determine whether communities choose attack, negotiation, flight, or restraint.",
+      "Laws, rituals, kinship systems, and political authorities can restrain violence while also legitimizing particular forms of coercion."
+    ],
+    "voiceSample": "In 1919, the harbor at Trieste held ships bearing flags from several vanished empires. A customs ledger from that spring recorded crates of coffee, bolts of cloth, and the names of officials learning a new border. Near the rail yard, a Slovenian-speaking porter carried a paper stamped by an Italian office that could not read his surname correctly. The error occupied one line in the document, while the delay kept his wages from reaching his family on time. At the same station, a newspaper described the city as a prize secured by sacrifice. The phrase belonged to a public argument about sovereignty, yet the ledger offered a quieter record of sovereignty's daily cost. A blue pencil marked one consignment for inspection. A clerk folded the page beside a brass scale. In the following months, police reports, party notices, and school regulations gave the new order a sharper outline. Each document named a different city, although the streets remained the same. The harbor's cranes lifted cargo above the roofs, and the customs office translated political change into stamps, queues, and withheld permissions. A map printed in Rome placed Trieste inside a nation; the porter’s delayed pay placed the nation inside an ordinary household. Neither paper settled what the city would become. Together, they showed how power entered a place through objects small enough to fit in a clerk’s hand."
+  },
+  "researchNotes": [
+    {
+      "url": "https://blog.everythingdinosaur.com/blog/_archives/2011/11/25/earliest-evidence-of-human-aggression.html",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "everythingdinosaur.com",
+      "summary": "*   **Early Evidence of Aggression:** A prehistoric skull, over 120,000 years old, shows marks consistent with an attack by another human, with signs of healing, indicating the victim survived."
+    },
+    {
+      "url": "https://www.cam.ac.uk/research/news/evidence-of-a-prehistoric-massacre-extends-the-history-of-warfare",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "cam.ac.uk",
+      "summary": "Additionally, skeletal remains from a massacre around 10,000 years ago at Nataruk, Kenya, provide unique evidence of violent conflict among ancient hunter-gatherers, with ten out of twelve relatively complete skeletons showing clear signs of violent death, including blunt-force trauma, broken bones, and projectile tips lodged in skulls and thoraxes."
+    },
+    {
+      "url": "https://www.pnas.org/doi/10.1073/pnas.1713611115",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "pnas.org",
+      "summary": "Humans exhibit a high propensity for proactive aggression, similar to chimpanzees, but a lower propensity for reactive aggression compared to chimpanzees, making them more bonobo-like in this respect."
+    },
+    {
+      "url": "https://pubmed.ncbi.nlm.nih.gov/9336687/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "nih.gov",
+      "summary": "*   **Evolutionary Perspective:** Aggressive behaviors are hypothesized to be context-sensitive solutions to adaptive problems of social living, such as co-opting resources, defending against attack, inflicting costs on rivals, negotiating status, deterring future aggression, deterring infidelity, and reducing resources on genetically unrelated children."
+    },
+    {
+      "url": "https://www.livescience.com/5333-evolution-human-aggression.html",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "livescience.com",
+      "summary": "Aggressive behavior has evolved in species where it increases an individual's survival or reproduction, depending on environmental, social, reproductive, and historical circumstances. *   **Biological Factors:** While a genetic predisposition to violence may exist, the specific environment largely determines if and how it is triggered. Humans are capable of both aggression and violence, as well as peace and cooperation, simultaneously."
+    },
+    {
+      "url": "https://forum.effectivealtruism.org/posts/QH2sECmmbLWbMXLhJ/violence-before-agriculture",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "effectivealtruism.org",
+      "summary": "Agricultural Societies:** The archaeological and ethnographic evidence suggests that the shift from nomadic hunter-gatherer societies to agricultural societies significantly increased levels of lethal violence, particularly intergroup conflict (warfare). While the 20th and 21st centuries have seen immense violence, some analyses suggest lower rates of lethal violence compared to pre-agricultural times, though violence rates were highly variable."
+    },
+    {
+      "url": "https://violencetrends.substack.com/p/violence-before-agriculture-full",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "substack.com",
+      "summary": "Agricultural Societies:** The archaeological and ethnographic evidence suggests that the shift from nomadic hunter-gatherer societies to agricultural societies significantly increased levels of lethal violence, particularly intergroup conflict (warfare). While the 20th and 21st centuries have seen immense violence, some analyses suggest lower rates of lethal violence compared to pre-agricultural times, though violence rates were highly variable."
+    },
+    {
+      "url": "https://www.reddit.com/r/AskHistorians/comments/15vkmt/are_agricultural_societies_more_violent_than/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "reddit.com",
+      "summary": "Hunter-gatherers typically engaged in skirmishes and interpersonal violence but less in large-scale warfare or attempts to conquer land. The development of social complexity, often linked to agriculture, is associated with the rise of organized warfare."
+    },
+    {
+      "url": "https://courier.unesco.org/en/articles/origins-violence",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "unesco.org",
+      "summary": "The development of agriculture led to food surpluses, the concept of ownership, and the emergence of inequalities, which in turn fostered internal struggles and conflicts between communities over resources. *   **Technology:** The appearance of genuine metal war weapons during the Bronze Age, for instance, led to the institutionalization of war."
+    },
+    {
+      "url": "https://medium.com/inside-of-elle-beau/large-scale-violence-only-began-with-the-agricultural-revolution-9b02193df5fd",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "medium.com",
+      "summary": "Sedentism, associated with agriculture, also made raids on settlements more feasible."
+    },
+    {
+      "url": "https://www.ovid.com/00000487-199602000-00003",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "ovid.com",
+      "summary": "*   **Factors Affecting Aggression:**\n*   **Social and Environmental Conditions:** Difficult life conditions, poverty, and discrimination against minority groups can intensify aggression-generating socialization practices."
+    },
+    {
+      "url": "https://www.ncbi.nlm.nih.gov/books/NBK493719/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "nih.gov",
+      "summary": "Social and cultural norms, often learned in childhood through experiences like corporal punishment or witnessing violence, can create an environment that either fosters or mitigates violence."
+    },
+    {
+      "url": "https://newbrainnutrition.com/a-violent-history-how-genes-and-environment-influence-aggression/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "newbrainnutrition.com",
+      "summary": "*   **Resource Competition and Social Complexity:** The struggle for resources like habitat, mates, and food has played a key role in shaping aggressive behavior."
+    },
+    {
+      "url": "https://leakeyfoundation.org/the-roots-of-human-aggression/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "leakeyfoundation.org",
+      "summary": "Abnormal biological function can influence patterns of aggressive behavior. Males and females differ in some facets of aggression, partly due to physical size and societal gender roles. *   **Aggression in the Past:** Arguments suggesting that aggression and violence were *greater* in the human past and have recently reduced are not well-supported by fossil and archaeological records, which show little evidence for widespread warfare and extensive inter-group conflict until relatively recently. Humans are capable of both aggression and violence, as well as peace and cooperation, simultaneously"
+    },
+    {
+      "url": "https://academic.oup.com/book/42019/chapter/355662477",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "oup.com",
+      "summary": "*   **Cultural Characteristics:** A history of devaluation and discrimination against a group, past victimization, harsh child-rearing practices, strong respect for authority, and monolithic societal structures can contribute to hostility and violence."
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Killer_ape_theory",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "wikipedia.org",
+      "summary": "*   **\"Killer Ape Theory\":** The \"killer ape theory,\" which posited that war and interpersonal aggression were the primary driving forces behind human evolution and that the urge to violence is a fundamental part of human psychology, has largely unraveled. Subsequent research has shown that chimpanzees and bonobos can exhibit aggressive behavior more often than humans, and primatologists discovered that chimpanzees also kill members of their own species."
+    }
+  ],
+  "styleContract": {
+    "localRules": [
+      {
+        "id": "do-not-invent-studies-journals-institutes-expert",
+        "instruction": "Do not invent studies, journals, institutes, experts, statistics, citations, archaeological sites, quotations, or numeric findings."
+      },
+      {
+        "id": "do-not-treat-the-supplied-research-summaries-as-",
+        "instruction": "Do not treat the supplied research summaries as sufficient proof for claims that require checking against primary or authoritative scholarly sources."
+      },
+      {
+        "id": "do-not-imply-that-agriculture-biology-technology",
+        "instruction": "Do not imply that agriculture, biology, technology, poverty, gender, or hierarchy has one universal effect on aggression."
+      },
+      {
+        "id": "avoid-proof-leap-transitions-such-as-this-is-not",
+        "instruction": "Avoid proof-leap transitions such as \"This is not a coincidence,\" \"no accident,\" \"hidden in plain sight,\" and \"the truth is\" unless directly quoted or genuinely necessary."
+      },
+      {
+        "id": "do-not-stack-a-local-fact-beside-a-sweeping-conc",
+        "instruction": "Do not stack a local fact beside a sweeping conclusion without explaining the evidence and limits of the connection."
+      },
+      {
+        "id": "avoid-repeated-binary-reversals-such-as-x-is-not",
+        "instruction": "Avoid repeated binary reversals such as \"X is not A. It is B.\" State the qualified claim directly."
+      },
+      {
+        "id": "use-em-dashes-and-en-dashes-sparingly-prefer-com",
+        "instruction": "Use em dashes and en dashes sparingly; prefer commas, periods, colons, or cleaner sentence structure."
+      },
+      {
+        "id": "replace-inflated-abstractions-with-concrete-exam",
+        "instruction": "Replace inflated abstractions with concrete examples, precise claims, and human-sized uncertainty."
+      },
+      {
+        "id": "do-not-reduce-historical-actors-to-violent-or-pe",
+        "instruction": "Do not reduce historical actors to violent or peaceful peoples as fixed collective traits."
+      },
+      {
+        "id": "do-not-turn-one-massacre-skull-injury-law-or-art",
+        "instruction": "Do not turn one massacre, skull injury, law, or artifact into a measure of an entire society's aggression."
+      },
+      {
+        "id": "do-not-mention-ai-prompts-plans-schemas-generati",
+        "instruction": "Do not mention AI, prompts, plans, schemas, generation, or production instructions in reader-facing pages."
+      },
+      {
+        "id": "avoid-generic-chapter-endings-that-merely-repeat",
+        "instruction": "Avoid generic chapter endings that merely repeat that history is complex."
+      },
+      {
+        "id": "use-caveats-when-evidence-requires-them-not-as-a",
+        "instruction": "Use caveats when evidence requires them, not as automatic padding."
+      },
+      {
+        "id": "evidence-before-interpretation",
+        "instruction": "Introduce the material evidence, textual record, or documented context before interpreting what it may indicate about aggression."
+      },
+      {
+        "id": "separate-categories",
+        "instruction": "Keep interpersonal aggression, raiding, warfare, punishment, domination, and self-defense distinct when the distinction changes the argument."
+      },
+      {
+        "id": "bounded-causation",
+        "instruction": "Describe causes as interacting conditions or plausible influences unless the evidence establishes a stronger relationship."
+      },
+      {
+        "id": "name-uncertainty",
+        "instruction": "State whether uncertainty comes from limited evidence, survival bias, contested interpretation, or conflicting sources."
+      },
+      {
+        "id": "humanize-without-sensationalizing",
+        "instruction": "Use specific people, objects, places, and decisions to make history legible without graphic excess or melodrama."
+      },
+      {
+        "id": "regional-balance",
+        "instruction": "Avoid presenting one region as the default human story; identify the geographic and cultural limits of each case."
+      },
+      {
+        "id": "no-proof-leap",
+        "instruction": "Avoid unsupported proof-leap transitions; do not jump from a local fact to a sweeping conclusion without evidence on this page."
+      },
+      {
+        "id": "no-invented-evidence",
+        "instruction": "Do not invent evidence, citations, studies, experts, or source identities."
+      },
+      {
+        "id": "no-generic-conclusion",
+        "instruction": "Avoid generic conclusions and visible prompt scaffolding in reader-facing prose."
+      },
+      {
+        "id": "uncertainty-where-earned",
+        "instruction": "Use uncertainty only where the evidence on this page requires it."
+      },
+      {
+        "id": "prompt-leak-ban",
+        "instruction": "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages."
+      }
+    ],
+    "distributionRules": [
+      {
+        "id": "vary-chapter-endings",
+        "instruction": "Vary chapter endings among an unresolved question, a source limitation, a changed institution, and a carefully bounded synthesis."
+      },
+      {
+        "id": "balance-evidence-types",
+        "instruction": "Across the manuscript, distribute archaeological evidence, written records, institutional history, comparative scholarship, and documented lived experience rather than repeating one source type."
+      },
+      {
+        "id": "avoid-framework-repetition",
+        "instruction": "Do not apply the full causes-of-aggression framework to every period; select only the lenses that illuminate each chapter."
+      },
+      {
+        "id": "regional-range",
+        "instruction": "Ensure the sequence moves among Africa, the Near East, Europe, Asia, the Americas, and cross-regional comparisons without implying equal evidence or coverage."
+      },
+      {
+        "id": "reserve-synthesis",
+        "instruction": "Keep broad comparison and final synthesis concentrated in the concluding chapter, while earlier chapters introduce distinct cases."
+      },
+      {
+        "id": "vary-caveat-endings",
+        "instruction": "Do not use the same caveat construction as the default ending across chapters."
+      },
+      {
+        "id": "select-relevant-lens",
+        "instruction": "Choose only the analytical lens relevant to a page rather than repeating the complete comparison grid."
+      },
+      {
+        "id": "allow-bounded-conclusions",
+        "instruction": "Let some pages commit to a bounded conclusion instead of balancing every cause symmetrically."
+      },
+      {
+        "id": "reintroduce-only-when-advancing",
+        "instruction": "Reintroduce a concept only when the later treatment advances, challenges, or applies it."
+      }
+    ]
+  },
+  "continuityRules": [
+    "Keep aggression, violence, warfare, coercion, punishment, and self-defense analytically distinct.",
+    "Do not convert a local case into a claim about an entire era, region, species, or gender.",
+    "Track the provenance, date, geographic scope, and limitations of every major source used in drafting.",
+    "Use the same cautious distinction between capacity, opportunity, justification, and observed behavior throughout.",
+    "Do not reuse a prior chapter's case as a new key beat; callbacks may occur only in brief connective sentences.",
+    "Any precise date, count, quotation, named scholar, or causal claim must be checked against an authoritative source before publication."
+  ],
+  "researchQueries": [
+    "What does the archaeological evidence at Nataruk, Kenya, securely establish about the violent encounter and what interpretations remain disputed?",
+    "What are the earliest securely dated archaeological indicators of interpersonal violence and organized warfare, and how do preservation biases affect the record?",
+    "How do current archaeological debates assess the relationship among agriculture, sedentism, inequality, property, and lethal violence?",
+    "What primary sources and archaeological evidence best document Assyrian siege warfare, deportation, and imperial administration at Nineveh?",
+    "Which single ancient or medieval frontier document can be sourced reliably and read closely without inventing missing context?",
+    "How did legal systems in selected historical societies distinguish injury, compensation, punishment, status, and legitimate force?",
+    "What authoritative comparative scholarship addresses proactive and reactive aggression without collapsing biological hypotheses into historical conclusions?",
+    "How did firearms, colonial administration, forced labor, racial classification, and imperial logistics alter the scale and distance of violence?",
+    "Which twentieth-century case has accessible primary records, testimony, and scholarship sufficient for a carefully bounded chapter?",
+    "What evidence supports or challenges claims about long-term changes in lethal violence across human history?"
+  ],
+  "illustrationPlan": {
+    "cadence": "manual",
+    "pageRules": [
+      "Use illustration only when a specific artifact, place, document, map, or process can clarify the page.",
+      "When Nataruk appears, label the scene with the exact place name and avoid inventing reconstructed faces or motives.",
+      "When Nineveh appears, use the exact location name and distinguish reconstructed architecture from verified remains.",
+      "Do not depict unnamed historical populations with stereotyped clothing, facial features, or generic ethnic markers.",
+      "Prefer diagrams, maps, document details, and site plans for analytical pages.",
+      "Do not include text inside images unless the image is a clearly labeled map, diagram, inscription, or document detail.",
+      "Avoid graphic injury and spectacle; show scale, setting, objects, and institutional processes instead.",
+      "Keep visual chronology and material culture consistent with the chapter's period."
+    ],
+    "coverPrompt": "A restrained documentary illustration for Aggression Through Time: a weathered archaeological fragment, a settlement wall, a folded historical document, and a distant human landscape arranged as layered evidence rather than a battle scene; muted earth and slate colors, scholarly but inviting, no text, no identifiable modern weapons, no graphic violence.",
+    "globalStyle": "Documentary historical illustration with restrained color, accurate material details, clear geographic and chronological cues, and no sensationalized gore. Use maps, artifacts, settlement plans, documents, and archaeological scenes when they clarify the argument.",
+    "characterReferencePrompts": []
+  },
+  "writingComplexity": 5
+}

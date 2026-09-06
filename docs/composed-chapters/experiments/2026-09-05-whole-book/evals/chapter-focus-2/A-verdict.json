@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 6,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 4
+  },
+  "overall": 6.7,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "High",
+  "highlights": [
+    {
+      "quote": "The forensic record narrows possibilities; it does not turn possibilities into motives.",
+      "judgment": "A crisp early formulation of the book's disciplined distinction between evidence and inference."
+    },
+    {
+      "quote": "The grave provides the event. Other evidence must carry the cause.",
+      "judgment": "This compact statement expresses the manuscript's strongest methodological principle with precision."
+    },
+    {
+      "quote": "The royal meal is an image of extraction.",
+      "judgment": "A memorable interpretive sentence that turns visual detail into a concrete political claim."
+    },
+    {
+      "quote": "The law protected slavery, but it never fully possessed the lives it classified.",
+      "judgment": "The sentence balances institutional power and human agency without minimizing either."
+    },
+    {
+      "quote": "The army is both employer and predator.",
+      "judgment": "A sharp compression of the Thirty Years' War chapter's account of military dependence and civilian harm."
+    },
+    {
+      "quote": "There were still choices.",
+      "judgment": "The isolated aphorism repeats a familiar emphasis but feels mechanically inserted after an already clear analysis."
+    },
+    {
+      "quote": "These processes cannot be reduced to one another.",
+      "judgment": "This characteristic qualification is sound, but repeated versions across chapters make the prose feel formulaic."
+    },
+    {
+      "quote": "The postwar decline is real in one register and unsettled in another.",
+      "judgment": "The balanced formulation is intellectually careful, though it also exemplifies the manuscript's overused symmetrical cadence."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Short isolated aphorisms close or pivot an argument.",
+      "instances": [
+        "The king’s penalty is an instrument of a legal order.",
+        "Moral restraint required a social coalition."
+      ]
+    },
+    {
+      "pattern": "Evidence is first credited with a limited claim and then denied broader explanatory reach.",
+      "instances": [
+        "The wound establishes behaviour; it does not establish feeling.",
+        "A weapon reveals the manner of an injury more securely than the social organisation behind it."
+      ]
+    },
+    {
+      "pattern": "Chapters repeatedly use three-part parallel summaries of their major cases.",
+      "instances": [
+        "Nataruk records abandoned bodies after a lethal attack. Jebel Sahaba records a cemetery marked by repeated injuries and repeated burial. Talheim records a massacre whose demographic setting remains contested.",
+        "The Code Noir shows authorisation at the level of clauses. The Zong shows what happened when a commercial decision entered court. Equiano shows how a person moved through the same world without becoming identical to its categories."
+      ]
+    },
+    {
+      "pattern": "Administrative chains are rendered as lists of concrete verbs or resources.",
+      "instances": [
+        "The palace supplied soldiers; the army secured or enlarged the palace’s claims; officials converted fields and labour into provisions; royal images converted victory into legitimacy.",
+        "counting, appointing, transporting, taxing, translating, protecting, and incorporating"
+      ]
+    },
+    {
+      "pattern": "The prose repeatedly rejects a single-cause explanation through balanced contrast.",
+      "instances": [
+        "Agriculture makes resource conflict imaginable but not inevitable.",
+        "Gunpowder gave the infantry new tactical possibilities; the devşirme gave the Ottoman government a durable route into the supply of infantry."
+      ]
+    }
+  ],
+  "summary": "The manuscript advances a coherent thesis that violence becomes historically intelligible through institutions that classify, authorize, resource, record, and sometimes restrain it. Its global chronological structure is unusually ambitious, and the case studies consistently separate material evidence, administrative process, ideology, individual choice, and consequence. The analysis is careful and often specific, but fifteen chapters repeatedly reenact the same argumentative machinery: a vivid case, evidentiary qualification, institutional chain, balanced comparison, and aphoristic close. That repetition slows the book, flattens distinctions among periods, and produces a polished but synthetic voice with many stock antitheses and recap loops. Moderate revision should preserve the evidence-led comparisons while cutting repeated methodological reminders, varying chapter architecture, and allowing more case-specific argument and texture."
+}

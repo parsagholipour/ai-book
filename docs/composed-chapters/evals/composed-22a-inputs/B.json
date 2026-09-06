@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.5,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Nataruk is an event, not a census of emotion.",
+      "judgment": "Compact, disciplined formulation of the book's central epistemic caution \u2014 a genuine strength of the argument."
+    },
+    {
+      "quote": "\u00d6tzi can reveal the danger faced by one person at one moment. Crow Creek and Talheim reveal attacks that reached groups.",
+      "judgment": "Exemplary calibration of inference to evidence scale; the book consistently refuses to let one body stand for an age."
+    },
+    {
+      "quote": "A warrior who took an enemy could gain honour and, according to the research brief, a route toward social advancement.",
+      "judgment": "Serious defect: generation scaffolding leaks into the prose, breaking the historiographic voice; occurs at least three times."
+    },
+    {
+      "quote": "A ruler\u2019s order became a tax, a tax became powder, powder became a siege, and a siege became hunger inside a city.",
+      "judgment": "Genuinely fine cascading sentence \u2014 but the chain-of-conversion device is reused often enough to become a signature tic."
+    },
+    {
+      "quote": "The difference was not between violence and administration. It was between different administrations of violence.",
+      "judgment": "Sharp chiastic reversal, and one of the book's best lines; also the clearest specimen of its most-repeated rhetorical mould."
+    },
+    {
+      "quote": "Faith gave the destruction meaning; military administration gave it sequence.",
+      "judgment": "Aphoristic semicolon closer; effective once, but nearly every section in the book lands on this exact cadence."
+    },
+    {
+      "quote": "A depot issued the rifle. A checkpoint selected the traveller. A radio named the enemy. A register allocated food.",
+      "judgment": "Powerful anaphoric summation, though by Chapter 15 the catalogue is recycling material already argued at length in Chapters 8, 13 and 14."
+    },
+    {
+      "quote": "The bullets do not identify the people who made or threw them.",
+      "judgment": "A one-line paragraph used as punctuation \u2014 a device deployed often enough (\"Some did so.\", \"The majority participated in the shootings.\") that its force is diluted."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Paired-antithesis aphorism as section closer, usually joined by a semicolon and balancing a 'meaning/language' half against a 'sequence/institution' half.",
+      "instances": [
+        "Faith gave the destruction meaning; military administration gave it sequence.",
+        "Moral certainty supplied the language of violence; political institutions supplied its direction, duration, and reach."
+      ]
+    },
+    {
+      "pattern": "Negation-then-correction couplet: a short sentence denying what the evidence shows, immediately followed by 'It shows/reveals\u2026'.",
+      "instances": [
+        "A wall does not reveal the face of an enemy. It reveals that a community invested in controlling approach and safeguarding what lay inside.",
+        "The difference was not between violence and administration. It was between different administrations of violence."
+      ]
+    },
+    {
+      "pattern": "Anaphoric four-part catalogue of parallel micro-sentences, each assigning one institution one verb.",
+      "instances": [
+        "A palisade does not command an attack. A burn layer does not name an arsonist. A weapon cache does not distinguish hunter from guard.",
+        "A depot issued the rifle. A checkpoint selected the traveller. A radio named the enemy. A register allocated food."
+      ]
+    },
+    {
+      "pattern": "Chain-of-conversion sentence in which each noun becomes the next, used to compress a whole argument into one clause train.",
+      "instances": [
+        "A ruler\u2019s order became a tax, a tax became powder, powder became a siege, and a siege became hunger inside a city.",
+        "A complaint became a name, a name became a file, and a file became a patrol with powers of search, arrest, detention, or force."
+      ]
+    },
+    {
+      "pattern": "Recap loop: Chapter 15 re-narrates cases already given full treatment earlier, sometimes at near-verbatim level, rather than advancing the argument.",
+      "instances": [
+        "Major Wilhelm Trapp told the men that they had been given a difficult task and offered the older men an opportunity to step aside.",
+        "Major Wilhelm Trapp offered older men an opportunity to step aside before the shootings. Some did. Most participated."
+      ]
+    }
+  ],
+  "summary": "This is an unusually disciplined survey whose thesis \u2014 that aggression becomes historically consequential only when offices, records, categories and supply chains make it repeatable \u2014 is stated early, tested against every case, and never abandoned or inflated. Its greatest strengths are evidential hygiene and clarity: the text repeatedly names what a fracture, a wall, a burn layer or a relief can and cannot establish, and its comparative pairings (Jebel Sahaba against \u00d6tzi, Congo concessions against the Java Cultivation System, Rwanda against Ethiopia against Homs) do real analytical work rather than decorative juxtaposition. Against that, the prose runs at one temperature for four hundred pages: paragraphs are near-uniform in shape, nearly every section lands on a balanced aphorism, and the negation-then-correction couplet recurs so often that the argument begins to feel produced by a template rather than pressed by evidence. Redundancy is a real cost \u2014 the thesis is restated at the close of most sections, and Chapter 15 largely re-stages Barbados, Wannsee and J\u00f3zef\u00f3w without adding to them. Three intrusions of the phrase 'the research brief' or 'the research record' are outright defects that a copyedit must remove. Substantively it is strong and largely publishable; what it needs is variation in rhythm, deeper engagement with contending historians beyond a late gesture at Pinker and Elias, and roughly a fifth fewer words."
+}

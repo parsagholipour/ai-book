@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.8,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "An armed seizure can therefore enter history as invasion, judgment, succession, or liberation, according to the record and the community for whom the record speaks.",
+      "judgment": "States the book's controlling thesis early and concretely, earned by the two preceding source readings rather than asserted."
+    },
+    {
+      "quote": "The bodies found by archaeologists are therefore not a simple remainder of all those who were attacked. They are the result of injury, survival, movement, treatment, burial, preservation, discovery, and selection.",
+      "judgment": "Exemplary evidentiary discipline: the inferential chain is spelled out instead of gestured at, and it recurs as a genuine method rather than a disclaimer."
+    },
+    {
+      "quote": "The law notices a broken tooth because a payment can be assigned to it; it says less about fear, humiliation, or the long strain placed upon a household.",
+      "judgment": "Precise, memorable, and analytically load-bearing \u2014 the silence of a source made vivid without editorializing."
+    },
+    {
+      "quote": "Uncertainty about identity became a reason to kill everyone instead of a reason to restrain the attack.",
+      "judgment": "The book's sharpest single sentence; it converts the B\u00e9ziers anecdote into an argument about how sacred certainty displaces evidence."
+    },
+    {
+      "quote": "The administrative voice did not make the killing less violent. It made violence portable.",
+      "judgment": "Strong compression, but also the clearest instance of the book's habitual antithetical closer, a device used dozens of times."
+    },
+    {
+      "quote": "Hideyoshi's coercion belonged to the same political system that made a campaign possible.",
+      "judgment": "A near-verbatim recycling of a sentence used thirty paragraphs earlier about a Qin corv\u00e9e labourer, where it made sense; here it is a copy-paste artifact and reads as a non sequitur."
+    },
+    {
+      "quote": "Interpersonal aggression directs force through personal encounters. Raiding organizes movement around seizure or destruction. Warfare joins armed groups to political objectives.",
+      "judgment": "Chapter 1 restates its own six-category taxonomy almost word for word within sixteen paragraphs \u2014 an internal recap loop that costs momentum with no analytic gain."
+    },
+    {
+      "quote": "When populations became strategic objects, did administrative targeting matter more than industrial technology, or did each make the other effective?",
+      "judgment": "Chapter 11 closes on an unresolved question rather than a conclusion; the move is honest once but becomes a formula across chapters 11, 13 and 14."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Paired antithesis as the default paragraph closer \u2014 a capacity is named, then immediately balanced against its opposite ('It could X. It could also Y.'). It appears many times per chapter and becomes the book's structural tic.",
+      "instances": [
+        "It can also enlarge violence by making armies, prisons, executions, and forced removals legitimate in the eyes of those who administer them.",
+        "A wall could discourage violence, redirect it towards the countryside, or turn a brief assault into a prolonged campaign."
+      ]
+    },
+    {
+      "pattern": "The negative-limit disclaimer: after each evidentiary claim, a sentence stating what the evidence does not establish. Methodologically admirable but so uniformly placed that it reads as a template slot rather than a judgment.",
+      "instances": [
+        "Neither observation identifies who attacked, why they came, or how often violence occurred.",
+        "It does not identify the attackers, establish that all deaths happened in one battle, or show that the law successfully prevented revenge."
+      ]
+    },
+    {
+      "pattern": "Identical chapter architecture: an artifact opens (stele, tapestry, edict, protocol, checkpoint), is read closely for several paragraphs, then a comparative case is introduced, then a catalogue of parallel institutions, then a closing paragraph that re-lists every artifact named in the chapter.",
+      "instances": [
+        "Naram-Sin's stele, Hammurabi's laws, Ur III ration tablets, and Sennacherib's reliefs do not measure aggression on one scale.",
+        "The Liberian reconstruction records, Rwandan local-government reports, Costa Rican constitutional records, and comparative peacebuilding evaluations do not measure one timeless quantity called aggression."
+      ]
+    },
+    {
+      "pattern": "Anaphoric list-paragraphs in which four to eight parallel clauses enumerate mechanisms in the same grammatical frame, often twice within a single chapter.",
+      "instances": [
+        "The blockade worked through ships and prices. The submarine worked through concealment and sinking. Gas worked through atmosphere and exposure.",
+        "A land survey supplied names to a revenue register. A census supplied numbers to a labour demand. A legal code supplied offences to a police report."
+      ]
+    },
+    {
+      "pattern": "Abstract, unanchored scene-setting at the start of a passage, where the subject is a generic 'a record', 'a person', 'someone' rather than a named case \u2014 including the book's own opening sentence.",
+      "instances": [
+        "A dim archive may preserve the movement of grain, laborers, and captives under a ruler whose victories were meant to be remembered.",
+        "Someone produced or collected the grain. Someone transported it. Someone measured it. Someone wrote down the amount."
+      ]
+    }
+  ],
+  "summary": "This is a serious, sustained work of comparative historical argument: aggression has no timeless measure, and state formation redistributes violence rather than simply reducing it. The thesis is stated early, tested against sixteen chronologically ordered chapters, and genuinely revisited \u2014 Jebel Sahaba and Nataruk return as methodological touchstones a dozen chapters later, and the treatment of Pinker, Elias and Gat in chapter 14 pays off arguments planted in chapter 1. The evidentiary discipline is the book's outstanding quality; source criticism is performed rather than promised, and the prose is consistently precise, unshowy, and free of the usual AI tells \u2014 no stock pivots, no aphoristic uplift, no listicle rhythm. What holds it back is monotony of move rather than poverty of thought: paired antithesis and the negative-limit disclaimer close hundreds of paragraphs, every chapter obeys the same artifact-then-comparison-then-catalogue architecture, and closing paragraphs routinely re-list what the chapter just said. There are outright redundancies \u2014 chapter 1 restates its six-category taxonomy nearly verbatim, and a sentence about coercion belonging to 'the same political system that made a campaign possible' is recycled from the Qin section into the Hideyoshi section where it no longer fits. Human beings appear almost exclusively as administrative positions; no one speaks, and engagement suffers accordingly. A revision that varied the paragraph shape, cut the recap tails, and let two or three scenes breathe would leave this close to publishable."
+}

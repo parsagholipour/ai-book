@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 8
+  },
+  "overall": 8.0,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Low",
+  "highlights": [
+    {
+      "quote": "The disposition is part of the story. It is not the office that signs the order.",
+      "judgment": "The book's controlling claim, stated late and earned by fifteen chapters of evidence; a genuinely unifying thesis rather than a decorative one."
+    },
+    {
+      "quote": "A cemetery's numerator is visible; its denominator may have vanished.",
+      "judgment": "Excellent compression of the book's best habit — treating quantification itself as a historical artifact rather than a neutral measure."
+    },
+    {
+      "quote": "The inscriptions celebrate the ruler, but their verbs disclose the offices beneath him: count, bring, establish, remove, report.",
+      "judgment": "Strong close reading; the argument is made from the grammar of the source rather than asserted over it."
+    },
+    {
+      "quote": "Below deck, the enslaved people lay packed between the beams, chained in pairs where the irons still held.",
+      "judgment": "The Zong chapter opens with the book's most sustained scene-writing and shows the prose can carry narrative when it chooses to."
+    },
+    {
+      "quote": "A burned granary was an administrative result.",
+      "judgment": "Effective once, but this one-sentence aphoristic landing is a device the book reaches for in nearly every chapter, and repetition drains it."
+    },
+    {
+      "quote": "Nasir al-Din al-Tusi's career shows how that transfer worked.",
+      "judgment": "Chapter 6 tells the Baghdad 1258 / Maragha observatory story at length, and Chapter 7 tells it again with the same figures and nearly the same sentences — a real redundancy, not an echo."
+    },
+    {
+      "quote": "Fred Wendorf's *The Prehistory of Nubia*, the excavation report on Cemetery 117, records the Massacre at Jebel Sahaba in the Nile Valley at c. 13,000 BCE",
+      "judgment": "Almost every chapter ends on a bolted-on citation sentence of this kind; it reads as apparatus intruding into prose and repeatedly kills the chapter's closing cadence."
+    },
+    {
+      "quote": "He governed through nobles, military leaders, priests, neighbourhood authorities, and institutions that had survived the deaths of Moctezuma and Cuitláhuac, as a ruler embedded in an enduring political order.",
+      "judgment": "A visible repair seam: the trailing appositive restates what the list already said, and several sentences across the book carry the same grafted clause."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter is built as a two-case contrastive pairing, usually resolved with a symmetrical antithesis sentence in which each half mirrors the other's grammar.",
+      "instances": [
+        "Assyria pressed difference towards relocation; Persia more often pressed it towards supervised continuity.",
+        "Tenochtitlan made submission legible in goods arriving at court; Cusco made it legible in roads built and labourers registered."
+      ]
+    },
+    {
+      "pattern": "The thesis is restated in near-identical administrative vocabulary at the end of nearly every section, so the reader is told the same conclusion dozens of times.",
+      "instances": [
+        "Colonial aggression became extensive when that boundary was written into offices that could act at a distance.",
+        "Gunpowder did not cause aggression; it enlarged what organised decisions could do."
+      ]
+    },
+    {
+      "pattern": "A one-sentence paragraph is dropped in as a percussive landing after a long expository block — a reliable, and by mid-book predictable, rhythm device.",
+      "instances": [
+        "No bronze blade carries a roster.",
+        "The gun, the hostage, and the quota belonged to one economic design."
+      ]
+    },
+    {
+      "pattern": "Sections are opened or closed with an unanswered rhetorical question that stages open-endedness rather than advancing the argument.",
+      "instances": [
+        "Did the Nile Valley witness a single concentrated assault, or did environmental pressure and repeated encounters turn a series of small conflicts into a cemetery of accumulated loss?",
+        "Where, then, did the battlefield end?"
+      ]
+    },
+    {
+      "pattern": "The negative-definition move — a claim is set up by first denying a simpler version of it — recurs as the standard paragraph opener.",
+      "instances": [
+        "What happened at Babi Yar was not a spontaneous eruption by an angry crowd.",
+        "The Islamic State's violence was not an eruption outside administration."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, argument-driven history whose thesis — that mass violence becomes durable through offices, registers and chains of authorization rather than through temperament — is genuinely carried from a Neolithic grave to Ghouta without slackening. Its strongest quality is epistemic: it repeatedly explains what a given source can and cannot establish (denominators, royal annals, colonial ethnography, chain of custody) and engages real counter-arguments from Keeley, Williams, Barfield, Le Bon and Pinker instead of strawmen. The prose is clean, adult and largely free of stock AI filler, and the Zong, Hagenbach and Bastille passages show real narrative capacity. Against that, the book is repetitive at the paragraph and chapter level: the thesis is restated to the point of catechism, Baghdad in 1258 is narrated twice at length across two chapters, and the same two-case comparative armature plus one-line aphoristic landing recurs so regularly that chapters begin to feel machined to a template. Several sentences carry visible repair seams, the appended source-citation sentence that closes most chapters reads as apparatus rather than prose, and one list in the revolution chapter is mashed into a single hyphenated paragraph. With a redundancy pass, the removal of the duplicated Baghdad material, and variation in the closing rhythm, this would be close to publishable."
+}

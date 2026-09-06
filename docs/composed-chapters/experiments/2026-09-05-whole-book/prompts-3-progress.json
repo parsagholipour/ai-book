@@ -1,0 +1,21 @@
+[
+  {
+    "purpose": "compose-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 1,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "totalWordBudget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  }
+]

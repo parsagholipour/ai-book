@@ -1,0 +1,57 @@
+{
+  "passed": false,
+  "total_constraints": 63,
+  "preserved": 56,
+  "missing_count": 7,
+  "missing": [
+    {
+      "type": "proper_noun",
+      "value": "Political Fragmentation\n\nThe",
+      "start": 37,
+      "end": 65
+    },
+    {
+      "type": "quote",
+      "value": "\u201cgreater grief,\u201d",
+      "start": 9710,
+      "end": 9726
+    },
+    {
+      "type": "quote",
+      "value": "\u201cthe diverse thousands of the diverse quarters.\u201d",
+      "start": 14036,
+      "end": 14084
+    },
+    {
+      "type": "quote",
+      "value": "\u201cgoing round about the people\u201d",
+      "start": 16795,
+      "end": 16825
+    },
+    {
+      "type": "quote",
+      "value": "\u201cdiverse quarters.\u201d",
+      "start": 17948,
+      "end": 17967
+    },
+    {
+      "type": "quote",
+      "value": "\u201cmobility caused Mongol violence\u201d",
+      "start": 35412,
+      "end": 35445
+    },
+    {
+      "type": "quote",
+      "value": "\u201cadministration civilised conquest.\u201d",
+      "start": 35449,
+      "end": 35485
+    }
+  ],
+  "warnings": [
+    "Negation count dropped 99->36. Verify no claim was inverted or weakened (e.g. 'does not support' -> 'supports').",
+    "Scope/precision word 'all' not in output. Verify the claim's scope is unchanged.",
+    "Scope/precision word 'each' not in output. Verify the claim's scope is unchanged.",
+    "Scope/precision word 'some' not in output. Verify the claim's scope is unchanged.",
+    "Conditional count dropped 10->4. Verify a conditional claim wasn't turned into an unconditional one."
+  ]
+}

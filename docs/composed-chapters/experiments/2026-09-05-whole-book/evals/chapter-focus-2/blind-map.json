@@ -1,0 +1,19 @@
+{
+  "label": "chapter-focus-2",
+  "sha256": "04138fe341f35557ce805ff9b2f218a9797a4dcbd14d4416a12e4a00fcbc726d",
+  "words": 56604,
+  "readers": {
+    "A": {
+      "path": "/run/media/parsa/projects/ravanix-book/ai-book-maker/docs/composed-chapters/experiments/2026-09-05-whole-book/evals/chapter-focus-2/A",
+      "sha256": "04138fe341f35557ce805ff9b2f218a9797a4dcbd14d4416a12e4a00fcbc726d"
+    },
+    "B": {
+      "path": "/run/media/parsa/projects/ravanix-book/ai-book-maker/docs/composed-chapters/experiments/2026-09-05-whole-book/evals/chapter-focus-2/B",
+      "sha256": "04138fe341f35557ce805ff9b2f218a9797a4dcbd14d4416a12e4a00fcbc726d"
+    },
+    "C": {
+      "path": "/run/media/parsa/projects/ravanix-book/ai-book-maker/docs/composed-chapters/experiments/2026-09-05-whole-book/evals/chapter-focus-2/C",
+      "sha256": "04138fe341f35557ce805ff9b2f218a9797a4dcbd14d4416a12e4a00fcbc726d"
+    }
+  }
+}

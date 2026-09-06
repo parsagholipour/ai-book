@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 9,
+    "engagement": 8,
+    "pacing": 7,
+    "craft": 9,
+    "slopResistance": 7
+  },
+  "overall": 8.3,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Both cases require aggression to be separated from the feeling that may have preceded it. Anger may have existed among the people who gathered at the pit, but the grave cannot measure anger.",
+      "judgment": "States the book's controlling thesis early and in concrete terms tied to a specific site; unusually disciplined framing for a survey history."
+    },
+    {
+      "quote": "The file did not pull a trigger. It allowed the person with the gun to find the address.",
+      "judgment": "Exactly the argument the whole book has been building, landed in two sentences — but it is also the book's habitual closer form (short antithetical pair) recurring for the fiftieth time."
+    },
+    {
+      "quote": "A blackened beam alone is an event without an agent.",
+      "judgment": "Sharp epistemic discipline about archaeological inference, and a memorable line; the aphoristic paragraph-ending is nonetheless a fixed tic."
+    },
+    {
+      "quote": "The wounded man reached the first timbers. His left hand closed on the edge of a plank, and he pulled himself forwards while men passed him in both directions.",
+      "judgment": "The Tollense opening is superb close-third narration, but it invents sensory particulars no source can support, and the book never flags where reconstruction ends."
+    },
+    {
+      "quote": "Ancient stories do not load buses.",
+      "judgment": "The best single sentence in the book: dismisses the ancient-hatreds thesis with a logistical fact rather than a rebuttal."
+    },
+    {
+      "quote": "Turtle Creek in South Dakota offers another scale and another history. At the Crow Creek site, dated to about 1325 CE...",
+      "judgment": "Internal slippage: a place is introduced under one name and immediately discussed under another, with no bridge; small but symptomatic of loose seams in Chapter 2."
+    },
+    {
+      "quote": "Acting Consul-General Ralph Moor's successor, James Robert Phillips's expedition commander, Harry Rawson, led the punitive force",
+      "judgment": "A garbled appositive chain that leaves Moor, Phillips and Rawson's relations incoherent — the clearest local failure of copy in the book."
+    },
+    {
+      "quote": "Cities did not produce one political destiny. At Uruk and Girsu, offices could turn surplus into armies and boundaries into sacred law; at Mohenjo-daro, the same urban capacity appears to have been directed through water, building standards, and civic maintenance.",
+      "judgment": "Model comparative verdict: refuses the determinist reading without retreating into vagueness, and names the institutional variable that actually differs."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter runs the identical five-beat template: an immersive dramatized scene in close third person with invented sensory detail, then a source-critique section, then a paired comparison of two societies, then a numbered or enumerated catalogue of instruments, then a one-paragraph verdict. Fifteen chapters, fifteen executions of the same shape.",
+      "instances": [
+        "Chapter 4 opens 'Sennacherib stood on the low rise east of Lachish while the last fire climbed through the gatehouse' and ends with the catalogue 'tribute, roads, garrisons, hostages, registers, and governors'.",
+        "Chapter 9 opens 'The gun on the Löwel Bastion fired before dawn on 12 September 1683' and ends with the catalogue of powder, food, magazines, requisition and the closing verdict on Ottoman versus Tokugawa regulation."
+      ]
+    },
+    {
+      "pattern": "The negation-then-correction antithesis ('X does not do A; it does B' / 'not X but Y') is the book's default sentence engine, appearing many times per page and flattening the difference between a major claim and a passing observation.",
+      "instances": [
+        "\"Urbanisation did not create aggression... Cities changed the distance between a decision and its consequences.\"",
+        "\"Labour was not an alternative to extermination. It was one of its forms.\""
+      ]
+    },
+    {
+      "pattern": "Symmetrical evidentiary hedging: nearly every piece of evidence is introduced, then bounded with a paired 'it shows X; it cannot show Y' formula. Admirable once, but so uniform that the caveats stop carrying information and become a cadence.",
+      "instances": [
+        "\"The bones record impact, direction, and force more securely than they record the words spoken before it.\"",
+        "\"The skull records force, direction, and timing more reliably than motive.\""
+      ]
+    },
+    {
+      "pattern": "Chapters close on a short, portable aphorism rather than on the argument's live edge, giving fifteen endings of near-identical rhetorical temperature.",
+      "instances": [
+        "\"Both require history before arithmetic.\"",
+        "\"Medieval peace was made from permissions renewed whenever a lord, caliph, emperor, or mansa found obedience cheaper than devastation.\""
+      ]
+    },
+    {
+      "pattern": "Long fused paragraphs in the analytic sections, several running 250-400 words and folding three or four distinct moves together without a break, so the middle of each chapter reads denser than its opening or its close.",
+      "instances": [
+        "Chapter 3's Indus passage runs from 'The Indus cities complicate any story...' through 'Nor does the absence of a named king prove the absence of authority' as one undivided block.",
+        "Chapter 10's provincial-restraint passage runs from 'Legal procedure did not stand outside the violence' straight into Bordeaux and Caen without a paragraph break."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined comparative history whose thesis — that large-scale aggression is produced by offices, records and classifications rather than by feeling — is stated in Chapter 1 and genuinely earned across fifteen chapters, from a Neolithic pit to Prijedor. Its greatest strengths are evidential honesty (it repeatedly names what a source cannot support), specificity of detail, and a cold, precise sentence-level voice that almost never reaches for a cliché; the dramatized chapter openings are often excellent narrative writing. Its weakness is architectural sameness: every chapter runs the same five-beat template, and the prose has one dominant rhetorical move — the negation-then-correction antithesis — deployed so relentlessly that the epistemic caveats become cadence rather than content. Pacing suffers from fused 300-word analytic paragraphs and from a closing aphorism at every chapter's end pitched at the same temperature. There are a few local defects: a garbled appositive around the Benin expedition's command, a place introduced as Turtle Creek and discussed as Crow Creek, and openings that invent sensory detail without ever marking where reconstruction begins. With paragraph surgery, variation of the chapter armature, and a pass to break the antithesis habit, this would be publishable non-fiction; as it stands it needs light revision."
+}

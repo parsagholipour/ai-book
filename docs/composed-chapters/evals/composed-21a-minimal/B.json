@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 6,
+    "reasoning": 7,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 5,
+    "pacing": 4,
+    "craft": 7,
+    "slopResistance": 5
+  },
+  "overall": 6.4,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Soil keeps bodies more readily than motives.",
+      "judgment": "Genuinely fine compression; the book's best line, and proof the author can write when not hedging."
+    },
+    {
+      "quote": "Precision does not remove uncertainty. It tells us where uncertainty begins.",
+      "judgment": "Crisp statement of the governing method \u2014 but the same thought is then restated dozens of times in weaker form."
+    },
+    {
+      "quote": "A disputed field could become a border war. A harvest could become a tax. A tax could become a ration. A ration could sustain a soldier. A labour draft could raise a wall.",
+      "judgment": "Effective chained cadence that makes the institutional thesis concrete rather than asserted."
+    },
+    {
+      "quote": "The language is cold because it performs a conversion. A person becomes an object of freight; a killing becomes a disposal; a decision becomes an average.",
+      "judgment": "The strongest analytic passage in the book: the argument is enacted by the prose rather than announced."
+    },
+    {
+      "quote": "The office did not replace hatred. It gave hatred procedures.",
+      "judgment": "Aphoristic closer that earns itself \u2014 though it is the twentieth chapter-section to end on exactly this rhetorical shape."
+    },
+    {
+      "quote": "They could also impose taxes, seize labour, confine movement, destroy rival settlements, and send soldiers toward a border whose meaning had been fixed by royal decree.",
+      "judgment": "Appears near-verbatim in Chapter 3 and again in Chapter 4 \u2014 an uncaught duplication, not an intentional refrain."
+    },
+    {
+      "quote": "Jebel Sahaba, by contrast, offers a collective burial whose injuries have been studied as a pattern.",
+      "judgment": "Chapter 2 re-introduces a site it has already analysed at length, and compares it to Nataruk before Nataruk is ever introduced; the chapter's assembly is visibly out of order."
+    },
+    {
+      "quote": "The cemetery can establish that violence was consequential for some members of the community. It cannot establish the proportion of daily life occupied by violence.",
+      "judgment": "Sound epistemics, but the 'X can establish\u2026 it cannot establish\u2026' frame is the book's default sentence and blunts every case study alike."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The can/cannot epistemic couplet: nearly every piece of evidence is introduced, then immediately bounded by a symmetrical negation. It is the book's signature move and its main source of monotony.",
+      "instances": [
+        "An injury pattern may support the statement that some people suffered interpersonal violence. It may not support the conclusion that the society was generally warlike.",
+        "Cieza's description may support the existence of a road system more securely than it supports a precise estimate of how often armies used a particular route."
+      ]
+    },
+    {
+      "pattern": "The three-part causal formula \u2014 institutions make possible, technology extends reach, ideas about belonging direct \u2014 is restated almost word-for-word as the summary of Chapters 3, 4, 5, 6, 9, 11, 12 and 15.",
+      "instances": [
+        "Institutions made actions possible; political ideas assigned them meaning; human choices directed them toward particular populations.",
+        "Institutions and ideas gave their reach a purpose."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis about restraint and coercion: the state/city/empire/court restrains one violence while enlarging another. The sentence recurs at nearly every chapter's close.",
+      "instances": [
+        "A city could make private violence harder while making public violence more powerful.",
+        "The capacity to reduce one kind of violence did not prevent the creation of another kind on a wider scale."
+      ]
+    },
+    {
+      "pattern": "Incantatory object-list closers: chapters end with a roll-call of surviving artefacts that leave, preserve or remain, followed by an aphorism.",
+      "instances": [
+        "The murals at Bonampak leave the captives visible but unheard. The roads of the Andes preserve connection without preserving every burden imposed along them.",
+        "The mountain at Behistun still presents a king above the defeated. The reliefs from Lachish still arrange a city's fall into an ordered spectacle."
+      ]
+    },
+    {
+      "pattern": "Uniform paragraph architecture: topic assertion, one or two qualifying sentences, a 'does not tell us' disclaimer, a closing generalisation \u2014 repeated with almost no variation in shape or length across 1,200 paragraphs, and with recap paragraphs before and after most transitions.",
+      "instances": [
+        "The code's existence does not show that every provision was applied in the same way everywhere.",
+        "A code is not a perfect description of practice. Its existence does not show that every provision was applied in every place."
+      ]
+    }
+  ],
+  "summary": "This is a serious, disciplined history of organised aggression that argues, consistently across fifteen chapters, that the scale and meaning of violence derive from institutions, records and ideas of belonging rather than from human nature or technology. The thesis is genuinely sustained, the chronological architecture is sound, and the source criticism is unusually scrupulous \u2014 the Zong, Wannsee and Behistun sections show real analytic power, and the prose is precise and free of lexical AI tics. Its weaknesses are structural rather than verbal: the same epistemic couplet ('this shows X; it cannot show Y'), the same three-part causal formula and the same restraint/coercion antithesis recur so often that chapters begin to read as variations on one paragraph, and at least two passages are duplicated near-verbatim across chapters, while Chapter 2 discusses Nataruk before introducing it. Evidence stays canonical and largely unquantified, so depth reads as competent synthesis rather than originality, and the relentless hedging drains narrative propulsion \u2014 few named people, almost no scene, little forward pull. Spelling conventions also drift between British and American forms within and across chapters. With aggressive cutting of the recap loops, variation of paragraph shape, and repair of the duplications and misordered case studies, this could be a strong book; as it stands it needs moderate revision."
+}

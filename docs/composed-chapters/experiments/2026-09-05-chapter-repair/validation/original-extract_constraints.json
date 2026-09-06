@@ -1,0 +1,384 @@
+{
+  "input_length": 37732,
+  "constraint_count": 63,
+  "constraints": [
+    {
+      "type": "reference",
+      "value": "Chapter 6",
+      "start": 3,
+      "end": 12
+    },
+    {
+      "type": "proper_noun",
+      "value": "Political Fragmentation\n\nThe",
+      "start": 37,
+      "end": 65
+    },
+    {
+      "type": "proper_noun",
+      "value": "The Secret History",
+      "start": 134,
+      "end": 152
+    },
+    {
+      "type": "proper_noun",
+      "value": "Alan Gua",
+      "start": 304,
+      "end": 312
+    },
+    {
+      "type": "proper_noun",
+      "value": "Genghis Khan",
+      "start": 1062,
+      "end": 1074
+    },
+    {
+      "type": "proper_noun",
+      "value": "Mark Cartwright",
+      "start": 1770,
+      "end": 1785
+    },
+    {
+      "type": "proper_noun",
+      "value": "The Secret History",
+      "start": 1834,
+      "end": 1852
+    },
+    {
+      "type": "quote",
+      "value": "\u201cparticular attention to how Genghis subdued and made alliances with the many different tribes of the Asian steppe.\u201d",
+      "start": 1889,
+      "end": 2005
+    },
+    {
+      "type": "proper_noun",
+      "value": "Alan Gua",
+      "start": 2540,
+      "end": 2548
+    },
+    {
+      "type": "number",
+      "value": "1206",
+      "start": 2640,
+      "end": 2644
+    },
+    {
+      "type": "number",
+      "value": "1206",
+      "start": 3580,
+      "end": 3584
+    },
+    {
+      "type": "proper_noun",
+      "value": "Alan Gua",
+      "start": 4087,
+      "end": 4095
+    },
+    {
+      "type": "proper_noun",
+      "value": "Genghis Khan",
+      "start": 4122,
+      "end": 4134
+    },
+    {
+      "type": "proper_noun",
+      "value": "Genghis Khan",
+      "start": 4221,
+      "end": 4233
+    },
+    {
+      "type": "quote",
+      "value": "\u201cWhat security is there for the churches of Britain if St Cuthbert with so great a throng of saints will not defend his own?\u201d",
+      "start": 6654,
+      "end": 6779
+    },
+    {
+      "type": "proper_noun",
+      "value": "St Cuthbert",
+      "start": 6929,
+      "end": 6940
+    },
+    {
+      "type": "quote",
+      "value": "\u201cEither this is the beginning of greater grief or the sins of those who live there have brought it upon themselves.\u201d",
+      "start": 7189,
+      "end": 7305
+    },
+    {
+      "type": "proper_noun",
+      "value": "St Cuthbert",
+      "start": 9167,
+      "end": 9178
+    },
+    {
+      "type": "quote",
+      "value": "\u201cgreater grief,\u201d",
+      "start": 9710,
+      "end": 9726
+    },
+    {
+      "type": "quote",
+      "value": "\u201cThose who live there\u201d",
+      "start": 10963,
+      "end": 10985
+    },
+    {
+      "type": "proper_noun",
+      "value": "Because Alcuin",
+      "start": 11896,
+      "end": 11910
+    },
+    {
+      "type": "proper_noun",
+      "value": "St Cuthbert",
+      "start": 12556,
+      "end": 12567
+    },
+    {
+      "type": "proper_noun",
+      "value": "The Mongol",
+      "start": 12955,
+      "end": 12965
+    },
+    {
+      "type": "quote",
+      "value": "\u201cAnd it is a suffering for the nation and the people.\u201d",
+      "start": 13607,
+      "end": 13661
+    },
+    {
+      "type": "quote",
+      "value": "\u201cthe diverse thousands of the diverse quarters.\u201d",
+      "start": 14036,
+      "end": 14084
+    },
+    {
+      "type": "quote",
+      "value": "\u201cgoing round about the people\u201d",
+      "start": 16795,
+      "end": 16825
+    },
+    {
+      "type": "quote",
+      "value": "\u201cGreat Turkey\u201d",
+      "start": 17259,
+      "end": 17273
+    },
+    {
+      "type": "number",
+      "value": "1260",
+      "start": 17383,
+      "end": 17387
+    },
+    {
+      "type": "proper_noun",
+      "value": "The Secret History",
+      "start": 17500,
+      "end": 17518
+    },
+    {
+      "type": "quote",
+      "value": "\u201cdiverse quarters.\u201d",
+      "start": 17948,
+      "end": 17967
+    },
+    {
+      "type": "proper_noun",
+      "value": "When Wells",
+      "start": 17968,
+      "end": 17978
+    },
+    {
+      "type": "proper_noun",
+      "value": "The Lindisfarne",
+      "start": 18684,
+      "end": 18699
+    },
+    {
+      "type": "quote",
+      "value": "\u201cWhat security is there\u201d",
+      "start": 18779,
+      "end": 18803
+    },
+    {
+      "type": "proper_noun",
+      "value": "St Cuthbert",
+      "start": 18876,
+      "end": 18887
+    },
+    {
+      "type": "proper_noun",
+      "value": "The Mongol",
+      "start": 19245,
+      "end": 19255
+    },
+    {
+      "type": "proper_noun",
+      "value": "The Secret History",
+      "start": 19938,
+      "end": 19956
+    },
+    {
+      "type": "proper_noun",
+      "value": "In Northumbria",
+      "start": 20076,
+      "end": 20090
+    },
+    {
+      "type": "proper_noun",
+      "value": "The Secret History",
+      "start": 21536,
+      "end": 21554
+    },
+    {
+      "type": "reference",
+      "value": "Chapter 7",
+      "start": 22027,
+      "end": 22036
+    },
+    {
+      "type": "proper_noun",
+      "value": "Steppe Powers",
+      "start": 22038,
+      "end": 22051
+    },
+    {
+      "type": "proper_noun",
+      "value": "Connected Worlds",
+      "start": 22056,
+      "end": 22072
+    },
+    {
+      "type": "quote",
+      "value": "\u201cPart two is more historical, even if it contains what claim to be direct speeches from the characters involved, and covers the ancestors, rise and reign of Genghis Khan, the founder of the Mongol Empire (1206-1368 CE).\u201d",
+      "start": 22076,
+      "end": 22296
+    },
+    {
+      "type": "range",
+      "value": "1206-1368",
+      "start": 22281,
+      "end": 22290
+    },
+    {
+      "type": "proper_noun",
+      "value": "Mark Cartwright",
+      "start": 22303,
+      "end": 22318
+    },
+    {
+      "type": "proper_noun",
+      "value": "The Secret History",
+      "start": 22332,
+      "end": 22350
+    },
+    {
+      "type": "proper_noun",
+      "value": "The Secret History",
+      "start": 22470,
+      "end": 22488
+    },
+    {
+      "type": "proper_noun",
+      "value": "Alan Gua",
+      "start": 22652,
+      "end": 22660
+    },
+    {
+      "type": "proper_noun",
+      "value": "Genghis Khan",
+      "start": 23077,
+      "end": 23089
+    },
+    {
+      "type": "proper_noun",
+      "value": "Mark Cartwright",
+      "start": 23591,
+      "end": 23606
+    },
+    {
+      "type": "number",
+      "value": "1206",
+      "start": 24003,
+      "end": 24007
+    },
+    {
+      "type": "quote",
+      "value": "\u201cincorporation\u201d",
+      "start": 24175,
+      "end": 24190
+    },
+    {
+      "type": "proper_noun",
+      "value": "Genghis Khan",
+      "start": 25979,
+      "end": 25991
+    },
+    {
+      "type": "proper_noun",
+      "value": "Genghis Khan",
+      "start": 26053,
+      "end": 26065
+    },
+    {
+      "type": "proper_noun",
+      "value": "The Secret History",
+      "start": 26493,
+      "end": 26511
+    },
+    {
+      "type": "quote",
+      "value": "\u201cbringing forth keepers of post stations and keepers of post horses from the diverse thousands of the diverse quarters\u201d",
+      "start": 26577,
+      "end": 26696
+    },
+    {
+      "type": "quote",
+      "value": "\u201cseats and seats of post stations.\u201d",
+      "start": 26717,
+      "end": 26752
+    },
+    {
+      "type": "number",
+      "value": "1242",
+      "start": 34133,
+      "end": 34137
+    },
+    {
+      "type": "proper_noun",
+      "value": "Yet Wells",
+      "start": 34344,
+      "end": 34353
+    },
+    {
+      "type": "quote",
+      "value": "\u201cmassacring or assimilating\u201d",
+      "start": 34368,
+      "end": 34396
+    },
+    {
+      "type": "proper_noun",
+      "value": "Great Turkey",
+      "start": 34861,
+      "end": 34873
+    },
+    {
+      "type": "number",
+      "value": "1260",
+      "start": 34976,
+      "end": 34980
+    },
+    {
+      "type": "quote",
+      "value": "\u201cmobility caused Mongol violence\u201d",
+      "start": 35412,
+      "end": 35445
+    },
+    {
+      "type": "quote",
+      "value": "\u201cadministration civilised conquest.\u201d",
+      "start": 35449,
+      "end": 35485
+    }
+  ]
+}

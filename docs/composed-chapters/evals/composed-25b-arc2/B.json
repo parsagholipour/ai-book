@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.7,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A wound in bone is an event reduced to material.",
+      "judgment": "Excellent opening-chapter compression: states the book's evidentiary problem in eight words without abstraction."
+    },
+    {
+      "quote": "Aggression concerns the harmful act or intended harm. Organized violence concerns the coordination that makes many such acts possible.",
+      "judgment": "The book's controlling distinction, stated early and then genuinely used as an analytic instrument for fifteen chapters."
+    },
+    {
+      "quote": "The field of battle was connected to fields of grain by accounting.",
+      "judgment": "Rare instance where the argument earns a memorable sentence rather than an aphoristic closer."
+    },
+    {
+      "quote": "The ship appears orderly because the violence has already been organized.",
+      "judgment": "Strong: the Brookes reading makes the book's thesis do work on an image rather than restating it."
+    },
+    {
+      "quote": "The Force Publique supplied the threat. It was a private army of European officers and African conscripts, numbering around 19,000 men by the 1890s according to the supplied account.",
+      "judgment": "Process leakage: 'according to the supplied account' (and elsewhere 'the available evidence in the material at hand', 'the description supplied for the site') exposes the drafting apparatus and breaks the historian's voice."
+    },
+    {
+      "quote": "It could count, persuade, reward, threaten, relocate, and destroy.",
+      "judgment": "Orphaned pronoun with no antecedent in the preceding paragraph; several such stitched-in sentences recur (e.g. 'It could be contained in the same road, office, or officer.', 'The answer was built into the system's procedures.')."
+    },
+    {
+      "quote": "Steven Pinker is right to insist that institutions, state capacity, norms, and interdependence can restrain killing. He is also right that violence has declined in important regions over the long term.",
+      "judgment": "Near-verbatim recycling: the same concessive Pinker formula reappears in at least five chapters, each time followed by the same 'but the state's reach also enlarged' turn."
+    },
+    {
+      "quote": "The chronicles preserve the victor's sequence. The city preserved the consequences.",
+      "judgment": "Elegant, but symptomatic: dozens of sections end on a short paired antithesis, and the cadence becomes predictable enough to signal the section break in advance."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The evidentiary see-saw: every artifact is introduced, credited with one narrow fact, then denied a larger inference in a matched negative sentence. Used hundreds of times; it is the book's method and also its tic.",
+      "instances": [
+        "The grave demonstrates collective killing; it does not by itself demonstrate a military system.",
+        "The Tophane record does not allow a verdict about Ottoman intentions in every campaign. It permits a firmer conclusion about means."
+      ]
+    },
+    {
+      "pattern": "Triadic negation blocks — three or four consecutive short sentences each denying a different inference, with almost identical syntax.",
+      "instances": [
+        "Resource scarcity does not prove that hunger caused each injury. Projectile points do not prove warfare. A mass burial does not prove a massacre.",
+        "It did not abolish slavery in the United States. It did not free every enslaved person connected to the ship's owners. It did not undo the law that had allowed Washington to be captured and transported."
+      ]
+    },
+    {
+      "pattern": "The administrative-chain inventory: a numbered-in-prose sequence of offices (register, road, intermediary, collector, garrison) recited to show how ordinary procedure becomes force. Genuinely illuminating the first two times, then repeated with new nouns in nearly every chapter.",
+      "instances": [
+        "The census identified obligations; the road moved the order; the local intermediary located the person or property; the tax farmer or official demanded payment; the garrison stood behind the demand.",
+        "Registration identifies. Concentration limits movement. Supply control creates dependence. Intelligence selects targets. Proxy assistance replenishes armed groups."
+      ]
+    },
+    {
+      "pattern": "Chapters open on a dated artifact or site, then dissolve into thematic catalogue: the human scene is abandoned within two or three paragraphs and rarely returns except as a closing echo.",
+      "instances": [
+        "In 1994, excavators working at Talheim in what is now southwestern Germany opened a burial unlike the orderly graves...",
+        "In the summer of 1683, those conditions gathered outside Vienna."
+      ]
+    },
+    {
+      "pattern": "The unresolved-question closer: chapters and sections end by explicitly staging a question the evidence cannot settle, often flagged with 'The question remains open' or 'unresolved'.",
+      "instances": [
+        "Could mobile bands sustain organized violence without permanent hierarchy?",
+        "The unresolved role of legitimacy remains precisely here: when does the claim to act for the people narrow the field of violence...?"
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, genuinely argued world history of organized violence whose thesis — that institutions decide how far human capacities travel, and that a record can establish an act more securely than a motive — is stated in chapter one and honestly tested through Talheim, Uruk, Behistun, the Lienzo de Tlaxcala, Merv, the Brookes, Tophane, the Somme, Wannsee, Srebrenica and Bombay Street. Reasoning and clarity are the strongest qualities: inferences are sized to the evidence, contrary scholars (Keeley, Ferguson, Parker, Black, Gleditsch) are engaged rather than name-dropped, and the book resists both the constant-brutality story and the smooth-improvement story it names in Pinker. The cost is monotony. The method hardens into a template — artifact, narrow fact, matched denial, paired-antithesis closer — repeated at paragraph, section and chapter scale, and the Pinker concession paragraph is recycled almost verbatim in at least five chapters. There are also visible seams: several orphaned pronouns with no antecedent, a floating one-line Las Casas paragraph, and three or four phrases ('according to the supplied account', 'the available evidence in the material at hand') that leak the drafting process into the historian's voice. Human beings appear mostly as categories the records failed to preserve, which is thematically deliberate but leaves the prose short of engagement. Trimming perhaps a fifth of the hedging, varying the section cadence, and repairing the stitched sentences would move this from competent to genuinely good."
+}

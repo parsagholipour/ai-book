@@ -1,0 +1,3797 @@
+{
+ "capturedAt": "2026-09-05T08:21:40.259987+00:00",
+ "projects": {
+  "cmtnwyp3d0000fwg07qgd68uo": {
+   "description": "development-fixes-1 (project 1: 1a, 1a-retry, 1b, 1c, 1d)",
+   "jobs": 8,
+   "totalProviderCostUsd": 2.3714,
+   "totalProviderCalls": 546,
+   "completedGenerateBookCostUsd": 1.5982,
+   "failedGenerateBookCostUsd": 0.7401,
+   "activeSoFarCostUsd": 0,
+   "otherJobsCostUsd": 0.0331,
+   "researchSearchRequestsUnpriced": 188,
+   "activeJobIds": []
+  },
+  "cmtnyg6ji0000seg0lrlewwb1": {
+   "description": "development-fixes-2a (2a, 2a-retry, 2a-retry-2, 2a-retry-3)",
+   "jobs": 5,
+   "totalProviderCostUsd": 2.2173,
+   "totalProviderCalls": 407,
+   "completedGenerateBookCostUsd": 0,
+   "failedGenerateBookCostUsd": 2.2172,
+   "activeSoFarCostUsd": 0,
+   "otherJobsCostUsd": 0.0001,
+   "researchSearchRequestsUnpriced": 130,
+   "activeJobIds": []
+  },
+  "cmtnzo7wf0000qwg0kwq6s3rk": {
+   "description": "development-fixes-3a (launched by another session: 3a, 3a-retry, 3a-retry-2, 3a-retry-3)",
+   "jobs": 5,
+   "totalProviderCostUsd": 2.3595,
+   "totalProviderCalls": 454,
+   "completedGenerateBookCostUsd": 0,
+   "failedGenerateBookCostUsd": 2.3589,
+   "activeSoFarCostUsd": 0,
+   "otherJobsCostUsd": 0.0006,
+   "researchSearchRequestsUnpriced": 144,
+   "activeJobIds": []
+  }
+ },
+ "jobs": [
+  {
+   "jobId": "cmtnwyp4a0002fwg0mmh03k0z",
+   "projectId": "cmtnwyp3d0000fwg07qgd68uo",
+   "type": "GENERATE_BOOK",
+   "status": "FAILED",
+   "progress": 15,
+   "createdAt": "2026-09-05 04:59:46.474",
+   "startedAt": "2026-09-05 05:01:28.49",
+   "finishedAt": "2026-09-05 05:02:36.796",
+   "label": "development-fixes-1a",
+   "elapsedMinutes": 1.1,
+   "providerCalls": 2,
+   "providerCostUsd": 0.0112,
+   "promptTokens": 5574,
+   "outputTokens": 8710,
+   "unpricedProviderCalls": 0,
+   "byStage": {
+    "episodes": {
+     "calls": 2,
+     "costUsd": 0.0112,
+     "promptTokens": 5574,
+     "outputTokens": 8710,
+     "durationSeconds": 97.7,
+     "unpricedCalls": 0
+    }
+   },
+   "byPurpose": [
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "plan-episodes",
+     "stage": "episodes",
+     "count": 2,
+     "costUsd": 0.011205,
+     "promptTokens": 5574,
+     "outputTokens": 8710,
+     "cacheHitTokens": 2784,
+     "durationSeconds": 97.7,
+     "unpricedCalls": 0
+    }
+   ],
+   "trace": {
+    "tracePath": "storage/books/cmtnwyp3d0000fwg07qgd68uo/runs/cmtnwyp4a0002fwg0mmh03k0z-generate-book.jsonl",
+    "events": {
+     "job.start": 2,
+     "research.search.request": 31,
+     "research.search.response": 31,
+     "text.generateJson.request": 2,
+     "text.generateJson.response": 2,
+     "job.recovering": 1,
+     "research.search.error": 3,
+     "job.stopped": 1
+    },
+    "unparseableLines": 0,
+    "jobStarts": [
+     "2026-09-05T04:59:46.486Z",
+     "2026-09-05T05:01:28.484Z"
+    ],
+    "firstEvent": "2026-09-05T04:59:46.486Z",
+    "lastEvent": "2026-09-05T05:02:36.794Z",
+    "failed": null,
+    "researchSearchRequestsUnpriced": 31,
+    "evidenceUnresolvedEvents": [],
+    "stageSpans": {
+     "episodes": {
+      "firstRequest": "2026-09-05T05:00:13.946Z",
+      "lastRequest": "2026-09-05T05:01:28.538Z",
+      "spanMinutes": 1.2,
+      "requests": 2
+     }
+    }
+   },
+   "launchedBy": "parent session",
+   "implementation": "implementation-1.json",
+   "outcome": "operator-stopped after the source-download timeout was propagated as cancellation"
+  },
+  {
+   "jobId": "cmtnx6j3k0000zig0o9y4ei1g",
+   "projectId": "cmtnwyp3d0000fwg07qgd68uo",
+   "type": "GENERATE_BOOK",
+   "status": "FAILED",
+   "progress": 16,
+   "createdAt": "2026-09-05 05:05:51.92",
+   "startedAt": "2026-09-05 05:05:51.942",
+   "finishedAt": "2026-09-05 05:24:46.174",
+   "label": "development-fixes-1a-retry",
+   "elapsedMinutes": 18.9,
+   "providerCalls": 123,
+   "providerCostUsd": 0.2356,
+   "promptTokens": 452461,
+   "outputTokens": 105033,
+   "unpricedProviderCalls": 0,
+   "byStage": {
+    "development-plan": {
+     "calls": 2,
+     "costUsd": 0.021,
+     "promptTokens": 34067,
+     "outputTokens": 10426,
+     "durationSeconds": 124.5,
+     "unpricedCalls": 0
+    },
+    "episodes": {
+     "calls": 3,
+     "costUsd": 0.0093,
+     "promptTokens": 4744,
+     "outputTokens": 7393,
+     "durationSeconds": 90.4,
+     "unpricedCalls": 0
+    },
+    "evidence-packets": {
+     "calls": 97,
+     "costUsd": 0.1329,
+     "promptTokens": 174521,
+     "outputTokens": 76756,
+     "durationSeconds": 733.7,
+     "unpricedCalls": 0
+    },
+    "sources": {
+     "calls": 21,
+     "costUsd": 0.0723,
+     "promptTokens": 239129,
+     "outputTokens": 10458,
+     "durationSeconds": 103.5,
+     "unpricedCalls": 0
+    }
+   },
+   "byPurpose": [
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "build-case-evidence",
+     "stage": "evidence-packets",
+     "count": 44,
+     "costUsd": 0.04122599999999999,
+     "promptTokens": 52279,
+     "outputTokens": 24175,
+     "cacheHitTokens": 0,
+     "durationSeconds": 248.0,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "develop-book-plan",
+     "stage": "development-plan",
+     "count": 2,
+     "costUsd": 0.021027,
+     "promptTokens": 34067,
+     "outputTokens": 10426,
+     "cacheHitTokens": 0,
+     "durationSeconds": 124.5,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "extract-excerpts",
+     "stage": "sources",
+     "count": 21,
+     "costUsd": 0.07233,
+     "promptTokens": 239129,
+     "outputTokens": 10458,
+     "cacheHitTokens": 0,
+     "durationSeconds": 103.5,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "plan-episodes",
+     "stage": "episodes",
+     "count": 3,
+     "costUsd": 0.009319000000000001,
+     "promptTokens": 4744,
+     "outputTokens": 7393,
+     "cacheHitTokens": 2784,
+     "durationSeconds": 90.4,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "verify-case-evidence",
+     "stage": "evidence-packets",
+     "count": 53,
+     "costUsd": 0.091695,
+     "promptTokens": 122242,
+     "outputTokens": 52581,
+     "cacheHitTokens": 8496,
+     "durationSeconds": 485.7,
+     "unpricedCalls": 0
+    }
+   ],
+   "trace": {
+    "tracePath": "storage/books/cmtnwyp3d0000fwg07qgd68uo/runs/cmtnx6j3k0000zig0o9y4ei1g-generate-book.jsonl",
+    "events": {
+     "job.start": 1,
+     "text.generateJson.request": 123,
+     "text.generateJson.response": 111,
+     "research.search.request": 60,
+     "research.search.response": 60,
+     "text.generateJson.error": 12,
+     "job.failed": 1
+    },
+    "unparseableLines": 0,
+    "jobStarts": [
+     "2026-09-05T05:05:51.933Z"
+    ],
+    "firstEvent": "2026-09-05T05:05:51.933Z",
+    "lastEvent": "2026-09-05T05:24:46.174Z",
+    "failed": {
+     "at": "2026-09-05T05:24:46.174Z",
+     "message": "Book development needs a new plan: the revised author stance must use the developed answer as its thesis"
+    },
+    "researchSearchRequestsUnpriced": 60,
+    "evidenceUnresolvedEvents": [],
+    "stageSpans": {
+     "episodes": {
+      "firstRequest": "2026-09-05T05:05:52.002Z",
+      "lastRequest": "2026-09-05T05:17:03.648Z",
+      "spanMinutes": 11.2,
+      "requests": 3
+     },
+     "sources": {
+      "firstRequest": "2026-09-05T05:07:38.590Z",
+      "lastRequest": "2026-09-05T05:21:55.555Z",
+      "spanMinutes": 14.3,
+      "requests": 21
+     },
+     "evidence-packets": {
+      "firstRequest": "2026-09-05T05:13:13.764Z",
+      "lastRequest": "2026-09-05T05:22:30.494Z",
+      "spanMinutes": 9.3,
+      "requests": 97
+     },
+     "development-plan": {
+      "firstRequest": "2026-09-05T05:22:41.652Z",
+      "lastRequest": "2026-09-05T05:23:47.658Z",
+      "spanMinutes": 1.1,
+      "requests": 2
+     }
+    }
+   },
+   "launchedBy": "parent session",
+   "implementation": "implementation-2.json",
+   "outcome": "developBookPlan thesis string-equality check"
+  },
+  {
+   "jobId": "cmtny8hzz00007jg0gh6u4g49",
+   "projectId": "cmtnwyp3d0000fwg07qgd68uo",
+   "type": "GENERATE_BOOK",
+   "status": "FAILED",
+   "progress": 16,
+   "createdAt": "2026-09-05 05:35:23.423",
+   "startedAt": "2026-09-05 05:35:23.467",
+   "finishedAt": "2026-09-05 05:51:30.559",
+   "label": "development-fixes-1b",
+   "elapsedMinutes": 16.1,
+   "providerCalls": 83,
+   "providerCostUsd": 0.1924,
+   "promptTokens": 394044,
+   "outputTokens": 79216,
+   "unpricedProviderCalls": 0,
+   "byStage": {
+    "development-plan": {
+     "calls": 4,
+     "costUsd": 0.0388,
+     "promptTokens": 63326,
+     "outputTokens": 19109,
+     "durationSeconds": 157.7,
+     "unpricedCalls": 0
+    },
+    "episodes": {
+     "calls": 2,
+     "costUsd": 0.0085,
+     "promptTokens": 3773,
+     "outputTokens": 6841,
+     "durationSeconds": 78.3,
+     "unpricedCalls": 0
+    },
+    "evidence-packets": {
+     "calls": 56,
+     "costUsd": 0.077,
+     "promptTokens": 103307,
+     "outputTokens": 43074,
+     "durationSeconds": 436.5,
+     "unpricedCalls": 0
+    },
+    "sources": {
+     "calls": 21,
+     "costUsd": 0.0681,
+     "promptTokens": 223638,
+     "outputTokens": 10192,
+     "durationSeconds": 107.7,
+     "unpricedCalls": 0
+    }
+   },
+   "byPurpose": [
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "build-case-evidence",
+     "stage": "evidence-packets",
+     "count": 29,
+     "costUsd": 0.029266,
+     "promptTokens": 37276,
+     "outputTokens": 17033,
+     "cacheHitTokens": 0,
+     "durationSeconds": 169.7,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "develop-book-plan",
+     "stage": "development-plan",
+     "count": 4,
+     "costUsd": 0.038761000000000004,
+     "promptTokens": 63326,
+     "outputTokens": 19109,
+     "cacheHitTokens": 0,
+     "durationSeconds": 157.7,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "extract-excerpts",
+     "stage": "sources",
+     "count": 21,
+     "costUsd": 0.06813600000000002,
+     "promptTokens": 223638,
+     "outputTokens": 10192,
+     "cacheHitTokens": 0,
+     "durationSeconds": 107.7,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "plan-episodes",
+     "stage": "episodes",
+     "count": 2,
+     "costUsd": 0.008462,
+     "promptTokens": 3773,
+     "outputTokens": 6841,
+     "cacheHitTokens": 2784,
+     "durationSeconds": 78.3,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "verify-case-evidence",
+     "stage": "evidence-packets",
+     "count": 27,
+     "costUsd": 0.047753000000000004,
+     "promptTokens": 66031,
+     "outputTokens": 26041,
+     "cacheHitTokens": 0,
+     "durationSeconds": 266.8,
+     "unpricedCalls": 0
+    }
+   ],
+   "trace": {
+    "tracePath": "storage/books/cmtnwyp3d0000fwg07qgd68uo/runs/cmtny8hzz00007jg0gh6u4g49-generate-book.jsonl",
+    "events": {
+     "job.start": 1,
+     "text.generateJson.request": 83,
+     "text.generateJson.response": 80,
+     "research.search.request": 59,
+     "research.search.response": 59,
+     "text.generateJson.error": 3,
+     "job.failed": 1
+    },
+    "unparseableLines": 0,
+    "jobStarts": [
+     "2026-09-05T05:35:23.450Z"
+    ],
+    "firstEvent": "2026-09-05T05:35:23.450Z",
+    "lastEvent": "2026-09-05T05:51:30.558Z",
+    "failed": {
+     "at": "2026-09-05T05:51:30.558Z",
+     "message": "Book development needs a new plan: chapter 7 has no evidence assigned"
+    },
+    "researchSearchRequestsUnpriced": 59,
+    "evidenceUnresolvedEvents": [],
+    "stageSpans": {
+     "episodes": {
+      "firstRequest": "2026-09-05T05:35:23.546Z",
+      "lastRequest": "2026-09-05T05:44:42.777Z",
+      "spanMinutes": 9.3,
+      "requests": 2
+     },
+     "sources": {
+      "firstRequest": "2026-09-05T05:37:06.717Z",
+      "lastRequest": "2026-09-05T05:48:24.923Z",
+      "spanMinutes": 11.3,
+      "requests": 21
+     },
+     "evidence-packets": {
+      "firstRequest": "2026-09-05T05:41:33.322Z",
+      "lastRequest": "2026-09-05T05:48:43.576Z",
+      "spanMinutes": 7.2,
+      "requests": 56
+     },
+     "development-plan": {
+      "firstRequest": "2026-09-05T05:48:52.860Z",
+      "lastRequest": "2026-09-05T05:50:58.847Z",
+      "spanMinutes": 2.1,
+      "requests": 4
+     }
+    }
+   },
+   "launchedBy": "ai-book-maker-a1 (this session)",
+   "implementation": "implementation-3 (in memory; implementation-4 landed mid-run)",
+   "outcome": "deterministic 'no evidence assigned' rule on the synthesis chapter"
+  },
+  {
+   "jobId": "cmtnyg6l00002seg0hki6pj5i",
+   "projectId": "cmtnyg6ji0000seg0lrlewwb1",
+   "type": "GENERATE_BOOK",
+   "status": "FAILED",
+   "progress": 16,
+   "createdAt": "2026-09-05 05:41:21.876",
+   "startedAt": "2026-09-05 05:41:21.901",
+   "finishedAt": "2026-09-05 05:53:08.983",
+   "label": "development-fixes-2a",
+   "elapsedMinutes": 11.8,
+   "providerCalls": 78,
+   "providerCostUsd": 0.173,
+   "promptTokens": 353951,
+   "outputTokens": 71100,
+   "unpricedProviderCalls": 0,
+   "byStage": {
+    "development-plan": {
+     "calls": 5,
+     "costUsd": 0.0411,
+     "promptTokens": 85958,
+     "outputTokens": 16382,
+     "durationSeconds": 138.2,
+     "unpricedCalls": 0
+    },
+    "episodes": {
+     "calls": 1,
+     "costUsd": 0.005,
+     "promptTokens": 2787,
+     "outputTokens": 4130,
+     "durationSeconds": 44.2,
+     "unpricedCalls": 0
+    },
+    "evidence-packets": {
+     "calls": 54,
+     "costUsd": 0.0766,
+     "promptTokens": 102104,
+     "outputTokens": 42774,
+     "durationSeconds": 399.7,
+     "unpricedCalls": 0
+    },
+    "sources": {
+     "calls": 18,
+     "costUsd": 0.0502,
+     "promptTokens": 163102,
+     "outputTokens": 7814,
+     "durationSeconds": 84.6,
+     "unpricedCalls": 0
+    }
+   },
+   "byPurpose": [
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "build-case-evidence",
+     "stage": "evidence-packets",
+     "count": 29,
+     "costUsd": 0.032379,
+     "promptTokens": 41536,
+     "outputTokens": 18502,
+     "cacheHitTokens": 0,
+     "durationSeconds": 162.3,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "develop-book-plan",
+     "stage": "development-plan",
+     "count": 3,
+     "costUsd": 0.02983,
+     "promptTokens": 49582,
+     "outputTokens": 14529,
+     "cacheHitTokens": 0,
+     "durationSeconds": 110.6,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "extract-excerpts",
+     "stage": "sources",
+     "count": 18,
+     "costUsd": 0.050151,
+     "promptTokens": 163102,
+     "outputTokens": 7814,
+     "cacheHitTokens": 0,
+     "durationSeconds": 84.6,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "plan-episodes",
+     "stage": "episodes",
+     "count": 1,
+     "costUsd": 0.005012,
+     "promptTokens": 2787,
+     "outputTokens": 4130,
+     "cacheHitTokens": 2784,
+     "durationSeconds": 44.2,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "review-book-development",
+     "stage": "development-plan",
+     "count": 2,
+     "costUsd": 0.011318,
+     "promptTokens": 36376,
+     "outputTokens": 1853,
+     "cacheHitTokens": 0,
+     "durationSeconds": 27.6,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "verify-case-evidence",
+     "stage": "evidence-packets",
+     "count": 25,
+     "costUsd": 0.044266000000000014,
+     "promptTokens": 60568,
+     "outputTokens": 24272,
+     "cacheHitTokens": 0,
+     "durationSeconds": 237.4,
+     "unpricedCalls": 0
+    }
+   ],
+   "trace": {
+    "tracePath": "storage/books/cmtnyg6ji0000seg0lrlewwb1/runs/cmtnyg6l00002seg0hki6pj5i-generate-book.jsonl",
+    "events": {
+     "job.start": 1,
+     "research.search.request": 61,
+     "research.search.response": 61,
+     "text.generateJson.request": 78,
+     "text.generateJson.response": 75,
+     "text.generateJson.error": 3,
+     "job.failed": 1
+    },
+    "unparseableLines": 0,
+    "jobStarts": [
+     "2026-09-05T05:41:21.889Z"
+    ],
+    "firstEvent": "2026-09-05T05:41:21.889Z",
+    "lastEvent": "2026-09-05T05:53:08.982Z",
+    "failed": {
+     "at": "2026-09-05T05:53:08.982Z",
+     "message": "Book development needs a new plan: Several required regional comparisons are not actually developed. Chapter 3 has only the Stele of the Vultures plus a disputed Mohenjo-daro decline narrative, so it does not compare two early state contexts or establish how state formation increased or redirected violence across contexts. Chapter 6 has only the Bayeux Tapestry as a developed case; its promised co"
+    },
+    "researchSearchRequestsUnpriced": 61,
+    "evidenceUnresolvedEvents": [],
+    "stageSpans": {
+     "episodes": {
+      "firstRequest": "2026-09-05T05:41:47.970Z",
+      "lastRequest": "2026-09-05T05:41:47.970Z",
+      "spanMinutes": 0.0,
+      "requests": 1
+     },
+     "sources": {
+      "firstRequest": "2026-09-05T05:43:05.500Z",
+      "lastRequest": "2026-09-05T05:49:33.378Z",
+      "spanMinutes": 6.5,
+      "requests": 18
+     },
+     "evidence-packets": {
+      "firstRequest": "2026-09-05T05:46:04.728Z",
+      "lastRequest": "2026-09-05T05:50:43.849Z",
+      "spanMinutes": 4.7,
+      "requests": 54
+     },
+     "development-plan": {
+      "firstRequest": "2026-09-05T05:50:50.773Z",
+      "lastRequest": "2026-09-05T05:52:53.793Z",
+      "spanMinutes": 2.1,
+      "requests": 5
+     }
+    }
+   },
+   "launchedBy": "ai-book-maker-a1 (this session)",
+   "implementation": "implementation-4.json",
+   "outcome": "model review rejected the developed plan twice"
+  },
+  {
+   "jobId": "cmtnz1i2500008xg01dal6amd",
+   "projectId": "cmtnwyp3d0000fwg07qgd68uo",
+   "type": "GENERATE_BOOK",
+   "status": "FAILED",
+   "progress": 25,
+   "createdAt": "2026-09-05 05:57:56.525",
+   "startedAt": "2026-09-05 05:57:56.555",
+   "finishedAt": "2026-09-05 06:19:23.174",
+   "label": "development-fixes-1c",
+   "elapsedMinutes": 21.4,
+   "providerCalls": 106,
+   "providerCostUsd": 0.3009,
+   "promptTokens": 572972,
+   "outputTokens": 132233,
+   "unpricedProviderCalls": 0,
+   "byStage": {
+    "chapter-evidence-review": {
+     "calls": 2,
+     "costUsd": 0.0059,
+     "promptTokens": 14602,
+     "outputTokens": 1856,
+     "durationSeconds": 27.5,
+     "unpricedCalls": 0
+    },
+    "compose": {
+     "calls": 4,
+     "costUsd": 0.0321,
+     "promptTokens": 52912,
+     "outputTokens": 15768,
+     "durationSeconds": 190.0,
+     "unpricedCalls": 0
+    },
+    "development-plan": {
+     "calls": 8,
+     "costUsd": 0.0771,
+     "promptTokens": 154743,
+     "outputTokens": 31972,
+     "durationSeconds": 330.6,
+     "unpricedCalls": 0
+    },
+    "episodes": {
+     "calls": 3,
+     "costUsd": 0.0071,
+     "promptTokens": 4792,
+     "outputTokens": 5504,
+     "durationSeconds": 70.8,
+     "unpricedCalls": 0
+    },
+    "evidence-packets": {
+     "calls": 66,
+     "costUsd": 0.0945,
+     "promptTokens": 125597,
+     "outputTokens": 52849,
+     "durationSeconds": 560.7,
+     "unpricedCalls": 0
+    },
+    "forms": {
+     "calls": 2,
+     "costUsd": 0.0149,
+     "promptTokens": 16999,
+     "outputTokens": 8880,
+     "durationSeconds": 65.1,
+     "unpricedCalls": 0
+    },
+    "line-edit": {
+     "calls": 2,
+     "costUsd": 0.0091,
+     "promptTokens": 15252,
+     "outputTokens": 4479,
+     "durationSeconds": 26.7,
+     "unpricedCalls": 0
+    },
+    "sources": {
+     "calls": 19,
+     "costUsd": 0.0601,
+     "promptTokens": 188075,
+     "outputTokens": 10925,
+     "durationSeconds": 112.3,
+     "unpricedCalls": 0
+    }
+   },
+   "byPurpose": [
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "build-case-evidence",
+     "stage": "evidence-packets",
+     "count": 34,
+     "costUsd": 0.03838600000000001,
+     "promptTokens": 48294,
+     "outputTokens": 22157,
+     "cacheHitTokens": 0,
+     "durationSeconds": 206.5,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "compose-chapter",
+     "stage": "compose",
+     "count": 4,
+     "costUsd": 0.032149000000000004,
+     "promptTokens": 52912,
+     "outputTokens": 15768,
+     "cacheHitTokens": 0,
+     "durationSeconds": 190.0,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "develop-book-plan",
+     "stage": "development-plan",
+     "count": 6,
+     "costUsd": 0.064289,
+     "promptTokens": 113745,
+     "outputTokens": 29877,
+     "cacheHitTokens": 0,
+     "durationSeconds": 307.6,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "edit-chapter",
+     "stage": "line-edit",
+     "count": 1,
+     "costUsd": 0.008346,
+     "promptTokens": 14382,
+     "outputTokens": 3959,
+     "cacheHitTokens": 0,
+     "durationSeconds": 21.9,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "extract-excerpts",
+     "stage": "sources",
+     "count": 19,
+     "costUsd": 0.060128,
+     "promptTokens": 188075,
+     "outputTokens": 10925,
+     "cacheHitTokens": 0,
+     "durationSeconds": 112.3,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "plan-chapter-forms",
+     "stage": "forms",
+     "count": 2,
+     "costUsd": 0.014906,
+     "promptTokens": 16999,
+     "outputTokens": 8880,
+     "cacheHitTokens": 0,
+     "durationSeconds": 65.1,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "plan-episodes",
+     "stage": "episodes",
+     "count": 3,
+     "costUsd": 0.0071140000000000005,
+     "promptTokens": 4792,
+     "outputTokens": 5504,
+     "cacheHitTokens": 2784,
+     "durationSeconds": 70.8,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "review-book-development",
+     "stage": "development-plan",
+     "count": 2,
+     "costUsd": 0.012763,
+     "promptTokens": 40998,
+     "outputTokens": 2095,
+     "cacheHitTokens": 0,
+     "durationSeconds": 23.0,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "review-chapter-evidence",
+     "stage": "chapter-evidence-review",
+     "count": 2,
+     "costUsd": 0.0058779999999999995,
+     "promptTokens": 14602,
+     "outputTokens": 1856,
+     "cacheHitTokens": 0,
+     "durationSeconds": 27.5,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "rewrite-couplets",
+     "stage": "line-edit",
+     "count": 1,
+     "costUsd": 0.000798,
+     "promptTokens": 870,
+     "outputTokens": 520,
+     "cacheHitTokens": 0,
+     "durationSeconds": 4.8,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "verify-case-evidence",
+     "stage": "evidence-packets",
+     "count": 32,
+     "costUsd": 0.056149000000000004,
+     "promptTokens": 77303,
+     "outputTokens": 30692,
+     "cacheHitTokens": 0,
+     "durationSeconds": 354.2,
+     "unpricedCalls": 0
+    }
+   ],
+   "trace": {
+    "tracePath": "storage/books/cmtnwyp3d0000fwg07qgd68uo/runs/cmtnz1i2500008xg01dal6amd-generate-book.jsonl",
+    "events": {
+     "job.start": 1,
+     "text.generateJson.request": 101,
+     "text.generateJson.response": 96,
+     "research.search.request": 38,
+     "research.search.response": 38,
+     "text.generateJson.error": 5,
+     "generation.composed_chapters.development_prepared": 1,
+     "text.generateText.request": 5,
+     "text.generateText.response": 5,
+     "job.failed": 1
+    },
+    "unparseableLines": 0,
+    "jobStarts": [
+     "2026-09-05T05:57:56.545Z"
+    ],
+    "firstEvent": "2026-09-05T05:57:56.545Z",
+    "lastEvent": "2026-09-05T06:19:23.173Z",
+    "failed": {
+     "at": "2026-09-05T06:19:23.173Z",
+     "message": "Chapter 1 still has unsupported case claims: \u201cbut not through an unrestricted rule of eldest sons\u201d: The evidence passage says only that the sachemships were hereditary under \u201climited and peculiar laws of descent.\u201d It does not identify eldest sons, or state that succession was specifically contrasted with a rule of eldest sons.; \u201cThe Domesday account describes William\u2019s survey of England in 1085\u201310"
+    },
+    "researchSearchRequestsUnpriced": 38,
+    "evidenceUnresolvedEvents": [],
+    "stageSpans": {
+     "episodes": {
+      "firstRequest": "2026-09-05T05:57:56.611Z",
+      "lastRequest": "2026-09-05T06:07:04.767Z",
+      "spanMinutes": 9.1,
+      "requests": 3
+     },
+     "sources": {
+      "firstRequest": "2026-09-05T05:59:29.975Z",
+      "lastRequest": "2026-09-05T06:07:58.773Z",
+      "spanMinutes": 8.5,
+      "requests": 19
+     },
+     "evidence-packets": {
+      "firstRequest": "2026-09-05T06:03:20.374Z",
+      "lastRequest": "2026-09-05T06:09:29.431Z",
+      "spanMinutes": 6.2,
+      "requests": 66
+     },
+     "development-plan": {
+      "firstRequest": "2026-09-05T06:09:37.154Z",
+      "lastRequest": "2026-09-05T06:14:14.541Z",
+      "spanMinutes": 4.6,
+      "requests": 8
+     },
+     "forms": {
+      "firstRequest": "2026-09-05T06:15:07.968Z",
+      "lastRequest": "2026-09-05T06:15:42.736Z",
+      "spanMinutes": 0.6,
+      "requests": 2
+     },
+     "compose": {
+      "firstRequest": "2026-09-05T06:16:13.119Z",
+      "lastRequest": "2026-09-05T06:18:14.543Z",
+      "spanMinutes": 2.0,
+      "requests": 4
+     },
+     "line-edit": {
+      "firstRequest": "2026-09-05T06:17:35.782Z",
+      "lastRequest": "2026-09-05T06:17:51.358Z",
+      "spanMinutes": 0.3,
+      "requests": 2
+     },
+     "chapter-evidence-review": {
+      "firstRequest": "2026-09-05T06:17:40.548Z",
+      "lastRequest": "2026-09-05T06:18:13.261Z",
+      "spanMinutes": 0.5,
+      "requests": 2
+     }
+    }
+   },
+   "launchedBy": "ai-book-maker-a1 (this session)",
+   "implementation": "implementation-5.json",
+   "outcome": "chapter 1 prose-evidence findings after one repair; pass threw"
+  },
+  {
+   "jobId": "cmtnz1nxq0000xbg0fzjvbdwv",
+   "projectId": "cmtnyg6ji0000seg0lrlewwb1",
+   "type": "GENERATE_BOOK",
+   "status": "FAILED",
+   "progress": 25,
+   "createdAt": "2026-09-05 05:58:04.142",
+   "startedAt": "2026-09-05 05:58:04.162",
+   "finishedAt": "2026-09-05 06:21:32.716",
+   "label": "development-fixes-2a-retry",
+   "elapsedMinutes": 23.5,
+   "providerCalls": 106,
+   "providerCostUsd": 0.3021,
+   "promptTokens": 633468,
+   "outputTokens": 120754,
+   "unpricedProviderCalls": 0,
+   "byStage": {
+    "chapter-evidence-review": {
+     "calls": 1,
+     "costUsd": 0.0023,
+     "promptTokens": 5320,
+     "outputTokens": 771,
+     "durationSeconds": 11.4,
+     "unpricedCalls": 0
+    },
+    "compose": {
+     "calls": 4,
+     "costUsd": 0.0252,
+     "promptTokens": 38672,
+     "outputTokens": 12911,
+     "durationSeconds": 128.4,
+     "unpricedCalls": 0
+    },
+    "development-plan": {
+     "calls": 8,
+     "costUsd": 0.076,
+     "promptTokens": 166625,
+     "outputTokens": 28593,
+     "durationSeconds": 235.2,
+     "unpricedCalls": 0
+    },
+    "episodes": {
+     "calls": 4,
+     "costUsd": 0.0106,
+     "promptTokens": 5686,
+     "outputTokens": 8341,
+     "durationSeconds": 101.3,
+     "unpricedCalls": 0
+    },
+    "evidence-packets": {
+     "calls": 61,
+     "costUsd": 0.0875,
+     "promptTokens": 116043,
+     "outputTokens": 48989,
+     "durationSeconds": 504.0,
+     "unpricedCalls": 0
+    },
+    "forms": {
+     "calls": 2,
+     "costUsd": 0.0153,
+     "promptTokens": 18209,
+     "outputTokens": 8936,
+     "durationSeconds": 71.7,
+     "unpricedCalls": 0
+    },
+    "line-edit": {
+     "calls": 1,
+     "costUsd": 0.0007,
+     "promptTokens": 793,
+     "outputTokens": 426,
+     "durationSeconds": 4.2,
+     "unpricedCalls": 0
+    },
+    "sources": {
+     "calls": 25,
+     "costUsd": 0.0847,
+     "promptTokens": 282120,
+     "outputTokens": 11787,
+     "durationSeconds": 119.1,
+     "unpricedCalls": 0
+    }
+   },
+   "byPurpose": [
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "build-case-evidence",
+     "stage": "evidence-packets",
+     "count": 32,
+     "costUsd": 0.035171999999999995,
+     "promptTokens": 42889,
+     "outputTokens": 20638,
+     "cacheHitTokens": 0,
+     "durationSeconds": 187.2,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "compose-chapter",
+     "stage": "compose",
+     "count": 4,
+     "costUsd": 0.025161,
+     "promptTokens": 38672,
+     "outputTokens": 12911,
+     "cacheHitTokens": 0,
+     "durationSeconds": 128.4,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "develop-book-plan",
+     "stage": "development-plan",
+     "count": 5,
+     "costUsd": 0.055714999999999994,
+     "promptTokens": 99582,
+     "outputTokens": 25684,
+     "cacheHitTokens": 0,
+     "durationSeconds": 204.0,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "extract-excerpts",
+     "stage": "sources",
+     "count": 25,
+     "costUsd": 0.08467300000000003,
+     "promptTokens": 282120,
+     "outputTokens": 11787,
+     "cacheHitTokens": 0,
+     "durationSeconds": 119.1,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "plan-chapter-forms",
+     "stage": "forms",
+     "count": 2,
+     "costUsd": 0.015275,
+     "promptTokens": 18209,
+     "outputTokens": 8936,
+     "cacheHitTokens": 0,
+     "durationSeconds": 71.7,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "plan-episodes",
+     "stage": "episodes",
+     "count": 4,
+     "costUsd": 0.010645,
+     "promptTokens": 5686,
+     "outputTokens": 8341,
+     "cacheHitTokens": 2784,
+     "durationSeconds": 101.3,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "review-book-development",
+     "stage": "development-plan",
+     "count": 3,
+     "costUsd": 0.020250999999999998,
+     "promptTokens": 67043,
+     "outputTokens": 2909,
+     "cacheHitTokens": 0,
+     "durationSeconds": 31.2,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "review-chapter-evidence",
+     "stage": "chapter-evidence-review",
+     "count": 1,
+     "costUsd": 0.002255,
+     "promptTokens": 5320,
+     "outputTokens": 771,
+     "cacheHitTokens": 0,
+     "durationSeconds": 11.4,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "rewrite-couplets",
+     "stage": "line-edit",
+     "count": 1,
+     "costUsd": 0.00067,
+     "promptTokens": 793,
+     "outputTokens": 426,
+     "cacheHitTokens": 0,
+     "durationSeconds": 4.2,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "verify-case-evidence",
+     "stage": "evidence-packets",
+     "count": 29,
+     "costUsd": 0.052305000000000004,
+     "promptTokens": 73154,
+     "outputTokens": 28351,
+     "cacheHitTokens": 0,
+     "durationSeconds": 316.8,
+     "unpricedCalls": 0
+    }
+   ],
+   "trace": {
+    "tracePath": "storage/books/cmtnyg6ji0000seg0lrlewwb1/runs/cmtnz1nxq0000xbg0fzjvbdwv-generate-book.jsonl",
+    "events": {
+     "job.start": 1,
+     "text.generateJson.request": 102,
+     "text.generateJson.response": 100,
+     "research.search.request": 69,
+     "research.search.response": 69,
+     "text.generateJson.error": 2,
+     "generation.composed_chapters.development_prepared": 1,
+     "text.generateText.request": 4,
+     "text.generateText.response": 4,
+     "job.failed": 1
+    },
+    "unparseableLines": 0,
+    "jobStarts": [
+     "2026-09-05T05:58:04.157Z"
+    ],
+    "firstEvent": "2026-09-05T05:58:04.157Z",
+    "lastEvent": "2026-09-05T06:21:32.716Z",
+    "failed": {
+     "at": "2026-09-05T06:21:32.716Z",
+     "message": "Case evidence review returned an unresolvable finding; prose was not verified."
+    },
+    "researchSearchRequestsUnpriced": 69,
+    "evidenceUnresolvedEvents": [],
+    "stageSpans": {
+     "episodes": {
+      "firstRequest": "2026-09-05T05:58:04.197Z",
+      "lastRequest": "2026-09-05T06:08:30.067Z",
+      "spanMinutes": 10.4,
+      "requests": 4
+     },
+     "sources": {
+      "firstRequest": "2026-09-05T05:59:52.664Z",
+      "lastRequest": "2026-09-05T06:13:48.449Z",
+      "spanMinutes": 13.9,
+      "requests": 25
+     },
+     "evidence-packets": {
+      "firstRequest": "2026-09-05T06:04:30.967Z",
+      "lastRequest": "2026-09-05T06:14:08.859Z",
+      "spanMinutes": 9.6,
+      "requests": 61
+     },
+     "development-plan": {
+      "firstRequest": "2026-09-05T06:14:17.121Z",
+      "lastRequest": "2026-09-05T06:18:01.820Z",
+      "spanMinutes": 3.7,
+      "requests": 8
+     },
+     "forms": {
+      "firstRequest": "2026-09-05T06:18:12.437Z",
+      "lastRequest": "2026-09-05T06:18:52.245Z",
+      "spanMinutes": 0.7,
+      "requests": 2
+     },
+     "compose": {
+      "firstRequest": "2026-09-05T06:19:24.208Z",
+      "lastRequest": "2026-09-05T06:21:06.117Z",
+      "spanMinutes": 1.7,
+      "requests": 4
+     },
+     "line-edit": {
+      "firstRequest": "2026-09-05T06:20:37.004Z",
+      "lastRequest": "2026-09-05T06:20:37.004Z",
+      "spanMinutes": 0.0,
+      "requests": 1
+     },
+     "chapter-evidence-review": {
+      "firstRequest": "2026-09-05T06:20:41.228Z",
+      "lastRequest": "2026-09-05T06:20:41.228Z",
+      "spanMinutes": 0.0,
+      "requests": 1
+     }
+    }
+   },
+   "launchedBy": "ai-book-maker-a1 (this session)",
+   "implementation": "implementation-5.json",
+   "outcome": "reviewChapterCaseEvidence threw on an unlocatable quote"
+  },
+  {
+   "jobId": "cmtnznlx0006hz8p26vd7jfvy",
+   "projectId": "cmtnwyp3d0000fwg07qgd68uo",
+   "type": "GENERATE_IMAGE",
+   "status": "COMPLETED",
+   "progress": 100,
+   "createdAt": "2026-09-05 06:15:07.956",
+   "startedAt": "2026-09-05 06:15:07.969",
+   "finishedAt": "2026-09-05 06:15:11.844",
+   "label": null,
+   "elapsedMinutes": 0.1,
+   "providerCalls": 1,
+   "providerCostUsd": 0.0006,
+   "promptTokens": 2275,
+   "outputTokens": 39,
+   "unpricedProviderCalls": 0,
+   "byStage": {
+    "finalize-compile-other": {
+     "calls": 1,
+     "costUsd": 0.0006,
+     "promptTokens": 2275,
+     "outputTokens": 39,
+     "durationSeconds": 1.4,
+     "unpricedCalls": 0
+    }
+   },
+   "byPurpose": [
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "select-cover-design",
+     "stage": "finalize-compile-other",
+     "count": 1,
+     "costUsd": 0.000615,
+     "promptTokens": 2275,
+     "outputTokens": 39,
+     "cacheHitTokens": 0,
+     "durationSeconds": 1.4,
+     "unpricedCalls": 0
+    }
+   ]
+  },
+  {
+   "jobId": "cmtnzo7xh0002qwg05ogzn883",
+   "projectId": "cmtnzo7wf0000qwg0kwq6s3rk",
+   "type": "GENERATE_BOOK",
+   "status": "FAILED",
+   "progress": 15,
+   "createdAt": "2026-09-05 06:15:36.485",
+   "startedAt": "2026-09-05 06:15:36.498",
+   "finishedAt": "2026-09-05 06:23:40.322",
+   "label": "development-fixes-3a",
+   "elapsedMinutes": 8.1,
+   "providerCalls": 32,
+   "providerCostUsd": 0.0751,
+   "promptTokens": 194270,
+   "outputTokens": 22768,
+   "unpricedProviderCalls": 0,
+   "byStage": {
+    "episodes": {
+     "calls": 2,
+     "costUsd": 0.0067,
+     "promptTokens": 3708,
+     "outputTokens": 5349,
+     "durationSeconds": 55.9,
+     "unpricedCalls": 0
+    },
+    "evidence-packets": {
+     "calls": 12,
+     "costUsd": 0.018,
+     "promptTokens": 25100,
+     "outputTokens": 9808,
+     "durationSeconds": 97.6,
+     "unpricedCalls": 0
+    },
+    "sources": {
+     "calls": 18,
+     "costUsd": 0.0505,
+     "promptTokens": 165462,
+     "outputTokens": 7611,
+     "durationSeconds": 83.7,
+     "unpricedCalls": 0
+    }
+   },
+   "byPurpose": [
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "build-case-evidence",
+     "stage": "evidence-packets",
+     "count": 6,
+     "costUsd": 0.006692,
+     "promptTokens": 8358,
+     "outputTokens": 3876,
+     "cacheHitTokens": 0,
+     "durationSeconds": 34.8,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "extract-excerpts",
+     "stage": "sources",
+     "count": 18,
+     "costUsd": 0.050494,
+     "promptTokens": 165462,
+     "outputTokens": 7611,
+     "cacheHitTokens": 0,
+     "durationSeconds": 83.7,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "plan-episodes",
+     "stage": "episodes",
+     "count": 2,
+     "costUsd": 0.006659,
+     "promptTokens": 3708,
+     "outputTokens": 5349,
+     "cacheHitTokens": 2784,
+     "durationSeconds": 55.9,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "verify-case-evidence",
+     "stage": "evidence-packets",
+     "count": 6,
+     "costUsd": 0.011303,
+     "promptTokens": 16742,
+     "outputTokens": 5932,
+     "cacheHitTokens": 0,
+     "durationSeconds": 62.8,
+     "unpricedCalls": 0
+    }
+   ],
+   "trace": {
+    "tracePath": "storage/books/cmtnzo7wf0000qwg0kwq6s3rk/runs/cmtnzo7xh0002qwg05ogzn883-generate-book.jsonl",
+    "events": {
+     "job.start": 1,
+     "research.search.request": 64,
+     "research.search.response": 64,
+     "text.generateJson.request": 32,
+     "text.generateJson.response": 31,
+     "text.generateJson.error": 1,
+     "research.search.error": 2,
+     "job.stopped": 1
+    },
+    "unparseableLines": 0,
+    "jobStarts": [
+     "2026-09-05T06:15:36.494Z"
+    ],
+    "firstEvent": "2026-09-05T06:15:36.494Z",
+    "lastEvent": "2026-09-05T06:23:40.455Z",
+    "failed": null,
+    "researchSearchRequestsUnpriced": 64,
+    "evidenceUnresolvedEvents": [],
+    "stageSpans": {
+     "episodes": {
+      "firstRequest": "2026-09-05T06:16:02.755Z",
+      "lastRequest": "2026-09-05T06:23:12.576Z",
+      "spanMinutes": 7.2,
+      "requests": 2
+     },
+     "sources": {
+      "firstRequest": "2026-09-05T06:17:34.792Z",
+      "lastRequest": "2026-09-05T06:23:11.559Z",
+      "spanMinutes": 5.6,
+      "requests": 18
+     },
+     "evidence-packets": {
+      "firstRequest": "2026-09-05T06:21:06.559Z",
+      "lastRequest": "2026-09-05T06:23:05.084Z",
+      "spanMinutes": 2.0,
+      "requests": 12
+     }
+    }
+   },
+   "launchedBy": "another session (ai-book-maker-57; driver log in the fixes directory)",
+   "implementation": "implementation-5.json (launched 06:15:36 UTC)",
+   "outcome": "stopped at progress 15 (no job.failed event; driver log shows FAILED@15 Stopped)"
+  },
+  {
+   "jobId": "cmtnzrk9900ehz8p2bym1bg38",
+   "projectId": "cmtnyg6ji0000seg0lrlewwb1",
+   "type": "GENERATE_IMAGE",
+   "status": "COMPLETED",
+   "progress": 100,
+   "createdAt": "2026-09-05 06:18:12.429",
+   "startedAt": "2026-09-05 06:18:12.437",
+   "finishedAt": "2026-09-05 06:18:14.994",
+   "label": null,
+   "elapsedMinutes": 0.0,
+   "providerCalls": 1,
+   "providerCostUsd": 0.0001,
+   "promptTokens": 2275,
+   "outputTokens": 40,
+   "unpricedProviderCalls": 0,
+   "byStage": {
+    "finalize-compile-other": {
+     "calls": 1,
+     "costUsd": 0.0001,
+     "promptTokens": 2275,
+     "outputTokens": 40,
+     "durationSeconds": 1.4,
+     "unpricedCalls": 0
+    }
+   },
+   "byPurpose": [
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "select-cover-design",
+     "stage": "finalize-compile-other",
+     "count": 1,
+     "costUsd": 0.000127,
+     "promptTokens": 2275,
+     "outputTokens": 40,
+     "cacheHitTokens": 2127,
+     "durationSeconds": 1.4,
+     "unpricedCalls": 0
+    }
+   ]
+  },
+  {
+   "jobId": "cmto0e92v0000jmg0pul2e7ak",
+   "projectId": "cmtnwyp3d0000fwg07qgd68uo",
+   "type": "GENERATE_BOOK",
+   "status": "COMPLETED",
+   "progress": 100,
+   "createdAt": "2026-09-05 06:35:51.031",
+   "startedAt": "2026-09-05 06:35:51.063",
+   "finishedAt": "2026-09-05 07:27:36.489",
+   "label": "development-fixes-1d",
+   "elapsedMinutes": 51.8,
+   "providerCalls": 210,
+   "providerCostUsd": 1.5982,
+   "promptTokens": 4070023,
+   "outputTokens": 485446,
+   "unpricedProviderCalls": 0,
+   "byStage": {
+    "chapter-evidence-review": {
+     "calls": 82,
+     "costUsd": 0.4662,
+     "promptTokens": 1501303,
+     "outputTokens": 75742,
+     "durationSeconds": 673.8,
+     "unpricedCalls": 0
+    },
+    "compose": {
+     "calls": 22,
+     "costUsd": 0.1958,
+     "promptTokens": 310773,
+     "outputTokens": 98449,
+     "durationSeconds": 1106.7,
+     "unpricedCalls": 0
+    },
+    "describe-pages": {
+     "calls": 30,
+     "costUsd": 0.0829,
+     "promptTokens": 163295,
+     "outputTokens": 35101,
+     "durationSeconds": 310.1,
+     "unpricedCalls": 0
+    },
+    "developmental-edit": {
+     "calls": 1,
+     "costUsd": 0.0256,
+     "promptTokens": 94777,
+     "outputTokens": 1585,
+     "durationSeconds": 11.7,
+     "unpricedCalls": 0
+    },
+    "forms": {
+     "calls": 2,
+     "costUsd": 0.0162,
+     "promptTokens": 18022,
+     "outputTokens": 10741,
+     "durationSeconds": 89.2,
+     "unpricedCalls": 0
+    },
+    "line-edit": {
+     "calls": 73,
+     "costUsd": 0.8115,
+     "promptTokens": 1981853,
+     "outputTokens": 263828,
+     "durationSeconds": 1707.1,
+     "unpricedCalls": 0
+    }
+   },
+   "byPurpose": [
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "compose-chapter",
+     "stage": "compose",
+     "count": 22,
+     "costUsd": 0.19582999999999998,
+     "promptTokens": 310773,
+     "outputTokens": 98449,
+     "cacheHitTokens": 0,
+     "durationSeconds": 1106.7,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "describe-pages",
+     "stage": "describe-pages",
+     "count": 30,
+     "costUsd": 0.08294399999999999,
+     "promptTokens": 163295,
+     "outputTokens": 35101,
+     "cacheHitTokens": 0,
+     "durationSeconds": 310.1,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "edit-chapter",
+     "stage": "line-edit",
+     "count": 58,
+     "costUsd": 0.7976310000000001,
+     "promptTokens": 1970568,
+     "outputTokens": 254164,
+     "cacheHitTokens": 0,
+     "durationSeconds": 1592.1,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "plan-chapter-forms",
+     "stage": "forms",
+     "count": 2,
+     "costUsd": 0.016168000000000002,
+     "promptTokens": 18022,
+     "outputTokens": 10741,
+     "cacheHitTokens": 5331,
+     "durationSeconds": 89.2,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "plan-developmental-edit",
+     "stage": "developmental-edit",
+     "count": 1,
+     "costUsd": 0.025596,
+     "promptTokens": 94777,
+     "outputTokens": 1585,
+     "cacheHitTokens": 0,
+     "durationSeconds": 11.7,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "review-chapter-evidence",
+     "stage": "chapter-evidence-review",
+     "count": 82,
+     "costUsd": 0.46620400000000006,
+     "promptTokens": 1501303,
+     "outputTokens": 75742,
+     "cacheHitTokens": 0,
+     "durationSeconds": 673.8,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "rewrite-couplets",
+     "stage": "line-edit",
+     "count": 15,
+     "costUsd": 0.013852,
+     "promptTokens": 11285,
+     "outputTokens": 9664,
+     "cacheHitTokens": 0,
+     "durationSeconds": 115.0,
+     "unpricedCalls": 0
+    }
+   ],
+   "trace": {
+    "tracePath": "storage/books/cmtnwyp3d0000fwg07qgd68uo/runs/cmto0e92v0000jmg0pul2e7ak-generate-book.jsonl",
+    "events": {
+     "job.start": 1,
+     "generation.composed_chapters.development_prepared": 1,
+     "text.generateJson.request": 130,
+     "text.generateJson.response": 130,
+     "text.generateText.request": 80,
+     "text.generateText.response": 80,
+     "generation.composed_chapters.evidence_unresolved": 9,
+     "job.completed": 1
+    },
+    "unparseableLines": 0,
+    "jobStarts": [
+     "2026-09-05T06:35:51.050Z"
+    ],
+    "firstEvent": "2026-09-05T06:35:51.050Z",
+    "lastEvent": "2026-09-05T07:27:36.493Z",
+    "failed": null,
+    "researchSearchRequestsUnpriced": 0,
+    "evidenceUnresolvedEvents": [
+     {
+      "chapterIndex": 1,
+      "findings": 1,
+      "repairs": 2,
+      "unresolved": 1,
+      "dropped": 0,
+      "stage": "compose"
+     },
+     {
+      "chapterIndex": 4,
+      "findings": 2,
+      "repairs": 2,
+      "unresolved": 1,
+      "dropped": 0,
+      "stage": "compose"
+     },
+     {
+      "chapterIndex": 7,
+      "findings": 5,
+      "repairs": 2,
+      "unresolved": 2,
+      "dropped": 1,
+      "stage": "compose"
+     },
+     {
+      "chapterIndex": 8,
+      "findings": 7,
+      "repairs": 2,
+      "unresolved": 3,
+      "dropped": 0,
+      "stage": "compose"
+     },
+     {
+      "chapterIndex": 11,
+      "findings": 8,
+      "repairs": 2,
+      "unresolved": 1,
+      "dropped": 0,
+      "stage": "compose"
+     },
+     {
+      "chapterIndex": 12,
+      "findings": 11,
+      "repairs": 2,
+      "unresolved": 2,
+      "dropped": 1,
+      "stage": "compose"
+     },
+     {
+      "chapterIndex": 13,
+      "findings": 1,
+      "repairs": 2,
+      "unresolved": 1,
+      "dropped": 1,
+      "stage": "compose"
+     },
+     {
+      "chapterIndex": 14,
+      "findings": 2,
+      "repairs": 2,
+      "unresolved": 2,
+      "dropped": 0,
+      "stage": "compose"
+     },
+     {
+      "chapterIndex": 15,
+      "findings": 10,
+      "repairs": 2,
+      "unresolved": 3,
+      "dropped": 0,
+      "stage": "compose"
+     }
+    ],
+    "stageSpans": {
+     "forms": {
+      "firstRequest": "2026-09-05T06:35:51.160Z",
+      "lastRequest": "2026-09-05T06:36:43.514Z",
+      "spanMinutes": 0.9,
+      "requests": 2
+     },
+     "compose": {
+      "firstRequest": "2026-09-05T06:37:20.446Z",
+      "lastRequest": "2026-09-05T07:02:19.064Z",
+      "spanMinutes": 25.0,
+      "requests": 22
+     },
+     "line-edit": {
+      "firstRequest": "2026-09-05T06:39:17.320Z",
+      "lastRequest": "2026-09-05T07:26:46.108Z",
+      "spanMinutes": 47.5,
+      "requests": 73
+     },
+     "chapter-evidence-review": {
+      "firstRequest": "2026-09-05T06:39:26.981Z",
+      "lastRequest": "2026-09-05T07:27:13.953Z",
+      "spanMinutes": 47.8,
+      "requests": 82
+     },
+     "describe-pages": {
+      "firstRequest": "2026-09-05T06:40:39.399Z",
+      "lastRequest": "2026-09-05T07:27:25.388Z",
+      "spanMinutes": 46.8,
+      "requests": 30
+     },
+     "developmental-edit": {
+      "firstRequest": "2026-09-05T07:06:06.237Z",
+      "lastRequest": "2026-09-05T07:06:06.237Z",
+      "spanMinutes": 0.0,
+      "requests": 1
+     }
+    }
+   },
+   "launchedBy": "ai-book-maker-a1 (this session)",
+   "implementation": "implementation-6.json",
+   "outcome": "COMPLETED; published REVIEW_REQUIRED (compile report state blocked: UNSUPPORTED_CASE_CLAIMS on 11 pages, CORROBORATED_STRUCTURAL_DUPLICATION pages 41/49, SYMMETRICAL_HEDGING 50 pages, CROSS_CHAPTER_CONCEPT_REPETITION 4 pages)"
+  },
+  {
+   "jobId": "cmto0eefi00009tg0holrwr5y",
+   "projectId": "cmtnyg6ji0000seg0lrlewwb1",
+   "type": "GENERATE_BOOK",
+   "status": "FAILED",
+   "progress": 71,
+   "createdAt": "2026-09-05 06:35:57.966",
+   "startedAt": "2026-09-05 06:35:57.994",
+   "finishedAt": "2026-09-05 07:21:42.4",
+   "label": "development-fixes-2a-retry-2",
+   "elapsedMinutes": 45.7,
+   "providerCalls": 193,
+   "providerCostUsd": 1.3984,
+   "promptTokens": 3572907,
+   "outputTokens": 424976,
+   "unpricedProviderCalls": 0,
+   "byStage": {
+    "chapter-evidence-review": {
+     "calls": 68,
+     "costUsd": 0.369,
+     "promptTokens": 1215538,
+     "outputTokens": 54263,
+     "durationSeconds": 516.9,
+     "unpricedCalls": 0
+    },
+    "compose": {
+     "calls": 25,
+     "costUsd": 0.2003,
+     "promptTokens": 313915,
+     "outputTokens": 101505,
+     "durationSeconds": 1189.4,
+     "unpricedCalls": 0
+    },
+    "describe-pages": {
+     "calls": 30,
+     "costUsd": 0.0789,
+     "promptTokens": 157402,
+     "outputTokens": 35289,
+     "durationSeconds": 300.2,
+     "unpricedCalls": 0
+    },
+    "developmental-edit": {
+     "calls": 4,
+     "costUsd": 0.0599,
+     "promptTokens": 215983,
+     "outputTokens": 4955,
+     "durationSeconds": 68.1,
+     "unpricedCalls": 0
+    },
+    "forms": {
+     "calls": 2,
+     "costUsd": 0.0152,
+     "promptTokens": 19108,
+     "outputTokens": 9819,
+     "durationSeconds": 78.1,
+     "unpricedCalls": 0
+    },
+    "line-edit": {
+     "calls": 64,
+     "costUsd": 0.6751,
+     "promptTokens": 1650961,
+     "outputTokens": 219145,
+     "durationSeconds": 1496.4,
+     "unpricedCalls": 0
+    }
+   },
+   "byPurpose": [
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "compose-chapter",
+     "stage": "compose",
+     "count": 25,
+     "costUsd": 0.20028399999999996,
+     "promptTokens": 313915,
+     "outputTokens": 101505,
+     "cacheHitTokens": 0,
+     "durationSeconds": 1189.4,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "describe-pages",
+     "stage": "describe-pages",
+     "count": 30,
+     "costUsd": 0.07891600000000001,
+     "promptTokens": 157402,
+     "outputTokens": 35289,
+     "cacheHitTokens": 12078,
+     "durationSeconds": 300.2,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "edit-chapter",
+     "stage": "line-edit",
+     "count": 49,
+     "costUsd": 0.6628650000000003,
+     "promptTokens": 1639670,
+     "outputTokens": 210795,
+     "cacheHitTokens": 0,
+     "durationSeconds": 1408.7,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "plan-chapter-forms",
+     "stage": "forms",
+     "count": 2,
+     "costUsd": 0.015167,
+     "promptTokens": 19108,
+     "outputTokens": 9819,
+     "cacheHitTokens": 6056,
+     "durationSeconds": 78.1,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "plan-developmental-edit",
+     "stage": "developmental-edit",
+     "count": 1,
+     "costUsd": 0.025476,
+     "promptTokens": 92727,
+     "outputTokens": 1912,
+     "cacheHitTokens": 0,
+     "durationSeconds": 22.8,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "review-chapter-evidence",
+     "stage": "chapter-evidence-review",
+     "count": 68,
+     "costUsd": 0.3689909999999999,
+     "promptTokens": 1215538,
+     "outputTokens": 54263,
+     "cacheHitTokens": 0,
+     "durationSeconds": 516.9,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "rewrite-couplets",
+     "stage": "line-edit",
+     "count": 15,
+     "costUsd": 0.012279000000000002,
+     "promptTokens": 11291,
+     "outputTokens": 8350,
+     "cacheHitTokens": 0,
+     "durationSeconds": 87.7,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "rewrite-developmental-sections",
+     "stage": "developmental-edit",
+     "count": 3,
+     "costUsd": 0.034465,
+     "promptTokens": 123256,
+     "outputTokens": 3043,
+     "cacheHitTokens": 0,
+     "durationSeconds": 45.3,
+     "unpricedCalls": 0
+    }
+   ],
+   "trace": {
+    "tracePath": "storage/books/cmtnyg6ji0000seg0lrlewwb1/runs/cmto0eefi00009tg0holrwr5y-generate-book.jsonl",
+    "events": {
+     "job.start": 1,
+     "generation.composed_chapters.development_prepared": 1,
+     "text.generateJson.request": 119,
+     "text.generateJson.response": 119,
+     "text.generateText.request": 74,
+     "text.generateText.response": 74,
+     "generation.composed_chapters.evidence_unresolved": 6,
+     "job.failed": 1
+    },
+    "unparseableLines": 0,
+    "jobStarts": [
+     "2026-09-05T06:35:57.990Z"
+    ],
+    "firstEvent": "2026-09-05T06:35:57.990Z",
+    "lastEvent": "2026-09-05T07:21:42.400Z",
+    "failed": {
+     "at": "2026-09-05T07:21:42.400Z",
+     "message": "The edited manuscript has 50194 words; the requested book needs 51600\u201376800. It remains staged for a substantive length repair."
+    },
+    "researchSearchRequestsUnpriced": 0,
+    "evidenceUnresolvedEvents": [
+     {
+      "chapterIndex": 3,
+      "findings": 2,
+      "repairs": 2,
+      "unresolved": 2,
+      "dropped": 0,
+      "stage": "compose"
+     },
+     {
+      "chapterIndex": 5,
+      "findings": 3,
+      "repairs": 2,
+      "unresolved": 2,
+      "dropped": 0,
+      "stage": "compose"
+     },
+     {
+      "chapterIndex": 7,
+      "findings": 1,
+      "repairs": 2,
+      "unresolved": 1,
+      "dropped": 1,
+      "stage": "compose"
+     },
+     {
+      "chapterIndex": 9,
+      "findings": 3,
+      "repairs": 2,
+      "unresolved": 1,
+      "dropped": 0,
+      "stage": "compose"
+     },
+     {
+      "chapterIndex": 13,
+      "findings": 9,
+      "repairs": 2,
+      "unresolved": 2,
+      "dropped": 0,
+      "stage": "compose"
+     },
+     {
+      "chapterIndex": 15,
+      "findings": 5,
+      "repairs": 2,
+      "unresolved": 1,
+      "dropped": 0,
+      "stage": "compose"
+     }
+    ],
+    "stageSpans": {
+     "forms": {
+      "firstRequest": "2026-09-05T06:35:58.038Z",
+      "lastRequest": "2026-09-05T06:36:42.255Z",
+      "spanMinutes": 0.7,
+      "requests": 2
+     },
+     "compose": {
+      "firstRequest": "2026-09-05T06:37:16.377Z",
+      "lastRequest": "2026-09-05T07:00:01.727Z",
+      "spanMinutes": 22.8,
+      "requests": 25
+     },
+     "line-edit": {
+      "firstRequest": "2026-09-05T06:38:37.920Z",
+      "lastRequest": "2026-09-05T07:20:57.821Z",
+      "spanMinutes": 42.3,
+      "requests": 64
+     },
+     "chapter-evidence-review": {
+      "firstRequest": "2026-09-05T06:38:42.289Z",
+      "lastRequest": "2026-09-05T07:21:24.784Z",
+      "spanMinutes": 42.7,
+      "requests": 68
+     },
+     "describe-pages": {
+      "firstRequest": "2026-09-05T06:39:15.901Z",
+      "lastRequest": "2026-09-05T07:21:29.843Z",
+      "spanMinutes": 42.2,
+      "requests": 30
+     },
+     "developmental-edit": {
+      "firstRequest": "2026-09-05T07:03:43.484Z",
+      "lastRequest": "2026-09-05T07:04:34.584Z",
+      "spanMinutes": 0.9,
+      "requests": 4
+     }
+    }
+   },
+   "launchedBy": "ai-book-maker-a1 (this session)",
+   "implementation": "implementation-6.json",
+   "outcome": "developmental-edit word floor: 50,194 words vs 51,600 minimum, thrown with 120 pages staged"
+  },
+  {
+   "jobId": "cmto0menm0000hjg029nvbrau",
+   "projectId": "cmtnzo7wf0000qwg0kwq6s3rk",
+   "type": "GENERATE_BOOK",
+   "status": "FAILED",
+   "progress": 16,
+   "createdAt": "2026-09-05 06:42:11.506",
+   "startedAt": "2026-09-05 06:42:11.518",
+   "finishedAt": "2026-09-05 06:55:48.374",
+   "label": "development-fixes-3a-retry",
+   "elapsedMinutes": 13.6,
+   "providerCalls": 78,
+   "providerCostUsd": 0.19,
+   "promptTokens": 352535,
+   "outputTokens": 85684,
+   "unpricedProviderCalls": 0,
+   "byStage": {
+    "development-plan": {
+     "calls": 4,
+     "costUsd": 0.0518,
+     "promptTokens": 76607,
+     "outputTokens": 27217,
+     "durationSeconds": 221.7,
+     "unpricedCalls": 0
+    },
+    "episodes": {
+     "calls": 1,
+     "costUsd": 0.0056,
+     "promptTokens": 2787,
+     "outputTokens": 4635,
+     "durationSeconds": 45.3,
+     "unpricedCalls": 0
+    },
+    "evidence-packets": {
+     "calls": 55,
+     "costUsd": 0.0779,
+     "promptTokens": 100698,
+     "outputTokens": 44182,
+     "durationSeconds": 512.2,
+     "unpricedCalls": 0
+    },
+    "sources": {
+     "calls": 18,
+     "costUsd": 0.0547,
+     "promptTokens": 172443,
+     "outputTokens": 9650,
+     "durationSeconds": 98.1,
+     "unpricedCalls": 0
+    }
+   },
+   "byPurpose": [
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "build-case-evidence",
+     "stage": "evidence-packets",
+     "count": 28,
+     "costUsd": 0.030319000000000002,
+     "promptTokens": 35687,
+     "outputTokens": 18079,
+     "cacheHitTokens": 0,
+     "durationSeconds": 176.8,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "develop-book-plan",
+     "stage": "development-plan",
+     "count": 3,
+     "costUsd": 0.045381000000000005,
+     "promptTokens": 55669,
+     "outputTokens": 26220,
+     "cacheHitTokens": 0,
+     "durationSeconds": 210.3,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "extract-excerpts",
+     "stage": "sources",
+     "count": 18,
+     "costUsd": 0.054687,
+     "promptTokens": 172443,
+     "outputTokens": 9650,
+     "cacheHitTokens": 0,
+     "durationSeconds": 98.1,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "plan-episodes",
+     "stage": "episodes",
+     "count": 1,
+     "costUsd": 0.005618,
+     "promptTokens": 2787,
+     "outputTokens": 4635,
+     "cacheHitTokens": 2784,
+     "durationSeconds": 45.3,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "review-book-development",
+     "stage": "development-plan",
+     "count": 1,
+     "costUsd": 0.006431,
+     "promptTokens": 20938,
+     "outputTokens": 997,
+     "cacheHitTokens": 0,
+     "durationSeconds": 11.4,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "verify-case-evidence",
+     "stage": "evidence-packets",
+     "count": 27,
+     "costUsd": 0.04757,
+     "promptTokens": 65011,
+     "outputTokens": 26103,
+     "cacheHitTokens": 0,
+     "durationSeconds": 335.4,
+     "unpricedCalls": 0
+    }
+   ],
+   "trace": {
+    "tracePath": "storage/books/cmtnzo7wf0000qwg0kwq6s3rk/runs/cmto0menm0000hjg029nvbrau-generate-book.jsonl",
+    "events": {
+     "job.start": 1,
+     "text.generateJson.request": 78,
+     "text.generateJson.response": 75,
+     "research.search.request": 36,
+     "research.search.response": 36,
+     "text.generateJson.error": 3,
+     "job.failed": 1
+    },
+    "unparseableLines": 0,
+    "jobStarts": [
+     "2026-09-05T06:42:11.514Z"
+    ],
+    "firstEvent": "2026-09-05T06:42:11.514Z",
+    "lastEvent": "2026-09-05T06:55:48.373Z",
+    "failed": {
+     "at": "2026-09-05T06:55:48.373Z",
+     "message": "OpenAI response was incomplete: max_output_tokens."
+    },
+    "researchSearchRequestsUnpriced": 36,
+    "evidenceUnresolvedEvents": [],
+    "stageSpans": {
+     "episodes": {
+      "firstRequest": "2026-09-05T06:42:11.541Z",
+      "lastRequest": "2026-09-05T06:42:11.541Z",
+      "spanMinutes": 0.0,
+      "requests": 1
+     },
+     "sources": {
+      "firstRequest": "2026-09-05T06:43:27.903Z",
+      "lastRequest": "2026-09-05T06:49:44.768Z",
+      "spanMinutes": 6.3,
+      "requests": 18
+     },
+     "evidence-packets": {
+      "firstRequest": "2026-09-05T06:46:37.753Z",
+      "lastRequest": "2026-09-05T06:51:56.657Z",
+      "spanMinutes": 5.3,
+      "requests": 55
+     },
+     "development-plan": {
+      "firstRequest": "2026-09-05T06:52:06.645Z",
+      "lastRequest": "2026-09-05T06:53:51.088Z",
+      "spanMinutes": 1.7,
+      "requests": 4
+     }
+    }
+   },
+   "launchedBy": "another session",
+   "implementation": "implementation-6.json (launched 06:42:11 UTC)",
+   "outcome": "OpenAI response incomplete: max_output_tokens (develop-book-plan schema repair)"
+  },
+  {
+   "jobId": "cmto1586m0000syg0ez8pf9as",
+   "projectId": "cmtnzo7wf0000qwg0kwq6s3rk",
+   "type": "GENERATE_BOOK",
+   "status": "FAILED",
+   "progress": 71,
+   "createdAt": "2026-09-05 06:56:49.582",
+   "startedAt": "2026-09-05 06:56:49.598",
+   "finishedAt": "2026-09-05 07:58:55.086",
+   "label": "development-fixes-3a-retry-2",
+   "elapsedMinutes": 62.1,
+   "providerCalls": 309,
+   "providerCostUsd": 1.749,
+   "promptTokens": 4334612,
+   "outputTokens": 557595,
+   "unpricedProviderCalls": 0,
+   "byStage": {
+    "chapter-evidence-review": {
+     "calls": 79,
+     "costUsd": 0.4157,
+     "promptTokens": 1321430,
+     "outputTokens": 71109,
+     "durationSeconds": 576.7,
+     "unpricedCalls": 0
+    },
+    "compose": {
+     "calls": 24,
+     "costUsd": 0.1966,
+     "promptTokens": 304599,
+     "outputTokens": 100413,
+     "durationSeconds": 985.5,
+     "unpricedCalls": 0
+    },
+    "describe-pages": {
+     "calls": 30,
+     "costUsd": 0.0756,
+     "promptTokens": 149517,
+     "outputTokens": 33644,
+     "durationSeconds": 321.4,
+     "unpricedCalls": 0
+    },
+    "development-plan": {
+     "calls": 9,
+     "costUsd": 0.0809,
+     "promptTokens": 162643,
+     "outputTokens": 33522,
+     "durationSeconds": 279.7,
+     "unpricedCalls": 0
+    },
+    "developmental-edit": {
+     "calls": 6,
+     "costUsd": 0.0663,
+     "promptTokens": 239689,
+     "outputTokens": 5317,
+     "durationSeconds": 58.8,
+     "unpricedCalls": 0
+    },
+    "episodes": {
+     "calls": 3,
+     "costUsd": 0.0077,
+     "promptTokens": 4817,
+     "outputTokens": 5986,
+     "durationSeconds": 83.4,
+     "unpricedCalls": 0
+    },
+    "evidence-packets": {
+     "calls": 62,
+     "costUsd": 0.088,
+     "promptTokens": 123309,
+     "outputTokens": 47933,
+     "durationSeconds": 522.1,
+     "unpricedCalls": 0
+    },
+    "forms": {
+     "calls": 2,
+     "costUsd": 0.0169,
+     "promptTokens": 17165,
+     "outputTokens": 10484,
+     "durationSeconds": 75.9,
+     "unpricedCalls": 0
+    },
+    "line-edit": {
+     "calls": 72,
+     "costUsd": 0.7339,
+     "promptTokens": 1792568,
+     "outputTokens": 238615,
+     "durationSeconds": 1473.8,
+     "unpricedCalls": 0
+    },
+    "sources": {
+     "calls": 22,
+     "costUsd": 0.0674,
+     "promptTokens": 218875,
+     "outputTokens": 10572,
+     "durationSeconds": 115.7,
+     "unpricedCalls": 0
+    }
+   },
+   "byPurpose": [
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "build-case-evidence",
+     "stage": "evidence-packets",
+     "count": 33,
+     "costUsd": 0.03685699999999999,
+     "promptTokens": 49338,
+     "outputTokens": 20731,
+     "cacheHitTokens": 0,
+     "durationSeconds": 220.7,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "compose-chapter",
+     "stage": "compose",
+     "count": 24,
+     "costUsd": 0.196643,
+     "promptTokens": 304599,
+     "outputTokens": 100413,
+     "cacheHitTokens": 0,
+     "durationSeconds": 985.5,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "describe-pages",
+     "stage": "describe-pages",
+     "count": 30,
+     "costUsd": 0.075602,
+     "promptTokens": 149517,
+     "outputTokens": 33644,
+     "cacheHitTokens": 9332,
+     "durationSeconds": 321.4,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "develop-book-plan",
+     "stage": "development-plan",
+     "count": 6,
+     "costUsd": 0.062857,
+     "promptTokens": 104883,
+     "outputTokens": 30531,
+     "cacheHitTokens": 0,
+     "durationSeconds": 251.4,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "edit-chapter",
+     "stage": "line-edit",
+     "count": 57,
+     "costUsd": 0.7208300000000001,
+     "promptTokens": 1780967,
+     "outputTokens": 229664,
+     "cacheHitTokens": 0,
+     "durationSeconds": 1388.0,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "extract-excerpts",
+     "stage": "sources",
+     "count": 22,
+     "costUsd": 0.067403,
+     "promptTokens": 218875,
+     "outputTokens": 10572,
+     "cacheHitTokens": 0,
+     "durationSeconds": 115.7,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "plan-chapter-forms",
+     "stage": "forms",
+     "count": 2,
+     "costUsd": 0.016871999999999998,
+     "promptTokens": 17165,
+     "outputTokens": 10484,
+     "cacheHitTokens": 0,
+     "durationSeconds": 75.9,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "plan-developmental-edit",
+     "stage": "developmental-edit",
+     "count": 1,
+     "costUsd": 0.023399,
+     "promptTokens": 85133,
+     "outputTokens": 1763,
+     "cacheHitTokens": 0,
+     "durationSeconds": 12.7,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "plan-episodes",
+     "stage": "episodes",
+     "count": 3,
+     "costUsd": 0.007701,
+     "promptTokens": 4817,
+     "outputTokens": 5986,
+     "cacheHitTokens": 2784,
+     "durationSeconds": 83.4,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "review-book-development",
+     "stage": "development-plan",
+     "count": 3,
+     "costUsd": 0.018029999999999997,
+     "promptTokens": 57760,
+     "outputTokens": 2991,
+     "cacheHitTokens": 0,
+     "durationSeconds": 28.3,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "review-chapter-evidence",
+     "stage": "chapter-evidence-review",
+     "count": 79,
+     "costUsd": 0.415675,
+     "promptTokens": 1321430,
+     "outputTokens": 71109,
+     "cacheHitTokens": 0,
+     "durationSeconds": 576.7,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "rewrite-couplets",
+     "stage": "line-edit",
+     "count": 15,
+     "costUsd": 0.013061999999999999,
+     "promptTokens": 11601,
+     "outputTokens": 8951,
+     "cacheHitTokens": 0,
+     "durationSeconds": 85.8,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "rewrite-developmental-sections",
+     "stage": "developmental-edit",
+     "count": 5,
+     "costUsd": 0.042903000000000004,
+     "promptTokens": 154556,
+     "outputTokens": 3554,
+     "cacheHitTokens": 0,
+     "durationSeconds": 46.1,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "verify-case-evidence",
+     "stage": "evidence-packets",
+     "count": 29,
+     "costUsd": 0.05113000000000001,
+     "promptTokens": 73971,
+     "outputTokens": 27202,
+     "cacheHitTokens": 0,
+     "durationSeconds": 301.4,
+     "unpricedCalls": 0
+    }
+   ],
+   "trace": {
+    "tracePath": "storage/books/cmtnzo7wf0000qwg0kwq6s3rk/runs/cmto1586m0000syg0ez8pf9as-generate-book.jsonl",
+    "events": {
+     "job.start": 1,
+     "text.generateJson.request": 228,
+     "text.generateJson.response": 223,
+     "research.search.request": 44,
+     "research.search.response": 44,
+     "text.generateJson.error": 5,
+     "generation.composed_chapters.development_prepared": 1,
+     "text.generateText.request": 81,
+     "text.generateText.response": 81,
+     "generation.composed_chapters.evidence_unresolved": 7,
+     "job.failed": 1
+    },
+    "unparseableLines": 0,
+    "jobStarts": [
+     "2026-09-05T06:56:49.595Z"
+    ],
+    "firstEvent": "2026-09-05T06:56:49.595Z",
+    "lastEvent": "2026-09-05T07:58:55.085Z",
+    "failed": {
+     "at": "2026-09-05T07:58:55.085Z",
+     "message": "The edited manuscript has 46651 words; the requested book needs 51040\u201376240. It remains staged for a substantive length repair."
+    },
+    "researchSearchRequestsUnpriced": 44,
+    "evidenceUnresolvedEvents": [
+     {
+      "chapterIndex": 3,
+      "findings": 5,
+      "repairs": 2,
+      "unresolved": 3,
+      "dropped": 0,
+      "stage": "compose"
+     },
+     {
+      "chapterIndex": 5,
+      "findings": 11,
+      "repairs": 2,
+      "unresolved": 3,
+      "dropped": 1,
+      "stage": "compose"
+     },
+     {
+      "chapterIndex": 7,
+      "findings": 10,
+      "repairs": 2,
+      "unresolved": 1,
+      "dropped": 1,
+      "stage": "compose"
+     },
+     {
+      "chapterIndex": 10,
+      "findings": 6,
+      "repairs": 2,
+      "unresolved": 2,
+      "dropped": 0,
+      "stage": "compose"
+     },
+     {
+      "chapterIndex": 11,
+      "findings": 5,
+      "repairs": 2,
+      "unresolved": 3,
+      "dropped": 1,
+      "stage": "compose"
+     },
+     {
+      "chapterIndex": 13,
+      "findings": 2,
+      "repairs": 2,
+      "unresolved": 1,
+      "dropped": 0,
+      "stage": "compose"
+     },
+     {
+      "chapterIndex": 14,
+      "findings": 8,
+      "repairs": 2,
+      "unresolved": 3,
+      "dropped": 0,
+      "stage": "compose"
+     }
+    ],
+    "stageSpans": {
+     "episodes": {
+      "firstRequest": "2026-09-05T06:56:49.620Z",
+      "lastRequest": "2026-09-05T07:05:20.942Z",
+      "spanMinutes": 8.5,
+      "requests": 3
+     },
+     "sources": {
+      "firstRequest": "2026-09-05T06:58:18.161Z",
+      "lastRequest": "2026-09-05T07:08:56.727Z",
+      "spanMinutes": 10.6,
+      "requests": 22
+     },
+     "evidence-packets": {
+      "firstRequest": "2026-09-05T07:01:29.430Z",
+      "lastRequest": "2026-09-05T07:09:21.432Z",
+      "spanMinutes": 7.9,
+      "requests": 62
+     },
+     "development-plan": {
+      "firstRequest": "2026-09-05T07:09:35.066Z",
+      "lastRequest": "2026-09-05T07:14:06.418Z",
+      "spanMinutes": 4.5,
+      "requests": 9
+     },
+     "forms": {
+      "firstRequest": "2026-09-05T07:14:14.924Z",
+      "lastRequest": "2026-09-05T07:14:57.592Z",
+      "spanMinutes": 0.7,
+      "requests": 2
+     },
+     "compose": {
+      "firstRequest": "2026-09-05T07:15:30.903Z",
+      "lastRequest": "2026-09-05T07:35:46.708Z",
+      "spanMinutes": 20.3,
+      "requests": 24
+     },
+     "line-edit": {
+      "firstRequest": "2026-09-05T07:16:59.287Z",
+      "lastRequest": "2026-09-05T07:58:04.410Z",
+      "spanMinutes": 41.1,
+      "requests": 72
+     },
+     "chapter-evidence-review": {
+      "firstRequest": "2026-09-05T07:17:04.139Z",
+      "lastRequest": "2026-09-05T07:58:37.590Z",
+      "spanMinutes": 41.6,
+      "requests": 79
+     },
+     "describe-pages": {
+      "firstRequest": "2026-09-05T07:18:00.991Z",
+      "lastRequest": "2026-09-05T07:58:43.620Z",
+      "spanMinutes": 40.7,
+      "requests": 30
+     },
+     "developmental-edit": {
+      "firstRequest": "2026-09-05T07:37:43.745Z",
+      "lastRequest": "2026-09-05T07:38:36.408Z",
+      "spanMinutes": 0.9,
+      "requests": 6
+     }
+    }
+   },
+   "launchedBy": "another session",
+   "implementation": "implementation-6.json (launched 06:56:49 UTC)",
+   "outcome": "developmental-edit word floor: 46,651 words vs 51,040 minimum"
+  },
+  {
+   "jobId": "cmto1rmrp00lg2cp2h5mn6724",
+   "projectId": "cmtnzo7wf0000qwg0kwq6s3rk",
+   "type": "GENERATE_IMAGE",
+   "status": "COMPLETED",
+   "progress": 100,
+   "createdAt": "2026-09-05 07:14:14.917",
+   "startedAt": "2026-09-05 07:14:14.93",
+   "finishedAt": "2026-09-05 07:14:18.241",
+   "label": null,
+   "elapsedMinutes": 0.1,
+   "providerCalls": 1,
+   "providerCostUsd": 0.0006,
+   "promptTokens": 2275,
+   "outputTokens": 42,
+   "unpricedProviderCalls": 0,
+   "byStage": {
+    "finalize-compile-other": {
+     "calls": 1,
+     "costUsd": 0.0006,
+     "promptTokens": 2275,
+     "outputTokens": 42,
+     "durationSeconds": 1.4,
+     "unpricedCalls": 0
+    }
+   },
+   "byPurpose": [
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "select-cover-design",
+     "stage": "finalize-compile-other",
+     "count": 1,
+     "costUsd": 0.000619,
+     "promptTokens": 2275,
+     "outputTokens": 42,
+     "cacheHitTokens": 0,
+     "durationSeconds": 1.4,
+     "unpricedCalls": 0
+    }
+   ]
+  },
+  {
+   "jobId": "cmto28t9f01192cp2cspgbad0",
+   "projectId": "cmtnwyp3d0000fwg07qgd68uo",
+   "type": "COMPILE_EXPORT",
+   "status": "COMPLETED",
+   "progress": 100,
+   "createdAt": "2026-09-05 07:27:36.483",
+   "startedAt": "2026-09-05 07:27:36.49",
+   "finishedAt": "2026-09-05 07:27:52.298",
+   "label": null,
+   "elapsedMinutes": 0.3,
+   "providerCalls": 3,
+   "providerCostUsd": 0.0104,
+   "promptTokens": 35440,
+   "outputTokens": 1266,
+   "unpricedProviderCalls": 0,
+   "byStage": {
+    "finalize-compile-other": {
+     "calls": 3,
+     "costUsd": 0.0104,
+     "promptTokens": 35440,
+     "outputTokens": 1266,
+     "durationSeconds": 13.0,
+     "unpricedCalls": 0
+    }
+   },
+   "byPurpose": [
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "chapterize-export",
+     "stage": "finalize-compile-other",
+     "count": 1,
+     "costUsd": 0.007935,
+     "promptTokens": 28201,
+     "outputTokens": 737,
+     "cacheHitTokens": 0,
+     "durationSeconds": 7.7,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "review-manuscript-structure",
+     "stage": "finalize-compile-other",
+     "count": 2,
+     "costUsd": 0.002444,
+     "promptTokens": 7239,
+     "outputTokens": 529,
+     "cacheHitTokens": 0,
+     "durationSeconds": 5.3,
+     "unpricedCalls": 0
+    }
+   ]
+  },
+  {
+   "jobId": "cmto295h100056qp2kul0v1p8",
+   "projectId": "cmtnwyp3d0000fwg07qgd68uo",
+   "type": "PREPARE_CHARACTER_CANDIDATES",
+   "status": "COMPLETED",
+   "progress": 100,
+   "createdAt": "2026-09-05 07:27:52.309",
+   "startedAt": "2026-09-05 07:27:52.326",
+   "finishedAt": "2026-09-05 07:28:28.327",
+   "label": null,
+   "elapsedMinutes": 0.6,
+   "providerCalls": 18,
+   "providerCostUsd": 0.0221,
+   "promptTokens": 81331,
+   "outputTokens": 1509,
+   "unpricedProviderCalls": 0,
+   "byStage": {
+    "finalize-compile-other": {
+     "calls": 18,
+     "costUsd": 0.0221,
+     "promptTokens": 81331,
+     "outputTokens": 1509,
+     "durationSeconds": 35.8,
+     "unpricedCalls": 0
+    }
+   },
+   "byPurpose": [
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "extract-voice-character-candidates",
+     "stage": "finalize-compile-other",
+     "count": 18,
+     "costUsd": 0.022140999999999997,
+     "promptTokens": 81331,
+     "outputTokens": 1509,
+     "cacheHitTokens": 0,
+     "durationSeconds": 35.8,
+     "unpricedCalls": 0
+    }
+   ]
+  },
+  {
+   "jobId": "cmto3sjcv0000k8g052hxry5n",
+   "projectId": "cmtnyg6ji0000seg0lrlewwb1",
+   "type": "GENERATE_BOOK",
+   "status": "FAILED",
+   "progress": 71,
+   "createdAt": "2026-09-05 08:10:56.384",
+   "startedAt": "2026-09-05 08:10:56.411",
+   "finishedAt": "2026-09-05 08:19:45.799",
+   "label": "development-fixes-2a-retry-3",
+   "elapsedMinutes": 8.8,
+   "providerCalls": 29,
+   "providerCostUsd": 0.3437,
+   "promptTokens": 1127597,
+   "outputTokens": 63899,
+   "unpricedProviderCalls": 1,
+   "byStage": {
+    "chapter-evidence-review": {
+     "calls": 12,
+     "costUsd": 0.1193,
+     "promptTokens": 426868,
+     "outputTokens": 10467,
+     "durationSeconds": 88.5,
+     "unpricedCalls": 0
+    },
+    "describe-pages": {
+     "calls": 4,
+     "costUsd": 0.0107,
+     "promptTokens": 20807,
+     "outputTokens": 4570,
+     "durationSeconds": 42.6,
+     "unpricedCalls": 0
+    },
+    "developmental-edit": {
+     "calls": 1,
+     "costUsd": 0.0254,
+     "promptTokens": 92727,
+     "outputTokens": 1871,
+     "durationSeconds": 15.4,
+     "unpricedCalls": 0
+    },
+    "line-edit": {
+     "calls": 12,
+     "costUsd": 0.1883,
+     "promptTokens": 587195,
+     "outputTokens": 46991,
+     "durationSeconds": 306.7,
+     "unpricedCalls": 1
+    }
+   },
+   "byPurpose": [
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "describe-pages",
+     "stage": "describe-pages",
+     "count": 4,
+     "costUsd": 0.010685,
+     "promptTokens": 20807,
+     "outputTokens": 4570,
+     "cacheHitTokens": 0,
+     "durationSeconds": 42.6,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "edit-chapter",
+     "stage": "line-edit",
+     "count": 12,
+     "costUsd": 0.18834099999999998,
+     "promptTokens": 587195,
+     "outputTokens": 46991,
+     "cacheHitTokens": 0,
+     "durationSeconds": 306.7,
+     "unpricedCalls": 1
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "plan-developmental-edit",
+     "stage": "developmental-edit",
+     "count": 1,
+     "costUsd": 0.025427,
+     "promptTokens": 92727,
+     "outputTokens": 1871,
+     "cacheHitTokens": 0,
+     "durationSeconds": 15.4,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "review-chapter-evidence",
+     "stage": "chapter-evidence-review",
+     "count": 12,
+     "costUsd": 0.119277,
+     "promptTokens": 426868,
+     "outputTokens": 10467,
+     "cacheHitTokens": 0,
+     "durationSeconds": 88.5,
+     "unpricedCalls": 0
+    }
+   ],
+   "trace": {
+    "tracePath": "storage/books/cmtnyg6ji0000seg0lrlewwb1/runs/cmto3sjcv0000k8g052hxry5n-generate-book.jsonl",
+    "events": {
+     "job.start": 1,
+     "generation.composed_chapters.development_prepared": 1,
+     "text.generateJson.request": 21,
+     "text.generateJson.response": 20,
+     "text.generateText.request": 13,
+     "text.generateText.response": 13,
+     "text.generateJson.error": 1,
+     "job.stopped": 1
+    },
+    "unparseableLines": 0,
+    "jobStarts": [
+     "2026-09-05T08:10:56.401Z"
+    ],
+    "firstEvent": "2026-09-05T08:10:56.401Z",
+    "lastEvent": "2026-09-05T08:19:45.797Z",
+    "failed": null,
+    "researchSearchRequestsUnpriced": 0,
+    "evidenceUnresolvedEvents": [],
+    "stageSpans": {
+     "developmental-edit": {
+      "firstRequest": "2026-09-05T08:10:56.601Z",
+      "lastRequest": "2026-09-05T08:10:56.601Z",
+      "spanMinutes": 0.0,
+      "requests": 1
+     },
+     "line-edit": {
+      "firstRequest": "2026-09-05T08:11:12.009Z",
+      "lastRequest": "2026-09-05T08:19:10.393Z",
+      "spanMinutes": 8.0,
+      "requests": 13
+     },
+     "chapter-evidence-review": {
+      "firstRequest": "2026-09-05T08:11:31.729Z",
+      "lastRequest": "2026-09-05T08:19:34.348Z",
+      "spanMinutes": 8.0,
+      "requests": 14
+     },
+     "describe-pages": {
+      "firstRequest": "2026-09-05T08:12:04.705Z",
+      "lastRequest": "2026-09-05T08:19:38.255Z",
+      "spanMinutes": 7.6,
+      "requests": 6
+     }
+    }
+   },
+   "launchedBy": "another session",
+   "implementation": "post-implementation-6 tree (developmental-edit length extension 08:09, generateJsonWithRetry widening 07:03; not snapshotted by this session)",
+   "outcome": "stopped by another session at 08:19:45 UTC while polishing chapter 6/15 (job.stopped)"
+  },
+  {
+   "jobId": "cmto3spgk00000zg006emuzp4",
+   "projectId": "cmtnzo7wf0000qwg0kwq6s3rk",
+   "type": "GENERATE_BOOK",
+   "status": "FAILED",
+   "progress": 71,
+   "createdAt": "2026-09-05 08:11:04.292",
+   "startedAt": "2026-09-05 08:11:04.304",
+   "finishedAt": "2026-09-05 08:19:49.343",
+   "label": "development-fixes-3a-retry-3",
+   "elapsedMinutes": 8.8,
+   "providerCalls": 34,
+   "providerCostUsd": 0.3448,
+   "promptTokens": 1141289,
+   "outputTokens": 61497,
+   "unpricedProviderCalls": 1,
+   "byStage": {
+    "chapter-evidence-review": {
+     "calls": 11,
+     "costUsd": 0.094,
+     "promptTokens": 333609,
+     "outputTokens": 8818,
+     "durationSeconds": 78.5,
+     "unpricedCalls": 0
+    },
+    "describe-pages": {
+     "calls": 4,
+     "costUsd": 0.0101,
+     "promptTokens": 19066,
+     "outputTokens": 4407,
+     "durationSeconds": 41.3,
+     "unpricedCalls": 0
+    },
+    "developmental-edit": {
+     "calls": 7,
+     "costUsd": 0.0729,
+     "promptTokens": 269794,
+     "outputTokens": 4570,
+     "durationSeconds": 55.6,
+     "unpricedCalls": 0
+    },
+    "line-edit": {
+     "calls": 12,
+     "costUsd": 0.1678,
+     "promptTokens": 518820,
+     "outputTokens": 43702,
+     "durationSeconds": 265.5,
+     "unpricedCalls": 1
+    }
+   },
+   "byPurpose": [
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "describe-pages",
+     "stage": "describe-pages",
+     "count": 4,
+     "costUsd": 0.010054,
+     "promptTokens": 19066,
+     "outputTokens": 4407,
+     "cacheHitTokens": 0,
+     "durationSeconds": 41.3,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "edit-chapter",
+     "stage": "line-edit",
+     "count": 12,
+     "costUsd": 0.16783399999999998,
+     "promptTokens": 518820,
+     "outputTokens": 43702,
+     "cacheHitTokens": 0,
+     "durationSeconds": 265.5,
+     "unpricedCalls": 1
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "plan-developmental-edit",
+     "stage": "developmental-edit",
+     "count": 1,
+     "costUsd": 0.023642,
+     "promptTokens": 85133,
+     "outputTokens": 1966,
+     "cacheHitTokens": 0,
+     "durationSeconds": 18.0,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "review-chapter-evidence",
+     "stage": "chapter-evidence-review",
+     "count": 11,
+     "costUsd": 0.093982,
+     "promptTokens": 333609,
+     "outputTokens": 8818,
+     "cacheHitTokens": 0,
+     "durationSeconds": 78.5,
+     "unpricedCalls": 0
+    },
+    {
+     "provider": "openai",
+     "model": "gpt-5.6-luna",
+     "purpose": "rewrite-developmental-sections",
+     "stage": "developmental-edit",
+     "count": 6,
+     "costUsd": 0.049289,
+     "promptTokens": 184661,
+     "outputTokens": 2604,
+     "cacheHitTokens": 0,
+     "durationSeconds": 37.6,
+     "unpricedCalls": 0
+    }
+   ],
+   "trace": {
+    "tracePath": "storage/books/cmtnzo7wf0000qwg0kwq6s3rk/runs/cmto3spgk00000zg006emuzp4-generate-book.jsonl",
+    "events": {
+     "job.start": 1,
+     "generation.composed_chapters.development_prepared": 1,
+     "text.generateJson.request": 26,
+     "text.generateJson.response": 26,
+     "text.generateText.request": 14,
+     "text.generateText.response": 13,
+     "text.generateText.error": 1,
+     "job.stopped": 1
+    },
+    "unparseableLines": 0,
+    "jobStarts": [
+     "2026-09-05T08:11:04.301Z"
+    ],
+    "firstEvent": "2026-09-05T08:11:04.301Z",
+    "lastEvent": "2026-09-05T08:19:49.343Z",
+    "failed": null,
+    "researchSearchRequestsUnpriced": 0,
+    "evidenceUnresolvedEvents": [],
+    "stageSpans": {
+     "developmental-edit": {
+      "firstRequest": "2026-09-05T08:11:04.428Z",
+      "lastRequest": "2026-09-05T08:11:30.282Z",
+      "spanMinutes": 0.4,
+      "requests": 7
+     },
+     "line-edit": {
+      "firstRequest": "2026-09-05T08:12:00.191Z",
+      "lastRequest": "2026-09-05T08:19:44.328Z",
+      "spanMinutes": 7.7,
+      "requests": 14
+     },
+     "chapter-evidence-review": {
+      "firstRequest": "2026-09-05T08:12:19.698Z",
+      "lastRequest": "2026-09-05T08:19:29.727Z",
+      "spanMinutes": 7.2,
+      "requests": 13
+     },
+     "describe-pages": {
+      "firstRequest": "2026-09-05T08:12:56.814Z",
+      "lastRequest": "2026-09-05T08:19:34.446Z",
+      "spanMinutes": 6.6,
+      "requests": 6
+     }
+    }
+   },
+   "launchedBy": "another session",
+   "implementation": "post-implementation-6 tree (as above)",
+   "outcome": "stopped by another session at 08:19:49 UTC while polishing chapter 7/15 (job.stopped)"
+  }
+ ],
+ "baseline": {
+  "ladder-5a-apparatus": {
+   "projectId": "cmtl77yis00007gg0xlt8zoe8",
+   "status": "COMPLETE",
+   "pages": 120,
+   "words": 56332,
+   "totals": {
+    "calls": 96,
+    "cost": 0.425445,
+    "minutes": 57
+   },
+   "byStage": {
+    "compose": {
+     "calls": 23,
+     "costUsd": 0.1364,
+     "promptTokens": 184563,
+     "outputTokens": 75462
+    },
+    "describe-pages": {
+     "calls": 15,
+     "costUsd": 0.0446,
+     "promptTokens": 87324,
+     "outputTokens": 19015
+    },
+    "episodes": {
+     "calls": 1,
+     "costUsd": 0.0054,
+     "promptTokens": 2802,
+     "outputTokens": 3886
+    },
+    "finalize-compile-other": {
+     "calls": 12,
+     "costUsd": 0.0227,
+     "promptTokens": 83827,
+     "outputTokens": 2761
+    },
+    "forms": {
+     "calls": 2,
+     "costUsd": 0.0156,
+     "promptTokens": 14993,
+     "outputTokens": 9881
+    },
+    "line-edit": {
+     "calls": 30,
+     "costUsd": 0.152,
+     "promptTokens": 221750,
+     "outputTokens": 80867
+    },
+    "manuscript-read": {
+     "calls": 1,
+     "costUsd": 0.0232,
+     "promptTokens": 79075,
+     "outputTokens": 2821
+    },
+    "sources": {
+     "calls": 12,
+     "costUsd": 0.0256,
+     "promptTokens": 84780,
+     "outputTokens": 3708
+    }
+   },
+   "byPurpose": [
+    {
+     "purpose": "chapterize-export",
+     "count": 1,
+     "promptTokens": 29171,
+     "outputTokens": 829,
+     "cost": 0.008287,
+     "avgSeconds": 9.1
+    },
+    {
+     "purpose": "compose-chapter",
+     "count": 15,
+     "promptTokens": 176885,
+     "outputTokens": 64610,
+     "cost": 0.12175199999999997,
+     "avgSeconds": 128.7
+    },
+    {
+     "purpose": "compose-scene",
+     "count": 8,
+     "promptTokens": 7678,
+     "outputTokens": 10852,
+     "cost": 0.014629,
+     "avgSeconds": 19.4
+    },
+    {
+     "purpose": "describe-pages",
+     "count": 15,
+     "promptTokens": 87324,
+     "outputTokens": 19015,
+     "cost": 0.044647,
+     "avgSeconds": 31.5
+    },
+    {
+     "purpose": "edit-chapter",
+     "count": 15,
+     "promptTokens": 211590,
+     "outputTokens": 71510,
+     "cost": 0.138708,
+     "avgSeconds": 73.2
+    },
+    {
+     "purpose": "extract-excerpts",
+     "count": 12,
+     "promptTokens": 84780,
+     "outputTokens": 3708,
+     "cost": 0.025642000000000005,
+     "avgSeconds": 4.3
+    },
+    {
+     "purpose": "extract-voice-character-candidates",
+     "count": 8,
+     "promptTokens": 40099,
+     "outputTokens": 361,
+     "cost": 0.008874,
+     "avgSeconds": 1.6
+    },
+    {
+     "purpose": "plan-chapter-forms",
+     "count": 2,
+     "promptTokens": 14993,
+     "outputTokens": 9881,
+     "cost": 0.015605,
+     "avgSeconds": 48.5
+    },
+    {
+     "purpose": "plan-episodes",
+     "count": 1,
+     "promptTokens": 2802,
+     "outputTokens": 3886,
+     "cost": 0.005364,
+     "avgSeconds": 40.7
+    },
+    {
+     "purpose": "read-manuscript",
+     "count": 1,
+     "promptTokens": 79075,
+     "outputTokens": 2821,
+     "cost": 0.023154,
+     "avgSeconds": 26.1
+    },
+    {
+     "purpose": "revise-page",
+     "count": 2,
+     "promptTokens": 12280,
+     "outputTokens": 1531,
+     "cost": 0.004906,
+     "avgSeconds": 11.2
+    },
+    {
+     "purpose": "rewrite-couplets",
+     "count": 15,
+     "promptTokens": 10160,
+     "outputTokens": 9357,
+     "cost": 0.013260000000000001,
+     "avgSeconds": 7.3
+    },
+    {
+     "purpose": "select-cover-design",
+     "count": 1,
+     "promptTokens": 2277,
+     "outputTokens": 40,
+     "cost": 0.000617,
+     "avgSeconds": 1.5
+    }
+   ],
+   "source": "docs/composed-chapters/runs/ladder-5a-apparatus/trace.json"
+  },
+  "ladder-5b-apparatus": {
+   "projectId": "cmtl7b6940000rrg0xvbcba5i",
+   "status": "COMPLETE",
+   "pages": 120,
+   "words": 52800,
+   "totals": {
+    "calls": 93,
+    "cost": 0.3989749999999999,
+    "minutes": 26
+   },
+   "byStage": {
+    "compose": {
+     "calls": 23,
+     "costUsd": 0.1264,
+     "promptTokens": 174295,
+     "outputTokens": 69181
+    },
+    "describe-pages": {
+     "calls": 15,
+     "costUsd": 0.0427,
+     "promptTokens": 82131,
+     "outputTokens": 18445
+    },
+    "episodes": {
+     "calls": 1,
+     "costUsd": 0.0041,
+     "promptTokens": 2802,
+     "outputTokens": 3356
+    },
+    "finalize-compile-other": {
+     "calls": 8,
+     "costUsd": 0.0148,
+     "promptTokens": 61484,
+     "outputTokens": 1338
+    },
+    "forms": {
+     "calls": 2,
+     "costUsd": 0.0198,
+     "promptTokens": 17713,
+     "outputTokens": 13636
+    },
+    "line-edit": {
+     "calls": 30,
+     "costUsd": 0.1379,
+     "promptTokens": 195844,
+     "outputTokens": 74478
+    },
+    "manuscript-read": {
+     "calls": 1,
+     "costUsd": 0.0198,
+     "promptTokens": 73531,
+     "outputTokens": 1200
+    },
+    "sources": {
+     "calls": 13,
+     "costUsd": 0.0335,
+     "promptTokens": 100069,
+     "outputTokens": 7056
+    }
+   },
+   "byPurpose": [
+    {
+     "purpose": "chapterize-export",
+     "count": 1,
+     "promptTokens": 28862,
+     "outputTokens": 759,
+     "cost": 0.008126,
+     "avgSeconds": 9
+    },
+    {
+     "purpose": "compose-chapter",
+     "count": 16,
+     "promptTokens": 166811,
+     "outputTokens": 60070,
+     "cost": 0.113785,
+     "avgSeconds": 56.3
+    },
+    {
+     "purpose": "compose-scene",
+     "count": 7,
+     "promptTokens": 7484,
+     "outputTokens": 9111,
+     "cost": 0.012596999999999999,
+     "avgSeconds": 17.3
+    },
+    {
+     "purpose": "describe-pages",
+     "count": 15,
+     "promptTokens": 82131,
+     "outputTokens": 18445,
+     "cost": 0.042665,
+     "avgSeconds": 14.4
+    },
+    {
+     "purpose": "edit-chapter",
+     "count": 15,
+     "promptTokens": 185181,
+     "outputTokens": 66566,
+     "cost": 0.126171,
+     "avgSeconds": 34.4
+    },
+    {
+     "purpose": "extract-excerpts",
+     "count": 13,
+     "promptTokens": 100069,
+     "outputTokens": 7056,
+     "cost": 0.033483,
+     "avgSeconds": 9.4
+    },
+    {
+     "purpose": "extract-voice-character-candidates",
+     "count": 6,
+     "promptTokens": 30345,
+     "outputTokens": 541,
+     "cost": 0.006591,
+     "avgSeconds": 2.4
+    },
+    {
+     "purpose": "plan-chapter-forms",
+     "count": 2,
+     "promptTokens": 17713,
+     "outputTokens": 13636,
+     "cost": 0.019846000000000003,
+     "avgSeconds": 69.9
+    },
+    {
+     "purpose": "plan-episodes",
+     "count": 1,
+     "promptTokens": 2802,
+     "outputTokens": 3356,
+     "cost": 0.004084,
+     "avgSeconds": 34.5
+    },
+    {
+     "purpose": "read-manuscript",
+     "count": 1,
+     "promptTokens": 73531,
+     "outputTokens": 1200,
+     "cost": 0.019823,
+     "avgSeconds": 12.4
+    },
+    {
+     "purpose": "rewrite-couplets",
+     "count": 15,
+     "promptTokens": 10663,
+     "outputTokens": 7912,
+     "cost": 0.011678999999999997,
+     "avgSeconds": 9.7
+    },
+    {
+     "purpose": "select-cover-design",
+     "count": 1,
+     "promptTokens": 2277,
+     "outputTokens": 38,
+     "cost": 0.000125,
+     "avgSeconds": 1.7
+    }
+   ],
+   "source": "docs/composed-chapters/runs/ladder-5b-apparatus/trace.json"
+  },
+  "ladder-5c-apparatus": {
+   "projectId": "cmtl7ee150000bqg03yxkgk5p",
+   "status": "COMPLETE",
+   "pages": 120,
+   "words": 59333,
+   "totals": {
+    "calls": 88,
+    "cost": 0.4239739999999999,
+    "minutes": 41
+   },
+   "byStage": {
+    "compose": {
+     "calls": 22,
+     "costUsd": 0.1412,
+     "promptTokens": 180579,
+     "outputTokens": 80235
+    },
+    "describe-pages": {
+     "calls": 15,
+     "costUsd": 0.0454,
+     "promptTokens": 90276,
+     "outputTokens": 19039
+    },
+    "episodes": {
+     "calls": 1,
+     "costUsd": 0.0043,
+     "promptTokens": 2802,
+     "outputTokens": 3571
+    },
+    "finalize-compile-other": {
+     "calls": 4,
+     "costUsd": 0.0108,
+     "promptTokens": 43680,
+     "outputTokens": 1559
+    },
+    "forms": {
+     "calls": 2,
+     "costUsd": 0.0198,
+     "promptTokens": 18082,
+     "outputTokens": 13497
+    },
+    "line-edit": {
+     "calls": 30,
+     "costUsd": 0.1561,
+     "promptTokens": 226591,
+     "outputTokens": 83339
+    },
+    "manuscript-read": {
+     "calls": 1,
+     "costUsd": 0.0221,
+     "promptTokens": 81923,
+     "outputTokens": 1373
+    },
+    "sources": {
+     "calls": 13,
+     "costUsd": 0.0242,
+     "promptTokens": 80443,
+     "outputTokens": 3436
+    }
+   },
+   "byPurpose": [
+    {
+     "purpose": "chapterize-export",
+     "count": 1,
+     "promptTokens": 29118,
+     "outputTokens": 695,
+     "cost": 0.008113,
+     "avgSeconds": 6.5
+    },
+    {
+     "purpose": "compose-chapter",
+     "count": 15,
+     "promptTokens": 173723,
+     "outputTokens": 71579,
+     "cost": 0.12932500000000002,
+     "avgSeconds": 113.2
+    },
+    {
+     "purpose": "compose-scene",
+     "count": 7,
+     "promptTokens": 6856,
+     "outputTokens": 8656,
+     "cost": 0.011888999999999999,
+     "avgSeconds": 33.6
+    },
+    {
+     "purpose": "describe-pages",
+     "count": 15,
+     "promptTokens": 90276,
+     "outputTokens": 19039,
+     "cost": 0.045415,
+     "avgSeconds": 13.8
+    },
+    {
+     "purpose": "edit-chapter",
+     "count": 15,
+     "promptTokens": 215425,
+     "outputTokens": 74863,
+     "cost": 0.143691,
+     "avgSeconds": 42.8
+    },
+    {
+     "purpose": "extract-excerpts",
+     "count": 13,
+     "promptTokens": 80443,
+     "outputTokens": 3436,
+     "cost": 0.024233,
+     "avgSeconds": 9.9
+    },
+    {
+     "purpose": "extract-voice-character-candidates",
+     "count": 1,
+     "promptTokens": 6099,
+     "outputTokens": 0,
+     "cost": null,
+     "avgSeconds": null
+    },
+    {
+     "purpose": "plan-chapter-forms",
+     "count": 2,
+     "promptTokens": 18082,
+     "outputTokens": 13497,
+     "cost": 0.019771999999999998,
+     "avgSeconds": 75.1
+    },
+    {
+     "purpose": "plan-episodes",
+     "count": 1,
+     "promptTokens": 2802,
+     "outputTokens": 3571,
+     "cost": 0.004342,
+     "avgSeconds": 39.5
+    },
+    {
+     "purpose": "read-manuscript",
+     "count": 1,
+     "promptTokens": 81923,
+     "outputTokens": 1373,
+     "cost": 0.022128,
+     "avgSeconds": 16.2
+    },
+    {
+     "purpose": "revise-page",
+     "count": 1,
+     "promptTokens": 6186,
+     "outputTokens": 824,
+     "cost": 0.002535,
+     "avgSeconds": 11
+    },
+    {
+     "purpose": "rewrite-couplets",
+     "count": 15,
+     "promptTokens": 11166,
+     "outputTokens": 8476,
+     "cost": 0.012402999999999997,
+     "avgSeconds": 7.9
+    },
+    {
+     "purpose": "select-cover-design",
+     "count": 1,
+     "promptTokens": 2277,
+     "outputTokens": 40,
+     "cost": 0.000128,
+     "avgSeconds": 1.5
+    }
+   ],
+   "source": "docs/composed-chapters/runs/ladder-5c-apparatus/trace.json"
+  },
+  "composed-7": {
+   "projectId": "cmtjlkn0z0000g8g08zbzxerc",
+   "status": "COMPLETE",
+   "pages": 120,
+   "words": 52745,
+   "totals": {
+    "calls": 105,
+    "cost": 0.4819000000000001,
+    "minutes": 23
+   },
+   "byStage": {
+    "compose": {
+     "calls": 60,
+     "costUsd": 0.2481,
+     "promptTokens": 321075,
+     "outputTokens": 144439
+    },
+    "describe-pages": {
+     "calls": 15,
+     "costUsd": 0.0426,
+     "promptTokens": 80915,
+     "outputTokens": 18613
+    },
+    "finalize-compile-other": {
+     "calls": 12,
+     "costUsd": 0.032,
+     "promptTokens": 87409,
+     "outputTokens": 9717
+    },
+    "forms": {
+     "calls": 2,
+     "costUsd": 0.019,
+     "promptTokens": 16380,
+     "outputTokens": 12392
+    },
+    "line-edit": {
+     "calls": 15,
+     "costUsd": 0.1191,
+     "promptTokens": 160369,
+     "outputTokens": 65883
+    },
+    "manuscript-read": {
+     "calls": 1,
+     "costUsd": 0.0211,
+     "promptTokens": 72537,
+     "outputTokens": 2494
+    }
+   },
+   "byPurpose": [
+    {
+     "purpose": "chapterize-export",
+     "count": 1,
+     "promptTokens": 28480,
+     "outputTokens": 697,
+     "cost": 0.007956,
+     "avgSeconds": 7.8
+    },
+    {
+     "purpose": "compose-chapter",
+     "count": 30,
+     "promptTokens": 213850,
+     "outputTokens": 142773,
+     "cost": 0.22478700000000001,
+     "avgSeconds": 61.4
+    },
+    {
+     "purpose": "critique-plan",
+     "count": 1,
+     "promptTokens": 4535,
+     "outputTokens": 37,
+     "cost": 0.001178,
+     "avgSeconds": 1.4
+    },
+    {
+     "purpose": "describe-pages",
+     "count": 15,
+     "promptTokens": 80915,
+     "outputTokens": 18613,
+     "cost": 0.042564000000000005,
+     "avgSeconds": 12.2
+    },
+    {
+     "purpose": "edit-chapter",
+     "count": 15,
+     "promptTokens": 160369,
+     "outputTokens": 65883,
+     "cost": 0.119147,
+     "avgSeconds": 31.8
+    },
+    {
+     "purpose": "extract-voice-character-candidates",
+     "count": 7,
+     "promptTokens": 33576,
+     "outputTokens": 286,
+     "cost": 0.007264,
+     "avgSeconds": 1.7
+    },
+    {
+     "purpose": "judge-chapter-drafts",
+     "count": 30,
+     "promptTokens": 107225,
+     "outputTokens": 1666,
+     "cost": 0.023271,
+     "avgSeconds": 1.6
+    },
+    {
+     "purpose": "plan-book",
+     "count": 2,
+     "promptTokens": 18549,
+     "outputTokens": 8659,
+     "cost": 0.015028,
+     "avgSeconds": 51.4
+    },
+    {
+     "purpose": "plan-chapter-forms",
+     "count": 2,
+     "promptTokens": 16380,
+     "outputTokens": 12392,
+     "cost": 0.018965,
+     "avgSeconds": 56.1
+    },
+    {
+     "purpose": "read-manuscript",
+     "count": 1,
+     "promptTokens": 72537,
+     "outputTokens": 2494,
+     "cost": 0.021127,
+     "avgSeconds": 24.8
+    },
+    {
+     "purpose": "select-cover-design",
+     "count": 1,
+     "promptTokens": 2269,
+     "outputTokens": 38,
+     "cost": 0.000613,
+     "avgSeconds": 1.5
+    }
+   ],
+   "source": "docs/composed-chapters/runs/composed-7/trace.json"
+  }
+ },
+ "provenance": {
+  "providerCalls": "ProviderCallLog grouped by generationJobId, provider, model, purpose (psql, .scratch/claude-development-fixes/providercalls-by-job-purpose.txt); costHint is the provider-estimated USD per settled call; research searches and document fetches write no ProviderCallLog row and are counted from run traces as unpriced",
+  "jobs": "GenerationJob rows (psql, .scratch/claude-development-fixes/jobs.txt); elapsedMinutes = finishedAt - startedAt",
+  "traces": "storage/books/<projectId>/runs/<jobId>-generate-book.jsonl; stage spans are first-to-last request timestamps of the stage's purposes and overlap across stages",
+  "baseline": "docs/composed-chapters/runs/<label>/trace.json written by scripts/dev-rerun-book.ts export at the time of those runs"
+ },
+ "activeExperimentJobsAtCapture": [],
+ "notes": {
+  "activeJobs": "At 08:18 UTC two GENERATE_BOOK jobs were ACTIVE at progress 71 (cmto3sjcv0000k8g052hxry5n on project 2a, cmto3spgk00000zg006emuzp4 on project 3a), both launched 08:10\u201308:11 UTC by another session; both carry job.stopped events at 08:19:45 and 08:19:49 UTC and are FAILED@71 'Stopped'. This session stopped nothing. Two June 2026 ACTIVE jobs on unrelated projects are pre-existing.",
+  "unpriced": "ProviderCallLog holds only openai/gpt-5.6-luna rows for these jobs; every research.search.* event (case-source-search queries answered with a research summary) has no ProviderCallLog row and no cost. Document fetches write no run-log event, so their count is not recoverable from the traces. Two ProviderCallLog rows carry a null costHint: the calls in flight when the two jobs were stopped.",
+  "resume": "development-fixes-1d resumed from the developed plan and evidence packets persisted by earlier attempts on the same project (evidence stage paid in 1a-retry, 1b, 1c), so its own trace and cost begin at chapter-form planning; a single uninterrupted run would add one preparation stage (episodes, sources, evidence packets, development plan: $0.19\u20130.30 and 12\u201319 minutes on the same plan).",
+  "codeChangesByAnotherSessionAfterImplementation6": [
+   "apps/worker/src/generation/composedDevelopmentalEdit.ts (08:09 UTC): word floor replaced by a bounded length extension plus a recorded shortfall",
+   "apps/worker/src/generation/composedDevelopmentalEdit.test.ts (08:10 UTC)",
+   "packages/core/src/generation/generateJsonWithRetry.ts (+test, 07:03\u201307:05 UTC): output budget widened 1.5x once on max_output_tokens",
+   "packages/core/src/generation/qualityGates.ts (+test, 08:20 UTC): bookDevelopment, caseEvidence, developmentalEdit made explicit opt-in, default off",
+   "apps/api/src/admin/generatedBooks.ts, apps/api/src/routes/adminGeneratedBooks.test.ts, apps/web/src/features/admin/* (08:13\u201308:14 UTC)",
+   "packages/core/src/generation/CLAUDE.md"
+  ]
+ }
+}

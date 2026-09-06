@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.3,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The bone records contact and damage. It does not record the attacker's inward state.",
+      "judgment": "Excellent opening move: the book's central epistemic claim stated concretely through a single skeleton rather than asserted abstractly."
+    },
+    {
+      "quote": "A cemetery containing five healed fractures does not become a population-wide rate by being counted five times.",
+      "judgment": "Sharp, specific methodological correction \u2014 the kind of sentence that earns the book its authority on evidence."
+    },
+    {
+      "quote": "A human being became cargo exposed to a peril of the voyage.",
+      "judgment": "The Zong chapter's best line: the moral horror is produced by the legal category, not by adjectives."
+    },
+    {
+      "quote": "Lieutenant Colonel Arthur L. Y. N. N. reports, regimental histories, and national memorials organised loss according to unit and army.",
+      "judgment": "A real defect \u2014 a garbled or fabricated name left in the text, the one place the manuscript's evidentiary care visibly fails."
+    },
+    {
+      "quote": "Order was not the opposite of violence. It was often the condition under which violence could be concentrated, directed, and justified.",
+      "judgment": "True to the thesis but symptomatic: the paired-antithesis aphorism is deployed dozens of times across the book and loses force by repetition."
+    },
+    {
+      "quote": "Counting is not killing. It is also not neutral when the count determines what can be demanded.",
+      "judgment": "Effective in isolation, yet the identical two-beat construction (denial, then qualified concession) is the manuscript's default cadence."
+    },
+    {
+      "quote": "Ecology supplied pressure. It did not select the victim.",
+      "judgment": "Crisp formulation of the anti-determinist argument, though by chapter 15 this exact claim has already been made about technology, wealth, scarcity, firearms and geography."
+    },
+    {
+      "quote": "Toussaint Louverture defeated forces associated with Andr\u00e9 Rigaud in the War of Knives in 1800 and became the dominant authority in Saint-Domingue.",
+      "judgment": "Chapter 10 re-narrates several paragraphs of Chapter 8's Toussaint material with near-identical facts and phrasing \u2014 visible redundancy rather than deliberate callback."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Identical chapter architecture: a vividly reconstructed artifact or site, a second contrasting case, an explicit side-by-side comparison, then a closing paragraph that re-lists every case name and restates the thesis.",
+      "instances": [
+        "Eannatum's prisoners were displayed because organized force required a public account of belonging and defeat. Uruk's rations and walls show how that force could be supplied and sustained. Mohenjo-daro shows that urban order could be dense and durable without preserving a comparable royal account of conquest.",
+        "In the Tlatelolco campaign, a defeated city remained useful because a market could be subordinated rather than destroyed. At Bonampak, captives helped a ruler make military success visible within ceremony. On the Inca roads, stored food and labour obligations turned distance into a governable problem."
+      ]
+    },
+    {
+      "pattern": "The negation-plus-concession sentence pair ('X did not do A. It did B.') used as the default rhetorical engine, often several times per page.",
+      "instances": [
+        "The longship was not a machine that compelled raiding. It gave a crew access to coasts, islands, estuaries, and rivers...",
+        "A road was not aggressive by nature; a state able to maintain routes across difficult territory could nevertheless concentrate force..."
+      ]
+    },
+    {
+      "pattern": "The same anti-determinist verdict restated at the end of nearly every chapter \u2014 technology, wealth, ecology or scale enlarges reach but 'does not decide' motive.",
+      "instances": [
+        "The firearm transformed lethality and reach... It did not transform human motives by itself.",
+        "Technology altered what rulers and communities could do with force, but it did not decide what force meant."
+      ]
+    },
+    {
+      "pattern": "Chapters closing on an open rhetorical question addressed to the reader, used as a substitute for a conclusion.",
+      "instances": [
+        "What, then, can a history of violence compare without mistaking different kinds of survival for different amounts of violence?",
+        "Has industrial war erased the distinction between soldier and civilian, or has it repeatedly redrawn the line around new forms of military dependence?"
+      ]
+    },
+    {
+      "pattern": "Source-caution boilerplate applied in near-identical wording to each new document, so that the epistemic humility becomes a formula rather than an argument.",
+      "instances": [
+        "His figures are enormous and belong to a senatorial historian's account of imperial crisis rather than a simple register of bodies.",
+        "The numbers in these accounts are often enormous, and they belong to a literary world in which the scale of a city's ruin could signify divine judgement or imperial terror."
+      ]
+    }
+  ],
+  "summary": "This is a serious, well-organised global history of organised violence, built on a genuine and sustained thesis: aggression is not a single measurable human quantity but a set of acts whose scale and target are routed through institutions, categories of belonging, and unequal archives. The evidentiary discipline is its strongest asset \u2014 the book repeatedly refuses inferences its sources cannot bear, distinguishes what a wound, a decree, a ledger and a testimony can each establish, and resists both innate-savagery and crude-materialist explanations. Prose quality is high and the voice is unusually consistent: austere, concrete, largely free of the lexical tics of AI writing. The costs are structural rather than verbal. Every chapter runs the same template, the same negation-plus-concession cadence carries most paragraphs, the anti-determinist verdict is restated a dozen times, and Toussaint Louverture's career is narrated twice at length across chapters 8 and 10. One garbled attribution ('Lieutenant Colonel Arthur L. Y. N. N.') survives into the finished text. With varied chapter shapes, trimmed thesis restatements, deduplicated case material and that error fixed, it would be close to publishable."
+}

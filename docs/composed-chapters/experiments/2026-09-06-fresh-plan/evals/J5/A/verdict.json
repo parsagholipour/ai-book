@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.5,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A wound records force, direction, and contact between bodies and objects. It does not record the category in which the participants understood the act.",
+      "judgment": "The book's governing idea stated early and with real precision; it earns the whole architecture that follows."
+    },
+    {
+      "quote": "A wall is not a battle report. A weapon is not a record of its use. A scar is not a statement of motive.",
+      "judgment": "Genuinely fine rhetoric, but it is also the template the book runs several hundred more times, and its force wears out."
+    },
+    {
+      "quote": "The legal text gives violence a grammar.",
+      "judgment": "A compressed, original formulation that does more analytic work in six words than most of the surrounding paragraph."
+    },
+    {
+      "quote": "The capacity for violence is not the same as its frequency, and frequency is not the same as social approval.",
+      "judgment": "The book's sharpest methodological distinction, and one it genuinely honours rather than merely announcing."
+    },
+    {
+      "quote": "The city was sustained, not liberated.",
+      "judgment": "Effective as a verdict on the Sarajevo relief operation, though the paired-antithesis closer recurs so often that it reads as a habit."
+    },
+    {
+      "quote": "The record is sharpest where lives were broken and quietest where people succeeded in preventing the break.",
+      "judgment": "An elegant chapter-ending aphorism, but chapters close on this shape with enough regularity to feel manufactured."
+    },
+    {
+      "quote": "Its concern is the preservation of a hierarchy of ownership, encompassing the preservation of goods.",
+      "judgment": "A garbled sentence where a comparative claim has collapsed into an unreadable participle; several such patches survive editing."
+    },
+    {
+      "quote": "Honour culture assigned different powers and risks according to gender and position, giving everyone a distinct place in the practice of fighting.",
+      "judgment": "The trailing clause is both vague and slightly false to the argument, which had just shown many people excluded from fighting."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The concession couplet: nearly every paragraph in fourteen chapters names what a source establishes and then, in a following sentence or semicolon clause, what it cannot establish. It is the book's method and its most exhausting tic.",
+      "instances": [
+        "The stones establish construction; they do not, by themselves, establish warfare.",
+        "The material record opens the question of capacity; administrative and political evidence is needed to explain whether that capacity became organised violence."
+      ]
+    },
+    {
+      "pattern": "Balanced antithetical closers ending paragraphs and chapters — a short two-clause sentence that reverses or negates its own first half, used as a substitute for a fresh idea.",
+      "instances": [
+        "Law did not make force disappear. It made some force official.",
+        "The city was sustained, not liberated."
+      ]
+    },
+    {
+      "pattern": "The 'A is not the same as B' abstraction pair, restating the capacity/prevalence caution in slightly new vocabulary in chapter after chapter.",
+      "instances": [
+        "The capacity for violence is not the same as its frequency, and frequency is not the same as social approval.",
+        "The existence of war and the prevalence of war are separate propositions."
+      ]
+    },
+    {
+      "pattern": "Long asyndetic role-and-task inventories used as the engine of a paragraph — a list of eight to twelve occupations or administrative steps standing in for analysis of any one of them.",
+      "instances": [
+        "Chariot makers, grooms, smiths, drivers, armourers, road builders, scribes, cooks, porters, scouts, and local guides formed the practical body of the army.",
+        "Officials had to identify people, assemble them, guard them, provision them, move them across long distances, allocate land or labour, and record their new status."
+      ]
+    },
+    {
+      "pattern": "Substantive duplication across chapters: the Nuremberg Laws and the Wannsee Protocol are each expounded at length twice, in chapter 8 and again in chapter 12, with the same definitions, the same euphemism analysis and the same flow diagram of classification to killing.",
+      "instances": [
+        "The second law, the Law for the Protection of German Blood and German Honour, moved from public status into intimate life.",
+        "The Nuremberg Laws of September 1935 made this process more exact."
+      ]
+    }
+  ],
+  "summary": "This is an unusually disciplined work of historical argument whose thesis — that the material record documents capacity and consequence far more reliably than frequency, motive or organisation — is stated in the first chapter and then genuinely enacted, not merely repeated, across fourteen chapters running from Nataruk to the South African Truth and Reconciliation Commission. The reasoning is the book's great strength: sources are weighed against their own conditions of survival, competing interpretations (Keeley against Fry, the Stojanowski critique of Nataruk) are given real weight, and the prose almost never claims more than its evidence carries. Clarity and sentence-level control are high, and the chapter openings — the Susa stele, the 5 April 1992 demonstration, the Hallgerdur bowstring episode — show that the author can write scene when he chooses to. The cost is severe monotony of shape. The concession couplet and the balanced antithetical closer become the near-universal paragraph engine, paragraphs run to uniform block length with almost no variation of tempo, and the whole of chapter 12's first half re-argues chapter 8 with the same documents and the same diagram. Engagement and pacing suffer accordingly, and the slop, though free of stock AI diction, is real and structural rather than lexical. With aggressive cutting of the repeated qualifications, a merger of the two Holocaust chapters, and deliberate variation of paragraph and cadence, this would be a genuinely distinguished book."
+}

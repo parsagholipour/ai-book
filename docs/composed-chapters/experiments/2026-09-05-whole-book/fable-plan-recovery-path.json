@@ -1,0 +1,8 @@
+{
+  "directory": "/tmp/plan-recovery-fable-m4x6pwm0",
+  "editable": [
+    "packages/core/src/schemas/plan.ts",
+    "packages/core/src/generation/planner.ts",
+    "packages/core/src/schemas/initialPlanRecovery.test.ts"
+  ]
+}

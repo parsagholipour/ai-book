@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 5,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 6.8,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A wall is not a battle report. A weapon is not a record of its use. A scar is not a statement of motive.",
+      "judgment": "Compact, memorable statement of the book's governing epistemic principle; the prose is at its best in this register."
+    },
+    {
+      "quote": "Bone preserves the result of force while obscuring its sequence.",
+      "judgment": "Precise and economical; a genuine insight rather than a decorative sentence."
+    },
+    {
+      "quote": "The legal text gives violence a grammar.",
+      "judgment": "Strong conceptual hinge for the Hammurabi chapter, earned by the clause-by-clause reading that follows."
+    },
+    {
+      "quote": "The record is sharpest where lives were broken and quietest where people succeeded in preventing the break.",
+      "judgment": "An effective chapter close that states a survivorship problem rather than merely gesturing at one."
+    },
+    {
+      "quote": "The body supplies possibilities, the mind interprets occasions, and the social world decides which possibilities become ordinary, useful, forbidden, or celebrated.",
+      "judgment": "Well-built tricolon, though the aphoristic chapter-ending cadence it exemplifies recurs too often to keep its force."
+    },
+    {
+      "quote": "It shows that mobility did not prevent a coordinated massacre and that people without cities or states could use lethal force against a mixed group of adults and children. It does not show that mobile communities were normally organized for war, that every resource-rich place was contested, or that peaceful encounters were rare.",
+      "judgment": "Sound reasoning, but the shows/does-not-show couplet is the book's default paragraph engine and by mid-book reads as a template."
+    },
+    {
+      "quote": "Sennacherib said this, and the wording turns hardship into proof of exceptional endurance.",
+      "judgment": "A rare clumsy seam: the flat attributive half-sentence does no work and breaks an otherwise controlled passage."
+    },
+    {
+      "quote": "The material record opens the question of capacity; administrative and political evidence is needed to explain whether that capacity became organised violence.",
+      "judgment": "Clear, but this exact proposition is restated in at least four chapters with only the nouns changed."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every case is closed with a symmetrical can-establish / cannot-establish couplet, so paragraphs across all fourteen chapters share one shape.",
+      "instances": [
+        "It rules out any account of early Holocene foragers as incapable of organized collective harm. It does not establish a universal disposition toward aggression, nor does it tell us that violence was the normal condition of life.",
+        "The provisions show what authority wanted to classify, deter, repair, or punish. They do not supply a sample from which rates of injury can be calculated."
+      ]
+    },
+    {
+      "pattern": "Long undifferentiated noun catalogues stand in for analysis of how the listed roles or materials actually related to one another.",
+      "instances": [
+        "These measures required engineers, carpenters, metalworkers, earth movers, soldiers, animals, and supplies.",
+        "Chariot makers, grooms, smiths, drivers, armourers, road builders, scribes, cooks, porters, scouts, and local guides formed the practical body of the army."
+      ]
+    },
+    {
+      "pattern": "Chapters and sections end on a short antithetical aphorism whose cadence is identical even when the subject changes completely.",
+      "instances": [
+        "Law did not make force disappear. It made some force official.",
+        "The city was sustained, not liberated."
+      ]
+    },
+    {
+      "pattern": "The same case material is worked twice at book length: the Nuremberg Laws, the Wannsee Protocol and the definition-to-deportation sequence are the substance of both Chapter 8 and Chapter 12, including a duplicated flow figure.",
+      "instances": [
+        "The Wannsee Protocol, dated 20 January 1942, shows a later point in this development.",
+        "The Wannsee meeting of 20 January 1942 did not begin the murder of Europe’s Jews."
+      ]
+    },
+    {
+      "pattern": "Closing paragraphs restate the book's methodological caution rather than advancing it, producing a recap loop that is most severe in Chapters 13 and 14.",
+      "instances": [
+        "Together, the sites enlarge the range of prehistoric conflict without turning either assemblage into a census of human conduct.",
+        "The long record remains a field of constrained comparisons rather than a staircase towards either inevitable brutality or guaranteed peace."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, intellectually honest history of violence organised around a single strong thesis: the archaeological, legal, documentary and ethnographic records each register a different stage of aggression, and most large claims about human nature fail because they fuse incompatible evidence. The argument is genuinely coherent across fourteen chapters, the reasoning is careful, and the prose is clean, unpretentious and often precise, with real command of each case from Nataruk and Jebel Sahaba through Hammurabi, Kadesh, the Twelve Tables, the vendetta, the Nuremberg Laws, Sarajevo and the South African commission. Its weaknesses are pacing and repetition rather than error. The evidentiary-limits move is performed in nearly every paragraph, so a method that is bracing in Chapter 1 has become a template by Chapter 6; long noun catalogues, paired antitheses and aphoristic chapter closers recur with near-identical cadence; and Chapters 8 and 12 cover the same Nazi documents twice, while Chapters 13 and 14 largely recapitulate what preceded them. Voice is consistent but uniformly impersonal, with almost no narrative momentum after each chapter's opening scene, and the book is more a rigorous synthesis of familiar cases than an original contribution. With substantial cutting, one consolidated Holocaust chapter, and variation in paragraph architecture, it would be a strong book; as it stands it needs moderate revision."
+}

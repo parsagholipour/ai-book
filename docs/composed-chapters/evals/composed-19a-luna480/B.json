@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.8,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The first fact is physical: bone was broken. The second is historical: several people with severe injuries were placed together. Between those facts and a story about the attack lies the work of interpretation.",
+      "judgment": "An opening that states the book's epistemic method in concrete terms rather than announcing it abstractly \u2014 strong, earned framing."
+    },
+    {
+      "quote": "A tablet did not swing a spear. It made the spear-bearer provisionable.",
+      "judgment": "Genuinely sharp compression of the surplus-to-army argument, though it is also the book's single most overused sentence shape."
+    },
+    {
+      "quote": "A healed injury cannot be assigned to the same encounter merely because it appears in the same grave.",
+      "judgment": "Exemplary discipline: the evidentiary caution is specific to this bone rather than a generic hedge."
+    },
+    {
+      "quote": "Their own freedom depended partly on the exclusion of others from the same freedom.",
+      "judgment": "The Maroon treaty analysis reaches a real moral complication without editorialising \u2014 one of the book's best analytical moments."
+    },
+    {
+      "quote": "No bodies appear in the protocol. No murdered family has a name; no passage describes shooting, hunger, terror, or resistance.",
+      "judgment": "Reading a document by what it omits; restrained and devastating, and the chapter's rhetorical peak."
+    },
+    {
+      "quote": "Gunpowder did not fight by itself.",
+      "judgment": "A one-line paragraph used as a beat; the effect is real once, but it is the same negation-reversal engine running everywhere else, so it reads as a tic rather than a decision."
+    },
+    {
+      "quote": "The Bastille fell because a crowd made authority answerable to the streets. The terror grew when the revolutionary state learned to make the streets answerable to its definition of authority.",
+      "judgment": "A polished chiastic closer \u2014 elegant, but it is the fifteenth chapter-ending built from the same paired-antithesis template."
+    },
+    {
+      "quote": "The historical task is to discover which possibilities became organised in a particular place.",
+      "judgment": "Clear statement of the governing thesis, but by chapter 13 the reader has met this claim in nearly identical wording a dozen times."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Negation-then-reframe antithesis ('X did not do A. It did B.') used as the book's default engine for almost every analytical turn and nearly every paragraph close.",
+      "instances": [
+        "A burial is an act after death; it is not a transcript of the killing.",
+        "Kinship did not remove aggression. It gave aggression a family vocabulary."
+      ]
+    },
+    {
+      "pattern": "Identical chapter architecture: a single artifact or site opened in forensic close-up, then a paired second case, then a catalogue of instruments, then a refusal of a monocausal explanation, then a summary chord. Fifteen chapters, no variation.",
+      "instances": [
+        "At Talheim in southwestern Germany, the ground held the remains of people who had been placed together rather than buried one by one.",
+        "The Ottoman T\u00fcfenk\u00e7i register begins with a word for a person, not with a theory of war."
+      ]
+    },
+    {
+      "pattern": "Epistemic-caution formula ('the evidence supports X; it does not establish Y') restated so often that it stops discriminating between strong and weak inferences.",
+      "instances": [
+        "The grave supports a collective episode; it does not supply the institutional form behind it.",
+        "A rule\u2019s presence proves an attempt to govern conduct; it does not establish that conduct had already changed."
+      ]
+    },
+    {
+      "pattern": "Anaphoric parallel catalogues used to close sections \u2014 three to five clauses on one grammatical frame, each naming a case already discussed.",
+      "instances": [
+        "The image at the Templo Mayor made defeated violence part of ascent. The ceremony of condolence made grief part of political repair. The Inca road made distance part of imperial command.",
+        "Tribute made people countable, hostages made promises personal, marriage made alliances hereditary, merchant protection made distance profitable, and religious patronage made conquest speak in local moral languages."
+      ]
+    },
+    {
+      "pattern": "The thesis about restraint and domination issuing from the same institution is re-derived from scratch in at least five chapters rather than developed further.",
+      "instances": [
+        "Restraint and domination were often produced by the same office, statute, or negotiation.",
+        "The colonial state could restrain one kind of violence while organising another."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, unusually coherent work of comparative history whose thesis \u2014 that aggression acquires its scale and direction from institutions, records and categories of belonging rather than from a constant human impulse \u2014 is stated early and genuinely earned across all fifteen chapters, from Talheim to postwar El Salvador. Its greatest strengths are evidentiary honesty and mechanism: it consistently separates what a bone, a stele, a ration tablet or a protocol can bear from the story an interpreter wants, and it explains how surplus, paper and intermediaries convert a decision into harm at a distance. Clarity and reasoning are near-professional; the voice is restrained, concrete and consistent to the last page. The weaknesses are formal rather than intellectual. Every chapter is built to the same template, and the prose runs on one rhetorical engine \u2014 the negation-then-reframe antithesis \u2014 so densely that its individual instances lose force, while the epistemic caveat is repeated far past the point of usefulness. Engagement and pacing suffer accordingly: the book is long, tonally level, and restates its central claim in near-identical language perhaps twenty times. Light revision that varies chapter shape, prunes redundant thesis-restatements, and breaks up the antithesis habit would leave a genuinely publishable manuscript."
+}

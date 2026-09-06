@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 7,
+    "engagement": 5,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.2,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A point made to travel through the air met a human head, and the meeting remained visible after the flesh had disappeared.",
+      "judgment": "Superb opening-chapter sentence: concrete, restrained, and it earns its own austerity rather than announcing it."
+    },
+    {
+      "quote": "An archaeological site is a surviving relation among objects, bodies, soil, and time. That relation can be read, but it must not be made to speak more fluently than it does.",
+      "judgment": "States the book's governing method in one line \u2014 the thesis is genuinely operative, not decorative."
+    },
+    {
+      "quote": "In 1648, after the long conflict had already exhausted many German territories, Magdeburg was taken and sacked by imperial forces.",
+      "judgment": "A hard factual error (the sack was 1631) in a book whose whole authority rests on evidentiary scrupulousness; it also breaks the chapter's own chronology."
+    },
+    {
+      "quote": "Across the eastern side of North America, the Mexica made the warrior an object of public representation. At Tenochtitlan\u2026",
+      "judgment": "Geographically incoherent transition \u2014 the Mexica are not in eastern North America; the seam between Mississippian and Mesoamerican material is unmended."
+    },
+    {
+      "quote": "Security was distributed through belonging.",
+      "judgment": "The book's best compressed formulation, but it is also the template for dozens of four-to-six-word abstract closers that begin to feel manufactured."
+    },
+    {
+      "quote": "The same strongpoint could shelter a population one season and support a counter-raid the next.",
+      "judgment": "Elegant, but it is the thousandth instance of the same balanced antithesis; the device stops carrying information and becomes cadence."
+    },
+    {
+      "quote": "Its walls did not make the surrounding countryside safe by themselves.",
+      "judgment": "Typical of the pervasive negative-clarification tic: the reader was never in danger of believing the claim being denied, so the sentence costs pace and buys nothing."
+    },
+    {
+      "quote": "The Kurdish families who climbed toward the Turkish frontier in 1991 were not simply examples of an eternal human tendency to aggression.",
+      "judgment": "A strong closing chapter that finally lets particular people carry the argument, showing how much narrative energy the middle chapters forgo."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The 'X does not prove Y; it shows Z' epistemic clamp, deployed several times per chapter until it becomes the book's default sentence-engine rather than a considered judgment.",
+      "instances": [
+        "A mass grave of foragers cannot prove that warfare began there, just as a peaceful burial cannot prove that a society lacked aggression.",
+        "The Coyolxauhqui Stone does not prove that Mexica people were more aggressive than the communities represented by Cahokia's palisade or an Inca frontier garrison. It shows a society that placed the representation of sacred violence at the centre of civic architecture."
+      ]
+    },
+    {
+      "pattern": "Chapters are built to one fixed template: a named object or site described in close physical detail, then the object's evidentiary limits, then the institutional argument, then a bounded comparative verdict. Every chapter, without variation of shape or scale.",
+      "instances": [
+        "Nataruk \u2192 definitions of aggression \u2192 'What forms of aggression left no mark that we can now recognise?'",
+        "The Brookes diagram \u2192 Virginia statutes \u2192 Stono \u2192 'Atlantic slavery joined these facts without resolving their contradictions'"
+      ]
+    },
+    {
+      "pattern": "Paired antithesis as habitual cadence \u2014 protection/coercion, restraint/enlargement, visibility/silence \u2014 often stated symmetrically enough that the two halves cancel rather than advance an argument.",
+      "instances": [
+        "Restraint and enlargement belonged together.",
+        "Institutions have no single moral direction. The same tools can register refugees or classify enemies, direct food or enforce deprivation, protect a corridor or close it, document a crime or conceal responsibility."
+      ]
+    },
+    {
+      "pattern": "The 'silence of the source' set piece: a paragraph noting that the record does not preserve the voice of the powerless, appearing in essentially identical form for archaeology, royal inscriptions, ledgers, colonial maps, and relief registers.",
+      "instances": [
+        "No names appeared in the rows\u2026 it could not restore the languages spoken on board, the kinship ties broken at embarkation.",
+        "The document's silence is active. It does not show every discussion that preceded the signatures, every pressure surrounding the negotiation."
+      ]
+    },
+    {
+      "pattern": "Uniform paragraph mass and rhythm \u2014 long, mid-abstraction expository blocks with almost no short paragraphs, no dialogue, no quoted primary voice of more than a phrase, and no shift in register across fifteen chapters.",
+      "instances": [
+        "Extended run of level exposition in Chapter 9 from 'A war tax began as an assessment and ended as a material stream' through the magazine, drill and requisition paragraphs.",
+        "Extended run in Chapter 11 from 'These instruments differed in form\u2026' through the Congo/Java comparison, where each paragraph opens with an abstract subject and closes with a balanced qualification."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, intellectually serious history whose thesis \u2014 that aggression takes its scale and meaning from institutions, records and definitions of belonging rather than from a fixed human quantity \u2014 is genuinely load-bearing across all fifteen chapters and is tested rather than merely repeated. The source criticism is its great strength: it consistently distinguishes what a bone, an inscription, a ledger and a battle-death dataset can each support, and it refuses the easy synthesis at every turn. The cost is severe monotony. Every chapter is cut to one template, the 'this does not prove, it shows' clamp and the balanced antithesis recur so often that they become a cadence rather than a judgment, and the near-total absence of narrative pull, authorial presence, or engagement with named historiography leaves long stretches inert. Precision also lapses at least twice in ways the book's own standards make costly \u2014 the sack of Magdeburg is dated 1648, and the Mexica are placed on the eastern side of North America. Sentence craft is high and slop of the obvious kind is largely absent, but the templated shapes and paired hedges are a subtler, structural version of the same problem. Aggressive cutting of the restatement and some variation in chapter architecture would lift it considerably; the argument and the research do not need rebuilding."
+}

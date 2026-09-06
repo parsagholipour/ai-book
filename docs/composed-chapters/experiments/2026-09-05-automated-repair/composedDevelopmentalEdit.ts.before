@@ -1,0 +1,255 @@
+import { createHash } from "node:crypto";
+import {
+  FIGURE_WORD_EQUIVALENT, chapterWordBudget, editChapter, editManuscriptDevelopment, figureStandInMarkdown, isRecord,
+  paragraphShapeReport, proseWordCount, reinsertFigureFences, reviewChapterCaseEvidence, stripFigureFences,
+  chapterDegeneracy, type BookPlan, type ChapterComposition, type ComposeChapterOptions,
+  type CreateProjectInput, type DevelopmentEditResult, type TextModelAdapter
+} from "@book-maker/core";
+import { Prisma, prisma } from "@book-maker/db";
+import { updateJobProgress } from "../runtime/jobLifecycle.js";
+import type { ChapterSetup } from "../runtime/jobTypes.js";
+import { repairChapterEvidence } from "./composedEvidenceRepair.js";
+import {
+  derivedChapterBrief, loadComposedBookState, type ComposedChapterReport, type ComposedPageRow,
+  type StoredComposedPage
+} from "./composedChaptersState.js";
+
+export function composedManuscriptDigest(chapters: ReadonlyArray<{ index: number; markdown: string }>): string {
+  return createHash("sha256").update(JSON.stringify(chapters.map((chapter) => [chapter.index, chapter.markdown.replace(/\s+/g, " ").trim()]))).digest("hex");
+}
+
+export async function runComposedDevelopmentalEdit(options: {
+  projectId: string; planId: string; input: CreateProjectInput; plan: BookPlan;
+  textModel: TextModelAdapter; setups: ChapterSetup[]; chapterIds: Map<number, string>;
+  finalText: Map<number, string>; reports: Map<number, ComposedChapterReport>;
+  compositionFor: (setup: ChapterSetup) => ChapterComposition;
+  composeOptionsFor: (setup: ChapterSetup, drafts: Map<number, string>) => Promise<ComposeChapterOptions>;
+  describePages: (setup: ChapterSetup, markdown: string) => Promise<ComposedPageRow[]>;
+  lineEdit: boolean; generationJobId?: string | undefined;
+}): Promise<void> {
+  const state = await loadComposedBookState(options.projectId);
+  const chapters = options.setups.map((setup) => ({ index: setup.chapter.index, title: setup.chapter.title, markdown: options.finalText.get(setup.chapter.index) ?? "" }));
+  const beforeDigest = composedManuscriptDigest(chapters);
+  const row = await prisma.planVersion.findUnique({ where: { id: options.planId }, select: { planningPackage: true } });
+  const marker = isRecord(row?.planningPackage) && isRecord(row.planningPackage.developmentalEdit) ? row.planningPackage.developmentalEdit : undefined;
+  if (marker?.version === 1 && marker.resultDigest === beforeDigest) return;
+  // A restart during finalize must never rewrite a mix of published and pending pages.
+  if (state.pages.some((page) => page.status !== "PENDING")) return;
+  if (state.pages.length !== options.input.targetPages || chapters.some((chapter) => !chapter.markdown.trim())) {
+    throw new Error("Developmental editing requires the complete staged manuscript.");
+  }
+  const budgets = options.setups.map((setup) => chapterWordBudget(options.input, setup.endPage - setup.startPage + 1, { figureWords: stripFigureFences(options.finalText.get(setup.chapter.index) ?? "").fences.length * FIGURE_WORD_EQUIVALENT }));
+  const wordBudget = budgets.reduce((sum, budget) => ({ min: sum.min + budget.min, target: sum.target + budget.target, max: sum.max + budget.max }), { min: 0, target: 0, max: 0 });
+  await updateJobProgress(options.generationJobId, { progress: 69, message: "Editing the manuscript's progression and overlapping sections" });
+  const result = await editManuscriptDevelopment({
+    input: options.input, plan: options.plan,
+    chapters: chapters.map((chapter) => ({ ...chapter, markdown: figureStandInMarkdown(chapter.markdown) })),
+    wordBudget, textModel: options.textModel
+  });
+  const candidates = new Map(result.chapters.map((chapter) => [chapter.index, chapter.markdown]));
+  const prepared: PreparedDevelopmentChapter[] = [];
+  // The same tier writer performs every rewrite and the final line edit.
+  for (const setup of options.setups) {
+    const original = options.finalText.get(setup.chapter.index)!;
+    const { fences } = stripFigureFences(original);
+    const composeOptions = await options.composeOptionsFor(setup, new Map());
+    const packets = options.plan.dossier?.evidencePackets ?? [];
+    const originalMaterial = composeOptions.material;
+    const material = packets.length
+      ? { episodes: originalMaterial?.episodes ?? [], excerpts: originalMaterial?.excerpts ?? [], evidencePackets: packets }
+      : originalMaterial;
+    let markdown = candidates.get(setup.chapter.index)!;
+    if (options.lineEdit) {
+      await updateJobProgress(options.generationJobId, { progress: 71, message: `Polishing chapter ${setup.chapter.index}/${options.setups.length}` });
+      const polished = await editChapter({ ...composeOptions, material, markdown, allowExtension: false });
+      const words = proseWordCount(polished.markdown);
+      const before = proseWordCount(markdown);
+      if (words >= before * 0.9 && words <= before * 1.1 && !chapterDegeneracy(polished.markdown, { maxWords: Math.ceil(before * 1.1), language: options.input.language }).degenerate) {
+        markdown = polished.markdown;
+      }
+    }
+    // The same bounded repair as the compose pass; what stands is recorded on the chapter and flagged at compile time.
+    const repair = await repairChapterEvidence({
+      markdown,
+      review: (text) => reviewChapterCaseEvidence({ markdown: text, packets, textModel: options.textModel }),
+      edit: async (text, notes) => (await editChapter({ ...composeOptions, material, markdown: text, allowExtension: false, readerNotes: notes })).markdown,
+      degenerate: (text) => chapterDegeneracy(text, { maxWords: Math.ceil(proseWordCount(markdown) * 1.1), language: options.input.language }).degenerate
+    });
+    markdown = repair.markdown;
+    const evidence = { findings: repair.findings, repairs: repair.repairs, unresolved: repair.unresolved, dropped: repair.dropped };
+    if (repair.unresolved.length || repair.dropped) {
+      console.warn("Developmental edit left unsupported case claims", { event: "generation.composed_chapters.evidence_unresolved", projectId: options.projectId, chapterIndex: setup.chapter.index, stage: "developmental-edit", ...evidence });
+    }
+    const restored = reinsertFigureFences(markdown, fences);
+    if (chapterDegeneracy(restored, { maxWords: Math.max(proseWordCount(original), proseWordCount(restored)) + 1, language: options.input.language }).degenerate) {
+      throw new Error(`Developmental edit of chapter ${setup.chapter.index} failed prose integrity.`);
+    }
+    const pages = await options.describePages(setup, restored);
+    const oldReport = options.reports.get(setup.chapter.index);
+    const chapterBudget = chapterWordBudget(options.input, setup.endPage - setup.startPage + 1);
+    const report: ComposedChapterReport = {
+      formPlanSource: "model", formPlanIssues: [], draftWords: proseWordCount(original), editedWords: proseWordCount(restored),
+      editorChanged: restored !== original, readNotes: [], secondEditApplied: false,
+      wordBudget: chapterBudget, paragraphCv: paragraphShapeReport(restored).cv, shapePassApplied: false,
+      ...oldReport,
+      developmentalEdit: {
+        appliedGroups: result.appliedGroups.filter((id) => result.plan.groups.find((group) => group.id === id)?.changes.some((change) => change.chapterIndex === setup.chapter.index)),
+        rejectedGroups: result.rejectedGroups,
+        beforeWords: proseWordCount(original), afterWords: proseWordCount(restored)
+      },
+      // This review read the final text, so it supersedes the compose-time residuals the compile matches pages against.
+      evidence
+    };
+    report.editedWords = proseWordCount(restored);
+    report.editorChanged = restored !== original;
+    report.paragraphCv = paragraphShapeReport(restored).cv;
+    prepared.push({ setup, chapterId: options.chapterIds.get(setup.chapter.index)!, composition: options.compositionFor(setup), markdown: restored, pages, report });
+  }
+  let afterWords = prepared.reduce((sum, chapter) => sum + proseWordCount(chapter.markdown), 0);
+  // A developmental edit cuts, and the line edit is told not to refill, so the
+  // book can land under its floor with every page written: two of the first
+  // three books to reach this point did (2.7% and 8.6% under, 2026-09-05) and
+  // were failed here with 120 pages staged. The floor is bought back the way
+  // the compose pass buys length — the chapters furthest under their own
+  // budget are developed from their material, each checked again — and what
+  // the extension cannot reach is recorded, never a failed book.
+  let extension: DevelopmentLengthExtension | undefined;
+  if (afterWords < wordBudget.min) {
+    extension = await extendUnderBudget({ options, prepared, budgets, floor: wordBudget.min });
+    afterWords = prepared.reduce((sum, chapter) => sum + proseWordCount(chapter.markdown), 0);
+  }
+  if (afterWords > wordBudget.max) {
+    throw new Error(`The edited manuscript has ${afterWords} words; the requested book allows at most ${wordBudget.max}. It remains staged for a substantive length repair.`);
+  }
+  const lengthShortfall = Math.max(0, wordBudget.min - afterWords);
+  if (lengthShortfall > 0) {
+    console.warn("Developmental edit left the book under its word floor", {
+      event: "generation.composed_chapters.length_shortfall",
+      projectId: options.projectId, afterWords, floor: wordBudget.min, shortfall: lengthShortfall, ...extension
+    });
+  }
+  await commitComposedDevelopment({
+    projectId: options.projectId, planId: options.planId, expectedPlan: row?.planningPackage, originalPages: state.pages, chapters: prepared,
+    marker: {
+      version: 1, sourceDigest: beforeDigest, resultDigest: composedManuscriptDigest(prepared.map((entry) => ({ index: entry.setup.chapter.index, markdown: entry.markdown }))),
+      beforeWords: result.beforeWords, afterWords, appliedGroups: result.appliedGroups, rejectedGroups: result.rejectedGroups,
+      ...(extension ? { extension } : {}), ...(lengthShortfall > 0 ? { lengthShortfall } : {})
+    }
+  });
+  for (const chapter of prepared) {
+    options.finalText.set(chapter.setup.chapter.index, chapter.markdown);
+    options.reports.set(chapter.setup.chapter.index, chapter.report);
+  }
+}
+
+type PreparedDevelopmentChapter = {
+  setup: ChapterSetup; chapterId: string; composition: ChapterComposition;
+  markdown: string; pages: ComposedPageRow[]; report: ComposedChapterReport;
+};
+
+/** Which chapters the length extension developed and what it bought. */
+export type DevelopmentLengthExtension = { chapters: number[]; addedWords: number };
+
+/** At most this many chapters are developed to buy the floor back; the shortfall the two failed books showed was one or two chapters' worth. */
+export const LENGTH_EXTENSION_CHAPTERS = 6;
+
+/**
+ * Develop the chapters furthest under their own budget, largest deficit first,
+ * until the book reaches its floor or the chapter allowance is spent. Each
+ * extension is the line editor's own extension mode on the chapter's material,
+ * kept only when it grew the chapter within its budget without degenerating,
+ * and its case claims are checked again because it added particulars.
+ */
+async function extendUnderBudget(args: {
+  options: Parameters<typeof runComposedDevelopmentalEdit>[0];
+  prepared: PreparedDevelopmentChapter[];
+  budgets: ReturnType<typeof chapterWordBudget>[];
+  floor: number;
+}): Promise<DevelopmentLengthExtension> {
+  const { options, prepared } = args;
+  const extension: DevelopmentLengthExtension = { chapters: [], addedWords: 0 };
+  let total = prepared.reduce((sum, chapter) => sum + proseWordCount(chapter.markdown), 0);
+  const deficits = prepared
+    .map((entry, position) => ({ entry, budget: args.budgets[position]!, deficit: args.budgets[position]!.target - proseWordCount(entry.markdown) }))
+    .filter((candidate) => candidate.deficit > 0)
+    .sort((a, b) => b.deficit - a.deficit)
+    .slice(0, LENGTH_EXTENSION_CHAPTERS);
+  for (const { entry, budget } of deficits) {
+    if (total >= args.floor) break;
+    const index = entry.setup.chapter.index;
+    await updateJobProgress(options.generationJobId, { progress: 71, message: `Developing chapter ${index} to the book's length` });
+    const composeOptions = await options.composeOptionsFor(entry.setup, new Map());
+    const packets = options.plan.dossier?.evidencePackets ?? [];
+    const originalMaterial = composeOptions.material;
+    const material = packets.length
+      ? { episodes: originalMaterial?.episodes ?? [], excerpts: originalMaterial?.excerpts ?? [], evidencePackets: packets }
+      : originalMaterial;
+    const { prose, fences } = stripFigureFences(entry.markdown);
+    const before = proseWordCount(prose);
+    const extended = await editChapter({ ...composeOptions, material, markdown: prose, allowExtension: true });
+    const grown = proseWordCount(extended.markdown);
+    if (grown <= before || grown > budget.max || chapterDegeneracy(extended.markdown, { maxWords: budget.max, language: options.input.language }).degenerate) continue;
+    const repair = await repairChapterEvidence({
+      markdown: extended.markdown,
+      review: (text) => reviewChapterCaseEvidence({ markdown: text, packets, textModel: options.textModel }),
+      edit: async (text, notes) => (await editChapter({ ...composeOptions, material, markdown: text, allowExtension: false, readerNotes: notes })).markdown,
+      degenerate: (text) => chapterDegeneracy(text, { maxWords: budget.max, language: options.input.language }).degenerate
+    });
+    const restored = reinsertFigureFences(repair.markdown, fences);
+    const words = proseWordCount(restored);
+    if (words <= proseWordCount(entry.markdown)) continue;
+    const pages = await options.describePages(entry.setup, restored);
+    total += words - proseWordCount(entry.markdown);
+    extension.addedWords += words - proseWordCount(entry.markdown);
+    extension.chapters.push(index);
+    entry.markdown = restored;
+    entry.pages = pages;
+    entry.report = {
+      ...entry.report,
+      editedWords: words, editorChanged: true, paragraphCv: paragraphShapeReport(restored).cv,
+      ...(entry.report.developmentalEdit ? { developmentalEdit: { ...entry.report.developmentalEdit, afterWords: words } } : {}),
+      evidence: { findings: repair.findings, repairs: repair.repairs, unresolved: repair.unresolved, dropped: repair.dropped }
+    };
+    if (repair.unresolved.length || repair.dropped) {
+      console.warn("Length extension left unsupported case claims", { event: "generation.composed_chapters.evidence_unresolved", projectId: options.projectId, chapterIndex: index, stage: "length-extension", ...entry.report.evidence });
+    }
+  }
+  return extension;
+}
+
+/** Linked moves and their restart marker publish as a single transaction. */
+export async function commitComposedDevelopment(options: {
+  projectId: string; planId: string; expectedPlan: unknown; originalPages: StoredComposedPage[];
+  chapters: PreparedDevelopmentChapter[];
+  marker: {
+    version: number; sourceDigest: string; resultDigest: string; beforeWords: number; afterWords: number;
+    appliedGroups: string[]; rejectedGroups: DevelopmentEditResult["rejectedGroups"];
+    extension?: DevelopmentLengthExtension | undefined; lengthShortfall?: number | undefined;
+  };
+}): Promise<void> {
+  const indexes = options.chapters.flatMap((chapter) => chapter.pages.map((page) => page.index));
+  if (indexes.length !== options.originalPages.length || new Set(indexes).size !== indexes.length || options.originalPages.some((page) => !indexes.includes(page.index))) throw new Error("The developmental edit does not cover every staged page exactly once.");
+  await prisma.$transaction(async (tx) => {
+    const row = await tx.planVersion.findUnique({ where: { id: options.planId }, select: { planningPackage: true } });
+    if (!row || !isRecord(row.planningPackage) || JSON.stringify(row.planningPackage) !== JSON.stringify(options.expectedPlan)) throw new Error("The plan changed during developmental editing; linked edits were not saved.");
+    const originals = new Map(options.originalPages.map((page) => [page.index, page]));
+    for (const chapter of options.chapters) {
+      for (const page of chapter.pages) {
+        const original = originals.get(page.index);
+        if (!original) throw new Error("The developmental edit no longer covers the staged pages.");
+        const changed = await tx.page.updateMany({
+          where: { projectId: options.projectId, index: page.index, status: "PENDING", title: original.title, markdown: original.markdown, summary: original.summary, imagePrompt: original.imagePrompt },
+          data: { title: page.title, markdown: page.markdown, summary: page.summary, imagePrompt: page.imagePrompt ?? null }
+        });
+        if (changed.count !== 1) throw new Error("A staged page changed during developmental editing; no linked edits were saved.");
+      }
+      const brief = derivedChapterBrief(chapter.setup, chapter.composition, chapter.pages, chapter.report);
+      await tx.chapter.update({ where: { id: chapter.chapterId }, data: { productionBrief: brief as unknown as Prisma.InputJsonValue } });
+    }
+    const saved = await tx.planVersion.updateMany({
+      where: { id: options.planId, planningPackage: { equals: row.planningPackage as Prisma.InputJsonValue } },
+      data: { planningPackage: { ...row.planningPackage, developmentalEdit: options.marker } as unknown as Prisma.InputJsonValue }
+    });
+    if (saved.count !== 1) throw new Error("The plan changed during developmental editing; linked edits were rolled back.");
+  }, { isolationLevel: "Serializable", timeout: 30_000 });
+}

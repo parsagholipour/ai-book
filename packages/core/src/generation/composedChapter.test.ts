@@ -458,3 +458,105 @@ describe("code blocks in the compose and edit prompts", () => {
     expect(seen[3]!.messages[0]!.content).not.toContain("language tag included");
   });
 });
+
+import { cutChapter } from "./composedChapter.js";
+import { countReadableWords } from "./proseShape.js";
+
+describe("cutChapter", () => {
+  const PARAGRAPHS = 11;
+
+  function draftOf(minWords: number): string {
+    const perParagraph = Math.ceil((minWords * 1.1) / PARAGRAPHS);
+    return Array.from({ length: PARAGRAPHS }, (_, paragraph) => {
+      const sentences: string[] = [];
+      let index = 0;
+      while (countReadableWords(sentences.join(" ")) < perParagraph) {
+        sentences.push(`Record ${paragraph}-${index} names the fee the clerk wrote beside the verdict of that day.`);
+        index += 1;
+      }
+      return sentences.join(" ");
+    }).join("\n\n");
+  }
+
+  async function cut(reply: (draft: string) => string) {
+    const { plan, chapter, composition } = setup();
+    const fake = new FakeTextModelAdapter(input);
+    const stance = await generateAuthorStance({ input, plan, textModel: fake });
+    const budget = chapterWordBudget(input, chapter.targetPages);
+    const markdown = draftOf(budget.min);
+    let system = "";
+    const model = {
+      ...fake,
+      generateText: async (options: GenerateTextOptions) => {
+        system = options.messages[0]!.content;
+        return { text: reply(markdown), model: "fake", provider: "fake" };
+      }
+    } as unknown as FakeTextModelAdapter;
+    const result = await cutChapter({
+      input,
+      plan,
+      stance,
+      chapter,
+      composition,
+      chapterPageStart: 1,
+      chapterPageEnd: chapter.targetPages,
+      earlierChapters: [],
+      continuityNotes: [],
+      researchNotes: [],
+      markdown,
+      notes: ["Paragraph beginning 'Record 10-0': cut the closing sentences."],
+      maxRemovableWords: 120,
+      textModel: model
+    });
+    return { result, system, markdown, budget };
+  }
+
+  it("names the removable-word ceiling in the prompt and keeps a cut that stays above the floor", async () => {
+    const { result, system, markdown, budget } = await cut((draft) => draft.split("\n\n").slice(0, -1).join("\n\n"));
+    expect(system).toContain("never more than 120 words");
+    expect(result.changed).toBe(true);
+    expect(result.markdown).not.toBe(markdown);
+    expect(result.words).toBeGreaterThanOrEqual(budget.min);
+  });
+
+  it("refuses a deletion-only cut that would drop the chapter under its page floor", async () => {
+    const deeper = (draft: string) => draft.split("\n\n").slice(0, -2).join("\n\n");
+    const { result, markdown, budget } = await cut(deeper);
+    // The cut itself is a legitimate deletion; only the floor refuses it.
+    expect(deletionOnlyResult(markdown, deeper(markdown))).toBe(deeper(markdown));
+    expect(countReadableWords(deeper(markdown))).toBeLessThan(budget.min);
+    expect(result.changed).toBe(false);
+    expect(result.markdown).toBe(markdown);
+  });
+
+  it("says nothing about a ceiling when none is given", async () => {
+    const { plan, chapter, composition } = setup();
+    const fake = new FakeTextModelAdapter(input);
+    const stance = await generateAuthorStance({ input, plan, textModel: fake });
+    let system = "";
+    const model = {
+      ...fake,
+      generateText: async (options: GenerateTextOptions) => {
+        system = options.messages[0]!.content;
+        return { text: "Cut.", model: "fake", provider: "fake" };
+      }
+    } as unknown as FakeTextModelAdapter;
+    await cutChapter({
+      input,
+      plan,
+      stance,
+      chapter,
+      composition,
+      chapterPageStart: 1,
+      chapterPageEnd: chapter.targetPages,
+      earlierChapters: [],
+      continuityNotes: [],
+      researchNotes: [],
+      markdown: "A draft.\n\nA second paragraph.",
+      notes: [],
+      textModel: model
+    });
+    expect(system).toContain("at most a quarter of the chapter.");
+    expect(system).not.toContain("never more than");
+  });
+});

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.9,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Low",
+  "highlights": [
+    {
+      "quote": "A weapon does not explain its own use. A wound does not identify the social purpose of the blow.",
+      "judgment": "Crisp statement of the book's controlling thesis, earned by the preceding archaeological reading rather than asserted."
+    },
+    {
+      "quote": "The number opens the question; it does not answer it alone.",
+      "judgment": "Exemplary epistemic discipline about sources, though the same formula recurs so often it becomes a tic."
+    },
+    {
+      "quote": "A paiza did not make every road safe. It made refusal dangerous.",
+      "judgment": "The single best sentence in the book: compressed, surprising, and analytically exact."
+    },
+    {
+      "quote": "What the Uruk tablet distributes through entries, Narmer's palette condenses into scale, posture, crown, and blow.",
+      "judgment": "Genuine cross-object synthesis; the chiastic comparison does real conceptual work rather than decorating."
+    },
+    {
+      "quote": "The hold had been measured for bodies; the plantation measured their time.",
+      "judgment": "Strong image, but also a specimen of the paired-antithesis closer the book reaches for at the end of nearly every section."
+    },
+    {
+      "quote": "The state's strength lay less in perfect compliance than in its capacity to identify interruption",
+      "judgment": "Original administrative insight that reframes early-modern state power away from the usual technological story."
+    },
+    {
+      "quote": "Tenochtitlan's lake setting shaped the routes through which the Mexica could rule.",
+      "judgment": "Representative of the weaker passages: a general claim restated after it has already been demonstrated, padding the section."
+    },
+    {
+      "quote": "Fear may move a hand, but an office can direct thousands of hands towards a defined population.",
+      "judgment": "Rhetorically effective but aphoristic and symmetrical \u2014 the closer-shape that, repeated fifteen times across chapters, dulls its own force."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Evidence-limit clause: nearly every subsection ends by conceding exactly what the source cannot establish, in the same two-clause shape. Intellectually admirable, but so uniform it becomes predictable structure rather than argument.",
+      "instances": [
+        "The bones establish harm. The archaeologists' reconstruction gives that harm a likely setting and sequence.",
+        "The stone and the bones secure the institution while leaving its full accounting incomplete."
+      ]
+    },
+    {
+      "pattern": "Negation-then-correction opener ('It was not X. It was Y.'), used to launch objects, events and institutions across all fifteen chapters.",
+      "instances": [
+        "A cannon register did not begin with rage. It began with measurement.",
+        "The mounds were not accidental heaps of earth."
+      ]
+    },
+    {
+      "pattern": "Instrument inventory: a section that enumerates four to six devices of rule, one short paragraph each, closing with a summary sentence that recombines all of them in a single list.",
+      "instances": [
+        "Tribute was the first instrument. [\u2026] Hostages were the second.",
+        "A tax pushed people towards wages; a pass restricted the route by which wages could be found; a quota measured what was owed"
+      ]
+    },
+    {
+      "pattern": "Paired-antithesis chapter closer, an aphorism balancing a physical act against an institutional one.",
+      "instances": [
+        "State formation did not simply add force to human affairs. In these cases, it selected targets, set limits, and gave aggression an address.",
+        "Exchange did not end aggression; it gave aggression a price and supplied reasons for ending it."
+      ]
+    },
+    {
+      "pattern": "The 'chain' metaphor for administered violence, invoked in essentially every chapter with the same vocabulary of offices, links and distance, so that the book's key figure loses novelty by mid-volume.",
+      "instances": [
+        "The person who dies from a spear thrust and the official who requisitions grain are connected by a chain of decisions",
+        "The paiza was the visible tip of a chain linking pastoral resources to imperial command."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined work of comparative history organised around one clear and productive thesis: aggression becomes historically consequential not through human temperament but through the offices, categories and records that select targets and make harm repeatable. The argument is sustained across fifteen chapters and roughly 5,000 years without drifting, and each chapter is anchored to specific objects \u2014 a grave, a stele, a tribute list, an arsenal register, a conference protocol \u2014 that are read closely and honestly, with consistent attention to what a source can and cannot support. The prose is precise, jargon-free and free of the usual AI vocabulary tells; the voice is distinctive and steady. Its weakness is rhythmic monotony: the negation-then-correction opener, the evidence-limit concession, the enumerated inventory of instruments, and the balanced aphoristic closer recur so regularly that the reader can predict a paragraph's shape before reading it, and several sections restate conclusions already reached. Engagement suffers accordingly \u2014 almost every chapter is written at the same middle temperature, with human experience admitted mostly as an acknowledged absence. Trimming the redundant restatements and varying the closing cadence would lift a strong manuscript to a very strong one."
+}

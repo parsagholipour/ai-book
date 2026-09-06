@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 5,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 6.8,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The number is an argument built from records, not a body recovered whole from the past.",
+      "judgment": "Strong: compresses the book's evidentiary thesis into a genuinely earned image rather than a decorative one."
+    },
+    {
+      "quote": "A wound belongs to the moment when force met bone; a burial belongs to the people who decided what should happen to the body afterward.",
+      "judgment": "Excellent analytic distinction, concretely grounded in the Jebel Sahaba material."
+    },
+    {
+      "quote": "Its language is composed, technical, and almost aggressively ordinary.",
+      "judgment": "One of the few sentences with real rhetorical torque; the Wannsee chapter is the book's sharpest writing."
+    },
+    {
+      "quote": "An employer could possess a contract; a worker possessed his feet.",
+      "judgment": "A rare witty antithesis that carries argument rather than merely balancing clauses."
+    },
+    {
+      "quote": "Technology altered the reach of that direction... None of these objects created a motive by itself.",
+      "judgment": "The book's core claim, but stated in nearly identical words in at least six chapters \u2014 the thesis is asserted more often than it is advanced."
+    },
+    {
+      "quote": "At a roadblock, the distance between bureaucratic category and bodily danger was only a question.",
+      "judgment": "An aphoristic one-line paragraph used as a dramatic beat; effective once, but symptomatic of a manufactured 'landing' habit."
+    },
+    {
+      "quote": "Security and coercion could be delivered by the same governor, supported by the same road, and justified by the same promise of order.",
+      "judgment": "Elegant, but this same paired-antithesis about protection-and-coercion recurs in nearly every chapter with only the nouns swapped."
+    },
+    {
+      "quote": "The open question is whether a decline claim survives when the measure includes the people who fled, starved, vanished, or lived under permanent threat.",
+      "judgment": "Chapter 14 ends on a posed question with no chapter-level synthesis, leaving the post-1945 argument structurally unfinished."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The 'establishes X, does not establish Y' symmetrical hedge, used as the standard closing move for every piece of evidence.",
+      "instances": [
+        "It establishes a physical encounter between a projectile and a body... The bones do not identify the participants",
+        "A stone stairway, a bridge anchor, a tambo... shows the labour invested in movement... It does not identify every conversation between a local leader and an imperial official"
+      ]
+    },
+    {
+      "pattern": "Chapter-closing synthesis paragraph that re-lists each artifact of the chapter in parallel clauses, restating the thesis rather than extending it.",
+      "instances": [
+        "A city wall turned labour into protection and siege. A ration tablet turned grain into an obligation. The Narmer Palette turned a blow into a definition of kingship.",
+        "A state could make a child's condition hereditary with one sentence. A merchant could turn a captive into insured cargo through a contract. A patrol could make a road conditional on a pass."
+      ]
+    },
+    {
+      "pattern": "Technology-disclaimer paragraph: a near-verbatim 'the tool did not decide; people did' passage appears in almost every chapter.",
+      "instances": [
+        "Neither architecture nor weaponry explains aggression by itself... it did not supply the motive that made a wall a boundary or a weapon an instrument of attack.",
+        "The machete did not make the killing communal. Political mobilisation... gave the tool its place."
+      ]
+    },
+    {
+      "pattern": "Numbered or enumerated 'sequence' scaffolding imposed on evidence (First, Second, Third...), used as the default explanatory device.",
+      "instances": [
+        "First, a resource becomes concentrated in time or space. Second, people alter their routes to reach it. Third, several parties arrive with claims...",
+        "First, the king is made larger than the captive... Second, the captive is lowered... Third, the weapon rises above both figures..."
+      ]
+    },
+    {
+      "pattern": "Case redundancy across chapters: the same episode is narrated twice at similar length with only a shifted lens, without acknowledgement.",
+      "instances": [
+        "H\u00fcleg\u00fc's army approached after the Mongols had destroyed the Abbasid caliphate's power in Iran... After the city capitulated in February 1258, killing, looting, and destruction followed. (Ch. 6)",
+        "The sources describe an ultimatum and a refusal... before the city was encircled in January 1258... Baghdad surrendered after the walls were breached (Ch. 7)"
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, source-literate work of comparative history with a clear and genuinely sustained thesis: aggression has no measurable constancy, and violence acquires scale through records, categories, supply chains and political decisions rather than through appetite. The evidence is specific and varied \u2014 Jebel Sahaba, Lachish reliefs, Ur III ration tablets, Behistun, the Coyolxauhqui Stone, the paiza, Virginia's 1662 statute, the Wannsee Protocol, gacaca \u2014 and the reasoning about what each source can and cannot support is consistently careful, often exemplary. The prose is clean and the voice steady, but the steadiness becomes the book's main liability: nearly every chapter runs the same three moves (narrate an artifact, disclaim what it cannot prove, close with a parallel-clause synthesis restating the thesis), producing heavy redundancy, low narrative pull, and almost no argumentative development after roughly chapter four. Structural problems compound this \u2014 Baghdad 1258 is narrated twice at length in chapters 6 and 7, and chapter 14 ends on a posed question rather than a chapter argument. Slop indicators here are structural rather than lexical: no stock AI phrasing, but pervasive symmetrical hedges, paired antitheses, uniform paragraph shapes and aphoristic closers. With aggressive cutting of the recap loops, variation in chapter architecture, and a thesis that grows rather than repeats, this would be a strong book; as it stands it needs moderate revision."
+}

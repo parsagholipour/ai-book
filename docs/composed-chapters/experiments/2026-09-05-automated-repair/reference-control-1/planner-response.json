@@ -1,0 +1,80 @@
+{
+  "text": "{\"groups\":[{\"id\":\"g1\",\"reason\":\"Chapter 6 repeats the organization-and-seasonality explanation of the Lindisfarne raid. Paragraph 1 already establishes the monastery’s vulnerability, portable wealth, and surprise, while paragraph 2 explains crew assembly, provisions, seasonal limits, and the wider relation between raiding and trade. Paragraph 10 restates those points without adding evidence; paragraph 11 retains the distinct transition from raiding to durable settlement and political rule.\",\"changes\":[{\"id\":\"c1\",\"chapterIndex\":6,\"startParagraph\":10,\"deleteCount\":1,\"targetWords\":0,\"instruction\":\"Delete this repeated framing paragraph. Retain the Lindisfarne evidence and the explanation of maritime organization in paragraphs 1–2, and retain the distinct evidence about Dublin, York, and winter camps in paragraph 11.\"}]},{\"id\":\"g2\",\"reason\":\"These passages in Chapter 8 repeat the chapter’s already established explanation that labour demand alone did not create hereditary racial slavery. Paragraphs 10–12 introduce the labour-shortage claim, Barbados’s production pressures, and the conclusion that institutions gave demand its destructive form. Paragraphs 13–19 then provide the stronger evidence: the Royal African Company’s transport network, colonial law, hereditary status, racial classification, and alternative labour possibilities. The shorter general statements in paragraphs 10 and 12 can therefore be removed while paragraphs 11 and 13–19 carry the substantive contribution.\",\"changes\":[{\"id\":\"c2\",\"chapterIndex\":8,\"startParagraph\":10,\"deleteCount\":1,\"targetWords\":0,\"instruction\":\"Delete the general labour-shortage framing. Retain the concrete Barbados production pressures in paragraph 11 and the institutional explanation in paragraphs 13–19.\"},{\"id\":\"c3\",\"chapterIndex\":8,\"startParagraph\":12,\"deleteCount\":1,\"targetWords\":0,\"instruction\":\"Delete this conclusion because paragraphs 13–19 demonstrate more specifically how demand became organized enslavement through companies, shipping, colonial law, hereditary status, and racial classification.\"}]},{\"id\":\"g3\",\"reason\":\"Chapter 8’s paragraphs 35–38 restate the resistance taxonomy already demonstrated in paragraphs 20–34. Paragraphs 20–27 establish Stono as armed, geographically directed revolt; paragraphs 28–30 establish Maroon and quilombo communities; paragraphs 31–32 establish workplace resistance and flight; and paragraphs 33–34 establish petitions and constrained legal claims. Paragraphs 35–38 summarize those same forms and their overlap without adding a new case or mechanism. Removing them preserves the chapter’s requested coverage while reducing recap.\",\"changes\":[{\"id\":\"c4\",\"chapterIndex\":8,\"startParagraph\":35,\"deleteCount\":4,\"targetWords\":0,\"instruction\":\"Delete the recap of revolt, cultural reconstruction, and overlapping resistance forms. Retain the detailed evidence in paragraphs 20–34, including Stono, Jamaican Maroons, Surinamese Maroons, Palmares, slowdowns, flight, petitions, and the limits of partial claims.\"}]},{\"id\":\"g4\",\"reason\":\"Chapter 8’s paragraphs 39–41 repeat the institutional synthesis already supplied by the preceding cases. Paragraph 39 restates that Virginia, Barbados, the Royal African Company, South Carolina, Maroon treaties, and French officials used state power; paragraph 40 restates the tension between regulation and licensed coercion; paragraph 41 repeats the chapter’s causal chain from labour demand through law, shipping, racial ideas, guns, and roads. The detailed evidence for those mechanisms is retained in paragraphs 1–19, 20–34, and 28–38. Paragraph 42 remains because it gives the chapter’s final contrast between the 1662 statute and resistance across different settings.\",\"changes\":[{\"id\":\"c5\",\"chapterIndex\":8,\"startParagraph\":39,\"deleteCount\":3,\"targetWords\":0,\"instruction\":\"Delete this repeated institutional and causal summary. Retain the underlying evidence in paragraphs 1–19 on hereditary slavery and plantation law, paragraphs 20–27 on Stono and state response, paragraphs 28–38 on Maroon communities, quilombos, slowdowns, flight, petitions, and cultural reconstruction, and retain paragraph 42 as the distinct closing image.\"}]}]}",
+  "model": "gpt-5.6-luna",
+  "provider": "openai",
+  "usage": {
+    "promptTokens": 69259,
+    "outputTokens": 1772,
+    "cacheHitTokens": 0,
+    "cacheWriteTokens": 69256,
+    "reasoningTokens": 886
+  },
+  "data": {
+    "groups": [
+      {
+        "id": "g1",
+        "reason": "Chapter 6 repeats the organization-and-seasonality explanation of the Lindisfarne raid. Paragraph 1 already establishes the monastery’s vulnerability, portable wealth, and surprise, while paragraph 2 explains crew assembly, provisions, seasonal limits, and the wider relation between raiding and trade. Paragraph 10 restates those points without adding evidence; paragraph 11 retains the distinct transition from raiding to durable settlement and political rule.",
+        "changes": [
+          {
+            "id": "c1",
+            "chapterIndex": 6,
+            "startParagraph": 10,
+            "deleteCount": 1,
+            "targetWords": 0,
+            "instruction": "Delete this repeated framing paragraph. Retain the Lindisfarne evidence and the explanation of maritime organization in paragraphs 1–2, and retain the distinct evidence about Dublin, York, and winter camps in paragraph 11."
+          }
+        ]
+      },
+      {
+        "id": "g2",
+        "reason": "These passages in Chapter 8 repeat the chapter’s already established explanation that labour demand alone did not create hereditary racial slavery. Paragraphs 10–12 introduce the labour-shortage claim, Barbados’s production pressures, and the conclusion that institutions gave demand its destructive form. Paragraphs 13–19 then provide the stronger evidence: the Royal African Company’s transport network, colonial law, hereditary status, racial classification, and alternative labour possibilities. The shorter general statements in paragraphs 10 and 12 can therefore be removed while paragraphs 11 and 13–19 carry the substantive contribution.",
+        "changes": [
+          {
+            "id": "c2",
+            "chapterIndex": 8,
+            "startParagraph": 10,
+            "deleteCount": 1,
+            "targetWords": 0,
+            "instruction": "Delete the general labour-shortage framing. Retain the concrete Barbados production pressures in paragraph 11 and the institutional explanation in paragraphs 13–19."
+          },
+          {
+            "id": "c3",
+            "chapterIndex": 8,
+            "startParagraph": 12,
+            "deleteCount": 1,
+            "targetWords": 0,
+            "instruction": "Delete this conclusion because paragraphs 13–19 demonstrate more specifically how demand became organized enslavement through companies, shipping, colonial law, hereditary status, and racial classification."
+          }
+        ]
+      },
+      {
+        "id": "g3",
+        "reason": "Chapter 8’s paragraphs 35–38 restate the resistance taxonomy already demonstrated in paragraphs 20–34. Paragraphs 20–27 establish Stono as armed, geographically directed revolt; paragraphs 28–30 establish Maroon and quilombo communities; paragraphs 31–32 establish workplace resistance and flight; and paragraphs 33–34 establish petitions and constrained legal claims. Paragraphs 35–38 summarize those same forms and their overlap without adding a new case or mechanism. Removing them preserves the chapter’s requested coverage while reducing recap.",
+        "changes": [
+          {
+            "id": "c4",
+            "chapterIndex": 8,
+            "startParagraph": 35,
+            "deleteCount": 4,
+            "targetWords": 0,
+            "instruction": "Delete the recap of revolt, cultural reconstruction, and overlapping resistance forms. Retain the detailed evidence in paragraphs 20–34, including Stono, Jamaican Maroons, Surinamese Maroons, Palmares, slowdowns, flight, petitions, and the limits of partial claims."
+          }
+        ]
+      },
+      {
+        "id": "g4",
+        "reason": "Chapter 8’s paragraphs 39–41 repeat the institutional synthesis already supplied by the preceding cases. Paragraph 39 restates that Virginia, Barbados, the Royal African Company, South Carolina, Maroon treaties, and French officials used state power; paragraph 40 restates the tension between regulation and licensed coercion; paragraph 41 repeats the chapter’s causal chain from labour demand through law, shipping, racial ideas, guns, and roads. The detailed evidence for those mechanisms is retained in paragraphs 1–19, 20–34, and 28–38. Paragraph 42 remains because it gives the chapter’s final contrast between the 1662 statute and resistance across different settings.",
+        "changes": [
+          {
+            "id": "c5",
+            "chapterIndex": 8,
+            "startParagraph": 39,
+            "deleteCount": 3,
+            "targetWords": 0,
+            "instruction": "Delete this repeated institutional and causal summary. Retain the underlying evidence in paragraphs 1–19 on hereditary slavery and plantation law, paragraphs 20–27 on Stono and state response, paragraphs 28–38 on Maroon communities, quilombos, slowdowns, flight, petitions, and cultural reconstruction, and retain paragraph 42 as the distinct closing image."
+          }
+        ]
+      }
+    ]
+  }
+}

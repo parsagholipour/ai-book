@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 7,
+    "slopResistance": 7
+  },
+  "overall": 7.2,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Low",
+  "highlights": [
+    {
+      "quote": "A point in a skull is a precise fact. It does not become a precise story merely because the story is tempting.",
+      "judgment": "Excellent compression of the book's evidentiary ethic; the kind of line that earns its isolation on the page."
+    },
+    {
+      "quote": "The violence of a state often enters the archive as accounting before it enters as a wound.",
+      "judgment": "The central thesis stated with real economy, and it does actual analytic work rather than decorating a section break."
+    },
+    {
+      "quote": "“Massacre” names the outcome from the number of dead; it does not identify the organisation that produced it.",
+      "judgment": "Strong methodological discipline: the book consistently refuses to let a label substitute for a mechanism."
+    },
+    {
+      "quote": "An unexcavated camp is not a peaceful camp.",
+      "judgment": "Sharp, but it is one of many one-sentence aphoristic paragraphs deployed at predictable intervals; the device becomes a tic."
+    },
+    {
+      "quote": "Behind this front the whole",
+      "judgment": "Chapter 12 ends on a truncated quotation fragment — a genuine textual defect, not a stylistic choice, and several chapters end similarly."
+    },
+    {
+      "quote": "Lord Justice James A. F. A. O. M. E. K. A. Sankey and other legal figures assessed the allegations.",
+      "judgment": "Garbled proper name; a handful of comparable slips (“Ribاط-i Sharaf” with intruding Arabic script, “Muhammadu Attahiru II of Kano”) undercut an otherwise precise surface."
+    },
+    {
+      "quote": "The first cities did not create the willingness to fight. They created offices that could preserve a quarrel, assign it a territory, and return armed men to it after the first encounter had ended.",
+      "judgment": "The book's signature move, executed well here — but the identical negation-then-substitution formula recurs in nearly every chapter."
+    },
+    {
+      "quote": "The useful distinction is between capacity and choice.",
+      "judgment": "A genuinely clarifying frame in the final chapter, though it arrives as a name for something the preceding fourteen chapters had already demonstrated rather than as a development of the argument."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "A fixed chapter skeleton: cinematic scene → contrasting second case → catalogue of institutional instruments → comparison → closing question. Every chapter follows it, so the book's shape is predictable by chapter three.",
+      "instances": [
+        "Socrates in the dikastery → Nataruk → anger/assault/raid/warfare/law/atrocity definitions → “Comparison then becomes unavoidable and dangerous” → “The question left open is narrower than whether humans are violent.”",
+        "Manco Inca at Cuzco → Tlatelolco 1473 → Coyolxauhqui Stone / condolence rite / mit’a → “The comparison leaves a question rather than a scale.”"
+      ]
+    },
+    {
+      "pattern": "Enumerated “instrument” paragraphs, each opening with a bare noun subject and a transitive verb of conversion, run three to six deep in every chapter.",
+      "instances": [
+        "“Ration tablets gave the state a way to detach food… Corvée labour converted subjects’ time… Gate control turned architecture into selection. Mudbrick fortifications made political claims visible…”",
+        "“In British territories, hut taxes made households visible… The pass worked through a different object… Congo concession companies made extraction more direct… Labour compounds completed the process… Boundary maps gave these systems a durable geography.”"
+      ]
+    },
+    {
+      "pattern": "The negation-substitution thesis restatement: “X did not cause/create Y; it gave Y a durable route/office/form.” It carries the argument but is repeated so often that the book has one analytic move rather than several.",
+      "instances": [
+        "“The city did not cause every act of aggression within or beyond its walls. It gave aggression a durable route from command to consequence.”",
+        "“The register did not create hatred, faith, or fear, but it gave those passions a route towards organised action.”"
+      ]
+    },
+    {
+      "pattern": "Rhetorical questions used as section pivots and as chapter-closing gestures, often left deliberately unanswered.",
+      "instances": [
+        "“What would have made the Nile corridor so dangerous?”",
+        "“Which frontier produced the deeper violence: the one where a claimant could turn victory into a nationwide transfer of land, or the one where wealth moved through a series of negotiated gates?”"
+      ]
+    },
+    {
+      "pattern": "Chapters terminate in an appended, syntactically detached fact-and-quotation stub that reads as apparatus rather than prose, breaking the closing cadence.",
+      "instances": [
+        "“On the Zagros frontier, c. 2250 BCE, Naram-Sin’s Victory Stele records Naram-Sin’s defeat of the mountain people…”",
+        "“Nishapur, Khurasan, 1221: Tolui’s Mongol army captured the city, and Ata-Malik Juvaini wrote that ‘not a living creature remained’ in Nishapur.”"
+      ]
+    }
+  ],
+  "summary": "This is a genuinely accomplished institutional history of human aggression, organised around a single durable claim: violence becomes large, repeatable and consequential when offices, ledgers, roads and classifications give a decision a route to a body. The evidentiary handling is unusually disciplined — it repeatedly names what a skeleton, a stele, a ledger or a relief cannot establish, and it resists the temptation to convert unlike archives into one scale. The voice is consistent and adult throughout, and the slop level is low: there are almost no stock pivots, no inflated abstraction, no motivational cadence. The costs are pacing and predictability. Every chapter runs the same five-part shape, the same negation-substitution thesis sentence recurs dozens of times, and the mid-chapter catalogues of institutional instruments read as lists rather than arguments, so the middle third of the book feels longer than it is. Real defects also survive into the text: several chapters end on detached citation stubs, and Chapter 12 breaks off mid-sentence inside a quotation, alongside a few garbled proper names. With those endings rewritten, the catalogues thinned, and the thesis restated less often, this would be close to publishable."
+}

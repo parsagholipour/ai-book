@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 6,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 5
+  },
+  "overall": 7.1,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Anger may have existed among the people who gathered at the pit, but the grave cannot measure anger. It shows bodies, tools, wounds, and the social fact that people acted together.",
+      "judgment": "The book's controlling idea stated early and with real precision; it earns the rest of the argument."
+    },
+    {
+      "quote": "The file did not pull a trigger. It allowed the person with the gun to find the address.",
+      "judgment": "Genuinely strong closer, and the single best compression of the thesis in the book."
+    },
+    {
+      "quote": "The stable feature is the breadth of the victims. Talheim was not a grave of a single adult fighting party.",
+      "judgment": "Exemplary evidentiary discipline: distinguishes what the bones establish from what interpreters have wanted them to establish."
+    },
+    {
+      "quote": "A large part will fall out by natural elimination... Murder is made to resemble an administrative residue.",
+      "judgment": "Close reading of a primary document that does the analytic work rather than merely quoting for horror."
+    },
+    {
+      "quote": "Acting Consul-General Ralph Moor's successor, James Robert Phillips's expedition commander, Harry Rawson, led the punitive force",
+      "judgment": "Garbled and factually incoherent apposition; the clearest local failure of copy in the manuscript."
+    },
+    {
+      "quote": "Faith named the enemy; officials decided which road was open, which captive could be bought back, and which settlement would be defended.",
+      "judgment": "Elegant, but it is the same paired-antithesis closer the book performs dozens of times; the form has become a reflex."
+    },
+    {
+      "quote": "A woman who had concealed a child under her robe would have heard the searchers in the courtyard and the child's breathing against her breast.",
+      "judgment": "Invented sensory interiority in a book whose whole argument is about not exceeding the evidence; the hedge 'would have' does not resolve the tension."
+    },
+    {
+      "quote": "Battle deaths per hundred thousand people fell dramatically after the Korean War peak, reaching a peak of 23 in 1953 and falling by about 95 per cent by 2016.",
+      "judgment": "Muddled sentence and unstated units in the one place where the book leans on quantitative claims."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter opens with a novelised, cinematically detailed scene reconstruction with named minor actors and invented sensory texture, then breaks to analysis with a pivot sentence built on the scene's last object.",
+      "instances": [
+        "The gates of the Tower opened, and the terms given to its garrison showed how quickly a sack could become an agreement between armed men.",
+        "The receiver carried Khrushchev's decision into the White House, but the settlement remained layered."
+      ]
+    },
+    {
+      "pattern": "Sections and chapters end on a paired antithesis or chiastic aphorism assigning one term to nature/feeling and the other to institutions.",
+      "instances": [
+        "Scarcity supplied a field of dispute; the king supplied its authorised violence.",
+        "The ecology supplied the means, while the khan's command determined their use."
+      ]
+    },
+    {
+      "pattern": "A standalone rhetorical question is set off as its own paragraph, then immediately answered with a refusal ('The answer cannot be...', 'The question cannot be answered by...').",
+      "instances": [
+        "Was prehistoric society more aggressive than the states that later covered its fields with offices, armies, courts, and walls?",
+        "What proportion of prehistoric aggression ended in a form that archaeology could recognise?"
+      ]
+    },
+    {
+      "pattern": "Symmetrical evidentiary hedge: an assertion of what a source shows immediately mirrored by what it does not show, in the same clause shape, several times per chapter.",
+      "instances": [
+        "The projectile establishes contact between weapon and victim, not the institution, custom, or decision that brought them together.",
+        "It records force, direction, and timing more reliably than motive."
+      ]
+    },
+    {
+      "pattern": "A late-chapter enumerated inventory of institutional mechanisms ('the first is..., the second..., the fifth...'; tribute, roads, garrisons, hostages, registers, governors), each given one uniform paragraph, then a closing sentence gathering the list.",
+      "instances": [
+        "Cranial trauma is the first item in the archaeologist's inventory... Defensive walls are the second... Demographic gaps are the fifth.",
+        "Tribute lists began with commodities... Royal roads made such demands possible... Provincial governors stood at the end of every imperial chain."
+      ]
+    }
+  ],
+  "summary": "This is a strong, disciplined work of synthetic history built on one clear and productive thesis: aggression scales not through feeling but through offices, records, and administrative categories that let a decision reach bodies it will never see. The thesis is genuinely developed rather than restated, and the handling of evidence is unusually scrupulous, repeatedly distinguishing what a grave, relief, protocol or ledger can establish from what interpreters have wanted it to say. Sentence-level craft is high and the historical specificity is dense and mostly convincing, with real engagement in historiographical debate (intentionalist versus functionalist, Le Bon, Malthus, Mamdani). The book's weakness is structural monotony: every chapter runs the same machine — dramatised opening scene, pivot on an object, document reading, standalone rhetorical question, two-case comparison, antithetical closer — and the paired-antithesis aphorism and the symmetrical 'it shows X, it cannot show Y' hedge recur so often they read as tics rather than judgments. At 55,000 words the restatement of the central claim at the end of nearly every section becomes a recap loop, the voice never varies its register or takes a risk, and the final chapter closes on the Universal Declaration rather than synthesising the arc the first chapter opened. It also never resolves the tension between its own epistemic caution and the invented sensory interiority of its openings. Light revision — trimming the closers, varying the chapter template, fixing the Benin and battle-death sentences, and writing a real conclusion — would leave a book of considerable quality."
+}

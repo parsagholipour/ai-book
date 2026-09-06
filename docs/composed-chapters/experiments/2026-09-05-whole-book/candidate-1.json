@@ -1,0 +1,68 @@
+{
+  "candidate": 1,
+  "label": "material-routing-1",
+  "projectId": "cmto7ood00000keg0vnxinawr",
+  "planId": "cmto7ood90001keg0592bqmmg",
+  "generationJobId": "cmto7oody0002keg07plijd7k",
+  "startedAt": "2026-09-05T09:59:54.742Z",
+  "qualityRevision": 49,
+  "writer": {
+    "model": "gpt-5.6-luna",
+    "thinkingEffort": "low"
+  },
+  "checks": "7 gates passed in 102.8s",
+  "regression": {
+    "before": {
+      "failed": 3,
+      "passed": 2
+    },
+    "afterFocused": {
+      "passed": 35
+    }
+  },
+  "fableSessions": [
+    {
+      "log": "fable-result.jsonl",
+      "model": "claude-fable-5-1",
+      "effort": "xhigh",
+      "costUsd": 3.2001605,
+      "durationMs": 275815,
+      "subtype": "error_max_budget_usd"
+    },
+    {
+      "log": "fable-size-result.jsonl",
+      "model": "claude-fable-5-1",
+      "effort": "xhigh",
+      "costUsd": 0.792539,
+      "durationMs": 109569,
+      "subtype": "success"
+    }
+  ],
+  "notes": [
+    "First Fable session wrote all specified files but hit its cost cap before final report; parent reviewed and tested the actual files.",
+    "Parent adjusted the second worker script insertion anchor to keep the existing materialLines documentation attached to that function.",
+    "First full check failed only the 900-line file budget; existing editor material helper extraction corrected this; final full check passed.",
+    "Two old ACTIVE database rows last updated in June remain unchanged; actual queue was empty before launch."
+  ],
+  "result": {
+    "status": "COMPLETE",
+    "storedPages": 120,
+    "pdfPages": 106,
+    "exportProseWords": 52472,
+    "assessmentMean": 7.1000000000000005,
+    "readerScores": [
+      7.0,
+      7.1,
+      7.2
+    ],
+    "allQuotedEvidenceMatches": true,
+    "generationExportProviderCost": 0.390523,
+    "allFinalProviderCost": 0.412323,
+    "voicePreparationProviderCost": 0.0218,
+    "finalProviderCalls": 96,
+    "generationExportProviderCalls": 78,
+    "generationJobWallMinutes": 23.0324,
+    "passed": false,
+    "codeUnchanged": true
+  }
+}

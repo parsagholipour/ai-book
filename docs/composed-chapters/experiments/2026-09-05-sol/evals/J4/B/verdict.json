@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 6,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 7,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 5
+  },
+  "overall": 7.0,
+  "readiness": "Needs major revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The bone does not contain the direction of intention. It contains the direction of force.",
+      "judgment": "This is an unusually precise statement of the manuscript's disciplined distinction between material trace and inferred motive."
+    },
+    {
+      "quote": "War did not replace administration. It used administration.",
+      "judgment": "The central thesis is compressed here into a memorable and historically productive claim."
+    },
+    {
+      "quote": "The same act of capture could therefore lead to opposite institutional ends.",
+      "judgment": "The comparative method works especially well when it identifies how institutions redirect similar acts rather than flattening cultures into a single scale."
+    },
+    {
+      "quote": "A man who entered the forest was required to provide a product from territory the state had declared its own.",
+      "judgment": "Concrete syntax makes the conversion of sovereignty into coerced labor immediately intelligible."
+    },
+    {
+      "quote": "The knife entered below the ribs.",
+      "judgment": "This vivid invented particular is presented inside an otherwise evidentiary history without a clear signal that the scene is reconstruction, undermining trust."
+    },
+    {
+      "quote": "Profit supplied the reason, law supplied the permission, and force supplied the means.",
+      "judgment": "The triadic aphorism is effective once, but it exemplifies the manuscript's frequent tendency to resolve complexity into polished symmetrical formulas."
+    },
+    {
+      "quote": "The order travelled. So did the refusal.",
+      "judgment": "The clipped chapter closer is rhetorically neat but belongs to a recurring pattern of aphoristic closure that becomes predictable."
+    },
+    {
+      "quote": "A society can move toward restraint and danger at the same time.",
+      "judgment": "This lucid sentence preserves the book's strongest habit: resisting single-cause or linear-progress explanations."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Chapters repeatedly reduce a complex causal relation to a short paired or triadic aphorism.",
+      "instances": [
+        "War did not replace administration. It used administration.",
+        "Profit supplied the reason, law supplied the permission, and force supplied the means."
+      ]
+    },
+    {
+      "pattern": "Material or technical capacity is repeatedly separated from the political choice that directs it.",
+      "instances": [
+        "The bone does not contain the direction of intention. It contains the direction of force.",
+        "Technology enlarges what a government or army can do; it does not supply the political reason for doing it."
+      ]
+    },
+    {
+      "pattern": "Institutions and documents are repeatedly personified as translators or containers of violence.",
+      "instances": [
+        "The document condensed a wide political crisis into a small file about one body.",
+        "Machinery enlarged the hand, but political authority chose where it would close."
+      ]
+    },
+    {
+      "pattern": "Chapter endings repeatedly use clipped sentences to convert the preceding survey into a maxim.",
+      "instances": [
+        "The order travelled. So did the refusal.",
+        "The future will still turn on decisions made by people at desks, in meeting rooms, at checkpoints, and before crowds."
+      ]
+    },
+    {
+      "pattern": "Comparisons repeatedly pivot from apparent similarity to differences in institutional outcome.",
+      "instances": [
+        "The same act of capture could therefore lead to opposite institutional ends.",
+        "The same age of telegraphs, railways, lists, and decrees produced different violence because officials assigned different meanings to the people being moved."
+      ]
+    }
+  ],
+  "summary": "The manuscript advances a strong, coherent thesis: aggression becomes historically consequential when institutions classify targets, authorize force, and extend it through offices, records, logistics, and law. Its chronological progression and cross-cultural comparisons are ambitious, specific, and often illuminating, especially when similar acts are shown producing different outcomes under different political structures. The principal weakness is evidentiary trust: long dramatized openings repeatedly supply dialogue, gestures, sensory detail, and individual actions that the surrounding discussion does not establish, while occasional internal inconsistencies further weaken confidence. Across more than fifty-six thousand words, the thesis is also restated through recurring lists, stock pivots, personified abstractions, and polished antitheses, producing substantial redundancy and a conspicuously uniform cadence. Major revision should distinguish documented fact from reconstruction, remove unsupported scene detail, correct internal contradictions, and compress repeated explanations of the institutional thesis."
+}

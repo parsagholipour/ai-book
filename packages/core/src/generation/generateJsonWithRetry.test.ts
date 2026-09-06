@@ -180,6 +180,39 @@ describe("generateJsonWithRetry", () => {
     expect(requests.every((request) => request.maxTokens === 16_000)).toBe(true);
   });
 
+  it("asks once more at a wider budget when the provider cut the reply at max_output_tokens, outside the repair count", async () => {
+    const requests: GenerateJsonOptions<unknown>[] = [];
+    const adapter = stub(async <T>(options: GenerateJsonOptions<T>) => {
+      requests.push(options as GenerateJsonOptions<unknown>);
+      if (requests.length === 1) {
+        throw new AdapterJsonValidationError("Test", "develop-book-plan", ["chapters"], "Expected string at chapters[1].callbacks[0]", "{}", {});
+      }
+      if (requests.length === 2) {
+        throw Object.assign(new Error("OpenAI response was incomplete: max_output_tokens."), { name: "OpenAIResponseError" });
+      }
+      return result({ title: "Plan", count: 1 } as T);
+    });
+
+    const outcome = await generateJsonWithRetry(adapter, {
+      schema,
+      repairAttempts: 1,
+      maxTokens: 16_000,
+      messages: [{ role: "system", content: "Original instructions" }]
+    });
+    expect(outcome.data).toEqual({ title: "Plan", count: 1 });
+    expect(requests.map((request) => request.maxTokens)).toEqual([16_000, 16_000, 24_000]);
+    // The widened attempt carries the same repair instructions as the attempt that truncated.
+    expect(requests[2]?.messages[0]?.content).toContain("did not match the required schema");
+
+    let calls = 0;
+    const alwaysTruncates = stub(async () => {
+      calls += 1;
+      throw Object.assign(new Error("OpenAI response was incomplete: max_output_tokens."), { name: "OpenAIResponseError" });
+    });
+    await expect(generateJsonWithRetry(alwaysTruncates, { schema, maxTokens: 1_000, messages: [] })).rejects.toThrow("max_output_tokens");
+    expect(calls).toBe(2);
+  });
+
   it("does not retry provider or arbitrary application failures", async () => {
     let calls = 0;
     const adapter = stub(async () => {

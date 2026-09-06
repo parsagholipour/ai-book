@@ -1,0 +1,25 @@
+{
+  "candidate": 4,
+  "label": "fresh-plan-4",
+  "status": "stopped-before-prose",
+  "writer": {
+    "model": "gpt-5.6-luna",
+    "tier": "balanced",
+    "thinkingEffort": "low"
+  },
+  "qualityRevision": 49,
+  "sourceProject": "cmtjbz54o000w6rjyvzewwqj4",
+  "reusePlan": false,
+  "stanceOverride": false,
+  "code": "unchanged from candidate 3; all 383 hashes verified",
+  "checks": "candidate 3 full 7-gate check remains valid; no subsequent production changes",
+  "intervention": "Fresh initial planning from original creation brief, preserving 120-page target and broad survey scope. No new implementation or editing pass.",
+  "projectId": "cmtp66oa20000cbg0rtrjww2o",
+  "planningJobId": "cmtp66oaf0001cbg09b67c4mm",
+  "planId": "cmtp690jz00fhibp2a2p8s6gf",
+  "generationJobId": "cmtp698zd0002cbg0l7tucobr",
+  "failure": "Luna authored chapters nested inside authorStance were discarded by initial schema; generic fallback inherited and critic merged into 48-page opening.",
+  "pages": 0,
+  "settledProviderCostUsd": 0.01283,
+  "unpricedInterruptedCalls": 1
+}

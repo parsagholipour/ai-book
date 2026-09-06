@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.7,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The historian’s task begins before counting bodies. It begins by asking who named the act, who recorded it, and what followed from the name.",
+      "judgment": "A genuinely load-bearing thesis statement, placed early and honoured by the rest of the book."
+    },
+    {
+      "quote": "A healed fracture has a rounded, remodelled edge: bone has had time to lay down new tissue and smooth the break. An unhealed fracture retains the sharpness and irregularity of a recent wound.",
+      "judgment": "Technical specificity that earns the inference rather than asserting it — the book's best register."
+    },
+    {
+      "quote": "Force Publique soldiers had to account for cartridges. That accounting encouraged the presentation of severed hands as proof that ammunition had been used against enemies.",
+      "judgment": "The thesis proved rather than restated: an accounting rule producing a specific atrocity."
+    },
+    {
+      "quote": "That sentence is chilling because its grammar leaves a human subject in place while removing a human future.",
+      "judgment": "Sharp close reading of the Wannsee protocol; one of the few moments the prose takes an interpretive risk."
+    },
+    {
+      "quote": "A ration was nourishment, but it was also a tie.",
+      "judgment": "One of dozens of one-line aphoristic paragraphs; individually good, collectively a visible template."
+    },
+    {
+      "quote": "At Tophane, aggression acquired an office address.",
+      "judgment": "Chapter-section closers reliably land on this kind of epigram, which flattens their effect by repetition."
+    },
+    {
+      "quote": "Horses opened the campaign; records kept the winnings.",
+      "judgment": "Paired antithesis as default cadence — elegant once, mechanical by the fifth chapter."
+    },
+    {
+      "quote": "The city did not become violent because its inhabitants suddenly acquired a new appetite for harm. Its institutions made distant consequences possible.",
+      "judgment": "The 'not a change in human nature, but institutions' move recurs so often it becomes a reflex rather than an argument."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter section runs the same four beats: a dated documentary artifact, a close reading of it, a contrasting second case, then a methodological caveat about what the source cannot show.",
+      "instances": [
+        "In the homicide entries of Domesday Book, a dead person is sometimes named, a place is given, and a payment is assessed... For most entries, it cannot tell us what the victim’s family believed had happened",
+        "A register compiled in 1631 allows that chain to be read in unusually fine detail... A register could state that a quantity of powder had been issued, but it could not make a road passable"
+      ]
+    },
+    {
+      "pattern": "Sections terminate in a short aphoristic paragraph, often a single sentence set off alone, restating the institutional thesis.",
+      "instances": [
+        "A first day of school became a room under guard.",
+        "A rifle could be counted. The command structure around it had to be dismantled."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis and negation-then-correction (\"not X; it was Y\") used as the default sentence engine.",
+      "instances": [
+        "The campaign was a mechanism, not a charge.",
+        "Difference was not abolished; it was rearranged."
+      ]
+    },
+    {
+      "pattern": "Symmetrical hedging that grants each interpretation half a point and then declines to adjudicate.",
+      "instances": [
+        "The surviving evidence supports neither a purely spiritual army nor a simple cover for plunder.",
+        "This is neither a portrait of natural savagery nor evidence of a peaceful past corrupted at a later date."
+      ]
+    },
+    {
+      "pattern": "Explicit cross-chapter callbacks that restate the same lesson in each new setting rather than developing it.",
+      "instances": [
+        "Here the wording of the act resembles the administrative tablets of Uruk in one narrow respect",
+        "Earlier tablets from Uruk had made labor visible to a palace through counted grain. In Northern Nigeria, counted households made colonial revenue visible to a resident."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, genuinely argued global history whose thesis — that organised aggression is made possible, durable and repeatable by offices, records and classifications rather than by fluctuating human appetite — is stated early, tested against fifteen chronological settings, and never abandoned. The best passages do real work: the forensic distinction between healed and perimortem fracture, the cartridge-accounting that produced severed hands in the Congo, the grammatical reading of the Wannsee protocol. Sourcing is handled with unusual care, and the book is consistently honest about what a document cannot show. The costs are structural rather than factual: nearly every section runs the identical artifact–reading–contrast–caveat cycle, closes on a one-line epigram, and reaches for paired antithesis or 'not X but Y' as its default cadence, so the prose reads uniformly and the thesis is restated more often than it is advanced. Human beings appear almost exclusively as objects of administration, which suits the argument but drains engagement across 55,000 words. Light revision — varying the section architecture, cutting perhaps a third of the aphoristic closers and the symmetrical hedges, and letting two or three chapters argue against the thesis rather than for it — would move this close to publishable."
+}

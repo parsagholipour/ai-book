@@ -1,0 +1,472 @@
+{
+  "title": "Aggression Across Time",
+  "premise": "A source-conscious historical survey of human aggressiveness across regions and eras, examining how ecology, population density, political organization, inequality, technology, institutions, cultural norms, and individual behavior have shaped when violence intensifies, changes form, or declines. The book distinguishes interpersonal violence from organized warfare and avoids treating any single period, society, or biological factor as a complete explanation.",
+  "audience": "General readers curious about history who want a clear, geographically broad account without assuming that human aggression has followed one simple upward or downward path.",
+  "chapters": [
+    {
+      "index": 1,
+      "title": "Chapter 1: Opening",
+      "summary": "Develop the book's central idea through a distinct movement of the outline while preserving continuity with the approved plan. Also covers Chapter 5: Opening: Develop the book's central idea through a distinct movement of the outline while preserving continuity with the approved plan. The repeated Opening, Development, Perspective, Resolution cycle makes Chapters 5 through 8 duplicate the first four movements; merge them into a chronological survey structure with distinct eras and regions. Also covers Chapter 9: Opening: Develop the book's central idea through a distinct movement of the outline while preserving continuity with the approved plan. Chapter 9 repeats the generic Opening label and should be replaced by a specific historical or analytical movement rather than restarting the outline. Also covers Chapter 10: Development: Develop the book's central idea through a distinct movement of the outline while preserving continuity with the approved plan. Chapter 10 repeats the generic Development label and should be replaced by a specific historical or analytical movement rather than extending the repeated cycle.",
+      "keyBeats": [
+        "Open with a concrete scene or question.",
+        "Advance one clear idea, conflict, or discovery.",
+        "End with a reason to continue.",
+        "Fold in Chapter 5: Opening.",
+        "Open with a concrete scene or question.",
+        "Advance one clear idea, conflict, or discovery.",
+        "End with a reason to continue.",
+        "Fold in Chapter 9: Opening.",
+        "Open with a concrete scene or question.",
+        "Advance one clear idea, conflict, or discovery.",
+        "End with a reason to continue.",
+        "Fold in Chapter 10: Development.",
+        "Open with a concrete scene or question.",
+        "Advance one clear idea, conflict, or discovery.",
+        "End with a reason to continue."
+      ],
+      "targetPages": 48
+    },
+    {
+      "index": 2,
+      "title": "Chapter 2: Development",
+      "summary": "Develop the book's central idea through a distinct movement of the outline while preserving continuity with the approved plan.",
+      "keyBeats": [
+        "Open with a concrete scene or question.",
+        "Advance one clear idea, conflict, or discovery.",
+        "End with a reason to continue."
+      ],
+      "targetPages": 12
+    },
+    {
+      "index": 3,
+      "title": "Chapter 3: Perspective",
+      "summary": "Develop the book's central idea through a distinct movement of the outline while preserving continuity with the approved plan.",
+      "keyBeats": [
+        "Open with a concrete scene or question.",
+        "Advance one clear idea, conflict, or discovery.",
+        "End with a reason to continue."
+      ],
+      "targetPages": 12
+    },
+    {
+      "index": 4,
+      "title": "Chapter 4: Resolution",
+      "summary": "Develop the book's central idea through a distinct movement of the outline while preserving continuity with the approved plan.",
+      "keyBeats": [
+        "Open with a concrete scene or question.",
+        "Advance one clear idea, conflict, or discovery.",
+        "End with a reason to continue."
+      ],
+      "targetPages": 12
+    },
+    {
+      "index": 5,
+      "title": "Chapter 6: Development",
+      "summary": "Develop the book's central idea through a distinct movement of the outline while preserving continuity with the approved plan.",
+      "keyBeats": [
+        "Open with a concrete scene or question.",
+        "Advance one clear idea, conflict, or discovery.",
+        "End with a reason to continue."
+      ],
+      "targetPages": 12
+    },
+    {
+      "index": 6,
+      "title": "Chapter 7: Perspective",
+      "summary": "Develop the book's central idea through a distinct movement of the outline while preserving continuity with the approved plan.",
+      "keyBeats": [
+        "Open with a concrete scene or question.",
+        "Advance one clear idea, conflict, or discovery.",
+        "End with a reason to continue."
+      ],
+      "targetPages": 12
+    },
+    {
+      "index": 7,
+      "title": "Chapter 8: Resolution",
+      "summary": "Develop the book's central idea through a distinct movement of the outline while preserving continuity with the approved plan.",
+      "keyBeats": [
+        "Open with a concrete scene or question.",
+        "Advance one clear idea, conflict, or discovery.",
+        "End with a reason to continue."
+      ],
+      "targetPages": 12
+    }
+  ],
+  "promises": [],
+  "locations": [],
+  "questions": [],
+  "characters": [],
+  "voiceGuide": [
+    "Write as a clear, measured historical survey for intelligent general readers.",
+    "Use concrete places, material conditions, institutions, artifacts, and documented events before offering interpretation.",
+    "Distinguish interpersonal aggression, ritualized violence, raiding, warfare, state coercion, colonial violence, and mass killing.",
+    "Treat archaeological traces, written records, demographic estimates, and modern behavioral research as different kinds of evidence with different limits.",
+    "Present causal explanations as historically bounded and comparative rather than universal.",
+    "Use moderate confidence, naming uncertainty when the surviving evidence cannot support a firm conclusion.",
+    "Vary the scale of attention: move from a household or artifact to a settlement, polity, region, or world system only when the evidence supports the move.",
+    "Let transitions arise from changing conditions and documented continuities rather than from sweeping claims about human nature."
+  ],
+  "antiAiRules": [
+    "Do not invent sources, citations, studies, experts, dates, casualty totals, quotations, archaeological sites, or research findings.",
+    "Do not treat the supplied research context as a complete bibliography; verify claims against attached sources during drafting and flag unsupported specifics.",
+    "Do not collapse aggression, violence, war, homicide, domination, punishment, and coercion into one interchangeable category.",
+    "Do not describe prehistoric people as inherently peaceful, savage, or warlike without specifying the evidence and its limits.",
+    "Avoid repeated binary reversals such as 'X is not A. It is B.' State the supported interpretation directly.",
+    "Do not stack adjacent contrast sentences that jump from a fact to a sweeping conclusion; earn the claim with evidence, scene, context, or qualification.",
+    "Use em dashes and en dashes sparingly; prefer clean punctuation.",
+    "Replace inflated abstractions with particular people, places, institutions, objects, or documented practices.",
+    "Do not imply that correlation proves causation when discussing agriculture, inequality, climate, hormones, technology, state formation, or crime trends.",
+    "Do not use a single European trajectory as a template for all regions.",
+    "Do not end every chapter with a balanced both-sides formula, a generic lesson, or a promise that history repeats itself.",
+    "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing prose.",
+    "Do not add genre assumptions that the user did not request.",
+    "Avoid proof-leap transitions such as 'This is not a coincidence', 'no accident', 'hidden in plain sight', and 'the truth is' unless directly quoted or genuinely necessary.",
+    "Avoid binary-reversal scaffolds such as 'X is not A. It is B.' State B directly unless both halves are needed for a precise correction or distinction, and do not repeat the construction across nearby pages.",
+    "Use em dashes and en dashes sparingly; when a dash is ornamental, prefer a period, comma, colon, or a cleaner sentence.",
+    "Replace inflated abstractions with concrete examples, precise claims, or human-sized uncertainty.",
+    "Preserve the user's thesis and intended edge, but do not make unsupported interpretive claims sound proven.",
+    "In reader-facing prose, avoid sounding like a model explaining its own conclusion.",
+    "Avoid unsupported proof-leap transitions; do not jump from a local fact to a sweeping conclusion without evidence on this page.",
+    "Do not invent evidence, citations, studies, experts, or source identities.",
+    "Avoid generic conclusions and visible prompt scaffolding in reader-facing prose.",
+    "Use uncertainty only where the evidence on this page requires it.",
+    "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages."
+  ],
+  "openingHook": "At Nataruk, near the western shore of Lake Turkana, archaeologists found the remains of people killed roughly ten thousand years ago. The bones open a question that no single massacre can answer: under what conditions does human aggression become private violence, group conflict, or organized war?",
+  "writingMode": "analytical-history",
+  "authorStance": {
+    "thesis": "Human aggressiveness has appeared across the human past, but its scale and form have been repeatedly reshaped by living conditions, social organization, institutions, technology, and cultural expectations.",
+    "refusals": [
+      "The author refuses to explain every historical conflict through one master cause.",
+      "The author refuses to use a dramatic example as proof of a global pattern.",
+      "The author refuses to treat uncertainty as a reason to abandon bounded conclusions.",
+      "The author refuses to end chapters by repeating the book's thesis in abstract language."
+    ],
+    "positions": [
+      "Aggression is a flexible human capacity whose expression changes with circumstances.",
+      "Organized warfare depends on collective arrangements that differ from individual anger or personal violence.",
+      "Agriculture, urbanization, and state formation created new opportunities for cooperation as well as new opportunities for coercion and large-scale conflict.",
+      "Technological development can expand the reach of violence while institutions can constrain who may use it and against whom.",
+      "Historical evidence shows variation rather than one universal curve of progress or decline."
+    ],
+    "voiceSample": "In 1914, a railway timetable hung beside the ticket office at Sarajevo station while mobilization orders moved through ministries and barracks across Europe. A telegraph cable could carry a decision from Vienna to a provincial command post before a local newspaper had described the assassination of Archduke Franz Ferdinand. At Verdun in 1916, the road behind the front filled with trucks, shells, stretcher bearers, and men carrying water toward a landscape where artillery had erased familiar landmarks. The steel helmet, the railway wagon, and the field telephone belonged to different parts of the same system. In 1945, a photograph from Hiroshima showed a city reduced to shadows, roof tiles, and fragments of household life. The paper lantern, the school uniform, and the laboratory instrument acquired new meanings within a weapon that could cross a boundary between military calculation and civilian existence. At the Hague in 1949, diplomats placed rules around prisoners, civilians, and wounded soldiers after two world wars had exposed the reach of industrial power. The clauses on paper could not restore Warsaw, Coventry, or Nanjing, yet the document recorded an effort to make restraint part of international practice. Each object carries a history of decisions made elsewhere: a timetable, a truck, a cable, a photograph, a clause."
+  },
+  "researchNotes": [
+    {
+      "url": "https://www.natureasia.com/en/nmiddleeast/article/10.1038/nmiddleeast.2023.223",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "natureasia.com",
+      "summary": "While violence has been a consistent element of the human experience, its intensity and scale have varied significantly across different eras and societies. *   The emergence of early cities and states coincided with increased population density, widening social inequality, and heightened competition for resources, which drove frequent organized conflicts. For instance, violence levels in the Middle East appeared to peak in the Copper Age (circa 4500 BC to 3300 BC) and subsequently declined in the early/mid Bronze Age (circa 3300 BC to 1500 BC). The expansion of trade networks could also foste"
+    },
+    {
+      "url": "https://news.tulane.edu/pr/new-study-reveals-long-history-violence-ancient-hunter-gatherer-societies",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "tulane.edu",
+      "summary": "While violence has been a consistent element of the human experience, its intensity and scale have varied significantly across different eras and societies. *   Archaeological studies in regions like northern Chile indicate that interpersonal violence was a consistent part of life among ancient hunter-gatherers, with rates remaining surprisingly static over millennia."
+    },
+    {
+      "url": "https://www.cam.ac.uk/research/news/evidence-of-a-prehistoric-massacre-extends-the-history-of-warfare",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "cam.ac.uk",
+      "summary": "**Prehistoric and Hunter-Gatherer Societies:**\n*   Evidence of violence, including massacres, has been found in late Stone Age foraging societies, such as the Nataruk massacre approximately 10,000 years ago in Kenya, which involved the killing of 27 individuals, including women and children."
+    },
+    {
+      "url": "https://popular-archaeology.com/article/evidence-of-a-prehistoric-massacre-extends-the-history-of-warfare/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "popular-archaeology.com",
+      "summary": "**Prehistoric and Hunter-Gatherer Societies:**\n*   Evidence of violence, including massacres, has been found in late Stone Age foraging societies, such as the Nataruk massacre approximately 10,000 years ago in Kenya, which involved the killing of 27 individuals, including women and children."
+    },
+    {
+      "url": "https://courier.unesco.org/en/articles/origins-violence",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "unesco.org",
+      "summary": "*   Traces of cannibalism on Palaeolithic human bones, dating back 780,000 years, suggest an early form of violence. *   The popular image of prehistoric humans as inherently \"wild and warlike\" is considered a 19th-century myth by some archaeologists, who suggest that collective violence primarily emerged with the sedentarization of communities and the transition to a production economy. *   While violent behavior is ancient, the concept of \"war\" as organized conflict may not have always existed, with its origins potentially correlated with the development of production economies and radical s"
+    },
+    {
+      "url": "https://medium.com/@saha75749/the-biology-and-culture-of-human-aggression-a-deep-dive-9e0e18279478",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "medium.com",
+      "summary": "*   Some research indicates that nomadic hunter-gatherer bands generally exhibited scant evidence of large-scale warfare, with disputes over scarce resources often resulting in limited casualties through tactics like stealthy raiding or one-on-one duels. Testosterone is associated with dominance, risk-taking, competitiveness, and status-seeking, which can be linked to aggression, but it tends to amplify existing behavioral tendencies rather than directly causing aggression. Low serotonin levels have been associated with impulsive violence. Brain structures like the amygdala (involved in threat"
+    },
+    {
+      "url": "https://today.uconn.edu/2020/03/farming-developed-cooperation-violence/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "uconn.edu",
+      "summary": "**The Agricultural Revolution (Neolithic Period):**\n*   The transition to agriculture, beginning around 7,500 to 5,000 years ago in Eastern North America, led to both increased cooperation and a notable rise in organized, intergroup violence, including practices like \"trophy-taking.\""
+    },
+    {
+      "url": "https://medium.com/inside-of-elle-beau/large-scale-violence-only-began-with-the-agricultural-revolution-9b02193df5fd",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "medium.com",
+      "summary": "*   Anthropological perspectives suggest that large-scale human violence became more prevalent with sedentism (agriculture), as it created defensible resources and a demand for labor, sometimes leading to slavery. Social norms and group pressures can be effective in maintaining peace within societies."
+    },
+    {
+      "url": "https://www.acsu.buffalo.edu/~fczagare/PSC%20346/CashmanCh2.pdf",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "buffalo.edu",
+      "summary": "Early agricultural and herding societies were often more warlike than their hunter-gatherer predecessors. Brain structures like the amygdala (involved in threat detection) and the prefrontal cortex play significant roles in aggressive responses."
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/State_formation",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "wikipedia.org",
+      "summary": "*   The modern state is defined by its monopoly on the legitimate use of violence within a defined territory. *   Conflict theories propose that states often form through the dominance of one population over another. *   Warfare has been a significant driver of state formation, as rulers sought to increase taxes to finance wars and control territory more effectively."
+    },
+    {
+      "url": "https://www.britannica.com/topic/state-monopoly-on-violence",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "britannica.com",
+      "summary": "*   The modern state is defined by its monopoly on the legitimate use of violence within a defined territory."
+    },
+    {
+      "url": "https://blog.proj4.me/journal/014kOzEJmhoV/How_Was_The_Nature_Of_War_Changed_By_The_Industrial_Revolution",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "proj4.me",
+      "summary": "**The Industrial Revolution:**\n*   The Industrial Revolution fundamentally transformed warfare through the mass production of weapons, ammunition, and supplies, enabling nations to equip larger conscripted armies and sustain longer conflicts. *   This era saw the development of advanced weaponry, including rifled barrels, machine guns, ironclad ships, and more effective artillery, significantly increasing the lethality and range of military forces. *   Logistics were revolutionized by railways, steamships, and telegraph systems, allowing for faster movement of troops, weapons, and information."
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Industrial_warfare",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "wikipedia.org",
+      "summary": "**The Industrial Revolution:**\n*   The Industrial Revolution fundamentally transformed warfare through the mass production of weapons, ammunition, and supplies, enabling nations to equip larger conscripted armies and sustain longer conflicts. *   This era saw the development of advanced weaponry, including rifled barrels, machine guns, ironclad ships, and more effective artillery, significantly increasing the lethality and range of military forces. *   Logistics were revolutionized by railways, steamships, and telegraph systems, allowing for faster movement of troops, weapons, and information."
+    },
+    {
+      "url": "https://www.loc.gov/exhibitions/world-war-i-american-experiences/about-this-exhibition/over-there/industrialized-warfare/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "loc.gov",
+      "summary": "**The Industrial Revolution:**\n*   The Industrial Revolution fundamentally transformed warfare through the mass production of weapons, ammunition, and supplies, enabling nations to equip larger conscripted armies and sustain longer conflicts."
+    },
+    {
+      "url": "https://www.sgr.org.uk/resources/industrialisation-war-lessons-world-war-i",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "sgr.org.uk",
+      "summary": "**The Industrial Revolution:**\n*   The Industrial Revolution fundamentally transformed warfare through the mass production of weapons, ammunition, and supplies, enabling nations to equip larger conscripted armies and sustain longer conflicts."
+    },
+    {
+      "url": "https://digventures.com/2014/08/the-industrialisation-of-war/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "digventures.com",
+      "summary": "The concept of \"total war,\" involving the complete mobilization of a nation's resources for the war effort, emerged during this period."
+    },
+    {
+      "url": "https://www.vrc.crim.cam.ac.uk/sites/default/files/manuel-eisner-historical-trends-in-violence.pdf",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "cam.ac.uk",
+      "summary": "**20th Century and Contemporary Trends:**\n*   In Europe, serious interpersonal violence saw a remarkable decrease between the mid-16th and early 20th centuries. Homicide rates in many European countries reached their lowest historically known levels around 1950, though an increasing trend has prevailed since then."
+    },
+    {
+      "url": "https://www.journals.uchicago.edu/doi/abs/10.1086/652229",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "uchicago.edu",
+      "summary": "**20th Century and Contemporary Trends:**\n*   In Europe, serious interpersonal violence saw a remarkable decrease between the mid-16th and early 20th centuries."
+    },
+    {
+      "url": "https://www.prio.org/2015/12/in-defence-of-the-reviled-20th-century/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "prio.org",
+      "summary": "*   The 20th century was marked by immense violence, including World War I, World War II, and China's \"Great Leap Forward,\" collectively estimated to have caused 100–115 million deaths. Despite these catastrophic events, the century also saw significant strides towards a more peaceful world, particularly as it drew to a close."
+    },
+    {
+      "url": "https://www.criminallawaz.com/how-crime-rates-have-changed-throughout-the-decades/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "criminallawaz.com",
+      "summary": "*   In the United States, violent crime rates dramatically increased in the late 20th century, peaking in the early 1990s, followed by a substantial decline in subsequent decades."
+    },
+    {
+      "url": "https://ourworldindata.org/us-crime-rates",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "ourworldindata.org",
+      "summary": "*   In the United States, violent crime rates dramatically increased in the late 20th century, peaking in the early 1990s, followed by a substantial decline in subsequent decades."
+    },
+    {
+      "url": "https://www.livescience.com/5333-evolution-human-aggression.html",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "livescience.com",
+      "summary": "**General Factors Affecting Aggressiveness:**\n*   **Biological and Evolutionary Factors:** Aggression is an evolved primal emotion that can enhance an individual's survival or reproduction, depending on specific environmental, social, and reproductive contexts. Humans are considered among the most violent species, yet also among the most altruistic and empathetic. *   **Social, Environmental, and Cultural Factors:** Environmental conditions can trigger biological predispositions to aggression."
+    },
+    {
+      "url": "https://newbrainnutrition.com/a-violent-history-how-genes-and-environment-influence-aggression/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "newbrainnutrition.com",
+      "summary": "Genetic predispositions contribute to approximately 50% of the variance in aggressive behavior in both males and females. *   **Psychological Factors:** Self-control, mediated by the frontal lobes of the brain, is crucial for managing aggressive impulses."
+    },
+    {
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC3696520/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "nih.gov",
+      "summary": "Genetic predispositions contribute to approximately 50% of the variance in aggressive behavior in both males and females."
+    },
+    {
+      "url": "https://courses.lumenlearning.com/suny-fmcc-social-psychology/chapter/personal-and-cultural-influences-on-aggression/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "lumenlearning.com",
+      "summary": "Testosterone is associated with dominance, risk-taking, competitiveness, and status-seeking, which can be linked to aggression, but it tends to amplify existing behavioral tendencies rather than directly causing aggression."
+    },
+    {
+      "url": "https://neblog.utdallas.edu/2025/08/12/humanaggression/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "utdallas.edu",
+      "summary": "Brain structures like the amygdala (involved in threat detection) and the prefrontal cortex play significant roles in aggressive responses."
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Killer_ape_theory",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "wikipedia.org",
+      "summary": "*   The \"killer ape theory,\" which proposed that war and interpersonal aggression were the primary drivers of human evolution, has been largely challenged by subsequent research, which shows that other primates like chimpanzees and bonobos can exhibit aggressive behavior more frequently than humans."
+    },
+    {
+      "url": "https://leakeyfoundation.org/the-roots-of-human-aggression/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "leakeyfoundation.org",
+      "summary": "*   The assertion that aggression and violence were historically greater in the human past and have recently decreased is not consistently supported by fossil and archaeological records until \"very recently\" in human history, suggesting a more nuanced pattern."
+    },
+    {
+      "url": "https://journalofpsychiatryreform.com/2024/01/07/understanding-human-aggression-and-war/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "journalofpsychiatryreform.com",
+      "summary": "An alternative perspective suggests that hostile and destructive qualities primarily emerge in response to frustration and conflict."
+    }
+  ],
+  "styleContract": {
+    "localRules": [
+      {
+        "id": "do-not-invent-sources-citations-studies-experts-",
+        "instruction": "Do not invent sources, citations, studies, experts, dates, casualty totals, quotations, archaeological sites, or research findings."
+      },
+      {
+        "id": "do-not-treat-the-supplied-research-context-as-a-",
+        "instruction": "Do not treat the supplied research context as a complete bibliography; verify claims against attached sources during drafting and flag unsupported specifics."
+      },
+      {
+        "id": "do-not-collapse-aggression-violence-war-homicide",
+        "instruction": "Do not collapse aggression, violence, war, homicide, domination, punishment, and coercion into one interchangeable category."
+      },
+      {
+        "id": "do-not-describe-prehistoric-people-as-inherently",
+        "instruction": "Do not describe prehistoric people as inherently peaceful, savage, or warlike without specifying the evidence and its limits."
+      },
+      {
+        "id": "avoid-repeated-binary-reversals-such-as-x-is-not",
+        "instruction": "Avoid repeated binary reversals such as 'X is not A. It is B.' State the supported interpretation directly."
+      },
+      {
+        "id": "do-not-stack-adjacent-contrast-sentences-that-ju",
+        "instruction": "Do not stack adjacent contrast sentences that jump from a fact to a sweeping conclusion; earn the claim with evidence, scene, context, or qualification."
+      },
+      {
+        "id": "use-em-dashes-and-en-dashes-sparingly-prefer-cle",
+        "instruction": "Use em dashes and en dashes sparingly; prefer clean punctuation."
+      },
+      {
+        "id": "replace-inflated-abstractions-with-particular-pe",
+        "instruction": "Replace inflated abstractions with particular people, places, institutions, objects, or documented practices."
+      },
+      {
+        "id": "do-not-imply-that-correlation-proves-causation-w",
+        "instruction": "Do not imply that correlation proves causation when discussing agriculture, inequality, climate, hormones, technology, state formation, or crime trends."
+      },
+      {
+        "id": "do-not-use-a-single-european-trajectory-as-a-tem",
+        "instruction": "Do not use a single European trajectory as a template for all regions."
+      },
+      {
+        "id": "do-not-end-every-chapter-with-a-balanced-both-si",
+        "instruction": "Do not end every chapter with a balanced both-sides formula, a generic lesson, or a promise that history repeats itself."
+      },
+      {
+        "id": "do-not-mention-ai-prompts-plans-json-schemas-gen",
+        "instruction": "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing prose."
+      },
+      {
+        "id": "do-not-add-genre-assumptions-that-the-user-did-n",
+        "instruction": "Do not add genre assumptions that the user did not request."
+      },
+      {
+        "id": "avoid-proof-leap-transitions-such-as-this-is-not",
+        "instruction": "Avoid proof-leap transitions such as 'This is not a coincidence', 'no accident', 'hidden in plain sight', and 'the truth is' unless directly quoted or genuinely necessary."
+      },
+      {
+        "id": "avoid-binary-reversal-scaffolds-such-as-x-is-not",
+        "instruction": "Avoid binary-reversal scaffolds such as 'X is not A. It is B.' State B directly unless both halves are needed for a precise correction or distinction, and do not repeat the construction across nearby pages."
+      },
+      {
+        "id": "use-em-dashes-and-en-dashes-sparingly-when-a-das",
+        "instruction": "Use em dashes and en dashes sparingly; when a dash is ornamental, prefer a period, comma, colon, or a cleaner sentence."
+      },
+      {
+        "id": "replace-inflated-abstractions-with-concrete-exam",
+        "instruction": "Replace inflated abstractions with concrete examples, precise claims, or human-sized uncertainty."
+      },
+      {
+        "id": "preserve-the-user-s-thesis-and-intended-edge-but",
+        "instruction": "Preserve the user's thesis and intended edge, but do not make unsupported interpretive claims sound proven."
+      },
+      {
+        "id": "in-reader-facing-prose-avoid-sounding-like-a-mod",
+        "instruction": "In reader-facing prose, avoid sounding like a model explaining its own conclusion."
+      },
+      {
+        "id": "no-proof-leap",
+        "instruction": "Avoid unsupported proof-leap transitions; do not jump from a local fact to a sweeping conclusion without evidence on this page."
+      },
+      {
+        "id": "no-invented-evidence",
+        "instruction": "Do not invent evidence, citations, studies, experts, or source identities."
+      },
+      {
+        "id": "no-generic-conclusion",
+        "instruction": "Avoid generic conclusions and visible prompt scaffolding in reader-facing prose."
+      },
+      {
+        "id": "uncertainty-where-earned",
+        "instruction": "Use uncertainty only where the evidence on this page requires it."
+      },
+      {
+        "id": "prompt-leak-ban",
+        "instruction": "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages."
+      }
+    ],
+    "distributionRules": [
+      {
+        "id": "vary-caveat-endings",
+        "instruction": "Do not use the same caveat construction as the default ending across chapters."
+      },
+      {
+        "id": "select-relevant-lens",
+        "instruction": "Choose only the analytical lens relevant to a page rather than repeating the complete comparison grid."
+      },
+      {
+        "id": "allow-bounded-conclusions",
+        "instruction": "Let some pages commit to a bounded conclusion instead of balancing every cause symmetrically."
+      },
+      {
+        "id": "reintroduce-only-when-advancing",
+        "instruction": "Reintroduce a concept only when the later treatment advances, challenges, or applies it."
+      }
+    ]
+  },
+  "continuityRules": [
+    "Do not contradict established names, relationships, chronology, or visual details.",
+    "When a new recurring detail appears, add it to continuity notes.",
+    "Avoid repeating this beat: Every chapter currently repeats the same three beats and generic labels, so the outline does not yet show distinct historical arguments, evidence types, regional coverage, or transitions.",
+    "Avoid repeating this beat: The repeated Opening, Development, Perspective, Resolution pattern appears twice and is followed by another Opening and Development, creating structural duplication.",
+    "Avoid repeating this beat: The summaries promise development of a central idea without specifying which factors, sources, cases, or limits each chapter will examine.",
+    "Replace the generic ten-chapter cycle with a clearly chronological and comparative sequence: definitions and evidence; small-scale societies; agriculture and settlement; early states; imperial and religious orders; medieval and early modern transformations across multiple regions; colonial and industrial violence; modern state, interpersonal, and technological violence; and a bounded synthesis.",
+    "Give each chapter a distinct region, period, or analytical problem, and identify whether the evidence concerns interpersonal violence, organized warfare, coercion, punishment, or another category.",
+    "Distribute regions deliberately rather than using a single European trajectory as the book's default chronology."
+  ],
+  "researchQueries": [],
+  "illustrationPlan": {
+    "cadence": "manual",
+    "pageRules": [
+      "Keep recurring characters visually consistent.",
+      "Make each illustration readable as a single scene.",
+      "Avoid text inside images unless this is a labeled diagram."
+    ],
+    "coverPrompt": "Cover illustration for Create the best-fitting book from the user's creation chat: Create the best-fitting book from the user's creation chat. Decide the real book shape during planning; do not rely on the neutral project category.\nBook type choice: Auto - decide during planning\nCreation chat: Assistant: Hi! Tell me about the book you want to make. Describe your idea in a sentence or two, or tap an example to start.\nUser: Write a book on human aggressiveness in different areas in history and what affected it\nAssistant: Great topic — a history of human aggressiveness and what influenced it across different eras. To shape the book well, I need to know who it's for.\nUser: A broad historical survey across eras and regions\nAssistant: A broad historical survey of human aggressiveness across eras and regions — great scope. I'll structure it around key periods and the forces that shaped conflict in each.\nArtifact: Book\nAudience or reader: General readers curious about history\nPromise or story shape: A broad historical survey of human aggressiveness across eras and regions, exploring what influenced it\nTone or vibe: clear and fitted to the intended book shape\nPlanning instruction: choose the most appropriate shape directly, such as children's fable, short story, workbook, practical guide, client tool, offer guide, or lead magnet, based on the chat history.",
+    "globalStyle": "visual style requested by the user prompt",
+    "characterReferencePrompts": []
+  },
+  "writingComplexity": 6
+}

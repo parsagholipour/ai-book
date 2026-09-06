@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 6,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 7.0,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Veratius discovered that an ancient tariff could function as a public subscription for battery.",
+      "judgment": "Strength: the book's best mode — a concrete legal mechanism turned into an argument in one clean sentence, without editorializing."
+    },
+    {
+      "quote": "The fracture in the bone records the impact of a stone adze on bone; it does not record the social mobilization that put the adze in the attacker's hand.",
+      "judgment": "Strength: exemplary evidentiary discipline; the book repeatedly states what a source cannot support, which is rare and genuinely earned."
+    },
+    {
+      "quote": "The hand supplied the sign. It made violence portable",
+      "judgment": "Strength: the Congo chapter's link between ammunition accounting and severed hands is the most originally argued passage in the book."
+    },
+    {
+      "quote": "The ledger was the campaign before it began.",
+      "judgment": "Weakness: an aphoristic one-line closer of a kind the book reaches for at nearly every section boundary; individually good, cumulatively a tic."
+    },
+    {
+      "quote": "The capture of Atahualpa was not a demonstration of European cultural superiority; it was the calculated execution of a military coup",
+      "judgment": "Weakness: the dominant sentence template ('not X; it was Y') runs through all fifteen chapters and flattens the prose rhythm."
+    },
+    {
+      "quote": "The dead included 16 children and 18 adults, among them men and women, and the bodies were deposited together after dying at approximately the same time.",
+      "judgment": "Weakness: this is Crow Creek, but the demographic figures are Talheim's, restated verbatim fourteen paragraphs later — an internal factual contamination that undercuts the book's evidentiary posture."
+    },
+    {
+      "quote": "His social status and income derived from an revocable imperial commission.",
+      "judgment": "Weakness: unedited grammatical slip in an otherwise polished register; a handful of these survive."
+    },
+    {
+      "quote": "It leaves the next choice to the living.",
+      "judgment": "Weakness: the closing line is the book's most generic sentence, an inspirational cadence that the preceding 55,000 words of institutional analysis have not earned or needed."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Chapters close on a rhetorical question that restates the book's thesis as an open problem rather than answering it. Used at least six times, so the ending of a chapter carries no information about that chapter specifically.",
+      "instances": [
+        "How can societies with radically different historical records be compared without mistaking the survival of documents for the actual prevalence of violence?",
+        "Did the arrival of gunpowder create the early modern state, or did expanding state administrations simply seize upon the new weapons to enlarge their existing capacities?"
+      ]
+    },
+    {
+      "pattern": "Two-case comparative scaffold in nearly every chapter: case A, case B, then an explicit 'the contrast shows' paragraph that converts them into the same institutional moral. The pairing is genuinely useful once and mechanical by the fifth repetition.",
+      "instances": [
+        "The difference becomes clear when Talheim is set beside the Roman Forum.",
+        "Rome and Han China thus approached frontier management through distinct administrative methods."
+      ]
+    },
+    {
+      "pattern": "Negation-then-assertion as the default sentence shape ('was not X; it was Y' / 'did not do A because B; they did A because C'), deployed dozens of times as the mechanism for delivering every thesis beat.",
+      "instances": [
+        "The violence was not an accidental breakdown of discipline; it was the coercive enforcement of Roman debt and annexation policies",
+        "They did not slaughter the city because they lost control of their weapons; they killed because their institutional commission defined the total cleansing of the urban space"
+      ]
+    },
+    {
+      "pattern": "One-sentence paragraphs dropped in as dramatic rests before or after a set piece, a rhythm device applied so regularly it becomes predictable punctuation rather than emphasis.",
+      "instances": [
+        "Ninety-four attackers died before the inner drawbridge fell.",
+        "By the morning the officials sat down in the villa, extermination was not a hypothetical project."
+      ]
+    },
+    {
+      "pattern": "Prose interrupted by encyclopedic enumerations — numbered or bulleted taxonomies of institutions or tactics — that read as reference material rather than argument, and that in several chapters collapse into a single run-on paragraph of inline bullets.",
+      "instances": [
+        "*   **Client kings and native dynasts:** ... *   **The satrapal system and elite integration:** ...",
+        "1. **Eurasian Steppe raiding confederacies:** ... 2. **Scandinavian riverine and maritime assault:** ..."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, unusually coherent global history whose single claim — that violence is produced by offices, ledgers, statutes and quotas rather than by rage — is stated in chapter one and genuinely earned in every chapter thereafter, from the Twelve Tables tariff to the Congo rubber account to the Wannsee distribution list. Its best quality is evidentiary honesty: it repeatedly names what a mass grave, a victory stele or a prison register cannot establish, and refuses to convert a percentage into a verdict about a society. The costs are monotony and flatness. The thesis is restated so often, in such a uniform two-case-plus-contrast chapter shape, with such a narrow repertoire of sentence moves ('not X; it was Y', the aphoristic one-line closer, the chapter-ending rhetorical question), that the reader learns the machine and stops being surprised by it; the voice is competent and entirely impersonal, with no wit, argument with a rival historian, or risk taken. Depth is real at the level of detail but synthetic at the level of argument — these are famous cases arranged well, not new claims — and one lapse is serious, with Crow Creek given Talheim's demographic figures verbatim. With aggressive cuts to the restatements, variation in how chapters land, and a factual pass, it could be a strong book; as it stands it needs moderate revision."
+}

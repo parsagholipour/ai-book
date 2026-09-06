@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.4,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The state counted its bullets more precisely than it counted the people struck by them.",
+      "judgment": "The book's best sentence: the whole thesis about administrative visibility compressed into one measured, unshowy line."
+    },
+    {
+      "quote": "Its blows were authorized, but they were priced.",
+      "judgment": "Sharp chapter-opening thesis that reframes lex talionis as a scale rather than a symmetry."
+    },
+    {
+      "quote": "Archaeology preserves the dead more readily than the intervals of safety.",
+      "judgment": "Elegant statement of the survivorship bias that governs the book's early evidence, earned rather than decorative."
+    },
+    {
+      "quote": "A count of injuries is not a count of violent encounters, and a count of injured people is not a measure of the whole population’s exposure.",
+      "judgment": "Genuinely careful quantitative reasoning; the numerator/denominator discussion that follows is the book's methodological high point."
+    },
+    {
+      "quote": "The bones give us the point at which an encounter became materially visible, while the remainder of the encounter stays beyond their record.",
+      "judgment": "Well made, but it is the first of roughly a dozen chapter-closers built on the identical 'this much is visible, the rest is not' cadence."
+    },
+    {
+      "quote": "One site makes the event visible; the other makes repetition visible.",
+      "judgment": "The book's signature move — a semicolon antithesis balancing the chapter's two case studies — used so often it stops registering as thought."
+    },
+    {
+      "quote": "Mobility changes the geography of danger; it does not abolish danger.",
+      "judgment": "Aphoristic negation closer; the pattern 'X changes A; it does not abolish/eliminate/remove A' recurs in nearly every chapter."
+    },
+    {
+      "quote": "Zappo- Zaps had _ been treacherously dealt with",
+      "judgment": "Chapter 10's epigraph is transcribed with visible OCR corruption and a nested unclosed quotation mark — an unfinished-manuscript blemish in an otherwise clean text."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The epistemic disclaimer refrain: nearly every paragraph asserts a fact and then withdraws the inference in the same breath ('does not establish', 'cannot tell us', 'it does show'). Correct and disciplined at first, it becomes the book's dominant rhythm and its chief source of length.",
+      "instances": [
+        "Context narrows possibilities; it rarely supplies motive.",
+        "The evidence supports a group catastrophe; it does not settle the attackers’ selection process."
+      ]
+    },
+    {
+      "pattern": "Two-case comparative architecture: every chapter pairs exactly two (occasionally three) sites or documents, develops each separately, then closes by symmetrically contrasting what each makes visible.",
+      "instances": [
+        "One site makes the event visible; the other makes repetition visible.",
+        "The walls of Lachish and the chariots at Kadesh answer the same question from opposite directions."
+      ]
+    },
+    {
+      "pattern": "Semicolon or comma-balanced antithesis as the payoff of a paragraph, usually of the form 'A does X; B does Y' or 'X changes A; it does not abolish A'.",
+      "instances": [
+        "Mobility changes the geography of danger; it does not abolish danger.",
+        "Technology affects the speed and reach of action; institutions determine what action is authorised, rewarded, or blocked."
+      ]
+    },
+    {
+      "pattern": "Recap coda beginning 'At [Site A]... At [Site B]...' that restates in summary form what the chapter has already argued at length, often two or three such codas stacked at a chapter's end.",
+      "instances": [
+        "At Abu Hureyra, the archaeological layer holds the village at the moment when cultivation, storage, and residence became liabilities as well as achievements.",
+        "At Vilna, classification became lethal because authorities connected it to confinement, forced labour, transport, auxiliary policing, and execution."
+      ]
+    },
+    {
+      "pattern": "Uniform paragraph shape and length: a topic assertion, three to five expanding declaratives of similar length, a qualifying counter-move, a closing generalisation — with almost no short paragraphs, dialogue, scene, or shift of register across 58,000 words.",
+      "instances": [
+        "The archaeological record cannot choose among these motives.",
+        "Neither mobility nor aggregation has one predictable effect on aggression."
+      ]
+    }
+  ],
+  "summary": "This is a serious, well-controlled comparative history of organised aggression, moving from Palaeolithic skeletal trauma through early states, law codes, honour societies, empire, and the twentieth century to a closing argument about what makes restraint credible. Its central claim — that aggression is made durable or restrainable by institutions, classifications and records rather than by weapons or human nature — is genuinely carried through all twelve chapters, and the handling of evidence is unusually scrupulous: sample bias, denominators, source purpose and the difference between what a document proves and what it wants believed are worked through case by case rather than announced. Clarity and sentence-level craft are high, and the voice is consistent and adult throughout. The costs are pacing and monotony. The epistemic hedge is performed so relentlessly, and the two-case comparative frame with its symmetrical closing antitheses so faithfully repeated, that whole passages could be moved between chapters without detection; chapters 4 and 6 in particular restate their arguments three or four times before ending. Depth is solid synthesis rather than original interpretation, and engagement suffers from the near-total absence of narrative texture — the Nataruk dead, Njal's burning and the Vilna ghetto are all rendered in the same even analytic register. With aggressive cutting of recapitulation, variation of paragraph shape, and a repaired epigraph in chapter 10, this would be publishable."
+}

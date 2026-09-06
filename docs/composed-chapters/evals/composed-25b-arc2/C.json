@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.6,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A wound in bone is an event reduced to material.",
+      "judgment": "Compressed, exact opening image that states the book's evidentiary problem in one line without decoration."
+    },
+    {
+      "quote": "Aggression is behavior intended to harm someone who is motivated to avoid the harm.",
+      "judgment": "The controlling definition is stated early, narrowly, and then genuinely governs the next fourteen chapters rather than being abandoned."
+    },
+    {
+      "quote": "The office that prevents one villager from killing another may also be the office that organizes soldiers, collects taxes for campaigns, and defines an entire population as dangerous.",
+      "judgment": "The book's central argumentative move — institutional redirection, not reduction — landed with concrete institutional nouns instead of abstraction."
+    },
+    {
+      "quote": "The Force Publique supplied the threat. It was a private army of European officers and African conscripts, numbering around 19,000 men by the 1890s according to the supplied account.",
+      "judgment": "'According to the supplied account' leaks the drafting apparatus into the prose; a reader has no idea what was supplied or by whom."
+    },
+    {
+      "quote": "the available evidence in the material at hand does not permit a precise account of every operation or death toll",
+      "judgment": "Same defect in the Vendée passage: source-provisioning language masquerading as scholarly caution, and it recurs enough to read as a tic."
+    },
+    {
+      "quote": "It could count, persuade, reward, threaten, relocate, and destroy.",
+      "judgment": "Orphaned pronoun opening a paragraph — a stitching artifact where a subject ('The empire') has been lost; several such dangling sentences survive in Chapters 4 and 5."
+    },
+    {
+      "quote": "The chronicles preserve the victor's sequence. The city preserved the consequences.",
+      "judgment": "Elegant, but it is one of a dozen near-identical two-beat antithetical section closers, and the device stops earning its place."
+    },
+    {
+      "quote": "History cannot observe aggression before it has entered a body, a weapon, a law, a testimony, or a count.",
+      "judgment": "A genuinely earned closing thesis: it names the book's method rather than summarising its contents."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The epistemic seesaw: a source is credited with establishing one thing, then denied the power to establish a second, in matched consecutive sentences. It is the book's strongest habit of mind and also its most mechanical sentence engine, appearing several times per chapter.",
+      "instances": [
+        "The grave shows a result. History asks how that result was produced.",
+        "Archaeology can identify burning more readily than agency. The flame is visible; the decision to light it is usually not."
+      ]
+    },
+    {
+      "pattern": "Chapters and sections end on a short paired antithesis, usually two clipped sentences with a chiastic or reversed subject. The rhythm is identical across widely separated chapters, so the closers begin to sound authored by a rule.",
+      "instances": [
+        "Their names do not return. Their city does.",
+        "The record ends there because the voyage did. The struggle did not."
+      ]
+    },
+    {
+      "pattern": "A named scholar is introduced as a foil, conceded a point in a 'X is right that...' formula, and then bounded. Pinker in particular is re-litigated in at least six chapters with nearly the same concession and nearly the same qualification, which flattens what should be a developing argument into a refrain.",
+      "instances": [
+        "Steven Pinker is right to insist that institutions, state capacity, norms, and interdependence can restrain killing.",
+        "Pinker is right that many forms of violence declined in important regions and that states, commerce, norms, and institutions could restrain killing."
+      ]
+    },
+    {
+      "pattern": "The enumerated administrative chain: a process is decomposed into a numbered or serial sequence of offices and hand-offs, each step a short sentence, ending with a sentence about how the chain multiplies force. Genuinely illuminating the first three times; by Chapters 11 and 13 it is the default paragraph shape.",
+      "instances": [
+        "The census identified obligations; the road moved the order; the local intermediary located the person or property; the tax farmer or official demanded payment; the garrison stood behind the demand.",
+        "Registration identifies. Concentration limits movement. Supply control creates dependence. Intelligence selects targets."
+      ]
+    },
+    {
+      "pattern": "Uniform paragraph architecture: a concrete object or site in the first sentence, three to five sentences of expansion, then a generalising sentence that promotes the object into a claim about political order. Very few paragraphs deviate — no short paragraphs for emphasis, almost no dialogue, no digression, which is the main source of the book's monotone.",
+      "instances": [
+        "Salt made the arrangement especially clear. It was heavy, necessary, and valuable at a distance from its source... Violence became a form of brokerage.",
+        "Fortification gave this power a fixed form. Early Mesopotamian cities built walls that required immense labor... A wall was a long-term claim on organized work."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined comparative history whose thesis — that aggression is a capacity while organized violence is an institutional achievement, so states redirect harm rather than simply reducing it — is stated in Chapter 1 and genuinely governs all fifteen chapters. Its method is its best feature: each chapter opens on a specific object or site (a grave, a stele, a foundry register, a ship diagram, a protocol) and reasons outward only as far as that object permits, with the limits of the source named rather than papered over. The weaknesses are of texture rather than substance. Paragraph architecture is almost invariant, section closers repeatedly reach for the same two-beat antithesis, the Pinker–Keeley–Tilly foils are re-argued on nearly identical terms in chapter after chapter, and the epistemic seesaw ('the evidence shows X; it cannot show Y') recurs often enough to become a reflex. There are also a handful of real defects — orphaned pronouns opening paragraphs in Chapters 4 and 5, and two places where drafting language ('according to the supplied account', 'the material at hand') survives into the finished prose. Depth is respectable but synthetic; the book arranges existing scholarship with rare judgment rather than advancing an original claim of its own. With a pass to break the paragraph monotony, prune the repeated foils, and fix the half-dozen stitching artifacts, it would read as publishable narrative history."
+}

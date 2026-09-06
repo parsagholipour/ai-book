@@ -1,0 +1,54 @@
+{
+  "scores": { "thesis": 9, "structure": 8, "depth": 8, "reasoning": 7, "clarity": 9, "voice": 9, "engagement": 7, "pacing": 7, "craft": 9, "slopResistance": 6 },
+  "overall": 7.9,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    { "quote": "The bone does not contain the direction of intention. It contains the direction of force.", "judgment": "Exemplary compression of the book's evidentiary discipline — the thesis carried in a sentence about a skull." },
+    { "quote": "No marching army is required for coercion to begin. The ration list already distinguishes those who issue from those who receive.", "judgment": "Strong argumentative move: makes an administrative document do the analytic work rather than a battle." },
+    { "quote": "The fort called him a sale, the ship a freight, the plantation a hand, and the court a piece of property.", "judgment": "The best sentence in the book — the chain-of-translations argument realised in syntax rather than asserted." },
+    { "quote": "A promise spoken at the mosque could be heard as mercy.", "judgment": "Narrative and analysis fused; the Merv sequence is the strongest of the dramatized openings." },
+    { "quote": "In 1789, John James Audubon painted the famous image often called *The Zong Massacre*", "judgment": "A plain factual fabrication (Audubon was four years old; the reference garbles Turner), and the clause that follows contradicts it." },
+    { "quote": "The Dar al-Hadith al-Nuriyya in Damascus, founded in 1172 after Nur al-Din’s death had already occurred", "judgment": "Internally incoherent: the chapter later dates his death to 1174; a chronology error that survived editing." },
+    { "quote": "Prison authorities communicated with municipal officials, and some did.", "judgment": "A broken sentence with a dangling clause — evidence that late passes did not read the prose closely." },
+    { "quote": "Machinery enlarged the hand, but political authority chose where it would close.", "judgment": "Elegant, but it is the same paired-antithesis closer the book has already used a dozen times; the figure has gone automatic." }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter closes on an aphoristic sentence restating the thesis about offices and institutions, so the ending is predictable before it arrives.",
+      "instances": [
+        "Mounted warfare opened the empire, but the offices that counted people, moved messages, and collected revenue determined whether conquest became a passing raid or a government.",
+        "The order travelled. So did the refusal."
+      ]
+    },
+    {
+      "pattern": "A stock comparative pivot — \"Neither case fits …\" — is used to close nearly every two-case comparison in the book.",
+      "instances": [
+        "Neither case fits a simple contrast between barbarian raiders and settled states.",
+        "Neither case fits the picture of an enraged population suddenly losing control."
+      ]
+    },
+    {
+      "pattern": "Relentless X-not-Y / semicolon antithesis as the default analytic sentence shape, in every chapter and often several times per page.",
+      "instances": [
+        "The house establishes proximity; it does not establish motive.",
+        "Technology enlarged the possibilities of force; accounting decided whether those possibilities could be repeated."
+      ]
+    },
+    {
+      "pattern": "A one-sentence standalone paragraph dropped between analytic blocks as a rhetorical drumbeat.",
+      "instances": [
+        "A population appears as the object of a command.",
+        "The first great movement was civilian flight."
+      ]
+    },
+    {
+      "pattern": "Uniform chapter architecture: an invented, novelistic sensory scene (often with fabricated dialogue and gesture) followed by a source-criticism paragraph and then long analytic exposition.",
+      "instances": [
+        "Narmer put his thumb into the hollow and drew it out black.",
+        "The captives were brought up the eastern stair of the Templo Mayor before sunrise, their wrists tied behind them with maguey cord."
+      ]
+    }
+  ],
+  "summary": "This is an unusually disciplined work of comparative history whose thesis — that aggression becomes historically consequential only when an office classifies a target, authorises force, and supplies the means — is stated early, tested case by case, and never abandoned across fifteen chapters. Its best pages handle evidence with genuine rigour: healed cranial lesions, ration tablets, an artillery register, a railway timetable, an insurance suit, each read for what it can and cannot support, with the survival of the trace itself treated as part of the history. Prose quality is high and the voice is consistent — dry, exact, unhurried — and the dramatized openings, when they work (Merv, Blenheim, Manila), earn their place. The weaknesses are formal rather than intellectual: a fixed chapter template, a paired-antithesis sentence shape that recurs to the point of tic, and closers that restate the thesis so often the middle chapters begin to feel interchangeable. Reasoning is undermined in a few places by errors that a fact pass would catch — an Audubon painting that never existed, a foundation dated after a death it precedes, a sentence that breaks mid-clause — and by scene-writing that supplies invented speech and gesture in a book otherwise scrupulous about what sources can bear. Light revision — thinning the antithesis, varying the chapter endings, correcting the factual slips — would leave a genuinely accomplished book."
+}

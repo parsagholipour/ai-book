@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 6,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.1,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A broken bone that knitted under the skin records pain, care, and survival, but not the quarrel, accident, raid, or punishment that caused it.",
+      "judgment": "Excellent opening: states the book's epistemic problem through a concrete object rather than an abstraction."
+    },
+    {
+      "quote": "Whereas some doubts have arisen whether children got by any Englishman upon a negro woman should be slave or free... The sentence begins with doubt and ends with inheritance.",
+      "judgment": "The book's best single move — a quoted primary source read closely, then unfolded into a system across a whole chapter."
+    },
+    {
+      "quote": "The document preserves the grammar by which a government turns an ideological enemy into a transport problem, a labour calculation, a diplomatic request, and a question of legal definition.",
+      "judgment": "Precise, earned, and the thesis stated where it actually does interpretive work."
+    },
+    {
+      "quote": "Tools alter speed, distance, endurance, and organisation. People and institutions select targets.",
+      "judgment": "Strong on first appearance, but this exact proposition is restated in at least eight chapters with only the nouns changed."
+    },
+    {
+      "quote": "The crowd had many hands. So did the state.",
+      "judgment": "A representative one-line aphoristic closer with a paired antithesis — the book's most habitual rhetorical tic."
+    },
+    {
+      "quote": "It could indicate centralized coercion... It could indicate defensive crisis... It could indicate both, with a central authority able to demand labour because conflict had made the demand urgent.",
+      "judgment": "Symmetrical triple hedge; the caution is genuine but the shape is mechanical and recurs at every point of interpretive strain."
+    },
+    {
+      "quote": "There was no single invention of organised war. In southern Mesopotamia... At Lagash... In Egypt... Around Uruk and across Akkadian territories...",
+      "judgment": "Nearly every chapter ends with this roll-call recap of its own cases, which flattens the endings into a single template."
+    },
+    {
+      "quote": "The unresolved question is whether that discipline can reach a person who must choose under fear: an official at a roadblock, a commander receiving a doubtful report, a village leader hearing that an army is approaching, or a president deciding whether to strike.",
+      "judgment": "A genuinely good final cadence, though it closes on the same claim chapter 1 opened with rather than on anything the intervening 50,000 words established."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The technology-does-not-supply-motive proposition, restated near-verbatim in most chapters with substituted nouns.",
+      "instances": [
+        "Technology changes the reach of aggression without supplying its purpose.",
+        "Technology altered reach without dictating purpose. Trains allowed the Nazi regime to coordinate deportations across occupied Europe, but railway lines did not decide that Jews should be killed."
+      ]
+    },
+    {
+      "pattern": "The economic-pressure disclaimer: scarcity is named, then denied causal sufficiency, then routed through 'political decisions' — a fixed three-beat paragraph.",
+      "instances": [
+        "Yet pressure does not move directly from an empty granary or a low wage to a wound.",
+        "Economic pressure alone cannot account for the different forms of violence. A tax or a rubber quota became destructive when officials defined nonpayment as defiance..."
+      ]
+    },
+    {
+      "pattern": "Isolated one-sentence paragraphs used as rhetorical punctuation, usually a paired antithesis or a rhetorical question, at roughly the same position in each chapter.",
+      "instances": [
+        "A date is a boundary, not a motive.",
+        "Truth spoken in public did not automatically become reconciliation."
+      ]
+    },
+    {
+      "pattern": "The comparison caveat: two cases are set side by side, then a paragraph insists they must not be collapsed, in identical syntax.",
+      "instances": [
+        "The Narmer Palette cannot be used as a simple mirror of the Stele of the Vultures... A comparison that treats all early kingship as one thing would erase the evidence it claims to connect.",
+        "The Assyrian inscription, the Persian satrapal system, and the Roman provincial record belong to different political worlds. They should not be collapsed into a single imperial model."
+      ]
+    },
+    {
+      "pattern": "Chapter architecture is invariant: artifact-first opening, two to four case studies each introduced by an object, source-criticism interlude, enumerative synthesis close. No chapter is shaped by its own material.",
+      "instances": [
+        "The cemetery at Jebel Sahaba lies in the Nile Valley, where the dead were placed together rather than abandoned at the place of injury.",
+        "The railway timetable turned a military intention into a sequence of movements."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, source-conscious global history of organized violence, and its prose is consistently clean, concrete and free of the usual lexical tells — no listicles, no second-person coaching, no fashionable abstraction. Its evidentiary handling is its real strength: the Twelve Tables, the Stele of the Vultures, the Virginia 1662 statute, the Wannsee Protocol and the Chapultepec accords are all read closely and their limits stated, and the recurring insistence that a record be asked only what it can answer is genuinely well executed. The weakness is structural rather than verbal. One proposition — institutions and political decisions, not temperament, scarcity or technology, set the scale and direction of violence — is restated in nearly identical syntax in every chapter, so the book accumulates rather than develops, and chapter 15 lands where chapter 1 began. Each chapter is built to the same template (artifact opening, paired case studies, comparison caveat, enumerative recap close), and each is punctuated by isolated one-line paragraphs in paired antithesis. The voice is capable but anonymous, its register never varying across 55,000 words, which makes the middle chapters heavy going despite the quality of the individual paragraphs. Light revision — varying chapter shapes, cutting the repeated thesis restatements and most of the aphoristic single-sentence landings — would raise this considerably."
+}

@@ -1,18 +1,14 @@
+import { isStopOrAbortError } from "../adapters/retry.js";
+
 /**
- * Public-domain primary text, by repository API, for the material-first
- * dossier (`dossier.ts`). Three hosts and one shape: a search returns
- * candidates with a plain-text URL, and `fetchPrimaryText` returns the
- * document's text with the repository's own boilerplate stripped. Licence is a
- * property of the host — Gutenberg and Wikisource publish only free text, and
- * archive.org is taken only for works dated before 1930 or carrying a public
- * licence URL — so nothing here asks a model whether a text may be used.
- *
- * `PrimarySourceFetch` is injected so the worker can put a timeout and a
- * user-agent on it and the tests can fake it; this module makes no network
- * call of its own.
+ * Source-document discovery and text extraction for the material-first dossier.
+ * The three catalogue adapters retain their public-domain filters. Optional web
+ * discovery supplies document URLs; only fetched document text becomes evidence,
+ * never a search provider's summary. The worker owns bounded network access and
+ * PDF extraction through the injected fetcher. This module performs no IO itself.
  */
 
-export type PrimarySourceHost = "wikisource" | "gutenberg" | "archive";
+export type PrimarySourceHost = "wikisource" | "gutenberg" | "archive" | "web";
 
 export type PrimarySourceCandidate = {
   host: PrimarySourceHost;
@@ -25,7 +21,29 @@ export type PrimarySourceCandidate = {
   year: string;
 };
 
-export type PrimarySourceFetch = (url: string) => Promise<{ status: number; text: string }>;
+export type PrimarySourceFetch = (url: string) => Promise<{ status: number; text: string; contentType?: string }>;
+/** Discovery supplies addresses only. A provider summary can never become a source passage. */
+export type PrimarySourceSearch = (query: string) => Promise<Array<{ title: string; url: string }>>;
+
+export function publicSourceUrl(value: string): string | undefined {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    if (!/^https?:$/.test(url.protocol) || url.username || url.password ||
+      !host.includes(".") || /^(?:\d+\.){3}\d+$/.test(host) || host.includes(":") ||
+      /(?:^|\.)(?:localhost|local|internal|test)$/.test(host)) return undefined;
+    url.hash = "";
+    return url.href;
+  } catch { return undefined; }
+}
+
+async function discoverSourceDocuments(query: string, search: PrimarySourceSearch, limit: number): Promise<PrimarySourceCandidate[]> {
+  const found = await search(query);
+  return found.flatMap((source): PrimarySourceCandidate[] => {
+    const url = publicSourceUrl(source.url);
+    return url ? [{ host: "web", title: source.title, url, textUrl: url, author: "", year: "" }] : [];
+  }).slice(0, limit);
+}
 
 export const PRIMARY_TEXT_MAX_CHARS = 600_000;
 const ARCHIVE_PUBLIC_DOMAIN_BEFORE = 1930;
@@ -78,7 +96,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 /** Only Wikimedia asks for serial requests; the other hosts answer in parallel and a slow one must not queue the rest. */
 const THROTTLED_HOST = /wikisource\.org$|wikipedia\.org$|wikimedia\.org$/i;
 
-export async function throttledFetch(fetchImpl: PrimarySourceFetch, url: string): Promise<{ status: number; text: string }> {
+export async function throttledFetch(fetchImpl: PrimarySourceFetch, url: string): ReturnType<PrimarySourceFetch> {
   const host = hostOf(url);
   if (!THROTTLED_HOST.test(host)) {
     return fetchImpl(url);
@@ -202,10 +220,11 @@ export async function searchArchive(query: string, options: { fetch: PrimarySour
 /** All three hosts for one query, deduplicated by text URL, Wikisource first (it holds documents, the others hold books). */
 export async function searchPrimarySources(
   query: string,
-  options: { fetch: PrimarySourceFetch; language: string; limit?: number | undefined }
+  options: { fetch: PrimarySourceFetch; language: string; limit?: number | undefined; search?: PrimarySourceSearch | undefined }
 ): Promise<PrimarySourceCandidate[]> {
   const limit = options.limit ?? 3;
   const settled = await Promise.allSettled([
+    ...(options.search ? [discoverSourceDocuments(query, options.search, limit)] : []),
     searchWikisource(query, { fetch: options.fetch, language: options.language, limit }),
     searchGutenberg(query, { fetch: options.fetch, language: options.language, limit }),
     searchArchive(query, { fetch: options.fetch, limit })
@@ -213,7 +232,10 @@ export async function searchPrimarySources(
   const seen = new Set<string>();
   const merged: PrimarySourceCandidate[] = [];
   for (const result of settled) {
-    if (result.status !== "fulfilled") continue;
+    if (result.status !== "fulfilled") {
+      if (isStopOrAbortError(result.reason)) throw result.reason;
+      continue;
+    }
     for (const candidate of result.value) {
       if (seen.has(candidate.textUrl)) continue;
       seen.add(candidate.textUrl);
@@ -334,15 +356,44 @@ export function textLooksLikeLanguage(text: string, language: string): boolean {
   return hits / tokens.length >= 0.06;
 }
 
+/** Archive identifiers do not determine filenames: resolve a missing OCR file from the item's own manifest. */
+async function archiveTextFallback(candidate: PrimarySourceCandidate, fetchImpl: PrimarySourceFetch): Promise<{ status: number; text: string }> {
+  const unavailable = { status: 404, text: "" };
+  let item: URL;
+  try { item = new URL(candidate.url); } catch { return unavailable; }
+  if (item.hostname !== "archive.org" || !/^\/details\/[^/]+\/?$/.test(item.pathname)) return unavailable;
+  const identifier = item.pathname.split("/")[2]!;
+  const metadata = record(await fetchJson(fetchImpl, `https://archive.org/metadata/${identifier}`));
+  if (!metadata || metadata.is_dark || !Array.isArray(metadata.files)) return unavailable;
+  const files = metadata.files.flatMap((entry) => {
+    const file = record(entry);
+    const name = str(file?.name);
+    if (file?.private || !name || /[\\/]/.test(name) || !(/_djvu\.txt$/i.test(name) || (file?.format === "Text" && /\.txt$/i.test(name)))) return [];
+    return [name];
+  }).sort((a, b) => Number(/_djvu\.txt$/i.test(b)) - Number(/_djvu\.txt$/i.test(a)) || a.localeCompare(b));
+  for (const name of files.slice(0, 2)) {
+    const url = `https://archive.org/download/${identifier}/${encodeURIComponent(name)}`;
+    if (url === candidate.textUrl) continue;
+    const response = await throttledFetch(fetchImpl, url);
+    if (response.status === 200 && response.text) return response;
+  }
+  return unavailable;
+}
+
 /** The document's text, capped, with the repository's own boilerplate removed; empty when the host has no plain text for it. */
 export async function fetchPrimaryText(
   candidate: PrimarySourceCandidate,
   fetchImpl: PrimarySourceFetch,
   maxChars: number = PRIMARY_TEXT_MAX_CHARS
 ): Promise<string> {
-  const response = await throttledFetch(fetchImpl, candidate.textUrl);
+  let response = await throttledFetch(fetchImpl, candidate.textUrl);
+  if (candidate.host === "archive" && response.status === 404) response = await archiveTextFallback(candidate, fetchImpl);
   if (response.status !== 200 || !response.text) return "";
   let text = response.text;
+  if (candidate.host === "web") {
+    if (response.contentType?.includes("html") || /^\s*(?:<!doctype|<html)/i.test(text)) text = htmlToText(text);
+    return normalizePrimaryText(text).slice(0, maxChars);
+  }
   if (candidate.host === "wikisource") {
     let parsed: WikisourceParse | undefined;
     try {

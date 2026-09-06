@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.7,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The fine was recorded in the same hand as the brawl, on the same membrane, by the same clerk who had spent the morning listening to the butcher and the prior's servant tell their versions of the fight.",
+      "judgment": "Superb opening: the book's whole argument about institutions carried by one concrete archival detail rather than stated."
+    },
+    {
+      "quote": "A massacre is a rare event, and rare events are precisely the ones most likely to leave a trace. A single violent afternoon can produce twenty-seven corpses... A lifetime of peaceful foraging produces no corpses at all",
+      "judgment": "Genuine methodological insight, argued rather than asserted; the strongest reasoning in the book."
+    },
+    {
+      "quote": "The Mesopotamian kings built their power on grain and walls; the Moche lords built theirs on prisoners and blood, and the two strategies produced different kinds of violence",
+      "judgment": "A comparison that earns its ecological explanation instead of gesturing at 'context'."
+    },
+    {
+      "quote": "grain became rations, rations became labor, labor became soldiers, and soldiers became the means by which the state defended its fields",
+      "judgment": "Elegant chain, but also the book's signature rhetorical move (escalating anaphoric chain) used often enough to become a tic."
+    },
+    {
+      "quote": "\u00c9mile Dutemple, processing military supply orders at the Gare de l'Est in 1870",
+      "judgment": "Internal contradiction: Chapter 12 places Dutemple at the Gare de l'Est on 31 August 1914; the recap misdates its own case."
+    },
+    {
+      "quote": "It was the product of a particular configuration of power, and the configuration was made by human beings, and it was unmade by them.",
+      "judgment": "The thesis sentence recurs almost verbatim at the end of Chapters 11 and 12 \u2014 recap loop rather than development."
+    },
+    {
+      "quote": "The chapter has moved from a single document to a mechanism to an argument to a comparison, and the movement has been deliberate.",
+      "judgment": "Naked scaffolding: the chapter announces its own template, exposing the generative formula behind all fifteen chapters."
+    },
+    {
+      "quote": "The technology was neutral; the purposes to which it was put were not.",
+      "judgment": "Aphoristic closer that flattens the book's own more careful earlier claim that capacity and organization co-produce scale."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter opens with one dated archival object (roll, register, form, protocol, drawing), described in loving material detail, then read as a synecdoche for the chapter's argument. Effective twice; by Chapter 11 it is a machine.",
+      "instances": [
+        "In the autumn of 1275, on a Thursday morning in the market town of Aylsham in Norfolk, three men came to blows outside the booth of a tanner named William le Blake.",
+        "In the archives of the Belgian Ministry of Foreign Affairs there is a printed form, two pages, dated 1891, headed *\u00c9tat Ind\u00e9pendant du Congo \u2014 Travail Obligatoire*."
+      ]
+    },
+    {
+      "pattern": "A named straw position is introduced with 'The claim/view/argument that X ... has a long history', attributed to a nineteenth- or twentieth-century figure, then partly conceded and refuted. The concession is always symmetrical ('The view is not entirely wrong').",
+      "instances": [
+        "The claim that steppe societies were purely destructive has a long history, and it was stated most forcefully by the settled societies that suffered from steppe conquests.",
+        "The claim that medieval violence was purely religious has a long history."
+      ]
+    },
+    {
+      "pattern": "Mechanisms are enumerated as ordinal steps, always four or five, always with the same connective frame \u2014 a reliable but mechanical scaffold that substitutes sequence for analysis.",
+      "instances": [
+        "The first step was the accumulation of grain... The second step was the conscription of labor. The third step was the creation of a permanent military establishment.",
+        "The first step was conscription... The second step was rationing... The third step was propaganda. The fourth step was strategic bombing."
+      ]
+    },
+    {
+      "pattern": "Chapters close with a metadiscursive recap that names what the chapter did and restates the book's thesis in near-identical wording, producing a long recap loop across the second half.",
+      "instances": [
+        "The chapter has shown both violence and restraint, and the conditions for each remain contested.",
+        "The chapter has shown both decline and persistence."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis and the 'not a difference in X, it is a difference in Y' construction do most of the analytical work, often twice in a paragraph.",
+      "instances": [
+        "The difference was not in the amount of force used but in the way it was used and in the goals it was meant to achieve.",
+        "The difference between them is not a difference in human nature. It is a difference in the capacity of institutions to organize, legitimize, and extend harm."
+      ]
+    }
+  ],
+  "summary": "This is an unusually accomplished manuscript at the sentence and paragraph level: a sober, patient, source-critical historian's voice, sustained without wobble across fifteen chapters, built almost entirely out of dated, named, material particulars rather than abstractions. Its thesis \u2014 that the scale, targets and meaning of violence are products of institutional capacity rather than of a constant human aggressiveness \u2014 is stated early, genuinely tested against cases that resist it (Moche ritual capture, Mongol administration, revolutionary restraint), and never abandoned for a comforting moral arc. The weaknesses are architectural rather than local. Every chapter runs the same four-beat program \u2014 archival object, step-by-step mechanism, named counter-view refuted, two-case comparison, metadiscursive recap \u2014 and by the late chapters the reader can predict each paragraph's function before reading it; the thesis sentence itself recurs almost word-for-word at three chapter endings, and Chapters 13 and 14 slide toward encyclopedic survey. There is at least one internal contradiction (Dutemple dated 1914 in Chapter 12, 1870 in Chapter 15), and several counter-positions are thinner than the sources they are drawn from. Trimming the recaps, varying the chapter template, and cutting the closing chapter's restatements would lift this to genuinely publishable nonfiction; the raw prose is already there."
+}

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.4,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The scale of the violence and the scale of its organization must remain separate. Ten dead people may record a coordinated assault without recording a government.",
+      "judgment": "Strength: the book's governing distinction stated early, crisply, and without inflation; it then genuinely does the analytic work for fifteen chapters."
+    },
+    {
+      "quote": "A wound on a skull records an injury. A ration tablet records an obligation that may have fed the person who inflicted one. A fortification records fear and a schedule of labour.",
+      "judgment": "Strength: evidence-type reasoning made concrete; the book consistently treats each artifact as a claim with known limits rather than as illustration."
+    },
+    {
+      "quote": "The report used cautious language because a skeleton preserves neither rope nor shout nor the final movement of a living person. It preserves the relation between bones and ground.",
+      "judgment": "Strength: unusually disciplined epistemics rendered as prose rather than as hedging boilerplate."
+    },
+    {
+      "quote": "There was no courtroom there, no magistrate, and no person empowered to hear their names. The crew held them as the ship rolled. One after another, the fifty-four were forced over the side.",
+      "judgment": "Strength: the Zong opening is the book's best narrative writing — flat, unadorned, and far more forceful than any commentary around it."
+    },
+    {
+      "quote": "The weapon enlarged the possible violence; the record decided whose labour would make that enlargement real.",
+      "judgment": "Weakness: an aphoristic semicolon antithesis used as a chapter landing; the same rhetorical shape closes at least eight chapters and blunts by repetition."
+    },
+    {
+      "quote": "The comparison with Lyon makes the problem sharper. In Nantes, protective committees and revolutionary officials had access to arrest lists...",
+      "judgment": "Weakness: a broken seam — the sentence announces Lyon and then discusses Nantes; several such joins survive uncorrected."
+    },
+    {
+      "quote": "Six centuries after the dedication Durán described, another public ceremony at Cajamarca began with fewer than two hundred Spanish soldiers",
+      "judgment": "Weakness: a dangling back-reference to a temple dedication the text never narrates, plus a wrong interval; the transition rests on absent material."
+    },
+    {
+      "quote": "Two days after the barefoot procession, the assault began. The siege towers were pushed towards the northern and southern walls",
+      "judgment": "Weakness: chapter 6 lurches from Constantinople 1204 to Jerusalem 1099 with no signal, and the procession referred to has not been described."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The 'person becomes an entry' conversion, restated in nearly every chapter with a new noun for the ledger. Analytically true, but by mid-book it arrives as a formula rather than a finding.",
+      "instances": [
+        "people taken in war became entries that could be moved between provincial records",
+        "Their presence enters the record through numbers attached to an insurance claim."
+      ]
+    },
+    {
+      "pattern": "Negation-framed pivot: a paragraph or section opens by denying a naive contrast, then supplies the corrected one. Used as the default transition into analysis.",
+      "instances": [
+        "The comparison is not between a violent city and a peaceful one.",
+        "The contrast does not measure which society was more aggressive."
+      ]
+    },
+    {
+      "pattern": "Terminal paired antithesis: chapters and sections land on a two-clause balanced sentence, usually joined by a semicolon or a 'not X but Y' turn. The cadence is identical across chapters.",
+      "instances": [
+        "Religious authority could close a gate against violence. It could also designate who was to be driven through it.",
+        "The tablet allows officials to repeat a demand. The stele allows a ruler to repeat the meaning of victory"
+      ]
+    },
+    {
+      "pattern": "The archival-silence caveat, deployed at a fixed position near each section's end: what the record preserves, followed by what it cannot say and whose voice is missing.",
+      "instances": [
+        "The murdered people remain counted rather than named.",
+        "no royal office survives to name the assailant and no sentence survives to quote"
+      ]
+    },
+    {
+      "pattern": "Uniform chapter architecture: an immersive present-tense-feeling scene with sensory detail, then a document or site analysis, then a two-case comparison, then the institutional moral. Fifteen chapters, one template.",
+      "instances": [
+        "The first ram struck the wall of Lachish just after sunrise, when the limestone still held the night's cold.",
+        "The fire had begun before dawn on 12 April 1204, and from the upper rooms of his house Nicetas Choniates could see it working westward"
+      ]
+    }
+  ],
+  "summary": "This is a serious, evidence-first global history of organized violence, held together by a single strong claim: harm becomes large-scale and durable not through weapons or temperament but through offices, records, and the routines that make people legible to power. The claim is developed with real specificity — Nataruk, Jebel Sahaba, Uruk tablets, the Lachish reliefs, the paiza, the Zong insurance suit, the Wannsee minutes, the Peers report — and with unusually disciplined epistemics: the book repeatedly says what an artifact can and cannot support instead of narrating past its evidence. Sentence-level craft is high and the voice is austere, concrete, and consistent, with several openings (Melos, Lachish, the Zong) that are genuinely gripping. The costs are pacing and shape. The same analytic move recurs in every chapter with fresh nouns, and the prose lands on balanced antitheses and archival-silence caveats so regularly that the structure becomes audible; there is no introduction or conclusion to relieve the pattern. A handful of seams are broken outright — a Lyon/Nantes mismatch, a dangling reference to a Durán dedication, an unsignalled jump from 1204 Constantinople to 1099 Jerusalem — which suggests the joins need a pass. Lexical AI slop is nearly absent; the slop that remains is structural, in the templated rhetorical shapes rather than in the words."
+}

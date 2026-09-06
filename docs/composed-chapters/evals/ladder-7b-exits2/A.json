@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 7,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.6,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The sabres belonged to individual riders. The decision to put riders among the crowd belonged to an office.",
+      "judgment": "Strength: the book's controlling idea stated concretely and early, grown out of a scene rather than announced."
+    },
+    {
+      "quote": "A healed lesion is a date written into the body.",
+      "judgment": "Strength: compressed, exact, and does real analytic work about how skeletal evidence carries chronology."
+    },
+    {
+      "quote": "The soil preserves outcomes, not a scale on which all societies can be placed.",
+      "judgment": "Strength: evidentiary discipline is a genuine and sustained virtue; the book repeatedly refuses inferences its sources cannot bear."
+    },
+    {
+      "quote": "The Girsu workers' village preserved ration lists in which barley was issued by status and task... In c. 2450 BCE, Eannatum of Lagash defeated Umma, restored the boundary, and the Stele of the Vultures says that he piled the bodies of Umma's men in the fields.",
+      "judgment": "Weakness: a chapter-terminal source-recap sentence that reads as a citation artifact, not prose; the same move ends most chapters."
+    },
+    {
+      "quote": "Violence opened the process; paperwork made it durable.",
+      "judgment": "Weakness: an aphoristic paired closer; effective once, but the manuscript reaches for this shape dozens of times."
+    },
+    {
+      "quote": "Ideology supplied permission. War supplied emergency. Bureaucracy supplied the route.",
+      "judgment": "Mixed: rhetorically sharp but the tricolon-of-abstractions is the book's default landing gear, and it flattens hard-won particulars into slogan."
+    },
+    {
+      "quote": "Giulio Douhet argued after the First World War that aircraft could pass over armies and fortifications to strike populations and industrial centres, producing panic and political collapse.",
+      "judgment": "Weakness: near-verbatim duplication of the Douhet/strategic-bombing discussion already given in Chapter 9; several cases (Vicksburg, the Armenian deportations, Rwanda, the Royal Road) are argued twice."
+    },
+    {
+      "quote": "A soldier on the wall bent over the merlon with a jar in both hands. He tipped it towards the tower. An Assyrian archer below raised his bow, drew, and released. The arrow entered the man's throat. He dropped the jar first.",
+      "judgment": "Strength: the chapter-opening set pieces (Lachish, Peterloo, the Bastille) are physically observed and unsentimental, and they earn the analysis that follows."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter closes with a flat recapitulation sentence that restates a source and its bibliographic particulars, breaking the essay voice at exactly the moment a chapter should land.",
+      "instances": [
+        "The skulls and mandibles from Ofnet Cave were deposited in two pits during the Late Mesolithic... Fred Wendorf's *The Prehistory of Nubia* reports that at Jebel Sahaba in the Nile Valley around 13,000 BCE, the cemetery contained people with embedded projectile points and both healed and unhealed wounds.",
+        "In his dispatch on the Battle of the Somme, Sir Douglas Haig recorded that the battle lasted from 1 July to 18 November 1916 and that the British Expeditionary Force captured about 38,000 prisoners."
+      ]
+    },
+    {
+      "pattern": "The paired-case comparison is the near-universal chapter engine: two societies or institutions are set side by side, declared not-different-in-kind, then separated by one named variable ('the difference lies in…').",
+      "instances": [
+        "The difference lies in what each community had built, defended, and risked losing.",
+        "Their differences lie in the ordinary route by which command reached households."
+      ]
+    },
+    {
+      "pattern": "Paragraphs land on a two-clause antithesis in which the second clause negates or reweights the first, usually with a semicolon or a 'not X but Y' frame.",
+      "instances": [
+        "The sword opened the arrangement, while the clerk, governor, and garrison made it last.",
+        "Movement opened the door. Offices determined who entered, who paid, and who survived."
+      ]
+    },
+    {
+      "pattern": "The thesis is restated in the same abstract vocabulary (office, record, classification, chain, durable) at the end of each section, so the argument is asserted far more often than it is advanced.",
+      "instances": [
+        "Classification is not decoration placed on violence afterwards. It determines who may answer for it, who may profit from it...",
+        "Commands, borders, records, and economic demands gave aggression a durable structure."
+      ]
+    },
+    {
+      "pattern": "Interrogative pivots are used to open or turn sections, a rhetorical question the following paragraph then answers in the book's standard register.",
+      "instances": [
+        "What kind of violence leaves a body in the ground with the weapon still inside it?",
+        "What kind of violence follows when people must move to survive but the state profits from keeping them in place?"
+      ]
+    }
+  ],
+  "summary": "This is an unusually coherent work of comparative history: a single thesis — that aggression acquires reach through offices, records and classification rather than through individual anger, and that the archive shapes what we can claim about it — is pursued across fifteen chapters from Talheim to the Rome Statute without drifting. The evidentiary manners are its strongest feature; again and again the book states what a grave, a tablet or a royal inscription can and cannot support, and it names the interests of its own sources. The prose is austere, concrete and consistent, and the chapter-opening scenes (Peterloo, Lachish, the Bastille) are genuinely well made. Against that, the book is highly templated at the paragraph and chapter level: nearly every chapter runs a two-case comparison to a 'the difference lies in' verdict, nearly every section lands on a paired antithesis, and every chapter terminates in a flat source-recapping sentence that reads as an artifact rather than an ending. Several cases are argued twice across chapters (Douhet and strategic bombing, Vicksburg, the Armenian deportations, Rwanda), which costs it pacing and makes the later chapters feel like re-treads. Light revision — varying the chapter architecture, cutting the terminal recap sentences, and consolidating the duplicated material — would lift it considerably without touching its research or its voice."
+}

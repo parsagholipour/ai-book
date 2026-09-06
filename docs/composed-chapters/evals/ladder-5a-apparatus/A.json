@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 7,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.4,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The bone does not contain the direction of intention. It contains the direction of force.",
+      "judgment": "Compressed, exact statement of the book's evidentiary discipline; among its best sentences."
+    },
+    {
+      "quote": "A captive became merchandise at the coast, merchandise became insured cargo at sea, cargo became labour on a plantation, labour became sugar in a warehouse, and sugar became credit for another purchase.",
+      "judgment": "The chain-of-translation device at its most earned: concrete, cumulative, and doing real analytic work."
+    },
+    {
+      "quote": "In 1789, John James Audubon painted the famous image often called *The Zong Massacre*, though the best-known visual representation of the event came later",
+      "judgment": "A fabricated attribution (the painting is Turner's, 1840) inside a book whose whole method is source scepticism; badly damaging."
+    },
+    {
+      "quote": "The Dar al-Hadith al-Nuriyya in Damascus, founded in 1172 after Nur al-Din's death had already occurred",
+      "judgment": "Internally incoherent: the same chapter dates his death to 1174. A visible fact-checking failure."
+    },
+    {
+      "quote": "Prison authorities communicated with municipal officials, and some did.",
+      "judgment": "A broken sentence surviving into finished prose; a clause has clearly been lost."
+    },
+    {
+      "quote": "The Korean armistice and the Iran-Iraq ceasefire therefore point to different endings for organized violence.",
+      "judgment": "Comparative payoff delivered before the Korean case is introduced anywhere; chapter 14's sequence is out of order."
+    },
+    {
+      "quote": "Machinery enlarged the hand, but political authority chose where it would close.",
+      "judgment": "Elegant, but the twelfth variation on a single antithesis the book closes almost every chapter with."
+    },
+    {
+      "quote": "The order travelled. So did the refusal.",
+      "judgment": "Aphoristic two-beat closer of exactly the kind the book reaches for whenever an argument ends."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter opens with a novelistic reconstruction containing invented sensory detail and dialogue, then pivots to analysis — a fabrication habit in tension with the book's own strictures about what evidence supports.",
+      "instances": [
+        "FitzUrse took one glove off, finger by finger. His nails were black from the journey.",
+        "Narmer put his thumb into the hollow and drew it out black."
+      ]
+    },
+    {
+      "pattern": "A one-sentence paragraph inserted as a dramatic pivot between expository blocks, used at least once per chapter.",
+      "instances": [
+        "The promise did not last beyond the counting of the people.",
+        "A population appears as the object of a command."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis as the closing move of a section: negate the naive reading, assert the institutional one.",
+      "instances": [
+        "War did not replace administration. It used administration.",
+        "Technology enlarges what a government or army can do; it does not supply the political reason for doing it."
+      ]
+    },
+    {
+      "pattern": "The comparison-refusal formula, in which two cases are declared not reducible to a stock contrast before their real difference is named.",
+      "instances": [
+        "Neither case fits a simple contrast between barbarian raiders and settled states.",
+        "Neither pattern can be reduced to peaceful diplomacy on one side and violent conquest on the other."
+      ]
+    },
+    {
+      "pattern": "The enumerated menu of rival readings — first, second, third interpretation — offered and then declared undecidable by the evidence.",
+      "instances": [
+        "One interpretation of the Neolithic injuries associates them with interpersonal violence in a settled community.",
+        "A third possibility treats violence as episodic and ritualised rather than as constant household assault."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely coherent book: a single thesis — that aggression becomes historically consequential only when an office classifies, authorises and directs it — is carried through fifteen chapters from Catalhoyuk to Colombia without slackening, and the source-critical discipline (what a bone can say versus what a chronicle can say) is sustained and often impressive. The prose is clean, unhurried and distinctly voiced, with real specificity across an unusually wide geographic range, and the best passages compress the argument into memorable, unshowy sentences. Its weaknesses are architectural rather than verbal. Each chapter runs the same four-move template — invented opening scene, paired case comparison, evidentiary caveat, aphoristic restatement of the thesis — so that by the tenth chapter the argument is being re-instantiated rather than advanced, and the closing antitheses have become a tic. Accuracy lapses undercut the book's own methodological posture, notably the invented Audubon painting of the Zong and the self-contradicting date for Nur al-Din's death, and chapter 14 delivers a comparison of the Korean armistice before introducing Korea at all. Slop here is structural, not lexical: no stock filler phrases, but heavy templating, uniform paragraph shapes and reflexive paired antithesis. With fact-checking, one chapter resequenced, and roughly a fifth of the thesis-restatement cut, it would be a strong book."
+}

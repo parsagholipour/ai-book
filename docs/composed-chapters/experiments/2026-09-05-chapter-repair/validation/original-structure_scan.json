@@ -1,0 +1,45 @@
+{
+  "flags": [
+    {
+      "metric": "sentence_burstiness",
+      "value": 0.498,
+      "threshold": "< 0.55 over at least 8 prose sentences",
+      "severity": "soft",
+      "detail": "Sentence lengths are unusually uniform for running prose.",
+      "suggestion": "Vary sentence length and cadence; if this is formal reference prose, review before treating it as blocking."
+    },
+    {
+      "metric": "opener_repetition",
+      "value": 0.408,
+      "threshold": "unique ratio < 0.55, one opener > 25% with 4+ uses, or 4 consecutive identical openers",
+      "severity": "soft",
+      "detail": "Sentence openings repeat in a template-like rhythm.",
+      "suggestion": "Rewrite repeated starts; step-by-step docs may need repeated imperative openers."
+    }
+  ],
+  "flagged": {
+    "sentence_burstiness": true,
+    "opener_repetition": true
+  },
+  "metrics": {
+    "sentence_burstiness": 0.498,
+    "summary_sandwich": 0.0,
+    "paragraph_cv": 0.262,
+    "sentence_mean_len": 19.0,
+    "triad_density": 5.13,
+    "em_dash_per_1k": 0.171,
+    "bold_colon_listicle_count": 0,
+    "one_line_staccato_share": 0.0,
+    "connective_paragraph_openers": 0,
+    "every_template_openers": 0,
+    "signpost_density": 0.0,
+    "opener_unique_ratio": 0.408,
+    "top_opener_share": 0.128,
+    "max_consecutive_opener": 2,
+    "participial_closer_share": 0.0,
+    "conclusion_coda": false
+  },
+  "genre": "prose",
+  "prose_sentences": 308,
+  "prose_paragraphs": 63
+}

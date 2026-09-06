@@ -1,0 +1,9 @@
+{
+  "packages/core/src/generation/developmentalEdit.ts": "1511ec8692c060c5626805bb8a8bd189dd67294cbcd2e69345e090f44d4281f0",
+  "packages/core/src/generation/developmentalEditIsolation.test.ts": "0263f25548cc6cc89d01ce1138f1ae9b7c248154ff7476ecfc19b0b4e8949b74",
+  "packages/core/src/generation/developmentalEditExtractive.test.ts": "212c41c893b611f9adfac8bcb14f204be0be19cd294f0b65b752a95815ec6b10",
+  "apps/worker/src/generation/composedDevelopmentalEdit.ts": "dd8b7050526e440eea3e0894ddfa3100c3203279bb9042a767e877c1a7147337",
+  "apps/worker/src/generation/composedDevelopmentalEdit.test.ts": "7445b90aac27afb4d43fb92a7eadc42bf08e19acae16fabcd4eb49f86a6a65b3",
+  "apps/worker/src/generation/composedChaptersPass.ts": "54006985ddf6eca94bc13c4cdb00d46723186d19605c2c6fe4c6eb3855b708a2",
+  "apps/worker/src/generation/composedChaptersPass.test.ts": "5a3072337ca8ac27e02b8fef4e17b76bf378a31e028ca80658ce9d6478bc5799"
+}

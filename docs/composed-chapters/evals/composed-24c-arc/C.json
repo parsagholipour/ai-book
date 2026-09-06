@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.6,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A police arrest, a street fight, and a court hearing belong to the same chain only when we identify what each part did.",
+      "judgment": "Strong opening move: the book's governing distinction (act, actor, target, institution, evidence) is stated early and then genuinely used for fifteen chapters."
+    },
+    {
+      "quote": "A cemetery is a selection before it is a sample.",
+      "judgment": "Compressed, original, and load-bearing — the best kind of aphorism here, because the surrounding argument earns it."
+    },
+    {
+      "quote": "Forty-one individuals, or 67.2 percent of those examined, showed both healed and unhealed lesions.",
+      "judgment": "Representative of a real evidentiary discipline: figures are given with their provenance and then used to narrow rather than inflate a claim."
+    },
+    {
+      "quote": "Law did not restrain violence here. It taught violence how to persist.",
+      "judgment": "Effective as a single line, but it is one of dozens of identically shaped closers (negation followed by epigram) that become predictable."
+    },
+    {
+      "quote": "A railway timetable began with a timetable.",
+      "judgment": "A malformed, tautological sentence that survived into the text — the clearest single lapse in an otherwise clean manuscript."
+    },
+    {
+      "quote": "Berenice becomes visible because she needed the state to recognize something. Her petition concerns an estate dispute.",
+      "judgment": "The one case study that stays abstract: the source is described in generalities where every other exhibit gets concrete detail."
+    },
+    {
+      "quote": "They decide whether a prisoner is an enemy, whether a petition deserves an answer, whether a plantation can be reformed",
+      "judgment": "Dangling antecedent — the paragraph's 'they' has no referent, a seam left visible near the end of Chapter 10."
+    },
+    {
+      "quote": "Violence in history is organized before it is felt: someone decides who may be harmed, and that decision leaves a record.",
+      "judgment": "A closing thesis statement that genuinely summarizes the book rather than gesturing at uplift; the ending is earned."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The evidentiary caveat as a fixed two-beat formula: assert what a source establishes, then withdraw what it cannot. Intellectually correct, but it recurs several times per page and becomes the book's dominant rhythm.",
+      "instances": [
+        "It does establish contact between a weapon and a body. A healed lesion establishes something else",
+        "It does show a state classifying a defeated population as movable."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis as a paragraph or section closer — a short negated sentence followed by a short epigrammatic one.",
+      "instances": [
+        "The horse made the distance possible. It did not decide the destination.",
+        "The railway widened the road. People decided where it led."
+      ]
+    },
+    {
+      "pattern": "Two named scholars staged against each other and then adjudicated with symmetrical concessions ('X is right that... Y is right that...'), in nearly every chapter.",
+      "instances": [
+        "Geoffrey Parker is right that gunpowder warfare increased the demands placed on states... Jeremy Black is right that the pattern was uneven",
+        "May is right to insist that later integration should not minimize the violence that made it possible. Morgan is right that violence alone does not describe what the Mongols built."
+      ]
+    },
+    {
+      "pattern": "Chapters close on a deliberately unresolved question announced as unresolved, rather than on an argument.",
+      "instances": [
+        "That question remains open.",
+        "Whether comparison can describe that unevenness without turning it into a new progress story remains unsettled."
+      ]
+    },
+    {
+      "pattern": "The 'chain of links' enumeration — a sequence of institutional steps listed in order, then re-listed as a summary, used to structure the second half of most chapters.",
+      "instances": [
+        "Force established a claim. Tribute made the claim regular. Roads carried orders and troops. Censuses and registers gave officials names and households.",
+        "Conscription supplied bodies; census lists identified them; railways moved them; factories equipped them; telegraphs directed them."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined work of comparative history whose thesis — that aggression becomes historically consequential only when institutions organize, authorize and record it — is stated in Chapter 1 and genuinely carried through fifteen chapters from Jebel Sahaba to Gacaca. The evidentiary handling is its strongest feature: figures are attributed, sources are read for what they were made to do, and conclusions are repeatedly narrowed to what a cemetery, a relief, a register or a protocol can bear. The prose is clean, the register consistent, and the case studies are specific and well chosen, with only one thin exhibit (the Zenon-archive Berenice) and a small number of textual lapses. Its weaknesses are formal rather than intellectual: the epistemic caveat, the negated-antithesis closer, the balanced pair of adjudicated scholars, and the chapter-ending open question recur so regularly that paragraph shapes become predictable and momentum flags across the middle chapters. Slop here is structural rather than lexical — no stock phrasing or filler, but a template performed several hundred times. A revision that varied the closing moves, cut perhaps a fifth of the redundant caveats, and fixed two broken sentences would leave the book ready."
+}

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.4,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "An armed seizure can therefore enter history as invasion, judgment, succession, or liberation, according to the record and the community for whom the record speaks.",
+      "judgment": "States the book's controlling thesis early, concretely, and without inflation \u2014 a genuinely strong opening move."
+    },
+    {
+      "quote": "They are the result of injury, survival, movement, treatment, burial, preservation, discovery, and selection.",
+      "judgment": "Excellent methodological precision: the archaeological sample is treated as a filtered artifact rather than a dataset, and this discipline is sustained for sixteen chapters."
+    },
+    {
+      "quote": "This was restraint with hierarchy inside it.",
+      "judgment": "Rare instance where the prose lands a compressed idea in the book's own idiom rather than a symmetrical clause pair."
+    },
+    {
+      "quote": "Restraint emerged inside power, not outside it.",
+      "judgment": "A sharp formulation, but it is the aphoristic-closer template the book reaches for at the end of almost every section."
+    },
+    {
+      "quote": "Interpersonal aggression directs force through personal encounters. Raiding organizes movement around seizure or destruction. Warfare joins armed groups to political objectives. Coercion makes force a means of governing conduct.",
+      "judgment": "The six-category taxonomy is defined, then restated nearly verbatim eighteen paragraphs later in the same chapter \u2014 a visible recap loop."
+    },
+    {
+      "quote": "A dim archive may preserve the movement of grain, laborers, and captives under a ruler whose victories were meant to be remembered.",
+      "judgment": "The book's very first sentence hedges into vagueness \u2014 an unnamed archive, an unnamed ruler \u2014 where the rest of the text is scrupulously specific."
+    },
+    {
+      "quote": "When populations became strategic objects, did administrative targeting matter more than industrial technology, or did each make the other effective?",
+      "judgment": "Chapter 11 ends on an unresolved rhetorical question rather than an argument, a structural weakness repeated at the close of Chapter 13."
+    },
+    {
+      "quote": "The number in a report records administrative completion; the name spoken at a hearing records a life that the report reduced to a category.",
+      "judgment": "Genuinely moving and earned by the preceding evidence \u2014 the book's rhetorical high point, and proof it can do more than balance clauses."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Paired antithesis as default sentence engine: 'X could do A. It could also do B.' Used at extremely high density, in every chapter, often three or four times per paragraph, so that argument is repeatedly expressed as symmetry rather than as development.",
+      "instances": [
+        "A wall could discourage violence, redirect it towards the countryside, or turn a brief assault into a prolonged campaign.",
+        "A railway could carry medical supplies or deported families. A telegraph could summon engineers to repair a bridge or transmit an order for collective punishment."
+      ]
+    },
+    {
+      "pattern": "Terminal recap paragraph that re-lists the chapter's exhibits in the order they appeared, restating conclusions already drawn. Nearly every chapter closes this way, and several also carry a mid-chapter version.",
+      "instances": [
+        "Naram-Sin's stele, Hammurabi's laws, Ur III ration tablets, and Sennacherib's reliefs do not measure aggression on one scale.",
+        "The Liberian reconstruction records, Rwandan local-government reports, Costa Rican constitutional records, and comparative peacebuilding evaluations do not measure one timeless quantity called aggression."
+      ]
+    },
+    {
+      "pattern": "The 'X did not do A; it did B' negation-then-correction move, deployed as a rhythm rather than as a response to any live misconception.",
+      "instances": [
+        "Internal discipline did not make an army peaceful. It made its violence more coordinated.",
+        "The administrative voice did not make the killing less violent. It made violence portable."
+      ]
+    },
+    {
+      "pattern": "Inventory sections in which five or six parallel institutions are introduced in equal-length paragraphs, one apiece, then summarized in a single sentence that names all of them again \u2014 an enumerated grid rather than a developing argument.",
+      "instances": [
+        "The blockade worked through ships and prices. The submarine worked through concealment and sinking. Gas worked through atmosphere and exposure. Deportation worked through lists, orders, escorts, and roads.",
+        "Encomienda tribute required delivery on a schedule... A land survey supplied names to a revenue register. A census supplied numbers to a labour demand. A legal code supplied offences to a police report."
+      ]
+    },
+    {
+      "pattern": "The book's central thesis restated in near-identical wording rather than advanced, so that later chapters argue for a proposition already conceded many times.",
+      "instances": [
+        "State formation does not describe a single movement from disorder into peace.",
+        "The evidence does not support the idea that state formation simply civilises."
+      ]
+    }
+  ],
+  "summary": "This is a serious, methodologically scrupulous comparative history whose thesis \u2014 that aggression has no timeless magnitude, only historically organized forms, and that every claim about it is bounded by how the evidence was produced \u2014 is stated early and sustained without drift across sixteen chapters. Its greatest strength is the handling of sources: skeletal trauma, law codes, ration tablets, royal reliefs, treaty texts and truth-commission testimony are each interrogated for what they can and cannot support, and the chain of inference is repeatedly made visible rather than assumed. Depth and specificity are real, and the case selection is genuinely global rather than a European spine with appendices. The prose is clean, precise and free of the lexical tells of machine writing, but its architecture is highly templated: paired antitheses, negation-then-correction, and terminal recap paragraphs recur with such regularity that the reading experience flattens badly after the middle chapters, and the argument is more often restated than extended. Voice is consistent and adult but impersonal, with almost no variation in paragraph shape or sentence rhythm to carry a reader across five hundred pages. With aggressive cutting of the recap loops and roughly a third of the balanced clause-pairs, this would be a distinguished book; as it stands, its intelligence is more evident than its readability."
+}

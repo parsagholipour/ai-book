@@ -1,0 +1,205 @@
+{
+  "version": 48,
+  "settings": {
+    "models": {
+      "fast": {
+        "writer": {
+          "model": "qwen3.7-flash",
+          "provider": "alibaba",
+          "thinkingEnabled": true
+        },
+        "judgment": {
+          "model": "qwen3.7-flash",
+          "provider": "alibaba",
+          "thinkingEnabled": true
+        },
+        "writerFallback": {
+          "model": "deepseek-ai/DeepSeek-V4-Flash",
+          "provider": "deepinfra",
+          "thinkingEnabled": false
+        },
+        "judgmentFallback": {
+          "model": "deepseek-ai/DeepSeek-V4-Flash",
+          "provider": "deepinfra",
+          "thinkingEnabled": false
+        }
+      },
+      "ultra": {
+        "writer": {
+          "model": "gpt-5.6-sol",
+          "provider": "openai",
+          "thinkingEffort": "medium"
+        },
+        "judgment": {
+          "model": "gpt-5.6-luna",
+          "provider": "openai",
+          "thinkingEffort": "medium"
+        },
+        "writerFallback": {
+          "model": "deepseek-v4-pro",
+          "provider": "deepseek"
+        },
+        "judgmentFallback": {
+          "model": "deepseek-v4-flash",
+          "provider": "deepseek",
+          "thinkingEnabled": false
+        }
+      },
+      "premium": {
+        "writer": {
+          "model": "gemini-3.7-flash",
+          "provider": "gemini",
+          "thinkingEffort": "medium"
+        },
+        "judgment": {
+          "model": "gemini-3.7-flash",
+          "provider": "gemini",
+          "thinkingEffort": "low"
+        },
+        "writerFallback": {
+          "model": "deepseek-v4-pro",
+          "provider": "deepseek"
+        },
+        "judgmentFallback": {
+          "model": "deepseek-v4-flash",
+          "provider": "deepseek",
+          "thinkingEnabled": false
+        }
+      },
+      "balanced": {
+        "writer": {
+          "model": "gpt-5.6-luna",
+          "provider": "openai",
+          "thinkingEffort": "low"
+        },
+        "judgment": {
+          "model": "gpt-5.6-luna",
+          "provider": "openai",
+          "thinkingEffort": "none"
+        },
+        "writerFallback": {
+          "model": "deepseek-ai/DeepSeek-V4-Pro",
+          "provider": "deepinfra"
+        },
+        "judgmentFallback": {
+          "model": "deepseek-ai/DeepSeek-V4-Flash",
+          "provider": "deepinfra",
+          "thinkingEnabled": false
+        }
+      },
+      "fastJudgments": {
+        "model": "deepseek-v4-flash",
+        "provider": "deepseek",
+        "thinkingEnabled": false
+      },
+      "fastJudgmentsFallback": {
+        "model": "deepseek-ai/DeepSeek-V4-Flash",
+        "provider": "deepinfra",
+        "thinkingEnabled": false
+      }
+    },
+    "beatDedup": [
+      "ultra",
+      "premium",
+      "fast"
+    ],
+    "planCritic": [
+      "ultra",
+      "premium",
+      "balanced",
+      "fast"
+    ],
+    "finalBookQa": [
+      "ultra",
+      "premium",
+      "fast",
+      "balanced"
+    ],
+    "pageLocalQa": [
+      "ultra",
+      "premium",
+      "balanced",
+      "fast"
+    ],
+    "smartUnslop": [
+      "fast",
+      "balanced"
+    ],
+    "writerTools": [
+      "ultra"
+    ],
+    "bestOfPolish": [],
+    "styleAuditor": [
+      "ultra",
+      "premium",
+      "fast"
+    ],
+    "claimRetrieve": [
+      "ultra"
+    ],
+    "claimVerifier": [
+      "ultra",
+      "premium"
+    ],
+    "materialFirst": [
+      "balanced"
+    ],
+    "pageMapCritic": [
+      "ultra",
+      "premium",
+      "fast",
+      "balanced"
+    ],
+    "pageQaRewrite": [
+      "ultra",
+      "premium",
+      "fast",
+      "balanced"
+    ],
+    "styleExcerpts": [
+      "ultra",
+      "premium"
+    ],
+    "coupletRewrite": [
+      "balanced"
+    ],
+    "pageModelReview": [
+      "ultra",
+      "premium",
+      "fast",
+      "balanced"
+    ],
+    "chapterApparatus": [
+      "balanced"
+    ],
+    "creativeContract": [
+      "balanced"
+    ],
+    "chapterEditorPass": [
+      "ultra",
+      "premium",
+      "balanced",
+      "fast"
+    ],
+    "planThinkingBoost": [
+      "ultra",
+      "premium"
+    ],
+    "storyExtractAudit": [
+      "ultra",
+      "premium",
+      "fast"
+    ],
+    "manuscriptReadPass": [
+      "ultra",
+      "premium",
+      "balanced",
+      "fast"
+    ],
+    "compactPageDraftContext": [
+      "balanced",
+      "fast"
+    ]
+  },
+  "note": "dev A/B: restored revision 37"
+}

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.3,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A rule that looked administrative in Whitehall became a decision about which child received the last egg.",
+      "judgment": "The book's best sentence: the abstract chain of industrial war collapsed into one household choice, earned rather than asserted."
+    },
+    {
+      "quote": "A healed fracture followed by a lethal wound would raise a different historical problem from a single injury sustained at the time of death.",
+      "judgment": "Exemplary evidentiary discipline \u2014 the inference is stated at exactly the strength the bones support."
+    },
+    {
+      "quote": "\u201cO people, know that you have committed great sins, and that the great ones amongst you committed these sins. If you ask me what proof I have for these words, I say it is because I am the punishment of God.\u201d",
+      "judgment": "The one extended primary quotation in the book, and it is well chosen and then genuinely analysed (the split between 'the people' and 'the great ones')."
+    },
+    {
+      "quote": "The explanatory pages at psychstory.co.uk and lumenlearning.com make a related division between hostile aggression, understood as an impulsive reaction, and instrumental aggression",
+      "judgment": "A serious blemish: a book otherwise scrupulous about source provenance builds its core conceptual vocabulary on named tutorial websites and Wikipedia."
+    },
+    {
+      "quote": "A rifle does not explain the campaign in which it was carried. The people who supplied and directed it do.",
+      "judgment": "Crisp, but it is the thesis in its stock form, and some version of it closes almost every chapter."
+    },
+    {
+      "quote": "A bronze weapon at Anyang and a ration tablet from Ur belonged to organised systems, yet they answered different administrative needs.",
+      "judgment": "Near-verbatim reuse of a Chapter 3 paragraph inside Chapter 4 \u2014 recap presented as fresh comparison."
+    },
+    {
+      "quote": "Talheim cannot supply the motive.",
+      "judgment": "Effective as a single instance; as one of fifteen identically deployed one-line paragraphs it reads as a manufactured cadence rather than emphasis."
+    },
+    {
+      "quote": "Human choices acquire their reach from historical conditions, and those conditions are made, maintained, and sometimes broken by people.",
+      "judgment": "A closing aphorism that restates what the previous 1,000 lines already established four or five times."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The isolated one-sentence paragraph used as a rhythmic beat, placed once or twice per chapter, usually a flat declarative or a paired antithesis. It appears in every single chapter, which converts a rhetorical device into a template.",
+      "instances": [
+        "The cases do not form a ladder.",
+        "Independence arrived in Malaya in 1957."
+      ]
+    },
+    {
+      "pattern": "The 'X did not do this; people/institutions did' formula, deployed as the closing move of nearly every chapter and most major sections, so the thesis is re-proved rather than developed.",
+      "instances": [
+        "Technology widened the distance between decision and harm. Political ideas supplied the targets and justifications",
+        "The instrument changes the reach and organization of violence; the political decision supplies its direction."
+      ]
+    },
+    {
+      "pattern": "The 'A records one thing; B records another; neither can answer the other's question' construction, applied to every pairing of source types across the book.",
+      "instances": [
+        "The burial may reveal bodily harm and treatment of the dead. The boast may reveal political language and the ruler\u2019s preferred account.",
+        "The settlement at Heit el-Ghurab can clarify how food and work were organized; Weni\u2019s inscription can clarify how troops were gathered and directed. Neither should be made to answer for the other."
+      ]
+    },
+    {
+      "pattern": "Large-scale recap loops: the same Atlantic legal chronology (Barbados 1661, Virginia 1662/1667/1669/1705, Maroon treaties 1739\u201340, Tacky 1760, Sharpe 1831\u201332, abolition 1833/1838, Brazil 1888) is rehearsed in full in Chapter 8, again in Chapter 10, again in Chapter 11, and again in Chapter 15.",
+      "instances": [
+        "Virginia\u2019s statutes made slavery hereditary through the mother in 1662, denied baptism as a route to freedom in 1667, and protected masters from ordinary murder liability when an enslaved person died during punishment in 1669.",
+        "The 1662 Virginia rule making slavery hereditary through the mother assigned a child\u2019s legal status before any act of resistance or disobedience. The 1667 baptism statute closed one possible route out of bondage."
+      ]
+    },
+    {
+      "pattern": "Uniform paragraph architecture: a concrete named artefact or document opens, three to five expository sentences follow at equal weight, and a generalising sentence restating the institutional thesis closes. Almost no paragraph departs from this shape, and none is short for effect except the beat sentences.",
+      "instances": [
+        "Tools belong in the catalogue, though they should not be promoted into causes. ... Technology changes the organization of violence when it permits people to strike from farther away, defend a boundary, or supply a larger group, but it does not decide why a boundary is defended.",
+        "Next came metal. A cannon foundry needed ore or scrap, furnaces, moulds, fuel, and men who understood how to cast or bore a barrel. ... The foundry was therefore only one point in the route from metal to bombardment."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined global history of organised violence, held together by one clearly stated and consistently honoured argument: aggression is a constant of human conduct whose scale, target and duration are set by institutions, law, records and ideas of belonging rather than by tools or scarcity. Its greatest strengths are evidentiary caution and clarity \u2014 it repeatedly names what a grave, a tablet, a chronicle or a tribunal judgment can and cannot establish, and it resists the easy inference at almost every turn. The prose is precise and the voice austere and consistent, with occasional flashes of real force (Nella Last's kitchen, Juvaini's Bukhara, Czerni\u00e1kow's diary). The book's central failing is redundancy: the thesis is restated at the end of nearly every section, Chapters 8, 10 and 11 rehearse the same Atlantic statutes and revolts three times over, Chapter 4 reuses a Chapter 3 paragraph almost verbatim, and Chapter 15 is largely a recap rather than a synthesis. Slop is structural rather than lexical \u2014 there is no stock filler vocabulary, but the isolated beat sentence, the paired antithesis and the thesis-restating closer recur with mechanical regularity, and the reliance on named tutorial websites for the book's conceptual vocabulary sits oddly against its otherwise rigorous sourcing. A firm cut of perhaps a fifth of the text, plus a rewritten final chapter, would leave a genuinely good book."
+}

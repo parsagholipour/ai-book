@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 8
+  },
+  "overall": 7.3,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Low",
+  "highlights": [
+    {
+      "quote": "The army began with the clerk who knew which granary could be opened.",
+      "judgment": "The book's thesis compressed into one concrete, earned image; this is the prose at its best."
+    },
+    {
+      "quote": "Bone is an archive, but a selective one. A healed fracture records survival because living tissue had time to repair itself.",
+      "judgment": "Epistemology carried by physical detail rather than asserted — the evidentiary chapters do this consistently well."
+    },
+    {
+      "quote": "One man refused to go. The crew seized him and carried him towards the side, but he held fast to the ship, gripping whatever he could reach. … In the report of the case, the fact survives without his name.",
+      "judgment": "The Zong opening is the strongest narrative writing in the book: restrained, particular, and morally exact without editorializing."
+    },
+    {
+      "quote": "On 399 BCE, Socrates was tried at Athens, convicted by the jurors, sentenced to death, and told them, “I to die, and you to live.”",
+      "judgment": "Ungrammatical (“On 399 BCE”) and a bolted-on citation stamp — several chapters end with this same mechanical artifact rather than a real close."
+    },
+    {
+      "quote": "He placed killing among inherited forms of kingship, ritual obligation, dynastic memory, and sacred exchange.",
+      "judgment": "Dangling pronoun with no antecedent in the paragraph; a sign of composition seams left unrepaired."
+    },
+    {
+      "quote": "The Portuguese attack seized the office that controlled the port and attached its revenue to a new external power, introducing religious hostility into a peaceful commercial world.",
+      "judgment": "The clause contradicts the same paragraph's argument that the coast was already rivalrous and armed; a lapse in an otherwise careful chapter."
+    },
+    {
+      "quote": "After the conquests, merchants moved through an empire whose roads were dangerous because armies had recently made them secure.",
+      "judgment": "The intended paradox comes out backwards and unmeaning — rhetorical inversion used where an argument was needed."
+    },
+    {
+      "quote": "The first measure is the interstate battlefield death. … The fifteenth is the death that never enters a conflict dataset.",
+      "judgment": "A fifteen-item enumeration that flattens the book's best method into a list; informative but the deadest stretch of prose in the volume."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The thesis (violence becomes historically consequential through offices, records and administration) is restated as a closing formula at the end of nearly every section, chapter after chapter, so the argument reinstantiates rather than develops.",
+      "instances": [
+        "Violence became less dependent on the anger of one ruler and more dependent on whether offices continued to function.",
+        "Passion gave violence its immediate force. Institutions decided whether that force could reach a prison…"
+      ]
+    },
+    {
+      "pattern": "Every chapter follows the same architecture: a vivid dated opening case, a second case at another scale, an explicit contrast paragraph, a catalogue of instruments or signs, an epistemic caveat about what the record cannot say, and a one-sentence citation stamp.",
+      "instances": [
+        "The archaeological record offers a deliberate catalogue of signs, each useful when joined to the others.",
+        "The gunpowder state can be read as a catalogue of dependencies."
+      ]
+    },
+    {
+      "pattern": "Near-verbatim duplication of whole passages within and across chapters, suggesting unmerged drafts.",
+      "instances": [
+        "Michael Roberts and Geoffrey Parker’s military-revolution thesis describes part of this change. (Chapter 9, twice, with the same 'universal ladder' caution)",
+        "The yellow star, required for Jews in the Reich and many occupied territories from 1941, made the classification visible in streets, shops, railway stations, and workplaces. (Chapter 13, twice)"
+      ]
+    },
+    {
+      "pattern": "A symmetrical 'X did not do this, Y did' antithesis used to close paragraphs, deployed so regularly that it becomes the default cadence.",
+      "instances": [
+        "Agriculture did not invent violence. The skull with the stone-edge fracture cannot bear that claim.",
+        "The weapon travelled across these worlds, but the institution pointed it."
+      ]
+    },
+    {
+      "pattern": "Rhetorical questions are raised as chapter hinges and then answered with the same institutional formula, so the apparent openness is decorative.",
+      "instances": [
+        "Did fragmented political worlds produce more violence because no ruler could suppress local feuds, or did they sometimes limit violence because every ruler needed merchants…",
+        "Did gunpowder change what rulers and soldiers wanted, or did it chiefly enlarge their ability to pursue older purposes?"
+      ]
+    }
+  ],
+  "summary": "This is a genuinely accomplished work of historical synthesis with one clear and well-defended argument: aggression becomes historically large and durable through offices, registers, rations and roads rather than through temperament, and the record we read is itself an artifact of who had the power to write. The evidentiary handling is unusually scrupulous — Jebel Sahaba, Talheim, Bonampak and the Wannsee Protocol are each read for what they can and cannot bear — and the prose is dry, concrete and free of the usual generative tells; no stock pivots, no motivational closers, almost no abstraction unearned by a detail. Its weaknesses are structural rather than sentence-level. Every chapter repeats the same six-part shape, the thesis is restated as a closing formula dozens of times, whole paragraphs are duplicated near-verbatim (the military-revolution thesis, the yellow star, the Armenian deportation described three times), and Chapter 14 collapses into a fifteen-item enumeration. Several sentences are broken or self-contradicting (“On 399 BCE”, “roads were dangerous because armies had recently made them secure”, a dangling “He” with no antecedent), and each chapter terminates in a mechanical citation stamp that reads as an artifact rather than an ending. With a hard edit for redundancy, the duplicated passages removed, the chapter-ending stamps rewritten and the argument allowed to develop rather than recur, this would be publishable non-fiction."
+}

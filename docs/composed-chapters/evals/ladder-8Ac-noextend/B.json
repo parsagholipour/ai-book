@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.5,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A stone in one person's hand is an instrument of assault. Stones brought to a meeting place, distributed to a group, and used after a public order may belong to a campaign of organised killing.",
+      "judgment": "The book's controlling idea stated concretely rather than abstractly; a strong early anchor for the whole argument."
+    },
+    {
+      "quote": "A blackened wall is an event, not a motive.",
+      "judgment": "One-line paragraph used with restraint and real evidentiary point; among the best sentences in the book."
+    },
+    {
+      "quote": "The gun extended the hand. The ledger decided where it reached.",
+      "judgment": "Effective as a chapter closer, but it is the same paired-antithesis formula used to end at least eight chapters."
+    },
+    {
+      "quote": "A wall can regulate movement, proclaim rank, retain water, or repel attackers, so its presence alone does not establish that a city fought frequent wars.",
+      "judgment": "Exemplary evidentiary discipline — the book consistently tells the reader what a trace cannot prove."
+    },
+    {
+      "quote": "The killing's significance lay in its being more extensively organised, heavily supplied, and faithfully recorded, with the larger total forming only one part of the account.",
+      "judgment": "Syntactically clotted and abstract; several sentences show this over-compressed, edited-to-death quality."
+    },
+    {
+      "quote": "Cities created offices that selected targets, gathered means, assigned duties, and preserved the justification afterwards, giving aggressive impulses an organized structure beyond a larger stage.",
+      "judgment": "The awkward 'more than a larger stage' construction recurs across chapters and reads as an unrepaired template phrase."
+    },
+    {
+      "quote": "Axayacatl did not destroy Tlatelolco. He seized it.",
+      "judgment": "Excellent compression; the negation-then-assertion move works here but is used to the point of tic elsewhere."
+    },
+    {
+      "quote": "At eight o'clock on Tuesday morning, 14 July 1789, Bernard-René Jourdan de Launay stood inside the Bastille and watched the crowd thicken across the rue Saint-Antoine.",
+      "judgment": "The narrative openings are genuinely good history writing — specific, sensory, unhurried, free of stock scene-setting."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter is built as two or three paired case studies followed by an explicit comparison paragraph that refuses to collapse them; by mid-book the reader can predict the shape of each chapter before reading it.",
+      "instances": [
+        "Ludlow and Kilwa were both frontiers, but their violence pursued different objects.",
+        "The difference between the mita of Spanish Peru and the sugar plantation of Jamaica appears first in the source that counts the worker."
+      ]
+    },
+    {
+      "pattern": "Chapters and sections end on a two-clause aphoristic antithesis, usually contrasting a material thing with an institutional one.",
+      "instances": [
+        "The horse carried the order; the office made it imperial.",
+        "War had acquired machines capable of reaching farther. States gave those machines their reach."
+      ]
+    },
+    {
+      "pattern": "The 'not X but Y' / 'X did not do A; it did B' construction is the book's default rhetorical engine, appearing several times per chapter.",
+      "instances": [
+        "State formation did not simply increase violence as though a quantity of aggression had been poured into a larger vessel. It changed the routes by which harm travelled.",
+        "Settled administration did not replace mobility; it financed and redirected it."
+      ]
+    },
+    {
+      "pattern": "Chapters close with an unanswered rhetorical question posed to the reader, framed as the limit of the evidence.",
+      "instances": [
+        "At what point did a seasonal gathering become a trap, when a disputed spring or marriage tie made departure costlier than attack and the people who could restrain retaliation were fewer than those bound to continue it?",
+        "Why did some officials choose that interval of restraint when others turned suspicion into a warrant and fear into a sentence?"
+      ]
+    },
+    {
+      "pattern": "The thesis (technology/emotion supplies capacity, offices supply direction) is restated in the closing paragraphs of nearly every chapter, producing substantial recap redundancy across 55,000 words.",
+      "instances": [
+        "Technology enlarged the field of possible harm. Administration chose its routes.",
+        "Hatred made persecution imaginable; institutions made it durable, mobile, and lethal."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, unusually coherent world history of organised violence built on a single argument: capacity — anger, scarcity, weapons — explains little, while the offices, records, roads and legal categories that route force explain a great deal. The case selection is genuinely broad and specific (Jebel Sahaba, Dholavira against Uruk, Lachish, Tlatelolco, Huaca de la Luna, Kilwa against the Welsh Marches, the yam, Potosí against Jamaica, Tophane against the French taille, Maji Maji, Wannsee against Rwanda, Belfast against Havana), and the book is exemplary in stating what each kind of evidence cannot establish. Prose is restrained and concrete, free of the usual stock AI vocabulary, with several genuinely fine narrative openings. Its weaknesses are architectural and rhythmic: every chapter runs the same paired-comparison template, the thesis is restated at the close of nearly every chapter, and the paired-antithesis aphorism ('the gun extended the hand; the ledger decided where it reached') is deployed so often that it stops registering. A handful of sentences are clotted or garbled by compression, spelling drifts between British and American forms in places, and the final chapter's checklist of factors reads as recap rather than synthesis. With cuts to the recurring restatements and a varied hand on the chapter closers, this would be close to publishable non-fiction."
+}

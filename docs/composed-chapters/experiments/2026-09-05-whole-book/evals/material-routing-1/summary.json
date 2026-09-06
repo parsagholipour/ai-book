@@ -1,0 +1,59 @@
+{
+  "mean": 7.1000000000000005,
+  "readers": [
+    {
+      "reader": "A",
+      "mean": 7.0,
+      "scores": {
+        "thesis": 9,
+        "structure": 8,
+        "depth": 8,
+        "reasoning": 7,
+        "clarity": 8,
+        "voice": 7,
+        "engagement": 7,
+        "pacing": 5,
+        "craft": 7,
+        "slopResistance": 4
+      },
+      "verbatimQuotes": 18,
+      "unmatchedQuotes": []
+    },
+    {
+      "reader": "B",
+      "mean": 7.1,
+      "scores": {
+        "thesis": 9,
+        "structure": 8,
+        "depth": 8,
+        "reasoning": 8,
+        "clarity": 8,
+        "voice": 7,
+        "engagement": 7,
+        "pacing": 5,
+        "craft": 7,
+        "slopResistance": 4
+      },
+      "verbatimQuotes": 18,
+      "unmatchedQuotes": []
+    },
+    {
+      "reader": "C",
+      "mean": 7.2,
+      "scores": {
+        "thesis": 9,
+        "structure": 8,
+        "depth": 8,
+        "reasoning": 7,
+        "clarity": 9,
+        "voice": 7,
+        "engagement": 7,
+        "pacing": 5,
+        "craft": 8,
+        "slopResistance": 4
+      },
+      "verbatimQuotes": 18,
+      "unmatchedQuotes": []
+    }
+  ]
+}

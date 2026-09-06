@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 7,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 7,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 3
+  },
+  "overall": 6.8,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "High",
+  "highlights": [
+    {
+      "quote": "The archive does not distribute evidence according to the importance of the violence.",
+      "judgment": "A precise methodological insight that anchors the manuscript’s recurring attention to archival visibility."
+    },
+    {
+      "quote": "The grave preserves the wound. The social decision that made the wound possible has to be inferred from the pattern around it.",
+      "judgment": "Strongly compresses the book’s distinction between material trace and institutional explanation."
+    },
+    {
+      "quote": "The ledger and the spear belonged to one chain.",
+      "judgment": "Memorable synthesis of the thesis that extraction and organized force are institutionally connected."
+    },
+    {
+      "quote": "Fear supplied urgency; political offices supplied categories; the sections supplied bodies; the prison supplied victims.",
+      "judgment": "Clear causal sequencing, though its balanced clauses typify an overused rhetorical template."
+    },
+    {
+      "quote": "Every weapon in this book was pointed by an institution, whether the institution was a palace, a company, a colonial department, or a party apparatus.",
+      "judgment": "States the central thesis forcefully, but overstates institutional mediation after chapters that also acknowledge looser coalitions and interpersonal action."
+    },
+    {
+      "quote": "Leadership opened routes. Constituencies, organizations, and events decided whether those routes remained passable.",
+      "judgment": "Polished but formulaic aphoristic closure, representative of repeated chapter-level cadence."
+    },
+    {
+      "quote": "A falling count may describe less harm, less detectable harm, or harm moved beyond the system that records it.",
+      "judgment": "A nuanced warning about measurement that productively complicates claims of historical decline."
+    },
+    {
+      "quote": "Terror announced the terms. Administration collected them.",
+      "judgment": "Effective compression, but another instance of the manuscript’s conspicuous paired-antithesis habit."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Paired aphoristic sentences reduce complex processes to a sharp institutional contrast.",
+      "instances": [
+        "Terror announced the terms. Administration collected them.",
+        "Leadership opened routes. Constituencies, organizations, and events decided whether those routes remained passable."
+      ]
+    },
+    {
+      "pattern": "Chapters repeatedly close or pivot with rhetorical questions about evidentiary limits.",
+      "instances": [
+        "Did the early state increase violence, or did it increase the chances that violence would survive as evidence?",
+        "How many people were killed without leaving a cemetery, a fracture, or a point in bone?"
+      ]
+    },
+    {
+      "pattern": "Concrete military objects are translated into compact claims about administrative systems.",
+      "instances": [
+        "The ledger and the spear belonged to one chain.",
+        "The siege gun was the visible end of a bureaucratic sentence."
+      ]
+    },
+    {
+      "pattern": "Material evidence is qualified by the social context required to interpret it.",
+      "instances": [
+        "The wall gave the army a place to store its grain, display its banners, and survive the interruption of ordinary production.",
+        "A wall, a roof entrance, or a healed wound becomes evidence through the pattern of social use around it, not through the object alone."
+      ]
+    },
+    {
+      "pattern": "Parallel clauses assign agency across institutions and people in a highly regular cadence.",
+      "instances": [
+        "Fear supplied urgency; political offices supplied categories; the sections supplied bodies; the prison supplied victims.",
+        "One army has direction; the other has only individuals."
+      ]
+    }
+  ],
+  "summary": "The manuscript advances a coherent and substantial thesis: aggression becomes historically explicable through institutions that classify targets, mobilize resources, authorize force, and preserve selective records. Its chronological architecture is ambitious and generally effective, moving from archaeological evidence to states, empires, colonial systems, industrial war, genocide, deterrence, and negotiated peace while repeatedly testing the same conceptual claims in distinct settings. The breadth of cases and attention to source limitations provide real depth, although many assertions are presented through authoritative synthesis rather than internally demonstrated evidentiary argument. The main weakness is severe repetition of pivots, paired antitheses, institutional chains, rhetorical questions, and aphoristic closers, which slows a long manuscript and makes otherwise strong prose feel generated from a stable template. Moderate revision should compress recurring explanations, vary chapter architecture, and qualify the few thesis statements that turn a persuasive tendency into a universal claim."
+}

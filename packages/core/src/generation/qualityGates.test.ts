@@ -32,6 +32,62 @@ describe("qualityFeatureEnabled", () => {
     expect(qualityFeatureEnabled(undefined, "compactPageDraftContext", "ultra")).toBe(false);
   });
 
+  it("keeps the development pipeline off on every tier unless a row opts in", () => {
+    const features = ["bookDevelopment", "caseEvidence", "developmentalEdit"] as const;
+    const tiers = ["ultra", "premium", "balanced", "fast"] as const;
+    // No revision row at all: compiled defaults.
+    for (const feature of features) {
+      expect(QUALITY_FEATURE_DEFAULTS[feature]).toEqual([]);
+      for (const tier of tiers) {
+        expect(qualityFeatureEnabled(undefined, feature, tier)).toBe(false);
+      }
+    }
+    // A row written before these ids existed carries none of the keys, so the
+    // merge must fall back to the empty default rather than turning them on.
+    const olderRow = parseQualityFeatureSettings({
+      pageLocalQa: ["ultra", "premium", "balanced", "fast"],
+      chapterEditorPass: ["ultra", "premium", "balanced", "fast"],
+      manuscriptReadPass: ["ultra", "premium", "balanced", "fast"]
+    });
+    for (const feature of features) {
+      expect(olderRow[feature]).toEqual([]);
+      for (const tier of tiers) {
+        expect(qualityFeatureEnabled(olderRow, feature, tier)).toBe(false);
+      }
+    }
+    expect(qualityFeatureEnabled(olderRow, "chapterEditorPass", "balanced")).toBe(true);
+    // An explicit opt-in enables each feature for the named tier only.
+    for (const feature of features) {
+      const optedIn = parseQualityFeatureSettings({ [feature]: ["balanced"] });
+      expect(optedIn[feature]).toEqual(["balanced"]);
+      expect(qualityFeatureEnabled(optedIn, feature, "balanced")).toBe(true);
+      expect(qualityFeatureEnabled(optedIn, feature, "fast")).toBe(false);
+      expect(qualityFeatureEnabled(optedIn, feature, "premium")).toBe(false);
+      expect(qualityFeatureEnabled(optedIn, feature, "ultra")).toBe(false);
+      for (const other of features) {
+        if (other === feature) continue;
+        expect(qualityFeatureEnabled(optedIn, other, "balanced")).toBe(false);
+      }
+    }
+  });
+
+  it("ships the rung-5 composition path and the read's cut off on every tier", () => {
+    for (const feature of ["chapterFocus", "manuscriptReadCuts"] as const) {
+      expect(QUALITY_FEATURE_DEFAULTS[feature]).toEqual([]);
+      for (const tier of ["ultra", "premium", "balanced", "fast"] as const) {
+        expect(qualityFeatureEnabled(undefined, feature, tier)).toBe(false);
+      }
+      // A revision written before these ids existed carries neither key.
+      expect(parseQualityFeatureSettings({ chapterEditorPass: ["balanced"] })[feature]).toEqual([]);
+      const optedIn = parseQualityFeatureSettings({ [feature]: ["balanced"] });
+      expect(qualityFeatureEnabled(optedIn, feature, "balanced")).toBe(true);
+      expect(qualityFeatureEnabled(optedIn, feature, "ultra")).toBe(false);
+    }
+    const composed = QUALITY_FEATURES.filter((feature) => feature.id === "chapterFocus" || feature.id === "manuscriptReadCuts");
+    expect(composed.map((feature) => feature.stage)).toEqual(["Compose chapter", "Manuscript read"]);
+    expect(composed.every((feature) => feature.pipelines.length === 1 && feature.pipelines[0] === "composed")).toBe(true);
+  });
+
   it("treats an empty array as disabled", () => {
     const settings = parseQualityFeatureSettings({
       finalBookQa: [],

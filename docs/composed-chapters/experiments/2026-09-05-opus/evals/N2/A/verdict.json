@@ -1,0 +1,54 @@
+{
+  "scores": { "thesis": 9, "structure": 8, "depth": 8, "reasoning": 9, "clarity": 9, "voice": 7, "engagement": 6, "pacing": 6, "craft": 8, "slopResistance": 6 },
+  "overall": 7.6,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    { "quote": "Anger is not the same as aggression.", "judgment": "The book's controlling distinction, stated early and then actually used as an analytic tool rather than dropped." },
+    { "quote": "A date is a boundary, not a motive.", "judgment": "Compact and earned in context, though it belongs to a family of aphoristic one-line closers that recurs too often." },
+    { "quote": "some doubts have arisen whether children got by any Englishman upon a negro woman should be slave or free", "judgment": "The one sustained use of a quoted primary text, and the chapter built on it is the strongest in the book." },
+    { "quote": "Accommodation did not remove coercion. It relocated much of it.", "judgment": "Precise, non-moralising formulation that does real comparative work across the imperial chapter." },
+    { "quote": "A society’s ways of naming harm affect what later generations can see.", "judgment": "Good statement of the source-critical thesis that runs through all fifteen chapters." },
+    { "quote": "Technology changes the reach of aggression without supplying its purpose.", "judgment": "True and central, but a version of this sentence reappears in almost every chapter, which drains it of force." },
+    { "quote": "The crowd had many hands. So did the state.", "judgment": "Neat paired antithesis, and an example of a closing rhetorical move the book leans on far too regularly." },
+    { "quote": "Its unity was made by commands, roads, armies, and titles; its everyday life was made by bargains.", "judgment": "Elegant chapter landing; also shows the habit of ending on a balanced two-clause summary." }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter includes a near-identical 'technology extends reach but supplies no motive' paragraph, often near the end.",
+      "instances": [
+        "Technology changes the reach of aggression without supplying its purpose.",
+        "Technology altered each situation without supplying its motives."
+      ]
+    },
+    {
+      "pattern": "A matching 'economic pressure alone does not explain it' rebuttal paragraph appears as a fixed rubric alongside the technology paragraph.",
+      "instances": [
+        "Economic pressure alone does not explain the pattern.",
+        "Economic pressure alone cannot account for the different forms of violence."
+      ]
+    },
+    {
+      "pattern": "Methodological throat-clearing about the legitimacy of comparison, phrased almost identically in chapter after chapter.",
+      "instances": [
+        "Comparison is useful here only if the difference remains visible",
+        "Comparison becomes useful when it follows the specific operation rather than assuming that every empire meant the same thing by rule."
+      ]
+    },
+    {
+      "pattern": "Chapters and sections close on a short symmetrical antithesis or paired-clause aphorism instead of an argumentative advance.",
+      "instances": [
+        "The crowd had many hands. So did the state.",
+        "The same government could present itself as the guardian of order and make order depend on coercion."
+      ]
+    },
+    {
+      "pattern": "Long undifferentiated inventories of social roles or objects are used as the default way to signal specificity.",
+      "instances": [
+        "Black stockyard workers, white labourers, policemen, soldiers, tenants, shopkeepers, and passers-by appear in testimony as people occupying different positions within the same emergency.",
+        "Merchants, pastoralists, rulers, and armed escorts could change places across a lifetime."
+      ]
+    }
+  ],
+  "summary": "This is an unusually disciplined work of comparative history whose thesis — that aggression becomes historically consequential through institutions, records, offices and categories of belonging rather than through a constant human nature — is stated in chapter one and genuinely tested, not merely restated, across fifteen chronologically ordered chapters. Its greatest strength is epistemic: almost every claim is tied to a named source and bounded by what that source can answer, from Jebel Sahaba trauma patterns to the Wannsee copy, and the book repeatedly refuses the easy verdict (the Assyria-as-terror reading, the total-war inevitability reading, the Pinkerian decline reading) by specifying what the evidence does and does not support. Prose-level craft is high: clean, concrete, unpretentious, with almost no filler adjectives and no fashionable jargon. The costs are engagement and variety. The book has no first-person presence, almost no quoted human speech beyond the Virginia statute, and a chapter template — case study, second case study, comparison caveat, technology paragraph, economics paragraph, aphoristic landing — that becomes predictable by chapter six and mechanical by chapter twelve, so that 53,000 words of uniformly measured, uniformly paragraphed exposition read slower than their quality warrants. Revision should break the rubric rather than the prose: cut the repeated technology-and-economics couplets to a handful of instances, vary paragraph and section shapes, and let two or three chapters end on an unresolved argument rather than a balanced closing sentence."
+}

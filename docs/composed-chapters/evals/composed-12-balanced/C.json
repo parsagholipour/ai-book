@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.7,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A measure does not merely collect violence. It defines the kind of violence that can be seen.",
+      "judgment": "The book's controlling idea, stated early and genuinely earned by the evidence handling that follows."
+    },
+    {
+      "quote": "A point may serve hunting or fishing; lodged in human bone, it enters another category of evidence.",
+      "judgment": "Excellent concrete reasoning about how material becomes evidence; typical of the book's best sentences."
+    },
+    {
+      "quote": "A ration was therefore more than food. It linked the body that worked to the authority that claimed the work.",
+      "judgment": "Strong original-feeling synthesis: the Uruk bowl chain is the most memorable analytical passage in the book."
+    },
+    {
+      "quote": "The human impulse to harm requires no single historical origin; the power to make harm collective has a history.",
+      "judgment": "Sharp thesis restatement, though it is one of many aphoristic chapter-closers that begin to feel manufactured."
+    },
+    {
+      "quote": "A file can be clean while its subject is filthy.",
+      "judgment": "Rare moment of rhetorical heat in an otherwise cool register; effective precisely because it is unusual."
+    },
+    {
+      "quote": "A season can be harsh. A war is made.",
+      "judgment": "Punchy, but an instance of the short antithetical closer the book reaches for too regularly."
+    },
+    {
+      "quote": "The cemetery shows the damage more clearly than it shows the organisation behind it.",
+      "judgment": "Sound epistemic caution, yet the 'shows X more clearly than Y' formula recurs so often it stops carrying information."
+    },
+    {
+      "quote": "Their differences are not obstacles to comparison. They are what comparison has to preserve.",
+      "judgment": "Elegant, but nearly every chapter ends on a variant of this same comparative moral, flattening the sense of progression."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Paired-case chapter architecture: two or three sites are described in sequence, then explicitly set side by side and declared incommensurable-but-comparable. The move is identical in all fifteen chapters.",
+      "instances": [
+        "Nataruk and Warwickshire can be placed side by side only if their differences remain visible.",
+        "Here the Inca roads provide a useful contrast without erasing the difference between the two empires."
+      ]
+    },
+    {
+      "pattern": "Symmetrical epistemic hedge closing almost every section: an assertion of what a source establishes, immediately balanced by what it cannot establish.",
+      "instances": [
+        "Violence can be identified more securely than intention.",
+        "The evidence supports repeated projectile violence affecting men, women, and children. It does not provide a complete account of the attacks."
+      ]
+    },
+    {
+      "pattern": "Negation-then-substitution antithesis ('not X; it is Y', 'it did not A, it B'), used several times per page as the default sentence engine.",
+      "instances": [
+        "The stele does not show an instinct becoming stronger. It shows a political claim becoming wider, better supplied, and harder to escape.",
+        "Ireland's monasteries were not merely isolated places of prayer."
+      ]
+    },
+    {
+      "pattern": "Terminal recap triad or quartet listing every case just discussed, then denying that any of them measures aggression.",
+      "instances": [
+        "A healed cranial wound, a mass grave, a ration bowl, a boundary stone, a royal inscription, and a ceremonial palette do not measure one underlying quantity.",
+        "A burial, a palace relief, a ration bowl, a deportation order, a satellite image, and a testimony session do not observe the same thing."
+      ]
+    },
+    {
+      "pattern": "The 'restraint and coercion travel through the same office' formula, restated with new nouns in nearly every chapter rather than developed further.",
+      "instances": [
+        "Restraint and coercion travelled through the same office.",
+        "The same practice that reduced one threat could create suffering for those moved. Order and harm travelled together."
+      ]
+    }
+  ],
+  "summary": "This is an unusually disciplined comparative history of organized violence, built on a genuine thesis: aggression has no single measurable quantity across time, and what looks like its history is largely a history of the institutions and records that make particular harms visible. The evidential handling is the book's greatest strength \u2014 sites, dates, documents and objects are described with real specificity, and the reasoning about what a wound, a tablet, a quota or a dataset can and cannot support is consistently careful and often illuminating. Clarity and sentence craft are high, and the prose avoids nearly all lexical AI tics: no listicles, no chirpy pivots, no vague uplift. The weakness is structural sameness. Every chapter runs the same engine \u2014 paired cases, an explicit side-by-side, a symmetrical hedge, an aphoristic closer, a recap catalogue \u2014 and the negation-then-substitution sentence recurs so often that the voice, though distinctive, becomes monotone across four hundred pages of argument. Pacing suffers accordingly: the epistemic caution that is principled at chapter one reads as a tic by chapter twelve, and several composed passages fuse three or four analytical units into a single unbroken paragraph. With variation of chapter form, pruning of the repeated caveats, and a few more chapters willing to advance a claim rather than bound one, this would be publishable work."
+}

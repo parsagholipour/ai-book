@@ -1,0 +1,15 @@
+{
+  "text": "{\"groups\":[]}",
+  "model": "gpt-5.6-luna",
+  "provider": "openai",
+  "usage": {
+    "promptTokens": 69378,
+    "outputTokens": 239,
+    "cacheHitTokens": 0,
+    "cacheWriteTokens": 69375,
+    "reasoningTokens": 226
+  },
+  "data": {
+    "groups": []
+  }
+}

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.8,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Low",
+  "highlights": [
+    {
+      "quote": "A person can harm another without displaying anger. A person can feel anger without harming anyone.",
+      "judgment": "Strong: a rare short-paragraph beat that earns its isolation and does real conceptual work early."
+    },
+    {
+      "quote": "Bone records contact between force and body; it does not preserve the full choreography of a fight.",
+      "judgment": "Excellent compression of the book's epistemic thesis into a concrete image."
+    },
+    {
+      "quote": "Violence here was communication with a body count.",
+      "judgment": "One of the few genuinely memorable sentences; sharp, and it does not feel bolted on."
+    },
+    {
+      "quote": "A clerk needed to know how many passengers had been assigned to a train, not what would happen to each person at the end of the journey.",
+      "judgment": "The bureaucracy-of-genocide argument at its best: specific, restrained, devastating."
+    },
+    {
+      "quote": "The machine extended the hand; the state, the commander, the clerk, and the idea of belonging gave it direction.",
+      "judgment": "Weakness: the aphoristic chapter-closer, a move repeated at nearly every chapter end."
+    },
+    {
+      "quote": "Order and danger grew from the same concentration of power.",
+      "judgment": "Weakness: the book's core paired antithesis, restated with minimal variation in at least ten chapters."
+    },
+    {
+      "quote": "A wall is a structure. It becomes a military instrument when stores, labour, watchmen, gates, and command are attached to it.",
+      "judgment": "Representative of the strongest analytic mode \u2014 an object made political through a named chain."
+    },
+    {
+      "quote": "The archaeological record preserves wounds and graves more readily than motives. Administrative records preserve the language of rulers more readily than the fear of those ruled.",
+      "judgment": "Fine closing synthesis, but it recapitulates a caution already stated in every preceding chapter."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The negative-then-positive evidential formula (\"X does not show A; it shows B\"), used many times per chapter as the default sentence engine.",
+      "instances": [
+        "It does not show the conversations or decisions that preceded the injuries.",
+        "The injuries establish violence; they do not name the institution, grievance, or allegiance that organised it."
+      ]
+    },
+    {
+      "pattern": "Every chapter closes on the same paired antithesis: the state restrains small-scale violence while enlarging organised violence.",
+      "instances": [
+        "State formation redirected violence before it consistently increased it.",
+        "It reduced some forms of unauthorized aggression and created means for larger collective harm."
+      ]
+    },
+    {
+      "pattern": "The two-case comparison scaffold \u2014 two sites introduced, contrasted, then explicitly declared not rankable on a single scale \u2014 repeats as the structural template of most chapters.",
+      "instances": [
+        "It shows that the targets, opportunities, and possible reach of aggression were shaped by the places people built.",
+        "Their histories cannot be used to rank whole peoples by aggressiveness."
+      ]
+    },
+    {
+      "pattern": "The 'tool has no motive' motif, applied to each era's technology with almost identical phrasing.",
+      "instances": [
+        "an object does not supply its user with a motive",
+        "Technology extends a decision; it does not make the decision."
+      ]
+    },
+    {
+      "pattern": "Procedural enumeration of an administrative chain (five to seven linked steps) used to convert a document into a mechanism.",
+      "instances": [
+        "First, land and water had to yield a harvest. Second, officials or household heads had to gather enough grain\u2026",
+        "information is collected; a person or group is classified; the classification enters a system of alerts; an official or unit receives the alert\u2026"
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, unusually coherent work of comparative history whose thesis \u2014 that aggression is given its targets, scale and meaning by institutions rather than by a constant human appetite \u2014 is stated early and genuinely tested across fifteen chapters rather than merely repeated as a slogan. Its greatest strengths are evidentiary restraint and specificity: sources are named, their limits are stated, and inferences are calibrated to what a grave, a register, a relief or a protocol can actually bear, with several chapters (Ur, Wannsee, the Zong, Srebrenica) achieving real analytic force. The prose is clean, precise and consistently controlled, with almost none of the usual lexical AI tells. The cost is monotony: the same evidential formula, the same two-case comparison scaffold, the same restraint/enlargement antithesis and the same aphoristic closer recur in every chapter, so paragraph rhythm and argumentative shape flatten well before the end and the reader can predict a chapter's last sentence from its first. Engagement suffers because the epistemic caution, admirable in itself, is asserted far more often than it is needed, and human particulars are repeatedly introduced only to be withdrawn as unknowable. Light revision \u2014 varying the closing move, cutting perhaps a fifth of the hedging restatements, and letting two or three chapters break the template \u2014 would leave the book's substance intact and considerably improve its readability."
+}

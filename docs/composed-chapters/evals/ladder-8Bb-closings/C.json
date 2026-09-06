@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 7.2,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "An injury is not yet a rate, a battle is not yet a society, and a grave is not yet a measure of human nature.",
+      "judgment": "Strong: states the book's methodological discipline early and memorably, and the whole manuscript honours it."
+    },
+    {
+      "quote": "The first organised wars began there: not when a spear struck, but in the prior act of making a population answerable to a count.",
+      "judgment": "Strong thesis statement, but also the template for a dozen near-identical chapter closers."
+    },
+    {
+      "quote": "The bones are eloquent about weapons. They are silent about the arrangements that placed weapons in men's hands.",
+      "judgment": "Elegant, but an instance of the paired-antithesis reflex that recurs on nearly every page."
+    },
+    {
+      "quote": "Prevalence is the proportion of the observed group showing a particular condition... Incidence is the number of new cases occurring within a defined population during a defined period.",
+      "judgment": "Genuine methodological teaching, unusual in popular history and integrated rather than boxed off."
+    },
+    {
+      "quote": "\"Even beyond the borders,\" Ashoka said.",
+      "judgment": "Weakness: invented dialogue and interior detail in a book whose central virtue is source scepticism; the vignette contradicts the method it sits beside."
+    },
+    {
+      "quote": "The file and the rifle belonged to the same government.",
+      "judgment": "A one-line paragraph aphorism; effective once, but the book deploys this move so often that it loses force."
+    },
+    {
+      "quote": "A runner arrived with orders to return to the front line, and Sassoon climbed down among the dead.",
+      "judgment": "Weakness: chapter 12 ends on a novelistic scene with no analytic landing, unlike the argued endings of chapters 3, 7 and 13."
+    },
+    {
+      "quote": "Mesopotamia often makes its king loud; Dholavira makes its infrastructure speak.",
+      "judgment": "Handsome sentence, and a fair summary, but symptomatic of a compulsive symmetry in the comparative passages."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The 'X establishes A; it does not establish B' concessive pair used to close nearly every evidentiary discussion. Rigorous the first ten times, mechanical by the fiftieth.",
+      "instances": [
+        "The remains establish that people were killed violently at the lagoon. They do not establish a war, a famine, or the identity of the attackers.",
+        "It does not require every wound to have been made by a sword, nor establish that every dead man was killed on the field rather than during pursuit or after capture."
+      ]
+    },
+    {
+      "pattern": "Chapter or section closes with a short aphorism naming an administrative object (count, register, file, office, map) as the true agent of violence.",
+      "instances": [
+        "The first organised wars began there: not when a spear struck, but in the prior act of making a population answerable to a count.",
+        "The line on the map was quiet; its enforcement was not."
+      ]
+    },
+    {
+      "pattern": "A dramatised, present-tense-feeling narrative vignette with invented sensory and psychological detail is dropped in at a chapter seam, sometimes as the chapter's whole ending, without being reconciled with the surrounding source criticism.",
+      "instances": [
+        "Wendorf brushed soil from the ribs with a camel-hair brush and called for the camera.",
+        "In the parish of St. Ulrich, a baker left dough rising in a trough and took a pike from the wall."
+      ]
+    },
+    {
+      "pattern": "A rhetorical question is used as the hinge between sections, then answered by restating the book's single thesis.",
+      "instances": [
+        "How much of Mongol expansion came from the assets of a mobile society, and how much from decisions that converted those assets into an office-bearing machine?",
+        "Did exemplary punishment produce allegiance, or did it postpone resistance until a governor weakened, a king died, or an enemy appeared beyond the frontier?"
+      ]
+    },
+    {
+      "pattern": "Two cases are set side by side and resolved with a balanced antithetical sentence, the second clause mirroring the first clause's grammar.",
+      "instances": [
+        "One method attacked the political geography of a province. The other occupied it.",
+        "At Merv, the register begins with selection among the living. In northern China, it becomes the instrument of a government that wants the living to remain productive."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely accomplished world history of organised violence with one clear and well-defended thesis: aggression becomes large, durable and repeatable when an office can count, classify, supply and record people, so the register and the ration list belong to the history of war as much as the weapon. The specificity is high throughout - Jebel Sahaba, Girsu, Behistun, Lachish, Merv, Magdeburg, Wannsee, Mumbai - and the source criticism is consistently applied rather than announced, with useful technical distinctions (perimortem versus postmortem, prevalence versus incidence, battle-death counts versus displacement) doing real argumentative work. The prose is clean, unhurried and free of the usual AI vocabulary; the voice is austere and unmistakably consistent. Its weaknesses are shape rather than substance: fifteen chapters re-derive the same conclusion, so the second half yields diminishing returns, and the argument is delivered through a small set of repeated moves - the 'establishes A, not B' pair, the mirrored antithesis, the administrative aphorism as closer. Several chapters end in fabricated novelistic scenes with invented dialogue and interior states, which sit badly against the book's own evidentiary scruples and leave those chapters without an analytic landing. Trimming the redundancy, varying the closing gesture, and either grounding or removing the invented scenes would leave it close to ready."
+}

@@ -1,0 +1,88 @@
+{
+  "candidateBlindReaders": [
+    {
+      "reader": "1",
+      "preferred": "revised",
+      "revised": 7.7,
+      "original": 6.8
+    },
+    {
+      "reader": "2",
+      "preferred": "revised",
+      "original": 6.7,
+      "revised": 7.5
+    }
+  ],
+  "candidateBlindMean": {
+    "original": 6.75,
+    "revised": 7.6
+  },
+  "controlBlind": {
+    "original": 8.4,
+    "revised": 8.3,
+    "preferred": "original"
+  },
+  "runs": [
+    {
+      "name": "candidate-1",
+      "calls": 1,
+      "model": "gpt-5.6-luna",
+      "cost": 0.023848,
+      "elapsedMs": 12084,
+      "appliedGroups": [],
+      "rejectedGroups": [
+        {
+          "id": "group-1",
+          "reason": "linked changes violate the whole-book word budget"
+        }
+      ],
+      "beforeWords": 52063,
+      "afterWords": 52063
+    },
+    {
+      "name": "reference-control-1",
+      "calls": 1,
+      "model": "gpt-5.6-luna",
+      "cost": 0.019441,
+      "elapsedMs": 21648,
+      "appliedGroups": [
+        "g1",
+        "g2",
+        "g3",
+        "g4"
+      ],
+      "rejectedGroups": [],
+      "beforeWords": 52758,
+      "afterWords": 52033
+    },
+    {
+      "name": "candidate-2",
+      "calls": 1,
+      "model": "gpt-5.6-luna",
+      "cost": 0.023776,
+      "elapsedMs": 8841,
+      "appliedGroups": [],
+      "rejectedGroups": [
+        {
+          "id": "overlap-steppe-case",
+          "reason": "linked changes violate the whole-book word budget"
+        }
+      ],
+      "beforeWords": 52063,
+      "afterWords": 52063
+    },
+    {
+      "name": "reference-control-2",
+      "calls": 1,
+      "model": "gpt-5.6-luna",
+      "cost": 0.017631,
+      "elapsedMs": 6080,
+      "appliedGroups": [],
+      "rejectedGroups": [],
+      "beforeWords": 52758,
+      "afterWords": 52758
+    }
+  ],
+  "generationProviderCost": 0.084696,
+  "scope": "Excerpt comparisons only. The candidate editorial draft bypassed only the requested length floor in an offline replay; it was not published. Latest production guards produce no text change on both sources."
+}

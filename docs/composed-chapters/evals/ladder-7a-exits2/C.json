@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.7,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A point in a skull is a precise fact. It does not become a precise story merely because the story is tempting.",
+      "judgment": "Compressed statement of the book's evidentiary discipline; earns its aphoristic form here, though the device is later overused."
+    },
+    {
+      "quote": "The first cities did not create the willingness to fight. They created offices that could preserve a quarrel, assign it a territory, and return armed men to it after the first encounter had ended.",
+      "judgment": "The central thesis stated at its sharpest, tied to a specific historical transition rather than floated as abstraction."
+    },
+    {
+      "quote": "The useful distinction is between capacity and choice. Capacity describes what a state, army, company, or movement can do... Choice describes what its officers decide to do with that reach.",
+      "judgment": "The closing chapter converts fifteen chapters of cases into an actual analytic instrument, which is rare in generated non-fiction."
+    },
+    {
+      "quote": "The 67.2 percent belongs to the examined remains, not to every person who passed through the Nile corridor.",
+      "judgment": "Strong internal handling of evidence: the book routinely qualifies its own numbers instead of deploying them rhetorically."
+    },
+    {
+      "quote": "Ötzi's body survived because ice held him in a high Alpine hollow; most deaths had no such preservation.",
+      "judgment": "Good line, but the chapter then ends on a detached, encyclopedic Ötzi paragraph that reads as an appended fact rather than a conclusion."
+    },
+    {
+      "quote": "Lord Justice James A. F. A. O. M. E. K. A. Sankey and other legal figures assessed the allegations.",
+      "judgment": "A visible generation artifact: garbled name string that would embarrass the book's otherwise scrupulous surface."
+    },
+    {
+      "quote": "At places such as Ribاط-i Sharaf in Khurasan, built in the Seljuq period",
+      "judgment": "Script contamination inside a transliteration; small, but symptomatic of unproofed passages in the later chapters."
+    },
+    {
+      "quote": "Certain novel diseases appeared, trench feet for instance... Behind this front the whole",
+      "judgment": "A chapter closes on a quotation truncated mid-sentence — the weakest structural failure in the manuscript."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Chapter-ending appended fact or quotation that breaks the argumentative voice, often reading like a stub rather than a conclusion.",
+      "instances": [
+        "On the Zagros frontier, c. 2250 BCE, Naram-Sin's Victory Stele records Naram-Sin's defeat of the mountain people...",
+        "At Naseby, the New Model Army defeated Charles I's forces on 14 June 1645... “The King's cabinet was taken.”"
+      ]
+    },
+    {
+      "pattern": "The 'toolbox catalogue': a mid-chapter run of four to six instruments, each given one paragraph of identical shape and length, then summarised.",
+      "instances": [
+        "Ration tablets gave the state a way to detach food from household possession... Corvée labour converted subjects' time into walls... Gate control turned architecture into selection... Mudbrick fortifications made political claims visible",
+        "Local peace committees formed the first line of restraint... National Guard patrols supplied a second restraint... Revolutionary tribunals redirected violence into verdicts... Neighbourhood petitions formed a fourth instrument"
+      ]
+    },
+    {
+      "pattern": "Paired-antithesis aphorism used as a paragraph clincher, at least once or twice per chapter.",
+      "instances": [
+        "The weapon extended the hand; the palace arranged whose hand would hold it.",
+        "An unexcavated camp is not a peaceful camp."
+      ]
+    },
+    {
+      "pattern": "Two-case symmetrical comparison per chapter (A gives X, B gives Y, neither can be scaled against the other), announced and then resolved into an open question.",
+      "instances": [
+        "For that reason Nataruk sits beside Socrates uneasily... One case gives us categories spoken aloud; the other gives us wounds that preceded all surviving categories.",
+        "Which frontier produced the deeper violence: the one where a claimant could turn victory into a nationwide transfer of land, or the one where wealth moved through a series of negotiated gates?"
+      ]
+    },
+    {
+      "pattern": "The thesis restated in near-identical vocabulary (office, chain, register, list, route) after each case, so the analytic payoff becomes predictable well before it arrives.",
+      "instances": [
+        "A governor, a road, a list, and a compliant ruler thus formed a chain. The governor identified a failure; the road carried the order...",
+        "A map assigned a village to an officer. The officer's register recorded its households. The tax demand fixed a payment. A pass directed a worker to a mine or plantation."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely argued history rather than a survey: aggression is treated as something institutions make possible, scalable and repeatable, and the claim is tested case by case from Nataruk to a drone screen without collapsing into a human-nature story. The evidentiary manners are unusually good — sources are read for their position, numbers are qualified against the archive that produced them, and the book repeatedly refuses comparisons it cannot support. The prose is concrete, specific and free of the usual lexical slop; the voice is steady and adult. What weakens it is shape rather than substance: chapters run to a visible template (scene, paired comparison, catalogue of instruments, open question, appended fact), the thesis is restated in the same nouns dozens of times, and paired-antithesis clinchers arrive on schedule, so the middle chapters are predictable and over-long. A handful of production artifacts also survive — a garbled judge's name, script contamination in a transliteration, and one chapter ending on a quotation cut off mid-sentence. With trimming of the recap sentences, variation of the chapter tails, and a proofing pass, this would be close to publishable."
+}

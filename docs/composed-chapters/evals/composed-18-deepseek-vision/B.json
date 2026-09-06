@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 7,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 6,
+    "slopResistance": 6
+  },
+  "overall": 6.7,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "But none of that explains the massacre. It describes the conditions under which it became possible.",
+      "judgment": "An excellent opening thesis-hinge: it converts a narrative scene into the book's governing analytic distinction without editorializing."
+    },
+    {
+      "quote": "The earliest writing in Mesopotamia was not literature. It was accounting.",
+      "judgment": "The book at its best \u2014 a concrete causal chain (surplus \u2192 storage \u2192 records \u2192 conscription \u2192 war) argued from material evidence rather than asserted."
+    },
+    {
+      "quote": "The injuries were concentrated on the skulls and the upper bodies... There were few defensive wounds\u2014no fractures of the forearms, no injuries to the hands",
+      "judgment": "Genuine forensic specificity that earns the interpretive caution which follows; the Talheim treatment is the strongest evidentiary reasoning in the book."
+    },
+    {
+      "quote": "The comparison preserves the difference. It does not allow us to say that the Aztec approach to warfare was better or worse than the Tlaxcalan approach.",
+      "judgment": "A methodological formula recycled almost word-for-word from Chapter 4's Rome/Han section; it reads as boilerplate rather than as thought."
+    },
+    {
+      "quote": "The violence of the Atlantic world was the violence of the slave trade, the violence of the plantation, and the violence of the state. The violence of the Atlantic world was the violence of the market, and the violence of the market was the violence of the state.",
+      "judgment": "Incantatory anaphora that circles back on itself and adds no information \u2014 the clearest instance of prose substituting rhythm for argument."
+    },
+    {
+      "quote": "The enslaved people who rose in August 1791 did so in response to a rumor that the king of France had freed them... The French Revolution had abolished slavery in 1794, and the news of that abolition had reached Saint-Domingue in a distorted form",
+      "judgment": "An internal chronological contradiction \u2014 a 1794 decree cannot explain a 1791 rumor \u2014 and the paragraph never notices it."
+    },
+    {
+      "quote": "He could not match the French in the air, on the water, or in the supply of modern weapons",
+      "judgment": "\"In the air\" is anachronistic for the 1890s; a small slip that suggests phrase-level automatism rather than checked description."
+    },
+    {
+      "quote": "The final case in this book is the one that has been present in every chapter but has never been named. It is the case of the reader.",
+      "judgment": "A rhetorically effective close, though the ensuing summary lapses into the book's habit of restating its own distinction three times over."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "A verbatim methodological coda \u2014 \"the comparison preserves the difference\" plus \"the evidence is uneven; the X sources are more abundant than the Y sources\" \u2014 pasted onto the end of comparative chapters.",
+      "instances": [
+        "The comparison is valuable because it preserves the difference. It does not allow us to say that the Roman approach was better or worse than the Han approach.",
+        "The evidence is uneven. The Aztec sources are more abundant than the Tlaxcalan sources, and the Aztec sources are more explicit about the ritual elements of warfare."
+      ]
+    },
+    {
+      "pattern": "Chapters end on the same manufactured aporia, \"The question that remains open is whether\u2026\", regardless of whether the chapter actually raised a question.",
+      "instances": [
+        "The question that remains open is whether the rarity of violent remains in the archaeological record is a measure of the rarity of violence\u2026",
+        "The question that remains open is whether the measurement of violence can ever be adequate to the reality of harm."
+      ]
+    },
+    {
+      "pattern": "Extended anaphoric list-paragraphs where a single subject-verb frame is repeated five or six times, so that enumeration replaces analysis.",
+      "instances": [
+        "The log records the purchase of enslaved people... The log records the number of deaths on board... The log records the sale of the enslaved people...",
+        "The function of the census was to identify. The function of the registration was to locate. The function of the expropriation was to dispossess."
+      ]
+    },
+    {
+      "pattern": "Chiastic pseudo-explanations that restate a term rather than explain it \u2014 an X-was-not-A-it-was-B pivot immediately negated or looped.",
+      "instances": [
+        "The records were the mechanism, and the mechanism was the violence.",
+        "The slave systems were not the product of a single cause; they were the product of many causes."
+      ]
+    },
+    {
+      "pattern": "Chapters open with a superbly specific archival object, then decay into undifferentiated generality by the final third, with the closing pages carrying almost no proper nouns or dates.",
+      "instances": [
+        "Michel de Marillac, intendant of Poitou in the 1620s, received instructions that made the supply of troops a matter of routine administration.",
+        "The modern state was a powerful instrument, and it could be used for good or for ill. It could be used to protect people, and it could be used to harm people."
+      ]
+    }
+  ],
+  "summary": "This is a competent, genuinely researched comparative survey of organized violence, held together by a clear and consistently applied thesis: aggression is a human capacity, but its scale, targets and meaning are set by institutions, records, resources and ideas rather than by a fixed human nature. Its best work is at the openings \u2014 Talheim, the wall of Uruk, the Wannsee protocol, the Liverpool ship's log \u2014 where a specific document or excavation is read closely and the interpretive limits are stated honestly; the source-criticism running through the book (whose record survives, and why) is its most distinctive intellectual asset. The weaknesses are structural and cumulative rather than local: chapters follow a visible template, several concluding passages are near-verbatim reuses of earlier ones, and long stretches of Chapters 8, 9, 11 and 12 dissolve into anaphoric enumeration and chiastic restatement that add length without adding argument. There are also a few internal slips \u2014 the 1791/1794 Haiti chronology, Samori matched \"in the air\" in the 1890s \u2014 that suggest passages assembled by rhythm rather than checked. Sentence by sentence the prose is clean and unmannered, and it avoids the loudest AI tells (no cheerleading, no aphoristic zingers, no fast-paced-landscape openers), but the repetition of whole rhetorical moves across chapters is itself a machine signature. With aggressive cutting of the restatement loops, elimination of the duplicated codas, and a specificity pass on the later chapters, this would be a solid trade survey."
+}

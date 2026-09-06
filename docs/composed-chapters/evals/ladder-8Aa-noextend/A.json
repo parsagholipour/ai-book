@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 6,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 8
+  },
+  "overall": 7.3,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Low",
+  "highlights": [
+    {
+      "quote": "The scale of the violence and the scale of its organization must remain separate. Ten dead people may record a coordinated assault without recording a government.",
+      "judgment": "The book's controlling distinction, stated early and cleanly; it earns the analytical restraint that follows."
+    },
+    {
+      "quote": "A tablet narrows reality to a quantity or obligation; the stele expands it into universal order. Both make violence durable.",
+      "judgment": "Genuine comparative insight, though the two-clause antithesis is also the book's most overused closing shape."
+    },
+    {
+      "quote": "The archive joined two kinds of evidence that should never have belonged together: the weight of latex and the number of bodies.",
+      "judgment": "The strongest sentence in the book: the thesis delivered as a fact about a document rather than as commentary."
+    },
+    {
+      "quote": "Emigration becomes evacuation; evacuation acquires a direction; the direction depends on approval.",
+      "judgment": "Close reading of the Wannsee euphemism that does real analytic work instead of moralising."
+    },
+    {
+      "quote": "Two days after the barefoot procession, the assault began.",
+      "judgment": "Serious continuity failure: this opens a Jerusalem 1099 sequence with no antecedent, immediately after the 1204 sack of Constantinople."
+    },
+    {
+      "quote": "Six centuries after the dedication Durán described, another public ceremony at Cajamarca began with fewer than two hundred Spanish soldiers",
+      "judgment": "A back-reference to material the text never supplied; the transition points at a missing passage."
+    },
+    {
+      "quote": "The comparison with Lyon makes the problem sharper. In Nantes, protective committees and revolutionary officials had access to arrest lists",
+      "judgment": "Topic sentence and paragraph disagree about their subject; the Lyon/Nantes/Vendée comparison never resolves into one frame."
+    },
+    {
+      "quote": "The records made absence legible without repairing it.",
+      "judgment": "Elegant, but it is the twentieth instance of the same aphoristic one-line paragraph landing, which blunts its force."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Chapter template: cinematic present-tense set piece (siege, deck, fire), then a document or artefact, then the offices behind it, then a paired-antithesis landing. Applied with almost no variation across fifteen chapters.",
+      "instances": [
+        "The first ram struck the wall of Lachish just after sunrise, when the limestone still held the night's cold.",
+        "James Kelsall stood on the deck of the *Zong* on 29 November 1781, with Jamaica still beyond the horizon and the ship's water casks nearly empty."
+      ]
+    },
+    {
+      "pattern": "The 'record preserves X more readily than Y' formula, used as the closing move of dozens of sections; the epistemic caution is sound but the sentence shape is a reflex.",
+      "instances": [
+        "The cemetery records the consequence more readily than the rule that produced it.",
+        "The archive preserves the pressure of those decisions more clearly than the sequence of fighting itself."
+      ]
+    },
+    {
+      "pattern": "Two-clause antithetical closer ('A does X; B does Y' / 'It could A. It could also B'), the default cadence for ending paragraphs, sections and chapters.",
+      "instances": [
+        "Religious authority could close a gate against violence. It could also designate who was to be driven through it.",
+        "The weapon enlarged the possible violence; the record decided whose labour would make that enlargement real."
+      ]
+    },
+    {
+      "pattern": "Restated thesis in near-identical wording at every chapter's end, so the argument accumulates repetition rather than development; by the later chapters the reader can predict the sentence.",
+      "instances": [
+        "Their achievement was not the invention of harm but the durable connection between stored resources, ranked offices, and permitted force.",
+        "violence expanded most reliably when a political community learned to make enemies administratively visible."
+      ]
+    },
+    {
+      "pattern": "Mid-chapter drift into gazetteer prose: chains of named offices, materials and place-names in list form with no argumentative pressure, usually in the third quarter of a chapter.",
+      "instances": [
+        "At the provincial level, officials maintained rolls and collected taxes. At the regimental level, officers accounted for men, horses, arms, and provisions. At the parish level, farms supported the soldier and his croft.",
+        "Police Special Branch officers gathered names and reports; district officers mapped settlements and food routes; military units protected roads, estates, and villages; resettlement officials prepared sites."
+      ]
+    }
+  ],
+  "summary": "This is an unusually disciplined work of comparative history with a real and sustained thesis: that aggression becomes large-scale and durable not through weapons or temperament but through the offices, ledgers and records that make coercion repeatable, and that our evidence about violence is shaped by which institutions bothered to write it down. The prose is austere, concrete and free of most AI tells - no throat-clearing, no motivational register, few generic abstractions - and the epistemic discipline is genuine, distinguishing what bones, tablets, reliefs and trial reports can and cannot establish. Against that, the book is built from one repeated template (scenic opening, document, chain of offices, antithetical landing) applied so uniformly that by the middle chapters the shape is predictable and the thesis is restated rather than advanced. Structure is the weakest element: Chapter 6 breaks badly, jumping from the 1204 sack of Constantinople into an unheralded Jerusalem 1099 assault that is then narrated twice, and Chapter 5 back-references a Duran passage that does not exist in the text; a Lyon/Nantes transition in Chapter 10 contradicts itself, and the book ends on Northern Ireland without a synthesis of its own argument. Depth is high on documents and institutions and thinner on people, whose interiority the method deliberately excludes but whose absence flattens engagement in long stretches of office-listing. With the continuity failures repaired, some chapter-level variety introduced, and the closing antitheses thinned, this would be a strong book; as it stands it needs moderate revision."
+}

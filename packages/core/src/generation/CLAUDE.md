@@ -37,6 +37,7 @@ holds the event loop open and vitest will never exit.
 ## Index
 
 - [Composed chapters](#composed-chapters)
+- [Case evidence](#case-evidence)
 - [Page 1's opening contract](#page-1s-opening-contract)
 - [Style contract routing](#style-contract-routing)
 - [Repetition gates and the evidence ledger](#repetition-gates-and-the-evidence-ledger)
@@ -113,6 +114,33 @@ holds the event loop open and vitest will never exit.
   (`run --reuse-plan <projectId> --tier <tier>`, `retry`, `resume`, `export`) with
   `scripts/dev-set-tier-writer.ts` for writer A/B through an appended quality revision and
   `scripts/dev-stop-project.ts` to stop a book.
+- **A plan field that names a distinction as the chapter's payoff is a couplet assignment, so the
+  contract on it is checked before the first prose call.** Three blind Opus readers of `fresh-plan-5`
+  (6 September 2026, 6.87 against rung 5's 7.63 in the same sitting) named one paragraph engine — what a
+  source establishes, then what it cannot — and the live compose prompts showed it assigned rather than
+  imitated: the writer never sees the stance positions on the focused path, but `focus.contribution` was a
+  distinction ("the reader can distinguish A from B", "rather than", "without treating") in 13 of 14
+  chapters, and in 13/15 and 11/15 of the two earlier focused books, because `CHAPTER_FOCUS_RULES` asked for
+  "the new distinction the reader can make"; three voice-guide method rules rode every call as `styleNotes`;
+  the episode plan gave Nataruk to three chapters and Keeley to two. `planContract.ts` is the check —
+  `isMethodShaped` (shape patterns always; the evidence/sources keyword for stance and voice guide only, since
+  it over-fires on an investigation line), `focusContractIssues`, `episodeCollisions` (two or more shared
+  proper nouns with one that is not a nationality or an institution word: "British Museum" and
+  "British, German" were two false positives on a stored plan), calibrated on the stored plans of candidates
+  2, 3 and 5 and on the hand-written flat positions, which must pass (`replay-contract.ts` under
+  `docs/composed-chapters/experiments/2026-09-06-fresh-plan/`). `planEpisodes` re-asks once with the
+  violations named, then `applyFocusContract` blanks a method contribution, drops method investigation lines
+  and drops the later chapter's colliding episode while it keeps material; `chapterStyleNotes` withholds the
+  method lines from `bookPayload`; `planAuthorStance(plan, { rejectMethodShaped })` regenerates a hedged
+  stance **on a fresh run only** — a resumed book composes from the stance it started with, and the first
+  whole-repo run caught the pass regenerating its own persisted stance. Nothing here fails a book and a
+  non-English plan is not gated. Measured on `plan-contract-6`: the first episode plan went from 21 flagged
+  fields and 5 collisions to 2 and 1, the prompts carried claim-shaped contributions and four of eight voice
+  lines, no reader named a re-narrated case — and the book read 7.00, its readers naming the same
+  assert-then-retract sentence with nothing assigning it. The contract removes what the pipeline manufactures;
+  the writer's own register (23 negation contrasts per 1,000 sentences at rung 5, 31–43 on every focused-path
+  book) and the strict reconstruction rule's cost in told scenes (rung 5a: 8 scenes, engagement 7.0; candidates
+  3, 5, 6: none, engagement 5.0–5.3) are not its business.
 - **A composed draft that is not prose is recomposed once and then fails the job; it is never
   edited, paginated and published.** The fast tier's writer returned 12,005 words of a rotating
   three-subject verb-chain with stray CJK tokens for one chapter (composed-13), the short-draft
@@ -181,21 +209,70 @@ holds the event loop open and vitest will never exit.
   without figures — the rerun loop's rule that a prompt field present in every chapter is a
   template. **Strings in a block are clipped, never refused**: that book's one figure was thrown
   away whole because its `unit` ran two characters past a limit; only the counts (series,
-  categories, nodes, edges) are hard limits, since truncating data would draw a different chart. A
+  categories, nodes, edges) and the magnitude of a value (`FIGURE_LIMITS.value`, 1e15) are hard
+  limits, since truncating data would draw a different chart — a value that size belongs in a
+  larger unit, and `Number.MAX_VALUE` used to parse as valid and round the axis end up to Infinity,
+  which `niceTicks` looped on forever; the tick generator is bounded on its own now
+  (`figureSvgShared.ts`), because the renderer is reachable with a spec built directly. A
   `scale: "log"` axis is there for values spanning orders of magnitude, which an operation-count
   chart needs, and falls back to linear over a value at or below zero; the renderer takes it on its
   own when the largest value is a thousand times the smallest, because the rerun's writer drew six
   decades on a linear axis and three of four series were flat. Ticks past ten thousand are compact
   (10K, 1M), the left margin follows the widest tick, and a unit longer than a sign gets a row of its
   own above the plot — the first rendered chart clipped every tick to "0,000,000". In a flow
-  diagram, labels keep their words whole, a node's edges are spread along its side, and an edge
-  that skips a layer bows out past the column it would otherwise run through. The same book tagged every
+  diagram, labels keep their words whole, a node's edges are spread along its side, an edge
+  that skips a layer bows out past the column it would otherwise run through, `svgOpen` takes the
+  sheet width rather than patching the viewBox string, and a chain taller than an A4 content block
+  is capped (`MAX_FLOW_HEIGHT` 720) with nodes scaled to fit. The same book tagged every
   code fence `text` and indented the rest, so highlight.js — which keys on the fence's language name
   and is wired for the PDF only — coloured nothing; `codeBlockRules` in `composedChapter.ts` tells
   a book about code (`bookMentionsCode`, a cue over the prompt and plan) to tag fences with the
   language, and the editor is told to return a draft's fences byte for byte. Every call after the compose reads a stand-in line or nothing
   (`figureStandInMarkdown`, `figureFreeProse` in `figures/figureBlocks.ts`) and the block goes back
-  beside the paragraph it followed (`reinsertFigureFences`); the paginator weighs it as
+  beside the paragraph it followed (`reinsertFigureFences`); that includes every prior-page excerpt
+  a page prompt is shown (`compactPriorPages`, `pinStyleExcerpts` in `pagesShared.ts`; summaries in that compact go through `pageDraftSummary`) and every
+  deterministic rule that reads a page (`pagesLocalQa.ts` reads the figure-free body throughout,
+  the final page's ending included; `readerChapters.ts` strips the figure fence and only the figure
+  fence, since a code listing is page text).   A per-page draft carries no figure and no stand-in
+  from the moment it is parsed — `figureFreeDraft` in `generatePageDraft`, `polishPageDraft`,
+  `revisePageDraft` and the tools writer — because only the compose call is ever shown the syntax
+  and a strip at the end of a path leaves every review and revision between reading the invention;
+  `RevisePageOptions.figures: "keep"` is the chat rewrite whose request names
+  the figure, and `figures: "hold"` is the holdFiguresAside path (unnamed chat rewrite, final-QA
+  repair): strip invented fences, keep `[Figure: …]` stand-ins so later revises and reviews still
+  see the stand-in. Absent, `revisePageDraft` still returns `figureFreeDraft`. And *names* is `mentionsFigure` (`figures/figureMentions.ts`), biased toward precision because a miss keeps the
+  block aside and puts it back unchanged (the chat can re-ask) while a false hit hands the model the
+  JSON and lets it change or drop a figure nobody asked about. The free exact-replacement walk copies
+  fences byte for byte. A word that names a chart and nothing
+  else fires alone (chart, graph, diagram, flowchart, infographic, histogram, and the qualified chart
+  vocabulary: axis labels, tick labels, legend entries, data series); "figure" and "graphic" fire
+  only as the head of an artifact phrase — a determiner, then the end of the text or a sentence, or
+  a **whitelisted** continuation (as, into, smaller, on page…) — never by a blacklist of person
+  continuations, since "this figure skating passage" walked through one and "this figure, a man in
+  grey" is an appositive; "plot", "legend", "axis", شکل, 图, 図 and график count only qualified,
+  because each is a story, a myth, an axle, a shape, a map or a schedule first.   With the page's own
+  specs (`pageFigureSpecs`) a request that quotes a figure's title as a whole phrase of three or
+  more characters counts too — a substring of a longer word does not, so "regrowth" is not a name for a figure titled "Growth"; its
+  categories and series names never do, since "describe 1950 more vividly" is about the prose.
+  European chart words are bounded by Unicode letters, so "photographique" does not name a
+  graphique. An opener with no closer, or with an info string after the tag, is still a figure
+  attempt: the unclosed span ends at the next blank line so dropping it does not take the rest of
+  the chapter, `validateFigureFences` drops it, and the planned kind is enforced when one was passed.
+  `reinsertFigureFences` drops any fence the pass invented, since the prose it was handed held
+  stand-ins only, and `reviewAppliedBookEdit` reads pages as stand-ins unless the instruction names
+  the figure.   The two reads of a stored page that are neither a prior-page context nor a review get
+  the same treatment where they meet the model: the writer's `lookup_page` tool (`writerTools.ts`)
+  cuts its excerpt from the stand-in form and its summary through `pageDraftSummary`, whatever the injected storage callback returns, and the
+  voice-character passes (`voiceCharacters.ts`) sample `figureFreeProse` before collapsing
+  whitespace, since a pass that only reads for who speaks has no use for a chart or its stand-in,
+  while their summaries — and the gender-inference page summaries beside them
+  (`voiceCharacterProfile.ts`) — go through `pageDraftSummary`, so a series named after a character
+  cannot vote on their pronouns. The final whole-book QA (`finalQaOpeningPages` in `pagesReview.ts`)
+  is shown page 1 as its stand-in form and its page map is `pageDraftSummary` of each page
+  (`compactPageMap`); so are chapter-review `pageSummaries` and `manuscriptReviewPacks` neighbor
+  summaries. And figures are composed chapters' alone in the other direction too: the whole-book,
+  chapter and batch writers (`generateWholeBookDraft`, `generateChapterDraft`, `generateBatchDraft`)
+  pass every page through `figureFreeDraft` at the parse, before the page set is normalised; the paginator weighs it as
   `FIGURE_WORD_EQUIVALENT`, never splits it, and hands the next chapter a tail with no block in it.
   `expandFigureFences` (`figures/figureHtml.ts`) turns the block into inline SVG with inline styles
   at render time — in `pdf.ts` after the anchor markers and before the font subset, in `epub.ts`
@@ -204,9 +281,86 @@ holds the event loop open and vitest will never exit.
   compile. The SVG carries no `id` and no `<marker>` (two figures in one book, and
   `neutralizeRenderedReservedIds`), self-closes every empty element (`toXhtml` closes six tag names
   and no more), and inherits the embedded display face. No gate reads a figure: the local checks,
-  the manuscript audit, the review packs, the reader chapterisation and the degeneracy guard are
+  the manuscript audit, the review packs, the reader chapterisation, the degeneracy guard and the
+  compile's bounded chapter-transition review (`compileExportChapterReview.ts` in the worker) are
   fence-blind at one seam each, and none was added — a rule that fires on a figure would be a rule
-  on shipped pages nobody replayed. The corpus fixture `figures` renders every kind.
+  on shipped pages nobody replayed, and a figure cannot fire a chapter-coherence rule. The corpus
+  fixture `figures` renders every kind.
+
+## Case evidence
+
+- **An evidence packet carries no model-ordered chronology, and an unknown is never about
+  provenance.** `buildCaseEvidence` (`caseEvidence.ts`) used to ask the builder for `sequence`, a
+  list of claim IDs "in documented chronological order", and the reviewer
+  (`caseEvidenceReview.ts`) for one boolean over the whole list. A list is a total order, so every
+  adjacent pair in it is an assertion, and the reviewer approved chains whose pairs no passage
+  orders: on 2026-09-05 a blind Sol audit of six rebuilt packets
+  (`docs/composed-chapters/experiments/2026-09-05-fixes/packets-sol-audit-3.json`) failed the
+  First Crusade packet for placing the founding of the Latin patriarchate after the Crusaders'
+  return home, and the Josephus packet for placing Scythopolis after the other Syrian cities — a
+  comparison read as a sequel — while each packet's own unknowns said the chronology was not
+  established. Version-2 packets (`reviewVersion`, `schemas/episodes.ts`) store an empty
+  `sequence`: order is stated inside the claim about the later event, only where the passage
+  states it, and the reviewer is told a temporal claim inferred from paragraph order, reporting
+  order, thematic logic, a comparison or an interpretation is unsupported. A version-1 chain is
+  rejected by `caseEvidenceReviewIssues` deterministically; stored version-1 packets still parse
+  and still compose. The same audit found the Crusade packet's unknown "not Fulcher of Chartres or
+  the document named in the proposed episode" — true of the search hypothesis, false of the packet,
+  because the reviewer had already corrected `canonicalEpisode` to the source actually fetched and
+  the unknowns had been written against the hypothesis. Provenance is metadata: builder and
+  reviewer both treat an unknown about which author or document the passages come from as
+  inaccurate, the repair round is built against the corrected episode, and the final packet is
+  what the second review sees. Claims are adjudicated one by one, so a claim the final review
+  still rejects is excised rather than costing the case (`supportedClaims`, two the floor);
+  identity, disagreement and unknown defects remain the packet's. And the case is grounded by
+  **one** anchor that resolves to exact passage text: the reviewer quotes up to three, and the
+  Keeley packet was lost twice to a second quote that skipped an OCR running header
+  ("170 BEATING SWORDS INTO METAPHORS" mid-sentence) or repaired a soft-hyphen break while the
+  first resolved exactly — an anchor is only a grounding check, nothing downstream reads it, so a
+  broken extra one is noise rather than a verdict. The rules were measured before they shipped:
+  `replay-evidence-4.ts` through `replay-evidence-6.ts` under that experiment directory rebuild
+  eight captured packets (the first two at the logged adapter boundary, the last through the
+  production modules), and the two wrong cases (Gudea, Iroquois) have to stay rejected.
+- **A composed chapter's unsupported case claims are repaired twice, then recorded and flagged for
+  review; a prose-review quote that resolves to nothing is re-asked once, then dropped.**
+  `reviewChapterCaseEvidence` reads a composed chapter against its packets and answers with exact
+  spans. It used to throw on a finding whose quote was not in the chapter, and the pass used to
+  throw on any finding left after one whole-chapter edit — so the two live books that first reached
+  composition (development-fixes-1c and 2a-retry, 2026-09-05) died on chapter 1 over "1085–1086"
+  read into "Christmas 1085 … little more than a year", and on chapter 2 over a reviewer quote
+  nobody could locate. The review now returns `{ issues, dropped }`: a finding that does not
+  resolve is sent back once as `reviewFeedback` asking for a verbatim re-quote, and what still does
+  not resolve is dropped as unactionable and counted. What the pass does with the resolvable ones
+  lives in `apps/worker/src/generation/CLAUDE.md`.
+- **A developed plan's thesis is its answer by construction, never a string the model is asked to
+  copy.** `developBookPlan` (`bookDevelopment.ts`) told the writer "its thesis must equal your
+  answer" and then compared the two strings; the answer is a paragraph, luna paraphrased it twice,
+  and the first live book to reach the developmental replan (development-fixes-1a-retry,
+  2026-09-05) failed after a twenty-minute evidence stage on that comparison. The stance's
+  `thesis` is set from `development.answer` after the parse, the prompt says so, and the model
+  review that follows checks what a review can — that the positions do not contradict the answer.
+- **The deterministic contract gates a developed plan; the model review's objections are
+  recorded, and a synthesis chapter inherits its prerequisites' cases.** The next two live books
+  after the thesis fix (development-fixes-1b and 2a, 2026-09-05) both died at the same stage with
+  zero pages after a complete evidence stage each. 1b: the planner wrote the research-gap chapter
+  ("Steppe Powers and Connected Worlds", no verifiable Mongol case) as a synthesis chapter with
+  `requires [3, 4, 6]` and an explicit "without inventing an unsupported Mongol episode" — exactly
+  what the prompt invites — and `bookDevelopmentIssues` rejected it for owning no case and no
+  callback, twice, because the rule read "evidence assigned" and the prompt read "may reason from
+  earlier cases". A chapter with no case is now a defect only when it also names no prerequisite,
+  and `chapterCaseEvidence` hands such a chapter its prerequisites' packets, so the writer is held
+  to those cases (`chapterDevelopmentLines` says so and forbids a new named case) and
+  `reviewChapterCaseEvidence` flags anything it invents. 2a: every deterministic check passed and
+  the *model* review rejected the plan twice, ten objections long, for regional comparisons and
+  surveys the old outline's beats asked for and one verified case a chapter cannot carry — true of
+  the material, not of the plan, and not something a third proposal could change — plus the
+  stance's voice sample, which it read as invented evidence. The review is editorial judgement,
+  so after `DEVELOPMENT_ATTEMPTS` its unresolved issues are stored as `bookDevelopment.reviewNotes`
+  (logged in `development_prepared`, shown to the developmental edit, which is told narrowing an
+  overclaim is a valid edit) and the plan proceeds; only a proposal that never passes the
+  deterministic contract fails the book. Both prompts now say that a requirement scoped to the
+  supported material with its gap stated is preserved coverage, and that the voice sample is a
+  stylistic sample about a subject outside the book, never evidence.
 
 ## Style contract routing
 
@@ -299,6 +453,16 @@ holds the event loop open and vitest will never exit.
 
 ## Page 1's opening contract
 
+- **A reply cut off by its output budget is asked for once more at a wider budget, outside the
+  repair count.** `generateJsonWithRetry` used to let an OpenAI `incomplete: max_output_tokens`
+  response propagate as the call's failure — it is not a parse error and not a schema error, so no
+  repair rule matched — and a `develop-book-plan` schema repair that ran out of its 16k budget failed
+  a paid book at the developmental replan (development-fixes-3a-retry, 2026-09-05). The Responses
+  API counts reasoning tokens against `max_output_tokens`, so a budget that fit the first proposal
+  can miss the repaired one. A truncated reply is the same reply cut short, so
+  `isOutputBudgetExhausted` buys exactly one more attempt at `OUTPUT_BUDGET_WIDENING` (1.5×) the
+  budget, with the same messages as the attempt that truncated, and does not consume a repair
+  attempt; a call with no `maxTokens` gets nothing, because there is no budget to widen.
 - **Nothing states page 1's opening contract in its own words: a prompt names an audience and gets
   the ban, the import exemption that silences it, and the hook fused to its payload key — or gets
   nothing.** The contract is two halves gated on different facts. The **opening-quality** half —

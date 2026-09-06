@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 5,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 6.8,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A wound may establish that violence occurred, but it does not by itself establish aggression, because intention is not visible in bone.",
+      "judgment": "The book's governing idea stated with unusual economy; the epistemic discipline it announces is genuinely sustained for 60,000 words."
+    },
+    {
+      "quote": "Coercion becomes durable when the result of force can be translated into a schedule.",
+      "judgment": "A real analytical insight, earned from the Lagash-Umma tribute material rather than asserted."
+    },
+    {
+      "quote": "The conquered capital was incorporated by being told that it had been rescued.",
+      "judgment": "Sharp compression of the Cyrus Cylinder argument; the book's best sentences do this kind of inversion."
+    },
+    {
+      "quote": "A ship’s manifest, an insurance policy, a plantation inventory, and a court’s ruling could carry the effects of a whip without describing the blow.",
+      "judgment": "Concrete, cumulative, and morally weighted without editorialising — the strongest writing in the book."
+    },
+    {
+      "quote": "The grave is an event sample, not a census of violence.",
+      "judgment": "Precise methodological point, and one of the few places the prose is memorably short."
+    },
+    {
+      "quote": "It establishes many violent deaths in a restricted historical period; it does not provide the whole event.",
+      "judgment": "The book's default sentence shape — assert, then symmetrically withdraw — repeated hundreds of times until it stops carrying information."
+    },
+    {
+      "quote": "Ideology supplied permission; administration supplied repetition.",
+      "judgment": "Effective in isolation, but the semicoloned antithetical couplet is a reflex here, appearing at the close of nearly every argumentative unit."
+    },
+    {
+      "quote": "Louverture was captured and deported. He died in prison in France in 1803.",
+      "judgment": "Chapter 10 re-narrates the Saint-Domingue revolution already covered at length in Chapter 8, including the same 1802 expedition and 1804 declaration — the clearest structural redundancy in the book."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The assert-then-withdraw evidential couplet: a claim about what a source establishes, immediately balanced by a symmetrical statement of what it cannot establish. It appears in nearly every paragraph of every chapter and eventually functions as a rhythm rather than an argument.",
+      "instances": [
+        "It establishes many violent deaths in a restricted historical period; it does not provide the whole event.",
+        "A mass grave may show collective death. Neither one supplies a complete account of the society in which the event took place."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis as closer: a two-clause sentence, usually semicoloned, that assigns one function to each half of a contrast, used to end sections and chapters.",
+      "instances": [
+        "Ideology supplied permission; administration supplied repetition.",
+        "Armies opened the way; tribute made the result durable."
+      ]
+    },
+    {
+      "pattern": "Every chapter is built from exactly two case exhibits and closes by explicitly re-pairing them in a comparison sentence; the template is identical across all fifteen chapters, which flattens progression into repetition.",
+      "instances": [
+        "The *Zong* killings and the Haitian declaration are separated by an ocean, a war, and more than two decades, but they can be read as opposing outcomes of the same institutional world.",
+        "The Janissary abolition and Solferino belong to the same history without producing the same outcome."
+      ]
+    },
+    {
+      "pattern": "The corrective negation opener: a new exhibit is introduced by denying a naive description of it (\"was not simply\", \"was not merely\", \"was therefore not\") before the real account begins.",
+      "instances": [
+        "Baghdad was not merely a wealthy prize.",
+        "The plantation was therefore not an isolated estate."
+      ]
+    },
+    {
+      "pattern": "The source-partiality paragraph: each document is introduced, then subjected to a standardised caveat about the interests of its author, ending in a formula about what it is strongest and weakest for.",
+      "instances": [
+        "Victory monuments are strongest as evidence for the public language of kingship and weaker as independent proof of every event they narrate.",
+        "A perpetrator’s record can be morally deformed and historically useful at the same time."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely coherent work of historical argument: aggression is not a substance societies possess in different quantities but a capacity that becomes consequential when feeling, action, organisation and authority meet, and the book pursues that claim from Crow Creek to Abu Ghraib without losing it. The source handling is consistently disciplined — royal inscriptions, perpetrator reports, casualty tables and homicide datasets are each read for what they were built to do — and the prose is clear, unshowy and precise, with a distinctive austere voice held steady across fifteen chapters. The costs are pacing and engagement. Every chapter runs the same two-exhibit template to the same comparative close, every paragraph tends toward the same assert-then-withdraw shape, and the epistemic caveat that is the book's intellectual signature becomes its most predictable tic; the reader learns the sentence rhythm long before the halfway point and can anticipate each chapter's final move. There is real redundancy too: the Haitian Revolution is narrated twice, in Chapters 8 and 10, with overlapping detail down to Louverture's death in French custody. This is not conventional AI slop — the specificity is high and the abstractions are earned — but the uniformity of paragraph shape, the reflexive antithetical couplets and the symmetrical hedging are exactly the templated moves that make it read as machine-regular rather than authored. Moderate revision aimed at breaking the chapter template, cutting the duplicated Saint-Domingue material, and varying the sentence architecture would raise it substantially."
+}

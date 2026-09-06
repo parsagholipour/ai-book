@@ -1,0 +1,14 @@
+{
+  "original_word_count": 6713,
+  "transformed_word_count": 2385,
+  "similarity_ratio": 0.476,
+  "change_percentage": 70.2,
+  "words_added": 136,
+  "words_removed": 2882,
+  "words_changed": 1694,
+  "excessive_change": true,
+  "flags": [
+    "Excessive change (70.2% > 40% threshold)",
+    "Significant condensation (36% of original)"
+  ]
+}

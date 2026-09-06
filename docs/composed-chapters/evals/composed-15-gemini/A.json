@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 9,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 7,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 8.0,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Low",
+  "highlights": [
+    {
+      "quote": "Calling every one of these actions by the single term aggression obscures the distinct conditions that produced them.",
+      "judgment": "The book's controlling move, stated early and then genuinely executed for fifteen chapters \u2014 the thesis is a working instrument, not a slogan."
+    },
+    {
+      "quote": "The Reichsbahn charged the SS four pfennigs per track-kilometre for each adult passenger and two pfennigs for children under ten, while guards and children under four travelled free.",
+      "judgment": "Exemplary of the book's best method: the argument about bureaucratized violence is carried by a tariff schedule rather than by adjectives."
+    },
+    {
+      "quote": "Twenty-one of the sixty-one excavated individuals carried stone projectile points embedded directly into bone tissue\u2026 / Twenty-four of the sixty-one individuals excavated by Wendorf's team bore direct skeletal trauma from stone weapons.",
+      "judgment": "Chapters 1 and 2 give incompatible counts and swap the sex of Burial/Skeleton 21 \u2014 an internal contradiction in the book's own flagship case."
+    },
+    {
+      "quote": "On a low sandstone ridge rising above the eastern bank of the Nile, just north of Wadi Halfa near the modern frontier between Sudan and Egypt, Fred Wendorf's excavation team began clearing the drift sand\u2026",
+      "judgment": "Chapter 2 reopens with a near-verbatim restaging of Chapter 1's opening scene; the redundancy costs the book its strongest early momentum."
+    },
+    {
+      "quote": "Let not our brothers die twice: once at the hands of the Franks, and once from cold and hunger in our streets.",
+      "judgment": "The Ascalon Genizah letter is the book's finest turn to the victim's-eye view, and the one place where a human voice, not an administrator's ledger, closes an argument."
+    },
+    {
+      "quote": "Kuelap, northeastern Peru: stone circular houses in the cloud forest containing the unburied skeletons of Chachapoyas women and children crushed beneath fallen masonry\u2026",
+      "judgment": "Chapter 5 collapses into a twelve-item catalogue of 'Place: description' fragments \u2014 raw research notes admitted into the manuscript without prose."
+    },
+    {
+      "quote": "It kept cargo manifests for the rubber.",
+      "judgment": "A rare, earned aphoristic closer; the sentence lands because the preceding ledger detail has done the work rather than the epigram."
+    },
+    {
+      "quote": "Did the industrialization of war create an administrative apparatus that forced societies into escalating violence against civilians against their conscious intent, or did modern states embrace the machine because it provided the first practical instrument to execute long-standing political desires\u2026?",
+      "judgment": "One of several chapter-closing rhetorical questions that the book never answers \u2014 a templated exit that substitutes a posed dilemma for a verdict."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The negation-then-assertion frame ('X was not A; it was B'), used as the default engine of nearly every argumentative paragraph across all fifteen chapters, until the rhythm itself becomes predictable.",
+      "instances": [
+        "The ledger of the *Hannibal* did not record an outburst of spontaneous fury. The deaths on the crossing were produced by the institutional machinery of royal charters and maritime insurance\u2026",
+        "The violence of the enslaved was not an explosion of blind fury; it was an instrumental counter-strategy, calibrated to damage the master's capital\u2026"
+      ]
+    },
+    {
+      "pattern": "Every chapter opens with a dated, named, camera-level scene (date + place + official + ledger or instrument), producing a uniform overture and telegraphing the chapter's thesis before any argument is made.",
+      "instances": [
+        "On the morning of May 19, 1694, the English merchant ship *Hannibal*, a four-hundred-and-fifty-ton vessel carrying thirty-six guns under the command of Captain Thomas Phillips, weighed anchor off the coast of Whydah\u2026",
+        "On the morning of August 28, 1903, the British consul Roger Casement walked into the clearing at Bongandanga, a trading station established by the Anglo-Belgian India Rubber Company\u2026"
+      ]
+    },
+    {
+      "pattern": "The isolated one-sentence paragraph deployed as a pivot beat between scene and analysis \u2014 effective the first several times, mechanical by mid-book, and used dozens of times.",
+      "instances": [
+        "The bones underneath those sandstone slabs recorded a sequence of physical trauma across decades.",
+        "The villa on the Wannsee did not mark the start of the killings."
+      ]
+    },
+    {
+      "pattern": "Chapters terminate in an abstract summation paragraph that restates the institutional thesis in near-identical vocabulary (institutions / capacity / channel / determine), regardless of the material just covered.",
+      "instances": [
+        "Human aggressiveness supplies the underlying physical capacity to inflict harm, but institutions, technologies, and social identities determine when that capacity is activated, whom it targets, and how far it reaches.",
+        "The human capacity for aggression remains an enduring feature of our species, but the scale and meaning of that violence are determined by the laws, institutions, and choices that human communities construct to govern themselves."
+      ]
+    },
+    {
+      "pattern": "A named 'naive view' is erected in the third person (a common line of reasoning, an influential tradition, this perspective) and then refuted by the material record \u2014 a straw-and-rebuttal scaffold repeated in most chapters, and rarely attributed to a scholar who actually holds it.",
+      "instances": [
+        "A common line of reasoning treats aggression as an invariant biological constant operating across human history.",
+        "Vast archives of colonial ordinances, trial transcripts, and military dispatches have sometimes encouraged the view that European power descended upon passive populations like an irresistible natural force."
+      ]
+    }
+  ],
+  "summary": "This is an unusually accomplished institutional history of organized violence, built on a single sharp thesis \u2014 that biology supplies the capacity for harm while institutions decide its scale, target and reach \u2014 and pursued with discipline from Jebel Sahaba to the Sargasso Sea. Its great strength is evidentiary texture: barley ration tablets, Reichsbahn tariffs, coroners' rolls, a Genizah ransom letter, Thistlewood's diaries. The prose is precise, cool, and consistently voiced, and it earns its arguments through documents rather than assertion. The weaknesses are structural rather than stylistic: Chapter 2 restages Chapter 1's opening scene and contradicts its own trauma counts, Chapter 5 degrades into an unwritten catalogue of site descriptions, and several chapters end on posed rhetorical questions or on near-interchangeable abstract restatements of the thesis. The book's argumentative machinery \u2014 the 'not X but Y' clause, the one-line pivot paragraph, the erected-and-demolished naive view \u2014 recurs often enough to be audible as a template even though the sentences themselves are rarely generic. Light revision that de-duplicates the opening chapters, prose-drafts the Americas catalogue, and varies the chapter cadences would leave a genuinely strong book."
+}

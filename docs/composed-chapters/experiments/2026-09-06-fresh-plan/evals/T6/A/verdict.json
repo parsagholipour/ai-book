@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 6,
+    "engagement": 5,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 6.7,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A humane interpretation must not become an invented anecdote.",
+      "judgment": "Crisp statement of the book's governing discipline: inference must stop where the evidence stops."
+    },
+    {
+      "quote": "A count of injuries is not a count of violent encounters, and a count of injured people is not a measure of the whole population’s exposure.",
+      "judgment": "Genuinely useful methodological precision about numerator and denominator in skeletal evidence."
+    },
+    {
+      "quote": "The state counted its bullets more precisely than it counted the people struck by them.",
+      "judgment": "The single best sentence in the book: an argument about administrative visibility compressed into one image."
+    },
+    {
+      "quote": "Its blows were authorized, but they were priced.",
+      "judgment": "Sharp thesis line for the law chapter; the book is at its strongest when it earns an epigram from case detail."
+    },
+    {
+      "quote": "Systems of coercion are often inherited by those who destroy their previous operators.",
+      "judgment": "A real historical claim, well supported by the Babylonian succession to Assyrian administration."
+    },
+    {
+      "quote": "A healed skull cannot become proof of a war, a war cannot become proof of a violent society, and a violent society cannot become proof of an unchanging human nature.",
+      "judgment": "Effective here, but it is also the book's most overused shape — the escalating triple negation recurs relentlessly."
+    },
+    {
+      "quote": "Archaeology preserves the dead more readily than the intervals of safety.",
+      "judgment": "Elegant handling of survivorship bias; one of the few sentences with a distinct authorial cadence."
+    },
+    {
+      "quote": "The contrast with Vindolanda is revealing.",
+      "judgment": "Symptomatic of the book's flattest habit: the paired-case comparison is announced rather than dramatized, in nearly every chapter."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The symmetrical hedge as the default sentence: a claim immediately balanced by a semicolon or 'but' clause denying its stronger form. It is the book's dominant rhythm and appears many times per page, so that assertion and retraction become indistinguishable from analysis.",
+      "instances": [
+        "Context narrows possibilities; it rarely supplies motive.",
+        "Mobility changes the geography of danger; it does not abolish danger."
+      ]
+    },
+    {
+      "pattern": "The 'X did not cause Y; institutions did' formula, applied to nearly every material factor the book raises (weapons, walls, agriculture, technology, radio, bronze). The point is true and central, but it is restated rather than developed across twelve chapters.",
+      "instances": [
+        "Organization changed the range of available action; it did not dictate the decision.",
+        "Technology affects the speed and reach of action; institutions determine what action is authorised, rewarded, or blocked."
+      ]
+    },
+    {
+      "pattern": "Uniform chapter architecture: two (occasionally three) named cases introduced in sequence, alternating analysis, an explicit comparison paragraph, then a recapitulating close. The template is so consistent that a reader can predict the position of every paragraph before reading it.",
+      "instances": [
+        "The difference between these cases is the difference between depth and breadth.",
+        "The contrast with Vindolanda is revealing."
+      ]
+    },
+    {
+      "pattern": "Aphoristic chapter closers that abstract from the chapter's material into a summary maxim, usually with paired or antithetical clauses. Every chapter lands this way, which drains the device of force by chapter four.",
+      "instances": [
+        "The first states made aggression durable by giving it institutions, and they made those institutions durable by presenting coercion as the visible expression of royal order.",
+        "Aggression changes when those connections change. So does restraint."
+      ]
+    },
+    {
+      "pattern": "Late-chapter recap clusters in which the two cases are re-summarized in their own paragraphs before the close, repeating conclusions already established two or three times earlier. This is the main source of the book's slack pacing.",
+      "instances": [
+        "The scale was limited, but limited scale is not the same as disorganization.",
+        "A mass of bodies does not automatically reveal organized war."
+      ]
+    }
+  ],
+  "summary": "This is a serious, methodologically disciplined history of organized aggression from Shanidar and Çatalhöyük through Rwanda and the Good Friday Agreement, and its central argument — that violence becomes durable when institutions classify, reach, supply and justify it, and that evidence for an act is far easier to obtain than evidence for its cause — is stated early, tested case by case, and genuinely earned by the end. The reasoning is the book's greatest strength: sources are read for what their forms permit, royal inscriptions and chronicles are handled as political instruments rather than reports, and the limits of skeletal, documentary and demographic evidence are respected with unusual consistency. The case selection is specific and well informed, and the prose is clear, unhurried and technically clean. Against this, the writing has almost no register beyond the judicious impersonal, and the same rhetorical move — assert, then withhold the stronger claim — recurs so often that whole pages are built from it, producing a monotony that the individual sentences do not deserve. Structurally, every chapter runs the same two-case comparison and closes with the same kind of abstracted maxim, and each ends with a recap cluster that restates conclusions already made, which is where most of the length could be cut. The result reads as slop-resistant in vocabulary but templated in shape: it needs a moderate revision that varies chapter architecture, deletes the recapitulations, and lets some of the human material — Nataruk's dead, Njáll in the burning house, the hibakusha testimony — carry weight in its own voice rather than as evidence in a standing argument."
+}

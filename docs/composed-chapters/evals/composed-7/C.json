@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.8,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A broken bone that knitted under the skin records pain, care, and survival, but not the quarrel, accident, raid, or punishment that caused it.",
+      "judgment": "Excellent opening: the book's whole epistemological program stated through a concrete object rather than an abstraction."
+    },
+    {
+      "quote": "Administration did not create the desire to command. It gave command a longer memory.",
+      "judgment": "The book's best kind of sentence \u2014 a real analytic claim compressed without becoming a slogan."
+    },
+    {
+      "quote": "Whereas some doubts have arisen whether children got by any Englishman upon a negro woman should be slave or free\u2026 The sentence begins with doubt and ends with inheritance.",
+      "judgment": "Strong close reading; primary text quoted then interrogated rather than paraphrased into generality."
+    },
+    {
+      "quote": "Talio could authorise a severe response, yet it also confined the response to a stated relation between injury and penalty.",
+      "judgment": "Characteristic strength: refuses the progress narrative while doing actual legal-historical work."
+    },
+    {
+      "quote": "Tools alter speed, distance, endurance, and organisation. People and institutions select targets.",
+      "judgment": "True and well put the first time, but this exact argument is restated in at least eight later chapters, and it becomes the book's tic."
+    },
+    {
+      "quote": "A date is a boundary, not a motive.",
+      "judgment": "One of several one-line aphoristic 'stinger' paragraphs planted at intervals; individually effective, collectively an obvious template."
+    },
+    {
+      "quote": "The crowd had many hands. So did the state.",
+      "judgment": "Paired antithesis as chapter beat \u2014 rhetorically neat, but it substitutes symmetry for the argument the chapter had already made better in prose."
+    },
+    {
+      "quote": "Neither can serve as a meter for the aggressiveness of all small communities. The cemetery and the open scatter preserve particular episodes, not an average day.",
+      "judgment": "Admirable evidentiary caution, but the same caution is issued so often that its rhetorical force is spent by the middle of the book."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Technology-neutrality formula: a paragraph asserting that a device extends reach while people or institutions supply purpose. Appears in nearly every chapter with only the nouns swapped.",
+      "instances": [
+        "Technology changes the reach of aggression without supplying its purpose.",
+        "Technology widened possibilities without determining purpose. Printed pamphlets and newspapers carried accusations beyond a neighbourhood."
+      ]
+    },
+    {
+      "pattern": "Economic-insufficiency formula: hardship or scarcity is introduced, then denied causal sufficiency, then routed through 'political decisions' \u2014 a fixed three-beat move.",
+      "instances": [
+        "Yet pressure does not move directly from an empty granary or a low wage to a wound.",
+        "Economic pressure alone cannot account for the different forms of violence. A tax or a rubber quota became destructive when officials defined nonpayment as defiance"
+      ]
+    },
+    {
+      "pattern": "Source-limit paragraph: after each case, a paragraph itemising what the record can and cannot establish, usually built on 'It shows X. It does not show Y.'",
+      "instances": [
+        "The wounds show that people were attacked. They do not provide a transcript of the quarrel, name the attackers, or establish whether the victims belonged to one settlement.",
+        "The camera could establish that a person had suffered a visible injury\u2026 It could not reconstruct the entire chain from rubber demand to punishment"
+      ]
+    },
+    {
+      "pattern": "Terminal roll-call: chapters close by naming their three or four cases in sequence and assigning each a one-clause moral, producing an identical landing every time.",
+      "instances": [
+        "In southern Mesopotamia, temple accounts made labour and food available\u2026 At Lagash, the disputed boundary with Umma\u2026 In Egypt, the Narmer Palette turned the defeated enemy\u2026",
+        "Sierra Leone's tax made households legible\u2026 The Congo regime made forest labour answerable to concession and force. Menelik's grants settled imperial power in conquered soil. German East Africa's scorched-earth campaign treated food as an enemy resource."
+      ]
+    },
+    {
+      "pattern": "Planted one-sentence paragraph used as a rhythmic break, roughly once per chapter, in an otherwise uniformly long-paragraph text.",
+      "instances": [
+        "The skeleton is not a written account.",
+        "Production followed policy."
+      ]
+    }
+  ],
+  "summary": "This is an unusually disciplined comparative history of organised violence, built case by case from named sites and documents \u2014 Jebel Sahaba, the Stele of the Vultures, the 1662 Virginia statute, the Wannsee Protocol, Kigali's roadblocks \u2014 and governed throughout by a clear thesis: aggression's scale and direction are produced by records, offices, authority and law rather than by temperament or technology. The evidentiary reasoning is genuinely strong; the book consistently refuses both the human-nature and the decline-of-violence stories, and it repeatedly marks the limits of its own sources instead of overclaiming. Sentence-level prose is clean, concrete and free of the usual AI vocabulary, and the voice is consistent from first chapter to last. The weakness is that consistency has hardened into template: the technology-neutrality paragraph, the economic-insufficiency paragraph, the 'it shows X, it does not show Y' hedge, the terminal roll-call of cases and the planted one-line aphorism recur on a near-fixed schedule, so that by the middle chapters the reader can anticipate the shape of a page before reading it. Engagement and pacing suffer accordingly \u2014 the argument is won by chapter four and thereafter re-demonstrated rather than developed, with few surprises, reversals or genuinely contested claims. Light revision that varies the paragraph architecture, cuts the repeated caveats to a fraction, and lets some chapters push the thesis somewhere new would move this from very competent survey to something considerably better."
+}

@@ -130,6 +130,8 @@ export type AdminGeneratedBookSummary = {
   pageCount: number;
   imageCount: number;
   completedAt: string;
+  /** COMPLETE, or REVIEW_REQUIRED for a compiled book the quality card flagged. */
+  status: string;
   grossCredits: number;
   refundedCredits: number;
   netCredits: number;

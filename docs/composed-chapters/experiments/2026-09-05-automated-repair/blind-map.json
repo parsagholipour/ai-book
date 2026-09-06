@@ -1,0 +1,14 @@
+{
+  "1": {
+    "path": "/tmp/prose-evaluation-79o02gah/1",
+    "A": "revised",
+    "B": "original",
+    "hash": "c60e81a2979c398dc05b0fe0ef46b7db153d344643eefd9455553e0601cb7e3d"
+  },
+  "2": {
+    "path": "/tmp/prose-evaluation-79o02gah/2",
+    "A": "original",
+    "B": "revised",
+    "hash": "dad07ae35d4809d4c0d91de34899766bbfeb256ec52caa106d8ac66e02480659"
+  }
+}

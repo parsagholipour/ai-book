@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 7,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 7,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 4
+  },
+  "overall": 6.9,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "High",
+  "highlights": [
+    {
+      "quote": "The wound begins the inquiry; it does not settle the institution behind it.",
+      "judgment": "A lucid early statement of the book’s disciplined distinction between bodily evidence and institutional cause."
+    },
+    {
+      "quote": "The differences are evidence, not noise around a universal impulse.",
+      "judgment": "This compact sentence states the comparative method and supports the central thesis with unusual precision."
+    },
+    {
+      "quote": "The ledger became the point at which imperial policy entered a household.",
+      "judgment": "A concrete, memorable formulation turns an abstract account of administration into an intelligible causal mechanism."
+    },
+    {
+      "quote": "The state sometimes restrained violence in order to monopolise it.",
+      "judgment": "The paradox is concise and analytically productive, especially in the discussion of revolutionary tribunals."
+    },
+    {
+      "quote": "A census became dangerous when the state used it to distinguish neighbours by descent.",
+      "judgment": "This sentence cleanly preserves contingency by locating harm in institutional use rather than in the administrative tool alone."
+    },
+    {
+      "quote": "The object supplied movement. An office supplied direction.",
+      "judgment": "The clipped antithesis is effective here but also exemplifies a formula repeated so often that it becomes predictable."
+    },
+    {
+      "quote": "A person may strike in anger. A household may raid. A state may punish. An army may wage war. A regime may organise atrocity.",
+      "judgment": "The escalating parallelism clarifies scale, though the manuscript repeatedly relies on similarly symmetrical sequences."
+    },
+    {
+      "quote": "The office needed to establish who possessed the right to decide which subject had become dangerous, without striking every subject itself.",
+      "judgment": "This awkward abstraction illustrates how the governing thesis can force ordinary material into an overextended institutional formula."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Material capacities are repeatedly separated from the human institutions that direct them.",
+      "instances": [
+        "Climate does not pull a trigger.",
+        "The iron did not organise itself."
+      ]
+    },
+    {
+      "pattern": "Short parallel sentences turn administrative dependencies into aphoristic chains.",
+      "instances": [
+        "A wall required commands before it could protect.",
+        "A ration required a clerk before it could feed."
+      ]
+    },
+    {
+      "pattern": "Chapter conclusions return to the thesis that institutions select the target and meaning of force.",
+      "instances": [
+        "The hand can be similar; the world directing it is not.",
+        "The object supplied movement. An office supplied direction."
+      ]
+    },
+    {
+      "pattern": "Lists climb across levels of scale to summarize a causal sequence.",
+      "instances": [
+        "A person may strike in anger. A household may raid. A state may punish. An army may wage war. A regime may organise atrocity.",
+        "A timetable could make a nation’s decision difficult to reverse. A factory could make destruction abundant."
+      ]
+    },
+    {
+      "pattern": "Administrative records are repeatedly figured as the point where abstract power reaches individual life.",
+      "instances": [
+        "The ledger became the point at which imperial policy entered a household.",
+        "A census became dangerous when the state used it to distinguish neighbours by descent."
+      ]
+    }
+  ],
+  "summary": "The manuscript advances a strong, coherent thesis: aggression takes historical form through institutions that classify people, mobilise resources, authorise force, and preserve or distort its record. Its chronological architecture is ambitious and generally effective, while the wide range of cases and careful attention to evidentiary limits give the argument real depth. The main weakness is cumulative repetition: chapters repeatedly resolve diverse material into the same office-record-classification mechanism, often through matched antitheses, enumerated chains, and aphoristic closers. Substantial compression, fewer speculative scene reconstructions, and more variation in chapter-level argument would preserve the insight while improving pace, voice, and evidentiary confidence."
+}

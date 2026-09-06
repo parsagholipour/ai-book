@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.7,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Nataruk is an event, not a census of emotion.",
+      "judgment": "Compact, original formulation that states the book's evidentiary discipline in seven words; among its best sentences."
+    },
+    {
+      "quote": "The city gave aggression a ledger, a calendar, and a chain of command.",
+      "judgment": "Thesis made vivid and concrete \u2014 but also the template for dozens of triadic closers that follow."
+    },
+    {
+      "quote": "A ration list is a small administrative instrument. Its importance lies in the repeated act it records.",
+      "judgment": "Excellent: the book's central causal claim (repeatability, not rage) argued from an unglamorous object."
+    },
+    {
+      "quote": "A warrior who took an enemy could gain honour and, according to the research brief, a route toward social advancement.",
+      "judgment": "Serious craft failure \u2014 an internal production artifact left in the text; recurs as 'the research brief notes' and 'often estimated in the research record'."
+    },
+    {
+      "quote": "A person could be owned as an object and prosecuted as a responsible offender.",
+      "judgment": "Sharp legal paradox stated without editorializing; the chapter earns it with the 1661 code."
+    },
+    {
+      "quote": "Euphemism did not conceal violence from those who carried it out. It made the policy usable across departments.",
+      "judgment": "Strong analytical inversion; the isolated one-line paragraph device that carries it, however, is used repeatedly for emphasis."
+    },
+    {
+      "quote": "Faith gave the destruction meaning; military administration gave it sequence.",
+      "judgment": "Elegant, but it is the book's signature move \u2014 a semicoloned paired antithesis that appears in nearly every chapter."
+    },
+    {
+      "quote": "The remaining task is to hear the quiet forms of force before they become entries in a death count.",
+      "judgment": "A dignified close, though it is an aphoristic closer of exactly the type the book reaches for at the end of almost every section."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The 'evidence cannot prove X, but it establishes Y' hedge, deployed as a paragraph engine in nearly every case study \u2014 admirable once, mechanical by the fifth chapter.",
+      "instances": [
+        "A wall does not reveal the face of an enemy. It reveals that a community invested in controlling approach and safeguarding what lay inside.",
+        "The bullets do not identify the people who made or threw them."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis joined by a semicolon or full stop, one clause per side, used as the closing beat of a section.",
+      "instances": [
+        "The market gave coercion a destination. Law gave it continuity.",
+        "One attack announced conquest; the other made subordination ordinary."
+      ]
+    },
+    {
+      "pattern": "Chapter-final summation that re-lists the chapter's cases in apposition, then restates the institutional thesis verbatim.",
+      "instances": [
+        "Palisades, burned layers, weapon caches, refuge sites, and abandoned houses add settlement-scale evidence\u2026",
+        "A depot issued the rifle. A checkpoint selected the traveller. A radio named the enemy. A register allocated food."
+      ]
+    },
+    {
+      "pattern": "Rhetorical question inserted to open or pivot a section, usually answered immediately and rarely left genuinely productive.",
+      "instances": [
+        "What happened at Nataruk?",
+        "When did the home front become a battlefield?"
+      ]
+    },
+    {
+      "pattern": "Wholesale recycling of earlier case material \u2014 Chapter 15 re-narrates the Barbados code, Wannsee, J\u00f3zef\u00f3w and the Armenian deportation law with the same facts and near-identical phrasing.",
+      "instances": [
+        "The Barbados Slave Code of 1661 gave this decision a written form. It defined enslaved Africans as real estate\u2026",
+        "The Barbados Slave Code of 1661 defined enslaved Africans as real estate, yet it also allowed them to be punished as responsible persons\u2026"
+      ]
+    }
+  ],
+  "summary": "This is a genuinely coherent book with a single, well-defended thesis: organized violence is a product of offices, records, and repeatability rather than of an escalating human temperament, and the historian's first duty is to say what each kind of evidence can and cannot bear. The chapter sequence is chronologically sound and the case selection is unusually wide and specific \u2014 Nataruk, Hamoukar, the Stele of the Vultures, the Lachish reliefs, the Florentine Codex, Nyasaland labour registers, the Schlieffen timetable, the Wannsee table of eleven million \u2014 with reasoning that consistently distinguishes inference from assertion. Clarity and sentence-level craft are high; the register is calm, concrete and free of the usual inflated diction. The cost is monotony: nearly every section is built from the same three moves (case, evidentiary caveat, institutional moral), closes on a paired antithesis or triadic list, and Chapter 15 recycles earlier chapters almost verbatim rather than advancing the argument. Engagement suffers accordingly \u2014 the prose never surprises itself, no counter-argument is allowed to win, and the reader is rarely given a scene rather than an analysis. Two undisguised production artifacts ('according to the research brief', 'often estimated in the research record') need removal, and roughly fifteen percent of the length could go with no loss of substance."
+}

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 9,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.9,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Violence is organised before it is counted, and counted again before it becomes history.",
+      "judgment": "The book's controlling idea, stated with real economy; it earns its place because the preceding paragraphs actually demonstrated it across three archives."
+    },
+    {
+      "quote": "A count of dead bodies treats each death as one unit, but a healed fracture belongs to someone who continued living with pain, restricted movement, or fear.",
+      "judgment": "Excellent conceptual move: turns a forensic category into an argument about what histories of violence systematically undercount."
+    },
+    {
+      "quote": "A market can price labour; it cannot by itself decide that a child inherits the mother's enslavement, that a patrol may enter a cabin, or that a person may be sold away from a spouse.",
+      "judgment": "The strongest single piece of reasoning in the book — a precise, non-strawman correction of Williams without dismissing him."
+    },
+    {
+      "quote": "The interesting and extremely important discoveries that have been made at Lachish last year and the year before by the skill and perseverance of Mr.",
+      "judgment": "Chapter 4's epigraph is a truncated fragment ending mid-name; a raw production defect that no reader can parse."
+    },
+    {
+      "quote": "In Rome, the Lex Gabinia, as Cicero later discussed legislation and public authority, belonged to a world where sanctioned force could be distinguished from private retaliation.",
+      "judgment": "Garbled, ungrammatical, and irrelevant to the osteology discussion it interrupts — the clearest sentence-level failure in the book."
+    },
+    {
+      "quote": "Saigō Takamori, whose reputation in Kagoshima later gathered loyalty around the language of samurai honour, shows how a person could become both symbol and instrument of a political conflict.",
+      "judgment": "A one-sentence non-sequitur inserted apparently only to justify the chapter's unrelated Brinkley epigraph; the book's argument gains nothing."
+    },
+    {
+      "quote": "One hundred and thirty-two people were thrown into the Atlantic that day.\\n\\nThe ship continued west.",
+      "judgment": "The dramatised set-pieces are genuinely good: restrained, concrete, and far more affecting than a summary would be."
+    },
+    {
+      "quote": "The relief threatens; the list specifies. One turns defeat into fear, the other turns submission into a schedule.",
+      "judgment": "Elegant in isolation, but this exact antithesis-plus-chiasmus cadence closes dozens of paragraphs and becomes the book's most audible tic."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter is built from paired case studies resolved by a 'the difference is not X but Y' formula, which becomes predictable once recognised.",
+      "instances": [
+        "The difference between the two urban systems is not that Mesopotamia possessed organisation while the Indus lacked it.",
+        "This is not a contrast between violence and peace. ... The difference lies in the political destination of the captive and the conquered community."
+      ]
+    },
+    {
+      "pattern": "Aphoristic single-sentence closers restating the thesis in office/record vocabulary, roughly one every few pages across all fifteen chapters.",
+      "instances": [
+        "Violence opened the door. The office that followed decided how long it stayed open.",
+        "The institution did not always command the blow; it made the person available to be struck."
+      ]
+    },
+    {
+      "pattern": "A rhetorical pivot question, usually opening a paragraph, used once or twice per chapter to hand off between sections.",
+      "instances": [
+        "Did mobility lessen repeated violence, or did it merely leave fewer durable traces of violence that occurred?",
+        "How should a reader approach the Spanish accounts of Mexica sacrifice, especially when their descriptions are vivid enough to seem conclusive?"
+      ]
+    },
+    {
+      "pattern": "A symmetrical evidential hedge — the source establishes the act but not the motive — repeated so often that it stops functioning as caution and becomes cadence.",
+      "instances": [
+        "The bones establish lethal assault more securely than they establish its purpose.",
+        "Skull racks establish a practice. They do not establish every number later attached to it."
+      ]
+    },
+    {
+      "pattern": "Novelistic set-pieces bolted to chapter boundaries whose characters and scenes are never integrated into the surrounding argument.",
+      "instances": [
+        "The cannon began before noon, from the ridge above Frankenhausen ... (Chapter 1's closing scene, unconnected to its Nataruk-and-archives argument)",
+        "Atahualpa sat on a low platform in his litter in the great square of Cajamarca ... (Chapter 5's opening scene; Atahualpa never returns)"
+      ]
+    }
+  ],
+  "summary": "This is an unusually disciplined comparative history of organised violence, held together by a genuine thesis: aggression becomes large-scale only when an office can classify a population, record it, and attach consequences to the classification. The evidence is specific, wide-ranging and handled with real epistemic care — the book is consistently better at saying what a skeleton, a register or a relief cannot establish than most popular history, and its treatments of Ur III rations, the Wannsee protocol and the Sierra Leone TRC are excellent. The dramatised set-pieces are vivid and well-controlled, though several sit at chapter seams without connecting to the argument around them. The weaknesses are repetition and template: over fifteen chapters the paired-case-study structure, the 'not X but Y' resolution, the rhetorical pivot question and the aphoristic office-and-record closer recur so regularly that the later chapters can be predicted paragraph by paragraph. There are also production defects — a truncated epigraph in Chapter 4, a garbled Lex Gabinia sentence in Chapter 1, a stray Saigō Takamori insertion in Chapter 15, and inconsistent British/American orthography. With trimming, integration of the orphaned scenes and a pass to vary the closing cadence, this would be publishable."
+}

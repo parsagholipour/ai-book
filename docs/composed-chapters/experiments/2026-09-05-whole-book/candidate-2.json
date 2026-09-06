@@ -1,0 +1,56 @@
+{
+  "candidate": 2,
+  "label": "chapter-focus-2",
+  "projectId": "cmtp2qckn0000stg0paeezqr1",
+  "planId": "cmtp2qckz0001stg0137ut7yo",
+  "generationJobId": "cmtp2qclv0002stg0vbxblv5i",
+  "qualityRevision": 49,
+  "writer": {
+    "model": "gpt-5.6-luna",
+    "thinkingEffort": "low"
+  },
+  "checks": "7 gates passed in 94.6s",
+  "regression": {
+    "before": {
+      "failed": 6,
+      "passed": 2
+    },
+    "afterFocused": {
+      "passed": 43
+    },
+    "editorGrounding": {
+      "beforeFailed": 1,
+      "afterPassed": 13
+    }
+  },
+  "fableSession": {
+    "model": "claude-fable-5-1",
+    "effort": "xhigh",
+    "costUsd": 5.736579249999999,
+    "subtype": "error_max_budget_usd",
+    "notes": "Specified production and test files were written before cap; parent reviewed actual outputs. Worker probed nonexistent paths, preserved in log."
+  },
+  "parentCorrections": [
+    "Updated worker tests to actual schema and fixture APIs; no claim that fixture-loader failures reproduced bugs.",
+    "Added explicit empty response instruction when passages do not describe requested scene.",
+    "Added stricter scene grounding to focused editor, after reproducing its omission in a regression test.",
+    "Snapshot used duplicate episodes.ts basenames initially; full code hash comparison proved no production file changed before apply. Recreated snapshots preserving paths. An inadvertently started full check before apply retained its expected red result."
+  ],
+  "result": {
+    "score": 6.866666666666666,
+    "readers": [
+      6.7,
+      6.8,
+      7.1
+    ],
+    "pass": false,
+    "proseWords": 56465,
+    "storedPages": 120,
+    "pdfPages": 117,
+    "generationExportProviderCostUsd": 0.43039,
+    "finalProjectProviderCostUsd": 0.454043,
+    "productionFilesVerifiedUnchanged": 383,
+    "coverageChaptersPerReader": 15,
+    "verbatimQuotesVerified": 54
+  }
+}

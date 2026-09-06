@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.3,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The record is therefore less like a window opened directly onto a quarrel than like a mould into which the quarrel has been pressed.",
+      "judgment": "Excellent controlling image; states the book's source-critical thesis in one figure rather than asserting it."
+    },
+    {
+      "quote": "The clay tablet was small. The chain behind it was not.",
+      "judgment": "Effective compression, but one of dozens of two-beat aphoristic paragraph-closers that become a tic."
+    },
+    {
+      "quote": "A person who could not bring a complaint to court did not experience less violence than a litigant at York. The absence of testimony tells us first about the path by which testimony would have had to travel.",
+      "judgment": "Genuinely analytical handling of archival silence; the argument earns its caution instead of merely performing it."
+    },
+    {
+      "quote": "Bones widen it again.",
+      "judgment": "A one-line hinge paragraph used as a transition device; the same move recurs in nearly every chapter and reads as a template rather than a decision."
+    },
+    {
+      "quote": "The trade’s language hid the violence by dividing it into transactions. A purchase on the African coast, an insurance policy in Bristol, a maritime contract, a sale in the Caribbean, and an account of sugar production could each appear ordinary when read alone.",
+      "judgment": "The book's strongest passage type: a concrete distributed-agency mechanism built from named parts, not abstraction."
+    },
+    {
+      "quote": "The Talheim pit can establish that a group was killed and deposited together. It cannot, by itself, identify the attackers, explain their motive, or show what happened immediately before the assault.",
+      "judgment": "Sound epistemics, but the can/cannot couplet is applied to nearly every piece of evidence in fifteen chapters, flattening emphasis."
+    },
+    {
+      "quote": "Religion was the primary cause of medieval violence. The modern interpretation is strongest when applied to the First Crusade’s own language",
+      "judgment": "A visible seam: a flat thesis sentence dropped in without attribution or framing, leaving the paragraph reading as an unlabelled steel-man exercise."
+    },
+    {
+      "quote": "Aggression becomes consequential through choices made in particular conditions, and the offices, leaders, tools, and identities that make those choices possible can be contested before they become fate.",
+      "judgment": "The closing sentence lands the thesis cleanly, though the balanced-clause rhythm is the same one used to end most chapters."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The paired-scholar standoff: each chapter stages two named authorities in tension and then declines to adjudicate, concluding that the disagreement 'improves the question'.",
+      "instances": [
+        "Allsen and Sneath disagree over emphasis, but their disagreement improves the question.",
+        "McNeill is right to insist that military competition altered political possibilities. Tilly is right to insist that those possibilities depended upon bargaining and extraction."
+      ]
+    },
+    {
+      "pattern": "The evidential can/cannot couplet — an artefact is credited with establishing one narrow fact and immediately debited for everything else, in the same two-sentence shape.",
+      "instances": [
+        "The Protocol can establish a policy meeting; it cannot substitute for the testimony of those whom policy marked for destruction.",
+        "It establishes that a group living without a state could participate in lethal collective violence. It does not establish how frequently such violence occurred"
+      ]
+    },
+    {
+      "pattern": "Aphoristic one-line paragraph as chapter hinge or coda, usually a paired antithesis or a bare subject-verb-object epigram.",
+      "instances": [
+        "The political map was broken. Social life was not.",
+        "Railways made armies faster. Administration made them repeatable."
+      ]
+    },
+    {
+      "pattern": "The enumerated institutional chain: a sequence of short declaratives naming successive offices or steps, then a sentence stating that each link made the next possible.",
+      "instances": [
+        "Roads brought armies and carried orders. Campaigns created captives and tribute. Governors classified the conquered territory. Censuses identified households and resources.",
+        "Registration identified people. Identification supported confiscation. Confiscation increased dependence. Ghettoization concentrated the population."
+      ]
+    },
+    {
+      "pattern": "The anti-essentialist disclaimer paragraph, warning against ranking societies or reading a case as a universal rate, placed near each chapter's end.",
+      "instances": [
+        "The verdict belongs in the conditions, not in a ranking of civilizations.",
+        "Their percentages and body counts are measures of what was preserved in two places, not gauges of a universal human rate."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, unusually literate history of organised violence, held together by a genuine thesis: aggression becomes historically consequential only when offices, records and commands connect a decision to a population, and every surviving source is itself a product of that machinery. The prose is precise, cliché-free and consistently pitched in a sober donnish register; the case material is concrete and well dated, and the source-critical scruple is real rather than decorative. The book's weakness is that its virtues have hardened into templates. Almost every chapter runs the same circuit — vivid artefact, close reading, two named scholars in unresolved tension, a can/cannot couplet about what the evidence permits, an anti-essentialist disclaimer, and a short aphoristic coda — so that by the tenth chapter the reader can predict the paragraph shapes without the content. Caution is also over-served: the same warning that a record shows the outcome of violence but not the relations producing it is restated dozens of times, which costs pace and blunts the passages where it matters most. Trimming the repeated hedges and varying the chapter architecture would leave a strong book; the sentence-level craft and argumentative spine are already close to publishable."
+}

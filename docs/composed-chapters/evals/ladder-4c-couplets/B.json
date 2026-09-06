@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.7,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A body can establish that harm occurred. A document can establish that harm was authorised. The distance between those statements begins with the institution that decided whose injury would be recorded and whose could disappear.",
+      "judgment": "The book's controlling idea, stated with real precision; it earns the closing position of chapter 1."
+    },
+    {
+      "quote": "A worker who depended upon an official allotment did not need to be struck in order to be governed.",
+      "judgment": "Excellent compression: the thesis carried by a single concrete relation rather than asserted abstractly."
+    },
+    {
+      "quote": "A body part became a receipt: the killing of a person was translated into evidence that an order had been fulfilled.",
+      "judgment": "The strongest single sentence in the book — horror and administration fused without editorialising."
+    },
+    {
+      "quote": "Every weapon in these scenes was pointed by an institution, and the institution determined whose injury became the foundation of rule.",
+      "judgment": "Chapter 3's closer; chapter 6 closes with a near-verbatim restatement ('every weapon in these frontiers was pointed by an institution'), exposing a template rather than a conclusion."
+    },
+    {
+      "quote": "Wendorf could imagine the wound as it was made: the body turning away, the attacker close behind, the stone entering between the ribs.",
+      "judgment": "Symptom of the book's central internal tension: chapters open with novelistic certainty about interiors and then spend pages preaching evidentiary restraint about the same site."
+    },
+    {
+      "quote": "The account in *On to the Rescue: A Tale of the Indian Mutiny, Book II* says, “The Sepoy hurried off to his mess and told of his adventure with the Lascar to his fellows”",
+      "judgment": "A work of fiction quoted in the evidentiary register the book otherwise polices strictly; the one place its own standard visibly fails."
+    },
+    {
+      "quote": "The raid consumed a place. The conquest attempted to incorporate one.",
+      "judgment": "Elegant, but representative of a paired-antithesis reflex that fires several times per page across all fifteen chapters."
+    },
+    {
+      "quote": "Security and coercion travelled the same road.",
+      "judgment": "Aphoristic paragraph-closer of a kind the book reaches for compulsively; individually good, cumulatively mechanical."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter opens with a cinematic reconstructed scene built from sensory detail and one-line dramatic beats, then breaks to analysis at a hinge sentence that reinterprets the scene as institutional.",
+      "instances": [
+        "Umma had pulled it down.",
+        "Then a trumpet sounded."
+      ]
+    },
+    {
+      "pattern": "Chapters close on an aphorism naming institutions/offices as the true agent of violence, several times in near-identical wording.",
+      "instances": [
+        "Every weapon in these scenes was pointed by an institution, and the institution determined whose injury became the foundation of rule.",
+        "The weapon, tax, pass, court, and treaty acquired their force from the office that named the target and recorded the act."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis as the default cadence: two short parallel clauses, the second inverting or completing the first.",
+      "instances": [
+        "The number is real; the boundary around the number is historical.",
+        "A spear settles the immediate contest; an inscription tells later generations why the contest had been rightful."
+      ]
+    },
+    {
+      "pattern": "A two-case comparison drives the analytical half of nearly every chapter, with an explicit 'the contrast is not X but Y' adjudication paragraph.",
+      "instances": [
+        "The contrast is not between barbaric appetite and civilised restraint.",
+        "The contrast with Nishapur is not between a violent beginning and a peaceful aftermath."
+      ]
+    },
+    {
+      "pattern": "Catalogue passages that enumerate indicators or instruments in sequence, each given a short paragraph of the same shape, before a paragraph declaring that 'no indicator stands alone'.",
+      "instances": [
+        "The archaeological indicators form a vocabulary, but each word must be read in its setting.",
+        "The early modern arsenal can be read as a catalogue of dependencies."
+      ]
+    }
+  ],
+  "summary": "This is an unusually disciplined and knowledgeable book with one clear, sustained argument: aggression becomes historically consequential only through offices, records, categories and supply chains, and the evidence we have is itself a product of who was empowered to write things down. The chronological sweep from Çatalhöyük to Mesetas is well built, the sourcing is dense and specific, and the prose is clear, unadorned and frequently excellent at the sentence level. Its main weakness is repetition of form rather than of content: fifteen chapters execute an identical template — dramatised opening scene, analytical pivot, paired case comparison, aphoristic institutional closer — and the thesis is restated far more often than it is advanced, which flattens pacing badly in the second half. The reconstructed openings also sit uneasily with the book's own epistemology, asserting gestures, thoughts and dialogue with a confidence the analytical sections would refuse, and at least one clearly fictional source is quoted as testimony. Slop markers are not lexical — there are almost no stock connectors or filler abstractions — but they are architectural, in the uniform paragraph shapes, the relentless paired antitheses and the near-verbatim chapter closers. With the vignettes labelled or trimmed, the thesis restatements cut by half, and the catalogue sections compressed, this would be a genuinely strong trade history."
+}

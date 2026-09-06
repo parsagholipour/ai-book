@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 7
+  },
+  "overall": 7.4,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The army began with the clerk who knew which granary could be opened.",
+      "judgment": "The book's controlling idea compressed into one concrete, earned sentence; this is the prose at its best."
+    },
+    {
+      "quote": "A charge had been written, a civic body had heard it, a vote had been counted, and a man had been sentenced to die. Whatever depth Meletus's anger possessed, the city gave it a form that killed Socrates.",
+      "judgment": "Excellent opening move: a dramatized scene converted into the thesis without editorializing."
+    },
+    {
+      "quote": "The crew continued until 54 people had been thrown into the Atlantic. That evening, the Zong's log recorded the ship's position and the weather. The later insurance case preserved no names for those who had died. It preserved the number.",
+      "judgment": "Restraint doing rhetorical work; the strongest passage in the book, and proof the author can generate heat without raising the voice."
+    },
+    {
+      "quote": "On 399 BCE, Socrates was tried at Athens, convicted by the jurors, sentenced to death, and told them, “I to die, and you to live.”",
+      "judgment": "Ungrammatical (“On 399 BCE”) and a flat recap; symptomatic of the tacked-on citation sentence that terminates most chapters."
+    },
+    {
+      "quote": "The people buried at Jebel Sahaba were placed in the cemetery, as F. Wendorf, *The Prehistory of Nubia*, volume 2, report on Jebel Sahaba has it.",
+      "judgment": "A chapter ends on a tautology dressed as a citation; the seam between argument and apparatus is visible."
+    },
+    {
+      "quote": "The Portuguese attack seized the office that controlled the port and attached its revenue to a new external power, introducing religious hostility into a peaceful commercial world.",
+      "judgment": "Self-contradicting: the preceding pages establish the Swahili coast as rivalrous and armed, not peaceful."
+    },
+    {
+      "quote": "By his own account, Amakusa Shirō became a symbolic leader for the insurgents, but surviving sources turn him quickly into an enemy to be destroyed.",
+      "judgment": "Attribution glitch — “by his own account” contradicts the same sentence's claim that only hostile sources survive."
+    },
+    {
+      "quote": "But that voice is historical evidence. It shows that violence required explanation even where it was celebrated. He placed killing among inherited forms of kingship, ritual obligation, dynastic memory, and sacred exchange.",
+      "judgment": "Dangling pronoun with no antecedent; a small but telling failure of line-level editing."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Paired antithesis as the default sentence engine: a negated clause followed by the institutional correction (“not the weapon but the office”). It carries the thesis, but by chapter six it is audible as a template rather than a thought.",
+      "instances": [
+        "The weapon remained visible because it was dramatic. The office remained quieter, but it decided whether the weapon would be scarce or plentiful…",
+        "The open range made the first movement possible; the office, register, and command made its consequences durable."
+      ]
+    },
+    {
+      "pattern": "Every chapter closes with an appended source-or-date sentence that restates the chapter in flat apparatus prose instead of landing it. Several are grammatically broken or merely tautological.",
+      "instances": [
+        "At Ur, ration lists and labor assignments show how a city could make force repeatable before it made conquest universal.",
+        "Tophane and Magdeburg together show that gunpowder's decisive historical effect lay in connecting weapons to supply offices and civilian requisition."
+      ]
+    },
+    {
+      "pattern": "Verbatim or near-verbatim self-repetition across a chapter's halves — whole analytic paragraphs restated with minimal variation, as if two drafts were stitched without reconciliation.",
+      "instances": [
+        "Michael Roberts and Geoffrey Parker's military-revolution thesis describes part of this change… the European sequence becomes misleading when treated as a universal ladder. (ch. 9, early)",
+        "Michael Roberts and Geoffrey Parker's military-revolution thesis describes this development… the European sequence becomes too neat when treated as a universal ladder. (ch. 9, late)"
+      ]
+    },
+    {
+      "pattern": "The enumerated catalogue substituting for argument: signs, dependencies, harms are listed ordinally at length, which flattens pacing and gives late chapters a reference-book texture.",
+      "instances": [
+        "The archaeological record offers a deliberate catalogue of signs… Projectile trauma comes first… Palisades, ditches, and walls form a second class of evidence.",
+        "The first measure is the interstate battlefield death… The fifteenth is the death that never enters a conflict dataset."
+      ]
+    },
+    {
+      "pattern": "Chapter-terminal methodological retreat: sections resolve into cautious statements about what evidence can and cannot show, phrased almost identically each time, so the epistemic humility becomes a tic rather than a stance.",
+      "instances": [
+        "The safest conclusion is limited but important. Conquest-era testimony can help identify forms of aggression…",
+        "The most secure conclusion is therefore limited but important. Aggression took different forms because people operated within particular environments…"
+      ]
+    }
+  ],
+  "summary": "This is a genuinely accomplished institutional history of organized violence, held together by one clear and sustained thesis: aggression becomes historically consequential not through temperament or technology but through offices, registers, rations and records that make force repeatable. The specificity is unusually high — named sites, dated documents, weighed sources — and the source-criticism is honest, repeatedly distinguishing what bone, monument or chronicle can and cannot bear. The opening scenes of several chapters (Socrates, the Zong, the Cabinet Room in October 1962) are handled with real narrative restraint, and the voice is cool, adult and consistent throughout. Against that stand serious editorial failures: whole analytic paragraphs are repeated near-verbatim within chapters, the thesis is restated far past the point of diminishing return, most chapters end on a tacked-on citation sentence that is flat or ungrammatical, and a handful of factual and grammatical slips survive (“On 399 BCE”, a dangling “He” with no antecedent, a Sierra Leone chronology that contradicts itself, a garbled ship name). The slop here is not vocabulary but shape — an antithesis machine and a uniform paragraph mass — which drains engagement and pacing in the long middle chapters. With a hard structural pass to cut duplication, rebuild the chapter endings and vary the sentence architecture, this would be publishable non-fiction; as it stands it needs moderate revision."
+}

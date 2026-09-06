@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 4,
+    "structure": 3,
+    "depth": 3,
+    "reasoning": 3,
+    "clarity": 3,
+    "voice": 3,
+    "engagement": 3,
+    "pacing": 2,
+    "craft": 3,
+    "slopResistance": 2
+  },
+  "overall": 2.9,
+  "readiness": "Needs major revision",
+  "slopSeverity": "High",
+  "highlights": [
+    {
+      "quote": "The scene scrambled these eggs, cooking them with pans and stoves. The calpulli leaders cooked these meals, serving them with plates and cutlery.",
+      "judgment": "Chapter 5 collapses into thousands of words of mechanical verb-chaining with no content whatsoever \u2014 a catastrophic generation failure, not a stylistic lapse."
+    },
+    {
+      "quote": "The codex plate uniformized these surfaces, parameterizing them with elliptic functions",
+      "judgment": "Chapter 5 terminates mid-sentence after drifting from Aztec tribute into abstract algebra and topology; two stray CJK tokens (\u7d22\u53d6, \u7ede\u5408) also leak into the text."
+    },
+    {
+      "quote": "Model calculates that when a village reaches a critical size, the marginal return on labor drops below the cost of defense",
+      "judgment": "Chapters 1, 2, 7 and 10 drop articles wholesale, producing an ungrammatical telegraphic register that reads like compressed notes rather than prose."
+    },
+    {
+      "quote": "Aggression takes the shape of the containers that hold it, and its scale, targets, and meaning shift decisively with the institutions, resources, technologies, identities, and historical choices that surround it.",
+      "judgment": "The book's one thesis is genuinely stable, but it is pasted in near-verbatim as a chapter-closing refrain rather than developed."
+    },
+    {
+      "quote": "When the price of sugar fell in the 1720s, masters in Jamaica did not relax their grip. They increased surveillance, reduced rations, and deployed patrols along the interior roads",
+      "judgment": "The Eric Williams critique in Chapter 8 is the book's best passage: a real counter-argument with a specific, falsifiable test attached."
+    },
+    {
+      "quote": "Robert Belah, in his comparative framework essay, traced how scholars conflated warfare with everyday conflict",
+      "judgment": "Named authorities are consistently vague or apparently invented (Belah, Joan Arzu, the 'Yukle Bei monument', 'William Buddy Menziez'), so the scholarly scaffolding cannot bear weight."
+    },
+    {
+      "quote": "The coinage hoards suggest that wealth accumulated in Kilwa was often buried rather than spent, hinting at the insecurity of the times",
+      "judgment": "This exact sentence appears twice within two paragraphs of Chapter 6; verbatim self-duplication recurs across the book (e.g. the Wu Jian promotion note in Chapter 7)."
+    },
+    {
+      "quote": "A blueprint produced by the Nations Development Program outlines a strategy for converting disused military facilities into hubs for sustainable farming",
+      "judgment": "The book ends not with a conclusion but with a placeholder-grade uplift case (unnamed country, generic 'Camp Delta', invented officials) that abandons the historical method the thesis rests on."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every section is launched by an artifact-as-hook \u2014 a named document, ledger, log, plan or inscription that is described in inventory detail before any argument begins.",
+      "instances": [
+        "The clay tablet PY Ta 641, baked in the kiln of the palace workshop later that year, preserves the memory of these transactions",
+        "The twelfth-century English pipe roll muster list reveals four distinct categories of armed service drawn from the population"
+      ]
+    },
+    {
+      "pattern": "The 'the record cannot show X' move \u2014 a paired antithesis in which the document's precision is contrasted with the inner life it omits \u2014 is used as a closer over and over.",
+      "instances": [
+        "It reveals nothing of the mood in the courtyard when the guard accepted his ration",
+        "The roll lists the names. It cannot show the condition of the men."
+      ]
+    },
+    {
+      "pattern": "Enumerated typologies of exactly four or five items, each introduced by an ordinal, substitute for analysis.",
+      "instances": [
+        "Manor court at Langley recorded four distinct forms of coercion on folio 12 of its thirteenth-century roll",
+        "The administration deployed five distinct provincial governance models to bind distant populations to the center."
+      ]
+    },
+    {
+      "pattern": "Paragraph-scale recap loops: a section states a point, then restates it in fresh vocabulary two or three times before ending on a generic abstraction.",
+      "instances": [
+        "Demographic model paper thus serves as a reminder of the limits of reductionist explanations",
+        "Sample 7B thus provides a window into a moment of crisis, capturing the environmental shock and its social repercussions"
+      ]
+    },
+    {
+      "pattern": "Formulaic cross-chapter callbacks that assert a parallel rather than earning one, usually in a trailing subordinate clause.",
+      "instances": [
+        "The calpulli leaders managed surplus much as the Mycenaean overseers had tracked olive oil",
+        "Like cotton bundles that sealed alliances in Tlaxcala, these printed sheets served as material evidence of political alignment"
+      ]
+    }
+  ],
+  "summary": "The manuscript pursues a single defensible thesis \u2014 that aggression is universal in potential but takes its scale, targets and meaning from the institutions, resources and identities that channel it \u2014 across a sensible chronological sweep from Bronze Age citadels to 1989. Its best chapters (4, 8, 12, 13) sustain real comparative argument, and the running device of anchoring each section in a specific document occasionally produces genuine texture. But the execution fails badly in three ways. Chapter 5 is catastrophically broken: roughly 12,000 words degenerate into mechanical verb-chains with no semantic content, stray CJK characters, and a mid-sentence stop about elliptic functions. Several other chapters drop articles wholesale into ungrammatical telegraphese, and the evidentiary base is untrustworthy, with authorities and monuments that appear invented and a closing case study set in an unnamed country with placeholder names. Add pervasive verbatim self-repetition, a thesis pasted in as a chapter-ending refrain, and the absence of any real conclusion, and the book is not close to publishable in its current state."
+}

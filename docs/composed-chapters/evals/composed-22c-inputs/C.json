@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 7,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.5,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A wound is not an emotion, and a projectile point is not a motive.",
+      "judgment": "Strength: compresses the book's central epistemic problem into one concrete line, and the chapter then earns it rather than asserting it."
+    },
+    {
+      "quote": "The greater detail of the modern archive does not mean that twentieth-century people possessed more aggression than prehistoric people. It means that modern states produced more documents and more powerful instruments for both violence and its administration. The archive grows alongside the office.",
+      "judgment": "Strength: genuine methodological insight, sharply phrased, and it does real work throughout the remaining fourteen chapters."
+    },
+    {
+      "quote": "The record begins after the furnace but before the shot. It follows the cannon through the intervals in which its destructive power was only potential... Those intervals are not empty. They are the time in which an institution maintained the possibility of violence.",
+      "judgment": "Strength: the book at its best \u2014 an unpromising document (an arsenal register) made analytically vivid without inflation."
+    },
+    {
+      "quote": "\"Appropriate treatment\" converts a decision about death into a decision about handling. People become a category to be processed after selection.",
+      "judgment": "Strength: close reading of bureaucratic language that is restrained rather than lurid, and all the more effective for it."
+    },
+    {
+      "quote": "Steppe ecology gave the Mongols a geography of possibility. Institutions decided how that possibility was used.",
+      "judgment": "Weakness: an aphoristic two-beat closer whose exact structure ends roughly a dozen sections; by chapter 7 the reader can predict the sentence before reading it."
+    },
+    {
+      "quote": "The state he built was also coercive. Expansion brought warfare to populations that might have preferred autonomy...",
+      "judgment": "Weakness: a real continuity break \u2014 Samori Tour\u00e9 is discussed for a full page before he is ever introduced, as if an introductory passage were deleted."
+    },
+    {
+      "quote": "C\u00f3rdoba provides a different question. The municipal record, as preserved in the material for this discussion, points towards moderation amid conflict...",
+      "judgment": "Weakness: the frame slips and the text refers to its own source packet; also the only place where the book admits it does not know what its evidence says."
+    },
+    {
+      "quote": "A fracture without healing belongs to the period around death, although its exact moment cannot be read as from a written sentence.",
+      "judgment": "Weakness: a garbled clause in an otherwise unusually clean manuscript; a handful of similar seams survive (\"The turning point was brief.\")."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The signature paired antithesis \u2014 an object or condition is denied causal agency in one clause, and an institution is granted it in the next. It is the book's thesis, but it is also a sentence template used dozens of times, in every chapter.",
+      "instances": [
+        "The grain did not choose its destination. An institution did.",
+        "The rifle did not gather latex. It made the quota enforceable."
+      ]
+    },
+    {
+      "pattern": "Negate-then-affirm cadence (\"X does not prove/show A. It shows B.\") used as the default way to state any finding, so that almost every conclusion arrives through a refusal first.",
+      "instances": [
+        "Talheim is powerful evidence for an event, not a census of aggression.",
+        "The evidence does not show a state. It shows collective violence before states, writing, taxation, and standing armies."
+      ]
+    },
+    {
+      "pattern": "Identical chapter architecture: cold-open on a dated site or artifact, several paragraphs of source-criticism about what the evidence can and cannot bear, a two-case comparison whose differences are declared non-moral, then a restatement of the institutional thesis as the closer.",
+      "instances": [
+        "In 2011, archaeologists working near Nataruk, west of Lake Turkana in northern Kenya, found human remains...",
+        "On 15 July 1099, forces of the First Crusade entered Jerusalem after a siege lasting several weeks."
+      ]
+    },
+    {
+      "pattern": "Comparative disclaimer formula: any two cases placed side by side are immediately protected from being read as a moral or quantitative ranking, in near-identical words.",
+      "instances": [
+        "It compares cemeteries, not souls.",
+        "These records do not place Assyria and Persia on a moral scale by themselves."
+      ]
+    },
+    {
+      "pattern": "Recap looping \u2014 earlier case studies are re-summarised in one-clause form at section ends and again at chapter ends, so the same handful of sites is restated many times over.",
+      "instances": [
+        "Talheim shows the consequence when a settled community becomes the target... Jebel Sahaba shows recurrent projectile injuries... San Teodoro shows why the absence of a comparable injury pattern must be interpreted",
+        "Merv demonstrates exemplary destruction used to punish resistance. Baghdad demonstrates the removal of an established political centre... Khanbaliq demonstrates the conversion of conquest into durable administration."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, intellectually serious global history of organised violence, held together by one clearly argued thesis: that emotion, scarcity and technology supply conditions, while institutions supply permission, targets and durability. The reasoning is its greatest strength \u2014 the book is scrupulous about what bones, registers, monuments and chronicles can and cannot support, and it repeatedly refuses inferences a weaker text would take, while still reaching definite conclusions. Prose is clear, concrete and largely free of the usual generative tells: no stock connectives, no listicles, no inflated abstractions, and several genuinely fine sentences. Its weaknesses are structural rather than verbal. Every chapter is built to the same plan, and the thesis is delivered through a paired-antithesis closer so often that the form becomes audible and the argument stops surprising by roughly chapter seven; redundancy compounds this, as the same case studies are recapped repeatedly. A few production seams survive \u2014 an unintroduced Samori Tour\u00e9, a passage that refers to \"the material for this discussion\", a garbled clause or two. With varied chapter shapes, a heavy trim of the restatement passages, and repair of those seams, it would be publishable work."
+}

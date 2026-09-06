@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 7,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 5
+  },
+  "overall": 7.1,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The forensic record narrows possibilities; it does not turn possibilities into motives.",
+      "judgment": "A crisp statement of the book's disciplined distinction between evidence and inference."
+    },
+    {
+      "quote": "Discussion does not make the policy peaceful; it organises the path by which force will be used.",
+      "judgment": "A strong formulation that links deliberation to institutional violence without confusing the two."
+    },
+    {
+      "quote": "The grave provides the event. Other evidence must carry the cause.",
+      "judgment": "The prose makes an important methodological limit memorable and precise."
+    },
+    {
+      "quote": "The stele is part of the machinery it represents.",
+      "judgment": "This compact insight gives representation an active political role rather than treating it as decoration."
+    },
+    {
+      "quote": "Confirmation of an act does not validate the category through which a conqueror explained an entire society.",
+      "judgment": "An especially effective warning against allowing material confirmation to ratify a source's ideology."
+    },
+    {
+      "quote": "Violence could open a corridor, but it could not by itself maintain the road.",
+      "judgment": "A vivid synthesis of the central thesis, though one of many similarly shaped aphoristic closers."
+    },
+    {
+      "quote": "These processes cannot be reduced to one another.",
+      "judgment": "The sentence typifies a recurring generic qualification that becomes predictable across chapters."
+    },
+    {
+      "quote": "There were still choices.",
+      "judgment": "The isolated emphasis is rhetorically clear but exemplifies the manuscript's repeated use of short declarative pivots."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Compact antithesis distinguishes material evidence from social explanation.",
+      "instances": [
+        "The wound establishes behaviour; it does not establish feeling.",
+        "The bodies show what violence did; they do not identify the decision that sent one group against another."
+      ]
+    },
+    {
+      "pattern": "Chapter synthesis contrasts what violence can initiate with what institutions must sustain.",
+      "instances": [
+        "Violence could open a city to seizure, while rule required selective restraint.",
+        "Violence could open a corridor, but it could not by itself maintain the road."
+      ]
+    },
+    {
+      "pattern": "Sources are credited for concrete evidence and then bounded by an explicit limitation.",
+      "instances": [
+        "The image does not establish how many people died in the Lullubi campaign or show the ordinary consequences for villages in the Zagros.",
+        "A United Nations report could identify the weapon and describe its effects, but its authority depended on states willing to enforce the rule."
+      ]
+    },
+    {
+      "pattern": "Administrative chains are rendered as accumulations of concrete verbs or nouns.",
+      "instances": [
+        "The palace needed people who could measure grain, assign work, supervise transport, maintain animals, make weapons, and communicate demands.",
+        "Orders had to be written, translated, carried, and enforced by officials whose interests might diverge from the centre."
+      ]
+    },
+    {
+      "pattern": "A three-case chapter closes by assigning each case a distinct institutional function.",
+      "instances": [
+        "Nataruk records abandoned bodies after a lethal attack. Jebel Sahaba records a cemetery marked by repeated injuries and repeated burial. Talheim records a massacre whose demographic setting remains contested.",
+        "The Code Noir shows authorisation at the level of clauses. The Zong shows what happened when a commercial decision entered court. Equiano shows how a person moved through the same world without becoming identical to its categories."
+      ]
+    }
+  ],
+  "summary": "The manuscript argues coherently that aggression becomes historically consequential through institutions that classify, authorise, supply, record, and remember violence. Its wide chronological range is controlled by careful distinctions among physical evidence, source categories, policy, implementation, and consequence, and the case studies usually supply concrete administrative mechanisms rather than generic claims. The progression from prehistoric wounds to states, empires, slavery, industrial war, genocide, and postwar coercion is persuasive, although the final chapter feels more like another comparative case study than a full synthesis of the whole arc. The principal editorial problem is cumulative repetition: most chapters use three cases, repeatedly delimit what each source can prove, and end in balanced antitheses or triadic recaps. Moderate revision should compress those qualification loops, vary the chapter architecture, and reserve the strongest aphorisms for genuine turning points."
+}

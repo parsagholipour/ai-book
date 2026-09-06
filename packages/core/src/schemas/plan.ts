@@ -9,6 +9,7 @@ import {
   unwrapJsonObject
 } from "./jsonCoercion.js";
 import { bookArcSchema } from "./bookArc.js";
+import { bookDevelopmentSchema } from "./bookDevelopment.js";
 import { bookDossierSchema, bookEpisodesSchema } from "./episodes.js";
 import { illustrationCadenceSchema } from "./mediaSettings.js";
 import {
@@ -383,7 +384,32 @@ function normalizeStyleContractFields(
   };
 }
 
-function normalizeBookPlanWithFallback(fallback: BookPlan) {
+/**
+ * The plan fields a stance object may be hiding: everything the plan itself
+ * declares, minus the stance key that would nest into itself.
+ */
+function recoverablePlanKeys(): string[] {
+  return Object.keys(bookPlanObjectSchema.shape).filter((key) => key !== "authorStance");
+}
+
+/**
+ * A model answer read against a fallback plan. `requireAuthoredChapters` is
+ * initial planning only.
+ *
+ * On 6 September a planner answered a 120-page brief with its fourteen real
+ * chapters — and `characters`, `locations`, `promises`, `illustrationPlan` and
+ * the rest — nested *inside* `authorStance`, with no `chapters` at the root.
+ * Stance normalisation keeps four fields, so the fourteen chapters were dropped
+ * on the floor; the fallback outline had already supplied ten generic ones, so
+ * the plan parsed, nothing reached the JSON repair path, and the book was
+ * written to "Chapter 1: Opening". Two rules answer that: a book-level field
+ * absent from the answer is recovered from the stance object it was misfiled
+ * in, and on initial planning the candidate never inherits the fallback's
+ * chapters — a missing or empty authored array fails `.min(1)` and is repaired,
+ * rather than passing as somebody else's outline. Revisions are patches and
+ * keep both old behaviours.
+ */
+function normalizeBookPlanWithFallback(fallback: BookPlan, requireAuthoredChapters = false) {
   return (value: unknown): unknown => {
     if (!isRecord(value)) {
       return value;
@@ -396,11 +422,35 @@ function normalizeBookPlanWithFallback(fallback: BookPlan) {
       delete outer[key];
     }
 
-    const candidate = isPlanLikeRecord(nestedPlan)
-      ? mergePlanRecords(mergePlanRecords(fallbackRecord, outer), nestedPlan)
+    // What the model actually answered, before the fallback is merged under it.
+    let answered = isPlanLikeRecord(nestedPlan)
+      ? mergePlanRecords(outer, nestedPlan)
       : isPlanLikeRecord(value)
-        ? mergePlanRecords(fallbackRecord, value)
-        : mergePlanRecords(fallbackRecord, outer);
+        ? value
+        : outer;
+
+    if (requireAuthoredChapters) {
+      const stance = firstPresentField(answered, AUTHOR_STANCE_KEYS);
+      if (isRecord(stance)) {
+        // Only a key the answer never spelled at all: an own field wins even
+        // when it is `[]`, `null` or malformed, because that is an answer too.
+        // The stance object itself is left alone — its own parse strips these.
+        const recovered: Record<string, unknown> = {};
+        for (const key of recoverablePlanKeys()) {
+          if (!(key in answered) && key in stance) {
+            recovered[key] = stance[key];
+          }
+        }
+        if (Object.keys(recovered).length > 0) {
+          answered = { ...recovered, ...answered };
+        }
+      }
+    }
+
+    const candidate = mergePlanRecords(fallbackRecord, answered);
+    if (requireAuthoredChapters) {
+      candidate.chapters = answered.chapters ?? [];
+    }
 
     return normalizeBookPlan(candidate, fallbackRecord);
   };
@@ -602,9 +652,11 @@ const bookPlanObjectSchema = z.object({
   authorStance: authorStanceSchema.optional(),
   /** The book's arc (generation/bookArc.ts). A stored arc that no longer parses is dropped, never a reason to fail the plan. */
   bookArc: z.preprocess((value) => (bookArcSchema.safeParse(value).success ? value : undefined), bookArcSchema.optional()),
+  // Unlike optional legacy annotations, a malformed persisted structural plan must not vanish on resume.
+  bookDevelopment: bookDevelopmentSchema.optional(),
   /** Material-first (generation/episodes.ts, dossier.ts): stored beside the arc, dropped when they no longer parse. */
   episodes: z.preprocess((value) => (bookEpisodesSchema.safeParse(value).success ? value : undefined), bookEpisodesSchema.optional()),
-  dossier: z.preprocess((value) => (bookDossierSchema.safeParse(value).success ? value : undefined), bookDossierSchema.optional()),
+  dossier: z.preprocess((value) => ((isRecord(value) && "evidencePackets" in value) || bookDossierSchema.safeParse(value).success ? value : undefined), bookDossierSchema.optional()),
   illustrationPlan: illustrationPlanSchema
 });
 
@@ -622,8 +674,8 @@ export function bookPlanSchemaWithFallback(fallback: BookPlan) {
  */
 export function bookPlanModelOutputSchemaWithFallback(fallback: BookPlan) {
   return z.preprocess(
-    normalizeBookPlanWithFallback(fallback),
-    bookPlanObjectSchema.omit({ researchNotes: true })
+    normalizeBookPlanWithFallback(fallback, true),
+    bookPlanObjectSchema.omit({ researchNotes: true, bookDevelopment: true, episodes: true, dossier: true })
   );
 }
 

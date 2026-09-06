@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 7,
+    "slopResistance": 7
+  },
+  "overall": 7.5,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Every weapon in the record has a social route before it reaches a body.",
+      "judgment": "Compact statement of the book's controlling claim, earned by the preceding vocabulary section rather than asserted."
+    },
+    {
+      "quote": "A blackened wall is an event, not a motive.",
+      "judgment": "Excellent epistemic discipline in one line; the book's habit of separating trace from meaning is its strongest intellectual asset."
+    },
+    {
+      "quote": "The stele tells us how a king wished victory to be seen; the ration list tells us how an institution made bodies available for a task.",
+      "judgment": "Model of the paired-source method that gives most chapters their analytic spine."
+    },
+    {
+      "quote": "If a high proportion of bodies in one cemetery bear trauma, the figure describes that cemetery's dead, not the number of attacks experienced by everyone who lived nearby.",
+      "judgment": "Rigorous handling of sampling bias; the book consistently refuses to let a statistic stand for a population."
+    },
+    {
+      "quote": "The killing's significance lay in its being more extensively organised, heavily supplied, and faithfully recorded, with the larger total forming only one part of the account.",
+      "judgment": "Syntactically clogged; several such gerund-and-comma pile-ups blunt otherwise clean prose."
+    },
+    {
+      "quote": "The gun extended the hand. The ledger decided where it reached.",
+      "judgment": "Effective as a single chapter closer, but it is the ninth variation on the same two-beat antithesis and by then reads as a template."
+    },
+    {
+      "quote": "Material deprivation supplied the heat. It did not choose the vessel.",
+      "judgment": "Aphoristic isolated one-liner: rhetorically strong, but the isolated-sentence-paragraph device recurs so often it becomes a tic."
+    },
+    {
+      "quote": "The question remains open at the level that matters most: can we move from recorded assaults, graves, campaigns, prisoners, executions, and disappearances to the prevalence of aggressiveness itself, or will the past always give us the violence that institutions noticed and the quiet they did not?",
+      "judgment": "A genuinely good chapter-ending question, but the same interrogative closer is deployed at the end of many chapters and its force decays."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter is built as a paired comparison of two distant cases that turn out to differ in institutional routing rather than in human nature, and the pairing is explicitly named near the chapter's end.",
+      "instances": [
+        "Breisach posed the same problem through another legal language. Hagenbach invoked the duke's command; the Rwandan accused man invoked the local official's.",
+        "Ludlow and Kilwa were both frontiers, but their violence pursued different objects."
+      ]
+    },
+    {
+      "pattern": "Chapter and section closers are two-clause antitheses in which a material thing is subordinated to an office or record.",
+      "instances": [
+        "The horse carried the order; the office made it imperial.",
+        "Technology enlarged the field of possible harm. Administration chose its routes."
+      ]
+    },
+    {
+      "pattern": "A single short sentence is set off as its own paragraph for dramatic punctuation, usually after a long descriptive passage.",
+      "instances": [
+        "The dancers continued.",
+        "The act failed."
+      ]
+    },
+    {
+      "pattern": "The corrective 'not X but Y' / 'X does not prove Y' formula used to qualify every piece of evidence, so that the qualification itself becomes predictable.",
+      "instances": [
+        "A healed fracture is evidence of violence without being evidence of a violent society.",
+        "A falling rate is not a moral verdict."
+      ]
+    },
+    {
+      "pattern": "A procedural sequence spelled out as a chain of clauses joined by semicolons or 'then', enumerating offices from seizure to record.",
+      "instances": [
+        "Capture supplied people; the ship transported them; the auction assigned a price; the code defined their condition; the patrol restricted movement; the overseer extracted labour; birth extended the claim; and a court protected title.",
+        "Conscription filled depots. Railways moved formations from depots to fronts. Factories replaced the weapons, food, clothing, and men consumed there."
+      ]
+    }
+  ],
+  "summary": "This is a serious, evidence-disciplined comparative history of organised violence whose thesis—that institutions, offices and records, rather than fluctuating human aggressiveness, decide where harm travels—is stated early and held with unusual consistency across fifteen chronological chapters from Neolithic cemeteries to Colombia's 2016 accord. Its greatest strengths are specificity and epistemic honesty: it names sites, statutes, registers and scholars, distinguishes carefully between what a trace establishes and what it merely permits, and repeatedly refuses to let a count stand for a population, culminating in a genuinely useful critique of Elias and Pinker. The prose is clean, restrained and consistent in register, and the case openings (Hagenbach at Breisach, Toxcatl, the Bastille) are vivid without being novelistic. The book's weakness is formal monotony: nearly every chapter executes the same paired-comparison move and lands on the same conclusion, so the argument accumulates instances rather than developing, and by the middle chapters the reader can predict the shape of a section from its first paragraph. That repetition is reinforced by a small set of rhetorical tics—the two-beat antithetical closer, the isolated one-line paragraph, the 'not X but Y' qualifier, the chapter-ending rhetorical question—which read as craft on first appearance and as template by the tenth. With compression of the middle chapters, variation of the comparative structure, and pruning of the aphoristic closers, this would be close to publishable non-fiction."
+}

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.6,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A roadblock is an object made out of people, wood, wire, paper, and permission.",
+      "judgment": "Strength: a concrete, non-generic formulation that states the book's whole argument in one image without abstraction."
+    },
+    {
+      "quote": "The grave gives a numerator with unusual force and a denominator that has dissolved.",
+      "judgment": "Strength: the best passage in the book — an entire methodological chapter section built on a single precise, earned metaphor."
+    },
+    {
+      "quote": "The weapon opened the territory, but the tablet kept it.",
+      "judgment": "Weakness: representative of a paired-antithesis closer used dozens of times; individually good, cumulatively a tic."
+    },
+    {
+      "quote": "The office did not replace emotion. It gave emotion a list.",
+      "judgment": "Weakness: aphoristic two-beat section-ender, the book's single most repeated rhetorical move."
+    },
+    {
+      "quote": "The Xiongnu’s power rested on mobile pastoral production, mounted warfare, alliances, raids, and the authority of the chanyu, as an outside army pressing against a fixed wall could not account for.",
+      "judgment": "Weakness: syntactically broken; a compression seam where a comparative clause has lost its main verb."
+    },
+    {
+      "quote": "At Mahenge, the machine gun left colonial war contingent, while nuclear weapons left the Cuban Missile Crisis open to peaceful resolution.",
+      "judgment": "Weakness: muddled parallel in the final chapter; \"left contingent\" and \"left open\" do not do the work the sentence needs."
+    },
+    {
+      "quote": "For anger, a letter or diary may reveal a feeling. For assault, a wound and testimony may establish an act. For feud, the sequence of retaliation matters.",
+      "judgment": "Strength: the definitional apparatus of chapter 1 is genuinely useful and is actually reused as a working instrument in later chapters."
+    },
+    {
+      "quote": "A battle-death series may show a sharp fall after a ceasefire while refugees remain in camps, unexploded ordnance kills farmers, and a government’s food policy produces deaths away from the front.",
+      "judgment": "Strength: the critique of the decline thesis is specific about measurement rather than merely contrarian."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter opens with a long, present-tense-feeling reconstructed scene (named individuals, weather, objects) before any analysis, then pivots to a general claim in a short bridging paragraph.",
+      "instances": [
+        "The water clock had already begun to run when Socrates entered the court below the Areopagus.",
+        "The mist had lifted from the fields above Naseby by six o’clock on Saturday, 14 June 1645, and Sir Thomas Fairfax could see the king’s army drawn out along the ridge."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis as a closing beat — two short clauses in which the second reverses or completes the first, used to end sections and chapters throughout.",
+      "instances": [
+        "The crowd made sovereignty visible; the decree made it durable.",
+        "The price of sugar set the pressure. Men and governments built the machine that applied it."
+      ]
+    },
+    {
+      "pattern": "Negation-then-assertion: \"X did not do A; Y did\" / \"It was not B. It was C.\" as the standard way of assigning causation.",
+      "instances": [
+        "No field ordered Eannatum to invade Umma. His office did.",
+        "Sugar did not strike anyone. A planter, overseer, magistrate, or armed patrol did."
+      ]
+    },
+    {
+      "pattern": "Obligatory two-case comparison in every chapter, announced in the same grammar (\"X and Y differed in… / belong together because…\"), then resolved with a symmetrical difference statement.",
+      "instances": [
+        "The Nile cemetery and Crow Creek, on the Great Plains of North America, are separated by more than twelve thousand years, a continent, and an economy. They belong together because their dead force the same question…",
+        "The Sahelian frontier and the Byzantine-Anatolian border were both zones of movement, but they organised movement differently."
+      ]
+    },
+    {
+      "pattern": "The chain-of-offices list — a sequence of five or six clauses naming successive functionaries or artefacts — recurs as the book's stock demonstration device, with material repeated across chapters (Baghdad 1258 is narrated twice, the Kigali roadblock twice).",
+      "instances": [
+        "A minister authorised a campaign and estimated its cost. Collectors raised money or supplies. Contractors bought grain, horses, leather, saltpetre, and iron.",
+        "A foreign sponsor paid for the aircraft; a national ministry issued the decree; an intelligence unit supplied the names; a local commander interpreted the order; a police detachment or militia carried it out."
+      ]
+    }
+  ],
+  "summary": "This is a serious and unusually disciplined history of organised violence, held together by a thesis it actually argues rather than merely repeats: aggression is a human capacity, but organised harm requires a route — an office, a list, a road, a ration — and those routes are built and can be closed. The evidentiary work is strong and specific across an enormous range, and the methodological chapters (the missing denominator at Jebel Sahaba, the critique of battle-death datasets, the intent/policy/implementation/consequence grid) are the best writing in the book. Its weaknesses are formal rather than factual. Every chapter runs the same machine — immersive scene, definitional bridge, evidence sweep, mandatory two-case comparison, aphoristic couplet — and the paired antithesis appears so often as a closing beat that it stops registering as thought and starts registering as cadence. Redundancy compounds this: the thesis is restated in nearly identical terms dozens of times, and Baghdad 1258 and the Kigali roadblock are each narrated twice in different chapters. A handful of sentences are syntactically broken in ways that suggest compressed joins, and the analytical stretches hold a uniform paragraph length and rhythm for pages at a time. Trimming the couplets, cutting one Baghdad, and varying the chapter template would move this from good to genuinely distinguished."
+}

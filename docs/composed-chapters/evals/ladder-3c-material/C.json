@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.2,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Both cases require aggression to be separated from the feeling that may have preceded it. Anger may have existed among the people who gathered at the pit, but the grave cannot measure anger.",
+      "judgment": "The book's controlling idea, stated early and with unusual precision; it earns the fifteen chapters that follow."
+    },
+    {
+      "quote": "The tool became a weapon because a person, or a group of people, directed it at a human body.",
+      "judgment": "Excellent compression: an archaeological observation turned into an argument without inflating the evidence."
+    },
+    {
+      "quote": "The file did not pull a trigger. It allowed the person with the gun to find the address.",
+      "judgment": "Genuinely strong closer, though it is also the book's most-repeated rhetorical move in miniature."
+    },
+    {
+      "quote": "Ancient stories do not load buses.",
+      "judgment": "Sharp and welcome after a long analytical passage; one of the few moments where a voice, rather than a method, is audible."
+    },
+    {
+      "quote": "It shows bodies, tools, wounds, and the social fact that people acted together. ... It cannot name the purpose of the attack.",
+      "judgment": "Admirable source discipline, but the assert-then-withdraw pairing recurs so often it becomes a tic rather than a caution."
+    },
+    {
+      "quote": "Tenochtitlan made distance answerable to a city. The Confederacy made danger answerable to a council.",
+      "judgment": "Elegant, and typical of the paired-antithesis verdict that ends nearly every section in the book."
+    },
+    {
+      "quote": "Acting Consul-General Ralph Moor's successor, James Robert Phillips's expedition commander, Harry Rawson, led the punitive force",
+      "judgment": "A garbled, unparsable appositive chain — the clearest copy-editing failure in the manuscript."
+    },
+    {
+      "quote": "Was prehistoric society more aggressive than the states that later covered its fields with offices, armies, courts, and walls?",
+      "judgment": "Free-standing rhetorical questions are used as section hinges in almost every chapter; the device announces the structure instead of concealing it."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter opens with a novelistic reconstructed scene (sensory detail, invented dialogue, a named minor figure), then pivots on a bridging sentence into source analysis. The template is identical across all fifteen chapters, so the openings stop surprising by chapter four.",
+      "instances": [
+        "When Socrates stood before the five hundred and one jurors in the court at Athens, Meletus was waiting with the charge in his hand.",
+        "Sennacherib stood on the low rise east of Lachish while the last fire climbed through the gatehouse."
+      ]
+    },
+    {
+      "pattern": "Symmetrical hedge: a claim is made about what evidence establishes, immediately followed by a matching sentence about what it cannot establish. Sound method, but the two-beat rhythm is used dozens of times per chapter and flattens genuinely different epistemic situations into one cadence.",
+      "instances": [
+        "A barrier announces concern, but concern may arise from raiding, animals, flood, or rivalry within the settlement. Its presence reveals an investment in controlling space; it does not identify the people whom that control was meant to exclude.",
+        "It demonstrates a political and ritual capacity to gather, classify, and bury people on a large scale, but it does not by itself identify a battlefield or a single episode of state killing."
+      ]
+    },
+    {
+      "pattern": "Paired-antithesis verdict closing a section: two clauses of matched grammar assigning contrasting outcomes to a contrasting pair of cases. Almost every comparison in the book lands on this shape.",
+      "instances": [
+        "Nishapur was treated as a warning; Yuan China was treated as a revenue-bearing world whose institutions could be occupied.",
+        "One destroyed the material conditions of subsistence, while the other reorganised the material signs of sovereignty."
+      ]
+    },
+    {
+      "pattern": "Enumerated 'clue inventory' passages in which five or six evidence types or institutional instruments are marched through with ordinal markers, each given one paragraph of identical length and shape.",
+      "instances": [
+        "Cranial trauma is the first item in the archaeologist's inventory. ... Defensive walls are the second. ... Burned houses form a third category. ... Weapon caches make a fourth. ... Demographic gaps are the fifth.",
+        "Tribute lists began with commodities and ended with political submission. ... Royal roads made such demands possible across distance. ... Frontier garrisons gave the road a harder edge. ... Hostage systems turned elite families into guarantees. ... Deportation registers converted conquered populations into categories."
+      ]
+    },
+    {
+      "pattern": "The thesis is restated in fresh vocabulary at the end of nearly every section rather than developed, producing a recap loop: feeling is not the cause, the office is.",
+      "instances": [
+        "Environment supplies conditions; people and their institutions determine how those conditions are distributed and answered.",
+        "Scarcity supplied a field of dispute; the king supplied its authorised violence."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, wide-ranging history whose thesis — that large-scale aggression is produced by offices, records and classification rather than by emotion — is held with unusual consistency from a Neolithic grave to Srebrenica. Its best qualities are real: careful source criticism that names what each kind of evidence can and cannot bear, dense and accurate-feeling concrete detail, and a cool forensic register that never lapses into the usual conversational AI mannerisms. Sentence-level craft is high and the reconstructed openings are often gripping. The weaknesses are structural rather than verbal. Every chapter runs the same machine — dramatised scene, pivot, source analysis, paired comparison, enumerated inventory, antithetical verdict — and the thesis is restated at every seam instead of being pressured, complicated or argued against, which makes the second half feel longer than it is. Slop here is a matter of shape, not diction: symmetrical hedges, matched-clause closers and rhetorical-question hinges recur far past the point of usefulness. With a structural edit that varies the chapter template, cuts the recap sentences, and repairs a few garbled passages, it would be close to publishable."
+}

@@ -1,0 +1,54 @@
+{
+  "scores": { "thesis": 9, "structure": 8, "depth": 8, "reasoning": 9, "clarity": 9, "voice": 8, "engagement": 6, "pacing": 6, "craft": 8, "slopResistance": 6 },
+  "overall": 7.7,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    { "quote": "Tools alter speed, distance, endurance, and organisation. People and institutions select targets.", "judgment": "Crisp statement of the book's governing claim — but it is restated in near-identical form in almost every later chapter." },
+    { "quote": "The question remains open: when the records grow thin, are we seeing less violence, a different violence, or merely weaker preservation?", "judgment": "Genuine methodological candour; the source-critical discipline is the manuscript's strongest asset." },
+    { "quote": "A wall does not announce warfare in its own voice.", "judgment": "Vivid, earned compression of an archaeological argument about inference." },
+    { "quote": "Sugar made exploitation profitable. Law made it inheritable. Ships widened its reach.", "judgment": "Rhythmic and precise; one of the few places where the prose accelerates rather than accumulates." },
+    { "quote": "A date is a boundary, not a motive.", "judgment": "Aphoristic one-line paragraph used as a pivot — effective once, but the device recurs as a tic across chapters." },
+    { "quote": "The crowd had many hands. So did the state.", "judgment": "Stock antithetical closer; the symmetry does more rhetorical work than analytical work." },
+    { "quote": "Production followed policy.", "judgment": "A three-word paragraph standing in for an argument the chapter has already made at length; padding disguised as emphasis." },
+    { "quote": "It restrained one kind of aggression by authorising another.", "judgment": "The book's signature paired antithesis; true, but recycled with minor variation in at least eight chapters." }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The 'X alone does not explain' negation formula, used to set up the institutional thesis in nearly every chapter",
+      "instances": [
+        "Economic pressure alone does not explain the pattern.",
+        "Economic pressure alone cannot account for the different forms of violence."
+      ]
+    },
+    {
+      "pattern": "A technology refrain: tools extend reach but never supply motive, restated almost verbatim chapter after chapter",
+      "instances": [
+        "Technology changes the reach of aggression without supplying its purpose.",
+        "Technology altered each situation without supplying its motives."
+      ]
+    },
+    {
+      "pattern": "One-sentence paragraph used as an aphoristic pivot or section hinge",
+      "instances": [
+        "A date is a boundary, not a motive.",
+        "The wire carried power because named offices stood at its ends."
+      ]
+    },
+    {
+      "pattern": "Paired antitheses and chiastic balancing at paragraph and chapter ends",
+      "instances": [
+        "It restrained one kind of aggression by authorising another.",
+        "Its unity was made by commands, roads, armies, and titles; its everyday life was made by bargains."
+      ]
+    },
+    {
+      "pattern": "Terminal recap paragraph that re-enumerates the chapter's three or four cases before restating the thesis",
+      "instances": [
+        "The Assyrian inscription, the Persian satrapal system, and the Roman provincial record belong to different political worlds.",
+        "A hut tax, a rubber quota, a land grant, and a burned field belong to different colonial histories."
+      ]
+    }
+  ],
+  "summary": "This is a serious, well-informed global history of organised violence with a coherent and consistently applied thesis: aggression is ubiquitous but its scale and direction are made by institutions, records, law, status and offices, while technology extends reach without supplying purpose. The evidential handling is the book's finest quality — it repeatedly distinguishes what a source can bear from what interpreters want it to say, refuses to equate death tolls across incommensurable records, and names its uncertainties (Jebel Sahaba versus Nataruk, the Cahokia palisade, the September Massacres, Wannsee's limits) rather than resolving them for narrative convenience. Sentence-level prose is clean, unhurried and free of the usual lexical tells; the specificity of cases and names is high throughout. The cost is monotony: every chapter runs the same arc — case, source caveat, 'X alone does not explain', paired antithesis, enumerative recap — so the argument accumulates instances rather than developing, and the reader learns the shape of the next paragraph well before chapter 8. Slop here is structural rather than verbal: templated chapter architecture, symmetrical hedges, aphoristic one-line pivots and recycled refrains. Light revision — cutting the repeated technology and economic-pressure formulations, varying paragraph and chapter shapes, and letting a few chapters argue rather than illustrate — would raise it considerably."
+}

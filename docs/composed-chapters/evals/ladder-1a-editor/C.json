@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 7,
+    "slopResistance": 7
+  },
+  "overall": 7.4,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The case demonstrates that the physical blow does not define the social meaning of harm; that meaning is defined by the magistrate who assesses the injury, the statute that sets its price, and the treasury that enforces the penalty.",
+      "judgment": "Strength: the book's controlling claim is stated early, concretely, and in terms that the following fourteen chapters actually honour."
+    },
+    {
+      "quote": "The fracture in the bone records the impact of a stone adze on bone; it does not record the social mobilization that put the adze in the attacker's hand.",
+      "judgment": "Strength: epistemic discipline about what a given class of evidence can and cannot carry, applied consistently and not merely announced."
+    },
+    {
+      "quote": "A rifle also acquired an accounting function. Soldiers were expected to account for cartridges issued to them, and the colonial system turned severed hands into proof that ammunition had been used in killings rather than stolen or wasted.",
+      "judgment": "Strength: the thesis earns its keep — an atrocity usually narrated as sadism is explained as a documentary requirement."
+    },
+    {
+      "quote": "The ledger was the campaign before it began.",
+      "judgment": "Weakness: an aphoristic one-line chapter-segment closer of a kind the book reaches for repeatedly; polished but manufactured."
+    },
+    {
+      "quote": "A crowd can break an armory, but it requires an institution to build a tribunal.",
+      "judgment": "Weakness: paired antithesis as a paragraph-standing pivot; rhetorically neat, analytically it only restates the surrounding pages."
+    },
+    {
+      "quote": "His social status and income derived from an revocable imperial commission.",
+      "judgment": "Weakness: uncorrected grammatical slip; a handful of similar stiffnesses survive into otherwise clean prose."
+    },
+    {
+      "quote": "The evidence before states supports no single measure of human aggressiveness.",
+      "judgment": "Weakness: nearly every chapter ends by refusing a single scale, so the conclusion loses force through repetition rather than gaining it."
+    },
+    {
+      "quote": "What parted Belfast from Oslo was not a differing supply of human kindness. It was the presence or absence of an institutional design that could survive the bad intentions of extremists.",
+      "judgment": "Strength: the closing comparison converts the book's abstraction into a testable structural claim about two documented settlements."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Each chapter is built on a symmetrical two-case comparison, usually one Western and one non-Western, resolved with a sentence declaring the contrast is not about temperament but about institutions. The device is effective once and predictable by chapter five.",
+      "instances": [
+        "The contrast does not divide a violent society from a peaceful one; it reveals two urban traditions whose institutions left distinct physical records.",
+        "The difference between an altar in the Valley of Mexico and a council fire in the northern woodlands was not a measure of innate hostility; it was a division between an imperial apparatus that consumed captives and a confederate kinship system that absorbed them."
+      ]
+    },
+    {
+      "pattern": "The negative-then-positive definition: a claim about what the evidence does NOT show, immediately followed by what it does. It appears many dozens of times and becomes the book's default sentence rhythm rather than a considered move.",
+      "instances": [
+        "A mass burial proves that lethal group violence occurred among Neolithic agriculturalists; it does not prove that warfare existed as an institutionalized enterprise",
+        "These accounts were not expressions of uncontrolled passion; they were official notices addressed to multiple audiences simultaneously."
+      ]
+    },
+    {
+      "pattern": "A mid-chapter taxonomy delivered as an enumerated list of four to six institutional types, each entry a bolded label plus one dense paragraph. Four chapters use the identical device, which flattens argument into catalogue.",
+      "instances": [
+        "1. **Eurasian Steppe raiding confederacies:** Pastoral groups such as the Xiongnu, Huns, and successive Turkic alliances...",
+        "*   **Client kings and native dynasts:** Client rulers like Prasutagus in Britain, Herod in Judea, and the local princes of Cilicia..."
+      ]
+    },
+    {
+      "pattern": "Chapters close on an unanswered rhetorical question that hands the problem back to the reader instead of committing to an answer. Used at least eight times, it reads as a house habit rather than genuine irresolution.",
+      "instances": [
+        "Did the arrival of gunpowder create the early modern state, or did expanding state administrations simply seize upon the new weapons to enlarge their existing capacities?",
+        "What would the history of American warfare look like if every captive were followed back to the council, palace, or lineage that gave his capture meaning?"
+      ]
+    },
+    {
+      "pattern": "The archive-silence coda: a paragraph noting what the source omits — pain, names, private grief — used to close a section. Genuinely illuminating early, but repeated in almost every chapter until it functions as filler.",
+      "instances": [
+        "The palace artist does not record the private lament of a woman pushed onto the road, nor the name of a child walking beside the carts.",
+        "The entries contain no mention of the farmer's anxiety over a dry spring, the resentment of a family parting with its livestock, or the personal motives of the warrior riding to war."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, unusually coherent comparative history organised around one argument it never loses: that aggression is shaped less by temperament than by the offices, ledgers, statutes and supply chains that decide who may be harmed. The specificity is real — timar registers, the Zong insurance action, cartridge accounting in the Congo, the de Chastelain decommissioning protocol — and the epistemic care about what bone, relief, or tax roll can actually prove is a genuine strength rather than a hedge. The cost is monotony of form. Nearly every chapter runs the same circuit: a vivid artifact, a paired East/West comparison, a bulleted taxonomy, an archive-silence coda, an aphoristic pivot, and a closing rhetorical question, so that by the middle chapters the reader can predict the shape of a page before reading it. The thesis is also restated far more often than it is advanced; the argument at chapter fifteen is the argument at chapter one, better illustrated but not deepened, and no scholarly interlocutor is engaged seriously except a brief pass at Pinker. Prose-level slop markers are few — no chatty transitions, no hollow abstraction — but structural slop is present in the templated chapter architecture and the relentless not-X-but-Y cadence. With cuts to the recap sentences, variation in chapter shape, and repair of a handful of grammatical slips, this would be publishable synthesis."
+}

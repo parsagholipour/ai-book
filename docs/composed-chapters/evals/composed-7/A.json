@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.7,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A broken bone that knitted under the skin records pain, care, and survival, but not the quarrel, accident, raid, or punishment that caused it.",
+      "judgment": "Opening establishes the book's evidentiary thesis in a concrete image rather than an abstraction \u2014 strong."
+    },
+    {
+      "quote": "Administration did not create the desire to command. It gave command a longer memory.",
+      "judgment": "The book's central argument compressed into one line; genuinely earned, though the aphoristic two-beat form recurs far too often."
+    },
+    {
+      "quote": "The army's apparent ability to move without stopping came from stopping its individual horses in rotation.",
+      "judgment": "Excellent specificity: a familiar clich\u00e9 about Mongol speed dismantled by a mechanism."
+    },
+    {
+      "quote": "Whereas some doubts have arisen whether children got by any Englishman upon a negro woman should be slave or free... according to the condition of the mother.",
+      "judgment": "Quoting the 1662 statute and then unpacking it clause by clause is the book's best use of a primary source."
+    },
+    {
+      "quote": "A date is a boundary, not a motive.",
+      "judgment": "One of many single-sentence aphoristic paragraphs deployed as rhythm; individually fine, cumulatively a tic."
+    },
+    {
+      "quote": "The crowd had many hands. So did the state.",
+      "judgment": "Paired antithesis used as a chapter-internal closer \u2014 the most conspicuous templated move in the book."
+    },
+    {
+      "quote": "Technology changes the reach of aggression without supplying its purpose.",
+      "judgment": "A true and useful claim, but it is restated in near-identical wording in at least eight chapters, blunting its force."
+    },
+    {
+      "quote": "It shows people acting within settings that differ in law, resources, technology, status, belief, and political choice.",
+      "judgment": "Representative of the recurring six-item abstract enumeration that substitutes for a sharper formulation."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The affirm-then-negate hedge: a claim is asserted, then immediately fenced by what the evidence 'does not' show. Deployed in nearly every paragraph cluster, it becomes a metronome rather than a discrimination.",
+      "instances": [
+        "The wounds show that people were attacked. They do not provide a transcript of the quarrel, name the attackers, or establish whether the victims belonged to one settlement.",
+        "The camera could establish that a person had suffered a visible injury... It could not reconstruct the entire chain from rubber demand to punishment."
+      ]
+    },
+    {
+      "pattern": "The 'X did not cause Y by itself; institutions/political decisions gave it force' formula, used to close arguments about technology, scarcity, and weapons in chapter after chapter.",
+      "instances": [
+        "Economic pressure alone does not explain the pattern... Neither device supplied a motive by itself.",
+        "Scarcity alone does not select a neighbour for deportation or make a city's evacuation compulsory."
+      ]
+    },
+    {
+      "pattern": "A one-sentence aphoristic paragraph inserted as a rhetorical caesura between long analytic blocks \u2014 usually antithetical or epigrammatic.",
+      "instances": [
+        "The skeleton is not a written account.",
+        "The wire carried power because named offices stood at its ends."
+      ]
+    },
+    {
+      "pattern": "Chapter-closing recapitulation that names each case in turn and assigns it a parallel clause, producing a list of near-identical grammatical shapes.",
+      "instances": [
+        "A hut tax, a rubber quota, a land grant, and a burned field belong to different colonial histories.",
+        "An inscription could celebrate the king's enemies as broken. A deportation list could assign them a destination. A road could bring the order, and a governor could bargain over its cost."
+      ]
+    },
+    {
+      "pattern": "The comparison caveat: every cross-cultural pairing is preceded or followed by a warning against collapsing the cases, phrased almost identically each time.",
+      "instances": [
+        "The Narmer Palette cannot be used as a simple mirror of the Stele of the Vultures... A comparison that treats all early kingship as one thing would erase the evidence it claims to connect.",
+        "The Assyrian inscription, the Persian satrapal system, and the Roman provincial record belong to different political worlds. They should not be collapsed into a single imperial model."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined global history of organised violence, held together by a genuine thesis: aggression's scale and direction are produced by records, offices, law, and logistics rather than by temperament, and technology extends reach without supplying purpose. The macro-structure is coherent and chronologically confident, moving from skeletal trauma and burial context through early states, empires, the Atlantic slave system, gunpowder bureaucracies, revolution, colonial extraction, industrial war, genocide, and the postwar order, with the final chapter honestly restating the limits of comparison rather than manufacturing a resolution. Specificity is high throughout \u2014 the Twelve Tables' asses, mansab and jagir, the yam, the Briggs Plan's New Villages, the Wannsee categories \u2014 and sources are handled as artefacts with purposes, which is where the book is most original. Its weaknesses are formal rather than factual: an affirm-then-negate hedge, a 'not by itself' causal formula, an aphoristic one-line paragraph, and a paired-antithesis closer recur so regularly that paragraph shapes become predictable and the reader's attention flattens across fifteen chapters of similar rhythm. Engagement and pacing suffer most; the argument is essentially complete by chapter four and is thereafter re-demonstrated rather than developed. Light revision \u2014 pruning the repeated caveats, varying the paragraph architecture, and letting several cases stand without their methodological escort \u2014 would raise it considerably without touching the research."
+}

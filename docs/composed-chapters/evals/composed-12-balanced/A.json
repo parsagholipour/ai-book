@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 5,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 7.0,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A wound is not self-interpreting. Its meaning depends upon its location, its edges, its depth, and its relation to the rest of the skeleton.",
+      "judgment": "Excellent opening discipline: the book's method \u2014 evidence before inference \u2014 is dramatized rather than announced."
+    },
+    {
+      "quote": "A measure does not merely collect violence. It defines the kind of violence that can be seen.",
+      "judgment": "The strongest single formulation of the book's second thesis; earns its aphoristic compression."
+    },
+    {
+      "quote": "The human impulse to harm requires no single historical origin; the power to make harm collective has a history.",
+      "judgment": "Crisp statement of the central argument, arriving where the evidence has actually earned it."
+    },
+    {
+      "quote": "Abstraction did not replace violence. It made violence administratively portable.",
+      "judgment": "Precise and non-decorative; the Wannsee chapter is where the thesis pays its highest dividend."
+    },
+    {
+      "quote": "The stones identify trajectories and wounds. They do not supply a political map.",
+      "judgment": "Effective isolated beat, but one of many identically shaped two-sentence withholding closers."
+    },
+    {
+      "quote": "Restraint and coercion travelled through the same office.",
+      "judgment": "A genuine insight the first time; by chapter 4 ('Security and extraction travelled along the same route') it reads as a formula being refilled."
+    },
+    {
+      "quote": "The cemetery shows the damage more clearly than it shows the organisation behind it.",
+      "judgment": "The book's signature caveat, restated in near-identical syntax dozens of times; it stops carrying information."
+    },
+    {
+      "quote": "A season can be harsh. A war is made.",
+      "judgment": "Effective rhetorical punctuation, but symptomatic of a habit of ending sections on a short antithetical epigram."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Paired-antithesis closer in which two abstractions are said to share a channel or move together \u2014 the book's default way of ending an analytical passage.",
+      "instances": [
+        "Restraint and coercion travelled through the same office.",
+        "Security and extraction travelled along the same route."
+      ]
+    },
+    {
+      "pattern": "Epistemic-limit formula: 'the source shows A more securely/clearly than B', deployed at least once per case study and often two or three times.",
+      "instances": [
+        "The cemetery shows the damage more clearly than it shows the organisation behind it.",
+        "Violence can be identified more securely than intention."
+      ]
+    },
+    {
+      "pattern": "Negation-then-assertion sentence pair ('It did not X. It Y.') used to pivot from a naive reading to the corrected one.",
+      "instances": [
+        "The tablet did not swing a weapon. It made it possible to know whether a store could feed a work crew",
+        "Abstraction did not replace violence. It made violence administratively portable."
+      ]
+    },
+    {
+      "pattern": "Terminal roll-call of the chapter's (or the book's) artefacts in a single apposed noun list, followed by a denial that they measure one thing.",
+      "instances": [
+        "A healed cranial wound, a mass grave, a ration bowl, a boundary stone, a royal inscription, and a ceremonial palette do not measure one underlying quantity.",
+        "A burial, a palace relief, a ration bowl, a deportation order, a satellite image, and a testimony session do not observe the same thing."
+      ]
+    },
+    {
+      "pattern": "Isolated one-sentence paragraph inserted as a dramatic beat between long analytical blocks, usually aphoristic and symmetrical.",
+      "instances": [
+        "Order had a price.",
+        "Peace becomes durable when people can locate security somewhere other than revenge."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined comparative history arguing that aggression's historical variation lies in organisation, administration and political belonging rather than in a fluctuating human impulse, and that any measure of violence is itself a choice about what can be seen. The argument is held with real consistency across fifteen chapters, and the case material is genuinely specific \u2014 Nataruk's embedded points, Uruk's ration bowls, the yam relay stations, the Wannsee population table, the Sierra Leone hut-tax schedule \u2014 with claims kept scrupulously proportionate to the evidence that survived. Prose is clean, cool and free of the usual conversational AI tells; the voice is coherent and adult throughout. Its weaknesses are pacing and sameness: the epistemic caveat about what a source cannot tell us is restated dozens of times in near-identical syntax, paragraphs run to a uniform length and shape, and sections close again and again on a paired antithesis or a short aphoristic beat, so that chapters accumulate rather than build. Human presence is also thin \u2014 victims are almost always categories, and only Sorghaghtani, Nur al-Din and Karski acquire any interiority \u2014 which leaves the reading experience austere. With aggressive pruning of the repeated hedges and more variation in cadence and closure, this would be close to publishable; as it stands the templating is visible enough to register as medium-grade slop despite the high quality of the thinking."
+}

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 7.0,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The archive is a surviving arrangement of attention, not a census of aggression.",
+      "judgment": "The book's governing idea in one clean, earned sentence \u2014 precise rather than decorative, and it genuinely organizes the fifteen chapters that follow."
+    },
+    {
+      "quote": "Their value begins with that unevenness: the sequence can be followed without turning the crowd into a single body with one mind.",
+      "judgment": "Strong opening move: the Haymarket materials are introduced as flawed evidence rather than as a story, which sets the epistemic contract immediately."
+    },
+    {
+      "quote": "A healed fracture is first a change in tissue: the broken surface has been repaired, and the repair may have left a callus, altered shape, or another sign that the person survived for some time after the injury.",
+      "judgment": "Excellent methodological specificity \u2014 the seven-step chain from bone to inference is real teaching, not gesture."
+    },
+    {
+      "quote": "A channel can conceal coercion more effectively than a monument that displays it.",
+      "judgment": "A genuinely original comparative insight (Dujiangyan against the Stele of the Vultures) that earns its aphoristic form."
+    },
+    {
+      "quote": "The table's neatness makes its violence easier to miss. A country becomes a line; a line becomes a number; a number becomes a population awaiting action.",
+      "judgment": "The strongest rhetorical passage in the book; the escalating clauses do analytic work rather than merely sounding grave."
+    },
+    {
+      "quote": "A powerful official could be useful and vulnerable at the same time.",
+      "judgment": "A recurring tic: an isolated one-sentence paragraph delivering a symmetrical maxim that the surrounding pages had already demonstrated. Padding disguised as emphasis."
+    },
+    {
+      "quote": "The evidence establishes harm more securely than frequency.",
+      "judgment": "True and well-placed here, but this exact epistemic beat \u2014 what the source proves versus what it cannot \u2014 recurs in nearly every section and eventually reads as a formula rather than a judgment."
+    },
+    {
+      "quote": "Coercion opened the way, but accommodation made the result governable; accommodation endured because coercion remained available.",
+      "judgment": "Elegant chiasmus, yet it is the same paired antithesis the book reaches for at almost every imperial case, from Assyria to Lugard's Nigeria."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The 'establishes X but does not establish Y' epistemic disclaimer, deployed after nearly every piece of evidence in all fifteen chapters. It is the book's intellectual virtue and its most exhausting mannerism.",
+      "instances": [
+        "The evidence supports a political order in which some forms of military success could be converted into sacred performance. It leaves the frequency and distribution of those practices uncertain.",
+        "Independent evidence supports the fall of Baghdad, the death of al-Musta\u02bfsim, the end of the Abbasid caliphate there, and severe destruction. It does not provide a precise total for the victims or confirm every literary scene."
+      ]
+    },
+    {
+      "pattern": "Chapter and section closers that gather three or four named artifacts into a serial list, then declare that they must not be flattened into one index. The move is identical from prehistory to the digital present.",
+      "instances": [
+        "A wall at Cahokia, a painted captive at Bonampak, a Wari stronghold, a Moche vessel, the death of Moquihuix, and a deposit beneath the Templo Mayor belong to different evidentiary worlds.",
+        "The archaeological projectile point, the royal inscription, the ration tablet, the detention photograph, the satellite image, and the victim's testimony answer different questions because they were produced for different purposes."
+      ]
+    },
+    {
+      "pattern": "The 'technology extends reach but supplies no motive' argument, restated with a new object roughly once per chapter rather than developed.",
+      "instances": [
+        "Technology alters reach without supplying motive. A rifle, a horse, a fortified wall, a telegraph, an aircraft, or a bureaucratic file can change how quickly force travels",
+        "A railway timetable could move a division; it could not decide that Leuven should be punished. A factory could produce shells in quantities that earlier arsenals could not match; it could not define a civilian as an enemy."
+      ]
+    },
+    {
+      "pattern": "Isolated one-sentence paragraphs used as rhetorical drum-beats. They interrupt otherwise dense analytical prose to deliver a symmetry the reader has already been given.",
+      "instances": [
+        "Prediction could be another form of pressure.",
+        "The line could be crossed, but not always without cost."
+      ]
+    },
+    {
+      "pattern": "The 'conquest becomes administration' arc, structurally identical across Qin Shu, Rome, the Mughal Deccan, the Yuan, the Ilkhanate, and colonial Nigeria: army takes territory, officials make demands routine, violence recedes behind paperwork.",
+      "instances": [
+        "The Qin conquest ended as a campaign only when its demands had acquired the appearance of administration.",
+        "conquest became durable when demands passed through local structures and acquired the appearance of ordinary administration."
+      ]
+    }
+  ],
+  "summary": "This is a serious, well-researched global history of organized aggression, held together by a genuine and consistently applied thesis: aggression is not a measurable constant of human nature, and the surviving record registers visibility rather than prevalence. Its greatest strengths are evidentiary specificity \u2014 Jebel Sahaba's embedded points, Uruk ration tablets, Domesday 'waste' entries, the Wannsee population table, the Caesar photographs \u2014 and an unusually disciplined method that keeps showing the reader the route from mark to meaning. The writing is clear, technically accurate in register, and free of the obvious markers of machine prose: no hype, no listicles, no false intimacy. Its weaknesses are structural rather than sentence-level. The epistemic disclaimer that gives the book its integrity becomes a template applied to nearly every source, the paragraphs settle into one uniform shape, and each chapter ends by serially naming its artifacts and warning against flattening them. Voice is consistent but nearly featureless, and the relentless qualification drains momentum from what are often vividly opened scenes. A firm editorial pass cutting perhaps fifteen percent of the recapitulation and varying the closing moves would raise this from an admirable manuscript to a compelling one."
+}

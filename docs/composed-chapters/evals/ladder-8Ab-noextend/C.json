@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.9,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Aggression must be separated from anger, and both from the organised forms that governments could count, authorise, and repeat.",
+      "judgment": "The book's controlling distinction, stated early and genuinely honoured for fifteen chapters — an unusually disciplined thesis."
+    },
+    {
+      "quote": "The body records violence more readily than intention.",
+      "judgment": "Compressed, exact, and doing real epistemological work rather than decorating the paragraph."
+    },
+    {
+      "quote": "A divine net and a military line could represent victory; only administration could collect it.",
+      "judgment": "Best kind of sentence here: the argument advanced through the object rather than asserted alongside it."
+    },
+    {
+      "quote": "The often-cited figure of 144,000 gur has prompted calculations that cannot be treated as exact modern tonnage.",
+      "judgment": "Representative of consistently scrupulous handling of numbers — Assyrian deportation totals, Baghdad's dead, Cambodia, Rwanda are all bounded the same way."
+    },
+    {
+      "quote": "Those statements are enough to reconstruct the monument's political work, but not to populate the battlefield with invented voices.",
+      "judgment": "An explicit methodological pledge that Chapters 9 and 12 then break with invented Naseby and Somme scenes; a real internal inconsistency, not a stylistic quibble."
+    },
+    {
+      "quote": "Charles moved towards the standard, but Lord Carnarvon seized his bridle.",
+      "judgment": "Novelistic reconstruction with unsupportable specifics, sitting oddly inside a book whose whole method is refusing exactly this."
+    },
+    {
+      "quote": "Then the killing began.",
+      "judgment": "Effective once; but the one-sentence dramatic pivot paragraph is deployed in nearly every chapter and becomes a visible device."
+    },
+    {
+      "quote": "Force became government when it could be repeated according to a record.",
+      "judgment": "True and well-earned in Chapter 3 — and then restated in some form perhaps forty times, which is the book's main pacing failure."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter is built as a two-case comparison resolved by 'both did X, but their institutions differed' — the shape becomes predictable well before the halfway point.",
+      "instances": [
+        "Assyria altered the social map by displacement. Persia arranged obligations around the map it found.",
+        "Ottoman artillery belonged to a state obliged to project force outward and bargain with provincial intermediaries. Tokugawa firearms belonged to domains subordinated within an order designed to prevent them from combining their resources against one another."
+      ]
+    },
+    {
+      "pattern": "The chapter-closing aphorism that restates the institutional thesis in a slightly reworded key, one per chapter and often several per section.",
+      "instances": [
+        "The army created the opening; offices filled it.",
+        "Aggression became administrative when the state could repeat such demands and punish refusal through offices that appeared separate from conquest."
+      ]
+    },
+    {
+      "pattern": "Symmetrical negative hedging — 'neither A nor B', 'not X, but also not simply Y' — used so often that the reader learns to anticipate the concession before it arrives.",
+      "instances": [
+        "None of this proves a culture of violence, and the absence of fortifications proves no culture of peace.",
+        "The comparison is not between a violent Europe and a peaceful Africa."
+      ]
+    },
+    {
+      "pattern": "Isolated one-line paragraphs used as scene pivots between a narrative set-piece and the analytic section that follows.",
+      "instances": [
+        "A different record begins with a name.",
+        "Capture did not begin with a ship."
+      ]
+    },
+    {
+      "pattern": "The paratactic list of offices — clerk, scribe, collector, magistrate, guard — deployed as the proof move in almost every chapter, so that the same rhetorical cadence carries the argument in Sumer, Nineveh, Liverpool, Berlin and Kigali.",
+      "instances": [
+        "Clerks register people, police gather them, soldiers guard them, and officials distribute orders.",
+        "A census clerk counted households in a French canton. A company agent weighed rubber in a Congolese station. A magistrate in Johannesburg examined a pass."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually well-disciplined work of comparative history with a genuine thesis: that anger, aggression, warfare and atrocity are distinct things, and that what makes harm historically consequential is the administrative apparatus — records, categories, rations, registers, courts — that lets a decision travel and repeat. The thesis is defined precisely in Chapter 1 and honoured across fifteen chapters and four continents, with strong evidentiary hygiene: contested totals are flagged, sources are situated in their political conditions, and the limits of bone, archive and dataset are argued rather than waved at. Sentence-level craft is high and the diction is remarkably free of the usual generative tells — no stock transitions, no inflated abstractions, no listicle rhythm. The costs are pacing and templating. The same conclusion is restated dozens of times in slightly varied phrasing, every chapter runs the same two-case comparative machine, and the pivot beats and closing aphorisms are visibly formulaic; by the later chapters the reader can predict the shape of a section from its first paragraph. Two set-pieces (Naseby, the Somme) also violate the book's own stated refusal to invent battlefield detail, and one contains historically unsupportable specifics. With compression of roughly a fifth, variation in chapter architecture, and either removal or reframing of the fictionalised scenes, this would be publishable narrative history."
+}

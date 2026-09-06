@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 6,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 6,
+    "engagement": 5,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 5
+  },
+  "overall": 6.5,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A broken skull can establish that force was used. It cannot, by itself, establish that a war took place.",
+      "judgment": "Excellent early statement of the book's controlling epistemic thesis \u2014 concrete, disciplined, and it earns the abstraction that follows."
+    },
+    {
+      "quote": "Status enters before intention does.",
+      "judgment": "A genuinely sharp analytic sentence: short, load-bearing, and doing real work on the Twelve Tables material."
+    },
+    {
+      "quote": "The city did not invent the wish to harm. It invented more durable ways to decide whose labour would be taken, whose boundary would be defended, and whose defeat could be named as justice.",
+      "judgment": "Strong chapter close, but it is the book's signature move \u2014 negation plus tricolon \u2014 and by Chapter 7 the move is fully predictable."
+    },
+    {
+      "quote": "Haiti's independence did not close that question. It made it impossible to avoid.",
+      "judgment": "Aphoristic two-beat closer of exactly the kind the rubric penalises; rhetorically satisfying once, formulaic as a habit."
+    },
+    {
+      "quote": "It turns murder into an item of administration.",
+      "judgment": "The Wannsee analysis is the book at its best: the reading of grammar, euphemism and 'germ cell' is specific and genuinely illuminating."
+    },
+    {
+      "quote": "The absence of industrial machinery did not prevent a vast death toll. Political organization made ordinary tools lethal at extraordinary scale.",
+      "judgment": "Sound argument, but it restates a claim already made about Babi Yar, Anatolia and the Congo ordinance \u2014 the technology/policy distinction is asserted perhaps twenty times across the book."
+    },
+    {
+      "quote": "A weapon in a grave may mark rank or ritual rather than recent fighting.",
+      "judgment": "Representative of the methodological chapters' strength: the taxonomy of evidence types in Chapter 1 is careful and unusually well-executed."
+    },
+    {
+      "quote": "History does not reveal an automatic slope from separation to sympathy. It reveals thresholds that can be crossed in more than one direction.",
+      "judgment": "Symmetrical hedge as conclusion \u2014 the book's caution has become a rhetorical shape rather than a finding, and the final chapter leans on it repeatedly."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The negation-then-correction couplet ('X does not show A; it shows B'), used as the default sentence engine and as almost every paragraph and chapter cadence.",
+      "instances": [
+        "Harappa's gates and raised areas do not prove a peaceful society.",
+        "The contrast does not show that nuclear weapons created peace. It shows that they altered the scale at which political leaders judged aggression."
+      ]
+    },
+    {
+      "pattern": "Identical chapter architecture: open on a named artifact/site in scene, extract what it can and cannot prove, introduce a contrasting second case, refuse a stated dichotomy, close with a generalising paragraph.",
+      "instances": [
+        "At Nataruk, near the western shore of Lake Turkana, the ground held people in positions that had not been chosen for burial.",
+        "The Ottoman Tophane arsenal stood on the European shore of Istanbul, near the water and within reach of the imperial city's roads, docks, and governing offices."
+      ]
+    },
+    {
+      "pattern": "The staged 'two sweeping explanations, both partly right' set-piece, deployed once per chapter as the argumentative climax, always resolved to the same middle position.",
+      "instances": [
+        "Some readers have resolved these histories by choosing one of two sweeping explanations.",
+        "Elite manipulation offers a different account."
+      ]
+    },
+    {
+      "pattern": "The capacity/policy distinction restated as if new in each chapter, with the same grammatical shape (tool-list, then 'but it did not decide').",
+      "instances": [
+        "Technology widened the field of action; political identity selected the victims.",
+        "A cannon increased what a government could attempt. The government still chose the attempt."
+      ]
+    },
+    {
+      "pattern": "The archival-silence paragraph \u2014 a list of what the record preserves, then a parallel list of what it omits \u2014 appearing in nearly every chapter with near-identical construction.",
+      "instances": [
+        "The legal record preserved the parties' arguments more securely than it preserved the voices of the dead.",
+        "Orders, timetables, production totals, and public statements survive more readily than fear, hunger, hesitation, or the private calculation of a household deciding whether to flee."
+      ]
+    }
+  ],
+  "summary": "This is a methodologically serious global history of organised violence, built around a genuinely coherent thesis: aggression is a capacity, while organised violence is administrative work, and the evidence for it is shaped by the institutions that produced the record. The case selection is wide and mostly well-chosen (Nataruk, the Twelve Tables, Lagash, Bit-Zatti, Bonampak, Merv, the Zong, Chittor, Wannsee, Babi Yar, Dien Bien Phu, the TRC), and the Wannsee and Chapter 1 evidence-taxonomy sections are excellent. The prose is clean, precise and free of the crudest AI tells \u2014 no listicles, no 'in today's world', very few stock transitions \u2014 but it is relentlessly uniform in shape. Nearly every paragraph runs on the same negation-then-correction couplet, every chapter follows the same open-with-an-artifact / contrast / refuse-the-dichotomy / aphoristic-close template, and the central capacity-versus-policy claim is restated a dozen times in identical grammar, producing real redundancy and low engagement across 15 chapters. There is also no discernible authorial personality and almost nothing a reader could disagree with: the caution that is the book's intellectual virtue has hardened into a rhetorical formula. A revision that varied paragraph architecture, cut the repeated methodological restatements, and let the argument take a few contestable positions would lift this considerably."
+}

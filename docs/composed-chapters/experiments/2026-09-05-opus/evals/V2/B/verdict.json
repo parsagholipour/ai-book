@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 7,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.8,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The bone does not contain the direction of intention. It contains the direction of force.",
+      "judgment": "Compressed, precise statement of the book's epistemological discipline about material evidence."
+    },
+    {
+      "quote": "No marching army is required for coercion to begin. The ration list already distinguishes those who issue from those who receive.",
+      "judgment": "The central thesis landed on a concrete artifact rather than asserted abstractly — the book at its best."
+    },
+    {
+      "quote": "The fort called him a sale, the ship a freight, the plantation a hand, and the court a piece of property. The violence remained continuous as the vocabulary changed.",
+      "judgment": "Excellent chain-of-translation argument; specific institutions carry the moral weight instead of adjectives."
+    },
+    {
+      "quote": "Ten deaths in a community of one hundred may transform daily life more severely than ten thousand deaths in a kingdom of several million, while the larger figure may represent a far greater administrative reach.",
+      "judgment": "Methodologically careful handling of quantification, and it governs the argument for the rest of the book."
+    },
+    {
+      "quote": "In 1789, John James Audubon painted the famous image often called *The Zong Massacre*, though the best-known visual representation of the event came later through abolitionist discussion rather than through a surviving eyewitness scene.",
+      "judgment": "A serious factual and internal incoherence — the attribution is impossible and the clause after it contradicts the claim it just made."
+    },
+    {
+      "quote": "Prison authorities communicated with municipal officials, and some did.",
+      "judgment": "Broken sentence with a dangling predicate; a rare but conspicuous copy failure in an otherwise polished text."
+    },
+    {
+      "quote": "The Germans knew only that the rising had spread faster than their patrols, without knowing how many people followed him.",
+      "judgment": "Dangling referent (\"him\" has no antecedent in the sentence) and a strained knew-only/without-knowing construction."
+    },
+    {
+      "quote": "So lofty is it, that if the day it not very clear, the peak cannot be seen, because the upper",
+      "judgment": "Chapter epigraph is a corrupted, mid-sentence fragment that contributes nothing to the chapter it heads."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "A comparison is closed with a negating \"Neither case fits...\" pivot that rejects a strawman contrast before restating the thesis.",
+      "instances": [
+        "Neither case fits a simple contrast between barbarian raiders and settled states.",
+        "Neither case fits the picture of nomads who only raided and moved on."
+      ]
+    },
+    {
+      "pattern": "A single-sentence paragraph is dropped between sections as an aphoristic beat, always summarising rather than advancing.",
+      "instances": [
+        "The promise did not last beyond the counting of the people.",
+        "The religious reputation had to survive contact with administration."
+      ]
+    },
+    {
+      "pattern": "Every chapter opens with a novelistic, sensory-prop scene in past tense that is then handed off to expository analysis at a visible seam.",
+      "instances": [
+        "The four men stood beneath the painted beams of the chapter house at Canterbury on 30 December 1170, while rain came off the close and struck the leaded windows in a thin, hard rattle.",
+        "The stone was wet when Narmer’s men carried it into the open court at Nekhen."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis of two cases in matched clause shapes (\"X was ruled through A; Y through B\"), used as the standard comparative closer.",
+      "instances": [
+        "Rus' was ruled through a hierarchy of submission; Iran was ruled through a more intensive reconstruction of the state.",
+        "Kenya’s hut tax pushed households toward wages through a monetised obligation attached to residence. Madagascar’s prestations seized labour more directly through requisitions attached to villages and districts."
+      ]
+    },
+    {
+      "pattern": "The thesis is re-stated in near-identical office/document vocabulary at the end of nearly every chapter, producing a recap loop across fifteen chapters.",
+      "instances": [
+        "The violence followed the route of the document.",
+        "Machinery enlarged the hand, but political authority chose where it would close."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely coherent work of comparative history: a single argument — that aggression becomes historically consequential only when an office, a record, and a chain of authorised hands convert impulse into a target — is pursued from a healed Neolithic skull to Colombia in 2016 without slackening. The evidential handling is unusually disciplined for a survey, repeatedly separating what a trace preserves from what interpretation adds, and the prose is clean, unhedged, and often striking at the sentence level. The cost is architectural monotony: nearly every chapter runs the same circuit of dramatised vignette, two-case comparison, \"neither case fits\" corrective, and a closing restatement of the office thesis, so that by the tenth chapter the reader can predict the shape of the next paragraph if not its content. The single-sentence aphoristic beat and the matched-clause antithesis are used often enough to read as tics rather than choices. There are also a few hard errors that a light pass would catch — the impossible Audubon attribution, a broken sentence in the September Massacres section, a dangling pronoun in Chapter 11, and at least one truncated epigraph. Trimming the recap loops, varying the chapter architecture in three or four places, and fixing the factual and copy defects would move this to publishable."
+}

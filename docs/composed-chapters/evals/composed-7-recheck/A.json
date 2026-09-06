@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.1,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A broken bone that knitted under the skin records pain, care, and survival, but not the quarrel, accident, raid, or punishment that caused it.",
+      "judgment": "Excellent opening move: states the book's evidentiary problem through a concrete object rather than an abstraction."
+    },
+    {
+      "quote": "Administration did not create the desire to command. It gave command a longer memory.",
+      "judgment": "The book's best single formulation, earned by the preceding pages on ration tablets; also the template for dozens of weaker imitations."
+    },
+    {
+      "quote": "Whereas some doubts have arisen whether children got by any Englishman upon a negro woman should be slave or free…",
+      "judgment": "The Virginia 1662 statute is quoted and then unpacked clause by clause — the most rigorous close reading in the book."
+    },
+    {
+      "quote": "A date is a boundary, not a motive.",
+      "judgment": "One of many one-line aphoristic paragraphs dropped between long blocks; individually sharp, cumulatively a tic."
+    },
+    {
+      "quote": "Technology changes the reach of aggression without supplying its purpose.",
+      "judgment": "True, and restated in nearly identical form in at least eight chapters; the argument stops advancing after chapter 3."
+    },
+    {
+      "quote": "The mark is physical. Its meaning has to be recovered from history.",
+      "judgment": "Paired antithesis in short-sentence pairs — the book's default cadence for closing a paragraph."
+    },
+    {
+      "quote": "They should not be collapsed into a single imperial model.",
+      "judgment": "The comparison-with-caveat move appears in every comparative chapter and functions as a substitute for a comparative conclusion."
+    },
+    {
+      "quote": "The crowd had many hands. So did the state.",
+      "judgment": "A stock rhetorical closer: symmetrical, quotable, and less precise than the twelve pages of analysis it is meant to crown."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The 'X did not invent/create aggression; it changed its reach' formula, used as the thesis restatement in almost every chapter.",
+      "instances": [
+        "The first cities did not invent aggression. They changed its reach.",
+        "Industrial technology made mass violence easier to coordinate, sustain, and extend into civilian life. … It did not make total war unavoidable."
+      ]
+    },
+    {
+      "pattern": "A fixed three-part rider — economic pressure alone / technology alone / ideas about belonging — appended near each chapter's end, in the same order and almost the same words.",
+      "instances": [
+        "Economic pressure alone does not explain the pattern. Scarcity could make animals, land, or trade more valuable … Technology widened reach: the longship moved quickly along coasts and rivers, while the camel made desert traffic possible.",
+        "Economic pressure alone cannot account for the different forms of violence. … Revenue required a political decision about who could command, who must obey, and whose injury counted as an acceptable cost."
+      ]
+    },
+    {
+      "pattern": "Uniform chapter architecture: vivid single artefact or scene, a second case, a 'repertoire' list, a paired comparison, then a synthesis paragraph reprising the thesis.",
+      "instances": [
+        "Imperial rule drew on a repertoire: tribute in silver, livestock, grain, timber, textiles, or military assistance; deportation …",
+        "The catalogue begins with shores, roads, walls, and harbours."
+      ]
+    },
+    {
+      "pattern": "Source-caution boilerplate: nearly every case is followed by a paragraph explaining what the evidence cannot show, phrased as 'it does not tell us / it cannot establish'.",
+      "instances": [
+        "The wounds show that people were attacked. They do not provide a transcript of the quarrel, name the attackers, or establish whether the victims belonged to one settlement.",
+        "A carved date can make a king's action precise. It cannot make his intention transparent."
+      ]
+    },
+    {
+      "pattern": "Isolated one-sentence paragraphs used as aphoristic beats or rhetorical questions between dense blocks.",
+      "instances": [
+        "What did a soldier see?",
+        "Production followed policy."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely accomplished work of historical synthesis: fifteen chapters that move from prehistoric trauma assemblages to Rwanda and the First Congo War, anchored throughout in named sites, documents and objects rather than generalities. Its methodological thesis — that aggression's scale and direction are produced by records, offices, revenue and categories of belonging rather than by temperament or technology — is stated early and honoured consistently, and the source criticism is unusually disciplined for a survey of this range. The prose is clear, well-cadenced and free of the more obvious AI vocabulary; individual passages, especially the Chicago Commission opening, the Uruk ration tablets and the 1662 Virginia statute, are genuinely fine. The costs are repetition and shape. The thesis is not developed after the third chapter, only re-instantiated, and each chapter performs the same sequence — vivid case, second case, repertoire list, paired comparison, synthesis — closing with the same trio of caveats about economics, technology and belonging. Short aphoristic paragraphs and paired antitheses are deployed on a schedule rather than where the argument earns them, and the source-caution paragraphs become a reflex. Trimming perhaps a fifth of the text and varying the chapter architecture would leave a strong book; the raw material is already there."
+}

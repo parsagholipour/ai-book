@@ -71,7 +71,7 @@ describe("mobile page rewrite retries", () => {
       headers: bearer("token-a"),
       payload: {
         requestId: "retry-page-rewrite-0001",
-        retryToken: generationRecoveryQuote(failed.generationAttempts[0]).retryToken
+        retryToken: generationRecoveryQuote(failed.generationAttempts[0]!).retryToken
       }
     });
 

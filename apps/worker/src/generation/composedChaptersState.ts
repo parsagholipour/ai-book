@@ -139,6 +139,12 @@ export type ComposedPageRow = DescribedPage & { markdown: string };
  * the brief like it.
  */
 export type ComposedChapterReport = {
+  developmentalEdit?: {
+    appliedGroups: string[];
+    rejectedGroups: Array<{ id: string; reason: string }>;
+    beforeWords: number;
+    afterWords: number;
+  } | undefined;
   /** The seams call replaced this chapter's opening and/or closing. */
   seamsApplied?: boolean | undefined;
   /** Where the book's arc came from: stored on the plan, or planned by this run. */
@@ -171,16 +177,25 @@ export type ComposedChapterReport = {
   couplets?: { found: number; rewritten: number } | undefined;
   /** Whether an epigraph from the dossier was set at the chapter's head. */
   epigraph?: boolean | undefined;
+  /** The prose-evidence review: findings on the composed chapter, targeted repairs spent, what still stands, and findings dropped as unlocatable. */
+  evidence?: { findings: number; repairs: number; unresolved: Array<{ quote: string; reason: string }>; dropped: number } | undefined;
 };
 
-/**
- * The read's per-chapter second edits are off: the run that carried them
- * (composed-5) scored inside the noise of the run that did not, and their
- * cost pays for the second draft the judge chooses between. The read still
- * runs; its notes are kept on the chapter report for the console.
- */
-/** The read-driven deletion-only cut ran on composed-8/9 (6.73 on composed-7's plan); off until it is tested on its own. */
-export const READ_SECOND_EDITS = false;
+/** A finalize-time repair can leave a claim the compose-time review never saw; it joins the chapter's residuals so the compile flags it. */
+export async function recordChapterEvidenceResiduals(projectId: string, chapterIndex: number, unresolved: Array<{ quote: string; reason: string }>): Promise<void> {
+  if (!unresolved.length) return;
+  const chapter = await prisma.chapter.findFirst({ where: { projectId, index: chapterIndex }, select: { id: true, productionBrief: true } });
+  if (!chapter || !isRecord(chapter.productionBrief)) return;
+  const brief = chapter.productionBrief;
+  const report = isRecord(brief.report) ? brief.report : {};
+  const evidence = isRecord(report.evidence) ? report.evidence : { findings: 0, repairs: 0, dropped: 0 };
+  const existing = Array.isArray(evidence.unresolved) ? evidence.unresolved : [];
+  await prisma.chapter.update({
+    where: { id: chapter.id },
+    data: { productionBrief: { ...brief, report: { ...report, evidence: { ...evidence, unresolved: [...existing, ...unresolved] } } } as unknown as Prisma.InputJsonValue }
+  });
+}
+
 /**
  * The book arc (core `bookArc.ts`): planned once per book, the pages re-cut
  * by kind, the thesis withheld from the middle chapters. Arm 1 of the

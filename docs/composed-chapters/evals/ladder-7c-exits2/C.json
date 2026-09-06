@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.1,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Bone records force more readily than purpose. It can show that a person suffered several blows, but not whether the assailant sought revenge, food, territory, or obedience.",
+      "judgment": "The book's evidentiary discipline in one line; this restraint about what a source can bear is the manuscript's genuine intellectual signature."
+    },
+    {
+      "quote": "The chain does not remove human aggression; it gives aggression a route, a vocabulary, and a repeatable reach.",
+      "judgment": "The controlling thesis stated early and honoured for fifteen chapters; strong, though the aphoristic cadence recurs so often it becomes a tic."
+    },
+    {
+      "quote": "A wall is a fact; the fear that prompted it is an inference.",
+      "judgment": "Sharp and useful, but it is one instance of a formula (assertion; counter-assertion) the book deploys hundreds of times."
+    },
+    {
+      "quote": "The angry master was real. He was also replaceable.",
+      "judgment": "Effective chapter-scale landing, and simultaneously the clearest specimen of the paired-antithesis closer that ends nearly every section."
+    },
+    {
+      "quote": "At Nataruk, west of Lake Turkana, eleven skeletons were found... Nataruk preserves twelve skeletons and scattered human remains",
+      "judgment": "Chapter 1 and Chapter 2 describe the same site with different counts and overlapping prose — an internal inconsistency plus redundancy."
+    },
+    {
+      "quote": "Fred Wendorf's *The Prehistory of Nubia*, an excavation report, records the Jebel Sahaba cemetery in the Nile Valley, dated to c. 13,400–18,600 years ago...",
+      "judgment": "Several chapters end on a bolted-on source-summary paragraph that reads as apparatus escaped into the prose and deflates the chapter's real ending."
+    },
+    {
+      "quote": "He wore the plain cloak in which his acquaintances usually saw him and stood barefoot on the packed earth before the jurors.",
+      "judgment": "The narrative openings are genuinely well made — concrete, unhurried, free of period-drama flourish — and they carry most of the book's engagement."
+    },
+    {
+      "quote": "On 11 January 1994, General Roméo Dallaire reported militia preparations and requested authority to raid weapons caches.",
+      "judgment": "The Dallaire cable, Srebrenica, and the Rwandan roadblocks are each narrated two or three times across chapters 13–15 with little new added."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Paired antithesis as the default closing move for paragraphs, sections and chapters — a short declarative followed by its inversion.",
+      "instances": [
+        "The battle ended in the field; the political violence continued wherever the monument defined Lagash's rights.",
+        "A dead merchant yielded one cargo; a protected route yielded duties year after year."
+      ]
+    },
+    {
+      "pattern": "Identical chapter architecture: a rendered scene, then a source-criticism gloss on that scene, then an institutional anatomy, then a moral about offices rather than emotions.",
+      "instances": [
+        "The exchange was written down by Plato years later, and its sharpness belongs to Plato's account.",
+        "Sahagún's work was made under colonial conditions, but Book 12 does not simply repeat Cortés."
+      ]
+    },
+    {
+      "pattern": "The 'chain / sequence' listing device — a run of short clauses naming each office a demand passes through — reused in nearly every chapter as the analytical climax.",
+      "instances": [
+        "A district officer assessed a labor requirement. A local headman received the order. A recruiter or policeman selected workers.",
+        "A ministry estimated a need, a railway moved material, a factory produced it, a telegraph adjusted the schedule, a conscription office removed labour."
+      ]
+    },
+    {
+      "pattern": "Ritual hedging about what the evidence cannot establish, repeated so often that it becomes a formal gesture rather than an argument.",
+      "instances": [
+        "The word massacre describes the pattern of deaths; it does not supply the motive.",
+        "Nataruk records collective lethal violence with unusual force. It does not identify the attackers' political organisation."
+      ]
+    },
+    {
+      "pattern": "Late-book recycling: the same three or four case studies (Rwanda 1994, Srebrenica 1995, Wannsee, Auschwitz) re-narrated across chapters 13 and 15 with overlapping detail.",
+      "instances": [
+        "Bosnian Serb forces under Ratko Mladić seized the UN-declared safe area, separated Bosniak men and boys...",
+        "In July 1995, Bosnian Serb forces under General Ratko Mladić seized the United Nations-declared safe area."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined work of comparative history with a real thesis — that aggression becomes large-scale violence only when offices, records and classifications give it route and repetition — and it holds that thesis across fifteen chapters and four continents without letting it collapse into a slogan. Its best qualities are evidentiary: it repeatedly names what a grave, a relief, a ledger or a memoir can and cannot establish, and it refuses easy causal nouns in favour of named offices. The prose is clean, concrete and consistently grave, and the chapter-opening scenes (Socrates, the causeway at Tenochtitlan, the Zong, the Erzurum column) are genuinely well made. Against that stand two structural liabilities: an almost invariant chapter template, and a sentence habit of paired antithesis and aphoristic closure that appears hundreds of times and flattens the voice into monotone. Redundancy grows severe in the last three chapters, where Rwanda, Srebrenica and the Wannsee material are re-narrated with little addition, and Nataruk is described twice in the opening chapters with inconsistent figures. Several chapters also end on a bolted-on source-summary paragraph that reads as apparatus rather than prose. With trimming of the repeated case studies, removal of the terminal citation paragraphs, and a pass to break up the antithesis habit, this would be close to publishable."
+}

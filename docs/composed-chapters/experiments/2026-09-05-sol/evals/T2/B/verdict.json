@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 7,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 5
+  },
+  "overall": 7.2,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The wound begins the inquiry; it does not settle the institution behind it.",
+      "judgment": "A crisp early formulation of the book's governing distinction between an act and the structure that gives it reach and meaning."
+    },
+    {
+      "quote": "Comparison begins by keeping those forms of evidence unequal.",
+      "judgment": "This is an excellent methodological principle, and the manuscript usually honors it across archaeology, narrative, law, and administrative records."
+    },
+    {
+      "quote": "A city can concentrate labour without carving a victory.",
+      "judgment": "The Mohenjo-daro comparison produces a precise and memorable inference from archival silence without overclaiming peacefulness."
+    },
+    {
+      "quote": "The same person could be described as a defeated enemy in a royal inscription and as a cultivator, artisan, or dependent in a resettlement account.",
+      "judgment": "This sentence exemplifies the manuscript's depth: it shows how institutions recategorize people as coercion moves from conquest into administration."
+    },
+    {
+      "quote": "A man named Muhammad, a clerk from the quarter near the Friday mosque, would have seen the heaps form beside the irrigation channels and the corpses carried away from the road so that the living could pass.",
+      "judgment": "The invented-seeming named witness is presented with documentary texture but without an explicit evidentiary basis, weakening trust in the otherwise careful handling of sources."
+    },
+    {
+      "quote": "The object supplied movement. An office supplied direction.",
+      "judgment": "The compact antithesis clarifies the technology argument, but it also typifies a highly repeated rhetorical template that becomes predictable."
+    },
+    {
+      "quote": "The question remains open because the same tribunal could regularise killing, the same decree could free and conscript, and the same crowd that spared one prisoner could kill another before the authorities arrived.",
+      "judgment": "The qualifying conclusion is intellectually responsible, though many chapters end with a similar open-question cadence and thereby repeat rather than advance the argument."
+    },
+    {
+      "quote": "The past leaves constraints; people still decide what those constraints will permit.",
+      "judgment": "The final sentence cleanly resolves the central tension between institutional constraint and individual choice."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Compact object-versus-institution antitheses repeatedly compress the thesis into a two-beat formula.",
+      "instances": [
+        "The object supplied movement. An office supplied direction.",
+        "The weapon supplied force; an office selected its target."
+      ]
+    },
+    {
+      "pattern": "Chapters repeatedly caution that material evidence establishes violent action more securely than motive or command.",
+      "instances": [
+        "The bones establish a violent meeting; they do not identify its command.",
+        "The fire records an assault more firmly than it records its cause."
+      ]
+    },
+    {
+      "pattern": "Administrative chains are rendered as sequences in which ordinary offices convert classifications into coercive outcomes.",
+      "instances": [
+        "Defeat made removal permissible; officials selected people; guards assembled them; roads and supplies carried them; provincial offices assigned their labour; new settlements weakened old political ties.",
+        "The guillotine in the Place de la Révolution was not simply a weapon; it was the endpoint of a chain beginning with arrest, classification, transfer, indictment, and judgement."
+      ]
+    },
+    {
+      "pattern": "Cross-case conclusions reject technological or environmental determinism by returning agency to institutions and decisions.",
+      "instances": [
+        "Climate does not pull a trigger.",
+        "Grain in a granary does not march."
+      ]
+    },
+    {
+      "pattern": "The prose frequently closes sections by converting a concrete item into a polished aphoristic summary.",
+      "instances": [
+        "The iron did not organise itself.",
+        "In the Atlantic world, the ledger was never alone."
+      ]
+    }
+  ],
+  "summary": "The manuscript advances a coherent and persuasive thesis: aggression becomes historically consequential through institutions that classify people, mobilize resources, authorize force, and preserve its meanings. Its extraordinary geographic and chronological range is usually disciplined by careful distinctions among kinds of evidence, and its best comparisons generate specific insight rather than flattening cases into a universal story. The principal weakness is accumulation: many chapters repeat the same movement from vivid scene to administrative mechanism to anti-determinist aphorism, producing substantial redundancy and an increasingly templated cadence. Several cinematic reconstructions also supply precise gestures, speech, or named figures without making their evidentiary status clear, which conflicts with the manuscript's own methodological caution. A moderate revision should cut repeated restatements, vary chapter architecture, and clearly mark or remove unsupported reconstructed detail while preserving the strong conceptual spine."
+}

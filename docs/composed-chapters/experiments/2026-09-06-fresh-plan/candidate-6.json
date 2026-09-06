@@ -1,0 +1,129 @@
+{
+  "candidate": 6,
+  "label": "plan-contract-6",
+  "status": "assessed-below-target",
+  "writer": {
+    "model": "gpt-5.6-luna",
+    "tier": "balanced",
+    "thinkingEffort": "low"
+  },
+  "assessors": "three fresh Opus readers (Agent tool, model=opus); same-sitting controls J2=ladder-5a-apparatus 7.63, R4=material-progression-3 7.10, J5=fresh-plan-5 6.87",
+  "qualityRevision": 49,
+  "sourceProject": "cmtjbz54o000w6rjyvzewwqj4",
+  "reusePlan": false,
+  "stanceOverride": false,
+  "intervention": "Plan contract (planContract.ts): method-shape detector on focus question/contribution/investigation, one episode-planner re-ask with the violations and episode collisions named, deterministic clean-up (blank method contributions, drop method investigation lines, drop a later chapter's colliding episode); stance regenerated on a fresh run when its thesis/positions are method-shaped; method voice-guide lines withheld from per-chapter styleNotes; one planner sentence capping synthesis chapters and revisit beats; focus rules no longer ask for a distinction.",
+  "implementation": {
+    "worker": "claude-opus (Agent tool, model=opus), three passes (spec, collision refinement, resume regression)",
+    "files": [
+      "packages/core/src/generation/planContract.ts",
+      "packages/core/src/generation/planContract.test.ts",
+      "packages/core/src/generation/episodes.ts",
+      "packages/core/src/generation/episodes.test.ts",
+      "packages/core/src/schemas/episodes.ts",
+      "packages/core/src/generation/authorStance.ts",
+      "packages/core/src/generation/composedChapter.ts",
+      "packages/core/src/generation/composedChapterMaterial.ts",
+      "packages/core/src/generation/planner.ts",
+      "apps/worker/src/generation/composedChaptersMaterial.ts",
+      "apps/worker/src/generation/composedChaptersPass.ts"
+    ],
+    "replay": "replay-contract.ts over plans 2/3/5: plan-5 13 contributions + 2 questions + 6 investigation lines flagged, collisions 1~2, 1~13, 1~14, 2~14, 8~12; plan-3 Haitian 8~10; flat positions pass",
+    "checks": "7 gates passed in 99.0s (check-6-final.log); one resume regression found by the first whole-repo run and fixed (stance gate is fresh-run only)"
+  },
+  "projectId": "cmtp8p8bg0000xwg05v49tihd",
+  "planningJobId": "cmtp8p8bx0001xwg0vcdejk1l",
+  "planId": "cmtp8s6ap0003ywp2m04edfun",
+  "generationJobId": "cmtp8sg940002xwg0y7d6r3zy",
+  "plan": {
+    "title": "Aggression Through Time",
+    "chapters": 12,
+    "pageSum": 120,
+    "targets": [
+      8,
+      11,
+      7,
+      13,
+      9,
+      14,
+      6,
+      12,
+      10,
+      9,
+      11,
+      10
+    ],
+    "genericTitles": 0,
+    "synthesisChapters": 1,
+    "positions": 4,
+    "voiceGuideLines": 8
+  },
+  "execution": {
+    "words": 58515,
+    "storedPages": 120,
+    "pdfPages": 118,
+    "generationMinutes": 29,
+    "generationExportCalls": 68,
+    "generationExportProviderCostUsd": 0.405393,
+    "productionFilesVerifiedUnchanged": 580,
+    "allCallsLuna": true,
+    "planBookCalls": 2,
+    "planBookRepairReason": "locations[*].description missing (pre-existing schema strictness, repaired by the bounded JSON repair)",
+    "planEpisodesCalls": 2,
+    "contract": {
+      "reasked": true,
+      "issuesBefore": 2,
+      "collisionsBefore": 1,
+      "issuesAfter": 1,
+      "collisionsAfter": 0,
+      "dropped": 0,
+      "blanked": 0
+    },
+    "stanceRegenerated": false,
+    "styleNotesShown": "4 of 8 voice-guide lines",
+    "chaptersWithDocuments": 5,
+    "chaptersWithExcerpts": 2,
+    "qualityReport": {
+      "state": "review_recommended",
+      "issues": [
+        "warning:SYMMETRICAL_HEDGING"
+      ]
+    },
+    "readFlaggedChapters": "11/12 (cut off)"
+  },
+  "result": {
+    "code": "T6",
+    "scores": {
+      "A": 6.7,
+      "B": 6.9,
+      "C": 7.4
+    },
+    "mean": 7,
+    "criterionMeans": {
+      "thesis": 8,
+      "structure": 7.666666666666667,
+      "depth": 7,
+      "reasoning": 8.666666666666666,
+      "clarity": 8.333333333333334,
+      "voice": 6.666666666666667,
+      "engagement": 5.333333333333333,
+      "pacing": 5,
+      "craft": 7.333333333333333,
+      "slopResistance": 6
+    },
+    "validationIssues": 0,
+    "pass": false,
+    "sameSitting": {
+      "ladder-5a-apparatus (J2)": 7.633333333333333,
+      "material-progression-3 (R4)": 7.1,
+      "fresh-plan-5 (J5)": 6.866666666666666
+    }
+  },
+  "diagnosis": [
+    "The assignment is gone and verified in the live prompts (claim-shaped contributions, 4/8 style notes, no re-narrated case; no reader names a duplicated case; structure 7.67 vs 7.33) but the readers name the same assert-then-retract sentence rhythm, two-case architecture, recap codas and aphoristic closers: with nothing assigning it, that shape is the balanced writer's own nonfiction register",
+    "Deterministic counts: negation contrasts per 1,000 sentences 41.7 (candidate 5: 42.8; rung 5a: 23.0), hedge-ending share 0.128 (0.135; 0.083), couplets 19.1 (11.4; 9.8), abstract nouns 10.3 (12.5; 5.4), list-sentence share 0.166 (0.209; 0.168)",
+    "Engagement 5.33 against rung 5's 7.0 in the same sitting: the focused path's strict reconstruction rule (candidate 2) plus a dossier that reached 2/12 chapters leaves no told scene and 5 verbatim quotes, where rung 5a had scenes and 19+ quotes under the creative contract",
+    "Chapters 1 and 2 both open at Nataruk: the plan's openingHook names it and chapter 2 owns it as an episode; the collision rule reads episodes only",
+    "The manuscript read again flagged 11/12 chapters for recap tails and five repeated claims; its cut stays off"
+  ]
+}

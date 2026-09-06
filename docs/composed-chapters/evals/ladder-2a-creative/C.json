@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.9,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The men at the barrier did not need to discover who belonged to which category. The category had already been printed, repeated, and made politically dangerous.",
+      "judgment": "Opening page states the book's controlling argument through a concrete scene rather than an abstraction; a genuinely strong hook."
+    },
+    {
+      "quote": "The city’s durable innovation was not the sword but the office that could tell a sword where to go.",
+      "judgment": "Memorable and exact, but it is one of many single-sentence paragraph closers built on the same not-X-but-Y frame."
+    },
+    {
+      "quote": "A wall alone cannot identify an enemy.",
+      "judgment": "Epistemic discipline compressed to five words; the archaeology chapter's method sections are the book's finest reasoning."
+    },
+    {
+      "quote": "The court was asked whether their owners had suffered an insured loss, not whether the captain had committed a crime against them.",
+      "judgment": "The Zong section lets the documentary form carry the moral weight without editorial commentary — the book at its best."
+    },
+    {
+      "quote": "The state did not need to discover a person’s convictions. It needed a paper trail.",
+      "judgment": "Precise and chilling, though the one-line paragraph as rhetorical punctuation has by chapter 13 become a reflex."
+    },
+    {
+      "quote": "Popular anger opened the door. Administrators decided which doors remained open.",
+      "judgment": "An aphoristic closer that restates the thesis a reader has already met roughly a dozen times in identical shape."
+    },
+    {
+      "quote": "Cultural contempt can intensify killing... Yet cultural brutality alone cannot explain why Lachish was besieged with ramps",
+      "judgment": "The concede-then-qualify counter-explanation section is genuinely fair-minded, but it is executed to a fixed template in nearly every chapter."
+    },
+    {
+      "quote": "It cannot make the past complete. It can keep asking who acted, who authorised the act, who was made legible, and whose suffering had to struggle to enter the record.",
+      "judgment": "A closing that earns its cadence and resolves the book's method rather than merely summarising it."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter ends with a 'the familiar explanation has real force, but it cannot explain...' section that concedes a popular thesis (cultural brutality, mobility, racial ideology, economic motive, spontaneous crowd anger) and then subordinates it to institutions. The move is intellectually sound and structurally identical fifteen times.",
+      "instances": [
+        "Steppe conquest cannot be explained by mobility alone because a moving army is not yet an empire.",
+        "Racial belief alone does not explain why Lugard preserved the emirates, why an emir was removed when he ceased to serve British purposes"
+      ]
+    },
+    {
+      "pattern": "Paired antithetical clauses, usually two or three per closing paragraph, assigning one term to force and the other to administration. The rhythm becomes predictable enough that a reader can anticipate the second half of the sentence.",
+      "instances": [
+        "Violence opened the door; administration kept it open.",
+        "The horse carried the order; the institution decided where it would fall."
+      ]
+    },
+    {
+      "pattern": "A one-sentence paragraph deployed as a rhetorical beat, typically after a long descriptive passage and typically restating the thesis in miniature.",
+      "instances": [
+        "Moquihuix went to the temple.",
+        "The office survived because it served the new administration."
+      ]
+    },
+    {
+      "pattern": "The relay or chain enumeration — a serial list of offices each handing harm to the next — recurs as the standard way of demonstrating institutional causation in at least six chapters.",
+      "instances": [
+        "A coastal broker turned capture into a sale; a ship’s officer turned sale into a manifest; an insurer turned death into a claim",
+        "A district commissioner issued an order; a police sergeant assembled men; a constable identified a suspect; a magistrate imposed a fine"
+      ]
+    },
+    {
+      "pattern": "Chapters and sections close on unresolved rhetorical questions about evidence and the archive, framed almost identically each time as 'the open question is not whether... it is how far/how often...'.",
+      "instances": [
+        "The open question is not whether humans have always been capable of harm... It is how far a surviving injury... permits us to travel from an act to a history.",
+        "The unresolved question is not whether precontact peoples were violent. They were. It is how often violence occurred, how widely it reached"
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, tightly argued history whose thesis — that the scale of human violence is produced by offices, records and classifications rather than by anger — is stated on page one and genuinely tested across fifteen chapters and four continents. Its greatest strengths are evidentiary: each chapter is anchored in named artifacts (a ration tablet, the Stele of the Vultures, an arsenal register, the Wannsee Protocol, a ship's log) and the reasoning about what those artifacts can and cannot support is unusually scrupulous, with the archaeology and Atlantic-slavery chapters the best of the book. Sentence-level craft is high and the register is consistent: sober, unornamented, free of the usual generative tells, with no filler transitions, no hype, and no listicles. The weakness is architectural repetition. Every chapter runs the same four-movement shape — artifact scene, mechanism, paired comparison, concession-then-refutation of a rival explanation — and each closes on aphoristic paired antitheses that restate a thesis the reader absorbed by chapter three, so the last third feels demonstrated rather than developed. Trimming the recurring counter-explanation sections and varying the chapter cadence would raise it from very good to genuinely publishable without touching the research."
+}

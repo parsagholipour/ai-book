@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 8
+  },
+  "overall": 7.7,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Low",
+  "highlights": [
+    {
+      "quote": "The stones do not settle the dispute. They make it unavoidable.",
+      "judgment": "A rare epigrammatic beat that earns itself; but the book leans on this closing-aphorism move often enough that it becomes a tic."
+    },
+    {
+      "quote": "Aggression is useful as a historical term only when it remains attached to behaviour.",
+      "judgment": "Strong early definitional discipline that governs the whole book and keeps psychological speculation out of the argument."
+    },
+    {
+      "quote": "Coercion did not begin with a blow. It began when a person's means of subsistence was placed inside a chain of decisions made elsewhere.",
+      "judgment": "The thesis stated at its sharpest \u2014 abstract but anchored in the Uruk ration tablets that precede it."
+    },
+    {
+      "quote": "A projectile point tells us about a weapon; a cache of standardised points may tell us about production and supply. A wound tells us about an attack; repeated wounds across a population may tell us about recurring enemies",
+      "judgment": "Genuinely useful reasoning about inference, though the tricolon of paired clauses is one of the book's most overused rhythms."
+    },
+    {
+      "quote": "Its violence was a royal decision applied across a populated landscape, and the Domesday survey preserved the administrative shape that followed.",
+      "judgment": "Excellent fusion of narrative and argument: the Harrying and the survey become two stages of one instrument."
+    },
+    {
+      "quote": "The bureaucratic form makes distance manageable. A person in Berlin, a family in Warsaw, and a community in Salonika can occupy the same line because each has first been converted into a number.",
+      "judgment": "The Wannsee chapter is the book's strongest writing \u2014 restraint doing work that emphasis could not."
+    },
+    {
+      "quote": "The Mapuche case differs from Bonampak and Cahokia because the evidence is entangled with a long colonial archive.",
+      "judgment": "Honest about evidentiary asymmetry, but the Americas chapter repeatedly substitutes cataloguing for analysis; sites are listed and hedged rather than compared in depth."
+    },
+    {
+      "quote": "Consent is therefore not a mood but a rule that gives restraint a route into power.",
+      "judgment": "A satisfying close, though it exemplifies the book's habit of ending sections on a balanced, slightly sententious formula."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter runs the same four-beat engine: an object or site rendered concretely, a mechanism extracted from it, a paired comparison, then a caveat about what evidence cannot show. The reliability becomes predictability by the halfway point.",
+      "instances": [
+        "At Jebel Sahaba, burial and injury stand together. At Nataruk, the lagoon setting and the position of the skeletons alter the question. Neither site offers a written account of the event.",
+        "Nataruk and Crow Creek should not be placed on a ladder from primitive skirmish to developed warfare."
+      ]
+    },
+    {
+      "pattern": "Recurrent 'X did not do this; an office/institution did' formula \u2014 the book's thesis restated as a rhetorical reversal rather than re-argued, appearing in nearly every chapter's final paragraph.",
+      "instances": [
+        "Gunpowder did not give violence its purpose. Institutions gave a weapon a campaign, a campaign a supply system, and a supply system access to civilians who had never chosen the war.",
+        "Military necessity could describe the pressure surrounding a decision, but it did not choose the victim. An office did."
+      ]
+    },
+    {
+      "pattern": "Cumulative-clause chains that list an administrative sequence, often five to seven items long, used in place of analysis of any single link.",
+      "instances": [
+        "A war tax filled a treasury, a contractor purchased supplies, a magazine stored them, a roll identified soldiers, and a road carried the result to a front.",
+        "A sponsor selected a partner. An intelligence service identified an enemy. A ministry or military office authorised funds. A transport system delivered weapons."
+      ]
+    },
+    {
+      "pattern": "Symmetrical antithesis as a closing device \u2014 two balanced clauses that reverse each other, deployed so consistently that endings blur together.",
+      "instances": [
+        "One system governed through difference; the other governed by grading access to sameness.",
+        "British rationing made the civilian body a resource to be preserved for continued war. Ottoman deportation made a population a danger to be removed."
+      ]
+    },
+    {
+      "pattern": "The chapter ends on an explicitly posed 'unresolved question', a template that substitutes an interrogative for a conclusion.",
+      "instances": [
+        "The remaining question is when a rule, a weapon, or a political choice becomes stronger than the institution prepared to use it.",
+        "The unresolved question is whether restraint came from convictions held by citizens or from institutions that prevented any one conviction from acquiring the power to kill."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, genuinely argued global history of organised violence, held together by one thesis pursued with unusual consistency: aggression scales through offices, records, and chains of authorisation rather than through temperament, technology, or scarcity. Its intellectual strengths are real \u2014 a rigorous separation of evidence from inference, an insistence on what bones, laws, reliefs and ledgers can and cannot say, and a refusal of the peaceful-versus-warlike prehistory binary and of civilisational rankings. Prose is clean, concrete and mercifully free of the usual AI register; there are no stock pivots, no false urgency, and the diction stays adult throughout. The costs are structural monotony and low reader engagement: every chapter uses the same artefact-mechanism-comparison-caveat engine, the thesis is restated in a recognisable reversal formula dozens of times, and long stretches (the Americas and post-1945 chapters especially) flatten into cataloguing with hedges attached. Depth is uneven \u2014 Uruk, Lagash, the Brookes plan and Wannsee are handled with real analytic force, while other cases are summarised rather than thought through, and the first two chapters overlap substantially. With varied chapter architecture, trimming of the repeated thesis restatements, and cuts to the redundant Jebel Sahaba/Nataruk material, this would be publishable serious nonfiction."
+}

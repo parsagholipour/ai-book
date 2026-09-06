@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.6,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "What happened must be reconstructed before why it happened can be argued.",
+      "judgment": "A crisp statement of the book's disciplined method and central intellectual commitment."
+    },
+    {
+      "quote": "The categories describe different dimensions of an event rather than competing names from which one final label must be chosen.",
+      "judgment": "This precise distinction gives the opening chapter genuine conceptual utility."
+    },
+    {
+      "quote": "The grave is an event sample, not a census of violence.",
+      "judgment": "Memorable compression of an important evidentiary limit."
+    },
+    {
+      "quote": "Coercion becomes durable when the result of force can be translated into a schedule.",
+      "judgment": "An original and forceful link between violence and administration."
+    },
+    {
+      "quote": "The conqueror took the office, not merely the territory.",
+      "judgment": "A concise formulation that clarifies the institutional argument."
+    },
+    {
+      "quote": "Armies opened the way; tribute made the result durable.",
+      "judgment": "Strong rhythmic prose, though it also exemplifies the manuscript's frequent aphoristic closers."
+    },
+    {
+      "quote": "A source may be partial without being useless; its partiality becomes part of what must be interpreted.",
+      "judgment": "A sound methodological principle, but variants of this qualification recur too often."
+    },
+    {
+      "quote": "Administrative improvements had no built-in moral direction.",
+      "judgment": "Clear and central, though the book restates this conclusion in many historical settings."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Evidence is followed by a carefully delimited statement of what it cannot establish.",
+      "instances": [
+        "The cemetery was not a battlefield. It does not prove that Ur possessed a permanent army in the modern sense, nor does it show how frequently the city fought.",
+        "It cannot establish a standing army, a war season, or a stable political organisation."
+      ]
+    },
+    {
+      "pattern": "Chapters separate institutional authorization from moral legitimacy.",
+      "instances": [
+        "Authorisation and legitimacy must remain separate.",
+        "The central issue was the authority to name violence."
+      ]
+    },
+    {
+      "pattern": "Administrative capacity is presented as making coercion durable across time.",
+      "instances": [
+        "Administration extended the life of coercion beyond the encounter by recording the claim, marking the ground, assigning obligations, and making future violations legible.",
+        "The tribute system made political violence cumulative."
+      ]
+    },
+    {
+      "pattern": "Binary historical stories are replaced with mixed motives and overlapping mechanisms.",
+      "instances": [
+        "Consent, accommodation, and compulsion may occupy the same political arrangement.",
+        "These motives could coexist in one person and change during the expedition."
+      ]
+    },
+    {
+      "pattern": "Compact parallel sentences close or crystallize long analytical passages.",
+      "instances": [
+        "A raid takes goods once. A tribute arrangement seeks to make the transfer habitual.",
+        "The weapon altered what an organised force could do. Organisation determined whether the weapon mattered."
+      ]
+    }
+  ],
+  "summary": "The manuscript advances a coherent and often persuasive thesis: aggression becomes historically consequential through institutions that classify, authorize, organize, preserve, and sometimes restrain harm. Its chronological architecture is broad but intelligible, and its best chapters connect close source criticism to concrete mechanisms such as tribute, logistics, law, accounting, deportation, and command. The prose is careful and polished, with an unusually responsible distinction between event, motive, evidence, and later representation. That care becomes repetitive across fifteen chapters, however, as sources are repeatedly introduced, qualified, balanced against a counterpart, and closed with a compact institutional lesson. Moderate revision should compress recap loops, vary chapter architecture, and reduce repeated epistemic disclaimers while retaining the book's strong comparative reasoning."
+}

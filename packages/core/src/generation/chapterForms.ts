@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
 import { targetLanguageGenerationGuidance, targetLanguagePayload } from "../prompting/language.js";
 import type { AuthorStance, BookPlan, ChapterPlan, CreateProjectInput } from "../schemas/book.js";
+import type { BookEpisodes } from "../schemas/episodes.js";
 import { isRecord } from "../schemas/jsonCoercion.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import { FIGURE_FORM_PLAN_CONTRACT, FIGURE_FORM_PLAN_RULE } from "./figures/figurePrompt.js";
@@ -641,8 +642,16 @@ export type PlanChapterFormsOptions = {
   fixed?: readonly ChapterComposition[] | undefined;
   /** Whether this book may carry figures (`usesFigures` and the gate): the rule and the key reach the planner only then. */
   figures?: boolean | undefined;
+  /** The book's episodes when they were planned first: the cases each chapter is built from, so the planner does not choose a second set. */
+  episodes?: BookEpisodes | undefined;
   textModel: TextModelAdapter;
 };
+
+const CASE_ASSIGNMENTS_RULE =
+  "caseAssignments is the material already selected for this book. Build each chapter's sections from its assigned episodes and their specific contributions; do not invent a second competing case list. A case has one home for its full treatment. Other chapters may use a brief comparison that adds a new inference, without retelling the episode. Use the chapter's remaining space to explain how its own events, institutions or documents worked.";
+
+const CHAPTER_FOCUS_RULE =
+  "A chapter with focus investigates that specific question using its assigned material. Give its investigation enough room to show what happened and why; arrange sections in the order that explanation needs. alreadyEstablished is reader knowledge, not a new section to repeat. contribution is the new distinction earned by this chapter, not a sentence to paste. Do not finish each chapter by translating its result back into the same book-wide thesis.";
 
 /**
  * One call for the whole book, so variety can be global, then one repair
@@ -657,6 +666,17 @@ export async function planChapterForms(options: PlanChapterFormsOptions): Promis
   if (open.length === 0) {
     return { compositions: [...(options.fixed ?? [])], issues: [], source: "model" };
   }
+  // Every chapter's cases, the written ones included, so an open chapter is
+  // planned around what its neighbours already own; never the search queries.
+  const caseAssignments =
+    options.episodes && options.episodes.chapters.length > 0
+      ? options.episodes.chapters.map((chapter) => ({
+          chapterIndex: chapter.index,
+          episodes: chapter.episodes.map(({ title, person, place, date, document, why }) => ({ title, person, place, date, document, why })),
+          ...(chapter.focus ? { focus: chapter.focus } : {})
+        }))
+      : undefined;
+  const anyFocus = options.episodes?.chapters.some((chapter) => chapter.focus !== undefined) ?? false;
   // A disabled gate strips any figure the model volunteered; chapters already
   // written keep theirs, since their pages already carry the block. The cap
   // is a ceiling against a figure in every chapter, not a target: the first
@@ -685,6 +705,8 @@ export async function planChapterForms(options: PlanChapterFormsOptions): Promis
             "Return one JSON object with a chapters array. Each chapter object has chapterIndex, throughLine, sections, landing, and avoid, exactly like outputContract.chapters[0].",
             "A section's form governs the shape of its prose, not its topic. Choose the form the material wants: a single vivid episode wants a scene; a document or object wants a close reading; a genuine dispute wants an argument or a counterargument; a list of things wants a catalogue and is allowed to read as one; an unsettled matter wants an open question left open.",
             "Each section's subject is concrete and specific to this book; owns lists the particular cases, sources, scenes, people or objects that section alone treats, and no two sections anywhere in the book own the same one.",
+            ...(caseAssignments ? [CASE_ASSIGNMENTS_RULE] : []),
+            ...(anyFocus ? [CHAPTER_FOCUS_RULE] : []),
             "landing is the claim this chapter adds to the book's argument, particular to this chapter's cases: what the author concludes from them, in one sentence. It is never a restatement of the book's thesis, never a general statement about institutions, capacities or human nature, and never built as a negation and its correction (\"X did not simply A; it B\"). No two landings share a shape or a subject. The writer reasons toward it in the chapter's final paragraph rather than quoting it.",
             "Each section carries a handoff: the question or unfinished business it leaves for the next section, so the chapter reads as one argument in movements rather than a stack of separate essays. The last section's handoff is empty.",
             ...(options.figures ? [FIGURE_FORM_PLAN_RULE] : []),
@@ -728,6 +750,7 @@ export async function planChapterForms(options: PlanChapterFormsOptions): Promis
                 ...(range.kind ? { kind: range.kind } : {}),
                 ...(range.job ? { job: range.job } : {})
               })),
+              ...(caseAssignments ? { caseAssignments } : {}),
               ...(options.fixed && options.fixed.length > 0
                 ? {
                     alreadyWrittenChapters: options.fixed.map((composition) => ({

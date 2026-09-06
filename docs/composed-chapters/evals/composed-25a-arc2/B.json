@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 6,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 7
+  },
+  "overall": 7.0,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "An injury belongs to an event; a burial belongs to a decision after the event.",
+      "judgment": "Strength: a compact, genuinely analytic distinction that sets the book's evidentiary method in one line."
+    },
+    {
+      "quote": "The amount of evidence and the amount of violence are not the same quantity.",
+      "judgment": "Strength: crisp statement of a real methodological hazard, and the book actually honors it later."
+    },
+    {
+      "quote": "Bureaucracy did not replace aggression. It gave aggression duration, direction, and an account book.",
+      "judgment": "Strength: the central thesis rendered concretely rather than abstractly, and earned by the preceding Ottoman supply chain."
+    },
+    {
+      "quote": "It was ideology after it had acquired filing systems.",
+      "judgment": "Strength: the book's best single sentence; original phrasing that does argumentative work rather than decorating."
+    },
+    {
+      "quote": "Steven Pinker is right that institutions can suppress private violence, and that some long-term measures show substantial declines in certain forms of killing.",
+      "judgment": "Weakness: this concessive formula appears near-verbatim in at least five chapters, a genuine recap loop rather than a developing engagement."
+    },
+    {
+      "quote": "The Bastille was a direct assault on royal authority.",
+      "judgment": "Weakness: a bald, imprecise sentence (the fortress is not an assault) sitting oddly amid otherwise careful prose."
+    },
+    {
+      "quote": "The frontier was not necessarily a line.",
+      "judgment": "Weakness: standalone one-line paragraph used for emphasis; the device recurs often enough to read as a tic."
+    },
+    {
+      "quote": "At Jebel Sahaba, 67 percent of the 61 examined individuals had wounds attributed to weapons. About half of the injuries were associated with projectiles, and 16 people had both healed and unhealed wounds.",
+      "judgment": "Weakness: this exact cluster of statistics is restated at least four times across Chapters 1-2; the book mistakes repetition for accumulation."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The 'what the evidence establishes / what it does not' couplet, used as the default paragraph engine in every chapter. It is the book's intellectual signature and also its most templated move; by mid-book the reader can predict the second half of nearly any paragraph from its first.",
+      "instances": [
+        "It does establish that the body encountered a projectile with enough force to enter and remain in it... The stone does not name the person who released it",
+        "The image tells us how Sennacherib wanted force to represent his rule. It tells us less directly how often punishment had to be repeated"
+      ]
+    },
+    {
+      "pattern": "Paired antithesis as a closing cadence, usually two short clauses balanced against each other at the end of a paragraph or section.",
+      "instances": [
+        "Battle is movement; kingship is decision.",
+        "One removed a competing center; the other made daily government possible."
+      ]
+    },
+    {
+      "pattern": "The 'silence of the record' motif, invoked as a formula rather than freshly each time.",
+      "instances": [
+        "Their silence has a shape.",
+        "Its silence is characteristic of the form."
+      ]
+    },
+    {
+      "pattern": "Uniform chapter architecture: a single artifact or site opened in close description, then its epistemic limits, then a named-scholar dispute, then a paired comparative case, then a 'verdict' paragraph that declares itself limited.",
+      "instances": [
+        "The verdict is therefore limited but firm: early states did not escalate aggression according to one universal sequence.",
+        "The comparison therefore yields a careful verdict. Jebel Sahaba records an unusually intense pattern of lethal and non-lethal weapon trauma"
+      ]
+    },
+    {
+      "pattern": "A short declarative sentence set alone as a paragraph for rhetorical weight, recurring across otherwise dense analytical chapters.",
+      "instances": [
+        "A shell required a factory before it required a gun.",
+        "The paper was small. Its consequences were not."
+      ]
+    }
+  ],
+  "summary": "This is a serious, methodologically disciplined comparative history arguing that human aggression is a recurrent capacity while organized violence is an institutional achievement — a thesis pursued consistently from Jebel Sahaba to Rwanda without collapsing into either biological fatalism or progress narrative. Its best quality is evidentiary hygiene: nearly every claim is sized to what the artifact, register, or relief can actually bear, and the chapter openings on material objects (the Brookes diagram, the Naram-Sin stele, the Wannsee Protocol) are genuinely well observed. The voice is austere, controlled, and unmistakably its own, and the argument builds real cumulative force by the final two chapters. The costs are redundancy and templating: Chapters 1 and 2 substantially duplicate each other on the same handful of Jebel Sahaba statistics, the concession to Pinker recurs almost verbatim in five chapters, and the 'this shows X but not Y' couplet becomes so predictable that it flattens the reading experience. Depth is uneven — cited historians function mostly as one-line positions rather than as arguments engaged — and the relentless qualification blunts engagement. With aggressive cutting of the repeated matter and more varied paragraph architecture, this would be a strong book; as it stands it needs moderate revision."
+}

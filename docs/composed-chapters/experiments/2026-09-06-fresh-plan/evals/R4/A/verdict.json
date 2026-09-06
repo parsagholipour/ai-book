@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.8,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A wound may establish that violence occurred, but it does not by itself establish aggression, because intention is not visible in bone.",
+      "judgment": "The book's methodological thesis in one exact, unshowy sentence; this discipline about inference holds across all fifteen chapters."
+    },
+    {
+      "quote": "Coercion becomes durable when the result of force can be translated into a schedule.",
+      "judgment": "Genuinely original formulation that earns its place, and it does real analytic work for the Lagash-Umma tribute argument rather than decorating it."
+    },
+    {
+      "quote": "The conquered capital was incorporated by being told that it had been rescued.",
+      "judgment": "Precise, memorable reading of the Cyrus Cylinder as political technique rather than tolerance; a high point of the imperial chapter."
+    },
+    {
+      "quote": "The dead entered the case as the object of a financial claim. Their destruction was not the primary wrong around which the proceedings were organized.",
+      "judgment": "The Zong analysis is the book's strongest passage: moral force generated entirely by describing a legal category accurately."
+    },
+    {
+      "quote": "A perpetrator’s record can be morally deformed and historically useful at the same time.",
+      "judgment": "Concise statement of the source-criticism method that unifies the book, applied consistently from Plato to the Einsatzgruppen reports."
+    },
+    {
+      "quote": "Ideology supplied permission; administration supplied repetition.",
+      "judgment": "Effective on first reading, but it is the same balanced two-clause aphorism the book reaches for dozens of times, and the device tires long before Chapter 15."
+    },
+    {
+      "quote": "It establishes many violent deaths in a restricted historical period; it does not provide the whole event.",
+      "judgment": "Epistemic scrupulousness is a virtue, but this exact concessive move recurs so regularly that it becomes a paragraph-closing reflex rather than an argument."
+    },
+    {
+      "quote": "Toussaint was captured and deported to France, where he died in prison in 1803.",
+      "judgment": "Symptom of the book's one substantive redundancy: the Haitian Revolution is narrated at length in Chapter 8 and then narrated again in Chapter 10 with overlapping facts."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter is built as a paired case study followed by an explicit comparison paragraph that names both cases; the template is so regular that a reader can predict a chapter's architecture from its first two pages.",
+      "instances": [
+        "Placed beside Athens, Sand Creek shows why scale is insufficient.",
+        "The Janissary abolition and Solferino belong to the same history without producing the same outcome."
+      ]
+    },
+    {
+      "pattern": "Chapters close with a summative recap paragraph that re-lists the two sites and restates the institutional thesis, instead of ending on new ground.",
+      "instances": [
+        "At Ur, the tombs and the Standard make hierarchy, labour, goods, and controlled bodies part of one political landscape.",
+        "The comparison with the Congo clarifies two forms of routine violence."
+      ]
+    },
+    {
+      "pattern": "Balanced two-clause antithesis used as the standard closing cadence for a paragraph — one clause granting an agent's power, the next reassigning it to institutions.",
+      "instances": [
+        "The weapon altered what an organised force could do. Organisation determined whether the weapon mattered.",
+        "Destruction cleared away a political arrangement; administration determined what would occupy its place."
+      ]
+    },
+    {
+      "pattern": "A standing epistemic-limits move, in which a paragraph states what a source establishes and then, in a mirrored sentence, states what it cannot establish. Intellectually sound but deployed at near-constant frequency.",
+      "instances": [
+        "Neither record permits a complete account of every motive.",
+        "It can show why a prison’s rules failed, how a security apparatus became answerable, and why a global number must be read as a construction rather than a verdict."
+      ]
+    },
+    {
+      "pattern": "Substantive duplication of the Haitian Revolution across Chapters 8 and 10, repeating the same dates, actors and outcomes rather than cross-referencing the earlier account.",
+      "instances": [
+        "Jean-Jacques Dessalines declared independence on 1 January 1804.",
+        "On 1 January 1804, Dessalines declared independence."
+      ]
+    }
+  ],
+  "summary": "This is a serious, intellectually coherent global history of human aggression organised around one sustained argument: aggression becomes historically consequential when feeling, act, organisation and authority meet, and a source is always evidence about the institution that produced it before it is evidence about the event. The thesis is carried without slippage across fifteen chapters and roughly nine millennia, and the handling of evidence is unusually disciplined — perimortem trauma, royal inscriptions, Einsatzgruppen returns and battle-death datasets are each interrogated for what their makers could and could not know. Sentence-level prose is clean, exact and almost free of padding, and the analytic voice is consistent from the first page to the last. The costs are pacing and engagement: every chapter runs the same two-case comparative template, paragraphs are near-uniform in length and shape, the same epistemic caveat is restated dozens of times, and the closing balanced antithesis becomes a tic rather than an effect. Human beings rarely appear as anything but positions within an apparatus, so the book informs steadily but seldom compels, and the Haitian Revolution is narrated twice in overlapping detail. Light revision — varying chapter architecture, thinning the repeated caveats and aphoristic closers, and cutting the duplicated Haiti material — would leave a genuinely distinguished work of synthesis."
+}

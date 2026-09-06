@@ -1,0 +1,1539 @@
+[
+  {
+    "chapters": [
+      {
+        "chapterIndex": 1,
+        "throughLine": "The chapter gives the book a working vocabulary by separating felt aggression from the institutions that authorize, classify, and record harm.",
+        "sections": [
+          {
+            "form": "scene",
+            "subject": "The Athenian delegation and Melian council in 416 BCE",
+            "share": 0.42,
+            "owns": [
+              "The Melian Dialogue in Thucydides, Book V, chapters 84\u2013116"
+            ],
+            "handoff": "The debate leaves open whether coercion begins with personal hostility or with a political decision about whose lives count."
+          },
+          {
+            "form": "close-reading",
+            "subject": "Thucydides' contrast between justice, interest, and power",
+            "share": 0.28,
+            "owns": [
+              "The dialogue's vocabulary of necessity and advantage"
+            ],
+            "handoff": "The text's political vocabulary requires a comparison with a society where violence is regulated through compensation rather than imperial command."
+          },
+          {
+            "form": "portrait",
+            "subject": "E. E. Evans-Pritchard's account of Nuer feud and homicide",
+            "share": 0.2,
+            "owns": [
+              "The Nuer feud and homicide material in The Nuer, chapters 4\u20135"
+            ],
+            "handoff": "The Nuer case raises the problem of how historians can compare feud, raiding, war, and law without making them equivalent."
+          },
+          {
+            "form": "argument",
+            "subject": "The chapter's distinctions among aggression, violence, war, and atrocity",
+            "share": 0.1,
+            "owns": [
+              "The chapter's working definitions and evidentiary vocabulary"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "The cases establish that the decisive historical question is who converts injury or anger into a recognized target, procedure, and record.",
+        "avoid": [
+          "Do not preview the full period survey or argue that institutions always increase violence."
+        ]
+      },
+      {
+        "chapterIndex": 2,
+        "throughLine": "Archaeological evidence can establish episodes of injury while leaving the scale, organization, and meaning of prehistoric conflict unsettled.",
+        "sections": [
+          {
+            "form": "close-reading",
+            "subject": "The clustered burials and projectile injuries at Jebel Sahaba",
+            "share": 0.38,
+            "owns": [
+              "Jebel Sahaba and the 2021 Scientific Reports study by Bocquentin and colleagues"
+            ],
+            "handoff": "The cemetery shows repeated violent injury, but its relation to ordinary life remains uncertain."
+          },
+          {
+            "form": "comparison",
+            "subject": "Jebel Sahaba beside the Nataruk remains",
+            "share": 0.24,
+            "owns": [
+              "Nataruk and the debate between Lahr's interpretation and subsequent critiques"
+            ],
+            "handoff": "The contrast shifts attention from the existence of violence to what skeletal patterns can and cannot identify."
+          },
+          {
+            "form": "mechanism",
+            "subject": "How archaeologists infer violence from bones, tools, settlement, and ecology",
+            "share": 0.26,
+            "owns": [
+              "Projectile trauma, perimortem injury, burial clustering, mobility, and resource context"
+            ],
+            "handoff": "Inference procedures explain the evidence's limits but cannot decide whether missing remains represent peace or missing records."
+          },
+          {
+            "form": "open-question",
+            "subject": "Whether absence of mass graves indicates less violence or different preservation",
+            "share": 0.12,
+            "owns": [
+              "The problem of invisible violence in mobile communities"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "Jebel Sahaba and Nataruk make the strongest archaeological conclusion a bounded one: prehistoric communities experienced lethal conflict, but the surviving dead cannot supply its social frequency.",
+        "avoid": [
+          "Do not treat isolated injuries as population-wide rates or repeat the chapter's definitions of aggression."
+        ]
+      },
+      {
+        "chapterIndex": 3,
+        "throughLine": "Early states made coercion durable by joining boundaries, surplus, administration, and divine authority in records that outlasted individual battles.",
+        "sections": [
+          {
+            "form": "portrait",
+            "subject": "Eannatum's claim over the Lagash\u2013Umma boundary",
+            "share": 0.4,
+            "owns": [
+              "The Stele of the Vultures"
+            ],
+            "handoff": "The monument's certainty about royal victory invites scrutiny of what an official inscription suppresses."
+          },
+          {
+            "form": "close-reading",
+            "subject": "The Stele of the Vultures as boundary record and royal image",
+            "share": 0.2,
+            "owns": [
+              "Its relief of vultures, prisoners, divine symbols, and inscription"
+            ],
+            "handoff": "Propaganda makes the administrative question unavoidable: what systems allowed a ruler to enforce the boundary?"
+          },
+          {
+            "form": "comparison",
+            "subject": "The Stele of the Vultures beside Mohenjo-daro's disputed skeletons",
+            "share": 0.28,
+            "owns": [
+              "The Mohenjo-daro skeleton interpretation and Dales's 'Mythical Massacre' critique"
+            ],
+            "handoff": "The two records differ because one announces organized force while the other cannot securely establish it."
+          },
+          {
+            "form": "argument",
+            "subject": "Surplus, hierarchy, and the administrative durability of coercion",
+            "share": 0.12,
+            "owns": [
+              "Taxation, labor organization, fortification, and boundary enforcement in early cities"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "The contrast between Lagash's explicit boundary claim and Mohenjo-daro's ambiguous remains shows that urban complexity made organized coercion recordable without making every urban death evidence of war.",
+        "avoid": [
+          "Do not re-explain archaeological uncertainty in general or treat state formation as a universal escalation."
+        ]
+      },
+      {
+        "chapterIndex": 4,
+        "throughLine": "Imperial power combined spectacular punishment with routine accommodation, and its records reveal both the violence and the political work of managing difference.",
+        "sections": [
+          {
+            "form": "close-reading",
+            "subject": "Darius's account of rebellion at Behistun",
+            "share": 0.34,
+            "owns": [
+              "The Behistun Inscription of Darius I"
+            ],
+            "handoff": "Darius's restored order depends on a story whose silences require comparison with imperial practice on the ground."
+          },
+          {
+            "form": "mechanism",
+            "subject": "How Neo-Assyrian deportation joined conquest to resettlement",
+            "share": 0.2,
+            "owns": [
+              "Assyrian deportation lists, resettlement, tribute, and local intermediaries"
+            ],
+            "handoff": "Administrative relocation raises the question of whether deportation destroyed communities or reorganized them for rule."
+          },
+          {
+            "form": "scene",
+            "subject": "A deported population in the reigns of Sargon II and Sennacherib",
+            "share": 0.14,
+            "owns": [
+              "Neo-Assyrian royal accounts of deportation in Dalley's collection"
+            ],
+            "handoff": "The movement of people exposes the human cost behind imperial categories."
+          },
+          {
+            "form": "comparison",
+            "subject": "Persian restoration language beside Assyrian relocation practice",
+            "share": 0.2,
+            "owns": [
+              "The contrasting political narratives of Behistun and Neo-Assyrian inscriptions"
+            ],
+            "handoff": "The comparison leaves a final question about when coercion stabilized an empire and when it generated revolt."
+          },
+          {
+            "form": "open-question",
+            "subject": "Whether imperial accommodation restrained violence or merely redistributed it",
+            "share": 0.12,
+            "owns": [
+              "Local intermediaries, tribute obligations, and frontier resistance"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "Behistun and the Assyrian deportation records show imperial stability emerging from a negotiated mixture of exemplary punishment, population movement, and local brokerage.",
+        "avoid": [
+          "Do not repeat the general claim that records are politically constructed or re-narrate early state formation."
+        ]
+      },
+      {
+        "chapterIndex": 5,
+        "throughLine": "Accounts of precolonial American conflict become clearer when ritual language, alliance politics, and conquest-era observation are kept distinct.",
+        "sections": [
+          {
+            "form": "scene",
+            "subject": "The Spanish assault and Nahua memory of Tenochtitlan",
+            "share": 0.43,
+            "owns": [
+              "The Florentine Codex, Book 12, The Conquest of Mexico"
+            ],
+            "handoff": "Nahua testimony records invasion through its own categories, which must be set beside an Andean succession crisis."
+          },
+          {
+            "form": "comparison",
+            "subject": "Tenochtitlan and Cajamarca as conflicts shaped by alliance and succession",
+            "share": 0.27,
+            "owns": [
+              "Pedro Cieza de Le\u00f3n and Inca Garcilaso de la Vega on the Inca civil war and Spanish invasion"
+            ],
+            "handoff": "The comparison separates imperial fracture from a timeless pattern of ritual violence."
+          },
+          {
+            "form": "close-reading",
+            "subject": "Conquest-era descriptions of captives, sacrifice, and diplomacy",
+            "share": 0.2,
+            "owns": [
+              "The Florentine Codex's representation of Nahua political and ceremonial practice"
+            ],
+            "handoff": "The sources' rhetorical purposes make the boundary between observed practice and colonial accusation the remaining problem."
+          },
+          {
+            "form": "counterargument",
+            "subject": "The claim that conquest narratives transparently describe indigenous violence",
+            "share": 0.1,
+            "owns": [
+              "Spanish and indigenous accounts as competing constructions of legitimacy"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "The Nahua and Andean cases show that alliances and succession struggles shaped the violence encountered by Europeans, while conquest narratives turned those contingencies into evidence of civilizational difference.",
+        "avoid": [
+          "Do not generalize across all American societies or repeat the book's general warning about uneven evidence."
+        ]
+      },
+      {
+        "chapterIndex": 6,
+        "throughLine": "Medieval and post-classical violence moved between raiding, dynastic rule, sacred authorization, and civilian survival rather than belonging to one political type.",
+        "sections": [
+          {
+            "form": "scene",
+            "subject": "The Norman landing, oath-making, and conquest scenes in the Bayeux Tapestry",
+            "share": 0.36,
+            "owns": [
+              "The Bayeux Tapestry's account of 1066 and the conquest of England"
+            ],
+            "handoff": "The tapestry turns conquest into a visual order, but a contested holy city reveals another language of authorization."
+          },
+          {
+            "form": "close-reading",
+            "subject": "Raymond of Aguilers and Fulcher of Chartres on Jerusalem",
+            "share": 0.24,
+            "owns": [
+              "The two accounts of the First Crusade's capture of Jerusalem in 1099"
+            ],
+            "handoff": "Sacred narrative explains how violence acquired meaning, leaving the practical question of how ordinary people endured it."
+          },
+          {
+            "form": "portrait",
+            "subject": "A civilian household caught between raiding and settled rule",
+            "share": 0.12,
+            "owns": [
+              "Documented noncombatant experience reconstructed from the frontier and crusade accounts"
+            ],
+            "handoff": "The civilian perspective shifts the chapter from justifications to consequences."
+          },
+          {
+            "form": "comparison",
+            "subject": "Mobile raiding and settled conquest in England and Jerusalem",
+            "share": 0.18,
+            "owns": [
+              "The Bayeux Tapestry and crusade narratives as contrasting political forms"
+            ],
+            "handoff": "Their differences make religious language a variable that could authorize or constrain violence."
+          },
+          {
+            "form": "argument",
+            "subject": "Why religious authorization did not determine one pattern of conduct",
+            "share": 0.1,
+            "owns": [
+              "Oath, sanctity, ransom, plunder, and protection in the assigned sources"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "England and Jerusalem demonstrate that sacred authorization intensified violence in some moments while negotiated submission and protection continued to organize survival around it.",
+        "avoid": [
+          "Do not repeat the empire chapter's treatment of imperial administration or reduce medieval violence to religion."
+        ]
+      },
+      {
+        "chapterIndex": 7,
+        "throughLine": "Steppe conquest depended on mobility, but its durable effects came from converting movement and military success into tribute, census, and incorporation.",
+        "sections": [
+          {
+            "form": "portrait",
+            "subject": "Temujin's consolidation of power in The Secret History of the Mongols",
+            "share": 0.4,
+            "owns": [
+              "The Secret History of the Mongols account of Temujin's rise"
+            ],
+            "handoff": "Temujin's career links battlefield success to kinship and redistribution, but conquest must also be followed after the fighting."
+          },
+          {
+            "form": "mechanism",
+            "subject": "How mounted mobility, remounts, intelligence, and discipline produced operational reach",
+            "share": 0.22,
+            "owns": [
+              "Steppe ecology, mounted tactics, oath relations, and redistributed households"
+            ],
+            "handoff": "Tactical mobility explains expansion but not how conquered populations became governable."
+          },
+          {
+            "form": "close-reading",
+            "subject": "The Mongol census and taxation of Rus",
+            "share": 0.26,
+            "owns": [
+              "The Novgorodian First Chronicle entries for 1257\u20131259"
+            ],
+            "handoff": "Enumeration shows conquest settling into tribute and local brokerage."
+          },
+          {
+            "form": "open-question",
+            "subject": "Whether incorporation softened conquest or preserved its hierarchy",
+            "share": 0.12,
+            "owns": [
+              "The relationship between destruction, exchange, and governance in Rus"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "The Mongol case turns mobility into a political technology when census and tribute bind conquered Rus to local princes and an imperial center.",
+        "avoid": [
+          "Do not portray steppe societies as uniformly warlike or repeat the general discussion of administrative coercion from early states."
+        ]
+      },
+      {
+        "chapterIndex": 8,
+        "throughLine": "Atlantic slavery became durable when law, insurance, labor discipline, and racial classification converted repeated violence into ordinary administration.",
+        "sections": [
+          {
+            "form": "close-reading",
+            "subject": "The Code Noir's rules for status, punishment, religion, and labor",
+            "share": 0.34,
+            "owns": [
+              "The 1685 Code Noir"
+            ],
+            "handoff": "The ordinance reveals legal design, but the Zong case shows how commercial law handled lethal practice."
+          },
+          {
+            "form": "scene",
+            "subject": "The Zong killings and the insurance hearing",
+            "share": 0.2,
+            "owns": [
+              "Gregson v. Gilbert and Equiano's account of the Zong"
+            ],
+            "handoff": "The courtroom's property language leaves the violence visible only through a dispute over financial loss."
+          },
+          {
+            "form": "mechanism",
+            "subject": "How plantation law connected ownership, surveillance, punishment, and shipping",
+            "share": 0.22,
+            "owns": [
+              "French Caribbean legal categories, plantation discipline, maritime insurance, and abolitionist testimony"
+            ],
+            "handoff": "The mechanism explains institutional continuity but must account for the actions of enslaved people and critics."
+          },
+          {
+            "form": "counterargument",
+            "subject": "The claim that Atlantic slavery was chiefly an economic system",
+            "share": 0.14,
+            "owns": [
+              "The Code Noir and Zong evidence on law, ideology, and agency"
+            ],
+            "handoff": "Economic incentives alone cannot explain the legal and moral categories that made coercion intelligible."
+          },
+          {
+            "form": "portrait",
+            "subject": "Olaudah Equiano's use of testimony against commercial abstraction",
+            "share": 0.1,
+            "owns": [
+              "Equiano's 1789 account of the Zong"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "The Code Noir and Zong litigation show slavery's violence becoming durable precisely where racial status and commercial law made human injury administratively legible as property management.",
+        "avoid": [
+          "Do not repeat colonial forced-labor mechanisms in general or treat the Atlantic as a single uniform system."
+        ]
+      },
+      {
+        "chapterIndex": 9,
+        "throughLine": "Gunpowder increased reach only through fiscal, personnel, and supply systems that extended state decisions into soldiers' and civilians' daily lives.",
+        "sections": [
+          {
+            "form": "mechanism",
+            "subject": "How the Ottoman devshirme supplied the janissary institution",
+            "share": 0.42,
+            "owns": [
+              "The Ottoman kanunname of devshirme and janissary registers"
+            ],
+            "handoff": "Personnel administration connects military power to households, while a European war shows its effects on civilians."
+          },
+          {
+            "form": "scene",
+            "subject": "The sack of Magdeburg in 1631",
+            "share": 0.22,
+            "owns": [
+              "Peter Hagendorf's diary and contemporary accounts of Magdeburg"
+            ],
+            "handoff": "The city's destruction makes supply, discipline, and restraint concrete."
+          },
+          {
+            "form": "comparison",
+            "subject": "Ottoman recruitment and the Thirty Years' War military economy",
+            "share": 0.24,
+            "owns": [
+              "The janissary levy and Magdeburg's requisition and battlefield records"
+            ],
+            "handoff": "Both cases raise whether firearms changed motives or mainly enlarged organized capacity."
+          },
+          {
+            "form": "argument",
+            "subject": "Technology as an amplifier of administrative reach",
+            "share": 0.12,
+            "owns": [
+              "Firearms, registers, taxation, requisition, and standing military labor"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "The janissary levy and Magdeburg show that gunpowder altered violence most decisively when states could recruit, supply, and discipline people beyond the battlefield.",
+        "avoid": [
+          "Do not repeat the chapter on early state formation or present technology as an autonomous cause."
+        ]
+      },
+      {
+        "chapterIndex": 10,
+        "throughLine": "Revolutionary crowds became politically dangerous when grievance, rumor, emergency institutions, and claims of popular legitimacy converged.",
+        "sections": [
+          {
+            "form": "scene",
+            "subject": "The October Days march from Paris to Versailles",
+            "share": 0.35,
+            "owns": [
+              "The Archives parlementaires proceedings on 5\u20136 October 1789"
+            ],
+            "handoff": "The march joins material grievance to political legitimacy, but the prison massacres show emergency turning toward killing."
+          },
+          {
+            "form": "close-reading",
+            "subject": "Marat's articles and Clery's account of the September Massacres",
+            "share": 0.25,
+            "owns": [
+              "Marat's Ami du peuple articles and Clery's prison account"
+            ],
+            "handoff": "The competing accounts make rumor and authorization inseparable from the violence they describe."
+          },
+          {
+            "form": "counterargument",
+            "subject": "Whether revolutionary crowd violence was spontaneous or organized",
+            "share": 0.18,
+            "owns": [
+              "The Paris Commune, prison crowds, women marchers, and emergency political claims"
+            ],
+            "handoff": "Neither spontaneity nor conspiracy alone explains how restraint survived in some institutions."
+          },
+          {
+            "form": "comparison",
+            "subject": "The October march and September prison killings",
+            "share": 0.12,
+            "owns": [
+              "The two Paris episodes as distinct forms of crowd action"
+            ],
+            "handoff": "Their divergence leaves the question of institutional collapse and surviving restraint."
+          },
+          {
+            "form": "open-question",
+            "subject": "Why some revolutionary authorities restrained violence while others licensed it",
+            "share": 0.1,
+            "owns": [
+              "Emergency legitimacy, municipal authority, and competing claims to citizenship"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "Paris in October 1789 and September 1792 shows popular legitimacy becoming lethal when emergency authority allowed rumor to define enemies faster than institutions could restrain action.",
+        "avoid": [
+          "Do not reduce crowd action to irrationality or repeat the general distinction between interpersonal and organized violence."
+        ]
+      },
+      {
+        "chapterIndex": 11,
+        "throughLine": "Colonial violence became routine through quotas, concessions, policing, and resettlement, while resistance continually altered how those systems operated.",
+        "sections": [
+          {
+            "form": "portrait",
+            "subject": "Roger Casement's investigation of the Congo Free State",
+            "share": 0.4,
+            "owns": [
+              "Casement's 1904 Report upon the Administration of the Congo Free State"
+            ],
+            "handoff": "Casement names the machinery of coercion, but the Maji Maji rebellion shows what extraction produced in another colonial setting."
+          },
+          {
+            "form": "scene",
+            "subject": "A Maji Maji community confronting taxation and forced cotton labor",
+            "share": 0.2,
+            "owns": [
+              "The Maji Maji rebellion and German reports interpreted through Iliffe"
+            ],
+            "handoff": "Resistance changes the colonial state's problem from extraction to counterinsurgency."
+          },
+          {
+            "form": "comparison",
+            "subject": "Concessionary Congo and administrated German East Africa",
+            "share": 0.22,
+            "owns": [
+              "Congo concession companies and German East African cotton policy"
+            ],
+            "handoff": "The comparison identifies distinct colonial arrangements rather than one generic colonial violence."
+          },
+          {
+            "form": "argument",
+            "subject": "Why colonial coercion required collaboration and local knowledge",
+            "share": 0.18,
+            "owns": [
+              "Armed agents, quotas, interpreters, local intermediaries, and famine-producing retaliation"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "The Congo and Maji Maji cases show colonial violence becoming systematic through delegated extraction, while resistance forced each administration to expose its dependence on local intermediaries and food control.",
+        "avoid": [
+          "Do not repeat the Atlantic chapter's legal conversion of people into property or portray colonized societies as passive."
+        ]
+      },
+      {
+        "chapterIndex": 12,
+        "throughLine": "Industrial war transformed civilian vulnerability by linking battlefield decisions to railways, factories, conscription, telegraphs, and administrative counts.",
+        "sections": [
+          {
+            "form": "scene",
+            "subject": "The Somme as an operation of railway schedules and shell supply",
+            "share": 0.34,
+            "owns": [
+              "The British War Office statistics on the 1916 Somme effort"
+            ],
+            "handoff": "The tables reveal logistics behind battle, while Ottoman deportation orders show administration reaching civilians."
+          },
+          {
+            "form": "close-reading",
+            "subject": "The deportation orders and diplomatic account of Erzurum Armenians",
+            "share": 0.24,
+            "owns": [
+              "Takvim-i Vekayi deportation orders and Morgenthau's account"
+            ],
+            "handoff": "The documents move the industrial-war question from supply to the administrative removal of populations."
+          },
+          {
+            "form": "mechanism",
+            "subject": "How conscription, railways, factories, telegraphy, and counting expanded war",
+            "share": 0.22,
+            "owns": [
+              "British mobilization statistics and Ottoman deportation administration"
+            ],
+            "handoff": "The mechanism connects technology to organization without deciding whether it determines intent."
+          },
+          {
+            "form": "comparison",
+            "subject": "The Somme home front and the Armenian deportation system",
+            "share": 0.1,
+            "owns": [
+              "Industrial military logistics and civilian displacement in 1916 and 1915"
+            ],
+            "handoff": "Their difference leaves the boundary between battlefield and civilian life unsettled."
+          },
+          {
+            "form": "argument",
+            "subject": "Why industrial capacity changed the reach rather than the motive of violence",
+            "share": 0.1,
+            "owns": [
+              "Conscription, shells, telegraphs, security language, and deportation"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "The Somme and Erzurum show industrial administration making civilian bodies reachable at the same moment that factories and railways made mass battle sustainable.",
+        "avoid": [
+          "Do not repeat the gunpowder chapter's account of military capacity or treat industrial technology as destiny."
+        ]
+      },
+      {
+        "chapterIndex": 13,
+        "throughLine": "Genocidal and total violence depended on ordinary offices, coordinated decisions, and layered implementation whose evidence must be read with provenance and limits in view.",
+        "sections": [
+          {
+            "form": "close-reading",
+            "subject": "The Wannsee Protocol's language of coordination",
+            "share": 0.43,
+            "owns": [
+              "The Wannsee Protocol of 20 January 1942"
+            ],
+            "handoff": "The protocol clarifies bureaucratic coordination, but the Auschwitz photographs confront the gap between administrative language and lived extermination."
+          },
+          {
+            "form": "close-reading",
+            "subject": "The four Auschwitz Sonderkommando photographs",
+            "share": 0.22,
+            "owns": [
+              "The photographs held by the Auschwitz-Birkenau State Museum"
+            ],
+            "handoff": "The images witness a bounded moment while refusing to stand for every stage of the killing process."
+          },
+          {
+            "form": "mechanism",
+            "subject": "How intent, policy, office coordination, transport, and implementation interacted",
+            "share": 0.25,
+            "owns": [
+              "Security offices, ministries, deportation logistics, killing sites, and survivor evidence"
+            ],
+            "handoff": "The chain of implementation makes disagreement about responsibility and scale unavoidable."
+          },
+          {
+            "form": "open-question",
+            "subject": "What the surviving records can establish about knowledge and choice",
+            "share": 0.1,
+            "owns": [
+              "Provenance, missing records, perpetrator language, and visual testimony"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "The Wannsee record and Auschwitz photographs show exterminatory violence emerging through coordinated offices whose paperwork and surviving witness traces reveal choices without making every individual role identical.",
+        "avoid": [
+          "Do not turn this chapter into a catalogue of genocides or repeat the industrial-war account of administration."
+        ]
+      },
+      {
+        "chapterIndex": 14,
+        "throughLine": "After 1945, nuclear deterrence, insurgency, resettlement, and intelligence changed the calculations of war without removing political violence.",
+        "sections": [
+          {
+            "form": "comparison",
+            "subject": "Kennedy and Khrushchev's letters during the Cuban Missile Crisis",
+            "share": 0.36,
+            "owns": [
+              "The Kennedy\u2013Khrushchev correspondence in Foreign Relations of the United States"
+            ],
+            "handoff": "The letters show restraint under nuclear danger, but Malaya tests how coercion worked in a counterinsurgency."
+          },
+          {
+            "form": "mechanism",
+            "subject": "How the Briggs Plan combined resettlement, food control, intelligence, and reform",
+            "share": 0.24,
+            "owns": [
+              "The Briggs Report on the Federation of Malaya, 1950"
+            ],
+            "handoff": "Counterinsurgency makes civilian administration central to military success."
+          },
+          {
+            "form": "argument",
+            "subject": "Why deterrence altered interstate risk without ending organized violence",
+            "share": 0.18,
+            "owns": [
+              "Nuclear signaling, centralized control, misperception, and negotiated restraint"
+            ],
+            "handoff": "The contrast between Washington\u2013Moscow and Malaya complicates any single postwar trend."
+          },
+          {
+            "form": "counterargument",
+            "subject": "The claim that postwar violence simply declined",
+            "share": 0.12,
+            "owns": [
+              "Battlefield deaths, insurgency, civilian control, and regional exceptions"
+            ],
+            "handoff": "A broad decline claim still depends on what is counted and whose insecurity is visible."
+          },
+          {
+            "form": "open-question",
+            "subject": "Whether changing measurements capture changing harm",
+            "share": 0.1,
+            "owns": [
+              "The distinction between interstate deaths, civil-war deaths, displacement, and coercive control"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "The Cuban crisis and Briggs Plan show postwar restraint and postwar coercion operating together, making any decline in battlefield deaths inseparable from the forms of control that replaced them.",
+        "avoid": [
+          "Do not summarize earlier eras or present deterrence as the end of war."
+        ]
+      },
+      {
+        "chapterIndex": 15,
+        "throughLine": "The final chapter tests the book's explanatory tools against abolition and civil war, ending with a bounded conclusion about historical choice and uncertainty.",
+        "sections": [
+          {
+            "form": "comparison",
+            "subject": "The Taiping Rebellion and the abolition campaign",
+            "share": 0.4,
+            "owns": [
+              "Taiping casualty estimates and the abolition campaign's parliamentary and testimonial record"
+            ],
+            "handoff": "The cases place mass death and institutional change side by side, but their evidence differs sharply in scale and precision."
+          },
+          {
+            "form": "close-reading",
+            "subject": "Thomas Clarkson's account of abolitionist evidence and organization",
+            "share": 0.2,
+            "owns": [
+              "Clarkson's The History of the Rise, Progress, and Accomplishment of the Abolition of the African Slave-Trade"
+            ],
+            "handoff": "Abolition's documents show political organization redirecting an entrenched system, while Taiping estimates expose the limits of retrospective measurement."
+          },
+          {
+            "form": "counterargument",
+            "subject": "Whether ecology, inequality, ideology, or institutions alone explain violence",
+            "share": 0.18,
+            "owns": [
+              "Taiping famine, civil war, religious ideology, state reconstruction, abolitionist testimony, and parliamentary action"
+            ],
+            "handoff": "The competing explanations converge on interaction rather than a single master cause."
+          },
+          {
+            "form": "open-question",
+            "subject": "What remains unknowable when categories and records overlap",
+            "share": 0.12,
+            "owns": [
+              "Disputed Taiping demography and incomplete accounts of coercion and reform"
+            ],
+            "handoff": "The remaining uncertainty must be carried into the conclusion rather than concealed by a final scale."
+          },
+          {
+            "form": "resolution",
+            "subject": "The author's conclusion about historical comparison and human choice",
+            "share": 0.1,
+            "owns": [
+              "The comparative inference drawn from the Taiping and abolition cases"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "Taiping's uncertain losses and abolition's organized reversal show that history can identify the conditions and choices that redirect violence, while never converting incomplete evidence into a final theory of human nature.",
+        "avoid": [
+          "Do not re-list the book's chapters, restate its thesis verbatim, or claim that abolition proves inevitable moral progress."
+        ]
+      }
+    ]
+  },
+  {
+    "chapters": [
+      {
+        "chapterIndex": 1,
+        "throughLine": "The chapter separates felt aggression from the institutions that authorize, classify, and record harm.",
+        "sections": [
+          {
+            "form": "scene",
+            "subject": "The Athenian delegation and Melian council in 416 BCE",
+            "share": 0.42,
+            "owns": [
+              "The Melian Dialogue in Thucydides, Book V, 84\u2013116"
+            ],
+            "handoff": "The debate leaves open whether coercion begins with hostility or with a political decision about whose lives count."
+          },
+          {
+            "form": "close-reading",
+            "subject": "Thucydides\u2019 vocabulary of justice, necessity, and advantage",
+            "share": 0.28,
+            "owns": [
+              "The dialogue\u2019s language of power and necessity"
+            ],
+            "handoff": "Its political vocabulary requires comparison with violence regulated through compensation rather than imperial command."
+          },
+          {
+            "form": "portrait",
+            "subject": "Evans-Pritchard\u2019s account of Nuer feud and homicide",
+            "share": 0.2,
+            "owns": [
+              "The Nuer, chapters 4\u20135"
+            ],
+            "handoff": "The Nuer case raises how historians can compare feud, raiding, war, and law."
+          },
+          {
+            "form": "argument",
+            "subject": "Working distinctions among aggression, violence, war, and atrocity",
+            "share": 0.1,
+            "owns": [
+              "The chapter\u2019s definitions and evidentiary vocabulary"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "The Melian and Nuer cases show that historical comparison begins by identifying who makes injury a recognized target, procedure, and record.",
+        "avoid": [
+          "Do not preview the full period survey or claim that institutions always increase violence."
+        ]
+      },
+      {
+        "chapterIndex": 2,
+        "throughLine": "Archaeological evidence can establish lethal episodes while leaving the scale and organization of prehistoric conflict unsettled.",
+        "sections": [
+          {
+            "form": "close-reading",
+            "subject": "The clustered burials and projectile injuries at Jebel Sahaba",
+            "share": 0.44,
+            "owns": [
+              "Jebel Sahaba and Bocquentin et al.\u2019s 2021 study"
+            ],
+            "handoff": "The cemetery shows repeated violent injury, but its relation to ordinary life remains uncertain."
+          },
+          {
+            "form": "comparison",
+            "subject": "Jebel Sahaba beside Nataruk",
+            "share": 0.24,
+            "owns": [
+              "Nataruk and the debate between Lahr and subsequent critics"
+            ],
+            "handoff": "The contrast shifts attention from violence\u2019s existence to what skeletal patterns can identify."
+          },
+          {
+            "form": "mechanism",
+            "subject": "How archaeologists infer violence from bones, tools, settlement, and ecology",
+            "share": 0.2,
+            "owns": [
+              "Projectile trauma, perimortem injury, burial clustering, mobility, and resource context"
+            ],
+            "handoff": "Inference procedures explain the evidence\u2019s limits but cannot decide whether missing remains mean peace or missing records."
+          },
+          {
+            "form": "open-question",
+            "subject": "Whether absent mass graves indicate less violence or different preservation",
+            "share": 0.12,
+            "owns": [
+              "Invisible violence in mobile communities"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "Jebel Sahaba and Nataruk establish lethal prehistoric conflict without supplying a reliable measure of its frequency in daily life.",
+        "avoid": [
+          "Do not treat isolated injuries as population-wide rates or repeat chapter 1\u2019s definitions."
+        ]
+      },
+      {
+        "chapterIndex": 3,
+        "throughLine": "Early states made coercion durable by joining boundaries, surplus, administration, and divine authority in records that outlasted battles.",
+        "sections": [
+          {
+            "form": "portrait",
+            "subject": "Eannatum\u2019s claim over the Lagash\u2013Umma boundary",
+            "share": 0.44,
+            "owns": [
+              "The Stele of the Vultures"
+            ],
+            "handoff": "The monument\u2019s certainty about victory invites scrutiny of what an official inscription suppresses."
+          },
+          {
+            "form": "close-reading",
+            "subject": "The stele\u2019s vultures, prisoners, divine symbols, and inscription",
+            "share": 0.2,
+            "owns": [
+              "The relief and inscription of the Stele of the Vultures"
+            ],
+            "handoff": "Propaganda makes the administrative question unavoidable: what enforced the boundary?"
+          },
+          {
+            "form": "comparison",
+            "subject": "Lagash beside Mohenjo-daro\u2019s disputed skeletons",
+            "share": 0.24,
+            "owns": [
+              "The Mohenjo-daro skeleton interpretation and Dales\u2019s critique"
+            ],
+            "handoff": "The records differ because one announces organized force while the other cannot securely establish it."
+          },
+          {
+            "form": "argument",
+            "subject": "Surplus, hierarchy, and administrative durability",
+            "share": 0.12,
+            "owns": [
+              "Taxation, labor organization, fortification, and boundary enforcement"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "Lagash\u2019s explicit boundary claim and Mohenjo-daro\u2019s ambiguous remains show that urban complexity made coercion recordable without making every urban death evidence of war.",
+        "avoid": [
+          "Do not re-explain archaeological uncertainty or treat state formation as a universal escalation."
+        ]
+      },
+      {
+        "chapterIndex": 4,
+        "throughLine": "Imperial power combined spectacular punishment with routine accommodation, and its records reveal both the violence and political work of managing difference.",
+        "sections": [
+          {
+            "form": "close-reading",
+            "subject": "Darius\u2019s account of rebellion at Behistun",
+            "share": 0.44,
+            "owns": [
+              "The Behistun Inscription"
+            ],
+            "handoff": "Darius\u2019s restored order depends on a story whose silences require comparison with practice on the ground."
+          },
+          {
+            "form": "mechanism",
+            "subject": "How Neo-Assyrian deportation joined conquest to resettlement",
+            "share": 0.2,
+            "owns": [
+              "Assyrian deportation lists, resettlement, tribute, and local intermediaries"
+            ],
+            "handoff": "Administrative relocation raises whether deportation destroyed communities or reorganized them for rule."
+          },
+          {
+            "form": "scene",
+            "subject": "A deported population under Sargon II and Sennacherib",
+            "share": 0.14,
+            "owns": [
+              "Neo-Assyrian deportation accounts in Dalley\u2019s collection"
+            ],
+            "handoff": "The movement of people exposes the human cost behind imperial categories."
+          },
+          {
+            "form": "comparison",
+            "subject": "Persian restoration language beside Assyrian relocation practice",
+            "share": 0.1,
+            "owns": [
+              "Behistun and Neo-Assyrian political narratives"
+            ],
+            "handoff": "Their difference leaves open when coercion stabilized empire and when it produced revolt."
+          },
+          {
+            "form": "open-question",
+            "subject": "Whether accommodation restrained violence or redistributed it",
+            "share": 0.12,
+            "owns": [
+              "Local intermediaries, tribute obligations, and frontier resistance"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "Behistun and the Assyrian records show imperial stability emerging from punishment, population movement, and local brokerage working together.",
+        "avoid": [
+          "Do not repeat the general claim that records are politically constructed or re-narrate early state formation."
+        ]
+      },
+      {
+        "chapterIndex": 5,
+        "throughLine": "Accounts of precolonial American conflict become clearer when ritual language, alliance politics, and conquest-era observation remain distinct.",
+        "sections": [
+          {
+            "form": "scene",
+            "subject": "The Spanish assault and Nahua memory of Tenochtitlan",
+            "share": 0.44,
+            "owns": [
+              "The Florentine Codex, Book 12"
+            ],
+            "handoff": "Nahua testimony records invasion through its own categories, which must be set beside an Andean succession crisis."
+          },
+          {
+            "form": "comparison",
+            "subject": "Tenochtitlan and Cajamarca as alliance and succession conflicts",
+            "share": 0.24,
+            "owns": [
+              "Cieza de Le\u00f3n and Garcilaso on the Inca civil war and invasion"
+            ],
+            "handoff": "The comparison separates imperial fracture from a timeless pattern of ritual violence."
+          },
+          {
+            "form": "close-reading",
+            "subject": "Conquest-era descriptions of captives, sacrifice, and diplomacy",
+            "share": 0.2,
+            "owns": [
+              "The Florentine Codex\u2019s representations of Nahua practice"
+            ],
+            "handoff": "The sources\u2019 rhetorical purposes make observed practice versus colonial accusation the remaining problem."
+          },
+          {
+            "form": "counterargument",
+            "subject": "Whether conquest narratives transparently describe indigenous violence",
+            "share": 0.12,
+            "owns": [
+              "Spanish and indigenous constructions of legitimacy"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "The Nahua and Andean cases show alliances and succession struggles shaping European encounters, while conquest narratives converted contingencies into civilizational accusation.",
+        "avoid": [
+          "Do not generalize across all American societies or repeat the general warning about uneven evidence."
+        ]
+      },
+      {
+        "chapterIndex": 6,
+        "throughLine": "Medieval and post-classical violence moved among raiding, dynastic rule, sacred authorization, and civilian survival.",
+        "sections": [
+          {
+            "form": "comparison",
+            "subject": "Norman conquest and the First Crusade at Jerusalem",
+            "share": 0.44,
+            "owns": [
+              "Bayeux Tapestry scenes and the 1099 Jerusalem accounts"
+            ],
+            "handoff": "The paired cases show different legitimating languages and require closer attention to the sources\u2019 political work."
+          },
+          {
+            "form": "close-reading",
+            "subject": "Raymond of Aguilers and Fulcher on Jerusalem",
+            "share": 0.2,
+            "owns": [
+              "The two crusade narratives"
+            ],
+            "handoff": "Sacred narrative explains meaning, leaving the practical question of civilian endurance."
+          },
+          {
+            "form": "portrait",
+            "subject": "A civilian household caught between raiding and settled rule",
+            "share": 0.14,
+            "owns": [
+              "Noncombatant experience reconstructed from the assigned frontier sources"
+            ],
+            "handoff": "The civilian perspective shifts the chapter from justification to consequence."
+          },
+          {
+            "form": "argument",
+            "subject": "Why religious authorization did not determine one conduct pattern",
+            "share": 0.1,
+            "owns": [
+              "Oath, sanctity, ransom, plunder, and protection"
+            ],
+            "handoff": "These variables leave open how restraint survived amid authorized violence."
+          },
+          {
+            "form": "open-question",
+            "subject": "When sacred language constrained violence rather than intensified it",
+            "share": 0.12,
+            "owns": [
+              "The unresolved relationship between sanctity, submission, and protection"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "England and Jerusalem show sacred authorization intensifying violence in some moments while negotiated submission and protection continued to organize survival.",
+        "avoid": [
+          "Do not repeat imperial administration or reduce medieval violence to religion."
+        ]
+      },
+      {
+        "chapterIndex": 7,
+        "throughLine": "Steppe conquest depended on mobility, but its durable effects came from converting movement and victory into tribute, census, and incorporation.",
+        "sections": [
+          {
+            "form": "portrait",
+            "subject": "Temujin\u2019s consolidation of power in The Secret History of the Mongols",
+            "share": 0.44,
+            "owns": [
+              "The Secret History\u2019s account of Temujin\u2019s rise"
+            ],
+            "handoff": "Temujin\u2019s career links battlefield success to kinship and redistribution, but conquest must be followed after fighting."
+          },
+          {
+            "form": "mechanism",
+            "subject": "How mounted mobility, remounts, intelligence, and discipline produced reach",
+            "share": 0.2,
+            "owns": [
+              "Steppe ecology, mounted tactics, oath relations, and redistributed households"
+            ],
+            "handoff": "Tactical mobility explains expansion but not how conquered populations became governable."
+          },
+          {
+            "form": "close-reading",
+            "subject": "The Mongol census and taxation of Rus",
+            "share": 0.24,
+            "owns": [
+              "Novgorodian First Chronicle entries for 1257\u20131259"
+            ],
+            "handoff": "Enumeration shows conquest settling into tribute and local brokerage."
+          },
+          {
+            "form": "open-question",
+            "subject": "Whether incorporation softened conquest or preserved hierarchy",
+            "share": 0.12,
+            "owns": [
+              "Destruction, exchange, and governance in Rus"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "The Mongol case turns mobility into political technology when census and tribute bind Rus to local princes and an imperial center.",
+        "avoid": [
+          "Do not portray steppe societies as uniformly warlike or repeat early states\u2019 administrative argument."
+        ]
+      },
+      {
+        "chapterIndex": 8,
+        "throughLine": "Atlantic slavery became durable when law, insurance, labor discipline, and racial classification converted repeated violence into administration.",
+        "sections": [
+          {
+            "form": "close-reading",
+            "subject": "The Code Noir\u2019s rules for status, punishment, religion, and labor",
+            "share": 0.44,
+            "owns": [
+              "The 1685 Code Noir"
+            ],
+            "handoff": "The ordinance reveals legal design, but the Zong case shows commercial law handling lethal practice."
+          },
+          {
+            "form": "scene",
+            "subject": "The Zong killings and insurance hearing",
+            "share": 0.2,
+            "owns": [
+              "Gregson v. Gilbert and Equiano\u2019s account of the Zong"
+            ],
+            "handoff": "The courtroom\u2019s property language leaves violence visible through a dispute over financial loss."
+          },
+          {
+            "form": "mechanism",
+            "subject": "How plantation law connected ownership, surveillance, punishment, and shipping",
+            "share": 0.14,
+            "owns": [
+              "French Caribbean legal categories and plantation discipline"
+            ],
+            "handoff": "Institutional continuity must still account for enslaved people and critics."
+          },
+          {
+            "form": "counterargument",
+            "subject": "Whether Atlantic slavery was chiefly an economic system",
+            "share": 0.1,
+            "owns": [
+              "The Code Noir and Zong evidence on law, ideology, and agency"
+            ],
+            "handoff": "Economic incentives alone cannot explain the categories that made coercion intelligible."
+          },
+          {
+            "form": "portrait",
+            "subject": "Olaudah Equiano\u2019s testimony against commercial abstraction",
+            "share": 0.12,
+            "owns": [
+              "Equiano\u2019s 1789 account of the Zong"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "The Code Noir and Zong litigation show slavery becoming durable where racial status and commercial law rendered human injury legible as property management.",
+        "avoid": [
+          "Do not repeat colonial forced-labor mechanisms or treat the Atlantic as uniform."
+        ]
+      },
+      {
+        "chapterIndex": 9,
+        "throughLine": "Gunpowder increased reach only through fiscal, personnel, and supply systems that extended state decisions into daily life.",
+        "sections": [
+          {
+            "form": "mechanism",
+            "subject": "How the Ottoman devshirme supplied the janissary institution",
+            "share": 0.44,
+            "owns": [
+              "The devshirme kanunname and janissary registers"
+            ],
+            "handoff": "Personnel administration connects military power to households, while Magdeburg shows its civilian effects."
+          },
+          {
+            "form": "scene",
+            "subject": "The sack of Magdeburg in 1631",
+            "share": 0.2,
+            "owns": [
+              "Hagendorf\u2019s diary and contemporary accounts of Magdeburg"
+            ],
+            "handoff": "The city\u2019s destruction makes supply, discipline, and restraint concrete."
+          },
+          {
+            "form": "comparison",
+            "subject": "Ottoman recruitment and the Thirty Years\u2019 War economy",
+            "share": 0.24,
+            "owns": [
+              "The janissary levy and Magdeburg\u2019s requisition records"
+            ],
+            "handoff": "Both cases raise whether firearms changed motives or enlarged capacity."
+          },
+          {
+            "form": "argument",
+            "subject": "Technology as an amplifier of administrative reach",
+            "share": 0.12,
+            "owns": [
+              "Firearms, registers, taxation, requisition, and standing military labor"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "The janissary levy and Magdeburg show gunpowder altering violence most decisively when states could recruit, supply, and discipline people beyond battle.",
+        "avoid": [
+          "Do not repeat early state formation or present technology as an autonomous cause."
+        ]
+      },
+      {
+        "chapterIndex": 10,
+        "throughLine": "Revolutionary crowds became politically dangerous when grievance, rumor, emergency institutions, and popular legitimacy converged.",
+        "sections": [
+          {
+            "form": "scene",
+            "subject": "The October Days march from Paris to Versailles",
+            "share": 0.44,
+            "owns": [
+              "The Archives parlementaires proceedings of 5\u20136 October 1789"
+            ],
+            "handoff": "The march joins material grievance to legitimacy, but the prison massacres show emergency turning toward killing."
+          },
+          {
+            "form": "close-reading",
+            "subject": "Marat\u2019s articles and Clery\u2019s account of the September Massacres",
+            "share": 0.2,
+            "owns": [
+              "Marat\u2019s Ami du peuple articles and Clery\u2019s prison account"
+            ],
+            "handoff": "The competing accounts make rumor and authorization inseparable from violence."
+          },
+          {
+            "form": "counterargument",
+            "subject": "Whether revolutionary crowd violence was spontaneous or organized",
+            "share": 0.14,
+            "owns": [
+              "The Paris Commune, prison crowds, and emergency claims"
+            ],
+            "handoff": "Neither spontaneity nor conspiracy explains how restraint survived in some institutions."
+          },
+          {
+            "form": "comparison",
+            "subject": "The October march and September prison killings",
+            "share": 0.1,
+            "owns": [
+              "The two Paris episodes as distinct crowd actions"
+            ],
+            "handoff": "Their divergence leaves institutional collapse and surviving restraint unresolved."
+          },
+          {
+            "form": "open-question",
+            "subject": "Why some revolutionary authorities restrained violence while others licensed it",
+            "share": 0.12,
+            "owns": [
+              "Emergency legitimacy, municipal authority, and citizenship"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "Paris in 1789 and 1792 shows popular legitimacy becoming lethal when emergency authority let rumor define enemies faster than institutions could restrain action.",
+        "avoid": [
+          "Do not reduce crowd action to irrationality or repeat the aggression\u2013organization distinction."
+        ]
+      },
+      {
+        "chapterIndex": 11,
+        "throughLine": "Colonial violence became routine through quotas, concessions, policing, and resettlement, while resistance altered how those systems operated.",
+        "sections": [
+          {
+            "form": "portrait",
+            "subject": "Roger Casement\u2019s investigation of the Congo Free State",
+            "share": 0.44,
+            "owns": [
+              "Casement\u2019s 1904 Congo report"
+            ],
+            "handoff": "Casement names the machinery of coercion, but Maji Maji shows what extraction produced elsewhere."
+          },
+          {
+            "form": "scene",
+            "subject": "A Maji Maji community confronting taxation and forced cotton labor",
+            "share": 0.2,
+            "owns": [
+              "The Maji Maji rebellion and German reports interpreted through Iliffe"
+            ],
+            "handoff": "Resistance changes the colonial state\u2019s problem from extraction to counterinsurgency."
+          },
+          {
+            "form": "comparison",
+            "subject": "Concessionary Congo and German East Africa",
+            "share": 0.24,
+            "owns": [
+              "Congo concession companies and German East African cotton policy"
+            ],
+            "handoff": "The comparison identifies distinct colonial arrangements rather than one generic violence."
+          },
+          {
+            "form": "argument",
+            "subject": "Why colonial coercion required collaboration and local knowledge",
+            "share": 0.12,
+            "owns": [
+              "Armed agents, quotas, interpreters, intermediaries, and retaliation"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "The Congo and Maji Maji cases show colonial violence becoming systematic through delegated extraction, while resistance exposed each administration\u2019s dependence on intermediaries and food control.",
+        "avoid": [
+          "Do not repeat slavery\u2019s legal conversion of people into property or portray colonized societies as passive."
+        ]
+      },
+      {
+        "chapterIndex": 12,
+        "throughLine": "Industrial war transformed civilian vulnerability by linking battlefield decisions to railways, factories, conscription, telegraphs, and administrative counts.",
+        "sections": [
+          {
+            "form": "scene",
+            "subject": "The Somme as an operation of railway schedules and shell supply",
+            "share": 0.44,
+            "owns": [
+              "British War Office statistics on the 1916 Somme effort"
+            ],
+            "handoff": "The tables reveal logistics behind battle, while Ottoman orders show administration reaching civilians."
+          },
+          {
+            "form": "close-reading",
+            "subject": "The Erzurum deportation orders and Morgenthau\u2019s account",
+            "share": 0.2,
+            "owns": [
+              "Takvim-i Vekayi orders and Morgenthau\u2019s diplomatic account"
+            ],
+            "handoff": "The documents move the industrial-war question from supply to population removal."
+          },
+          {
+            "form": "mechanism",
+            "subject": "How conscription, railways, factories, telegraphy, and counting expanded war",
+            "share": 0.14,
+            "owns": [
+              "British mobilization statistics and Ottoman deportation administration"
+            ],
+            "handoff": "The mechanism connects technology to organization without deciding intent."
+          },
+          {
+            "form": "comparison",
+            "subject": "The Somme home front and Armenian deportation system",
+            "share": 0.1,
+            "owns": [
+              "Industrial military logistics and civilian displacement"
+            ],
+            "handoff": "Their difference leaves the battlefield\u2013civilian boundary unsettled."
+          },
+          {
+            "form": "argument",
+            "subject": "Why industrial capacity changed reach rather than motive",
+            "share": 0.12,
+            "owns": [
+              "Conscription, shells, telegraphs, security language, and deportation"
+            ],
+            "handoff": ""
+          },
+          {
+            "form": "catalogue",
+            "subject": "The administrative links joining fronts, factories, and civilian transport",
+            "share": 0.1,
+            "owns": [
+              "Rail timetables, shell production, telegraph orders, and deportation registers"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "The Somme and Erzurum show industrial administration making civilian bodies reachable at the same moment factories and railways made mass battle sustainable.",
+        "avoid": [
+          "Do not repeat the gunpowder chapter\u2019s capacity argument or treat industrial technology as destiny."
+        ],
+        "figure": {
+          "kind": "line",
+          "shows": "The growth of mobilized personnel and mat\u00e9riel across the Somme campaign",
+          "source": "War Office, Statistics of the Military Effort of the British Empire During the Great War, 1914\u20131920"
+        }
+      },
+      {
+        "chapterIndex": 13,
+        "throughLine": "Genocidal and total violence depended on ordinary offices, coordinated decisions, and layered implementation whose evidence requires careful attention to provenance.",
+        "sections": [
+          {
+            "form": "close-reading",
+            "subject": "The Wannsee Protocol\u2019s language of coordination",
+            "share": 0.44,
+            "owns": [
+              "The Wannsee Protocol of 20 January 1942"
+            ],
+            "handoff": "The protocol clarifies bureaucratic coordination, but photographs confront the gap between office language and extermination."
+          },
+          {
+            "form": "catalogue",
+            "subject": "The four Auschwitz Sonderkommando photographs",
+            "share": 0.2,
+            "owns": [
+              "The four photographs in the Auschwitz-Birkenau State Museum archive"
+            ],
+            "handoff": "The images witness a bounded moment without standing for every stage of killing."
+          },
+          {
+            "form": "mechanism",
+            "subject": "How intent, policy, offices, transport, and implementation interacted",
+            "share": 0.14,
+            "owns": [
+              "Security offices, ministries, deportation logistics, and killing sites"
+            ],
+            "handoff": "The chain of implementation makes responsibility and scale disputable."
+          },
+          {
+            "form": "argument",
+            "subject": "What provenance permits historians to claim",
+            "share": 0.1,
+            "owns": [
+              "Documentary provenance, missing records, perpetrator language, and visual testimony"
+            ],
+            "handoff": "The evidentiary limits leave knowledge and choice as the final question."
+          },
+          {
+            "form": "open-question",
+            "subject": "What surviving records can establish about knowledge and choice",
+            "share": 0.12,
+            "owns": [
+              "The unresolved relation between institutional evidence and individual awareness"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "The Wannsee record and Auschwitz photographs reveal exterminatory violence through coordinated offices while preserving meaningful differences among individual roles.",
+        "avoid": [
+          "Do not turn the chapter into a catalogue of genocides or repeat industrial war\u2019s administrative account."
+        ]
+      },
+      {
+        "chapterIndex": 14,
+        "throughLine": "After 1945, nuclear deterrence, insurgency, resettlement, and intelligence changed calculations without removing political violence.",
+        "sections": [
+          {
+            "form": "comparison",
+            "subject": "Kennedy and Khrushchev\u2019s letters during the Cuban Missile Crisis",
+            "share": 0.44,
+            "owns": [
+              "The Kennedy\u2013Khrushchev correspondence in FRUS, 1961\u20131963, XI"
+            ],
+            "handoff": "The letters show restraint under nuclear danger, but Malaya tests coercion in counterinsurgency."
+          },
+          {
+            "form": "mechanism",
+            "subject": "How the Briggs Plan combined resettlement, food control, intelligence, and reform",
+            "share": 0.2,
+            "owns": [
+              "The Briggs Report on Malaya, 1950"
+            ],
+            "handoff": "Counterinsurgency makes civilian administration central to military success."
+          },
+          {
+            "form": "argument",
+            "subject": "Why deterrence altered interstate risk without ending organized violence",
+            "share": 0.14,
+            "owns": [
+              "Nuclear signaling, centralized control, misperception, and restraint"
+            ],
+            "handoff": "The contrast between Washington\u2013Moscow and Malaya complicates one postwar trend."
+          },
+          {
+            "form": "counterargument",
+            "subject": "The claim that postwar violence simply declined",
+            "share": 0.1,
+            "owns": [
+              "Battlefield deaths, insurgency, civilian control, and regional exceptions"
+            ],
+            "handoff": "A decline claim still depends on what is counted and whose insecurity is visible."
+          },
+          {
+            "form": "open-question",
+            "subject": "Whether changing measurements capture changing harm",
+            "share": 0.12,
+            "owns": [
+              "Interstate deaths, civil-war deaths, displacement, and coercive control"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "The Cuban crisis and Briggs Plan show postwar restraint and coercion operating together, so battlefield-death trends cannot be separated from newer forms of control.",
+        "avoid": [
+          "Do not summarize earlier eras or present deterrence as the end of war."
+        ]
+      },
+      {
+        "chapterIndex": 15,
+        "throughLine": "The final chapter tests historical explanation against civil war and abolition, ending with a bounded conclusion about choice and uncertainty.",
+        "sections": [
+          {
+            "form": "close-reading",
+            "subject": "Taiping casualty estimates and their evidentiary conflicts",
+            "share": 0.44,
+            "owns": [
+              "De Groot\u2019s demographic claims and Platt\u2019s reconstruction of the Taiping war"
+            ],
+            "handoff": "The disputed figures expose measurement limits, while abolition offers a case of organized institutional redirection."
+          },
+          {
+            "form": "comparison",
+            "subject": "Taiping civil war and the abolition campaign",
+            "share": 0.2,
+            "owns": [
+              "Taiping estimates and the British abolition campaign"
+            ],
+            "handoff": "The cases place mass death and institutional change together but differ sharply in evidence."
+          },
+          {
+            "form": "portrait",
+            "subject": "Thomas Clarkson\u2019s abolitionist evidence-gathering",
+            "share": 0.14,
+            "owns": [
+              "Clarkson\u2019s History of the Rise, Progress, and Accomplishment of Abolition"
+            ],
+            "handoff": "Abolition\u2019s organization shows political action redirecting an entrenched system."
+          },
+          {
+            "form": "counterargument",
+            "subject": "Whether ecology, inequality, ideology, or institutions alone explain violence",
+            "share": 0.1,
+            "owns": [
+              "Taiping famine, civil war, religious ideology, reconstruction, and abolitionist action"
+            ],
+            "handoff": "The competing explanations converge on interaction rather than a master cause."
+          },
+          {
+            "form": "open-question",
+            "subject": "What remains unknowable when categories and records overlap",
+            "share": 0.12,
+            "owns": [
+              "Incomplete accounts of Taiping coercion, mortality, reform, and abolition"
+            ],
+            "handoff": ""
+          }
+        ],
+        "landing": "Taiping\u2019s uncertain losses and abolition\u2019s organized reversal show history identifying conditions and choices that redirect violence without turning incomplete evidence into a final account of human nature.",
+        "avoid": [
+          "Do not re-list the chapters, restate the thesis verbatim, or claim that abolition proves inevitable moral progress."
+        ]
+      }
+    ]
+  }
+]

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.5,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Absence is a historical condition before it becomes a historical conclusion.",
+      "judgment": "Compact, genuinely earned formulation of the book's epistemological argument; among its best sentences."
+    },
+    {
+      "quote": "A wound is a trace of force. It cannot tell us whether a state ordered the attack, whether an armed group had a command structure, or whether the people who died were treated as combatants or civilians.",
+      "judgment": "Exemplary control of inferential distance \u2014 the book consistently refuses to let material evidence overstate itself."
+    },
+    {
+      "quote": "A ration account belongs to the history of coercion as much as to the history of accounting: it tells us who received nourishment, but also who had to appear, for how long, and under whose authority.",
+      "judgment": "The central thesis rendered through a specific document type rather than asserted abstractly; strong reasoning."
+    },
+    {
+      "quote": "A bureaucratic document does not make killing impersonal; it gives impersonality a procedure.",
+      "judgment": "Sharp and true, but also typical of a much-repeated aphoristic-closer move that loses force by the fifth chapter."
+    },
+    {
+      "quote": "A weapon can enlarge the reach of an individual attack. An arsenal enlarges the reach of an office.",
+      "judgment": "Elegant, yet a textbook paired antithesis in isolated-paragraph form \u2014 the book's single most overused rhetorical shape."
+    },
+    {
+      "quote": "One source speaks through jurisdiction. The other speaks through bone.",
+      "judgment": "Memorable, but the symmetrical two-clause verdict recurs at the close of nearly every comparison in the book."
+    },
+    {
+      "quote": "The significance lies in the verbs.",
+      "judgment": "A one-line paragraph used as a drumbeat; effective once, mannered by repetition across chapters."
+    },
+    {
+      "quote": "How much violence can disappear when a society does not carve its king striking an enemy?",
+      "judgment": "Good question, but chapter and section ends are repeatedly handed to an unanswered rhetorical question rather than to an argued landing."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Sections and chapters close on an unanswered rhetorical question rather than a conclusion, used as a structural default across all fifteen chapters.",
+      "instances": [
+        "Was restraint practised by the living, or produced by the conditions of preservation?",
+        "At what point does warning become responsibility, and who has the power to declare that the point has been reached?"
+      ]
+    },
+    {
+      "pattern": "Negation-then-assertion sentence pairs (\"X did not merely do A. It did B.\") as the standard engine of every analytic turn.",
+      "instances": [
+        "The pass did not merely record movement. It made movement conditional.",
+        "Violence is not pictured as a breakdown of political order. It is pictured as the act through which political order becomes visible."
+      ]
+    },
+    {
+      "pattern": "Paired antitheses in matched clauses used to summarise a comparison, almost always as the final sentence of a passage.",
+      "instances": [
+        "One material form organised space; the other organised memory.",
+        "The homicide register is richer in names and poorer in bodies."
+      ]
+    },
+    {
+      "pattern": "Every chapter is built from the same modular unit \u2014 two cases set side by side, declared non-equivalent, then resolved into an institutional difference \u2014 so the macro-structure is a chain of interchangeable diptychs.",
+      "instances": [
+        "Roman Britain and Achaemenid Egypt were both extractive provinces, but their imperial arrangements differed in the location of force.",
+        "The Mongol Empire and the Xiongnu confederation are often placed together because both drew power from the steppe, mounted warfare, and relations with settled China. The resemblance is real but narrow."
+      ]
+    },
+    {
+      "pattern": "The thesis (emotion supplies energy, institutions supply direction) is restated in fresh wording dozens of times rather than developed, producing a recap loop across chapters.",
+      "instances": [
+        "Emotion supplied energy. Institutions supplied direction.",
+        "Hatred can prepare a population; institutions decide how far preparation will go."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, conceptually unified history of organised aggression whose controlling claim \u2014 that harm becomes durable through offices, records and classifications rather than through anger \u2014 is held steadily across fifteen chapters from Jebel Sahaba to Rwanda. Its greatest strengths are evidentiary discipline and clarity: it repeatedly names what a source can and cannot establish, refuses to let a wound, a monument or a ledger say more than it does, and keeps the reader aware that visibility itself is an institutional artefact. The prose is clean, unhurried and free of most lexical AI tells; the register is consistent to the point of austerity. The weakness is formal monotony. Almost every passage runs the same circuit \u2014 two cases, a refused equivalence, a symmetrical two-clause verdict, an aphoristic isolated sentence, and a rhetorical question at the exit \u2014 so the thesis is restated far more often than it is complicated, and pacing flattens well before the twentieth-century chapters. Depth is respectable but the cases are canonical and the originality lies mainly in the framing; with tightened redundancy and varied paragraph architecture this would be a strong book rather than a well-executed template."
+}

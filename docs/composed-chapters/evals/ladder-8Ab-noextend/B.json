@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 7,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.7,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Low",
+  "highlights": [
+    {
+      "quote": "The body records violence more readily than intention.",
+      "judgment": "Compact, earned aphorism that states the book's evidentiary problem without inflating it."
+    },
+    {
+      "quote": "A divine net and a military line could represent victory; only administration could collect it.",
+      "judgment": "The controlling thesis realised through a specific object rather than asserted abstractly - the book at its best."
+    },
+    {
+      "quote": "Someone had to decide that a person could be entered into a calculation of tonnage.",
+      "judgment": "Excellent: converts a famous image into an argument about authorisation instead of re-describing horror."
+    },
+    {
+      "quote": "Those statements are enough to reconstruct the monument's political work, but not to populate the battlefield with invented voices.",
+      "judgment": "A stated methodological rule the book later breaks in its Naseby and Somme set-pieces, where interior detail and unattributable action are supplied freely."
+    },
+    {
+      "quote": "The army created the opening; offices filled it.",
+      "judgment": "Sharp, but it is the same closing cadence used in nearly every chapter, which drains it of force by chapter 11."
+    },
+    {
+      "quote": "Cromwell rode among his men, his face and sleeves black with powder.",
+      "judgment": "Vivid, but the omniscient battlefield reconstruction sits uneasily beside the source-scepticism the rest of the book insists on."
+    },
+    {
+      "quote": "The report counts her among those marked for death; her account restores the time between the order and the bullet.",
+      "judgment": "The book's best single formulation of its report-versus-testimony method."
+    },
+    {
+      "quote": "A line on a graph may rise or fall. The substantive question is whether the people beneath it possess more secure protection from those authorised to harm them.",
+      "judgment": "Strong close to chapter 14, though the two-beat 'X may do this; the real question is Y' shape recurs constantly."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Chapters close on the same thesis-restating antithesis: force opens, administration sustains.",
+      "instances": [
+        "Weapons opened the process. Records, routes, rations, and appointed officials carried it into ordinary life.",
+        "Eannatum's army opened the arrangement; the grain obligation kept it alive."
+      ]
+    },
+    {
+      "pattern": "Paired-antithesis sentence rhythm ('not X, but Y' / 'A did this; B did that') used as the default comparative move, several times per page.",
+      "instances": [
+        "Assyria altered the social map by displacement. Persia arranged obligations around the map it found.",
+        "One system made war productive for an imperial capital; the other could make war survivable for a community by changing the meaning of the person taken."
+      ]
+    },
+    {
+      "pattern": "Identical chapter architecture: immersive opening scene, then an object/document read closely, then a paired non-European comparison, then a short historiography section, then a summary of the offices involved.",
+      "instances": [
+        "Chapter 4: Lachish scene, Behistun inscription read, Persepolis tablets compared, Assyria/Persia contrast summarised.",
+        "Chapter 8: Brookes plan, Equiano narrative, Potosi comparison, Williams/Drescher/Fields historiography, closing catalogue of records."
+      ]
+    },
+    {
+      "pattern": "The evidentiary-caution disclaimer as a recurring formula: a number is given, then declared unreliable, then declared unnecessary to the argument.",
+      "instances": [
+        "The often-cited figure of 144,000 gur has prompted calculations that cannot be treated as exact modern tonnage.",
+        "Juvaini gives an enormous number for the dead, a figure that cannot be accepted as a simple census, but the narrative still records the event's administrative form."
+      ]
+    },
+    {
+      "pattern": "Triadic and quadratic noun lists standing in for analysis of who acted.",
+      "instances": [
+        "Clerks register people, police gather them, soldiers guard them, and officials distribute orders.",
+        "A census clerk counted households in a French canton. A company agent weighed rubber in a Congolese station. A magistrate in Johannesburg examined a pass."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely accomplished work of comparative history with a single, well-held thesis: organised violence becomes extensive and durable not through aggressive feeling but through offices, registers, roads and records that make harm repeatable, and the archive that survives is itself part of the apparatus. The specificity is real and non-generic - Jebel Sahaba's healed wounds, the grain clause on the Stele of the Vultures, the Persepolis ration tablets, the Wannsee population table, the Nyamata identity card - and claims are handled with unusual epistemic care, with contested totals flagged rather than laundered. Clarity and sentence-level control are high; the voice is consistent, cool and unfashionable in the best sense. The main weakness is uniformity: every chapter runs the same architecture and lands on the same antithetical closer, the paired 'not X but Y' rhythm is the default sentence at every scale, and by the later chapters the argument is being restated rather than advanced, which costs pacing and engagement. There is also an internal inconsistency the book itself names - chapter 3 refuses to invent battlefield voices, while chapters 9 and 12 supply immersive interior detail no source could carry - and the recurring Neolithic sites across chapters 1 and 2 duplicate material. With trimming, more variation in chapter shape, and an explicit framing introduction and conclusion, this would be close to ready."
+}

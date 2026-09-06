@@ -1,0 +1,527 @@
+--- packages/core/src/generation/developmentalEdit.ts (before this turn)
++++ packages/core/src/generation/developmentalEdit.ts
+@@ -11,10 +11,15 @@
+ const changeSchema = z.object({
+   id: z.string().min(1), chapterIndex: z.number().int().positive(),
+   startParagraph: z.number().int().positive(), deleteCount: z.number().int().nonnegative(),
+-  targetWords: z.number().int().nonnegative(), instruction: z.string().min(1)
++  targetWords: z.number().int().nonnegative(), instruction: z.string().min(1),
++  /** Existing paragraphs to assemble verbatim, in this order, without a rewrite call. */
++  sourceParagraphs: z.array(z.object({ chapterIndex: z.number().int().positive(), paragraph: z.number().int().positive() })).min(1).max(100).optional()
+ });
+ const editPlanSchema = z.object({
+-  groups: z.array(z.object({ id: z.string().min(1), reason: z.string().min(1), changes: z.array(changeSchema).min(1).max(8) })).max(6)
++  groups: z.array(z.object({
++    id: z.string().min(1), reason: z.string().min(1), changes: z.array(changeSchema).min(1).max(8),
++    retainedCaseParagraphs: z.array(z.object({ chapterIndex: z.number().int().positive(), paragraph: z.number().int().positive() })).min(1).max(100).optional()
++  })).max(6)
+ });
+ export type DevelopmentEditPlan = z.infer<typeof editPlanSchema>;
+ export type DevelopmentChange = z.infer<typeof changeSchema>;
+@@ -58,7 +63,18 @@
+       const original = paragraphs.slice(start, end).join("\n\n");
+       // A figure stays anchored to its paragraph; edits around it are still allowed.
+       if (/\[Figure:/i.test(original) || hasFigureFence(original)) issues.push(`range ${change.id} contains a protected figure`);
+-      const words = Math.max(countReadableWords(original), change.targetWords);
++      let replacementWords = change.targetWords;
++      if (change.sourceParagraphs) {
++        replacementWords = 0;
++        if (change.targetWords === 0) issues.push(`deletion ${change.id} also selects source paragraphs`);
++        for (const source of change.sourceParagraphs) {
++          const text = byChapter.get(source.chapterIndex)?.[source.paragraph - 1];
++          if (text === undefined) { issues.push(`invalid source paragraph ${change.id}`); continue; }
++          if (/\[Figure:/i.test(text) || hasFigureFence(text)) issues.push(`source ${change.id} contains a protected figure`);
++          replacementWords += countReadableWords(text);
++        }
++      }
++      const words = Math.max(countReadableWords(original), replacementWords);
+       touchedWords += words;
+       groupWords += words;
+     }
+@@ -91,6 +107,12 @@
+   chapters: DevelopmentChapter[];
+   wordBudget: DevelopmentWordBudget;
+   textModel: TextModelAdapter;
++  /** Extractive edits copy existing paragraphs or delete; no prose-generation calls. */
++  mode?: "rewrite" | "extractive";
++  /** Other chapters remain context, but no group may change them. */
++  editableChapterIndexes?: readonly number[];
++  /** Restrict the experiment to repeated case treatments across different chapters. */
++  crossChapterCasesOnly?: boolean;
+ }): Promise<DevelopmentEditResult> {
+   const beforeWords = options.chapters.reduce((sum, chapter) => sum + countReadableWords(chapter.markdown), 0);
+   const empty: DevelopmentEditResult = { chapters: options.chapters, plan: { groups: [] }, appliedGroups: [], rejectedGroups: [], beforeWords, afterWords: beforeWords };
+@@ -100,58 +122,112 @@
+     messages: [
+       { role: "system", content: [
+         "Read the complete nonfiction manuscript and propose a bounded developmental edit. Identify sections whose cases, explanation or inference overlap, even with different names and wording. Preserve the requested coverage and useful recurrence that changes understanding. You may delete, move, combine, or replace sections, and develop an unanswered question using the available evidence. Do not prescribe uniform openings, closings, paragraph shapes or rhetorical moves.",
+-        "Return JSON {groups:[{id,reason,changes:[{id,chapterIndex,startParagraph,deleteCount,targetWords,instruction}]}]}. Paragraph indexes are one-based against the supplied original text. deleteCount 0 inserts before startParagraph (length+1 appends); targetWords 0 deletes with no replacement. A move has linked source and destination changes in ONE group: both apply or neither does. Instructions must explain the concrete contribution the replacement adds and which evidence supports it.",
++        "Return JSON {groups:[{id,reason,changes:[{id,chapterIndex,startParagraph,deleteCount,targetWords,instruction,sourceParagraphs?:[{chapterIndex,paragraph}]}]}]}. Paragraph indexes are one-based against the supplied original text. deleteCount 0 inserts before startParagraph (length+1 appends); targetWords 0 deletes with no replacement. sourceParagraphs assembles those original paragraphs verbatim in order, without rewriting; use a positive targetWords estimate for that selection. A move has linked source and destination changes in ONE group: both apply or neither does. Instructions must explain the concrete contribution the replacement adds and which evidence supports it.",
++        options.mode === "extractive" ? "This is an extractive edit: every non-deletion MUST specify sourceParagraphs. You cannot write or paraphrase prose. Keep an awkward paragraph when removing it would lose a distinct explanation, source attribution or necessary uncertainty." : "Prefer copying existing paragraphs when a change only needs to relocate or consolidate material.",
++        options.crossChapterCasesOnly ? "Only address a repeated treatment of the same case across DIFFERENT chapters. Do not cut within-chapter summaries or syntheses: they may connect evidence into an argument. Each group MUST include retainedCaseParagraphs:[{chapterIndex,paragraph}] pointing to the existing treatment that remains in a different chapter from every deletion. Preserve all distinct details in a duplicated treatment, including dates, biographical facts, source attribution, and mechanisms. Keep the original paragraph if it combines duplication with unique material. A comparison must not precede the supporting material it assumes. Return no groups when these requirements cannot be met." : "",
++        "For each cut, identify in its reason the retained paragraph locations carrying the same substantive contribution. Repeated names alone do not establish duplication: preserve distinct mechanisms, temporal distinctions, conditional examples, and limits that change the conclusion. No cuts are required.",
+         "At most six groups and six affected chapters, no overlapping ranges. Sum of max(original range words,targetWords) across changes must stay within thirty percent of manuscript words (600-word minimum budget), and within 8000 per group. Never select a paragraph containing a figure stand-in. All unselected prose stays unchanged.",
+-        "The word budget belongs to the whole book. Compensate for necessary cuts only by developing a named unanswered question or case from the evidence, possibly in another chapter. Never refill the section just cut, pad with a recap, or invent details. Aim within the supplied book min/max; consider the actual current count. Use empty groups when no substantive improvement is warranted.",
++        "The word budget belongs to the whole book. Stay within its min/max after each independent group; link changes that need each other to meet that budget. The target is not a refill instruction: do not pad a cut with a recap or invent details. Use empty groups when no substantive improvement is warranted.",
+         "development.reviewNotes, when present, lists coverage the plan reviewer judged thinner than requested. Do not let prose claim a comparison or survey the evidence does not carry, and do not invent material to fill it; narrowing an overclaim is a valid edit."
+       ].join(" ") },
+       { role: "user", content: JSON.stringify({
+         request: options.input.prompt, coverage: options.plan.bookDevelopment?.coverage ?? options.plan.promises,
+         development: options.plan.bookDevelopment, wordBudget: options.wordBudget, currentWords: beforeWords,
++        editableChapterIndexes: options.editableChapterIndexes,
+         evidence: options.plan.dossier?.evidencePackets?.map(({ excerpts: _excerpts, ...packet }) => packet),
+         chapters: options.chapters.map((chapter) => ({ index: chapter.index, title: chapter.title, paragraphs: developmentParagraphs(chapter.markdown).map((text, index) => ({ index: index + 1, text })) }))
+       }) }
+     ]
+   });
+-  const issues = developmentEditPlanIssues(options.chapters, result.data);
+-  if (issues.length) return { ...empty, plan: result.data, rejectedGroups: [{ id: "plan", reason: issues.join("; ") }] };
+   const replacements = new Map<string, string>();
+   const accepted: DevelopmentChange[] = [];
++  const acceptedGroups: DevelopmentEditPlan["groups"] = [];
+   const appliedGroups: string[] = [];
+   const rejectedGroups: DevelopmentEditResult["rejectedGroups"] = [];
+   for (const group of result.data.groups) {
+-    const response = await generateJsonWithRetry(options.textModel, {
++    const issues = developmentEditPlanIssues(options.chapters, { groups: [...acceptedGroups, group] });
++    if (options.crossChapterCasesOnly) {
++      const retained = group.retainedCaseParagraphs ?? [];
++      for (const change of group.changes.filter((change) => change.deleteCount > 0)) {
++        if (!retained.some((source) => source.chapterIndex !== change.chapterIndex)) issues.push("cross-chapter edit needs a retained case treatment in another chapter");
++      }
++      for (const source of retained) {
++        if (!options.chapters.find((chapter) => chapter.index === source.chapterIndex) || developmentParagraphs(options.chapters.find((chapter) => chapter.index === source.chapterIndex)!.markdown)[source.paragraph - 1] === undefined) issues.push("invalid retained case paragraph");
++      }
++    }
++    if (options.editableChapterIndexes && group.changes.some((change) => !options.editableChapterIndexes!.includes(change.chapterIndex))) issues.push("group changes a chapter outside the editable scope");
++    const generatedChanges = group.changes.filter((change) => change.targetWords > 0 && !change.sourceParagraphs);
++    if (options.mode === "extractive" && generatedChanges.length) issues.push("extractive mode requires source paragraphs for every non-deletion");
++    if (issues.length) { rejectedGroups.push({ id: group.id, reason: issues.join("; ") }); continue; }
++    const byId = new Map<string, string>();
++    for (const change of group.changes) {
++      if (change.sourceParagraphs) byId.set(change.id, change.sourceParagraphs.map((source) => developmentParagraphs(options.chapters.find((chapter) => chapter.index === source.chapterIndex)!.markdown)[source.paragraph - 1]!).join("\n\n"));
++      else if (change.targetWords === 0) byId.set(change.id, "");
++    }
++    let complete = true;
++    if (generatedChanges.length) {
++      const response = await generateJsonWithRetry(options.textModel, {
+       purpose: "rewrite-developmental-sections", temperature: Math.min(0.6, options.input.temperature),
+       maxTokens: Math.min(30_000, Math.max(4000, group.changes.reduce((sum, change) => sum + change.targetWords, 0) * 3 + 2000)),
+       schema: z.object({ replacements: z.array(z.object({ id: z.string(), text: z.string() })).max(8) }),
+       messages: [
+-        { role: "system", content: "Execute this linked group of developmental section edits. Return JSON {replacements:[{id,text}]} with exactly one replacement for every change ID. Return only the replacement section in text, not a whole chapter; deletion returns an empty string. Preserve useful material in a move or combination. Use the supplied evidence for factual additions, retaining attribution and uncertainty. Do not invent scene details, quotes, sources or claims. Follow the book's language and voice. Target each requested word count within twenty percent. Do not introduce headings, commentary, figure blocks or figure stand-ins. All prose outside these ranges is preserved by code." },
++        { role: "system", content: "Execute the generatedChanges in this linked group of developmental section edits. Return JSON {replacements:[{id,text}]} with exactly one replacement for every generatedChanges ID. Other changes are assembled by code. Return only the replacement section in text, not a whole chapter. Preserve distinct explanations, mechanisms, useful conditional examples, attribution and uncertainty in a move or combination. Use the supplied evidence for factual additions. Do not invent scene details, quotes, sources or claims. Follow the book's language and voice. Target each requested word count within twenty percent. Do not introduce headings, commentary, figure blocks or figure stand-ins. All prose outside these ranges is preserved by code." },
+         { role: "user", content: JSON.stringify({
+-          language: options.input.language, voiceGuide: options.plan.voiceGuide, group,
++          language: options.input.language, voiceGuide: options.plan.voiceGuide, group, generatedChanges,
+           chapters: options.chapters.filter((chapter) => group.changes.some((change) => change.chapterIndex === chapter.index)),
+           caseEvidence: options.plan.dossier?.evidencePackets,
+           wordBudget: options.wordBudget
+         }) }
+       ]
+-    });
+-    const byId = new Map(response.data.replacements.map((entry) => [entry.id, entry.text.trim()]));
+-    const complete = byId.size === group.changes.length && byId.size === response.data.replacements.length && group.changes.every((change) => byId.has(change.id));
++      });
++      const seen = new Set<string>();
++      for (const entry of response.data.replacements) {
++        const text = entry.text.trim();
++        if (seen.has(entry.id) || !group.changes.some((change) => change.id === entry.id) || (byId.has(entry.id) && byId.get(entry.id) !== text)) complete = false;
++        seen.add(entry.id);
++        if (!byId.has(entry.id)) byId.set(entry.id, text);
++      }
++    }
++    complete &&= byId.size === group.changes.length && group.changes.every((change) => byId.has(change.id));
+     const valid = complete && group.changes.every((change) => {
+       const text = byId.get(change.id)!;
+       if (change.targetWords === 0) return text === "";
++      if (change.sourceParagraphs) return true;
+       const words = countReadableWords(text);
+       return words >= Math.max(1, change.targetWords * 0.6) && words <= change.targetWords * 1.4 &&
+         !hasFigureFence(text) && !/\[Figure:/i.test(text) && !chapterDegeneracy(text, { maxWords: Math.ceil(change.targetWords * 1.4), language: options.input.language }).degenerate;
+     });
+     if (!valid) { rejectedGroups.push({ id: group.id, reason: "replacement IDs, lengths or prose integrity failed; linked changes kept together" }); continue; }
++    const candidateReplacements = new Map([...replacements, ...byId]);
++    const candidate = applyDevelopmentChanges(options.chapters, [...accepted, ...group.changes], candidateReplacements);
++    const current = applyDevelopmentChanges(options.chapters, accepted, replacements);
++    if (candidate.some((chapter) => !chapter.markdown.trim()) || candidate.every((chapter, index) => chapter.markdown === current[index]!.markdown)) {
++      rejectedGroups.push({ id: group.id, reason: "edit empties a chapter or makes no textual change" });
++      continue;
++    }
++    if (options.crossChapterCasesOnly) {
++      const candidateParagraphs = new Set(candidate.flatMap((chapter) => developmentParagraphs(chapter.markdown)));
++      const retained = [...acceptedGroups, group].flatMap((entry) => entry.retainedCaseParagraphs ?? []);
++      const lostAnchor = retained.some((source) => !candidateParagraphs.has(developmentParagraphs(options.chapters.find((chapter) => chapter.index === source.chapterIndex)!.markdown)[source.paragraph - 1]!));
++      const numbers = (chapters: readonly DevelopmentChapter[]) => new Set(chapters.flatMap((chapter) => chapter.markdown.match(/\b\d[\d,.]*(?:[–-]\d[\d,.]*)?\b/g) ?? []));
++      const beforeNumbers = numbers(options.chapters);
++      const afterNumbers = numbers(candidate);
++      if (lostAnchor || [...beforeNumbers].some((number) => !afterNumbers.has(number))) {
++        rejectedGroups.push({ id: group.id, reason: lostAnchor ? "edit removes a retained case paragraph" : "edit removes a numeric detail with no surviving occurrence" });
++        continue;
++      }
++    }
++    const candidateWords = candidate.reduce((sum, chapter) => sum + countReadableWords(chapter.markdown), 0);
++    if (candidateWords < options.wordBudget.min || candidateWords > options.wordBudget.max) {
++      rejectedGroups.push({ id: group.id, reason: "linked changes violate the whole-book word budget" });
++      continue;
++    }
+     for (const [id, text] of byId) replacements.set(id, text);
+     accepted.push(...group.changes);
++    acceptedGroups.push(group);
+     appliedGroups.push(group.id);
+   }
+   const chapters = applyDevelopmentChanges(options.chapters, accepted, replacements);
+   const afterWords = chapters.reduce((sum, chapter) => sum + countReadableWords(chapter.markdown), 0);
+-  if (afterWords < options.wordBudget.min || afterWords > options.wordBudget.max) {
+-    return { ...empty, plan: result.data, rejectedGroups: [...rejectedGroups, ...appliedGroups.map((id) => ({ id, reason: "combined edits violate the whole-book word budget" }))] };
+-  }
+   return { chapters, plan: result.data, appliedGroups, rejectedGroups, beforeWords, afterWords };
+ }
+--- apps/worker/src/generation/composedDevelopmentalEdit.ts (before this turn)
++++ apps/worker/src/generation/composedDevelopmentalEdit.ts
+@@ -1,6 +1,6 @@
+ import { createHash } from "node:crypto";
+ import {
+-  FIGURE_WORD_EQUIVALENT, chapterWordBudget, editChapter, editManuscriptDevelopment, figureStandInMarkdown, isRecord,
++  FIGURE_WORD_EQUIVALENT, chapterWordBudget, editManuscriptDevelopment, figureStandInMarkdown, isRecord,
+   paragraphShapeReport, proseWordCount, reinsertFigureFences, reviewChapterCaseEvidence, stripFigureFences,
+   chapterDegeneracy, type BookPlan, type ChapterComposition, type ComposeChapterOptions,
+   type CreateProjectInput, type DevelopmentEditResult, type TextModelAdapter
+@@ -8,7 +8,7 @@
+ import { Prisma, prisma } from "@book-maker/db";
+ import { updateJobProgress } from "../runtime/jobLifecycle.js";
+ import type { ChapterSetup } from "../runtime/jobTypes.js";
+-import { repairChapterEvidence } from "./composedEvidenceRepair.js";
++import { parseEvidenceFinding } from "./composedEvidenceRepair.js";
+ import {
+   derivedChapterBrief, loadComposedBookState, type ComposedChapterReport, type ComposedPageRow,
+   type StoredComposedPage
+@@ -44,40 +44,23 @@
+   const result = await editManuscriptDevelopment({
+     input: options.input, plan: options.plan,
+     chapters: chapters.map((chapter) => ({ ...chapter, markdown: figureStandInMarkdown(chapter.markdown) })),
+-    wordBudget, textModel: options.textModel
++    wordBudget, textModel: options.textModel, mode: "extractive", crossChapterCasesOnly: true
+   });
+   const candidates = new Map(result.chapters.map((chapter) => [chapter.index, chapter.markdown]));
+   const prepared: PreparedDevelopmentChapter[] = [];
+-  // The same tier writer performs every rewrite and the final line edit.
++  const unchangedPages: StoredComposedPage[] = [];
++  // The planner selects existing paragraphs; only changed chapters need evidence review and pagination.
+   for (const setup of options.setups) {
+     const original = options.finalText.get(setup.chapter.index)!;
++    const markdown = candidates.get(setup.chapter.index)!;
++    if (markdown === figureStandInMarkdown(original)) {
++      unchangedPages.push(...state.pages.filter((page) => page.index >= setup.startPage && page.index <= setup.endPage));
++      continue;
++    }
+     const { fences } = stripFigureFences(original);
+-    const composeOptions = await options.composeOptionsFor(setup, new Map());
+-    const packets = options.plan.dossier?.evidencePackets ?? [];
+-    const originalMaterial = composeOptions.material;
+-    const material = packets.length
+-      ? { episodes: originalMaterial?.episodes ?? [], excerpts: originalMaterial?.excerpts ?? [], evidencePackets: packets }
+-      : originalMaterial;
+-    let markdown = candidates.get(setup.chapter.index)!;
+-    if (options.lineEdit) {
+-      await updateJobProgress(options.generationJobId, { progress: 71, message: `Polishing chapter ${setup.chapter.index}/${options.setups.length}` });
+-      const polished = await editChapter({ ...composeOptions, material, markdown, allowExtension: false });
+-      const words = proseWordCount(polished.markdown);
+-      const before = proseWordCount(markdown);
+-      if (words >= before * 0.9 && words <= before * 1.1 && !chapterDegeneracy(polished.markdown, { maxWords: Math.ceil(before * 1.1), language: options.input.language }).degenerate) {
+-        markdown = polished.markdown;
+-      }
+-    }
+-    // The same bounded repair as the compose pass; what stands is recorded on the chapter and flagged at compile time.
+-    const repair = await repairChapterEvidence({
+-      markdown,
+-      review: (text) => reviewChapterCaseEvidence({ markdown: text, packets, textModel: options.textModel }),
+-      edit: async (text, notes) => (await editChapter({ ...composeOptions, material, markdown: text, allowExtension: false, readerNotes: notes })).markdown,
+-      degenerate: (text) => chapterDegeneracy(text, { maxWords: Math.ceil(proseWordCount(markdown) * 1.1), language: options.input.language }).degenerate
+-    });
+-    markdown = repair.markdown;
+-    const evidence = { findings: repair.findings, repairs: repair.repairs, unresolved: repair.unresolved, dropped: repair.dropped };
+-    if (repair.unresolved.length || repair.dropped) {
++    const review = await reviewChapterCaseEvidence({ markdown, packets: options.plan.dossier?.evidencePackets ?? [], textModel: options.textModel });
++    const evidence = { findings: review.issues.length, repairs: 0, unresolved: review.issues.map(parseEvidenceFinding), dropped: review.dropped.length };
++    if (evidence.unresolved.length || evidence.dropped) {
+       console.warn("Developmental edit left unsupported case claims", { event: "generation.composed_chapters.evidence_unresolved", projectId: options.projectId, chapterIndex: setup.chapter.index, stage: "developmental-edit", ...evidence });
+     }
+     const restored = reinsertFigureFences(markdown, fences);
+@@ -105,19 +88,9 @@
+     report.paragraphCv = paragraphShapeReport(restored).cv;
+     prepared.push({ setup, chapterId: options.chapterIds.get(setup.chapter.index)!, composition: options.compositionFor(setup), markdown: restored, pages, report });
+   }
+-  let afterWords = prepared.reduce((sum, chapter) => sum + proseWordCount(chapter.markdown), 0);
+-  // A developmental edit cuts, and the line edit is told not to refill, so the
+-  // book can land under its floor with every page written: two of the first
+-  // three books to reach this point did (2.7% and 8.6% under, 2026-09-05) and
+-  // were failed here with 120 pages staged. The floor is bought back the way
+-  // the compose pass buys length — the chapters furthest under their own
+-  // budget are developed from their material, each checked again — and what
+-  // the extension cannot reach is recorded, never a failed book.
+-  let extension: DevelopmentLengthExtension | undefined;
+-  if (afterWords < wordBudget.min) {
+-    extension = await extendUnderBudget({ options, prepared, budgets, floor: wordBudget.min });
+-    afterWords = prepared.reduce((sum, chapter) => sum + proseWordCount(chapter.markdown), 0);
+-  }
++  const changed = new Map(prepared.map((chapter) => [chapter.setup.chapter.index, chapter]));
++  const finalChapters = chapters.map((chapter) => ({ ...chapter, markdown: changed.get(chapter.index)?.markdown ?? chapter.markdown }));
++  const afterWords = finalChapters.reduce((sum, chapter) => sum + proseWordCount(chapter.markdown), 0);
+   if (afterWords > wordBudget.max) {
+     throw new Error(`The edited manuscript has ${afterWords} words; the requested book allows at most ${wordBudget.max}. It remains staged for a substantive length repair.`);
+   }
+@@ -125,15 +98,15 @@
+   if (lengthShortfall > 0) {
+     console.warn("Developmental edit left the book under its word floor", {
+       event: "generation.composed_chapters.length_shortfall",
+-      projectId: options.projectId, afterWords, floor: wordBudget.min, shortfall: lengthShortfall, ...extension
++      projectId: options.projectId, afterWords, floor: wordBudget.min, shortfall: lengthShortfall
+     });
+   }
+   await commitComposedDevelopment({
+-    projectId: options.projectId, planId: options.planId, expectedPlan: row?.planningPackage, originalPages: state.pages, chapters: prepared,
++    projectId: options.projectId, planId: options.planId, expectedPlan: row?.planningPackage, originalPages: state.pages, chapters: prepared, unchangedPages,
+     marker: {
+-      version: 1, sourceDigest: beforeDigest, resultDigest: composedManuscriptDigest(prepared.map((entry) => ({ index: entry.setup.chapter.index, markdown: entry.markdown }))),
++      version: 1, sourceDigest: beforeDigest, resultDigest: composedManuscriptDigest(finalChapters),
+       beforeWords: result.beforeWords, afterWords, appliedGroups: result.appliedGroups, rejectedGroups: result.rejectedGroups,
+-      ...(extension ? { extension } : {}), ...(lengthShortfall > 0 ? { lengthShortfall } : {})
++      ...(lengthShortfall > 0 ? { lengthShortfall } : {})
+     }
+   });
+   for (const chapter of prepared) {
+@@ -147,102 +120,35 @@
+   markdown: string; pages: ComposedPageRow[]; report: ComposedChapterReport;
+ };
+ 
+-/** Which chapters the length extension developed and what it bought. */
+-export type DevelopmentLengthExtension = { chapters: number[]; addedWords: number };
+-
+-/** At most this many chapters are developed to buy the floor back; the shortfall the two failed books showed was one or two chapters' worth. */
+-export const LENGTH_EXTENSION_CHAPTERS = 6;
+-
+-/**
+- * Develop the chapters furthest under their own budget, largest deficit first,
+- * until the book reaches its floor or the chapter allowance is spent. Each
+- * extension is the line editor's own extension mode on the chapter's material,
+- * kept only when it grew the chapter within its budget without degenerating,
+- * and its case claims are checked again because it added particulars.
+- */
+-async function extendUnderBudget(args: {
+-  options: Parameters<typeof runComposedDevelopmentalEdit>[0];
+-  prepared: PreparedDevelopmentChapter[];
+-  budgets: ReturnType<typeof chapterWordBudget>[];
+-  floor: number;
+-}): Promise<DevelopmentLengthExtension> {
+-  const { options, prepared } = args;
+-  const extension: DevelopmentLengthExtension = { chapters: [], addedWords: 0 };
+-  let total = prepared.reduce((sum, chapter) => sum + proseWordCount(chapter.markdown), 0);
+-  const deficits = prepared
+-    .map((entry, position) => ({ entry, budget: args.budgets[position]!, deficit: args.budgets[position]!.target - proseWordCount(entry.markdown) }))
+-    .filter((candidate) => candidate.deficit > 0)
+-    .sort((a, b) => b.deficit - a.deficit)
+-    .slice(0, LENGTH_EXTENSION_CHAPTERS);
+-  for (const { entry, budget } of deficits) {
+-    if (total >= args.floor) break;
+-    const index = entry.setup.chapter.index;
+-    await updateJobProgress(options.generationJobId, { progress: 71, message: `Developing chapter ${index} to the book's length` });
+-    const composeOptions = await options.composeOptionsFor(entry.setup, new Map());
+-    const packets = options.plan.dossier?.evidencePackets ?? [];
+-    const originalMaterial = composeOptions.material;
+-    const material = packets.length
+-      ? { episodes: originalMaterial?.episodes ?? [], excerpts: originalMaterial?.excerpts ?? [], evidencePackets: packets }
+-      : originalMaterial;
+-    const { prose, fences } = stripFigureFences(entry.markdown);
+-    const before = proseWordCount(prose);
+-    const extended = await editChapter({ ...composeOptions, material, markdown: prose, allowExtension: true });
+-    const grown = proseWordCount(extended.markdown);
+-    if (grown <= before || grown > budget.max || chapterDegeneracy(extended.markdown, { maxWords: budget.max, language: options.input.language }).degenerate) continue;
+-    const repair = await repairChapterEvidence({
+-      markdown: extended.markdown,
+-      review: (text) => reviewChapterCaseEvidence({ markdown: text, packets, textModel: options.textModel }),
+-      edit: async (text, notes) => (await editChapter({ ...composeOptions, material, markdown: text, allowExtension: false, readerNotes: notes })).markdown,
+-      degenerate: (text) => chapterDegeneracy(text, { maxWords: budget.max, language: options.input.language }).degenerate
+-    });
+-    const restored = reinsertFigureFences(repair.markdown, fences);
+-    const words = proseWordCount(restored);
+-    if (words <= proseWordCount(entry.markdown)) continue;
+-    const pages = await options.describePages(entry.setup, restored);
+-    total += words - proseWordCount(entry.markdown);
+-    extension.addedWords += words - proseWordCount(entry.markdown);
+-    extension.chapters.push(index);
+-    entry.markdown = restored;
+-    entry.pages = pages;
+-    entry.report = {
+-      ...entry.report,
+-      editedWords: words, editorChanged: true, paragraphCv: paragraphShapeReport(restored).cv,
+-      ...(entry.report.developmentalEdit ? { developmentalEdit: { ...entry.report.developmentalEdit, afterWords: words } } : {}),
+-      evidence: { findings: repair.findings, repairs: repair.repairs, unresolved: repair.unresolved, dropped: repair.dropped }
+-    };
+-    if (repair.unresolved.length || repair.dropped) {
+-      console.warn("Length extension left unsupported case claims", { event: "generation.composed_chapters.evidence_unresolved", projectId: options.projectId, chapterIndex: index, stage: "length-extension", ...entry.report.evidence });
+-    }
+-  }
+-  return extension;
+-}
+-
+ /** Linked moves and their restart marker publish as a single transaction. */
+ export async function commitComposedDevelopment(options: {
+   projectId: string; planId: string; expectedPlan: unknown; originalPages: StoredComposedPage[];
+   chapters: PreparedDevelopmentChapter[];
++  unchangedPages?: StoredComposedPage[];
+   marker: {
+     version: number; sourceDigest: string; resultDigest: string; beforeWords: number; afterWords: number;
+     appliedGroups: string[]; rejectedGroups: DevelopmentEditResult["rejectedGroups"];
+-    extension?: DevelopmentLengthExtension | undefined; lengthShortfall?: number | undefined;
++    lengthShortfall?: number | undefined;
+   };
+ }): Promise<void> {
+-  const indexes = options.chapters.flatMap((chapter) => chapter.pages.map((page) => page.index));
++  const pages = [...options.chapters.flatMap((chapter) => chapter.pages), ...(options.unchangedPages ?? [])];
++  const indexes = pages.map((page) => page.index);
+   if (indexes.length !== options.originalPages.length || new Set(indexes).size !== indexes.length || options.originalPages.some((page) => !indexes.includes(page.index))) throw new Error("The developmental edit does not cover every staged page exactly once.");
+   await prisma.$transaction(async (tx) => {
+     const row = await tx.planVersion.findUnique({ where: { id: options.planId }, select: { planningPackage: true } });
+     if (!row || !isRecord(row.planningPackage) || JSON.stringify(row.planningPackage) !== JSON.stringify(options.expectedPlan)) throw new Error("The plan changed during developmental editing; linked edits were not saved.");
+     const originals = new Map(options.originalPages.map((page) => [page.index, page]));
++    // Compare-and-swap every staged page, including unchanged rows, before the linked marker publishes.
++    for (const page of pages) {
++      const original = originals.get(page.index);
++      if (!original) throw new Error("The developmental edit no longer covers the staged pages.");
++      const changed = await tx.page.updateMany({
++        where: { projectId: options.projectId, index: page.index, status: "PENDING", title: original.title, markdown: original.markdown, summary: original.summary, imagePrompt: original.imagePrompt },
++        data: { title: page.title, markdown: page.markdown, summary: page.summary, imagePrompt: page.imagePrompt ?? null }
++      });
++      if (changed.count !== 1) throw new Error("A staged page changed during developmental editing; no linked edits were saved.");
++    }
+     for (const chapter of options.chapters) {
+-      for (const page of chapter.pages) {
+-        const original = originals.get(page.index);
+-        if (!original) throw new Error("The developmental edit no longer covers the staged pages.");
+-        const changed = await tx.page.updateMany({
+-          where: { projectId: options.projectId, index: page.index, status: "PENDING", title: original.title, markdown: original.markdown, summary: original.summary, imagePrompt: original.imagePrompt },
+-          data: { title: page.title, markdown: page.markdown, summary: page.summary, imagePrompt: page.imagePrompt ?? null }
+-        });
+-        if (changed.count !== 1) throw new Error("A staged page changed during developmental editing; no linked edits were saved.");
+-      }
+       const brief = derivedChapterBrief(chapter.setup, chapter.composition, chapter.pages, chapter.report);
+       await tx.chapter.update({ where: { id: chapter.chapterId }, data: { productionBrief: brief as unknown as Prisma.InputJsonValue } });
+     }
+--- apps/worker/src/generation/composedDevelopmentalEdit.test.ts (before this turn)
++++ apps/worker/src/generation/composedDevelopmentalEdit.test.ts
+@@ -35,6 +35,11 @@
+   };
+ }
+ 
++
++function changedResult(markdown = prose.split("\n\n").slice(1).join("\n\n")) {
++  mocks.edit.mockResolvedValue({ chapters: [{ index: 1, title: "Appeal", markdown }], plan: { groups: [{ id: "cut", changes: [{ chapterIndex: 1 }] }] }, appliedGroups: ["cut"], rejectedGroups: [], beforeWords: 440, afterWords: markdown.split(/\s+/).length });
++}
++
+ beforeEach(() => {
+   vi.clearAllMocks();
+   mocks.state.mockResolvedValue({ chapters: [], pages: [page] });
+@@ -47,6 +52,17 @@
+ });
+ 
+ describe("developmental edit persistence and restart", () => {
++  it("records a no-op without composing, polishing, reviewing or describing any chapter", async () => {
++    const options = runOptions();
++    await runComposedDevelopmentalEdit(options);
++    expect(mocks.line).not.toHaveBeenCalled();
++    expect(mocks.evidence).not.toHaveBeenCalled();
++    expect(options.composeOptionsFor).not.toHaveBeenCalled();
++    expect(options.describePages).not.toHaveBeenCalled();
++    expect(mocks.tx.chapter.update).not.toHaveBeenCalled();
++    expect(mocks.tx.planVersion.updateMany).toHaveBeenCalledOnce();
++    expect(options.finalText.get(1)).toBe(prose);
++  });
+   it("skips an already committed manuscript even if pagination changed whitespace", async () => {
+     const resultDigest = composedManuscriptDigest([{ index: 1, markdown: prose.replaceAll("\n\n", "\n\n\n") }]);
+     mocks.tx.planVersion.findUnique.mockResolvedValue({ planningPackage: { ...plan, developmentalEdit: { version: 1, resultDigest } } });
+@@ -61,53 +77,41 @@
+     expect(mocks.edit).not.toHaveBeenCalled();
+   });
+ 
+-  it("runs the final line edit without length padding and saves pages, derived briefs and marker together", async () => {
++  it("saves an extractive edit with its pages, derived brief and marker without a line rewrite", async () => {
++    changedResult();
+     const options = runOptions();
+     await runComposedDevelopmentalEdit(options);
+-    expect(mocks.line).toHaveBeenCalledWith(expect.objectContaining({ allowExtension: false }));
++    expect(mocks.line).not.toHaveBeenCalled();
++    expect(mocks.edit).toHaveBeenCalledWith(expect.objectContaining({ mode: "extractive" }));
+     expect(mocks.transaction).toHaveBeenCalledOnce();
+     expect(mocks.tx.page.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ markdown: prose, status: "PENDING", title: "Verdict", imagePrompt: null }) }));
+     expect(mocks.tx.chapter.update.mock.calls[0]![0].data.productionBrief.pages[0].requiredContinuity).toEqual(["Appeal ordered"]);
+-    expect(mocks.tx.planVersion.updateMany.mock.calls[0]![0].data.planningPackage.developmentalEdit.resultDigest).toBe(composedManuscriptDigest([{ index: 1, markdown: prose }]));
++    expect(mocks.tx.planVersion.updateMany.mock.calls[0]![0].data.planningPackage.developmentalEdit.resultDigest).toBe(composedManuscriptDigest([{ index: 1, markdown: options.finalText.get(1)! }]));
+   });
+ 
+-  it("repairs an unsupported case claim twice, then saves the pages with the residual recorded for the compile to flag", async () => {
++  it("records evidence residuals on changed text without another prose repair loop", async () => {
++    changedResult("The verdict has been reversed.\n\n" + prose);
+     mocks.evidence.mockResolvedValue({ issues: ["“The verdict has been reversed”: The record says the appeal is pending."], dropped: [] });
+     await runComposedDevelopmentalEdit(runOptions());
+-    expect(mocks.line).toHaveBeenCalledTimes(3);
+-    expect(mocks.line.mock.calls[2]![0].readerNotes[0]).toContain("Delete the unsupported detail outright");
++    expect(mocks.line).not.toHaveBeenCalled();
++    expect(mocks.evidence).toHaveBeenCalledOnce();
+     expect(mocks.transaction).toHaveBeenCalledOnce();
+     const brief = mocks.tx.chapter.update.mock.calls[0]![0].data.productionBrief;
+-    expect(brief.report.evidence).toMatchObject({ findings: 1, repairs: 2, dropped: 0, unresolved: [{ quote: "The verdict has been reversed", reason: "The record says the appeal is pending." }] });
++    expect(brief.report.evidence).toMatchObject({ findings: 1, repairs: 0, dropped: 0, unresolved: [{ quote: "The verdict has been reversed", reason: "The record says the appeal is pending." }] });
+   });
+ 
+-  it("develops the chapters furthest under budget when the developmental edit takes the book under its floor, then commits", async () => {
++  it("records a shortfall without buying back cuts with a length-extension rewrite", async () => {
+     const { min } = chapterWordBudget(input, 1);
+     const cut = prose.split("\n\n").slice(0, Math.floor(min / 10) - 5).join("\n\n");
+-    const grown = Array.from({ length: Math.floor(min / 10) + 6 }, (_, i) => `Record ${i} supplies another detail about the disputed original judgment.`).join("\n\n");
+-    mocks.edit.mockImplementation(async () => ({ chapters: [{ index: 1, title: "Appeal", markdown: cut }], plan: { groups: [{ id: "cut", changes: [{ chapterIndex: 1 }] }] }, appliedGroups: ["cut"], rejectedGroups: [], beforeWords: 440, afterWords: 250 }));
+-    mocks.line.mockImplementation(async (options) => ({ markdown: options.allowExtension === true ? grown : options.markdown, changed: options.allowExtension === true }));
++    changedResult(cut);
+     const options = runOptions();
+     await runComposedDevelopmentalEdit(options);
+-    expect(mocks.line.mock.calls.some((call) => call[0].allowExtension === true)).toBe(true);
+-    expect(mocks.transaction).toHaveBeenCalledOnce();
+-    const marker = mocks.tx.planVersion.updateMany.mock.calls[0]![0].data.planningPackage.developmentalEdit;
+-    expect(marker.extension).toEqual({ chapters: [1], addedWords: 110 });
+-    expect(marker).not.toHaveProperty("lengthShortfall");
+-    expect(options.finalText.get(1)).toBe(grown);
+-  });
+-
+-  it("records the shortfall and still commits when the extension cannot buy the floor back", async () => {
+-    const { min } = chapterWordBudget(input, 1);
+-    const cut = prose.split("\n\n").slice(0, Math.floor(min / 10) - 5).join("\n\n");
+-    mocks.edit.mockImplementation(async () => ({ chapters: [{ index: 1, title: "Appeal", markdown: cut }], plan: { groups: [] }, appliedGroups: [], rejectedGroups: [], beforeWords: 440, afterWords: 250 }));
+-    const options = runOptions();
+-    await runComposedDevelopmentalEdit(options);
+-    expect(mocks.line.mock.calls.some((call) => call[0].allowExtension === true)).toBe(true);
+-    expect(mocks.transaction).toHaveBeenCalledOnce();
++    expect(mocks.line).not.toHaveBeenCalled();
++    expect(options.composeOptionsFor).not.toHaveBeenCalled();
+     const marker = mocks.tx.planVersion.updateMany.mock.calls[0]![0].data.planningPackage.developmentalEdit;
+     expect(marker.lengthShortfall).toBe(50);
+-    expect(marker.extension).toEqual({ chapters: [], addedWords: 0 });
++    expect(marker).not.toHaveProperty("extension");
++    expect(options.finalText.get(1)).toBe(cut);
+   });
+ 
+   it("rejects a changed plan before starting any linked page writes", async () => {
+@@ -126,11 +130,13 @@
+     const markdown = `${short}\n\n${fence}`;
+     mocks.state.mockResolvedValue({ chapters: [], pages: [{ ...page, markdown }] });
+     const options = runOptions(); options.finalText.set(1, markdown);
++    mocks.edit.mockImplementation(async (args) => ({ chapters: [{ ...args.chapters[0], markdown: args.chapters[0].markdown.split("\n\n").slice(1).join("\n\n") }], plan: { groups: [] }, appliedGroups: [], rejectedGroups: [], beforeWords: 280, afterWords: 270 }));
+     await runComposedDevelopmentalEdit(options);
+     const { min, target, max } = chapterWordBudget(input, 1, { figureWords: FIGURE_WORD_EQUIVALENT });
+     expect(mocks.edit.mock.calls[0]![0].wordBudget).toEqual({ min, target, max });
+     expect(mocks.edit.mock.calls[0]![0].chapters[0].markdown).not.toContain("```figure");
+-    expect(mocks.line.mock.calls[0]![0].markdown).not.toContain("```figure");
++    expect(mocks.line).not.toHaveBeenCalled();
++    expect(mocks.evidence.mock.calls[0]![0].markdown).not.toContain("```figure");
+     expect(options.finalText.get(1)).toContain(fence);
+     expect(options.finalText.get(1)).not.toContain("[Figure:");
+   });

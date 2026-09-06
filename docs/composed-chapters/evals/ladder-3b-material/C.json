@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 7,
+    "clarity": 9,
+    "voice": 9,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.6,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The state had not caused the quarrel. It determined what the quarrel meant after the death.",
+      "judgment": "The book's controlling claim, stated early and in its own words rather than borrowed abstraction; it earns the paragraph it closes."
+    },
+    {
+      "quote": "A fracture is not anger. A killing is not automatically warfare. A sentence is not merely another blow, even when it injures or kills.",
+      "judgment": "Precise conceptual triage that does real work — but also the first instance of a triadic-negation cadence the book reuses for fifteen chapters."
+    },
+    {
+      "quote": "Consider the report produced after excavations at a small prehistoric cemetery beside the Danube. Designated HN-12 by the excavators, the site contained thirty-seven burials",
+      "judgment": "A generic-sounding, unattributed site presented with the same evidential weight as Jebel Sahaba or Talheim; the book's own source-critical standards are not applied to it."
+    },
+    {
+      "quote": "The record becomes brief at the moment when military defeat changed into captivity. It identifies the surrender, the guards, and the number of prisoners. It does not give the inner thoughts of the men leaving the strongpoints, and no invented witness can supply them.",
+      "judgment": "Admirable epistemic scruple — and in direct tension with the invented dialogue ('\"Put it with the others,\" Eannatum said'; '\"No exceptions,\" he said') that opens most other chapters."
+    },
+    {
+      "quote": "A register is a quiet object beside a cannon. Its columns explain how the gun could be present.",
+      "judgment": "Best kind of sentence in the book: compressed, concrete, and it advances the argument instead of decorating it."
+    },
+    {
+      "quote": "Imperial rule travelled through six practices. Tribute turned submission into grain, silver, livestock and manufactured goods…",
+      "judgment": "The analytic middles repeatedly flatten into enumerated mechanism-lists that read as briefing notes rather than argument."
+    },
+    {
+      "quote": "The first cities did not invent human aggression. They invented ways for a decision made in a palace, temple, or royal court to reach people who had never met the person who made it.",
+      "judgment": "Fine closer, but the negation-then-reframe chapter ending is used so uniformly that its arrival stops being a surprise by chapter four."
+    },
+    {
+      "quote": "Ecology explains the pressure around the door. It does not explain who was told to enter, who was told to attack, or who was told that the attack served the nation.",
+      "judgment": "The thesis at its sharpest and most local; the Rwanda chapter is where the argument is best tested rather than merely restated."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Identical chapter architecture: a present-tense dramatised scene with invented sensory detail and dialogue, a hinge sentence that steps back to 'what the record shows', an analytic mechanism section, a two-case comparison, a named counter-interpretation, an aphoristic close.",
+      "instances": [
+        "Ch.3 opens 'The vultures had begun before the stone was raised' and closes 'The first cities did not invent human aggression. They invented ways for a decision…'",
+        "Ch.11 opens 'The paper lay open on General Lothar von Trotha's table' and closes 'The ordinary office did not replace the atrocity. It made the atrocity durable.'"
+      ]
+    },
+    {
+      "pattern": "A steel-manned rival interpretation is granted force in one paragraph, then reversed in the next with a limiting fact — the same concessive move, chapter after chapter.",
+      "instances": [
+        "'The direct-rate interpretation has a serious case… But the denominator is unstable.'",
+        "'The interpretation has force. Assyrian sculpture was selective… Display alone does not explain the road to Lachish.'"
+      ]
+    },
+    {
+      "pattern": "Paired antithesis as the standard closing figure — two clauses of parallel grammar with inverted terms, used to end sections and chapters.",
+      "instances": [
+        "'One turned enemies into relatives. The other made conquered districts serve the court's labour and military needs.'",
+        "'Gunpowder widened the possible radius of harm. Fiscal choices selected its victims.'"
+      ]
+    },
+    {
+      "pattern": "The thesis is re-derived on new material rather than developed, so chapters 4 through 13 restate one conclusion in local vocabulary.",
+      "instances": [
+        "'Coercion travelled through ordinary entries before it reached the battlefield.'",
+        "'The killing site was the final office in a chain that had begun with paperwork.'"
+      ]
+    },
+    {
+      "pattern": "Chapters end on a rhetorical question or an explicitly unresolved measurement problem, deferring the argument rather than concluding it.",
+      "instances": [
+        "'Which carried the greater weight in imperial stability: the memory of Lachish beneath the Assyrian king's chariot, or the advantage Gobryas found in changing sides…?'",
+        "'Why did restraint survive in some revolutionary neighbourhoods while collapsing in others?'"
+      ]
+    }
+  ],
+  "summary": "This is a genuinely accomplished book with one argument — that violence is selected, scaled and made durable by offices, records and categories rather than by an aggressive human nature — pursued from a Neolithic cemetery to Nyamata without losing its thread. The prose is clean, concrete and free of the usual lexical tells; the voice is a restrained, source-critical historian who is consistently interested in what a given kind of evidence cannot say, and the chapters on Assyria, the Atlantic plantation and Rwanda are strong on their own terms. Its weakness is shape rather than sentence: every chapter is built to the same six-part template, every counter-argument is conceded-then-reversed in one paragraph, and the closing figure is almost always a paired antithesis or a deferred question, so 55,000 words deliver considerably less argumentative development than their length implies. The evidential handling is also uneven — the book insists that 'no invented witness' can supply a defeated soldier's thoughts, yet opens most chapters with invented dialogue, and at least one case (the 'HN-12' Danube cemetery) is presented with the authority of a real excavation report and no attribution. Revision should thin the middle mechanism-lists, break the chapter template in at least a third of the chapters, and either source or openly frame the constructed exemplars. The result would need moderate work to publish, but the material and the voice are already there."
+}

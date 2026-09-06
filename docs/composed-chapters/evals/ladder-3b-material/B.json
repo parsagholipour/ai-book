@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.8,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The state had not caused the quarrel. It determined what the quarrel meant after the death.",
+      "judgment": "The book's whole argument in two sentences, planted early and earned by the preceding case; a genuinely strong thesis statement."
+    },
+    {
+      "quote": "A healed fracture tells us that a person survived long enough for bone to knit. It may indicate violence, accident, work, ritual, or a fall. The anatomical pattern narrows the possibilities without closing them.",
+      "judgment": "Exemplary epistemic discipline: the book repeatedly shows how a category is built rather than asserting a finding."
+    },
+    {
+      "quote": "Power was built in the storehouse before it appeared in the ranks.",
+      "judgment": "Memorable and precise, but symptomatic — nearly every chapter lands on an aphorism of exactly this cadence."
+    },
+    {
+      "quote": "Consider the report produced after excavations at a small prehistoric cemetery beside the Danube. Designated HN-12 by the excavators, the site contained thirty-seven burials",
+      "judgment": "An apparently invented site with invented burial numbers, presented in the register of a real excavation report — a serious evidentiary lapse in a book whose subject is how records are made."
+    },
+    {
+      "quote": "Harwood said that Harris called Green a liar and threatened to have him arrested.",
+      "judgment": "The opening Chipping Norton case is furnished with names, depositions, dates and a verdict that read as fabricated archival specificity; it undercuts the book's own evidence ethics."
+    },
+    {
+      "quote": "The relief makes conquest appear complete because it gathers labour, machinery, soldiers, captives and king into one controlled surface.",
+      "judgment": "Excellent close reading of an image as an administrative artefact; the book is at its best when a single object carries the analysis."
+    },
+    {
+      "quote": "The document did not itself shoot anyone. It gave soldiers permission to decide that a person's identity was evidence of guilt, and it made mercy appear as disobedience.",
+      "judgment": "Sentence-level craft at its strongest: concrete, unshowy, and doing real analytic work."
+    },
+    {
+      "quote": "Ecology explains the pressure around the door. It does not explain who was told to enter, who was told to attack, or who was told that the attack served the nation.",
+      "judgment": "A clean and forceful close to the book's central refutation, though it is the twentieth instance of the same negation-then-assertion figure."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter closes on a short aphoristic couplet, usually a negation followed by a substitution, in near-identical cadence.",
+      "instances": [
+        "The first cities did not invent human aggression. They invented ways for a decision made in a palace, temple, or royal court to reach people who had never met the person who made it.",
+        "The ordinary office did not replace the atrocity. It made the atrocity durable."
+      ]
+    },
+    {
+      "pattern": "A rival interpretation is formally credited, then bounded and rebutted — a steelman ritual performed in almost every chapter with the same opening move.",
+      "instances": [
+        "The direct-rate interpretation has a serious case.",
+        "The universal-nature interpretation has a serious appeal."
+      ]
+    },
+    {
+      "pattern": "Each chapter is built as a paired comparison of two cases resolved by a sentence declaring the difference institutional rather than characterological.",
+      "instances": [
+        "The difference was institutional. Congo concession companies had direct incentives to maximise extraction",
+        "The difference did not arise from a gentler British character. It arose from decisions made through different offices."
+      ]
+    },
+    {
+      "pattern": "A dramatised, present-tense-feeling scene of five to fifteen paragraphs opens each chapter — often with invented dialogue and sensory detail — then breaks abruptly into analysis at a paragraph beginning with an abstraction.",
+      "instances": [
+        "\"Put it with the others,\" Eannatum said.",
+        "\"No exceptions,\" he said."
+      ]
+    },
+    {
+      "pattern": "Enumerated chains of administrative practice (four to six stages, or a list of offices) recur so often that the mechanism starts to read as a fill-in template.",
+      "instances": [
+        "Intelligence, assembly, movement, assault, removal, and retreat made the operation possible.",
+        "First, land or revenue was declared subject to colonial jurisdiction. Second, a tax or quota made local production answerable to an official target."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely coherent book with one argument — that aggression is directed, sorted and legitimated by institutions rather than explained by an invariant human nature — pursued across fifteen chapters from a Neolithic cemetery to Nyamata without drift or dilution. The prose is austere, concrete and unusually free of the lexical tics of machine writing: no stock transitions, no listicles, very few adjectives doing emotional work, and a real gift for making a register, a relief or a proclamation carry analytic weight. Its weaknesses are structural rather than verbal. The chapter template is rigid to the point of predictability (dramatised scene, paired comparison, credited-then-rebutted rival reading, aphoristic closer, occasional rhetorical question), the thesis is restated far more often than a reader needs, and the middle chapters accumulate enumerated administrative chains until the mechanism blurs. More seriously for a book whose subject is how evidence gets made, at least two of its cases — the Chipping Norton killing and the \"HN-12\" Danube cemetery — appear to be invented and are presented with the texture of real archives. With trimming of roughly a fifth, variation of the chapter architecture, and the fabricated cases either sourced or relabelled as illustrative, this would be close to ready."
+}

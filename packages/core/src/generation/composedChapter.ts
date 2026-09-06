@@ -7,10 +7,14 @@ import { kidsReadingGuidanceForInput, kidsReadingGuidanceLines } from "../prompt
 import type { AuthorStance, BookPlan, ChapterPlan, CreateProjectInput } from "../schemas/book.js";
 import { isRecord } from "../schemas/jsonCoercion.js";
 import { authorStancePromptLines, isNarrativeWritingMode } from "./authorStance.js";
-import { arcChapterLines, type BookArc } from "./bookArc.js";
+import type { BookArc } from "./bookArc.js";
+import { chapterDevelopmentLines } from "./bookDevelopment.js";
 import {
   CREATIVE_CONTRACT_RULES,
   CREATIVE_RECONSTRUCTION_RULE,
+  FOCUSED_RECONSTRUCTION_RULE,
+  focusedProgressionLines,
+  materialEditLines,
   materialLines,
   materialPayload,
   remainingBudget,
@@ -19,12 +23,14 @@ import {
   type ComposedChapterText
 } from "./composedChapterMaterial.js";
 export { CREATIVE_CONTRACT_RULES, type ChapterMaterial, type ComposeContract, type ComposedChapterText } from "./composedChapterMaterial.js";
+import { stanceLinesFor } from "./composedChapterStance.js";
 import {  compositionWriterLines, formPaletteFor, type ChapterComposition } from "./chapterForms.js";
 import { normalizeChapterMarkdown } from "./chapterPagination.js";
 import { FIGURE_WORD_EQUIVALENT, figureFreeProse, figureStandInMarkdown, proseWordCount } from "./figures/figureBlocks.js";
 import { codeBlockRules } from "./codeBlockRules.js";
 import { figureComposeRules, figureEditRules, plannedFigures } from "./figures/figurePrompt.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
+import { chapterStyleNotes } from "./planContract.js";
 import { BYLINE_IS_TYPESET_RULE } from "./markdown.js";
 import { GROUNDED_FACTUALITY_RULE, IMAGE_PROMPT_CHARACTER_RULE, citationContractFields } from "./pagesShared.js";
 import { countReadableWords } from "./proseShape.js";
@@ -253,8 +259,9 @@ function bookPayload(plan: BookPlan, input: CreateProjectInput, withheld: BookAr
     writingComplexity: plan.writingComplexity,
     // Taking these out of the writer's payload was measured (composed-20, ×3):
     // 7.08 against 7.32 with them in, and the same five reader complaints
-    // either way. They stay.
-    styleNotes: plan.voiceGuide,
+    // either way. They stay. Only the method rules are withheld, because a rule
+    // about handling evidence shown in every call is performed in every paragraph.
+    styleNotes: chapterStyleNotes(plan.voiceGuide),
     continuityRules: plan.continuityRules,
     ...(withheld ? {} : { promises: plan.promises })
   };
@@ -265,8 +272,10 @@ function withheldArc(options: ComposeChapterOptions): BookArc | undefined {
   return options.arc && !isFirstOrLastChapter(options) ? options.arc : undefined;
 }
 
-/** The chapter's summary as the writer sees it: the arc's job where the plan's summary would say what the chapter proves. */
+/** The chapter's summary as the writer sees it: its focus, else the arc's job where the plan's summary would say what the chapter proves. */
 function chapterSummaryFor(options: ComposeChapterOptions): string {
+  const focus = options.material?.focus;
+  if (focus) return `${focus.question} ${focus.investigation.join(" ")}`;
   const arc = withheldArc(options);
   const job = arc?.chapters.find((entry) => entry.index === options.chapter.index)?.job.does;
   return job || options.chapter.summary;
@@ -309,6 +318,7 @@ function composeMaxTokens(budget: ChapterWordBudget): number {
 export async function composeChapter(options: ComposeChapterOptions): Promise<ComposedChapterText> {
   const mode = inferWritingMode(options.input, options.plan);
   const narrative = isNarrativeWritingMode(mode);
+  const focused = !narrative && Boolean(options.material?.focus);
   const palette = formPaletteFor(mode);
   const pages = options.chapterPageEnd - options.chapterPageStart + 1;
   const budget = chapterWordBudget(options.input, pages, { figureWords: plannedFigures(options.composition).length * FIGURE_WORD_EQUIVALENT });
@@ -329,15 +339,18 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
     "Paragraphs only: no headings, no title line, no section labels, no page numbers or page breaks, no summary, no epigraph, no notes. Move between sections with a paragraph break and a change of register.",
     ...(minimal
       ? []
-      : shapeRules(narrative).filter(
-          // Under an arc only a method chapter keeps the evidence-limit rule; the others' job is not to bound sources.
-          (rule) => !(options.arc && arcKindFor(options) !== "method" && rule.startsWith("State what a source shows"))
-        )),
+      : focused
+        ? focusedProgressionLines()
+        : shapeRules(narrative).filter(
+            // Under an arc only a method chapter keeps the evidence-limit rule; the others' job is not to bound sources.
+            (rule) => !(options.arc && arcKindFor(options) !== "method" && rule.startsWith("State what a source shows"))
+          )),
     ...(minimal ? [] : ["Do not open the chapter with a general claim about a common noun (\"A cannon was never only a cannon\")."]),
-    ...(minimal ? [] : options.contract === "creative" ? (narrative ? [] : [CREATIVE_RECONSTRUCTION_RULE]) : reconstructionRule(narrative)),
+    ...(minimal || options.material?.evidencePackets?.length ? [] : options.contract === "creative" ? (narrative ? [] : [options.material?.focus ? FOCUSED_RECONSTRUCTION_RULE : CREATIVE_RECONSTRUCTION_RULE]) : reconstructionRule(narrative)),
     `Now chapter ${options.chapter.index}, "${options.chapter.title}".`,
     ...materialLines(options),
-    ...compositionWriterLines(options.composition, palette, budget.target),
+    ...chapterDevelopmentLines(options.plan, options.chapter.index),
+    ...(focused ? [] : compositionWriterLines(options.composition, palette, budget.target)),
     ...figureComposeRules(options.composition),
     ...codeBlockRules(options.input, options.plan),
     ...(options.variant === "second"
@@ -359,28 +372,34 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
     PROMPT_LEAK_BAN,
     ...targetLanguageGenerationGuidance(options.input.language),
     ...kidsReadingGuidanceLines(options.input),
-    `Write between ${remaining.min} and ${remaining.max} words and aim for ${remaining.target}. The typesetter will divide the chapter into ${pages} pages of about ${budget.perPage} words; pages are not units of argument, so do not shape the prose around them.`,
+    `Write between ${remaining.min} and ${remaining.max} words and aim for ${options.plan.bookDevelopment ? Math.min(remaining.max, Math.ceil(remaining.target / 0.87)) : remaining.target}. The typesetter will divide the chapter into ${pages} pages of about ${budget.perPage} words; pages are not units of argument, so do not shape the prose around them.`,
     "Return only the chapter's prose."
   ];
   const userPayload = {
     language: targetLanguagePayload(options.input.language),
     userPrompt: options.input.prompt,
-    book: bookPayload(options.plan, options.input, withheldArc(options)),
+    // A focused middle chapter is not handed the thesis back as the premise, nor where the book lands as promises.
+    book: {
+      ...bookPayload(options.plan, options.input, withheldArc(options)),
+      ...(options.material?.focus && !isFirstOrLastChapter(options) ? { premise: options.material.focus.question, promises: [] } : {})
+    },
     chapter: {
       index: options.chapter.index,
       title: options.chapter.title,
       summary: chapterSummaryFor(options)
     },
     chapterPosition: chapterPosition(options.plan, options.chapter, options.chapterPageStart, options.chapterPageEnd),
-    composition: {
-      sections: options.composition.sections.map((section) => ({
-        form: section.form,
-        subject: section.subject,
-        owns: section.owns,
-        ...(section.note ? { note: section.note } : {}),
-        ...(section.figure ? { figure: section.figure } : {})
-      }))
-    },
+    ...(focused ? {} : {
+      composition: {
+        sections: options.composition.sections.map((section) => ({
+          form: section.form,
+          subject: section.subject,
+          owns: section.owns,
+          ...(section.note ? { note: section.note } : {}),
+          ...(section.figure ? { figure: section.figure } : {})
+        }))
+      }
+    }),
     ...(options.previousChapterTail ? { previousChapterTail: options.previousChapterTail } : {}),
     earlierChapters: options.earlierChapters,
     continuityNotes: continuityNotesForPrompt(options.continuityNotes, CONTINUITY_NOTE_PROMPT_LIMITS.bulkDraft),
@@ -411,7 +430,7 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
     if (!best || words > best.words) {
       best = candidate;
     }
-    if (words >= remaining.min * 0.7) {
+    if (words >= remaining.min * (options.plan.bookDevelopment ? 1 : 0.7)) {
       break;
     }
     shortfall = `Your previous answer was ${words} words; the chapter needs at least ${remaining.min}. Write the complete chapter.`;
@@ -423,6 +442,8 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
 }
 
 export type EditChapterOptions = ComposeChapterOptions & {
+  /** Structural editing allocates length across the book; a line edit cannot pad a chapter. */
+  allowExtension?: boolean | undefined;
   markdown: string;
   /** Notes from the whole-manuscript read, when this is the second pass. */
   readerNotes?: string[] | undefined;
@@ -434,25 +455,6 @@ export type EditedChapterText = ComposedChapterText & { changed: boolean };
 
 /** "full" is the prompt every composed run to composed-18 wrote with; "minimal" is the subtraction ablation. */
 export const COMPOSE_PROMPT_MODE: "full" | "minimal" = "full";
-
-/**
- * One rotated position per chapter was tried on composed-8/9: the refrains
- * the panel named in composed-7 were the five positions restated, but shown one
- * each the chapters restated the thesis instead and the book lost its argument
- * ("nothing a reader could disagree with"), 6.73 against 7.73 on the same plan.
- */
-const ROTATE_STANCE_POSITIONS = false;
-
-function stanceLinesFor(options: ComposeChapterOptions): string[] {
-  const mode = inferWritingMode(options.input, options.plan);
-  if (options.arc && !isFirstOrLastChapter(options)) {
-    return [...authorStancePromptLines(options.stance, mode, { exemplarOnly: true }), ...arcChapterLines(options.arc, options.chapter.index)];
-  }
-  return [
-    ...authorStancePromptLines(options.stance, mode, ROTATE_STANCE_POSITIONS ? { chapterIndex: options.chapter.index } : {}),
-    ...(options.arc ? arcChapterLines(options.arc, options.chapter.index) : [])
-  ];
-}
 
 function isFirstOrLastChapter(options: ComposeChapterOptions): boolean {
   const chapters = options.plan.chapters;
@@ -559,7 +561,8 @@ export function deletionOnlyResult(draft: string, candidate: string): string | u
  * makes "can only delete" a property of the code rather than of the prompt.
  */
 export async function cutChapter(
-  options: EditChapterOptions & { notes: string[]; bookNotes?: string[] | undefined }
+  // `maxRemovableWords` is the room this chapter has over its page floor; the cut may spend no more.
+  options: EditChapterOptions & { notes: string[]; bookNotes?: string[] | undefined; maxRemovableWords?: number | undefined }
 ): Promise<EditedChapterText> {
   const draftWords = countReadableWords(options.markdown);
   const pages = options.chapterPageEnd - options.chapterPageStart + 1;
@@ -575,7 +578,7 @@ export async function cutChapter(
           `You are cutting chapter ${options.chapter.index}, "${options.chapter.title}", of "${options.plan.title}" after a reader's notes on the whole manuscript.`,
           "The only operation is deletion of whole sentences or whole paragraphs. Do not rewrite, reorder, merge or add a word; every sentence you keep stays exactly as written, in its paragraph. Delete what the notes name, and anything else that restates what this chapter or an earlier chapter already established, repeats a caveat the chapter already made, re-lists the chapter's cases at its end, or restates the book's argument in a sentence of its own.",
           "Never delete a sentence carrying a fact, name, date, number, place or quotation that appears nowhere else in the chapter, and never delete the chapter's first paragraph.",
-          "Remove at least a few sentences and at most a quarter of the chapter.",
+          `Remove at least a few sentences and at most a quarter of the chapter${options.maxRemovableWords === undefined ? "" : ` and never more than ${options.maxRemovableWords} words`}.`,
           "Return only the cut chapter as Markdown paragraphs, nothing else."
         ].join(" ")
       },
@@ -594,7 +597,8 @@ export async function cutChapter(
     ]
   });
   const cut = deletionOnlyResult(options.markdown, normalizeChapterMarkdown(unfence(result.text), { chapterTitle: options.chapter.title }));
-  if (!cut) {
+  // A cut that takes the chapter under the pages it was paid for is refused, deletion-only or not.
+  if (!cut || countReadableWords(cut) < budget.min) {
     return { markdown: options.markdown, words: draftWords, attempts: 1, changed: false };
   }
   return { markdown: cut, words: countReadableWords(cut), attempts: 1, changed: true };
@@ -603,6 +607,7 @@ export async function cutChapter(
 export async function editChapter(options: EditChapterOptions): Promise<EditedChapterText> {
   const mode = inferWritingMode(options.input, options.plan);
   const narrative = isNarrativeWritingMode(mode);
+  const focused = !narrative && Boolean(options.material?.focus);
   const palette = formPaletteFor(mode);
   const pages = options.chapterPageEnd - options.chapterPageStart + 1;
   const budget = chapterWordBudget(options.input, pages, { figureWords: plannedFigures(options.composition).length * FIGURE_WORD_EQUIVALENT });
@@ -619,28 +624,31 @@ export async function editChapter(options: EditChapterOptions): Promise<EditedCh
     // These three shape rules were removed for composed-8/9 on the theory that
     // every rule about shape becomes a shape; on the same plan the book scored
     // 6.73 against 7.73 with them, so they stand (spec.md, iterations 8-10).
-    "Reshape paragraphs wherever the draft is uniform: merge paragraphs that continue one movement into long ones of two hundred words or more, let a turn or a landing stand alone as a one- or two-sentence paragraph, and leave no run of paragraphs of the same length. Vary sentence length and openings the same way; no two consecutive paragraphs open on the same construction.",
+    ...(focused ? focusedProgressionLines() : ["Reshape paragraphs wherever the draft is uniform: merge paragraphs that continue one movement into long ones of two hundred words or more, let a turn or a landing stand alone as a one- or two-sentence paragraph, and leave no run of paragraphs of the same length. Vary sentence length and openings the same way; no two consecutive paragraphs open on the same construction."]),
     options.contract === "creative"
       ? "Where the author holds a position, let the prose commit: delete the counterweight that hedges a stated position. You may sharpen a particular the draft already carries; add no new episode or source. Use one spelling convention throughout, the one the book's title and premise use."
       : "Where the author holds a position, let the prose commit: delete the counterweight that hedges a stated position. Add no new claim, example, or source. Use one spelling convention throughout, the one the book's title and premise use.",
-    narrative
+    ...(focused ? [] : [narrative
       ? "Only the chapter's final paragraph may reflect; every other paragraph ends on action, speech, or an image."
-      : "Only the chapter's final paragraph lands an idea; every other paragraph ends where its matter ends, and not on a placed object for effect.",
-    "Cut the \"It can show X. It cannot show Y.\" pair wherever it appears more than three times in the chapter, cut runs of rhetorical questions to one, and cut any list of four or more items to the one detail that matters unless the section is a catalogue or a procedure.",
+      : "Only the chapter's final paragraph lands an idea; every other paragraph ends where its matter ends, and not on a placed object for effect."]),
+    ...(focused ? [] : ["Cut the \"It can show X. It cannot show Y.\" pair wherever it appears more than three times in the chapter, cut runs of rhetorical questions to one, and cut any list of four or more items to the one detail that matters unless the section is a catalogue or a procedure."]),
     `Now chapter ${options.chapter.index}, "${options.chapter.title}".`,
-    ...compositionWriterLines(options.composition, palette, budget.target),
+    ...(focused ? [] : compositionWriterLines(options.composition, palette, budget.target)),
     ...figureEditRules(options.composition),
     ...(/```/.test(options.markdown) ? ["Every fenced code block in the draft is returned byte for byte, its language tag included."] : []),
-    ...(options.measurementNotes && options.measurementNotes.length > 0
+    ...(!focused && options.measurementNotes && options.measurementNotes.length > 0
       ? [`Measured on this draft, with the sentences that put each measure over its ceiling; rewrite those sentences and bring every measure under: ${options.measurementNotes.join(" || ")}`]
       : []),
     ...(options.readerNotes && options.readerNotes.length > 0
       ? [`A reader of the whole manuscript left these notes on this chapter; they outrank every keep-rule above, so act on each one: ${options.readerNotes.join(" | ")}`]
       : []),
-    draftWords < budget.target * EDITOR_EXTEND_BELOW_SHARE
+    options.allowExtension === false
+      ? "This is a final line edit. Improve clarity and sentence craft while preserving substantive content and its evidence. Do not add facts, sections, examples or explanation to fill a length target. Do not undo a developmental cut or move. Keep the draft's length within ten percent unless readerNotes explicitly requires a factual correction."
+      : draftWords < budget.target * EDITOR_EXTEND_BELOW_SHARE
       ? `The draft is ${draftWords} words and the chapter needs about ${budget.target} (never under ${budget.min}, never over ${budget.max}): develop the existing sections with more particular detail — the named person, the document, the place, the next thing that happened — rather than adding sections, generalising, or restating.`
       : `Return between ${budget.min} and ${budget.max} words; the draft is ${draftWords} words. Over ${budget.max}, cut.`,
     ...(options.contract === "creative" ? [CREATIVE_CONTRACT_RULES[1]!] : [GROUNDED_FACTUALITY_RULE, ...citation.rules]),
+    ...materialEditLines(options),
     ...(options.material?.scene
       ? [`The chapter opens with a scene of about ${options.material.scene.words} words that was written on purpose in a narrating register; keep it a scene — tighten it if you must, never turn it into summary or argument.`]
       : []),
@@ -669,9 +677,10 @@ export async function editChapter(options: EditChapterOptions): Promise<EditedCh
             draft: options.markdown,
             ...(options.previousChapterTail ? { previousChapterTail: options.previousChapterTail } : {}),
             earlierChapters: options.earlierChapters,
-            ...(options.measurementNotes && options.measurementNotes.length > 0 ? { measurementNotes: options.measurementNotes } : {}),
+            ...(!focused && options.measurementNotes && options.measurementNotes.length > 0 ? { measurementNotes: options.measurementNotes } : {}),
             ...(options.readerNotes && options.readerNotes.length > 0 ? { readerNotes: options.readerNotes } : {}),
             ...citation.payload,
+            ...materialPayload(options),
             wordBudget: budget
           },
           null,

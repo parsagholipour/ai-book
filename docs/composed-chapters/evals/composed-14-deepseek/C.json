@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.7,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The fine was recorded in the same hand as the brawl, on the same membrane, by the same clerk who had spent the morning listening to the butcher and the prior's servant tell their versions of the fight.",
+      "judgment": "Superb opening move: the book's whole thesis about institutions is carried by a concrete detail rather than asserted."
+    },
+    {
+      "quote": "A history that simply counts the recorded acts of violence will find that violence increased wherever writing and bureaucracy increased, and will mistake the growth of the record for the growth of the thing recorded.",
+      "judgment": "Precise, genuinely useful methodological formulation stated without padding."
+    },
+    {
+      "quote": "A massacre is a rare event, and rare events are precisely the ones most likely to leave a trace.",
+      "judgment": "Compressed reasoning of real analytic value; the chapter then earns it with the Linearbandkeramik burial counts."
+    },
+    {
+      "quote": "grain became rations, rations became labor, labor became soldiers, and soldiers became the means by which the state defended its fields and took those of its neighbors",
+      "judgment": "Effective causal chain, though the escalating-anadiplosis cadence is one of the book's few showy tics."
+    },
+    {
+      "quote": "It was a place where killing was organized through paperwork.",
+      "judgment": "The book's best single sentence: earned by the preceding column-by-column reading of the labor form."
+    },
+    {
+      "quote": "\u00c9mile Dutemple, processing military supply orders at the Gare de l'Est in 1870, was part of the same railway network that the Wannsee participants would later use to coordinate deportations",
+      "judgment": "Internal contradiction: chapter 12 dates Dutemple's shift to August 31, 1914; the final chapter misremembers its own example."
+    },
+    {
+      "quote": "It was the product of a particular configuration of power, and the configuration was made by human beings, and it was unmade by them.",
+      "judgment": "A closing formula recycled almost verbatim across chapters 11 and 12; it substitutes cadence for a chapter-specific conclusion."
+    },
+    {
+      "quote": "The chapter has moved from a single document to a mechanism to an argument to a comparison, and the movement has been deliberate.",
+      "judgment": "Naked exposure of the generative template; the book narrates its own outline instead of trusting the reader."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "A fixed four-beat chapter architecture \u2014 vivid named document/site, step-by-step 'mechanism', a stated counterargument attributed to a named school, then a two-case comparison \u2014 repeated in nearly every chapter and sometimes announced outright.",
+      "instances": [
+        "The chapter has moved from a single document to a mechanism to an argument to a comparison, and the movement has been deliberate.",
+        "The mechanism of colonial coercion can be traced step by step in a single colony, and the steps are worth naming."
+      ]
+    },
+    {
+      "pattern": "Chapter-closing thesis restatement in near-identical wording, asserting institutional causation and denying 'timeless human aggressiveness'.",
+      "instances": [
+        "shaped by specific institutions, resources, technologies, identities, and choices, and that the violence of colonial rule was not the expression of a timeless human aggressiveness",
+        "industrial war was a specific historical phenomenon, shaped by specific institutions, resources, technologies, identities, and choices, and that its violence was not the expression of a timeless human aggressiveness"
+      ]
+    },
+    {
+      "pattern": "The symmetrical-hedge closer: 'the difference is not a difference in human nature / X, it is a difference in circumstances/institutions'.",
+      "instances": [
+        "It is not a difference in human nature. It is a difference in the political circumstances, the institutional frameworks, and the ideas that shaped the crowd's actions.",
+        "The difference between them is not a difference in human nature. It is a difference in the capacity of institutions to organize, legitimize, and extend harm."
+      ]
+    },
+    {
+      "pattern": "The paired-error frame: both the romantic reading and the revisionist reading are named, then dismissed together as projections, leaving a deliberately open verdict.",
+      "instances": [
+        "Both views are projections, and both are wrong for the same reason: they treat the absence of evidence as a blank canvas on which to paint a theory of human nature.",
+        "The task of the historian is not to choose between the peaceful past and the violent past, but to ask what conditions made particular societies, at particular moments, more or less likely to organize violence"
+      ]
+    },
+    {
+      "pattern": "Long inventory paragraphs of parallel cases or categories, each introduced identically, which flatten into list-prose in the later chapters.",
+      "instances": [
+        "It appeared in Malaya, where the British defeated a communist insurgency between 1948 and 1960 ... It appeared in Kenya, where the British suppressed the Mau Mau uprising",
+        "Ecology mattered: ... Institutions mattered: ... Inequality mattered: ... Technology mattered: ... Identity mattered: ... Leadership mattered: ... Contingency mattered:"
+      ]
+    }
+  ],
+  "summary": "This is an unusually disciplined work of comparative history with a clear and consistently held thesis: the scale and meaning of violence are set by institutions, records, and choices rather than by a constant human aggressiveness. Its greatest strengths are source-first specificity \u2014 the Aylsham court roll, the Nataruk bones, the Libro delle Galleazze, the Congo labor form with its narrow column for the dead \u2014 and a genuine methodological conscience about what each kind of evidence can and cannot bear. The prose is clean, unhurried, and precise, with real command of paragraph-level argument, and the first nine chapters in particular read as the work of a serious writer rather than a generator. Against that, the book runs on a visible template: each chapter opens on a document, walks a numbered mechanism, names a counterargument, sets up a two-case comparison, and closes on a recycled thesis sentence, sometimes with the structure announced aloud. Later chapters (11\u201314) thin into inventory prose, the 'not X but Y' and 'not a difference in human nature' formulas recur past the point of usefulness, and the final chapter contradicts chapter 12 on Dutemple's date. Trimming the repeated summations, varying the chapter shape, and cutting the meta-narration would lift it close to publishable."
+}

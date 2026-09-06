@@ -430,7 +430,7 @@ function optionalQualityDiagnostics(
   if (typeof record.detectorVersion !== "string" || typeof record.wouldBlock !== "boolean" || !Array.isArray(record.findings)) {
     return {};
   }
-  const findings = record.findings.flatMap((entry) => {
+  const findings = record.findings.flatMap((entry): NonNullable<ProjectQualityStatus["diagnostics"]>["findings"] => {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
       return [];
     }

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.7,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A wound and a verdict are not equivalent units: the wound is a bodily consequence, while the verdict is a public decision.",
+      "judgment": "Crisp statement of the book's governing epistemological thesis, earned by the preceding comparison rather than asserted."
+    },
+    {
+      "quote": "Absence is a historical condition before it becomes a historical conclusion.",
+      "judgment": "Genuinely original formulation that does real analytic work across the archaeology chapters."
+    },
+    {
+      "quote": "A bureaucratic document does not make killing impersonal; it gives impersonality a procedure.",
+      "judgment": "The book's best single sentence \u2014 but also a specimen of its most-repeated rhetorical shape (negate, then invert)."
+    },
+    {
+      "quote": "Ibn al-Athir, writing in *The Complete History*, approached the fall of the Abbasid capital through disbelief.",
+      "judgment": "Contradicted twelve paragraphs later by 'Although Ibn al-Athir wrote before the sack' \u2014 an unresolved internal inconsistency in the chapter's central source."
+    },
+    {
+      "quote": "Jebel Sahaba lies in the Nile Valley, near the border of Sudan and Egypt, in a landscape not yet divided by written boundaries or governed by a state archive.",
+      "judgment": "Chapter 2 restages the whole Jebel Sahaba argument that Chapter 1 already made; the reader pays twice for one insight."
+    },
+    {
+      "quote": "The significance lies in the verbs.",
+      "judgment": "Effective one-line paragraph, but the isolated aphoristic beat recurs so often that it reads as a formatting tic rather than emphasis."
+    },
+    {
+      "quote": "Emotion supplied energy. Institutions supplied direction.",
+      "judgment": "Sharp, but the paired-antithesis closer is the book's default cadence and lands with diminishing force by Chapter 10."
+    },
+    {
+      "quote": "How many lives were preserved by choices that left no document, and how much of history's apparent pattern is the residue of actions that were never recorded?",
+      "judgment": "A strong ending that converts the book's evidentiary humility into a genuine argument about historiography rather than a shrug."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Evidence paragraph followed by a mandatory 'what it can show / what it cannot show' concession, in nearly every section of every chapter \u2014 rigorous the first twenty times, mechanical thereafter.",
+      "instances": [
+        "The bones establish the bodily consequences of attacks. They do not preserve the attackers' names, their commands, or the purpose for which they acted.",
+        "The record is strongest where it lists the obligation. It shows what was demanded and how military supply reached into the Magdeburg hinterland. It does not restore the complete sequence of every household's choices"
+      ]
+    },
+    {
+      "pattern": "Paired antithesis as section closer \u2014 two short parallel clauses that invert each other, used as the book's habitual cadence for ending a movement.",
+      "instances": [
+        "One source speaks through jurisdiction. The other speaks through bone.",
+        "One material form organised space; the other organised memory."
+      ]
+    },
+    {
+      "pattern": "Two-case comparative structure driving nearly every chapter's middle: site A versus site B, empire A versus empire B, colony A versus colony B, always resolved with 'the difference was political before it was technical'.",
+      "instances": [
+        "In Tokugawa Japan, regulation made the firearm answerable to a settled social order; in Qing Xinjiang, organised forces carried weapons across a frontier",
+        "Britain displayed conquest through military occupation and road-bound mobility. Egypt more often placed imperial authority inside older bureaucratic and temple structures."
+      ]
+    },
+    {
+      "pattern": "Isolated one-sentence paragraph used as an aphoristic punctuation mark between blocks of exposition.",
+      "instances": [
+        "Surrender did not end the violence.",
+        "A poster could make the state's request appear to come from a neighbour."
+      ]
+    },
+    {
+      "pattern": "Rhetorical question deployed as a hinge or chapter close, posing a dilemma the text then declines to settle.",
+      "instances": [
+        "Was restraint practised by the living, or produced by the conditions of preservation?",
+        "How much violence can disappear when a society does not carve its king striking an enemy?"
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined global history whose thesis \u2014 that aggression becomes historically consequential when offices, records and classifications make harm repeatable \u2014 is stated early, tested against genuinely varied evidence, and synthesised in a final chapter that reads as argument rather than recap. The specificity is real: Jebel Sahaba lesion counts, the Gu'edena boundary, Ottoman arsenal registers, the Wannsee eleven-million table, ExComm's competing channels, all handled with consistent source-criticism about what each artefact can and cannot establish. The prose is precise and the voice is distinctive \u2014 cool, forensic, allergic to melodrama \u2014 but that voice never modulates, and the book's engagement suffers: there are almost no sustained human scenes, and the reader is held at analytic distance for fifteen chapters. Its main weaknesses are structural repetition (Jebel Sahaba is argued twice across Chapters 1 and 2; Rud\u00e9 is introduced twice; the core thesis is restated in near-identical phrasing dozens of times) and a small set of sentence templates \u2014 the negate-then-invert construction, the paired antithesis, the single-line aphorism, the unresolved closing question \u2014 that recur so regularly they become the book's metre rather than its emphasis. One outright internal contradiction survives, in the Chapter 6 handling of Ibn al-Athir's relation to 1258. Light revision \u2014 trimming restatement, breaking the cadence, resolving the Ibn al-Athir slip \u2014 would leave a genuinely strong book."
+}

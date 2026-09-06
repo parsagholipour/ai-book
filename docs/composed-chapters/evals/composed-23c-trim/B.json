@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.6,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Aggression is useful as a historical term only when it remains attached to behaviour.",
+      "judgment": "The book's controlling methodological commitment, stated early and honoured with unusual consistency for fifteen chapters."
+    },
+    {
+      "quote": "Coercion did not begin with a blow. It began when a person's means of subsistence was placed inside a chain of decisions made elsewhere.",
+      "judgment": "Strong: the thesis rendered concretely through Uruk's ration tablets rather than asserted as abstraction."
+    },
+    {
+      "quote": "The arrangement of bodies followed the vessel's tonnage; tonnage followed rules made by Parliament; and those rules attempted to convert mass confinement into a regulated trade.",
+      "judgment": "The best kind of passage in the book \u2014 a causal chain that is specific, verifiable, and does real analytic work."
+    },
+    {
+      "quote": "The stones do not settle the dispute. They make it unavoidable.",
+      "judgment": "An aphoristic two-beat closer of a kind the book deploys dozens of times; effective once, formulaic by the fifth chapter."
+    },
+    {
+      "quote": "Ashurnasirpal's northwest palace at Nimrud gave this policy a permanent setting. \u2026 At Lachish, the Assyrian army's work was represented in stone with unusual concentration. The siege reliefs from the northwest palace show the fortified city under attack",
+      "judgment": "A substantive slip: the Lachish reliefs belong to Sennacherib's palace at Nineveh, and the chapter silently folds them into Ashurnasirpal's reign."
+    },
+    {
+      "quote": "Labour scarcity explains recruitment. Markets explain expansion. Law explains possession, and patrols explain why possession could be enforced beyond the field.",
+      "judgment": "Crisp summary rhythm \u2014 but it is the book's standard four-beat recap, and nearly every section ends in one."
+    },
+    {
+      "quote": "Gunpowder did not give violence its purpose. Institutions gave a weapon a campaign, a campaign a supply system, and a supply system access to civilians who had never chosen the war.",
+      "judgment": "Elegant, and typical: the thesis is restated at chapter's end in almost identical grammatical form throughout the book."
+    },
+    {
+      "quote": "Consent is therefore not a mood but a rule that gives restraint a route into power.",
+      "judgment": "A genuinely earned closing formulation; the Belfast Agreement chapter is the one place the argument reaches something the earlier chapters had not already said."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The negation-then-affirmation pivot ('X does not do A; it does B'), used to close nearly every paragraph and section, so that the argument advances by the same grammatical gesture hundreds of times.",
+      "instances": [
+        "Burial does not soften the injuries; it shows that the dead entered another social act after the attack.",
+        "The office did not remove aggression from the human world. It gave aggression a jurisdiction, a budget, a category, and a chain of command."
+      ]
+    },
+    {
+      "pattern": "A single restated thesis \u2014 that institutions, not temperament, give violence its scale \u2014 reappears verbatim in substance at the end of every chapter, producing a strong spine but heavy redundancy.",
+      "instances": [
+        "At Uruk, Lagash, and the cities set beside them, violence acquired its scale and direction through institutions that could feed workers, mark boundaries, command armies, and preserve a ruler's decision as duty.",
+        "It reveals how communities made force answer to the political worlds they built."
+      ]
+    },
+    {
+      "pattern": "The paired-case comparison as a structural unit: two sites or polities are set side by side, declared not to sit on a ladder, then resolved by locating the difference in institutions. It appears in essentially every chapter.",
+      "instances": [
+        "Nataruk and Crow Creek should not be placed on a ladder from primitive skirmish to developed warfare.",
+        "The difference was not that Britain governed gently while France governed harshly."
+      ]
+    },
+    {
+      "pattern": "The itemised chain of offices \u2014 a five- or six-clause list walking a decision from paper to body \u2014 used as the standard method of demonstration rather than as an occasional device.",
+      "instances": [
+        "A customs official recorded the ship. A merchant calculated its cargo. An insurer assessed its risks. A captain enforced discipline. A plantation buyer waited at the other end of the voyage.",
+        "A sponsor selected a partner. An intelligence service identified an enemy. A ministry or military office authorised funds. A transport system delivered weapons."
+      ]
+    },
+    {
+      "pattern": "The epistemic caveat template: evidence is presented, then bounded by what it cannot show, then the boundary itself is praised as the finding. Rigorous, but it becomes a predictable third movement in every section.",
+      "instances": [
+        "The bones register force, but they do not preserve the words by which participants named the encounter. That uncertainty gives the site its value.",
+        "What cannot yet be generalised is precisely what makes the evidence valuable."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, intellectually coherent book with a single strong argument: that aggression acquires its scale, direction and durability from offices, records and chains of command rather than from an inner human disposition, and that the historian's job is to trace the passage from trace to inference without collapsing it. The thesis is carried cleanly from Palaeolithic cemeteries to the Belfast Agreement, the prose is precise and unfashionably free of stock rhetoric, and the best passages \u2014 the Uruk ration tablets, the Brookes tonnage arithmetic, the Wannsee protocol read as office work \u2014 make the argument through concrete mechanism rather than assertion. The costs are pacing and engagement: the same argumentative move (negation, then institutional affirmation, then epistemic caveat, then an aphoristic two-beat closer) recurs at almost every paragraph and section boundary, so that by the middle chapters the reader can predict the shape of a page before reading it, and the book has no voice beyond its method \u2014 no wit, no risk, no authorial presence. Depth is broad rather than novel; most chapters synthesise familiar cases, and originality lies in the framing rather than in any claim. There is at least one real scholarly slip (the Lachish siege reliefs assigned to Ashurnasirpal's northwest palace at Nimrud), and a few chapters, notably the frontier chapter, are held together by theme rather than by argument. It reads as a competent, publishable survey that would benefit from a hard structural edit for repetition and a deliberate loosening of its sentence templates."
+}

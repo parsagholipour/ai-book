@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.5,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The body is a document written by impact, and its sentences have been broken apart by burial, erosion, excavation, and time.",
+      "judgment": "Strong: a controlled metaphor that states the book's evidentiary thesis without ornament, and it is actually cashed out in the analysis that follows."
+    },
+    {
+      "quote": "Patterns permit a historical argument. They do not turn uncertainty into a witness.",
+      "judgment": "Strength and warning at once \u2014 an excellent formulation, but the exact rhythm (affirm / withdraw, two clipped sentences) becomes the book's default cadence."
+    },
+    {
+      "quote": "A field boundary says, \"this work belongs to someone\"; a wall says, \"this place must be entered on terms.\"",
+      "judgment": "Best kind of writing here: a comparison that does analytic work rather than decorating one."
+    },
+    {
+      "quote": "Rome made belonging portable. Qin made service countable.",
+      "judgment": "Genuinely earned epigram \u2014 compressed, specific, arising from four preceding paragraphs of comparison rather than substituting for them."
+    },
+    {
+      "quote": "A softened word could carry a hard procedure. The schedule supplied the violence that the sentence concealed.",
+      "judgment": "Chapter 11 is the book's sharpest: euphemism analysed through logistics rather than denounced."
+    },
+    {
+      "quote": "The sword remained real throughout. So did the wound and the burned house.",
+      "judgment": "Weakness: this paragraph closes Chapter 7's argument but sits under Chapter 8's heading \u2014 a visible seam where composed sections were stitched in the wrong order."
+    },
+    {
+      "quote": "There is the Crow Creek burial in what is now South Dakota... There are projectile points from Nataruk, the lake margins of Turkana, the sixty-one skeletons from Jebel Sahaba, and the cave deposits at Ofnet.",
+      "judgment": "Weakness: an inventory paragraph that re-lists material already introduced; Chapter 2 does this three separate times and stalls badly."
+    },
+    {
+      "quote": "Bone survives in some soils and dissolves in others. Metal weapons remain after wooden houses vanish. Archives endure when buildings burn, or burn when stones remain.",
+      "judgment": "Elegant, but symptomatic: the paired-clause chiasmus recurs so often that its arrival stops carrying emphasis."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The evidentiary see-saw: every claim is immediately met by a symmetrical withdrawal of the same claim ('It shows X. It does not show Y.'). Intellectually principled and the book's chief virtue, but deployed in nearly every paragraph it flattens emphasis and makes all findings feel equally provisional.",
+      "instances": [
+        "The site preserves harm with unusual force while withholding the story that would make the harm comfortable to explain.",
+        "Talheim can support a connection between early farming life and collective killing in that region. It cannot turn every Neolithic field into a battlefield."
+      ]
+    },
+    {
+      "pattern": "Fixed three-beat paragraph shape: concrete site or artefact named in sentence one, mechanism explained in the middle, abstract generalisation in the final sentence. Almost no paragraph deviates, so chapters read at one unvarying altitude regardless of subject.",
+      "instances": [
+        "The ditch turned distance into effort.",
+        "Architecture is not a motive. It places motives within reach."
+      ]
+    },
+    {
+      "pattern": "The paired-comparison chapter engine: two cases are set side by side, declared 'not a ranking' or 'not stages on one ladder,' then resolved with a compressed antithesis. Used to organise essentially every chapter, so the book's method becomes predictable by Chapter 5.",
+      "instances": [
+        "\u00c7atalh\u00f6y\u00fck concentrates resources inside households. Jericho concentrates labour around a shared boundary.",
+        "The Icelandic settlement gathered dispersed households into a public legal contest; the Akan settlement drew disputants back into a dense network of kinship."
+      ]
+    },
+    {
+      "pattern": "Recap loops across chapter boundaries: earlier cases are re-narrated with their statistics repeated rather than referred to, costing real pace in Chapters 2, 12 and 15.",
+      "instances": [
+        "The cemetery in the Nile Valley, dated broadly to between about 13,400 and 18,600 years ago, contains sixty-one individuals",
+        "At Jebel Sahaba, injuries in bone establish repeated exposure to violence but leave motive and social organisation uncertain."
+      ]
+    },
+    {
+      "pattern": "Aphoristic closers ending sections on an abstract chiasmus or antithesis, often after the analytic point has already landed, which gives the prose an unearned oracular finish.",
+      "instances": [
+        "The battle ended; the demands continued.",
+        "The firearm gives the state reach; the register gives reach memory."
+      ]
+    }
+  ],
+  "summary": "This is a serious, evidence-first history of human aggression from Jebel Sahaba to Rwandan gacaca, and its governing idea \u2014 that each class of evidence makes a different kind of violence visible, so the historian's first duty is to say what a source can and cannot establish \u2014 is stated in Chapter 1 and genuinely sustained across fifteen chapters. Specificity is high and largely non-generic: Ofnet, Urukagina's reform text, Alburnus Maior's wax tablets, L\u00fcbeck assault fines, Akan lineage arbitration, Sahel rainfall records. Reasoning is the strongest dimension, with several passages (the Wannsee logistics, the Rome/Qin comparison, Jericho's ditch) that are better than competent. The costs are pacing and shape: the affirm-then-qualify sentence pair and the two-case paired comparison are used so uniformly that they stop reading as judgment and start reading as a template, several inventory and recap paragraphs stall Chapters 2 and 13 outright, and the opening paragraph of Chapter 8 plainly belongs to the end of Chapter 7. Lexical AI-slop is low \u2014 no stock pivots, no listicle rhythm, no fake urgency \u2014 but the structural symmetry and the steady supply of aphoristic closers put slop severity at medium. Light revision aimed at varying paragraph architecture, cutting the recap inventories, and fixing the Chapter 7/8 seam would leave a genuinely publishable book."
+}

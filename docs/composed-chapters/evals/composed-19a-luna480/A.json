@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.5,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Low",
+  "highlights": [
+    {
+      "quote": "A grave of this kind invites a narrative larger than the material permits.",
+      "judgment": "Compact statement of the book's governing epistemic discipline, established on the first page and honoured throughout."
+    },
+    {
+      "quote": "A tablet did not swing a spear. It made the spear-bearer provisionable.",
+      "judgment": "The best sentence in the book: the whole administrative-violence thesis compressed without abstraction."
+    },
+    {
+      "quote": "The earlier colonial pass and labour systems provide a useful comparison in half a sentence: paper and local intermediaries again made distant power present in ordinary movement, though the legal and political settings were different.",
+      "judgment": "A drafting instruction has leaked into the prose ('in half a sentence'); a clear editorial defect."
+    },
+    {
+      "quote": "Aggression encompasses behaviour intended to harm another person who wishes to avoid that harm; violence refers more specifically to the intentional use of physical force to injure, damage, or kill.",
+      "judgment": "Chapter 9 restates Chapter 1's definitions almost verbatim \u2014 the clearest instance of the book's recap habit."
+    },
+    {
+      "quote": "Drought does not command a massacre. A firearm does not select an enemy. Poverty does not write a policy.",
+      "judgment": "Rhetorically effective, but the fourteenth appearance of the same negation triad; by the last chapter it reads as a tic rather than an argument."
+    },
+    {
+      "quote": "Tribute made people countable, hostages made promises personal, marriage made alliances hereditary, merchant protection made distance profitable, and religious patronage made conquest speak in local moral languages.",
+      "judgment": "Elegant, but a formulaic five-beat recap of a list the chapter has already walked through item by item."
+    },
+    {
+      "quote": "The Bastille fell because a crowd made authority answerable to the streets. The terror grew when the revolutionary state learned to make the streets answerable to its definition of authority.",
+      "judgment": "A genuinely earned chiasmus \u2014 though nearly every chapter ends on this same paired-antithesis cadence."
+    },
+    {
+      "quote": "Gunpowder did not fight by itself.",
+      "judgment": "A rare one-line paragraph that breaks the otherwise uniform 120\u2013200 word block and lands with real force."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Negation-then-reframe: an artefact or fact is denied one meaning and reassigned a narrower one, usually across a semicolon or 'but'. It is the book's default sentence engine and appears several times per chapter.",
+      "instances": [
+        "A burial is an act after death; it is not a transcript of the killing.",
+        "The technology did not choose the objective, but it changed which objectives seemed feasible."
+      ]
+    },
+    {
+      "pattern": "Denial of object agency \u2014 a tool, machine or infrastructure is said not to have chosen its own use \u2014 used as the standard pivot from material to political explanation.",
+      "instances": [
+        "a tool does not choose its target",
+        "The train helped deport European Jews across long distances, but its tracks did not select the passengers."
+      ]
+    },
+    {
+      "pattern": "Chapter-closing antithetical pairing: the final paragraph resolves into two balanced clauses that mirror each other's terms, giving fifteen chapters near-identical cadences at the end.",
+      "instances": [
+        "It showed how an empire could govern a people only by recognizing enough of their distinctiveness to use it, and by fearing enough of it to strike at it.",
+        "The Bastille fell because a crowd made authority answerable to the streets. The terror grew when the revolutionary state learned to make the streets answerable to its definition of authority."
+      ]
+    },
+    {
+      "pattern": "Catalogue-then-recap: a set of instruments is enumerated in successive paragraphs, then compressed into a single summarising sentence list \u2014 the material is delivered twice.",
+      "instances": [
+        "The list could be extended, but its order should remain visible. Tribute extracted wealth. Deportation rearranged population.",
+        "The pattern is visible across the catalogue: tribute made people countable, hostages made promises personal, marriage made alliances hereditary"
+      ]
+    },
+    {
+      "pattern": "Terminal epistemic caveat: nearly every case section ends by announcing the boundary of what the evidence permits, so scepticism becomes a structural refrain rather than a live judgment about a specific source.",
+      "instances": [
+        "The bones at Nataruk and Jebel Sahaba bring us to that boundary and stop there.",
+        "It cannot tell us that the next choice was already written."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined comparative history of organised violence, argued through one consistent claim: aggression becomes destructive at scale through institutions, classification and administrative reach rather than through any constant human appetite, and the historian's first duty is to say what each surviving trace can and cannot bear. The macro-structure is strong \u2014 fifteen chapters move chronologically from Talheim to post-1945 counterinsurgency, each anchored in two or three named artefacts (a stele, a ration tablet, a hut-tax register, the Wannsee Protocol) that are read closely rather than cited decoratively. Prose is unusually clean and precise, the voice is stable and unmistakable, and the book is remarkably free of the usual AI tells: no rhetorical questions to itself, no 'in a world where', very few stock transitions, and concrete nouns doing most of the work. Its weaknesses are repetition and monotony rather than emptiness: the negation-then-reframe move, the object-agency denial, the terminal epistemic caveat and the paired-antithesis chapter closer recur so regularly that by the later chapters the reader can predict the shape of a paragraph before reading it, and paragraph lengths and internal rhythm barely vary across 1,100 lines. Depth is more synthetic than original \u2014 the cases are handled competently and the caution is admirable, but the book rarely stakes a contestable claim of its own, and the Pinker chapter is the only place it argues against a named opponent. One editorial artefact ('in half a sentence') and a near-verbatim redefinition of aggression in Chapter 9 need fixing; with pruning of the recap loops and some variation in sentence and paragraph shape, this would be publishable."
+}

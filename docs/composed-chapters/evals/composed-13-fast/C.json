@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 4,
+    "structure": 3,
+    "depth": 3,
+    "reasoning": 3,
+    "clarity": 3,
+    "voice": 2,
+    "engagement": 2,
+    "pacing": 1,
+    "craft": 2,
+    "slopResistance": 2
+  },
+  "overall": 2.5,
+  "readiness": "Needs major revision",
+  "slopSeverity": "High",
+  "highlights": [
+    {
+      "quote": "The sun struck the flagstones of the citadel at Mycenae until the heat drove the shadows under the colonnade, and there the overseer kept his tally while the armed men shifted their spears against the wall",
+      "judgment": "Genuinely strong opening: concrete, sensory, and it earns the book's argument about tally-keeping and armed force being one system."
+    },
+    {
+      "quote": "The calpulli leaders cleaned these rooms, sweeping them with brooms and mops. The tribute exchange swept these floors, polishing them with buffers and waxes.",
+      "judgment": "Chapter 5 collapses into thousands of words of mechanical verb-chaining with zero semantic content \u2014 a catastrophic generation failure, not a stylistic lapse."
+    },
+    {
+      "quote": "The tribute system imposes these limits, capping the\u7d22\u53d6 and ensuring fairness.",
+      "judgment": "Untranslated foreign tokens (also \u7ede\u5408 later) surface mid-sentence, confirming the text was never proofread."
+    },
+    {
+      "quote": "The calpulli leaders continued these series, modularizing them with forms and periods. The tribute exchange modularized these lattices, uniformizing them with groups and actions. The codex plate uniformized these surfaces, parameterizing them with elliptic functions",
+      "judgment": "Chapter 5 ends mid-sentence in graduate algebraic geometry vocabulary while ostensibly discussing Aztec tribute \u2014 total loss of subject."
+    },
+    {
+      "quote": "Model captures a mechanical relationship between numbers and resources, but it fails to account for the cultural and political factors",
+      "judgment": "Pervasive determiner-dropping (\"Model captures\", \"Report concludes\", \"Roll stands\") gives long stretches a telegraphic, machine-translated register that fights comprehension."
+    },
+    {
+      "quote": "Aggression takes the shape of the containers that hold it, and its scale, targets, and meaning shift decisively with the institutions, resources, technologies, identities, and historical choices that surround it.",
+      "judgment": "The thesis is real and usable, but it is recited near-verbatim at multiple chapter seams rather than developed, turning coherence into recap."
+    },
+    {
+      "quote": "Robert Belah, in his comparative framework essay, traced how scholars conflated warfare with everyday conflict",
+      "judgment": "Authorities and artifacts are frequently unverifiable or garbled (\"Joan Arzu's analysis\", \"William Buddy Menziez\", \"Yukle Bei monument\"), so the evidentiary scaffolding cannot bear the interpretive weight placed on it."
+    },
+    {
+      "quote": "The truce held. The rain started. It was a transaction, simple and hard, born of necessity rather than friendship.",
+      "judgment": "Chapter 6's Meuse negotiation shows the book's best register \u2014 short declaratives, restraint, a scene that argues without narrating its own moral."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every section opens by naming a single document or artifact, describes its physical properties, then glosses it into the thesis \u2014 the same three-beat template roughly sixty times, so chapters feel like stacked exhibit labels rather than an argument that moves.",
+      "instances": [
+        "The clay tablet PY Ta 641, baked in the kiln of the palace workshop later that year, preserves the memory of these transactions in linear script",
+        "The twelfth-century English pipe roll muster list reveals four distinct categories of armed service drawn from the population"
+      ]
+    },
+    {
+      "pattern": "The 'ledger sees X but cannot see Y' antithesis, used as the closing move of section after section, always contrasting bureaucratic record against unrecorded feeling.",
+      "instances": [
+        "We see the allocation of resources, but the emotional texture of the encounter remains buried beneath the clay",
+        "The table shows the scale of catastrophe, but it cannot show the grief of a mother searching for a child among the rubble"
+      ]
+    },
+    {
+      "pattern": "Verbatim or near-verbatim restatement of the book's thesis as a chapter closer, and even repetition of whole sentences within a single chapter.",
+      "instances": [
+        "Aggression takes the shape of the containers that hold it, and its scale, targets, and meaning shift decisively with the institutions, resources, technologies, identities, and historical choices that surround it.",
+        "The coinage hoards suggest that wealth accumulated in Kilwa was often buried rather than spent, hinting at the insecurity of the times \u2014 repeated word-for-word two paragraphs after its first appearance."
+      ]
+    },
+    {
+      "pattern": "Article- and determiner-dropping degrades whole chapters into a clipped, agentless register, applied inconsistently so the prose lurches between lush and telegraphic within a page.",
+      "instances": [
+        "Tokens inside bulla indicated volume of barley, sesame oil, and wool taxpayer provided",
+        "Distribution of copies to affiliated societies across country extended reach of committee authority beyond Paris"
+      ]
+    },
+    {
+      "pattern": "Forced back-references that name an earlier chapter's artifact and assert a parallel without doing comparative work, functioning as cohesion signage rather than analysis.",
+      "instances": [
+        "Just as the baked clay tablet PY Ta 641 documented barley allocations for guards, this register tracks the flow of humans through the gate of power",
+        "Like cotton bundles that sealed alliances in Tlaxcala, these printed sheets served as material evidence of political alignment"
+      ]
+    }
+  ],
+  "summary": "This manuscript has a defensible thesis \u2014 that aggression is shaped by the institutions, resources and identities that contain it \u2014 and a sensible chronological arc from Bronze Age citadels to postwar deterrence and archival silence, and its best passages (Mycenae, the Meuse negotiation, the Checkpoint Charlie queue log) show real scene-craft. Everything above that level fails. Chapter 5 disintegrates into several thousand words of mechanical verb-chaining ('The codex plate polished these tables, shining them with oils and creams') that abandons its subject entirely, drifts through consumer electronics into algebraic topology, emits untranslated Chinese tokens, and terminates mid-sentence; the book itself then stops at a development-program blueprint with no conclusion. Elsewhere the prose oscillates between ornate and a determiner-stripped telegraphic register that reads like unrevised machine output, and the evidence base leans on authorities and artifacts that appear invented or garbled. Structurally the book is one template repeated sixty times \u2014 name an artifact, describe it, gloss it into the thesis, close on a 'the record shows X but cannot show Y' antithesis \u2014 with the thesis itself recited near-verbatim at chapter seams instead of advanced. This is not a draft needing polish; it needs an entire chapter regenerated, an ending written, and a uniform register imposed across the whole."
+}

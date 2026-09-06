@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.7,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A quarrel becomes a prosecution when a court recognises it. A raid becomes warfare when a political community organises and names it. A threat becomes durable when a person or office can enforce it.",
+      "judgment": "The book's controlling thesis stated with unusual economy, and it genuinely governs all fifteen chapters rather than being announced and dropped."
+    },
+    {
+      "quote": "The clay tablet did not need to describe pain to extend the reach of force. It needed to preserve who owed what, to whom, and by when, so that a demand survived the moment in which it was issued.",
+      "judgment": "Excellent: an abstract claim about durability of coercion is carried entirely by the concrete properties of the artifact."
+    },
+    {
+      "quote": "The explanatory pages at psychstory.co.uk and lumenlearning.com make a related division between hostile aggression... The broad summary at wikipedia.org is right to emphasise that...",
+      "judgment": "A serious evidentiary weakness: the conceptual frame of a scholarly-toned history rests on named consumer web pages, and the text keeps re-citing them."
+    },
+    {
+      "quote": "A human archive was made mobile, joining techniques to imperial campaigns even when the workers had no choice in the matter.",
+      "judgment": "Original formulation; the Mongol chapter is where the book's specificity and analytic ambition are highest."
+    },
+    {
+      "quote": "Tacky is named.",
+      "judgment": "The recurring one-sentence 'beat' paragraph at its emptiest \u2014 a formal tic that adds emphasis without adding content."
+    },
+    {
+      "quote": "A pass, a census, a tax register, or a transport list became lethal through the purpose assigned to it, not through its administrative form.",
+      "judgment": "Precise and earned in the genocide chapter, but it is the eleventh restatement of the book's single analytic move (instrument neutral, politics decisive)."
+    },
+    {
+      "quote": "Barbados had already made the legal principle plain in the Act of 1661... Virginia's statutes made slavery hereditary through the mother in 1662, denied baptism as a route to freedom in 1667, and protected masters from ordinary murder liability... in 1669.",
+      "judgment": "Chapter 10 reprints, near-verbatim, material already given in chapter 8 and given again in chapter 11; the Atlantic legal chronology is stated three full times."
+    },
+    {
+      "quote": "The evidence supports a harder and more useful judgment: human choices acquire their reach from historical conditions, and those conditions are made, maintained, and sometimes broken by people.",
+      "judgment": "A disciplined, non-inflated closing claim that refuses the grand summation the genre invites."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The negation-then-correction sentence pair \u2014 an object or event is denied a causal power in one clause so that institutions can be credited in the next. It structures the argument of every chapter and eventually reads as a template rather than a finding.",
+      "instances": [
+        "None of these objects contains a motive. A tool can be used in a feud, a hunt, a ceremony, a prison, or a war, depending on the people who control it",
+        "A cannon could breach a wall. It could not by itself make a tax category accepted."
+      ]
+    },
+    {
+      "pattern": "The isolated one-sentence paragraph dropped at intervals as a rhythmic beat, often restating the surrounding prose rather than advancing it.",
+      "instances": [
+        "The walls did not collapse.",
+        "Independence arrived in Malaya in 1957."
+      ]
+    },
+    {
+      "pattern": "Verbatim or near-verbatim recycling of earlier passages across chapters, presented as if new. Chapter 4 re-runs chapter 3's Anyang/Ur/Wadi al-Jarf comparison; chapters 10 and 11 re-run chapter 8's Atlantic statutes and company chronology; chapter 15 re-runs chapters 13 and 14 at length.",
+      "instances": [
+        "A bronze weapon at Anyang, a ration tablet from Ur, and a transport journal from Wadi al-Jarf all belong to organized systems, but they answer different administrative needs.",
+        "A bronze weapon at Anyang and a ration tablet from Ur belonged to organised systems, yet they answered different administrative needs."
+      ]
+    },
+    {
+      "pattern": "The 'catalogue paragraph': a topic sentence followed by four to six parallel clauses naming institutions or actors, closed by a limiting caveat. Paragraph shape is near-uniform across 1,000 lines, which flattens pacing.",
+      "instances": [
+        "At the frontier stands the enemy; on the road, the bandit; at sea, the pirate. Beside them appear the tax defaulter, the rebellious governor, the impious city, the rival claimant...",
+        "A registration card named a resident. A ration book assigned food. An identity paper authorised movement. A factory pass admitted a worker."
+      ]
+    },
+    {
+      "pattern": "The evidentiary-humility closer: chapters and sections end by naming what the sources cannot establish. Admirable once or twice, it becomes the default exit and drains momentum from almost every section.",
+      "instances": [
+        "Absence becomes informative only after the conditions of preservation, excavation, burial, and recognition have been examined",
+        "The document leaves a boundary between observed ruin and inferred intention."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined comparative history of organized violence whose thesis \u2014 that institutions, law, and ideas of belonging convert pressure and capacity into targets, while tools and scarcity select nobody \u2014 is stated early, tested chapter by chapter against named sites and documents, and refused the temptation of a grand closing law. The specificity is real (Jebel Sahaba and Talheim distinguished by what their deposits can bear, Puzrish-Dagan set against the Stele of the Vultures, Juvaini read as both witness and functionary), the source criticism is consistently the most interesting thing on the page, and the sentence-level prose is clean, unhurried, and free of the usual lexical tells. The costs are pacing and repetition: the Atlantic chapters state the same statutes and dates three times, chapter 4 recycles chapter 3's comparison nearly verbatim, and chapter 15 is largely a recapitulation rather than a synthesis. The analytic move is also singular \u2014 instrument neutral, politics decisive \u2014 so by the tenth chapter the reader can predict a paragraph's ending from its opening. Grounding the definitional chapter in Wikipedia and two commercial psychology explainers is a genuine weakness in a book otherwise scrupulous about provenance. With aggressive cutting of duplicated material and more variety in paragraph architecture, this would be strong; as it stands the redundancy, not the prose, is what needs work."
+}

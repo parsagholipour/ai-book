@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 7,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 5
+  },
+  "overall": 7.2,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The card converted a passer-by into a classification.",
+      "judgment": "Compact, concrete statement of the book's governing claim; earns its abstraction from the preceding scene."
+    },
+    {
+      "quote": "A wall was built from mud brick, but its persistence depended on administration in the form of clay.",
+      "judgment": "Strong image welding material and bureaucratic evidence — the book at its most original."
+    },
+    {
+      "quote": "An arrow point in a rib is evidence of injury; an arrow point in the soil is evidence of association.",
+      "judgment": "Excellent teaching of inference discipline; the epistemological care is a genuine distinguishing strength."
+    },
+    {
+      "quote": "A dead man left on a pay list was a fiscal fact awaiting correction.",
+      "judgment": "The Ottoman register chapter is the book's sharpest reading of a document as an instrument."
+    },
+    {
+      "quote": "Violence opened the route. Administration decided who would continue along it.",
+      "judgment": "Effective in isolation, but this exact two-beat antithesis closes dozens of sections and becomes a tic."
+    },
+    {
+      "quote": "Las Casas, writing decades afterward, described the work of the conquerors and said, “I saw them with my bodily, mortal eyes,” in words preserved in *The Red Man and the White Man in North America*, Chapter 1.",
+      "judgment": "Awkward secondary-source citation (as with a stray reference to “David Irving v Penguin Books ... /VII”) that breaks the authorial voice and betrays the underlying source pile."
+    },
+    {
+      "quote": "In 2012, Marta Mirazón Lahr and her colleagues reported the discovery in *Nature*",
+      "judgment": "A datable slip (the Nataruk report is 2016), and similar attribution wobbles elsewhere slightly weaken an otherwise scrupulous evidentiary posture."
+    },
+    {
+      "quote": "At Cajamarca, the Spanish needed only a brief exchange before the meeting became a battle. At Xaragua, Ovando needed a feast before it became a trap. In the Mississippi Valley, leaders needed thousands of posts before danger became a wall.",
+      "judgment": "Typical closing recap: every chapter ends by re-listing its cases in parallel clauses, which flattens the argument into a roll call."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Paired antithesis / X-not-Y closer used as the default terminal move of nearly every section, chapter and often paragraph.",
+      "instances": [
+        "Speech opened the door; the office decided who passed through it.",
+        "Governance did not cancel coercion. It gave coercion a schedule."
+      ]
+    },
+    {
+      "pattern": "Identical chapter architecture: a cinematic named-witness vignette with sensory detail and one-line dramatic beats, a hinge sentence pivoting to a second case, comparative analysis of two to four sites, then a summarising roll call.",
+      "instances": [
+        "The king looked up.",
+        "The second drawbridge dropped."
+      ]
+    },
+    {
+      "pattern": "Formulaic evidentiary hedge — a claim is advanced and then disclaimed with “cannot / does not prove”, repeated so regularly it stops reading as caution and starts reading as cadence.",
+      "instances": [
+        "A projectile proves violent injury; it does not by itself prove war.",
+        "A cannon made a breach possible. It did not make victory inevitable."
+      ]
+    },
+    {
+      "pattern": "Restatement of the single thesis — records/offices make harm repeatable — in near-identical wording across chapters, without escalation of the argument.",
+      "instances": [
+        "It increased the number of ways in which a ruler could make harm repeatable.",
+        "a chain of command that made harm repeatable."
+      ]
+    },
+    {
+      "pattern": "Cases recycled across chapters with re-described detail rather than cited forward, producing redundancy (Jebel Sahaba in Chapters 1 and 2; Kibuye in 1 and 15; Lachish, Cajamarca, Babyn Yar re-narrated at chapter ends).",
+      "instances": [
+        "At Site 117 near the Nile in what is now northern Sudan, the dead were gathered in a cemetery dating to approximately 13,000 or 14,000 years ago.",
+        "At Site 117, about 13,000 to 14,000 years ago, the remains of 61 people included numerous projectile injuries"
+      ]
+    }
+  ],
+  "summary": "This is an unusually competent work of comparative history: fifteen chapters that hold one clear thesis — that aggression becomes large-scale and durable only when offices, registers, roads and categories make harm repeatable — and test it against genuinely specific material from Nataruk and Crow Creek to Wannsee, Biafra and Belfast. The prose is clean, concrete and unsentimental, the source criticism is real rather than performed, and the refusal to arrange societies on a ladder from primitive to modern is intellectually honest. Its weaknesses are formal rather than factual. Every chapter runs the same machine — dramatised opening scene with clipped one-line beats, hinge sentence, comparative exposition, closing roll call — and nearly every unit of argument terminates in the same paired antithesis, so that a genuinely earned insight and a filler transition sound alike. Redundancy compounds this: the thesis is restated in near-identical words in a dozen places, and several cases are re-narrated in full in later chapters, while the final chapter adds little the first has not already claimed. A few citation artifacts and dating slips intrude on an otherwise careful evidentiary voice. With the closers thinned, the recaps cut and the chapter template varied, this would be strong publishable non-fiction; as it stands its shape, not its substance, reads as manufactured."
+}

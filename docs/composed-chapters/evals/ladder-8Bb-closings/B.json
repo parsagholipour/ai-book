@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 7,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.6,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "An injury is not yet a rate, a battle is not yet a society, and a grave is not yet a measure of human nature.",
+      "judgment": "Compressed, memorable statement of the book's methodological spine; also an early instance of the tricolon-plus-aphorism move that later becomes formulaic."
+    },
+    {
+      "quote": "The first organised wars began there: not when a spear struck, but in the prior act of making a population answerable to a count.",
+      "judgment": "The thesis at its sharpest, but the not-X-but-Y closing cadence recurs at nearly every chapter's end."
+    },
+    {
+      "quote": "Prevalence is the proportion of the observed group showing a particular condition... Incidence is the number of new cases occurring within a defined population during a defined period.",
+      "judgment": "Genuine technical instruction rather than gesture; the book repeatedly teaches how a number is made before using one."
+    },
+    {
+      "quote": "Prisoners were not said to be killed; they were said to diminish.",
+      "judgment": "Best sentence in the Wannsee chapter — close reading of euphemism doing the analytic work the thesis needs."
+    },
+    {
+      "quote": "The Mesopotamian monument hides the worker behind the king and the defeated behind the vultures. The Indus ruins hide administrators behind masonry and water levels.",
+      "judgment": "Elegant paired antithesis, but the book runs this exact two-clause mirror hundreds of times and it stops registering."
+    },
+    {
+      "quote": "The horse supplied reach, the bow supplied force, the census supplied repetition, and the local bargain supplied endurance.",
+      "judgment": "A summary list-with-repeated-verb construction that appears in almost every chapter's closing paragraphs; efficient once, mechanical by the tenth use."
+    },
+    {
+      "quote": "“Is he Kalingan?” he asked. The officer bowed. “Yes, Majesty.”",
+      "judgment": "Invented dialogue in an otherwise scrupulously source-critical history; the fictionalised set-pieces sit uneasily beside chapters that refuse to say more than the evidence allows."
+    },
+    {
+      "quote": "Frontier violence was organised through unequal access to movement, refuge, and negotiation despite its connection to exchange.",
+      "judgment": "One of several awkward, back-loaded thesis sentences where a concessive clause is bolted on and blurs the claim."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter is built as two or three case studies followed by an explicit comparison paragraph that states what the cases share and where they differ, then a short aphoristic landing. The scaffolding is visible in nearly identical wording chapter to chapter.",
+      "instances": [
+        "Merv and Yelü Chucai belong to the same history. The first shows what happens when a population is classified during conquest; the second shows how classification can survive the battlefield.",
+        "The Ottoman arsenal, the French levy, the Dutch bond, the Mughal rank, and the Nagashima siege belong in one argument because each joins a weapon to an institution without becoming the same story."
+      ]
+    },
+    {
+      "pattern": "Symmetrical evidentiary hedge: an assertion of what a source establishes immediately mirrored by a sentence of what it does not. Used as the default paragraph closer across all fifteen chapters.",
+      "instances": [
+        "The remains establish that people were killed violently at the lagoon. They do not establish a war, a famine, or the identity of the attackers.",
+        "It does establish that the violence was not merely decorative invention."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis in two short clauses, often with a semicolon, contrasting two societies, objects or institutions. It is the book's signature rhetorical unit and by mid-book it substitutes for analysis.",
+      "instances": [
+        "Mesopotamia often makes its king loud; Dholavira makes its infrastructure speak.",
+        "One method attacked the political geography of a province. The other occupied it."
+      ]
+    },
+    {
+      "pattern": "A rhetorical open question planted at a section seam, sometimes answered immediately, sometimes left hanging as a false gesture toward humility.",
+      "instances": [
+        "How many communities left no mass grave because their conflicts ended in dispersal, cremation, ordinary burial, or the killing of only a few people at a time? The bones cannot decide.",
+        "Was Mongol governance a coherent design carried outward from a central plan, or a sequence of local bargains made by commanders, princes, clerks, and conquered rulers?"
+      ]
+    },
+    {
+      "pattern": "Novelistic set-pieces in present-scene narration, with invented sensory detail and occasional invented dialogue, appended to the head or tail of a chapter without argumentative integration, and often restating material the analytic prose has already delivered.",
+      "instances": [
+        "The wind came off the Nile and lifted the sand from the cut at Cemetery 117, where Fred Wendorf knelt beside a body laid on its right side.",
+        "Wat Tyler’s horse had pushed through the wet grass of Smithfield by the time the king came down from Clerkenwell on Saturday, 15 June 1381."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely accomplished work of synthetic history with one clear and sustained thesis: aggression becomes large, durable and repeatable only when an office can count, classify, record and compel, so the census, the ration list, the tax roll and the deportation register belong to the history of violence as much as the weapon does. The argument is carried across fifteen chapters from Jebel Sahaba to Mumbai with unusual evidentiary discipline; the book habitually explains how a number, a bone, a chronicle or a royal inscription was produced before it uses one, and it is consistently honest about what its sources cannot show. Sentence-level craft is high and the voice is austere, controlled and unmistakably consistent. The weaknesses are all weaknesses of sameness. Almost every chapter is assembled from the same parts in the same order, and the prose leans on a small set of moves — the mirrored what-it-shows/what-it-does-not hedge, the two-clause antithesis, the X-supplied-A, Y-supplied-B list, the aphoristic not-when-but-when closer — until they read as furniture rather than thought. The interleaved fictionalised scenes, some with invented dialogue, sit awkwardly against the book's own source-critical scruples and frequently repeat what the analysis has already established. Cut the redundancy, vary the chapter architecture, and either justify or remove the dramatised passages, and this would be close to publishable."
+}

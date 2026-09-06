@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.8,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The archive does not distribute evidence according to the importance of the violence. It preserves what institutions, environments, and observers were equipped to notice.",
+      "judgment": "The book's methodological spine stated cleanly and early; it earns the rest of the argument."
+    },
+    {
+      "quote": "The story is plausible. The bones do not supply its sequence.",
+      "judgment": "Superb two-beat deflation — but this exact move (short assertion, shorter refusal) recurs so often it becomes a tic."
+    },
+    {
+      "quote": "Water was being assigned against bodies, and bodies were being selected when the arithmetic no longer satisfied the voyage.",
+      "judgment": "The Zong chapter's best sentence: the chiasmus does real analytic work rather than decorating."
+    },
+    {
+      "quote": "Murder became possible because no single office had to describe the whole act.",
+      "judgment": "The Wannsee analysis lands the book's central claim with maximum economy and zero moralising."
+    },
+    {
+      "quote": "Terror announced the terms. Administration collected them.",
+      "judgment": "Elegant, but symptomatic: dozens of paragraph-closers are this same two-clause antithetical epigram."
+    },
+    {
+      "quote": "In London, a century and a quarter after the death of John Hayes, the same vocabulary of guilt gathered around a different scene",
+      "judgment": "An internally incoherent transition — the paragraph then treats the 1722 Hayes trial as the scene it just dated from; the reader stalls."
+    },
+    {
+      "quote": "Did the early state increase violence, or did it increase the chances that violence would survive as evidence?",
+      "judgment": "A genuinely good question, weakened by the fact that nearly every chapter closes on a near-identical rhetorical either/or."
+    },
+    {
+      "quote": "The proceedings make the household visible by following the people who moved through it. A servant had seen or heard something. A neighbour had noticed an absence. Someone had carried an object from one place to another.",
+      "judgment": "Where specificity fails, the prose reverts to placeholder generality — unnamed servants doing unspecified things."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Aphoristic one- or two-sentence paragraph as a section punchline, almost always built on a paired antithesis (X is good evidence for A; it is poor evidence for B).",
+      "instances": [
+        "The pit is powerful evidence of killing. It is poor evidence for a census.",
+        "The new weapon changed the problem without solving it."
+      ]
+    },
+    {
+      "pattern": "The paired-comparison paragraph: two cases named, one sentence each, then a 'the difference lay in the institutions' summary that restates the book's thesis verbatim.",
+      "instances": [
+        "In the Congo, the concession boundary directed labour towards rubber. In South Africa, the land boundary directed labour towards mines and farms.",
+        "Kenya made land scarcity reinforce the tax. Indochina made the commune itself a labour register."
+      ]
+    },
+    {
+      "pattern": "Chapter-closing rhetorical question that reframes the chapter as an unanswerable archival problem, then declines to answer it.",
+      "instances": [
+        "The sharper question remains unanswered: were the preserved massacres rare eruptions in communities that usually settled disputes, or are they the surviving peaks of a much wider low-level conflict whose victims left no mark?",
+        "How destructive were the Mongols compared with other conquerors, and how much of their apparent exceptionalism comes from the kind of records their empire produced?"
+      ]
+    },
+    {
+      "pattern": "Chapter-opening cinematic set-piece in the historical present-tense mode (a named figure, weather, objects, a short dramatic beat) before the analytic body begins — a fixed template rather than a chosen effect.",
+      "instances": [
+        "The five hundred and one jurors were already seated when Socrates came into the court beside the Royal Stoa in Athens.",
+        "At 9 a.m. on Tuesday, 16 October 1962, McGeorge Bundy entered the Oval Office carrying a folder of photographs."
+      ]
+    },
+    {
+      "pattern": "The 'X supplied A; Y supplied B' distribution formula used to allocate causal credit, deployed at least once per chapter.",
+      "instances": [
+        "Social anger supplied force; institutions had already supplied the categories.",
+        "Fear supplied urgency; political offices supplied categories; the sections supplied bodies; the prison supplied victims."
+      ]
+    }
+  ],
+  "summary": "This is an unusually disciplined work of comparative history with a single, clearly held thesis: aggression is not a constant human quantity but a capacity organised by offices, and what we can say about it is bounded by what particular archives were built to record. The argument is carried across fifteen chapters from Jebel Sahaba to Colombia without drift, and the source criticism — on Keeley's rates, on the Florentine Codex, on Juvayni against Ibn al-Athir, on battle-death series against excess-mortality surveys — is consistently more careful than the genre demands. Sentence-level craft is high and the diction is free of the usual machine idiom: no stock transitions, no inflated abstractions, no false intimacy with the reader. The weakness is rhythmic rather than intellectual. The book has perhaps six paragraph shapes and cycles them relentlessly, so that the paired antithesis, the aphoristic closer, the two-case comparison and the chapter-ending open question stop reading as thought and start reading as furniture; the thesis is restated so often that its later appearances add nothing. A few local lapses — a garbled chronology in the Hayes passage, a quotation attributed to Ashurnasirpal's successor that belongs to the Darius epigraph, stretches of unnamed servants and generic 'someone' — suggest a light editorial pass would help. With the closers thinned and the restatements cut, this would be ready."
+}

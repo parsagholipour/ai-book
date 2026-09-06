@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.5,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The archive does not distribute evidence according to the importance of the violence. It preserves what institutions, environments, and observers were equipped to notice.",
+      "judgment": "The book's strongest idea, stated crisply and then genuinely worked through chapter by chapter rather than merely asserted."
+    },
+    {
+      "quote": "The pit is powerful evidence of killing. It is poor evidence for a census.",
+      "judgment": "Excellent compression — but this exact two-beat antithesis is the book's signature closer and recurs far too often."
+    },
+    {
+      "quote": "A tablet might record barley issued to a named worker... The tablet did not feed anyone by itself. It made the delivery accountable, and accountability allowed a palace or temple to plan beyond the immediate household.",
+      "judgment": "Concrete mechanism-building: the argument is carried by specific material practice rather than abstraction."
+    },
+    {
+      "quote": "Fifty-four on 29 November, forty-two on 30 November, twenty-six on 1 December, and ten more in the account presented afterward: a sequence of deaths converted into quantities that could be tested against water, distance, and the terms of a policy.",
+      "judgment": "The Zong chapter is the book's best writing — restraint doing the moral work that adjectives would have spoiled."
+    },
+    {
+      "quote": "“Whatsoever commands have been laid on them by me, by night or by day, have been performed by them,” Ashurnasirpal’s successor claimed in the imperial idiom.",
+      "judgment": "A real error: this is Darius at Behistun, quoted as the chapter's own epigraph, here reattributed to an Assyrian king."
+    },
+    {
+      "quote": "In London, a century and a quarter after the death of John Hayes, the same vocabulary of guilt gathered around a different scene",
+      "judgment": "Incoherent transition — the sentence dates the scene relative to the very murder it then narrates (1722), and chapter 1's Socrates opening never connects to it."
+    },
+    {
+      "quote": "In France, Dutch police and railway personnel assisted German authorities in many arrests and transports",
+      "judgment": "Country conflation in a chapter whose whole method depends on precision; a reader who catches it will discount nearby claims."
+    },
+    {
+      "quote": "Every weapon in this book was pointed by an institution, whether the institution was a palace, a company, a colonial department, or a party apparatus.",
+      "judgment": "The synthesis chapter earns this line, but by then the same claim has been made in nearly identical form in every preceding chapter."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "A fixed four-part chapter template: cinematic present-tense scene, then close reading of one artifact/document, then a paired comparison of two unlike cases, then an archive-limits coda that ends on an open question.",
+      "instances": [
+        "The ram struck the wall below the western tower, and dust came down over the men who pushed it. ... The record of aggression had become a record of jurisdiction.",
+        "On 29 November 1781, Captain Luke Collingwood stood on the deck of the *Zong* ... How far calculation explains slavery’s fusion with state power remains open, but any answer must account for the ledger and the statute."
+      ]
+    },
+    {
+      "pattern": "Short standalone paragraph built as a paired antithesis, used as a section punctuation mark dozens of times.",
+      "instances": [
+        "The story is plausible. The bones do not supply its sequence.",
+        "The new weapon changed the problem without solving it."
+      ]
+    },
+    {
+      "pattern": "Balanced 'X did A; Y did B; neither fits a simple opposition' comparison paragraph, deployed at the same position in almost every chapter.",
+      "instances": [
+        "One system made separation a principle of relationship; the other made incorporation a means of imperial order. Neither case fits a simple opposition between peaceful diplomacy and violent empire.",
+        "Kenya made land scarcity reinforce the tax. Indochina made the commune itself a labour register."
+      ]
+    },
+    {
+      "pattern": "Rhetorical question as a section pivot, usually posed and then answered by restating the book's thesis.",
+      "instances": [
+        "Did the early state increase violence, or did it increase the chances that violence would survive as evidence?",
+        "Did violence increase because frontier peoples were more aggressive, or because fragmented political power made raiding the most practical way to obtain wealth, security, and recognition?"
+      ]
+    },
+    {
+      "pattern": "Near-verbatim restatement of the core claim that offices supply categories while force supplies execution.",
+      "instances": [
+        "Social anger supplied force; institutions had already supplied the categories.",
+        "Fear supplied urgency; political offices supplied categories; the sections supplied bodies; the prison supplied victims."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, unusually specific comparative history arguing that organised violence is produced by offices, records and administrative categories rather than by an inner human aggressiveness, and that surviving archives determine which violence we can even see. The argument is sustained across fifteen chronological chapters with real evidentiary humility: sources are read for what they could not record, and the openings — Lachish, the Zong, La Force, the Somme — are genuinely good narrative writing. The prose is clean and the voice austere and consistent, with almost none of the usual lexical AI tells. Its weaknesses are structural rather than sentence-level: every chapter runs the same four-part shape, the thesis is restated in near-identical wording dozens of times, and a two-beat antithetical aphorism is used as a closer so often that it stops registering. Depth is high in specificity but moderate in originality — this is a synthesis of familiar cases under one consistent lens. Several factual slips (Darius's Behistun line attributed to an Assyrian king, 'Dutch police' placed in France, a garbled Hayes chronology in chapter 1) are damaging precisely because the book's authority rests on exactness; light revision to fix those, cut roughly a fifth of the thesis restatements, and vary the chapter architecture would leave it close to ready."
+}

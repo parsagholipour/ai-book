@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.8,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Organisation gives aggression a destination, a schedule, a vocabulary, and a supply line without making it disappear. That is why the number of people involved is less revealing than the path by which a decision reaches them.",
+      "judgment": "The book's controlling thesis, stated early and honoured in every later chapter — unusually disciplined for a survey of this scope."
+    },
+    {
+      "quote": "Absence is especially dangerous. No mass grave found in a valley does not prove that its inhabitants lived without violence.",
+      "judgment": "Genuine methodological care about evidence; the argument about what archives make durable is the book's most original thread — though the double negative here is a clumsy sentence."
+    },
+    {
+      "quote": "In the document, the body appears first as a carrier of disease, then as an economic disturbance, then as a labour classification. Each description opens a different administrative response: isolation, confiscation, or exploitation.",
+      "judgment": "Close reading of the Wannsee protocol that earns its conclusion from the wording rather than asserting it — the strongest analytic passage in the book."
+    },
+    {
+      "quote": "Rainfall could reduce the harvest. It could not order a search of a peasant's house or seal a road from Ukraine.",
+      "judgment": "Effective, concrete refutation of the ecological explanation; the final chapter is the book's best-argued."
+    },
+    {
+      "quote": "The sources record no named Viking commander and no speech by a monk facing the attackers... it would be false to furnish them with invented names.",
+      "judgment": "An explicit evidentiary rule the book breaks two chapters later, where the September Massacres open with an invented boy, butcher and woman with a shawl inside the Abbaye yard."
+    },
+    {
+      "quote": "In Édit du roi concernant la police des îles de l'Amérique, *Code Noir*, Louis XIV's last recorded act in the document is dated 1685.",
+      "judgment": "A garbled, meaningless chapter-closing sentence — the clearest visible seam of a template that requires each chapter to end on a sourced 'anchor' fact."
+    },
+    {
+      "quote": "The seven prisoners mattered less than the powder.",
+      "judgment": "A good line, but one of dozens of identically shaped one-sentence aphoristic drop-paragraphs that close sections across every chapter."
+    },
+    {
+      "quote": "A point in a rib preserves more than the existence of a weapon. It records the direction of the attack, the distance between shooter and target, and a force sufficient to pass through flesh and bone.",
+      "judgment": "Precise and vivid, but Chapter 2 re-narrates Jebel Sahaba almost entirely from scratch after Chapter 1 has already covered the cemetery, the healed wounds and the massacre reinterpretation."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Negate-then-assert: a claim is denied in one short sentence and the 'real' meaning supplied in the next. It is the book's default engine of paragraph movement and appears several times per page.",
+      "instances": [
+        "A wall is defensive in its immediate shape. It does not prove that Uruk attacked its neighbours... Its importance lies in the labour that defence required.",
+        "Climate supplied pressure. It did not select the victims, choose the weapons, or determine that a dispute would become an attack."
+      ]
+    },
+    {
+      "pattern": "Every chapter terminates in a flat, sourced 'anchor' sentence naming a document, date and actor, unconnected to the paragraph before it — clearly a required slot rather than an ending.",
+      "instances": [
+        "Ata-Malik Juvaini wrote that in 1221, at Merv in Khurasan, Chinggis Khan's army counted the inhabitants and killed them.",
+        "In 1908, William H. Sheppard told the United States Senate that in Kasai, Congo Free State, Force Publique officials enforced rubber quotas through hostage-taking, beatings, and killings..."
+      ]
+    },
+    {
+      "pattern": "Sections close on a one-sentence standalone paragraph delivering a compressed aphorism, so the reader meets the same cadence of arrival at roughly fixed intervals.",
+      "instances": [
+        "A timetable could narrow political choice.",
+        "At Jebel Sahaba, a projectile point remained inside the history of the body it struck."
+      ]
+    },
+    {
+      "pattern": "Paired-comparison scaffolding: two cases are set beside one another, declared not to form a moral ladder, and then resolved into 'the difference was what the institutions rewarded'. The same disclaimer-then-synthesis recurs in nearly every chapter.",
+      "instances": [
+        "The contrast should not become a ladder from isolated aggression to warfare.",
+        "The comparison with the Haudenosaunee does not produce a scale from gentle to violent."
+      ]
+    },
+    {
+      "pattern": "Enumerated 'chain' passages that list an administrative sequence in identical grammatical form, used to close arguments in at least six chapters.",
+      "instances": [
+        "A field yielded grain; a collector brought it to a storehouse; a scribe measured it; an official authorised its distribution; a worker received enough to remain attached to the institution.",
+        "A clerk entered a name. A local official assigned a status. A police officer checked a document. A storekeeper released or withheld grain. A railway worker permitted or blocked a journey."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually coherent comparative history of organised violence, held together by a single argument — that institutions, records and offices are what convert anger into durable, repeatable harm — which is stated in Chapter 1 and genuinely tested in all fifteen chapters rather than merely restated. Its evidentiary manners are its best feature: it distinguishes what a cemetery can establish from what a law code can, refuses death tolls it cannot support, and repeatedly asks what an archive was designed to make durable. The prose is clean, concrete and free of the usual AI vocabulary; the voice is consistent and adult. What holds it back is mechanical repetition of a small set of moves: negate-then-assert sentences, paired-comparison disclaimers, enumerated administrative chains, and above all a fixed structural template — one-line aphoristic section closers and a bolted-on sourced 'anchor' sentence ending every chapter, one of which (the Code Noir line) is simply incoherent. There is also real redundancy, with Chapter 2 re-telling Chapter 1's Jebel Sahaba material at length, and one internal contradiction, since Chapter 10 opens with an invented prison-yard scene of exactly the kind Chapter 11 declares it would be false to write. Trimming the templated closers, cutting the duplicated archaeology and resolving the invented-scene inconsistency would leave a genuinely publishable book."
+}

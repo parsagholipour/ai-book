@@ -1,0 +1,54 @@
+{
+  "scores": { "thesis": 9, "structure": 8, "depth": 8, "reasoning": 8, "clarity": 8, "voice": 8, "engagement": 7, "pacing": 7, "craft": 8, "slopResistance": 6 },
+  "overall": 7.7,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    { "quote": "The bone does not contain the direction of intention. It contains the direction of force.", "judgment": "Compact, genuinely earned formulation of the book's central epistemic caution about physical evidence." },
+    { "quote": "No marching army is required for coercion to begin. The ration list already distinguishes those who issue from those who receive.", "judgment": "The thesis stated at its strongest — administration as the origin, not the servant, of organized force." },
+    { "quote": "The house establishes proximity; it does not establish motive.", "judgment": "Excellent discipline in separating what a trace preserves from what interpretation adds." },
+    { "quote": "In 1789, John James Audubon painted the famous image often called *The Zong Massacre*", "judgment": "A conspicuous fabricated attribution (Audubon was four years old; the painting is Turner's), and the sentence then contradicts itself — the worst evidentiary lapse in the book." },
+    { "quote": "The Dar al-Hadith al-Nuriyya in Damascus, founded in 1172 after Nur al-Din’s death had already occurred", "judgment": "Internally incoherent: the chapter dates that death to 1174, so the clause is both wrong and self-defeating." },
+    { "quote": "Prison authorities communicated with municipal officials, and some did.", "judgment": "A broken, truncated sentence that survived to the final draft — evidence of unfinished line-editing." },
+    { "quote": "The Germans knew only that the rising had spread faster than their patrols, without knowing how many people followed him.", "judgment": "Dangling pronoun with no antecedent in the sentence; a recurring symptom of clause-reordering left unchecked." },
+    { "quote": "Machinery enlarged the hand, but political authority chose where it would close.", "judgment": "Vivid and apt, but typical of the aphoristic chapter-closer the book reaches for almost every time." }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Nearly every chapter opens with a dramatised, novelistic set-piece (weather, gestures, invented dialogue) before pivoting to analysis — a template so regular that the reader learns to wait out the scene.",
+      "instances": [
+        "The four men stood beneath the painted beams of the chapter house at Canterbury on 30 December 1170",
+        "The stone was wet when Narmer’s men carried it into the open court at Nekhen."
+      ]
+    },
+    {
+      "pattern": "A standardised comparative pivot that dismisses a strawman contrast in identical syntax before restating the institutional thesis.",
+      "instances": [
+        "Neither case fits the picture of nomads who only raided and moved on.",
+        "Neither case fits the picture of an enraged population suddenly losing control."
+      ]
+    },
+    {
+      "pattern": "Isolated one-sentence paragraphs used as rhetorical punctuation between analytic blocks, at a rate of several per chapter.",
+      "instances": [
+        "A population appears as the object of a command.",
+        "The religious reputation had to survive contact with administration."
+      ]
+    },
+    {
+      "pattern": "Semicolon or comma antithesis of the form 'X did one thing; it did not do the other', deployed as the default way to end an argumentative paragraph.",
+      "instances": [
+        "The house establishes proximity; it does not establish motive.",
+        "A wampum belt recorded a relation; it did not register a tax."
+      ]
+    },
+    {
+      "pattern": "Chapter and book endings resolve into an aphoristic summary clause naming offices, traces or choices, so that closure always sounds the same note.",
+      "instances": [
+        "the history of aggression becomes a record of choices about who could be harmed, by whom, and under whose protection.",
+        "The future will still turn on decisions made by people at desks, in meeting rooms, at checkpoints, and before crowds."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually coherent work of comparative history whose thesis — that aggression becomes historically consequential only when an office classifies a population, authorises harm, and supplies the means — is stated in chapter 1 and genuinely tested, rather than merely restated, across fifteen chapters spanning Çatalhöyük to Colombia. Its greatest strength is evidentiary discipline: it repeatedly distinguishes what a skull, a chronicle, a relief or a protocol can establish from what interpretation adds, and it stages real interpretive disagreements (Jebel Sahaba, Erlitou's earthworks, the September Massacres' spontaneity) without collapsing them into a verdict. The prose is clean, concrete, and rarely abstract, with sustained control of a cool, forensic register. The costs are structural repetition and a few lapses that should not have survived: every chapter runs the same dramatised-scene-then-analysis machine, the comparative pivots and one-sentence rhetorical beats recur to the point of predictability, and the closing aphorism is a fixed habit. Two factual failures matter — an invented Audubon attribution for the Zong image, and a Dar al-Hadith founding date that contradicts the chapter's own account of Nur al-Din's death — alongside at least one broken sentence and a dangling pronoun. With a line-edit for those errors and a deliberate variation of the chapter template, this would be ready."
+}

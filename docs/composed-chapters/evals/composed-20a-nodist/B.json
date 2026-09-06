@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 7
+  },
+  "overall": 7.1,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The bone records contact and damage. It does not record the attacker\u2019s inward state.",
+      "judgment": "Excellent opening move: the book's governing epistemic thesis stated concretely through a single skeleton rather than asserted abstractly."
+    },
+    {
+      "quote": "A rise in recorded assaults may mean more violence, better reporting, a new category in law, or a court newly willing to hear complaints.",
+      "judgment": "Genuine methodological rigor; the source-critical reasoning is specific and load-bearing, not decorative."
+    },
+    {
+      "quote": "Grain supported the workers, the tablet tracked that support, and the corv\u00e9e supplied labour that could be directed toward the wall. The administrative chain did not leap from surplus to army. It passed through hands and offices.",
+      "judgment": "Strong causal mechanism made vivid through material steps \u2014 the book at its analytic best."
+    },
+    {
+      "quote": "Lieutenant Colonel Arthur L. Y. N. N. reports, regimental histories, and national memorials organised loss according to unit and army.",
+      "judgment": "A garbled, apparently machine-generated pseudo-name that survived into the text; a hard error in an otherwise careful chapter."
+    },
+    {
+      "quote": "Hadrian also adopted the title Paternal or victorious names associated with the suppression of the revolt",
+      "judgment": "Syntactically broken and evasive where the text elsewhere is precise; symptom of hedging over a fact the draft could not fix."
+    },
+    {
+      "quote": "Administration thus limited aggression while enabling more sustained military action elsewhere.",
+      "judgment": "Appears verbatim twice within Chapter 6 (Nur al-Din and Norman England) \u2014 evidence the chapters were assembled rather than composed through."
+    },
+    {
+      "quote": "The Constitution of Saint-Domingue, adopted in 1801, made Toussaint governor for life.",
+      "judgment": "Chapter 10 re-narrates the Toussaint sequence Chapter 8 had already told in detail, including the same dates and framing \u2014 significant cross-chapter redundancy."
+    },
+    {
+      "quote": "Ecology sets constraints and opportunities. It does not issue commands.",
+      "judgment": "Crisp and true, but it is the hundredth instance of the book's single rhetorical figure, and by Chapter 15 the figure has stopped surprising."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The negative-then-positive definitional couplet ('It did not X. It Y.') used as the default sentence engine, often several times per page and in nearly every paragraph's hinge position.",
+      "instances": [
+        "The longship was not a machine that compelled raiding. It gave a crew access to coasts, islands, estuaries, and rivers...",
+        "The market did not cause the first blow. It gave the blow a destination and made repeated expeditions worth organising."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis / 'neither A nor B' as the closing verdict of a chapter or major section, so that every argument lands on the same balanced non-position.",
+      "instances": [
+        "The city was therefore neither a cure for violence nor its simple engine.",
+        "The Atlantic plantation system was therefore neither an automatic result of greed nor an expression of an unchanging human appetite for domination."
+      ]
+    },
+    {
+      "pattern": "The evidentiary-limits disclaimer appended to each case ('the record shows X; it does not show Y'), correct the first dozen times and thereafter a recap loop that inflates length without adding argument.",
+      "instances": [
+        "The record shows victory staged as a relationship between the king, his troops, the god Ningirsu, and the defeated men of Umma. It does not show how many prisoners survived...",
+        "The murals do not reveal how many people fought or how the defeated community understood the event. They show what a court chose to make visible..."
+      ]
+    },
+    {
+      "pattern": "A fixed chapter template: vivid artifact or atrocity in the opening paragraphs \u2192 close object-reading \u2192 a catalogue of defined terms or an operational 'chain' broken into numbered/sequential steps \u2192 two or three contrasting cases \u2192 a comparison paragraph refusing a single scale \u2192 a final paragraph that re-lists every case by name.",
+      "instances": [
+        "Baghdad, Lindisfarne, Damascus, England, and the western Islamic frontiers do not form a single ladder of increasing violence.",
+        "In the Tlatelolco campaign, a defeated city remained useful because a market could be subordinated rather than destroyed. At Bonampak, captives helped a ruler make military success visible within ceremony. On the Inca roads..."
+      ]
+    },
+    {
+      "pattern": "The 'X did not decide / did not supply the motive' technology disclaimer, repeated as a near-identical formula in at least six chapters, so the book's most distinctive claim about instruments becomes boilerplate.",
+      "instances": [
+        "The cannon remained an object of metal and powder. Its historical force came from the people and offices that decided where it would go.",
+        "The radio does not decide whom a commander calls an enemy, and the registry does not decide whether a state will repair the harm it records."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, source-critical global history of organised violence, held together by a real and consistently pursued thesis: that 'aggression' is not a single measurable human quantity, and that the scale and target of force are set by institutions, categories of belonging, and the uneven survival of evidence. The case material is concrete and well chosen \u2014 Towton 25, the Uruk ration tablet, the Zong litigation, the Tophane registers, the Wannsee Protocol, the Lulonga rubber quotas \u2014 and the reasoning about what each source can and cannot bear is the book's strongest and most original feature. Its voice is stable and adult, the prose clean, and the lexical AI tells (stock pivots, marketing abstractions, motivational closers) are largely absent. What undermines it is structural sameness: every chapter runs the same template, and two syntactic figures \u2014 the negative/positive couplet and the 'neither A nor B' verdict \u2014 carry an implausible share of the sentences, so that a genuinely sceptical argument hardens into a mannerism and the epistemic disclaimers become a recap loop. Redundancy is a real problem, with the Toussaint Louverture narrative told twice across Chapters 8 and 10 and at least one sentence repeated verbatim inside Chapter 6, alongside two garbled passages ('Lieutenant Colonel Arthur L. Y. N. N.'; Hadrian's 'title Paternal or victorious names'). With aggressive cutting for repetition, deliberate variation of the closing move, and repair of the corrupted lines, this would be a strong book; as it stands the thinking outruns the execution."
+}

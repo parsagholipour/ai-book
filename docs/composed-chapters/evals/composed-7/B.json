@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.7,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A broken bone that knitted under the skin records pain, care, and survival, but not the quarrel, accident, raid, or punishment that caused it.",
+      "judgment": "Excellent opening: states the book's evidentiary problem through a physical particular rather than an abstraction."
+    },
+    {
+      "quote": "Administration did not create the desire to command. It gave command a longer memory.",
+      "judgment": "The thesis at its best \u2014 compressed, non-obvious, and earned by the tablet evidence just presented."
+    },
+    {
+      "quote": "Whereas some doubts have arisen whether children got by any Englishman upon a negro woman should be slave or free... according to the condition of the mother.",
+      "judgment": "The one sustained close reading of a primary text in the book; Chapter 8 is stronger than its neighbours because of it."
+    },
+    {
+      "quote": "A relay widened the khan's reach; a concealed detachment narrowed the enemy's choices.",
+      "judgment": "Elegant, but typical of a paired-antithesis cadence used so often it stops registering as insight."
+    },
+    {
+      "quote": "Technology changes the reach of aggression without supplying its purpose.",
+      "judgment": "True and central \u2014 but restated in near-identical wording in at least six later chapters, which converts an argument into a refrain."
+    },
+    {
+      "quote": "A date is a boundary, not a motive.",
+      "judgment": "One of many one-sentence aphoristic paragraphs deployed as rhythmic punctuation; individually good, collectively a template."
+    },
+    {
+      "quote": "Who could stand on a beach, enter a street, board a car, call the police, or expect an officer to treat a complaint as legitimate?",
+      "judgment": "Strong rhetorical use of an enumerated question; the same device recurs so regularly that later instances feel scheduled."
+    },
+    {
+      "quote": "The question remains open: when the records grow thin, are we seeing less violence, a different violence, or merely weaker preservation?",
+      "judgment": "Genuine intellectual honesty about the archive, and the book keeps this promise rather than quietly abandoning it."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The 'X did not create/cause Y; it changed Y's reach or durability' formula, used to close an evidential section in nearly every chapter.",
+      "instances": [
+        "The first cities did not invent aggression. They changed its reach.",
+        "Technology widened reach: the longship moved quickly along coasts and rivers, while the camel made desert traffic possible. Neither device supplied a motive by itself."
+      ]
+    },
+    {
+      "pattern": "Symmetrical antithesis of protection and coercion \u2014 a state restrains one violence by authorising another \u2014 as the recurring analytic payoff.",
+      "instances": [
+        "It restrained one kind of aggression by authorising another.",
+        "Protection and compulsion occupied the same settlement."
+      ]
+    },
+    {
+      "pattern": "Chapter endings that recap the chapter's cases as a serial list, one clause per site, before a summarising verdict.",
+      "instances": [
+        "In southern Mesopotamia, temple accounts made labour and food available... At Lagash, the disputed boundary with Umma... In Egypt, the Narmer Palette...",
+        "Sierra Leone's tax made households legible... The Congo regime made forest labour answerable to concession and force. Menelik's grants settled imperial power in conquered soil."
+      ]
+    },
+    {
+      "pattern": "A short interrogative or one-line paragraph inserted mid-chapter as a beat, then answered by the paragraph that follows.",
+      "instances": [
+        "What did a soldier see?",
+        "Was Cahokia ruled through fear?"
+      ]
+    },
+    {
+      "pattern": "The 'comparison is useful only if difference remains visible' caveat, restated whenever two cases are juxtaposed.",
+      "instances": [
+        "Comparison is useful here only if the difference remains visible: both objects make domination intelligible, but they do so through distinct traditions of kingship and image-making.",
+        "Comparison becomes useful when it follows the specific operation rather than assuming that every empire meant the same thing by rule."
+      ]
+    }
+  ],
+  "summary": "This is a serious, well-controlled global history of organised violence whose argument \u2014 that aggression's scale and direction are produced by records, offices, law and authority rather than by temperament or by technology alone \u2014 is stated early and genuinely carried through fifteen chapters without drift. Its outstanding quality is evidentiary discipline: sources are named, their purposes interrogated, and the limits of inference marked repeatedly and honestly, so claims stay tethered to traces rather than floating into generality. Specificity is high (Jebel Sahaba, the Stele of the Vultures, Assyrian deportation lists, the 1662 Virginia statute, the mansab and jagir, the Wannsee protocol), and the sentence-level prose is clean, unhurried and largely free of ornament. The weaknesses are rhythmic rather than factual: the same three or four moves \u2014 technology-extends-reach, protection-is-also-coercion, the aphoristic one-line paragraph, the closing roll-call of cases \u2014 recur so predictably that later chapters feel generated by the earlier ones, and the argument is re-proved rather than developed after roughly Chapter 7. Voice is consistent but undifferentiated, and engagement suffers because human figures appear as illustrations and are dropped rather than followed. With a pass that varies the closing architecture, cuts the restated thesis by half, and lets two or three chapters build a single case at length, this would be publishable history."
+}

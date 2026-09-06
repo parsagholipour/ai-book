@@ -1,0 +1,582 @@
+{
+  "chapters": [
+    {
+      "index": 1,
+      "episodes": [
+        {
+          "title": "The Shanidar 3 Rib Wound",
+          "kind": "figure",
+          "person": "Erik Trinkaus and colleagues",
+          "place": "Shanidar Cave, Iraqi Kurdistan",
+          "date": "Neanderthal period, about 50,000 years ago",
+          "document": "Erik Trinkaus, \"Trauma among the Shanidar Neandertals,\" American Journal of Physical Anthropology (1983).",
+          "why": "The wound's healing and location allow the chapter to distinguish skeletal evidence of interpersonal injury from proof of intentional killing or a universal human tendency.",
+          "searchQueries": [
+            "Erik Trinkaus Trauma among the Shanidar Neandertals 1983",
+            "Shanidar 3 rib injury paper",
+            "American Journal Physical Anthropology Shanidar trauma"
+          ]
+        },
+        {
+          "title": "Nataruk and the Limits of Massacre Evidence",
+          "kind": "figure",
+          "person": "Marta Mirazón Lahr and colleagues",
+          "place": "Nataruk, Kenya",
+          "date": "about 10,000 years ago",
+          "document": "Marta Mirazón Lahr et al., \"Inter-group violence among early Holocene hunter-gatherers of West Turkana, Kenya,\" Nature (2016).",
+          "why": "The Nataruk remains test whether multiple violent injuries can support a claim about group conflict while leaving social motives and the prevalence of violence uncertain.",
+          "searchQueries": [
+            "Marta Mirazon Lahr Nataruk inter-group violence Nature 2016",
+            "Inter-group violence among early Holocene hunter-gatherers West Turkana Kenya",
+            "Nataruk skeletons Nature article"
+          ]
+        },
+        {
+          "title": "The Human Skeleton as an Uneven Archive",
+          "kind": "document",
+          "person": "Lawrence H. Keeley",
+          "place": "Comparative archaeological record",
+          "date": "1996",
+          "document": "Lawrence H. Keeley, War Before Civilization: The Myth of the Peaceful Savage.",
+          "why": "Keeley's comparison supplies a documented argument about archaeological visibility and lets the chapter set evidence for violence against the equally serious problem of missing evidence for cooperation.",
+          "searchQueries": [
+            "Lawrence Keeley War Before Civilization full text",
+            "War Before Civilization Myth Peaceful Savage Internet Archive",
+            "Keeley archaeological evidence prehistoric warfare"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "episodes": [
+        {
+          "title": "The 8.2 Kiloyear Event and Abu Hureyra",
+          "kind": "figure",
+          "person": "Gordon Hillman and Andrew Moore",
+          "place": "Abu Hureyra, Syria",
+          "date": "about 6200 BCE",
+          "document": "Gordon C. Hillman et al., \"New evidence of late glacial cereal cultivation at Abu Hureyra on the Euphrates,\" The Holocene (2001), alongside site reports.",
+          "why": "The settlement's climate and subsistence evidence shows how environmental instability can alter food strategies without itself proving that scarcity caused violence.",
+          "searchQueries": [
+            "Abu Hureyra 8.2 kiloyear event Hillman Moore",
+            "New evidence late glacial cereal cultivation Abu Hureyra",
+            "Abu Hureyra climate drought archaeological report"
+          ]
+        },
+        {
+          "title": "The Hamoukar Destruction Layer",
+          "kind": "scene",
+          "person": "Clemens Reichel and the Chicago team",
+          "place": "Hamoukar, northeastern Syria",
+          "date": "about 3500 BCE",
+          "document": "Clemens Reichel, \"The 2007 season at Hamoukar,\" Oriental Institute Annual Report.",
+          "why": "Projectile balls and a destruction layer make a specific case for conflict around a resource-rich settlement while preserving the distinction between ecological pressure and political escalation.",
+          "searchQueries": [
+            "Clemens Reichel Hamoukar 2007 season report",
+            "Hamoukar destruction layer sling bullets Oriental Institute",
+            "Hamoukar Syria archaeological report PDF"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "episodes": [
+        {
+          "title": "Jericho's Tower and Wall",
+          "kind": "figure",
+          "person": "Kathleen Kenyon",
+          "place": "Tell es-Sultan, Jericho",
+          "date": "Pre-Pottery Neolithic, about 8000 BCE",
+          "document": "Kathleen M. Kenyon, Digging Up Jericho (1957).",
+          "why": "Jericho's tower and wall let the chapter ask whether defensive architecture records external threat, internal coordination, ritual display, or several functions at once.",
+          "searchQueries": [
+            "Kathleen Kenyon Digging Up Jericho full text",
+            "Jericho tower wall Kenyon 1957",
+            "Tell es-Sultan Neolithic tower archaeological report"
+          ]
+        },
+        {
+          "title": "Çatalhöyük Houses and Stored Life",
+          "kind": "figure",
+          "person": "James Mellaart and later Çatalhöyük researchers",
+          "place": "Çatalhöyük, Anatolia",
+          "date": "about 7400–6000 BCE",
+          "document": "James Mellaart, Çatal Hüyük: A Neolithic Town in Anatolia (1967).",
+          "why": "The dense houses, storage practices, and access patterns show how settlement concentrates resources and social relationships without making fortification the only measure of danger.",
+          "searchQueries": [
+            "James Mellaart Catal Huyuk A Neolithic Town in Anatolia",
+            "Çatalhöyük storage houses archaeological report",
+            "Catal Huyuk Mellaart Internet Archive"
+          ]
+        },
+        {
+          "title": "The Fortified Settlement of Skara Brae",
+          "kind": "document",
+          "person": "V. Gordon Childe",
+          "place": "Orkney, Scotland",
+          "date": "about 3200–2200 BCE",
+          "document": "V. Gordon Childe, Skara Brae (1931).",
+          "why": "Skara Brae provides a contrasting settled community in which substantial domestic investment does not straightforwardly translate into walls, armies, or organized warfare.",
+          "searchQueries": [
+            "V Gordon Childe Skara Brae 1931 full text",
+            "Skara Brae archaeological report Childe",
+            "Skara Brae settlement Internet Archive"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "episodes": [
+        {
+          "title": "The Victory Stele of Naram-Sin",
+          "kind": "document",
+          "person": "Naram-Sin of Akkad",
+          "place": "Akkadian Empire; stele found at Susa",
+          "date": "about 2254–2218 BCE",
+          "document": "The Victory Stele of Naram-Sin, Louvre Sb 4; translated in Douglas Frayne, The Royal Inscriptions of Mesopotamia: Sargonic and Gutian Periods.",
+          "why": "The image and inscription show how royal authority turns conquest into ordered hierarchy, divine approval, and a permanent public claim.",
+          "searchQueries": [
+            "Victory Stele of Naram-Sin inscription translation",
+            "Louvre Sb 4 Naram Sin stele text",
+            "Douglas Frayne Royal Inscriptions Naram Sin"
+          ]
+        },
+        {
+          "title": "The Behistun Inscription",
+          "kind": "document",
+          "person": "Darius I",
+          "place": "Behistun, western Iran",
+          "date": "about 520 BCE",
+          "document": "The Old Persian, Elamite, and Babylonian versions of the Behistun Inscription; translation in Livius, \"Behistun Inscription.\"",
+          "why": "Darius's account demonstrates how a state represents rebellion, punishment, and legitimate succession through a controlled multilingual record.",
+          "searchQueries": [
+            "Behistun inscription translation Darius full text",
+            "Darius Behistun inscription Old Persian text",
+            "Behistun inscription Livius translation"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "episodes": [
+        {
+          "title": "The Assyrian Campaigns of Ashurnasirpal II",
+          "kind": "document",
+          "person": "Ashurnasirpal II",
+          "place": "Neo-Assyrian Empire",
+          "date": "883–859 BCE",
+          "document": "The Annals of Ashurnasirpal II, translated in Daniel David Luckenbill, Ancient Records of Assyria and Babylonia, volume 1.",
+          "why": "The annals connect roads, tribute, deportation, siege, and royal reporting, making visible the administrative machinery that converts campaigns into repeatable state practice.",
+          "searchQueries": [
+            "Luckenbill Ancient Records Assyria Babylonia Ashurnasirpal annals",
+            "Ashurnasirpal II annals translation full text",
+            "Ancient Records of Assyria and Babylonia Internet Archive"
+          ]
+        },
+        {
+          "title": "The Persian Royal Road and Imperial Couriers",
+          "kind": "document",
+          "person": "Herodotus",
+          "place": "Achaemenid Empire",
+          "date": "fifth century BCE account of earlier Persian rule",
+          "document": "Herodotus, Histories, Book 8, section 98, describing the Persian messenger system.",
+          "why": "Herodotus's account supplies a concrete example of communication infrastructure allowing imperial authority to coordinate distant force and administration.",
+          "searchQueries": [
+            "Herodotus Histories Book 8 section 98 Persian couriers",
+            "Herodotus Histories full text Project Gutenberg Persian road",
+            "Persian royal road couriers Herodotus translation"
+          ]
+        },
+        {
+          "title": "The Roman Army's Logistics at Dura-Europos",
+          "kind": "figure",
+          "person": "Simon James",
+          "place": "Dura-Europos, Syria",
+          "date": "Roman occupation, second–third centuries CE",
+          "document": "Simon James, Excavations at Dura-Europos 1928–1937: Final Report VII, The Arms and Armour and Other Military Equipment (2004).",
+          "why": "The excavated equipment and garrison records show how supply, standardized matériel, and permanent personnel make territorial control more than a battlefield victory.",
+          "searchQueries": [
+            "Simon James Dura-Europos arms armour military equipment PDF",
+            "Dura Europos Roman garrison logistics excavation report",
+            "Excavations at Dura-Europos Final Report VII"
+          ]
+        },
+        {
+          "title": "The Roman Census and Tax Register of Egypt",
+          "kind": "document",
+          "person": "Roman provincial administrators",
+          "place": "Egypt",
+          "date": "first–second centuries CE",
+          "document": "Selected papyri in Naphtali Lewis, Life in Egypt under Roman Rule (1985).",
+          "why": "Tax and census papyri reveal the routine administrative extraction that financed armies and tied ordinary households to imperial mobilization.",
+          "searchQueries": [
+            "Naphtali Lewis Life in Egypt under Roman Rule papyri",
+            "Roman Egypt census tax papyrus translation",
+            "Life in Egypt under Roman Rule Internet Archive"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 6,
+      "episodes": [
+        {
+          "title": "The Ottoman Siege of Constantinople",
+          "kind": "scene",
+          "person": "Mehmed II and the defenders of Constantinople",
+          "place": "Constantinople",
+          "date": "1453",
+          "document": "Steven Runciman, The Fall of Constantinople 1453 (1965).",
+          "why": "The siege shows gunpowder artillery becoming effective through finance, engineering, labor, and coordinated command rather than through weapon design alone.",
+          "searchQueries": [
+            "Steven Runciman Fall of Constantinople 1453 full text",
+            "1453 Constantinople siege artillery Runciman",
+            "The Fall of Constantinople 1453 Internet Archive"
+          ]
+        },
+        {
+          "title": "The Portuguese Cannon at Calicut",
+          "kind": "document",
+          "person": "Duarte Barbosa",
+          "place": "Calicut, India",
+          "date": "early sixteenth-century account",
+          "document": "Duarte Barbosa, The Book of Duarte Barbosa, translated by Mansel Longworth Dames (1918).",
+          "why": "Barbosa's account places firearms and naval violence inside commercial networks and local political arrangements, challenging a simple European technological triumph narrative.",
+          "searchQueries": [
+            "Duarte Barbosa Book of Duarte Barbosa 1918 full text",
+            "Duarte Barbosa Calicut cannon translation",
+            "Book of Duarte Barbosa Internet Archive"
+          ]
+        },
+        {
+          "title": "The Siege of La Rochelle",
+          "kind": "scene",
+          "person": "Cardinal Richelieu and the Huguenot defenders",
+          "place": "La Rochelle, France",
+          "date": "1627–1628",
+          "document": "Edward S. Corwin, French Policy and the League of Augsburg (1916), and contemporary memoirs collected in the Memoirs of the Duke of Rohan.",
+          "why": "The blockade and siege demonstrate how fortifications, naval control, finance, and starvation extend violence beyond direct combat.",
+          "searchQueries": [
+            "Memoirs Duke of Rohan siege La Rochelle full text",
+            "La Rochelle siege 1627 1628 primary source",
+            "Richelieu La Rochelle siege memoir Internet Archive"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 7,
+      "episodes": [
+        {
+          "title": "The Thirty Years' War in the Village of Dreißigacker",
+          "kind": "scene",
+          "person": "Hans Heberle",
+          "place": "Dreißigacker, Württemberg",
+          "date": "1618–1672 diary, focused on the Thirty Years' War",
+          "document": "Hans Heberle, Zeytregister: A Diary of the Thirty Years' War, translated by Bernd Roeck (2012).",
+          "why": "Heberle's village-centered diary follows billeting, requisition, disease, flight, and return as separate pressures within one coercive military relationship.",
+          "searchQueries": [
+            "Hans Heberle Zeytregister diary Thirty Years War translation",
+            "Hans Heberle diary Dreißigacker full text",
+            "Zeytregister A Diary of the Thirty Years War"
+          ]
+        },
+        {
+          "title": "The Magdeburg Tax and War Account Books",
+          "kind": "figure",
+          "person": "Magdeburg civic officials",
+          "place": "Magdeburg, Germany",
+          "date": "1630–1631",
+          "document": "The Magdeburg city accounts and eyewitness account in Otto von Guericke, Experimenta Nova (1672), translated selections.",
+          "why": "Municipal accounts make the material aftermath of siege visible through food, fortification, burial, and emergency expenditure rather than through battle narrative alone.",
+          "searchQueries": [
+            "Magdeburg city accounts 1631 siege translation",
+            "Otto von Guericke Magdeburg siege eyewitness full text",
+            "Magdeburg 1631 municipal records war expenditure"
+          ]
+        },
+        {
+          "title": "The English Civil War's Billeting Complaints",
+          "kind": "document",
+          "person": "Parliamentary petitioners and county officials",
+          "place": "England",
+          "date": "1642–1646",
+          "document": "The Parliamentary or Constitutional History of England, volume 12, collections of county petitions concerning billeting and free quarter.",
+          "why": "Petitions show villagers negotiating with military authorities over protection, requisition, and compensation, revealing agency within coercive occupation.",
+          "searchQueries": [
+            "English Civil War county petitions billeting free quarter 1642",
+            "Parliamentary History England billeting petitions 1640s",
+            "English Civil War free quarter primary sources"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 8,
+      "episodes": [
+        {
+          "title": "The Middlesex Sessions Case of Mary Rayment",
+          "kind": "document",
+          "person": "Mary Rayment and the Middlesex justices",
+          "place": "Middlesex, England",
+          "date": "seventeenth century",
+          "document": "The Proceedings of the Old Bailey, case records concerning assault and self-defense.",
+          "why": "A specific prosecution shows how courts translate contested bodily force into categories such as assault, provocation, and legitimate defense.",
+          "searchQueries": [
+            "Old Bailey Proceedings assault self defence Mary Rayment",
+            "Proceedings Old Bailey Mary Rayment case",
+            "Old Bailey online assault trial transcript seventeenth century"
+          ]
+        },
+        {
+          "title": "The Carolina Slave Code of 1740",
+          "kind": "document",
+          "person": "South Carolina legislators",
+          "place": "South Carolina",
+          "date": "1740",
+          "document": "An Act for the Better Ordering and Governing of Negroes and Other Slaves in this Province, in David J. McCord, The Statutes at Large of South Carolina, volume 7.",
+          "why": "The statute demonstrates how law can suppress interpersonal violence among a dominant population while authorizing organized violence against a legally subordinated one.",
+          "searchQueries": [
+            "South Carolina Negro Act 1740 full text McCord",
+            "An Act for the Better Ordering and Governing of Negroes 1740",
+            "South Carolina slave code 1740 primary source"
+          ]
+        },
+        {
+          "title": "The Bow Street Runners and Criminal Information",
+          "kind": "document",
+          "person": "Henry Fielding",
+          "place": "London",
+          "date": "1751",
+          "document": "Henry Fielding, An Enquiry into the Causes of the Late Increase of Robbers (1751).",
+          "why": "Fielding's reform proposal links policing, reporting, prosecution, and urban social conditions, allowing the chapter to question whether recorded crime tracks actual violence directly.",
+          "searchQueries": [
+            "Henry Fielding Enquiry Causes Late Increase Robbers 1751 full text",
+            "Fielding 1751 increase of robbers Project Gutenberg",
+            "An Enquiry into the Causes of the Late Increase of Robbers Internet Archive"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 9,
+      "episodes": [
+        {
+          "title": "The 1857 Indian Rebellion Census and Classification",
+          "kind": "document",
+          "person": "British colonial administrators",
+          "place": "India",
+          "date": "1857–1860",
+          "document": "William H. Sleeman, Report on the System of Mahratta and Pindaree Dacoity (1839), read alongside the Report of the Indian Education Commission and post-1857 administrative reports.",
+          "why": "Colonial reports show how classification and statistical legibility turn coercion into an administrative problem while embedding unequal legal status in the record.",
+          "searchQueries": [
+            "British India 1857 administrative report classification full text",
+            "colonial India census criminal tribes report PDF",
+            "post 1857 India official report Internet Archive"
+          ]
+        },
+        {
+          "title": "The Congo Free State Rubber Quotas",
+          "kind": "document",
+          "person": "Edmund Dene Morel and Roger Casement",
+          "place": "Congo Free State",
+          "date": "1903–1904",
+          "document": "Roger Casement, Report upon the Administration of the Congo Free State (1904).",
+          "why": "Casement's testimony connects extraction quotas, transport networks, forced labor, and bodily punishment into an industrial-colonial system of harm.",
+          "searchQueries": [
+            "Roger Casement Report upon Administration Congo Free State 1904 full text",
+            "Congo Free State Casement Report Internet Archive",
+            "1904 Casement report rubber quotas"
+          ]
+        },
+        {
+          "title": "The Pullman Strike",
+          "kind": "scene",
+          "person": "Eugene V. Debs, George Pullman, and federal troops",
+          "place": "Chicago and the American railway network",
+          "date": "1894",
+          "document": "The Report of the United States Strike Commission (1895).",
+          "why": "The commission's evidence distinguishes worker protest, corporate discipline, injunctions, and state repression within an industrial conflict rather than treating all crowd violence as the same phenomenon.",
+          "searchQueries": [
+            "United States Strike Commission Report 1895 Pullman full text",
+            "Pullman Strike 1894 government report Internet Archive",
+            "Report United States Strike Commission 1895 PDF"
+          ]
+        },
+        {
+          "title": "The Paris Commune and the Versailles Repression",
+          "kind": "scene",
+          "person": "Communards and Adolphe Thiers",
+          "place": "Paris, France",
+          "date": "1871",
+          "document": "Prosper-Olivier Lissagaray, History of the Commune of 1871, translated by Eleanor Marx (1886).",
+          "why": "The Commune supplies a case where mass politics, urban inequality, barricade warfare, and state retaliation produce competing records of protest and criminality.",
+          "searchQueries": [
+            "Lissagaray History of the Commune 1871 Eleanor Marx full text",
+            "Paris Commune 1871 Lissagaray Project Gutenberg",
+            "History of the Commune of 1871 Internet Archive"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 10,
+      "episodes": [
+        {
+          "title": "The British Blockade and the German Home Front",
+          "kind": "figure",
+          "person": "Arthur Salter and British wartime administrators",
+          "place": "Germany and Britain",
+          "date": "1914–1918",
+          "document": "Arthur Salter, Allied Shipping Control: An Experiment in International Administration (1921).",
+          "why": "Shipping and ration records show how blockade, industrial supply, and civilian hunger make the home front an operational component of modern war.",
+          "searchQueries": [
+            "Arthur Salter Allied Shipping Control 1921 full text",
+            "World War I blockade civilian food supply Salter",
+            "Allied Shipping Control Internet Archive"
+          ]
+        },
+        {
+          "title": "The German Air Raids on London",
+          "kind": "scene",
+          "person": "London civilians and the German air service",
+          "place": "London, England",
+          "date": "1917–1918",
+          "document": "The British War Office, The German Air Raids on England, 1914–1918 (1921).",
+          "why": "Official raid maps and casualty tables demonstrate how aerial power collapses the geographic distinction between battlefield and civilian life while still revealing limits of strategic effect.",
+          "searchQueries": [
+            "The German Air Raids on England 1914 1918 War Office full text",
+            "British War Office German Air Raids England 1921",
+            "World War I London air raids official report"
+          ]
+        },
+        {
+          "title": "The Bombing of Guernica",
+          "kind": "scene",
+          "person": "George Steer and Guernica residents",
+          "place": "Guernica, Spain",
+          "date": "26 April 1937",
+          "document": "George Steer, \"The Tragedy of Guernica,\" The Times, 28 April 1937.",
+          "why": "Steer's eyewitness report and its disputed casualty claims show how civilian targeting, propaganda, and contested documentation interact in modern mass violence.",
+          "searchQueries": [
+            "George Steer The Tragedy of Guernica 28 April 1937 text",
+            "Guernica bombing George Steer Times article",
+            "The Tragedy of Guernica primary source"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 11,
+      "episodes": [
+        {
+          "title": "The Bengal Famine of 1943",
+          "kind": "figure",
+          "person": "Amartya Sen and Bengal administrative authorities",
+          "place": "Bengal, British India",
+          "date": "1943",
+          "document": "Amartya Sen, Poverty and Famines: An Essay on Entitlement and Deprivation (1981), chapters on Bengal.",
+          "why": "Bengal lets the chapter define structural harm through entitlement failure, prices, wartime policy, and unequal access rather than through a single assailant.",
+          "searchQueries": [
+            "Amartya Sen Poverty and Famines Bengal 1943 full text",
+            "Bengal famine 1943 entitlement failure Sen PDF",
+            "Poverty and Famines Internet Archive"
+          ]
+        },
+        {
+          "title": "The Apartheid Pass Laws",
+          "kind": "document",
+          "person": "South African Parliament and pass-law officials",
+          "place": "South Africa",
+          "date": "1952",
+          "document": "The Natives (Abolition of Passes and Coordination of Documents) Act, 1952, South African legislative text.",
+          "why": "The pass system shows how mobility, employment, housing, and police power can produce direct vulnerability through an administrative arrangement.",
+          "searchQueries": [
+            "Natives Abolition of Passes and Coordination of Documents Act 1952 full text",
+            "South Africa pass laws 1952 legislation",
+            "1952 pass law South African statute PDF"
+          ]
+        },
+        {
+          "title": "The Warsaw Ghetto Hunger and Deportation Records",
+          "kind": "document",
+          "person": "Adam Czerniaków and the Jewish Council",
+          "place": "Warsaw, Poland",
+          "date": "1940–1942",
+          "document": "Adam Czerniaków, The Warsaw Diary of Adam Czerniakow, edited and translated by Raul Hilberg, Stanislaw Staron, and Josef Kermisz (1979).",
+          "why": "Czerniaków's diary connects institutional confinement, food deprivation, forced labor, deportation, and direct killing without reducing structural and physical violence to separate systems.",
+          "searchQueries": [
+            "Adam Czerniakow Warsaw Diary full text",
+            "Warsaw Diary Adam Czerniakow 1940 1942 Internet Archive",
+            "Czerniakow diary deportation hunger translation"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 12,
+      "episodes": [
+        {
+          "title": "The Rwanda Genocide and the Gacaca Testimony",
+          "kind": "document",
+          "person": "Survivors, accused persons, and Gacaca witnesses",
+          "place": "Rwanda",
+          "date": "1994 and 2002–2012",
+          "document": "National Service of Gacaca Jurisdictions, selected official testimonies and reports, with Human Rights Watch, Justice Compromised: The Legacy of Rwanda's Community-Based Gacaca Courts (2011).",
+          "why": "Gacaca tests the book's explanation by showing how institutions can transform mass violence into testimony, accountability, and renewed contest over truth.",
+          "searchQueries": [
+            "Human Rights Watch Justice Compromised Gacaca Courts 2011 full text",
+            "Rwanda Gacaca official testimonies report PDF",
+            "National Service Gacaca Jurisdictions report"
+          ]
+        },
+        {
+          "title": "The Decline of Homicide in London",
+          "kind": "figure",
+          "person": "Manuel Eisner",
+          "place": "London, England",
+          "date": "1300–1925",
+          "document": "Manuel Eisner, \"Modernization, Self-Control and Lethal Violence in Western Europe,\" British Journal of Criminology (2001).",
+          "why": "Eisner's homicide series tests whether long-term decline reflects changing institutions and social controls, while exposing the evidentiary problems of comparing records across centuries.",
+          "searchQueries": [
+            "Manuel Eisner Modernization Self-Control Lethal Violence Western Europe 2001",
+            "London homicide decline Eisner data table",
+            "British Journal Criminology Eisner lethal violence PDF"
+          ]
+        },
+        {
+          "title": "The Uppsala Conflict Data Program's Post-1945 Series",
+          "kind": "figure",
+          "person": "Uppsala Conflict Data Program researchers",
+          "place": "Global",
+          "date": "1946–present",
+          "document": "Uppsala Conflict Data Program, UCDP/PRIO Armed Conflict Dataset Codebook and data files.",
+          "why": "The dataset tests claims of decline and transformation against explicit definitions, coding rules, and missing-data limits rather than against a single dramatic historical episode.",
+          "searchQueries": [
+            "UCDP PRIO Armed Conflict Dataset Codebook PDF",
+            "Uppsala Conflict Data Program data download codebook",
+            "UCDP armed conflict dataset definitions"
+          ]
+        },
+        {
+          "title": "The Truth and Reconciliation Commission Final Report",
+          "kind": "document",
+          "person": "Desmond Tutu and the South African Truth and Reconciliation Commission",
+          "place": "South Africa",
+          "date": "1998",
+          "document": "Truth and Reconciliation Commission of South Africa, Final Report, five volumes.",
+          "why": "The Commission's testimony tests whether public truth-telling and institutional reform can restrain recurring violence without pretending that acknowledgment alone resolves structural inequality.",
+          "searchQueries": [
+            "South African Truth and Reconciliation Commission Final Report full text",
+            "TRC South Africa report 1998 PDF",
+            "Desmond Tutu Truth and Reconciliation Commission Final Report Internet Archive"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 6,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 5,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 5
+  },
+  "overall": 6.6,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A wound is not an emotion, and a projectile point is not a motive.",
+      "judgment": "Excellent opening-chapter formulation that states the book's epistemic discipline in concrete terms rather than abstraction."
+    },
+    {
+      "quote": "Preservation changes the population that can be seen. The skull, mandible, and long bones generally survive better than ribs, vertebrae, the sternum, and the small bones of the hands and feet.",
+      "judgment": "Genuine methodological depth: the book repeatedly explains why the evidence is skewed instead of merely asserting caution."
+    },
+    {
+      "quote": "The tablet was not merely a record of food. It converted subsistence into command.",
+      "judgment": "Strong compression of the central claim, but also the signature template \u2014 negate, then assert \u2014 that recurs hundreds of times."
+    },
+    {
+      "quote": "The owners did not need to prove that the people aboard the *Zong* were human; they needed to establish that their destruction met the terms of a maritime loss.",
+      "judgment": "The book's best single sentence: the institutional thesis carried by a real legal detail rather than by paraphrase."
+    },
+    {
+      "quote": "Steppe ecology gave the Mongols a geography of possibility. Institutions decided how that possibility was used.",
+      "judgment": "Aphoristic paired-antithesis chapter closer; effective once, but nearly every chapter ends on this identical rhythm."
+    },
+    {
+      "quote": "C\u00f3rdoba provides a different question. The municipal record, as preserved in the material for this discussion, points towards moderation amid conflict",
+      "judgment": "A visible generation seam: the text refers to its own source packet, and the example remains unsupported and unnamed."
+    },
+    {
+      "quote": "The state he built was also coercive. Expansion brought warfare to populations that might have preferred autonomy",
+      "judgment": "A broken antecedent \u2014 Samori Tour\u00e9 is discussed for several paragraphs before he is introduced, the clearest continuity failure in the book."
+    },
+    {
+      "quote": "It can mean that violence was rare. It can mean that violence was directed away from the people whose bones were buried there. It can mean that disputes were settled through exchange, separation, compensation, ritual, or the authority of senior kin.",
+      "judgment": "Symmetrical enumerated hedging: careful in principle, but the anaphoric list appears so often that caution starts reading as filler."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Paired-antithesis closer: a two-clause sentence contrasting a material thing with an institution, used to end nearly every section and chapter.",
+      "instances": [
+        "The sword ended resistance; the triumph explained why resistance had ended.",
+        "Weapons opened spaces; institutions tried to hold them."
+      ]
+    },
+    {
+      "pattern": "Negation-then-assertion couplet ('It is not X. It is Y.') as the default engine of every analytic paragraph.",
+      "instances": [
+        "The list is not an afterthought to violence. It is one of the forms through which violence became government.",
+        "The whip was not an isolated instrument of anger. It belonged to a timetable"
+      ]
+    },
+    {
+      "pattern": "Identical chapter architecture: single artifact/site vignette, source-critical caveats, a two-case comparison, then a restatement of the institutional thesis \u2014 repeated with almost no variation across all fifteen chapters.",
+      "instances": [
+        "In 2011, archaeologists working near Nataruk, west of Lake Turkana in northern Kenya, found human remains",
+        "On 8 June 793, men from Scandinavia came by sea to Lindisfarne, an island monastery off the coast of Northumbria."
+      ]
+    },
+    {
+      "pattern": "Thesis recapitulation: the same claim \u2014 that scarcity, technology or emotion becomes harm only through an office's decision \u2014 is restated verbatim in substance dozens of times.",
+      "instances": [
+        "Scarcity becomes dispossession only when people with weapons, rules, or offices decide who will lose access",
+        "Scarcity may intensify fear, but it becomes dispossession when a government decides whose claim to land or food will be denied."
+      ]
+    },
+    {
+      "pattern": "The isolated dramatic one-sentence paragraph deployed as a beat marker, frequent enough to become a tic rather than an emphasis.",
+      "instances": [
+        "The decision was presented in court as a matter of insurance.",
+        "The turning point was brief."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, intellectually serious global survey of organised violence built around one clear and well-sustained thesis: that harm acquires its scale, targets and meaning through institutions \u2014 records, offices, quotas, laws, permissions \u2014 rather than through human nature, scarcity or technology alone. Its greatest strengths are evidentiary craft and source criticism; chapters on Nataruk's taphonomy, the Zong insurance case, the Wannsee Protocol's vocabulary and the Ottoman artillery registers are genuinely good historical writing, precise about what a given record can and cannot support. The prose is clean, unhurried and free of the usual lexical AI tells, and the voice is consistent throughout. The costs are structural rather than verbal: every chapter follows the same vignette-caveat-comparison-thesis shape, every section closes on a paired antithesis, and the argument is restated so often that the second half of most chapters delivers no new proposition. Engagement suffers accordingly \u2014 the book is populated by offices and categories more than by people, and few individuals ever speak. Two real defects need fixing (an unintroduced Samori Tour\u00e9 in Chapter 11, and a C\u00f3rdoba passage that refers to 'the material for this discussion'), and a hard structural edit removing recap paragraphs and varying the closing cadence would raise this considerably."
+}

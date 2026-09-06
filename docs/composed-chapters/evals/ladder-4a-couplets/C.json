@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 5
+  },
+  "overall": 7.0,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Violence in history is organised before it is felt: an institution decides who may be harmed, and its decision leaves a record.",
+      "judgment": "A crisp, genuinely load-bearing thesis stated at the end of chapter 1 and honoured throughout — the book's greatest strength."
+    },
+    {
+      "quote": "A wound is an event; a homicide is a legal conclusion. Between them stand the surgeon's description, the witness's memory, the coroner's questions, and the verdict written by a clerk.",
+      "judgment": "Excellent methodological precision; also the first instance of a paired-antithesis formula the book reuses hundreds of times."
+    },
+    {
+      "quote": "A ditch is a procedure made visible in earth.",
+      "judgment": "Real sentence-level craft — a concrete image doing analytical work rather than decorating it."
+    },
+    {
+      "quote": "The German state did not simply unleash hatred. It gave hatred addresses.",
+      "judgment": "Strong line, but it is the thesis restated for perhaps the fortieth time; by chapter 13 the epigram lands as habit rather than insight."
+    },
+    {
+      "quote": "Menna, the king's charioteer, would have known the horses by their stable names: Victory-in-Thebes and Mut-is-Satisfied.",
+      "judgment": "The dramatized openers invent interior detail the book elsewhere insists the record cannot supply — a tension it never addresses."
+    },
+    {
+      "quote": "Iceland made the feud negotiable; France made it prosecutable.",
+      "judgment": "Elegant, but symptomatic: nearly every comparative section terminates in a two-clause chiasmus of exactly this shape."
+    },
+    {
+      "quote": "When the next cemetery is opened, will its emptiness mean that people lived without recurrent attack, or that the conflict passed through bodies and materials the ground was unable to keep?",
+      "judgment": "The rhetorical-question chapter closer, used repeatedly (chs. 2, 13, 15) as a substitute for an actual landing."
+    },
+    {
+      "quote": "The evidence supports neither a picture of robots compelled by commands nor one in which every participant arrived with the same murderous conviction.",
+      "judgment": "Characteristic symmetrical hedge: the book habitually positions itself between two named extremes rather than committing to a claim of its own."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter opens with a novelistic set-piece in scene (named figures, weather, dialogue, sensory detail), then a hinge sentence converts the scene into the chapter's analytical problem. The device is identical fifteen times.",
+      "instances": [
+        "The first chariot came out of the reeds before Ramesses had finished crossing the Orontes. … The next morning Ramesses ordered the scribes to write the account of his victory.",
+        "The paper was on General Lothar von Trotha's table at Okahandja on 2 October 1904, held flat by a revolver, a brass inkwell, and the map of the Waterberg. … The rider carried more than an order into the Omaheke."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis / chiasmus as the default terminal sentence of a section: two clauses of matched length assigning contrasting predicates to contrasting subjects.",
+      "instances": [
+        "Violence cleared political space; administration occupied it.",
+        "Necessity narrows the object of force. Targeting widens it by assigning guilt to a population."
+      ]
+    },
+    {
+      "pattern": "The same institutional thesis is restated as an aphoristic closer at the end of nearly every section and chapter, so that later chapters (4, 7, 11, 12, 13) argue an identical point with new material rather than developing it.",
+      "instances": [
+        "The gun made coercion more extensive, but an office still had to decide whom to coerce.",
+        "Hatred may supply the target, but an institution must still load the train."
+      ]
+    },
+    {
+      "pattern": "The 'the record cannot say' caveat, deployed as a standing move after almost every piece of evidence — valuable discipline, but so uniformly placed that it becomes a rhythm rather than a judgment.",
+      "instances": [
+        "The cemetery can support the conclusion that many people suffered violent deaths. … It gives less secure ground for reconstructing the organisation behind those attacks.",
+        "The sources disagree about numbers, and Juvaini's figures are too large to accept as literal arithmetic."
+      ]
+    },
+    {
+      "pattern": "Catalogue paragraphs in which three or four parallel cases are given one sentence each and then summarised in a fourth sentence that ranks them by scale.",
+      "instances": [
+        "A feud treated a killing as an obligation between families. A raid treated people and goods as objects to be carried away. A punitive expedition treated a population as a field from which exemplary suffering could be distributed.",
+        "The census supplied categories; the telegraph supplied speed; conscription supplied men; railways supplied movement; factories supplied endurance."
+      ]
+    }
+  ],
+  "summary": "This is an unusually disciplined synthetic history organised around a single strong claim: that aggression in the historical record is constituted by offices, classifications and archives before it is expressible as feeling, and that what survives is therefore evidence of institutional decision as much as of harm. The claim is stated early, honoured in every chapter, and supported by dense, well-chosen particulars across an ambitious chronological and geographical range, with consistently scrupulous handling of what each trace can and cannot bear. Sentence-level prose is clean and often genuinely fine, and the dramatized chapter openers are effective on first encounter. The book's central weakness is uniformity: the same chapter template (set-piece, hinge, three to five cases, comparative section, aphoristic restatement of the thesis) runs fifteen times, and by the later chapters the argument is being re-illustrated rather than advanced, so the middle third could lose substantial length without loss of content. Its slop signature is high-craft rather than crude — paired antitheses, chiastic closers, symmetrical hedges between two named positions, and rhetorical-question endings — but it is pervasive enough to flatten the voice. Sound and often impressive; it needs structural pruning, variation of chapter architecture, and a hand taken to the epigrams before it would read as a finished book."
+}

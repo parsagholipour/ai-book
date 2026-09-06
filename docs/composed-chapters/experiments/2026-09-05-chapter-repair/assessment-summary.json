@@ -1,0 +1,101 @@
+{
+  "reader1": {
+    "original": 6.7,
+    "revised": 8.3,
+    "preferred": "revised",
+    "materialLossesFlagged": [
+      {
+        "presentIn": "A",
+        "quote": "Conquest prizes the sudden concentration of force. Administration, as Ögedei describes it, would depend on repeated arrival.",
+        "missingOrChangedIn": "B",
+        "significance": "B omits A’s explicit temporal distinction between a single coercive encounter and the repeated continuity required by administration. This is a substantive and useful explanation of why mobility serves conquest and governance differently.",
+        "materialLoss": true
+      },
+      {
+        "presentIn": "A",
+        "quote": "A station might exist in one corridor and fail in another. A duty might be enforced regularly for a time and fall unevenly on households.",
+        "missingOrChangedIn": "B",
+        "significance": "B retains the uncertainty about implementation and burden but drops A’s concrete account of uneven operation across place and time, reducing the specificity of the uncertainty.",
+        "materialLoss": true
+      }
+    ]
+  },
+  "reader2": {
+    "original": 6.5,
+    "revised": 8.1,
+    "preferred": "revised",
+    "materialLossesFlagged": [
+      {
+        "presentIn": "B",
+        "quote": "Conquest prizes the sudden concentration of force. Administration, as Ögedei describes it, would depend on repeated arrival.",
+        "missingOrChangedIn": "A",
+        "significance": "B explicitly distinguishes the time structure of conquest from the repeated operation required by administration; A implies this through stations and message speed but does not formulate it. This is a substantive explanatory gain in B.",
+        "materialLoss": true
+      },
+      {
+        "presentIn": "B",
+        "quote": "A defeated group might be removed from an opposing alignment, attached to a new command, or included within a wider order whose strength rested on the threat of renewed force.",
+        "missingOrChangedIn": "A",
+        "significance": "B supplies plausible mechanisms by which a battlefield result could become an enduring political relation, while also conceding that the route in each case is unknown. A’s shorter account loses this concrete elaboration.",
+        "materialLoss": true
+      }
+    ]
+  },
+  "means": {
+    "original": 6.6,
+    "revised": 8.2,
+    "metrics": {
+      "thesis": {
+        "original": 8.0,
+        "revised": 8.0,
+        "delta": 0.0
+      },
+      "structure": {
+        "original": 5.5,
+        "revised": 8.5,
+        "delta": 3.0
+      },
+      "depth": {
+        "original": 9.0,
+        "revised": 7.5,
+        "delta": -1.5
+      },
+      "reasoning": {
+        "original": 8.0,
+        "revised": 8.0,
+        "delta": 0.0
+      },
+      "clarity": {
+        "original": 7.0,
+        "revised": 9.0,
+        "delta": 2.0
+      },
+      "voice": {
+        "original": 7.0,
+        "revised": 8.0,
+        "delta": 1.0
+      },
+      "engagement": {
+        "original": 6.0,
+        "revised": 7.5,
+        "delta": 1.5
+      },
+      "pacing": {
+        "original": 3.5,
+        "revised": 9.0,
+        "delta": 5.5
+      },
+      "craft": {
+        "original": 7.0,
+        "revised": 8.0,
+        "delta": 1.0
+      },
+      "slopResistance": {
+        "original": 5.0,
+        "revised": 8.5,
+        "delta": 3.5
+      }
+    }
+  },
+  "scope": "Blind scores apply only to evaluated-v1/revised.md, a two-chapter excerpt. Final amended text has no new blind score."
+}

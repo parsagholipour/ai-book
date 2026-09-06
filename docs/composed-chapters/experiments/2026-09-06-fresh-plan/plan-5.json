@@ -1,0 +1,553 @@
+{
+  "title": "Human Aggression Through History",
+  "premise": "A broad historical survey of human aggression across eras and regions, examining how ecology, resources, social organization, technology, political authority, cultural norms, and group identities have shaped when violence expands, contracts, or changes form. The book distinguishes individual aggression from organized violence and treats archaeological evidence, historical records, and modern behavioral research as partial windows rather than a single complete account.",
+  "audience": "General readers curious about history, human behavior, and the conditions that influence conflict across societies.",
+  "chapters": [
+    {
+      "index": 1,
+      "title": "The Wound and the Question",
+      "summary": "Introduces the distinction between individual aggression, collective violence, and organized warfare through archaeological evidence and the limits of interpreting injuries.",
+      "keyBeats": [
+        "Open at Nataruk with the physical evidence of violent death.",
+        "Define the book's working terms without claiming that ancient people shared modern categories.",
+        "Set out the central debate between violence as a deep human capacity and violence as a condition shaped by social life.",
+        "Explain why skeletal remains, weapons, settlements, and written records reveal different parts of the past.",
+        "End by framing aggression as a historical pattern to investigate rather than a fixed verdict on humanity."
+      ],
+      "targetPages": 7
+    },
+    {
+      "index": 2,
+      "title": "Before Cities, Between Bands",
+      "summary": "Examines the evidence for conflict among mobile and semi-sedentary communities, including Jebel Sahaba and Nataruk, while keeping the surviving cases in proportion to the evidence that has disappeared.",
+      "keyBeats": [
+        "Compare the kinds of evidence associated with Jebel Sahaba and Nataruk.",
+        "Discuss how mobility, population density, seasonal resources, and access to territory may have affected conflict.",
+        "Distinguish a massacre, a raid, repeated interpersonal violence, and organized warfare.",
+        "Present the disagreement over whether early violence was exceptional, recurrent, or poorly sampled.",
+        "Show how cooperation and shared subsistence complicate the image of prehistoric life.",
+        "Close with the methodological problem of inferring frequency from exceptional burial sites."
+      ],
+      "targetPages": 10
+    },
+    {
+      "index": 3,
+      "title": "Fields, Walls, and Stored Grain",
+      "summary": "Explores how settlement, agriculture, stored resources, changing property relations, and population concentration created new incentives for both conflict and collective protection.",
+      "keyBeats": [
+        "Trace the shift from mobile subsistence to more permanent settlement without treating it as a single worldwide transition.",
+        "Examine why stored food, cultivated land, livestock, and water could become objects of dispute.",
+        "Discuss the possibility that walls served as practical defenses, status symbols, or both.",
+        "Introduce the argument that social hierarchy can organize violence as well as restrain it.",
+        "Qualify claims about ownership and warfare where archaeological evidence cannot reveal the social rules involved."
+      ],
+      "targetPages": 7
+    },
+    {
+      "index": 4,
+      "title": "A Tablet from the Archive",
+      "summary": "Reads one ancient administrative or legal document as a contained historical object, showing how authority named injury, compensation, obligation, and legitimate force while also revealing what the document leaves out.",
+      "keyBeats": [
+        "Open with the physical circumstances of a surviving tablet or legal text.",
+        "Read its language closely rather than treating it as a transparent report of everyday life.",
+        "Identify the people and harms the document recognizes.",
+        "Consider who had standing before the institution and whose suffering remained invisible.",
+        "Compare written regulation with the coercive power required to enforce it.",
+        "End with the distinction between a society's rules about violence and the actual frequency of violence."
+      ],
+      "targetPages": 12
+    },
+    {
+      "index": 5,
+      "title": "Bronze, Iron, and the Reach of Power",
+      "summary": "Studies how weapons, transport, fortifications, and military organization changed the capacity for violence in the Bronze and Iron Ages without reducing conflict to technology alone.",
+      "keyBeats": [
+        "Explain why improved weapons can alter tactics without automatically causing more warfare.",
+        "Connect bronze and iron production to labor, trade, specialist knowledge, and political control.",
+        "Examine the relationship between fortified places and expanding authority.",
+        "Use inscriptions and material remains cautiously when rulers had reasons to exaggerate victory.",
+        "Show how technological change interacts with taxation, logistics, leadership, and social obligation.",
+        "Leave the reader with a comparative question about capacity versus motive."
+      ],
+      "targetPages": 8
+    },
+    {
+      "index": 6,
+      "title": "The City, the Army, and the Law",
+      "summary": "Considers early states and empires as institutions that could suppress some forms of private violence while organizing conquest, punishment, extraction, and large-scale warfare.",
+      "keyBeats": [
+        "Define the double role of political authority as restraint and concentration of force.",
+        "Use one carefully bounded example of law or administration to show how order was constructed.",
+        "Discuss the difference between peace within a polity and peace across its borders.",
+        "Avoid treating imperial claims as neutral accounts of the people they conquered.",
+        "Close on the recurring historical tension between security and coercion."
+      ],
+      "targetPages": 5
+    },
+    {
+      "index": 7,
+      "title": "Honor, Kin, and the Price of an Insult",
+      "summary": "Explores how status, kinship, reputation, gender expectations, and cultural norms can transform anger or injury into sanctioned retaliation, while avoiding a single universal model of honor.",
+      "keyBeats": [
+        "Begin with a specific recorded dispute in which reputation or status shaped the response.",
+        "Separate personal anger from the social expectation to answer an insult.",
+        "Examine how kin groups, patriarchal authority, and public reputation can distribute permission to use force.",
+        "Compare an honor-centered interpretation with material and political explanations where appropriate.",
+        "Show how institutions may redirect retaliation into courts, compensation, duels, or feuds.",
+        "Discuss gendered expectations without presenting them as biologically fixed.",
+        "End with the point that norms can authorize aggression while also setting limits around it."
+      ],
+      "targetPages": 11
+    },
+    {
+      "index": 8,
+      "title": "Enemies Made Legible",
+      "summary": "Examines devaluation, exclusion, religious and political identity, propaganda, and social boundaries as processes that make collective aggression easier to justify and organize.",
+      "keyBeats": [
+        "Define devaluation as a social process rather than a private attitude alone.",
+        "Show how labels, legal categories, ritual language, and public stories can separate insiders from outsiders.",
+        "Distinguish prejudice, discrimination, persecution, and mass violence.",
+        "Use examples from different periods only when their evidence and scale are clearly distinguished.",
+        "Explain how administrators, neighbors, soldiers, and witnesses can occupy different roles in violent systems.",
+        "End with the importance of examining institutions and choices rather than attributing violence to an entire population."
+      ],
+      "targetPages": 9
+    },
+    {
+      "index": 9,
+      "title": "Sarajevo, 1992–1995: A City Under Siege",
+      "summary": "Narrates a single modern case from the siege of Sarajevo to show how political fracture, artillery, identity, logistics, fear, international decisions, and civilian endurance interacted over time.",
+      "keyBeats": [
+        "Open with a concrete civilian moment in Sarajevo, grounded in a documented setting rather than an invented character.",
+        "Establish the city's mixed population and the political crisis that preceded the siege.",
+        "Follow the changing experience of movement, water, food, schools, hospitals, and communication.",
+        "Explain how artillery, checkpoints, media narratives, and territorial aims converted political claims into daily danger.",
+        "Keep civilian agency visible through adaptation, mutual aid, work, art, and survival routines.",
+        "Distinguish what the case demonstrates about organized violence from what it cannot establish about all wars.",
+        "Conclude with the interaction of ideology, institutions, military capacity, fear, and international constraint."
+      ],
+      "targetPages": 13
+    },
+    {
+      "index": 10,
+      "title": "The Body, the Brain, and the Social World",
+      "summary": "Introduces biological, developmental, and psychological perspectives on aggression while making clear that predisposition, emotion, learning, and environment do not provide a single historical cause.",
+      "keyBeats": [
+        "Distinguish reactive aggression from planned or instrumental aggression.",
+        "Explain why biological findings describe tendencies and interactions rather than historical destinies.",
+        "Discuss development, social learning, stress, and immediate environments without importing unsupported numerical claims.",
+        "Clarify the limits of applying present-day behavioral research to ancient societies.",
+        "Return the biological discussion to the historical question of institutions and circumstances."
+      ],
+      "targetPages": 6
+    },
+    {
+      "index": 11,
+      "title": "When Violence Contracts",
+      "summary": "Investigates periods and places in which homicide, feud, or interpersonal violence declined, asking how law, administration, changing norms, economic ties, and state power may have contributed.",
+      "keyBeats": [
+        "Open with a documented change in a form of violence rather than a claim that society became simply peaceful.",
+        "Separate declines in private violence from the persistence or expansion of state and imperial violence.",
+        "Examine how courts, policing, mediation, and changing expectations can alter behavior.",
+        "Avoid presenting modernization as a universal or morally uniform path.",
+        "Close by identifying which mechanisms appear plausible and which remain uncertain."
+      ],
+      "targetPages": 4
+    },
+    {
+      "index": 12,
+      "title": "Industrial Scale, Administrative Violence",
+      "summary": "Shows how modern states, industrial systems, mass politics, transport, records, and weapons expanded the capacity to organize violence while also creating new forms of international law and accountability.",
+      "keyBeats": [
+        "Describe the relationship between bureaucracy, identification, logistics, and mass violence.",
+        "Distinguish battlefield deaths, civilian targeting, forced displacement, imprisonment, and famine as related but separate forms.",
+        "Explain how industrial capacity can magnify political decisions without making technology the sole cause.",
+        "Discuss propaganda and administrative language as tools that normalize or conceal harm.",
+        "Include the development of legal and humanitarian responses without implying that law automatically prevents violence.",
+        "End with the problem of measuring violence when records are abundant in some places and destroyed in others."
+      ],
+      "targetPages": 10
+    },
+    {
+      "index": 13,
+      "title": "What the Long Record Can and Cannot Say",
+      "summary": "Synthesizes the historical patterns across regions and eras, testing the book's major explanatory factors without forcing them into a universal formula.",
+      "keyBeats": [
+        "Revisit ecology, resources, settlement, hierarchy, technology, identity, and institutions as interacting conditions.",
+        "Identify recurring mechanisms while preserving regional and chronological differences.",
+        "Explain why the same institution can restrain violence in one context and enable it in another.",
+        "Address the competing claims that humans are naturally violent or naturally peaceful.",
+        "Set limits on broad comparisons, especially where the evidence comes from different kinds of sources.",
+        "Prepare the conclusion by narrowing the thesis to what the historical record can responsibly support."
+      ],
+      "targetPages": 9
+    },
+    {
+      "index": 14,
+      "title": "A History Without a Final Verdict",
+      "summary": "Concludes by returning to the opening archaeological evidence and offering a bounded account of human aggressiveness as a capacity repeatedly shaped by circumstances, institutions, meanings, and choices.",
+      "keyBeats": [
+        "Return to the bones, walls, documents, and living memories introduced earlier.",
+        "State the book's conclusion without claiming that history predicts a single future.",
+        "Clarify what has changed across time and what remains difficult to infer.",
+        "Hold violence and cooperation together without flattening either into a slogan.",
+        "End on a concrete image that leaves the reader with historical responsibility and unresolved inquiry rather than a generic moral."
+      ],
+      "targetPages": 9
+    }
+  ],
+  "promises": [
+    "The opening evidence from Nataruk will be revisited to clarify what violent remains can and cannot reveal.",
+    "The book will distinguish individual aggression from organized warfare and state-administered violence.",
+    "The debate over whether humans are naturally violent or naturally peaceful will be treated as incomplete unless social conditions are included.",
+    "A single extended Sarajevo case will show how political identity, military capacity, institutions, fear, and civilian adaptation interact over time.",
+    "The conclusion will explain why violence has deep historical roots without treating its scale or direction as biologically predetermined.",
+    "The book will identify conditions that have sometimes enabled restraint as well as conditions that have enabled escalation."
+  ],
+  "locations": [
+    {
+      "name": "Nataruk",
+      "rules": [],
+      "description": "An archaeological site near Lake Turkana in Kenya, used as the opening case for interpreting violent injury and the limits of prehistoric evidence."
+    },
+    {
+      "name": "Jebel Sahaba",
+      "rules": [],
+      "description": "A burial site in the Nile Valley associated with evidence of repeated projectile injuries and used to discuss early group violence cautiously."
+    },
+    {
+      "name": "Sarajevo",
+      "rules": [],
+      "description": "A modern city used for the book's extended single-case narrative about siege, political fracture, civilian life, and organized violence."
+    }
+  ],
+  "questions": [],
+  "characters": [],
+  "voiceGuide": [
+    "Use clear historical prose for general readers, with concrete scenes, artifacts, institutions, and decisions carrying the explanation.",
+    "Move across eras and regions without implying that one society represents all societies or that chronological change is automatically progress.",
+    "Separate what evidence shows from what scholars infer, especially when archaeological remains cannot reveal motives or the full scale of past violence.",
+    "Treat aggression as a changing range of behaviors, from reactive interpersonal violence to planned warfare, coercion, domination, and state-organized force.",
+    "Use moderate confidence. Name competing interpretations when the available evidence genuinely supports more than one reading.",
+    "Prefer specific mechanisms such as land pressure, political consolidation, retaliation norms, dehumanization, or military technology over broad claims about human nature.",
+    "Vary chapter endings. Some should close on a bounded conclusion, some on an unresolved question, and some on a document or scene that changes the reader's perspective."
+  ],
+  "antiAiRules": [
+    "Do not invent studies, scholars, institutions, citations, dates, statistics, archaeological findings, or source identities.",
+    "Do not treat the supplied research summaries as sufficient proof for claims they only suggest; verify or qualify claims during drafting.",
+    "Do not turn a single massacre, text, society, or region into evidence about all humans or all historical periods.",
+    "Do not use modern psychological categories as if ancient actors used them or as if they map perfectly across cultures.",
+    "Do not equate aggression, anger, crime, warfare, conquest, punishment, and genocide without defining the relationship on the relevant page.",
+    "Do not present contested origins-of-war arguments as settled fact.",
+    "Avoid proof-leap transitions, inflated abstractions, repeated binary reversals, and ornamental em dashes.",
+    "Avoid stacking adjacent contrast sentences that leap from a local fact to a sweeping conclusion.",
+    "Do not end every chapter with a balanced list of causes or a generic statement about complexity.",
+    "Keep page-local uncertainty tied to the evidence actually discussed rather than adding empty hedges.",
+    "Do not add genre assumptions that the user did not request.",
+    "Avoid proof-leap transitions such as 'This is not a coincidence', 'no accident', 'hidden in plain sight', and 'the truth is' unless directly quoted or genuinely necessary.",
+    "Do not stack adjacent contrast sentences that jump from a fact to a sweeping conclusion; earn the claim with evidence, scene, context, or qualification.",
+    "Avoid binary-reversal scaffolds such as 'X is not A. It is B.' State B directly unless both halves are needed for a precise correction or distinction, and do not repeat the construction across nearby pages.",
+    "Use em dashes and en dashes sparingly; when a dash is ornamental, prefer a period, comma, colon, or a cleaner sentence.",
+    "Replace inflated abstractions with concrete examples, precise claims, or human-sized uncertainty.",
+    "Preserve the user's thesis and intended edge, but do not make unsupported interpretive claims sound proven.",
+    "In reader-facing prose, avoid sounding like a model explaining its own conclusion.",
+    "Avoid unsupported proof-leap transitions; do not jump from a local fact to a sweeping conclusion without evidence on this page.",
+    "Do not invent evidence, citations, studies, experts, or source identities.",
+    "Avoid generic conclusions and visible prompt scaffolding in reader-facing prose.",
+    "Use uncertainty only where the evidence on this page requires it.",
+    "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages."
+  ],
+  "openingHook": "The book opens beside the remains at Nataruk, near Lake Turkana, where wounds in skeletons preserve a brief and unsettling record of violence among people who left no written account of what happened. The scene immediately raises the book's governing question: what can evidence of harm tell us about the conditions that made aggression possible, and what can it never tell us?",
+  "writingMode": "analytical-history",
+  "authorStance": {
+    "thesis": "Human aggression has appeared across history in changing forms, and its scale and direction have been strongly shaped by social organization, material conditions, political institutions, cultural meanings, and relationships between groups.",
+    "refusals": [
+      "The author refuses to treat one dramatic case as a universal model of human behavior.",
+      "The author refuses to end every section by giving equal weight to explanations that the evidence does not support equally.",
+      "The author refuses to use modern moral labels as substitutes for historical explanation.",
+      "The author refuses to repeat a conclusion after it has already been demonstrated by a stronger later example."
+    ],
+    "positions": [
+      "Archaeological evidence shows that organized violence has deep roots, but it does not establish that warfare was constant or universal in every early society.",
+      "Settled life, population pressure, property, and unequal access to resources could intensify conflict while also creating institutions capable of restraining it.",
+      "States and legal systems have sometimes reduced private violence while concentrating coercion in armies, courts, prisons, and administrative structures.",
+      "Cultural stories about honor, enemies, identity, and legitimate force can make aggression easier to justify and easier to organize.",
+      "The historical record contains both violence and cooperation, so neither permanent human brutality nor an originally peaceful humanity explains the whole past."
+    ],
+    "voiceSample": "At Nataruk, near Lake Turkana, the bones of people struck by projectiles preserve violence without preserving an explanation. A wound can identify force, direction, and sometimes the kind of weapon involved; it cannot name the argument that preceded the attack.\n\nIn 1648, the Peace of Westphalia entered European memory as a compact associated with sovereign states, although the document set and the political changes around it resist a single, tidy meaning. A treaty can close one war while leaving the habits of military competition intact. The paper on a diplomat's table and the hunger in a ruined village belong to the same history, but they do not speak in the same register.\n\nAt a kitchen table in Belfast in 1998, a newspaper carrying the Good Friday Agreement could sit beside an ordinary cup of tea. The page described institutions, prisoners, policing, and consent; the cup belonged to the quieter work of imagining daily life after armed conflict. Documents mark decisions. Objects reveal how those decisions enter rooms, routines, and expectations.\n\nA bronze blade from the eastern Mediterranean, a court record from medieval Cairo, and a photograph from Sarajevo each preserves a different edge of the past. None can stand for the whole human story. Together, they make a narrower and more useful demand: look closely at the conditions that gave violence a purpose, a permission, or a place."
+  },
+  "researchNotes": [
+    {
+      "url": "https://www.ebsco.com/research-starters/anthropology/prehistoric-warfare",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "ebsco.com",
+      "summary": "**Early Human Aggressiveness (Prehistory):**\n*   Archaeological evidence suggests that organized conflict, or warfare, began as early as the Neolithic period, coinciding with growing populations and competition over land and resources *   In 2012, archaeologists found the remains of 27 individuals at Nataruk, near Lake Turkana in Kenya, with 10 of 12 nearly complete skeletons showing clear indications of violent death, such as skull fractures and arrow marks, suggesting a massacre among prehistoric hunter-gatherers around 10,000 years ago *   The transition from nomadic hunter-gatherer societi"
+    },
+    {
+      "url": "https://www.thearchaeologist.org/blog/the-dawn-of-ancient-warfare",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "thearchaeologist.org",
+      "summary": "**Early Human Aggressiveness (Prehistory):**\n*   Archaeological evidence suggests that organized conflict, or warfare, began as early as the Neolithic period, coinciding with growing populations and competition over land and resources *   One of the earliest known examples of group violence is a mass grave discovered at Jebel Sahaba in Sudan, dating back approximately 10,000 years, where skeletons show clear signs of violent injuries from projectiles"
+    },
+    {
+      "url": "https://medium.com/@ancient.rome/the-gloomy-dawn-of-humanity-conflicts-and-warfare-in-the-stone-age-6244ff5e8585",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "medium.com",
+      "summary": "*   One of the earliest known examples of group violence is a mass grave discovered at Jebel Sahaba in Sudan, dating back approximately 10,000 years, where skeletons show clear signs of violent injuries from projectiles Control over fertile areas became critically important with the transition to settled life and early agriculture"
+    },
+    {
+      "url": "https://www.cam.ac.uk/research/news/evidence-of-a-prehistoric-massacre-extends-the-history-of-warfare",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "cam.ac.uk",
+      "summary": "*   In 2012, archaeologists found the remains of 27 individuals at Nataruk, near Lake Turkana in Kenya, with 10 of 12 nearly complete skeletons showing clear indications of violent death, such as skull fractures and arrow marks, suggesting a massacre among prehistoric hunter-gatherers around 10,000 years ago Some argue that organized violence is deeply rooted in human evolutionary history, while others suggest it is a symptom of the idea of ownership that emerged with settled land and agriculture"
+    },
+    {
+      "url": "https://www.english-heritage.org.uk/learn/story-of-england/prehistory/war/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "english-heritage.org.uk",
+      "summary": "*   Technological advancements in weaponry, such as the development of bronze weapons in the Bronze Age and further advancements in the Iron Age, led to more sophisticated military strategies"
+    },
+    {
+      "url": "https://www.natureasia.com/en/nmiddleeast/article/10.1038/nmiddleeast.2023.223",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "natureasia.com",
+      "summary": "*   Patterns of violence appear to have peaked in the Copper Age (circa 4500 BC to 3300 BC), as indicated by skeletal remains with injuries, and then declined in the early to mid-Bronze Age (circa 3300 BC to 1500 BC) *   **Social Structures and Governance:** The appearance of centralized governments and the development of legal systems are suggested to have played a pivotal role in reducing conflict during the early/mid-Bronze Age"
+    },
+    {
+      "url": "https://newbrainnutrition.com/a-violent-history-how-genes-and-environment-influence-aggression/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "newbrainnutrition.com",
+      "summary": "**Factors Affecting Aggressiveness Throughout History:**\n*   **Resource Competition and Territorial Disputes:** The struggle for resources like habitat, mates, and food has played a key role in shaping aggressive behavior in humans *   **Social Learning and Environment:** Children can learn aggressive behavior through the observation of aggressive models, particularly in the home environment *   **Biological and Genetic Predispositions:** Humans tend to be an aggressive species, with a higher rate of deaths caused by conspecifics (around 2%) compared to other mammals (0.3%) Aggressiveness is a"
+    },
+    {
+      "url": "https://www.wellbeingminder.com.au/single-post/cultural-norms-of-anger-a-historical-perspective-past-normalisation-of-anger",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "wellbeingminder.com.au",
+      "summary": "*   **Cultural Norms and Societal Expectations:** Historically, expressions of anger were often accepted or even encouraged, particularly in patriarchal societies where dominance and control were seen as assertive qualities Men were often expected to express anger openly as a sign of dominance, while women were encouraged to suppress it"
+    },
+    {
+      "url": "https://opentext.uoregon.edu/socialpsychology/chapter/personal-and-cultural-influences-on-aggression/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "uoregon.edu",
+      "summary": "*   **\"Culture of Honor\":** Some cultures, particularly those with a \"culture of honor\" (e.g., southern and western U.S. states), have norms that condone and even encourage responding to insults with aggression, leading to more violent reactions to perceived threats to social status *   **Hormonal Influences:** Males generally exhibit more aggressive behavior than females, which is thought to be linked to higher levels of testosterone"
+    },
+    {
+      "url": "https://www.ovid.com/00000487-199602000-00003",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "ovid.com",
+      "summary": "*   **Devaluation and Discrimination:** A history of devaluation of a group or a cultural-societal split between groups is a core influence on violence, making aggression seem normal or even desirable for resolving differences"
+    },
+    {
+      "url": "https://academic.oup.com/book/42019/chapter/355662477",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "oup.com",
+      "summary": "*   **Devaluation and Discrimination:** A history of devaluation of a group or a cultural-societal split between groups is a core influence on violence, making aggression seem normal or even desirable for resolving differences"
+    },
+    {
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC3696520/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "nih.gov",
+      "summary": "Environmental conditions and social situations significantly affect aggressive behavior Genetic influences account for about half (50%) of the variance in aggressive behavior in both males and females, with the other 50% explained by nonshared environmental factors"
+    },
+    {
+      "url": "https://medium.com/@saha75749/the-biology-and-culture-of-human-aggression-a-deep-dive-9e0e18279478",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "medium.com",
+      "summary": "Genetic influences account for about half (50%) of the variance in aggressive behavior in both males and females, with the other 50% explained by nonshared environmental factors While there are no specific \"violence genes,\" certain gene variants may increase susceptibility to aggression when interacting with risky environments However, testosterone fuels existing aggressive tendencies rather than creating an innate urge to harm, and its effects interact with personality and environment"
+    },
+    {
+      "url": "https://neblog.utdallas.edu/2025/08/12/humanaggression/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "utdallas.edu",
+      "summary": "*   **Hormonal Influences:** Males generally exhibit more aggressive behavior than females, which is thought to be linked to higher levels of testosterone *   **Psychological Aspects:** Anger is an innate emotion, hardwired into humans biologically Aggression can be categorized into reactive aggression (impulsive reaction) and proactive aggression (purposeful, planned attack) Humans experienced a reduction in anatomical features associated with reactive aggression around 200,000 years ago, but their propensity for proactive aggression remains high"
+    },
+    {
+      "url": "https://www.livescience.com/5333-evolution-human-aggression.html",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "livescience.com",
+      "summary": "*   **The \"Natural State\" of Humanity:** There is an ongoing debate among scholars about whether humans are naturally peaceful or inherently prone to violence"
+    },
+    {
+      "url": "https://opentext.uoregon.edu/socialpsychology/chapter/the-biological-and-emotional-causes-of-aggression/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "uoregon.edu",
+      "summary": "*   **The \"Natural State\" of Humanity:** There is an ongoing debate among scholars about whether humans are naturally peaceful or inherently prone to violence Philosophers like Thomas Hobbes argued that humans are naturally evil and require society to constrain aggression, while Jean-Jacques Rousseau believed humans are naturally gentle and become aggressive due to societal influence"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Prehistoric_warfare",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "wikipedia.org",
+      "summary": "*   **The \"Natural State\" of Humanity:** There is an ongoing debate among scholars about whether humans are naturally peaceful or inherently prone to violence Some scientists argue that a predisposition for violence exists, noting that chimpanzees, genetically close to humans, wage wars over territory and resources However, other perspectives suggest that early hunter-gatherer societies might have had low enough population densities to avoid armed conflict, and cooperation was necessary for survival activities like ambush hunting"
+    },
+    {
+      "url": "https://courier.unesco.org/en/articles/origins-violence",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "unesco.org",
+      "summary": "They argue that collective violence emerged with the sedentarization of communities and the transition to a production economy"
+    },
+    {
+      "url": "https://factsanddetails.com/world/cat56/sub361/entry-5992.html",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "factsanddetails.com",
+      "summary": "However, other experts contend that war is universal and extends deep into human history, challenging the notion of a \"sublimely peaceful\" past"
+    }
+  ],
+  "styleContract": {
+    "localRules": [
+      {
+        "id": "do-not-invent-studies-scholars-institutions-cita",
+        "instruction": "Do not invent studies, scholars, institutions, citations, dates, statistics, archaeological findings, or source identities."
+      },
+      {
+        "id": "do-not-treat-the-supplied-research-summaries-as-",
+        "instruction": "Do not treat the supplied research summaries as sufficient proof for claims they only suggest; verify or qualify claims during drafting."
+      },
+      {
+        "id": "do-not-turn-a-single-massacre-text-society-or-re",
+        "instruction": "Do not turn a single massacre, text, society, or region into evidence about all humans or all historical periods."
+      },
+      {
+        "id": "do-not-use-modern-psychological-categories-as-if",
+        "instruction": "Do not use modern psychological categories as if ancient actors used them or as if they map perfectly across cultures."
+      },
+      {
+        "id": "do-not-equate-aggression-anger-crime-warfare-con",
+        "instruction": "Do not equate aggression, anger, crime, warfare, conquest, punishment, and genocide without defining the relationship on the relevant page."
+      },
+      {
+        "id": "do-not-present-contested-origins-of-war-argument",
+        "instruction": "Do not present contested origins-of-war arguments as settled fact."
+      },
+      {
+        "id": "avoid-proof-leap-transitions-inflated-abstractio",
+        "instruction": "Avoid proof-leap transitions, inflated abstractions, repeated binary reversals, and ornamental em dashes."
+      },
+      {
+        "id": "avoid-stacking-adjacent-contrast-sentences-that-",
+        "instruction": "Avoid stacking adjacent contrast sentences that leap from a local fact to a sweeping conclusion."
+      },
+      {
+        "id": "do-not-end-every-chapter-with-a-balanced-list-of",
+        "instruction": "Do not end every chapter with a balanced list of causes or a generic statement about complexity."
+      },
+      {
+        "id": "keep-page-local-uncertainty-tied-to-the-evidence",
+        "instruction": "Keep page-local uncertainty tied to the evidence actually discussed rather than adding empty hedges."
+      },
+      {
+        "id": "do-not-add-genre-assumptions-that-the-user-did-n",
+        "instruction": "Do not add genre assumptions that the user did not request."
+      },
+      {
+        "id": "avoid-proof-leap-transitions-such-as-this-is-not",
+        "instruction": "Avoid proof-leap transitions such as 'This is not a coincidence', 'no accident', 'hidden in plain sight', and 'the truth is' unless directly quoted or genuinely necessary."
+      },
+      {
+        "id": "do-not-stack-adjacent-contrast-sentences-that-ju",
+        "instruction": "Do not stack adjacent contrast sentences that jump from a fact to a sweeping conclusion; earn the claim with evidence, scene, context, or qualification."
+      },
+      {
+        "id": "avoid-binary-reversal-scaffolds-such-as-x-is-not",
+        "instruction": "Avoid binary-reversal scaffolds such as 'X is not A. It is B.' State B directly unless both halves are needed for a precise correction or distinction, and do not repeat the construction across nearby pages."
+      },
+      {
+        "id": "use-em-dashes-and-en-dashes-sparingly-when-a-das",
+        "instruction": "Use em dashes and en dashes sparingly; when a dash is ornamental, prefer a period, comma, colon, or a cleaner sentence."
+      },
+      {
+        "id": "replace-inflated-abstractions-with-concrete-exam",
+        "instruction": "Replace inflated abstractions with concrete examples, precise claims, or human-sized uncertainty."
+      },
+      {
+        "id": "preserve-the-user-s-thesis-and-intended-edge-but",
+        "instruction": "Preserve the user's thesis and intended edge, but do not make unsupported interpretive claims sound proven."
+      },
+      {
+        "id": "in-reader-facing-prose-avoid-sounding-like-a-mod",
+        "instruction": "In reader-facing prose, avoid sounding like a model explaining its own conclusion."
+      },
+      {
+        "id": "no-proof-leap",
+        "instruction": "Avoid unsupported proof-leap transitions; do not jump from a local fact to a sweeping conclusion without evidence on this page."
+      },
+      {
+        "id": "no-invented-evidence",
+        "instruction": "Do not invent evidence, citations, studies, experts, or source identities."
+      },
+      {
+        "id": "no-generic-conclusion",
+        "instruction": "Avoid generic conclusions and visible prompt scaffolding in reader-facing prose."
+      },
+      {
+        "id": "uncertainty-where-earned",
+        "instruction": "Use uncertainty only where the evidence on this page requires it."
+      },
+      {
+        "id": "prompt-leak-ban",
+        "instruction": "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages."
+      }
+    ],
+    "distributionRules": [
+      {
+        "id": "vary-caveat-endings",
+        "instruction": "Do not use the same caveat construction as the default ending across chapters."
+      },
+      {
+        "id": "select-relevant-lens",
+        "instruction": "Choose only the analytical lens relevant to a page rather than repeating the complete comparison grid."
+      },
+      {
+        "id": "allow-bounded-conclusions",
+        "instruction": "Let some pages commit to a bounded conclusion instead of balancing every cause symmetrically."
+      },
+      {
+        "id": "reintroduce-only-when-advancing",
+        "instruction": "Reintroduce a concept only when the later treatment advances, challenges, or applies it."
+      }
+    ]
+  },
+  "continuityRules": [
+    "Keep the distinction between aggression, interpersonal violence, collective violence, and organized warfare stable throughout.",
+    "Mark the difference between direct evidence, historical interpretation, and unresolved scholarly debate.",
+    "Do not reuse the same archaeological case as proof of a different claim unless the later treatment adds a genuinely new dimension.",
+    "Preserve regional specificity and avoid treating Europe, Africa, Asia, or the Americas as internally uniform.",
+    "When returning to Nataruk, Jebel Sahaba, or Sarajevo, advance the argument rather than merely recapping earlier material.",
+    "Keep chronological transitions explicit when a chapter moves between eras.",
+    "Avoid repeating this beat: Chapters 1, 2, and 14 all return to Nataruk or opening archaeological evidence; vary the purpose of each return so the later references advance the argument rather than repeat the introduction.",
+    "Avoid repeating this beat: Chapters 1, 2, 3, 5, 6, and 13 repeatedly frame violence through interacting conditions; assign each chapter a distinct primary mechanism and reserve synthesis for Chapter 13.",
+    "Avoid repeating this beat: Chapters 1, 2, 4, 5, 6, 8, 12, and 13 repeatedly emphasize limits of evidence; keep methodological qualification proportional and specific to the source under discussion.",
+    "Avoid repeating this beat: Chapters 3, 5, 6, 8, 10, 12, and 13 repeatedly present institutions as both restraining and enabling violence; avoid restating the same dual-role formulation in each chapter.",
+    "Avoid repeating this beat: Chapters 7, 8, 9, 10, and 13 repeatedly connect identity, norms, fear, and social learning to aggression; distinguish honor and kin obligation, boundary-making, wartime mobilization, individual development, and comparative synthesis.",
+    "Avoid repeating this beat: Chapters 6, 11, 12, and 13 repeatedly contrast internal order with external or state violence; give Chapter 11 the focused decline case and let Chapter 12 address administrative scale without reusing its framing.",
+    "Avoid repeating this beat: Chapters 13 and 14 both synthesize the thesis and qualify what the record can support; make Chapter 13 the analytical test and Chapter 14 the concise return to the opening evidence."
+  ],
+  "researchQueries": [
+    "What primary archaeological publications and reputable institutional summaries document Nataruk, Jebel Sahaba, and other early evidence of violent injury?",
+    "What are the main scholarly interpretations of the relationship between sedentism, agriculture, property, population density, and organized violence?",
+    "Which archaeological evidence supports claims about Copper Age and Bronze Age changes in violence, and how secure are the chronological comparisons?",
+    "What primary legal, administrative, or royal documents can be read closely to show how early states defined injury, compensation, punishment, or legitimate force?",
+    "How did military technology, logistics, fortification, and political organization interact in selected Bronze Age and Iron Age societies?",
+    "What reputable historical research documents honor norms, feud, kinship, gender expectations, and retaliation in specific societies without generalizing across cultures?",
+    "What research explains devaluation, discrimination, identity formation, and the organization of collective violence in historically specific cases?",
+    "Which authoritative histories and survivor accounts can ground the Sarajevo siege narrative while distinguishing documented experience from interpretation?",
+    "What current research can responsibly explain biological, developmental, and environmental influences on aggression without presenting disputed findings as settled?",
+    "Which historical datasets document declines in particular forms of interpersonal violence, and what are the limits of comparing them?",
+    "What scholarship explains the relationship between modern bureaucracy, industrial capacity, mass politics, international law, and mass violence?"
+  ],
+  "illustrationPlan": {
+    "cadence": "manual",
+    "pageRules": [
+      "Prefer maps, artifacts, site plans, documents, and environments over invented portraits.",
+      "Do not depict identifiable victims or create fictional witnesses for factual cases.",
+      "Use exact historical place names in illustration prompts when a named location appears.",
+      "Keep visual uncertainty visible when an artifact or site has multiple scholarly interpretations.",
+      "Avoid graphic injury, triumphant violence, propaganda-like heroism, and anachronistic objects.",
+      "Do not place explanatory text inside images unless the image is a clearly labeled map or diagram.",
+      "Ensure every illustration supports the page's specific historical claim rather than repeating a generic war image."
+    ],
+    "coverPrompt": "A restrained historical composition showing a weathered archaeological fragment, a faint map linking distant regions, and layered traces of a settlement wall, legal tablet, and modern city street; muted earth, stone, charcoal, and rust palette; documentary realism; no text, no author name, no sensationalized violence.",
+    "globalStyle": "Restrained historical documentary style: maps, artifacts, site plans, archival-document details, and carefully framed environments; muted earth, stone, paper, charcoal, and rust tones; no sensationalized gore.",
+    "characterReferencePrompts": []
+  },
+  "writingComplexity": 5
+}

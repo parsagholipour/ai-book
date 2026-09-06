@@ -1,0 +1,127 @@
+{
+  "capturedAt": "2026-09-05T04:06:58.955Z",
+  "jobs": [
+    {
+      "id": "cmtntugmb0002img09d8i4y5l",
+      "status": "FAILED",
+      "createdAt": "2026-09-05T03:32:29.987Z",
+      "startedAt": "2026-09-05T03:32:30.011Z",
+      "finishedAt": "2026-09-05T03:45:59.853Z",
+      "progress": 15,
+      "calls": [
+        {
+          "_count": 19,
+          "_sum": {
+            "costHint": 0.026405,
+            "promptTokens": 34118,
+            "outputTokens": 15003
+          },
+          "generationJobId": "cmtntugmb0002img09d8i4y5l",
+          "provider": "openai",
+          "model": "gpt-5.6-luna",
+          "purpose": "verify-case-evidence"
+        },
+        {
+          "_count": 23,
+          "_sum": {
+            "costHint": 0.031783000000000006,
+            "promptTokens": 32531,
+            "outputTokens": 19910
+          },
+          "generationJobId": "cmtntugmb0002img09d8i4y5l",
+          "provider": "openai",
+          "model": "gpt-5.6-luna",
+          "purpose": "build-case-evidence"
+        },
+        {
+          "_count": 24,
+          "_sum": {
+            "costHint": 0.047642000000000004,
+            "promptTokens": 166572,
+            "outputTokens": 5001
+          },
+          "generationJobId": "cmtntugmb0002img09d8i4y5l",
+          "provider": "openai",
+          "model": "gpt-5.6-luna",
+          "purpose": "extract-excerpts"
+        },
+        {
+          "_count": 11,
+          "_sum": {
+            "costHint": 0.017549000000000002,
+            "promptTokens": 11915,
+            "outputTokens": 12522
+          },
+          "generationJobId": "cmtntugmb0002img09d8i4y5l",
+          "provider": "openai",
+          "model": "gpt-5.6-luna",
+          "purpose": "plan-episodes"
+        }
+      ],
+      "totalTextCalls": 77,
+      "estimatedProviderCost": 0.12337900000000002,
+      "missingCostEstimates": false
+    },
+    {
+      "id": "cmtnujlt30000m3g0b8qmin69",
+      "status": "FAILED",
+      "createdAt": "2026-09-05T03:52:03.111Z",
+      "startedAt": "2026-09-05T03:52:03.138Z",
+      "finishedAt": "2026-09-05T04:05:54.343Z",
+      "progress": 15,
+      "calls": [
+        {
+          "_count": 22,
+          "_sum": {
+            "costHint": 0.021902,
+            "promptTokens": 21980,
+            "outputTokens": 14117
+          },
+          "generationJobId": "cmtnujlt30000m3g0b8qmin69",
+          "provider": "openai",
+          "model": "gpt-5.6-luna",
+          "purpose": "build-case-evidence"
+        },
+        {
+          "_count": 26,
+          "_sum": {
+            "costHint": 0.064662,
+            "promptTokens": 222427,
+            "outputTokens": 7548
+          },
+          "generationJobId": "cmtnujlt30000m3g0b8qmin69",
+          "provider": "openai",
+          "model": "gpt-5.6-luna",
+          "purpose": "extract-excerpts"
+        },
+        {
+          "_count": 20,
+          "_sum": {
+            "costHint": 0.024527999999999998,
+            "promptTokens": 32666,
+            "outputTokens": 13673
+          },
+          "generationJobId": "cmtnujlt30000m3g0b8qmin69",
+          "provider": "openai",
+          "model": "gpt-5.6-luna",
+          "purpose": "verify-case-evidence"
+        },
+        {
+          "_count": 9,
+          "_sum": {
+            "costHint": 0.017217,
+            "promptTokens": 10538,
+            "outputTokens": 12962
+          },
+          "generationJobId": "cmtnujlt30000m3g0b8qmin69",
+          "provider": "openai",
+          "model": "gpt-5.6-luna",
+          "purpose": "plan-episodes"
+        }
+      ],
+      "totalTextCalls": 77,
+      "estimatedProviderCost": 0.128309,
+      "missingCostEstimates": false
+    }
+  ]
+}

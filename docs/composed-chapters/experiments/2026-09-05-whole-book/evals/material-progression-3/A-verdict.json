@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 8,
+    "voice": 6,
+    "engagement": 6,
+    "pacing": 4,
+    "craft": 7,
+    "slopResistance": 3
+  },
+  "overall": 6.8,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "High",
+  "highlights": [
+    {
+      "quote": "Authority answers who could impose it, not whether the authority was rightly used.",
+      "judgment": "A crisp formulation of the book's central distinction between institutional capacity and legitimacy."
+    },
+    {
+      "quote": "The grave is an event sample, not a census of violence.",
+      "judgment": "Memorable methodological precision turns an archaeological limitation into a broadly useful principle."
+    },
+    {
+      "quote": "Coercion becomes durable when the result of force can be translated into a schedule.",
+      "judgment": "This original sentence captures the manuscript's strongest insight about administration extending violence through time."
+    },
+    {
+      "quote": "A ship’s manifest, an insurance policy, a plantation inventory, and a court’s ruling could carry the effects of a whip without describing the blow.",
+      "judgment": "Concrete objects and a forceful image make institutional violence vivid without sacrificing analysis."
+    },
+    {
+      "quote": "The protocol is often treated as though it were the moment when a room full of officials invented genocide. It was not.",
+      "judgment": "The direct correction is clear and well placed, though this corrective template recurs too often elsewhere."
+    },
+    {
+      "quote": "These were not separate worlds, with violence in one and civilisation in the other.",
+      "judgment": "A strong synthesis, but representative of the repeated paired-antithesis construction that makes the voice feel manufactured."
+    },
+    {
+      "quote": "No single mechanism governed these changes.",
+      "judgment": "Accurate in context, yet emblematic of generic qualification that repeatedly restates the book's method instead of advancing it."
+    },
+    {
+      "quote": "The explanation is neither a theory of permanent human savagery nor a story of inevitable improvement.",
+      "judgment": "The conclusion is conceptually sound but closes with the same balanced negation used throughout the manuscript."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Evidence is repeatedly defined by pairing what it establishes with what it cannot establish.",
+      "instances": [
+        "A wound may show an impact. A mass grave may show collective death. Neither one supplies a complete account of the society in which the event took place.",
+        "The document does not prove every stage of the Holocaust, but it does establish that senior officials met under Heydrich’s authority, that they were informed of a Europe-wide programme, that they discussed categories and mixed marriages, and that their offices were expected to cooperate."
+      ]
+    },
+    {
+      "pattern": "Chapter syntheses reject essentialist explanations in favor of institutional mechanisms.",
+      "instances": [
+        "The evidence from Ur and Lagash changes the question asked of royal violence. Instead of asking whether these rulers were unusually aggressive, we can ask what their institutions allowed them to do repeatedly.",
+        "Gunpowder did not make people more aggressive in any simple sense. It gave older motives organised form: the ability to gather men, deliver weapons, preserve command, replace losses, and extend violence beyond the moment of decision."
+      ]
+    },
+    {
+      "pattern": "Technologies are introduced as capacities whose direction depends on political choice.",
+      "instances": [
+        "The train did not decide that a civilian was an enemy. An office did.",
+        "Institutional structure creates capacity; political decisions determine its use."
+      ]
+    },
+    {
+      "pattern": "Comparisons hinge on the claim that apparently opposite practices coexist within one system.",
+      "instances": [
+        "Consent, accommodation, and compulsion may occupy the same political arrangement.",
+        "Organised restraint was not the replacement of organised violence. It was a parallel institution made possible by some of the same capacities: international communication, regular reporting, standardised emblems, trained personnel, and governments able to make commitments on behalf of armies."
+      ]
+    },
+    {
+      "pattern": "Concluding paragraphs repeatedly use balanced negation to avoid universal claims.",
+      "instances": [
+        "The state is not required for coordination, though later institutions can enlarge, regularise, and record violence.",
+        "It cannot decide that aggression is humanity’s essence or that every century moves toward restraint."
+      ]
+    }
+  ],
+  "summary": "The manuscript advances a strong, coherent thesis: history explains aggression most responsibly by tracing how intentions, classifications, resources, institutions, and individual choices combine, rather than by treating violence as a timeless human essence. Its fifteen-chapter progression is ambitious and well informed, and its source criticism is unusually consistent about the limits of bones, monuments, testimony, administrative records, and statistics. The book's chief weakness is excessive reiteration: nearly every case is processed through the same establish/cannot-establish qualification, paired contrast, inventory of mechanisms, and chapter-end recap. That uniform architecture dulls narrative momentum, reduces distinctiveness of voice, and makes many later sections feel like restatements of a method already securely established. A substantial compression and greater variation in argumentative and narrative form would preserve the intellectual strength while making the book more engaging and persuasive."
+}

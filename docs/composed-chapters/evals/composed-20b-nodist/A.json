@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 6,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 6,
+    "engagement": 5,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 6.6,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Without it, a feeling becomes an action, an action becomes a crowd, and a crowd becomes an explanation.",
+      "judgment": "Strength: a genuinely well-turned sentence that does conceptual work rather than decorating it."
+    },
+    {
+      "quote": "Archaeological silence becomes especially misleading when comparisons cross regions or periods in which bodies were treated differently.",
+      "judgment": "Strength: the book's best habit \u2014 methodological caution stated concretely rather than as a hedge."
+    },
+    {
+      "quote": "The word \u201cmassacre\u201d carries its own danger. It implies a particular event and often a particular relation between attackers and victims.",
+      "judgment": "Strength: interrogates its own vocabulary, which keeps the evidentiary standard visible to the reader."
+    },
+    {
+      "quote": "The material is not the explanation.",
+      "judgment": "Weakness: one of dozens of near-identical aphoristic beats; by chapter 7 the reader can predict the sentence before it arrives."
+    },
+    {
+      "quote": "The crowd was crowded with purposes, not governed by one mind.",
+      "judgment": "Weakness: an unintended jingle in a chapter that otherwise depends on tonal control; a rare craft lapse that survived revision."
+    },
+    {
+      "quote": "After British occupation in 1903, the emir Abbas was removed and Muhammad Abbas was installed",
+      "judgment": "Weakness: internally incoherent as written \u2014 the same name appears as both deposed and installed ruler, a factual/editorial slip in an otherwise careful text."
+    },
+    {
+      "quote": "The state\u2019s violence was narrower and broader than the ritual-war model suggests.",
+      "judgment": "Weakness: the paired-antithesis reflex applied where a single, sharper claim would carry more; the shape precedes the thought."
+    },
+    {
+      "quote": "protect access before grievance hardens, challenge categories before they become commands, and keep security power answerable before it learns to call destruction order.",
+      "judgment": "Mixed: a strong closing cadence, but the tricolon-with-final-inversion is the book's most-used rhetorical move and lands as a template rather than a discovery."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The technology-absolution formula: an instrument is introduced, then denied causal force, then handed back to politics. It appears in nearly every chapter and in identical syntax.",
+      "instances": [
+        "The clay sling bullets show how technology changed the reach of aggression without supplying its purpose.",
+        "Technology extended the reach of violence; it did not supply the reasons that made one neighbour denounce another"
+      ]
+    },
+    {
+      "pattern": "Two-case paired comparison as the invariant chapter skeleton: case A, case B, an explicit 'the difference lies not in X but in Y' paragraph, then a synthesis refusing a developmental ladder.",
+      "instances": [
+        "The difference between the two cases lies less in the presence or absence of aggression than in the path an injury could take.",
+        "The difference lies less in a more aggressive Norman character than in the tools and prizes of rule."
+      ]
+    },
+    {
+      "pattern": "The restraint/enlargement antithesis \u2014 every institution is said to restrain one violence while enabling another, stated in the same balanced clause each time.",
+      "instances": [
+        "Institutions do not simply remove violence from social life. They can contain one form while building the means for another.",
+        "A state may restrain private violence by policing streets... The same state can enlarge violence when its offices classify certain people as outside protection."
+      ]
+    },
+    {
+      "pattern": "Source-limits disclaimer paragraph placed after each case study, often closing with an epigram about evidence rather than an argument.",
+      "instances": [
+        "These sources cannot be made symmetrical by force. Their differences are part of the evidence.",
+        "The record preserves a pattern of action, not a verdict on a people."
+      ]
+    },
+    {
+      "pattern": "Terminal catalogue paragraphs that re-list every artefact and actor from the chapter in parallel apposition, functioning as recap rather than advance.",
+      "instances": [
+        "The catalogue continues through the objects that made these relationships tangible: wampum belts carried in councils; plazas and mounds...",
+        "The documents gave violence an official vocabulary: Lugard\u2019s memoranda on indirect rule, Casement\u2019s report on the Congo, the German extermination order..."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, unusually well-evidenced global history of organized aggression, held together by a clear and genuinely sustained thesis: material pressure and technology set the reach of violence, while institutions and ideas of belonging choose its targets. Its best pages are methodological \u2014 the analysis of skeletal trauma and preservation bias, the reading of the Wannsee Protocol's euphemisms, the refusal to let 'massacre' or 'Pax Mongolica' smuggle conclusions into evidence. The cost is a book that is architecturally identical from chapter to chapter: two cases, a hinge sentence denying that the difference is one of national character, a source-limits disclaimer, a catalogue recap, an aphoristic closer. That template, plus the roughly twenty restatements of the technology-supplies-no-motive claim, drains momentum and flattens the voice into an anonymous, affectless institutional register with almost no reader address. Prose quality is high sentence by sentence but rarely surprising, and a few slips survive (a confused Kano succession, 'J\u00f3z\u00f3w', 'the crowd was crowded'). Slop here is structural rather than lexical \u2014 no stock filler phrases, but heavy symmetrical antithesis, paired closers, and uniform paragraph shape. With aggressive cutting of the repeated thesis restatements and a deliberate variation of chapter architecture, this could be a strong book; as it stands it needs moderate revision."
+}

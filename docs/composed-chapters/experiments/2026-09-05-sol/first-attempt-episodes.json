@@ -1,0 +1,552 @@
+[
+  {
+    "chapters": [
+      {
+        "index": 1,
+        "episodes": [
+          {
+            "title": "The Trial of Socrates",
+            "kind": "document",
+            "person": "Plato; Socrates",
+            "place": "Athens",
+            "date": "399 BCE",
+            "document": "Plato, Apology",
+            "why": "The text distinguishes anger, civic coercion, moral conviction, and legally authorized violence while showing how interpretation depends on genre and perspective.",
+            "searchQueries": [
+              "Plato Apology Wikisource",
+              "Plato Apology Benjamin Jowett text",
+              "Apology Socrates 399 BCE Project Gutenberg"
+            ]
+          },
+          {
+            "title": "The Nuer and Dinka Feud",
+            "kind": "document",
+            "person": "E. E. Evans-Pritchard",
+            "place": "Upper Nile",
+            "date": "1930s",
+            "document": "E. E. Evans-Pritchard, The Nuer, chapters on feud and warfare",
+            "why": "This ethnographic account offers a documented comparison between interpersonal feud, raiding, compensation, and political authority without treating all aggression as one phenomenon.",
+            "searchQueries": [
+              "E E Evans-Pritchard The Nuer Internet Archive",
+              "The Nuer feud warfare Evans-Pritchard text",
+              "Evans-Pritchard The Nuer catalogue"
+            ]
+          }
+        ]
+      },
+      {
+        "index": 2,
+        "episodes": [
+          {
+            "title": "The Crow Creek Massacre",
+            "kind": "scene",
+            "person": "Douglas Owsley and Richard Jantz",
+            "place": "Crow Creek, South Dakota",
+            "date": "circa 1325 CE",
+            "document": "Douglas W. Owsley and Richard L. Jantz, Skeletal Biology in the Reconstruction of Prehistoric Mississippian Warfare",
+            "why": "A mass burial with cut marks and trauma shows both the evidentiary power and interpretive limits of archaeological violence research.",
+            "searchQueries": [
+              "Skeletal Biology in the Reconstruction of Prehistoric Mississippian Warfare Crow Creek",
+              "Crow Creek massacre Owsley Jantz book",
+              "Crow Creek archaeological mass grave catalogue"
+            ]
+          },
+          {
+            "title": "The Jebel Sahaba Burials",
+            "kind": "document",
+            "person": "Fred Wendorf",
+            "place": "Nile Valley, Egypt",
+            "date": "circa 13,000 BCE",
+            "document": "Fred Wendorf, The Prehistory of Nubia, discussion of Jebel Sahaba",
+            "why": "The burials provide a contested case for repeated projectile injury, allowing the chapter to separate individual trauma from claims about organized warfare.",
+            "searchQueries": [
+              "Fred Wendorf The Prehistory of Nubia Jebel Sahaba Internet Archive",
+              "Jebel Sahaba Wendorf text",
+              "The Prehistory of Nubia catalogue"
+            ]
+          }
+        ]
+      },
+      {
+        "index": 3,
+        "episodes": [
+          {
+            "title": "The Stele of the Vultures",
+            "kind": "document",
+            "person": "Eannatum of Lagash",
+            "place": "Sumer",
+            "date": "circa 2450 BCE",
+            "document": "Stele of the Vultures, translated in Samuel Noah Kramer, History Begins at Sumer",
+            "why": "The monument links kingship, territorial administration, divine sanction, and military force while making royal propaganda visible as evidence.",
+            "searchQueries": [
+              "Stele of the Vultures translation Kramer",
+              "Eannatum Stele of the Vultures text",
+              "History Begins at Sumer Internet Archive"
+            ]
+          },
+          {
+            "title": "The Siege of Megiddo",
+            "kind": "scene",
+            "person": "Thutmose III",
+            "place": "Megiddo",
+            "date": "circa 1457 BCE",
+            "document": "The Annals of Thutmose III, translated in James Henry Breasted, Ancient Records of Egypt",
+            "why": "The annals connect logistics, taxation, royal display, and conquest, while comparison with the archaeological record exposes the limits of victory narratives.",
+            "searchQueries": [
+              "Breasted Ancient Records of Egypt Thutmose III Megiddo Internet Archive",
+              "Annals of Thutmose III translation",
+              "Thutmose III Megiddo annals catalogue"
+            ]
+          }
+        ]
+      },
+      {
+        "index": 4,
+        "episodes": [
+          {
+            "title": "The Assyrian Deportations",
+            "kind": "document",
+            "person": "Sargon II",
+            "place": "Northern Mesopotamia",
+            "date": "722\u2013705 BCE",
+            "document": "Sargon II, Khorsabad Annals, translated in Daniel David Luckenbill, Ancient Records of Assyria and Babylonia",
+            "why": "The annals show how deportation, tribute, roads, and imperial language turned conquest into a repeatable administrative practice.",
+            "searchQueries": [
+              "Luckenbill Ancient Records Assyria Babylonia Sargon Khorsabad Annals",
+              "Sargon II Khorsabad Annals translation",
+              "Ancient Records of Assyria and Babylonia Internet Archive"
+            ]
+          },
+          {
+            "title": "The Achaemenid Royal Inscriptions at Behistun",
+            "kind": "document",
+            "person": "Darius I",
+            "place": "Behistun, Iran",
+            "date": "circa 520 BCE",
+            "document": "Darius I, Behistun Inscription",
+            "why": "Darius\u2019s account of suppressing rebellions reveals how imperial legitimacy was constructed through named enemies, punishments, and claims of truthful order.",
+            "searchQueries": [
+              "Darius Behistun Inscription translation Livius",
+              "Behistun inscription text Project Gutenberg",
+              "Darius Behistun inscription catalogue"
+            ]
+          }
+        ]
+      },
+      {
+        "index": 5,
+        "episodes": [
+          {
+            "title": "The Aztec-Spanish Encounter at Tenochtitlan",
+            "kind": "scene",
+            "person": "Hern\u00e1n Cort\u00e9s and Nahua witnesses",
+            "place": "Tenochtitlan",
+            "date": "1519\u20131521",
+            "document": "Hern\u00e1n Cort\u00e9s, Second Letter to Charles V",
+            "why": "The letter combines warfare, alliance-making, tribute, captivity, and conquest-era self-justification, making source distortion part of the case.",
+            "searchQueries": [
+              "Hernan Cortes Second Letter to Charles V Wikisource",
+              "Cortes Second Letter Tenochtitlan Project Gutenberg",
+              "Cartas de relacion Cortes English text"
+            ]
+          },
+          {
+            "title": "The Florentine Codex on Aztec Warfare",
+            "kind": "document",
+            "person": "Bernardino de Sahag\u00fan and Nahua informants",
+            "place": "Central Mexico",
+            "date": "1570s",
+            "document": "Bernardino de Sahag\u00fan, Florentine Codex, Book 8 and Book 12",
+            "why": "The bilingual compilation permits close comparison of ritual representation, military practice, and post-conquest mediation.",
+            "searchQueries": [
+              "Florentine Codex Book 12 Internet Archive",
+              "Sahagun Florentine Codex Book 8 warfare text",
+              "Florentine Codex digitized manuscript"
+            ]
+          }
+        ]
+      },
+      {
+        "index": 6,
+        "episodes": [
+          {
+            "title": "The Norman Conquest of England",
+            "kind": "scene",
+            "person": "William of Normandy",
+            "place": "England",
+            "date": "1066\u20131087",
+            "document": "The Anglo-Saxon Chronicle, entries for 1066 and 1087",
+            "why": "The chronicle contrasts conquest, land seizure, castle-building, and the suffering of ordinary people with later legitimating narratives.",
+            "searchQueries": [
+              "Anglo-Saxon Chronicle 1066 1087 Wikisource",
+              "Anglo-Saxon Chronicle Project Gutenberg",
+              "Domesday conquest 1066 chronicle text"
+            ]
+          },
+          {
+            "title": "The First Crusade at Jerusalem",
+            "kind": "document",
+            "person": "Fulcher of Chartres",
+            "place": "Jerusalem",
+            "date": "1099",
+            "document": "Fulcher of Chartres, A History of the Expedition to Jerusalem",
+            "why": "Fulcher\u2019s narrative shows how religious language authorized violence while also recording negotiation, rivalry, and the experience of noncombatants.",
+            "searchQueries": [
+              "Fulcher of Chartres History Expedition Jerusalem Internet Archive",
+              "Fulcher of Chartres 1099 text",
+              "A History of the Expedition to Jerusalem catalogue"
+            ]
+          }
+        ]
+      },
+      {
+        "index": 7,
+        "episodes": [
+          {
+            "title": "The Mongol Conquest of Khwarazm",
+            "kind": "scene",
+            "person": "Juvaini and Genghis Khan",
+            "place": "Transoxiana and Khurasan",
+            "date": "1219\u20131221",
+            "document": "Ala al-Din Ata-Malik Juvaini, The History of the World-Conqueror",
+            "why": "Juvaini records destruction, population movement, intelligence, and administrative incorporation in a conquest that cannot be explained by mobility alone.",
+            "searchQueries": [
+              "Juvaini History of the World Conqueror Internet Archive",
+              "History of the World Conqueror Khwarazm text",
+              "Juvaini Genghis Khan translation catalogue"
+            ]
+          },
+          {
+            "title": "The Mongol Paiza and the Yassa Tradition",
+            "kind": "document",
+            "person": "William of Rubruck",
+            "place": "Mongol Empire",
+            "date": "1253\u20131255",
+            "document": "William of Rubruck, The Journey of William of Rubruck to the Eastern Parts of the World",
+            "why": "Rubruck\u2019s travel account documents courts, taxation, religious plurality, diplomacy, and the institutional side of Mongol rule.",
+            "searchQueries": [
+              "William of Rubruck Journey Internet Archive",
+              "Rubruck Mongol court text Project Gutenberg",
+              "Journey of William of Rubruck catalogue"
+            ]
+          }
+        ]
+      },
+      {
+        "index": 8,
+        "episodes": [
+          {
+            "title": "The Barbados Slave Code",
+            "kind": "document",
+            "person": "Barbados Assembly",
+            "place": "Barbados",
+            "date": "1661",
+            "document": "An Act for the Better Ordering and Governing of Negroes, Barbados Slave Code",
+            "why": "The code shows how law transformed coercion, surveillance, punishment, and racial hierarchy into a durable plantation institution.",
+            "searchQueries": [
+              "Barbados Slave Code 1661 text",
+              "An Act for the Better Ordering and Governing of Negroes 1661",
+              "Barbados slave code Internet Archive"
+            ]
+          },
+          {
+            "title": "The Zong Massacre and Gregson v. Gilbert",
+            "kind": "dispute",
+            "person": "Lord Mansfield and Granville Sharp",
+            "place": "Atlantic Ocean and London",
+            "date": "1781\u20131783",
+            "document": "Gregson v. Gilbert trial report and Granville Sharp\u2019s account of the Zong case",
+            "why": "The legal record exposes the economic reasoning that rendered murdered enslaved people cargo and the abolitionist challenge to that logic.",
+            "searchQueries": [
+              "Gregson v Gilbert Zong trial report text",
+              "Granville Sharp Zong case document",
+              "Zong massacre court record Internet Archive"
+            ]
+          }
+        ]
+      },
+      {
+        "index": 9,
+        "episodes": [
+          {
+            "title": "The Ottoman Military Revolution and the Janissaries",
+            "kind": "document",
+            "person": "Bernard Lewis",
+            "place": "Ottoman Empire",
+            "date": "fifteenth\u2013sixteenth centuries",
+            "document": "Bernard Lewis, The Emergence of Modern Turkey, chapters on the Janissaries",
+            "why": "The Janissary system connects firearms, taxation, recruitment, and central administration without treating technology as an independent cause.",
+            "searchQueries": [
+              "Bernard Lewis Emergence of Modern Turkey Janissaries Internet Archive",
+              "The Emergence of Modern Turkey catalogue",
+              "Ottoman Janissaries firearms Lewis text"
+            ]
+          },
+          {
+            "title": "The Thirty Years\u2019 War and the Commissariat",
+            "kind": "figure",
+            "person": "Peter H. Wilson",
+            "place": "Central Europe",
+            "date": "1618\u20131648",
+            "document": "Peter H. Wilson, Europe\u2019s Tragedy, chapters on armies, taxation, and civilian requisition",
+            "why": "Army sizes, fiscal demands, and requisition practices let readers work through how state capacity translated into civilian exposure.",
+            "searchQueries": [
+              "Peter H Wilson Europe's Tragedy Internet Archive",
+              "Europe's Tragedy Thirty Years War commissariat",
+              "Peter Wilson Europe\u2019s Tragedy catalogue"
+            ]
+          }
+        ]
+      },
+      {
+        "index": 10,
+        "episodes": [
+          {
+            "title": "The September Massacres",
+            "kind": "scene",
+            "person": "Parisian crowds and revolutionary authorities",
+            "place": "Paris",
+            "date": "September 1792",
+            "document": "Georges Lefebvre, The Great Fear of 1789 and Other Studies, discussion of revolutionary violence",
+            "why": "The prison killings test claims about rumor, crowd action, political organization, and the survival of restraint during institutional breakdown.",
+            "searchQueries": [
+              "Georges Lefebvre September Massacres text",
+              "The Great Fear of 1789 and Other Studies Internet Archive",
+              "September Massacres Lefebvre catalogue"
+            ]
+          },
+          {
+            "title": "The Haitian Declaration of Independence",
+            "kind": "document",
+            "person": "Jean-Jacques Dessalines",
+            "place": "Haiti",
+            "date": "1804",
+            "document": "Haitian Declaration of Independence, 1 January 1804",
+            "why": "The declaration shows how revolutionary violence was framed through slavery, race, sovereignty, retaliation, and the creation of a new political community.",
+            "searchQueries": [
+              "Haitian Declaration of Independence 1804 text",
+              "Dessalines declaration 1804 Wikisource",
+              "Haiti declaration independence Project Gutenberg"
+            ]
+          }
+        ]
+      },
+      {
+        "index": 11,
+        "episodes": [
+          {
+            "title": "The Congo Free State Rubber Regime",
+            "kind": "document",
+            "person": "Edmund Dene Morel and Roger Casement",
+            "place": "Congo Free State",
+            "date": "1904\u20131905",
+            "document": "Roger Casement, Report upon the Administration of the Congo Free State",
+            "why": "The report traces how quotas, armed enforcement, transport, and commercial extraction made coercion routine while preserving local resistance and testimony.",
+            "searchQueries": [
+              "Roger Casement Congo Report 1904 text",
+              "Report upon the Administration of the Congo Free State Internet Archive",
+              "Casement Report Congo catalogue"
+            ]
+          },
+          {
+            "title": "The Herero and Nama War",
+            "kind": "document",
+            "person": "Lothar von Trotha",
+            "place": "German South-West Africa",
+            "date": "1904\u20131908",
+            "document": "Lothar von Trotha, Vernichtungsbefehl and German colonial records",
+            "why": "The extermination order and its administrative context show how military command, racial ideology, land seizure, and colonial institutions interacted.",
+            "searchQueries": [
+              "Lothar von Trotha Vernichtungsbefehl text",
+              "German South West Africa extermination order 1904 document",
+              "Herero Nama war colonial records Internet Archive"
+            ]
+          }
+        ]
+      },
+      {
+        "index": 12,
+        "episodes": [
+          {
+            "title": "The Armenian Deportations during World War I",
+            "kind": "document",
+            "person": "Henry Morgenthau Sr.",
+            "place": "Ottoman Empire",
+            "date": "1915\u20131916",
+            "document": "Henry Morgenthau Sr., Ambassador Morgenthau\u2019s Story",
+            "why": "Morgenthau\u2019s dispatches and memoir connect deportation policy to railways, bureaucracy, wartime security claims, and civilian vulnerability.",
+            "searchQueries": [
+              "Henry Morgenthau Ambassador's Story Project Gutenberg",
+              "Ambassador Morgenthau's Story Armenian deportations",
+              "Morgenthau memoir Internet Archive"
+            ]
+          },
+          {
+            "title": "The Battle of the Somme",
+            "kind": "figure",
+            "person": "John Keegan",
+            "place": "Somme, France",
+            "date": "1916",
+            "document": "John Keegan, The Face of Battle, chapter on the Somme",
+            "why": "Casualty tables, artillery logistics, communications, and testimony demonstrate how industrial systems reshaped the battlefield and its human costs.",
+            "searchQueries": [
+              "John Keegan The Face of Battle Somme Internet Archive",
+              "The Face of Battle Somme catalogue",
+              "Keegan Somme casualty text"
+            ]
+          }
+        ]
+      },
+      {
+        "index": 13,
+        "episodes": [
+          {
+            "title": "The Wannsee Protocol",
+            "kind": "document",
+            "person": "Reinhard Heydrich and Adolf Eichmann",
+            "place": "Berlin",
+            "date": "20 January 1942",
+            "document": "Wannsee Conference Protocol",
+            "why": "The protocol makes visible the coordination among ministries, deportation systems, racial definitions, and exterminatory policy.",
+            "searchQueries": [
+              "Wannsee Protocol English text Wikisource",
+              "Wannsee Conference Protocol document",
+              "Wannsee protocol translation Internet Archive"
+            ]
+          },
+          {
+            "title": "The Nuremberg Einsatzgruppen Trial",
+            "kind": "dispute",
+            "person": "Otto Ohlendorf and Benjamin Ferencz",
+            "place": "Nuremberg",
+            "date": "1947\u20131948",
+            "document": "United States v. Otto Ohlendorf et al., Einsatzgruppen Trial judgment and testimony",
+            "why": "The trial tests the relationship among orders, initiative, intent, bureaucratic reporting, and the legal interpretation of mass murder.",
+            "searchQueries": [
+              "Einsatzgruppen Trial judgment Ohlendorf text",
+              "United States v Otto Ohlendorf Nuremberg document",
+              "Nuremberg Einsatzgruppen trial Internet Archive"
+            ]
+          }
+        ]
+      },
+      {
+        "index": 14,
+        "episodes": [
+          {
+            "title": "The Cuban Missile Crisis ExComm Records",
+            "kind": "document",
+            "person": "John F. Kennedy and Executive Committee members",
+            "place": "Washington and Havana",
+            "date": "October 1962",
+            "document": "The Cuban Missile Crisis, 1962: National Security Archive Documents",
+            "why": "The records show how nuclear deterrence altered calculations without eliminating coercion, misperception, or the possibility of escalation.",
+            "searchQueries": [
+              "Cuban Missile Crisis ExComm transcripts National Security Archive",
+              "Cuban Missile Crisis 1962 documents catalogue",
+              "ExComm recordings transcript October 1962"
+            ]
+          },
+          {
+            "title": "The Algerian War and the Battle of Algiers",
+            "kind": "document",
+            "person": "Paul Aussaresses and Henri Alleg",
+            "place": "Algiers",
+            "date": "1956\u20131957",
+            "document": "Henri Alleg, The Question",
+            "why": "Alleg\u2019s testimony documents torture, counterinsurgency, secrecy, and the political conditions that made violence both systematic and contested.",
+            "searchQueries": [
+              "Henri Alleg The Question torture Algeria Internet Archive",
+              "The Question Henri Alleg text",
+              "Algerian War Battle of Algiers catalogue"
+            ]
+          }
+        ]
+      },
+      {
+        "index": 15,
+        "episodes": [
+          {
+            "title": "The Abolition of the Slave Trade Debate",
+            "kind": "dispute",
+            "person": "William Wilberforce and Thomas Clarkson",
+            "place": "Britain and the Atlantic",
+            "date": "1789\u20131807",
+            "document": "Parliamentary debates and Thomas Clarkson, The History of the Rise, Progress, and Accomplishment of the Abolition of the African Slave Trade",
+            "why": "The abolition campaign brings institutions, economic interests, moral arguments, testimony, and political contingency together without reducing change to one cause.",
+            "searchQueries": [
+              "Thomas Clarkson History Abolition African Slave Trade Project Gutenberg",
+              "British parliamentary debate slave trade 1789 text",
+              "Clarkson abolition slave trade Internet Archive"
+            ]
+          },
+          {
+            "title": "The Universal Declaration of Human Rights",
+            "kind": "document",
+            "person": "United Nations General Assembly",
+            "place": "Paris",
+            "date": "1948",
+            "document": "Universal Declaration of Human Rights",
+            "why": "The declaration provides a bounded conclusion about historical choice: institutions can articulate constraints on violence even when practice remains incomplete and contested.",
+            "searchQueries": [
+              "Universal Declaration of Human Rights 1948 Wikisource",
+              "United Nations Universal Declaration Human Rights text",
+              "UDHR 1948 document Project Gutenberg"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "chapters": [
+      {
+        "index": 2,
+        "episodes": [
+          {
+            "title": "The Nataruk bodies and the limits of a massacre narrative",
+            "kind": "document",
+            "person": "Marta Miraz\u00f3n Lahr and the Nataruk research team",
+            "place": "Nataruk, Turkana, Kenya",
+            "date": "c. 10,500\u20139,500 BCE",
+            "document": "Marta Miraz\u00f3n Lahr et al., \u201cInter-group violence among early Holocene hunter-gatherers of West Turkana, Kenya,\u201d Nature 529 (2016), 394\u2013398",
+            "why": "The injuries, burial contexts, and artifact evidence support an argument about lethal inter-group violence while also exposing how much archaeology cannot establish about group size, motive, or the frequency of aggression.",
+            "searchQueries": [
+              "\u201cInter-group violence among early Holocene hunter-gatherers of West Turkana, Kenya\u201d",
+              "Marta Miraz\u00f3n Lahr Nataruk Nature 529 394 398",
+              "Nataruk early Holocene hunter gatherers violence full text"
+            ]
+          },
+          {
+            "title": "The bound dead at Talheim",
+            "kind": "scene",
+            "person": "Unknown members of a Linear Pottery Culture community",
+            "place": "Talheim, Baden-W\u00fcrttemberg, Germany",
+            "date": "c. 5100 BCE",
+            "document": "Joachim Wahl and Hans-G\u00fcnter K\u00f6nig, \u201cAnthropologisch-traumatologische Untersuchung der menschlichen Skelettreste aus dem bandkeramischen Massengrab bei Talheim,\u201d Fundberichte aus Baden-W\u00fcrttemberg 12 (1987), 65\u2013193",
+            "why": "The mass grave provides a tightly documented case of lethal organized assault, but the standardized injuries and burial arrangement still leave the identities, alliances, and immediate causes of the attackers uncertain.",
+            "searchQueries": [
+              "Joachim Wahl Hans-G\u00fcnter K\u00f6nig Talheim Massengrab 1987",
+              "\u201cAnthropologisch-traumatologische Untersuchung\u201d Talheim",
+              "Talheim Linear Pottery mass grave skeletal remains Wahl K\u00f6nig"
+            ]
+          },
+          {
+            "title": "Violence and its apparent decline at \u00c7atalh\u00f6y\u00fck",
+            "kind": "figure",
+            "person": "Clark Spencer Larsen and colleagues",
+            "place": "\u00c7atalh\u00f6y\u00fck, central Anatolia",
+            "date": "c. 7100\u20135950 BCE",
+            "document": "Clark Spencer Larsen et al., \u201cBioarchaeology of Neolithic \u00c7atalh\u00f6y\u00fck reveals fundamental transitions in health, mobility, and lifestyle,\u201d Proceedings of the National Academy of Sciences 113, no. 5 (2016), 1131\u20131136, read alongside the site\u2019s published cranial-trauma data",
+            "why": "A long-lived settlement\u2019s changing rates and patterns of cranial trauma allow the chapter to compare evidence across time and to show why declining injury frequencies cannot by themselves prove a decline in aggression or explain its causes.",
+            "searchQueries": [
+              "Clark Spencer Larsen Bioarchaeology of Neolithic \u00c7atalh\u00f6y\u00fck reveals fundamental transitions",
+              "\u201cBioarchaeology of Neolithic \u00c7atalh\u00f6y\u00fck\u201d PNAS 2016",
+              "\u00c7atalh\u00f6y\u00fck cranial trauma Larsen 2016 full text"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

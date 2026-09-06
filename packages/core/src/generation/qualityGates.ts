@@ -65,11 +65,16 @@ export const QUALITY_FEATURE_IDS = [
   "claimRetrieve",
   "chapterEditorPass",
   "manuscriptReadPass",
+  "bookDevelopment",
+  "caseEvidence",
+  "developmentalEdit",
   "creativeContract",
   "materialFirst",
   "coupletRewrite",
   "chapterApparatus",
-  "figures"
+  "figures",
+  "chapterFocus",
+  "manuscriptReadCuts"
 ] as const;
 
 export type QualityFeatureId = (typeof QUALITY_FEATURE_IDS)[number];
@@ -156,6 +161,11 @@ export const QUALITY_FEATURE_DEFAULTS: QualityFeatureSettings = {
   // read is one call per book. Both replace the per-page review loop.
   chapterEditorPass: ["ultra", "premium", "balanced", "fast"],
   manuscriptReadPass: ["ultra", "premium", "balanced", "fast"],
+  // The September 5 live experiment regressed quality and runtime. These
+  // stages require an explicit opt-in; older settings must not enable them.
+  bookDevelopment: [],
+  caseEvidence: [],
+  developmentalEdit: [],
   // The 2026-09-03 quality ladder (opinion-fable-5). Off everywhere until a
   // rung is measured; each is a content or contract change, not a gate.
   creativeContract: [],
@@ -164,7 +174,13 @@ export const QUALITY_FEATURE_DEFAULTS: QualityFeatureSettings = {
   chapterApparatus: [],
   // No model call of its own: the form plan assigns the figure inside its
   // one call, the writer emits the block, the exporters draw it.
-  figures: ["ultra", "premium", "balanced", "fast"]
+  figures: ["ultra", "premium", "balanced", "fast"],
+  // The 2026-09-06 fresh-plan measurement: rung 5 (no focus, told opening
+  // scenes) read 7.63 against 6.87–7.10 for every focused book, and the
+  // read's cut is affordable only where the book has room over its floor.
+  // Off everywhere; the live revision opts in.
+  chapterFocus: [],
+  manuscriptReadCuts: []
 };
 
 export type QualityFeatureDescription = {
@@ -312,6 +328,21 @@ export const QUALITY_FEATURES: QualityFeatureDescription[] = [
     stage: "Manuscript read"
   },
   {
+    id: "bookDevelopment", label: "Research-led book planning",
+    summary: "Before a new nonfiction manuscript starts, redesigns chapter count, order and scope while checking requested coverage and distinct contributions. Requires reviewed case evidence even if that separate gate is off. Stored plans resume unchanged.",
+    pipelines: ["composed"], stage: "Book development"
+  },
+  {
+    id: "caseEvidence", label: "Evidence for major cases",
+    summary: "Builds and independently checks case claims against retrieved passages, retries missing research, and checks the resulting prose before publication.",
+    pipelines: ["composed"], stage: "Case evidence"
+  },
+  {
+    id: "developmentalEdit", label: "Developmental manuscript edit",
+    summary: "A bounded edit of overlapping sections across nonfiction chapters, with source-backed replacements, coordinated moves and a whole-book word budget before the final line edit; replaces the legacy notes-only read for these runs.",
+    pipelines: ["composed"], stage: "Developmental edit"
+  },
+  {
     id: "creativeContract",
     label: "Creative contract (composed chapters)",
     summary: "The writer draws on its own knowledge for people, dates, documents and scenes instead of being held to the research notes; quotation marks stay a promise.",
@@ -345,6 +376,20 @@ export const QUALITY_FEATURES: QualityFeatureDescription[] = [
     summary: "Lets the form plan place one bar, line or pie chart or one flow diagram in up to three chapters in four of an analytical, instructional or reference book; the writer emits a fenced figure block and the exporters draw it. No extra model call.",
     pipelines: ["composed"],
     stage: "Chapter form plan"
+  },
+  {
+    id: "chapterFocus",
+    label: "Chapter focus: per-chapter question and investigation (composed chapters)",
+    summary: "The episode planner also plans a question, investigation list and contribution per chapter, and the writer composes from them with the strict reconstruction rule and no separate scene call; off, the chapter is composed the rung-5 way from the stance and its episodes, with a told opening scene where the material has one. No extra model call either way.",
+    pipelines: ["composed"],
+    stage: "Compose chapter"
+  },
+  {
+    id: "manuscriptReadCuts",
+    label: "Manuscript read cuts (composed chapters)",
+    summary: "The chapters the whole-manuscript read flags get one deletion-only cut call each on the writer, accepted by code only when every kept sentence is verbatim, the cut removes between 0.5% and 25% of the chapter, and the chapter stays above its page floor. Needs the manuscript read.",
+    pipelines: ["composed"],
+    stage: "Manuscript read"
   }
 ];
 

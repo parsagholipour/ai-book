@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 6,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 5,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 6.8,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The number is an argument built from records, not a body recovered whole from the past.",
+      "judgment": "Excellent compression of the book's methodological thesis; earns its aphoristic close because the preceding paragraph did the arithmetic."
+    },
+    {
+      "quote": "One of her attendants knelt so that she could sit at the same height as the governor. The gesture made diplomatic equality visible through a body, a piece of furniture, and a room arranged by one side.",
+      "judgment": "The book at its best: a concrete scene analysed for its political mechanics rather than narrated for colour."
+    },
+    {
+      "quote": "The Burgesses turned a political decision into a hereditary fact. Once the rule stood, a child's unfree status could appear to have come from family rather than from a legislature, an owner, or a court.",
+      "judgment": "Precise, non-obvious reading of a legal text; the analysis of naturalisation is genuinely illuminating."
+    },
+    {
+      "quote": "At a roadblock, the distance between bureaucratic category and bodily danger was only a question.",
+      "judgment": "A rare one-line paragraph that lands, precisely because the surrounding prose almost never varies its shape."
+    },
+    {
+      "quote": "Technology widened the reach of coercion, but political decisions gave coercion its targets.",
+      "judgment": "The book's core claim, but restated in near-identical form in at least eight chapters \u2014 thesis has hardened into refrain."
+    },
+    {
+      "quote": "Words did not stop swords. They helped decide whose sword counted as lawful, whose death could be honoured, and whose refuge could be breached.",
+      "judgment": "Chapter-closing aphorism plus tricolon \u2014 a template the book reaches for at nearly every section end."
+    },
+    {
+      "quote": "It does not yield a measurement of aggression lodged inside either race.",
+      "judgment": "Representative of a hedging formula ('X establishes A; it does not establish B') deployed dozens of times per chapter until it reads as tic rather than rigour."
+    },
+    {
+      "quote": "Registration may preserve a name, age, place of origin, family connection, date of arrival, and reason for flight\u2026 may appear only as an absence.",
+      "judgment": "The manuscript simply stops here: no synthesis, no return to the opening question, and no introduction anywhere \u2014 a real structural hole."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Epistemic see-saw: an assertion immediately cancelled by a symmetrical negation ('It shows X. It does not show Y'). Used as the default paragraph ending across all fifteen chapters, so caution stops registering as thought and becomes cadence.",
+      "instances": [
+        "A stone point in a rib does not carry a written account of the person who threw it. It establishes a physical encounter between a projectile and a body",
+        "The built network records organised demands more clearly than private feelings."
+      ]
+    },
+    {
+      "pattern": "The 'technology vs. politics' refrain \u2014 every chapter arrives at the same verdict, phrased almost identically, regardless of period or evidence.",
+      "instances": [
+        "Technology altered the reach and organisation of force, but it did not supply the motive that made a wall a boundary or a weapon an instrument of attack.",
+        "Machines widened the reach of each decision. They did not make the decision."
+      ]
+    },
+    {
+      "pattern": "Terminal object-list: chapters and major sections close by enumerating the artefacts just discussed in parallel clauses, each with the same verb shape.",
+      "instances": [
+        "A city wall turned labour into protection and siege. A ration tablet turned grain into an obligation. The Narmer Palette turned a blow into a definition of kingship.",
+        "The tax register named the liable household. The pass book named the permitted worker. The quota named the expected labour. The map named the district."
+      ]
+    },
+    {
+      "pattern": "The paired-case comparison as invariant chapter architecture: artefact/scene \u2192 mechanism \u2192 a second case \u2192 'the contrast is not between X and Y' \u2192 shared conclusion. The comparison is nearly always defused with the same disclaimer.",
+      "instances": [
+        "The contrast is not between a peaceful village and a violent settlement.",
+        "The contrast is between styles of integration, not between a violent empire and a peaceful one."
+      ]
+    },
+    {
+      "pattern": "The 'protection and coercion are the same institution' antithesis, restated as a stand-alone couplet in most chapters.",
+      "instances": [
+        "Security and coercion could be delivered by the same governor, supported by the same road, and justified by the same promise of order.",
+        "Courts and militias restrained some violence among slaveholders while authorising violence against the enslaved."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, source-anchored global history of organised violence, argued from artefacts and documents rather than from generalisations about human nature, and its central claim \u2014 that aggression acquires reach through categories, records, supply and administration \u2014 is genuinely held rather than decorative. The evidentiary reasoning is the strongest thing here: the book consistently states what a skeleton, a ration tablet, a treaty or a protocol can and cannot support, and its readings of the 1662 Virginia statute, the Wannsee Protocol and Nzinga's chair are sharp and non-obvious. The costs are structural and rhythmic. There is no introduction and no conclusion; chapter 15 halts mid-inventory on displacement registers, so the book's own argument is never gathered. Within chapters the architecture is invariant \u2014 opening scene, mechanism, second case, symmetrical caveat, enumerated closer \u2014 and the thesis is restated in near-identical wording so often that it functions as a refrain rather than a developing argument. Paragraphs are uniformly long and uniformly weighted, affect is deliberately suppressed, and the hedging couplet becomes a mannerism; the prose is clean and slop-free at word level while being heavily templated at paragraph and chapter level. With an opening and closing frame, roughly 20 percent cut from the recap sentences, and variation in the cadence of section endings, this would be a strong book."
+}

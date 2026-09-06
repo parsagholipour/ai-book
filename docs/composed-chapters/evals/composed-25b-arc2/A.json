@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.6,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A wound in bone is an event reduced to material.",
+      "judgment": "Compressed, concrete opening premise that establishes the book's evidentiary method in one line."
+    },
+    {
+      "quote": "The grave shows a result. History asks how that result was produced.",
+      "judgment": "States the governing question cleanly, and the book genuinely holds to it for fifteen chapters."
+    },
+    {
+      "quote": "A weapon can injure a person; an office can send hundreds of people toward a distant settlement, feed them on the way, replace them when they fall, and record what they have taken.",
+      "judgment": "The central thesis rendered as mechanism rather than slogan; the strongest single sentence in the book."
+    },
+    {
+      "quote": "The ship appears orderly because the violence has already been organized.",
+      "judgment": "Analysis of the Brookes diagram does real interpretive work rather than borrowing the image's shock."
+    },
+    {
+      "quote": "Selection was part of violence. The hand that spared a craftsman also marked others for death.",
+      "judgment": "Rare moment where moral weight and analytic precision reinforce each other instead of trading off."
+    },
+    {
+      "quote": "It could be contained in the same road, office, or officer.",
+      "judgment": "Dangling pronoun with no available antecedent — a visible composition seam, and not the only one in Chapter 4."
+    },
+    {
+      "quote": "Las Casas had earlier condemned Spanish violence against Indigenous peoples in the Americas, and his descriptions exposed the distance between Christian claims and colonial practice.",
+      "judgment": "Orphan one-sentence paragraph dropped into Chapter 8, followed by 'The answer was built into the system's procedures' answering a question never posed."
+    },
+    {
+      "quote": "The Wannsee Protocol gives that chain its administrative expression: “evacuation east,” followed by labor and death, entered into the record as coordinated policy.",
+      "judgment": "Chapter 13 ends here — the genocide chapter is a fraction of the length of its neighbors and stops rather than concludes."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The evidentiary concession formula: a source is credited with establishing X, then denied the power to establish Y, in paired sentences. It is the book's method and also its most mechanical tic, recurring several times per chapter.",
+      "instances": [
+        "The bones record lethal force. The grave records collective burial. The social purpose of the force remains less certain.",
+        "The points do not announce a battle plan. They show that people at Jebel Sahaba used distance as part of violence."
+      ]
+    },
+    {
+      "pattern": "Aphoristic two-clause closer that seals a section with a chiasmus or antithesis, often at the cost of adding nothing analytically.",
+      "instances": [
+        "The chronicles preserve the victor’s sequence. The city preserved the consequences.",
+        "Their names do not return. Their city does."
+      ]
+    },
+    {
+      "pattern": "Chapters end on a posed unresolved question or an explicit 'the question remains open' gesture, rather than on a finding — a structural habit that makes the progression feel scheduled.",
+      "instances": [
+        "Why did one conflict permit accommodation while the other became exemplary destruction?",
+        "Could mobile bands sustain organized violence without permanent hierarchy?"
+      ]
+    },
+    {
+      "pattern": "The administrative-chain enumeration: a coercive outcome is decomposed into a numbered or serial list of offices and steps. Genuinely illuminating the first three times, then reused as a default paragraph shape across at least seven chapters.",
+      "instances": [
+        "The census identified obligations; the road moved the order; the local intermediary located the person or property; the tax farmer or official demanded payment; the garrison stood behind the demand.",
+        "Registration identifies. Concentration limits movement. Supply control creates dependence. Intelligence selects targets."
+      ]
+    },
+    {
+      "pattern": "Pinker is re-litigated as a recurring foil, with the same concession-then-qualification move restated in nearly identical terms across widely separated chapters.",
+      "instances": [
+        "Steven Pinker is right to insist that institutions, state capacity, norms, and interdependence can restrain killing.",
+        "Pinker is right that many forms of violence declined in important regions and that states, commerce, norms, and institutions could restrain killing."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely serious book with one clear and sustained thesis: aggression is a human capacity, but organized violence is an administrative achievement, and institutions redistribute permission to harm rather than adding or subtracting a fixed quantity of it. The argument is carried by unusually disciplined handling of evidence — each source is asked what it can and cannot establish, and the book almost never lets a dramatic site (Talheim, Nataruk, Mohenjo-daro, Merv, the Brookes diagram, Wannsee) carry more inference than it can bear. Specificity is high and the case selection is genuinely global rather than decorative. The costs are pacing and shape: paragraphs are long, uniformly dense, and built from a small set of repeated moves — the paired concession, the administrative chain, the aphoristic closer, the chapter-ending open question — so that by the middle chapters the reader can predict the sentence architecture even when the content is new. There are also real production defects: several orphaned or antecedent-less sentences in Chapters 4 and 8, and a Chapter 13 on genocide that is a fraction of its neighbors' length and simply stops. The prose is not lexically sloppy — there is no stock-phrase AI register here — but its structural uniformity is its own kind of template, and light revision to break the paragraph rhythm and repair the seams would raise it considerably."
+}

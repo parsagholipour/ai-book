@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.3,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A weapon does not explain its own use. A wound does not identify the social purpose of the blow.",
+      "judgment": "The book's controlling idea stated crisply and early; it genuinely governs all fifteen chapters."
+    },
+    {
+      "quote": "That distinction is small in grammar and large in history.",
+      "judgment": "Excellent compression \u2014 the rare sentence where the argument and the phrasing arrive together."
+    },
+    {
+      "quote": "A sedentary army displayed its supply line in carts and roads. A steppe army concealed much of its supply in the herd.",
+      "judgment": "Concrete, non-obvious comparison that earns its symmetry rather than performing it."
+    },
+    {
+      "quote": "The empire did not need every difference to disappear. It needed every difference to report upward.",
+      "judgment": "Sharp, but one of dozens of near-identical aphoristic closers; the device is exhausted by mid-book."
+    },
+    {
+      "quote": "The evidence is strong where bodies preserve force and weak where social intention must be reconstructed.",
+      "judgment": "Genuinely disciplined epistemics about archaeological inference \u2014 a real strength of Chapters 1\u20132."
+    },
+    {
+      "quote": "One supplied estimate places global deaths in interstate wars at more than 65,000 per year in the 1950s",
+      "judgment": "\"Supplied\" (also \"the supplied evidence\", \"the figures supplied for this period\") leaks the drafting apparatus into the prose; no reader is given a source."
+    },
+    {
+      "quote": "The quota did more than take a product. It changed the village calendar.",
+      "judgment": "A one-line dramatic beat used as a recurring structural tic rather than for a moment that needs it."
+    },
+    {
+      "quote": "Its euphemisms reveal concealment; its table reveals scope; its personnel reveal participation; its treatment of mixed categories reveals the reach of racial law.",
+      "judgment": "Fourfold parallelism that summarises what four preceding pages already said \u2014 the recap habit at its most visible."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The concessive epistemic couplet \u2014 an artefact/document \"establishes X but does not establish Y\" \u2014 used as the default paragraph engine in nearly every chapter.",
+      "instances": [
+        "The bones establish harm. The archaeologists\u2019 reconstruction gives that harm a likely setting and sequence.",
+        "The image establishes that violence had public meaning; it does not establish the political chain that carried distant communities into a single captive-taking system."
+      ]
+    },
+    {
+      "pattern": "Chapters are built to one template: case A, case B, explicit A-versus-B comparison, then a paragraph insisting the comparison yields no simple hierarchy.",
+      "instances": [
+        "The contrast is not between a peaceful population and a warlike one.",
+        "The contrast is not between terror and tolerance. Both empires could destroy cities, enslave captives, and kill those who resisted."
+      ]
+    },
+    {
+      "pattern": "Section-ending paired antithesis, usually chiastic and usually restating the thesis in fresh nouns rather than advancing it.",
+      "instances": [
+        "Fear may move a hand, but an office can direct thousands of hands towards a defined population.",
+        "A pastoral ecology widened the possible scale of aggression. Political offices selected its targets and made its consequences durable."
+      ]
+    },
+    {
+      "pattern": "Enumerated noun-chains standing in for analysis \u2014 four to eight institutional nouns in series, deployed whenever the argument needs to gesture at complexity.",
+      "instances": [
+        "Recruitment, taxation, transport, command, intelligence, supply, and the treatment of prisoners sustain the fighting.",
+        "the collector, clerk, carrier, smith, miller, engineer, and guard"
+      ]
+    },
+    {
+      "pattern": "Isolated one-sentence paragraphs deployed as manufactured dramatic beats, structurally rather than where the material demands emphasis.",
+      "instances": [
+        "The Romans breached the outer defences and pressed inward.",
+        "The report made distance harder to preserve."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely coherent book with a real argument: that aggression becomes historically consequential only when offices, categories, records and supply chains give it targets and durability, and that evidence about violence is inseparable from the institution that produced the evidence. The thesis is unusually well sustained across fifteen chapters and a very wide geographic and temporal span, the handling of sources is disciplined and refreshingly unwilling to overclaim, and the sentence-level prose is clean, formal and largely free of the lexical tells of machine writing. The failure is at the level of shape rather than words. Almost every paragraph runs the same concessive engine (\"X establishes this, but not that\"), almost every section ends on a balanced two-clause aphorism, and every chapter executes the same case-A/case-B/comparison/no-simple-hierarchy architecture, so that by Chapter 8 the reader can predict the next move reliably enough to skim. The thesis is also restated dozens of times in interchangeable vocabulary, which is where the redundancy and pacing scores fall away, and a handful of phrases (\"the supplied evidence\", \"the figures supplied for this period\") expose the drafting process. A revision that varied paragraph architecture, cut perhaps a fifth of the restatements, and let two or three chapters break form would move this from impressive-but-mechanical to genuinely good."
+}

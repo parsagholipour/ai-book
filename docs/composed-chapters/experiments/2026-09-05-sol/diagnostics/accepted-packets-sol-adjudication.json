@@ -1,0 +1,142 @@
+{
+  "semantics": {
+    "episodeMetadata": "Search hypothesis; verified claims and actual excerpt attribution take precedence.",
+    "sequence": "May contain a subset of claims; omission alone is not a defect, but unsupported chronology is."
+  },
+  "packets": [
+    {
+      "attempt": "development-1a",
+      "caseId": "case-1-1",
+      "episodeTitle": "The Trial of Socrates",
+      "usableAsProposedCase": false,
+      "findings": [
+        {
+          "classification": "substantive evidence defect",
+          "kind": "claim-content",
+          "claimId": "claim-3",
+          "claimQuote": "E. D. Jowett’s summary states that Socrates was condemned to death and characterizes his speech after the penalty proposal as becoming more lofty and commanding rather than more conciliatory.",
+          "sourceQuote": "And now the tone of the speech, instead of being more conciliatory, becomes more lofty and commanding. Anytus proposes death as the penalty: and what counter-proposition shall he make?",
+          "reason": "The claim places the change of tone after Anytus's penalty proposal, whereas the passage introduces the change before the proposal."
+        },
+        {
+          "classification": "substantive evidence defect",
+          "kind": "sequence",
+          "claimId": "claim-3",
+          "claimQuote": "E. D. Jowett’s summary states that Socrates was condemned to death and characterizes his speech after the penalty proposal as becoming more lofty and commanding rather than more conciliatory.",
+          "sourceQuote": "As he expected, and probably intended, he is convicted. And now the tone of the speech, instead of being more conciliatory, becomes more lofty and commanding. Anytus proposes death as the penalty: and what counter-proposition shall he make? He, the benefactor of the Athenian people, whose whole life has been spent in doing them good, should at least have the Olympic victor’s reward of maintenance in the Prytaneum. Or why should he propose any counter-penalty when he does not know whether death, which Anytus proposes, is a good or an evil? And he is certain that imprisonment is an evil, exile is an evil. Loss of money might be no evil, but then he has none to give; perhaps he can make up a mina. Let that be the penalty, or, if his friends wish, thirty minae; for which they will be excellent securities. [He is condemned to death.]",
+          "reason": "Claim 3 combines a tonal change placed before the penalty proposal with condemnation placed after the counter-penalties. Putting the whole claim after claim 2 does not preserve the passage's sequence."
+        }
+      ]
+    },
+    {
+      "attempt": "development-1a",
+      "caseId": "case-6-2",
+      "episodeTitle": "The First Crusade at Jerusalem",
+      "usableAsProposedCase": true,
+      "findings": [
+        {
+          "classification": "metadata correction only",
+          "kind": "stale-source-metadata",
+          "sourceQuote": "At length Jerusalem was surrounded, besieged, and taken (July 15, 1099).",
+          "reason": "The passages directly concern the First Crusade at Jerusalem and support the claims, but their actual source is The Greek and Eastern Churches by an unknown author. The proposed Fulcher person/document and the description of this as Fulcher's narrative should be corrected to the actual attribution."
+        }
+      ]
+    },
+    {
+      "attempt": "development-1a",
+      "caseId": "case-12-1",
+      "episodeTitle": "The Armenian Deportations during World War I",
+      "usableAsProposedCase": true,
+      "findings": []
+    },
+    {
+      "attempt": "development-1a",
+      "caseId": "case-13-1",
+      "episodeTitle": "The Wannsee Protocol",
+      "usableAsProposedCase": false,
+      "findings": [
+        {
+          "classification": "substantive evidence defect",
+          "kind": "sequence",
+          "claimId": "claim-1",
+          "claimQuote": "The Wannsee Protocol reports that 537,000 Jews were sent out of Germany, Austria, and the Protectorate of Bohemia and Moravia between the Nazi takeover of power and 31 October 1941, and that Jewish emigration was prohibited by the Reichsführer-SS and Chief of the German Police because of wartime dangers and the possibilities of the East.",
+          "sourceQuote": "At the beginning of the discussion Chief of the Security Police and of the SD, SS-Obergruppenführer Heydrich, reported that the Reich Marshal had appointed him delegate for the preparations for the final solution of the Jewish question in Europe and pointed out that this discussion had been called for the purpose of clarifying fundamental questions.",
+          "reason": "The proposed sequence places claim 1 before claim 2, but the supplied protocol text expressly places the report in claim 2 at the beginning of the discussion. The passages do not document the proposed ordering."
+        }
+      ]
+    },
+    {
+      "attempt": "development-1a-retry",
+      "caseId": "case-2-3",
+      "episodeTitle": "War before agriculture in ethnographic comparison",
+      "usableAsProposedCase": true,
+      "findings": []
+    },
+    {
+      "attempt": "development-1a-retry",
+      "caseId": "case-4-3",
+      "episodeTitle": "The revolt of the Jews against Rome",
+      "usableAsProposedCase": true,
+      "findings": [
+        {
+          "classification": "metadata correction only",
+          "kind": "stale-source-metadata",
+          "sourceQuote": "But we have given a more accurate account of these things in the books of the Jewish war. I only mention them now, because I would demonstrate to my readers, that the Jews' war with the Romans was not voluntary, but that, for the main, they were forced by necessity to enter into it.",
+          "reason": "The passages directly concern the revolt and the claims preserve Josephus's attribution, but the actual excerpts are from The Life of Flavius Josephus, not The Jewish War. The proposed document metadata should be corrected."
+        }
+      ]
+    },
+    {
+      "attempt": "development-1a-retry",
+      "caseId": "case-3-1",
+      "episodeTitle": "The Standard Inscription of Gudea",
+      "usableAsProposedCase": false,
+      "findings": [
+        {
+          "classification": "substantive evidence defect",
+          "kind": "episode-support",
+          "sourceQuote": "The ancient Babylonian king Gudea states incidentally that he has built the temple according to the Number Fifty, and erected within it a mausoleum of cedar wood.",
+          "reason": "The secondary passage does not identify the Standard Inscription, Gudea's Cylinders, or any particular inscription. Its incidental report about an unidentified Gudea statement cannot support the proposed specific documentary episode, although the two narrow claims accurately attribute Jeremias's account and interpretation."
+        }
+      ]
+    },
+    {
+      "attempt": "development-1a-retry",
+      "caseId": "case-5-3",
+      "episodeTitle": "The Iroquois Mourning War",
+      "usableAsProposedCase": false,
+      "findings": [
+        {
+          "classification": "substantive evidence defect",
+          "kind": "episode-support",
+          "claimId": "c1",
+          "claimQuote": "The Cambridge History of American Literature identifies Cadwallader Colden as a historian of the Indians who settled in New York in 1710, held the confidence of the authorities, and was promoted to important offices.",
+          "sourceQuote": "Another historian of the Indians was Dr. Cadwallader Colden , a man of learning and high position in Philadelphia and New York. He settled in New York in 1710, where he enjoyed the confidence of the authorities and was promoted to important offices.",
+          "reason": "This is a biographical notice about Colden and supplies no evidence about mourning-war practices, captive-taking, adoption, or their political and social functions."
+        },
+        {
+          "classification": "substantive evidence defect",
+          "kind": "episode-support",
+          "claimId": "c3",
+          "claimQuote": "The author of The Old New York Frontier interprets Germaine's promises to redress grievances after the war and to provide the King's favor and protection as securing Brant's adhesion to the English cause.",
+          "sourceQuote": "In the second of these speeches it is plain that Germaine, through his promise to redress these grievances after the war, and his promises of the King's favor and protection, made sure of Brant's adhesion to the English cause.",
+          "reason": "This passage concerns Brant's adhesion to the English cause and border warfare. It does not concern an Iroquois mourning war. Claims c3-c5 accurately summarize this passage but do not support the proposed episode."
+        },
+        {
+          "classification": "withdrawn under clarified rules",
+          "kind": "sequence-omission",
+          "sourceQuote": "To support that cause was now not an ancient privilege, but a newly awakened patriotic sentiment, founded in self-interest.",
+          "reason": "The original audit treated omission of claims c3-c5 from the sequence as part of a sequence defect. Under the clarified rule, a sequence may contain a subset of claims, so omission alone is not defective. No chronological relation is asserted between the omitted claims and the included sequence."
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "packetsReviewed": 8,
+    "packetsWithSubstantiveEvidenceDefects": 4,
+    "packetsWithMetadataCorrectionsOnly": 2,
+    "packetsWithNoDefectFound": 2,
+    "withdrawnFindings": 1,
+    "note": "All eight packets were re-read from the supplied audit input. Different source attribution alone was treated as metadata rather than an unsupported-claim defect when the passages supported the same episode. No other files or external facts were used as evidence."
+  }
+}

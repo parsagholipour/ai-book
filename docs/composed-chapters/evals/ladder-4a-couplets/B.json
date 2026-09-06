@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 7,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.7,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Violence in history is organised before it is felt: an institution decides who may be harmed, and its decision leaves a record.",
+      "judgment": "A genuinely load-bearing thesis, stated early and honoured for fifteen chapters; the strongest thing in the book."
+    },
+    {
+      "quote": "A wound is an event; a homicide is a legal conclusion. Between them stand the surgeon's description, the witness's memory, the coroner's questions, and the verdict written by a clerk.",
+      "judgment": "Exemplary methodological precision — the epistemology is argued through a concrete case rather than asserted."
+    },
+    {
+      "quote": "The owners did not need to believe that the people aboard were less than human in order to claim compensation for their deaths. They needed a law that treated enslaved people as property and a market that assigned them prices.",
+      "judgment": "The book's argument at its sharpest: a counterintuitive, evidence-anchored refusal of the psychological explanation."
+    },
+    {
+      "quote": "\"Natural causes\" is not vague in the manner of an uncertain report. It disguises starvation, exhaustion, disease, and lethal labour as though the deaths would arise from climate or bodily weakness without an author.",
+      "judgment": "Close reading of a primary document that earns its moral weight without editorialising."
+    },
+    {
+      "quote": "The German state did not simply unleash hatred. It gave hatred addresses.",
+      "judgment": "Effective, but one of dozens of identically shaped aphoristic closers; the device has been spent long before this chapter."
+    },
+    {
+      "quote": "Iceland made the feud negotiable; France made it prosecutable.",
+      "judgment": "The paired-antithesis tic in pure form — elegant once, mechanical by the fourteenth chapter that ends on the same figure."
+    },
+    {
+      "quote": "A weapon appears in each case, whose significance depends on the setting: the musket may kill in a feud or enforce a colonial order.",
+      "judgment": "A rare syntactic stumble; the relative clause is stranded and the sentence has been over-compressed."
+    },
+    {
+      "quote": "When the next cemetery is opened, will its emptiness mean that people lived without recurrent attack, or that the conflict passed through bodies and materials the ground was unable to keep?",
+      "judgment": "Chapter-closing rhetorical question, a move repeated at the ends of chapters 2, 13 and 15 with near-identical cadence."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter opens with a novelistic, present-tense-feeling reconstruction of a single scene (with invented dialogue, weather and sensory detail), then breaks off at a hinge sentence into analysis. The device is invariant across all fifteen chapters and sits awkwardly beside the book's own warnings against reading motive into evidence.",
+      "instances": [
+        "The jurors had taken their seats when Socrates stood in the court of the Archon Basileus, beside the Stoa of the King.",
+        "The first kettle went over in the Et Meydanı on 15 June 1826. It struck the paving stones outside the Janissary barracks..."
+      ]
+    },
+    {
+      "pattern": "Chapters close by restating the same institutional thesis in a short, aphoristic sentence or pair of sentences. The restatement is nearly interchangeable between chapters, so the book's argument accretes no new tension after roughly chapter four.",
+      "instances": [
+        "The gun made coercion more extensive, but an office still had to decide whom to coerce.",
+        "Its roads carried the authority that had organised its violence."
+      ]
+    },
+    {
+      "pattern": "The negate-then-assert construction (\"It did not X; it Y\", \"not because A but because B\") is the book's default engine of emphasis and appears several times per page.",
+      "instances": [
+        "Indirect rule was therefore not the absence of force. It was force placed behind an existing office.",
+        "Baghdad was not simply burned in a moment of rage; it was entered, sorted, and appropriated."
+      ]
+    },
+    {
+      "pattern": "Comparative sections resolve into balanced two-part antitheses that assign each case a single tidy destination, flattening the contingency the book elsewhere insists on.",
+      "instances": [
+        "In Haiti, emancipation took the state; in Brazil, the state eventually withdrew legal ownership while leaving unequal land, wealth, and citizenship behind.",
+        "One placed the repair of social losses and the authority of councils at its centre. The other placed the sovereign's capacity to incorporate land, labour, and people at the centre."
+      ]
+    },
+    {
+      "pattern": "A methodological caution paragraph — \"the evidence shows X but cannot show Y\" — is inserted after almost every case study, in the same position and roughly the same length, so the epistemic humility becomes a scheduled beat rather than a live judgment.",
+      "instances": [
+        "A single injury therefore demonstrates violence more readily than warfare. Even several injuries at one site may represent different episodes.",
+        "The sources disagree about numbers, and Juvaini's figures are too large to accept as literal arithmetic."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined comparative history organised around one clear and well-defended claim: that violence is produced and directed by offices, records and procedures rather than by an unchanging human temperament. The evidence is dense, specific and geographically wide — Jebel Sahaba, Ur III ration tablets, the Zong insurance case, Tophane arsenal registers, the Wannsee protocol, gacaca and Article 7 — and the reasoning is careful, repeatedly distinguishing what a trace can and cannot support and engaging real historiographical disputes (Browning against Goldhagen, intentionalist against functionalist, Elias and Pinker against colonial counter-evidence). Sentence-level craft is high and the voice is consistent, austere and free of the obvious lexical tells of machine prose. What holds it back is shape rather than substance: every chapter runs the same three-movement template of cinematic reconstruction, case-study sequence and thesis restatement, and the local rhetoric leans hard on a small kit of moves — negate-then-assert, paired antithesis, scheduled epistemic caution, aphoristic closer. Because the thesis is never revised or pressured by the later material, the second half accumulates examples without deepening the argument, and the reader begins to anticipate each paragraph's turn. Light revision — varying the chapter architecture, cutting perhaps a fifth of the restatements, and letting one or two cases genuinely complicate the institutional claim — would lift it considerably."
+}

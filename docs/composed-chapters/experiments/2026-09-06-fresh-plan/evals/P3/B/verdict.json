@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.7,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "An embedded projectile is an observation. A coordinated attack is an inference supported by several observations.",
+      "judgment": "The book's methodological spine stated with exemplary economy; this discipline holds across all twelve chapters."
+    },
+    {
+      "quote": "The stone says that the boundary is settled because the boundary is vulnerable.",
+      "judgment": "A genuinely original reading of monumental rhetoric, earned by the preceding analysis rather than asserted."
+    },
+    {
+      "quote": "The archaeological record encourages a simpler conclusion because weapons and graves are easier to count than avoidance, forgiveness, or fear.",
+      "judgment": "Turns a source-criticism point into a real argument about survivorship bias in the historiography of violence."
+    },
+    {
+      "quote": "Safety and vulnerability are produced together.",
+      "judgment": "Compressed and precise; the dhimmi analysis is one of the book's strongest passages."
+    },
+    {
+      "quote": "The timetable had treated the country as a passage; the passage contained people.",
+      "judgment": "Rare moment where the prose lets the human cost land instead of hedging it away."
+    },
+    {
+      "quote": "Claudianus may have disliked service, accepted it, valued it, or regarded it as work.",
+      "judgment": "Chapter 7 is the weakest: a source too thin to bear a chapter, so the argument becomes a list of possibilities nobody can adjudicate."
+    },
+    {
+      "quote": "— Jane Addams and Hull House reform workers, *Portland, Oregon: Its History and Builders/Volume 1/Chapter 22*",
+      "judgment": "An epigraph mis-sourced to an unrelated Portland civic history and misattributed to Addams; a sourcing lapse in a book whose whole claim is evidentiary care."
+    },
+    {
+      "quote": "One record is rich in classification and poor in ordinary voices; the other is rich in physical traces and poor in intentions.",
+      "judgment": "Elegant on first appearance, but this exact chiastic balance becomes the book's default cadence and loses force by Chapter 8."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The symmetrical semicolon antithesis, used to compare two source types, appears in nearly every chapter and becomes the book's default closing cadence.",
+      "instances": [
+        "Archaeology makes recurrence visible; ethnography makes response visible.",
+        "The battlefield opened the territory; the record occupied it."
+      ]
+    },
+    {
+      "pattern": "Almost every paragraph closes on an epistemic-limit disclaimer stating what the evidence cannot show. Individually sound, cumulatively a template that flattens paragraph shape across 52,000 words.",
+      "instances": [
+        "Its evidence offers no rate of assault for Babylon.",
+        "The evidence is powerful at the level of event and limited at the level of motive."
+      ]
+    },
+    {
+      "pattern": "Chapters end on an unanswered rhetorical question about archival silence, always in the same two-clause 'how many X ... and how many Y' shape.",
+      "instances": [
+        "how many conflicts vanished before they left a body, and how many peaceful settlements left no trace because peace required nothing to be buried?",
+        "How many children learned violence in rooms where no reformer entered, and how many learned restraint from care that left no document behind?"
+      ]
+    },
+    {
+      "pattern": "A short aphoristic closer is dropped after a long analytical stretch, typically a definitional reversal in seven to twelve words.",
+      "instances": [
+        "A record can preserve a child’s name and still lose the child.",
+        "The monopoly of force is a transfer, not an abolition."
+      ]
+    },
+    {
+      "pattern": "The named counter-thesis is wheeled on and dispatched in nearly identical terms in at least four chapters, granting the same concession before making the same correction.",
+      "instances": [
+        "These distinctions answer the timeless-aggression thesis, the recurring interpretation that human aggression is a fixed, universal force expressing itself in much the same way everywhere.",
+        "The timeless-aggression thesis is right that fear, anger, and competition recur. It is wrong when recurrence becomes sameness."
+      ]
+    }
+  ],
+  "summary": "This is a serious, sustained work of comparative history that argues human aggression's recurring capacities are organised differently by law, authority, material conditions and learned expectation, and it tests that claim against an unusually wide and well-chosen evidentiary range from Nataruk and Jebel Sahaba to Stockholm's court books and Democratic Kampuchea. Its greatest strength is reasoning: observation is separated from inference with real rigour, alternative explanations are tested rather than gestured at, and Chapter 11 steelmans the measurement objection to its own central case study more honestly than most published history does. Clarity and sentence-level control are consistently high, and the best passages — the Stele of the Vultures, the Pact of Umar, the Schlieffen timetable — produce readings that are specific and non-obvious. The cost is rhythm. The caveat sentence, the semicolon antithesis, the archival-silence question and the aphoristic closer recur so regularly that paragraphs acquire a uniform shape, the pacing sags under repeated qualification (Chapter 11 loops its own objection three times), and Chapter 7's papyrus is too thin a source to carry a chapter of speculation. The voice is disciplined but impersonal, so the material's inherent drama is repeatedly deflated by the hedge that follows it. Light revision — pruning perhaps a fifth of the disclaimers, varying the closing cadences, repairing the mis-sourced epigraphs, and either strengthening or absorbing Chapter 7 — would leave a genuinely strong book."
+}

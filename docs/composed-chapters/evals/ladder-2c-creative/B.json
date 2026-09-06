@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.7,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Silence is a historical object with more than one possible source. The absence of a record may result from peace, loss, exclusion, or a decision by someone who never considered an event worth recording.",
+      "judgment": "The book's methodological spine stated cleanly; this is genuinely good historiographical thinking, not decoration."
+    },
+    {
+      "quote": "A king's body stood at the centre of the inscription; the archive spread his body across the kingdom.",
+      "judgment": "Strong compressed image that earns its place, and one of the few sentences with real rhetorical lift."
+    },
+    {
+      "quote": "The weapon was visible at the moment of injury; the institution had already selected the target.",
+      "judgment": "The thesis in its sharpest form — but this same antithesis is restaged in nearly every chapter, so its force decays."
+    },
+    {
+      "quote": "Marta Mirazon Lahr and colleagues reported the Nataruk remains in 2016 after excavating and analysing ten skeletons and scattered human remains.",
+      "judgment": "Chapter 1 gives ten skeletons; Chapter 2 gives 'at least twenty-seven people' at the same site without reconciling the discrepancy."
+    },
+    {
+      "quote": "Four words in a tablet could redirect a life.",
+      "judgment": "Aphoristic chapter-closer of a type the book reaches for reliably; effective once, formulaic by the fifth occurrence."
+    },
+    {
+      "quote": "A count of arrests measures police activity as well as public violence. The figure may be precise while its meaning remains broad.",
+      "judgment": "Precise, unshowy analytic prose; the book is consistently strongest when interrogating a measurement."
+    },
+    {
+      "quote": "Deportation broke one political geography and created another.",
+      "judgment": "Typical of the book's short pivot sentences: clean, but they arrive at the same structural beat in chapter after chapter."
+    },
+    {
+      "quote": "Their differences prevent a universal account of aggression, while their similarities identify the change at issue here",
+      "judgment": "The symmetrical hedge — differences resist generalisation, similarities permit a narrow claim — recurs as a closing move throughout."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Chapter template: open on one vivid archival document or scene, describe it forensically, catalogue what it cannot show, pair it with a contrasting case, close on an aphoristic antithesis about offices.",
+      "instances": [
+        "On a January night in 2019, a Chicago police incident report began with a domestic dispute and ended with a homicide investigation.",
+        "In May 1788, when the House of Commons considered the bill introduced by Sir William Dolben, the argument was presented as a question of measurement."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis and negation-then-correction ('X did not do A; it did B'), used as the default sentence engine at every scale from clause to chapter ending.",
+      "instances": [
+        "The Stele of the Vultures makes the dead visible, while the tablets make the living countable.",
+        "The road did not kill by itself. It moved the men, food, orders, and tools by which killing, settlement, and extraction could occur"
+      ]
+    },
+    {
+      "pattern": "Evidence-caution recap loop: an all-but-identical paragraph about record survival, preservation bias and the ambiguity of absence is re-argued in most chapters.",
+      "instances": [
+        "A village without homicide entries may have been peaceful. It may also have lost its court registers in a fire",
+        "A low count may describe a life with little violence. It may also describe a life in which violence damaged flesh rather than bone"
+      ]
+    },
+    {
+      "pattern": "Enumerative list-of-offices sentences (four to eight comma-separated institutional nouns) used to demonstrate institutional reach, in nearly every chapter.",
+      "instances": [
+        "A lettre de cachet might be accompanied by a petition, a ministerial note, an order of arrest, a prison register, correspondence about maintenance, and a request for release.",
+        "The Crown, customs officers, courts, insurers, and port merchants formed the surrounding apparatus."
+      ]
+    },
+    {
+      "pattern": "Uniform paragraph geometry: nearly every paragraph runs five to eight medium declarative sentences with no short paragraphs, dialogue, lists, or tonal breaks to vary the surface.",
+      "instances": [
+        "Archaeologists approach that problem by separating observations made on a skeleton from interpretations made about the event...",
+        "The sequence began with a demand. An Assyrian army might arrive at a frontier..."
+      ]
+    }
+  ],
+  "summary": "This is a serious, disciplined work of comparative history whose thesis — that aggression acquires its scale, direction and targets from institutions rather than from a fixed human nature — is stated early and genuinely argued across fifteen chapters from Nataruk to Srebrenica. Its greatest strengths are evidentiary: named documents, dates and archives are handled with unusual care, counterarguments (ecological determinism, bellicism, market explanations, intentionalism versus functionalism, Pinker's decline thesis) are stated at full strength before being qualified, and the book is consistently honest about what its sources cannot show. The prose is clear, exact and free of the obvious markers of machine writing; there are no stock pivots, no listicles, no motivational filler. What weakens it is shape rather than substance: every chapter follows the same opening-document template, the thesis is restated in near-identical antithetical closers dozens of times, the caution-about-silence argument is re-derived rather than developed, and paragraph geometry never varies, so a 55,000-word book reads as one very long paragraph type. Voice is consistent but affectless, and there is an unreconciled inconsistency in the Nataruk casualty figures between chapters 1 and 2. With compression of roughly a fifth, variation of the chapter openings and closers, and a reconciliation pass on repeated cases, this would be publishable non-fiction."
+}

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.8,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The state had not caused the quarrel. It determined what the quarrel meant after the death.",
+      "judgment": "The book's thesis stated with unusual economy in chapter 1; it earns the abstraction from the deposition detail that precedes it."
+    },
+    {
+      "quote": "A sipahi's revenue was not an abstract salary but the produce of named villages, assessed and transferred through a hierarchy of officials.",
+      "judgment": "Representative of the book's real strength: it keeps converting institutional claims back into countable, named material."
+    },
+    {
+      "quote": "Coercion travelled through ordinary entries before it reached the battlefield.",
+      "judgment": "Strong compressed formulation, but also an example of the aphoristic paragraph-closer the book reaches for dozens of times."
+    },
+    {
+      "quote": "The record becomes brief at the moment when military defeat changed into captivity. It identifies the surrender, the guards, and the number of prisoners. It does not give the inner thoughts of the men leaving the strongpoints, and no invented witness can supply them.",
+      "judgment": "Admirable evidentiary scruple — but it sits badly beside fourteen chapter-openings that do invent interiors, weather, gestures and dialogue."
+    },
+    {
+      "quote": "Consider the report produced after excavations at a small prehistoric cemetery beside the Danube. Designated HN-12 by the excavators, the site contained thirty-seven burials",
+      "judgment": "A fabricated site presented with the texture of a real one; the later phrase 'the sample report' half-flags it, but a book about how records are made should not model its epistemology on an invented record."
+    },
+    {
+      "quote": "Assyria made conquered bodies visibly movable; Persia more often made conquered elites politically serviceable.",
+      "judgment": "Elegant, and typical: the semicoloned paired antithesis is the book's default closing cadence and becomes predictable long before chapter 15."
+    },
+    {
+      "quote": "The first cities did not invent human aggression. They invented ways for a decision made in a palace, temple, or royal court to reach people who had never met the person who made it.",
+      "judgment": "A fine chapter landing, but the negate-then-assert shape recurs at nearly every section break across all fifteen chapters."
+    },
+    {
+      "quote": "Ecology explains the pressure around the door. It does not explain who was told to enter, who was told to attack, or who was told that the attack served the nation.",
+      "judgment": "The final chapter's best line; the Rwanda/Srebrenica pairing genuinely tests the thesis rather than illustrating it."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter opens with a novelistic, present-tense-feeling reconstruction (weather, hands, objects, invented dialogue) for 8-20 paragraphs, then pivots without warning to analytic exposition. The seam is always in the same place and the scenes carry sensory detail no source could supply.",
+      "instances": [
+        "The clerk sprinkled sand over the wet ink.",
+        "Wendorf brushed soil from the point with a camel-hair brush and placed it on a sheet of paper marked with the trench number. The paper lifted and snapped in the wind."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis as the standard closing sentence of a section — two clauses of near-identical grammar joined by a semicolon or full stop, one assigned to each of the two cases just compared.",
+      "instances": [
+        "One preserves an institution deciding what happened; the other preserves people after decisions and accidents have erased most of their setting.",
+        "Jamaica made racialised property the centre of reproduction; Peru pressed Indigenous communities into an imperial labour tax."
+      ]
+    },
+    {
+      "pattern": "Thesis restated at the end of each chapter in near-identical vocabulary (office, register, list, order, category), so that the argument stops accumulating and begins looping. Fifteen chapters land on approximately the same sentence.",
+      "instances": [
+        "The ordinary office did not replace the atrocity. It made the atrocity durable.",
+        "Atlantic slavery endured because violence was made profitable, inheritable, mobile, and lawful."
+      ]
+    },
+    {
+      "pattern": "A rhetorical question, usually rhetorically balanced and unanswered, placed at or near the chapter's close to manufacture forward motion.",
+      "instances": [
+        "Which carried the greater weight in imperial stability: the memory of Lachish beneath the Assyrian king's chariot, or the advantage Gobryas found in changing sides before Babylon's gates were forced?",
+        "Why did restraint survive in some revolutionary neighbourhoods while collapsing in others?"
+      ]
+    },
+    {
+      "pattern": "The comparison is always a symmetrical pair (never three cases, never one), introduced late in the chapter and resolved by declaring both real and different — a shape so regular it becomes a template rather than an argument.",
+      "instances": [
+        "Tokugawa Japan contained firearms by making them politically unnecessary for most domains... Mughal India used firearms and artillery while extending warfare across a contested imperial geography",
+        "One turned enemies into relatives. The other made conquered districts serve the court's labour and military needs."
+      ]
+    }
+  ],
+  "summary": "This is a serious, tightly argued global history whose thesis — that human capacity for violence is constant but its direction, scale and victims are selected by offices, records, categories and command chains — is stated early, tested against fifteen very different settings, and genuinely stress-tested at the end against the universal-nature and ecological-pressure explanations. The specificity is exceptional: named clerks, named registers, ration issues, timar rolls, allotment farms, identity cards, and a consistent refusal to let a monument or a chronicle stand as a transparent report. Sentence-level craft is high and the prose is largely free of the cruder AI tells — no filler transitions, no listicles, no false enthusiasm. What holds it back is shape rather than substance. Every chapter is built to the same plan (dramatised opening, analytic turn, symmetrical two-case comparison, aphoristic or interrogative close), the paired antithesis is used as a closing cadence dozens of times, and the central claim is restated in near-identical vocabulary at fifteen chapter endings, so the second half accumulates less than it should. The invented openings also sit uneasily with the book's own epistemology, and at least two case studies (Chipping Norton 1665, the 'HN-12' Danube cemetery) appear to be fabricated composites presented with the texture of archival record. Light revision — varying the chapter architecture, cutting the redundant thesis restatements, and flagging or replacing the invented evidence — would leave a very strong book."
+}

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.9,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Low",
+  "highlights": [
+    {
+      "quote": "A point in a skull is a precise fact. It does not become a precise story merely because the story is tempting.",
+      "judgment": "Compresses the book's epistemic discipline into two sentences; the strongest kind of line here."
+    },
+    {
+      "quote": "The violence of a state often enters the archive as accounting before it enters as a wound.",
+      "judgment": "Thesis-carrying aphorism that is earned by the ration tablets and corvée evidence around it."
+    },
+    {
+      "quote": "The 67.2 percent belongs to the examined remains, not to every person who passed through the Nile corridor.",
+      "judgment": "Exemplary handling of a statistic: the number is given, then immediately bounded by what it can support."
+    },
+    {
+      "quote": "The phrase “natural causes” is the most revealing concealment in the document. Hunger, exhaustion, disease, beating, exposure, and deliberate deprivation are made to appear as impersonal outcomes, as though the road itself killed the workers.",
+      "judgment": "Close reading at its best: the argument about euphemism is performed on the actual wording, not asserted."
+    },
+    {
+      "quote": "A world with fewer wars between major states could still contain many wars against villages.",
+      "judgment": "Fair, specific engagement with Pinker that neither adopts nor caricatures the decline thesis."
+    },
+    {
+      "quote": "In 1920, H. G. Wells wrote in *The Outline of History*, Chapter 40: “Certain novel diseases appeared, trench feet for instance... Behind this front the whole”",
+      "judgment": "A chapter ends on a quotation truncated mid-sentence — a raw production defect that breaks the book's otherwise careful surface."
+    },
+    {
+      "quote": "Around 3300 BCE, at Tisenjoch in the Alps, Ötzi was shot by an arrow that entered his left shoulder.",
+      "judgment": "Chapter 2's closing paragraph: a bolted-on fact with no argumentative connection to the preceding pages; several chapters end this way."
+    },
+    {
+      "quote": "The first cities did not create the willingness to fight. They created offices that could preserve a quarrel, assign it a territory, and return armed men to it after the first encounter had ended.",
+      "judgment": "Excellent as a single formulation, but this exact negation-then-substitution shape recurs dozens of times and becomes the book's tell."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The 'X did not create Y; it created/gave Z' negation-substitution sentence, used as the payoff of nearly every section.",
+      "instances": [
+        "The first cities did not create the willingness to fight. They created offices that could preserve a quarrel...",
+        "Sugar made slavery valuable, but institutions made it durable."
+      ]
+    },
+    {
+      "pattern": "One-sentence standalone paragraph used as aphoristic section punctuation between narrative blocks.",
+      "instances": [
+        "An unexcavated camp is not a peaceful camp.",
+        "A mounted archer was the visible part of a household economy, a training regime, and a command system."
+      ]
+    },
+    {
+      "pattern": "A mid-chapter 'toolbox' inventory in which four to six evidence types or institutions are catalogued in parallel one-paragraph units, then summarised as convergence.",
+      "instances": [
+        "Burial shows how the dead were handled. Osteology identifies injury and survival. Walls mark defended or governed space. Tablets trace supplies and obligations.",
+        "A map assigned a village to an officer. The officer's register recorded its households. The tax demand fixed a payment. A pass directed a worker to a mine or plantation."
+      ]
+    },
+    {
+      "pattern": "Chapter closes on an open interrogative addressed to the reader, deferring rather than settling the argument.",
+      "instances": [
+        "When the archive is uneven and the meanings of harm are local, how far can comparison go before a common scale turns unlike histories into one false quantity?",
+        "Conquest opened the corridors. Did administration create the connected world, or did it only give durable form to routes that merchants, herders, pilgrims, and scholars had already made?"
+      ]
+    },
+    {
+      "pattern": "A tacked-on final paragraph consisting of a date, place and quotation fragment, disconnected from the chapter's closing argument.",
+      "instances": [
+        "On the Zagros frontier, c. 2250 BCE, Naram-Sin's Victory Stele records Naram-Sin's defeat of the mountain people...",
+        "At Naseby, the New Model Army defeated Charles I's forces on 14 June 1645... “The King's cabinet was taken.”"
+      ]
+    }
+  ],
+  "summary": "This is a serious, tightly governed comparative history whose thesis — that aggression acquires scale, duration and repeatability through offices, records and chains of obligation rather than through human temperament — is stated early, tested against fifteen very different evidentiary worlds, and never abandoned for a comfortable generalisation. Its greatest strengths are evidentiary hygiene and reasoning: numbers are bounded by what produced them, victors' monuments are read as claims rather than reports, and rival frameworks (Pinker, Arendt, Lefebvre, Scheidel, the warfare theory of state formation, the eight-stage genocide model) are engaged on their merits and then limited rather than dismissed. Prose is clean, concrete and unusually free of stock connective filler; the voice is consistently sober and English-academic. The weaknesses are rhythmic rather than intellectual: the same argumentative shape — narrative case, second case, comparison, institutional inventory, counterargument, open question — runs through every chapter, and the negation-substitution aphorism appears so often that the thesis begins to be restated instead of advanced, which dulls the middle chapters. Several chapters also close on bolted-on quotation fragments that connect to nothing, one of them truncated mid-sentence, and these read as production artefacts against an otherwise finished surface. With those tails removed and perhaps fifteen percent of the restatement cut, this would be publishable work."
+}

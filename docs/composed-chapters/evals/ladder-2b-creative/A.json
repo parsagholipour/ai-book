@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 8
+  },
+  "overall": 7.9,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Low",
+  "highlights": [
+    {
+      "quote": "The historian’s task begins before counting bodies. It begins by asking who named the act, who recorded it, and what followed from the name.",
+      "judgment": "Crisp statement of the governing thesis, earned by the Beslan/Domesday pairing that precedes it rather than asserted in advance."
+    },
+    {
+      "quote": "Green bone bends before it breaks. Dry bone shatters. That distinction is practical rather than magical.",
+      "judgment": "Excellent method writing: teaches a real inferential technique in three sentences and refuses mystique."
+    },
+    {
+      "quote": "The order that destroyed a wall could preserve the mason who knew how to build one.",
+      "judgment": "Compression at its best — a single line carries the chapter's argument about expertise as capturable resource."
+    },
+    {
+      "quote": "The law could claim to protect a person while placing that person within the owner’s property, and it could condemn unauthorised cruelty chiefly because cruelty might damage the owner’s asset.",
+      "judgment": "Reads the Barbados statute's two clauses against each other instead of quoting them for shock; genuine analysis."
+    },
+    {
+      "quote": "That sentence is chilling because its grammar leaves a human subject in place while removing a human future.",
+      "judgment": "Rare moment where the book's habitual restraint pays a large dividend; the Wannsee reading is the strongest close-reading in the manuscript."
+    },
+    {
+      "quote": "At Tophane, aggression acquired an office address.",
+      "judgment": "Neat, but it is the fifteenth instance of an identical move — the aphoristic one-line chapter-section closer is the book's most exhausted device."
+    },
+    {
+      "quote": "The city did not become violent because its inhabitants suddenly acquired a new appetite for harm. Its institutions made distant consequences possible.",
+      "judgment": "The book's thesis restated verbatim in structure for perhaps the twentieth time; by mid-book the reader can predict the sentence before reading it."
+    },
+    {
+      "quote": "Neither pattern yields a simple measure of violence.",
+      "judgment": "A stock hedge that closes many comparisons; it forecloses rather than advances, and the book leans on this reflex whenever two cases resist synthesis."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter opens with a dated, camera-level vignette anchored to one artifact or scene, then widens to institutional analysis — a template so consistent it becomes predictable by chapter four.",
+      "instances": [
+        "On the morning of 1 September 2004, families in Beslan walked towards School Number One with flowers, schoolbags, and the small formal clothes children wore for the first day of lessons.",
+        "On 29 November 1781, the crew of the *Zong* sighted Jamaica after weeks at sea."
+      ]
+    },
+    {
+      "pattern": "One-sentence paragraph used as a rhetorical gong, set off from the surrounding prose; it appears several times per chapter and has an unvarying cadence.",
+      "instances": [
+        "A first day of school became a room under guard.",
+        "A ration was nourishment, but it was also a tie."
+      ]
+    },
+    {
+      "pattern": "Negation-then-correction sentence pair (\"It was not X; it was Y\") used to pivot into the institutional claim, functioning as the book's default transition.",
+      "instances": [
+        "The campaign was a mechanism, not a charge.",
+        "Collaboration was not a single act of surrender. It was a series of decisions made inside a structure whose final authority lay elsewhere."
+      ]
+    },
+    {
+      "pattern": "Paired comparison closed by a \"the difference lay in…\" formula that names offices rather than motives — the same analytic landing in nearly every chapter.",
+      "instances": [
+        "The difference lay in the direction of authority, not in the presence or absence of violence.",
+        "The difference lay in who could possess a weapon, who could move it, who paid its crew, and which office could command it."
+      ]
+    },
+    {
+      "pattern": "Chapters end on an unresolved interrogative or an explicit \"the question remains open\" gesture, deferring judgment in identical terms.",
+      "instances": [
+        "The unanswered question is how often that force became a rule.",
+        "when the people are declared sovereign, who may harm in their name?"
+      ]
+    }
+  ],
+  "summary": "This is a genuinely accomplished work of comparative historical nonfiction with a clear and disciplined thesis: aggression becomes large-scale not through appetite but through offices, records, categories and supply chains, and the surviving evidence is itself a product of those institutions. The thesis is sustained across fifteen chapters with real specificity — the Jebel Sahaba re-study, the murdrum fine, the 1631 Tophane register, the Gregson v Gilbert pleadings, the Wannsee population table — and claims are consistently hedged where the evidence is thin rather than inflated for effect. Prose is clean, concrete and almost entirely free of the usual AI register: no throat-clearing, no false urgency, no vocabulary tics. The costs are uniformity and redundancy. Every chapter obeys the same architecture (dated vignette, artifact reading, second case, comparison, deferred question), every section closes on the same institutional moral, and the one-line aphoristic beat plus the \"not X but Y\" pivot recur so often that they read as machinery rather than emphasis; several paragraphs are also overlong and internally unpunctuated by paragraph breaks. With variation in chapter shape, pruning of the restated thesis, and a lighter hand on the epigrammatic closers, this would be publishable as serious popular history."
+}

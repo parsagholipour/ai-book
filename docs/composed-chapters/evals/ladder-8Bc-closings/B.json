@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 7,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 6.9,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The movement from anger to atrocity is not a ladder on which one emotion grows larger. It is a change in who acts, who authorizes, who is targeted, and how the act is repeated.",
+      "judgment": "The book's controlling idea, stated early and cleanly; it genuinely governs all fifteen chapters."
+    },
+    {
+      "quote": "A fracture has a location, a shape, and a degree of healing; a motive must be inferred from the pattern around it.",
+      "judgment": "Best feature of the book: a disciplined, repeated account of what each class of evidence can and cannot bear."
+    },
+    {
+      "quote": "Officers had to account for cartridges, and severed hands could be presented as evidence that bullets had supposedly been used in combat rather than wasted. Mutilation became an accounting device.",
+      "judgment": "Specific, earned, and the thesis lands without being announced — the book at its strongest."
+    },
+    {
+      "quote": "Fire was not the system. The system was the decision about whose fields could be burned and whose stores would be spared.",
+      "judgment": "Effective once, but this exact negate-then-relocate closer recurs dozens of times and becomes a tic."
+    },
+    {
+      "quote": "The absence of a readable conquest narrative cannot be converted into proof of peace, but the city's walls cannot be converted into proof of constant warfare either.",
+      "judgment": "A perfectly symmetrical hedge; the book reaches for this balanced non-verdict so often that caution starts reading as evasion."
+    },
+    {
+      "quote": "“ dans ma ̄e campagne je marchai vers la Syrie .”",
+      "judgment": "A garbled epigraph reproduced with OCR damage and a Wikisource-style citation; chapters 9 and 10 have epigraphs that break off mid-sentence or argue with their own attribution."
+    },
+    {
+      "quote": "Cromwell watched Rupert’s cavalry come on against Sir Thomas Fairfax’s son, Sir Thomas Fairfax the younger, who held Parliament’s other wing.",
+      "judgment": "Internally incoherent: Fairfax is simultaneously the army's general and his own son; a polish failure inside the book's most vivid set piece."
+    },
+    {
+      "quote": "The last point came free from the chest of Burial 27 just before the workmen covered the trench.",
+      "judgment": "The closing scenes are well made, but this one re-narrates, detail for detail, the Jebel Sahaba evidence already analysed twenty paragraphs earlier."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter is built as a two-case juxtaposition resolved by a chiastic 'A makes X visible; B makes Y visible' sentence. It is coherent architecture, but by mid-book the reader can predict the paragraph before reading it.",
+      "instances": [
+        "Jebel Sahaba makes recurrence visible; Talheim makes simultaneity visible.",
+        "Cahokia's monumental order is distributed across ground; Bonampak's is concentrated on walls."
+      ]
+    },
+    {
+      "pattern": "The thesis is delivered by a fixed rhetorical move: deny that the object/technology/emotion caused the harm, then relocate causation in an office or decision. It appears in almost every chapter, often several times.",
+      "instances": [
+        "Rubber became lethal because an office had defined failure and equipped men to punish it.",
+        "The railway, the ration card, and the deportation order were tools. Their meaning came from the policy attached to each."
+      ]
+    },
+    {
+      "pattern": "Symmetrical two-sided hedging that refuses both readings without adjudicating between them, producing a uniform tone of measured non-conclusion.",
+      "instances": [
+        "To call it merely superstition conceals its administrative force; to call it the single engine of all warfare conceals that force as well.",
+        "The Spanish reports deserve neither credence as untouched windows nor dismissal as worthless propaganda."
+      ]
+    },
+    {
+      "pattern": "Chapters end with a novelistic reconstruction in a wholly different register (present-tense-feeling scene, short declarative one-line paragraphs), placed after the analysis has already covered the same material. Vivid, but structurally redundant and mechanically positioned.",
+      "instances": [
+        "Then the second ram came forward.",
+        "The cabinet was opened."
+      ]
+    },
+    {
+      "pattern": "Aphoristic or triadic closers used to seal sections in place of argument.",
+      "instances": [
+        "A pass could be lost. A tax could be raised. A chief could be replaced.",
+        "The civilian population entered the battlefield through a decision made in an office."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely coherent work of comparative history with a single, well-chosen thesis: aggression becomes historically large not by intensifying emotionally but by acquiring offices, records, categories and supply chains. The thesis is sustained across fifteen chapters and four continents with impressive specificity — dates, named sites, named officials, and an unusually disciplined running commentary on what each kind of evidence (bone, relief, ledger, protocol, testimony) can and cannot support. The prose is clear, the voice is consistent and coolly archival, and the book is largely free of lexical AI tells. Its problems are structural rather than verbal: the thesis is restated by the same negate-then-relocate formula so often that it stops persuading and starts reciting, nearly every chapter is a two-case comparison resolved by the same chiastic sentence, and the hedging is relentlessly symmetrical. Pacing suffers most — the end-of-chapter dramatised set pieces re-narrate material the analysis has just delivered, Talheim is presented twice, and the last three chapters add little the middle chapters have not established. Polish is uneven where it should be safest: several epigraphs are OCR-damaged or break off mid-sentence, and the Naseby scene garbles Fairfax into his own son."
+}

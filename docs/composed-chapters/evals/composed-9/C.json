@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 5,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 6.8,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A broken skull can establish that force was used. It cannot, by itself, establish that a war took place.",
+      "judgment": "The book's controlling idea stated with admirable economy; the evidentiary discipline it announces is genuinely sustained for 15 chapters."
+    },
+    {
+      "quote": "One source begins with damaged bodies and ends at the edge of motive. The other begins with a category of injury and ends at the edge of lived experience.",
+      "judgment": "Excellent: a real methodological insight rendered as symmetry rather than as jargon."
+    },
+    {
+      "quote": "It turns murder into an item of administration.",
+      "judgment": "The strongest compressed judgment in the book; the Wannsee chapter shows what the method can do when the source resists it."
+    },
+    {
+      "quote": "The city did not invent the wish to harm. It invented more durable ways to decide whose labour would be taken, whose boundary would be defended, and whose defeat could be named as justice.",
+      "judgment": "Fine sentence, but it is the first of at least a dozen chapter-closing recastings of one thesis."
+    },
+    {
+      "quote": "A cannon increased what a government could attempt. The government still chose the attempt.",
+      "judgment": "The same argument as the Uruk closer, six chapters later, in the same two-beat aphoristic shape \u2014 diminishing returns."
+    },
+    {
+      "quote": "Technology widened the field of action; political identity selected the victims.",
+      "judgment": "Third recasting of the capacity/policy claim; by Chapter 13 the reader has been told this many times and learns nothing new from the repetition."
+    },
+    {
+      "quote": "Their prosperity depended upon ships and monsoon routes, imported goods, local production, merchants, port facilities, and rulers capable of making exchange sufficiently predictable to continue.",
+      "judgment": "Representative of a pervasive habit: long enumerative lists that gesture at specificity while conveying only that many things were involved."
+    },
+    {
+      "quote": "Bone preserves some injuries and loses others. Stone walls remain after wooden palisades decay.",
+      "judgment": "Crisp, concrete, and rhythmically varied \u2014 proof that the prose can move when it stops hedging."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Can/cannot antithesis used to close nearly every evidentiary discussion \u2014 a hedge so regular it becomes the book's default cadence rather than a considered judgment.",
+      "instances": [
+        "It records the physical event more securely than the intentions behind it.",
+        "The record can establish that lethal aggression occurred in particular places and that its forms varied with movement, resources, weapons, and group ties. It cannot turn the number of surviving mass graves into a direct measure of how often people threatened, struck, controlled, or reconciled with one another."
+      ]
+    },
+    {
+      "pattern": "Two-case comparison per chapter, resolved by an explicit 'the difference lies in\u2026' sentence \u2014 the identical architecture recurs in at least eight chapters.",
+      "instances": [
+        "The difference lies in the ways people occupied land, gathered resources, stored food, travelled, and imagined the return of those who had attacked them.",
+        "The difference lies in the balance between removing populations and incorporating existing intermediaries."
+      ]
+    },
+    {
+      "pattern": "Negate-then-correct construction ('did not X; it Y'd') used as the standard paragraph turn, producing a uniform rhetorical shape across hundreds of paragraphs.",
+      "instances": [
+        "When the walls fell, Norman violence did not stop; it acquired administrative work.",
+        "The ordinance's concern with procedure did not remove coercion. It organised it."
+      ]
+    },
+    {
+      "pattern": "A source-limitation paragraph inserted at a fixed position in every case study, saying much the same thing about every archive regardless of what that archive is.",
+      "instances": [
+        "The source record does not preserve every person's final hours.",
+        "The record's brevity preserves the imperial outline."
+      ]
+    },
+    {
+      "pattern": "Chapter-ending aphorism built on a reversal or paradox, landing in the same two-sentence rhythm each time.",
+      "instances": [
+        "Haiti's independence did not close that question. It made it impossible to avoid.",
+        "A city can become quiet before it becomes reconciled."
+      ]
+    }
+  ],
+  "summary": "This is a serious, methodologically disciplined history of organised violence whose real subject is evidence: what a mass grave, a law code, a palace relief, an insurance suit, or an administrative protocol can and cannot be made to say. The thesis is coherent and honestly held, the case selection is genuinely global rather than decorative, and the reasoning about sources is consistently better than the reasoning one usually finds in popular history \u2014 the Wannsee, Zong, and Nataruk passages are all strong. The cost is monotony. Every chapter runs the same machine: two or three named cases, a comparison, a 'the difference lies in' resolution, a source-caveat paragraph, and a reversal aphorism, with the capacity-versus-policy thesis restated in fresh clothes perhaps fifteen times. Prose-level slop markers are largely absent, but structural templating, symmetrical hedging, and enumerative lists are heavy, and human beings almost never speak \u2014 no quoted voices, little narrative propulsion, and the reader is told the same lesson far more often than they are shown a new one. Cutting a quarter of the length and varying the chapter architecture would move this from competent to genuinely good."
+}

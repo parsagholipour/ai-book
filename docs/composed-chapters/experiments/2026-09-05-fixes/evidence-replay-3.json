@@ -1,0 +1,404 @@
+{
+  "runId": "evidence-replay-1788584654961",
+  "results": [
+    {
+      "attempt": "development-1a-retry",
+      "caseId": "case-2-3",
+      "title": "War before agriculture in ethnographic comparison",
+      "expectedIdentity": true,
+      "review": {
+        "caseMatch": {
+          "supported": true,
+          "reason": "The passages directly present Keeley’s comparative arguments about precivilized warfare, ethnographic analogy, evidence selection, and conditions associated with war and peace.",
+          "canonicalEpisode": {
+            "title": "War before agriculture in ethnographic comparison",
+            "kind": "document",
+            "person": "Lawrence H. Keeley",
+            "place": "Comparative cases",
+            "date": "1996",
+            "document": "War Before Civilization by Lawrence H. Keeley",
+            "why": "Keeley’s comparative treatment addresses theories of primitive war and prehistoric peace, the selective use of evidence, and conditions associated with violence and sustained peace.",
+            "searchQueries": [
+              "Lawrence Keeley War Before Civilization full text",
+              "War Before Civilization Lawrence H Keeley Internet Archive",
+              "The Myth of the Peaceful Savage Keeley"
+            ]
+          },
+          "anchors": [
+            {
+              "excerptId": "ch2-x1",
+              "quote": "the concepts of primitive war and prehistoric peace were not the products of pure imagination or conscious falsehood"
+            },
+            {
+              "excerptId": "ch2-x1",
+              "quote": "The resulting fashionable ideas concerning precivilized warfare are the products of discrimination, then, not ignorance or prevarication."
+            },
+            {
+              "excerptId": "ch2-x2",
+              "quote": "neither die intensity nor the frequency of war or other violent behavior is correlated with human population density"
+            }
+          ]
+        },
+        "claims": [
+          {
+            "id": "c1",
+            "supported": true,
+            "reason": "The passage explicitly links a neo-Rousseauian worldview with war as a product of Western progress and an idyllic, peaceful precivilized and non-Western world."
+          },
+          {
+            "id": "c2",
+            "supported": true,
+            "reason": "The passage states that primitive-war and prehistoric-peace concepts relied on available evidence, while the cited data were often irrelevant to their key ideas."
+          },
+          {
+            "id": "c3",
+            "supported": true,
+            "reason": "The passage contrasts stylized, low-casualty battles with rarer massacres and more frequent lethal raids, stating that proponents focused on the former."
+          },
+          {
+            "id": "c4",
+            "supported": true,
+            "reason": "The passage says proponents evaluated tribal war by similarity to modern warfare rather than actual effects and gave special attention to motives."
+          },
+          {
+            "id": "c5",
+            "supported": true,
+            "reason": "The passage says advocates ignored archaeological evidence disproving prehistoric peace and that ethnographic analogy contributed to pacifying the past."
+          },
+          {
+            "id": "c6",
+            "supported": true,
+            "reason": "The passage concludes that fashionable ideas about precivilized warfare resulted from discrimination rather than ignorance or prevarication."
+          },
+          {
+            "id": "c7",
+            "supported": true,
+            "reason": "The passage explicitly states that war intensity and frequency, and other violent behavior, are not correlated with human population density."
+          },
+          {
+            "id": "c8",
+            "supported": true,
+            "reason": "The passage explicitly states that trade and intermarriage increase, rather than decrease, the likelihood of war between societies."
+          },
+          {
+            "id": "c9",
+            "supported": true,
+            "reason": "The passage describes aggressive societies that spoil their neighborhood and states that several ethnographic and historical cases involved rapid population increases."
+          },
+          {
+            "id": "c10",
+            "supported": true,
+            "reason": "The passage says moving cultural frontiers are prone to violence and wars are frequent during hard times created by natural and man-made disasters."
+          },
+          {
+            "id": "c11",
+            "supported": true,
+            "reason": "The passage states that peace between independent societies across several generations is difficult and rarer in both primitive and civilized worlds."
+          },
+          {
+            "id": "c12",
+            "supported": true,
+            "reason": "The passage identifies strong dispute-resolving institutions, punishment of peace breaking, and rewards or nonpunishment for peacekeepers as useful factors."
+          }
+        ],
+        "sequenceSupported": false,
+        "sequenceReason": "The passages present arguments and comparative conclusions but do not establish a chronological sequence of underlying events.",
+        "disagreementsSupported": true,
+        "disagreementsReason": "No actual source disagreement is identified; the two passages provide complementary arguments and comparative conclusions.",
+        "unknownsAccurate": true,
+        "unknownsReason": "The passages do not specify particular cases, dates, locations, populations, casualty figures, archaeological examples, motives, or a chronology among comparative cases."
+      },
+      "reviewIssues": [],
+      "rebuilt": {
+        "packet": {
+          "id": "case-2-3",
+          "sourceChapterIndex": 2,
+          "episode": {
+            "title": "War before agriculture in ethnographic comparison",
+            "kind": "document",
+            "person": "Lawrence H. Keeley",
+            "place": "Comparative cases",
+            "date": "1996",
+            "document": "War Before Civilization",
+            "why": "Keeley’s comparative treatment discusses evidence for primitive war and prehistoric peace, and criticizes ethnographic analogy and selective interpretation of violence.",
+            "searchQueries": [
+              "Lawrence Keeley War Before Civilization full text",
+              "War Before Civilization Lawrence H Keeley Internet Archive",
+              "The Myth of the Peaceful Savage Keeley"
+            ]
+          },
+          "claims": [
+            {
+              "id": "c1",
+              "text": "Keeley argues that the view of precivilized and non-Western societies as idyllic and peaceful arose within a neo-Rousseauian interpretation of civilization and progress.",
+              "kind": "interpretation",
+              "excerptIds": [
+                "ch2-x1"
+              ]
+            },
+            {
+              "id": "c2",
+              "text": "Keeley states that doctrines of primitive war and prehistoric peace relied on available evidence, but that the cited data were often irrelevant to their central ideas.",
+              "kind": "fact",
+              "excerptIds": [
+                "ch2-x1"
+              ]
+            },
+            {
+              "id": "c3",
+              "text": "Keeley argues that proponents of safe, ineffective primitive war emphasized stylized, low-casualty battles over rarer massacres and more frequent lethal raids.",
+              "kind": "interpretation",
+              "excerptIds": [
+                "ch2-x1"
+              ]
+            },
+            {
+              "id": "c4",
+              "text": "Keeley states that advocates of prehistoric peace ignored archaeological evidence that contradicted their position.",
+              "kind": "fact",
+              "excerptIds": [
+                "ch2-x1"
+              ]
+            },
+            {
+              "id": "c5",
+              "text": "Keeley argues that archaeologists contributed to pacifying interpretations of the past by relying on ethnographic analogy while ignoring prehistoric violence.",
+              "kind": "interpretation",
+              "excerptIds": [
+                "ch2-x1"
+              ]
+            },
+            {
+              "id": "c6",
+              "text": "Keeley states that neither the intensity nor the frequency of war is correlated with human population density, while trade and intermarriage can increase the likelihood of war between societies.",
+              "kind": "fact",
+              "excerptIds": [
+                "ch2-x2"
+              ]
+            },
+            {
+              "id": "c7",
+              "text": "Keeley states that strong institutions for resolving disputes and punishing peace breaking, together with rewards or protection for peacekeepers, have appeared useful for sustaining peace between independent societies.",
+              "kind": "fact",
+              "excerptIds": [
+                "ch2-x2"
+              ]
+            }
+          ],
+          "sequence": [],
+          "disagreements": [],
+          "unknowns": [
+            "The passages do not identify the specific ethnographic, historical, or archaeological cases underlying Keeley's comparative conclusions.",
+            "They do not establish the identities of the anthropologists or archaeologists whose positions Keeley criticizes.",
+            "They do not establish a chronology linking the discussed societies, wars, or peace arrangements.",
+            "They do not establish dialogue, sensory details, motives, or personal experiences of participants in any particular conflict."
+          ],
+          "excerpts": [
+            {
+              "id": "ch2-x1",
+              "chapterIndex": 2,
+              "episodeTitle": "War before agriculture in ethnographic comparison",
+              "documentTitle": "War Before Civilization - Lawrence H. Keeley",
+              "documentUrl": "https://archive.org/details/war-before-civilization-lawrence-h.-keeley",
+              "host": "archive",
+              "author": "Lawrence H. Keeley",
+              "year": "",
+              "speaker": "Lawrence H. Keeley",
+              "text": "Most of the evils attributed to civilization and progress—such as social inequality and subordination, murder, theft, rape, vandalism, and conquest—are found concentrated in the conduct and effects of war. Therefore, in a neo- Rousseauian world view, war itself constitutes one of the principal products of “Western progress, and the precivilized condition and the non-Western world before European expansion must have been idyllic and peaceful. As ever, when — faith in the myth of progress declines, the myth of the golden age finds new adherents. THE CREATION QF MYTH In the postwar atmosphere of anxiety, malaise, and dissatisfaction with Western civilization, anthropologists have introduced doctrines concerning precivilized violence consistent with this mood. But the concepts of primitive war and prehistoric peace were not the products of pure imagination or conscious falsehood. They relied on available evidence, but aften the data cited were quite 170 BEATING SWORDS INTO METAPHORS irrelevant to their key ideas. Thus the proponents of safe and ineffective primitive war have focused on stylized and low-casualty battles in preference to the rarer massacres and much more frequent raids that killed most people. These proponents have evaluated the effectiveness of tribal war entirely on the ethnocentic grounds of how similar its conduct was to modern warfare rather than on the basis of its actual effects. They have devoted special attention to the murky question of motives. Similarly, the advocates of prehistoric peace ignore the very archaeological evidence that disproves their case. Archaeologists, relying on the time-honored method of ‘““ethnographic analogy,” have contributed to the pacification of the past by blithely ignoring the problem of prehistoric violence. The resulting fashionable ideas concerning precivilized warfare are the products of discrimination, then, not ignorance or prevarication.",
+              "words": 283
+            },
+            {
+              "id": "ch2-x2",
+              "chapterIndex": 2,
+              "episodeTitle": "War before agriculture in ethnographic comparison",
+              "documentTitle": "War Before Civilization",
+              "documentUrl": "https://archive.org/details/warbeforecivilization",
+              "host": "archive",
+              "author": "Lawrence H. Keeley",
+              "year": "1996",
+              "speaker": "Lawrence H. Keeley",
+              "text": "sideration of contexts that encourage war leads to several interesting conclu¬ sions. Contrary to common sense, neither die intensity nor the frequency of war or other violent behavior is correlated with human population density. Another surprise is that trade and intermarriage between societies increase, rather than decrease, the likelihood of war between them. On the other hand, some com¬ mon expectations are correct* For example, regions and periods of frequent bitter warfare are often centered on especially aggressive societies that “spoil their neighborhood.” In several ethnographic aqd historical cases, these “bad apples” were experiencing rapid population increases. Consistent with Holly¬ wood folklore, frontiers between cultures are prone to violence, especially when moving. And, as we might think, wars are very frequent during the hard times created by natural and man-made disasters. Despite a universal preference for peace and revulsion for homicide, even that of enemies, making peace between equals is fraught with pitfalls. Maintainf ing a peace between independent societies over several generations is even more f difficult and thus even rarer. The rarity in both the primitive and civilized worlds , of sustained peaces makes it hard to isolare the favorable factors. However, two have long appeared to be useful: employing strong institutions to resolve dis¬ putes and punish peace breaking and ensuring that those who keep the peace 178 A TROUT IN THE MILK Discussion and Conclusions 178 are rewarded, or at least not punished. If these prescriptions seem vague and too simplistic, the reason is that one cannot describe the form of institutions or the kinds of rewards that might be universally and eternally applicable. If it were not so difficult to design social systetns that delivered these desiderata, peace would be a far less scarse commodity.",
+              "words": 290
+            }
+          ],
+          "reviewVersion": 1
+        }
+      }
+    },
+    {
+      "attempt": "development-1a",
+      "caseId": "case-1-1",
+      "title": "The Trial of Socrates",
+      "expectedIdentity": true,
+      "review": {
+        "caseMatch": {
+          "supported": true,
+          "reason": "The passage directly describes Socrates’ conviction, Anytus’s proposed death penalty, Socrates’ counter-penalties, and his condemnation to death.",
+          "canonicalEpisode": {
+            "title": "The Trial of Socrates",
+            "kind": "scene",
+            "person": "Socrates; Anytus",
+            "place": "",
+            "date": "",
+            "document": "E. D. Jowett’s introduction to Plato’s Apology",
+            "why": "Jowett’s summary describes Socrates’ conviction, the proposed death penalty, his counter-penalties, and his subsequent condemnation to death.",
+            "searchQueries": [
+              "Plato Apology Wikisource",
+              "Plato Apology Benjamin Jowett text",
+              "Apology Socrates 399 BCE Project Gutenberg"
+            ]
+          },
+          "anchors": [
+            {
+              "excerptId": "ch1-x1",
+              "quote": "As he expected, and probably intended, he is convicted."
+            },
+            {
+              "excerptId": "ch1-x1",
+              "quote": "Anytus proposes death as the penalty: and what counter-proposition shall he make?"
+            },
+            {
+              "excerptId": "ch1-x1",
+              "quote": "[He is condemned to death.] He is an old man already"
+            }
+          ]
+        },
+        "claims": [
+          {
+            "id": "claim-1",
+            "supported": true,
+            "reason": "The passage explicitly states, “As he expected, and probably intended, he is convicted,” within Jowett’s summary of Plato’s Apology."
+          },
+          {
+            "id": "claim-2",
+            "supported": true,
+            "reason": "The passage explicitly attributes the death proposal to Anytus and lists maintenance, a mina, and thirty minae with friends as securities."
+          },
+          {
+            "id": "claim-3",
+            "supported": true,
+            "reason": "The passage states that the speech becomes “more lofty and commanding” after the penalty proposal and then explicitly says Socrates is condemned to death."
+          }
+        ],
+        "sequenceSupported": true,
+        "sequenceReason": "The passage presents conviction first, Anytus’s penalty proposal and Socrates’ counter-proposals next, and condemnation to death afterward.",
+        "disagreementsSupported": true,
+        "disagreementsReason": "No disagreements are supplied; the single passage consistently presents the conviction, penalty proposal, counter-proposals, and condemnation.",
+        "unknownsAccurate": true,
+        "unknownsReason": "The listed unknowns accurately identify missing exact dating, full dialogue, Anytus’s motives, jury reasoning, and the distinction between summary and transcript."
+      },
+      "reviewIssues": [],
+      "rebuilt": {
+        "packet": {
+          "id": "case-1-1",
+          "sourceChapterIndex": 1,
+          "episode": {
+            "title": "The Trial of Socrates",
+            "kind": "scene",
+            "person": "Socrates; Anytus",
+            "place": "Athens",
+            "date": "",
+            "document": "E. D. Jowett, Apology (Jowett)/Introduction",
+            "why": "Jowett summarizes Socrates’ conviction, Anytus’ proposed death penalty, Socrates’ counter-penalty proposals, and his condemnation to death.",
+            "searchQueries": [
+              "Plato Apology Wikisource",
+              "Plato Apology Benjamin Jowett text",
+              "Apology Socrates 399 BCE Project Gutenberg"
+            ]
+          },
+          "claims": [
+            {
+              "id": "c1",
+              "text": "Jowett’s introduction states that Socrates was convicted, as he had expected and probably intended.",
+              "kind": "fact",
+              "excerptIds": [
+                "ch1-x1"
+              ]
+            },
+            {
+              "id": "c2",
+              "text": "According to Jowett’s summary, Anytus proposed death as the penalty.",
+              "kind": "event",
+              "excerptIds": [
+                "ch1-x1"
+              ]
+            },
+            {
+              "id": "c3",
+              "text": "Jowett characterizes Socrates’ response after the conviction as becoming more lofty and commanding rather than more conciliatory.",
+              "kind": "interpretation",
+              "excerptIds": [
+                "ch1-x1"
+              ]
+            },
+            {
+              "id": "c4",
+              "text": "Jowett reports that Socrates proposed maintenance in the Prytaneum as a possible counter-penalty.",
+              "kind": "event",
+              "excerptIds": [
+                "ch1-x1"
+              ]
+            },
+            {
+              "id": "c5",
+              "text": "The passage presents Socrates as saying that he did not know whether death was good or evil and as treating imprisonment and exile as evils.",
+              "kind": "fact",
+              "excerptIds": [
+                "ch1-x1"
+              ]
+            },
+            {
+              "id": "c6",
+              "text": "Jowett reports that Socrates considered proposing a fine of one mina, or thirty minae with his friends as security.",
+              "kind": "event",
+              "excerptIds": [
+                "ch1-x1"
+              ]
+            },
+            {
+              "id": "c7",
+              "text": "The passage records that Socrates was condemned to death.",
+              "kind": "event",
+              "excerptIds": [
+                "ch1-x1"
+              ]
+            }
+          ],
+          "sequence": [
+            "c1",
+            "c2",
+            "c3",
+            "c5",
+            "c4",
+            "c6",
+            "c7"
+          ],
+          "disagreements": [],
+          "unknowns": [
+            "The excerpt does not establish the specific charges, the vote totals, or the full sequence and timing of the proceedings.",
+            "It does not provide the wording of Socrates’ speech, Anytus’ argument, or the dialogue surrounding the proposed penalties.",
+            "It does not establish the motives of Socrates, Anytus, or the Athenian judges beyond Jowett’s characterization of Socrates’ expectations and conduct.",
+            "The excerpt does not explicitly establish the trial’s date or place."
+          ],
+          "excerpts": [
+            {
+              "id": "ch1-x1",
+              "chapterIndex": 1,
+              "episodeTitle": "The Trial of Socrates",
+              "documentTitle": "Apology (Jowett)/Introduction",
+              "documentUrl": "https://en.wikisource.org/wiki/Apology_(Jowett)%2FIntroduction",
+              "host": "wikisource",
+              "author": "",
+              "year": "",
+              "speaker": "E. D. Jowett, summarizing Plato's Apology",
+              "text": "As he expected, and probably intended, he is convicted. And now the tone of the speech, instead of being more conciliatory, becomes more lofty and commanding. Anytus proposes death as the penalty: and what counter-proposition shall he make? He, the benefactor of the Athenian people, whose whole life has been spent in doing them good, should at least have the Olympic victor’s reward of maintenance in the Prytaneum. Or why should he propose any counter-penalty when he does not know whether death, which Anytus proposes, is a good or an evil? And he is certain that imprisonment is an evil, exile is an evil. Loss of money might be no evil, but then he has none to give; perhaps he can make up a mina. Let that be the penalty, or, if his friends wish, thirty minae; for which they will be excellent securities. [He is condemned to death.] He is an old man already,",
+              "words": 155
+            }
+          ],
+          "reviewVersion": 1
+        }
+      }
+    }
+  ],
+  "failures": []
+}

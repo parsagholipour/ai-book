@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 8
+  },
+  "overall": 7.9,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Low",
+  "highlights": [
+    {
+      "quote": "The archive is a surviving arrangement of attention, not a census of aggression.",
+      "judgment": "Compact statement of the book's governing epistemology; earns its aphoristic form because the preceding twenty paragraphs built it."
+    },
+    {
+      "quote": "A channel can conceal coercion more effectively than a monument that displays it.",
+      "judgment": "Genuinely original comparative insight (Dujiangyan vs. the Stele of the Vultures), and the kind of thinking the book does best."
+    },
+    {
+      "quote": "The table's neatness makes its violence easier to miss. A country becomes a line; a line becomes a number; a number becomes a population awaiting action.",
+      "judgment": "One of the few places where rhetorical escalation is allowed; the tricolon works because the book almost never reaches for it."
+    },
+    {
+      "quote": "The water carried a promise; the rifle column carried a state.",
+      "judgment": "Sharp, but an example of the paired-antithesis closer the book reuses at chapter and section joints."
+    },
+    {
+      "quote": "A projectile is an object with a technical history before it becomes a weapon in an archaeological argument.",
+      "judgment": "Excellent methodological precision; the seven-step trauma-to-inference sequence that follows is the strongest sustained reasoning in the book."
+    },
+    {
+      "quote": "Both sites support the conclusion that lethal interpersonal violence occurred among small-scale communities long before written states, standing armies, or administrative records. Neither supports a simple estimate of how aggressive all people were at the time.",
+      "judgment": "The book's signature move \u2014 assert, then withdraw the overclaim \u2014 used well here, but repeated perhaps a hundred times elsewhere until it becomes a reflex rather than a judgment."
+    },
+    {
+      "quote": "Cahokia's palisade records collective labour and guarded space. Bonampak's murals record a court's celebration of military success. Wari defensive sites record elevated control and difficult approaches. Moche vessels record the ceremonial ordering of capture.",
+      "judgment": "A recap-by-inventory that closes sections in most chapters; it restates what was just read rather than advancing the argument."
+    },
+    {
+      "quote": "A registration entry could become a claim on a family.",
+      "judgment": "The isolated one-sentence paragraph is a recurring rhythmic device; effective once or twice, but deployed often enough to read as a formatting habit."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The assert-then-retract couplet: a claim about what a source shows is immediately paired with a sentence about what it does not show. It is the book's dominant sentence-pair and appears many times per chapter.",
+      "instances": [
+        "The evidence establishes harm more securely than frequency.",
+        "The Templo Mayor deposits show ritual killing under Mexica rule; they do not show that every Indigenous community shared it."
+      ]
+    },
+    {
+      "pattern": "Section-closing inventory that re-lists the chapter's named artifacts in parallel clauses, one per case, before a summarizing caution.",
+      "instances": [
+        "Uruk's tablets made distributions countable. Mesopotamian walls concentrated defence around urban settlements. Egyptian corv\u00e9e records made labour obligations visible to officials.",
+        "A baptismal register attached a Christian name to a captive. The *Brooks* arranged captive bodies for oceanic transport. Jamaican punishment made labor continue after arrival."
+      ]
+    },
+    {
+      "pattern": "The 'technology enlarges reach but supplies no motive' thesis, restated almost verbatim in nearly every chapter rather than developed.",
+      "instances": [
+        "Technology alters reach without supplying motive.",
+        "Technology extends sight; it does not decide whether sight will expose abuse, guide protection, or improve targeting."
+      ]
+    },
+    {
+      "pattern": "The isolated one-sentence paragraph used as a beat of emphasis between dense blocks, typically stating a mild paradox.",
+      "instances": [
+        "Prediction could be another form of pressure.",
+        "A powerful official could be useful and vulnerable at the same time."
+      ]
+    },
+    {
+      "pattern": "The paired-antithesis closer, in which a chapter or long section ends on two balanced clauses contrasting force with administration.",
+      "instances": [
+        "The army made the new order possible. Offices made it repeatable.",
+        "Violence removed political alternatives; incorporation made selected forms of the conquered world useful to the victors."
+      ]
+    }
+  ],
+  "summary": "This is an unusually disciplined comparative history of organized violence, running from Haymarket and Jebel Sahaba to Aleppo and Mindanao, held together by a clear and consistently honoured thesis: aggression is not a constant human quantity but a set of actions whose scale and meaning are made by institutions, and the archive records visibility rather than prevalence. Its greatest strengths are evidentiary reasoning and clarity \u2014 the seven-step route from a healed fracture to a claim about conflict, the reading of the Wannsee protocol as coordination rather than origin, and the Dujiangyan-versus-stele comparison are all first-rate \u2014 and the prose is almost entirely free of conversational AI tics, stock pivots, or hedge-laden filler. The cost of that discipline is a strong sameness of texture: paragraphs run to a near-identical length and shape, and the assert-then-retract couplet that gives the book its intellectual integrity hardens into a reflex, so that a reader can predict the second half of most paragraphs from the first. Chapters progress chronologically and sensibly, but they are largely inventories of case studies joined by recurring caveats, and they close on listing-recaps or balanced antitheses often enough to feel templated. Engagement suffers accordingly: there are almost no quoted voices, no narrative momentum, and little variation in pressure across 15 dense chapters. Light revision \u2014 cutting perhaps a fifth of the epistemic caveats, varying paragraph and closing shapes, and letting a few episodes run as narrative \u2014 would raise it considerably without touching the argument."
+}

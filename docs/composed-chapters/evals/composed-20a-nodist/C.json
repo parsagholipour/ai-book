@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 7.2,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The bone records contact and damage. It does not record the attacker\u2019s inward state.",
+      "judgment": "Excellent opening discipline \u2014 states the book's evidentiary thesis in concrete terms rather than abstraction."
+    },
+    {
+      "quote": "A rise in recorded assaults may mean more violence, better reporting, a new category in law, or a court newly willing to hear complaints.",
+      "judgment": "Genuine methodological sophistication; the source-criticism is the book's strongest recurring asset."
+    },
+    {
+      "quote": "A conquering power could preserve human expertise by removing people while damaging the city that had made their expertise socially productive.",
+      "judgment": "Sharp, specific, non-obvious formulation earned by the preceding evidence."
+    },
+    {
+      "quote": "The spear and shield stood at the end of a process that began with cultivation and accounting.",
+      "judgment": "Concrete image doing real analytical work; the Uruk ration-tablet chain is the book's best sustained explanation."
+    },
+    {
+      "quote": "Lieutenant Colonel Arthur L. Y. N. N. reports, regimental histories, and national memorials organised loss according to unit and army.",
+      "judgment": "A corrupted, meaningless name left in the text \u2014 a hard error that undermines confidence in the surrounding factual apparatus."
+    },
+    {
+      "quote": "Hadrian also adopted the title Paternal or victorious names associated with the suppression of the revolt",
+      "judgment": "Broken syntax and a garbled claim; the sentence never resolves into a statement."
+    },
+    {
+      "quote": "Administration thus limited aggression while enabling more sustained military action elsewhere.",
+      "judgment": "Appears verbatim twice within Chapter 6 (Nur al-Din, then Norman England) \u2014 a copied summary clause standing in for two different arguments."
+    },
+    {
+      "quote": "Marie and Jules, names that recur in municipal records and refugee accounts from the region, belonged to no single representative family.",
+      "judgment": "A composite that hedges itself into vacancy: it gains no human texture while conceding it names nobody."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter opens on a single artifact or site, extracts a mechanism from it, then pairs it with a contrasting case whose evidence is of a different kind \u2014 a template so fixed it becomes predictable by Chapter 4.",
+      "instances": [
+        "At Nataruk, on the western side of Lake Turkana in northern Kenya, the first clue is not a weapon or a wall but a scatter of human bones lying in old lakeshore sediment.",
+        "A musket, cannon, or powder barrel entered the Ottoman record not as an isolated object but as a quantity to be received, altered, stored, issued, repaired, and counted again."
+      ]
+    },
+    {
+      "pattern": "The paired antithesis \"X does not / did not A; it B\" is the book's default sentence engine, used hundreds of times and often twice in one paragraph.",
+      "instances": [
+        "The market did not cause the first blow. It gave the blow a destination and made repeated expeditions worth organising.",
+        "Ecology sets constraints and opportunities. It does not issue commands."
+      ]
+    },
+    {
+      "pattern": "Chapters close by re-listing their own case studies in a single roll-call sentence, restating conclusions the chapter has already reached.",
+      "instances": [
+        "The Tophane register, the Swedish allotment, the Dutch bond, the French magazine, and the road followed by an artillery train belonged to one historical movement because each turned resources into organized reach.",
+        "Darfur shows how ecological strain became organised persecution through political and military authority; Northern Ireland shows how a negotiated peace could preserve identity while limiting violence; Colombia shows that armed movements can be redirected towards politics..."
+      ]
+    },
+    {
+      "pattern": "The same disclaimer \u2014 that technology, wealth or ecology supplies means but not motive \u2014 is restated in nearly identical form in at least eight chapters.",
+      "instances": [
+        "A tool became historically important through the people who controlled it, the goods that supported it, and the ideas that authorised its use.",
+        "The cannon remained an object of metal and powder. Its historical force came from the people and offices that decided where it would go."
+      ]
+    },
+    {
+      "pattern": "Chapters end on a rhetorical question posed to the reader in place of an argued conclusion, deferring rather than resolving.",
+      "instances": [
+        "What, then, can a history of violence compare without mistaking different kinds of survival for different amounts of violence?",
+        "Has industrial war erased the distinction between soldier and civilian, or has it repeatedly redrawn the line around new forms of military dependence?"
+      ]
+    }
+  ],
+  "summary": "This is a genuinely serious comparative history of organised violence, held together by one thesis it never loses: aggression has no universal scale, and what varies across cases is the institutional route by which a claim becomes an injury. Its best material \u2014 the Uruk ration chain, the Mongol operational chain, the Wannsee protocol read as administrative euphemism, the Zong litigation \u2014 is specific, well reasoned, and unusually disciplined about what each kind of evidence can and cannot bear. The voice is consistent and adult, and it resists both the innate-savagery and the pure-materialist explanations with real argument rather than gesture. Against that, the book is formally monotonous: every chapter runs the same artifact-mechanism-contrast-catalogue-question circuit, paragraphs settle into a uniform length and shape, and the \"not X; rather Y\" antithesis becomes a tic that flattens engagement and pads the middle chapters. Redundancy is a real cost \u2014 the technology-supplies-means-not-motive point is restated in nearly every chapter, and one summary clause is reproduced verbatim within a single chapter. Two textual defects (a garbled officer's name at the Somme, a broken sentence about Hadrian's titles) plus a hollow composite refugee family are the specific things a light revision must fix, alongside cutting the recap loops."
+}

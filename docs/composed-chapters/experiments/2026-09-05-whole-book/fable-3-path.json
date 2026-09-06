@@ -1,0 +1,9 @@
+{
+  "directory": "/tmp/material-progression-fable-y04gte8x",
+  "editable": [
+    "packages/core/src/generation/episodes.ts",
+    "packages/core/src/generation/composedChapterMaterial.ts",
+    "packages/core/src/generation/composedChapter.ts",
+    "packages/core/src/generation/chapterFocus.test.ts"
+  ]
+}

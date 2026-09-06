@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 5
+  },
+  "overall": 6.9,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A healed fracture and a lethal wound can lie in the same soil, inviting two questions that sound alike until they are pursued: what happened to these people, and what can anyone responsibly infer from the traces they left behind?",
+      "judgment": "Excellent opening: it states the book's epistemic problem through a concrete image rather than a thesis sentence."
+    },
+    {
+      "quote": "A demographic gap is a question before it is a conclusion.",
+      "judgment": "Compact, genuinely useful methodological rule \u2014 the book's best kind of sentence."
+    },
+    {
+      "quote": "Roman law turned injury into offences, claims, and public categories... A legal term is evidence of conduct, but also evidence of the authority that selected the term.",
+      "judgment": "Strong analytic payoff that earns the comparison between 2011 London incident logs and Ciceronian vocabulary."
+    },
+    {
+      "quote": "Food supports labour, labour builds protection, protection supports expansion, and expansion produces bodies that rulers display as proof of order.",
+      "judgment": "Effective chain summary, but the same circular-chain device recurs in six later chapters until it reads as a formula."
+    },
+    {
+      "quote": "The rifle did not determine the quota. The quota gave the rifle its task.",
+      "judgment": "Sharp when first met; unfortunately it is the twentieth restatement of 'technology does not choose the target'."
+    },
+    {
+      "quote": "A registration office did not begin with a gun. It began with a form.",
+      "judgment": "The book's signature move \u2014 a two-beat aphoristic antithesis dropped as a paragraph \u2014 used so often that its force is spent well before Wannsee."
+    },
+    {
+      "quote": "The first step in the violence at Nataruk was exposure... The second step was distance... Third came the collapse of individual defence... The fourth step was the decision not to recover or bury the dead. The fifth step was the effect on movement.",
+      "judgment": "Numbered-step scaffolding imposes an orderly narrative on evidence the text elsewhere insists cannot support one; the device recurs at Crow Creek, deportation, plantation, and Darfur."
+    },
+    {
+      "quote": "Their outcomes depended on political offices, local relationships, material pressures, weapons, ideas of belonging, and choices made under uncertainty. The differences between them are not noise surrounding a universal human impulse. They are the explanation.",
+      "judgment": "A clean landing, but it restates a thesis the previous fourteen chapters have each already restated in their closing paragraph."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Negation-then-affirmation antithesis as the default explanatory unit ('X did not do A; it did B'), often set off as its own short paragraph.",
+      "instances": [
+        "Technology changes what can be done, not what must be wanted.",
+        "The tool did not create hostility. It altered the range at which hostility could be imposed."
+      ]
+    },
+    {
+      "pattern": "A mandatory epistemic-caution paragraph after every case study, warning the reader not to over-read the evidence \u2014 valuable once per chapter, but appearing three or four times per chapter in near-identical phrasing.",
+      "instances": [
+        "Nataruk should not be turned into a miniature battle simply because several people died.",
+        "The captive scene should not be made to stand for all Maya warfare, still less for all Indigenous American societies."
+      ]
+    },
+    {
+      "pattern": "Symmetrical paired-noun closers asserting that protection and harm are the same institution \u2014 the book's one moral idea, restated in matching syntax across every era.",
+      "instances": [
+        "Security and vulnerability grew together.",
+        "Order and harm were often produced by the same office."
+      ]
+    },
+    {
+      "pattern": "Uniform chapter architecture: a vivid object/scene opening, two or three comparanda from other regions, an explicit 'the comparison shows' paragraph, then a recap paragraph naming every case in the chapter in sequence.",
+      "instances": [
+        "Eannatum\u2019s soldiers, the worker counted for a ration, Narmer\u2019s captive, and the official serving a province occupy different positions in that history.",
+        "The Paris sections, the Cordeliers Club, Marat\u2019s newspaper, the prison registers of September 1792, and the constitution of Saint-Domingue reveal political acts that sorted people into citizens, suspects, workers, soldiers, prisoners, and enemies."
+      ]
+    },
+    {
+      "pattern": "Cumulative link-chain enumeration ('A produced B; B allowed C; C required D'), used to convert administration into violence in nearly every chapter.",
+      "instances": [
+        "A map allowed a district to be named; a district allowed an officer to be assigned; an officer required transport and protection; protection justified a police force.",
+        "The map directed the post; the post supervised the recruiter; the recruiter supplied the quota; the quota produced the patrol."
+      ]
+    }
+  ],
+  "summary": "This is a serious, evidence-disciplined global history of organized aggression across fifteen chronological chapters, held together by a clear and consistently argued thesis: violence takes its scale, targets and meaning from institutions, classifications and resources rather than from a constant human impulse. Its greatest strength is methodological \u2014 it repeatedly shows what a grave, a legal term, an incident log, a ration tablet or a casualty series can and cannot support, and it keeps royal display, administrative record and bodily evidence at their proper distances from one another. The specificity is real (Jebel Sahaba, the Stele of the Vultures, Behistun, Bonampak, the Brookes, the Wannsee table, the Wajir committees) and the reasoning rarely outruns its sources. The weakness is repetition of form rather than error of content: nearly every case study is delivered through the same numbered-step scaffold, the same caution paragraph, the same negation-then-affirmation antithesis, and the same closing recapitulation, so that by the middle chapters the reader can predict a paragraph's shape from its first clause. The thesis is also restated far more often than it is complicated or tested, which flattens engagement and leaves the argument feeling safe rather than contested. With aggressive cutting of the recap paragraphs, variation of paragraph architecture, and removal of perhaps half the aphoristic two-beat closers, this would be a genuinely strong book; as it stands the prose is clean and the shape is templated."
+}

@@ -1,0 +1,94 @@
+{
+  "candidate": 3,
+  "label": "material-progression-3",
+  "status": "assessed-below-target",
+  "qualityRevision": 49,
+  "writer": {
+    "model": "gpt-5.6-luna",
+    "thinkingEffort": "low",
+    "tier": "balanced"
+  },
+  "assessors": "three fresh gpt-5.6-sol readers",
+  "regression": {
+    "before": {
+      "failed": 1,
+      "passed": 5
+    },
+    "afterFocused": {
+      "passed": 45
+    }
+  },
+  "fableSession": {
+    "model": "claude-fable-5-1",
+    "effort": "xhigh",
+    "subtype": "success",
+    "turns": 25,
+    "costUsd": 2.7967560000000002,
+    "toolsUsed": [
+      "Read",
+      "Edit"
+    ],
+    "workDirectory": "/tmp/material-progression-fable-y04gte8x"
+  },
+  "notes": [
+    "User explicitly disallowed Sol as writer; no such book was launched.",
+    "Parent reviewed all edits and ran regression test against candidate-2 production before applying.",
+    "Combined removal of equal case treatment, section-form quotas, and explicit shape targets for focused nonfiction; no new provider calls or altered word budgets."
+  ],
+  "checks": "7 gates passed in 118.1s",
+  "projectId": "cmtp4mr8z000015g0tuqpbhts",
+  "planId": "cmtp4mr9b000115g0fty1ny03",
+  "generationJobId": "cmtp4mra3000215g04ps4p4mq",
+  "livePromptVerified": {
+    "model": "gpt-5.6-luna",
+    "focus": true,
+    "compositionPayload": false,
+    "formQuota": false,
+    "paragraphLengthRule": false,
+    "strictGrounding": true,
+    "chapterWordTarget": 4160
+  },
+  "execution": {
+    "words": 60192,
+    "storedPages": 120,
+    "pdfPages": 124,
+    "generationMinutes": 25.607233333333333,
+    "generationExportCalls": 78,
+    "generationExportProviderCostUsd": 0.417525,
+    "finalProjectProviderCostUsd": 0.44191,
+    "productionFilesVerifiedUnchanged": 383,
+    "proseRequests": 30,
+    "allProseLuna": true,
+    "allProseFocus": true,
+    "allProseStrictGrounding": true,
+    "formQuotasInProseRequests": 0,
+    "paragraphLengthRulesInProseRequests": 0
+  },
+  "result": {
+    "scores": {
+      "A": 6.8,
+      "B": 7.6,
+      "C": 6.7
+    },
+    "mean": 7.033333333333333,
+    "verbatimQuotesVerified": 54,
+    "coverageChaptersPerReader": {
+      "A": 15,
+      "B": 15,
+      "C": 15
+    },
+    "criterionMeans": {
+      "thesis": 9,
+      "structure": 8,
+      "depth": 8,
+      "reasoning": 8.666666666666666,
+      "clarity": 8,
+      "voice": 6.333333333333333,
+      "engagement": 6.333333333333333,
+      "pacing": 4.666666666666667,
+      "craft": 7.333333333333333,
+      "slopResistance": 4
+    },
+    "pass": false
+  }
+}

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 7,
+    "clarity": 9,
+    "voice": 7,
+    "engagement": 7,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 4
+  },
+  "overall": 7.2,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "High",
+  "highlights": [
+    {
+      "quote": "The violence has a chain of custody.",
+      "judgment": "This compact formulation states the book's central insight with unusual force."
+    },
+    {
+      "quote": "The bones carry violence, but the grave carries care, and the two traces belong to different moments that cannot be collapsed into one story.",
+      "judgment": "A precise and memorable example of reading evidence without flattening its ambiguity."
+    },
+    {
+      "quote": "Violence opens the way; measurement, ritual, and obligation keep it open.",
+      "judgment": "The sentence crisply connects battlefield force to administration, though its aphoristic symmetry recurs too often elsewhere."
+    },
+    {
+      "quote": "The system required a title, a ledger, a patrol, a parish, a ship, and a court, instead of depending on one violent man.",
+      "judgment": "Specific institutional nouns give the thesis material substance rather than leaving it abstract."
+    },
+    {
+      "quote": "Atahualpa was still in the litter when the first gun went off.",
+      "judgment": "The vivid scene opening creates momentum, but later novelistic particulars are presented without clear textual grounding, blurring reconstruction and evidence."
+    },
+    {
+      "quote": "The same arrangements that made medical services and sanitation possible gave officials a means to observe departure, return, absence, and contact.",
+      "judgment": "The analysis handles the mixed effects of counterinsurgency institutions with clarity and restraint."
+    },
+    {
+      "quote": "The archive is neither a window nor a wall. It is a field of choices left by people who acted under pressure and tried to make their actions legible.",
+      "judgment": "The ending aptly gathers the methodological argument, although it uses another polished binary pivot."
+    },
+    {
+      "quote": "A form assigned a man to a regiment. A telegraph instructed an official where to send guards. A deportation order placed a family on the road.",
+      "judgment": "The parallel sentences are rhetorically effective but exemplify the manuscript's overused cadence of administrative accumulation."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Chapters repeatedly distinguish enabling conditions from human decisions through a 'did not/cannot explain' pivot.",
+      "instances": [
+        "Resource pressure did not choose the victims. People did.",
+        "The environment explains why people met; it does not explain why one group attacked another."
+      ]
+    },
+    {
+      "pattern": "A concrete object or technology is expanded into the institutional chain behind it.",
+      "instances": [
+        "A gun without shells was an object of iron and timber. A shell without a gun was a burden.",
+        "The rifle mattered. So did the list."
+      ]
+    },
+    {
+      "pattern": "Paired case studies culminate in a concise comparison of different systems of organized harm.",
+      "instances": [
+        "One order distributed violence through social relationships; the other concentrated it in a state decision and gave that decision military reach.",
+        "One system restrained the movement of weapons; the other reorganised the movement of people and food."
+      ]
+    },
+    {
+      "pattern": "Institutional reach is repeatedly expressed as a chain of short assignments or links.",
+      "instances": [
+        "A baptismal register and a sale contract could concern the same person while assigning a different meaning to each life.",
+        "A deportation register joined a household to a route."
+      ]
+    },
+    {
+      "pattern": "Chapter endings frequently resolve into polished aphorisms about force and administration.",
+      "instances": [
+        "Horsemanship supplied the means. Institutions supplied the reach.",
+        "Profit supplied the incentive. Government supplied permission and means."
+      ]
+    }
+  ],
+  "summary": "The manuscript advances a strong, coherent thesis: aggression becomes historically consequential when institutions classify targets, distribute authority, and carry decisions across distance. Its global chronology and paired case studies offer impressive range, careful source qualification, and many concrete accounts of how law, logistics, records, and intermediaries turn violence into durable policy. The main weakness is accumulation: chapters repeatedly use the same scene-to-source-to-institution-to-comparison architecture, revisit the same choice-versus-necessity claim, and close on highly polished binary formulations. Several immersive openings also present novelistic physical detail more confidently than the surrounding methodological caution seems to permit, so the book needs a visible distinction between documented description and reconstruction. Substantial cutting, variation in chapter design, and stricter handling of reconstructed scenes would make a compelling argument publication-ready."
+}

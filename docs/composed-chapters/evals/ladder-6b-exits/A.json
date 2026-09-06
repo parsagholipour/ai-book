@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 7.0,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The jailer wept, but he carried the cup.",
+      "judgment": "The book's thesis compressed into one concrete image; the strongest single sentence in the opening chapter."
+    },
+    {
+      "quote": "A buried body preserves no verdict. It preserves what the ground has allowed to remain.",
+      "judgment": "Elegant transition from law to archaeology, and an honest statement of the evidentiary problem the book keeps returning to."
+    },
+    {
+      "quote": "Anger names an emotion. Interpersonal violence names harm within a direct relationship. Raiding names a limited armed incursion. Warfare names sustained conflict between organised groups.",
+      "judgment": "Useful definitional work, but the anaphoric 'X names Y' list is a template that recurs across chapters and reads mechanically."
+    },
+    {
+      "quote": "This was a machine assembled from pasture and paperwork. The horse opened the distance; the decimal unit controlled the men; the relay carried the message; the clerk and interpreter turned submission into an obligation.",
+      "judgment": "Genuine analytical payoff: the Mongol chapter earns its abstraction with prior concrete detail."
+    },
+    {
+      "quote": "The sources record no named Viking commander and no speech by a monk facing the attackers... it would be false to furnish them with invented names.",
+      "judgment": "Admirable evidentiary discipline that the September-Massacres chapter then violates with an invented boy, butcher and woman with a shawl."
+    },
+    {
+      "quote": "The seven prisoners mattered less than the powder.",
+      "judgment": "Sharp, but an instance of the book's most repeated tic: the one-line aphoristic paragraph placed as a section beat."
+    },
+    {
+      "quote": "In Édit du roi concernant la police des îles de l'Amérique, Code Noir, Louis XIV's last recorded act in the document is dated 1685.",
+      "judgment": "A chapter-closing 'source stamp' that is syntactically garbled and says nothing; the closers are the book's weakest recurring feature."
+    },
+    {
+      "quote": "Capacity is not authorisation. A state may own railways, warehouses, police stations, and statistical offices without using them to expose a population deliberately. Authorisation is not outcome.",
+      "judgment": "A clean, non-trivial closing distinction that retro-organises the whole book without overclaiming."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter terminates in a stiff, sourced 'capstone' sentence that restates a datum already given, often in awkward syntax; it reads as a fixture rather than an ending.",
+      "instances": [
+        "Ata-Malik Juvaini wrote that in 1221, at Merv in Khurasan, Chinggis Khan's army counted the inhabitants and killed them.",
+        "In 1908, William H. Sheppard told the United States Senate that in Kasai, Congo Free State, Force Publique officials enforced rubber quotas through hostage-taking, beatings, and killings, and that severed hands were presented as proof of those killings."
+      ]
+    },
+    {
+      "pattern": "Negation-then-correction sentence shape ('A did not X; it Y' / 'The difference is not between P and Q'), used dozens of times per chapter as the default engine of argument.",
+      "instances": [
+        "The delay was not mercy granted by an individual jailer. It followed a religious rule recognised by the city",
+        "The contrast is not between a peaceful Africa and a violent Asia."
+      ]
+    },
+    {
+      "pattern": "Paired-case comparative architecture in nearly every chapter — two societies set beside each other, then an explicit paragraph declaring the comparison is 'not a ladder' or 'not a scale'.",
+      "instances": [
+        "The contrast should not become a ladder from isolated aggression to warfare.",
+        "The comparison with the Haudenosaunee does not produce a scale from gentle to violent."
+      ]
+    },
+    {
+      "pattern": "Isolated one-sentence paragraph used as a rhythmic beat before a section break, frequently aphoristic and interchangeable.",
+      "instances": [
+        "Climate supplied pressure. It did not select the victims, choose the weapons, or determine that a dispute would become an attack.",
+        "A timetable could narrow political choice."
+      ]
+    },
+    {
+      "pattern": "Material carried over between chapters with near-identical framing rather than developed, most visibly Jebel Sahaba in Chapters 1 and 2.",
+      "instances": [
+        "More than sixty individuals were recovered from the cemetery, including men, women, and children. Many had injuries compatible with sharp stone points.",
+        "The dead numbered between sixty and slightly more individuals... Men, women, and children were among them."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely thesis-driven world history of organised violence: aggression matters less than the institutional path by which a decision reaches a body, and that argument is pressed with real consistency from Socrates' cup to the Bengal famine's boat-denial policy. The evidence is specific, dated, and unusually candid about what the archives cannot settle — the treatment of Jebel Sahaba, Nataruk, medieval casualty totals and famine mortality estimates is careful rather than credulous, and the closing distinction between capacity, authorisation and outcome earns its place. The prose is clean, cool, and recognisably one voice, but it is also monotone: nearly every paragraph runs topic sentence to institutional abstraction, and the argument advances chiefly by negation ('not X; Y') and by paired-case comparison capped with a disclaimer that the comparison is not a ladder. Two structural failures stand out. Chapters 1 and 2 re-narrate the same cemetery with little added, and every chapter ends on a stiff quoted 'source stamp' that at one point degenerates into an ungrammatical non-statement about the Code Noir. The September Massacres chapter also invents a boy, a butcher and a woman with a shawl, breaking the evidentiary rule the book states explicitly elsewhere. With the closers rewritten, the duplication cut, and the fabricated scene either sourced or removed, this would be strong; as it stands the templating is visible enough to flatten a book whose thinking is better than its shapes."
+}

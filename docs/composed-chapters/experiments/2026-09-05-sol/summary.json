@@ -1,0 +1,326 @@
+{
+  "assessorModel": "gpt-5.6-sol",
+  "books": [
+    {
+      "code": "J4",
+      "sourceLabel": "ladder-5a-apparatus",
+      "arm": "baseline",
+      "sha256": "3026686c1b004465e0df50c5a74eab97a47e1445a3559cf7b8144d4936344a34",
+      "words": 56471,
+      "readers": [
+        {
+          "reader": "A",
+          "overall": 7.8,
+          "thesis": 9,
+          "structure": 8,
+          "depth": 8,
+          "reasoning": 8,
+          "clarity": 9,
+          "voice": 8,
+          "engagement": 8,
+          "pacing": 6,
+          "craft": 8,
+          "slopResistance": 6
+        },
+        {
+          "reader": "B",
+          "overall": 7,
+          "thesis": 9,
+          "structure": 8,
+          "depth": 8,
+          "reasoning": 6,
+          "clarity": 8,
+          "voice": 7,
+          "engagement": 7,
+          "pacing": 5,
+          "craft": 7,
+          "slopResistance": 5
+        },
+        {
+          "reader": "C",
+          "overall": 7,
+          "thesis": 9,
+          "structure": 8,
+          "depth": 8,
+          "reasoning": 7,
+          "clarity": 8,
+          "voice": 7,
+          "engagement": 7,
+          "pacing": 5,
+          "craft": 7,
+          "slopResistance": 4
+        }
+      ],
+      "readerCount": 3,
+      "means": {
+        "overall": 7.266666666666667,
+        "thesis": 9,
+        "structure": 8,
+        "depth": 8,
+        "reasoning": 7,
+        "clarity": 8.333333333333334,
+        "voice": 7.333333333333333,
+        "engagement": 7.333333333333333,
+        "pacing": 5.333333333333333,
+        "craft": 7.333333333333333,
+        "slopResistance": 5
+      },
+      "readerRange": [
+        7,
+        7.8
+      ]
+    },
+    {
+      "code": "M8",
+      "sourceLabel": "ladder-5b-apparatus",
+      "arm": "baseline",
+      "sha256": "60ddd04e4e00c59e6ccfb99f5f136399f23761f4ada22bac4957650092d4b652",
+      "words": 52939,
+      "readers": [
+        {
+          "reader": "A",
+          "overall": 7.8,
+          "thesis": 9,
+          "structure": 8,
+          "depth": 9,
+          "reasoning": 8,
+          "clarity": 9,
+          "voice": 8,
+          "engagement": 8,
+          "pacing": 6,
+          "craft": 8,
+          "slopResistance": 5
+        },
+        {
+          "reader": "B",
+          "overall": 7.1,
+          "thesis": 9,
+          "structure": 8,
+          "depth": 8,
+          "reasoning": 8,
+          "clarity": 8,
+          "voice": 7,
+          "engagement": 7,
+          "pacing": 5,
+          "craft": 7,
+          "slopResistance": 4
+        },
+        {
+          "reader": "C",
+          "overall": 6.8,
+          "thesis": 8,
+          "structure": 8,
+          "depth": 8,
+          "reasoning": 7,
+          "clarity": 8,
+          "voice": 7,
+          "engagement": 7,
+          "pacing": 5,
+          "craft": 7,
+          "slopResistance": 3
+        }
+      ],
+      "readerCount": 3,
+      "means": {
+        "overall": 7.233333333333333,
+        "thesis": 8.666666666666666,
+        "structure": 8,
+        "depth": 8.333333333333334,
+        "reasoning": 7.666666666666667,
+        "clarity": 8.333333333333334,
+        "voice": 7.333333333333333,
+        "engagement": 7.333333333333333,
+        "pacing": 5.333333333333333,
+        "craft": 7.333333333333333,
+        "slopResistance": 4
+      },
+      "readerRange": [
+        6.8,
+        7.8
+      ]
+    },
+    {
+      "code": "T2",
+      "sourceLabel": "ladder-5c-apparatus",
+      "arm": "baseline",
+      "sha256": "8e36c4a8bc269cdde3b2476e2da5badda5da64f19b7e070a6b0cb06665659559",
+      "words": 59472,
+      "readers": [
+        {
+          "reader": "A",
+          "overall": 6.9,
+          "thesis": 8,
+          "structure": 8,
+          "depth": 8,
+          "reasoning": 7,
+          "clarity": 8,
+          "voice": 7,
+          "engagement": 7,
+          "pacing": 5,
+          "craft": 7,
+          "slopResistance": 4
+        },
+        {
+          "reader": "B",
+          "overall": 7.2,
+          "thesis": 9,
+          "structure": 8,
+          "depth": 8,
+          "reasoning": 8,
+          "clarity": 8,
+          "voice": 7,
+          "engagement": 7,
+          "pacing": 5,
+          "craft": 7,
+          "slopResistance": 5
+        },
+        {
+          "reader": "C",
+          "overall": 7.1,
+          "thesis": 9,
+          "structure": 8,
+          "depth": 8,
+          "reasoning": 6,
+          "clarity": 9,
+          "voice": 7,
+          "engagement": 8,
+          "pacing": 5,
+          "craft": 7,
+          "slopResistance": 4
+        }
+      ],
+      "readerCount": 3,
+      "means": {
+        "overall": 7.066666666666666,
+        "thesis": 8.666666666666666,
+        "structure": 8,
+        "depth": 8,
+        "reasoning": 7,
+        "clarity": 8.333333333333334,
+        "voice": 7,
+        "engagement": 7.333333333333333,
+        "pacing": 5,
+        "craft": 7,
+        "slopResistance": 4.333333333333333
+      },
+      "readerRange": [
+        6.9,
+        7.2
+      ]
+    },
+    {
+      "code": "Q9",
+      "sourceLabel": "composed-7",
+      "arm": "reference",
+      "sha256": "850396c091aa1eeb96f07f1620cbd5d1b4d2a6c7ef2cc607ce07a56e5b816976",
+      "words": 52884,
+      "readers": [
+        {
+          "reader": "A",
+          "overall": 7.2,
+          "thesis": 9,
+          "structure": 8,
+          "depth": 8,
+          "reasoning": 8,
+          "clarity": 8,
+          "voice": 7,
+          "engagement": 7,
+          "pacing": 5,
+          "craft": 8,
+          "slopResistance": 4
+        },
+        {
+          "reader": "B",
+          "overall": 7.8,
+          "thesis": 9,
+          "structure": 8,
+          "depth": 9,
+          "reasoning": 8,
+          "clarity": 9,
+          "voice": 8,
+          "engagement": 8,
+          "pacing": 6,
+          "craft": 8,
+          "slopResistance": 5
+        },
+        {
+          "reader": "C",
+          "overall": 8,
+          "thesis": 9,
+          "structure": 8,
+          "depth": 9,
+          "reasoning": 9,
+          "clarity": 9,
+          "voice": 8,
+          "engagement": 8,
+          "pacing": 6,
+          "craft": 8,
+          "slopResistance": 6
+        }
+      ],
+      "readerCount": 3,
+      "means": {
+        "overall": 7.666666666666667,
+        "thesis": 9,
+        "structure": 8,
+        "depth": 8.666666666666666,
+        "reasoning": 8.333333333333334,
+        "clarity": 8.666666666666666,
+        "voice": 7.666666666666667,
+        "engagement": 7.666666666666667,
+        "pacing": 5.666666666666667,
+        "craft": 8,
+        "slopResistance": 5
+      },
+      "readerRange": [
+        7.2,
+        8
+      ]
+    }
+  ],
+  "arms": {
+    "baseline": {
+      "completeBooks": 3,
+      "means": {
+        "overall": 7.188888888888889,
+        "thesis": 8.777777777777777,
+        "structure": 8,
+        "depth": 8.11111111111111,
+        "reasoning": 7.222222222222222,
+        "clarity": 8.333333333333334,
+        "voice": 7.222222222222222,
+        "engagement": 7.333333333333333,
+        "pacing": 5.222222222222222,
+        "craft": 7.222222222222222,
+        "slopResistance": 4.444444444444445
+      },
+      "bookRange": [
+        7.066666666666666,
+        7.266666666666667
+      ],
+      "bookStandardDeviation": 0.10715167512214407
+    },
+    "reference": {
+      "completeBooks": 1,
+      "means": {
+        "overall": 7.666666666666667,
+        "thesis": 9,
+        "structure": 8,
+        "depth": 8.666666666666666,
+        "reasoning": 8.333333333333334,
+        "clarity": 8.666666666666666,
+        "voice": 7.666666666666667,
+        "engagement": 7.666666666666667,
+        "pacing": 5.666666666666667,
+        "craft": 8,
+        "slopResistance": 5
+      },
+      "bookRange": [
+        7.666666666666667,
+        7.666666666666667
+      ],
+      "bookStandardDeviation": null
+    }
+  },
+  "validationIssues": []
+}

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 6,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 6,
+    "slopResistance": 4
+  },
+  "overall": 6.5,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "But none of that explains the massacre. It describes the conditions under which it became possible.",
+      "judgment": "A genuinely load-bearing opening move: it states the book's causal discipline in concrete terms and the closing chapter pays it off."
+    },
+    {
+      "quote": "The earliest writing in Mesopotamia was not literature. It was accounting.",
+      "judgment": "Chapter 3's best passage \u2014 a real mechanism traced from surplus to fence to record to conscription, with the wall as evidence rather than decoration."
+    },
+    {
+      "quote": "The records were the mechanism, and the mechanism was the violence.",
+      "judgment": "Representative of an aphoristic closer the book reaches for far too often; it sounds conclusive while adding nothing the paragraph had not already argued."
+    },
+    {
+      "quote": "The peace was the point. He had troops, and he had the authority to use them, but the use was governed by a calculus of cost and benefit that the emperor monitored from Rome.",
+      "judgment": "An orphaned two-sentence paragraph whose pronoun has no antecedent \u2014 visible seam where composed sections were joined."
+    },
+    {
+      "quote": "Article forty-one states that an enslaved person who has run away for a month shall have his ears cut off... Article forty-two states that an enslaved person who has run away for a month shall have his ears cut off",
+      "judgment": "The text builds an interpretive claim ('the drafters were not concerned with the precision of the law') on what reads as its own duplicated sentence \u2014 a reasoning failure disguised as source analysis."
+    },
+    {
+      "quote": "The historian can say that the Aztecs and the Tlaxcalans both used warfare to achieve political goals... The historian cannot say that the goals were the same, or that the outcomes were the same.",
+      "judgment": "Chapter 5 reproduces Chapter 4's closing formula almost word for word; the epistemic humility becomes a template rather than a judgment."
+    },
+    {
+      "quote": "The log records the number of enslaved people purchased, the price paid for them, and the number of deaths that occurred on board.",
+      "judgment": "One of roughly a dozen consecutive sentences beginning 'The log records' \u2014 anaphora used as a substitute for analysis, and the section says the same thing three times."
+    },
+    {
+      "quote": "They were a confederation of refugees and warriors who had been invited to settle inside the empire and had been mishandled by Roman officials who sold them food at inflated prices and then tried to disarm them.",
+      "judgment": "Chapter 15 recovers real specificity and shows the prose can be precise and unhurried when it is not filling a structural slot."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Negation-then-assertion as the default sentence engine ('It was not X; it was Y'), often several times per paragraph and used even where no reader would have assumed X.",
+      "instances": [
+        "The wall of Uruk, then, was not a response to a single attack. It was a response to a pattern of threat",
+        "The campaign was not a conquest; it was a destruction."
+      ]
+    },
+    {
+      "pattern": "A boilerplate chapter coda: 'the evidence is uneven' \u2192 'the comparison preserves the difference' \u2192 'the historian can say... cannot say' \u2192 'the circumstances were made by people'. Recycled nearly verbatim across at least four chapters.",
+      "instances": [
+        "The comparison is valuable because it preserves the difference. It does not allow us to say that the Roman approach was better or worse than the Han approach.",
+        "The comparison preserves the difference. It does not allow us to say that the Aztec approach to warfare was better or worse than the Tlaxcalan approach."
+      ]
+    },
+    {
+      "pattern": "Enumerated-criteria scaffolding that loses track of itself, restating points already made under new numbers.",
+      "instances": [
+        "One key criterion is the distribution of wounds... A second criterion is the position of the bodies.",
+        "The second criterion is the number of victims. A single violent event that kills one or two people is more likely to be interpersonal."
+      ]
+    },
+    {
+      "pattern": "Recap loops in which a section's conclusion is restated two or three times in successive paragraphs with only cosmetic variation, especially at chapter ends.",
+      "instances": [
+        "The violence that made the empire possible was not the violence that sustained it",
+        "The violence that made the empire possible was not the violence that sustained it, and the violence that destroyed the cities of the Khwarezmid Empire was not the violence that rebuilt them."
+      ]
+    },
+    {
+      "pattern": "Late chapters flatten into encyclopedia summary \u2014 dated event, actors, outcome \u2014 with the book's analytic frame appended as a paragraph of abstractions rather than carried by the material.",
+      "instances": [
+        "The modern state was a powerful instrument, and it could be used for good or for ill. It could be used to protect people, and it could be used to harm people.",
+        "The state that can mobilize a million soldiers can also destroy a million lives. The state that can supply an army can also starve a city."
+      ]
+    }
+  ],
+  "summary": "A serious, well-organized survey of organized violence with a clear and consistently applied thesis: aggression is a human capacity whose scale, targets and meaning are set by ecology, technology, institutions, inequality, ideology and identity, and the book keeps faith with that argument from My Lai in Chapter 1 to the aggression/organized-violence distinction in Chapter 15. Its strongest asset is source discipline \u2014 Talheim, the Peers Report, the Res Gestae, Juvayni, the Wannsee protocol are each read as artifacts with interests, and the book is unusually honest about what its evidence cannot settle. The weaknesses are structural rather than factual: nearly every chapter runs the same machine (documentary set-piece, mechanism traced, counterargument entertained, epistemic-limits coda), and the coda in particular is recycled almost verbatim across chapters four, five, nine and eleven. Prose habits compound this \u2014 negation-then-assertion, anaphoric list paragraphs, aphoristic closers, and recap loops that restate a conclusion three ways \u2014 while Chapters 9, 12 and 14 thin into textbook summary. There are visible composition seams: an orphaned paragraph in Chapter 4, duplicated criterion numbering in Chapter 2, and a Chapter 8 argument built on what appears to be its own repeated sentence. Cutting perhaps a fifth of the length, varying the chapter template, and rewriting the closers would move this from capable to genuinely good."
+}

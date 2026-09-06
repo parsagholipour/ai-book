@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 6,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 5,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 6.8,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Absence is a historical condition before it becomes a historical conclusion.",
+      "judgment": "Strength: a genuinely earned formulation that names the book's methodological discipline in one line."
+    },
+    {
+      "quote": "A wound is a trace of force. It cannot tell us whether a state ordered the attack, whether an armed group had a command structure, or whether the people who died were treated as combatants or civilians.",
+      "judgment": "Strength: the evidentiary humility is specific and load-bearing rather than decorative hedging."
+    },
+    {
+      "quote": "A weapon can enlarge the reach of an individual attack. An arsenal enlarges the reach of an office.",
+      "judgment": "Mixed: crisp and thesis-carrying, but it is the hundredth instance of the same two-beat antithesis, so its force is spent."
+    },
+    {
+      "quote": "The people whom the manifest had listed as cargo now determined the vessel's direction.",
+      "judgment": "Strength: the Creole chapter's best sentence \u2014 concrete, ironic, and it earns its isolation as a paragraph."
+    },
+    {
+      "quote": "The significance lies in the verbs.",
+      "judgment": "Weakness: a one-line aphoristic paragraph used as a rhetorical drumbeat; the book deploys this move dozens of times until it reads as a tic."
+    },
+    {
+      "quote": "Emotion supplied energy. Institutions supplied direction.",
+      "judgment": "Weakness: the thesis compressed into a paired antithesis so symmetrical it substitutes cadence for argument, and it restates what three preceding paragraphs already established."
+    },
+    {
+      "quote": "How many peaceful lives leave no trace, and how many violent lives vanish before anyone has a reason to record them?",
+      "judgment": "Weakness: chapters and sections repeatedly close on an unanswered rhetorical question, which defers analysis rather than performing it."
+    },
+    {
+      "quote": "A cemetery contains bodies that survived for varying lengths of time after injury, or did not survive it, and those injuries were produced by other people or by events in which people used weapons.",
+      "judgment": "Weakness: qualification piled on qualification produces a sentence that says almost nothing; Jebel Sahaba is then re-explained at length in Chapter 2."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Negation-then-assertion antithesis ('It does not X; it does Y' / 'not A but B'), used as the default sentence engine in every chapter, often several times per paragraph.",
+      "instances": [
+        "The animals were not an accessory to the army's power; they were part of its order of march.",
+        "The stele does not pause over individual grief. It organises the dead so that they testify to Eannatum's power."
+      ]
+    },
+    {
+      "pattern": "The evidence-limits couplet: a source 'can show' one thing and 'cannot tell us' another \u2014 an admirable habit that hardens into a fixed two-sentence template applied to nearly every artifact.",
+      "instances": [
+        "A wall cannot tell us how every person understood that arrangement. It can tell us that protection was assigned to a location and that access to the location could be restricted.",
+        "The cemetery can show patterns in the bodies assembled there. It cannot identify the assailant, explain the quarrel, or name the rule under which the attack occurred."
+      ]
+    },
+    {
+      "pattern": "Paired-case chapter architecture: each chapter is built from two or four contrasting sites/documents introduced separately, then explicitly compared in a summary paragraph that begins 'the difference' or 'the contrast'.",
+      "instances": [
+        "The contrast lies in the institutions that made resources available.",
+        "The difference did not arise because one society possessed aggression and the other did not."
+      ]
+    },
+    {
+      "pattern": "Aphoristic one-sentence closer set off as its own paragraph, landing a chapter or section on an epigram.",
+      "instances": [
+        "A bureaucratic document does not make killing impersonal; it gives impersonality a procedure.",
+        "A poster could make the state's request appear to come from a neighbour."
+      ]
+    },
+    {
+      "pattern": "Recap loops in which the chapter's cases are re-listed in one clause each, restating conclusions already drawn.",
+      "instances": [
+        "Jebel Sahaba joins projectile wounds to repeated injury; \u00c7atalh\u00f6y\u00fck joins house burial to limited visible trauma; Nataruk and Talheim join collective death to unlike social settings.",
+        "Cahokia invested labour in a boundary. Bonampak made a captive serve royal display. Moche objects carried the defeated body into ritual settings. Inca roads allowed an imperial government to return to conquered provinces."
+      ]
+    }
+  ],
+  "summary": "This is a fifteen-chapter global history arguing that aggression becomes large-scale and durable only when institutions \u2014 offices, registers, classifications, supply chains \u2014 make harm repeatable, and that emotion supplies energy while institutions supply direction. The thesis is genuinely sustained from a Nile cemetery to Rwandan identity cards, and the book's best quality is its evidentiary conscience: it repeatedly names what a source can and cannot support, refuses to convert bones into 'war' or a monument into a battle report, and treats gaps in the record as historical facts in their own right. The prose is clean, the register consistently austere, and the specificity high; there is no lexical AI slop, no listicles, no filler abstraction. The failure is structural monotony. Nearly every paragraph is built from the same negation-then-assertion antithesis, nearly every artifact receives the same 'can show / cannot tell us' couplet, chapters are assembled as paired case studies capped by a comparison paragraph, and sections close on either an epigram or an unanswered rhetorical question. Redundancy compounds this \u2014 Jebel Sahaba is argued twice, and summary paragraphs re-list cases already analysed \u2014 so the reading experience flattens well before the strong later chapters on Wannsee and the missile crisis. It needs moderate revision aimed at varying sentence architecture, cutting recap passages, and letting more human particularity into chapters that currently move entirely at the level of offices and categories."
+}

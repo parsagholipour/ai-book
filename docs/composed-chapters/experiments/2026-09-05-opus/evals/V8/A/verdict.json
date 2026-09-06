@@ -1,0 +1,54 @@
+{
+  "scores": { "thesis": 9, "structure": 8, "depth": 8, "reasoning": 8, "clarity": 9, "voice": 8, "engagement": 7, "pacing": 6, "craft": 8, "slopResistance": 6 },
+  "overall": 7.7,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    { "quote": "The pit is powerful evidence of killing. It is poor evidence for a census.", "judgment": "Compressed, exact statement of the book's central epistemic claim; the manuscript at its best." },
+    { "quote": "The archive does not distribute evidence according to the importance of the violence.", "judgment": "The controlling idea stated plainly and without decoration; earns the chapters that follow it." },
+    { "quote": "A clerk did not need to write “murder” in order to prepare a murder train.", "judgment": "A genuinely earned sentence: the administrative thesis and the moral stake meet in one clause." },
+    { "quote": "The story is plausible. The bones do not supply its sequence.", "judgment": "Strong two-beat correction, though this exact rhythm recurs so often it becomes a tic." },
+    { "quote": "The ledger and the spear belonged to one chain.", "judgment": "Aphoristic closer of a kind the book reaches for at almost every section end; effective once, wearying by chapter 9." },
+    { "quote": "The new weapon changed the problem without solving it.", "judgment": "Free-standing one-line paragraph used as a rhetorical stamp; substitutes cadence for the analysis around it." },
+    { "quote": "The conquered people did not become the conquered city’s ruler.", "judgment": "A near-tautology dressed as an epigram — the pattern misfiring when there is no real paradox to compress." },
+    { "quote": "Scarcity became killing where an authority had already decided who could be dispossessed.", "judgment": "The book's key move, but restated in near-identical wording across chapters rather than developed." }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "A one-sentence paragraph dropped after a long analytic passage as a rhetorical stamp",
+      "instances": [
+        "The ram moved again.",
+        "The percentage gave dispossession the appearance of measurement."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis assigning complementary roles to two institutions or sources, usually in two clipped clauses",
+      "instances": [
+        "Terror announced the terms. Administration collected them.",
+        "Josephus preserves the human catastrophe; the arch preserves the state’s possession of its meaning."
+      ]
+    },
+    {
+      "pattern": "Chapter closing on an unanswerable question about what the archive could record",
+      "instances": [
+        "Did the early state increase violence, or did it increase the chances that violence would survive as evidence?",
+        "How destructive were the Mongols compared with other conquerors, and how much of their apparent exceptionalism comes from the kind of records their empire produced?"
+      ]
+    },
+    {
+      "pattern": "Symmetrical hedge that refuses a simple dichotomy just after raising it",
+      "instances": [
+        "Neither conclusion supports a universal ladder in which settled farmers simply become more aggressive than foragers.",
+        "Neither case fits a simple opposition between peaceful diplomacy and violent empire."
+      ]
+    },
+    {
+      "pattern": "Two-case comparison delivered as matched \"In A ... In B ...\" sentences with parallel syntax",
+      "instances": [
+        "In the Congo, the concession boundary directed labour towards rubber. In South Africa, the land boundary directed labour towards mines and farms.",
+        "In Japan, consolidation made restriction useful. In north India, contested sovereignty made concentrated firepower useful."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, genuinely learned global history of organised violence built on one strong argument: aggression becomes large-scale only through offices, and what we can know about it is shaped by the archives those offices produced. The thesis is stated early, tested against wildly varied evidence — Jebel Sahaba, Eannatum's stele, the Zong, Wannsee, the Cuban missile crisis, the Good Friday Agreement — and returns in chapter 15 without collapsing into a slogan. The reconstructed scenes that open chapters are concrete and researched rather than atmospheric filler, and the prose is clean, unhurried, and free of stock LLM vocabulary. What weakens it is uniformity of shape: nearly every section closes on the same paired antithesis, the same short aphoristic punch line, or the same open question about the record, and the comparison chapters are assembled to an identical template of case A, case B, and a hedging refusal of the obvious contrast. Cutting perhaps a fifth of the summarising paragraphs and varying the closers would move the book from good to genuinely distinguished; the underlying research and the argument are already there."
+}

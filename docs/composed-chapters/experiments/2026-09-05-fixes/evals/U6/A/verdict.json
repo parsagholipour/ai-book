@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 6,
+    "engagement": 6,
+    "pacing": 4,
+    "craft": 7,
+    "slopResistance": 4
+  },
+  "overall": 6.5,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "High",
+  "highlights": [
+    {
+      "quote": "The office, rather than the individual, is the durable unit in his account.",
+      "judgment": "A precise formulation of the book's recurring interest in how institutions outlast individual actors."
+    },
+    {
+      "quote": "A wound is not a war.",
+      "judgment": "The thesis achieves memorable compression without sacrificing its key categorical distinction."
+    },
+    {
+      "quote": "The court’s categories remain part of the evidence and part of the violence.",
+      "judgment": "This insight sharply connects documentary form to the harm the document processes."
+    },
+    {
+      "quote": "Communication multiplied without producing clarity.",
+      "judgment": "A clean paradox that makes the Cuban Missile Crisis analysis vivid and exact."
+    },
+    {
+      "quote": "The question remains open because the site records violence across lives without recording the social scale at which violence was organised.",
+      "judgment": "The careful qualification is sound, but it exemplifies the extended caveats repeatedly restated throughout the book."
+    },
+    {
+      "quote": "A body can reveal the wound more securely than the command that produced it.",
+      "judgment": "Strong sentence-level craft turns an evidentiary limit into a lucid governing principle."
+    },
+    {
+      "quote": "The same administrative capacity could enlarge coercion or place limits on its form.",
+      "judgment": "The balanced formulation is conceptually useful, though this recurring either-direction structure becomes predictable."
+    },
+    {
+      "quote": "The unresolved question is narrow but consequential: through what sequence did a phrase heard over radio become a decision made by a particular person at a particular place?",
+      "judgment": "A genuinely probing question, but another chapter-ending open question reinforces the manuscript's repetitive architecture."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The prose distinguishes what a record securely shows from the procedure or agency it cannot recover.",
+      "instances": [
+        "The record preserves the result more securely than the procedure.",
+        "A body can reveal the wound more securely than the command that produced it."
+      ]
+    },
+    {
+      "pattern": "Paired clauses contrast two evidentiary levels in a polished, symmetrical form.",
+      "instances": [
+        "The first concerns interpretation; the second concerns the channels through which a community recognised injury and attempted to sustain its practice.",
+        "One record illuminates the architecture of persecution; the other examines people who operated within its violent front line."
+      ]
+    },
+    {
+      "pattern": "Brief aphoristic statements compress a chapter's argument.",
+      "instances": [
+        "A wound is not a war.",
+        "Communication multiplied without producing clarity."
+      ]
+    },
+    {
+      "pattern": "Chapters preserve uncertainty by ending or pivoting on an explicitly unresolved question.",
+      "instances": [
+        "The question remains open because the site records violence across lives without recording the social scale at which violence was organised.",
+        "The unresolved question is narrow but consequential: through what sequence did a phrase heard over radio become a decision made by a particular person at a particular place?"
+      ]
+    },
+    {
+      "pattern": "Institutional media are treated as active components of violence rather than neutral containers.",
+      "instances": [
+        "The court’s categories remain part of the evidence and part of the violence.",
+        "The body shows one history of harm; the political account shows how a community organised relationship; the royal book shows how conquest became obligation."
+      ]
+    }
+  ],
+  "summary": "The manuscript advances a coherent and valuable thesis: aggression cannot be ranked across societies as a single substance, and historical records reveal different layers of injury, coercion, organisation, and authority. Its strongest work closely reads the form of evidence—bones, monuments, legal cases, administrative protocols, letters, and broadcasts—and shows how institutions can organise harm or restraint. The chronological progression is intelligible, but adjacent chapters sometimes repeat cases and arguments, most conspicuously the overlapping Mongol material in Chapters 6 and 7. Nearly every section reiterates what the source does and does not establish, often through symmetrical caveats and open-ended questions; this produces rigor but also severe redundancy and a recognisably templated cadence. A substantial compression pass, sharper differentiation of chapter functions, and more sustained human narrative would make the book considerably more engaging without weakening its caution."
+}

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 7.1,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Veratius discovered that an ancient tariff could function as a public subscription for battery.",
+      "judgment": "Excellent opening move: a single sentence turns an anecdote into the book's thesis about pricing and permission."
+    },
+    {
+      "quote": "The fracture in the bone records the impact of a stone adze on bone; it does not record the social mobilization that put the adze in the attacker's hand.",
+      "judgment": "Model of the book's evidentiary discipline — states precisely what a source can and cannot bear."
+    },
+    {
+      "quote": "A rifle also acquired an accounting function. Soldiers were expected to account for cartridges issued to them, and the colonial system turned severed hands into proof that ammunition had been used in killings rather than stolen or wasted.",
+      "judgment": "The strongest single passage: horror explained through paperwork rather than adjectives."
+    },
+    {
+      "quote": "What disappears entirely from the fifteen pages is any mention of human pain, blood, screaming, or resistance. That total omission is the protocol's defining historical feature.",
+      "judgment": "Reads a document by its silences; genuinely analytic rather than descriptive."
+    },
+    {
+      "quote": "The ledger was the campaign before it began.",
+      "judgment": "One of many one-line aphoristic closers set off as their own paragraph; effective once, formulaic by the fifth occurrence."
+    },
+    {
+      "quote": "A crowd can break an armory, but it requires an institution to build a tribunal.",
+      "judgment": "Neat, but the same paired-antithesis shape carries nearly every section's conclusion, flattening the argument's texture."
+    },
+    {
+      "quote": "Nothing in the cemetery, as described by the archaeological record available here, names a chief, a council, a permanent war party, or a rule authorizing attack.",
+      "judgment": "\"available here\" leaks the drafting apparatus into the finished prose — a residue of source-limited composition."
+    },
+    {
+      "quote": "His social status and income derived from an revocable imperial commission.",
+      "judgment": "Uncorrected article error; small but a sign the copy pass was uneven across chapters."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter opens on a single named artifact, document or scene, then abstracts from it to the institutional thesis — a reliable and often superb engine, but so regular it becomes predictable by mid-book.",
+      "instances": [
+        "Aulus Gellius places Lucius Veratius in the streets of Rome, among the civic habits that gave Roman violence its peculiar shape.",
+        "A page from an Ottoman timar register of the sixteenth century looks like a page from any other imperial account book."
+      ]
+    },
+    {
+      "pattern": "Pervasive \"not X, but Y\" / negated-then-corrected sentences, several per page, used as the default way to make any claim.",
+      "instances": [
+        "The violence was not an accidental breakdown of discipline; it was the coercive enforcement of Roman debt and annexation policies",
+        "These accounts were not expressions of uncontrolled passion; they were official notices addressed to multiple audiences simultaneously."
+      ]
+    },
+    {
+      "pattern": "Chapters close on an open rhetorical question addressed to the reader, in almost every chapter, as a standardized landing.",
+      "instances": [
+        "Did the arrival of gunpowder create the early modern state, or did expanding state administrations simply seize upon the new weapons to enlarge their existing capacities?",
+        "What would the history of American warfare look like if every captive were followed back to the council, palace, or lineage that gave his capture meaning?"
+      ]
+    },
+    {
+      "pattern": "The same conclusion — technology/emotion/scarcity did not cause the harm; an office decided it — is restated at the end of nearly every section, producing heavy redundancy across chapters 3, 4, 9, 11 and 12.",
+      "instances": [
+        "Industrial warfare provided the logistics, but the state chose who would be harmed.",
+        "Scarcity became killing because the office had already decided that the required amount must be supplied."
+      ]
+    },
+    {
+      "pattern": "Inserted taxonomic list-interludes (bulleted or numbered catalogues of \"four logics\", \"five travellers\", \"six forms of resistance\") that break the narrative register and read as reference apparatus rather than argument; several are also run together into one undifferentiated block.",
+      "instances": [
+        "1. **Eurasian Steppe raiding confederacies:** Pastoral groups such as the Xiongnu, Huns, and successive Turkic alliances...",
+        "*   Flight and temporary absence (*petit marronage*) to disrupt planting cycles, visit family members on neighboring estates..."
+      ]
+    }
+  ],
+  "summary": "This is an unusually disciplined comparative history whose thesis — that aggression is shaped less by anger or technology than by the offices, ledgers and legal categories that decide who may be harmed — is stated clearly in chapter 1 and honoured in every chapter through to the Good Friday Agreement. The research texture is dense and concrete, the openings are consistently strong, and the handling of evidence is genuinely scrupulous: the book repeatedly tells the reader what a mass grave, a victory stele or a protocol cannot establish, and the Congo rubber chapter and the Wannsee reading are first-rate. Its weaknesses are those of monotony rather than error. Paragraphs share one shape, claims are almost always made by negation (\"not an outburst; it was an act of\"), sections land on aphoristic one-line closers, and chapters end on an open rhetorical question, so that by the ninth chapter the argument feels performed on schedule rather than pursued. Redundancy is the biggest structural cost — chapters 3, 4, 9 and 12 reach the same conclusion about administration and scale several times each — and the inserted bulleted taxonomies read as reference material dropped into narrative prose. A firm pass that cut perhaps fifteen percent of the restatement, varied the sentence architecture, and let a few sections end without a summarizing verdict would lift a competent, informative book toward a distinguished one."
+}

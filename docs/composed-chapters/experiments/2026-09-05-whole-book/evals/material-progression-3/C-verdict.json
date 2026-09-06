@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 6,
+    "engagement": 6,
+    "pacing": 4,
+    "craft": 7,
+    "slopResistance": 3
+  },
+  "overall": 6.7,
+  "readiness": "Needs major revision",
+  "slopSeverity": "High",
+  "highlights": [
+    {
+      "quote": "Authorisation and legitimacy must remain separate.",
+      "judgment": "This concise distinction gives the book a clear conceptual tool that remains useful across periods."
+    },
+    {
+      "quote": "A source may be partial without being useless; its partiality becomes part of what must be interpreted.",
+      "judgment": "The sentence captures the manuscript's strongest methodological habit: calibrated use of incomplete evidence."
+    },
+    {
+      "quote": "Coercion becomes durable when the result of force can be translated into a schedule.",
+      "judgment": "This is a memorable and original formulation of the link between violence and administration."
+    },
+    {
+      "quote": "A ship’s manifest, an insurance policy, a plantation inventory, and a court’s ruling could carry the effects of a whip without describing the blow.",
+      "judgment": "Concrete objects and a controlled metaphor make institutional violence vivid without melodrama."
+    },
+    {
+      "quote": "The existence of a number is evidence of an institutional practice as well as of a demographic event, while leaving open what it measures.",
+      "judgment": "The manuscript handles quantitative evidence with welcome precision about what counting reveals and conceals."
+    },
+    {
+      "quote": "The choice before the revolutionary leaders was therefore not between coercion and its absence.",
+      "judgment": "This exemplifies the book's repeated binary-correction template, which becomes predictable despite its analytical value."
+    },
+    {
+      "quote": "The same factor can have opposite effects.",
+      "judgment": "Late in the book, this familiar balancing move feels like another recap of a point already established many times."
+    },
+    {
+      "quote": "The photographs from Abu Ghraib, the testimony considered in the De Kock matter, and the columns of the Small Arms Survey are different kinds of historical objects",
+      "judgment": "The final chapter opens another three-case comparison but the manuscript ends without a proportionate concluding synthesis or rhetorical close."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The prose repeatedly distinguishes what evidence establishes from what it cannot establish.",
+      "instances": [
+        "Perimortem does not mean fatal.",
+        "The Wannsee Protocol offers unusually clear evidence of coordination, but it does not contain a simple sentence announcing the entire murder programme."
+      ]
+    },
+    {
+      "pattern": "Chapters reject single-cause technological explanations in nearly identical formulations.",
+      "instances": [
+        "Gunpowder changed what states could do, but it did not decide why they did it.",
+        "The Armenian case therefore cannot be explained by railways alone."
+      ]
+    },
+    {
+      "pattern": "Institutional capacity is presented as morally open to violence or restraint.",
+      "instances": [
+        "Administrative improvements had no built-in moral direction.",
+        "Institutional structure creates capacity; political decisions determine its use."
+      ]
+    },
+    {
+      "pattern": "Comparisons are repeatedly introduced by a formula announcing what one case clarifies about another.",
+      "instances": [
+        "The comparison with the Congo clarifies two forms of routine violence.",
+        "The comparison with Abu Ghraib clarifies the difference."
+      ]
+    },
+    {
+      "pattern": "Paragraphs often close with paired qualifications balancing agency and constraint.",
+      "instances": [
+        "Communication widened the field of action; it did not perform every act itself.",
+        "Submission offered survival, but survival was reorganised around imperial demands."
+      ]
+    }
+  ],
+  "summary": "The manuscript advances a strong, coherent thesis that aggression becomes historically consequential through institutions, classifications, material capacity, and individual choices rather than through a timeless human essence. Its chronological architecture and paired case studies support unusually careful reasoning about sources, intent, authority, consequence, and the limits of comparison. The central weakness is accumulation: chapters repeatedly restate the same cautions, binary distinctions, lists of institutional mechanisms, and balanced antitheses, often after the analytical point is already secure. This produces high AI-slop severity, suppresses narrative momentum and distinct voice, and makes the book far longer than its conceptual development requires. A major revision should compress repeated methodological disclaimers, vary chapter architecture, sharpen selection among examples, and provide a fuller final synthesis."
+}

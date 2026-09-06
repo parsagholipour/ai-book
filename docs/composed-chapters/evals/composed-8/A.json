@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 7,
+    "slopResistance": 7
+  },
+  "overall": 7.1,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The body is a document written by impact, and its sentences have been broken apart by burial, erosion, excavation, and time.",
+      "judgment": "Strength: a genuinely earned image that states the book's evidentiary thesis without decorating it."
+    },
+    {
+      "quote": "Patterns permit a historical argument. They do not turn uncertainty into a witness.",
+      "judgment": "Strength: crisp, and it establishes the epistemic discipline the whole book then honours."
+    },
+    {
+      "quote": "A field boundary says, \"this work belongs to someone\"; a wall says, \"this place must be entered on terms.\"",
+      "judgment": "Strength: the comparative method at its best \u2014 two sites made to say different things rather than the same thing twice."
+    },
+    {
+      "quote": "Architecture is not a motive. It places motives within reach.",
+      "judgment": "Strength: characteristic two-beat closer; sharp here, but this exact cadence recurs so often it becomes a tic."
+    },
+    {
+      "quote": "The sword remained real throughout. So did the wound and the burned house.",
+      "judgment": "Weakness: this is the opening paragraph of Chapter 8 but is plainly the conclusion of Chapter 7 \u2014 a live structural fault, not a stylistic one."
+    },
+    {
+      "quote": "Its value lies in the army, the walls, the ships, the guns, and the final assault they place before us.",
+      "judgment": "Weakness: a list standing in for analysis; the book falls back on enumerated inventories whenever synthesis gets hard."
+    },
+    {
+      "quote": "Rain supplied pressure; policy supplied the terms.",
+      "judgment": "Mixed: memorable, but it is the book's default sentence shape (paired clauses, semicolon, chiastic verbs) deployed for the dozenth time."
+    },
+    {
+      "quote": "What kind of restraint will be built into systems that can act at a distance, speak at scale, and govern movement under environmental pressure?",
+      "judgment": "Weakness: the closing chapters lean on rhetorical questions where the book has spent 1,200 paragraphs earning the right to assert."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The concessive caveat formula \u2014 a source is credited with establishing X, then immediately denied the power to establish Y. Deployed in nearly every paragraph of evidence in all fifteen chapters; intellectually correct, but it becomes the book's only rhythm.",
+      "instances": [
+        "The site preserves harm with unusual force while withholding the story that would make the harm comfortable to explain.",
+        "Talheim can support a connection between early farming life and collective killing in that region. It cannot turn every Neolithic field into a battlefield."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis as paragraph closer \u2014 'It could X. It could also Y.' The two-sided balance is asserted rather than resolved, so hundreds of paragraphs end in the same symmetrical shrug.",
+      "instances": [
+        "Communal construction could flatten differences temporarily: every resident might depend on the wall. It could also create new distinctions...",
+        "The same social knowledge that restrains strong members can expose vulnerable ones."
+      ]
+    },
+    {
+      "pattern": "Two-case comparative template per chapter \u2014 open on Site/Text A, present Site/Text B, then a paragraph beginning 'The difference/contrast is...' that names the axis of comparison. Predictable enough that the reader can anticipate the pivot.",
+      "instances": [
+        "The comparison concerns the organisation of exposure, not a ranking of violence.",
+        "The contrast can be stated plainly. \u00c7atalh\u00f6y\u00fck concentrates resources inside households. Jericho concentrates labour around a shared boundary."
+      ]
+    },
+    {
+      "pattern": "The aphoristic short-sentence closer after a long analytic paragraph \u2014 a compressed epigram that summarises rather than advances. Effective in isolation, mechanical at this frequency.",
+      "instances": [
+        "Rome made belonging portable. Qin made service countable.",
+        "The battle ended; the demands continued."
+      ]
+    },
+    {
+      "pattern": "Procedural enumeration of a bureaucratic sequence ('first X, then Y, then Z'), used as a substitute for causal argument in the state-formation chapters.",
+      "instances": [
+        "Officials first determined that a perimeter should exist and where it should run. They gathered labour, moved earth, mixed mud, shaped bricks, and laid courses.",
+        "A local office registered eligible men. Medical and legal classifications sorted them. Units received orders. Reservists travelled to designated points."
+      ]
+    }
+  ],
+  "summary": "This is a serious, disciplined comparative history of organised violence from Jebel Sahaba to Rwandan gacaca, held together by an unusually consistent thesis: that every claim about aggression is bounded by what its particular class of evidence \u2014 bone, chronicle, legal record, demographic reconstruction \u2014 is capable of establishing. The reasoning is the manuscript's strongest asset; it repeatedly refuses the causal shortcuts (agriculture causes war, drought causes collapse, states pacify) that its own material invites, and the sourcing is specific and non-generic throughout. Prose is clear, restrained, and free of the obvious markers of machine writing \u2014 no stock pivots, no chirpy signposting, no hollow abstraction. What it lacks is variation and forward motion: the same concessive caveat, the same paired antithesis, the same epigrammatic closer recur in nearly every paragraph until the epistemic caution reads as a verbal habit rather than a stance, and pacing suffers badly across fifteen long chapters. There is a real structural fault at the head of Chapter 8, whose first paragraph belongs to Chapter 7's conclusion. With aggressive compression, redistribution of the repeated hedges, and a fix to that chapter boundary, this would be a publishable synthesis; as it stands it is over-long for what it argues and rarely advances a claim of its own beyond method."
+}

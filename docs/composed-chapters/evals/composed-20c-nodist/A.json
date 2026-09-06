@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.8,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A demographic gap is a question before it is a conclusion.",
+      "judgment": "Compact statement of the book's evidentiary discipline; earns its aphoristic form because the surrounding pages actually demonstrate the procedure."
+    },
+    {
+      "quote": "The sword in a quarrel and the sword in an army may be physically similar; the second belongs to a chain of decisions that reaches beyond the person holding it.",
+      "judgment": "Strong conceptual image that does real analytical work rather than decorating the paragraph."
+    },
+    {
+      "quote": "A ration is food detached from a household's immediate control and assigned through an office, a storehouse, or a labour system.",
+      "judgment": "Excellent definitional precision; the chapter's argument about surplus-to-war is built on this kind of exact naming rather than assertion."
+    },
+    {
+      "quote": "The rifle did not determine the quota. The quota gave the rifle its task.",
+      "judgment": "Sharpest formulation of the technology thesis in the book \u2014 but it is the fifteenth appearance of that thesis, so its force is blunted by repetition."
+    },
+    {
+      "quote": "A registration office did not begin with a gun. It began with a form.",
+      "judgment": "Effective one-line paragraph, one of very few tonal variations in an otherwise metronomic paragraph rhythm."
+    },
+    {
+      "quote": "It shows that killing and disposal were socially connected after the last blow because someone either could not or would not bring the bodies into a protected mortuary setting.",
+      "judgment": "Representative of a symmetrical hedging habit ('could not or would not', 'X or Y or Z') that recurs so often it becomes an audible tic."
+    },
+    {
+      "quote": "The British abolitionist diagram of the *Brookes*, produced in 1788, shows how another part of the Atlantic system converted people into measured cargo.",
+      "judgment": "Chapter 10 re-explains material already given a full opening treatment in Chapter 8; the recap adds nothing and signals weak cross-chapter memory."
+    },
+    {
+      "quote": "Eannatum's soldiers, the worker counted for a ration, Narmer's captive, and the official serving a province occupy different positions in that history.",
+      "judgment": "The book's standard closing move \u2014 a roll-call of the chapter's cases followed by a restatement of the thesis \u2014 used in nearly every chapter."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The tools-don't-choose-targets paragraph: every chapter ends its technology discussion with a near-identical formulation that material means enlarge possibility while politics selects purpose.",
+      "instances": [
+        "Technology changes what can be done, not what must be wanted.",
+        "The machine widened the possible field of action. It did not select the enemy."
+      ]
+    },
+    {
+      "pattern": "The corrective negation formula ('X did not do A; it did B' / 'not simply A but B'), used as the default sentence engine for making almost every point.",
+      "instances": [
+        "Law did not remove aggression; it placed some acts inside a process controlled by rules and officials.",
+        "Writing did not create the murder, but it connected local actions to a larger campaign."
+      ]
+    },
+    {
+      "pattern": "Evidence-limit disclaimer appended to each case study: a paragraph stating what the source shows, then what it cannot show, then a warning against over-reading.",
+      "instances": [
+        "It does not establish a constant level of aggression among all mobile communities, or show that violence was an unavoidable response to human nature.",
+        "It does not provide the names of every captive, the full history of the conflict, or the private responses of those forced into the display."
+      ]
+    },
+    {
+      "pattern": "Chapter-closing synthesis that lists the chapter's exhibits in apposition and then restates the book thesis over them.",
+      "instances": [
+        "The Paris sections, the Cordeliers Club, Marat's newspaper, the prison registers of September 1792, and the constitution of Saint-Domingue reveal political acts that sorted people into citizens, suspects, workers, soldiers, prisoners, and enemies.",
+        "The missile site photographed over Cuba, the naval line approached by Soviet ships, the interrogation room in Algiers, the fenced strategic hamlet in Vietnam, the casualty table for Korea..."
+      ]
+    },
+    {
+      "pattern": "Chained-causation catalogue: a sequence of short clauses in which each link produces the next, used as the standard device for explaining institutional violence.",
+      "instances": [
+        "Grain paid for work; work produced walls; walls protected stores and population; protected stores allowed rulers to demand further work.",
+        "A map allowed a district to be named; a district allowed an officer to be assigned; an officer required transport and protection; protection justified a police force."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined comparative history of organised violence, running from prehistoric burials to Darfur, held together by a clear and consistently argued thesis: aggression's scale, targets and meaning are produced by institutions, records, resources and ideas of belonging rather than by human nature, scarcity or technology. Its greatest strengths are evidentiary honesty and precision \u2014 nearly every case study specifies what a source can and cannot support, and the prose defines its terms (iniuria, ration, timar, quota, mit'a) with real care. The reasoning is genuinely cumulative, the voice is stable and adult, and the sentence-level writing is clean, concrete and free of the obvious markers of machine prose. What weakens it is repetition at the level of structure and formula: the technology-does-not-choose paragraph, the corrective 'X did not do A; it did B' construction, the source-limits disclaimer and the roll-call closing appear in essentially every chapter, and Chapter 10 re-covers Bois Ca\u00efman and the Brookes diagram already treated in Chapter 8. Paragraph shape and length are near-uniform throughout, which flattens pacing and leaves engagement lower than the quality of the material deserves; British and American spellings also alternate ('organised'/'organized'). With a pass that cuts the recurring thesis restatements, varies paragraph rhythm and removes the cross-chapter duplication, this would be publishable scholarly-trade history."
+}

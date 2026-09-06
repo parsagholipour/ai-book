@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.9,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The record then confronted a question that Hagenbach's judges had made unavoidable: whether violence belonged to the hand that delivered it, the office that ordered it, or the power that made obedience its condition.",
+      "judgment": "States the book's governing question in its own terms on page one, and every later chapter genuinely answers to it."
+    },
+    {
+      "quote": "A cemetery's numerator is visible; its denominator may have vanished.",
+      "judgment": "Compact, exact statement of a real methodological constraint; the book earns it by having worked through the arithmetic first."
+    },
+    {
+      "quote": "The inscriptions celebrate the ruler, but their verbs disclose the offices beneath him: count, bring, establish, remove, report.",
+      "judgment": "Reads a primary source's grammar as evidence rather than paraphrasing its content — the book's best analytical move."
+    },
+    {
+      "quote": "No bronze blade carries a roster.",
+      "judgment": "Effective in isolation, but this one-line dramatic beat is a formula the book performs in nearly every chapter."
+    },
+    {
+      "quote": "Assyria pressed difference towards relocation; Persia more often pressed it towards supervised continuity.",
+      "judgment": "Sharp comparison, but the semicolon-balanced antithesis is the book's default comparative gesture and appears dozens of times."
+    },
+    {
+      "quote": "“Grotius thus regained his freedom in 1621. In a small village near Paris, after what appeared to be the work of less than two years, he completed in 1625 his great work, Be Jure Belli ac Facis^” — The narrator",
+      "judgment": "An opening epigraph carrying an uncorrected OCR corruption and attributed to “the narrator”; apparatus quality below the prose."
+    },
+    {
+      "quote": "Hamoukar's debris, Lagash's inscription, and Egypt's frontier records connect durable warfare to the administrative conversion of surplus and labour into repeated campaigns.",
+      "judgment": "Chapter-closing thesis restatement; a recap loop that adds nothing the chapter has not already demonstrated at length."
+    },
+    {
+      "quote": "The disposition is part of the story. It is not the office that signs the order.",
+      "judgment": "The closing chapter lands the argument against Pinker and evolutionary psychology precisely, without overclaiming."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Negation-then-correction sentence shape (“X was not merely/simply Y. It was Z.”) used as the default analytical move, several times per chapter.",
+      "instances": [
+        "A granary was not merely a place where grain waited.",
+        "The implement was not merely a weapon in the modern sense."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis across a semicolon or two adjacent sentences to close a comparison, applied to almost every cross-case juxtaposition.",
+      "instances": [
+        "One record made extraction visible as output; the other showed the cost paid before the output reached the station.",
+        "Tenochtitlan made submission legible in goods arriving at court; Cusco made it legible in roads built and labourers registered."
+      ]
+    },
+    {
+      "pattern": "A one-sentence paragraph deployed as a dramatic or aphoristic beat, at a roughly fixed rate of one or two per chapter.",
+      "instances": [
+        "A burned granary was an administrative result.",
+        "The gun, the hostage, and the quota belonged to one economic design."
+      ]
+    },
+    {
+      "pattern": "Every chapter terminates in a formulaic apparatus paragraph — either a thesis restatement naming the chapter's three cases, or an abruptly appended source citation with no analytic function.",
+      "instances": [
+        "Erzurum's deportation route and the contrasting British and German home fronts show industrial war turning civilian exposure into a consequence of schedules, rations, and administrative placement.",
+        "In 1519, Hernán Cortés recorded in his Second Letter to Charles V that Tlaxcalan envoys came after fighting in Tlaxcala, negotiated with the Spaniards, and that he accepted their submission and alliance."
+      ]
+    },
+    {
+      "pattern": "Substantive material is re-narrated across chapters as if new, most visibly the 1258 sack of Baghdad, al-Tusi and the Maragha observatory (full treatment in Ch. 6, then again in Ch. 7) and Pinker's decline thesis (Ch. 14 and Ch. 15).",
+      "instances": [
+        "Hülegü's conquest helped destroy Baghdad's old position while enabling a new institution at Maragha.",
+        "Nasir al-Din al-Tusi's career shows another path through the wreckage. Hülegü brought him into his service, and at Maragha in the 1250s Tusi directed the construction of an observatory"
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined work of comparative history with a real thesis: mass harm becomes possible when populations are made countable and classifiable, and when responsibility is distributed across offices that each handle only a fragment. The thesis is argued rather than asserted, and the epistemic hygiene is exceptional — the book repeatedly explains what a grave, a royal inscription, a colonial report or a UN sample can and cannot establish, and refuses attributions the evidence does not support. Sentence-level prose is clean, concrete and free of the usual generative tics; there is no motivational register, no rhetorical question padding, no “in today's world.” What holds it back is uniformity of shape rather than poverty of content. The same three or four moves — negation-then-correction, semicolon antithesis, isolated aphoristic line, chapter-closing restatement — recur so regularly that chapters begin to feel machined, and genuine duplication (Baghdad and al-Tusi told twice at length, Pinker twice) suggests chapters were composed without full sight of one another. With a pass to vary paragraph architecture, cut the mandated closers, fix the corrupted epigraph, and merge the redundant material, this would read as a strong trade history."
+}

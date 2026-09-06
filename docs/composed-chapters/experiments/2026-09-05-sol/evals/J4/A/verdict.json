@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 8,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.8,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The first task is to see the hand that directs the blow.",
+      "judgment": "A memorable statement of the book’s governing claim that institutions direct and scale human aggression."
+    },
+    {
+      "quote": "No marching army is required for coercion to begin.",
+      "judgment": "A concise conceptual pivot that expands the analysis from battle to administrative dependence."
+    },
+    {
+      "quote": "War did not replace administration. It used administration.",
+      "judgment": "Excellent compression of the manuscript’s strongest causal insight."
+    },
+    {
+      "quote": "A population appears as the object of a command.",
+      "judgment": "The spare line lands forcefully after a concrete account of deportation."
+    },
+    {
+      "quote": "The tribunal gave passion an office, a vocabulary, and a timetable.",
+      "judgment": "A precise synthesis of how revolutionary violence becomes institutionalized."
+    },
+    {
+      "quote": "A ship could carry out the massacre because a trading company, a port, a contract, and a court had already specified who could be owned.",
+      "judgment": "The causal chain is specific, lucid, and morally serious without becoming merely declamatory."
+    },
+    {
+      "quote": "The order travelled. So did the refusal.",
+      "judgment": "The polished aphoristic closer is effective in isolation but typifies an overused chapter-ending cadence."
+    },
+    {
+      "quote": "The gas chamber did not stand alone.",
+      "judgment": "This reiterates the thesis in a familiar short-sentence form after the surrounding detail has already established the point."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Material structures are read as instruments of protection and control at once.",
+      "instances": [
+        "A wall could guard a population, but it also announced a boundary in a place where the horizon offered little definition.",
+        "A moat or wall could keep enemies out. It could also keep labour, stores, and valuable crafts in."
+      ]
+    },
+    {
+      "pattern": "The prose repeatedly denies autonomous agency to objects or systems, then locates force in institutions.",
+      "instances": [
+        "The clay commanded no one by itself.",
+        "The road allowed the king to hear of trouble and send orders before a provincial dispute became a separate kingdom, without making the empire peaceful by itself."
+      ]
+    },
+    {
+      "pattern": "Long causal chains connect mundane administrative acts to bodily harm.",
+      "instances": [
+        "A ship could carry out the massacre because a trading company, a port, a contract, and a court had already specified who could be owned.",
+        "A list could send a person to a square; a police unit could close a street; a train could carry a family beyond return."
+      ]
+    },
+    {
+      "pattern": "Physical artifacts become evidence for otherwise hidden labor and command.",
+      "instances": [
+        "The wall materialised a capacity for coordinated extraction even when its military use remained uncertain.",
+        "The printed page concealed this labour without making it unnecessary."
+      ]
+    },
+    {
+      "pattern": "The phrase “the same” links benevolent or ordinary capacities to coercive consequences.",
+      "instances": [
+        "The same institution that organised abundance exposed people to command.",
+        "The same state that breached the wall could count the households behind it and determine their next settlement."
+      ]
+    }
+  ],
+  "summary": "The manuscript advances a strong, coherent thesis: human aggression becomes historically consequential when institutions classify targets, authorize force, and extend action through records, infrastructure, and offices. Its global chronological range is impressive, and many case studies reason carefully from material or documentary traces while acknowledging uncertainty and source bias. The prose is clear, controlled, and often vivid, but the fifteen-chapter progression repeatedly returns to the same chain-of-command conclusion, producing substantial redundancy and a predictable cadence. Recurring fictionalized openings, paired pivots, enumerated institutional chains, and aphoristic closers give the book a manufactured uniformity despite its intellectual depth. Moderate revision should compress overlapping cases, vary chapter architecture, and reserve the thesis’s strongest formulations for moments when they add a genuinely new distinction."
+}

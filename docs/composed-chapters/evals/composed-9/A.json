@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 5,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 6.9,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A broken skull can establish that force was used. It cannot, by itself, establish that a war took place.",
+      "judgment": "The book's controlling epistemic thesis, stated early with admirable economy, and genuinely honoured for fifteen chapters."
+    },
+    {
+      "quote": "The name assigned to an act must remain proportionate to the trace that supports it.",
+      "judgment": "A methodological rule that earns its aphoristic form because the following chapters actually apply it."
+    },
+    {
+      "quote": "The city did not invent the wish to harm. It invented more durable ways to decide whose labour would be taken, whose boundary would be defended, and whose defeat could be named as justice.",
+      "judgment": "Strong chapter landing \u2014 but also the book's default rhetorical shape (negation followed by tricolon), used dozens of times."
+    },
+    {
+      "quote": "Once a person could be entered as cargo, that person's destruction could be described as a maritime loss.",
+      "judgment": "The Zong section is the book at its best: a specific legal mechanism made to carry the moral argument without editorial commentary."
+    },
+    {
+      "quote": "Grammar performs part of the work. People become a population to be counted, moved, sorted, and absorbed into a program.",
+      "judgment": "Close reading of the Wannsee Protocol's syntax is original and precise; the strongest analytic passage in the book."
+    },
+    {
+      "quote": "A city can become quiet before it becomes reconciled.",
+      "judgment": "Well-turned, but one of many epigrammatic two-beat closers that arrive on schedule at section ends."
+    },
+    {
+      "quote": "Walls, ditches, gates, towers, and controlled approaches show that people invested labour in limiting movement and protecting a place.",
+      "judgment": "Representative of a pervasive habit: four- to six-item noun catalogues substituting for a chosen detail."
+    },
+    {
+      "quote": "Their prosperity depended upon ships and monsoon routes, imported goods, local production, merchants, port facilities, and rulers capable of making exchange sufficiently predictable to continue.",
+      "judgment": "Clear but inert \u2014 the enumerative sentence flattens Kilwa into the same texture as every other case in the book."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Symmetrical negation-then-assertion: nearly every paragraph resolves with 'X does not show A; it shows B' or 'A could... but it could not...'. Intellectually principled at first, it becomes the book's only cadence.",
+      "instances": [
+        "Capacity can make a policy practicable, but it cannot explain why one population receives ration cards while another receives a deportation order.",
+        "Technology widened the field of action; political identity selected the victims."
+      ]
+    },
+    {
+      "pattern": "Archive-silence disclaimer appended to every case study, usually as the penultimate move before the section's summary sentence.",
+      "instances": [
+        "The account does not name those officials or describe their orders.",
+        "The source record does not preserve every person's final hours."
+      ]
+    },
+    {
+      "pattern": "Uniform chapter and section openings: a named site plus a named artefact, described in the past tense with deliberately flattened affect, before the analysis begins.",
+      "instances": [
+        "At Nataruk, near the western shore of Lake Turkana, the ground held people in positions that had not been chosen for burial.",
+        "At Talheim, the dead were found together rather than scattered across the ground where they had fallen."
+      ]
+    },
+    {
+      "pattern": "Aphoristic two-sentence closer at the end of sections and chapters, often a short reversal, giving the book a metronomic rhythm.",
+      "instances": [
+        "Haiti's independence did not close that question. It made it impossible to avoid.",
+        "Calculation did not replace ambition. It gave ambition a longer memory."
+      ]
+    },
+    {
+      "pattern": "Paired-case comparison scaffold in every chapter: two sites introduced separately, then a 'the contrast/comparison turns on...' paragraph that itemises similarities and then differences and refuses a verdict.",
+      "instances": [
+        "The comparison turns on the relationship created after force.",
+        "The contrast with Ashurnasirpal's deportation of Bit-Zatti is sharp but incomplete."
+      ]
+    }
+  ],
+  "summary": "This is a serious, methodologically disciplined comparative history of human aggression, organised around a genuine and consistently applied thesis: aggression is a capacity, organised violence is administrative work, and every claim must be proportionate to the surviving trace. Its evidentiary range is real \u2014 Nataruk, the Twelve Tables, Uruk ration tablets, the Stele of the Vultures, Bonampak, Juvaini on Merv, the Zong insurance case, the Wannsee Protocol, Babi Yar, Phoenix Program files, the Los Angeles uprising \u2014 and the cross-chapter callbacks are earned rather than decorative. Reasoning and clarity are its strongest properties; the book repeatedly refuses easy verdicts (Pinker, 'endemic warfare', 'total war', ecological determinism) while stating exactly what each source can and cannot support. What it lacks is variation. Almost every paragraph is 90\u2013140 words, almost every section closes on a balanced antithesis or a two-beat epigram, and the archive-silence caveat recurs so regularly that it stops registering as thought and starts registering as form. Human beings almost never appear as individuals with texture; the prose is deliberately unheated, which protects it from ordinary AI slop vocabulary but leaves engagement and pacing thin over 90,000 words. With editorial pressure on rhythm \u2014 cutting perhaps a fifth of the hedging, breaking the paired-antithesis habit, and letting three or four scenes run at human scale \u2014 this would be a publishable and distinctive book."
+}

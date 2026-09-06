@@ -57,6 +57,7 @@ describe("GET /api/admin/operations/books", () => {
       {
         id: "book-newest",
         title: "The Newest Book",
+        status: "COMPLETE",
         updatedAt: new Date("2026-08-25T14:00:00.000Z"),
         user: { email: "owner@example.com" },
         _count: { pages: 12, images: 5 }
@@ -89,6 +90,7 @@ describe("GET /api/admin/operations/books", () => {
           pageCount: 12,
           imageCount: 5,
           completedAt: "2026-08-25T14:00:00.000Z",
+          status: "COMPLETE",
           grossCredits: 1200,
           refundedCredits: 200,
           netCredits: 1000,
@@ -104,7 +106,7 @@ describe("GET /api/admin/operations/books", () => {
     });
     expect(mockDb.prisma.project.findMany).toHaveBeenCalledWith({
       where: {
-        status: "COMPLETE",
+        status: { in: ["COMPLETE", "REVIEW_REQUIRED"] },
         updatedAt: { gte: expect.any(Date), lte: expect.any(Date) }
       },
       orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
@@ -113,6 +115,7 @@ describe("GET /api/admin/operations/books", () => {
       select: {
         id: true,
         title: true,
+        status: true,
         updatedAt: true,
         user: { select: { email: true } },
         _count: { select: { pages: true, images: true } }
@@ -338,13 +341,16 @@ describe("GET /api/admin/operations/books/:id", () => {
     expect(Array.from(costSql as readonly string[]).join(" ")).not.toContain('l."createdAt"');
   });
 
-  it("returns 404 when the project is missing or is no longer complete", async () => {
+  it("returns 404 when the project is missing or is not a finished book; a review-flagged book is finished", async () => {
     app = await buildApp();
     expect((await app.inject({ method: "GET", url: "/api/admin/operations/books/missing" })).statusCode).toBe(404);
 
-    mockDb.prisma.project.findUnique.mockResolvedValue({ id: "book-review", status: "REVIEW_REQUIRED" });
-    expect((await app.inject({ method: "GET", url: "/api/admin/operations/books/book-review" })).statusCode).toBe(404);
+    mockDb.prisma.project.findUnique.mockResolvedValue({ id: "book-generating", status: "GENERATING" });
+    expect((await app.inject({ method: "GET", url: "/api/admin/operations/books/book-generating" })).statusCode).toBe(404);
     expect(mockDb.prisma.$queryRaw).not.toHaveBeenCalled();
+
+    mockDb.prisma.project.findUnique.mockResolvedValue({ id: "book-review", status: "REVIEW_REQUIRED", mediaSettings: {}, updatedAt: new Date("2026-08-25T14:00:00.000Z") });
+    expect((await app.inject({ method: "GET", url: "/api/admin/operations/books/book-review" })).statusCode).toBe(200);
   });
 });
 

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.7,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "An archaeological site is a surviving relation among objects, bodies, soil, and time. That relation can be read, but it must not be made to speak more fluently than it does.",
+      "judgment": "Strength: states the book's epistemic thesis in a sentence that is both precise and memorable, and earns it from the Nataruk evidence just described."
+    },
+    {
+      "quote": "A point made to travel through the air met a human head, and the meeting remained visible after the flesh had disappeared.",
+      "judgment": "Strength: rare moment where the austere register produces genuine force; the euphemistic verb 'met' does real work."
+    },
+    {
+      "quote": "The shields overlap, the spears rise together, and the formation suggests discipline rather than a crowd gathered by immediate fear.",
+      "judgment": "Strength: close object-reading that converts an artefact's formal properties into a political argument without overclaiming."
+    },
+    {
+      "quote": "Regulation did not amount to freedom. A ship carrying fewer captives remained a ship carrying captives.",
+      "judgment": "Mixed: sharp and true, but exemplifies a recurring aphoristic closer built on antithetical repetition that the book reaches for too often."
+    },
+    {
+      "quote": "Conquest began the process. Rule required other people to continue it.",
+      "judgment": "Weakness: chapter-ending epigram substitutes cadence for synthesis; several chapters end on the same two-beat pattern."
+    },
+    {
+      "quote": "None of these objects contains a motive. The point at Nataruk did not decide whom its bearer should attack.",
+      "judgment": "Weakness: the technology-has-no-motive move is stated here in chapter 1 and then repeated with fresh nouns in at least six later chapters."
+    },
+    {
+      "quote": "The evidence supports repeated or connected violence affecting a community, though it does not identify the political boundary between those who attacked and those who were attacked.",
+      "judgment": "Weakness: the symmetrical 'X is established, Y is not' hedge is the book's default sentence shape and eventually blunts every claim it protects."
+    },
+    {
+      "quote": "It refuses the comfort of a single human nature and the comfort of inevitable progress.",
+      "judgment": "Mixed: a genuinely earned conclusion, but delivered through the same paired-antithesis machinery used hundreds of times before it."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The establish-then-withhold caveat: nearly every evidentiary paragraph closes by naming exactly what the source cannot show, in near-identical syntax.",
+      "instances": [
+        "The skeleton carries evidence of injury across time; it does not carry a witness's account of why the injury occurred.",
+        "The graves reveal connection at the time of disposal; they do not state the identity that made the connection meaningful."
+      ]
+    },
+    {
+      "pattern": "The protection/coercion antithesis \u2014 a state restrains violence among insiders while enlarging it against outsiders \u2014 restated as a chapter's summarising proposition in at least six chapters.",
+      "instances": [
+        "A ruler who punished theft or feud could make markets, fields, and streets more predictable for those recognised as members of the political community. The same ruler could define outsiders as violators, rebels, or enemies and send an organised force against them.",
+        "A government's ability to restrain private violence could coexist with its ability to organise public violence on an unprecedented scale."
+      ]
+    },
+    {
+      "pattern": "The 'comparison must remain bounded' meta-paragraph: before or after each cross-case comparison, an explicit warning against generalising, phrased almost identically each time.",
+      "instances": [
+        "Comparisons across Assyria and Rome must remain bounded.",
+        "The comparison must remain bounded. Mexica sources were preserved, edited, or commissioned under colonial rule."
+      ]
+    },
+    {
+      "pattern": "The material-pressure-needs-political-direction formula: economic causes are raised and then subordinated to institutions in one two-sentence beat, chapter after chapter.",
+      "instances": [
+        "Material pressure becomes violence through arrangements that direct it.",
+        "Economic value supplied the destination; political power determined the route."
+      ]
+    },
+    {
+      "pattern": "Uniform paragraph architecture \u2014 a topic sentence, three to five flat declaratives of equal length, then a summarising or qualifying clincher \u2014 sustained with almost no variation across 15 chapters; no dialogue, digression, first person, or short paragraph is ever used for rhythm.",
+      "instances": [
+        "The procedure moves outward from the body. A mark is dated relative to death. Its shape is compared with possible causes. A nearby object is tested for fit. Similar injuries are mapped across individuals.",
+        "The process began with classification. A household had to be made visible to the collector; a field had to be assigned to an owner or cultivator; a mill, shop, or herd had to be placed within a category that could bear a demand."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, genuinely intelligent global history of organised violence, argued around a single controlling thesis: aggression's scale and meaning are produced by institutions, records and definitions of belonging rather than by a constant human nature. The reasoning is unusually careful \u2014 each chapter anchors itself in a specific object (the Nataruk points, the Stele of the Vultures, a ration tablet, the Brookes diagram, the Wannsee Protocol, a satellite image) and reads it for exactly what it can bear, which makes the evidence handling the book's strongest feature alongside its sentence-level precision. The weakness is that this virtue hardens into a template. The same three moves \u2014 establish, withhold, then warn against generalising \u2014 recur in nearly every paragraph, technology-has-no-motive and protection-for-insiders/coercion-for-outsiders are restated in most chapters, and chapters close on paired antitheses or aphorisms of near-identical cadence. Paragraph shapes almost never vary, and the deliberately affectless register drains engagement from material that occasionally deserves to land harder. The slop here is structural rather than lexical: there are no stock AI phrases, but there is a great deal of symmetrical hedging, recap looping and uniform rhythm. Light revision that cuts perhaps a fifth of the caveats and varies chapter architecture would leave a publishable book."
+}

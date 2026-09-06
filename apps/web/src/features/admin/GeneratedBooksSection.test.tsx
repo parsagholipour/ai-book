@@ -12,6 +12,7 @@ const list: AdminGeneratedBookList = {
       pageCount: 12,
       imageCount: 4,
       completedAt: "2026-08-25T14:00:00.000Z",
+      status: "COMPLETE",
       grossCredits: 1200,
       refundedCredits: 200,
       netCredits: 1000,

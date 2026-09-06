@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 9,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 9,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.9,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Low",
+  "highlights": [
+    {
+      "quote": "The inscription gave the kingdom a voice. The tablet gave it joints.",
+      "judgment": "Best kind of closer in the book: compressed, concrete, and earned by the preceding pages of Ur III administrative detail."
+    },
+    {
+      "quote": "Silence is a historical object with more than one possible source. The absence of a record may result from peace, loss, exclusion, or a decision by someone who never considered an event worth recording.",
+      "judgment": "The methodological spine of the book, stated early and honoured throughout; unusually disciplined about what the evidence cannot bear."
+    },
+    {
+      "quote": "The hand was evidence manufactured for a ledger.",
+      "judgment": "Devastating and specific; the Congo chapter's strongest single sentence, and an argument rather than an ornament."
+    },
+    {
+      "quote": "A rifle magnified the threat, but the quota, map, and ordinance told the rifle where to point. The weapon was visible at the moment of injury; the institution had already selected the target.",
+      "judgment": "Sharp, but this exact figure — visible weapon versus prior office — recurs in at least six chapters and has become a tic rather than an insight."
+    },
+    {
+      "quote": "Fourteen thousand years before Chicago's police department began writing incident reports, people at Nataruk ... archaeologists who asked whether the injuries belonged to a massacre",
+      "judgment": "Internal inconsistency: Chapter 1 dates Nataruk to ~14,000 years ago with ten skeletons; Chapter 2 gives 9,500-10,500 years ago and at least twenty-seven people."
+    },
+    {
+      "quote": "On the morning of 17 August 1915, the Armenian population of Erzurum was already being moved ... but in June and July 1915 Ottoman authorities were preparing",
+      "judgment": "A dated opening that the next clause immediately contradicts; the specificity is decorative rather than load-bearing."
+    },
+    {
+      "quote": "The Stele of the Vultures makes the dead visible, while the tablets make the living countable. Narmer's palette makes the king's blow visible, while labour records make the workforce available.",
+      "judgment": "Elegant, but symptomatic: the paired-antithesis sentence is the book's default rhetorical unit and appears at nearly every chapter seam."
+    },
+    {
+      "quote": "A name is not an explanation, but it is where explanation must begin.",
+      "judgment": "A genuinely moving ending, though it is the fifteenth chapter-closing aphorism in a book of fifteen chapters, so the form has lost surprise."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter closes on a short aphoristic sentence that restates the book's thesis in fresh vocabulary — a landing so regular it can be predicted from the chapter's opening.",
+      "instances": [
+        "Steppe warfare reached imperial scale when movement became command.",
+        "The king stood above the process, but the process was what made the king dangerous."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis as the default sentence shape: two clauses of parallel syntax assigning a visible act to one institution and an invisible one to another.",
+      "instances": [
+        "The Assyrian relief at Lachish makes terror visible because terror was part of the message. The Cyrus Cylinder makes restoration visible because restoration was part of the bargain.",
+        "One system made distance answerable to a centre; the other made coexistence depend on procedures for speaking, remembering, and limiting retaliation."
+      ]
+    },
+    {
+      "pattern": "A fixed four-move chapter architecture: vivid dated case, a contrasting second case, a named theory rejected as insufficient (ecological, technological, market, religious, evolutionary), then a source-criticism coda about what the archive cannot show.",
+      "instances": [
+        "Density alone explains too much. People can live close together while developing rules, exchange systems, kin ties, and rituals that reduce the need for killing.",
+        "The claim that markets alone explain slavery also blurs the difference between a labour shortage and a slave regime."
+      ]
+    },
+    {
+      "pattern": "Long asyndetic or comma-chained inventories of offices and objects, used to demonstrate institutional density; effective once per chapter, but deployed several times per chapter.",
+      "instances": [
+        "A lettre de cachet might be accompanied by a petition, a ministerial note, an order of arrest, a prison register, correspondence about maintenance, and a request for release.",
+        "Buses, guards, detention sites, ammunition, earth-moving equipment, and coordinated unit movements point to an operation requiring preparation and command."
+      ]
+    },
+    {
+      "pattern": "Symmetrical epistemic hedging: a claim is advanced, then bracketed by an equal-and-opposite caution, so that many paragraphs end in a balanced non-verdict.",
+      "instances": [
+        "Historical restraint does not require treating every interpretation as equal. It requires matching the size of the claim to the strength and kind of trace.",
+        "If the historian claims too much, private motives become invented and contingency disappears. If the historian claims too little, commands, records, machinery, and institutions become a background against which violence mysteriously appears."
+      ]
+    }
+  ],
+  "summary": "This is a serious, tightly argued global history whose thesis — that organised violence acquires its scale and direction from offices, records and classifications rather than from an unchanging human aggression — is stated in Chapter 1 and genuinely earned across fifteen chapters that run from Nataruk to Srebrenica. The case selection is rich and specific, the source criticism is unusually scrupulous (the recurring treatment of archival silence is the book's intellectual signature), and the prose is clean, unadorned, and free of the obvious markers of machine writing: no filler openers, no listicles, no cheerleading. Its weaknesses are structural rather than local. Each chapter reproduces the same four-move architecture and lands on the same aphorism in new clothing, so that by Chapter 9 the argument is being confirmed rather than developed, and the paired-antithesis sentence — visible weapon versus prior office, one record makes X visible while another makes Y countable — has hardened into a mannerism the rubric names explicitly. Engagement suffers from uniformly grave paragraphs of similar length and register with almost no variation in tempo, and a handful of factual seams are loose (Nataruk is dated and counted differently in Chapters 1 and 2; the Erzurum chapter opens on a date its own next sentence contradicts). Light revision — pruning the thesis restatements, varying the chapter landings, and reconciling the internal inconsistencies — would leave a very strong book."
+}

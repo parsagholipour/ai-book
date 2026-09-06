@@ -1,0 +1,38 @@
+{
+  "text": "{\"groups\":[{\"id\":\"group-1\",\"reason\":\"Chapters 6 and 7 develop the same Secret History of the Mongols material twice: Temüjin's genealogy and rise, the combination of subduing and alliance, and Ögedei's proposed post-station network. Chapter 7 supplies the fuller treatment of mobility, incorporation, administrative continuity, implementation limits, and the unanswered question about how the proposed system affected communities. Chapter 6's distinct contribution is Alcuin's interpretation of the Lindisfarne raid and the way religious communication connected frontier insecurity to ordinary institutional life, which remains in chapter 6 paragraphs 9-21 and the comparative discussion in paragraphs 32-38. Deleting the duplicated Mongol exposition preserves the frontier-faith comparison while removing repeated case explanation.\",\"changes\":[{\"id\":\"cut-ch6-mongol-opening\",\"chapterIndex\":6,\"startParagraph\":1,\"deleteCount\":8,\"targetWords\":0,\"instruction\":\"Delete the duplicated opening treatment of Temüjin's genealogy, rise, alliance, subduing, mobility, and incorporation. The same substantive case and its distinct political inference are retained in chapter 7 paragraphs 2-6, 15, and 19-23, where the evidence is developed more fully and with clearer limits.\"},{\"id\":\"cut-ch6-mongol-administration\",\"chapterIndex\":6,\"startParagraph\":22,\"deleteCount\":10,\"targetWords\":0,\"instruction\":\"Delete the repeated treatment of Ögedei's proposed messenger stations, keepers, horses, burdens, and administrative reach. The fuller explanation and its uncertainty about implementation are retained in chapter 7 paragraphs 7-14 and 24-26; chapter 6 paragraphs 32-38 still preserve the distinct comparison between Alcuin's religious interpretation and Mongol political organization without repeating the full case.\"}]}]}",
+  "model": "gpt-5.6-luna",
+  "provider": "openai",
+  "usage": {
+    "promptTokens": 91045,
+    "outputTokens": 906,
+    "cacheHitTokens": 0,
+    "cacheWriteTokens": 91042,
+    "reasoningTokens": 516
+  },
+  "data": {
+    "groups": [
+      {
+        "id": "group-1",
+        "reason": "Chapters 6 and 7 develop the same Secret History of the Mongols material twice: Temüjin's genealogy and rise, the combination of subduing and alliance, and Ögedei's proposed post-station network. Chapter 7 supplies the fuller treatment of mobility, incorporation, administrative continuity, implementation limits, and the unanswered question about how the proposed system affected communities. Chapter 6's distinct contribution is Alcuin's interpretation of the Lindisfarne raid and the way religious communication connected frontier insecurity to ordinary institutional life, which remains in chapter 6 paragraphs 9-21 and the comparative discussion in paragraphs 32-38. Deleting the duplicated Mongol exposition preserves the frontier-faith comparison while removing repeated case explanation.",
+        "changes": [
+          {
+            "id": "cut-ch6-mongol-opening",
+            "chapterIndex": 6,
+            "startParagraph": 1,
+            "deleteCount": 8,
+            "targetWords": 0,
+            "instruction": "Delete the duplicated opening treatment of Temüjin's genealogy, rise, alliance, subduing, mobility, and incorporation. The same substantive case and its distinct political inference are retained in chapter 7 paragraphs 2-6, 15, and 19-23, where the evidence is developed more fully and with clearer limits."
+          },
+          {
+            "id": "cut-ch6-mongol-administration",
+            "chapterIndex": 6,
+            "startParagraph": 22,
+            "deleteCount": 10,
+            "targetWords": 0,
+            "instruction": "Delete the repeated treatment of Ögedei's proposed messenger stations, keepers, horses, burdens, and administrative reach. The fuller explanation and its uncertainty about implementation are retained in chapter 7 paragraphs 7-14 and 24-26; chapter 6 paragraphs 32-38 still preserve the distinct comparison between Alcuin's religious interpretation and Mongol political organization without repeating the full case."
+          }
+        ]
+      }
+    ]
+  }
+}

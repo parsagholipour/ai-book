@@ -1,0 +1,572 @@
+[
+  {
+    "purpose": "compose-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 1,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "edit-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 1,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "compose-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 2,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "compose-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 3,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "edit-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 2,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "edit-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 3,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "compose-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 4,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "edit-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 4,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "compose-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 5,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "edit-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 5,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "compose-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 6,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "edit-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 6,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "compose-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 7,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "compose-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 8,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "edit-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 7,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "compose-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 9,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "edit-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 8,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "edit-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 9,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "compose-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 10,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "edit-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 10,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "compose-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 11,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "edit-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 11,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "compose-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 12,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "edit-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 12,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "compose-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 13,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "compose-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 14,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "edit-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 13,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "compose-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 15,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "edit-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 14,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  },
+  {
+    "purpose": "edit-chapter",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna"
+    },
+    "chapter": 15,
+    "focus": true,
+    "compositionKey": false,
+    "formQuota": false,
+    "shapeRule": false,
+    "grounding": true,
+    "budget": {
+      "perPage": 520,
+      "min": 3440,
+      "target": 4160,
+      "max": 5120
+    }
+  }
+]

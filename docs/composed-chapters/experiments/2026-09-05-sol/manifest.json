@@ -1,0 +1,133 @@
+{
+  "createdAt": "2026-09-05T03:32:28.561538+00:00",
+  "sourceProject": "cmtjbz54o000w6rjyvzewwqj4",
+  "reusePlanProject": "cmtjlkn0z0000g8g08zbzxerc",
+  "writerTier": "balanced",
+  "assessorModel": "gpt-5.6-sol",
+  "readersPerBook": 3,
+  "mainOldReplicates": 3,
+  "plannedNewReplicates": 3,
+  "gitHead": "b9d891909e83721ad1edba85f2ad339c22f0d7d9",
+  "candidates": {
+    "J4": {
+      "sourceLabel": "ladder-5a-apparatus",
+      "arm": "baseline",
+      "sha256": "3026686c1b004465e0df50c5a74eab97a47e1445a3559cf7b8144d4936344a34",
+      "words": 56471
+    },
+    "M8": {
+      "sourceLabel": "ladder-5b-apparatus",
+      "arm": "baseline",
+      "sha256": "60ddd04e4e00c59e6ccfb99f5f136399f23761f4ada22bac4957650092d4b652",
+      "words": 52939
+    },
+    "T2": {
+      "sourceLabel": "ladder-5c-apparatus",
+      "arm": "baseline",
+      "sha256": "8e36c4a8bc269cdde3b2476e2da5badda5da64f19b7e070a6b0cb06665659559",
+      "words": 59472
+    },
+    "Q9": {
+      "sourceLabel": "composed-7",
+      "arm": "reference",
+      "sha256": "850396c091aa1eeb96f07f1620cbd5d1b4d2a6c7ef2cc607ce07a56e5b816976",
+      "words": 52884
+    }
+  },
+  "launches": [
+    {
+      "label": "development-1a",
+      "projectId": "cmtntugl60000img0t01m5uk6",
+      "planId": "cmtntuglk0001img0hzv22ay6",
+      "generationJobId": "cmtntugmb0002img09d8i4y5l",
+      "status": "FAILED",
+      "failureStage": "evidence readiness",
+      "missingChapters": [
+        2,
+        3,
+        4,
+        5,
+        7,
+        8,
+        9,
+        10,
+        11,
+        14,
+        15
+      ],
+      "completedPages": 0,
+      "finishedAt": "2026-09-05T03:45:59.853Z",
+      "elapsedMinutes": 13.497566666666668,
+      "estimatedProviderCost": 0.12337900000000002,
+      "textCalls": 77,
+      "jsonErrors": 19,
+      "chaptersWithAcceptedReviews": [
+        1,
+        6,
+        12,
+        13
+      ]
+    },
+    {
+      "label": "development-1a-retry",
+      "projectId": "cmtntugl60000img0t01m5uk6",
+      "planId": "cmtntuglk0001img0hzv22ay6",
+      "generationJobId": "cmtnujlt30000m3g0b8qmin69",
+      "status": "FAILED",
+      "startedAt": "2026-09-05T03:52:03Z",
+      "implementation": "after amendment 1",
+      "failureStage": "evidence readiness",
+      "missingChapters": [
+        1,
+        6,
+        7,
+        8,
+        13,
+        15
+      ],
+      "completedPages": 0,
+      "finishedAt": "2026-09-05T04:05:54.343Z",
+      "elapsedMinutes": 13.853616666666666,
+      "estimatedProviderCost": 0.128309,
+      "textCalls": 77,
+      "jsonErrors": 0,
+      "chaptersWithAcceptedReviews": [
+        2,
+        3,
+        4,
+        5,
+        9,
+        10,
+        11,
+        12,
+        14
+      ]
+    }
+  ],
+  "amendments": [
+    {
+      "at": "2026-09-05T03:51:54.992983+00:00",
+      "beforeRetry": "Archive downloader resolves a 404 OCR filename from the item manifest. Evidence extraction and verification prompts now include explicit output result examples; no evidence acceptance rules or rubric scores changed.",
+      "files": {
+        "packages/core/src/generation/primarySources.ts": "ca1bc03e22fc99359da8eac02f8e58d6e461977a616ea3a1330fd99f239e1b31",
+        "packages/core/src/generation/caseEvidence.ts": "10efcab323a5069312b179f3f19ca82ce2500176d040ae930588f9514d92e852"
+      }
+    }
+  ],
+  "ancillarySourceAudit": {
+    "model": "gpt-5.6-sol",
+    "agent": "source_packet_audit",
+    "kind": "exploratory, added after first-run failure",
+    "input": "diagnostics/accepted-packets-audit-input.json",
+    "selection": "all four accepted first-attempt packets and the first four accepted retry packets available in the frozen diagnostic snapshot",
+    "packetCount": 8,
+    "separateFromLiteraryScores": true
+  },
+  "outcome": {
+    "completedNewBooks": 0,
+    "qualityDelta": null,
+    "reason": "Both live attempts failed evidence readiness before replanning or drafting. Planned further replicates were not launched under the protocol amendment.",
+    "completedReferenceAssessments": 12,
+    "referenceBookCount": 4
+  }
+}

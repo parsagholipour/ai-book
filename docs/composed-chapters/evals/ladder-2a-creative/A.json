@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.8,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The men at the barrier did not need to discover who belonged to which category. The category had already been printed, repeated, and made politically dangerous.",
+      "judgment": "Opening page states the book's governing argument through a concrete scene rather than an abstraction; strongest kind of writing in the book."
+    },
+    {
+      "quote": "The state's paperwork and the village's memory met at the barrier.",
+      "judgment": "Genuinely fine sentence-level compression, and it earns its place because the preceding paragraph did the work."
+    },
+    {
+      "quote": "A fortification indicates concern about attack, not the number of attacks it prevented.",
+      "judgment": "Representative of the book's best habit: it states precisely what a class of evidence can and cannot license."
+    },
+    {
+      "quote": "The city's durable innovation was not the sword but the office that could tell a sword where to go.",
+      "judgment": "Effective as a single line, but it is the first of roughly a dozen structurally identical chapter closers, which drains the device."
+    },
+    {
+      "quote": "The horse carried the order; the institution decided where it would fall.",
+      "judgment": "Paired antithesis closing a chapter; the same semicolon-balanced shape recurs so often it reads as a template rather than a judgment."
+    },
+    {
+      "quote": "Cultural contempt can intensify killing... Yet cultural brutality alone cannot explain why Lachish was besieged with ramps",
+      "judgment": "The steel-man-then-qualify move is intellectually honest but appears in nearly every chapter with the same 'X has genuine force... yet X alone cannot explain' scaffolding."
+    },
+    {
+      "quote": "Violence opened the door; administration kept it open.",
+      "judgment": "The thesis restated in the same rhetorical shape it takes in at least eight other chapters; the reader stops learning from these lines well before the end."
+    },
+    {
+      "quote": "It can keep asking who acted, who authorised the act, who was made legible, and whose suffering had to struggle to enter the record.",
+      "judgment": "A disciplined ending that resists a triumphal summary, but it also closes on the same four-part cadence the book has used throughout."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Aphoristic, antithetically balanced chapter closer, usually contrasting a weapon or emotion with an office or institution.",
+      "instances": [
+        "The horse carried the order; the institution decided where it would fall.",
+        "The weapon enlarged human power; offices gave that power direction."
+      ]
+    },
+    {
+      "pattern": "Steel-man section near each chapter's end that concedes a rival explanation and then defeats it with the identical 'alone cannot explain' formula.",
+      "instances": [
+        "The economic explanation correctly identifies an engine. It becomes inadequate when it treats the engine as the whole machine.",
+        "Racial belief alone does not explain why Lugard preserved the emirates, why an emir was removed when he ceased to serve British purposes"
+      ]
+    },
+    {
+      "pattern": "Two-case comparison built on a fixed frame: both did A and B; the difference lay in C.",
+      "instances": [
+        "Both polities joined sacred legitimacy to political command. Their difference lay in the channels through which conquest became durable.",
+        "Both used force and collected revenue. Their differences lay in the kinds of local life they could afford to leave intact."
+      ]
+    },
+    {
+      "pattern": "Relay or chain paragraph in which a sequence of offices is enumerated in parallel clauses to show distributed responsibility.",
+      "instances": [
+        "A coastal broker turned capture into a sale; a ship's officer turned sale into a manifest; an insurer turned death into a claim",
+        "A district commissioner issued an order; a police sergeant assembled men; a constable identified a suspect; a magistrate imposed a fine"
+      ]
+    },
+    {
+      "pattern": "Every chapter opens on a dated, staged scene or single artifact, then widens to the institutional argument within two or three paragraphs.",
+      "instances": [
+        "On the morning of 27 October 1962, John F. Kennedy sat with his advisers in the Cabinet Room",
+        "The Ottoman Arsenal register for the Vienna campaign of 1683 begins with things too ordinary to look like the machinery of war."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined work of historical synthesis built on one argument that it never loses: violence acquires scale through offices, records, and classification rather than through anger or weapons. The case material is specific and well chosen, the handling of evidence is genuinely scrupulous about what bones, walls, annals, and royal monuments can and cannot license, and the prose is clean, unhurried, and free of the usual lexical tells of machine writing. Its weaknesses are architectural rather than local. Each chapter runs the same circuit - dated scene, artifact, second case, comparison, steel-manned rival explanation, aphoristic antithesis closer - so that by the middle of the book the reader can predict the shape of a page before reading it, and the thesis is restated in near-identical balanced clauses dozens of times past the point of instruction. Pacing suffers most: the comparison sections are the longest and least surprising parts of every chapter, and several late passages become lists of exemplary cases rather than arguments. With the closers varied, the redundant thesis restatements cut, and two or three chapters restructured away from the template, this would be publishable non-fiction."
+}

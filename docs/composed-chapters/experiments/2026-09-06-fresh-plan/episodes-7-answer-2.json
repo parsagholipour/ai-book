@@ -1,0 +1,506 @@
+{
+  "chapters": [
+    {
+      "index": 1,
+      "episodes": [
+        {
+          "title": "The Shanidar 3 Rib Wound",
+          "kind": "figure",
+          "person": "Shanidar 3",
+          "place": "Shanidar Cave, Iraqi Kurdistan",
+          "date": "c. 50,000 BCE",
+          "document": "Erik Trinkaus, \"Trauma among the Shanidar Neandertals,\" American Journal of Physical Anthropology (1983)",
+          "why": "The healed rib injury demonstrates both interpersonal violence and survival with care, while showing why skeletal trauma cannot by itself identify motive or social rules.",
+          "searchQueries": [
+            "Erik Trinkaus Trauma among the Shanidar Neandertals 1983",
+            "\"Trauma among the Shanidar Neandertals\""
+          ]
+        },
+        {
+          "title": "The Jebel Sahaba Burials",
+          "kind": "figure",
+          "person": "The people buried at Jebel Sahaba",
+          "place": "Nile Valley near Wadi Halfa, Sudan",
+          "date": "c. 13,400–18,600 years ago",
+          "document": "Fred Wendorf, The Prehistory of Nubia, volume 1 (1968), excavation report on Jebel Sahaba",
+          "why": "The concentration of projectile injuries tests whether repeated violence can be inferred from a cemetery while exposing uncertainty about raids, ambushes, and recurring local conflict.",
+          "searchQueries": [
+            "Fred Wendorf The Prehistory of Nubia Jebel Sahaba PDF",
+            "\"Jebel Sahaba\" Wendorf excavation report"
+          ]
+        },
+        {
+          "title": "The Yanomamö as an Ethnographic Argument",
+          "kind": "portrait",
+          "person": "Napoleon Chagnon",
+          "place": "Yanomamö communities, Amazonia",
+          "date": "1960s–1980s",
+          "document": "Napoleon A. Chagnon, Yanomamö: The Fierce People (1968)",
+          "why": "Chagnon's contested interpretation lets the chapter distinguish observed fighting, ethnographic description, and broad claims that violence is an unchanging human constant.",
+          "searchQueries": [
+            "Napoleon Chagnon Yanomamo The Fierce People 1968",
+            "\"Yanomamö: The Fierce People\" Chagnon"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "episodes": [
+        {
+          "title": "The Abu Hureyra Settlement Record",
+          "kind": "figure",
+          "person": "Andrew M. T. Moore and archaeologists of Abu Hureyra",
+          "place": "Abu Hureyra, northern Syria",
+          "date": "c. 13,000–7,000 BCE",
+          "document": "Andrew M. T. Moore, Gordon C. Hillman, and Anthony J. Legge, Village on the Euphrates (2000)",
+          "why": "The settlement sequence connects climate fluctuation and changing subsistence to mobility and resource concentration without treating environmental stress as an automatic cause of violence.",
+          "searchQueries": [
+            "Andrew Moore Village on the Euphrates Abu Hureyra 2000",
+            "\"Village on the Euphrates\" Moore Hillman Legge"
+          ]
+        },
+        {
+          "title": "The Drought at Tell Leilan",
+          "kind": "figure",
+          "person": "Harvey Weiss and the excavators of Tell Leilan",
+          "place": "Tell Leilan, northern Mesopotamia",
+          "date": "c. 2200 BCE",
+          "document": "Harvey Weiss et al., \"The Genesis and Collapse of Third Millennium North Mesopotamian Civilization,\" Science (1993)",
+          "why": "The archaeological and climate evidence shows how drought could destabilize a densely settled region, while leaving political response as a separate causal question.",
+          "searchQueries": [
+            "Harvey Weiss Genesis and Collapse Third Millennium North Mesopotamian Civilization",
+            "\"The Genesis and Collapse of Third Millennium North Mesopotamian Civilization\""
+          ]
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "episodes": [
+        {
+          "title": "The Wall of Jericho",
+          "kind": "figure",
+          "person": "Kathleen Kenyon and the inhabitants of Jericho",
+          "place": "Tell es-Sultan, Jericho",
+          "date": "c. 8000 BCE",
+          "document": "Kathleen M. Kenyon, Excavations at Jericho, volume 1 (1960)",
+          "why": "Jericho's wall and settlement layers show how concentration of people and stores generated defensive architecture without revealing a single identifiable enemy.",
+          "searchQueries": [
+            "Kathleen Kenyon Excavations at Jericho volume 1 1960",
+            "\"Excavations at Jericho\" Kenyon wall"
+          ]
+        },
+        {
+          "title": "The Fortifications of Neolithic Çatalhöyük",
+          "kind": "figure",
+          "person": "Ian Hodder and the residents of Çatalhöyük",
+          "place": "Çatalhöyük, central Anatolia",
+          "date": "c. 7400–6000 BCE",
+          "document": "Ian Hodder, Çatalhöyük: The Leopard's Tale (2006)",
+          "why": "The dense houses, roof access, and debated defensive interpretations test whether settlement itself produced walls, surveillance, and exclusion or merely new forms of social organization.",
+          "searchQueries": [
+            "Ian Hodder Catalhoyuk The Leopard's Tale 2006",
+            "\"Çatalhöyük: The Leopard's Tale\""
+          ]
+        },
+        {
+          "title": "The Massacre at Talheim",
+          "kind": "scene",
+          "person": "The victims and attackers represented at Talheim",
+          "place": "Talheim, southwestern Germany",
+          "date": "c. 5000 BCE",
+          "document": "V. Wahl and J. König, \"Anthropologisch-traumatologische Untersuchung der bandkeramischen Skelettreste aus dem Massengrab bei Talheim,\" Fundberichte aus Baden-Württemberg (1987)",
+          "why": "The mass grave links settled Neolithic life to a particular episode of organized lethal attack while warning against generalizing from one violent deposit to all farming communities.",
+          "searchQueries": [
+            "Wahl Konig Talheim Massengrab 1987",
+            "\"Massengrab bei Talheim\" anthropologisch traumatologische Untersuchung"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "episodes": [
+        {
+          "title": "The Sumerian King List",
+          "kind": "document",
+          "person": "The anonymous compilers of the Sumerian King List",
+          "place": "Mesopotamia",
+          "date": "early second millennium BCE",
+          "document": "The Sumerian King List, translated in Thorkild Jacobsen, The Sumerian King List (1939)",
+          "why": "Its formula of kingship, succession, and transfer of rule shows how political authority turns contested power into a compressed story of legitimate order.",
+          "searchQueries": [
+            "Thorkild Jacobsen The Sumerian King List 1939",
+            "\"The Sumerian King List\" Jacobsen translation"
+          ]
+        },
+        {
+          "title": "The Code of Hammurabi",
+          "kind": "document",
+          "person": "Hammurabi of Babylon",
+          "place": "Babylon",
+          "date": "c. 1750 BCE",
+          "document": "The Code of Hammurabi, translated by L. W. King in The Code of Hammurabi (1910)",
+          "why": "The prologue, laws, and epilogue reveal how a ruler recasts punishment, property, hierarchy, and coercion as a public program of justice.",
+          "searchQueries": [
+            "L W King The Code of Hammurabi 1910",
+            "\"The Code of Hammurabi\" L. W. King translation"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "episodes": [
+        {
+          "title": "The Akkadian Victory Stele of Naram-Sin",
+          "kind": "document",
+          "person": "Naram-Sin of Akkad",
+          "place": "Akkadian Empire and the Zagros frontier",
+          "date": "c. 2250 BCE",
+          "document": "The Victory Stele of Naram-Sin, described in Dominique Collon, First Impressions: Cylinder Seals in the Ancient Near East (1987)",
+          "why": "The image's divine kingship and ordered enemy defeat show how visual propaganda converts a campaign into proof of centralized legitimacy.",
+          "searchQueries": [
+            "Victory Stele of Naram-Sin description museum",
+            "Dominique Collon Victory Stele Naram-Sin"
+          ]
+        },
+        {
+          "title": "The Assyrian Annals of Tiglath-Pileser III",
+          "kind": "document",
+          "person": "Tiglath-Pileser III",
+          "place": "Neo-Assyrian Empire",
+          "date": "745–727 BCE",
+          "document": "Daniel David Luckenbill, Ancient Records of Assyria and Babylonia, volume 1 (1926), translations of Tiglath-Pileser III's annals",
+          "why": "The annals expose the administrative mechanisms—tribute, deportation, governors, and campaigns—through which conquest became repeatable imperial policy.",
+          "searchQueries": [
+            "Luckenbill Ancient Records Assyria Babylonia Tiglath Pileser III",
+            "\"Ancient Records of Assyria and Babylonia\" volume 1"
+          ]
+        },
+        {
+          "title": "The Persian Royal Road",
+          "kind": "figure",
+          "person": "Herodotus and the administrators of the Achaemenid Empire",
+          "place": "Persian Empire",
+          "date": "fifth century BCE",
+          "document": "Herodotus, Histories, Book 8, translated by George Rawlinson (1860), on the Royal Road and imperial communications",
+          "why": "The road and courier system demonstrate how infrastructure supports both administrative integration and the rapid movement of armies.",
+          "searchQueries": [
+            "Herodotus Histories Book 8 Royal Road Rawlinson",
+            "\"Royal Road\" Herodotus Histories Book 8"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 6,
+      "episodes": [
+        {
+          "title": "The Ottoman Siege of Constantinople",
+          "kind": "scene",
+          "person": "Mehmed II and the defenders of Constantinople",
+          "place": "Constantinople",
+          "date": "1453",
+          "document": "Steven Runciman, The Fall of Constantinople 1453 (1965)",
+          "why": "The siege shows gunpowder artillery changing a capability while finance, engineers, supply, and command determine whether that capability becomes conquest.",
+          "searchQueries": [
+            "Steven Runciman The Fall of Constantinople 1453",
+            "\"The Fall of Constantinople 1453\" Runciman"
+          ]
+        },
+        {
+          "title": "The Portuguese Cannon at Calicut",
+          "kind": "scene",
+          "person": "Vasco da Gama and the Zamorin of Calicut",
+          "place": "Calicut, India",
+          "date": "1498–1502",
+          "document": "Álvaro Velho, The Roteiro of a Journey to India, translated by H. E. J. Stanley (1869)",
+          "why": "The voyage narrative reveals how shipboard artillery mattered through commercial networks, diplomatic intimidation, and state backing rather than through metal alone.",
+          "searchQueries": [
+            "Alvaro Velho Roteiro Journey to India Stanley 1869",
+            "\"The Roteiro of a Journey to India\""
+          ]
+        },
+        {
+          "title": "The Thirty Years' War and the Military Entrepreneur",
+          "kind": "portrait",
+          "person": "Albrecht von Wallenstein",
+          "place": "Bohemia and the Holy Roman Empire",
+          "date": "1618–1634",
+          "document": "Geoffrey Parker, The Thirty Years' War (1984)",
+          "why": "Wallenstein's army shows how firearms became strategically consequential through credit, contracting, provisioning, and political authority.",
+          "searchQueries": [
+            "Geoffrey Parker The Thirty Years' War 1984 Wallenstein",
+            "\"The Thirty Years' War\" Geoffrey Parker"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 7,
+      "episodes": [
+        {
+          "title": "The Destruction of Magdeburg",
+          "kind": "scene",
+          "person": "Otto von Guericke and the inhabitants of Magdeburg",
+          "place": "Magdeburg, Germany",
+          "date": "1631",
+          "document": "Friedrich Schiller, The History of the Thirty Years' War, Book II (1791), translated by A. J. W. Morrison",
+          "why": "The sack follows how siege, command, panic, and civilian survival intersect when a town is treated simultaneously as strategic position, source of supplies, and population to be punished.",
+          "searchQueries": [
+            "Schiller History of the Thirty Years War Magdeburg 1631",
+            "\"The History of the Thirty Years' War\" Schiller Magdeburg"
+          ]
+        },
+        {
+          "title": "The Swedish Army's Contribution Ordinances",
+          "kind": "document",
+          "person": "Gustavus Adolphus and Swedish military administrators",
+          "place": "Swedish-occupied German territories",
+          "date": "1630s",
+          "document": "Geoffrey Parker, The Military Revolution: Military Innovation and the Rise of the West, 1500–1800 (1988), discussion of wartime contributions",
+          "why": "The contribution system makes requisition visible as an administrative relationship in which protection and coercion were imposed through the same military apparatus.",
+          "searchQueries": [
+            "Geoffrey Parker Military Revolution wartime contributions Swedish army",
+            "\"The Military Revolution\" Parker contributions Thirty Years War"
+          ]
+        },
+        {
+          "title": "The Parish Register of Kriegsheim",
+          "kind": "document",
+          "person": "The pastor and parishioners of Kriegsheim",
+          "place": "Kriegsheim, Palatinate",
+          "date": "1630s–1640s",
+          "document": "Peter H. Wilson, Europe's Tragedy: A History of the Thirty Years War (2009), discussion of local parish and demographic records",
+          "why": "A local record of deaths, absences, and disrupted households shows what military movement looks like from below without pretending that every civilian experience was identical.",
+          "searchQueries": [
+            "Peter H Wilson Europe's Tragedy parish records Kriegsheim",
+            "\"Europe's Tragedy\" Wilson Kriegsheim"
+          ]
+        },
+        {
+          "title": "After the Armies Left",
+          "kind": "figure",
+          "person": "The population of the Duchy of Württemberg",
+          "place": "Württemberg, Germany",
+          "date": "1618–1648",
+          "document": "Geoffrey Parker, \"The Crisis of the Seventeenth Century,\" in Europe in Crisis, 1598–1648 (1979)",
+          "why": "Population and tax evidence tests whether wartime devastation came from battle alone or from the cumulative mechanisms of billeting, disease, hunger, and flight.",
+          "searchQueries": [
+            "Geoffrey Parker Europe in Crisis 1598 1648 Württemberg population",
+            "\"The Crisis of the Seventeenth Century\" Geoffrey Parker"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 8,
+      "episodes": [
+        {
+          "title": "The Assize of Clarendon",
+          "kind": "document",
+          "person": "Henry II of England",
+          "place": "Clarendon, England",
+          "date": "1166",
+          "document": "The Assize of Clarendon, translated in Select Charters and Other Illustrations of English Constitutional History, edited by William Stubbs (1870)",
+          "why": "The assize shows a monarchy extending standardized accusation and punishment into local communities while redefining which violence becomes a matter for royal justice.",
+          "searchQueries": [
+            "William Stubbs Select Charters Assize of Clarendon 1166",
+            "\"The Assize of Clarendon\" translation"
+          ]
+        },
+        {
+          "title": "The London Coroners' Rolls",
+          "kind": "figure",
+          "person": "The coroners and victims recorded in medieval London",
+          "place": "London, England",
+          "date": "1276–1277",
+          "document": "Barbara A. Hanawalt, Crime and Conflict in English Communities, 1300–1348 (1979)",
+          "why": "The coroners' cases permit a cautious count of homicide while showing how legal categories and reporting practices shape any apparent decline or concentration of violence.",
+          "searchQueries": [
+            "Barbara Hanawalt Crime and Conflict in English Communities coroners rolls London",
+            "\"Crime and Conflict in English Communities\" Hanawalt"
+          ]
+        },
+        {
+          "title": "The Carolina Criminal Code",
+          "kind": "document",
+          "person": "Charles V, Holy Roman Emperor",
+          "place": "Holy Roman Empire",
+          "date": "1532",
+          "document": "The Constitutio Criminalis Carolina, translated in John H. Wigmore, A Panorama of the World's Legal Systems (1928)",
+          "why": "The code demonstrates how investigation, torture, evidence, and punishment institutionalized a boundary between legitimate state force and criminal violence.",
+          "searchQueries": [
+            "Constitutio Criminalis Carolina 1532 English translation",
+            "John Wigmore Panorama World's Legal Systems Carolina"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 9,
+      "episodes": [
+        {
+          "title": "The Indian Rebellion Census and Classification",
+          "kind": "document",
+          "person": "William H. Sleeman and British colonial administrators",
+          "place": "North India",
+          "date": "1857–1858",
+          "document": "William H. Sleeman, A Journey through the Kingdom of Oude (1858), alongside British parliamentary papers on the Indian Rebellion",
+          "why": "Colonial reports show how rebellion was converted into racial and administrative classifications that made coercion and imperial knowledge reinforce one another.",
+          "searchQueries": [
+            "William H Sleeman A Journey through the Kingdom of Oude 1858",
+            "\"A Journey through the Kingdom of Oude\" Sleeman"
+          ]
+        },
+        {
+          "title": "The Lancashire Cotton Workers' Petition",
+          "kind": "document",
+          "person": "Lancashire textile workers",
+          "place": "Manchester and Lancashire, England",
+          "date": "1842",
+          "document": "The National Archives, Parliamentary Papers on the 1842 Plug Plot riots and Chartist petitions",
+          "why": "The petitions and testimony distinguish labor protest from state repression and reveal how industrial dependence turns economic organization into a conflict over political voice.",
+          "searchQueries": [
+            "1842 Plug Plot riots parliamentary papers petition Lancashire",
+            "National Archives 1842 Lancashire workers petition"
+          ]
+        },
+        {
+          "title": "The Congo Reform Association Evidence",
+          "kind": "document",
+          "person": "Edmund Dene Morel and Roger Casement",
+          "place": "Congo Free State",
+          "date": "1904–1908",
+          "document": "Roger Casement, Report upon the Administration of the Congo Free State (1904)",
+          "why": "Casement's testimony connects forced labor, extraction, bodily punishment, and bureaucratic targets, showing how imperial economic systems organize harm beyond battlefield violence.",
+          "searchQueries": [
+            "Roger Casement Report upon the Administration of the Congo Free State 1904",
+            "\"Report upon the Administration of the Congo Free State\""
+          ]
+        }
+      ]
+    },
+    {
+      "index": 10,
+      "episodes": [
+        {
+          "title": "The German Air Raids on London",
+          "kind": "scene",
+          "person": "Arthur Harris and London civilians",
+          "place": "London, England",
+          "date": "1940–1941",
+          "document": "The Blitz, official British government photographs and reports in the Imperial War Museums collection",
+          "why": "The raid records show how air power, civilian morale, shelters, and industrial logistics made the home front part of the military system.",
+          "searchQueries": [
+            "Imperial War Museums Blitz London official photographs reports 1940",
+            "\"The Blitz\" Imperial War Museums London 1940"
+          ]
+        },
+        {
+          "title": "The British Ministry of Information Home Intelligence Reports",
+          "kind": "document",
+          "person": "British Ministry of Information observers",
+          "place": "Britain",
+          "date": "1939–1944",
+          "document": "Paul Addison and Jeremy Crang, eds., Listening to Britain: Home Intelligence Reports on Britain during the Second World War (2010)",
+          "why": "The reports reveal how governments measured civilian morale and managed information, adding psychological administration to the material mechanisms of total war.",
+          "searchQueries": [
+            "Addison Crang Listening to Britain Home Intelligence Reports 2010",
+            "\"Listening to Britain\" Home Intelligence Reports"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 11,
+      "episodes": [
+        {
+          "title": "The Apartheid Pass Laws",
+          "kind": "document",
+          "person": "South African officials and pass-law resisters",
+          "place": "South Africa",
+          "date": "1952–1986",
+          "document": "Union of South Africa, Natives (Abolition of Passes and Co-ordination of Documents) Act, 1952",
+          "why": "The pass system makes structural violence concrete by showing how movement, employment, residence, and policing were linked through ordinary administrative documents.",
+          "searchQueries": [
+            "South Africa Natives Abolition of Passes Act 1952 text",
+            "\"Natives (Abolition of Passes and Co-ordination of Documents) Act\""
+          ]
+        },
+        {
+          "title": "The Bengal Famine Commission Report",
+          "kind": "document",
+          "person": "The Bengal Famine Commission",
+          "place": "Bengal, British India",
+          "date": "1943–1945",
+          "document": "Famine Inquiry Commission, Report on Bengal (1945)",
+          "why": "The report allows food shortage to be separated from entitlement failure, procurement policy, price control, and political exclusion as mechanisms producing mass deprivation.",
+          "searchQueries": [
+            "Famine Inquiry Commission Report on Bengal 1945",
+            "\"Report on Bengal\" Famine Inquiry Commission"
+          ]
+        },
+        {
+          "title": "The Warsaw Ghetto Diary",
+          "kind": "document",
+          "person": "Emanuel Ringelblum",
+          "place": "Warsaw, German-occupied Poland",
+          "date": "1939–1943",
+          "document": "Emanuel Ringelblum, Notes from the Warsaw Ghetto, translated by J. B. and M. B. Sten (1958)",
+          "why": "Ringelblum's record shows how rationing, forced separation, information control, and direct terror combine into institutional harm rather than existing as separate categories.",
+          "searchQueries": [
+            "Emanuel Ringelblum Notes from the Warsaw Ghetto 1958",
+            "\"Notes from the Warsaw Ghetto\" Ringelblum"
+          ]
+        }
+      ]
+    },
+    {
+      "index": 12,
+      "episodes": [
+        {
+          "title": "The Truth and Reconciliation Commission Final Report",
+          "kind": "document",
+          "person": "Desmond Tutu and the South African Truth and Reconciliation Commission",
+          "place": "South Africa",
+          "date": "1998",
+          "document": "Truth and Reconciliation Commission of South Africa, Final Report (1998)",
+          "why": "The commission tests whether public testimony, institutional reform, and conditional amnesty can transform a society's account of violence without producing a simple measure of reconciliation.",
+          "searchQueries": [
+            "Truth and Reconciliation Commission of South Africa Final Report 1998",
+            "\"Truth and Reconciliation Commission of South Africa Final Report\""
+          ]
+        },
+        {
+          "title": "The World Health Organization Violence Prevention Data",
+          "kind": "figure",
+          "person": "World Health Organization researchers",
+          "place": "Global",
+          "date": "2002",
+          "document": "World Health Organization, World Report on Violence and Health (2002)",
+          "why": "The report tests historical explanations against a modern classification of interpersonal, collective, and self-directed violence while exposing what global comparison leaves invisible.",
+          "searchQueries": [
+            "World Health Organization World Report on Violence and Health 2002",
+            "\"World Report on Violence and Health\""
+          ]
+        },
+        {
+          "title": "The Human Security Report's Long-Term War Trend",
+          "kind": "dispute",
+          "person": "Andrew Mack and the Human Security Report Project",
+          "place": "Global",
+          "date": "2005",
+          "document": "Human Security Centre, Human Security Report 2005: War and Peace in the 21st Century",
+          "why": "The report's decline narrative tests the book's institutional explanation against disputed coding, missing deaths, and the possibility that transformed violence can look like reduced violence.",
+          "searchQueries": [
+            "Human Security Report 2005 War and Peace in the 21st Century PDF",
+            "\"Human Security Report 2005\" Andrew Mack"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 8,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.9,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A point is not automatically a weapon of war; a fortification is not automatically evidence of a siege; a mass grave is not automatically an atrocity.",
+      "judgment": "The book's evidentiary discipline stated early and honoured throughout; this is the spine of its argument and it is genuinely rigorous."
+    },
+    {
+      "quote": "The card converted a passer-by into a classification.",
+      "judgment": "Compressed, concrete, and load-bearing — the thesis about administration made visible in one object rather than asserted abstractly."
+    },
+    {
+      "quote": "A wall was built from mud brick, but its persistence depended on administration in the form of clay.",
+      "judgment": "Best kind of sentence here: the material and the bureaucratic fused rather than merely juxtaposed."
+    },
+    {
+      "quote": "A boy in a sailor’s jacket held a brass key in his fist. He kept turning it over, as if the house it fitted might still be standing when he came back.",
+      "judgment": "Powerful as narrative, but invented sensory detail of this granularity sits uneasily against a book that spends its analytic pages refusing to claim more than the evidence permits."
+    },
+    {
+      "quote": "A later description in David Irving v Penguin Books and Deborah Lipstadt/VII says, “They were called Sonderkommando.”",
+      "judgment": "A visible seam where secondary-source scaffolding intrudes; the citation is inert and awkward, as are “*The Red Man and the White Man in North America*, Chapter 1” and Hobbes quoted via “*History of Modern Philosophy*”."
+    },
+    {
+      "quote": "Governance did not cancel coercion. It gave coercion a schedule.",
+      "judgment": "Excellent line in isolation; but the isolated aphoristic one-sentence paragraph as section closer recurs so often it becomes a tic."
+    },
+    {
+      "quote": "The crowd had not vanished. It had been claimed by a government.",
+      "judgment": "Same move again — negation, then the corrected clause — landing a chapter; the reader can feel the machine that produced it."
+    },
+    {
+      "quote": "At Vienna, the register counted an army before the walls. At Tenochtitlan, alliances carried a fleet across a lake. At Naseby, drilled regiments held when one wing broke.",
+      "judgment": "The anaphoric roll-call of the chapter's own cases is the standard closing device in almost every chapter; effective once, deadening by the fifteenth time."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Identical chapter architecture: a cinematic reconstructed scene (with short one-line dramatic beats) for 15–25 paragraphs, a hinge sentence carrying the reader to a second case, then analysis, a paired comparison, a named counter-interpretation refuted, and a braided closer.",
+      "instances": [
+        "The prisoner stood below the bench with his hands bound.",
+        "The second drawbridge dropped."
+      ]
+    },
+    {
+      "pattern": "Anaphoric case-list closer: every chapter ends by naming its own sites in parallel clauses.",
+      "instances": [
+        "At Toulouse in 1560, judges gave a legal name to a man’s assumed identity... At Kibuye in 1994, officials and armed men used identity to prevent households from remaining together. At Nataruk, stone points and fractures record an attack whose purpose remains open.",
+        "At Mahenge, the first shots came from a boma defending a station. At the Waterberg, German troops turned a failed encirclement into a campaign against routes and wells. In Nigeria, the emir’s office carried British command into local society."
+      ]
+    },
+    {
+      "pattern": "Negation-then-correction as the default sentence engine (“not X; it is Y” / “X did not do A. It did B”), repeated hundreds of times and often twice in a paragraph.",
+      "instances": [
+        "Violence did not stand outside production at Drax Hall; it set production’s pace.",
+        "The Mongols did not merely raid cities and vanish. They made choices about artisans, clerks, farmers, and soldiers."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis assigning one clause to each agent, usually in matched short sentences (“X supplies A. Y supplies B.”).",
+      "instances": [
+        "Scarcity supplies a condition. An attacking group supplies the decision.",
+        "Rumour supplied danger; institutions supplied the object."
+      ]
+    },
+    {
+      "pattern": "Thesis restatement — institutions/offices/documents give violence duration and reach — delivered as a fresh conclusion at the end of nearly every chapter and again inside them, so the book's argument stops developing after roughly chapter four while the cases keep arriving.",
+      "instances": [
+        "Those instruments did not make aggression inevitable. They gave it direction, duration, and public meaning.",
+        "Administration inherited the force of conquest and made it ordinary."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely serious work of comparative history with one clear and well-defended thesis: aggression becomes historically consequential only when institutions — registers, roads, codes, quotas, tables — give it direction, duration and repeatability, and the record we read is itself produced by those institutions. The evidentiary discipline is the book's greatest strength; it repeatedly names what a trace can and cannot support, distinguishes a court archive from a cemetery, and refuses the ladder from primitive anger to modern atrocity that a lesser book would have climbed. Chapter openings are vivid and often gripping, and the analytic prose is clean, concrete and unusually free of abstraction. The weaknesses are formal rather than intellectual: an identical chapter template repeated fifteen times, an anaphoric case-list closer at nearly every chapter's end, a pervasive negation-then-correction sentence engine, and a thesis that is restated as if newly discovered long after it has been established, so the last third accumulates evidence without advancing the argument. There is also an unresolved tension between the invented sensory detail of the dramatized openings and the source-critical austerity of the pages that follow, and a handful of visible citation seams where secondary scaffolding was left in the text. With compression, varied chapter shapes and a stronger developmental arc across the second half, this would be ready."
+}

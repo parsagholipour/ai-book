@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.2,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A quarrel at the water's edge became a citywide crisis because the city had already arranged its population in unequal spaces.",
+      "judgment": "Excellent opening thesis-in-miniature: concrete, earned by the preceding narration, and it sets the book's governing argument without announcing it."
+    },
+    {
+      "quote": "Jebel Sahaba is a cemetery, not a battlefield preserved beneath the sand.",
+      "judgment": "Strong chapter opening \u2014 a corrective sentence that immediately establishes an evidentiary discipline rather than a topic."
+    },
+    {
+      "quote": "There was no wall at the horizon, but there was nowhere to go.",
+      "judgment": "One of the very few sentences with rhetorical shape; its rarity shows how flat the surrounding register mostly is."
+    },
+    {
+      "quote": "The category did the work. It converted refusal into evidence of belonging to an enemy camp.",
+      "judgment": "Compact and analytically precise; the short-paragraph device is used sparingly enough here to land."
+    },
+    {
+      "quote": "Technology extended reach; political decisions determined who would be treated as an enemy.",
+      "judgment": "The book's central claim, but by Chapter 14 it has been restated in near-identical grammar a dozen times; assertion has replaced argument."
+    },
+    {
+      "quote": "A ditch may slow movement, but it may also drain rainwater. A gate can regulate trade as readily as repel attackers.",
+      "judgment": "Good methodological caution, though the symmetrical 'may X but may also Y' construction becomes the book's default sentence engine."
+    },
+    {
+      "quote": "The evidence supports no simple rise or fall in human aggressiveness. It shows power learning to travel through cities.",
+      "judgment": "Typical chapter closer: a denial followed by an aphoristic reformulation \u2014 effective once, mechanical by the fifth repetition."
+    },
+    {
+      "quote": "Their differences are the evidence, not an inconvenience to be smoothed away.",
+      "judgment": "A genuinely useful methodological principle, and the book largely honors it; but the same sentiment is restated in nearly every chapter's final paragraphs."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Chapter template: two or three named case studies presented in sequence, then an explicit comparison, then a source-critical caution, then a closing paragraph that denies a naive explanation and restates the thesis.",
+      "instances": [
+        "The Chicago report records a beach confrontation, a city's racial order, and the later effort to describe both.",
+        "The four records do not describe one universal path towards peace. The Al\u00feingi worked through compensation and public judgment. Ashanti diplomacy depended on protocol among rulers."
+      ]
+    },
+    {
+      "pattern": "The 'X did not do A; it did B' paired antithesis, used as the standard analytic move and as the standard paragraph closer.",
+      "instances": [
+        "State formation did not simply add violence to an otherwise peaceful human world. It altered where violence occurred, who could authorise it, and how long it could be sustained.",
+        "Revolution did not release a fixed quantity of human aggression. It rearranged the routes by which fear, grievance, hope, and power reached other bodies."
+      ]
+    },
+    {
+      "pattern": "Symmetrical epistemic hedge of the form 'the record shows P; it does not show Q', repeated in nearly every section on nearly every source.",
+      "instances": [
+        "The bone records an effect. The burial records what survivors did with the body afterwards. Neither record, by itself, supplies the whole encounter.",
+        "The source shows Baghdad remembered as a world overturned; it does not supply a reliable total for every person killed."
+      ]
+    },
+    {
+      "pattern": "The 'restraint and enlargement' couplet: an institution is shown to reduce one kind of violence while extending another, phrased almost identically each time.",
+      "instances": [
+        "A city could restrain private violence by claiming the right to judge, punish, and protect. That claim became dangerous when the same right was applied to whole populations",
+        "A state that restrained private violence among its citizens could simultaneously build files, fences, detention centres, and armed units capable of systematic harm."
+      ]
+    },
+    {
+      "pattern": "Uniform paragraph architecture \u2014 long, evenly weighted declarative blocks of five to eight sentences with almost no variation in length, no dialogue, no digression, and only rare one-line paragraphs used as punctuation.",
+      "instances": [
+        "Collection required records and personnel. The reeve supervised work, measured deliveries, and reported failures. The manor court handled disputes and imposed fines...",
+        "The station was therefore both a road service and a claim upon the countryside. Its horses had to be fed when no army was visible, and its officials had to identify legitimate couriers..."
+      ]
+    }
+  ],
+  "summary": "This is a serious, well-organized comparative history whose governing thesis \u2014 that aggression's scale and direction come from institutions, records, and categories of belonging rather than from a fixed human nature \u2014 is stated early and sustained with unusual discipline across fifteen chronological chapters. Its strongest asset is evidentiary manners: each case is introduced through a specific artifact (a skull, a tablet, a register, a relief, a protocol), and the text is consistently honest about what a given source can and cannot bear, which produces reasoning that is careful and rarely overreaching. The prose is clean, precise, and free of the usual surface markers of machine writing; there are no clich\u00e9s, no filler transitions, no motivational padding. The weakness is structural monotony. Every chapter runs the same circuit \u2014 case, second case, comparison, source caution, thesis restatement \u2014 and the same two or three sentence shapes ('not A but B', 'shows P, does not show Q') carry almost all the analytical weight, so that by the later chapters the argument is being recited rather than advanced. Engagement and pacing suffer accordingly: the register never modulates, no case is allowed to run at greater length or intensity than any other, and there is little authorial risk or surprise. With variation in chapter form, some pruning of the thesis restatements, and a few passages permitted to develop at their own tempo, this would be a genuinely strong book."
+}

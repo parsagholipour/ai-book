@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.5,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A weapon does not explain its own use. A wound does not identify the social purpose of the blow.",
+      "judgment": "Crisp statement of the book's controlling thesis; earns its place because the preceding archaeology has actually demonstrated it."
+    },
+    {
+      "quote": "State formation did not simply add force to human affairs. In these cases, it selected targets, set limits, and gave aggression an address.",
+      "judgment": "Genuinely original phrasing ('gave aggression an address') and a real analytic advance over the anarchy/order binary."
+    },
+    {
+      "quote": "The horse gave speed, but the yam gave speed a route; herds gave food, but officers allocated them; the bow gave range, but commanders arranged the deception that made range decisive.",
+      "judgment": "Strong tricolon that compresses a whole chapter's argument \u2014 but also the book's signature move, used until it becomes a mannerism."
+    },
+    {
+      "quote": "The phrase 'natural reduction' is especially revealing because it makes a planned death appear to arise from conditions rather than decisions.",
+      "judgment": "Excellent close reading; the chapter on Wannsee is the book's best sustained analysis of a single document."
+    },
+    {
+      "quote": "Eannatum did not need to speak to each soldier. The monument spoke before officials, dependants, priests, and people whose fields lay near the disputed territory.",
+      "judgment": "Concrete, well-cadenced, and does interpretive work rather than merely summarising the object."
+    },
+    {
+      "quote": "the figures supplied for this period",
+      "judgment": "Provenance language from the drafting process leaks into the prose ('supplied evidence', 'one supplied estimate'), breaking the historian's voice and quietly signalling a source packet rather than research."
+    },
+    {
+      "quote": "The evidence is strong where bodies preserve force and weak where social intention must be reconstructed.",
+      "judgment": "Accurate, but one of dozens of near-identical epistemic-limit sentences; the caution stops registering as thought and starts reading as reflex."
+    },
+    {
+      "quote": "The number opens the question; it does not answer it alone.",
+      "judgment": "Aphoristic paired closer of exactly the type that ends most sections; individually good, cumulatively formulaic."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The negation-then-assertion couplet ('X is not A. It is B.') used as the default unit of argument, several times per page.",
+      "instances": [
+        "A skull fracture was not anger itself. It was the material consequence of an impact",
+        "The wagon train was not an afterthought to the army. It set the limits of the army\u2019s reach."
+      ]
+    },
+    {
+      "pattern": "Section-closing aphorism built on paired antithesis, landing nearly every subsection on the same rhythm.",
+      "instances": [
+        "Fear may move a hand, but an office can direct thousands of hands towards a defined population.",
+        "Exchange did not end aggression; it gave aggression a price and supplied reasons for ending it."
+      ]
+    },
+    {
+      "pattern": "The evidentiary-limit disclaimer: after each artefact is described, a paragraph stating what it establishes and what it cannot establish, with almost identical syntax throughout all fifteen chapters.",
+      "instances": [
+        "The osteological injury sequence does not prove a state, an army, or a permanent war.",
+        "The stone and the bones secure the institution while leaving its full accounting incomplete."
+      ]
+    },
+    {
+      "pattern": "Recap loops within chapters: the same paired case is re-contrasted three or four times with only slight rewording, inflating chapters 2, 7 and 14.",
+      "instances": [
+        "Jebel Sahaba suggests repeated episodes involving a broad range of people; Nataruk demonstrates that a whole group could be attacked in a setting before states.",
+        "At Jebel Sahaba, repeated healed and unhealed wounds show that recurrent violence could shape lives before states. At Nataruk, obsidian points and widespread trauma show that a group could be attacked before dense settlement made populations legible to a government."
+      ]
+    },
+    {
+      "pattern": "The instrument-inventory subsection: five or six mechanisms of rule each given one uniform paragraph, then a summarising sentence that strings them together.",
+      "instances": [
+        "A tax pushed people towards wages; a pass restricted the route by which wages could be found; a quota measured what was owed; an expedition punished refusal; a boundary decided which office could make the demand.",
+        "Rationing governed the meal, blockade governed the supply behind it, deportation governed the household\u2019s place, war work governed the labour of those who remained, and mobilisation governed the path of disease."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely thesis-driven history: organised violence is treated throughout as a product of offices, categories and administrative reach rather than of human temperament, and the argument is carried consistently from a Neolithic mass grave to autonomous weapons without slackening. The evidentiary discipline is unusual \u2014 sources are read as artefacts with purposes, numbers are interrogated for the categories that produced them, and the book repeatedly refuses inferences its material cannot support. Clarity and sentence-level control are high, the voice is steady and adult, and several chapters (Uruk and Lagash, Wannsee, the Ottoman arsenal) are strong analytical set-pieces. The weaknesses are formal rather than intellectual: the argument is built almost entirely from one syntactic move (negation followed by assertion) and closed almost every time with a paired antithesis, so paragraph shapes and section endings become highly predictable, and the epistemic caveat recurs so often it loses force. Pacing suffers from recap loops in chapters 2, 7 and 14, and there is little human texture \u2014 no named voices, no scenes, few surprises \u2014 which blunts engagement across 200-odd pages. Occasional traces of source-packet language ('the supplied evidence', 'the figures supplied for this period') should be removed. A revision that varied the cadence, cut roughly a fifth of the restatement, and admitted more particularity would lift this well above its current level."
+}

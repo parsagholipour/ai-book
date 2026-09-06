@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 9,
+    "engagement": 7,
+    "pacing": 7,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 8.1,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Neither injury supplies an explanation. Each begins as a shape in bone.",
+      "judgment": "Opening page establishes the book's epistemic discipline in two sentences; the restraint is the argument."
+    },
+    {
+      "quote": "Violence is organised before it is counted, and counted again before it becomes history.",
+      "judgment": "The thesis in its sharpest form, and a genuinely earned line after three pages of counting practices."
+    },
+    {
+      "quote": "Narmer’s arm is frozen just before impact. The palette presents violence as a permanent royal posture, endlessly ready and already completed.",
+      "judgment": "Reads an object rather than summarising a scholarly consensus; the kind of specificity that carries the chapter."
+    },
+    {
+      "quote": "The army begins as handwriting.",
+      "judgment": "Effective as a single move, but one of many one-line aphoristic paragraph-closers that become a tic."
+    },
+    {
+      "quote": "In Rome, the Lex Gabinia, as Cicero later discussed legislation and public authority, belonged to a world where sanctioned force could be distinguished from private retaliation.",
+      "judgment": "A garbled non sequitur dropped into an osteology passage; the citation does no work and the syntax barely parses."
+    },
+    {
+      "quote": "“The interesting and extremely important discoveries that have been made at Lachish last year and the year before by the skill and perseverance of Mr.”",
+      "judgment": "A chapter epigraph truncated mid-name — apparatus failure that a reader will notice immediately."
+    },
+    {
+      "quote": "The relief threatens; the list specifies. One turns defeat into fear, the other turns submission into a schedule.",
+      "judgment": "Well made, but the paired-antithesis cadence recurs so often that the prose starts to feel metronomic."
+    },
+    {
+      "quote": "The record is uneven because power shapes what survives.",
+      "judgment": "The closing chapter lands the argument cleanly and without inflation, gathering fifteen chapters of evidence into one claim."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The paired-case chapter engine: two sites or archives introduced separately, then explicitly set against each other with a symmetrical contrast sentence. It structures nearly every section of every chapter, so the reader learns the rhythm and begins reading ahead of the prose.",
+      "instances": [
+        "Jericho reveals a population able to mobilise labour over years. Talheim reveals a population unable, or unwilling, to protect its dead after a lethal encounter.",
+        "Mozambique’s agreement asked armed rivals to compete within a common national framework. Dayton asked rival national projects to share a state while retaining extensive territorial autonomy."
+      ]
+    },
+    {
+      "pattern": "Negation-then-assertion (\"X does not do A; it does B\" / \"not A but B\") used as the default way of stating any conclusion, dozens of times per chapter.",
+      "instances": [
+        "The wall does not identify an enemy.",
+        "The hostage was not simply collateral. Her confinement made the quota visible inside the household."
+      ]
+    },
+    {
+      "pattern": "A rhetorical question opening a paragraph, answered by a hedged \"the evidence permits only a narrower conclusion\" move. It appears in almost every chapter as a transition device.",
+      "instances": [
+        "Did mobility lessen repeated violence, or did it merely leave fewer durable traces of violence that occurred?",
+        "Has violence declined, or has it moved into places and categories that the principal datasets register unevenly?"
+      ]
+    },
+    {
+      "pattern": "Aphoristic one-line closers set off as their own short paragraph, landing a chapter or section on an epigram.",
+      "instances": [
+        "Writing makes a person available to command.",
+        "The institution did not always command the blow; it made the person available to be struck."
+      ]
+    },
+    {
+      "pattern": "Dramatised present-tense set-pieces appended to the end of a chapter, often re-narrating material the chapter has already analysed and connected to the next chapter by a forward-pointing paragraph.",
+      "instances": [
+        "The gate of Lachish stood open by midmorning, and the first family was already on the road below the mound when Sennacherib took his place on the throne.",
+        "The cannon began before noon, from the ridge above Frankenhausen, and the peasants saw the smoke lift white against the Harz."
+      ]
+    }
+  ],
+  "summary": "This is an unusually disciplined comparative history of organised violence, held together by one argument pursued without slackening across fifteen chapters: aggression becomes large and durable when an office can classify a population and attach consequences to the classification. The evidentiary handling is the book's real distinction — it consistently states what a fracture, a relief, a tribute list or a conflict dataset can and cannot establish, and it declines the easy causal inference from drought or technology to killing. The prose is clean, concrete and free of the usual lexical tells; the voice is steady and adult throughout, and the narrative set-pieces (Cajamarca, Vladimir, the Zong, Jallianwala Bagh) are genuinely well written. Its weaknesses are formal rather than substantive: the paired-case engine, the negation-then-assertion cadence, the paragraph-opening rhetorical question and the epigrammatic closer recur so regularly that paragraph shapes become predictable, and the thesis is restated far more often than it needs to be. Apparatus and seams are the other soft spot — a truncated epigraph, an epigraph in the final chapter that bears no relation to the text under it, an incoherent Cicero aside in chapter one, and dramatised codas that sometimes duplicate analysis already given. With a compression pass, varied paragraph architecture and repaired seams, it would be publishable non-fiction."
+}

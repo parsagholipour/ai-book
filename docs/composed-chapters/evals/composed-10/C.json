@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 7.1,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "An archaeological site is a surviving relation among objects, bodies, soil, and time. That relation can be read, but it must not be made to speak more fluently than it does.",
+      "judgment": "Excellent statement of the book's methodological thesis, earned by the Nataruk material that precedes it."
+    },
+    {
+      "quote": "The number is inseparable from the institution that produced it.",
+      "judgment": "Concise, load-bearing formulation that the later chapters on battle-death datasets genuinely pay off."
+    },
+    {
+      "quote": "The lower deck... Their lack of faces, clothing, gestures, and histories was part of the indictment: the trade had already reduced them to quantities before the abolitionist reader encountered them.",
+      "judgment": "Strong close reading that turns a familiar image into an argument about evidence rather than sentiment."
+    },
+    {
+      "quote": "In 1648, after the long conflict had already exhausted many German territories, Magdeburg was taken and sacked by imperial forces.",
+      "judgment": "A factual slip (the sack was 1631) in a book whose authority rests entirely on evidentiary care."
+    },
+    {
+      "quote": "Across the eastern side of North America, the Mexica made the warrior an object of public representation.",
+      "judgment": "Geographically incoherent transition \u2014 Tenochtitlan is not in eastern North America; the seam between Mississippian and Mexica material is the weakest joint in the book."
+    },
+    {
+      "quote": "None of these objects contains a motive. The point at Nataruk did not decide whom its bearer should attack.",
+      "judgment": "True and well put the first time; the same proposition is restated in nearly every chapter thereafter."
+    },
+    {
+      "quote": "Conquest began the process. Rule required other people to continue it.",
+      "judgment": "An aphoristic two-sentence chapter closer \u2014 one of several near-identical cadences used to end chapters."
+    },
+    {
+      "quote": "It refuses the comfort of a single human nature and the comfort of inevitable progress.",
+      "judgment": "The final chapter lands the thesis cleanly, though the paired-antithesis form is by now the book's default sentence shape."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The 'X does not / it does' negation couplet used as the basic unit of argument, dozens of times per chapter",
+      "instances": [
+        "The skeleton carries evidence of injury across time; it does not carry a witness's account of why the injury occurred.",
+        "The image did not decide policy. It supplied one part of the chain by which policy became possible."
+      ]
+    },
+    {
+      "pattern": "Every chapter converges on the same three conclusions \u2014 technology has no motive, institutions direct force, sources are partial \u2014 restated rather than developed",
+      "instances": [
+        "Technology changes what can be done and how actions can be organized; ideas and institutions help determine what people seek to do with those capacities.",
+        "Technology enlarged reach and speed. Political decisions selected targets, obligations, and acceptable losses."
+      ]
+    },
+    {
+      "pattern": "Fixed chapter architecture: an object or site opened in close description, a source-criticism caveat, a bounded comparison with a second case, then a hedged 'the most secure conclusion is narrower' summation",
+      "instances": [
+        "The most secure conclusion is therefore narrower than a story of inevitable escalation.",
+        "The comparison can be stated narrowly. Jebel Sahaba demonstrates that repeated, lethal, projectile-based violence affected a small community before written states."
+      ]
+    },
+    {
+      "pattern": "Rhetorical questions posed at chapter ends and left explicitly unresolved, standing in for argumentative closure",
+      "instances": [
+        "What forms of aggression left no mark that we can now recognise?",
+        "Did religious authority restrain violence more often than it legitimised it? The answer remains open..."
+      ]
+    },
+    {
+      "pattern": "Uniform paragraph shape and length \u2014 declarative topic sentence, three to six evidential sentences, a qualifying final clause \u2014 with almost no variation in rhythm across 60,000 words",
+      "instances": [
+        "Powder required particular care. Barrels had to be kept dry; sparks had to be controlled; quantities had to be issued under supervision.",
+        "The first step was classification. A household had to be made visible to the collector; a field had to be assigned to an owner or cultivator..."
+      ]
+    }
+  ],
+  "summary": "This is a serious, well-informed comparative history of organized violence from Nataruk to Kosovo, held together by a genuine and consistently applied thesis: aggression is a constant human capacity whose scale and direction are set by institutions, records, and definitions of belonging, and every source must be read for what its producer wanted counted. The evidentiary handling is unusually disciplined \u2014 embedded lithics, ration tablets, the Brookes diagram, the Wannsee Protocol, refugee registration cards are each interrogated for what they can and cannot establish \u2014 and the voice is coherent, restrained, and free of the usual generative tells in vocabulary. Its weaknesses are structural rather than local. Nearly every chapter runs the same machine and reaches the same conclusion, so the book accumulates evidence without deepening its argument after roughly chapter four; the negation couplet ('X does not do A; it does B') becomes a tic; and the affect is so uniformly level that the reader has few reasons to press forward. There are also lapses that matter in a book whose authority is source-criticism: Magdeburg dated to 1648 and a Mississippian-to-Mexica transition placed 'across the eastern side of North America.' With aggressive compression, varied chapter shapes, and a corrected fact-check pass, this would be publishable scholarship; as it stands it needs moderate revision."
+}

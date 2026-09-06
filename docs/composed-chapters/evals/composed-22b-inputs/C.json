@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.6,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A person could strike another person without a state. A state could turn a person into a target without striking him itself. Those forms of aggression belong in the same history because their difference lies in the institution that gives them reach.",
+      "judgment": "Crisp statement of the governing thesis; earns its chapter-ending position, though the same antithetical two-beat closer recurs so often it loses force later."
+    },
+    {
+      "quote": "Soldiers were expected to account for cartridges, and severed hands could be used to demonstrate that ammunition had been spent against supposed enemies... The hand was both a body part and a receipt.",
+      "judgment": "The book at its best: a documentary particular that carries the argument without being told to."
+    },
+    {
+      "quote": "The wider Armenian deportations of 1915 produced death marches and the displacement of an estimated 1.5 million Armenians, according to the research record supplied for this history.",
+      "judgment": "Serious flaw \u2014 a drafting artifact leaks into the prose; 'the research record supplied for this history' has no meaning for a reader and recurs in several chapters."
+    },
+    {
+      "quote": "The supplied record does not establish further sentencing details, so the secure account is narrower: the tribunal convicted him for his role in inciting genocide.",
+      "judgment": "Same defect, worse: epistemic caution about the author's own materials is addressed to the wrong audience and breaks the historiographical voice."
+    },
+    {
+      "quote": "A healed fracture should not be converted into a homicide rate. A court's prosecutions should not be treated as the frequency of assault. A battlefield chronicle should not be read as a complete account of civilian harm.",
+      "judgment": "Excellent methodological discipline, and it governs the whole book; but the triadic parallel-negation cadence is one of the manuscript's most overused shapes."
+    },
+    {
+      "quote": "Toussaint Louverture, born around 1743 on the Br\u00e9da plantation near Cap-Fran\u00e7ais and later freed, initially aligned with Georges Biassou and Spain. He shifted to France in 1794, after Sonthonax proclaimed emancipation...",
+      "judgment": "Chapter 10 re-narrates, with near-identical facts and dates, material already given at length in Chapter 8 \u2014 a genuine redundancy, not a deliberate callback."
+    },
+    {
+      "quote": "The spear is the visible end of a chain whose earlier links are measured grain, assigned labour, and recorded transport.",
+      "judgment": "A fine image \u2014 but 'the visible end of a chain/financial sequence' returns as 'A rifle was the visible end of a financial sequence' and 'the cannon was only the most visible end of the process'."
+    },
+    {
+      "quote": "The wall does not close history. It keeps the names where power once tried to remove them.",
+      "judgment": "A controlled, unsentimental ending that resolves the book's argument in a place rather than a maxim; among the strongest closes in the manuscript."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter is built from the same three-part rig: an artifact or site read closely, a matched comparison case, then a closing verdict that the institution rather than the weapon or the temperament decided the outcome. Predictable by Chapter 4.",
+      "instances": [
+        "A gun could help conquer a city, guard a castle, or remain under official supervision. Its meaning came from the office that directed it.",
+        "The weapon did not determine the political result. The office that received the captive did."
+      ]
+    },
+    {
+      "pattern": "Negation-then-assertion as the default sentence engine ('It was not X. It was Y.'), applied at paragraph and chapter scale hundreds of times.",
+      "instances": [
+        "Terror was not an uncontrolled eruption attached to the king's temper. It was one instrument in an imperial policy...",
+        "The *Zong* was not an isolated failure of discipline aboard a damaged vessel. Its legal aftermath showed..."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis with balanced clause length used to close sections, producing an aphoristic rhythm that flattens differences between very different chapters.",
+      "instances": [
+        "A massacre would leave bodies; deportation leaves a population available for use elsewhere.",
+        "The Sierra Leone hut tax monetised obligation; Madagascar's corv\u00e9e embodied it."
+      ]
+    },
+    {
+      "pattern": "Explicit anti-determinist hedge inserted whenever an environmental, technological or racial cause is raised \u2014 always in the same 'X alone does not\u2026' frame.",
+      "instances": [
+        "Scarcity alone does not fire an arrow.",
+        "Gunpowder did not supply the objective. It gave an office a stronger means of imposing one."
+      ]
+    },
+    {
+      "pattern": "Chapters end on a rhetorical question or a self-consciously 'open' question about evidence, a device used so consistently that the openness reads as a formal requirement rather than genuine uncertainty.",
+      "instances": [
+        "Can an empire sustain difference without repeatedly turning difference into a test of obedience?",
+        "When early rulers raised walls and monuments, were they building the visible shell of permanent armies, or were armies only one possible use of a broader power over labour?"
+      ]
+    }
+  ],
+  "summary": "This is a disciplined comparative history of organized violence with an unusually clear controlling argument: aggression acquires its scale, direction and durability from offices, records and classifications rather than from any constant human disposition. The argument is genuinely carried by evidence \u2014 Jebel Sahaba's healed and unhealed lesions, Uruk's ration tablets, the Zong insurance litigation, the Wannsee table, the Rettig files \u2014 and the source criticism is consistently sharp about what each kind of record was made to do. Prose is clean, precise and free of the usual lexical slop; the voice is steady and adult throughout. The weaknesses are structural rather than sentence-level: a rigid artifact-plus-foil-plus-verdict template in every chapter, relentless negation-then-assertion and paired-antithesis cadences, and thesis restatements that recur so often the reader can anticipate the last sentence of each section. Two concrete defects need fixing before publication \u2014 the visible drafting artifacts referring to 'the research record supplied for this history', and the substantial duplication of the Toussaint Louverture and Saint-Domingue narrative between Chapters 8 and 10. Varying the chapter architecture and trimming the recap loops would move this from strong to excellent."
+}

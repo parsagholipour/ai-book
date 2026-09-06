@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.0,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "An injury belongs to an event; a burial belongs to a decision after the event.",
+      "judgment": "Crisp, load-bearing distinction that sets the book's whole evidentiary method in one line."
+    },
+    {
+      "quote": "The amount of evidence and the amount of violence are not the same quantity.",
+      "judgment": "A genuinely original methodological point, stated without padding, and used consistently thereafter."
+    },
+    {
+      "quote": "It was ideology after it had acquired filing systems.",
+      "judgment": "The book's best single sentence; the Wannsee chapter earns its epigrammatic moments rather than decorating with them."
+    },
+    {
+      "quote": "Bureaucracy did not replace aggression. It gave aggression duration, direction, and an account book.",
+      "judgment": "Strong thesis compression, but also an instance of the paired-antithesis-plus-tricolon closer the book reaches for far too often."
+    },
+    {
+      "quote": "Steven Pinker is right that institutions can suppress private violence, and that some long-term measures show substantial declines in certain forms of killing.",
+      "judgment": "Near-verbatim in Chapters 1, 3, 6, 9, 14 and 15 — a stock concession move that reads as a template slot rather than an argument."
+    },
+    {
+      "quote": "The available account records the uprising's broad movement more securely than the words or decisions of every participant.",
+      "judgment": "One of many phrases ('the evidence available here', 'as represented in the evidence available here') where research scaffolding leaks into the prose."
+    },
+    {
+      "quote": "The 1913 ordinance did not narrate the fear of a household awaiting a collector",
+      "judgment": "Excellent concrete grounding of an abstract legal instrument in a body and a doorway; the book does this well when it stops hedging."
+    },
+    {
+      "quote": "Sixteen individuals had both healed and unhealed injuries.",
+      "judgment": "This fact, with the 61 individuals and 67 percent, is restated at least four times across Chapters 1 and 2 — the clearest symptom of the redundancy problem."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The symmetrical epistemic hedge — a claim is granted, then bounded, in matched clauses, usually as a paragraph's last two sentences. It appears dozens of times per chapter and becomes the book's default cadence.",
+      "instances": [
+        "It does establish that the body encountered a projectile with enough force to enter and remain in it",
+        "The Protocol can show coordination, but not every decision that made coordination effective. That limit does not weaken its evidence. It defines it."
+      ]
+    },
+    {
+      "pattern": "The 'silence' closer — a source's omissions are turned into an aphorism about the record, in nearly identical wording across seven centuries of material.",
+      "instances": [
+        "Their silence has a shape.",
+        "Its silence is characteristic of the form."
+      ]
+    },
+    {
+      "pattern": "The paired antithesis 'X was not A; it was B', used as the standard sentence for every conceptual turn, so that distinctions arrive in one shape regardless of subject.",
+      "instances": [
+        "Accommodation was not the opposite of domination; it was one of its forms.",
+        "Punishment was not separate from production. It was one of the means by which production was pursued."
+      ]
+    },
+    {
+      "pattern": "The 'verdict' paragraph — each comparison chapter halts to announce its own finding in explicitly judicial language, then restates the two sides that were just laid out.",
+      "instances": [
+        "The comparison therefore yields a careful verdict.",
+        "The verdict must remain uneven."
+      ]
+    },
+    {
+      "pattern": "The bulleted-in-prose institutional chain, in which five to seven nouns are marched through a cause-and-effect relay to show how force is made durable. Effective once; it is the structural spine of at least six chapters.",
+      "instances": [
+        "Surplus fed labor. Labor raised walls. Walls protected stores. Stores sustained armed authority.",
+        "Credit made voyages possible; insurance made losses bearable; ships moved captives; law defined them as property; overseers extracted labor; patrols suppressed escape; courts returned people to owners"
+      ]
+    }
+  ],
+  "summary": "This is a serious, intellectually coherent global history whose thesis — that aggression is a recurrent human capacity while organized violence is an institutional achievement — is stated early, tested against genuinely varied evidence, and honored rather than abandoned in the final chapter. Its best writing is austere and exact: the Wannsee euphemism analysis, the Brookes diagram, the Native Authority ordinance, and the Halifax explosion each convert a document or object into an argument about how force acquires duration. The reasoning is unusually disciplined about what a trace can and cannot bear, and the cross-chapter callbacks (Uruk tablets to Ottoman registers to Wannsee lists) do real structural work. The costs are pacing and repetition: Chapters 1 and 2 restate the same Jebel Sahaba figures four or five times, the Pinker concession is reproduced almost verbatim in six chapters, and the epistemic hedge hardens into a tic that flattens paragraph rhythm across five hundred pages. Slop here is not lexical — there are almost no stock phrases or hype — but structural: symmetrical hedges, paired antitheses, aphoristic closers and uniform paragraph shapes are exactly the templated moves the book keeps executing. With aggressive compression, a merged opening pair of chapters, and the Pinker passage written once, it would be close to ready."
+}

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 6,
+    "engagement": 6,
+    "pacing": 4,
+    "craft": 7,
+    "slopResistance": 4
+  },
+  "overall": 6.8,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "High",
+  "highlights": [
+    {
+      "quote": "The forensic record narrows possibilities; it does not turn possibilities into motives.",
+      "judgment": "A precise early statement of the book's disciplined approach to evidence and inference."
+    },
+    {
+      "quote": "The palace supplied soldiers; the army secured or enlarged the palace’s claims; officials converted fields and labour into provisions; royal images converted victory into legitimacy.",
+      "judgment": "A strong synthesis that makes the institutional thesis concrete without losing causal sequence."
+    },
+    {
+      "quote": "Imperial violence appears here after the battle as a schedule.",
+      "judgment": "A memorable compression of the tribute chapter's argument and one of the manuscript's best aphoristic lines."
+    },
+    {
+      "quote": "The law protected slavery, but it never fully possessed the lives it classified.",
+      "judgment": "An effective conclusion that preserves enslaved agency without understating legal domination."
+    },
+    {
+      "quote": "There were still choices.",
+      "judgment": "The emphatic fragment states an important ethical premise, but it exemplifies a repeatedly used dramatic pivot."
+    },
+    {
+      "quote": "The document remains useful when its evidence is not confused with its verdict.",
+      "judgment": "This clearly articulates the source-critical method that gives the book much of its intellectual coherence."
+    },
+    {
+      "quote": "A weapon changed the terms of a fight.",
+      "judgment": "The sentence is clear but overly generic, reflecting the manuscript's tendency to restate settled distinctions."
+    },
+    {
+      "quote": "A report could call the result order. A company ledger could call it output. A military commander could call it victory.",
+      "judgment": "The parallelism is rhetorically effective in isolation but belongs to an overused pattern of triadic summary and institutional relabelling."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "A concrete artifact or record is used to establish what evidence can show before sharply limiting what it can explain.",
+      "instances": [
+        "A weapon reveals the manner of an injury more securely than the social organisation behind it.",
+        "A number is evidence of how an office counted as well as evidence of people killed."
+      ]
+    },
+    {
+      "pattern": "Chapters repeatedly separate enabling conditions from human decisions through a 'did not' construction.",
+      "instances": [
+        "Climate is a setting in which choices occur, not a motive preserved inside a rib or a projectile point.",
+        "Industrial technology made these decisions more extensive, faster, and more durable. It did not make them inevitable."
+      ]
+    },
+    {
+      "pattern": "Administrative chains are rendered as rhythmic lists of linked actions.",
+      "instances": [
+        "His name had to travel; his title had to be recognised; officials had to collect; soldiers had to enforce.",
+        "Powder had to be manufactured and transported; weapons had to be stored; soldiers had to practise; units had to be paid; horses had to be fed; roads had to be secured; wounded and sick men had to be managed."
+      ]
+    },
+    {
+      "pattern": "Chapter conclusions return to the contrast between violence and the institutions that give it duration or reach.",
+      "instances": [
+        "Violence could open a corridor, but it could not by itself maintain the road.",
+        "A procedure can redirect violence only when people make it consequential."
+      ]
+    },
+    {
+      "pattern": "Parallel formulations insist that categories overlap while remaining analytically distinct.",
+      "instances": [
+        "The categories overlap without collapsing.",
+        "These processes cannot be reduced to one another."
+      ]
+    }
+  ],
+  "summary": "The manuscript advances a coherent and valuable thesis: organized violence is best explained by tracing how institutions classify people, mobilize resources, transmit commands, and convert force into durable policy. Its chronological scope is impressive, and its source criticism is consistently careful about the difference between an artifact, an administrative record, a representation, and the claims each can support. The central weakness is accumulation: most chapters repeat the same three-case architecture, caution against monocausal explanation, inventory an administrative chain, and close by restating distinctions already established. That regularity, together with frequent balanced antitheses, triadic lists, aphoristic fragments, and recap loops, makes the voice feel generated and significantly slows a book that contains strong analysis. A substantial compression and greater variation in chapter method and cadence would move it much closer to publication readiness."
+}

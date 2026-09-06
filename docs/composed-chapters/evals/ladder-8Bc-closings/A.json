@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.7,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The movement from anger to atrocity is not a ladder on which one emotion grows larger. It is a change in who acts, who authorizes, who is targeted, and how the act is repeated.",
+      "judgment": "The book's controlling thesis, stated early and with genuine precision; it earns the rest of the argument."
+    },
+    {
+      "quote": "A fracture has a location, a shape, and a degree of healing; a motive must be inferred from the pattern around it.",
+      "judgment": "Exemplary evidentiary discipline — the book repeatedly separates what a trace shows from what an interpreter wants it to show."
+    },
+    {
+      "quote": "Officers had to account for cartridges, and severed hands could be presented as evidence that bullets had supposedly been used in combat rather than wasted. Mutilation became an accounting device.",
+      "judgment": "The strongest kind of passage here: a concrete administrative mechanism doing the argumentative work, not an abstraction."
+    },
+    {
+      "quote": "“ dans ma ̄e campagne je marchai vers la Syrie .”",
+      "judgment": "A garbled, OCR-corrupted epigraph quoted twice; one of several scraped-source artifacts that a copy-editor should have removed."
+    },
+    {
+      "quote": "— Charlotte Corday? No; Madame Roland, as reported in A Daughter of the Seine",
+      "judgment": "An attribution line that preserves a source's own editorial hesitation as if it were the citation — visible sourcing debris."
+    },
+    {
+      "quote": "Although the village as a whole had become angry, John was condemned because a chain of offices transformed an encounter into an offence against the king.",
+      "judgment": "A non sequitur clause: nothing establishes the village's anger, and the concession does no logical work."
+    },
+    {
+      "quote": "The civilian population entered the battlefield through a decision made in an office.",
+      "judgment": "Well made, but the twelfth or fifteenth iteration of a formula the book uses to close nearly every chapter and many sections."
+    },
+    {
+      "quote": "The last point came free from the chest of Burial 27 just before the workmen covered the trench.",
+      "judgment": "The dramatized codas are genuinely well written, but this one re-narrates evidence the same chapter has already analysed in full."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "A chapter's analytic body is followed by a detached present-tense scene reconstruction that dramatizes material the chapter has already covered — a coda pasted onto the argument rather than growing from it.",
+      "instances": [
+        "Fred Wendorf knelt in the gravel at Jebel Sahaba in the spring of 1965, with the Nile below him and the black basalt ridge rising behind the trench.",
+        "Reinhard Heydrich stood at the end of the long table in the dining room of the villa at Am Großen Wannsee 56–58, with the lake beyond the windows and fifteen men seated beneath the chandeliers."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis as the default sentence engine: negate one description, substitute another, in the same two-clause shape, hundreds of times.",
+      "instances": [
+        "The guillotine did not create the Terror. It gave a regular form to a policy dependent on decrees, surveillance committees, warrants, prosecutors, prison registers...",
+        "Fire was not the system. The system was the decision about whose fields could be burned and whose stores would be spared."
+      ]
+    },
+    {
+      "pattern": "Every chapter is built as a symmetrical two-case comparison (site A versus site B, empire A versus empire B) resolved by the identical verdict: same capacity, different institutional signature.",
+      "instances": [
+        "Jebel Sahaba makes recurrence visible; Talheim makes simultaneity visible.",
+        "Rus’ was governed through subordination among princes and tribute-paying communities. Yuan China was governed through offices reaching into households, fields, warehouses, and transport routes."
+      ]
+    },
+    {
+      "pattern": "Section and chapter endings resolve into an aphoristic restatement of the book's single thesis, so closure is announced rather than reached.",
+      "instances": [
+        "Grain became force after an authority claimed the right to redirect it.",
+        "Hatred acquired lethal force when it acquired an office, a list, a transmitter, a uniform, or a rule that made refusal costly."
+      ]
+    },
+    {
+      "pattern": "The archive-limits move — a paragraph conceding what the sources cannot show — is deployed at the same point in nearly every case study, until the humility reads as scheduled rather than earned.",
+      "instances": [
+        "The surviving record does not tell us whether John regretted the blow, whether William had threatened him first, or whether the neighbours thought the sentence just.",
+        "The surviving record gives no complete interior portrait. It gives petitions, club rules, newspaper reports, police references, and hostile speeches."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined work of comparative history whose thesis — that aggression becomes historically consequential when offices, records, and classifications authorize and distribute it — is held steadily from a Neolithic mass grave to private security contractors, and is genuinely tested rather than merely asserted. Its best quality is evidentiary conduct: the book repeatedly states what a trace can support, refuses the inference the reader expects, and lets an argument stop short of a satisfying conclusion. The prose is clean, concrete, and free of the usual lexical tells; the voice is consistent and adult. What weakens it is architecture and repetition. Every chapter runs the same machine — artifact description, evidentiary caution, symmetrical two-case comparison, aphoristic thesis restatement — and several close with a dramatized scene that re-narrates material the analytic section already delivered, so the book pays twice for Jebel Sahaba, Lachish, Baghdad and Wannsee. Paired antithesis dominates the sentence rhythm to the point of tic, and three chapters open with corrupted or nonsensically attributed epigraphs that betray unedited scraped sources. With cuts to the codas, thinned restatement, and the epigraphs fixed, this would read as a strong publishable synthesis; as it stands the argument is stronger than the book's shape."
+}

@@ -1,0 +1,1018 @@
+{
+  "runId": "evidence-replay-1788583821424",
+  "results": [
+    {
+      "attempt": "development-1a",
+      "caseId": "case-1-1",
+      "title": "The Trial of Socrates",
+      "expectedIdentity": true,
+      "review": {
+        "caseMatch": {
+          "supported": true,
+          "reason": "The passage explicitly summarizes the trial sequence in the identified Apology introduction: Socrates is convicted, Anytus proposes death, Socrates considers counter-penalties, and he is condemned to death. It therefore establishes the proposed trial episode, though not every supplied metadata detail.",
+          "canonicalEpisode": {
+            "title": "Socrates' conviction and condemnation in the Apology",
+            "kind": "document",
+            "person": "Socrates",
+            "place": "",
+            "date": "",
+            "document": "Apology (Jowett)/Introduction",
+            "why": "The passage summarizes Socrates' conviction, Anytus's proposed death penalty, Socrates' counter-penalty discussion, and his condemnation to death.",
+            "searchQueries": [
+              "Plato Apology Wikisource",
+              "Plato Apology Benjamin Jowett text",
+              "Apology Socrates 399 BCE Project Gutenberg"
+            ]
+          },
+          "anchors": [
+            {
+              "excerptId": "ch1-x1",
+              "quote": "As he expected, and probably intended, he is convicted. And now the tone of the speech, instead of being more conciliatory, becomes more lofty and commanding. Anytus proposes death as the penalty: and what counter-proposition shall he make? He, the benefactor of the Athenian people, whose whole life has been spent in doing them good, should at least have the Olympic victor’s reward of maintenance in the Prytaneum. Or why should he propose any counter-penalty when he does not know whether death, which Anytus proposes, is a good or an evil? He is an old man already,"
+            }
+          ]
+        },
+        "claims": [
+          {
+            "id": "claim-1",
+            "supported": true,
+            "reason": "The passage states verbatim that Socrates is convicted and that he expected and probably intended this outcome; it identifies this as part of E. D. Jowett's summary in the excerpt metadata."
+          },
+          {
+            "id": "claim-2",
+            "supported": true,
+            "reason": "The passage states that Anytus proposes death as the penalty and then describes the possible counter-propositions of maintenance in the Prytaneum, a mina, or thirty minae for which Socrates' friends would be securities."
+          },
+          {
+            "id": "claim-3",
+            "supported": true,
+            "reason": "The passage states both that Socrates is condemned to death and that the tone of his speech becomes more lofty and commanding rather than more conciliatory after the penalty proposal."
+          }
+        ],
+        "sequenceSupported": true,
+        "sequenceReason": "The passage presents an explicit event order: conviction, Anytus's proposal of death and Socrates' discussion of counter-penalties, followed by the statement that he is condemned to death. This supports the submitted sequence of underlying events.",
+        "disagreementsSupported": true,
+        "disagreementsReason": "The submitted disagreement list is empty, and the supplied passages contain only one account rather than conflicting source accounts.",
+        "unknownsAccurate": true,
+        "unknownsReason": "The listed unknowns are accurate: the passage gives no exact date, full trial dialogue, complete speech, Anytus's motives, or wider jury reasoning, and it is a summary rather than a verbatim transcript. The passage does establish the relative order of the conviction, penalty discussion, and condemnation, so the unknowns appropriately limit rather than deny that evidence."
+      },
+      "reviewIssues": [
+        "Case identity: the supporting anchors do not resolve to exact source passages"
+      ],
+      "rebuilt": {
+        "failure": "OpenAI JSON validation failed for verify-case-evidence. Root keys: caseMatch. [\n  {\n    \"expected\": \"array\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"claims\"\n    ],\n    \"message\": \"Invalid input: expected array, received undefined\"\n  },\n  {\n    \"expected\": \"boolean\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"sequenceSupported\"\n    ],\n    \"message\": \"Invalid input: expected boolean, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"sequenceReason\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"boolean\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"disagreementsSupported\"\n    ],\n    \"message\": \"Invalid input: expected boolean, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"disagreementsReason\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"boolean\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"unknownsAccurate\"\n    ],\n    \"message\": \"Invalid input: expected boolean, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"unknownsReason\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n]"
+      }
+    },
+    {
+      "attempt": "development-1a",
+      "caseId": "case-6-2",
+      "title": "The First Crusade at Jerusalem",
+      "expectedIdentity": true,
+      "review": {
+        "caseMatch": {
+          "supported": false,
+          "reason": "The passages establish a secondary account of First Crusade events, but they do not establish that the source is Fulcher of Chartres's narrative or identify Fulcher as its author. The supplied document metadata identifies the source as The Greek and Eastern Churches, Chapter 7, by an unknown author.",
+          "canonicalEpisode": {
+            "title": "The First Crusade at Jerusalem",
+            "kind": "document",
+            "person": "Unknown author of The Greek and Eastern Churches",
+            "place": "Jerusalem",
+            "date": "1099",
+            "document": "The Greek and Eastern Churches/Part 1/Division 2/Chapter 7",
+            "why": "This chapter recounts the First Crusade's peasant and regular armies, their passage through Constantinople, the capture of Jerusalem, the recovery of the supposed cross, and the establishment of the Latin kingdom.",
+            "searchQueries": [
+              "The Greek and Eastern Churches Part 1 Division 2 Chapter 7 First Crusade",
+              "The Greek and Eastern Churches Jerusalem 1099",
+              "The Greek and Eastern Churches Wikisource"
+            ]
+          },
+          "anchors": [
+            {
+              "excerptId": "ch6-x1",
+              "quote": "Without any organisation or commissariat the simple multitude set out for their tremendous walk in the spring of the year 1096."
+            },
+            {
+              "excerptId": "ch6-x2",
+              "quote": "At length Jerusalem was surrounded, besieged, and taken (July 15, 1099)."
+            },
+            {
+              "excerptId": "ch6-x3",
+              "quote": "Thus there was founded the Latin kingdom of Jerusalem."
+            }
+          ]
+        },
+        "claims": [
+          {
+            "id": "c1",
+            "supported": true,
+            "reason": "The passage states that Peter's horde of peasants set out before the lords and knights, in spring 1096, without organisation or commissariat."
+          },
+          {
+            "id": "c2",
+            "supported": true,
+            "reason": "The passage states that they crossed Austria and then had 600 miles of forest and wilderness to traverse in Hungary and Bulgaria before reaching Constantinople."
+          },
+          {
+            "id": "c3",
+            "supported": true,
+            "reason": "The passage explicitly states that raids of hunger provoked retaliation and slaughter."
+          },
+          {
+            "id": "c4",
+            "supported": true,
+            "reason": "The passage states that the multitude was divided into two parts for better provisioning, half under Peter and half under Walter the Penniless."
+          },
+          {
+            "id": "c5",
+            "supported": true,
+            "reason": "The passage says they reached Thrace in a pitiable plight and might have perished if Emperor Alexius had not sent to rescue them."
+          },
+          {
+            "id": "c6",
+            "supported": true,
+            "reason": "The passage states that in August a more regular army followed under the listed leaders, including Hugh, Robert, Stephen, Raymond, Bohemond, Tancred, and Godfrey."
+          },
+          {
+            "id": "c7",
+            "supported": true,
+            "reason": "The passage describes the army as ill-organised under several leaders and says undisciplined footmen immensely outnumbered knights on horseback."
+          },
+          {
+            "id": "c8",
+            "supported": true,
+            "reason": "The passage states that these troops came through Germany and Hungary and were admitted into Constantinople with fear and suspicion."
+          },
+          {
+            "id": "c9",
+            "supported": true,
+            "reason": "The passage states that after crossing the Hellespont they defeated the Turks at Nicaea, divided, and that one body under Baldwin conquered Edessa."
+          },
+          {
+            "id": "c10",
+            "supported": true,
+            "reason": "The passage states that the main army proceeded to Antioch, which fell after a fearful siege in which both sides suffered very heavily."
+          },
+          {
+            "id": "c11",
+            "supported": true,
+            "reason": "The passage explicitly states that Jerusalem was surrounded, besieged, and taken on July 15, 1099."
+          },
+          {
+            "id": "c12",
+            "supported": true,
+            "reason": "The passage states that the Crusaders then proceeded with lighted torches among scenes of blood to the Holy Sepulchre."
+          },
+          {
+            "id": "c13",
+            "supported": true,
+            "reason": "The passage states that part of the supposed cross was recovered from its silver casket and borne with singing in procession, and quotes that the people wept and regarded it as a great treasure or recompense."
+          },
+          {
+            "id": "c14",
+            "supported": true,
+            "reason": "The passage states that Godfrey was elected king, declined the title as unworthy, and accepted the actual rule."
+          },
+          {
+            "id": "c15",
+            "supported": true,
+            "reason": "The passage states that Godfrey died the next year, Baldwin succeeded him, was crowned at Bethlehem in 1100, and that the Latin kingdom of Jerusalem was thereby founded."
+          }
+        ],
+        "sequenceSupported": true,
+        "sequenceReason": "The passages provide an explicit broad chronology: the peasant multitude's departure and journey precede the regular army; the army's passage through Constantinople precedes the Hellespont, Nicaea, Edessa, Antioch, and Jerusalem; the procession and supposed-cross episode follow Jerusalem's capture; Godfrey's rule and Baldwin's succession follow those events.",
+        "disagreementsSupported": true,
+        "disagreementsReason": "No actual source disagreement is supplied. The excerpts are consistent with one another and the listed unknowns concern omissions rather than contradictions.",
+        "unknownsAccurate": true,
+        "unknownsReason": "The listed unknowns accurately identify information not established by these excerpts, including Fulcher's authorship, detailed chronology between major stages, identities and numbers of victims, capture circumstances, private motives, noncombatant experiences, the precise reason for Godfrey's refusal of the title, the exact date of his death, and the detailed political arrangements of the Latin kingdom."
+      },
+      "reviewIssues": [
+        "Case identity: The passages establish a secondary account of First Crusade events, but they do not establish that the source is Fulcher of Chartres's narrative or identify Fulcher as its author. The supplied document metadata identifies the source as The Greek and Eastern Churches, Chapter 7, by an unknown author."
+      ],
+      "rebuilt": {
+        "failure": "Case identity: The passages establish a narrative account of the First Crusade, including the capture of Jerusalem in 1099, but they identify the source as an unknown author of The Greek and Eastern Churches, not Fulcher of Chartres or Fulcher's A History of the Expedition to Jerusalem. Thus they do not establish the proposed particular document or its attribution."
+      }
+    },
+    {
+      "attempt": "development-1a",
+      "caseId": "case-12-1",
+      "title": "The Armenian Deportations during World War I",
+      "expectedIdentity": true,
+      "review": {
+        "caseMatch": {
+          "supported": true,
+          "reason": "The passages directly establish Henry Morgenthau Sr.'s account of the early-April arrest and deportation of about two hundred Armenians in Constantinople, and his reported conversations and diary impression concerning Talaat's explanations and policy.",
+          "canonicalEpisode": {
+            "title": "Morgenthau’s account of the early-April arrest and deportation of Armenians from Constantinople and Talaat’s explanations",
+            "kind": "document",
+            "person": "Henry Morgenthau Sr.",
+            "place": "Constantinople and the Ottoman interior",
+            "date": "Early April; August 3 for the diary entry, with no calendar year established",
+            "document": "Ambassador Morgenthau's Story, Chapter 25",
+            "why": "The chapter records the arrest and deportation of about two hundred Armenians, Talaat’s stated security rationale and denial of a general scheme, Morgenthau’s observations of Talaat, and Talaat’s account of Union and Progress Committee deliberation.",
+            "searchQueries": [
+              "Henry Morgenthau Ambassador's Story Chapter 25 Armenian deportations",
+              "Ambassador Morgenthau's Story Talaat Constantinople Armenians"
+            ]
+          },
+          "anchors": [
+            {
+              "excerptId": "ch12-x1",
+              "quote": "In early April the authorities arrested about two hundred Armenians in Constantinople and sent them into the interior."
+            },
+            {
+              "excerptId": "ch12-x2",
+              "quote": "He told me that the Union and Progress Committee had carefully considered the matter in all its details and that the policy which was being pursued was that which they had officially adopted."
+            }
+          ]
+        },
+        "claims": [
+          {
+            "id": "c1",
+            "supported": true,
+            "reason": "The passage states that in early April authorities arrested about two hundred Armenians in Constantinople and sent them into the interior, including educational and social leaders and people prominent in industry and finance."
+          },
+          {
+            "id": "c2",
+            "supported": true,
+            "reason": "The passage attributes to Talaat the claim that the Government was acting in self-defense, citing the Armenians at Van and alleged correspondence between Constantinople's leaders and the Russians."
+          },
+          {
+            "id": "c3",
+            "supported": true,
+            "reason": "The passage quotes Talaat saying that sending the leaders to Angora and other interior towns was the safest plan because he feared they would start an insurrection against the Central Government."
+          },
+          {
+            "id": "c4",
+            "supported": true,
+            "reason": "The passage states that Talaat denied the deportation was part of a general concerted scheme to rid Constantinople of its Armenian population and insisted that the Armenian masses would not be disturbed."
+          },
+          {
+            "id": "c5",
+            "supported": true,
+            "reason": "The passage states that all uncoded cablegrams received in Constantinople were forwarded to Talaat for reading before transmission, that ambassadors' cablegrams were apparently not exempt, and that ciphered messages were not interfered with."
+          },
+          {
+            "id": "c6",
+            "supported": true,
+            "reason": "Morgenthau explicitly describes Talaat as evasive and non-committal and says he showed hostility toward the interest Americans were manifesting in the Armenians."
+          },
+          {
+            "id": "c7",
+            "supported": true,
+            "reason": "The passage explicitly identifies the diary entry on August 3 and quotes Morgenthau's impression that Talaat was the one who desired to crush the Armenians."
+          },
+          {
+            "id": "c8",
+            "supported": true,
+            "reason": "The passage states that Talaat told Morgenthau the Union and Progress Committee had carefully considered the matter and officially adopted the policy being pursued."
+          },
+          {
+            "id": "c9",
+            "supported": true,
+            "reason": "The passage states that Talaat said the deportations had not been decided hastily but were the result of prolonged and careful deliberation."
+          }
+        ],
+        "sequenceSupported": true,
+        "sequenceReason": "Only a limited chronology is explicit: the arrests and deportations occurred in early April, while Morgenthau's diary entry recording his impression is dated August 3. The sources do not establish reliable chronological ordering among the several statements and observations, so the supported sequence is limited to the underlying early-April event preceding the August 3 diary entry.",
+        "disagreementsSupported": false,
+        "disagreementsReason": "No actual source disagreement is supplied. Talaat's claims and Morgenthau's interpretations are distinct attributed accounts, not conflicting source passages.",
+        "unknownsAccurate": true,
+        "unknownsReason": "The listed unknowns are consistent with the passages: they do not establish the calendar year, total number affected, outcomes, individual identities, cablegram contents or ambassador identities, the full scope or administration of the policy, the truth of Talaat's allegations, or motives beyond the attributed explanations and impressions."
+      },
+      "reviewIssues": [
+        "Source disagreements: No actual source disagreement is supplied. Talaat's claims and Morgenthau's interpretations are distinct attributed accounts, not conflicting source passages."
+      ],
+      "rebuilt": {
+        "packet": {
+          "id": "case-12-1",
+          "sourceChapterIndex": 12,
+          "episode": {
+            "title": "Arrests and deportations of approximately two hundred Armenians from Constantinople, followed by Morgenthau's conversations with Talaat about the policy",
+            "kind": "document",
+            "person": "Henry Morgenthau Sr.",
+            "place": "Constantinople and the Ottoman interior",
+            "date": "Early April; the year is not stated in the excerpts, with an August 3 diary entry also mentioned without a year",
+            "document": "Henry Morgenthau's Story, Chapter 25",
+            "why": "The excerpts record the arrests and deportations, Talaat's stated security rationale and denial of a general scheme, his claims about Union and Progress Committee deliberation, and Morgenthau's hostile assessment of Talaat.",
+            "searchQueries": [
+              "Henry Morgenthau Ambassador's Story Project Gutenberg",
+              "Ambassador Morgenthau's Story Armenian deportations",
+              "Morgenthau memoir Internet Archive"
+            ]
+          },
+          "claims": [
+            {
+              "id": "c1",
+              "text": "According to Morgenthau, Ottoman authorities arrested about two hundred Armenians in Constantinople in early April and sent them into the interior.",
+              "kind": "event",
+              "excerptIds": [
+                "ch12-x1"
+              ]
+            },
+            {
+              "id": "c2",
+              "text": "According to Morgenthau, many of those deported in early April were educational and social leaders and prominent figures in industry and finance.",
+              "kind": "fact",
+              "excerptIds": [
+                "ch12-x1"
+              ]
+            },
+            {
+              "id": "c3",
+              "text": "Talaat told Morgenthau that the government was acting in self-defense because it feared Armenian leaders in Constantinople were corresponding with the Russians and might start an insurrection.",
+              "kind": "interpretation",
+              "excerptIds": [
+                "ch12-x1"
+              ]
+            },
+            {
+              "id": "c4",
+              "text": "Talaat told Morgenthau that sending the Armenian leaders to Angora and other interior towns was the safest plan.",
+              "kind": "interpretation",
+              "excerptIds": [
+                "ch12-x1"
+              ]
+            },
+            {
+              "id": "c5",
+              "text": "Talaat denied to Morgenthau that the deportations were part of a general concerted scheme to remove Constantinople's Armenian population and said the Armenian masses there would not be disturbed.",
+              "kind": "interpretation",
+              "excerptIds": [
+                "ch12-x1"
+              ]
+            },
+            {
+              "id": "c6",
+              "text": "Morgenthau reported that uncoded cablegrams received in Constantinople were forwarded to Talaat, who read them before they were sent to their destinations; he said ciphered messages were not interfered with.",
+              "kind": "fact",
+              "excerptIds": [
+                "ch12-x2"
+              ]
+            },
+            {
+              "id": "c7",
+              "text": "Morgenthau reported that Talaat explained his policy by saying that Armenians were in constant correspondence with the Russians.",
+              "kind": "interpretation",
+              "excerptIds": [
+                "ch12-x2"
+              ]
+            },
+            {
+              "id": "c8",
+              "text": "Morgenthau wrote that his conversations with Talaat left him convinced that Talaat was the most implacable enemy of Armenians.",
+              "kind": "interpretation",
+              "excerptIds": [
+                "ch12-x2"
+              ]
+            },
+            {
+              "id": "c9",
+              "text": "In a diary entry dated August 3, as quoted by Morgenthau, Morgenthau wrote that Talaat gave him the impression of being the person who desired to crush Armenians.",
+              "kind": "interpretation",
+              "excerptIds": [
+                "ch12-x2"
+              ]
+            },
+            {
+              "id": "c10",
+              "text": "Talaat told Morgenthau that the Union and Progress Committee had carefully considered the matter in detail and had officially adopted the policy being pursued.",
+              "kind": "interpretation",
+              "excerptIds": [
+                "ch12-x2"
+              ]
+            },
+            {
+              "id": "c11",
+              "text": "Talaat told Morgenthau that the deportations had not been decided hastily but resulted from prolonged and careful deliberation.",
+              "kind": "interpretation",
+              "excerptIds": [
+                "ch12-x2"
+              ]
+            }
+          ],
+          "sequence": [
+            "c1",
+            "c2",
+            "c3",
+            "c4",
+            "c5",
+            "c6",
+            "c7",
+            "c8",
+            "c9",
+            "c10",
+            "c11"
+          ],
+          "disagreements": [
+            "Talaat denied that the deportations formed part of a general concerted scheme to remove Constantinople's Armenian population, while Morgenthau interpreted Talaat's conduct and statements as indicating hostility toward Armenians and a desire to crush them."
+          ],
+          "unknowns": [
+            "The passages do not establish the exact date of the early-April arrests or the year of the August 3 diary entry.",
+            "The passages do not establish what happened to the deported Armenians after they were sent to the interior.",
+            "The passages do not establish whether the Armenians arrested or deported were actually corresponding with Russia or planning an insurrection.",
+            "The passages do not establish the full scope, geographic extent, or ultimate purpose of the deportation policy beyond the statements attributed to Talaat and Morgenthau's interpretations.",
+            "The passages do not provide the identities of the approximately two hundred arrested Armenians or the names of the interior destinations beyond Angora and other towns.",
+            "The passages do not establish the contents of the coded cablegrams or whether any specific ambassadorial message was read."
+          ],
+          "excerpts": [
+            {
+              "id": "ch12-x1",
+              "chapterIndex": 12,
+              "episodeTitle": "Arrests and deportations of approximately two hundred Armenians from Constantinople, followed by Morgenthau's conversations with Talaat about the policy",
+              "documentTitle": "Ambassador Morgenthau's Story/Chapter 25",
+              "documentUrl": "https://en.wikisource.org/wiki/Ambassador_Morgenthau's_Story%2FChapter_25",
+              "host": "wikisource",
+              "author": "",
+              "year": "",
+              "speaker": "Henry Morgenthau Sr.",
+              "text": "In early April the authorities arrested about two hundred Armenians in Constantinople and sent them into the interior. Many of those who were then deported were educational and social leaders and men who were prominent in industry and in finance. I knew many of these men and therefore felt a personal interest in their misfortunes. But when I spoke to Talaat about their expulsion, he replied that the Government was acting in self-defense. The Armenians at Van, he said, had already shown their abilities as revolutionists; he knew that these leaders in Constantinople were corresponding with the Russians and he had every reason to fear that they would start an insurrection against the Central Government. The safest plan, therefore, was to send them to Angora and other interior towns. Talaat denied that this was part of any general concerted scheme to rid the city of its Armenian population, and insisted that the Armenian masses in Constantinople would not be disturbed.",
+              "words": 160
+            },
+            {
+              "id": "ch12-x2",
+              "chapterIndex": 12,
+              "episodeTitle": "Arrests and deportations of approximately two hundred Armenians from Constantinople, followed by Morgenthau's conversations with Talaat about the policy",
+              "documentTitle": "Ambassador Morgenthau's Story/Chapter 25",
+              "documentUrl": "https://en.wikisource.org/wiki/Ambassador_Morgenthau's_Story%2FChapter_25",
+              "host": "wikisource",
+              "author": "",
+              "year": "",
+              "speaker": "Henry Morgenthau Sr.",
+              "text": "This statement was the literal truth. Every morning all uncoded cablegrams received in Constantinople were forwarded to Talaat, who read them, before consenting to their being forwarded to their destinations. Even the cablegrams of the ambassadors were apparently not exempt, though, of course, the ciphered messages were not interfered with. Ordinarily I might have protested against this infringement of my rights, but Talaat's engaging frankness about pilfering my correspondence and in even waving my own cablegrams in my face gave me an excellent opening to introduce the forbidden subject. But on this occasion, as on many others, Talaat was evasive and non-committal and showed much hostility to the interest which the American people were manifesting in the Armenians. He explained his policy on the ground that the Armenians were in constant correspondence with the Russians. The definite conviction which these conversations left upon my mind was that Talaat was the most implacable enemy of this persecuted race. \"He gave me the impression,\" such is the entry which I find in my diary on August 3d, \"that Talaat is the one who desires to crush the poor Armenians.\" He told me that the Union and Progress Committee had carefully considered the matter in all its details and that the policy which was being pursued was that which they had officially adopted. He said that I must not get the idea that the deportations had been decided upon hastily; in reality, they were the result of prolonged and careful deliberation.",
+              "words": 248
+            }
+          ],
+          "reviewVersion": 1
+        }
+      }
+    },
+    {
+      "attempt": "development-1a",
+      "caseId": "case-13-1",
+      "title": "The Wannsee Protocol",
+      "expectedIdentity": true,
+      "review": {
+        "caseMatch": {
+          "supported": true,
+          "reason": "The passages explicitly identify and reproduce the Wannsee Protocol, including Heydrich's report about preparations for the final solution, the emigration figures and prohibition, and the planned treatment and transport of Jews. They do not establish the proposed place or date, and they identify Heydrich but not Eichmann in the cited text.",
+          "canonicalEpisode": {
+            "title": "The Wannsee Protocol",
+            "kind": "document",
+            "person": "Reinhard Heydrich",
+            "place": "",
+            "date": "",
+            "document": "Wannsee Protocol",
+            "why": "The protocol records Heydrich's reported mandate, the coordination sought among central offices, the history and suspension of Jewish emigration, and the planned allocation, transport, and treatment of Jews in the East.",
+            "searchQueries": [
+              "Wannsee Protocol English text Wikisource",
+              "Wannsee Conference Protocol document",
+              "Wannsee protocol translation Internet Archive"
+            ]
+          },
+          "anchors": [
+            {
+              "excerptId": "ch13-x1",
+              "quote": "At the beginning of the discussion Chief of the Security Police and of the SD, SS-Obergruppenführer Heydrich, reported that the Reich Marshal had appointed him delegate for the preparations for the final solution of the Jewish question in Europe and pointed out that this discussion had been called for the purpose of clarifying fundamental questions."
+            },
+            {
+              "excerptId": "ch13-x2",
+              "quote": "In spite of these difficulties, 537,000 Jews were sent out of the country between the takeover of power and the deadline of 31 October 1941."
+            },
+            {
+              "excerptId": "ch13-x3",
+              "quote": "Under proper guidance, in the course of the final solution the Jews are to be allocated for appropriate labor in the East."
+            }
+          ]
+        },
+        "claims": [
+          {
+            "id": "claim-1",
+            "supported": true,
+            "reason": "Excerpt ch13-x2 states that 537,000 Jews were sent out between the Nazi takeover and 31 October 1941, gives the Germany, Austria, and Protectorate of Bohemia and Moravia figures, and says that the Reichsführer-SS and Chief of the German Police prohibited emigration because of wartime dangers and the possibilities of the East."
+          },
+          {
+            "id": "claim-2",
+            "supported": true,
+            "reason": "Excerpt ch13-x1 explicitly says that Heydrich reported the Reich Marshal had appointed him delegate for preparations for the final solution and that the discussion was called to clarify fundamental questions and initiate common action by the central offices concerned."
+          },
+          {
+            "id": "claim-3",
+            "supported": true,
+            "reason": "Excerpt ch13-x3 describes allocation to labor in the East, the expected elimination of many by natural causes, treatment of the remaining remnant accordingly, the west-to-east process, and transport from transit ghettos to the East."
+          }
+        ],
+        "sequenceSupported": false,
+        "sequenceReason": "The excerpts establish that the emigration figures concern a period ending 31 October 1941, but they do not provide the date of the discussion or a temporal placement for the planned measures in claim-3. Therefore they do not establish the proposed chronological ordering of the three claims.",
+        "disagreementsSupported": true,
+        "disagreementsReason": "No disagreements are proposed, and the passages contain no pair of conflicting claims or source accounts requiring adjudication.",
+        "unknownsAccurate": true,
+        "unknownsReason": "The passages identify Heydrich but do not establish all participants or their precise responsibilities; they do not give each deportation's date, location, killing methods, or victim total; they preserve a report rather than private reactions or motives; and they do not establish complete implementation or a full post-meeting chronology."
+      },
+      "reviewIssues": [
+        "Chronology: The excerpts establish that the emigration figures concern a period ending 31 October 1941, but they do not provide the date of the discussion or a temporal placement for the planned measures in claim-3. Therefore they do not establish the proposed chronological ordering of the three claims."
+      ],
+      "rebuilt": {
+        "packet": {
+          "id": "case-13-1",
+          "sourceChapterIndex": 13,
+          "episode": {
+            "title": "The Wannsee Protocol",
+            "kind": "document",
+            "person": "Reinhard Heydrich",
+            "place": "",
+            "date": "",
+            "document": "Wannsee Protocol",
+            "why": "The protocol records Heydrich's reported mandate, the intended coordination of central offices, emigration policy, deportation planning, forced labor, and the stated treatment of Jews under the final solution.",
+            "searchQueries": [
+              "Wannsee Protocol English text Wikisource",
+              "Wannsee Conference Protocol document",
+              "Wannsee protocol translation Internet Archive"
+            ]
+          },
+          "claims": [
+            {
+              "id": "c1",
+              "text": "The Wannsee Protocol records that Heydrich reported the Reich Marshal had appointed him delegate for preparations for the “final solution of the Jewish question in Europe.”",
+              "kind": "fact",
+              "excerptIds": [
+                "ch13-x1"
+              ]
+            },
+            {
+              "id": "c2",
+              "text": "According to the protocol, the discussion was called to clarify fundamental questions and initiate common action among central offices concerned with the “final solution of the Jewish question in Europe.”",
+              "kind": "fact",
+              "excerptIds": [
+                "ch13-x1"
+              ]
+            },
+            {
+              "id": "c3",
+              "text": "The protocol records that 537,000 Jews were sent out of the country between the takeover of power and 31 October 1941, including approximately 360,000 from Germany proper, 147,000 from Austria, and 30,000 from the Protectorate of Bohemia and Moravia.",
+              "kind": "fact",
+              "excerptIds": [
+                "ch13-x2"
+              ]
+            },
+            {
+              "id": "c4",
+              "text": "The protocol records that Jewish individuals or organizations financed emigration through measures including an income-based emigration tax and foreign-currency arrangements, with foreign Jewish organizations donating approximately 9,500,000 dollars by 30 October 1941.",
+              "kind": "fact",
+              "excerptIds": [
+                "ch13-x2"
+              ]
+            },
+            {
+              "id": "c5",
+              "text": "The protocol states that the Reichsführer-SS and Chief of the German Police had prohibited Jewish emigration because of wartime dangers and the possibilities in the East.",
+              "kind": "event",
+              "excerptIds": [
+                "ch13-x2"
+              ]
+            },
+            {
+              "id": "c6",
+              "text": "The protocol describes the planned “final solution” as allocating Jews to labor in the East, separating able-bodied Jews by sex, and sending them in large work columns, while stating that a large portion would likely be eliminated by natural causes.",
+              "kind": "interpretation",
+              "excerptIds": [
+                "ch13-x3"
+              ]
+            },
+            {
+              "id": "c7",
+              "text": "The protocol states that the remaining Jews after the labor process would have to be “treated accordingly,” but the passage does not define that phrase.",
+              "kind": "interpretation",
+              "excerptIds": [
+                "ch13-x3"
+              ]
+            },
+            {
+              "id": "c8",
+              "text": "The protocol states that Europe would be combed from west to east, with Germany proper and the Protectorate of Bohemia and Moravia handled first, and evacuated Jews sent through transit ghettos before transport to the East.",
+              "kind": "fact",
+              "excerptIds": [
+                "ch13-x3"
+              ]
+            }
+          ],
+          "sequence": [],
+          "disagreements": [],
+          "unknowns": [
+            "The passages do not establish the precise date or location of the discussion beyond the supplied episode metadata.",
+            "The passages do not identify all participants or ministries represented at the discussion.",
+            "The passages do not provide the Reich Marshal’s name in the quoted text or reproduce the requested draft.",
+            "The passages do not specify the operational meaning of “treated accordingly.”",
+            "The passages do not establish the precise number, locations, dates, or conditions of subsequent transports or labor operations.",
+            "The passages do not provide dialogue beyond the statements recorded or summarized in the protocol.",
+            "The passages do not establish the motives of individual participants or the extent to which each participant agreed with the stated policy."
+          ],
+          "excerpts": [
+            {
+              "id": "ch13-x1",
+              "chapterIndex": 13,
+              "episodeTitle": "The Wannsee Protocol",
+              "documentTitle": "Wannsee Protocol",
+              "documentUrl": "https://en.wikisource.org/wiki/Wannsee_Protocol",
+              "host": "wikisource",
+              "author": "",
+              "year": "",
+              "speaker": "Reinhard Heydrich, as recorded in the Wannsee Protocol",
+              "text": "At the beginning of the discussion Chief of the Security Police and of the SD, SS-Obergruppenführer Heydrich, reported that the Reich Marshal had appointed him delegate for the preparations for the final solution of the Jewish question in Europe and pointed out that this discussion had been called for the purpose of clarifying fundamental questions. The wish of the Reich Marshal to have a draft sent to him concerning organizational, factual and material interests in relation to the final solution of the Jewish question in Europe makes necessary an initial common action of all central offices immediately concerned with these questions",
+              "words": 101
+            },
+            {
+              "id": "ch13-x2",
+              "chapterIndex": 13,
+              "episodeTitle": "The Wannsee Protocol",
+              "documentTitle": "Wannsee Protocol",
+              "documentUrl": "https://en.wikisource.org/wiki/Wannsee_Protocol",
+              "host": "wikisource",
+              "author": "",
+              "year": "",
+              "speaker": "Wannsee Protocol",
+              "text": "In spite of these difficulties, 537,000 Jews were sent out of the country between the takeover of power and the deadline of 31 October 1941. Of these approximately 360,000 were in Germany proper on 30 January 1933 approximately 147,000 were in Austria (Ostmark) on 15 March 1939 approximately 30,000 were in the Protectorate of Bohemia and Moravia on 15 March 1939. The Jews themselves, or their Jewish political organizations, financed the emigration. In order to avoid impoverished Jews' remaining behind, the principle was followed that wealthy Jews have to finance the emigration of poor Jews; this was arranged by imposing a suitable tax, i.e., an emigration tax, which was used for financial arrangements in connection with the emigration of poor Jews and was imposed according to income. Apart from the necessary Reichsmark exchange, foreign currency had to presented at the time of landing. In order to save foreign exchange held by Germany, the foreign Jewish financial organizations were - with the help of Jewish organizations in Germany - made responsible for arranging an adequate amount of foreign currency. Up to 30 October 1941, these foreign Jews donated a total of around 9,500,000 dollars. In the meantime the Reichsführer-SS and Chief of the German Police had prohibited emigration of Jews due to the dangers of an emigration in wartime and due to the possibilities of the East.",
+              "words": 226
+            },
+            {
+              "id": "ch13-x3",
+              "chapterIndex": 13,
+              "episodeTitle": "The Wannsee Protocol",
+              "documentTitle": "Wannsee Protocol",
+              "documentUrl": "https://en.wikisource.org/wiki/Wannsee_Protocol",
+              "host": "wikisource",
+              "author": "",
+              "year": "",
+              "speaker": "Wannsee Protocol",
+              "text": "Under proper guidance, in the course of the final solution the Jews are to be allocated for appropriate labor in the East. Able-bodied Jews, separated according to sex, will be taken in large work columns to these areas for work on roads, in the course of which action doubtless a large portion will be eliminated by natural causes. The possible final remnant will, since it will undoubtedly consist of the most resistant portion, have to be treated accordingly, because it is the product of natural selection and would, if released, act as a the seed of a new Jewish revival (see the experience of history.) In the course of the practical execution of the final solution, Europe will be combed through from west to east. Germany proper, including the Protectorate of Bohemia and Moravia, will have to be handled first due to the housing problem and additional social and political necessities. The evacuated Jews will first be sent, group by group, to so-called transit ghettos, from which they will be transported to the East.",
+              "words": 174
+            }
+          ],
+          "reviewVersion": 1
+        }
+      }
+    },
+    {
+      "attempt": "development-1a-retry",
+      "caseId": "case-2-3",
+      "title": "War before agriculture in ethnographic comparison",
+      "expectedIdentity": true,
+      "review": {
+        "caseMatch": {
+          "supported": true,
+          "reason": "The passages directly present distinctive arguments from Lawrence H. Keeley's War Before Civilization about neo-Rousseauian views, primitive warfare, prehistoric peace, ethnographic analogy, and comparative conditions affecting war and peace. They therefore establish the proposed document and episode, although they do not establish the added subtitle or a specific geographic place.",
+          "canonicalEpisode": {
+            "title": "War Before Civilization",
+            "kind": "document",
+            "person": "Lawrence H. Keeley",
+            "place": "not specified",
+            "date": "1996",
+            "document": "War Before Civilization",
+            "why": "Keeley argues that neo-Rousseauian ideas idealized the precivilized and non-Western world, while selective use of ethnographic and archaeological evidence produced misleading views of primitive warfare and prehistoric peace.",
+            "searchQueries": [
+              "Lawrence Keeley War Before Civilization full text",
+              "War Before Civilization Lawrence H Keeley Internet Archive",
+              "The Myth of the Peaceful Savage Keeley"
+            ]
+          },
+          "anchors": [
+            {
+              "excerptId": "ch2-x1",
+              "quote": "Therefore, in a neo- Rousseauian world view, war itself constitutes one of the principal products of “Western progress, and the precivilized condition and the non-Western world before European expansion must have been idyllic and peaceful."
+            },
+            {
+              "excerptId": "ch2-x1",
+              "quote": "The resulting fashionable ideas concerning precivilized warfare are the products of discrimination, then, not ignorance or prevarication."
+            },
+            {
+              "excerptId": "ch2-x2",
+              "quote": "Contrary to common sense, neither die intensity nor the frequency of war or other violent behavior is correlated with human population density."
+            }
+          ]
+        },
+        "claims": [
+          {
+            "id": "c1",
+            "supported": true,
+            "reason": "The passage explicitly describes a neo-Rousseauian worldview in which war is a product of Western progress and the precivilized and non-Western world was imagined as idyllic and peaceful."
+          },
+          {
+            "id": "c2",
+            "supported": true,
+            "reason": "The passage says that theories of primitive war and prehistoric peace relied on available evidence, but that the cited data were often irrelevant to their key ideas."
+          },
+          {
+            "id": "c3",
+            "supported": true,
+            "reason": "The passage explicitly contrasts stylized, low-casualty battles with rarer massacres and more frequent raids that killed most people."
+          },
+          {
+            "id": "c4",
+            "supported": true,
+            "reason": "The passage says proponents evaluated tribal-war effectiveness by similarity to modern warfare rather than actual effects and gave special attention to the question of motives."
+          },
+          {
+            "id": "c5",
+            "supported": true,
+            "reason": "The passage says advocates of prehistoric peace ignored archaeological evidence that disproved their case and that ethnographic analogy contributed to pacifying the past."
+          },
+          {
+            "id": "c6",
+            "supported": true,
+            "reason": "The passage concludes that fashionable ideas about precivilized warfare resulted from discrimination in the use of evidence, not ignorance or deliberate falsehood."
+          },
+          {
+            "id": "c7",
+            "supported": true,
+            "reason": "The passage explicitly states that neither the intensity nor the frequency of war or other violent behavior is correlated with human population density."
+          },
+          {
+            "id": "c8",
+            "supported": true,
+            "reason": "The passage explicitly states that trade and intermarriage between societies increase rather than decrease the likelihood of war between them."
+          },
+          {
+            "id": "c9",
+            "supported": true,
+            "reason": "The passage says frequent, bitter warfare is often centered on especially aggressive societies that spoil their neighborhood and that several such ethnographic and historical cases involved rapid population increases."
+          },
+          {
+            "id": "c10",
+            "supported": true,
+            "reason": "The passage states that frontiers between cultures are prone to violence, especially when moving, and that wars are very frequent during hard times caused by natural and man-made disasters."
+          },
+          {
+            "id": "c11",
+            "supported": true,
+            "reason": "The passage states that maintaining peace between independent societies over several generations is difficult and rarer in both primitive and civilized worlds."
+          },
+          {
+            "id": "c12",
+            "supported": true,
+            "reason": "The passage identifies strong institutions for resolving disputes and punishing peace breaking, together with rewarding or not punishing peacekeepers, as useful factors for sustaining peace."
+          }
+        ],
+        "sequenceSupported": false,
+        "sequenceReason": "The passages present arguments and comparative generalizations but do not establish a chronological sequence of underlying events or cases. The sequence is therefore correctly empty.",
+        "disagreementsSupported": false,
+        "disagreementsReason": "No actual disagreement between the supplied passages is identified; the two excerpts address different aspects of Keeley's argument and do not contradict one another.",
+        "unknownsAccurate": true,
+        "unknownsReason": "The passages mention ethnographic and historical cases without identifying them individually, provide no dates, locations, populations, casualty figures, or specific archaeological finds, do not establish the motives of the participants, and do not supply a chronological ordering of the comparative cases or arguments."
+      },
+      "reviewIssues": [
+        "Chronology: The passages present arguments and comparative generalizations but do not establish a chronological sequence of underlying events or cases. The sequence is therefore correctly empty.",
+        "Source disagreements: No actual disagreement between the supplied passages is identified; the two excerpts address different aspects of Keeley's argument and do not contradict one another."
+      ],
+      "rebuilt": {
+        "failure": "Chronology: The excerpts present comparative conclusions and report arguments, but they do not establish a chronological ordering among the underlying events or cases. The proposed sequence is empty."
+      }
+    },
+    {
+      "attempt": "development-1a-retry",
+      "caseId": "case-4-3",
+      "title": "The revolt of the Jews against Rome",
+      "expectedIdentity": true,
+      "review": {
+        "caseMatch": {
+          "supported": false,
+          "reason": "The passages substantively describe Josephus's account of the revolt, Cestius's defeat, communal killings, and the claimed necessity of the war, but both excerpts are from The Life of Flavius Josephus rather than the proposed document, The Jewish War. The case is therefore related and supported in substance, but the proposed specific document attribution is not established.",
+          "canonicalEpisode": {
+            "title": "Josephus's account of the Jewish revolt and its causes",
+            "kind": "scene",
+            "person": "Josephus",
+            "place": "",
+            "date": "",
+            "document": "The Life of Flavius Josephus",
+            "why": "Josephus recounts the beginnings of revolt, his unsuccessful attempt to dissuade its promoters, the defeat associated with Gessius [with Cestius], killings of Jews in Syrian cities and Scythopolis, and his interpretation that the war was entered largely through necessity.",
+            "searchQueries": [
+              "Josephus Jewish revolt Life of Josephus full text",
+              "The Life of Josephus Wikisource",
+              "Josephus Jewish War Internet Archive"
+            ]
+          },
+          "anchors": [
+            {
+              "excerptId": "ch4-x3",
+              "quote": "And now I perceived innovations were already begun, and that there were a great many very much elevated in hopes of a revolt from the Romans."
+            },
+            {
+              "excerptId": "ch4-x4",
+              "quote": "But, upon his coming and fighting, he was beaten, and a great many of those that were with him fell."
+            },
+            {
+              "excerptId": "ch4-x4",
+              "quote": "Those that dwelt in the neighboring cities of Syria seized upon such Jews as dwelt among them, with their wives and children, and slew them"
+            },
+            {
+              "excerptId": "ch4-x4",
+              "quote": "being in number many ten thousands [13,000]."
+            },
+            {
+              "excerptId": "ch4-x4",
+              "quote": "The like miseries were undergone by those Jews that were the inhabitants of Damascus."
+            },
+            {
+              "excerptId": "ch4-x4",
+              "quote": "the Jews' war with the Romans was not voluntary, but that, for the main, they were forced by necessity to enter into it."
+            }
+          ]
+        },
+        "claims": [
+          {
+            "id": "c1",
+            "supported": true,
+            "reason": "The passage directly states that innovations had begun and that many hoped for a revolt from the Romans."
+          },
+          {
+            "id": "c2",
+            "supported": true,
+            "reason": "Josephus says he tried to stop the tumultuous persons, urged them to change their minds, and warned that they were inferior to the Romans in martial skill and good fortune."
+          },
+          {
+            "id": "c3",
+            "supported": true,
+            "reason": "Josephus explicitly says he could not persuade them because the madness of desperate men was too hard for him."
+          },
+          {
+            "id": "c4",
+            "supported": true,
+            "reason": "Josephus says he foresaw that the end of such a war would be most unfortunate for them."
+          },
+          {
+            "id": "c5",
+            "supported": true,
+            "reason": "The passage says that after his coming and fighting, he was beaten and many of those with him fell; it identifies Gessius in the bracketed wording as '[with Cestius].'"
+          },
+          {
+            "id": "c6",
+            "supported": true,
+            "reason": "Josephus calls the defeat a calamity for the nation and says supporters of war became hopeful of finally conquering the Romans."
+          },
+          {
+            "id": "c7",
+            "supported": true,
+            "reason": "The passage reports that inhabitants of neighboring Syrian cities seized Jewish residents and their wives and children and killed them, despite saying they had not revolted or shown hatred or treachery."
+          },
+          {
+            "id": "c8",
+            "supported": true,
+            "reason": "The passage says Scythopolis's inhabitants forced local Jews to fight Jewish attackers from outside, then killed them after the victory despite prior assurances."
+          },
+          {
+            "id": "c9",
+            "supported": true,
+            "reason": "The passage gives the number killed as 'many ten thousands [13,000],' preserving the conflicting main and bracketed numerical wording."
+          },
+          {
+            "id": "c10",
+            "supported": true,
+            "reason": "Josephus directly states that Jews who were inhabitants of Damascus underwent like miseries."
+          },
+          {
+            "id": "c11",
+            "supported": true,
+            "reason": "Josephus explicitly interprets the account as showing that the war was not voluntary and that, for the main, necessity forced the Jews to enter it."
+          }
+        ],
+        "sequenceSupported": true,
+        "sequenceReason": "The proposed order follows the narrative's underlying chronology: the beginnings of revolt and Josephus's intervention precede the defeat associated with Gessius [with Cestius]; that defeat is presented as preceding subsequent violence in Syrian cities, Scythopolis, and Damascus. The numerical claim belongs with the Scythopolis event, and the final necessity claim is Josephus's concluding interpretation.",
+        "disagreementsSupported": true,
+        "disagreementsReason": "No source disagreement is supplied: the evidence consists of two passages from the same work, and the disagreements list is empty.",
+        "unknownsAccurate": true,
+        "unknownsReason": "The listed unknowns appropriately preserve uncertainty about dates, locations, identities, motives, fuller circumstances, independent corroboration, the attackers and guarantors at Scythopolis, the conflicting numerical wording, Damascus's details, and whether necessity was the sole cause. The passages establish only the stated events and Josephus's interpretation."
+      },
+      "reviewIssues": [
+        "Case identity: The passages substantively describe Josephus's account of the revolt, Cestius's defeat, communal killings, and the claimed necessity of the war, but both excerpts are from The Life of Flavius Josephus rather than the proposed document, The Jewish War. The case is therefore related and supported in substance, but the proposed specific document attribution is not established."
+      ],
+      "rebuilt": {
+        "failure": "Case identity: The passages substantively establish Josephus's account of episodes connected with the Jewish revolt, but both excerpts are from The Life of Flavius Josephus rather than The Jewish War by Flavius Josephus translated by William Whiston. The passage itself says that a more accurate account was given in the books of the Jewish War, without supplying those books here.; Chronology: The excerpts do not provide enough explicit temporal information to establish a reliable chronology among Josephus's attempted persuasion, the defeat involving Gessius [with Cestius], the Syrian-city violence, Scythopolis, and Damascus. The proposed sequence is empty, which is appropriate.; Source disagreements: The supplied excerpts do not present conflicting accounts or explicit disagreements between sources; they are both passages from The Life of Flavius Josephus."
+      }
+    },
+    {
+      "attempt": "development-1a-retry",
+      "caseId": "case-3-1",
+      "title": "The Standard Inscription of Gudea",
+      "expectedIdentity": false,
+      "review": {
+        "caseMatch": {
+          "supported": false,
+          "reason": "The passage establishes only an incidental statement attributed to Gudea about a temple and a cedar-wood mausoleum. It does not identify the proposed Standard Inscription, Gudea's Cylinders, the Pritchard edition, Lagash as the place, or the proposed date and broader building-record interpretation.",
+          "canonicalEpisode": {
+            "title": "Incidental Reference to Gudea's Temple and Cedar-Wood Mausoleum",
+            "kind": "document",
+            "person": "Gudea",
+            "place": "",
+            "date": "",
+            "document": "The Babylonian Conception of Heaven and Hell/Death and Burial, by Alfred Jeremias, translated by Jane Hutchison",
+            "why": "The passage reports Gudea's incidental statement that he built a temple according to the Number Fifty and erected a cedar-wood mausoleum within it, followed by Jeremias's inference about royal tombs beneath Babylonian temples.",
+            "searchQueries": [
+              "Alfred Jeremias Gudea cedar wood mausoleum",
+              "The Babylonian Conception of Heaven and Hell Death and Burial Gudea"
+            ]
+          },
+          "anchors": [
+            {
+              "excerptId": "ch3-x1",
+              "quote": "The ancient Babylonian king Gudea states incidentally that he has built the temple according to the Number Fifty, and erected within it a mausoleum of cedar wood."
+            }
+          ]
+        },
+        "claims": [
+          {
+            "id": "c1",
+            "supported": true,
+            "reason": "The passage explicitly attributes to the ancient Babylonian king Gudea the statement that he built a temple according to the Number Fifty and erected within it a cedar-wood mausoleum. It therefore entails the claim's substance, including the attribution to Jeremias's account."
+          },
+          {
+            "id": "c2",
+            "supported": true,
+            "reason": "Jeremias explicitly draws the inference: \"It would seem, therefore, that Babylonian temples like the Egyptian pyramids conceal beneath them royal tombs.\" This supports the claim that he interpreted the cedar-wood mausoleum reference as suggesting concealed royal tombs, while preserving the passage's inferential wording."
+          }
+        ],
+        "sequenceSupported": false,
+        "sequenceReason": "The passage gives no usable chronology for the construction of the temple or mausoleum, and the surrounding burial references do not establish an ordering of the claimed events.",
+        "disagreementsSupported": false,
+        "disagreementsReason": "Only one passage is supplied, so there are no sources expressing an actual disagreement.",
+        "unknownsAccurate": true,
+        "unknownsReason": "The listed unknowns are consistent with the passage: it does not identify the particular temple or inscription, explain the Number Fifty, establish that the mausoleum was a royal tomb or that Babylonian temples generally concealed royal tombs, provide chronology, or describe the mausoleum's contents, location beyond being within the temple, or construction process."
+      },
+      "reviewIssues": [
+        "Case identity: The passage establishes only an incidental statement attributed to Gudea about a temple and a cedar-wood mausoleum. It does not identify the proposed Standard Inscription, Gudea's Cylinders, the Pritchard edition, Lagash as the place, or the proposed date and broader building-record interpretation.",
+        "Chronology: The passage gives no usable chronology for the construction of the temple or mausoleum, and the surrounding burial references do not establish an ordering of the claimed events.",
+        "Source disagreements: Only one passage is supplied, so there are no sources expressing an actual disagreement."
+      ],
+      "rebuilt": {
+        "failure": "Case identity: The passage is a secondary account by Alfred Jeremias, not the specified Gudea Cylinders translation in Pritchard's Ancient Near Eastern Texts. It mentions Gudea only incidentally and does not identify the proposed inscription, document edition, date, place, or the claimed building-administration context.; Chronology: The passage reports Gudea's statement but provides no date or temporal relationship establishing a chronological sequence for the construction or mausoleum event. A one-item sequence is therefore not supported as chronology."
+      }
+    },
+    {
+      "attempt": "development-1a-retry",
+      "caseId": "case-5-3",
+      "title": "The Iroquois Mourning War",
+      "expectedIdentity": false,
+      "review": {
+        "caseMatch": {
+          "supported": false,
+          "reason": "The passages do not establish the proposed Iroquois mourning-war episode or the contents of Colden's document. One passage gives biographical and bibliographic information about Colden, while the other concerns Germaine, Brant, and border warfare; neither identifies a specific mourning war, its practices, or its political and social functions.",
+          "canonicalEpisode": {
+            "title": "No established canonical episode",
+            "kind": "document",
+            "person": "",
+            "place": "",
+            "date": "",
+            "document": "",
+            "why": "",
+            "searchQueries": []
+          },
+          "anchors": []
+        },
+        "claims": [
+          {
+            "id": "c1",
+            "supported": true,
+            "reason": "The passage identifies Colden as an historian of the Indians, says he settled in New York in 1710, enjoyed the authorities' confidence, and was promoted to important offices."
+          },
+          {
+            "id": "c2",
+            "supported": true,
+            "reason": "The passage states that Colden wrote History of the Five Indian Nations, dates it to 1727–1747, calls it a source of valuable information and facts, and says later research rendered many statements unsatisfactory."
+          },
+          {
+            "id": "c3",
+            "supported": true,
+            "reason": "The passage explicitly interprets Germaine's promises to redress grievances and provide the King's favor and protection as securing Brant's adhesion to the English cause."
+          },
+          {
+            "id": "c4",
+            "supported": true,
+            "reason": "The passage explicitly characterizes support for the English cause as a newly awakened patriotic sentiment founded in self-interest rather than an ancient privilege."
+          },
+          {
+            "id": "c5",
+            "supported": true,
+            "reason": "The passage says that probably more than any other man, Germaine should bear responsibility for Brant's destructive zeal in the border warfare."
+          }
+        ],
+        "sequenceSupported": false,
+        "sequenceReason": "The proposed sequence orders bibliographic and biographical claims rather than underlying events. The passages provide no explicit chronology for the events at issue, so no event sequence is established.",
+        "disagreementsSupported": true,
+        "disagreementsReason": "No disagreements are asserted, and the supplied passages do not present conflicting accounts of the same proposition.",
+        "unknownsAccurate": true,
+        "unknownsReason": "The listed unknowns accurately identify matters not established by the passages, including the mourning-war practices and functions, the specific war and chronology, the contents and motives surrounding the speeches, sensory details and dialogue, and independent verification of Colden's claims. The passages do explicitly establish Colden's biography and bibliographic description and the attributed interpretations concerning Germaine and Brant; the unknowns do not deny those points."
+      },
+      "reviewIssues": [
+        "Case identity: The passages do not establish the proposed Iroquois mourning-war episode or the contents of Colden's document. One passage gives biographical and bibliographic information about Colden, while the other concerns Germaine, Brant, and border warfare; neither identifies a specific mourning war, its practices, or its political and social functions.",
+        "Chronology: The proposed sequence orders bibliographic and biographical claims rather than underlying events. The passages provide no explicit chronology for the events at issue, so no event sequence is established."
+      ],
+      "rebuilt": {
+        "failure": "Case identity: The passages do not establish the proposed Iroquois mourning-war document or its contents. One passage describes Colden's biography and general work on the Iroquois, while the other concerns Germaine, Brant, and border warfare; neither identifies a mourning-war account, captive-taking, adoption, or the proposed document's distinctive contents.; Source disagreements: The passages do not present conflicting accounts of the same claim. Their different subjects—Colden's biography and work, versus Germaine and Brant—do not constitute a source disagreement."
+      }
+    }
+  ],
+  "failures": [
+    "The Trial of Socrates: rebuilt packet OpenAI JSON validation failed for verify-case-evidence. Root keys: caseMatch. [\n  {\n    \"expected\": \"array\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"claims\"\n    ],\n    \"message\": \"Invalid input: expected array, received undefined\"\n  },\n  {\n    \"expected\": \"boolean\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"sequenceSupported\"\n    ],\n    \"message\": \"Invalid input: expected boolean, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"sequenceReason\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"boolean\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"disagreementsSupported\"\n    ],\n    \"message\": \"Invalid input: expected boolean, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"disagreementsReason\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"boolean\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"unknownsAccurate\"\n    ],\n    \"message\": \"Invalid input: expected boolean, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"unknownsReason\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n]",
+    "The First Crusade at Jerusalem: case identity differs from the adjudicated fixture",
+    "The First Crusade at Jerusalem: rebuilt packet Case identity: The passages establish a narrative account of the First Crusade, including the capture of Jerusalem in 1099, but they identify the source as an unknown author of The Greek and Eastern Churches, not Fulcher of Chartres or Fulcher's A History of the Expedition to Jerusalem. Thus they do not establish the proposed particular document or its attribution.",
+    "War before agriculture in ethnographic comparison: rebuilt packet Chronology: The excerpts present comparative conclusions and report arguments, but they do not establish a chronological ordering among the underlying events or cases. The proposed sequence is empty.",
+    "The revolt of the Jews against Rome: case identity differs from the adjudicated fixture",
+    "The revolt of the Jews against Rome: rebuilt packet Case identity: The passages substantively establish Josephus's account of episodes connected with the Jewish revolt, but both excerpts are from The Life of Flavius Josephus rather than The Jewish War by Flavius Josephus translated by William Whiston. The passage itself says that a more accurate account was given in the books of the Jewish War, without supplying those books here.; Chronology: The excerpts do not provide enough explicit temporal information to establish a reliable chronology among Josephus's attempted persuasion, the defeat involving Gessius [with Cestius], the Syrian-city violence, Scythopolis, and Damascus. The proposed sequence is empty, which is appropriate.; Source disagreements: The supplied excerpts do not present conflicting accounts or explicit disagreements between sources; they are both passages from The Life of Flavius Josephus."
+  ]
+}

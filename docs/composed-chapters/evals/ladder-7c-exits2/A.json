@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 7,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.4,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The offices that police a state’s own subjects are the offices that can build harm on a scale no feud reaches. A clerk turns an accusation into a record. A court turns that record into an authorised sentence. An officer turns the sentence into a bodily act.",
+      "judgment": "The book’s controlling thesis stated early, concretely, and without abstraction — a real strength."
+    },
+    {
+      "quote": "Bone records force more readily than purpose. It can show that a person suffered several blows, but not whether the assailant sought revenge, food, territory, or obedience.",
+      "judgment": "Exemplary epistemic discipline: the book repeatedly names what its evidence cannot carry."
+    },
+    {
+      "quote": "A wall is a fact; the fear that prompted it is an inference.",
+      "judgment": "Sharp sentence, but the paired-antithesis aphorism becomes the book’s single most overworked rhetorical move."
+    },
+    {
+      "quote": "No one is recorded shouting. No one is described drawing a weapon. The page turns mass murder into a subject for coordination. At Wannsee, the state did not discover violence; it made extermination compatible with paperwork.",
+      "judgment": "The best passage in the book: restraint doing the emotional work that emphasis would have spoiled."
+    },
+    {
+      "quote": "At the gate, an old man named Sarkis Der-Melikian stopped beside the ditch to fasten his shoe. His daughter waited with a woollen shawl over her head.",
+      "judgment": "Chapter openings are consistently the strongest writing — concrete, unhurried, free of commentary."
+    },
+    {
+      "quote": "Fred Wendorf’s *The Prehistory of Nubia*, an excavation report, records the Jebel Sahaba cemetery in the Nile Valley, dated to c. 13,400–18,600 years ago",
+      "judgment": "An unincorporated citation stub ending Chapter 2, and it contradicts Chapter 1’s “roughly 13,000 to 12,000 years ago” for the same site."
+    },
+    {
+      "quote": "At Nataruk, west of Lake Turkana, eleven skeletons were found in sediments dated to about 9,500 to 10,500 years ago.",
+      "judgment": "Chapter 2 re-narrates the same site as “twelve skeletons” — the cross-chapter recycling of cases is both redundant and inconsistent."
+    },
+    {
+      "quote": "“The ninth book it taken up with an account of the merchants, their pilgrimages, the religious rites on their departure…”",
+      "judgment": "Chapter 5’s epigraph is ungrammatical and topically irrelevant to the chapter; several epigraphs are similarly mismatched."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Concessive negation pair — an assertion immediately followed by “It does not… / It cannot…” disclaiming a stronger reading. Used dozens of times per chapter until it reads as a tic rather than as caution.",
+      "instances": [
+        "“The word massacre describes the pattern of deaths; it does not supply the motive.”",
+        "“Nataruk records collective lethal violence with unusual force. It does not identify the attackers’ political organisation.”"
+      ]
+    },
+    {
+      "pattern": "Aphoristic closer: nearly every section and chapter lands on a short, balanced, quotable sentence restating the thesis in fresh clothing.",
+      "instances": [
+        "“The distance between the order and the wound was widened by administration, and that distance gave violence its reach.”",
+        "“Its permanence was an administrative achievement.”"
+      ]
+    },
+    {
+      "pattern": "Fixed chapter template: cinematic present-tense-feeling scene → documentary case inventory → a “method” or “mechanism” block → comparative section → limits-of-evidence coda. The predictability flattens the middle third of most chapters.",
+      "instances": [
+        "Ch.1 Socrates in court → Jebel Sahaba/Nataruk → definitions of aggression → Petition of Right → survivorship caveat",
+        "Ch.8 the *Zong* at the rail → *Creole* / Barbados code → the Liverpool credit circuit → Brazil/Jamaica/Cherokee comparison → perpetrator-testimony caveat"
+      ]
+    },
+    {
+      "pattern": "Chain-of-offices enumeration: a list of functionaries in sequence, each converting the previous step, used as the standard explanatory paragraph in every chapter.",
+      "instances": [
+        "“A district officer assessed a labor requirement. A local headman received the order. A recruiter or policeman selected workers.”",
+        "“A ministry estimated a need, a railway moved material, a factory produced it, a telegraph adjusted the schedule…”"
+      ]
+    },
+    {
+      "pattern": "Orphaned citation sentences appended to chapter ends — a bibliographic fact rendered as a paragraph, disconnected from the prose that precedes it.",
+      "instances": [
+        "“On 14 June 1645 at Naseby, Joshua Sprigge’s *Anglia Rediviva* recorded that Oliver Cromwell and the New Model Army defeated the king’s forces…”",
+        "“In his Second Letter to Charles V, Cortés described Moctezuma as a ruler of great authority, about forty years old, of good stature…”"
+      ]
+    }
+  ],
+  "summary": "This is a genuinely serious book with one clear and well-defended thesis: aggression is a human capacity, but large-scale violence is an administrative achievement — offices, registers, classifications and records are what give harm reach and repeatability. The thesis is carried across fifteen chapters and roughly five millennia without drifting, and the evidentiary handling is unusually disciplined for popular history: the text repeatedly names what bone, monument, ledger or memoir cannot establish, and it resists both the pessimist and the progress narrative at the close. Sentence craft is high and the voice is consistent — cool, concrete, unshowy — with the scene-setting chapter openings (Socrates, the *Zong*, Erzurum, the causeway at Tenochtitlan) the best writing on offer. The weaknesses are structural rather than verbal. Every chapter runs the same template, and within it the same two rhetorical moves — the balanced antithesis and the “it does not tell us” disclaimer — recur so often that the caution starts to read as mannerism and the argument as a refrain; the middle third of most chapters flattens into site-and-institution catalogue. There are also loose ends: several chapters terminate in unincorporated citation stubs, some epigraphs are mismatched or ungrammatical, and repeated cases (Nataruk, Jebel Sahaba, the Dallaire cable, Srebrenica) return across chapters with inconsistent figures. Light revision — varying the chapter shape, thinning the disclaimers and aphoristic closers, reconciling the recycled cases — would leave a very strong book."
+}

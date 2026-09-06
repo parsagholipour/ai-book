@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 7.0,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "An injury belongs to an event; a burial belongs to a decision after the event.",
+      "judgment": "Excellent opening distinction — compact, concrete, and it seeds the book's whole method."
+    },
+    {
+      "quote": "The amount of evidence and the amount of violence are not the same quantity.",
+      "judgment": "The book's sharpest recurring insight, stated once with real economy."
+    },
+    {
+      "quote": "It was ideology after it had acquired filing systems.",
+      "judgment": "Best sentence in the manuscript; the euphemism analysis of the Wannsee Protocol is the strongest sustained close reading."
+    },
+    {
+      "quote": "They gave force a schedule, a storehouse, a work gang, a boundary, and a name.",
+      "judgment": "Rhythmically confident and specific — the chapter-3 argument earns its summation."
+    },
+    {
+      "quote": "At Jebel Sahaba, 67 percent of the 61 examined individuals had wounds attributed to weapons. About half of the injuries were associated with projectiles, and 16 people had both healed and unhealed wounds.",
+      "judgment": "The same three statistics are restated at least four times across chapters 1–2; the recap loop is the book's main pacing failure."
+    },
+    {
+      "quote": "The Parisians went to the fortress with a purpose. The Bastille was a direct assault on royal authority.",
+      "judgment": "A genuine sentence-level breakdown — the building is made the agent of the assault; a copyedit lapse in an otherwise controlled text."
+    },
+    {
+      "quote": "Steven Pinker is right to insist that institutions can restrain private violence and that some long-term measures show substantial declines in certain forms of killing.",
+      "judgment": "Near-verbatim concession repeated in at least six chapters; it stops being argument and becomes a ritual hedge."
+    },
+    {
+      "quote": "Yet the same episode already contained that vulnerability: victory required more than terror, and administration required more than victory.",
+      "judgment": "A chapter-closing aphorism with a dangling antecedent — the chiasmus is doing the work an argument should."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The 'establishes X but cannot establish Y' scaffold ends nearly every evidentiary paragraph in the book, so epistemic caution becomes a template rather than a judgment.",
+      "instances": [
+        "It does establish that the body encountered a projectile with enough force to enter and remain in it",
+        "The Protocol can show coordination, but not every decision that made coordination effective."
+      ]
+    },
+    {
+      "pattern": "The 'silence of the source' move is deployed as a set-piece in almost every chapter, usually in a short standalone sentence.",
+      "instances": [
+        "Their silence has a shape.",
+        "The absence of a prisoner's testimony is not permission to invent one."
+      ]
+    },
+    {
+      "pattern": "A formal 'verdict' paragraph is announced near the end of each comparison, flagging the conclusion rather than letting the evidence deliver it.",
+      "instances": [
+        "The comparison therefore yields a careful verdict.",
+        "The verdict must remain uneven."
+      ]
+    },
+    {
+      "pattern": "Paired antitheses and chiasmus close sections with symmetrical balance, so different chapters end in the same cadence.",
+      "instances": [
+        "Numbers feed the army; images explain why the army moves as one.",
+        "Mobility created access; rule determined whether access became exchange or extraction."
+      ]
+    },
+    {
+      "pattern": "Institutional chains are enumerated as list-cascades of nouns, an effective device on first use that recurs as a default shape for explanation.",
+      "instances": [
+        "Credit made voyages possible; insurance made losses bearable; ships moved captives; law defined them as property; overseers extracted labor; patrols suppressed escape",
+        "revenue became wages; wages kept soldiers in service; soldiers required provisions; provisions required roads, pack animals, warehouses, and officials"
+      ]
+    }
+  ],
+  "summary": "This is a serious, methodologically disciplined global history of organized aggression, unified by a genuine thesis: human capacity for harm is constant, but its scale is a property of offices, records, supply and command, and the historian's claims must stay proportionate to the traces that support them. The evidentiary work is often excellent — the Wannsee euphemism reading, the Uruk tablet-and-wall argument, the Brookes diagram, and the Ottoman fiscal chain are all specific, argued, and free of borrowed summary. Voice is consistent and adult throughout, and the prose is clear, concrete and largely free of cliché at the word level. The book's weakness is shape rather than content: the caution formula, the source-silence set-piece, the announced 'verdict', and the near-verbatim Pinker concession recur so regularly that paragraphs become predictable, and chapters 1 and 2 restate the same Jebel Sahaba figures and arguments several times over. Engagement suffers accordingly — the openings are strong but the middles flatten into uniform paragraph shapes with few surprises of pace or register. Trimming the recap loop, cutting the Pinker refrain to two appearances, and varying the paragraph architecture would lift this materially without touching the research."
+}

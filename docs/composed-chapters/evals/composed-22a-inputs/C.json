@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.6,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Nataruk is an event, not a census of emotion.",
+      "judgment": "Compact, memorable, and does real analytic work \u2014 it states the book's evidentiary discipline in seven words."
+    },
+    {
+      "quote": "Archaeologists move from mark to pattern, from pattern to context, and from context to a bounded interpretation.",
+      "judgment": "Strong methodological clarity; the book consistently earns its conclusions this way rather than asserting them."
+    },
+    {
+      "quote": "A ruler's order became a tax, a tax became powder, powder became a siege, and a siege became hunger inside a city.",
+      "judgment": "The thesis rendered as causal chain \u2014 the book's best single sentence, and the rare moment where rhythm carries argument."
+    },
+    {
+      "quote": "A warrior who took an enemy could gain honour and, according to the research brief, a route toward social advancement.",
+      "judgment": "Serious defect: generation scaffolding leaks into the prose (also 'The research brief associates\u2026', 'often estimated in the research record'), breaking the historian's voice."
+    },
+    {
+      "quote": "The office that punished escape helped produce the condition from which escape became necessary.",
+      "judgment": "Excellent chiastic insight, though the same inversion shape recurs so often it becomes a tic."
+    },
+    {
+      "quote": "One stone projectile point remained embedded in a skeleton.",
+      "judgment": "Effective isolated one-line paragraph for emphasis \u2014 but the device recurs at least eight times across chapters and loses force."
+    },
+    {
+      "quote": "The difference was not between violence and administration. It was between different administrations of violence.",
+      "judgment": "Sharp, but exemplifies the book's dominant and overused negate-then-restate cadence."
+    },
+    {
+      "quote": "The remaining task is to hear the quiet forms of force before they become entries in a death count.",
+      "judgment": "A genuinely earned closer that names an unfinished problem rather than tidying the book shut."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Negate-then-assert cadence ('X did not do A. It did B.') used as the default sentence engine in every chapter \u2014 clear, but so pervasive it flattens rhythm.",
+      "instances": [
+        "The state did not remove force; it claimed the right to decide where force belonged.",
+        "The tapestry does not show religion restraining William's invasion; it shows religion helping to authorise it."
+      ]
+    },
+    {
+      "pattern": "Evidence-limits disclaimer appended to nearly every case: the artifact is named, then told what it cannot prove. Appropriate to the subject, but formulaic by repetition.",
+      "instances": [
+        "A wall does not reveal the face of an enemy. It reveals that a community invested in controlling approach.",
+        "The bullets do not identify the people who made or threw them."
+      ]
+    },
+    {
+      "pattern": "Chapters close with an enumerative roll-call paragraph that lists every case just discussed and restates the institutional thesis.",
+      "instances": [
+        "Brazilian quilombos, Jamaican Maroon treaties, Chesapeake county courts, Barbadian sugar estates, Elmina Castle, and Asante diplomacy belonged to connected worlds without being interchangeable.",
+        "A depot issued the rifle. A checkpoint selected the traveller. A radio named the enemy. A register allocated food."
+      ]
+    },
+    {
+      "pattern": "Rhetorical question deployed as a section hinge, usually one per case-module, sometimes labelled as 'the unresolved question'.",
+      "instances": [
+        "Was a society with sparse evidence peaceful, or did its violence leave fewer traces?",
+        "When did the home front become a battlefield?"
+      ]
+    },
+    {
+      "pattern": "Cases are re-narrated across chapters rather than assumed, producing a recap loop \u2014 especially in Chapter 15, which largely restages earlier material.",
+      "instances": [
+        "The Barbados Slave Code of 1661 defined enslaved Africans as real estate\u2026 (Ch.15, after the same code in Ch.1 and Ch.8)",
+        "At J\u00f3zef\u00f3w in July 1942\u2026 Major Wilhelm Trapp offered older men an opportunity to step aside. (Ch.15, repeating Ch.13 nearly verbatim)"
+      ]
+    }
+  ],
+  "summary": "This is a disciplined comparative history arguing that organised aggression is produced by offices, registers, laws, and logistics rather than by an appetite for violence, and it sustains that thesis with unusual consistency across fifteen chapters and a very wide case corpus, from Nataruk to Homs. Its strengths are evidentiary restraint, a cool and distinctive analytic voice, and a genuine progression from bone to bureaucracy; claims are routinely bounded by what the archaeology or the archive can actually support. Its weaknesses are structural rather than lexical: paragraphs are uniformly long and similarly shaped, the negate-then-assert cadence functions as a default sentence engine, each chapter ends in an enumerative roll-call, and Chapter 15 largely restages material already argued. Two real defects stand out \u2014 the visible leakage of generation scaffolding ('according to the research brief', 'the research record') and the repeated re-narration of Jebel Sahaba, Wannsee, J\u00f3zef\u00f3w and the Barbados code. Engagement suffers from an unvarying register: the book is admirably free of stock AI diction but heavily templated at the paragraph and chapter level. With a pass to break the cadence, cut the recaps, and remove the brief references, it would be close to publishable non-fiction."
+}

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 7,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 4
+  },
+  "overall": 7.2,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "High",
+  "highlights": [
+    {
+      "quote": "A stone thrown into the water did not create Chicago’s racial boundaries.",
+      "judgment": "A concrete, forceful sentence establishes the book’s central distinction between an act and the structures that direct its meaning."
+    },
+    {
+      "quote": "Administration did not create the desire to command. It gave command a longer memory.",
+      "judgment": "This is an unusually concise and memorable formulation of the book’s strongest historical claim."
+    },
+    {
+      "quote": "The photograph’s work was visual, but it was also editorial.",
+      "judgment": "The manuscript handles source mediation well here, linking an image’s force to captions, sequencing, and institutions."
+    },
+    {
+      "quote": "The crowd had many hands. So did the state.",
+      "judgment": "The compact close gives the crowd-state analysis rhetorical bite without oversimplifying agency."
+    },
+    {
+      "quote": "The object did not contain its political use.",
+      "judgment": "This accurately condenses the technology argument, but versions of the same claim recur so often that the insight loses force."
+    },
+    {
+      "quote": "Technology extended reach, but institutions and local choices determined whom that reach served.",
+      "judgment": "The sentence is clear, yet it exemplifies a stock thesis-restatement repeated across many chapters."
+    },
+    {
+      "quote": "A date is a boundary, not a motive.",
+      "judgment": "The aphorism neatly disciplines archaeological inference, though the manuscript overuses this short antithetical closer."
+    },
+    {
+      "quote": "The first speaks in the language of victory. The second follows the consequences into offices and fields.",
+      "judgment": "The source comparison is lucid, but its balanced two-part cadence is one of many conspicuously templated rhetorical moves."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Tools enlarge the reach of violence while human institutions choose its target or purpose.",
+      "instances": [
+        "A stone point could travel from hand to body, but it did not choose the target.",
+        "Trains allowed the Nazi regime to coordinate deportations across occupied Europe, but railway lines did not decide that Jews should be killed."
+      ]
+    },
+    {
+      "pattern": "Institutions protect or enable one group while exposing or coercing another.",
+      "instances": [
+        "A road reduced travel time for a merchant and shortened the march of troops.",
+        "A court might hear a petition against an illegal sale and still enforce the owner’s title."
+      ]
+    },
+    {
+      "pattern": "Short aphorisms mark the limits of what a source can establish.",
+      "instances": [
+        "A date is a boundary, not a motive.",
+        "The skeleton is not a written account."
+      ]
+    },
+    {
+      "pattern": "Administrative chains translate distant commands into material action.",
+      "instances": [
+        "The record made the work transferable across distance and office.",
+        "A command sent from Karakorum or from a moving court passed through successive riders, each covering a segment before handing the message to another."
+      ]
+    },
+    {
+      "pattern": "Paired source forms contrast public claims with administrative or lived consequences.",
+      "instances": [
+        "The first speaks in the language of victory. The second follows the consequences into offices and fields.",
+        "A decree changing ownership, a census assigning racial status, or an order moving civilians could appear technical while helping to erase a population from a place."
+      ]
+    }
+  ],
+  "summary": "The manuscript sustains a clear thesis across an exceptionally wide chronology: aggression gains historical scale and direction through institutions, categories of belonging, technologies, and political decisions rather than arising from a timeless human essence. Its best passages connect concrete objects and records to bounded claims, compare unlike cases without flattening them, and make source limitations part of the argument. The chronological architecture is sound and the prose is polished, but chapter after chapter returns to nearly identical formulations about technology, economic pressure, protection and coercion, and what evidence cannot prove. Substantial compression and variation in argumentative rhythm would preserve the book’s considerable depth while improving pacing, distinctiveness, and reader engagement."
+}

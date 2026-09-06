@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 6,
+    "engagement": 5,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 6.7,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A rifle does not explain the campaign in which it was carried. The people who supplied and directed it do.",
+      "judgment": "Crisp statement of the book's governing claim, but this exact move \u2014 object denied agency, humans restored \u2014 is repeated in nearly every chapter and loses force by Chapter 14."
+    },
+    {
+      "quote": "The name of Site 117 stayed fixed while the explanation of Jebel Sahaba moved.",
+      "judgment": "Genuinely elegant: a single sentence carrying the book's epistemology about how evidence is reread over time."
+    },
+    {
+      "quote": "A cemetery beside the Nile is evidence of violence before states, not evidence that violence had already become warfare in the later sense of armies, commanders, and territorial governments.",
+      "judgment": "Excellent calibrated inference; the book's strongest habit is refusing to let a striking find outrun what it can support."
+    },
+    {
+      "quote": "Coercion had worked before the revolt because Prasutagus made Roman supremacy compatible, however unequally, with the continuation of Iceni kingship. It failed when Roman officials treated the death of the intermediary as an opportunity to remove the protections and property that had sustained the arrangement.",
+      "judgment": "The Boudica section is the book at its best \u2014 a fully worked causal argument anchored in one named case rather than a generalization."
+    },
+    {
+      "quote": "A bronze weapon at Anyang, a ration tablet from Ur, and a transport journal from Wadi al-Jarf all belong to organised systems, but they answer different administrative needs.",
+      "judgment": "Fine comparative point in Chapter 3 \u2014 but it reappears near-verbatim in Chapter 4, which is a straightforward redundancy failure rather than a deliberate callback."
+    },
+    {
+      "quote": "Tacky is named.",
+      "judgment": "One of many one-line paragraphs deployed as rhythmic punctuation; the device recurs so regularly across chapters that it reads as a template rather than emphasis."
+    },
+    {
+      "quote": "The word aggression will be used here for behaviour, or an attempt at behaviour, directed toward injuring, threatening, dominating, or forcing another person or group.",
+      "judgment": "Definitional rigor is a real strength, but Chapter 1 spends roughly half its length on method and terminology before any history begins, delaying engagement badly."
+    },
+    {
+      "quote": "Technologies have carried decisions across greater distances without making those decisions.",
+      "judgment": "The closing line restates a proposition the reader has now met perhaps thirty times; the ending confirms rather than advances."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The 'technology/object contains no motive' formula, restated in nearly every chapter with a swapped noun.",
+      "instances": [
+        "None of these objects contains a motive. A tool can be used in a feud, a hunt, a ceremony, a prison, or a war",
+        "Yet none of these technologies contains a motive. The same railway can carry refugees, food, soldiers, or deportees."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis as the default sentence shape \u2014 'X does not do A; it does B' \u2014 used to close paragraphs across all fifteen chapters.",
+      "instances": [
+        "Organization describes the relationship among actions; motive describes the purpose assigned to them.",
+        "The memorial preserves the names; the records preserve different parts of the sequence."
+      ]
+    },
+    {
+      "pattern": "The isolated one-sentence paragraph inserted as a beat between long expository blocks, roughly two or three per chapter.",
+      "instances": [
+        "The walls did not collapse.",
+        "The cases do not form a ladder."
+      ]
+    },
+    {
+      "pattern": "Wholesale reuse of earlier material as if new, especially the Atlantic-slavery legal chronology, which is narrated at length in Chapter 8 and then re-narrated in Chapters 10 and 11.",
+      "instances": [
+        "Virginia's statutes made slavery hereditary through the mother in 1662, denied baptism as a route to freedom in 1667, and protected masters from ordinary murder liability... in 1669.",
+        "In 1662, it settled the status of children born to enslaved women. In 1667, it closed the possibility that Christian baptism might make slavery temporary. In 1669, it addressed the killing of an enslaved person during correction"
+      ]
+    },
+    {
+      "pattern": "The 'catalogue' paragraph: a list of institutional roles enumerated in parallel clauses to demonstrate administrative reach, deployed as a set piece in most chapters.",
+      "instances": [
+        "The law needed sheriffs, constables, patrols, jailers, judges, ship captains, and neighbors willing to act.",
+        "It required guards to control exits, officials to allocate housing, and railway personnel to move the deportees."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined work of historical synthesis with a clear and defensible thesis: the scale and targets of organized violence are set by institutions, law, and ideas of belonging rather than by human nature, scarcity, or technology. Its greatest strengths are evidentiary discipline \u2014 repeatedly distinguishing what a source records from what must be inferred \u2014 and a wide, well-chosen case base (Jebel Sahaba, Lagash, Assyria, Tenochtitlan, Antioch, Karakorum, Barbados, Vauban, Guernica, Wannsee, Cuba, Kigali) that is genuinely comparative rather than decorative. The prose is precise and free of the usual commercial-AI tics, and the refusal to overclaim is itself a form of authority. The book's weaknesses are structural rather than factual: the thesis is restated so often, and in such consistent syntactic shapes, that later chapters carry little argumentative surprise, and several passages are reproduced almost verbatim across chapters, which suggests chapters were composed with imperfect memory of one another. Pacing suffers most \u2014 paragraphs are uniformly long, uniformly shaped, and uniformly cautious, and the one-line 'beat' paragraphs read as a mechanical remedy for that uniformity rather than as earned emphasis. With aggressive cutting of duplicated material, a livelier variation of sentence architecture, and a final chapter that advances rather than recapitulates, this would be a strong book; as it stands it needs moderate revision."
+}

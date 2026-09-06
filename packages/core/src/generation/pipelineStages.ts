@@ -88,25 +88,25 @@ export const COMPOSED_STAGES: readonly PipelineStage[] = [
   {
     id: "forms",
     label: "Chapter form plan",
-    summary: "Every chapter gets 3 to 8 sections with a form from the palette and one landing. Variety is checked deterministically; one repair call, then rotation.",
-    purposes: ["plan-chapter-forms", "architect-book"],
+    summary: "After research-led replanning when enabled, every chapter gets 3 to 8 sections with a form from the palette and one landing. Variety is checked deterministically; one repair call, then rotation.",
+    purposes: ["plan-chapter-forms", "architect-book", "develop-book-plan", "review-book-development"],
     lane: "prose",
-    calls: "1 per book, plus at most 1 repair",
-    gates: ["figures"]
+    calls: "1 form plan plus at most 1 repair; research-led development adds up to 2 proposals and 2 reviews",
+    gates: ["figures", "bookDevelopment"]
   },
   {
     id: "compose",
     label: "Compose chapter",
-    summary: "Two continuous drafts per chapter from the stance, the form plan, the previous chapter's tail and digests of earlier chapters; a fast cross-family judge reads the opening and closing of each and picks one, or the first when the two orders disagree.",
-    purposes: ["compose-chapter", "judge-chapter-drafts", "plan-episodes", "extract-excerpts", "compose-scene"],
+    summary: "A continuous chapter from the stance, form plan, prior chapters and researched cases. Evidence-required runs extract and review case claims from source passages before drafting, then check the written claims.",
+    purposes: ["compose-chapter", "judge-chapter-drafts", "plan-episodes", "case-source-search", "extract-excerpts", "compose-scene", "build-case-evidence", "verify-case-evidence", "review-chapter-evidence"],
     lane: "prose",
-    calls: "2 drafts and 2 judge calls per chapter, more when a draft is far too short",
-    gates: ["creativeContract", "materialFirst"]
+    calls: "1 draft per chapter, up to 1 length retry; evidence adds extraction, packet reviews and prose checks, with bounded research retries",
+    gates: ["creativeContract", "materialFirst", "caseEvidence", "chapterFocus"]
   },
   {
     id: "edit",
     label: "Line edit",
-    summary: "An editor pass over the whole chapter: cut repeated caveats and restatements, vary paragraph shape, let stated positions stand.",
+    summary: "A chapter line edit after developmental changes when enabled, with no automatic padding. Legacy runs retain their original chapter edit order.",
     purposes: ["edit-chapter", "rewrite-couplets"],
     lane: "prose",
     calls: "1 per chapter",
@@ -124,11 +124,11 @@ export const COMPOSED_STAGES: readonly PipelineStage[] = [
   {
     id: "read",
     label: "Manuscript read",
-    summary: "One read of the whole book returning notes; at most a third of the chapters, capped at six, get a second line edit.",
-    purposes: ["read-manuscript", "cut-chapter", "rewrite-seams"],
+    summary: "For nonfiction, bounded section deletions, moves and rewrites across chapters within a whole-book word budget. When developmental editing is off, the legacy read returns notes.",
+    purposes: ["read-manuscript", "cut-chapter", "rewrite-seams", "plan-developmental-edit", "rewrite-developmental-sections"],
     lane: "prose",
-    calls: "1 per book, plus up to 6 edits",
-    gates: ["manuscriptReadPass"]
+    calls: "1 full-text proposal plus up to 6 linked section rewrites; final line edits and descriptions run per chapter",
+    gates: ["manuscriptReadPass", "manuscriptReadCuts", "developmentalEdit"]
   },
   {
     id: "finalize",

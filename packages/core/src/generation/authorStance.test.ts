@@ -83,6 +83,40 @@ describe("authorStance on the plan", () => {
     expect(plan.authorStance?.refusals).toEqual(["No section ends by balancing both sides."]);
   });
 
+  it("regenerates a stance whose positions are hedged evidence statements, and keeps a flat one", () => {
+    // The episode planner copies the positions into every chapter's
+    // alreadyEstablished, so a method stance is performed in every paragraph.
+    const method = bookPlanSchema.parse({
+      ...makeFallbackPlan(input),
+      authorStance: {
+        thesis: "Archaeological evidence shows that organized violence has deep roots, but it does not establish that warfare was constant.",
+        positions: [
+          "The historical record contains both violence and cooperation, so neither permanent brutality nor an originally peaceful humanity explains the whole past.",
+          "The offices that police a state's own subjects build harm on a scale no feud reaches."
+        ],
+        refusals: [],
+        voiceSample: SAMPLE
+      }
+    });
+    // The gate is opt-in: a resumed run re-reads the stance it started with.
+    expect(planAuthorStance(method)).toEqual(method.authorStance);
+    expect(planAuthorStance(method, { rejectMethodShaped: true })).toBeUndefined();
+    const flat = bookPlanSchema.parse({
+      ...makeFallbackPlan(input),
+      authorStance: {
+        thesis: "Violence in history is organised before it is felt: someone decides who may be harmed.",
+        positions: [
+          "The offices that police a state's own subjects build harm on a scale no feud reaches.",
+          "Every weapon in this book was pointed by an institution, and the institution is the subject."
+        ],
+        refusals: [],
+        voiceSample: SAMPLE
+      }
+    });
+    expect(planAuthorStance(flat)).toEqual(flat.authorStance);
+    expect(planAuthorStance(flat, { rejectMethodShaped: true })).toEqual(flat.authorStance);
+  });
+
   it("degrades a malformed stance to none rather than failing the plan", () => {
     const plan = bookPlanSchema.parse({ ...makeFallbackPlan(input), authorStance: { thesis: "Only a thesis" } });
     expect(plan.authorStance).toBeUndefined();

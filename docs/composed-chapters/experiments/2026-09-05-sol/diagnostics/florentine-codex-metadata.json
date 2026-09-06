@@ -1,0 +1,43 @@
+{
+  "identifier": "florentine-codex",
+  "files": [
+    {
+      "name": "florentine-codex_archive.torrent",
+      "source": "metadata",
+      "btih": "890ab753ce450067eeeada21e5265efd99dec42e",
+      "mtime": "1775260665",
+      "size": "1517",
+      "md5": "ad77ec5d0180718a1f9431b5a33cdd2f",
+      "crc32": "8c720679",
+      "sha1": "7186154f47a0705e0bf09de373f84b5ab11b034c",
+      "format": "Archive BitTorrent"
+    },
+    {
+      "name": "florentine-codex_files.xml",
+      "source": "original",
+      "format": "Metadata",
+      "md5": "a9d7a0fc386a60003174105285b34154",
+      "summation": "md5"
+    },
+    {
+      "name": "florentine-codex_meta.sqlite",
+      "source": "original",
+      "mtime": "1725901152",
+      "size": "12288",
+      "md5": "7fcd1a261f4b3c9ffe7d6aae32f8d755",
+      "crc32": "2b5d424f",
+      "sha1": "c3f7df8447c77beaa6950b1575a0bcd017ae0666",
+      "format": "Metadata"
+    },
+    {
+      "name": "florentine-codex_meta.xml",
+      "source": "original",
+      "mtime": "1775260663",
+      "size": "24832",
+      "md5": "ca7b1b10f1c24df2e796890443d08d78",
+      "crc32": "bc7ba24e",
+      "sha1": "ca1066869a0db1ee64e6ed264cf969634f71ceb8",
+      "format": "Metadata"
+    }
+  ]
+}

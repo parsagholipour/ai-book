@@ -1,0 +1,1298 @@
+{
+  "title": "The Many Faces of Human Aggression",
+  "bookArc": {
+    "answer": "Human aggression is a recurring human capacity whose historical expression depends heavily on social organization, material conditions, political authority, cultural expectations, and systems of restraint.",
+    "chapters": [
+      {
+        "job": {
+          "adds": "A careful vocabulary and a warning about uneven records.",
+          "does": "Defines the distinctions and evidence standards needed for comparison.",
+          "leavesOpen": "Whether settled life and political authority intensified or restrained violence.",
+          "believesSoFar": "Aggression may be common, but its historical meaning is not self-evident."
+        },
+        "cast": [],
+        "kind": "method",
+        "index": 1,
+        "pages": 8
+      },
+      {
+        "job": {
+          "adds": "The roles of kinship, mobility, resources, and evidence limits.",
+          "does": "Examines archaeological traces of conflict before cities.",
+          "leavesOpen": "How settlement changed the organization of conflict.",
+          "believesSoFar": "Small-scale societies cannot be placed neatly on a peaceful-to-violent ladder."
+        },
+        "cast": [],
+        "kind": "case",
+        "index": 2,
+        "pages": 11
+      },
+      {
+        "job": {
+          "adds": "A specific transition from mobile to settled vulnerability.",
+          "does": "Studies farming, storage, defense, and population concentration.",
+          "leavesOpen": "Whether early state power reduced private violence.",
+          "believesSoFar": "Fixed resources may alter the stakes of disputes."
+        },
+        "cast": [],
+        "kind": "case",
+        "index": 3,
+        "pages": 7
+      },
+      {
+        "job": {
+          "adds": "The distinction between state authorization and unauthorized violence.",
+          "does": "Follows the palace, army, tribute system, and official representations of conquest.",
+          "leavesOpen": "How legitimacy and moral language shape force.",
+          "believesSoFar": "Political centralization can organize violence without eliminating it."
+        },
+        "cast": [],
+        "kind": "case",
+        "index": 4,
+        "pages": 14
+      },
+      {
+        "job": {
+          "adds": "The social mechanics of reputation, kinship, compensation, and mediation.",
+          "does": "Analyzes a bounded feud and its settlement mechanisms.",
+          "leavesOpen": "How sacred and imperial authority classify legitimate violence.",
+          "believesSoFar": "Honor systems can sustain retaliation and create limits at the same time."
+        },
+        "cast": [],
+        "kind": "case",
+        "index": 5,
+        "pages": 9
+      },
+      {
+        "job": {
+          "adds": "A more precise account of legitimate and illegitimate force.",
+          "does": "Examines religious law, imperial authority, and the gap between ideals and campaigns.",
+          "leavesOpen": "How individual experience appears inside organized war.",
+          "believesSoFar": "Normative systems influence violence through institutions and actors."
+        },
+        "cast": [],
+        "kind": "argument",
+        "index": 6,
+        "pages": 12
+      },
+      {
+        "job": {
+          "adds": "The intimate scale of fear, duty, deprivation, and omission.",
+          "does": "Reads one wartime letter closely and tests it against context.",
+          "leavesOpen": "How cities and political movements magnify conflict.",
+          "believesSoFar": "A single document can make violence immediate without representing everyone."
+        },
+        "cast": [],
+        "kind": "document",
+        "index": 7,
+        "pages": 6
+      },
+      {
+        "job": {
+          "adds": "The interaction of density, faction, policing, deprivation, and rumor.",
+          "does": "Studies a documented disturbance or political conflict in its local setting.",
+          "leavesOpen": "How technology and bureaucracy alter the scale of force.",
+          "believesSoFar": "Urban violence emerges through institutions and pressures that differ by city."
+        },
+        "cast": [],
+        "kind": "case",
+        "index": 8,
+        "pages": 13
+      },
+      {
+        "job": {
+          "adds": "The institutional architecture of modern mass force.",
+          "does": "Traces logistics, weapons, transport, communication, and bureaucratic classification.",
+          "leavesOpen": "How learned behavior and family environments shape individual aggression.",
+          "believesSoFar": "Industrial systems can extend violence without making political choice irrelevant."
+        },
+        "cast": [],
+        "kind": "case",
+        "index": 9,
+        "pages": 10
+      },
+      {
+        "job": {
+          "adds": "A human-scale account that connects development to institutions.",
+          "does": "Examines a bounded historical case involving family, childhood, or social learning.",
+          "leavesOpen": "Whether stronger institutions can produce measurable declines in violence.",
+          "believesSoFar": "Individual aggression develops within relationships and expectations."
+        },
+        "cast": [],
+        "kind": "portrait",
+        "index": 10,
+        "pages": 9
+      },
+      {
+        "job": {
+          "adds": "A cautious model of restraint, measurement, and state capacity.",
+          "does": "Analyzes one documented decline and its competing explanations.",
+          "leavesOpen": "What can be responsibly generalized across the book's cases.",
+          "believesSoFar": "Some forms of violence have declined under particular institutional conditions."
+        },
+        "cast": [],
+        "kind": "argument",
+        "index": 11,
+        "pages": 11
+      },
+      {
+        "job": {
+          "adds": "A bounded answer linking capacity, institutions, material conditions, and learned expectations.",
+          "does": "Synthesizes the cases and states the limits of the argument.",
+          "leavesOpen": "Questions that require better evidence rather than a more confident universal theory.",
+          "believesSoFar": "Aggression is historically organized rather than historically uniform."
+        },
+        "cast": [],
+        "kind": "resolution",
+        "index": 12,
+        "pages": 10
+      }
+    ],
+    "opponent": {
+      "name": "The timeless-aggression thesis",
+      "work": "A recurring interpretation in popular accounts of human violence",
+      "claim": "Human aggression is best understood as a fixed, universal force that expresses itself similarly across societies.",
+      "whereRight": "Human beings do possess recurring capacities for anger, fear, competition, and physical harm.",
+      "whereTheBookBreaks": "The historical record shows that institutions, resources, identities, technologies, and norms change who may use violence, against whom, for what purpose, and with what consequences."
+    },
+    "proposal": "A 120-page analytical history organized around distinct cases and evidence types, with one close document reading and a final synthesis. The book is a general-reader historical survey rather than a lead magnet or practical guide.",
+    "question": "How have historical conditions shaped the forms and intensity of human aggression?"
+  },
+  "premise": "Human aggression has appeared in raids, feuds, warfare, punishment, conquest, and everyday violence, but its expression has changed with settlement, resources, institutions, beliefs, technology, and social expectations. This analytical history compares distinct eras and regions while separating well-supported patterns from interpretations that remain uncertain.",
+  "audience": "General readers curious about history who want a clear, broad survey grounded in documented cases and cautious interpretation.",
+  "chapters": [
+    {
+      "index": 1,
+      "title": "What Counts as Aggression?",
+      "summary": "Define the book's working distinctions through a documented historical scene and explain why records of violence are uneven. Introduce the central claim that aggression is shaped by circumstances and institutions as well as individual dispositions.",
+      "keyBeats": [
+        "Open with a surviving legal or narrative record that shows how one society named and judged violent conduct.",
+        "Distinguish aggression, warfare, coercion, punishment, and defense without treating the categories as interchangeable.",
+        "Explain how archaeological remains, elite chronicles, legal codes, and demographic records produce different kinds of knowledge.",
+        "Set the book's standard for cautious comparison across eras and regions."
+      ],
+      "targetPages": 8
+    },
+    {
+      "index": 2,
+      "title": "Before Cities: Conflict in Small-Scale Societies",
+      "summary": "Examine what archaeology and anthropology can suggest about violence before urban states, with attention to mobility, kinship, resources, and the limits of projecting modern categories backward.",
+      "keyBeats": [
+        "Introduce a specific archaeological record of injury or collective conflict and explain what its pattern can support.",
+        "Compare the pressures of mobility, seasonal resources, kin obligations, and revenge without treating any one condition as universal.",
+        "Show how cooperation, exchange, and dispute settlement coexisted with episodes of violence.",
+        "Explain why the absence of weapons or graves cannot by itself prove peacefulness."
+      ],
+      "targetPages": 11
+    },
+    {
+      "index": 3,
+      "title": "Farms, Walls, and Stored Grain",
+      "summary": "Follow the transition to settled agriculture and early defended communities, asking how storage, land, population density, and unequal authority altered opportunities for organized aggression.",
+      "keyBeats": [
+        "Open at an early settlement where walls, weapons, storage, or mass burial provide a concrete entry point.",
+        "Trace how fixed resources changed disputes over land, harvests, and movement.",
+        "Introduce the possibility that settlement increased both vulnerability and the capacity for collective defense.",
+        "Leave open which changes were causal and which may reflect better preservation or reporting."
+      ],
+      "targetPages": 7
+    },
+    {
+      "index": 4,
+      "title": "The Palace and the Battlefield",
+      "summary": "Study early states as organizers of violence through armies, taxation, conquest, spectacle, and law. The chapter centers on how centralized authority could intensify warfare while also regulating private retaliation.",
+      "keyBeats": [
+        "Open with a royal inscription, monument, or administrative record that presents violence as political work.",
+        "Show how rulers connected military campaigns to tribute, territory, labor, legitimacy, and display.",
+        "Examine the difference between violence carried out by the state and violence condemned as unauthorized.",
+        "Compare official triumphal language with the quieter evidence of displacement, enslavement, or destroyed settlements.",
+        "Explain why state formation cannot be treated as a simple transition from disorder to peace."
+      ],
+      "targetPages": 14
+    },
+    {
+      "index": 5,
+      "title": "Honor, Kin, and the Feud",
+      "summary": "Explore feud and honor systems through a historically bounded regional case, showing how reputation, kinship, arbitration, and retaliation could sustain violence while also creating rules for limiting it.",
+      "keyBeats": [
+        "Introduce a recorded feud, compensation agreement, or court dispute involving reputation and kin obligation.",
+        "Show how an insult or injury became a public claim requiring response.",
+        "Describe mediators, compensation, sanctuary, or ritual settlements that constrained escalation.",
+        "Distinguish cultural ideals of honor from the behavior of every person living under them.",
+        "End with the tension between social status and the practical costs of prolonged retaliation."
+      ],
+      "targetPages": 9
+    },
+    {
+      "index": 6,
+      "title": "Faith, Empire, and Legitimate Force",
+      "summary": "Examine how religious language, imperial administration, and moral law framed violence in a selected historical setting. The chapter asks how sacred and political authority could condemn some violence while authorizing other forms.",
+      "keyBeats": [
+        "Open with a legal, theological, or imperial document that sets conditions for legitimate force.",
+        "Trace how rulers and communities classified enemies, rebels, outsiders, and protected persons.",
+        "Show the gap between normative texts and behavior during campaigns or internal conflict.",
+        "Introduce conscientious objections, mercy practices, or limits on violence where the evidence permits.",
+        "Clarify that religious explanation operates through institutions and historical actors rather than as a single cause."
+      ],
+      "targetPages": 12
+    },
+    {
+      "index": 7,
+      "title": "A Letter from a War",
+      "summary": "Read one surviving wartime document closely, using its language, omissions, and material context to show how individuals experienced organized aggression without turning one voice into a representative sample.",
+      "keyBeats": [
+        "Present the document's author, date, location, recipient, and surviving form.",
+        "Read the writer's description of fear, duty, deprivation, or hostility at sentence level.",
+        "Identify what the document reveals about institutions and what it cannot reveal about the wider population.",
+        "Place the document beside one corroborating or complicating source type.",
+        "Close on the distance between official war aims and the writer's immediate world."
+      ],
+      "targetPages": 6
+    },
+    {
+      "index": 8,
+      "title": "Crowds, Cities, and Political Violence",
+      "summary": "Investigate how urban density, economic stress, factional politics, policing, and rapid social change shaped violence in a specific city or cluster of cities.",
+      "keyBeats": [
+        "Open on a documented urban disturbance, riot, assassination, or policing encounter.",
+        "Map the local institutions, neighborhoods, occupations, and political factions involved.",
+        "Separate crowd action from organized state repression and from ordinary interpersonal violence.",
+        "Show how rumor, exclusion, food or housing pressure, and political entrepreneurs could interact without making a single-factor claim.",
+        "Explain why urban records may make violence more visible without proving that cities are inherently more aggressive."
+      ],
+      "targetPages": 13
+    },
+    {
+      "index": 9,
+      "title": "The Industrialization of Force",
+      "summary": "Trace how firearms, railways, bureaucracies, factories, mass communication, and conscription changed the scale and administration of violence in the modern era.",
+      "keyBeats": [
+        "Open with a specific object or logistical record that reveals how technology altered military reach.",
+        "Explain how industrial systems connected distant production, transport, command, and battlefield decisions.",
+        "Examine the bureaucratic language used to classify soldiers, civilians, enemies, and targets.",
+        "Contrast technological capacity with the political choices required to mobilize it.",
+        "Mark where the evidence supports changes in scale and where claims about public attitudes remain uncertain."
+      ],
+      "targetPages": 10
+    },
+    {
+      "index": 10,
+      "title": "The Child, the Family, and Learned Violence",
+      "summary": "Bring psychological and developmental perspectives into historical context without reducing history to biology. The chapter examines family violence, social learning, gender expectations, and the transmission of norms through a bounded case.",
+      "keyBeats": [
+        "Open with a documented family, school, court, or reform record concerning aggressive behavior.",
+        "Distinguish observation, imitation, punishment, neglect, threat, and opportunity as different pathways.",
+        "Explain how gender roles and local expectations shaped which forms of aggression were rewarded or concealed.",
+        "Connect individual development to institutions without claiming that childhood experience determines adult conduct.",
+        "Identify what historical records leave invisible about private violence."
+      ],
+      "targetPages": 9
+    },
+    {
+      "index": 11,
+      "title": "Why Violence Sometimes Falls",
+      "summary": "Analyze a documented long-term decline in a specific form of violence, considering courts, policing, state capacity, commerce, social norms, and changing opportunities while resisting a single civilizing explanation.",
+      "keyBeats": [
+        "Open with a sequence of comparable records showing a change in homicide, feud, or another defined measure.",
+        "Explain how stronger courts or policing could redirect conflict without assuming they eliminated coercion.",
+        "Examine changes in weapon carrying, urban organization, commerce, and social expectations.",
+        "Address the possibility that measurement and record survival affect the apparent trend.",
+        "Contrast declining interpersonal violence with forms of state or imperial violence that may have remained substantial."
+      ],
+      "targetPages": 11
+    },
+    {
+      "index": 12,
+      "title": "A History of Possibilities",
+      "summary": "Synthesize the cases into a bounded account of human aggressiveness: recurring capacities are filtered through institutions, resources, identities, incentives, learned expectations, and restraints. The conclusion identifies what the historical record supports and what it cannot settle.",
+      "keyBeats": [
+        "Return briefly to the opening distinction between aggression as capacity and aggression as historically organized action.",
+        "Compare the mechanisms that intensified violence across the book without pretending they operated identically everywhere.",
+        "Compare the mechanisms that restrained violence, including norms, negotiation, institutions, interdependence, and changing incentives.",
+        "State the strongest supported conclusions and separate them from unresolved questions about biology, culture, and measurement.",
+        "Close with a concrete image or case that leaves readers with historical possibility rather than a universal verdict."
+      ],
+      "targetPages": 10
+    }
+  ],
+  "episodes": {
+    "chapters": [
+      {
+        "index": 1,
+        "episodes": [
+          {
+            "why": "The graded penalties for injury, status, and retaliation show that aggression was classified through social rank and legal institutions rather than treated as one undifferentiated act.",
+            "date": "c. 1750 BCE",
+            "kind": "document",
+            "place": "Babylon",
+            "title": "The Laws of Hammurabi on Assault and Injury",
+            "person": "Hammurabi",
+            "document": "Code of Hammurabi, especially laws 195–214, in the L. W. King translation",
+            "searchQueries": [
+              "Code of Hammurabi L W King translation laws 195 214",
+              "Hammurabi Code Wikisource",
+              "The Code of Hammurabi Project Gutenberg"
+            ]
+          },
+          {
+            "why": "The injuries, victim positions, and dating demonstrate what skeletal evidence can establish about collective violence while leaving motives and group identities uncertain.",
+            "date": "c. 10,000–9,000 BCE",
+            "kind": "figure",
+            "place": "Nataruk, Kenya",
+            "title": "The Massacre at Nataruk",
+            "person": "Unknown victims and attackers",
+            "document": "Marta Mirazón Lahr et al., “Inter-group violence among early Holocene hunter-gatherers of West Turkana, Kenya,” Nature (2016)",
+            "searchQueries": [
+              "Marta Mirazon Lahr Inter-group violence Nataruk Nature 2016",
+              "Nataruk early Holocene hunter gatherers violence paper",
+              "Inter-group violence among early Holocene hunter-gatherers West Turkana PDF"
+            ]
+          },
+          {
+            "why": "The trial distinguishes physical aggression from coercive civic judgment and shows how a society could authorize punishment through procedures and public definitions of harm.",
+            "date": "399 BCE",
+            "kind": "scene",
+            "place": "Athens",
+            "title": "The Trial of Socrates",
+            "person": "Socrates",
+            "document": "Plato, Apology, translated by Benjamin Jowett",
+            "searchQueries": [
+              "Plato Apology Benjamin Jowett Project Gutenberg",
+              "Plato Apology Wikisource",
+              "The Apology of Socrates text translation"
+            ]
+          }
+        ]
+      },
+      {
+        "index": 2,
+        "episodes": [
+          {
+            "why": "Repeated projectile wounds across a cemetery reveal recurrent conflict associated with climatic stress while showing why injury evidence cannot by itself establish constant warfare.",
+            "date": "c. 13,400–18,600 years ago",
+            "kind": "figure",
+            "place": "Jebel Sahaba, Sudan",
+            "title": "Jebel Sahaba and the Cemetery of Repeated Violence",
+            "person": "Unknown Nile Valley foragers",
+            "document": "Isabelle Crevecoeur et al., “New insights on interpersonal violence in the Late Pleistocene based on the Jebel Sahaba cemetery,” Scientific Reports (2021)",
+            "searchQueries": [
+              "Jebel Sahaba cemetery interpersonal violence Scientific Reports 2021",
+              "Crevecoeur New insights Jebel Sahaba PDF",
+              "Jebel Sahaba cemetery original excavation report"
+            ]
+          },
+          {
+            "why": "The ethnographic record places dispute, homicide, sharing, and reconciliation in the same social world, preventing archaeology from turning small-scale life into either a peaceful ideal or a warlike stereotype.",
+            "date": "1960s",
+            "kind": "document",
+            "place": "Kalahari, southern Africa",
+            "title": "The Kung San !Xai Exchange and Conflict Accounts",
+            "person": "Richard B. Lee and Irven DeVore, editors",
+            "document": "Man the Hunter, edited by Richard B. Lee and Irven DeVore, especially ethnographic chapters on Ju/'hoansi social relations",
+            "searchQueries": [
+              "Man the Hunter Richard B Lee Irven DeVore full text",
+              "Ju hoansi homicide reconciliation ethnography Man the Hunter",
+              "Richard Lee Kalahari conflict dispute PDF"
+            ]
+          }
+        ]
+      },
+      {
+        "index": 3,
+        "episodes": [
+          {
+            "why": "The tower, wall, and settlement layers show how fixed communities invested in defense while leaving open whether the structures responded to warfare, flood control, status, or communal organization.",
+            "date": "c. 8000 BCE",
+            "kind": "figure",
+            "place": "Tell es-Sultan, Jordan",
+            "title": "Jericho’s Stone Tower and Wall",
+            "person": "Unknown inhabitants of Jericho",
+            "document": "Kathleen M. Kenyon, Digging Up Jericho (1957)",
+            "searchQueries": [
+              "Kathleen Kenyon Digging Up Jericho full text",
+              "Jericho stone tower wall Neolithic excavation Kenyon",
+              "Digging Up Jericho Internet Archive"
+            ]
+          },
+          {
+            "why": "The dense settlement’s entrances, burials, and household organization complicate the assumption that agricultural concentration automatically produced fortification or organized aggression.",
+            "date": "c. 7400–6000 BCE",
+            "kind": "figure",
+            "place": "Central Anatolia, Turkey",
+            "title": "Çatalhöyük Houses and the Absence of Defensive Walls",
+            "person": "Unknown residents of Çatalhöyük",
+            "document": "Ian Hodder, The Leopard’s Tale: Revealing the Mysteries of Çatalhöyük (2006)",
+            "searchQueries": [
+              "Ian Hodder The Leopard's Tale Çatalhöyük text",
+              "Çatalhöyük houses defensive walls archaeology Hodder",
+              "The Leopard's Tale Internet Archive"
+            ]
+          },
+          {
+            "why": "A burned settlement and mass of clay sling bullets provide a concrete case in which stored wealth and settled urban life may have made conflict both more valuable and more destructive.",
+            "date": "c. 3500 BCE",
+            "kind": "scene",
+            "place": "Hamoukar, Syria",
+            "title": "The Hamoukar Destruction Layer",
+            "person": "Unknown inhabitants and attackers",
+            "document": "Clemens Reichel et al., “The 2007 season at Hamoukar,” Akkadica 128 (2007), reporting the destruction and sling-bullet evidence",
+            "searchQueries": [
+              "Hamoukar 2007 season sling bullets destruction layer Reichel",
+              "Hamoukar battle 3500 BCE archaeological report",
+              "The 2007 season at Hamoukar Akkadica PDF"
+            ]
+          }
+        ]
+      },
+      {
+        "index": 4,
+        "episodes": [
+          {
+            "why": "Eannatum’s account presents territorial violence, divine sanction, boundary enforcement, and royal administration as one integrated form of state power.",
+            "date": "c. 2450 BCE",
+            "kind": "document",
+            "place": "Lagash and Umma, Mesopotamia",
+            "title": "The Stele of the Vultures",
+            "person": "Eannatum of Lagash",
+            "document": "The Stele of the Vultures, translated in Samuel Noah Kramer, History Begins at Sumer",
+            "searchQueries": [
+              "Stele of the Vultures translation Eannatum Lagash Umma",
+              "Samuel Noah Kramer History Begins at Sumer Stele Vultures",
+              "Stele of the Vultures full text translation"
+            ]
+          },
+          {
+            "why": "The king’s catalog of conquest, deportation, tribute, and exemplary cruelty shows how imperial violence could function as administration, communication, and political theater.",
+            "date": "883–859 BCE",
+            "kind": "document",
+            "place": "Assyrian Empire",
+            "title": "The Annals of Ashurnasirpal II",
+            "person": "Ashurnasirpal II",
+            "document": "The Kurkh Monolith and royal annals of Ashurnasirpal II, translated in Daniel David Luckenbill, Ancient Records of Assyria and Babylonia",
+            "searchQueries": [
+              "Daniel David Luckenbill Ancient Records Assyria Babylonia Ashurnasirpal annals",
+              "Ashurnasirpal II Kurkh Monolith translation",
+              "Ancient Records of Assyria and Babylonia Internet Archive"
+            ]
+          },
+          {
+            "why": "The debate over executing a rebellious population exposes competing arguments about deterrence, expediency, justice, and the limits of state punishment.",
+            "date": "427 BCE",
+            "kind": "dispute",
+            "place": "Athens and Mytilene",
+            "title": "The Athenian Debate over Mytilene",
+            "person": "Cleon and Diodotus",
+            "document": "Thucydides, History of the Peloponnesian War, Book 3, translated by Richard Crawley",
+            "searchQueries": [
+              "Thucydides Mytilene debate Richard Crawley Project Gutenberg",
+              "History of Peloponnesian War Book 3 Mytilene debate",
+              "Thucydides Cleon Diodotus text"
+            ]
+          },
+          {
+            "why": "The survey shows conquest converted into taxable, documented authority and reveals how state records can make domination more legible than the violence that produced it.",
+            "date": "1086",
+            "kind": "document",
+            "place": "England",
+            "title": "The Domesday Book’s Entries on Violence and Tenure",
+            "person": "William the Conqueror and royal commissioners",
+            "document": "Domesday Book, translated selections in John Morris, The Domesday Book",
+            "searchQueries": [
+              "Domesday Book translation full text Internet Archive",
+              "Domesday Book 1086 translated text",
+              "John Morris Domesday Book PDF"
+            ]
+          }
+        ]
+      },
+      {
+        "index": 5,
+        "episodes": [
+          {
+            "why": "The saga links insult, kin obligation, legal maneuvering, compensation, and retaliation, showing how feud could be both culturally expected and institutionally constrained.",
+            "date": "c. 960–1010 CE, as narrated in the medieval saga",
+            "kind": "scene",
+            "place": "Iceland",
+            "title": "The Icelandic Blood Feud of Njal’s Saga",
+            "person": "Njáll Þorgeirsson, Gunnar Hámundarson, and their kin",
+            "document": "Njal’s Saga, translated by George Webbe Dasent",
+            "searchQueries": [
+              "Njal's Saga George Webbe Dasent Project Gutenberg",
+              "Njal's Saga Wikisource",
+              "The Story of Burnt Njal full text"
+            ]
+          },
+          {
+            "why": "Specified compensation for wounds, status, and homicide demonstrates how payment could redirect kin retaliation into a publicly calculable settlement.",
+            "date": "c. 690 CE",
+            "kind": "document",
+            "place": "Wessex, England",
+            "title": "The Anglo-Saxon Wergild Clauses",
+            "person": "Unknown West Saxon lawmakers",
+            "document": "The Laws of Ine, translated in Frederic Seebohm, The English Village Community",
+            "searchQueries": [
+              "Laws of Ine translation wergild text",
+              "Frederic Seebohm English Village Community Laws of Ine",
+              "Anglo Saxon laws of Ine Project Gutenberg"
+            ]
+          },
+          {
+            "why": "Rules concerning injury, kin groups, fosterage, and honor price show how a noncentralized legal order could distribute responsibility and limit cycles of revenge.",
+            "date": "medieval compilations preserving earlier legal material",
+            "kind": "document",
+            "place": "Ireland",
+            "title": "The Brehon Law on Fosterage and Compensation",
+            "person": "Early Irish jurists",
+            "document": "The Ancient Laws of Ireland, volume 2, translated by W. Neilson Hancock and others",
+            "searchQueries": [
+              "Ancient Laws of Ireland volume 2 translation compensation fosterage",
+              "Brehon law honor price Ancient Laws of Ireland Internet Archive",
+              "W Neilson Hancock Ancient Laws of Ireland PDF"
+            ]
+          }
+        ]
+      },
+      {
+        "index": 6,
+        "episodes": [
+          {
+            "why": "Augustine’s distinction between wrongful passion and authorized punishment shows how Christian moral reasoning could condemn private violence while permitting coercive public force.",
+            "date": "c. 420 CE",
+            "kind": "document",
+            "place": "North Africa and the Roman Empire",
+            "title": "Augustine on Just War",
+            "person": "Augustine of Hippo",
+            "document": "Augustine, Contra Faustum Manichaeum, Book 22, chapters 69–75, translated in Philip Schaff, Nicene and Post-Nicene Fathers",
+            "searchQueries": [
+              "Augustine Contra Faustum Book 22 just war text",
+              "Nicene Post Nicene Fathers Augustine Contra Faustum Project Gutenberg",
+              "Augustine just war Contra Faustum translation"
+            ]
+          },
+          {
+            "why": "The text’s restrictions and protections for non-Muslim communities reveal how imperial rule could combine religious hierarchy, tolerated difference, and regulated coercion.",
+            "date": "textual form attested in later medieval compilations",
+            "kind": "document",
+            "place": "Syria and the early Islamic caliphate",
+            "title": "The Pact of Umar",
+            "person": "Attributed to Umar ibn al-Khattab; preserved by later Muslim jurists",
+            "document": "Al-Shafi‘i, Kitab al-Umm, and later versions of the Pact of Umar, discussed in Mark R. Cohen, Under Crescent and Cross",
+            "searchQueries": [
+              "Pact of Umar Arabic text translation",
+              "Mark R Cohen Under Crescent and Cross Pact of Umar",
+              "Kitab al-Umm Pact of Umar translation"
+            ]
+          },
+          {
+            "why": "The canons show religious institutions defining legitimate authority, protected persons, and forbidden violence while relying on secular enforcement.",
+            "date": "1123 CE",
+            "kind": "document",
+            "place": "Rome and Latin Christendom",
+            "title": "The Laws of War in the First Lateran Council",
+            "person": "Pope Innocent II and Latin church authorities",
+            "document": "First Lateran Council, canons 10–12 and 20, translated in Decrees of the Ecumenical Councils, edited by Norman Tanner",
+            "searchQueries": [
+              "First Lateran Council 1123 canons translation violence",
+              "Norman Tanner Decrees Ecumenical Councils First Lateran Council PDF",
+              "First Lateran Council text Wikisource"
+            ]
+          }
+        ]
+      },
+      {
+        "index": 7,
+        "episodes": [
+          {
+            "why": "The letter’s personal requests and omissions reveal how military service appeared in an individual relationship without pretending that one private voice represents an army.",
+            "date": "2nd century CE",
+            "kind": "document",
+            "place": "Egypt",
+            "title": "The Letter of a Roman Soldier from Egypt",
+            "person": "Claudianus, Roman soldier",
+            "document": "Papyri Oxyrhynchus 1678, a soldier’s letter to his mother concerning service and return",
+            "searchQueries": [
+              "P.Oxy. 1678 Claudianus soldier letter translation",
+              "Roman soldier letter to mother Oxyrhynchus 1678",
+              "Oxyrhynchus papyri 1678 full text"
+            ]
+          },
+          {
+            "why": "Lamin’s descriptions of bombardment, boredom, comradeship, and censorship expose the gap between military operations and the emotional scale of a soldier’s daily experience.",
+            "date": "1917",
+            "kind": "document",
+            "place": "Western Front, France",
+            "title": "The Letter of Private Harry to His Mother",
+            "person": "Harry Lamin",
+            "document": "The Harry Lamin letters, published in From the Front: The Letters of Harry Lamin, 1917–1918",
+            "searchQueries": [
+              "Harry Lamin letters 1917 1918 full text",
+              "From the Front The Letters of Harry Lamin archive",
+              "Harry Lamin World War One letter mother"
+            ]
+          }
+        ]
+      },
+      {
+        "index": 8,
+        "episodes": [
+          {
+            "why": "The riots show how religious exclusion, crowd organization, prison attacks, property destruction, and delayed policing interacted in a dense city.",
+            "date": "2–9 June 1780",
+            "kind": "scene",
+            "place": "London, England",
+            "title": "The Gordon Riots",
+            "person": "Lord George Gordon, rioters, and London authorities",
+            "document": "Horace Walpole, Journal of the Reign of George III, and the official Report from the Committee of the House of Commons on the Riots",
+            "searchQueries": [
+              "Horace Walpole Gordon Riots 1780 journal text",
+              "Report Committee House Commons Gordon Riots 1780",
+              "Gordon Riots 1780 primary source Internet Archive"
+            ]
+          },
+          {
+            "why": "The uprising connects unemployment, neighborhood barricades, republican legitimacy, and military repression while separating popular violence from state violence.",
+            "date": "23–26 June 1848",
+            "kind": "scene",
+            "place": "Paris, France",
+            "title": "The Paris June Days",
+            "person": "Parisian insurgents and General Louis-Eugène Cavaignac",
+            "document": "Alexis de Tocqueville, Recollections: The French Revolution of 1848, translated by Henry Reeve",
+            "searchQueries": [
+              "Tocqueville Recollections French Revolution 1848 June Days Project Gutenberg",
+              "Alexis de Tocqueville Recollections 1848 full text",
+              "June Days 1848 primary source Tocqueville"
+            ]
+          },
+          {
+            "why": "The riots demonstrate how conscription, class resentment, racial hierarchy, wartime politics, and policing could turn a policy dispute into targeted urban violence.",
+            "date": "13–16 July 1863",
+            "kind": "scene",
+            "place": "New York City",
+            "title": "The New York Draft Riots",
+            "person": "New York rioters, Black residents, and municipal authorities",
+            "document": "Adrian Cook, The Armies of the Streets: The New York City Draft Riots of 1863",
+            "searchQueries": [
+              "Adrian Cook Armies of the Streets New York Draft Riots 1863",
+              "New York Draft Riots 1863 primary sources report",
+              "New York City draft riots 1863 Internet Archive"
+            ]
+          },
+          {
+            "why": "The commission’s testimony shows how neighborhood boundaries, partisan identity, rumor, and uneven policing converted political controversy into repeated communal attacks.",
+            "date": "July–September 1886",
+            "kind": "scene",
+            "place": "Belfast, Ireland",
+            "title": "The Belfast Riots of 1886",
+            "person": "Belfast Protestant and Catholic crowds and police",
+            "document": "The Royal Commission on the Belfast Riots, 1886, report and evidence",
+            "searchQueries": [
+              "Royal Commission Belfast Riots 1886 report text",
+              "Belfast riots 1886 commission evidence Internet Archive",
+              "Belfast riots 1886 official report PDF"
+            ]
+          }
+        ]
+      },
+      {
+        "index": 9,
+        "episodes": [
+          {
+            "why": "The plan shows how railways, timetables, staffs, and mobilization transformed military power into a system whose logistics narrowed political choices.",
+            "date": "1905–1914",
+            "kind": "document",
+            "place": "Germany, Belgium, and France",
+            "title": "The Railway Timetable of the Schlieffen Plan",
+            "person": "Alfred von Schlieffen and Helmuth von Moltke",
+            "document": "Gerhard Ritter, The Schlieffen Plan: Critique of a Myth, including mobilization and railway documents",
+            "searchQueries": [
+              "Gerhard Ritter Schlieffen Plan railway timetable documents",
+              "Schlieffen Plan original memorandum translation",
+              "The Schlieffen Plan Critique of a Myth Internet Archive"
+            ]
+          },
+          {
+            "why": "The battle’s casualty disparity makes visible how industrial firepower, imperial organization, and tactical doctrine altered the scale of killing.",
+            "date": "2 September 1898",
+            "kind": "scene",
+            "place": "Omdurman, Sudan",
+            "title": "The Maxim Gun and the Battle of Omdurman",
+            "person": "Horatio Herbert Kitchener and Mahdist forces",
+            "document": "Winston S. Churchill, The River War, chapters on Omdurman",
+            "searchQueries": [
+              "Winston Churchill The River War Omdurman Project Gutenberg",
+              "Battle of Omdurman Maxim guns primary source",
+              "The River War full text Internet Archive"
+            ]
+          },
+          {
+            "why": "The report’s testimonies and evidentiary problems show how bureaucratic military orders, reprisals, and mass communication shaped both violence and its public documentation.",
+            "date": "August 1914",
+            "kind": "document",
+            "place": "Belgium",
+            "title": "The German Army’s Orders in Belgium",
+            "person": "German military authorities and Belgian civilians",
+            "document": "The Bryce Report, Report of the Committee on Alleged German Outrages (1915)",
+            "searchQueries": [
+              "Bryce Report Committee Alleged German Outrages 1915 full text",
+              "Report on German atrocities Belgium 1915 Internet Archive",
+              "Bryce Report Project Gutenberg"
+            ]
+          }
+        ]
+      },
+      {
+        "index": 10,
+        "episodes": [
+          {
+            "why": "The reform records connect juvenile aggression to crowded housing, work, schooling, policing, and peer status rather than treating conduct as an isolated personal trait.",
+            "date": "1890s–1910s",
+            "kind": "document",
+            "place": "Chicago, Illinois",
+            "title": "The Child Savers’ Case Records at Hull House",
+            "person": "Jane Addams and Hull House reform workers",
+            "document": "Jane Addams, The Spirit of Youth in the City Streets, and Hull-House Maps and Papers",
+            "searchQueries": [
+              "Jane Addams Spirit of Youth in the City Streets Project Gutenberg",
+              "Hull House Maps and Papers full text",
+              "Jane Addams juvenile delinquency Chicago primary source"
+            ]
+          },
+          {
+            "why": "The case shows how private family violence became publicly actionable only when reformers, courts, and child-protection institutions created a recognized category and route for intervention.",
+            "date": "1874",
+            "kind": "scene",
+            "place": "New York City",
+            "title": "The Case of Mary Ellen Wilson",
+            "person": "Mary Ellen Wilson, Mary Connolly, and Etta Wheeler",
+            "document": "New York Society for the Prevention of Cruelty to Children, annual report for 1875, recounting the Mary Ellen case",
+            "searchQueries": [
+              "Mary Ellen Wilson 1875 annual report child cruelty full text",
+              "New York Society Prevention Cruelty Children Mary Ellen case",
+              "Mary Ellen Wilson primary source 1874"
+            ]
+          },
+          {
+            "why": "The study’s matched cases illustrate how family supervision, school experience, temperament, and neighborhood conditions were combined into developmental explanations without proving simple childhood determinism.",
+            "date": "1939–1950",
+            "kind": "figure",
+            "place": "Boston and Somerville, Massachusetts",
+            "title": "The Cambridge-Somerville Youth Study",
+            "person": "Sheldon and Eleanor Glueck",
+            "document": "Sheldon and Eleanor Glueck, Unraveling Juvenile Delinquency (1950)",
+            "searchQueries": [
+              "Sheldon Eleanor Glueck Unraveling Juvenile Delinquency full text",
+              "Cambridge Somerville Youth Study Glueck 1950",
+              "Unraveling Juvenile Delinquency Internet Archive"
+            ]
+          }
+        ]
+      },
+      {
+        "index": 11,
+        "episodes": [
+          {
+            "why": "The Stockholm court records provide a bounded, serial measure through which weapon use, drinking, legal prosecution, and urban social change can be compared without claiming a universal European trajectory.",
+            "date": "1450–1700",
+            "kind": "figure",
+            "place": "Stockholm, Sweden",
+            "title": "The Stockholm Homicide Series",
+            "person": "Eva Österberg and Dag Lindström",
+            "document": "Eva Österberg and Dag Lindström, Crime and Social Control in Medieval and Early Modern Swedish Towns",
+            "searchQueries": [
+              "Eva Österberg Dag Lindström Crime Social Control Swedish Towns homicide",
+              "Stockholm homicide 1450 1700 court records",
+              "Crime and Social Control in Medieval and Early Modern Swedish Towns PDF"
+            ]
+          }
+        ]
+      },
+      {
+        "index": 12,
+        "episodes": [
+          {
+            "why": "Cambodia tests the book’s explanation by showing how revolutionary institutions, forced collectivization, racial categories, war, and ideology can rapidly reorganize ordinary coercion into mass murder.",
+            "date": "1975–1979",
+            "kind": "scene",
+            "place": "Cambodia",
+            "title": "The Cambodian Genocide and the Limits of Institutional Explanation",
+            "person": "Pol Pot, Democratic Kampuchea cadres, and Cambodian civilians",
+            "document": "Ben Kiernan, The Pol Pot Regime: Race, Power, and Genocide in Cambodia under the Khmer Rouge, 1975–79",
+            "searchQueries": [
+              "Ben Kiernan Pol Pot Regime full text",
+              "Cambodian genocide primary documents Khmer Rouge",
+              "The Pol Pot Regime Internet Archive"
+            ]
+          },
+          {
+            "why": "The testimonies test whether truth-telling, amnesty, and public acknowledgment can transform politically organized violence without assuming that institutions automatically produce reconciliation.",
+            "date": "1996–1998",
+            "kind": "document",
+            "place": "South Africa",
+            "title": "The Truth and Reconciliation Commission on South Africa",
+            "person": "Desmond Tutu and Truth and Reconciliation Commission witnesses",
+            "document": "Truth and Reconciliation Commission of South Africa Report, volumes 1 and 2",
+            "searchQueries": [
+              "Truth and Reconciliation Commission South Africa report full text",
+              "TRC South Africa final report PDF",
+              "Desmond Tutu Truth and Reconciliation Commission report Internet Archive"
+            ]
+          },
+          {
+            "why": "The constitutional tradition supplies a fresh test case in which kinship, ritual, representation, and diplomacy are designed to redirect intergroup retaliation into durable political restraint.",
+            "date": "traditional account with textual versions recorded in the nineteenth century",
+            "kind": "document",
+            "place": "Northeastern North America",
+            "title": "The Peacemaking of the Iroquois Great Law",
+            "person": "Deganawida and Hiawatha in the Haudenosaunee tradition",
+            "document": "The Great Law of Peace of the Haudenosaunee, recorded in Arthur C. Parker, The Constitution of the Five Nations (1916)",
+            "searchQueries": [
+              "Arthur C Parker Constitution of the Five Nations 1916 full text",
+              "Haudenosaunee Great Law of Peace Parker PDF",
+              "The Constitution of the Five Nations Internet Archive"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "promises": [
+    "The book will explain why human aggression takes different forms in different historical settings.",
+    "The book will connect violence to institutions, resources, identities, technology, social learning, and political authority without reducing it to one cause.",
+    "The book will include a close reading of one historical document rather than treating all evidence as abstract data.",
+    "The book will show at least one documented decline in a specific form of violence and examine why that decline remains difficult to interpret.",
+    "The conclusion will distinguish what the historical record supports from what remains uncertain."
+  ],
+  "subtitle": "A Historical Survey of Conflict, Power, Fear, and Restraint",
+  "locations": [
+    {
+      "name": "Early agricultural settlement",
+      "rules": [
+        "Keep the settlement historically bounded and avoid presenting it as representative of all early farmers.",
+        "Describe walls, tools, storage, and burial evidence only when supported by the selected source."
+      ],
+      "description": "A reconstructed early farming community used to discuss storage, fixed land, defensive architecture, and the uncertain archaeological traces of conflict."
+    },
+    {
+      "name": "Imperial capital",
+      "rules": [
+        "Name the actual capital and period when drafting pages rather than treating this as a fictional setting.",
+        "Separate official monuments and royal claims from evidence about ordinary residents."
+      ],
+      "description": "A large administrative center where palace authority, military organization, tribute, law, and public representations of conquest can be examined."
+    },
+    {
+      "name": "Feuding frontier community",
+      "rules": [
+        "Do not generalize the local honor system to an entire continent or culture.",
+        "Show both escalation and the institutions that limited or redirected retaliation."
+      ],
+      "description": "A historically specific region in which kinship, honor, retaliation, arbitration, and compensation appear in surviving records."
+    },
+    {
+      "name": "Industrializing city",
+      "rules": [
+        "Use precise dates, neighborhoods, and source types when available.",
+        "Distinguish crowd violence, state repression, organized crime, and interpersonal violence."
+      ],
+      "description": "A documented modern city whose neighborhoods, political factions, policing, transport, and economic pressures provide a setting for urban conflict."
+    },
+    {
+      "name": "Wartime correspondence setting",
+      "rules": [
+        "Use the exact document context supplied by reliable sources.",
+        "Never invent private thoughts, missing passages, or biographical details."
+      ],
+      "description": "The physical and institutional environment surrounding one surviving letter or document, including its sender, recipient, date, route, and archival condition."
+    }
+  ],
+  "questions": [],
+  "characters": [],
+  "voiceGuide": [
+    "Write as a clear analytical history for intelligent general readers, using concrete episodes before broad interpretation.",
+    "Treat aggression as historically variable rather than as a single timeless force.",
+    "Distinguish interpersonal violence, organized warfare, state punishment, coercion, and symbolic hostility.",
+    "Explain biological, psychological, environmental, economic, political, and cultural influences without reducing any case to one cause.",
+    "Name the limits of surviving evidence, especially when comparing archaeological remains, elite records, legal codes, and modern measurements.",
+    "Use moderate confidence: state supported claims plainly and mark contested interpretations as contested.",
+    "Let each chapter develop through its own case or period instead of repeating one universal framework.",
+    "Keep prose humane and precise, acknowledging both violence and cooperation in historical communities."
+  ],
+  "antiAiRules": [
+    "Do not invent studies, statistics, citations, experts, institutions, archaeological findings, or historical events.",
+    "Do not treat the supplied research summaries as sufficient proof for precise claims; verify details against attached sources when drafting.",
+    "Do not turn biological correlates into inevitable causes of violence.",
+    "Do not describe a whole culture, religion, sex, class, or region as naturally aggressive.",
+    "Avoid proof-leap phrases such as \"the truth is,\" \"hidden in plain sight,\" and \"this is not a coincidence\" unless directly quoted or genuinely necessary.",
+    "Do not stack adjacent contrast sentences that leap from a local fact to a sweeping conclusion.",
+    "Avoid repeated binary reversals such as \"X is not A. It is B.\"",
+    "Use em dashes and en dashes sparingly; prefer cleaner punctuation when a dash is ornamental.",
+    "Replace inflated abstractions with specific people, places, institutions, objects, or decisions.",
+    "Do not force equal treatment of every possible cause on every page.",
+    "Do not use generic chapter endings that merely announce that history is complicated.",
+    "Do not mention prompts, planning, AI, schemas, generation, or production instructions in reader-facing prose.",
+    "Do not make unsupported claims about long-term declines or increases in violence without specifying the measure and evidence.",
+    "Use uncertainty where the evidence requires it, not as a decorative hedge.",
+    "Begin major claims with a documented case, source type, material record, or clearly identified historical setting before interpreting it.",
+    "Identify whether a passage concerns interpersonal violence, warfare, punishment, coercion, or symbolic hostility rather than using aggression as an undifferentiated label.",
+    "State what the available evidence can and cannot establish when records are partial, partisan, archaeological, or difficult to compare.",
+    "Describe institutions and historical conditions without assigning innate aggression to entire peoples or groups.",
+    "When several factors may matter, explain their interaction through the chapter's specific case instead of listing them abstractly.",
+    "Avoid unsupported proof-leap transitions; do not jump from a local fact to a sweeping conclusion without evidence on this page.",
+    "Do not invent evidence, citations, studies, experts, or source identities.",
+    "Avoid generic conclusions and visible prompt scaffolding in reader-facing prose.",
+    "Use uncertainty only where the evidence on this page requires it.",
+    "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages."
+  ],
+  "openingHook": "A law court records an injury, a retaliation, and the price assigned to each wound. Before the first army appears, the book asks who had the authority to call an act aggression, who was expected to answer it, and what kept the answer from becoming a feud.",
+  "writingMode": "analytical-history",
+  "authorStance": {
+    "thesis": "Human aggression has appeared across history, but its intensity, targets, and forms have been shaped substantially by social arrangements, material conditions, institutions, and learned expectations.",
+    "refusals": [
+      "The author refuses to treat any population as naturally violent or naturally peaceful.",
+      "The author refuses to end a chapter by balancing every possible cause equally when the case supports a bounded conclusion.",
+      "The author refuses to use one dramatic example as proof of a universal historical pattern.",
+      "The author refuses to repeat a point after its evidence and implication have already been established."
+    ],
+    "positions": [
+      "Human communities have repeatedly combined aggressive behavior with cooperation, care, exchange, and conflict settlement.",
+      "States can concentrate and magnify violence while also restricting private retaliation through law and administration.",
+      "Material scarcity and population pressure matter through institutions, identities, and political decisions rather than acting as automatic causes.",
+      "Cultural ideas about honor, gender, legitimacy, and belonging influence which aggressive acts receive approval, punishment, or concealment.",
+      "Historical evidence supports changes in particular forms of violence more securely than it supports a single worldwide story of human violence."
+    ],
+    "voiceSample": "In 1648, a clerk in Münster copied a list of confiscated weapons into a ledger whose narrow pages left little room for explanation. The iron blades, matchlocks, and pikes belonged to households that had learned to keep danger within reach. Across the square, the town hall carried proclamations about order, obedience, and the authority of the new settlement. A baker named Johann Schulte appears in the record beside two swords and a damaged musket. His entry offers no confession, only an inventory and a price. The silence around Schulte matters because the ledger records ownership more confidently than intention.\n\nIn Kyoto, a different kind of object preserves a different argument. A wooden tablet from the seventeenth century names a debt, a promise, and the officials asked to settle the dispute. The tablet is small enough to hold in one hand, yet its marks connect a household quarrel to a recognized procedure. The people involved may have been angry, frightened, or calculating; the object cannot decide among those possibilities. It can show that a quarrel entered an institution capable of giving it a shape other than private revenge. Between Schulte’s weapons and Kyoto’s tablet, history keeps placing human choices beside the rules that made some choices easier, safer, or more dangerous."
+  },
+  "researchNotes": [
+    {
+      "url": "http://institutecsr.iksi.ac.rs/124/1/n.drndarevic.pdf",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "iksi.ac.rs",
+      "summary": "It is generally defined as any behavior intended to harm or injure others"
+    },
+    {
+      "url": "https://neblog.utdallas.edu/2025/08/12/humanaggression/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "utdallas.edu",
+      "summary": "Aggression can manifest as reactive (impulsive) or proactive (planned) *   Hormones also play a role; testosterone is associated with increased aggression, particularly in males, but it tends to amplify pre-existing aggressive tendencies rather than directly causing them *   Brain structures like the amygdala and prefrontal cortex are involved in the mechanisms of aggressive behavior *   **Gender Differences in Aggression:** While males generally exhibit more physical aggression than females, which may be partly attributed to higher testosterone levels and evolutionary factors related to histo"
+    },
+    {
+      "url": "https://neurosciencenews.com/genetics-environment-childhood-aggression-8216/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "neurosciencenews.com",
+      "summary": "Aggression can manifest as reactive (impulsive) or proactive (planned)"
+    },
+    {
+      "url": "https://www.livescience.com/5333-evolution-human-aggression.html",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "livescience.com",
+      "summary": "**Evolutionary and Biological Foundations:**\n*   Aggressive behavior has evolved in species where it enhances survival or reproduction, and humans are considered among the most violent species, though also highly altruistic and empathetic It is widely accepted that humans are capable of both aggression and cooperation"
+    },
+    {
+      "url": "https://newbrainnutrition.com/a-violent-history-how-genes-and-environment-influence-aggression/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "newbrainnutrition.com",
+      "summary": "The struggle for resources like habitat, mates, and food has been a key factor in shaping human aggressive behavior from an evolutionary perspective **Psychological Influences:**\n*   **Social Learning Theory** posits that aggression is a learned response, shaped by the social environment and transmitted across generations through observation Children, for instance, learn aggressive behavior by observing aggressive models, particularly in the home environment *   **Predictive Value of Biological Factors:** While biological factors are clearly linked to aggression, their predictive value for ind"
+    },
+    {
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC3696520/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "nih.gov",
+      "summary": "*   Genetic predispositions account for approximately 50% of the variance in aggressive behavior in both males and females"
+    },
+    {
+      "url": "https://pubmed.ncbi.nlm.nih.gov/22078481/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "nih.gov",
+      "summary": "*   Genetic predispositions account for approximately 50% of the variance in aggressive behavior in both males and females However, genetic factors interact significantly with environmental influences"
+    },
+    {
+      "url": "https://journals.biologists.com/jeb/article/218/1/123/13627/The-developmental-origins-of-chronic-physical",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "biologists.com",
+      "summary": "Specific genes involved in serotonin and dopamine metabolism, such as monoamine oxidase A (MAOA), dopamine receptor 2 (DRD2), and the serotonin transporter (5-HTT or SLC6A4), have been linked to aggression **Psychological Influences:**\n*   **Social Learning Theory** posits that aggression is a learned response, shaped by the social environment and transmitted across generations through observation"
+    },
+    {
+      "url": "https://www.sciencedaily.com/releases/2018/07/180709101117.htm",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "sciencedaily.com",
+      "summary": "Specific genes involved in serotonin and dopamine metabolism, such as monoamine oxidase A (MAOA), dopamine receptor 2 (DRD2), and the serotonin transporter (5-HTT or SLC6A4), have been linked to aggression"
+    },
+    {
+      "url": "https://opentext.uoregon.edu/socialpsychology/chapter/personal-and-cultural-influences-on-aggression/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "uoregon.edu",
+      "summary": "However, genetic factors interact significantly with environmental influences *   Hormones also play a role; testosterone is associated with increased aggression, particularly in males, but it tends to amplify pre-existing aggressive tendencies rather than directly causing them *   Individuals with an inflated self-concept may react with anger and aggression when their self-esteem is threatened, a concept known as threatened egotism \"Cultures of honor\" can lead to more violent reactions when social status is perceived to be threatened"
+    },
+    {
+      "url": "https://opentext.uoregon.edu/socialpsychology/chapter/the-biological-and-emotional-causes-of-aggression/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "uoregon.edu",
+      "summary": "However, genetic factors interact significantly with environmental influences *   Hormones also play a role; testosterone is associated with increased aggression, particularly in males, but it tends to amplify pre-existing aggressive tendencies rather than directly causing them Low levels of serotonin have been linked to impulsive violence Philosophers like Thomas Hobbes and Sigmund Freud argued for an inherent aggressive drive, while Jean-Jacques Rousseau believed humans are naturally gentle and become aggressive due to societal influence"
+    },
+    {
+      "url": "https://medium.com/@saha75749/the-biology-and-culture-of-human-aggression-a-deep-dive-9e0e18279478",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "medium.com",
+      "summary": "*   Hormones also play a role; testosterone is associated with increased aggression, particularly in males, but it tends to amplify pre-existing aggressive tendencies rather than directly causing them Low levels of serotonin have been linked to impulsive violence Relative deprivation, rather than absolute poverty, appears to be particularly provocative *   **Cultural norms** that promote beliefs such as toughness, hypermasculinity, intergroup tension, vigilantism, and vengeance can increase an individual's risk of violence by normalizing such behaviors"
+    },
+    {
+      "url": "https://psychology.town/advanced-social/theories-explaining-aggression-models/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "psychology.town",
+      "summary": "**Psychological Influences:**\n*   **Social Learning Theory** posits that aggression is a learned response, shaped by the social environment and transmitted across generations through observation"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Frustration%E2%80%93aggression_hypothesis",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "wikipedia.org",
+      "summary": "If the source of frustration cannot be directly challenged, the aggression may be displaced onto an innocent target"
+    },
+    {
+      "url": "https://www.ovid.com/00000487-199602000-00003",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "ovid.com",
+      "summary": "*   A history of aggression between groups can normalize such behavior Difficult societal conditions, including severe economic problems, intense political conflict, and rapid technological and social change, can lead to social disorganization, scapegoating, destructive ideologies, and escalating violence against a designated enemy"
+    },
+    {
+      "url": "https://www.fordham.edu/student-life/deans-of-students-and-student-life/caring-for-students/responding-to-a-students-threatening-behavior/factors-contributing-to-aggressive-behavior/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "fordham.edu",
+      "summary": "*   The **family environment** is crucial, with early childhood abuse or neglect and witnessing violence at home being associated with aggressive behavior"
+    },
+    {
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC1154735/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "nih.gov",
+      "summary": "*   **Population density** can increase violence; studies on both animals and humans suggest that crowding can lead to more aggressive behavior and conflict Historical population cycles show increased violence when populations outgrow resources"
+    },
+    {
+      "url": "https://www.vrc.crim.cam.ac.uk/sites/default/files/manuel-eisner-historical-trends-in-violence.pdf",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "cam.ac.uk",
+      "summary": "*   The strengthening of **state powers** and the \"civilizing process\" have been proposed as explanations for long-term declines in violence For example, homicide rates in Kent, UK, fell tenfold over more than 400 years"
+    },
+    {
+      "url": "https://journalofpsychiatryreform.com/2024/01/07/understanding-human-aggression-and-war/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "journalofpsychiatryreform.com",
+      "summary": "Civilization itself is seen as an attempt to contain aggressive drives through the imposition of societal rules for peaceful coexistence"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Genetics_of_aggression",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "wikipedia.org",
+      "summary": "**Environmental Factors:**\n*   Environmental factors, such as neighborhood greenspace, have been shown to reduce aggressive behaviors in children and adolescents, possibly by mitigating stress and depression"
+    },
+    {
+      "url": "https://www.billkingblog.com/blog/has-violence-increased-or-decreased-throughout-history",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "billkingblog.com",
+      "summary": "**Historical Trends in Violence:**\n*   The incidence of violence on a per capita basis has shown a dramatic decline throughout much of human history, particularly since the Enlightenment Era and even more significantly since World War II"
+    },
+    {
+      "url": "https://www.hfg.org/what-do-historians-have-to-say-about-violence/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "hfg.org",
+      "summary": "Athens experienced a sharp increase in violence in the late 19th century due to urbanization, poor housing, unemployment, and poverty, but its homicide rate significantly decreased by 1920, making it one of the least violent cities"
+    },
+    {
+      "url": "https://courier.unesco.org/en/articles/origins-violence",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "unesco.org",
+      "summary": "*   Archaeological evidence suggests that collective violence emerged with the sedentarization of communities and the transition from a predation (hunter-gatherer) economy to a production (agricultural) economy Some contemporary views suggest that the concept of \"primordial violence\" is a myth, asserting that violence has historical and social causes rather than being purely genetic"
+    },
+    {
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9510521/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "nih.gov",
+      "summary": "*   Archaeological evidence suggests that collective violence emerged with the sedentarization of communities and the transition from a predation (hunter-gatherer) economy to a production (agricultural) economy"
+    },
+    {
+      "url": "https://www.natureasia.com/en/nmiddleeast/article/10.1038/nmiddleeast.2023.223",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "natureasia.com",
+      "summary": "The rise of early cities and states, accompanied by increased population density, social inequality, and competition for resources, coincided with higher levels of violence in the Middle East between 12,000 BC and 400 BC"
+    },
+    {
+      "url": "https://leakeyfoundation.org/the-roots-of-human-aggression/",
+      "query": "Write a book on human aggressiveness in different areas in history and what affected it",
+      "title": "leakeyfoundation.org",
+      "summary": "It is widely accepted that humans are capable of both aggression and cooperation"
+    }
+  ],
+  "styleContract": {
+    "localRules": [
+      {
+        "id": "do-not-invent-studies-statistics-citations-exper",
+        "instruction": "Do not invent studies, statistics, citations, experts, institutions, archaeological findings, or historical events."
+      },
+      {
+        "id": "do-not-treat-the-supplied-research-summaries-as-",
+        "instruction": "Do not treat the supplied research summaries as sufficient proof for precise claims; verify details against attached sources when drafting."
+      },
+      {
+        "id": "do-not-turn-biological-correlates-into-inevitabl",
+        "instruction": "Do not turn biological correlates into inevitable causes of violence."
+      },
+      {
+        "id": "do-not-describe-a-whole-culture-religion-sex-cla",
+        "instruction": "Do not describe a whole culture, religion, sex, class, or region as naturally aggressive."
+      },
+      {
+        "id": "avoid-proof-leap-phrases-such-as-the-truth-is-hi",
+        "instruction": "Avoid proof-leap phrases such as \"the truth is,\" \"hidden in plain sight,\" and \"this is not a coincidence\" unless directly quoted or genuinely necessary."
+      },
+      {
+        "id": "do-not-stack-adjacent-contrast-sentences-that-le",
+        "instruction": "Do not stack adjacent contrast sentences that leap from a local fact to a sweeping conclusion."
+      },
+      {
+        "id": "avoid-repeated-binary-reversals-such-as-x-is-not",
+        "instruction": "Avoid repeated binary reversals such as \"X is not A. It is B.\""
+      },
+      {
+        "id": "use-em-dashes-and-en-dashes-sparingly-prefer-cle",
+        "instruction": "Use em dashes and en dashes sparingly; prefer cleaner punctuation when a dash is ornamental."
+      },
+      {
+        "id": "replace-inflated-abstractions-with-specific-peop",
+        "instruction": "Replace inflated abstractions with specific people, places, institutions, objects, or decisions."
+      },
+      {
+        "id": "do-not-force-equal-treatment-of-every-possible-c",
+        "instruction": "Do not force equal treatment of every possible cause on every page."
+      },
+      {
+        "id": "do-not-use-generic-chapter-endings-that-merely-a",
+        "instruction": "Do not use generic chapter endings that merely announce that history is complicated."
+      },
+      {
+        "id": "do-not-mention-prompts-planning-ai-schemas-gener",
+        "instruction": "Do not mention prompts, planning, AI, schemas, generation, or production instructions in reader-facing prose."
+      },
+      {
+        "id": "do-not-make-unsupported-claims-about-long-term-d",
+        "instruction": "Do not make unsupported claims about long-term declines or increases in violence without specifying the measure and evidence."
+      },
+      {
+        "id": "use-uncertainty-where-the-evidence-requires-it-n",
+        "instruction": "Use uncertainty where the evidence requires it, not as a decorative hedge."
+      },
+      {
+        "id": "case-before-generalization",
+        "instruction": "Begin major claims with a documented case, source type, material record, or clearly identified historical setting before interpreting it."
+      },
+      {
+        "id": "separate-forms-of-aggression",
+        "instruction": "Identify whether a passage concerns interpersonal violence, warfare, punishment, coercion, or symbolic hostility rather than using aggression as an undifferentiated label."
+      },
+      {
+        "id": "mark-evidence-limits",
+        "instruction": "State what the available evidence can and cannot establish when records are partial, partisan, archaeological, or difficult to compare."
+      },
+      {
+        "id": "avoid-essentialism",
+        "instruction": "Describe institutions and historical conditions without assigning innate aggression to entire peoples or groups."
+      },
+      {
+        "id": "show-competing-mechanisms",
+        "instruction": "When several factors may matter, explain their interaction through the chapter's specific case instead of listing them abstractly."
+      },
+      {
+        "id": "no-proof-leap",
+        "instruction": "Avoid unsupported proof-leap transitions; do not jump from a local fact to a sweeping conclusion without evidence on this page."
+      },
+      {
+        "id": "no-invented-evidence",
+        "instruction": "Do not invent evidence, citations, studies, experts, or source identities."
+      },
+      {
+        "id": "no-generic-conclusion",
+        "instruction": "Avoid generic conclusions and visible prompt scaffolding in reader-facing prose."
+      },
+      {
+        "id": "uncertainty-where-earned",
+        "instruction": "Use uncertainty only where the evidence on this page requires it."
+      },
+      {
+        "id": "prompt-leak-ban",
+        "instruction": "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages."
+      }
+    ],
+    "distributionRules": [
+      {
+        "id": "do-not-repeat-the-same-comparison-grid-caveat-or",
+        "instruction": "Do not repeat the same comparison grid, caveat, or question in every chapter."
+      },
+      {
+        "id": "vary-chapter-openings",
+        "instruction": "Distribute openings among scenes, objects, documents, archaeological evidence, legal changes, and sharply framed historical questions."
+      },
+      {
+        "id": "vary-evidence-types",
+        "instruction": "Across the manuscript, balance material remains, chronicles, legal records, demographic evidence, political history, and social analysis without forcing every type into every chapter."
+      },
+      {
+        "id": "vary-endings",
+        "instruction": "End chapters variously with a qualified finding, an unresolved source problem, a changed institution, a human consequence, or a question carried forward."
+      },
+      {
+        "id": "reserve-synthesis",
+        "instruction": "Concentrate broad comparison and final synthesis in the concluding chapter rather than repeating it after every case."
+      },
+      {
+        "id": "control-modern-analogy",
+        "instruction": "Use present-day comparisons sparingly and only when they clarify a historical distinction rather than flattening it."
+      },
+      {
+        "id": "vary-caveat-endings",
+        "instruction": "Do not use the same caveat construction as the default ending across chapters."
+      },
+      {
+        "id": "select-relevant-lens",
+        "instruction": "Choose only the analytical lens relevant to a page rather than repeating the complete comparison grid."
+      },
+      {
+        "id": "allow-bounded-conclusions",
+        "instruction": "Let some pages commit to a bounded conclusion instead of balancing every cause symmetrically."
+      },
+      {
+        "id": "reintroduce-only-when-advancing",
+        "instruction": "Reintroduce a concept only when the later treatment advances, challenges, or applies it."
+      }
+    ]
+  },
+  "continuityRules": [
+    "Use aggression as an umbrella term only after naming the specific form of violence under discussion.",
+    "Keep chronology clear and identify when the book moves between interpersonal, collective, and state violence.",
+    "Do not reuse a previous chapter's principal case as a new key beat; callbacks may orient the reader in one sentence.",
+    "Treat biology, psychology, environment, institutions, and culture as interacting possibilities rather than interchangeable explanations.",
+    "Distinguish a decline in one measured form of violence from a decline in violence overall.",
+    "Keep uncertainty attached to the relevant evidence instead of allowing it to spread into unsupported vagueness.",
+    "Use source type and evidentiary limits consistently across archaeological, legal, narrative, demographic, and modern research material."
+  ],
+  "researchQueries": [
+    "What primary and scholarly sources document violence and conflict in early agricultural settlements without overstating archaeological interpretation?",
+    "Which well-documented early state provides accessible evidence for the relationship among conquest, tribute, law, and political legitimacy?",
+    "What regional case best demonstrates feud, honor, kinship, arbitration, and compensation through surviving records?",
+    "Which historical wartime letter or document can be reproduced or closely analyzed with reliable provenance and context?",
+    "What urban case has sufficiently strong records to distinguish crowd violence, state repression, political conflict, and interpersonal violence?",
+    "Which industrial-era technology and administrative records demonstrate changes in the scale or organization of violence?",
+    "What historical evidence supports a bounded decline in homicide or feud, and what measurement limits accompany it?",
+    "Which peer-reviewed research best clarifies the interaction of developmental experience, social learning, biology, and environment without deterministic claims?"
+  ],
+  "illustrationPlan": {
+    "cadence": "manual",
+    "pageRules": [
+      "Use illustrations only when they clarify a documented object, place, map, process, or source context.",
+      "Do not depict invented recurring characters because the book has no fictional cast.",
+      "Label maps, timelines, and diagrams with dates and source boundaries when the manuscript provides them.",
+      "Avoid graphic violence, heroic conquest imagery, and visual claims that exceed the evidence.",
+      "Keep historical reconstructions visibly distinct from photographs, artifacts, and direct document reproductions."
+    ],
+    "coverPrompt": "Cover illustration for Create the best-fitting book from the user's creation chat: Create the best-fitting book from the user's creation chat. Decide the real book shape during planning; do not rely on the neutral project category.\nBook type choice: Auto - decide during planning\nCreation chat: Assistant: Hi! Tell me about the book you want to make. Describe your idea in a sentence or two, or tap an example to start.\nUser: Write a book on human aggressiveness in different areas in history and what affected it\nAssistant: Great topic — a history of human aggressiveness and what influenced it across different eras. To shape the book well, I need to know who it's for.\nUser: A broad historical survey across eras and regions\nAssistant: A broad historical survey of human aggressiveness across eras and regions — great scope. I'll structure it around key periods and the forces that shaped conflict in each.\nArtifact: Book\nAudience or reader: General readers curious about history\nPromise or story shape: A broad historical survey of human aggressiveness across eras and regions, exploring what influenced it\nTone or vibe: clear and fitted to the intended book shape\nPlanning instruction: choose the most appropriate shape directly, such as children's fable, short story, workbook, practical guide, client tool, offer guide, or lead magnet, based on the chat history.",
+    "globalStyle": "Restrained documentary history: archival textures, archaeological objects, maps, built environments, and carefully labeled diagrams; muted earth, stone, charcoal, and faded ochre tones; no sensational gore and no invented historical details.",
+    "characterReferencePrompts": []
+  },
+  "writingComplexity": 5
+}

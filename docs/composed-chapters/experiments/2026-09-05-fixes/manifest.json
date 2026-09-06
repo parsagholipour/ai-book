@@ -1,0 +1,216 @@
+{
+  "sourceProject": "cmtjbz54o000w6rjyvzewwqj4",
+  "reusePlanProject": "cmtjlkn0z0000g8g08zbzxerc",
+  "writerTier": "balanced",
+  "qualityRevision": 48,
+  "assessorModel": "gpt-5.6-sol",
+  "readersPerBook": 3,
+  "plannedNewReplicates": 3,
+  "launches": [
+    {
+      "label": "development-fixes-1a",
+      "projectId": "cmtnwyp3d0000fwg07qgd68uo",
+      "planId": "cmtnwyp3n0001fwg0h5vz0del",
+      "generationJobId": "cmtnwyp4a0002fwg0mmh03k0z",
+      "implementation": "implementation-1.json",
+      "status": "STOPPED_BY_OPERATOR",
+      "reason": "A source download deadline was propagated as book cancellation and triggered automatic whole-job recovery; stopped before another avoidable attempt.",
+      "pages": 0
+    },
+    {
+      "label": "development-fixes-1a-retry",
+      "projectId": "cmtnwyp3d0000fwg07qgd68uo",
+      "planId": "cmtnwyp3n0001fwg0h5vz0del",
+      "generationJobId": "cmtnx6j3k0000zig0o9y4ei1g",
+      "implementation": "implementation-2.json",
+      "status": "FAILED",
+      "reason": "Reached the developmental replan after a complete evidence stage (15 chapters, ~95 build/review calls); developBookPlan compared the revised stance's thesis to the developed answer by exact string equality and luna paraphrased the paragraph twice. Zero pages; exported as runs/development-fixes-1a-retry for diagnosis only.",
+      "pages": 0,
+      "failedAt": "2026-09-05T05:24:46Z",
+      "export": "../../runs/development-fixes-1a-retry"
+    },
+    {
+      "label": "development-fixes-1b",
+      "projectId": "cmtnwyp3d0000fwg07qgd68uo",
+      "planId": "cmtnwyp3n0001fwg0h5vz0del",
+      "generationJobId": "cmtny8hzz00007jg0gh6u4g49",
+      "implementation": "implementation-3.json \u2192 implementation-4.json",
+      "status": "FAILED",
+      "startedAt": "2026-09-05T05:35:23Z",
+      "note": "Retry of the same project/plan under implementation-3: chronology-in-claims evidence packets (reviewVersion 2), provenance-is-metadata unknowns, claim excision, thesis-by-construction in developBookPlan. The anchor rule (implementation-4) landed at 05:38 UTC while this job was in its source-gathering stage; whether the worker restarted onto it is recorded in diagnostics-notes.md.",
+      "failedAt": "2026-09-05T05:51:30Z",
+      "pages": 0,
+      "reason": "Passed the thesis check; the deterministic development check rejected chapter 7 ('Steppe Powers and Connected Worlds', the research-gap chapter) for having no case and no callback although the planner had written it as a synthesis chapter with requires [3, 4, 6]. Zero pages."
+    },
+    {
+      "label": "development-fixes-2a",
+      "projectId": "cmtnyg6ji0000seg0lrlewwb1",
+      "planId": "cmtnyg6jz0001seg0bc6ci956",
+      "generationJobId": "cmtnyg6l00002seg0hki6pj5i",
+      "implementation": "implementation-4.json",
+      "status": "FAILED",
+      "startedAt": "2026-09-05T05:41:21Z",
+      "note": "First planned fresh replicate; same source request, reused approved plan, balanced tier, flat stance positions.",
+      "failedAt": "2026-09-05T05:53:10Z",
+      "pages": 0,
+      "reason": "Deterministic checks passed; the model review of the developed plan rejected it twice for requested regional comparisons the verified cases could not carry (e.g. chapter 3 compares two early state contexts with one packet). Zero pages."
+    },
+    {
+      "label": "development-fixes-1c",
+      "projectId": "cmtnwyp3d0000fwg07qgd68uo",
+      "planId": "cmtnwyp3n0001fwg0h5vz0del",
+      "generationJobId": "cmtnz1i2500008xg01dal6amd",
+      "implementation": "implementation-5.json",
+      "status": "FAILED",
+      "startedAt": "2026-09-05T05:57:56Z",
+      "note": "Retry of the same project and plan under implementation-5 (synthesis chapters inherit evidence; review objections recorded; three attempts).",
+      "failedAt": "2026-09-05T06:19:23Z",
+      "pages": 0,
+      "reason": "Passed the developmental replan (three proposals; unresolved review objections recorded as reviewNotes) and composed chapter 1; the prose-evidence review kept two findings after the single whole-chapter repair ('1085\u20131086' read into 'Christmas 1085 \u2026 little more than a year'; 'not through an unrestricted rule of eldest sons') and the pass failed the book on them."
+    },
+    {
+      "label": "development-fixes-2a-retry",
+      "projectId": "cmtnyg6ji0000seg0lrlewwb1",
+      "planId": "cmtnyg6jz0001seg0bc6ci956",
+      "generationJobId": "cmtnz1nxq0000xbg0fzjvbdwv",
+      "implementation": "implementation-5.json",
+      "status": "FAILED",
+      "startedAt": "2026-09-05T05:58:04Z",
+      "note": "Retry of the same project and plan under implementation-5 (synthesis chapters inherit evidence; review objections recorded; three attempts).",
+      "failedAt": "2026-09-05T06:21:30Z",
+      "pages": 0,
+      "reason": "Passed the developmental replan and chapter 1; on chapter 2 the prose-evidence reviewer returned a finding whose quote did not resolve verbatim in the chapter, and reviewChapterCaseEvidence failed closed by throwing."
+    },
+    {
+      "label": "development-fixes-3a",
+      "projectId": "cmtnzo7wf0000qwg0kwq6s3rk",
+      "planId": "cmtnzo7wt0001qwg0kv4jkp2j",
+      "generationJobId": "cmtnzo7xh0002qwg05ogzn883",
+      "implementation": "implementation-5.json",
+      "status": "STOPPED_BY_OPERATOR",
+      "startedAt": "2026-09-05T06:15:36Z",
+      "note": "Third fresh replicate, launched by the Opus-panel session once development-fixes-1c had passed the development stage (first run of the pipeline to reach composition). Same source request, reused approved plan, balanced tier, flat stance positions, designed cover.",
+      "stoppedAt": "2026-09-05T06:24:00Z",
+      "pages": 0,
+      "reason": "Stopped during evidence checking once 1c and 2a-retry had both failed in chapter 1 on the chapter evidence check (the fresh re-review ratchet and the misquote guard); the same code would have met the same wall. Stopped before composition spend."
+    },
+    {
+      "label": "development-fixes-1d",
+      "projectId": "cmtnwyp3d0000fwg07qgd68uo",
+      "planId": "cmtnwyp3n0001fwg0h5vz0del",
+      "generationJobId": "cmto0e92v0000jmg0pul2e7ak",
+      "implementation": "implementation-6.json",
+      "status": "COMPLETED",
+      "startedAt": "2026-09-05T06:35:51Z",
+      "note": "Retry of the same project and plan under implementation-6 (prose-evidence review never fails the book: re-quote then drop; two targeted repairs; residuals recorded and flagged REVIEW_REQUIRED at compile). Completed at 07:27 UTC after 52 minutes; compiled; project REVIEW_REQUIRED (compile-time flags). Exported by the Opus-panel session at 08:04 after the launching session had exited.",
+      "completedAt": "2026-09-05T07:27:00Z",
+      "pages": 120,
+      "pdfPages": 107,
+      "words": 51977,
+      "projectStatus": "REVIEW_REQUIRED",
+      "export": "../../runs/development-fixes-1d"
+    },
+    {
+      "label": "development-fixes-2a-retry-2",
+      "projectId": "cmtnyg6ji0000seg0lrlewwb1",
+      "planId": "cmtnyg6jz0001seg0bc6ci956",
+      "generationJobId": "cmto0eefi00009tg0holrwr5y",
+      "implementation": "implementation-6.json",
+      "status": "FAILED",
+      "startedAt": "2026-09-05T06:35:57Z",
+      "note": "Retry of the same project and plan under implementation-6 (prose-evidence review never fails the book: re-quote then drop; two targeted repairs; residuals recorded and flagged REVIEW_REQUIRED at compile).",
+      "failedAt": "2026-09-05T07:21:00Z",
+      "pages": 0,
+      "stagedPages": 120,
+      "reason": "Composed all 15 chapters and ran the developmental edit; the book-level length gate then failed the job: 'The edited manuscript has 50194 words; the requested book needs 51600\u201376800. It remains staged for a substantive length repair.' No repair exists; 120 pages staged PENDING."
+    },
+    {
+      "label": "development-fixes-3a-retry",
+      "projectId": "cmtnzo7wf0000qwg0kwq6s3rk",
+      "planId": "cmtnzo7wt0001qwg0kv4jkp2j",
+      "generationJobId": "cmto0menm0000hjg029nvbrau",
+      "implementation": "implementation-6.json",
+      "status": "FAILED",
+      "startedAt": "2026-09-05T06:42:11Z",
+      "note": "Third replicate for the Opus-panel session (experiments/2026-09-05-opus): retry of the stopped 3a project under implementation-6, launched once 1d and 2a-retry-2 were past chapter 1.",
+      "failedAt": "2026-09-05T06:55:48Z",
+      "pages": 0,
+      "reason": "Passed evidence readiness; at the developmental replan the second develop-book-plan proposal failed JSON validation (chapters[1].callbacks[0] not a string) and its schema-repair attempt ended with 'OpenAI response was incomplete: max_output_tokens', which propagated as the job's failure. Zero pages; provider truncation on a repair attempt, not a pipeline verdict."
+    },
+    {
+      "label": "development-fixes-3a-retry-2",
+      "projectId": "cmtnzo7wf0000qwg0kwq6s3rk",
+      "planId": "cmtnzo7wt0001qwg0kv4jkp2j",
+      "generationJobId": "cmto1586m0000syg0ez8pf9as",
+      "implementation": "implementation-6.json",
+      "status": "FAILED",
+      "startedAt": "2026-09-05T06:56:49Z",
+      "note": "Second retry of the 3a project for the Opus-panel session; same implementation-6 code, launched because the previous attempt's failure was a provider truncation on a JSON repair, not a verdict.",
+      "failedAt": "2026-09-05T07:58:00Z",
+      "pages": 0,
+      "stagedPages": 120,
+      "reason": "Composed all 15 chapters and ran the developmental edit; the length gate failed the job at 46651 words against a 51040 floor. 120 pages staged PENDING."
+    },
+    {
+      "label": "development-fixes-2a-retry-3",
+      "projectId": "cmtnyg6ji0000seg0lrlewwb1",
+      "generationJobId": "cmto3sjcv0000k8g052hxry5n",
+      "implementation": "implementation-6b.json",
+      "status": "STOPPED_BY_OPERATOR",
+      "startedAt": "2026-09-05T08:11:00Z",
+      "note": "Retry on the 120 staged pages under implementation-6b: composition is skipped, the developmental edit re-runs, and a manuscript under its floor is extended rather than failed.",
+      "stoppedAt": "2026-09-05T08:23:05.104888+00:00",
+      "pages": 0,
+      "stagedPages": 120,
+      "reason": "Stopped after the user reported unacceptable runtime/cost and poor completed-book quality. Staged pages retained; no further benchmark launches authorized by current experiment decision."
+    },
+    {
+      "label": "development-fixes-3a-retry-3",
+      "projectId": "cmtnzo7wf0000qwg0kwq6s3rk",
+      "generationJobId": "cmto3spgk00000zg006emuzp4",
+      "implementation": "implementation-6b.json",
+      "status": "STOPPED_BY_OPERATOR",
+      "startedAt": "2026-09-05T08:11:00Z",
+      "note": "Retry on the 120 staged pages under implementation-6b: composition is skipped, the developmental edit re-runs, and a manuscript under its floor is extended rather than failed.",
+      "stoppedAt": "2026-09-05T08:23:05.104943+00:00",
+      "pages": 0,
+      "stagedPages": 120,
+      "reason": "Stopped after the user reported unacceptable runtime/cost and poor completed-book quality. Staged pages retained; no further benchmark launches authorized by current experiment decision."
+    }
+  ],
+  "implementations": {
+    "implementation-1.json": "Original three feature additions plus the first blocker fixes (coverage book/chapter, primary-source discovery, independent evidence review).",
+    "implementation-2.json": "Adds the source-download timeout classification and the bounded reviewer retry; the evidence rules audited in packets-sol-audit-3.json.",
+    "implementation-3.json": "Evidence packets carry no model-ordered sequence (order only inside individually supported claims), unknowns are never about provenance, the repair is built against the reviewer's corrected episode, a claim rejected on the final review is excised (floor two), reviewer fields tolerate null; developBookPlan sets the stance thesis from the developed answer instead of comparing strings.",
+    "implementation-4.json": "implementation-3 plus: a case is grounded by at least one anchor resolving to exact passage text; extra anchors that do not resolve are ignored instead of failing the packet.",
+    "implementation-5.json": "implementation-4 plus: a chapter with no case is a defect only when it names no prerequisite; a synthesis chapter inherits its prerequisites' packets and is told to introduce no new case; three development attempts; unresolved model-review objections stored as bookDevelopment.reviewNotes (logged, shown to the developmental edit) instead of failing the book; prompts accept honestly scoped coverage and exclude the voice sample from evidence.",
+    "implementation-6.json": "implementation-5 plus: reviewChapterCaseEvidence returns { issues, dropped } with one verbatim re-quote request; repairChapterEvidence runs at most two targeted edits and never throws; residual findings stored on the chapter report, logged, and turned into a compile-time UNSUPPORTED_CASE_CLAIMS error issue (REVIEW_REQUIRED) by unsupportedCaseClaimIssues; finalize and developmental edit take the same door; peer's pipelineStages/textRouting purpose-list edits included.",
+    "implementation-6a.json": "implementation-6 plus (Opus-panel session, 07:04 UTC): generateJsonWithRetry buys one more attempt at 1.5x maxTokens when the provider reports the reply was cut at max_output_tokens (isOutputBudgetExhausted), outside the repair count; poppler-utils added to the Dockerfile so pdftotext exists in the worker image (every PDF source fetch had failed with 'spawn pdftotext ENOENT'; takes effect at the next image build).",
+    "implementation-6b.json": "implementation-6a plus (Opus-panel session, 08:08 UTC): the developmental edit's book-level length gate no longer fails the job; when the edited manuscript is under its word floor, the chapters furthest under their own budget (at most six) are developed by the line editor's extension mode on their material and re-checked against their evidence (extendUnderBudget), and any remaining shortfall is recorded on the developmentalEdit marker and logged as generation.composed_chapters.length_shortfall. Over the maximum still fails. Worker typecheck and the developmental-edit tests (10) pass."
+  },
+  "evidenceReplays": {
+    "evidence-replay-4.json": "candidate-evidence-rules.json injected at the adapter boundary; 8/8 expected decisions; audited as packets-sol-audit-3.json (K1, K7 unusable).",
+    "evidence-replay-5.json": "candidate-evidence-rules-2.json injected at the adapter boundary with sequence forced empty; 7/8 (Socrates lost to one overclaimed claim the repair did not fix), K1/K7 defects absent by construction.",
+    "evidence-replay-6.json": "production modules of implementation-3, no injection: 7/8 (both wrong cases rejected; K1 First Crusade and K7 Josephus rebuilt without a sequence; Keeley lost on a protocol defect \u2014 a second reviewer anchor broken by an OCR running header/soft hyphen while the first resolved exactly). Fixed in implementation-4 by requiring one resolving anchor rather than all."
+  },
+  "candidates": {
+    "J6": {
+      "sourceLabel": "development-fixes-1d",
+      "arm": "development",
+      "sha256": "0c7896a911f5814cdbb0a94dca5d65823e8268e8d0a6779b20642180b8b7f851",
+      "words": 52119
+    }
+  },
+  "decision": {
+    "qualityRevision": 49,
+    "disabledGates": [
+      "bookDevelopment",
+      "caseEvidence",
+      "developmentalEdit"
+    ],
+    "furtherReplicates": "canceled",
+    "assessment": "evals/U6/A/verdict.json",
+    "score": 6.5,
+    "note": "One fresh blind Sol assessment; earlier Sol reference baseline 7.1889. All attempts retained."
+  }
+}

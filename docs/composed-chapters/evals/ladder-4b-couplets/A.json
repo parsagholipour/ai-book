@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.6,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A roadblock is an object made out of people, wood, wire, paper, and permission.",
+      "judgment": "Excellent compression of the book's central claim into a concrete image; earns its abstraction from the scene just given."
+    },
+    {
+      "quote": "The report gives historians a grammar of harm. It separates what happened long before death from what happened at death and from what can be inferred about the object that caused it.",
+      "judgment": "Strong methodological writing: it teaches how to read forensic evidence rather than merely asserting a conclusion."
+    },
+    {
+      "quote": "Their conduct supplies a sequence: stop, inspect, classify, separate, kill, search, release. That sequence shows aggression as a practice rather than a sudden eruption.",
+      "judgment": "The thesis argued from observed procedure instead of assertion — the book's best analytic move."
+    },
+    {
+      "quote": "A cemetery used for fifty years and one used for five hundred years may contain the same number of violent deaths while describing very different risks.",
+      "judgment": "Genuine epistemic care about the denominator problem; rare honesty about what the evidence cannot support."
+    },
+    {
+      "quote": "Sugar did not strike anyone. A planter, overseer, magistrate, or armed patrol did.",
+      "judgment": "Effective once, but this negate-then-name couplet is the book's default cadence and recurs in nearly every chapter."
+    },
+    {
+      "quote": "Technology gives a decision range and speed. An institution points it.",
+      "judgment": "A stock aphoristic closer of the kind that ends dozens of sections; rhetorically tidy but adds nothing the chapter has not already established."
+    },
+    {
+      "quote": "The Xiongnu’s power rested on mobile pastoral production, mounted warfare, alliances, raids, and the authority of the chanyu, as an outside army pressing against a fixed wall could not account for.",
+      "judgment": "Garbled clause — a visible seam where two sentences appear to have been fused; several similar breakages recur."
+    },
+    {
+      "quote": "The account of Subutai’s European campaign in *The Outline of History* praises the Mongol command for knowing the political condition of Hungary and Poland",
+      "judgment": "Weak sourcing: H. G. Wells's 1920 popular survey is leaned on repeatedly in Chapter 7 beside genuine primary material, undercutting the book's otherwise careful evidentiary standard."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter opens with an extended reconstructed scene in close third person (present-tense sensory detail, named minor actors, invented micro-gestures), then pivots into analysis via a bridging sentence that restates the thesis.",
+      "instances": [
+        "The water clock had already begun to run when Socrates entered the court below the Areopagus.",
+        "The mist had lifted from the fields above Naseby by six o’clock on Saturday, 14 June 1645, and Sir Thomas Fairfax could see the king’s army drawn out along the ridge."
+      ]
+    },
+    {
+      "pattern": "Aphoristic two-clause couplet closing a section, usually antithetical and usually restating the office-versus-emotion thesis. This is the single most templated feature of the book.",
+      "instances": [
+        "The office did not replace emotion. It gave emotion a list.",
+        "The crowd made sovereignty visible; the decree made it durable."
+      ]
+    },
+    {
+      "pattern": "Negation-then-assertion formula: a candidate explanation is named, denied, and replaced by the institutional one, in the same rhythm each time.",
+      "instances": [
+        "Warfare is not anger enlarged. It is force supplied with continuity.",
+        "No field ordered Eannatum to invade Umma. His office did."
+      ]
+    },
+    {
+      "pattern": "A one-line paragraph used as a dramatic beat inside the opening scene, isolated for effect.",
+      "instances": [
+        "The Bastille fired.",
+        "The drums stopped."
+      ]
+    },
+    {
+      "pattern": "Paired case comparison whose paragraphs are near-symmetrical in shape: site A's evidence, site B's evidence, an explicit 'the difference lay in' sentence, then a caution against ranking the two.",
+      "instances": [
+        "Jebel Sahaba records recurrent injury in a river corridor where mobile groups repeatedly encountered one another. Crow Creek records the destruction of a defended agricultural settlement",
+        "In Korea, the boundary between states drew in superpower armies. In Algeria, the colonial state made the boundary inside its own population."
+      ]
+    }
+  ],
+  "summary": "This is an unusually accomplished synthetic history organised around one clear and productive claim: aggression is a human capacity, but organised violence requires a route — an office, a list, a road, a ration, a record — and it is the route, not the emotion, that historians can actually trace. The thesis is genuinely sustained across fifteen chapters from Jebel Sahaba to Srebrenica, and the evidentiary manners are strong: chronicler bias is flagged, death tolls are held at arm's length, and the book repeatedly says what its sources cannot establish. Prose is disciplined and consistent in register, with real specificity of date, name, object and procedure, and the reconstructed scenes that open each chapter are often gripping. The costs are structural rather than local. Every chapter runs the same machine — scene, analysis, paired comparison, source-critical coda — and almost every section closes on an antithetical couplet or a negate-then-name aphorism, which by mid-book reads as a tic rather than as thought; the closing chapter is largely recapitulation. A handful of sentences are visibly broken at their seams, and Chapter 7 leans on a 1920 popular survey where it elsewhere insists on primary material. With the couplet cadence thinned, the thesis restatements cut, and the garbled clauses repaired, this would stand as publishable work."
+}

@@ -1,5 +1,8 @@
 /**
- * Lifetime unit economics for books that are complete right now.
+ * Lifetime unit economics for books that are finished right now — COMPLETE, or
+ * REVIEW_REQUIRED, which is a compiled book the quality card flagged (the
+ * composed pipeline's unsupported-case-claims check lands there); the operator
+ * had paid provider cost either way and wants the download.
  *
  * The list window chooses projects only. Once chosen, every ledger entry and
  * provider call associated with each project is included, regardless of when
@@ -33,6 +36,8 @@ export type GeneratedBookSummary = {
   pageCount: number;
   imageCount: number;
   completedAt: string;
+  /** COMPLETE, or REVIEW_REQUIRED for a compiled book the quality card flagged. */
+  status: string;
   grossCredits: number;
   refundedCredits: number;
   netCredits: number;
@@ -75,6 +80,8 @@ export type QaRewriteTriggerCost = {
   providerCostUsd: number;
 };
 
+const FINISHED_BOOK_STATUSES = ["COMPLETE", "REVIEW_REQUIRED"] as const;
+
 const QUALITY_GATE_JOB_TYPES = [
   "PLAN_BOOK",
   "GENERATE_BOOK",
@@ -112,7 +119,7 @@ export async function listGeneratedBooks(options: {
   offset: number;
 }): Promise<GeneratedBookList> {
   const where = {
-    status: "COMPLETE" as const,
+    status: { in: [...FINISHED_BOOK_STATUSES] },
     updatedAt: { gte: options.window.since, lte: options.window.until }
   };
   const [total, projects] = await Promise.all([
@@ -125,6 +132,7 @@ export async function listGeneratedBooks(options: {
       select: {
         id: true,
         title: true,
+        status: true,
         updatedAt: true,
         user: { select: { email: true } },
         _count: { select: { pages: true, images: true } }
@@ -141,6 +149,7 @@ export async function listGeneratedBooks(options: {
       pageCount: project._count.pages,
       imageCount: project._count.images,
       completedAt: project.updatedAt.toISOString(),
+      status: project.status,
       ...economicsFor(economics, project.id)
     })),
     total,
@@ -154,7 +163,7 @@ export async function loadGeneratedBookDetail(projectId: string): Promise<Genera
     where: { id: projectId },
     select: { id: true, status: true, mediaSettings: true, updatedAt: true }
   });
-  if (!project || project.status !== "COMPLETE") {
+  if (!project || !(FINISHED_BOOK_STATUSES as readonly string[]).includes(project.status)) {
     return null;
   }
 

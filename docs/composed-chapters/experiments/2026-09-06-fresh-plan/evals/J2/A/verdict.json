@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.6,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The bone does not contain the direction of intention. It contains the direction of force.",
+      "judgment": "Exemplary compression of the book's evidentiary discipline: the limit of a source stated as an epigram rather than a hedge."
+    },
+    {
+      "quote": "No marching army is required for coercion to begin. The ration list already distinguishes those who issue from those who receive.",
+      "judgment": "The central argument earned rather than asserted, arriving out of pages of Uruk tablet detail."
+    },
+    {
+      "quote": "The fort called him a sale, the ship a freight, the plantation a hand, and the court a piece of property. The violence remained continuous as the vocabulary changed.",
+      "judgment": "Strongest single move in the book: the thesis carried entirely by the sequence of institutional nouns."
+    },
+    {
+      "quote": "Narmer put his thumb into the hollow and drew it out black.",
+      "judgment": "The dramatised chapter openings are consistently concrete and unsentimental; this one earns its place without explaining itself."
+    },
+    {
+      "quote": "In 1789, John James Audubon painted the famous image often called *The Zong Massacre*",
+      "judgment": "A fabricated attribution, and the same sentence then contradicts itself by conceding no such contemporary image exists; the worst factual lapse in the manuscript."
+    },
+    {
+      "quote": "The Dar al-Hadith al-Nuriyya in Damascus, founded in 1172 after Nur al-Din’s death had already occurred, preserved his name as a patron of religious learning.",
+      "judgment": "Internally contradictory: the chapter itself dates Nur al-Din's death to 1174, so the clause defeats its own date."
+    },
+    {
+      "quote": "Prison authorities communicated with municipal officials, and some did.",
+      "judgment": "A sentence that lost half of itself in revision and was never caught; symptomatic of light final proofing."
+    },
+    {
+      "quote": "Machinery enlarged the hand, but political authority chose where it would close.",
+      "judgment": "Elegant, but it is the book's fifteenth variation on one antithesis; the figure has become a reflex by this point."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every section and chapter lands on an aphoristic closer built from the same antithesis: a means (technology, weapon, machinery, surplus) is granted force, then subordinated to an office that directs it.",
+      "instances": [
+        "Technology enlarged the possibilities of force; accounting decided whether those possibilities could be repeated.",
+        "The object enlarges an institution’s decision."
+      ]
+    },
+    {
+      "pattern": "A comparison is closed by dismissing a strawman contrast with a fixed formula (\"Neither case fits...\") before the thesis is restated, often twice per chapter.",
+      "instances": [
+        "Neither case fits a simple contrast between barbarian raiders and settled states.",
+        "Neither case fits the picture of an enraged population suddenly losing control."
+      ]
+    },
+    {
+      "pattern": "A one-sentence paragraph is dropped between long analytical blocks as a rhythmic beat; the device is effective the first few times and becomes a structural tic across all fifteen chapters.",
+      "instances": [
+        "The promise did not last beyond the counting of the people.",
+        "A population appears as the object of a command."
+      ]
+    },
+    {
+      "pattern": "Chapters open with an invented sensory scene containing dialogue and detail no source could supply, then pivot to source criticism that partly disowns the scene just staged.",
+      "instances": [
+        "The knife entered below the ribs.",
+        "The details belong to different kinds of evidence, and they should not be made into a single eyewitness scene."
+      ]
+    },
+    {
+      "pattern": "Causal claims are habitually delivered as symmetrical paired clauses, one supplying pressure and the other supplying direction, so that explanation always arrives in the same grammatical shape.",
+      "instances": [
+        "The environment supplied pressure; kin obligations, remembered boundaries, and expectations about possession supplied its direction.",
+        "Biology helps explain readiness for fear and anger. It does not explain the office that changes fear into a roster."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely argued global history: aggression is treated not as a quantity that rises and falls but as conduct that becomes historically decisive only when an office identifies a target, authorises force, and records the result. The thesis is stated in chapter one, tested against archaeology, royal monuments, law codes, ledgers, timetables and protocols, and is still doing real analytic work in chapter fifteen, where biology, ecology, technology and moral progress are each credited and each shown to be insufficient. Evidence is unusually specific and unusually well-policed; the book repeatedly names what its sources cannot support, and the source-criticism passages are among its best writing. Against that, the manuscript is heavily templated at the level of shape rather than diction: a dramatised opening scene, two or three paired cases, a \"neither case fits\" dismissal, a one-sentence beat, and an aphoristic antithesis recur so reliably that by the middle chapters the reader can predict the paragraph before reading it, and the thesis is restated far more often than the argument requires. Sentence-level craft is high, but the polish is uneven at the last mile: a fabricated attribution of a Zong painting to Audubon, a Damascus foundation dated after a death the chapter dates later, and at least one sentence that lost its second half. Trim the restatements, vary the closing figure, and check the factual tail, and this would be very strong; as it stands it is disciplined, absorbing, and audibly formulaic."
+}

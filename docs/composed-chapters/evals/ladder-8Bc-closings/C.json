@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.6,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The movement from anger to atrocity is not a ladder on which one emotion grows larger. It is a change in who acts, who authorizes, who is targeted, and how the act is repeated.",
+      "judgment": "The book's controlling thesis, stated early and with real precision; it earns the whole structure that follows."
+    },
+    {
+      "quote": "A fracture has a location, a shape, and a degree of healing; a motive must be inferred from the pattern around it.",
+      "judgment": "Excellent evidentiary discipline — the book repeatedly separates what a trace shows from what an interpreter wants it to show."
+    },
+    {
+      "quote": "Officers had to account for cartridges, and severed hands could be presented as evidence that bullets had supposedly been used in combat rather than wasted. Mutilation became an accounting device.",
+      "judgment": "Specific, unforgettable, and it advances the argument rather than decorating it."
+    },
+    {
+      "quote": "The last point came free from the chest of Burial 27 just before the workmen covered the trench.",
+      "judgment": "The set-piece scenes are the strongest writing in the book — but this one re-narrates material the same chapter has already laid out in expository prose."
+    },
+    {
+      "quote": "Charlotte Corday? No; Madame Roland, as reported in A Daughter of the Seine",
+      "judgment": "A raw sourcing artifact left standing as a chapter epigraph; chapters 4 and 9 carry similarly broken epigraphs (garbled French, a quote ending 'But Cromwell')."
+    },
+    {
+      "quote": "Cromwell watched Rupert’s cavalry come on against Sir Thomas Fairfax’s son, Sir Thomas Fairfax the younger, who held Parliament’s other wing.",
+      "judgment": "Garbled and factually confused (Ireton held that wing); a handful of similar slips — Ibn al-Athir is made to narrate a siege that postdates his death — undercut an otherwise scrupulous book."
+    },
+    {
+      "quote": "The absence of a readable conquest narrative cannot be converted into proof of peace, but the city’s walls cannot be converted into proof of constant warfare either.",
+      "judgment": "Sound method, but this exact balanced negation recurs so often it becomes a reflex rather than a judgment."
+    },
+    {
+      "quote": "The civilian population entered the battlefield through a decision made in an office.",
+      "judgment": "By chapter 12 this closing move — return to the office, the classification, the decision — has been performed in nearly every chapter and has lost its force."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Paired antithesis as the default sentence for summing up a case: two clauses, parallel syntax, one thing set against another.",
+      "instances": [
+        "One record compresses human beings into imperial order. The other, despite its Greek interests and narrative habits, preserves hesitation, rivalry, fear, and misjudgement.",
+        "One image magnifies a ruler’s victory; one landscape magnifies collective subordination to a centre."
+      ]
+    },
+    {
+      "pattern": "Symmetrical hedge that refuses both over-readings of the evidence, in the same two-part shape each time.",
+      "instances": [
+        "The term is useful if it refers to repeated attacks involving projectiles and perhaps coordinated assailants. It reaches beyond the evidence when it imports armies, territorial states, or permanent military offices...",
+        "To call it merely superstition conceals its administrative force; to call it the single engine of all warfare conceals that force as well."
+      ]
+    },
+    {
+      "pattern": "Chapter closes by restating the institutional thesis in a compressed abstract sentence about offices, decisions or classification.",
+      "instances": [
+        "Mongol coercion acquired different offices when it became administration.",
+        "Who stopped it, who armed it, and who named the person beyond protection determined the violence more decisively than the crowd’s size."
+      ]
+    },
+    {
+      "pattern": "Dramatized narrative set-piece appended to a chapter that has already covered the same episode expositorily, producing duplicated detail.",
+      "instances": [
+        "Fred Wendorf knelt in the gravel at Jebel Sahaba in the spring of 1965... (after the chapter's opening analysis of the same burials, points and healed femur)",
+        "Reinhard Heydrich stood at the end of the long table in the dining room of the villa... (after the chapter has already walked through Göring's letter, Eichmann's table and Bühler's intervention)"
+      ]
+    },
+    {
+      "pattern": "Two-case comparison scaffold: case A, case B, then a paragraph insisting the contrast proves neither society gentler nor crueller, only differently recorded.",
+      "instances": [
+        "The difference says nothing about whether Indus people were gentler by nature. It establishes that similar urban achievements left different institutional signatures.",
+        "The difference does not establish that Cahokia was peaceful or that Bonampak was uniquely warlike."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually well-sourced history of human aggression organised around one clear and productive thesis: harm becomes historically consequential when an office classifies it, authorises it and records it. The thesis is enacted rather than asserted, through genuinely specific material — Talheim's cranial fractures, the Gu-edena boundary, the Behistun genealogy, the Brookes stowage plan, Ottoman supply headings, the Wannsee table, the Potočari gate — and the reasoning about what each trace can and cannot support is consistently disciplined. The costs are repetition and monotony: the argument's shape is the same in chapter 14 as in chapter 2, and the sentence-level toolkit (paired antitheses, balanced negations, office-naming closers) hardens into template long before the end. Polish failures are visible but localised: three broken epigraphs, a garbled Naseby sentence, an anachronistic Ibn al-Athir, and chapter-ending narrative set-pieces that re-tell episodes the same chapter has already analysed. Slop is not of the chatty, generic kind — there are no stock pivots or motivational closers — but the uniform paragraph shape and reflexive symmetry are their own species of it. With tightened redundancy, fixed epigraphs and a few factual corrections, this would be a strong book."
+}

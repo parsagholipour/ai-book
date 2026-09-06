@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 6,
+    "depth": 6,
+    "reasoning": 7,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 4,
+    "pacing": 3,
+    "craft": 7,
+    "slopResistance": 4
+  },
+  "overall": 6.0,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "His account is therefore narrow, but its narrowness is the condition under which the episode can be known.",
+      "judgment": "Excellent compression of the book's source-critical thesis into a single working sentence."
+    },
+    {
+      "quote": "Jebel Sahaba should remain a graveyard before it becomes an emblem.",
+      "judgment": "The rare line where the argument acquires a memorable, non-generic image; the book needs dozens more like it."
+    },
+    {
+      "quote": "It shows that bodies were penetrated; it does not say whether the attackers understood themselves as defending a resource, avenging an injury, expelling strangers, or taking advantage of a moment of weakness.",
+      "judgment": "Methodologically exact, but the shows/does-not-say seesaw becomes the book's default sentence and loses force through repetition."
+    },
+    {
+      "quote": "Connected worlds are not necessarily humane worlds. They are worlds in which consequences travel farther.",
+      "judgment": "An aphoristic chapter-closer of a kind that recurs at nearly every chapter end, signalling formula rather than arrival."
+    },
+    {
+      "quote": "The question is always: order for whom, enforced by whom, and at whose expense?",
+      "judgment": "The book's central question, well phrased \u2014 but restated in near-identical form in at least half the chapters."
+    },
+    {
+      "quote": "Technology changed reach without supplying motive.",
+      "judgment": "A genuinely useful analytical claim that hardens into a recited slogan reappearing in almost every chapter with minor rewording."
+    },
+    {
+      "quote": "Economic pressure became destructive through institutions that defined some people as available for extraction and armed authority as legitimate when used on their behalf.",
+      "judgment": "Strong, concrete application of the framework to the Congo rubber regime \u2014 the best version of a formula elsewhere applied mechanically."
+    },
+    {
+      "quote": "The task is not to decide whether humanity is violent or peaceful. Those words are too broad to carry the weight placed upon them.",
+      "judgment": "A clear and earned final position, though the closing chapter largely re-states chapter one rather than advancing it."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every source is introduced, then immediately fenced with a symmetrical 'it shows X; it does not show Y' hedge. The move appears several times per chapter and becomes the book's dominant sentence shape.",
+      "instances": [
+        "It shows that bodies were penetrated; it does not say whether the attackers understood themselves as defending a resource, avenging an injury, expelling strangers, or taking advantage of a moment of weakness.",
+        "They tell us that things were being counted and assigned; they do not automatically tell us whether a delivery was accepted willingly, contested, delayed, or extracted under threat."
+      ]
+    },
+    {
+      "pattern": "Each comparison ends with an explicit refusal to rank the two cases on a single scale \u2014 a stock pivot used to close nearly every paired case study.",
+      "instances": [
+        "These sources alone cannot tell us which society was more aggressive overall.",
+        "The comparison shows how empires adjusted their methods to existing institutions and identities; it does not rank the two systems on a single scale of benevolence."
+      ]
+    },
+    {
+      "pattern": "A fixed technology clause \u2014 tools extend reach but do not supply motive \u2014 is restated almost verbatim in chapter after chapter.",
+      "instances": [
+        "Technology changed reach without supplying motive.",
+        "Technology altered this reach without supplying the motive."
+      ]
+    },
+    {
+      "pattern": "A fixed economics clause \u2014 material pressure becomes destructive only through institutions and ideas of belonging \u2014 is likewise recited as a checklist item in most chapters.",
+      "instances": [
+        "Material conditions enter history through decisions, structures, and interpretations.",
+        "Economic pressure became destructive through institutions that defined some people as available for extraction and armed authority as legitimate when used on their behalf."
+      ]
+    },
+    {
+      "pattern": "Chapters close on a paired antithesis about order and harm, usually followed by the 'for whom / at whose expense' question, producing near-identical endings across the book.",
+      "instances": [
+        "Order and harm can be produced by the same institutions. The question is always: order for whom, enforced by whom, and at whose expense?",
+        "Every empire claimed to create order. The historical question is what kind of order it created, for whom, and through what costs."
+      ]
+    }
+  ],
+  "summary": "This is a serious, intellectually disciplined book with a genuine thesis: aggression has no single historical shape, and violence becomes legible only through the institutions that organise it and the sources that unevenly record it. The prose is clean, precise, and consistently voiced in a restrained donnish register, and the case material \u2014 Pepys and Hammurabi, Jebel Sahaba and \u00c7atalh\u00f6y\u00fck, Lachish and Puzrish-Dagan, the Dolben Act and Stono, Wannsee and Rwanda, Kabul and San Carlos \u2014 is well chosen and handled with real epistemic care. The fatal weakness is repetition at the level of structure rather than diction. Every chapter runs the same template (source described, source fenced with a symmetrical hedge, comparison refused a single scale, technology-does-not-supply-motive, economics-through-institutions, identity-and-belonging, an aphoristic order-and-harm closer), so fifteen chapters of varied material yield almost no cumulative development; chapter fifteen largely restates chapter one. Engagement suffers accordingly: there is scarcely a quotation, a date, a number, or a scene allowed to run, and the relentless hedging warns the reader far more often than it shows them anything. Lexically the text is clean of obvious AI tells, but the templated pivots, paired antitheses, uniform paragraph shapes and recap loops are exactly the structural slop the rubric names. With aggressive cutting, differentiated chapter architecture, and more concrete evidence admitted onto the page, this could be a strong book; as it stands it needs moderate revision."
+}

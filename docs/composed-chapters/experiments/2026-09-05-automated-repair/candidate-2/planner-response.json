@@ -1,0 +1,116 @@
+{
+  "text": "{\"groups\":[{\"id\":\"overlap-steppe-case\",\"reason\":\"Chapters 6 and 7 both provide extended treatments of the same Secret History of the Mongols material: Temüjin’s rise through subduing and alliance, mobility, and Ögedei’s proposed post-station network. The retained treatment in chapter 7 carries the fuller and more focused explanation of conquest versus administration, the burdens and possible benefits of regularized communication, implementation uncertainty, and the unanswered question about local experience. Removing chapter 6 paragraphs 22–38 avoids repeating that case while preserving chapter 6’s distinct treatment of Alcuin, Lindisfarne, religious interpretation, and communication as response. The retained paragraphs in chapter 7 support the same substantive contribution and should remain there before any later comparison or synthesis relies on it.\",\"retainedCaseParagraphs\":[{\"chapterIndex\":7,\"paragraph\":2},{\"chapterIndex\":7,\"paragraph\":3},{\"chapterIndex\":7,\"paragraph\":4},{\"chapterIndex\":7,\"paragraph\":5},{\"chapterIndex\":7,\"paragraph\":7},{\"chapterIndex\":7,\"paragraph\":8},{\"chapterIndex\":7,\"paragraph\":9},{\"chapterIndex\":7,\"paragraph\":10},{\"chapterIndex\":7,\"paragraph\":11},{\"chapterIndex\":7,\"paragraph\":12},{\"chapterIndex\":7,\"paragraph\":13},{\"chapterIndex\":7,\"paragraph\":14},{\"chapterIndex\":7,\"paragraph\":15},{\"chapterIndex\":7,\"paragraph\":16},{\"chapterIndex\":7,\"paragraph\":17},{\"chapterIndex\":7,\"paragraph\":18},{\"chapterIndex\":7,\"paragraph\":19},{\"chapterIndex\":7,\"paragraph\":20},{\"chapterIndex\":7,\"paragraph\":23},{\"chapterIndex\":7,\"paragraph\":25},{\"chapterIndex\":7,\"paragraph\":26}],\"changes\":[{\"id\":\"delete-duplicated-mongol-treatment-from-chapter-6\",\"chapterIndex\":6,\"startParagraph\":22,\"deleteCount\":17,\"targetWords\":0,\"instruction\":\"Delete this second treatment of Temüjin, Ögedei’s proposed post stations, and Mongol mobility. Retain chapter 7’s treatment, which supplies the fuller case explanation and preserves the distinctions among conquest, alliance, administration, burden, implementation uncertainty, and local experience. Do not replace the deleted material; chapter 6 should proceed from its distinct Alcuin analysis to its existing concluding synthesis.\"}]}]}",
+  "model": "gpt-5.6-luna",
+  "provider": "openai",
+  "usage": {
+    "promptTokens": 91164,
+    "outputTokens": 821,
+    "cacheHitTokens": 0,
+    "cacheWriteTokens": 91161,
+    "reasoningTokens": 324
+  },
+  "data": {
+    "groups": [
+      {
+        "id": "overlap-steppe-case",
+        "reason": "Chapters 6 and 7 both provide extended treatments of the same Secret History of the Mongols material: Temüjin’s rise through subduing and alliance, mobility, and Ögedei’s proposed post-station network. The retained treatment in chapter 7 carries the fuller and more focused explanation of conquest versus administration, the burdens and possible benefits of regularized communication, implementation uncertainty, and the unanswered question about local experience. Removing chapter 6 paragraphs 22–38 avoids repeating that case while preserving chapter 6’s distinct treatment of Alcuin, Lindisfarne, religious interpretation, and communication as response. The retained paragraphs in chapter 7 support the same substantive contribution and should remain there before any later comparison or synthesis relies on it.",
+        "changes": [
+          {
+            "id": "delete-duplicated-mongol-treatment-from-chapter-6",
+            "chapterIndex": 6,
+            "startParagraph": 22,
+            "deleteCount": 17,
+            "targetWords": 0,
+            "instruction": "Delete this second treatment of Temüjin, Ögedei’s proposed post stations, and Mongol mobility. Retain chapter 7’s treatment, which supplies the fuller case explanation and preserves the distinctions among conquest, alliance, administration, burden, implementation uncertainty, and local experience. Do not replace the deleted material; chapter 6 should proceed from its distinct Alcuin analysis to its existing concluding synthesis."
+          }
+        ],
+        "retainedCaseParagraphs": [
+          {
+            "chapterIndex": 7,
+            "paragraph": 2
+          },
+          {
+            "chapterIndex": 7,
+            "paragraph": 3
+          },
+          {
+            "chapterIndex": 7,
+            "paragraph": 4
+          },
+          {
+            "chapterIndex": 7,
+            "paragraph": 5
+          },
+          {
+            "chapterIndex": 7,
+            "paragraph": 7
+          },
+          {
+            "chapterIndex": 7,
+            "paragraph": 8
+          },
+          {
+            "chapterIndex": 7,
+            "paragraph": 9
+          },
+          {
+            "chapterIndex": 7,
+            "paragraph": 10
+          },
+          {
+            "chapterIndex": 7,
+            "paragraph": 11
+          },
+          {
+            "chapterIndex": 7,
+            "paragraph": 12
+          },
+          {
+            "chapterIndex": 7,
+            "paragraph": 13
+          },
+          {
+            "chapterIndex": 7,
+            "paragraph": 14
+          },
+          {
+            "chapterIndex": 7,
+            "paragraph": 15
+          },
+          {
+            "chapterIndex": 7,
+            "paragraph": 16
+          },
+          {
+            "chapterIndex": 7,
+            "paragraph": 17
+          },
+          {
+            "chapterIndex": 7,
+            "paragraph": 18
+          },
+          {
+            "chapterIndex": 7,
+            "paragraph": 19
+          },
+          {
+            "chapterIndex": 7,
+            "paragraph": 20
+          },
+          {
+            "chapterIndex": 7,
+            "paragraph": 23
+          },
+          {
+            "chapterIndex": 7,
+            "paragraph": 25
+          },
+          {
+            "chapterIndex": 7,
+            "paragraph": 26
+          }
+        ]
+      }
+    ]
+  }
+}

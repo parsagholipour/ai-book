@@ -1,0 +1,85 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.9,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A threat spoken in a kitchen becomes a sentence in a report; a blow becomes an injury category; a death becomes a homicide number.",
+      "judgment": "Excellent concretion of the book's core claim in its opening chapter: violence acquires its shape from the office that records it."
+    },
+    {
+      "quote": "One violent deposit is evidence of violence at Nataruk; it is not a measure of the aggressiveness of all people living in the region.",
+      "judgment": "Exemplary evidentiary discipline; the book consistently matches claim size to trace strength rather than overreaching."
+    },
+    {
+      "quote": "The inscription gave the kingdom a voice. The tablet gave it joints.",
+      "judgment": "Striking, but this two-clause antithetical closer recurs at nearly every section break and becomes a tic."
+    },
+    {
+      "quote": "A cannon did not make the siege possible by itself... The weapon extended Ottoman power because other offices made its slowness tolerable.",
+      "judgment": "The strongest kind of argument here: a famous technological explanation deflated by logistics without denying the technology mattered."
+    },
+    {
+      "quote": "Numbers could turn human beings into a problem passed between offices.",
+      "judgment": "A one-line paragraph used for emphasis — effective once, but the isolated-sentence beat is deployed formulaically across chapters."
+    },
+    {
+      "quote": "It can mean that lethal and bone-breaking violence was uncommon among the people represented. It can mean that the community's disputes were contained... It can mean that attacks occurred elsewhere...",
+      "judgment": "Rigorous, but the symmetrical triple-hedge appears in nearly every chapter's uncertainty passage and blunts pacing."
+    },
+    {
+      "quote": "The dead of Srebrenica were made into a group before they were made into bodies, and they became persons again through the patient work of families, investigators, courts, and memory.",
+      "judgment": "A genuinely earned closing sentence that gathers the book's thesis without inflating it."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Aphoristic paired-antithesis closer at nearly every section break: two short clauses, parallel syntax, one abstract noun each.",
+      "instances": [
+        "The paiza made authority visible to strangers; the yam made it mobile.",
+        "Mobility opened the field. Administration decided what could be done there."
+      ]
+    },
+    {
+      "pattern": "Negation-then-assertion sentence pair (\"X was not A. It was B.\") used as the default engine of paragraph turns.",
+      "instances": [
+        "A massacre, in this reading, was not a private quarrel multiplied twenty-seven times. It was a collective act directed against a population.",
+        "The pass did not strike anyone. The arresting constable did."
+      ]
+    },
+    {
+      "pattern": "Identical chapter architecture: vivid documentary vignette, then source-critique of that document, then a comparative set of three or four cases, then a named reductive thesis (bellicist, ecological, market-only, technological, intentionalist) knocked down as \"real but insufficient,\" then a hedged verdict.",
+      "instances": [
+        "The bellicist interpretation associated with historians such as Charles Tilly has given this relationship a memorable formulation: war made states, and states made war.",
+        "Market demand explains much of the expansion of Atlantic slavery... The market supplied a powerful motive. It did not supply the whole system."
+      ]
+    },
+    {
+      "pattern": "Symmetrical hedge stacks — three or four grammatically parallel possibilities offered without ranking, then a sentence saying they are not equally likely.",
+      "instances": [
+        "The absence of a record may result from peace, loss, exclusion, or a decision by someone who never considered an event worth recording. These possibilities are not equally likely in every setting.",
+        "It can mean that attacks occurred elsewhere, that the dead were not buried in the cemetery, or that most assaults injured tissue that did not fossilise. These possibilities are not equally likely in every case."
+      ]
+    },
+    {
+      "pattern": "The book's thesis restated verbatim-in-substance as a chapter coda, with only the nouns swapped for the chapter's own case material.",
+      "instances": [
+        "A rifle magnified the threat, but the quota, map, and ordinance told the rifle where to point.",
+        "Across the Atlantic, aggression was given its scale by the office that named a person property, the ledger that pledged a life against a debt, the patrol that searched the road, and the court that called punishment justice."
+      ]
+    }
+  ],
+  "summary": "This is a serious, tightly governed work of comparative history whose thesis — that aggression acquires its scale, targets and durability from offices, records and institutions rather than from a fixed human nature — is stated in chapter one and genuinely tested, not merely repeated, across fifteen chapters spanning Nataruk to Srebrenica. Its outstanding qualities are evidentiary discipline and clarity: almost every case is paired with an account of how the surviving document was made, who it served, and what it therefore cannot support, and reductive rival theories (bellicist, ecological, technological, market-only, intentionalist) are engaged on their strongest form before being bounded rather than dismissed. Prose is precise, unhurried and free of the usual generative tells — no listicles, no stock openers, no chirpy transitions — and the sentence-level craft is well above competent. The weaknesses are structural sameness and length. Every chapter follows the same four-move template, hedge passages are built from the same symmetrical triples, and the two-clause antithetical aphorism is used as a section closer so often that its effect has worn out by the middle of the book; combined with a register that never varies in temperature, this makes the second half feel considerably longer than it is. Light revision — thinning the codas, varying the chapter architecture, and cutting perhaps ten percent of restated thesis — would leave a book that is genuinely publishable."
+}

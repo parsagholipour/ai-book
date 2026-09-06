@@ -2,13 +2,16 @@ import {
   type BookGenerationStrategy,
   type BookPlan,
   type CreateProjectInput,
-  type ProviderSet
+  type ProviderSet,
+  chapterCaseEvidence, reviewChapterCaseEvidence
 } from "@book-maker/core";
 import { prisma, pageScope } from "@book-maker/db";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
 import type { IndexedPageDraft } from "../runtime/jobTypes.js";
 import { restoreFigures, stripDraftFigures } from "./composedFigures.js";
-import { loadComposedBookState } from "./composedChaptersState.js";
+import { loadComposedBookState, recordChapterEvidenceResiduals } from "./composedChaptersState.js";
+import { parseEvidenceFinding } from "./composedEvidenceRepair.js";
+import type { RunLogger } from "../providers/runLogging.js";
 import {
   GeneratedPagePublicationClaimLostError,
   loadGeneratedPagePublicationSnapshot,
@@ -32,8 +35,9 @@ export async function finalizePendingPages(options: {
   providers: ProviderSet;
   strategy: BookGenerationStrategy;
   generationJobId?: string | undefined;
+  runLog?: Pick<RunLogger, "append"> | undefined;
 }): Promise<void> {
-  const { projectId, planId, input, plan, providers, strategy, generationJobId } = options;
+  const { projectId, planId, input, plan, providers, strategy, generationJobId, runLog } = options;
   const state = await loadComposedBookState(projectId);
   const pending = state.pages.filter((page) => page.status === "PENDING");
   if (pending.length === 0) {
@@ -67,6 +71,27 @@ export async function finalizePendingPages(options: {
     pages: drafts,
     generationJobId
   });
+
+  // A local leak repair is another writer. Check its changed case assertions before publishing any page.
+  const reviewedByIndex = new Map(reviewed.map((page) => [page.draft.index, page.draft.markdown]));
+  let start = 1;
+  for (const chapter of plan.chapters) {
+    const end = start + chapter.targetPages;
+    const pages = state.pages.filter((page) => page.index >= start && page.index < end);
+    const changed = pages.some((page) => reviewedByIndex.has(page.index) && reviewedByIndex.get(page.index) !== drafts.find((draft) => draft.index === page.index)?.markdown);
+    if (changed) {
+      const markdown = pages.map((page) => reviewedByIndex.get(page.index) ?? page.markdown).join("\n\n");
+      const review = await reviewChapterCaseEvidence({ markdown, packets: plan.dossier?.evidencePackets ?? chapterCaseEvidence(plan, chapter.index), textModel: providers.text });
+      if (review.issues.length || review.dropped.length) {
+        // The same door as the compose-time residuals: recorded on the chapter, flagged by the compile, never a failed book.
+        const unresolved = review.issues.map(parseEvidenceFinding);
+        console.warn("Final page repair left unsupported case claims", { event: "generation.composed_chapters.evidence_unresolved", projectId, chapterIndex: chapter.index, stage: "finalize", unresolved, dropped: review.dropped.length });
+        await runLog?.append("generation.composed_chapters.evidence_unresolved", { projectId, chapterIndex: chapter.index, stage: "finalize", unresolved, dropped: review.dropped.length });
+        await recordChapterEvidenceResiduals(projectId, chapter.index, unresolved);
+      }
+    }
+    start = end;
+  }
 
   let currentState = await loadProjectStoryState(projectId, plan.promises ?? []);
   for (const [offset, page] of reviewed.entries()) {
@@ -142,10 +167,3 @@ export async function finalizePendingPages(options: {
     }
   }
 }
-
-/**
- * A stance the pass had to generate is written back onto the approved plan, so
- * the console can show the author the book was written as and a later
- * continuation or chat edit reads the same one. The merge keeps every other
- * field of the stored package byte for byte.
- */

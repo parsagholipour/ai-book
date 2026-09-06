@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 8,
+    "depth": 9,
+    "reasoning": 7,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.5,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Twenty-one of the sixty-one excavated individuals carried stone projectile points embedded directly into bone tissue",
+      "judgment": "Chapter 1's version of Jebel Sahaba; Chapter 2 re-opens with the same site and says twenty-four of sixty-one, and renumbers the burials \u2014 a self-contradiction the reader can catch unaided."
+    },
+    {
+      "quote": "Human aggressiveness supplies the underlying physical capacity to inflict harm, but institutions, technologies, and social identities determine when that capacity is activated, whom it targets, and how far it reaches.",
+      "judgment": "The book's thesis, stated cleanly and early; every later chapter is a genuine test of it rather than an ornament on it."
+    },
+    {
+      "quote": "Bioarchaeologists estimate that only about one-third of fatal wounds inflicted with traditional weapons ... leave diagnostic cut marks or fractures on bone.",
+      "judgment": "Strong evidentiary self-discipline: the argument is repeatedly told what its own sources cannot support, which is rare and earns trust."
+    },
+    {
+      "quote": "The severed heads counted by royal scribes on the battlefield and the lines of captives driven across the Syrian desert were two sides of a single bookkeeping entry.",
+      "judgment": "Excellent one-line synthesis \u2014 but it is also the book's signature closing move, deployed at nearly every section seam until it stops landing."
+    },
+    {
+      "quote": "The Reichsbahn charged the SS four pfennigs per track-kilometre for each adult passenger and two pfennigs for children under ten, while guards and children under four travelled free.",
+      "judgment": "The best single passage in the book: the thesis proved by a tariff table rather than asserted over one."
+    },
+    {
+      "quote": "Norris Farms 36, Illinois: a fourteenth-century cemetery containing two hundred and sixty burials, where one-third of the skeletons show lethal trauma",
+      "judgment": "One of eleven consecutive site-label paragraphs in Chapter 5; the chapter briefly abandons prose for a catalogue and the argument stops moving."
+    },
+    {
+      "quote": "The ledger recorded thirty-four floggings that morning. It recorded no names.",
+      "judgment": "Genuinely fine sentence-level craft \u2014 short antithetical pairs like this are the voice at its best, and also the tic it overuses."
+    },
+    {
+      "quote": "When German colonial forces under Captain Johannes and Major Kurt von Johannes countered these movements",
+      "judgment": "A garbled name doubled into two officers; a symptom of the density of unsourced proper nouns, where nothing internal lets a reader check a slip."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Negation-then-correction thesis formula ('this was not X; it was Y'), used to close nearly every section in all fifteen chapters until the antithesis becomes audible as a template rather than an argument.",
+      "instances": [
+        "The palace reliefs documented neither a momentary burst of collective fury nor an uncontrolled sack. They documented an administrative transaction.",
+        "The violence of the enslaved was not an explosion of blind fury; it was an instrumental counter-strategy"
+      ]
+    },
+    {
+      "pattern": "The single-sentence pivot paragraph \u2014 a lone declarative line set off between long paragraphs to carry the turn. Dozens per chapter, giving the whole book a uniform respiration.",
+      "instances": [
+        "Human biology provides the neurological circuitry and hormonal mechanisms that make violent action possible.",
+        "The firearm itself was inert; its social reach was determined by the administrative apparatus that procured it."
+      ]
+    },
+    {
+      "pattern": "Straw-man-then-refutation chapter engine: a named or unnamed 'common view' is erected in generic terms, then dismantled by the evidence. Effective the first two times, mechanical by chapter nine.",
+      "instances": [
+        "A common line of reasoning treats aggression as an invariant biological constant operating across human history.",
+        "Warfare among the Classic Maya has often been described as an aristocratic ritual, a seasonal pageant of capture and bloodletting"
+      ]
+    },
+    {
+      "pattern": "Chapters and sections closed with a rhetorical either/or question that the book never returns to answer, substituting the appearance of open inquiry for actual adjudication.",
+      "instances": [
+        "How much of the apparent rise and fall of prehistoric conflict reflects genuine shifts in how human communities chose to organize their societies, and how much reflects only the accidental chemistry of the ground?",
+        "Did the industrialization of war create an administrative apparatus that forced societies into escalating violence against civilians against their conscious intent, or did modern states embrace the machine because it provided the first practical instrument to execute long-standing political desires?"
+      ]
+    },
+    {
+      "pattern": "Wholesale case reuse across distant chapters, with the second telling adding little and sometimes conflicting with the first.",
+      "instances": [
+        "Fred Wendorf and his excavation team spent the winter months of 1965 clearing sixty-one skeletons (Ch. 1) / Fred Wendorf's excavation team began clearing the drift sand ... in the winter of 1965 (Ch. 2)",
+        "the English merchant ship Hannibal ... under the command of Captain Thomas Phillips (Ch. 8) / the surviving logbook of the British slave ship Hannibal ... under the command of Captain Thomas Phillips (Ch. 15)"
+      ]
+    }
+  ],
+  "summary": "This is an unusually substantial and disciplined work of institutional history: a single argument \u2014 that biology supplies the capacity for harm while institutions decide its reach, targets and frequency \u2014 is genuinely tested across fifteen chapters from Jebel Sahaba to the Sargasso Sea, and the evidence is specific, concrete and often superb (the Reichsbahn passenger tariff, the Shulgi ration tablet, the Ascalon Genizah letter). Its source criticism is a real strength: taphonomy, sampling bias and royal propaganda are handled early and then honored throughout, and the comparative chapters on Mesopotamia/Egypt and Europe/Tokugawa Japan do the analytic work the thesis needs. The prose is clean and the voice consistent, but the consistency shades into machinery: every section ends on a negation-then-correction antithesis, single-sentence pivot paragraphs punctuate every page, most chapters open by erecting a generic 'common view' to demolish, and several close on unanswered either/or questions. Chapter 5 collapses into a catalogue of site labels, and two major cases (Jebel Sahaba, the Hannibal) are retold in later chapters with no new yield and, in the first instance, contradictory figures. The book also has no synthesizing conclusion \u2014 it ends on Arkhipov, thematically apt but structurally abrupt \u2014 and its dense unsourced proper nouns occasionally garble. Light revision to deduplicate cases, break the closing formula and restore prose to Chapter 5 would move this close to publishable."
+}

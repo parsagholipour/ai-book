@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 6,
+    "depth": 5,
+    "reasoning": 7,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 4,
+    "pacing": 3,
+    "craft": 7,
+    "slopResistance": 5
+  },
+  "overall": 6.1,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Archaeology may preserve a wound without a name. Administrative writing may preserve a name without a wound.",
+      "judgment": "The book's governing insight, stated with genuine elegance and earned by the preceding pages."
+    },
+    {
+      "quote": "Bone can preserve damage. It rarely preserves the full social sequence.",
+      "judgment": "Precise and memorable, but also the template for dozens of near-identical two-beat formulations."
+    },
+    {
+      "quote": "Violence may open a political order; writing may help it last.",
+      "judgment": "Strong compression of the Domesday argument; also the first of many chapter-closing aphorisms."
+    },
+    {
+      "quote": "The bones carry recurrence, but not a calendar of recurrence.",
+      "judgment": "Excellent epistemic discipline about what a date range can and cannot support."
+    },
+    {
+      "quote": "The record does not establish the extent of implementation, the number of stations, or the precise burdens carried by the communities assigned to them.",
+      "judgment": "Representative of the pervasive hedging that eventually substitutes for analysis rather than sharpening it."
+    },
+    {
+      "quote": "opens with a semi-mythical genealogy in which a blue-grey wolf and a fallow doe become the ancestors of Batachiqan",
+      "judgment": "Chapter 7 re-narrates Chapter 6's Mongol material almost wholesale — a structural duplication, not a callback."
+    },
+    {
+      "quote": "A rider can cross open ground quickly; an empire has to make messages arrive.",
+      "judgment": "The best single sentence in the book; shows what the prose can do when it stops qualifying."
+    },
+    {
+      "quote": "The claim that benevolence and terror are opposing systems has a clear appeal.",
+      "judgment": "A stock straw-man setup that recurs in most chapters: raise a simple reading, grant its appeal, then qualify it."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The negative-then-positive evidentiary seesaw — nearly every paragraph closes by saying what the source does not establish and then what it does. Used hundreds of times, it flattens argument into liturgy.",
+      "instances": [
+        "It does establish the reasoning expressed by one German military leader and the wider association between scorched-earth policy and famine.",
+        "It does not establish the role of railway networks, factories, telegraphy, conscription, nationalism, or industrial supply chains in producing those events."
+      ]
+    },
+    {
+      "pattern": "Aphoristic paired closer: sections and chapters end on a two-clause antithesis rather than on a completed argument.",
+      "instances": [
+        "A wound is not a war. A cemetery records the dead without functioning as a census.",
+        "A rider can cross open ground quickly; an empire has to make messages arrive."
+      ]
+    },
+    {
+      "pattern": "Obligatory backward comparison: every chapter inserts a paragraph explicitly measuring its case against a previous chapter's case, usually to conclude the two cannot be ranked.",
+      "instances": [
+        "Earlier, the Zong case showed how a commercial claim could translate the killing of enslaved people into the language of insured property.",
+        "The Swedish allotment system described in an earlier case offers a contrast in institutional scale, though not in moral content."
+      ]
+    },
+    {
+      "pattern": "Definitional not-the-same-thing antithesis used as a substitute for developed distinction.",
+      "instances": [
+        "Administrative visibility and public accessibility are not the same thing.",
+        "Counting does not produce the same knowledge as witnessing."
+      ]
+    },
+    {
+      "pattern": "Chapters end by naming an explicitly unresolved question, phrased in an almost identical formula, so the withholding of conclusions becomes itself formulaic.",
+      "instances": [
+        "The unresolved question is not whether Davis saw deported groups moving through Harput.",
+        "The unresolved question lies on the other side of that responsibility."
+      ]
+    }
+  ],
+  "summary": "This is an unusually disciplined book about the epistemology of violence: its thesis — that aggression, injury, coercion, raiding, warfare and atrocity are not interchangeable units, and that each surviving source can answer only some of those questions — is stated in Chapter 1 and honoured consistently through fifteen chapters. The voice is restrained, precise and genuinely distinctive, and the best sentences (\"Archaeology may preserve a wound without a name\"; \"A rider can cross open ground quickly; an empire has to make messages arrive\") show real craft. But the method eats the book. Almost every paragraph performs the same two-beat move of denying and then conceding what a source establishes, so that source-criticism displaces historical argument; depth is further limited because each chapter close-reads only one or two thin excerpts, several of them evidently encyclopaedic summaries the text has to keep apologising for. Redundancy is severe: Chapters 6 and 7 narrate the same Secret History genealogy and the same Ögedei post-station proposal twice at length, and Chapters 12 and 13 repeat the Leslie Davis material almost verbatim. The result is coherent, honest and often intelligent, but airless and roughly a third too long for what it argues."
+}

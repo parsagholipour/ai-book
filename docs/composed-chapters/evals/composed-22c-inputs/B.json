@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.5,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A wound is not an emotion, and a projectile point is not a motive.",
+      "judgment": "Excellent opening-chapter compression of the book's evidentiary discipline; earns its epigrammatic form because the following paragraphs actually cash it out."
+    },
+    {
+      "quote": "Preservation changes the population that can be seen. The skull, mandible, and long bones generally survive better than ribs, vertebrae, the sternum, and the small bones of the hands and feet. A record built largely from skulls will overrepresent head injuries",
+      "judgment": "Genuine methodological depth: the book reasons about how its own evidence is biased rather than asserting conclusions."
+    },
+    {
+      "quote": "The stored grain made a garrison or labour force possible; the labour force made the wall possible; the wall protected the stores and the offices that distributed them.",
+      "judgment": "The Uruk causal loop is the strongest analytic passage in the book \u2014 mechanism shown, not stated."
+    },
+    {
+      "quote": "The owners did not need to prove that the people aboard the Zong were human; they needed to establish that their destruction met the terms of a maritime loss.",
+      "judgment": "Sharpest sentence in the manuscript; the argument and the horror arrive in the same clause."
+    },
+    {
+      "quote": "\"Evacuation\" meant a knock at an apartment door. \"Appropriate treatment\" meant removal to Che\u0142mno.",
+      "judgment": "Effective translation of bureaucratic euphemism into consequence, and one of the few places the prose changes register."
+    },
+    {
+      "quote": "The state he built was also coercive. Expansion brought warfare to populations that might have preferred autonomy",
+      "judgment": "A continuity failure: \"he\" has no antecedent \u2014 Samori Tour\u00e9 is discussed for two pages before he is ever introduced, indicating a dropped or misordered passage."
+    },
+    {
+      "quote": "C\u00f3rdoba provides a different question. The municipal record, as preserved in the material for this discussion, points towards moderation amid conflict",
+      "judgment": "A drafting artefact left in the text; \"the material for this discussion\" breaks the book's voice and admits the author never examined the source."
+    },
+    {
+      "quote": "Steppe ecology gave the Mongols a geography of possibility. Institutions decided how that possibility was used.",
+      "judgment": "Elegant in isolation, but this exact two-beat closer \u2014 condition named, institutions credited \u2014 ends a dozen sections, and by Chapter 12 it reads as a template rather than a conclusion."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Section-ending paired antithesis in which a material condition is demoted and 'institutions'/'offices' are given the last word. It closes nearly every section in all fifteen chapters, so the book's best rhetorical move becomes its most predictable one.",
+      "instances": [
+        "The grain did not choose its destination. An institution did.",
+        "Ecology made movement possible; it did not determine which prince commanded the movement."
+      ]
+    },
+    {
+      "pattern": "The negation-first definitional opener: 'X is not Y' or 'X did not do Z', followed by the corrected account. Used at paragraph heads hundreds of times; it gives the prose a uniform rhythm and pre-empts objections nobody raised.",
+      "instances": [
+        "Water is not aggression.",
+        "The wall did not fight."
+      ]
+    },
+    {
+      "pattern": "Symmetrical possibility-enumeration hedging, in which three or four readings of the evidence are listed in parallel clauses of near-identical length and then left unresolved. Intellectually honest, but repeated to the point of flattening the argument's forward motion.",
+      "instances": [
+        "It can mean that violence was rare. It can mean that violence was directed away from the people whose bones were buried there. It can mean that disputes were settled through exchange, separation, compensation, ritual",
+        "The attack might have been intended to seize land, remove competitors, settle a feud, capture people, or avenge an earlier killing."
+      ]
+    },
+    {
+      "pattern": "Chapter-closing recap that renames each of the chapter's three or four case studies in a single sentence and assigns each a one-clause moral, so that consecutive chapters end with the same syntactic list.",
+      "instances": [
+        "Merv demonstrates exemplary destruction used to punish resistance. Baghdad demonstrates the removal of an established political centre... Khanbaliq demonstrates the conversion of conquest into durable administration.",
+        "Assyria answered them through lists of deportation and reassigned labour; Persia through satrapies, tribute, and a ceremony of ordered peoples; Rome through siege, rebuilding, garrisons, and triumph."
+      ]
+    },
+    {
+      "pattern": "The document-as-instrument set piece: a register, list, ledger or protocol is introduced as 'quiet' or 'calm', then shown to encode coercion. Powerful the first two times (Uruk ration tablets, the Zong claim), formulaic by the fifth (Tophane, quartering records, Codex Mendoza, Wannsee, EURODAC).",
+      "instances": [
+        "A cannon inventory is a quiet document. Its columns may contain no battlefield scene",
+        "A page from the Codex Mendoza can seem orderly because the violence that produced its order has been removed from the immediate scene."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined survey history arguing that aggression becomes organised violence only when institutions supply permission, targets and records \u2014 that scarcity, technology and emotion are conditions rather than causes. The thesis is held with rare consistency across fifteen chronological chapters, the source criticism is genuinely sophisticated (taphonomy, cemetery sampling, royal propaganda as evidence-for-something-else), and individual passages on Uruk's grain-to-labour loop, the Zong insurance claim and the Wannsee euphemisms are excellent. The cost is monotony: the same closing antithesis, the same negation-first paragraph opener and the same case-recap list recur so often that by the later chapters the argument feels executed rather than pursued, and the prose sustains one austere register with almost no variation in sentence length, humour or human presence. Two concrete defects need fixing: Samori Tour\u00e9 is discussed for several paragraphs in Chapter 11 before he is ever introduced (\"The state he built was also coercive\" has no antecedent), and Chapter 10 leaves a drafting artefact in the text (\"as preserved in the material for this discussion\"), alongside a run of unanswered rhetorical questions that reads as an unfinished section. The slop here is structural rather than lexical \u2014 no stock chattiness, but heavily templated paragraph shapes and aphoristic closers \u2014 so it would take a pass for redundancy and rhythm, plus repair of those two breaks, to reach publishable form."
+}

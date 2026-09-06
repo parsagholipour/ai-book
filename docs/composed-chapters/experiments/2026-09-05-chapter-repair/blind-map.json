@@ -1,0 +1,14 @@
+{
+  "reader1": {
+    "path": "/tmp/book-reading-9dltbywy/reader1",
+    "A": "original",
+    "B": "revised",
+    "packetSha256": "8b0a0f2e881866d0f77a4480e4b3175c62ad5d62753ac0e53df7e069eb22b457"
+  },
+  "reader2": {
+    "path": "/tmp/book-reading-9dltbywy/reader2",
+    "A": "revised",
+    "B": "original",
+    "packetSha256": "f056e9c3df69cad45dfebaa3474554e6d70733001e8dda2707d48c90b91dd03c"
+  }
+}

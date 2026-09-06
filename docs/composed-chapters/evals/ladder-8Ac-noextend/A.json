@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.6,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The vocabulary follows the organisation of the act: who chose the target, who supplied the means, what duration was intended, and how many people were drawn into carrying out or enduring the harm.",
+      "judgment": "The book's controlling idea is stated early, concretely, and as a working procedure rather than a slogan; almost every later chapter genuinely executes it."
+    },
+    {
+      "quote": "If a high proportion of bodies in one cemetery bear trauma, the figure describes that cemetery's dead, not the number of attacks experienced by everyone who lived nearby.",
+      "judgment": "Model handling of evidentiary limits: the argument about survivorship in the archaeological record is made in plain, non-defensive prose and then actually constrains later claims."
+    },
+    {
+      "quote": "The granary was a military object even when no weapon stood beside it.",
+      "judgment": "A genuinely earned reframing that does real analytic work, and one of the few epigrammatic lines that is not merely decorative."
+    },
+    {
+      "quote": "The absence of blood from the page was produced by the institutions between the page and the dead.",
+      "judgment": "Strongest sentence in the Wannsee chapter; joins the book's institutional thesis to the moral stakes without overstatement."
+    },
+    {
+      "quote": "The gun extended the hand. The ledger decided where it reached.",
+      "judgment": "Effective in isolation but symptomatic: this two-beat antithetical closer recurs at chapter ends throughout and reads as a template."
+    },
+    {
+      "quote": "The killing's significance lay in its being more extensively organised, heavily supplied, and faithfully recorded, with the larger total forming only one part of the account.",
+      "judgment": "A rare but telling lapse in craft — a nominalised, comma-spliced construction that obscures a point the book elsewhere makes cleanly."
+    },
+    {
+      "quote": "In August 1071, Robert Guiscard and his brother Roger defeated the Byzantine army at Bari's wider Sicilian theatre and pressed their campaign",
+      "judgment": "Garbled geography and a confused clause; the chapter on frontiers is the weakest-edited stretch in the book."
+    },
+    {
+      "quote": "Material deprivation supplied the heat. It did not choose the vessel.",
+      "judgment": "Sharp, but part of a recurring habit of isolating a two-sentence aphorism as its own paragraph to mark a section hinge."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter runs the same machine: a cinematic set-piece opening, two or three paired case studies from distant regions, an explicit 'the contrast lies in...' comparison paragraph, and a closing abstraction. Readers learn the shape by chapter three and can predict the next move.",
+      "instances": [
+        "Breisach posed the same problem through another legal language. Hagenbach invoked the duke's command; the Rwandan accused man invoked the local official's.",
+        "Lachish and Babylon cannot be reduced to either tolerance or terror."
+      ]
+    },
+    {
+      "pattern": "Chapter- and section-endings are dominated by paired antitheses in balanced short sentences, a signature move used so often it becomes the book's default cadence rather than a rhetorical peak.",
+      "instances": [
+        "The horse carried the order; the office made it imperial.",
+        "Technology enlarged the field of possible harm. Administration chose its routes."
+      ]
+    },
+    {
+      "pattern": "Single-sentence dramatic paragraphs are inserted as beat markers before or after dense analytical stretches, a rhythm device applied on schedule rather than where the material demands it.",
+      "instances": [
+        "A blackened wall is an event, not a motive.",
+        "The act failed."
+      ]
+    },
+    {
+      "pattern": "Chapters repeatedly close on an unresolved rhetorical question posed to the reader, which substitutes suspended inquiry for actual synthesis; the final chapter does this too, so the book never lands a conclusion.",
+      "instances": [
+        "can we move from recorded assaults, graves, campaigns, prisoners, executions, and disappearances to the prevalence of aggressiveness itself, or will the past always give us the violence that institutions noticed and the quiet they did not?",
+        "can demobilisation, memory, and political inclusion redirect aggression faster than new conditions produce new targets?"
+      ]
+    },
+    {
+      "pattern": "The thesis is restated in near-identical institutional vocabulary at the close of nearly every case, so that the book's argument is confirmed far more often than it is tested or complicated.",
+      "instances": [
+        "Violence expanded where an administrative chain carried an order to a target; it narrowed where the chain broke",
+        "destruction required offices that could issue orders and neighbours who encountered those orders as permissions."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined comparative history whose central claim — that the scale and shape of human violence is determined by offices, records and administrative reach rather than by fluctuating levels of innate aggression — is stated early and pursued with real consistency from Jebel Sahaba to Colombia. Its greatest strengths are evidentiary honesty (it repeatedly explains what a grave, a ration tablet, a relief, or a casualty register can and cannot establish) and specificity: named cases, dates, scholars and disputes rather than generic period colour. The prose is clean, cool and free of the usual AI vocabulary tics, and the best passages — the Uruk ration lists, the Wannsee protocol, the Brookes plan against Equiano's narrative — are genuinely good historical writing. The weaknesses are architectural rather than lexical: the chapter template (scene, paired cases, contrast paragraph, aphoristic closer, open question) is applied so uniformly that pacing flattens across fifty-five thousand words, and the thesis is confirmed on schedule instead of being stress-tested. Slop here shows up as shape — balanced antitheses, one-line dramatic paragraphs on cue, and question-mark endings — rather than as vocabulary. With varied chapter architecture, fewer restatements of the core claim, a real concluding synthesis in place of the final open question, and a copy pass over a handful of garbled sentences, it would be close to publishable."
+}

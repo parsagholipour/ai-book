@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 5,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 6.8,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Without it, a feeling becomes an action, an action becomes a crowd, and a crowd becomes an explanation.",
+      "judgment": "Strong: a genuinely earned aphorism that states the book's method in one clause instead of asserting it abstractly."
+    },
+    {
+      "quote": "Aggression and restraint occupy the same material record.",
+      "judgment": "Strong: compact formulation of the book's most useful recurring insight, drawn directly from the healed-fracture evidence rather than imposed on it."
+    },
+    {
+      "quote": "One hundred and thirty-two lives became an amount that could be claimed, contested, and measured against the terms of a contract.",
+      "judgment": "Strong: the Zong chapter's best sentence \u2014 the horror is carried entirely by the commercial vocabulary, exactly the point being argued."
+    },
+    {
+      "quote": "The state's suppression of a fistfight does not place it outside the history of aggression. It changes the scale and meaning of force.",
+      "judgment": "Strong reasoning move, but the two-sentence negation-then-correction shape recurs so often it becomes the book's default cadence."
+    },
+    {
+      "quote": "The clay sling bullets show how technology changed the reach of aggression without supplying its purpose.",
+      "judgment": "Weakness: this exact proposition is restated in nearly every chapter (Chs. 3, 5, 7, 8, 9, 10, 11, 12, 13, 14) with only the noun swapped."
+    },
+    {
+      "quote": "Neither case supports a universal sequence in which surplus automatically creates kings, kings automatically create armies, and armies automatically create war.",
+      "judgment": "Weakness: the symmetrical 'neither X nor Y / not a ladder from simple to complex' hedge is deployed as a chapter-closing reflex rather than as a fresh argument."
+    },
+    {
+      "quote": "The crowd was crowded with purposes, not governed by one mind.",
+      "judgment": "Weakness: a rare stylistic reach that misfires \u2014 the pun on 'crowd/crowded' is the only ornamental sentence in a chapter of plain prose and reads as an accident."
+    },
+    {
+      "quote": "protect access before grievance hardens, challenge categories before they become commands, and keep security power answerable before it learns to call destruction order.",
+      "judgment": "Weakness: after fourteen chapters of refusing prescription, the book ends on a tricolon of policy imperatives \u2014 the one closing move its own method disallows."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The four-factor refrain (institutions / resources / technology / ideas of belonging) restated in near-identical wording at the close of every chapter, usually with technology explicitly denied causal force.",
+      "instances": [
+        "Technology affected the means available to both societies, but weapons did not decide whether a quarrel became a lawsuit, a raid, or a settlement. Political organisation gave material pressures their direction.",
+        "Technologies extended command without deciding its purpose. The rifle carried by the Force Publique, the telegraph linking colonial stations, the road built by Malagasy labour..."
+      ]
+    },
+    {
+      "pattern": "The 'not X but Y' / paired-antithesis sentence as the dominant syntactic unit, often two or three in a row, flattening argument into symmetry.",
+      "instances": [
+        "Monopoly is therefore a claim to the final right of authorised coercion, not a promise that private violence has vanished.",
+        "Narration is chaptered... The ceremony is not an interval after the real event. It is where the event becomes history."
+      ]
+    },
+    {
+      "pattern": "A fixed chapter template: open on one vivid case \u2192 a second contrasting case \u2192 an explicit methodological caution about what the evidence cannot show \u2192 a paragraph cataloguing objects/persons/places \u2192 a closing paragraph re-listing all cases in the chapter.",
+      "instances": [
+        "At Uruk, accounting made collective projects governable. At Hamoukar, collective force reached a wall. On the Narmer Palette, conquest became an image of political order.",
+        "In the Mexica campaign, the Bonampak court, the Haudenosaunee council, the Mississippian plaza, and the Inka road, political institutions gave aggression its reach, its targets, and its reasons."
+      ]
+    },
+    {
+      "pattern": "Source-critical hedging escalated into a tic \u2014 the limits of the archive are announced in nearly every section, frequently in the same 'the record does not preserve X; it shows Y' shape.",
+      "instances": [
+        "The record does not give us the names of a ruler, defender, or victim, so those roles should not be filled with invented personalities.",
+        "They rarely preserve the choices of individual families who hid, fled, negotiated, or returned."
+      ]
+    },
+    {
+      "pattern": "Cross-chapter recap loops: earlier cases are re-summarised inside later chapters and then a third time in Chapter 15, with material repeated almost verbatim.",
+      "instances": [
+        "Here the earlier problem of revolutionary emergency returns in another register. In Paris in September 1792, prison killings grew from rumours, political categories, a failing custody system...",
+        "The surviving copy of the Wannsee protocol, prepared by Adolf Eichmann after Reinhard Heydrich chaired the meeting on 20 January 1942, records the administrative vocabulary of a policy already advancing..."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, well-informed comparative history of organised violence from Jebel Sahaba to the Good Friday Agreement, held together by an unusually explicit thesis: aggression is a constant possibility whose scale, targets and meaning are set by institutions, resources, technology and ideas of belonging, none of which supplies a motive on its own. The evidentiary work is genuinely good \u2014 sources are named, their production conditions examined, and rival readings (the ritual-war model of the Mexica, the spontaneity account of the September Massacres, the long-decline thesis) are argued against on evidence rather than dismissed. Prose is clean, precise and free of the usual lexical tells; there is no listicle padding, no hype register, no false intimacy. The failure is structural rather than verbal: every chapter runs the same template, the four-factor conclusion is restated dozens of times in barely varied wording, and the 'not X, but Y' antithesis dominates the syntax so completely that the argument begins to feel generated by a rule rather than reached. Combined with an unvaryingly grave register and no narrative momentum, this makes the book more admirable than readable \u2014 a strong manuscript that needs its refrains cut hard and its chapter shapes differentiated before it would hold a reader across 15 chapters."
+}

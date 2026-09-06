@@ -1,0 +1,180 @@
+--- packages/core/src/generation/chapterForms.ts
++++ packages/core/src/generation/chapterForms.ts
+@@ -2,6 +2,7 @@
+ import type { TextModelAdapter } from "../adapters/types.js";
+ import { targetLanguageGenerationGuidance, targetLanguagePayload } from "../prompting/language.js";
+ import type { AuthorStance, BookPlan, ChapterPlan, CreateProjectInput } from "../schemas/book.js";
++import type { BookEpisodes } from "../schemas/episodes.js";
+ import { isRecord } from "../schemas/jsonCoercion.js";
+ import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
+ import { FIGURE_FORM_PLAN_CONTRACT, FIGURE_FORM_PLAN_RULE } from "./figures/figurePrompt.js";
+@@ -641,8 +642,13 @@
+   fixed?: readonly ChapterComposition[] | undefined;
+   /** Whether this book may carry figures (`usesFigures` and the gate): the rule and the key reach the planner only then. */
+   figures?: boolean | undefined;
++  /** The book's episodes when they were planned first: the cases each chapter is built from, so the planner does not choose a second set. */
++  episodes?: BookEpisodes | undefined;
+   textModel: TextModelAdapter;
+ };
++
++const CASE_ASSIGNMENTS_RULE =
++  "caseAssignments is the material already selected for this book. Build each chapter's sections from its assigned episodes and their specific contributions; do not invent a second competing case list. A case has one home for its full treatment. Other chapters may use a brief comparison that adds a new inference, without retelling the episode. Use the chapter's remaining space to explain how its own events, institutions or documents worked.";
+ 
+ /**
+  * One call for the whole book, so variety can be global, then one repair
+@@ -657,6 +663,15 @@
+   if (open.length === 0) {
+     return { compositions: [...(options.fixed ?? [])], issues: [], source: "model" };
+   }
++  // Every chapter's cases, the written ones included, so an open chapter is
++  // planned around what its neighbours already own; never the search queries.
++  const caseAssignments =
++    options.episodes && options.episodes.chapters.length > 0
++      ? options.episodes.chapters.map((chapter) => ({
++          chapterIndex: chapter.index,
++          episodes: chapter.episodes.map(({ title, person, place, date, document, why }) => ({ title, person, place, date, document, why }))
++        }))
++      : undefined;
+   // A disabled gate strips any figure the model volunteered; chapters already
+   // written keep theirs, since their pages already carry the block. The cap
+   // is a ceiling against a figure in every chapter, not a target: the first
+@@ -685,6 +700,7 @@
+             "Return one JSON object with a chapters array. Each chapter object has chapterIndex, throughLine, sections, landing, and avoid, exactly like outputContract.chapters[0].",
+             "A section's form governs the shape of its prose, not its topic. Choose the form the material wants: a single vivid episode wants a scene; a document or object wants a close reading; a genuine dispute wants an argument or a counterargument; a list of things wants a catalogue and is allowed to read as one; an unsettled matter wants an open question left open.",
+             "Each section's subject is concrete and specific to this book; owns lists the particular cases, sources, scenes, people or objects that section alone treats, and no two sections anywhere in the book own the same one.",
++            ...(caseAssignments ? [CASE_ASSIGNMENTS_RULE] : []),
+             "landing is the claim this chapter adds to the book's argument, particular to this chapter's cases: what the author concludes from them, in one sentence. It is never a restatement of the book's thesis, never a general statement about institutions, capacities or human nature, and never built as a negation and its correction (\"X did not simply A; it B\"). No two landings share a shape or a subject. The writer reasons toward it in the chapter's final paragraph rather than quoting it.",
+             "Each section carries a handoff: the question or unfinished business it leaves for the next section, so the chapter reads as one argument in movements rather than a stack of separate essays. The last section's handoff is empty.",
+             ...(options.figures ? [FIGURE_FORM_PLAN_RULE] : []),
+@@ -728,6 +744,7 @@
+                 ...(range.kind ? { kind: range.kind } : {}),
+                 ...(range.job ? { job: range.job } : {})
+               })),
++              ...(caseAssignments ? { caseAssignments } : {}),
+               ...(options.fixed && options.fixed.length > 0
+                 ? {
+                     alreadyWrittenChapters: options.fixed.map((composition) => ({
+--- packages/core/src/generation/composedChapterMaterial.ts
++++ packages/core/src/generation/composedChapterMaterial.ts
+@@ -17,7 +17,17 @@
+   evidencePackets?: readonly CaseEvidencePacket[] | undefined;
+   /** The opening scene, composed by `composeScene` before the chapter and printed ahead of it. */
+   scene?: { text: string; words: number; episodeTitle: string } | undefined;
++  /** Episodes whose full treatment belongs to another chapter: named so the writer refers to them rather than retelling them. */
++  reservedCases?: ReadonlyArray<{ chapterIndex: number; episodes: ReadonlyArray<Pick<ChapterEpisode, "title" | "person" | "place" | "date" | "document">> }> | undefined;
+ };
++
++/** The routing line for `reservedCases`: nothing when no other chapter owns a case. */
++export function caseReservationLines(options: { material?: ChapterMaterial | undefined }): string[] {
++  if (!options.material?.reservedCases?.length) return [];
++  return [
++    "reservedCases names episodes whose full treatment belongs to another chapter. Refer to them only briefly when a comparison adds something this chapter needs; do not narrate them again. Develop the mechanisms, decisions, consequences and source details of this chapter's own episodes instead."
++  ];
++}
+ 
+ /**
+  * The creative contract's rules, in place of the grounded factuality rule and
+@@ -48,6 +58,18 @@
+ }
+ 
+ /**
++ * System lines for the editor pass. The editor needs the case evidence rules
++ * and case reservations, but not the compose-time opening-scene instructions
++ * that materialLines() adds.
++ */
++export function materialEditLines(options: { material?: ChapterMaterial | undefined }): string[] {
++  return [
++    ...(options.material?.evidencePackets?.length ? CASE_EVIDENCE_WRITER_RULES : []),
++    ...caseReservationLines(options),
++  ];
++}
++
++/**
+  * Material-first: the writer's lines about the chapter's episodes, its
+  * dossier and the scene already written. Content assignments per chapter,
+  * never a shape rule, and named in the payload keys (`episodes`, `dossier`,
+@@ -60,6 +82,7 @@
+     "This chapter is built from the episodes in `episodes`: each is a person, a place, a date and a document from the record, and the chapter's sections are made from them — an episode told in time, a document read closely, a figure worked through — with the argument arising from the material rather than the material illustrating the argument. Give each episode a real stretch of the chapter, not a mention."
+   ];
+   if (material.episodes.length === 0) lines.length = 0;
++  lines.push(...caseReservationLines(options));
+   if (material.evidencePackets?.length) lines.push(...CASE_EVIDENCE_WRITER_RULES);
+   if (material.excerpts.length > 0) {
+     lines.push(
+@@ -87,6 +110,14 @@
+       document: episode.document,
+       why: episode.why
+     })),
++    ...(material.reservedCases?.length
++      ? {
++          reservedCases: material.reservedCases.map((entry) => ({
++            chapterIndex: entry.chapterIndex,
++            episodes: entry.episodes.map(({ title, person, place, date, document }) => ({ title, person, place, date, document }))
++          }))
++        }
++      : {}),
+     ...(material.evidencePackets?.length ? { caseEvidence: material.evidencePackets } : {}),
+     ...(material.excerpts.length > 0
+       ? {
+--- packages/core/src/generation/composedChapter.ts
++++ packages/core/src/generation/composedChapter.ts
+@@ -9,10 +9,10 @@
+ import { authorStancePromptLines, isNarrativeWritingMode } from "./authorStance.js";
+ import { arcChapterLines, type BookArc } from "./bookArc.js";
+ import { chapterDevelopmentLines } from "./bookDevelopment.js";
+-import { CASE_EVIDENCE_WRITER_RULES } from "./caseEvidence.js";
+ import {
+   CREATIVE_CONTRACT_RULES,
+   CREATIVE_RECONSTRUCTION_RULE,
++  materialEditLines,
+   materialLines,
+   materialPayload,
+   remainingBudget,
+@@ -648,7 +648,7 @@
+       ? `The draft is ${draftWords} words and the chapter needs about ${budget.target} (never under ${budget.min}, never over ${budget.max}): develop the existing sections with more particular detail — the named person, the document, the place, the next thing that happened — rather than adding sections, generalising, or restating.`
+       : `Return between ${budget.min} and ${budget.max} words; the draft is ${draftWords} words. Over ${budget.max}, cut.`,
+     ...(options.contract === "creative" ? [CREATIVE_CONTRACT_RULES[1]!] : [GROUNDED_FACTUALITY_RULE, ...citation.rules]),
+-    ...(options.material?.evidencePackets?.length ? CASE_EVIDENCE_WRITER_RULES : []),
++    ...materialEditLines(options),
+     ...(options.material?.scene
+       ? [`The chapter opens with a scene of about ${options.material.scene.words} words that was written on purpose in a narrating register; keep it a scene — tighten it if you must, never turn it into summary or argument.`]
+       : []),
+--- packages/core/src/generation/episodes.ts
++++ packages/core/src/generation/episodes.ts
+@@ -73,6 +73,7 @@
+             "kind says what the chapter will do with it: scene (an event told in time), document (a text read closely), figure (a number or a table worked through), dispute (two named people or works that disagree about it), portrait (one person followed). Choose the treatment the evidence supports. A scene is optional.",
+             ...(options.evidenceRequired ? ["Every central case must subsequently pass source verification. Select cases with accessible substantive documentation, not famous names used as decoration. If feedback names unavailable cases, choose different documented material serving the same requested coverage."] : []),
+             "searchQueries: two or three searches that would find the document's own text in a library catalogue — its title, its author, a distinctive phrase — never a topic. why: one sentence on what the episode lets the chapter show.",
++            "Select each case for one chapter only: its full account belongs where it makes the strongest contribution. When neighboring chapter scopes overlap, give them different documented episodes. The why field names a concrete question or mechanism this episode adds that the other chapters do not already explain; avoid another illustration of the book's general thesis. The final chapter needs fresh material that tests the earlier explanation, rather than a tour of the preceding cases.",
+             "Return one JSON object shaped exactly like outputContract, with one entry per chapter of the plan in the plan's order and the plan's index numbers.",
+             ...targetLanguageGenerationGuidance(options.input.language)
+           ].join(" ")
+--- apps/worker/src/generation/composedChaptersPass.ts
++++ apps/worker/src/generation/composedChaptersPass.ts
+@@ -199,9 +199,17 @@
+     const evidencePackets = chapterCaseEvidence(plan, chapterIndex);
+     if (chapterEpisodes.length === 0 && evidencePackets.length === 0) return undefined;
+     const scene = scenes.get(chapterIndex);
++    // The other chapters' cases, named only: the writer refers to them, never retells them.
++    const reservedCases = episodes.chapters
++      .filter((chapter) => chapter.index !== chapterIndex && chapter.episodes.length > 0)
++      .map((chapter) => ({
++        chapterIndex: chapter.index,
++        episodes: chapter.episodes.map(({ title, person, place, date, document }) => ({ title, person, place, date, document }))
++      }));
+     return {
+       episodes: chapterEpisodes,
+       excerpts: dossier?.excerpts.filter((excerpt) => excerpt.chapterIndex === chapterIndex) ?? [],
++      ...(reservedCases.length > 0 ? { reservedCases } : {}),
+       ...(dossier?.evidencePackets ? { evidencePackets } : {}),
+       ...(scene ? { scene } : {})
+     };
+@@ -281,6 +289,8 @@
+     }),
+     fixed,
+     figures,
++    // The cases already selected for every chapter, so the planner builds on them rather than choosing a second set.
++    episodes,
+     textModel
+   });
+   if (forms.issues.length > 0) {

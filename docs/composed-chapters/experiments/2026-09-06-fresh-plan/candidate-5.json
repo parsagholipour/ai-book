@@ -1,0 +1,107 @@
+{
+  "candidate": 5,
+  "label": "fresh-plan-5",
+  "status": "assessed-below-target",
+  "writer": {
+    "model": "gpt-5.6-luna",
+    "tier": "balanced",
+    "thinkingEffort": "low"
+  },
+  "assessors": "three fresh Opus readers per book (Agent tool, model=opus); same-sitting controls J2=ladder-5a-apparatus, R4=material-progression-3",
+  "qualityRevision": 49,
+  "sourceProject": "cmtjbz54o000w6rjyvzewwqj4",
+  "reusePlan": false,
+  "stanceOverride": false,
+  "intervention": "Plan-recovery fix (authored chapters nested under authorStance are lifted; initial planning never inherits the fallback outline; one prompt sentence naming the root contract), then a fresh Luna plan from the original brief. No other code change since candidate 3/4.",
+  "implementation": {
+    "worker": "claude-opus (Agent tool, model=opus)",
+    "files": [
+      "packages/core/src/schemas/plan.ts",
+      "packages/core/src/generation/planner.ts",
+      "packages/core/src/schemas/initialPlanRecovery.test.ts"
+    ],
+    "replay": "docs/composed-chapters/experiments/2026-09-05-whole-book/replay-plan-4.ts PASS",
+    "checks": "7 gates passed in 103.6s (check-5.log)"
+  },
+  "projectId": "cmtp6zavs0000e8g0xx9tld49",
+  "planningJobId": "cmtp6zaw60001e8g0ewlrmm22",
+  "planId": "cmtp715u9000311p2fda8achs",
+  "generationJobId": "cmtp718i00002e8g0u7uexf4q",
+  "plan": {
+    "title": "Human Aggression Through History",
+    "chapters": 14,
+    "pageSum": 120,
+    "targets": [
+      7,
+      10,
+      7,
+      12,
+      8,
+      5,
+      11,
+      9,
+      13,
+      6,
+      4,
+      10,
+      9,
+      9
+    ],
+    "genericTitles": 0,
+    "writingMode": "analytical-history",
+    "planningCalls": "plan-book 1 + critique-plan 2, all gpt-5.6-luna"
+  },
+  "execution": {
+    "words": 56605,
+    "storedPages": 120,
+    "pdfPages": 117,
+    "generationMinutes": 25,
+    "generationExportCalls": 80,
+    "generationExportProviderCostUsd": 0.3988929999999999,
+    "productionFilesVerifiedUnchanged": 579,
+    "allCallsLuna": true,
+    "chaptersWithDocuments": 6,
+    "chaptersWithExcerpts": 3,
+    "qualityReport": {
+      "state": "review_recommended",
+      "issues": [
+        "warning:SYMMETRICAL_HEDGING"
+      ]
+    },
+    "readSecondEditsApplied": 0
+  },
+  "result": {
+    "code": "J5",
+    "scores": {
+      "A": 7.5,
+      "B": 6.3,
+      "C": 6.8
+    },
+    "mean": 6.866666666666666,
+    "criterionMeans": {
+      "thesis": 8.666666666666666,
+      "structure": 7.333333333333333,
+      "depth": 7.333333333333333,
+      "reasoning": 8.666666666666666,
+      "clarity": 8.333333333333334,
+      "voice": 6.333333333333333,
+      "engagement": 5,
+      "pacing": 4.333333333333333,
+      "craft": 7,
+      "slopResistance": 5.666666666666667
+    },
+    "validationIssues": 0,
+    "pass": false,
+    "sameSitting": {
+      "ladder-5a-apparatus (J2)": 7.633333333333333,
+      "material-progression-3 (R4)": 7.1
+    }
+  },
+  "diagnosis": [
+    "13/14 focus.contribution fields were distinctions (\"The reader can distinguish A from B\"); 5/14 focus.question fields asked what evidence can and cannot establish — the concession couplet all three readers named was assigned per chapter by the episode planner (also 13/15 in candidate 2 and 11/15 in candidate 3)",
+    "3/7 voiceGuide lines were evidence-method rules and rode every compose/edit call as styleNotes",
+    "2/5 stance positions were hedged evidence statements; the episode planner copies them into alreadyEstablished",
+    "episodes revisited Nataruk in chapters 1, 2, 14 and Keeley in 1, 13; chapters 8 and 12 both took the Nuremberg/Wannsee documents; the manuscript read flagged 12/14 chapters and 5 book-wide restatements but READ_SECOND_EDITS is off",
+    "dossier: excerpts reached 3/14 chapters (rung 5a: 8/15) — the fresh plan's episodes are mostly modern scholarship, not public-domain texts"
+  ]
+}

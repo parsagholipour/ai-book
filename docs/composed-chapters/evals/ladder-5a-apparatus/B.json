@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.5,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The bone does not contain the direction of intention. It contains the direction of force.",
+      "judgment": "Exact, memorable statement of the book's evidentiary discipline — but also the prototype of a paired-antithesis cadence the book reuses dozens of times."
+    },
+    {
+      "quote": "No marching army is required for coercion to begin. The ration list already distinguishes those who issue from those who receive.",
+      "judgment": "Strong: the central thesis earned from a specific artefact (Uruk tablets) rather than asserted."
+    },
+    {
+      "quote": "A captive became merchandise at the coast, merchandise became insured cargo at sea, cargo became labour on a plantation, labour became sugar in a warehouse, and sugar became credit for another purchase.",
+      "judgment": "The book's best analytical set-piece — the abstract argument made mechanically concrete."
+    },
+    {
+      "quote": "The prior asked whether the king had commanded the archbishop’s death. FitzUrse took one glove off, finger by finger. His nails were black from the journey.",
+      "judgment": "Genuinely good dramatic prose; the physical detail carries the chapter's question without stating it."
+    },
+    {
+      "quote": "In 1789, John James Audubon painted the famous image often called *The Zong Massacre*, though the best-known visual representation of the event came later",
+      "judgment": "A clear factual fabrication (Audubon painted no such work), and the sentence contradicts itself in its own second clause — the worst lapse in an otherwise careful book."
+    },
+    {
+      "quote": "The Dar al-Hadith al-Nuriyya in Damascus, founded in 1172 after Nur al-Din’s death had already occurred",
+      "judgment": "Internally incoherent (he dies in 1174 four paragraphs later); a symptom of chapter-scale drafting outrunning verification."
+    },
+    {
+      "quote": "Prison authorities communicated with municipal officials, and some did.",
+      "judgment": "A broken sentence surviving into a finished chapter; a handful of similar mangled clauses recur (\"without knowing how many people followed him\" with no antecedent)."
+    },
+    {
+      "quote": "Machinery enlarged the hand, but political authority chose where it would close.",
+      "judgment": "Elegant chapter closer, yet the twelfth or thirteenth instance of the same aphoristic \"tool vs. authority\" cadence; by Chapter 12 the reader can predict the final sentence's shape."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter opens with a novelistic present-tense-feeling scene (named actors, weather, hands, objects), then breaks to an analytic voice that reframes the scene as evidence. The seam is almost always a paragraph beginning with a noun phrase naming the scene.",
+      "instances": [
+        "The scene at Canterbury leaves no clean boundary between feeling and action.",
+        "The palette left the court in the hands of men who had not carved it and would not use it to grind pigment."
+      ]
+    },
+    {
+      "pattern": "A two- or three-case comparison is set up, then closed with a symmetrical \"neither case fits the simple picture\" rebuttal of an unnamed opponent — a straw-man pivot used as a structural hinge in most chapters.",
+      "instances": [
+        "Neither case fits a simple contrast between barbarian raiders and settled states.",
+        "Neither case fits the picture of an enraged population suddenly losing control."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis in the form \"X does not A; it B\" / \"A supplied X, B supplied Y\", used to land nearly every analytic paragraph.",
+      "instances": [
+        "The house establishes proximity; it does not establish motive.",
+        "Profit supplied the reason, law supplied the permission, and force supplied the means."
+      ]
+    },
+    {
+      "pattern": "An isolated one-sentence paragraph is dropped in for emphasis at a fixed point in the chapter's rhythm, roughly once per section.",
+      "instances": [
+        "A population appears as the object of a command.",
+        "The religious reputation had to survive contact with administration."
+      ]
+    },
+    {
+      "pattern": "Triadic or serial enumeration of institutions as a closing gesture — a list of offices standing in for an argument about them.",
+      "instances": [
+        "A field supplied barley. Harvesters delivered it. A storehouse received it under seal. A brewer transformed part of it into beer. A clerk recorded an issue.",
+        "Between those events stood a colony, a temple, a trading town, a road, and an army"
+      ]
+    }
+  ],
+  "summary": "This is an unusually disciplined work of comparative history with a genuinely load-bearing thesis: aggression becomes historically consequential only when an office — a ration list, a warrant, an insurance policy, a timetable, a deportation order — converts feeling into authorised action. The thesis is stated in Chapter 1 and tested rather than merely restated across fifteen chapters, and the handling of evidence is the book's real strength: it repeatedly says what a healed skull, a royal palette, a chronicle written for a martyr's cult, or a conqueror's astonishment can and cannot establish. Specificity is high and the opening set-pieces (Canterbury, Merv, Blenheim, the Yamashita commission) are well-made narrative prose. The cost is a very visible template. Every chapter runs scene → analytic reframing → two-case comparison → symmetrical \"neither case fits\" rebuttal → aphoristic office-versus-instrument closer, and the paragraph-level habit of paired antithesis becomes predictable by the midpoint, which flattens voice and drains the later chapters of surprise. There are also a few hard errors — an invented Audubon painting of the Zong, a foundation dated \"after Nur al-Din's death\" two years before it, several garbled sentences — that a light copy-edit and fact pass should clear. Cut perhaps fifteen percent of the analytic middles, vary the chapter architecture, and this would be publishable non-fiction."
+}

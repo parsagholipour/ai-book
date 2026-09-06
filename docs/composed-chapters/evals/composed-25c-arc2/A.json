@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 9,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.9,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The changed decree did not dissolve Athenian rule. It altered the number and identity of those whom Athens authorized itself to kill.",
+      "judgment": "Strong: the opening chapter converts a famous anecdote into the book's controlling thesis without overstating it."
+    },
+    {
+      "quote": "A drought does not issue an order to raid.",
+      "judgment": "Strong: compressed, memorable, and it does real analytic work against ecological determinism."
+    },
+    {
+      "quote": "A city wall is labor converted into delay. Delay gives defenders time, and time gives stores, messengers, and commanders greater value.",
+      "judgment": "Strong: material reasoning at its best, turning an object into a chain of institutional consequences."
+    },
+    {
+      "quote": "The violence appears as design. A deck can be divided; a measurement can be taken; a permitted number can be assigned; bodies can be placed according to a scheme.",
+      "judgment": "Strong: the Brookes reading is the book's finest passage of close description, and the syntax enacts the argument."
+    },
+    {
+      "quote": "The people disappear grammatically before they disappear physically.",
+      "judgment": "Strong: a genuinely earned aphorism, one of the few that names something the surrounding analysis had not already said."
+    },
+    {
+      "quote": "That sentence should remain near every interpretation of prehistoric massacre. The existence of collective killing does not establish a state...",
+      "judgment": "Weakness: a compositional seam — 'that sentence' has no antecedent, evidence of paragraphs spliced without a final read."
+    },
+    {
+      "quote": "It supplied labor. Women entered factories... It supplied surveillance. Internment separated people... It supplied money. War loans asked civilians...",
+      "judgment": "Weakness: an anaphoric list collapsed into one undifferentiated paragraph; the home-front section becomes an inventory rather than an argument."
+    },
+    {
+      "quote": "The evidence does establish the character of the campaign: a rebellion formed against an imposed order, and an administration answered by attacking the material conditions that allowed resistance to continue.",
+      "judgment": "Weakness: the hundredth iteration of the book's 'what the evidence permits' formula, here summarizing Maji Maji so abstractly that the uprising nearly vanishes."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The permit/deny epistemic couplet: almost every artifact is introduced, then bounded by a paired sentence saying what it can and cannot show. It is intellectually honest and, by chapter six, entirely predictable.",
+      "instances": [
+        "The cemetery can support the inference that several people were attacked by weapons in more than one episode. It cannot tell us that a sovereign power mobilized them",
+        "The palette records an ideology of victory more securely than it records the sequence of campaigns by which Narmer's power was established."
+      ]
+    },
+    {
+      "pattern": "Isolated one-sentence paragraphs used as chapter beats — dramatic pivots or aphoristic closers set off alone, functioning as punctuation rather than argument.",
+      "instances": [
+        "The bones resist so clean a sequence.",
+        "A reserve boundary could outlast the officer who drew it."
+      ]
+    },
+    {
+      "pattern": "The 'chain / sequence / link' machine-metaphor applied to every period, with the same enumerated stages (record, office, road, punishment) recurring almost verbatim.",
+      "instances": [
+        "The plantation sequence depended on this conversion of meanings. Purchase made a person an investment. Transport made separation an economic route.",
+        "A card identifies. An official summons. A broadcast names. A roadblock stops. A group attacks."
+      ]
+    },
+    {
+      "pattern": "Symmetrical antithesis as the standard closing move of a section: one institution restrains one violence while enabling another, stated in balanced clauses.",
+      "instances": [
+        "The same office that punishes a murderer may recruit a conscript. The same storehouse that prevents famine may supply a siege.",
+        "Technology has made rescue possible and killing more distant."
+      ]
+    },
+    {
+      "pattern": "The 'not X, but Y' correction of a strawman reading, usually a warning against a moral contrast the chapter has just set up.",
+      "instances": [
+        "The difference was not that Vikings were naturally predatory while Byzantine soldiers were disciplined representatives of civilization.",
+        "The comparison should not be turned into a contrast between an aggressive society and a peaceful one."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined comparative history of organized aggression, built chapter by chapter around a single durable claim: violence acquires reach through political organization — surplus, records, offices, roads, classifications — rather than through a fixed human appetite. The thesis is genuinely load-bearing, argued through concrete artifacts (the Uruk tablets, the Narmer Palette, the Lachish reliefs, the Brookes plan, a Rwandan identity card) and sustained against named interlocutors, chiefly Pinker, Morris and Scott, whose positions are handled with unusual fairness. Prose quality is high and the voice is consistent: cool, declarative, materially specific, allergic to melodrama. The weakness is repetition of form rather than of content. The same three or four rhetorical machines — the permit/deny couplet, the enumerated chain, the balanced antithesis, the single-sentence beat — run in every chapter, so that by the later sections the argument feels performed on schedule; a few passages also show visible compositional seams and one anaphoric list collapsed into a paragraph. Trimming the epistemic hedging by half and varying the closing moves would lift a strong manuscript to a distinguished one."
+}

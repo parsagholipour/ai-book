@@ -1,0 +1,61 @@
+{
+  "flesch_kincaid_grade": 12.8,
+  "flesch_reading_ease": 37.1,
+  "sentence_count": 307,
+  "word_count": 5877,
+  "avg_sentence_length": 19.1,
+  "sentence_length_variance": 131.7,
+  "min_sentence_length": 1,
+  "max_sentence_length": 140,
+  "consecutive_similar_length": 4,
+  "word_repetition_score": 66.8,
+  "top_repeated_words": [
+    [
+      "political",
+      47
+    ],
+    [
+      "through",
+      34
+    ],
+    [
+      "tem\u00fcjin",
+      26
+    ],
+    [
+      "people",
+      23
+    ],
+    [
+      "alcuin",
+      21
+    ],
+    [
+      "proposal",
+      21
+    ],
+    [
+      "his",
+      20
+    ],
+    [
+      "raid",
+      20
+    ],
+    [
+      "also",
+      19
+    ],
+    [
+      "horses",
+      19
+    ]
+  ],
+  "paragraph_count": 66,
+  "avg_paragraph_length": 89.0,
+  "flags": [
+    "High reading level (12.8 grade)",
+    "4+ consecutive similar-length sentences",
+    "High word repetition (66.8%)"
+  ]
+}

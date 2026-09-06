@@ -1,0 +1,282 @@
+--- a/packages/core/src/generation/episodes.ts
++++ b/packages/core/src/generation/episodes.ts
+@@ -40,7 +40,8 @@
+  */
+ const CHAPTER_FOCUS_RULES = [
+   "focus is the chapter's explanatory assignment, answered from its assigned episodes. question asks one distinct explanatory question and names the assigned material. investigation lists two to five concrete things the chapter works out in full: a sequence of decisions, resources and logistics, incentives, the alternatives open at the time, costs, aftermath, how an inference is made from the record. contribution names the new distinction the reader can make afterward. alreadyEstablished names the answers earlier chapters have settled, which this chapter need not argue again.",
+-  "Across the book the focuses cover different causal questions drawn from the user's request; do not turn every chapter into proof of the same thesis or a reminder that a source is limited. A later chapter changes, refines or tests an earlier chapter's explanation with its new material. A focus is a subject assignment, never a compulsory order of scene, comparison or recap. Where the stance's positions would have a chapter repeat a claim, the focus decides what the chapter investigates, within the scope the user asked for."
++  "Across the book the focuses cover different causal questions drawn from the user's request; do not turn every chapter into proof of the same thesis or a reminder that a source is limited. A later chapter changes, refines or tests an earlier chapter's explanation with its new material. A focus is a subject assignment, never a compulsory order of scene, comparison or recap. Where the stance's positions would have a chapter repeat a claim, the focus decides what the chapter investigates, within the scope the user asked for.",
++  "Write investigation as concrete questions whose answers require new events, decisions, quantities, consequences or close examination of a particular passage. General reminders that institutions matter, choices existed, categories overlap or sources are limited are already-established knowledge, not investigation topics. Some chapters follow one case through a consequential sequence; others need a genuine comparison or a worked explanation. Let the material choose."
+ ];
+ 
+ /** The episodes a plan stores, or nothing. */
+@@ -84,7 +85,9 @@
+         {
+           role: "system",
+           content: [
+-            `You are the author of "${options.plan.title}", filling the shoebox before writing a word: for every chapter of the plan, the distinct documented episodes the chapter will be made from — three or four for a chapter of eight or more pages, two or three for a shorter one.`,
++            focused
++              ? `You are the author of "${options.plan.title}", filling the shoebox before writing a word: for every chapter of the plan, the distinct documented episodes the chapter will be made from. Choose one to four documented episodes per chapter according to the question and available material. One well-documented episode may carry most of a chapter; another may be a short comparison. Vary the number and the depth of treatment across the book. Do not build a repeated three-case survey. In why, state what work the episode does and whether it needs sustained treatment or a brief supporting use.`
++              : `You are the author of "${options.plan.title}", filling the shoebox before writing a word: for every chapter of the plan, the distinct documented episodes the chapter will be made from — three or four for a chapter of eight or more pages, two or three for a shorter one.`,
+             "An episode is a particular documented case, event, worked result or text relevant to this book. It is never a theme, a period or a generalisation. Identify a document the reader could consult. Prefer accessible original records or authoritative expositions; do not force historical anecdotes into an instructional or technical book. Public repositories include Wikisource, Project Gutenberg and the Internet Archive.",
+             "kind says what the chapter will do with it: scene (an event told in time), document (a text read closely), figure (a number or a table worked through), dispute (two named people or works that disagree about it), portrait (one person followed). Choose the treatment the evidence supports. A scene is optional.",
+             ...(options.evidenceRequired ? ["Every central case must subsequently pass source verification. Select cases with accessible substantive documentation, not famous names used as decoration. If feedback names unavailable cases, choose different documented material serving the same requested coverage."] : []),
+--- a/packages/core/src/generation/composedChapterMaterial.ts
++++ b/packages/core/src/generation/composedChapterMaterial.ts
+@@ -65,6 +65,19 @@
+ 
+ export type ComposedChapterText = { markdown: string; words: number; attempts: number };
+ 
++/**
++ * In place of the shape rules and the per-section form quotas for a focused
++ * nonfiction chapter: three readers found every chapter doing a three-case
++ * tour, source caveats, then a comparative recap. Positive rules only; the
++ * structure follows the investigation and the weight of its evidence.
++ */
++export function focusedProgressionLines(): string[] {
++  return [
++    "Let the reader follow the people, events, documents and reasoning far enough to understand what happened and why. Keep consequential sequences together; explain a mechanism where its result becomes puzzling, and introduce a comparison where it changes the answer.",
++    "Use the chapter's full word budget for substantive development. A paragraph advances the account with an event, decision, evidence, inference or consequence. Write paragraphs and sentences at the length that work needs; a short turn does not need an aphorism or an explanatory recap."
++  ];
++}
++
+ 
+ /** The chapter's budget less the scene already written for it. */
+ export function remainingBudget(budget: ChapterWordBudget, sceneWords: number): ChapterWordBudget {
+@@ -102,7 +115,9 @@
+   const material = options.material;
+   if (!material) return [];
+   const lines = [
+-    "This chapter is built from the episodes in `episodes`: each is a person, a place, a date and a document from the record, and the chapter's sections are made from them — an episode told in time, a document read closely, a figure worked through — with the argument arising from the material rather than the material illustrating the argument. Give each episode a real stretch of the chapter, not a mention."
++    material.focus
++      ? "episodes is the material available for this chapter, not a checklist of equally long case studies. Follow the investigation through the material that answers it. Give a consequential sequence, a difficult explanation or a revealing passage the space it needs; a supporting case can enter briefly. Each return to an episode must add an event, evidence or inference, not repeat its earlier conclusion. The chapter need not end by comparing or re-listing its cases."
++      : "This chapter is built from the episodes in `episodes`: each is a person, a place, a date and a document from the record, and the chapter's sections are made from them — an episode told in time, a document read closely, a figure worked through — with the argument arising from the material rather than the material illustrating the argument. Give each episode a real stretch of the chapter, not a mention."
+   ];
+   if (material.episodes.length === 0) lines.length = 0;
+   lines.push(...chapterFocusLines(options));
+--- a/packages/core/src/generation/composedChapter.ts
++++ b/packages/core/src/generation/composedChapter.ts
+@@ -13,6 +13,7 @@
+   CREATIVE_CONTRACT_RULES,
+   CREATIVE_RECONSTRUCTION_RULE,
+   FOCUSED_RECONSTRUCTION_RULE,
++  focusedProgressionLines,
+   materialEditLines,
+   materialLines,
+   materialPayload,
+@@ -315,6 +316,7 @@
+ export async function composeChapter(options: ComposeChapterOptions): Promise<ComposedChapterText> {
+   const mode = inferWritingMode(options.input, options.plan);
+   const narrative = isNarrativeWritingMode(mode);
++  const focused = !narrative && Boolean(options.material?.focus);
+   const palette = formPaletteFor(mode);
+   const pages = options.chapterPageEnd - options.chapterPageStart + 1;
+   const budget = chapterWordBudget(options.input, pages, { figureWords: plannedFigures(options.composition).length * FIGURE_WORD_EQUIVALENT });
+@@ -335,16 +337,18 @@
+     "Paragraphs only: no headings, no title line, no section labels, no page numbers or page breaks, no summary, no epigraph, no notes. Move between sections with a paragraph break and a change of register.",
+     ...(minimal
+       ? []
+-      : shapeRules(narrative).filter(
+-          // Under an arc only a method chapter keeps the evidence-limit rule; the others' job is not to bound sources.
+-          (rule) => !(options.arc && arcKindFor(options) !== "method" && rule.startsWith("State what a source shows"))
+-        )),
++      : focused
++        ? focusedProgressionLines()
++        : shapeRules(narrative).filter(
++            // Under an arc only a method chapter keeps the evidence-limit rule; the others' job is not to bound sources.
++            (rule) => !(options.arc && arcKindFor(options) !== "method" && rule.startsWith("State what a source shows"))
++          )),
+     ...(minimal ? [] : ["Do not open the chapter with a general claim about a common noun (\"A cannon was never only a cannon\")."]),
+     ...(minimal || options.material?.evidencePackets?.length ? [] : options.contract === "creative" ? (narrative ? [] : [options.material?.focus ? FOCUSED_RECONSTRUCTION_RULE : CREATIVE_RECONSTRUCTION_RULE]) : reconstructionRule(narrative)),
+     `Now chapter ${options.chapter.index}, "${options.chapter.title}".`,
+     ...materialLines(options),
+     ...chapterDevelopmentLines(options.plan, options.chapter.index),
+-    ...compositionWriterLines(options.composition, palette, budget.target),
++    ...(focused ? [] : compositionWriterLines(options.composition, palette, budget.target)),
+     ...figureComposeRules(options.composition),
+     ...codeBlockRules(options.input, options.plan),
+     ...(options.variant === "second"
+@@ -383,15 +387,17 @@
+       summary: chapterSummaryFor(options)
+     },
+     chapterPosition: chapterPosition(options.plan, options.chapter, options.chapterPageStart, options.chapterPageEnd),
+-    composition: {
+-      sections: options.composition.sections.map((section) => ({
+-        form: section.form,
+-        subject: section.subject,
+-        owns: section.owns,
+-        ...(section.note ? { note: section.note } : {}),
+-        ...(section.figure ? { figure: section.figure } : {})
+-      }))
+-    },
++    ...(focused ? {} : {
++      composition: {
++        sections: options.composition.sections.map((section) => ({
++          form: section.form,
++          subject: section.subject,
++          owns: section.owns,
++          ...(section.note ? { note: section.note } : {}),
++          ...(section.figure ? { figure: section.figure } : {})
++        }))
++      }
++    }),
+     ...(options.previousChapterTail ? { previousChapterTail: options.previousChapterTail } : {}),
+     earlierChapters: options.earlierChapters,
+     continuityNotes: continuityNotesForPrompt(options.continuityNotes, CONTINUITY_NOTE_PROMPT_LIMITS.bulkDraft),
+@@ -597,6 +603,7 @@
+ export async function editChapter(options: EditChapterOptions): Promise<EditedChapterText> {
+   const mode = inferWritingMode(options.input, options.plan);
+   const narrative = isNarrativeWritingMode(mode);
++  const focused = !narrative && Boolean(options.material?.focus);
+   const palette = formPaletteFor(mode);
+   const pages = options.chapterPageEnd - options.chapterPageStart + 1;
+   const budget = chapterWordBudget(options.input, pages, { figureWords: plannedFigures(options.composition).length * FIGURE_WORD_EQUIVALENT });
+@@ -613,19 +620,19 @@
+     // These three shape rules were removed for composed-8/9 on the theory that
+     // every rule about shape becomes a shape; on the same plan the book scored
+     // 6.73 against 7.73 with them, so they stand (spec.md, iterations 8-10).
+-    "Reshape paragraphs wherever the draft is uniform: merge paragraphs that continue one movement into long ones of two hundred words or more, let a turn or a landing stand alone as a one- or two-sentence paragraph, and leave no run of paragraphs of the same length. Vary sentence length and openings the same way; no two consecutive paragraphs open on the same construction.",
++    ...(focused ? focusedProgressionLines() : ["Reshape paragraphs wherever the draft is uniform: merge paragraphs that continue one movement into long ones of two hundred words or more, let a turn or a landing stand alone as a one- or two-sentence paragraph, and leave no run of paragraphs of the same length. Vary sentence length and openings the same way; no two consecutive paragraphs open on the same construction."]),
+     options.contract === "creative"
+       ? "Where the author holds a position, let the prose commit: delete the counterweight that hedges a stated position. You may sharpen a particular the draft already carries; add no new episode or source. Use one spelling convention throughout, the one the book's title and premise use."
+       : "Where the author holds a position, let the prose commit: delete the counterweight that hedges a stated position. Add no new claim, example, or source. Use one spelling convention throughout, the one the book's title and premise use.",
+-    narrative
++    ...(focused ? [] : [narrative
+       ? "Only the chapter's final paragraph may reflect; every other paragraph ends on action, speech, or an image."
+-      : "Only the chapter's final paragraph lands an idea; every other paragraph ends where its matter ends, and not on a placed object for effect.",
+-    "Cut the \"It can show X. It cannot show Y.\" pair wherever it appears more than three times in the chapter, cut runs of rhetorical questions to one, and cut any list of four or more items to the one detail that matters unless the section is a catalogue or a procedure.",
++      : "Only the chapter's final paragraph lands an idea; every other paragraph ends where its matter ends, and not on a placed object for effect."]),
++    ...(focused ? [] : ["Cut the \"It can show X. It cannot show Y.\" pair wherever it appears more than three times in the chapter, cut runs of rhetorical questions to one, and cut any list of four or more items to the one detail that matters unless the section is a catalogue or a procedure."]),
+     `Now chapter ${options.chapter.index}, "${options.chapter.title}".`,
+-    ...compositionWriterLines(options.composition, palette, budget.target),
++    ...(focused ? [] : compositionWriterLines(options.composition, palette, budget.target)),
+     ...figureEditRules(options.composition),
+     ...(/```/.test(options.markdown) ? ["Every fenced code block in the draft is returned byte for byte, its language tag included."] : []),
+-    ...(options.measurementNotes && options.measurementNotes.length > 0
++    ...(!focused && options.measurementNotes && options.measurementNotes.length > 0
+       ? [`Measured on this draft, with the sentences that put each measure over its ceiling; rewrite those sentences and bring every measure under: ${options.measurementNotes.join(" || ")}`]
+       : []),
+     ...(options.readerNotes && options.readerNotes.length > 0
+@@ -666,7 +673,7 @@
+             draft: options.markdown,
+             ...(options.previousChapterTail ? { previousChapterTail: options.previousChapterTail } : {}),
+             earlierChapters: options.earlierChapters,
+-            ...(options.measurementNotes && options.measurementNotes.length > 0 ? { measurementNotes: options.measurementNotes } : {}),
++            ...(!focused && options.measurementNotes && options.measurementNotes.length > 0 ? { measurementNotes: options.measurementNotes } : {}),
+             ...(options.readerNotes && options.readerNotes.length > 0 ? { readerNotes: options.readerNotes } : {}),
+             ...citation.payload,
+             ...materialPayload(options),
+--- a/packages/core/src/generation/chapterFocus.test.ts
++++ b/packages/core/src/generation/chapterFocus.test.ts
+@@ -5,9 +5,9 @@
+ import { makeFallbackPlan } from "../prompting/templates.js";
+ import { developmentInput } from "./testing/bookDevelopmentFixtures.js";
+ import type { AuthorStance } from "../schemas/plan.js";
+-import { bookEpisodesSchema, type ChapterFocus } from "../schemas/episodes.js";
++import { bookEpisodesSchema, type ChapterFocus, type DossierExcerpt } from "../schemas/episodes.js";
+ import { planChapterForms, type ChapterComposition } from "./chapterForms.js";
+-import { composeChapter, editChapter, type ComposeChapterOptions } from "./composedChapter.js";
++import { chapterWordBudget, composeChapter, editChapter, type ComposeChapterOptions } from "./composedChapter.js";
+ 
+ const input: CreateProjectInput = {
+   ...developmentInput,
+@@ -70,7 +70,24 @@
+   }
+ }
+ 
+-function composeOptions(model: CapturingModel, withFocus: boolean): ComposeChapterOptions {
++const excerpt: DossierExcerpt = {
++  id: "petworth-roll-1",
++  chapterIndex: 2,
++  episodeTitle: "Felling at Petworth",
++  documentTitle: "Petworth account roll",
++  documentUrl: "",
++  host: "",
++  author: "",
++  year: "1417",
++  speaker: "",
++  text: "Paid to the sawyers for felling forty oaks in Petworth park, 26s 8d.",
++  words: 13
++};
++
++const measurementNote = "negation rate 45 per thousand sentences, ceiling 30: \"The roll does not say who carted them.\"";
++const readerNote = "Cut the closing comparison of Petworth with the Hampshire woods.";
++
++function composeOptions(model: CapturingModel, withFocus: boolean, excerpts: DossierExcerpt[] = []): ComposeChapterOptions {
+   const chapter = plan.chapters[1]!;
+   return {
+     input,
+@@ -87,7 +104,7 @@
+     contract: "creative",
+     material: {
+       episodes: [{ title: "Felling at Petworth", kind: "scene", person: "John Hoggekyn", place: "Petworth", date: "1417", document: "E 101 account", why: "The felling.", searchQueries: [] }],
+-      excerpts: [],
++      excerpts,
+       ...(withFocus ? { focus } : {})
+     }
+   };
+@@ -162,3 +179,64 @@
+     expect(payload.focus).toBeUndefined();
+   });
+ });
++
++describe("focused chapters follow their investigation, not the form quotas", () => {
++  const formSubject = composition.sections[1]!.subject;
++
++  it("drops form quotas, shape targets and measurements from the writer and the editor with a focus", async () => {
++    const model = new CapturingModel();
++    await composeChapter(composeOptions(model, true, [excerpt]));
++    await editChapter({ ...composeOptions(model, true, [excerpt]), markdown: longProse, measurementNotes: [measurementNote], readerNotes: [readerNote] });
++    expect(model.textCalls).toHaveLength(2);
++    for (const call of model.textCalls) {
++      const system = call.messages[0]!.content;
++      expect(system).not.toContain(formSubject);
++      expect(system).not.toContain("two hundred words or more");
++      expect(system).not.toContain("It can show X");
++      expect(system).not.toContain(measurementNote);
++      expect(system).toContain("a plausible detail is not a witnessed fact");
++      expect(system).toContain("Keep consequential sequences together");
++      expect(system.split("Use the chapter's full word budget for substantive development")).toHaveLength(2);
++      const payload = JSON.parse(call.messages[1]!.content);
++      expect(payload.episodes).toHaveLength(1);
++      expect(payload.focus).toEqual(focus);
++      expect(payload.wordBudget).toEqual(chapterWordBudget(input, 10));
++      expect(payload.dossier).toEqual([{ id: excerpt.id, document: excerpt.documentTitle, year: excerpt.year, text: excerpt.text }]);
++      expect(Object.keys(payload)).not.toContain("measurementNotes");
++    }
++    const composeSystem = model.textCalls[0]!.messages[0]!.content;
++    expect(composeSystem).toContain("not a checklist of equally long case studies");
++    expect(composeSystem).not.toContain("Give each episode a real stretch of the chapter");
++    expect(composeSystem).not.toContain("may appear at most three times in the chapter");
++    expect(Object.keys(JSON.parse(model.textCalls[0]!.messages[1]!.content))).not.toContain("composition");
++    const editSystem = model.textCalls[1]!.messages[0]!.content;
++    expect(editSystem).not.toContain("Reshape paragraphs wherever");
++    expect(editSystem).not.toContain("Only the chapter's final paragraph");
++    expect(editSystem).toContain("Keep every fact, name, date, number, place and quotation");
++    expect(editSystem).toContain("Cut what a reader would skim");
++    expect(editSystem).toContain(readerNote);
++    expect(JSON.parse(model.textCalls[1]!.messages[1]!.content).readerNotes).toEqual([readerNote]);
++  });
++
++  it("keeps the composition, the shape rules and the measurements without a focus", async () => {
++    const model = new CapturingModel();
++    await composeChapter(composeOptions(model, false));
++    await editChapter({ ...composeOptions(model, false), markdown: longProse, measurementNotes: [measurementNote], readerNotes: [readerNote] });
++    expect(model.textCalls).toHaveLength(2);
++    for (const call of model.textCalls) {
++      const system = call.messages[0]!.content;
++      expect(system).toContain(formSubject);
++      expect(system).toContain("two hundred words or more");
++      expect(system).toContain("It can show X");
++      expect(system).not.toContain("Keep consequential sequences together");
++    }
++    const composePayload = JSON.parse(model.textCalls[0]!.messages[1]!.content);
++    expect(composePayload.composition.sections[1].subject).toBe(formSubject);
++    expect(composePayload.wordBudget).toEqual(chapterWordBudget(input, 10));
++    expect(model.textCalls[0]!.messages[0]!.content).toContain("Give each episode a real stretch of the chapter");
++    const editSystem = model.textCalls[1]!.messages[0]!.content;
++    expect(editSystem).toContain(measurementNote);
++    expect(editSystem).toContain(readerNote);
++    expect(JSON.parse(model.textCalls[1]!.messages[1]!.content).measurementNotes).toEqual([measurementNote]);
++  });
++});

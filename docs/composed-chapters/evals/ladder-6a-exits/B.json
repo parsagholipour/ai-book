@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 7,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 8.0,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The record then confronted a question that Hagenbach’s judges had made unavoidable: whether violence belonged to the hand that delivered it, the office that ordered it, or the power that made obedience its condition.",
+      "judgment": "States the book’s controlling question early and concretely; the whole argument is genuinely built on it."
+    },
+    {
+      "quote": "A cemetery’s numerator is visible; its denominator may have vanished.",
+      "judgment": "Compressed, memorable, and doing real epistemic work rather than decorating a paragraph — the book’s best register."
+    },
+    {
+      "quote": "Collingwood knew the arithmetic. Water was cargo as well as provision, measured against the number of mouths and the distance still to run.",
+      "judgment": "The Zong opening is the strongest narrative writing in the book: physical, restrained, and thematically exact."
+    },
+    {
+      "quote": "Registration became deportation when the list was attached to police power and a transport date. Deportation became murder when the destination was controlled by an exterminatory command and every intervening office treated the movement as legitimate work. No single form killed anyone. The chain did.",
+      "judgment": "Chapter 13’s argument lands hard because the mechanism has been built across twelve prior chapters."
+    },
+    {
+      "quote": "Fred Wendorf’s *The Prehistory of Nubia*, the excavation report on Cemetery 117, records the Massacre at Jebel Sahaba in the Nile Valley at c. 13,000 BCE: sixty-one people were buried, and flint points remained embedded in the bones of some of them.",
+      "judgment": "A chapter-ending citation stub rather than a conclusion; nearly every chapter ends this way, deflating otherwise well-built arguments."
+    },
+    {
+      "quote": "— The narrator, *The Influence of Grotius in the Far East*",
+      "judgment": "Epigraph attribution is incoherent (“the narrator”), and the quotation itself carries uncorrected OCR (“Be Jure Belli ac Facis^”) — apparatus errors that undercut the book’s otherwise scrupulous handling of sources."
+    },
+    {
+      "quote": "- Bread committees monitored supplies, negotiated prices, and organized distribution. In Paris, the sections treated flour and grain as matters of civic survival rather than private commerce alone. - Citizens’ guards placed weapons within a municipal command.",
+      "judgment": "A list collapsed into a single run-on paragraph; a formatting failure inside an otherwise clean chapter."
+    },
+    {
+      "quote": "Nasir al-Din al-Tusi’s career shows how that transfer worked. ... Nasir al-Din al-Tusi’s career shows another path through the wreckage.",
+      "judgment": "The Baghdad–Hulegu–Maragha material is narrated twice at length, in Chapter 6 and again in Chapter 7, with little added the second time."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The negation-then-concession antithesis: a source “cannot” establish X but “can” establish Y. Intellectually honest the first dozen times, but it becomes the default sentence-pair of the book and flattens variety across every chapter.",
+      "instances": [
+        "The bones do not distinguish every raid from every accident, but they can show that the cemetery was not formed by people whose lives had been untouched until one final moment.",
+        "Such imagery cannot establish exactly how the fighting unfolded. It can establish what the monument emphasized: disciplined troops, concentrated authority, and the ruler’s right to define the outcome."
+      ]
+    },
+    {
+      "pattern": "The isolated one-line paragraph deployed as a beat drop, roughly once per chapter, always aphoristic and always summarizing the paragraph before it.",
+      "instances": [
+        "No bronze blade carries a roster.",
+        "A burned granary was an administrative result."
+      ]
+    },
+    {
+      "pattern": "Each chapter closes not with an argument but with a bibliographic capsule — a source, a date, and a restated fact — which reads as an appended citation rather than a landing.",
+      "instances": [
+        "In 1519, Hernán Cortés recorded in his Second Letter to Charles V that Tlaxcalan envoys came after fighting in Tlaxcala, negotiated with the Spaniards, and that he accepted their submission and alliance.",
+        "Charles H. Armitage and Arthur A. W. Fyfe record that, after months of resistance in Sierra Leone, Bai Bureh was surrounded, captured, and brought out of the bush in November 1898."
+      ]
+    },
+    {
+      "pattern": "The paired-case comparison scaffold: two societies or sites are set beside each other, declared “not a contrast between violence and its absence,” and then resolved into a difference of administrative form. Structurally identical in at least eight chapters.",
+      "instances": [
+        "Assyria pressed difference towards relocation; Persia more often pressed it towards supervised continuity.",
+        "The contrast between Rojava and the Islamic State is not a contrast between violence and peace."
+      ]
+    },
+    {
+      "pattern": "The list-of-verbs cadence — four to six bureaucratic infinitives strung together to stand in for a whole apparatus — recurs as the book’s signature rhetorical shorthand.",
+      "instances": [
+        "The inscriptions celebrate the ruler, but their verbs disclose the offices beneath him: count, bring, establish, remove, report.",
+        "Its verbs belong to administration: prepare, direct, accelerate, arrange, separate, allocate, evacuate, treat."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined work of comparative history with a real thesis — that mass violence becomes possible when offices, registers and classifications convert people into countable, movable categories — and it pursues that thesis with genuine consistency from a Neolithic grave to Ghouta. Its greatest strength is evidentiary conscience: it repeatedly explains what a source cannot bear, distinguishes numerator from denominator, names the interests of chroniclers, and refuses tidy attributions the record will not support. The prose is clear and often finely made, and the strongest openings (Hagenbach, the Zong, Wannsee) are as good as trade nonfiction. The weaknesses are rhythmic and structural rather than factual: the same negation-then-concession sentence pair, the same paired-case comparison, the same solitary aphoristic line, and the same bibliographic stub at every chapter's end produce a strong sense of template across fifteen chapters, and the Baghdad material is narrated twice at length. Apparatus errors — an epigraph attributed to “the narrator,” uncorrected OCR, a bullet list collapsed into a paragraph — are small but visible. With a pass to vary the argumentative cadence, cut the duplicated Ilkhanid material, and replace the citation-stub endings with actual conclusions, this would be close to publishable."
+}

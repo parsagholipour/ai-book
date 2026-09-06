@@ -4,6 +4,7 @@ import { reviewPageWithQualityGates } from "./pageReview.js";
 import { loadQualityContext } from "./qualitySettings.js";
 import {
   hasSmartUnslopCandidates,
+  CASE_EVIDENCE_WRITER_RULES,
   type BookGenerationStrategy,
   type BookPlan,
   type CreateProjectInput,
@@ -64,6 +65,10 @@ export async function reviewWholeBookDraftPages(options: {
           plan: options.plan,
           pageIndex: pageDraft.index,
           qaCandidateNumber: 2,
+          ...(options.plan.dossier?.evidencePackets?.length ? {
+            researchNotes: [...options.plan.researchNotes.map((note) => `${note.title} (${note.url ?? ""}): ${note.summary}`), ...options.plan.dossier.evidencePackets.map((packet) => JSON.stringify(packet))],
+            pageEditGuidance: CASE_EVIDENCE_WRITER_RULES.join(" ")
+          } : {}),
           draft,
           report,
           previousPages,

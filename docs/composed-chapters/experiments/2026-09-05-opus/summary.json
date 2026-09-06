@@ -1,0 +1,429 @@
+{
+  "assessorModel": "claude-opus (Agent tool, model=opus)",
+  "books": [
+    {
+      "code": "N2",
+      "sourceLabel": "composed-7",
+      "arm": "reference",
+      "sha256": "850396c091aa1eeb96f07f1620cbd5d1b4d2a6c7ef2cc607ce07a56e5b816976",
+      "words": 52884,
+      "readers": [
+        {
+          "reader": "A",
+          "overall": 7.6,
+          "thesis": 9,
+          "structure": 8,
+          "depth": 8,
+          "reasoning": 9,
+          "clarity": 9,
+          "voice": 7,
+          "engagement": 6,
+          "pacing": 6,
+          "craft": 8,
+          "slopResistance": 6
+        },
+        {
+          "reader": "B",
+          "overall": 7.7,
+          "thesis": 9,
+          "structure": 8,
+          "depth": 8,
+          "reasoning": 9,
+          "clarity": 9,
+          "voice": 8,
+          "engagement": 6,
+          "pacing": 6,
+          "craft": 8,
+          "slopResistance": 6
+        },
+        {
+          "reader": "C",
+          "overall": 7.9,
+          "thesis": 9,
+          "structure": 8,
+          "depth": 8,
+          "reasoning": 9,
+          "clarity": 9,
+          "voice": 8,
+          "engagement": 7,
+          "pacing": 6,
+          "craft": 8,
+          "slopResistance": 7
+        }
+      ],
+      "readerCount": 3,
+      "means": {
+        "overall": 7.733333333333333,
+        "thesis": 9,
+        "structure": 8,
+        "depth": 8,
+        "reasoning": 9,
+        "clarity": 9,
+        "voice": 7.666666666666667,
+        "engagement": 6.333333333333333,
+        "pacing": 6,
+        "craft": 8,
+        "slopResistance": 6.333333333333333
+      },
+      "readerRange": [
+        7.6,
+        7.9
+      ]
+    },
+    {
+      "code": "V2",
+      "sourceLabel": "ladder-5a-apparatus",
+      "arm": "baseline",
+      "sha256": "3026686c1b004465e0df50c5a74eab97a47e1445a3559cf7b8144d4936344a34",
+      "words": 56471,
+      "readers": [
+        {
+          "reader": "A",
+          "overall": 7.9,
+          "thesis": 9,
+          "structure": 8,
+          "depth": 8,
+          "reasoning": 7,
+          "clarity": 9,
+          "voice": 9,
+          "engagement": 7,
+          "pacing": 7,
+          "craft": 9,
+          "slopResistance": 6
+        },
+        {
+          "reader": "B",
+          "overall": 7.8,
+          "thesis": 9,
+          "structure": 8,
+          "depth": 8,
+          "reasoning": 8,
+          "clarity": 9,
+          "voice": 8,
+          "engagement": 7,
+          "pacing": 7,
+          "craft": 8,
+          "slopResistance": 6
+        },
+        {
+          "reader": "C",
+          "overall": 7.7,
+          "thesis": 9,
+          "structure": 8,
+          "depth": 8,
+          "reasoning": 8,
+          "clarity": 8,
+          "voice": 8,
+          "engagement": 7,
+          "pacing": 7,
+          "craft": 8,
+          "slopResistance": 6
+        }
+      ],
+      "readerCount": 3,
+      "means": {
+        "overall": 7.8,
+        "thesis": 9,
+        "structure": 8,
+        "depth": 8,
+        "reasoning": 7.666666666666667,
+        "clarity": 8.666666666666666,
+        "voice": 8.333333333333334,
+        "engagement": 7,
+        "pacing": 7,
+        "craft": 8.333333333333334,
+        "slopResistance": 6
+      },
+      "readerRange": [
+        7.7,
+        7.9
+      ]
+    },
+    {
+      "code": "V8",
+      "sourceLabel": "ladder-5b-apparatus",
+      "arm": "baseline",
+      "sha256": "60ddd04e4e00c59e6ccfb99f5f136399f23761f4ada22bac4957650092d4b652",
+      "words": 52939,
+      "readers": [
+        {
+          "reader": "A",
+          "overall": 7.7,
+          "thesis": 9,
+          "structure": 8,
+          "depth": 8,
+          "reasoning": 8,
+          "clarity": 9,
+          "voice": 8,
+          "engagement": 7,
+          "pacing": 6,
+          "craft": 8,
+          "slopResistance": 6
+        },
+        {
+          "reader": "B",
+          "overall": 7.7,
+          "thesis": 9,
+          "structure": 8,
+          "depth": 8,
+          "reasoning": 8,
+          "clarity": 9,
+          "voice": 8,
+          "engagement": 7,
+          "pacing": 6,
+          "craft": 8,
+          "slopResistance": 6
+        },
+        {
+          "reader": "C",
+          "overall": 8,
+          "thesis": 9,
+          "structure": 8,
+          "depth": 8,
+          "reasoning": 9,
+          "clarity": 9,
+          "voice": 8,
+          "engagement": 7,
+          "pacing": 7,
+          "craft": 8,
+          "slopResistance": 7
+        }
+      ],
+      "readerCount": 3,
+      "means": {
+        "overall": 7.8,
+        "thesis": 9,
+        "structure": 8,
+        "depth": 8,
+        "reasoning": 8.333333333333334,
+        "clarity": 9,
+        "voice": 8,
+        "engagement": 7,
+        "pacing": 6.333333333333333,
+        "craft": 8,
+        "slopResistance": 6.333333333333333
+      },
+      "readerRange": [
+        7.7,
+        8
+      ]
+    },
+    {
+      "code": "L7",
+      "sourceLabel": "ladder-5c-apparatus",
+      "arm": "baseline",
+      "sha256": "8e36c4a8bc269cdde3b2476e2da5badda5da64f19b7e070a6b0cb06665659559",
+      "words": 59472,
+      "readers": [
+        {
+          "reader": "A",
+          "overall": 8,
+          "thesis": 9,
+          "structure": 8,
+          "depth": 8,
+          "reasoning": 9,
+          "clarity": 9,
+          "voice": 8,
+          "engagement": 7,
+          "pacing": 7,
+          "craft": 8,
+          "slopResistance": 7
+        },
+        {
+          "reader": "B",
+          "overall": 7.8,
+          "thesis": 9,
+          "structure": 8,
+          "depth": 8,
+          "reasoning": 9,
+          "clarity": 9,
+          "voice": 8,
+          "engagement": 7,
+          "pacing": 6,
+          "craft": 8,
+          "slopResistance": 6
+        },
+        {
+          "reader": "C",
+          "overall": 7.8,
+          "thesis": 9,
+          "structure": 8,
+          "depth": 8,
+          "reasoning": 9,
+          "clarity": 9,
+          "voice": 8,
+          "engagement": 7,
+          "pacing": 6,
+          "craft": 8,
+          "slopResistance": 6
+        }
+      ],
+      "readerCount": 3,
+      "means": {
+        "overall": 7.866666666666666,
+        "thesis": 9,
+        "structure": 8,
+        "depth": 8,
+        "reasoning": 9,
+        "clarity": 9,
+        "voice": 8,
+        "engagement": 7,
+        "pacing": 6.333333333333333,
+        "craft": 8,
+        "slopResistance": 6.333333333333333
+      },
+      "readerRange": [
+        7.8,
+        8
+      ]
+    },
+    {
+      "code": "P7",
+      "sourceLabel": "development-fixes-1d",
+      "arm": "new",
+      "sha256": "0c7896a911f5814cdbb0a94dca5d65823e8268e8d0a6779b20642180b8b7f851",
+      "words": 52119,
+      "readers": [
+        {
+          "reader": "A",
+          "overall": 5.9,
+          "thesis": 8,
+          "structure": 5,
+          "depth": 5,
+          "reasoning": 7,
+          "clarity": 8,
+          "voice": 8,
+          "engagement": 4,
+          "pacing": 3,
+          "craft": 7,
+          "slopResistance": 4
+        },
+        {
+          "reader": "B",
+          "overall": 5.7,
+          "thesis": 8,
+          "structure": 5,
+          "depth": 5,
+          "reasoning": 8,
+          "clarity": 8,
+          "voice": 6,
+          "engagement": 4,
+          "pacing": 3,
+          "craft": 6,
+          "slopResistance": 4
+        },
+        {
+          "reader": "C",
+          "overall": 6.1,
+          "thesis": 8,
+          "structure": 6,
+          "depth": 5,
+          "reasoning": 7,
+          "clarity": 8,
+          "voice": 8,
+          "engagement": 4,
+          "pacing": 3,
+          "craft": 7,
+          "slopResistance": 5
+        }
+      ],
+      "readerCount": 3,
+      "means": {
+        "overall": 5.9,
+        "thesis": 8,
+        "structure": 5.333333333333333,
+        "depth": 5,
+        "reasoning": 7.333333333333333,
+        "clarity": 8,
+        "voice": 7.333333333333333,
+        "engagement": 4,
+        "pacing": 3,
+        "craft": 6.666666666666667,
+        "slopResistance": 4.333333333333333
+      },
+      "readerRange": [
+        5.7,
+        6.1
+      ]
+    }
+  ],
+  "arms": {
+    "reference": {
+      "completeBooks": 1,
+      "means": {
+        "overall": 7.733333333333333,
+        "thesis": 9,
+        "structure": 8,
+        "depth": 8,
+        "reasoning": 9,
+        "clarity": 9,
+        "voice": 7.666666666666667,
+        "engagement": 6.333333333333333,
+        "pacing": 6,
+        "craft": 8,
+        "slopResistance": 6.333333333333333
+      },
+      "bookRange": [
+        7.733333333333333,
+        7.733333333333333
+      ],
+      "bookStandardDeviation": null
+    },
+    "baseline": {
+      "completeBooks": 3,
+      "means": {
+        "overall": 7.822222222222222,
+        "thesis": 9,
+        "structure": 8,
+        "depth": 8,
+        "reasoning": 8.333333333333334,
+        "clarity": 8.88888888888889,
+        "voice": 8.11111111111111,
+        "engagement": 7,
+        "pacing": 6.555555555555555,
+        "craft": 8.11111111111111,
+        "slopResistance": 6.222222222222222
+      },
+      "bookRange": [
+        7.8,
+        7.866666666666666
+      ],
+      "bookStandardDeviation": 0.03849001794597491
+    },
+    "new": {
+      "completeBooks": 1,
+      "means": {
+        "overall": 5.9,
+        "thesis": 8,
+        "structure": 5.333333333333333,
+        "depth": 5,
+        "reasoning": 7.333333333333333,
+        "clarity": 8,
+        "voice": 7.333333333333333,
+        "engagement": 4,
+        "pacing": 3,
+        "craft": 6.666666666666667,
+        "slopResistance": 4.333333333333333
+      },
+      "bookRange": [
+        5.9,
+        5.9
+      ],
+      "bookStandardDeviation": null
+    }
+  },
+  "validationIssues": [],
+  "newMinusBaseline": {
+    "overall": -1.9222222222222216,
+    "thesis": -1,
+    "structure": -2.666666666666667,
+    "depth": -3,
+    "reasoning": -1.0000000000000009,
+    "clarity": -0.8888888888888893,
+    "voice": -0.7777777777777777,
+    "engagement": -3,
+    "pacing": -3.5555555555555554,
+    "craft": -1.4444444444444438,
+    "slopResistance": -1.8888888888888893
+  }
+}

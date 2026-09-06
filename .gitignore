@@ -48,3 +48,5 @@ docs/english-regeneration-chat-router-incident.md
 
 # Frozen review-page replay pack (real book drafts + reviewer payloads).
 .scratch/review-page-sensitivity/
+# Blinded manuscript copies for the reader panels are generated books; they live only on the machine that ran them
+docs/composed-chapters/**/blind/

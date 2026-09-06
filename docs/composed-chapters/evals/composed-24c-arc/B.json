@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.2,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A cemetery is a selection before it is a sample.",
+      "judgment": "Compact, genuinely illuminating formulation of the book's central evidentiary problem; the prose is at its best in these short analytic turns."
+    },
+    {
+      "quote": "Law did not restrain violence here. It taught violence how to persist.",
+      "judgment": "Strong rhetorical close to the Barbados chapter, but also a specimen of the aphoristic two-beat closer the book reaches for far too often."
+    },
+    {
+      "quote": "The horse made the distance possible. It did not decide the destination.",
+      "judgment": "Elegant in isolation; identical in shape to at least a dozen other section endings, so it reads as a formula rather than an insight."
+    },
+    {
+      "quote": "A police arrest, a street fight, and a court hearing belong to the same chain only when we identify what each part did.",
+      "judgment": "Sets the book's real thesis early and clearly: acts acquire meaning from actor, institution and record, not from physical resemblance."
+    },
+    {
+      "quote": "The protocol estimated that the measures would concern more than eleven million Jews across Europe... A list made a future empire visible before it had been secured.",
+      "judgment": "Best kind of specificity in the book: a document read closely enough that its bureaucratic form becomes the argument."
+    },
+    {
+      "quote": "Keeley asks the record to correct a romantic image of peaceful pre-state life. Fry asks the record not to become a new image of universal savagery.",
+      "judgment": "Fair staging of a real historiographical dispute, but the paired-scholars-in-symmetrical-opposition device recurs in nearly every chapter and starts to feel manufactured."
+    },
+    {
+      "quote": "Jebel Sahaba cannot decide whether scarcity produced raids. Nataruk cannot decide whether abundance produced massacre. Talheim cannot decide whether farming made neighbors enemies.",
+      "judgment": "Rhetorically effective triad, but exemplifies the pervasive negative summary: whole sections end by listing what the evidence cannot say."
+    },
+    {
+      "quote": "Norbert Elias is right that... Michel Foucault is right that... Elsa Dorlin is right that... Steven Pinker is right that... None of these insights can stand alone as the history's final law.",
+      "judgment": "The book's last paragraph declines to synthesize; the concluding chapter distributes assent evenly and leaves the thesis less sharp than chapter 1 left it."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every case study is processed by the same two-move template: assert what the source establishes, then withdraw what it cannot establish. It is intellectually honest but becomes the book's default paragraph engine, so the reader can predict the second half of nearly every section.",
+      "instances": [
+        "It records a lethal encounter involving several people and several weapons. It cannot tell us how often such encounters occurred along Lake Turkana...",
+        "The sources are strongest when they show how kings wanted force understood. They are weaker when asked to describe the full social result."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis as a sentence habit ('not X but Y', 'X did not A; it B-ed'), used several times per page rather than reserved for genuine contrasts.",
+      "instances": [
+        "Payment did not end coercion. It placed coercion on a schedule.",
+        "Sacrifice did not replace politics. It made political inequality visible."
+      ]
+    },
+    {
+      "pattern": "Aphoristic short-sentence closers ending sections and chapters, almost always a long clause followed by a clipped reversal.",
+      "instances": [
+        "The railway widened the road. People decided where it led.",
+        "Violence followed judgment."
+      ]
+    },
+    {
+      "pattern": "Enumerated causal chains presented as a numbered or 'first/then/finally' sequence, deployed in at least six chapters with the same rhythm and the same concluding reflection that removing a link breaks the system.",
+      "instances": [
+        "First identify the act... Then identify the actor... Then identify the target and the purpose. Finally ask what institution authorized...",
+        "First, horses and pasture permit a force to move faster... Fifth, census takers and administrators classify the population. Finally, relay stations connect the conquered place to the court."
+      ]
+    },
+    {
+      "pattern": "Chapters and sections end on a deliberately unresolved question, so the book repeatedly defers rather than advances its argument; the cumulative effect is a flat line of open problems instead of a developing thesis.",
+      "instances": [
+        "That question remains open.",
+        "Until that question is answered, the passage from conviction to coercion remains open."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined global history of organized violence, built around a genuine thesis: aggression, coercive law, war and atrocity are distinct social acts, and what a source can prove depends on the institution that produced it. The research texture is strong and specific — Jebel Sahaba's healed and unhealed lesions, the Tophane arsenal register, the Wannsee population table, the Kenya detention order's grammar — and the case anchors are well chosen and mostly well compared. Its prose is clear, precise, and free of the usual lexical AI tells, and its handling of evidence is more scrupulous than most popular history. The weakness is structural monotony: nearly every section runs the same establish-then-withdraw move, resolves into a paired antithesis, and closes on an aphorism or an open question, so fifteen chapters read as one procedure repeated at different dates. Historiographical debate is consistently staged as two named scholars in symmetrical opposition, and the final chapter distributes assent among four of them rather than concluding. With compression, variation of paragraph shape, and a conclusion willing to commit, this would be close to publishable; as it stands the argument is sound but its delivery is templated."
+}

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 9,
+    "clarity": 8,
+    "voice": 5,
+    "engagement": 4,
+    "pacing": 3,
+    "craft": 6,
+    "slopResistance": 5
+  },
+  "overall": 6.3,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Nataruk is a place where violence became archaeologically visible. It is not a census of every encounter that occurred around Lake Turkana.",
+      "judgment": "Strength: the book's governing distinction — capability versus prevalence — stated with exemplary economy."
+    },
+    {
+      "quote": "A wall is not a battle report. A weapon is not a record of its use. A scar is not a statement of motive.",
+      "judgment": "Strength of thought, weakness of form: genuinely clarifying, but the tripled negative parallelism is the book's most overused rhetorical gear."
+    },
+    {
+      "quote": "Devaluation had become portable.",
+      "judgment": "Strength: a rare short, concrete sentence that does more argumentative work than the paragraphs around it."
+    },
+    {
+      "quote": "A compensation rule is not a compensation payment.",
+      "judgment": "Strength: precise, memorable, and earns the long discussion of Hammurabi's silver tariffs that precedes it."
+    },
+    {
+      "quote": "The denominator is not a technical afterthought; it determines which social pattern becomes visible.",
+      "judgment": "Strength: the methodological core of chapter 13, and one of the few places the book's abstraction pays an obvious dividend."
+    },
+    {
+      "quote": "Law did not make force disappear. It made some force official.",
+      "judgment": "Weakness in aggregate: an effective line, but nearly every chapter lands on a paired antithesis of exactly this shape."
+    },
+    {
+      "quote": "The body supplies possibilities, the mind interprets occasions, and the social world decides which possibilities become ordinary, useful, forbidden, or celebrated.",
+      "judgment": "Weakness: an aphoristic triadic closer that restates the chapter rather than advancing it; the same cadence closes chapters 1, 2, 6, 10 and 12."
+    },
+    {
+      "quote": "The record is sharpest where lives were broken and quietest where people succeeded in preventing the break.",
+      "judgment": "Weakness: elegant but decorative — the chiastic closer substitutes symmetry for a new claim."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The symmetrical can-show / cannot-show hedge, applied to virtually every case in the book, so that each section ends by retracting most of what it advanced. Used once it is rigour; used several times per chapter across fourteen chapters it becomes the book's default paragraph engine and its chief source of redundancy.",
+      "instances": [
+        "It cannot establish the prevalence of warfare among foragers",
+        "What it cannot show is equally important."
+      ]
+    },
+    {
+      "pattern": "Definitional antithesis in the form \"X is not A; it is B\" or \"not merely A but B,\" used to open or close nearly every analytical move rather than reserved for genuinely contested definitions.",
+      "instances": [
+        "Universal equality before law was not the code",
+        "Enforcement is therefore not a technical afterthought. It determines whether a rule enters the chain of decision."
+      ]
+    },
+    {
+      "pattern": "Long undifferentiated catalogues of occupations, offices or materials used as a substitute for describing one of them concretely; the lists recur in the Kadesh, Assyrian, Wannsee, Sarajevo and camp chapters with interchangeable rhythm.",
+      "instances": [
+        "Chariot makers, grooms, smiths, drivers, armourers, road builders, scribes, cooks, porters, scouts, and local guides formed the practical body of the army.",
+        "Officials had to identify people, assemble them, guard them, provision them, move them across long distances, allocate land or labour, and record their new status."
+      ]
+    },
+    {
+      "pattern": "Aphoristic, balanced closers that summarise rather than extend, ending sections on a cadence of paired or tripled clauses instead of on a new consequence.",
+      "instances": [
+        "Law did not make force disappear. It made some force official.",
+        "The record is sharpest where lives were broken and quietest where people succeeded in preventing the break."
+      ]
+    },
+    {
+      "pattern": "Substantive duplication across chapters: the Nuremberg Laws and Wannsee Protocol are narrated at length twice (chapters 8 and 12), and Nataruk is re-described in chapters 1, 2, 13 and 14 with much of the same evidentiary detail, so the last two chapters read largely as recapitulation.",
+      "instances": [
+        "The First Regulation to the Reich Citizenship Law, issued in November 1935, defined a Jew generally as someone descended from at least three Jewish grandparents.",
+        "The November regulations defined Jewishness through the religious affiliation of grandparents and the status of parents, not simply through a person"
+      ]
+    }
+  ],
+  "summary": "This is a genuinely coherent book with a real and unusual thesis: that the history of violence is a history of what different classes of evidence — bones, weapons, settlements, law codes, royal annals, ethnography, homicide series, testimony — can and cannot support, and that capacity, frequency and organisation must never be conflated. The argumentative discipline is the strongest thing here; from Nataruk through Hammurabi, Kadesh, the Twelve Tables, Nuremberg, Sarajevo and the South African commission, inferences are calibrated to their sources with a care most trade history lacks, and the closing chapters on denominators, negative cases and mechanism-versus-law are genuinely instructive. The cost is severe. The book has one rhetorical move — assert what the evidence shows, then symmetrically retract what it does not — and performs it hundreds of times, so pacing flatlines and paragraphs become interchangeable in shape; chapter 12 re-narrates chapter 8's documents, and chapters 13 and 14 largely re-narrate everything. Voice is uniform, impersonal and abstract, with almost no scene, person or image sustained long enough to grip a reader, and the prose leans on nominalisation and on balanced antitheses and triads that read as manufactured cadence rather than thought. Surface AI tells are largely absent, but the structural templating — paired negations, catalogue lists, aphoristic closers — is pervasive enough to register as medium slop. With aggressive cutting of the retraction formula, elimination of the duplicated Holocaust and Nataruk material, and a deliberate variation of tempo and register, this could be a distinguished book; as it stands it needs moderate revision."
+}

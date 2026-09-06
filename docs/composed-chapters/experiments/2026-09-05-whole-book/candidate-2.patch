@@ -1,0 +1,470 @@
+--- packages/core/src/schemas/episodes.ts
++++ packages/core/src/schemas/episodes.ts
+@@ -32,12 +32,28 @@
+ });
+ export type ChapterEpisode = z.infer<typeof chapterEpisodeSchema>;
+ 
++/**
++ * A chapter's explanatory assignment: the question it investigates with its
++ * assigned material, what it works out in full, the distinction the reader can
++ * make afterward, and what earlier chapters settled. Planning questions, not
++ * verified factual claims.
++ */
++export const chapterFocusSchema = z.object({
++  question: z.string().min(1),
++  investigation: z.array(z.string().min(1)).min(2).max(5),
++  contribution: z.string().min(1),
++  alreadyEstablished: z.array(z.string()).max(6).default([])
++});
++export type ChapterFocus = z.infer<typeof chapterFocusSchema>;
++
+ export const bookEpisodesSchema = z.object({
+   chapters: z
+     .array(
+       z.object({
+         index: z.number().int().positive(),
+-        episodes: z.array(chapterEpisodeSchema).default([])
++        episodes: z.array(chapterEpisodeSchema).default([]),
++        /** Absent on episodes planned before focus existed and on narrative books. */
++        focus: chapterFocusSchema.optional()
+       })
+     )
+     .min(1)
+--- packages/core/src/generation/episodes.ts
++++ packages/core/src/generation/episodes.ts
+@@ -4,7 +4,9 @@
+ import { isRecord } from "../schemas/jsonCoercion.js";
+ import { bookDossierSchema, bookEpisodesSchema, type BookDossier, type BookEpisodes, type ChapterEpisode } from "../schemas/episodes.js";
+ import type { AuthorStance } from "../schemas/plan.js";
++import { isNarrativeWritingMode } from "./authorStance.js";
+ import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
++import { inferWritingMode } from "./styleContract.js";
+ 
+ /**
+  * Material-first, step one: the episodes. One call plans two or three
+@@ -20,13 +22,26 @@
+   bookDossierSchema,
+   bookEpisodesSchema,
+   chapterEpisodeSchema,
++  chapterFocusSchema,
+   dossierExcerptSchema,
+   type BookDossier,
+   type BookEpisodes,
+   type ChapterEpisode,
++  type ChapterFocus,
+   type DossierExcerpt,
+   type EpisodeKind
+ } from "../schemas/episodes.js";
++
++/**
++ * The focus, for the books that argue: each chapter investigates its own
++ * question with its own material, so the book covers different causal
++ * questions instead of reenacting one thesis through different cases. A
++ * narrative book plans no focus.
++ */
++const CHAPTER_FOCUS_RULES = [
++  "focus is the chapter's explanatory assignment, answered from its assigned episodes. question asks one distinct explanatory question and names the assigned material. investigation lists two to five concrete things the chapter works out in full: a sequence of decisions, resources and logistics, incentives, the alternatives open at the time, costs, aftermath, how an inference is made from the record. contribution names the new distinction the reader can make afterward. alreadyEstablished names the answers earlier chapters have settled, which this chapter need not argue again.",
++  "Across the book the focuses cover different causal questions drawn from the user's request; do not turn every chapter into proof of the same thesis or a reminder that a source is limited. A later chapter changes, refines or tests an earlier chapter's explanation with its new material. A focus is a subject assignment, never a compulsory order of scene, comparison or recap. Where the stance's positions would have a chapter repeat a claim, the focus decides what the chapter investigates, within the scope the user asked for."
++];
+ 
+ /** The episodes a plan stores, or nothing. */
+ export function planEpisodesFromPlan(plan: BookPlan): BookEpisodes | undefined {
+@@ -58,6 +73,7 @@
+   evidenceRequired?: boolean | undefined;
+   feedback?: string[] | undefined;
+ }): Promise<PlanEpisodesResult> {
++  const focused = !isNarrativeWritingMode(inferWritingMode(options.input, options.plan));
+   try {
+     const result = await generateJsonWithRetry(options.textModel, {
+       purpose: PLAN_EPISODES_PURPOSE,
+@@ -68,12 +84,13 @@
+         {
+           role: "system",
+           content: [
+-            `You are the author of "${options.plan.title}", filling the shoebox before writing a word: for every chapter of the plan, the two or three episodes the chapter will be made from.`,
++            `You are the author of "${options.plan.title}", filling the shoebox before writing a word: for every chapter of the plan, the distinct documented episodes the chapter will be made from — three or four for a chapter of eight or more pages, two or three for a shorter one.`,
+             "An episode is a particular documented case, event, worked result or text relevant to this book. It is never a theme, a period or a generalisation. Identify a document the reader could consult. Prefer accessible original records or authoritative expositions; do not force historical anecdotes into an instructional or technical book. Public repositories include Wikisource, Project Gutenberg and the Internet Archive.",
+             "kind says what the chapter will do with it: scene (an event told in time), document (a text read closely), figure (a number or a table worked through), dispute (two named people or works that disagree about it), portrait (one person followed). Choose the treatment the evidence supports. A scene is optional.",
+             ...(options.evidenceRequired ? ["Every central case must subsequently pass source verification. Select cases with accessible substantive documentation, not famous names used as decoration. If feedback names unavailable cases, choose different documented material serving the same requested coverage."] : []),
+             "searchQueries: two or three searches that would find the document's own text in a library catalogue — its title, its author, a distinctive phrase — never a topic. why: one sentence on what the episode lets the chapter show.",
+             "Select each case for one chapter only: its full account belongs where it makes the strongest contribution. When neighboring chapter scopes overlap, give them different documented episodes. The why field names a concrete question or mechanism this episode adds that the other chapters do not already explain; avoid another illustration of the book's general thesis. The final chapter needs fresh material that tests the earlier explanation, rather than a tour of the preceding cases.",
++            ...(focused ? CHAPTER_FOCUS_RULES : []),
+             "Return one JSON object shaped exactly like outputContract, with one entry per chapter of the plan in the plan's order and the plan's index numbers.",
+             ...targetLanguageGenerationGuidance(options.input.language)
+           ].join(" ")
+@@ -83,6 +100,7 @@
+           content: JSON.stringify(
+             {
+               language: targetLanguagePayload(options.input.language),
++              userPrompt: options.input.prompt,
+               book: { title: options.plan.title, premise: options.plan.premise, audience: options.plan.audience },
+               stance: { thesis: options.stance.thesis, positions: options.stance.positions },
+               ...(options.feedback ? { feedback: options.feedback } : {}),
+@@ -108,7 +126,8 @@
+                         why: "",
+                         searchQueries: ["", ""]
+                       }
+-                    ]
++                    ],
++                    ...(focused ? { focus: { question: "", investigation: ["", ""], contribution: "", alreadyEstablished: [] } } : {})
+                   }
+                 ]
+               }
+--- packages/core/src/generation/chapterForms.ts
++++ packages/core/src/generation/chapterForms.ts
+@@ -650,6 +650,9 @@
+ const CASE_ASSIGNMENTS_RULE =
+   "caseAssignments is the material already selected for this book. Build each chapter's sections from its assigned episodes and their specific contributions; do not invent a second competing case list. A case has one home for its full treatment. Other chapters may use a brief comparison that adds a new inference, without retelling the episode. Use the chapter's remaining space to explain how its own events, institutions or documents worked.";
+ 
++const CHAPTER_FOCUS_RULE =
++  "A chapter with focus investigates that specific question using its assigned material. Give its investigation enough room to show what happened and why; arrange sections in the order that explanation needs. alreadyEstablished is reader knowledge, not a new section to repeat. contribution is the new distinction earned by this chapter, not a sentence to paste. Do not finish each chapter by translating its result back into the same book-wide thesis.";
++
+ /**
+  * One call for the whole book, so variety can be global, then one repair
+  * call against the deterministic issues, then rotation. Never blocks: a
+@@ -669,9 +672,11 @@
+     options.episodes && options.episodes.chapters.length > 0
+       ? options.episodes.chapters.map((chapter) => ({
+           chapterIndex: chapter.index,
+-          episodes: chapter.episodes.map(({ title, person, place, date, document, why }) => ({ title, person, place, date, document, why }))
++          episodes: chapter.episodes.map(({ title, person, place, date, document, why }) => ({ title, person, place, date, document, why })),
++          ...(chapter.focus ? { focus: chapter.focus } : {})
+         }))
+       : undefined;
++  const anyFocus = options.episodes?.chapters.some((chapter) => chapter.focus !== undefined) ?? false;
+   // A disabled gate strips any figure the model volunteered; chapters already
+   // written keep theirs, since their pages already carry the block. The cap
+   // is a ceiling against a figure in every chapter, not a target: the first
+@@ -701,6 +706,7 @@
+             "A section's form governs the shape of its prose, not its topic. Choose the form the material wants: a single vivid episode wants a scene; a document or object wants a close reading; a genuine dispute wants an argument or a counterargument; a list of things wants a catalogue and is allowed to read as one; an unsettled matter wants an open question left open.",
+             "Each section's subject is concrete and specific to this book; owns lists the particular cases, sources, scenes, people or objects that section alone treats, and no two sections anywhere in the book own the same one.",
+             ...(caseAssignments ? [CASE_ASSIGNMENTS_RULE] : []),
++            ...(anyFocus ? [CHAPTER_FOCUS_RULE] : []),
+             "landing is the claim this chapter adds to the book's argument, particular to this chapter's cases: what the author concludes from them, in one sentence. It is never a restatement of the book's thesis, never a general statement about institutions, capacities or human nature, and never built as a negation and its correction (\"X did not simply A; it B\"). No two landings share a shape or a subject. The writer reasons toward it in the chapter's final paragraph rather than quoting it.",
+             "Each section carries a handoff: the question or unfinished business it leaves for the next section, so the chapter reads as one argument in movements rather than a stack of separate essays. The last section's handoff is empty.",
+             ...(options.figures ? [FIGURE_FORM_PLAN_RULE] : []),
+--- packages/core/src/generation/composedChapterMaterial.ts
++++ packages/core/src/generation/composedChapterMaterial.ts
+@@ -1,5 +1,5 @@
+ import type { ChapterWordBudget } from "./composedChapter.js";
+-import type { ChapterEpisode, DossierExcerpt, CaseEvidencePacket } from "../schemas/episodes.js";
++import type { ChapterEpisode, ChapterFocus, DossierExcerpt, CaseEvidencePacket } from "../schemas/episodes.js";
+ import { CASE_EVIDENCE_WRITER_RULES } from "./caseEvidence.js";
+ 
+ /**
+@@ -19,6 +19,8 @@
+   scene?: { text: string; words: number; episodeTitle: string } | undefined;
+   /** Episodes whose full treatment belongs to another chapter: named so the writer refers to them rather than retelling them. */
+   reservedCases?: ReadonlyArray<{ chapterIndex: number; episodes: ReadonlyArray<Pick<ChapterEpisode, "title" | "person" | "place" | "date" | "document">> }> | undefined;
++  /** The chapter's own explanatory question, planned with its episodes: with one, the chapter writes from it and not from the book's thesis. */
++  focus?: ChapterFocus | undefined;
+ };
+ 
+ /** The routing line for `reservedCases`: nothing when no other chapter owns a case. */
+@@ -26,6 +28,21 @@
+   if (!options.material?.reservedCases?.length) return [];
+   return [
+     "reservedCases names episodes whose full treatment belongs to another chapter. Refer to them only briefly when a comparison adds something this chapter needs; do not narrate them again. Develop the mechanisms, decisions, consequences and source details of this chapter's own episodes instead."
++  ];
++}
++
++/**
++ * The chapter's focus as the writer and the editor see it: the question, the
++ * concrete things to work out, and what the reader already knows. Nothing when
++ * the chapter has no focus.
++ */
++export function chapterFocusLines(options: { material?: ChapterMaterial | undefined }): string[] {
++  const focus = options.material?.focus;
++  if (!focus) return [];
++  return [
++    `This chapter investigates: ${focus.question}`,
++    `Develop these concrete questions from its material, carrying each explanation far enough to show its parts: ${focus.investigation.join(" | ")}. The new contribution is ${focus.contribution}; earn it through the chapter rather than announcing or repeating it.`,
++    `Already established for this reader: ${focus.alreadyEstablished.join(" | ") || "Nothing yet"}. Start from that knowledge. Keep every paragraph doing new work on this chapter's question; the broad thesis is not an additional conclusion to attach to each example. Source qualification belongs where it changes an inference, once, not after every observation.`
+   ];
+ }
+ 
+@@ -41,6 +58,10 @@
+ 
+ export const CREATIVE_RECONSTRUCTION_RULE =
+   "A scene may be told as it happened: a named person in a named place on a day, with what they saw, said and did, reconstructed from what the record makes likely. Where you reconstruct rather than report, let the grammar say so once — \"would have\", \"by his own account\", \"as the register has it\" — and then tell it plainly. Never present an invented person as a real one; a type (\"a clerk of the customs house\") is named as a type.";
++
++/** In place of the creative reconstruction rule for a focused nonfiction chapter: three blind readers found invented particulars in every scene opening. */
++export const FOCUSED_RECONSTRUCTION_RULE =
++  "When narrating a real event, use only actions and descriptions supported by a supplied passage for scene-level details. Do not invent dialogue, private thoughts, remembered objects, gestures or sensory effects. General historical knowledge can supply contextual facts and explanation, but a plausible detail is not a witnessed fact. If the record supports only a short account, write that account and continue the chapter’s explanation.";
+ 
+ export type ComposedChapterText = { markdown: string; words: number; attempts: number };
+ 
+@@ -58,12 +79,14 @@
+ }
+ 
+ /**
+- * System lines for the editor pass. The editor needs the case evidence rules
+- * and case reservations, but not the compose-time opening-scene instructions
+- * that materialLines() adds.
++ * System lines for the editor pass. The editor needs the case evidence rules,
++ * case reservations and the chapter's focus, but not the compose-time
++ * opening-scene instructions that materialLines() adds.
+  */
+ export function materialEditLines(options: { material?: ChapterMaterial | undefined }): string[] {
+   return [
++    ...chapterFocusLines(options),
++    ...(options.material?.focus ? [FOCUSED_RECONSTRUCTION_RULE] : []),
+     ...(options.material?.evidencePackets?.length ? CASE_EVIDENCE_WRITER_RULES : []),
+     ...caseReservationLines(options),
+   ];
+@@ -82,6 +105,7 @@
+     "This chapter is built from the episodes in `episodes`: each is a person, a place, a date and a document from the record, and the chapter's sections are made from them — an episode told in time, a document read closely, a figure worked through — with the argument arising from the material rather than the material illustrating the argument. Give each episode a real stretch of the chapter, not a mention."
+   ];
+   if (material.episodes.length === 0) lines.length = 0;
++  lines.push(...chapterFocusLines(options));
+   lines.push(...caseReservationLines(options));
+   if (material.evidencePackets?.length) lines.push(...CASE_EVIDENCE_WRITER_RULES);
+   if (material.excerpts.length > 0) {
+@@ -110,6 +134,7 @@
+       document: episode.document,
+       why: episode.why
+     })),
++    ...(material.focus ? { focus: material.focus } : {}),
+     ...(material.reservedCases?.length
+       ? {
+           reservedCases: material.reservedCases.map((entry) => ({
+--- packages/core/src/generation/composedChapter.ts
++++ packages/core/src/generation/composedChapter.ts
+@@ -7,11 +7,12 @@
+ import type { AuthorStance, BookPlan, ChapterPlan, CreateProjectInput } from "../schemas/book.js";
+ import { isRecord } from "../schemas/jsonCoercion.js";
+ import { authorStancePromptLines, isNarrativeWritingMode } from "./authorStance.js";
+-import { arcChapterLines, type BookArc } from "./bookArc.js";
++import type { BookArc } from "./bookArc.js";
+ import { chapterDevelopmentLines } from "./bookDevelopment.js";
+ import {
+   CREATIVE_CONTRACT_RULES,
+   CREATIVE_RECONSTRUCTION_RULE,
++  FOCUSED_RECONSTRUCTION_RULE,
+   materialEditLines,
+   materialLines,
+   materialPayload,
+@@ -21,6 +22,7 @@
+   type ComposedChapterText
+ } from "./composedChapterMaterial.js";
+ export { CREATIVE_CONTRACT_RULES, type ChapterMaterial, type ComposeContract, type ComposedChapterText } from "./composedChapterMaterial.js";
++import { stanceLinesFor } from "./composedChapterStance.js";
+ import {  compositionWriterLines, formPaletteFor, type ChapterComposition } from "./chapterForms.js";
+ import { normalizeChapterMarkdown } from "./chapterPagination.js";
+ import { FIGURE_WORD_EQUIVALENT, figureFreeProse, figureStandInMarkdown, proseWordCount } from "./figures/figureBlocks.js";
+@@ -267,8 +269,10 @@
+   return options.arc && !isFirstOrLastChapter(options) ? options.arc : undefined;
+ }
+ 
+-/** The chapter's summary as the writer sees it: the arc's job where the plan's summary would say what the chapter proves. */
++/** The chapter's summary as the writer sees it: its focus, else the arc's job where the plan's summary would say what the chapter proves. */
+ function chapterSummaryFor(options: ComposeChapterOptions): string {
++  const focus = options.material?.focus;
++  if (focus) return `${focus.question} ${focus.investigation.join(" ")}`;
+   const arc = withheldArc(options);
+   const job = arc?.chapters.find((entry) => entry.index === options.chapter.index)?.job.does;
+   return job || options.chapter.summary;
+@@ -336,7 +340,7 @@
+           (rule) => !(options.arc && arcKindFor(options) !== "method" && rule.startsWith("State what a source shows"))
+         )),
+     ...(minimal ? [] : ["Do not open the chapter with a general claim about a common noun (\"A cannon was never only a cannon\")."]),
+-    ...(minimal || options.material?.evidencePackets?.length ? [] : options.contract === "creative" ? (narrative ? [] : [CREATIVE_RECONSTRUCTION_RULE]) : reconstructionRule(narrative)),
++    ...(minimal || options.material?.evidencePackets?.length ? [] : options.contract === "creative" ? (narrative ? [] : [options.material?.focus ? FOCUSED_RECONSTRUCTION_RULE : CREATIVE_RECONSTRUCTION_RULE]) : reconstructionRule(narrative)),
+     `Now chapter ${options.chapter.index}, "${options.chapter.title}".`,
+     ...materialLines(options),
+     ...chapterDevelopmentLines(options.plan, options.chapter.index),
+@@ -368,7 +372,11 @@
+   const userPayload = {
+     language: targetLanguagePayload(options.input.language),
+     userPrompt: options.input.prompt,
+-    book: bookPayload(options.plan, options.input, withheldArc(options)),
++    // A focused middle chapter is not handed the thesis back as the premise, nor where the book lands as promises.
++    book: {
++      ...bookPayload(options.plan, options.input, withheldArc(options)),
++      ...(options.material?.focus && !isFirstOrLastChapter(options) ? { premise: options.material.focus.question, promises: [] } : {})
++    },
+     chapter: {
+       index: options.chapter.index,
+       title: options.chapter.title,
+@@ -439,25 +447,6 @@
+ 
+ /** "full" is the prompt every composed run to composed-18 wrote with; "minimal" is the subtraction ablation. */
+ export const COMPOSE_PROMPT_MODE: "full" | "minimal" = "full";
+-
+-/**
+- * One rotated position per chapter was tried on composed-8/9: the refrains
+- * the panel named in composed-7 were the five positions restated, but shown one
+- * each the chapters restated the thesis instead and the book lost its argument
+- * ("nothing a reader could disagree with"), 6.73 against 7.73 on the same plan.
+- */
+-const ROTATE_STANCE_POSITIONS = false;
+-
+-function stanceLinesFor(options: ComposeChapterOptions): string[] {
+-  const mode = inferWritingMode(options.input, options.plan);
+-  if (options.arc && !isFirstOrLastChapter(options)) {
+-    return [...authorStancePromptLines(options.stance, mode, { exemplarOnly: true }), ...arcChapterLines(options.arc, options.chapter.index)];
+-  }
+-  return [
+-    ...authorStancePromptLines(options.stance, mode, ROTATE_STANCE_POSITIONS ? { chapterIndex: options.chapter.index } : {}),
+-    ...(options.arc ? arcChapterLines(options.arc, options.chapter.index) : [])
+-  ];
+-}
+ 
+ function isFirstOrLastChapter(options: ComposeChapterOptions): boolean {
+   const chapters = options.plan.chapters;
+--- packages/core/src/generation/composeScene.ts
++++ packages/core/src/generation/composeScene.ts
+@@ -4,7 +4,7 @@
+ import type { ChapterEpisode, DossierExcerpt, CaseEvidencePacket } from "../schemas/episodes.js";
+ import { CASE_EVIDENCE_WRITER_RULES } from "./caseEvidence.js";
+ import type { AuthorStance } from "../schemas/plan.js";
+-import { authorStancePromptLines } from "./authorStance.js";
++import { authorStancePromptLines, isNarrativeWritingMode } from "./authorStance.js";
+ import { normalizeChapterMarkdown } from "./chapterPagination.js";
+ import { CREATIVE_CONTRACT_RULES, type ComposeContract } from "./composedChapter.js";
+ import { countReadableWords } from "./proseShape.js";
+@@ -16,11 +16,17 @@
+  * writes analysis whatever it is told about scenes; asked only to tell one
+  * episode, it tells it. The scene is printed as the chapter's opening and the
+  * compose call continues from it (`ChapterMaterial.scene`).
++ *
++ * Nonfiction tells the episode as an account of what the record holds: no
++ * passage of the record, no scene; a short passage, a short account. Three
++ * blind readers found invented particulars in every cinematic opening.
+  */
+ export const COMPOSE_SCENE_PURPOSE = "compose-scene";
+ 
+ export const SCENE_TARGET_WORDS = 700;
+ const SCENE_MIN_WORDS = 300;
++/** Nonfiction: the shortest account kept; anything less is no scene rather than a padded one. */
++export const ACCOUNT_MIN_WORDS = 80;
+ 
+ export type ComposedScene = { text: string; words: number; episodeTitle: string };
+ 
+@@ -43,21 +49,34 @@
+ }): Promise<ComposedScene | undefined> {
+   const target = options.targetWords ?? SCENE_TARGET_WORDS;
+   const mode = inferWritingMode(options.input, options.plan);
++  const narrative = isNarrativeWritingMode(mode);
+   const excerpts = options.excerpts.filter((excerpt) => !excerpt.episodeTitle || excerpt.episodeTitle === options.episode.title);
+   const packets = options.evidencePackets?.filter((packet) => packet.episode.title === options.episode.title);
+   if (options.evidencePackets && (!packets?.length || !packets.some((packet) => packet.sequence.length >= 2))) return undefined;
++  // Nonfiction with no passage of the record has nothing witnessed to tell;
++  // model knowledge supplies context, never the detail a scene is made of.
++  if (!narrative && excerpts.length === 0) return undefined;
++  const rhythm = "Paragraphs of visibly different lengths; no heading, no title, no summary, no epigraph. Return only the scene's prose.";
+   const systemLines = [
+     `You are writing the opening of chapter ${options.chapter.index}, "${options.chapter.title}", of the book "${options.plan.title}", as its author.`,
+     ...authorStancePromptLines(options.stance, mode, { exemplarOnly: true }),
+     packets?.length
+       ? `Narrate the documented sequence of ${options.episode.title} through the recorded choices and consequences. Use only actors, actions and dates supported by caseEvidence. Dialogue or sensory detail may appear only when a supplied passage records it. Do not add a cinematic setting or speculate to meet the length target.`
+-      : `Tell one episode as a scene in time: ${options.episode.title}. A named person in a named place on a day, doing, seeing and saying; the reader is there. Tell it — do not argue it, do not explain what it means, do not say what the chapter or the book will make of it. Begin inside the episode, not before it, and end on its last event, not on a reflection.`,
++      : narrative
++        ? `Tell one episode as a scene in time: ${options.episode.title}. A named person in a named place on a day, doing, seeing and saying; the reader is there. Tell it — do not argue it, do not explain what it means, do not say what the chapter or the book will make of it. Begin inside the episode, not before it, and end on its last event, not on a reflection.`
++        : `Tell the documented episode ${options.episode.title} as an account in time: the recorded actors, what they did, and what followed, in the order the record gives it. Scene-level detail comes only from a supplied passage. If the supplied passages do not describe this episode, return an empty response with no explanation. Do not turn unrelated source context into an account of the requested event. Do not invent dialogue, private thoughts, remembered objects, gestures, weather or sensory effects, and do not write "would have" to license a detail the record does not hold. Add a contextual fact only where the reader needs it to identify the episode. Tell it — do not argue it, do not explain what it means, do not say what the chapter or the book will make of it. Begin inside the episode and end on its last recorded event.`,
+     excerpts.length > 0
+       ? "`dossier` holds verbatim passages from the record of this episode. Quote from them with quotation marks and the document named — a phrase, a line, a whole passage where it is better than anything you could write — and put quotation marks around nothing else."
+       : "Quotation marks are a promise: put them only around words you are confident were said or written in that form.",
+-    ...(options.contract === "creative" ? [CREATIVE_CONTRACT_RULES[0]!] : ["Use the episode's document and the research notes; do not invent named people or documents."]),
+-    ...(packets?.length ? CASE_EVIDENCE_WRITER_RULES : ["Where you reconstruct rather than report, let the grammar say so once — \"would have\", \"by his own account\", \"as the register has it\" — and then tell it plainly."]),
+-    `Write between ${Math.round(target * 0.75)} and ${Math.round(target * 1.3)} words, aiming for ${target}. Paragraphs of visibly different lengths; no heading, no title, no summary, no epigraph. Return only the scene's prose.`,
++    ...(narrative && options.contract === "creative" ? [CREATIVE_CONTRACT_RULES[0]!] : ["Use the episode's document and the research notes; do not invent named people or documents."]),
++    ...(packets?.length
++      ? CASE_EVIDENCE_WRITER_RULES
++      : narrative
++        ? ["Where you reconstruct rather than report, let the grammar say so once — \"would have\", \"by his own account\", \"as the register has it\" — and then tell it plainly."]
++        : []),
++    narrative
++      ? `Write between ${Math.round(target * 0.75)} and ${Math.round(target * 1.3)} words, aiming for ${target}. ${rhythm}`
++      : `Write up to ${target} words; a short source warrants a short account. Do not invent or reiterate material to reach a minimum. ${rhythm}`,
+     ...targetLanguageGenerationGuidance(options.input.language)
+   ];
+   const payload = {
+@@ -83,8 +102,12 @@
+     chapter: { title: options.chapter.title, summary: options.chapter.summary },
+     ...(packets?.length ? { caseEvidence: packets } : {})
+   };
++  // Narrative may try once more for length; nonfiction is one call, a short
++  // account kept as it is and never asked to fill a minimum.
++  const attempts = narrative ? 2 : 1;
++  const minWords = narrative ? SCENE_MIN_WORDS : ACCOUNT_MIN_WORDS;
+   let best: ComposedScene | undefined;
+-  for (let attempt = 0; attempt < 2; attempt += 1) {
++  for (let attempt = 0; attempt < attempts; attempt += 1) {
+     const result = await options.textModel.generateText({
+       purpose: COMPOSE_SCENE_PURPOSE,
+       temperature: options.input.temperature,
+@@ -97,7 +120,7 @@
+     const text = normalizeChapterMarkdown(result.text.trim().replace(/^```[a-z]*\n([\s\S]*?)\n```$/i, "$1"), { chapterTitle: options.chapter.title });
+     const words = countReadableWords(text);
+     if (!best || words > best.words) best = { text, words, episodeTitle: options.episode.title };
+-    if (words >= SCENE_MIN_WORDS) break;
++    if (words >= minWords) break;
+   }
+-  return best && best.words >= SCENE_MIN_WORDS ? best : undefined;
++  return best && best.words >= minWords ? best : undefined;
+ }
+--- apps/worker/src/generation/composedChaptersPass.ts
++++ apps/worker/src/generation/composedChaptersPass.ts
+@@ -199,6 +199,8 @@
+     const evidencePackets = chapterCaseEvidence(plan, chapterIndex);
+     if (chapterEpisodes.length === 0 && evidencePackets.length === 0) return undefined;
+     const scene = scenes.get(chapterIndex);
++    // The chapter's own question, planned with its episodes; absent on older episodes and narrative books.
++    const focus = episodes.chapters.find((chapter) => chapter.index === chapterIndex)?.focus;
+     // The other chapters' cases, named only: the writer refers to them, never retells them.
+     const reservedCases = episodes.chapters
+       .filter((chapter) => chapter.index !== chapterIndex && chapter.episodes.length > 0)
+@@ -209,6 +211,7 @@
+     return {
+       episodes: chapterEpisodes,
+       excerpts: dossier?.excerpts.filter((excerpt) => excerpt.chapterIndex === chapterIndex) ?? [],
++      ...(focus ? { focus } : {}),
+       ...(reservedCases.length > 0 ? { reservedCases } : {}),
+       ...(dossier?.evidencePackets ? { evidencePackets } : {}),
+       ...(scene ? { scene } : {})
+--- packages/core/src/generation/composedChapterStance.ts
++++ packages/core/src/generation/composedChapterStance.ts
+@@ -0,0 +1,42 @@
++import { authorStancePromptLines } from "./authorStance.js";
++import { arcChapterLines } from "./bookArc.js";
++import type { ComposeChapterOptions } from "./composedChapter.js";
++import { inferWritingMode } from "./styleContract.js";
++
++/**
++ * The stance as one chapter's writer and editor see it. Split from
++ * `composedChapter.ts` for the 900-line budget; the compose and edit calls
++ * import from here.
++ */
++
++/**
++ * One rotated position per chapter was tried on composed-8/9: the refrains
++ * the panel named in composed-7 were the five positions restated, but shown one
++ * each the chapters restated the thesis instead and the book lost its argument
++ * ("nothing a reader could disagree with"), 6.73 against 7.73 on the same plan.
++ */
++const ROTATE_STANCE_POSITIONS = false;
++
++/**
++ * A chapter with a focus writes from its own question, which reaches the
++ * compose and edit calls through the material helpers; the five global
++ * positions are not handed to it as demands, only the voice exemplar. Three
++ * blind readers found one institutional explanation reenacted by every
++ * chapter's cases when the positions rode in every call. Without a focus the
++ * legacy lines are unchanged.
++ */
++export function stanceLinesFor(options: ComposeChapterOptions): string[] {
++  const mode = inferWritingMode(options.input, options.plan);
++  if (options.material?.focus) {
++    return authorStancePromptLines(options.stance, mode, { exemplarOnly: true });
++  }
++  const chapters = options.plan.chapters;
++  const firstOrLast = options.chapter.index === chapters[0]?.index || options.chapter.index === chapters.at(-1)?.index;
++  if (options.arc && !firstOrLast) {
++    return [...authorStancePromptLines(options.stance, mode, { exemplarOnly: true }), ...arcChapterLines(options.arc, options.chapter.index)];
++  }
++  return [
++    ...authorStancePromptLines(options.stance, mode, ROTATE_STANCE_POSITIONS ? { chapterIndex: options.chapter.index } : {}),
++    ...(options.arc ? arcChapterLines(options.arc, options.chapter.index) : [])
++  ];
++}

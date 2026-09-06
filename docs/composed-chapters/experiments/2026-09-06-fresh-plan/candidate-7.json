@@ -1,0 +1,18 @@
+{
+  "candidate": 7,
+  "label": "legacy-cuts-7",
+  "status": "stopped-before-prose",
+  "writer": { "model": "gpt-5.6-luna", "tier": "balanced", "thinkingEffort": "low" },
+  "qualityRevision": 50,
+  "liveFlags": { "chapterFocus": "off (compiled default)", "manuscriptReadCuts": "on for balanced (revision 50)" },
+  "sourceProject": "cmtjbz54o000w6rjyvzewwqj4",
+  "reusePlan": false,
+  "intervention": "chapterFocus gate off (rung-5 composition: positions shown, told opening scene, creative reconstruction), manuscriptReadCuts gate on (whole-chapter deletion-only cut from the manuscript read, floor-bounded), couplet rewrite broadened to assert-then-retract, semicolon retraction and without-proving forms (cap 18).",
+  "implementation": { "worker": "claude-opus (Agent tool, model=opus)", "files": ["packages/core/src/generation/qualityGates.ts", "packages/core/src/generation/pipelineStages.ts", "packages/core/src/generation/episodes.ts", "packages/core/src/generation/coupletRewrite.ts", "packages/core/src/generation/composedChapter.ts", "apps/worker/src/generation/composedChaptersMaterial.ts", "apps/worker/src/generation/composedChaptersPass.ts", "apps/worker/src/generation/composedChaptersState.ts"], "checks": "7 gates passed in 98.6s (check-7.log)" },
+  "projectId": "cmtpatos00000yvg01cpxosw0",
+  "planId": "cmtpaw9ql00032bp2ovuvkc16",
+  "generationJobId": "cmtpawl530002yvg0oo4pu8my",
+  "plan": { "title": "The Many Faces of Human Aggression", "chapters": 12, "pageSum": 120, "targets": [9,7,11,5,13,8,14,10,12,6,10,15], "stanceRegenerated": true, "stanceRegeneratedBecause": "planner position 5 was an evidence statement" },
+  "failure": "Stopped at 15% (gathering sources) by the parent: the plan contract's collision rule dropped four legitimate later-chapter episodes on tokens shared only through a modern editor's name (Geoffrey Parker), a polity (Holy Roman) and a book-title word plus a place (India, Journey). Saved answers: episodes-7-answer-1.json, episodes-7-answer-2.json. Rule refined (document-only overlap never counts; identity fields decide) and the candidate relaunched as legacy-cuts-7b.",
+  "settledProviderCostUsd": "plan-book 2 + critique 1 + author-stance 1 + plan-episodes 2, about $0.03"
+}

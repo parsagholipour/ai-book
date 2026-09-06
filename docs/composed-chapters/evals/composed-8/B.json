@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 7.1,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The body is a document written by impact, and its sentences have been broken apart by burial, erosion, excavation, and time.",
+      "judgment": "A genuinely earned image that states the book's evidentiary thesis in one line; the rare figurative move that is not decorative."
+    },
+    {
+      "quote": "Patterns permit a historical argument. They do not turn uncertainty into a witness.",
+      "judgment": "Crisp epistemic discipline \u2014 but also the prototype of the paired-antithesis closer the book reaches for hundreds of times."
+    },
+    {
+      "quote": "A field boundary says, \u201cthis work belongs to someone\u201d; a wall says, \u201cthis place must be entered on terms.\u201d",
+      "judgment": "Excellent compression of the chapter's argument into a contrast a reader can carry forward."
+    },
+    {
+      "quote": "Rome made belonging portable. Qin made service countable.",
+      "judgment": "The comparative machinery at its best: two systems distinguished in eight words after four pages of careful setup."
+    },
+    {
+      "quote": "A softened word could carry a hard procedure. The schedule supplied the violence that the sentence concealed.",
+      "judgment": "The Wannsee analysis is the book's strongest reading of a document; euphemism is explained mechanically rather than deplored."
+    },
+    {
+      "quote": "The sword remained real throughout. So did the wound and the burned house.",
+      "judgment": "A structural fault: this paragraph summarises Chapter 7 but sits under the Chapter 8 heading, so the gunpowder chapter opens with the previous chapter's coda."
+    },
+    {
+      "quote": "There is the Crow Creek burial in what is now South Dakota, a mass deposit associated with a settled agricultural community of the late prehistoric Plains.",
+      "judgment": "The existential-\u201cthere is\u201d inventory mode that Chapter 2 falls into three times running; catalogue substitutes for argument and stalls the pacing."
+    },
+    {
+      "quote": "Efficiency did not make coercion gentle. It made coercion repeatable.",
+      "judgment": "Sharp, but it is the fourth or fifth aphoristic two-beat closer in the same chapter, and the shape has begun to announce itself before the content does."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The evidentiary concession-then-assertion: a source is credited, then denied the larger claim, in a fixed two- or three-sentence shape. Used dozens of times per chapter until it reads as a template rather than a judgment.",
+      "instances": [
+        "The site does not prove that warfare had one origin, nor that every community of the same period lived under similar threat. It shows that organised or repeated group violence appeared in at least some early settings",
+        "Jericho\u2019s construction shows preparedness and collective effort; it does not supply a calendar of assaults."
+      ]
+    },
+    {
+      "pattern": "Symmetrical paired antithesis as paragraph closer \u2014 \u201cIt could A. It could also B.\u201d \u2014 hedging in a balanced couplet rather than adjudicating.",
+      "instances": [
+        "Familiarity can restrain violence because reputation has time to accumulate. It can also sharpen resentment because debts and insults are remembered in the place where they occurred.",
+        "The same dossier could protect a person by establishing status and expose that person by marking difference."
+      ]
+    },
+    {
+      "pattern": "The two-case comparison scaffold: two sites/institutions introduced separately, compared in a \u201cThe difference is not that\u2026\u201d or \u201cThe contrast can be stated plainly\u201d paragraph, then a verdict paragraph. Every chapter runs this same machine, so chapter shapes become interchangeable.",
+      "instances": [
+        "The contrast can be stated plainly. \u00c7atalh\u00f6y\u00fck concentrates resources inside households. Jericho concentrates labour around a shared boundary.",
+        "The verdict is limited but clear. Ottoman organisation gave the central government a durable infantry core and strong artillery traditions for siege warfare."
+      ]
+    },
+    {
+      "pattern": "The enumerated inventory sentence \u2014 a long comma-chain of sites, objects or offices standing in for analysis, usually opening or closing a section.",
+      "instances": [
+        "the sixty-one individuals at Jebel Sahaba in the Nile Valley; projectile fragments lodged among their bones; healed injuries that indicate survival before the final episode; unhealed wounds\u2026",
+        "Andean terraces, where shared repair can become tribute; Californian oak groves, where seasonal abundance supports storage and inherited rights; Dutch polders, where common defence depends on unequal payments and votes"
+      ]
+    },
+    {
+      "pattern": "Cross-chapter redundancy: the same case is re-introduced from scratch in a later chapter, repeating dates, figures and framing already given.",
+      "instances": [
+        "The people buried there lived roughly between 13,400 and 18,600 years ago, according to the dating associated with the site.",
+        "The cemetery in the Nile Valley, dated broadly to between about 13,400 and 18,600 years ago, contains sixty-one individuals"
+      ]
+    }
+  ],
+  "summary": "This is a serious, evidence-first world history of organised aggression, held together by a real and unusually well-sustained thesis: that each class of source (bone, chronicle, law, demography, testimony) licenses only certain claims, and that human dispositions become raids, sieges, drafts or deportations only when institutions supply means, targets and permission. The reasoning is disciplined, the specificity is high and largely accurate in texture, and the prose is clean, unhurried, and free of the usual lexical slop \u2014 no stock pivots, no motivational filler, few dead abstractions. What weakens it is shape rather than substance. The same rhetorical machine runs in every chapter \u2014 case, counter-case, \u201cthis shows X but not Y,\u201d balanced antithesis, verdict \u2014 until paragraphs become predictable at the level of form even when their content is fresh, and chapters end where the machine stops rather than where the argument lands. Pacing suffers most: Chapters 2, 5 and 8 accumulate inventories and near-duplicate comparisons, several cases (Jebel Sahaba, Saint-Domingue, Njals saga, Ashoka) are re-introduced from scratch later, and one paragraph summarising the medieval chapter has been stranded under the Chapter 8 heading. Cut the redundant re-introductions, vary the paragraph architecture, and let more sections end without a two-beat aphorism, and this would be close to publishable non-fiction."
+}

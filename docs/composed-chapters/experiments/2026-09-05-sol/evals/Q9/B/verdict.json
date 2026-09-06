@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 9,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 8,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 5
+  },
+  "overall": 7.8,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The mark is physical. Its meaning has to be recovered from history.",
+      "judgment": "A crisp opening formulation establishes the book's governing distinction between traces and historical interpretation."
+    },
+    {
+      "quote": "These are working distinctions, not five levels on a ladder.",
+      "judgment": "The manuscript defines its core categories precisely while resisting a simplistic hierarchy of violence."
+    },
+    {
+      "quote": "The skeleton is not a written account.",
+      "judgment": "This compact sentence sharply states an evidentiary limit and gives the archaeological discussion authority."
+    },
+    {
+      "quote": "An army could take a city once. Officials had to turn that seizure into annual grain, labour, obedience, and information.",
+      "judgment": "The concrete contrast between conquest and administration distills a major cross-chapter argument with force."
+    },
+    {
+      "quote": "The crowd had many hands. So did the state.",
+      "judgment": "The aphorism is memorable, though it exemplifies the book's repeated reliance on paired conceptual closers."
+    },
+    {
+      "quote": "Technology widened possibilities without determining purpose.",
+      "judgment": "This lucid claim is persuasive, but close variants recur so often that the insight loses momentum."
+    },
+    {
+      "quote": "A date is a boundary, not a motive.",
+      "judgment": "The sentence is polished and useful, yet its antithetical aphorism belongs to an overused rhetorical pattern."
+    },
+    {
+      "quote": "The unresolved question is whether that discipline can reach a person who must choose under fear",
+      "judgment": "The ending returns the vast survey to individual choice and preserves uncertainty instead of claiming predictive power."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Technologies extend the reach of violence but do not determine its ends.",
+      "instances": [
+        "Technology changes the reach of aggression without supplying its purpose.",
+        "Technology widened possibilities without determining purpose."
+      ]
+    },
+    {
+      "pattern": "Short antithetical aphorisms punctuate longer analytical passages.",
+      "instances": [
+        "A date is a boundary, not a motive.",
+        "The crowd had many hands. So did the state."
+      ]
+    },
+    {
+      "pattern": "The text repeatedly warns that a compelling artifact or record cannot answer every historical question.",
+      "instances": [
+        "The skeleton is not a written account.",
+        "A wall does not announce warfare in its own voice."
+      ]
+    },
+    {
+      "pattern": "Institutions are rendered as chains linking administrative acts to bodily consequences.",
+      "instances": [
+        "A military order became a timetable; the timetable became a traffic problem; the traffic problem became a battlefield formation.",
+        "A chain of obligation ran from emperor to mansabdar, from mansabdar to officials, and from officials to cultivators."
+      ]
+    },
+    {
+      "pattern": "Chapter conclusions reject monocausal or essentialist explanations in closely repeated language.",
+      "instances": [
+        "The evidence supports neither a timeless human substance nor an inevitable movement towards peace.",
+        "The Spaniards’ victory did not prove that one people possessed a timeless appetite for violence greater than another."
+      ]
+    }
+  ],
+  "summary": "This is an ambitious, coherent history of aggression built around the thesis that institutions, political categories, technologies, and material systems determine the scale and direction of harm more reliably than timeless claims about human nature. Its breadth is matched by disciplined source criticism: artifacts, laws, testimony, images, and administrative records are repeatedly assessed for what they can and cannot establish. The prose is clear and often memorable, and the strongest case studies connect ordinary administrative acts to bodily consequences with striking precision. The main weakness is cumulative repetition: many chapters cycle through the same claims about technology, scarcity, classification, coercion, and evidentiary limits, often in similar paragraph shapes and paired aphorisms. Moderate revision should compress recurring caveats and synthesis passages, sharpen distinctions among chapter-level arguments, and preserve more momentum across the long chronological arc."
+}

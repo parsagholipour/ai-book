@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 7,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 8.0,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Organisation gives aggression a destination, a schedule, a vocabulary, and a supply line without making it disappear. That is why the number of people involved is less revealing than the path by which a decision reaches them.",
+      "judgment": "The book's controlling thesis stated early, in its own words, and genuinely honoured for fifteen chapters."
+    },
+    {
+      "quote": "Absence is especially dangerous. No mass grave found in a valley does not prove that its inhabitants lived without violence.",
+      "judgment": "Exemplary evidential discipline — the text repeatedly polices what a source can and cannot bear, which is the strongest thing about it."
+    },
+    {
+      "quote": "The state named a liability, the labour market offered a means to discharge it, the employer obtained a controllable worker, and the police punished departure. Coercion was distributed across offices, so that no single official needed to describe the whole system as force.",
+      "judgment": "Argument and evidence fused; abstraction earned by the pass book, hut tax and compound described just above it."
+    },
+    {
+      "quote": "Near midnight, a boy was brought in who could not have been more than sixteen. His coat was too large, and one sleeve was fastened with string.",
+      "judgment": "Chapter 10 opens with an invented novelistic scene — unattributed and unmarked — inside a book that elsewhere refuses to 'furnish' actors 'with invented names'; a real methodological inconsistency."
+    },
+    {
+      "quote": "In Édit du roi concernant la police des îles de l'Amérique, *Code Noir*, Louis XIV's last recorded act in the document is dated 1685.",
+      "judgment": "A garbled, near-meaningless closing sentence — the weakest line in the book and symptomatic of the formulaic chapter-ending slot."
+    },
+    {
+      "quote": "The seven prisoners mattered less than the powder.",
+      "judgment": "Effective as one epigram, but the isolated one-line aphoristic paragraph is deployed so often that it becomes a tic rather than an emphasis."
+    },
+    {
+      "quote": "The ancient cemetery can establish the occurrence and recurrence of lethal attacks. It cannot provide the denominator needed to rank all human aggression across time.",
+      "judgment": "Precise and honest — but the exact 'X can establish A; it cannot establish B' balance recurs dozens of times and flattens into a reflex."
+    },
+    {
+      "quote": "A road to Verdun and a road to Deir ez-Zor were both surveyed by officials, but they carried different political decisions.",
+      "judgment": "Comparative method at its best: two cases held apart by their institutional purpose rather than ranked by body count."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Negation-then-assertion as the default sentence engine: a claim is denied and immediately replaced, usually across two adjacent short sentences. It carries most of the book's emphasis and, repeated at this density, becomes audible as a machine.",
+      "instances": [
+        "The delay was not mercy granted by an individual jailer. It followed a religious rule recognised by the city",
+        "A hostage was not merely a prisoner. His identity was the instrument of the bargain."
+      ]
+    },
+    {
+      "pattern": "Chapters close on a flat, citation-shaped one-sentence artifact that restates a document, date and quotation — an evidently templated slot rather than a written ending, and sometimes ungrammatical.",
+      "instances": [
+        "Ata-Malik Juvaini wrote that in 1221, at Merv in Khurasan, Chinggis Khan's army counted the inhabitants and killed them.",
+        "In 1908, William H. Sheppard told the United States Senate that in Kasai, Congo Free State, Force Publique officials enforced rubber quotas through hostage-taking, beatings, and killings"
+      ]
+    },
+    {
+      "pattern": "The symmetrical epistemic hedge — a source 'can show' one thing and 'cannot show' another — used as the standard way to end an evidence discussion in nearly every chapter.",
+      "instances": [
+        "A burial assemblage can show that people were attacked. A statute can show how a court wished injury to be named",
+        "They cannot by themselves measure terror, dispossession, hunger, sexual violence, imprisonment"
+      ]
+    },
+    {
+      "pattern": "The same case material is re-narrated across chapters with heavy overlap rather than cross-referenced, inflating length: Jebel Sahaba is described twice at full expository width, and Rwanda 1994 is set up twice with the same plane, roadblocks, identity cards and Akayesu.",
+      "instances": [
+        "At Jebel Sahaba, on the eastern bank of the Nile in what is now northern Sudan, the dead were placed in a cemetery roughly 13,400 years ago (Ch.1) / Fred Wendorf's excavation at Jebel Sahaba began with a cemetery cut into the gravel terrace above the Nile (Ch.2)",
+        "Roadblocks checked identity cards. Burgomasters supplied lists (Ch.13) / At roadblocks, identity cards became instruments of selection. In Taba, burgomaster Jean-Paul Akayesu (Ch.14)"
+      ]
+    },
+    {
+      "pattern": "Uniform paragraph architecture inside chapters: a scene or artifact, six to ten mid-length expository paragraphs of roughly equal weight, then a one-line aphoristic paragraph used as a beat marker. Little variation in rhythm across 55,000 words.",
+      "instances": [
+        "The machinery had to run in sequence.",
+        "Climate supplied pressure. It did not select the victims, choose the weapons, or determine that a dispute would become an attack."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, genuinely argued comparative history whose thesis — that organised violence is made by the path a decision travels through offices, records and classifications, not by an aggregate of anger — is announced in Chapter 1 and tested rather than merely restated across fifteen chapters. Its greatest strength is evidential conduct: it repeatedly names what a cemetery, a stele, a ration tablet, a protocol or a battle-death dataset can and cannot establish, refuses to rank atrocities by disputed body counts, and prefers institutional contrast to moral hierarchy. The specificity is real and well distributed, from the Uruk ration chain and the Tophane foundry to Westerbork's Tuesday transports, the hukou register and the Law of Spikelets, and the closing famine chapter is a strong capstone rather than a recap. Against that, the prose runs on a narrow set of moves — negation-then-assertion, the symmetrical can/cannot hedge, and an isolated one-line aphorism to end a section — so that at length the voice, though consistent and unusually free of ordinary AI filler, reads as machined. Chapter 10 also opens with an invented, unmarked novelistic scene in a book that elsewhere explicitly refuses to invent actors, and several chapter-closing sentences are formulaic to the point of ungrammaticality. Trimming the duplicated Jebel Sahaba and Rwanda expositions, varying the sentence engine, and rewriting or removing the templated chapter-end artifact would take it close to ready."
+}

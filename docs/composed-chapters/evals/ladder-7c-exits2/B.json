@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 7.1,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Bone records force more readily than purpose.",
+      "judgment": "Crisp, load-bearing epistemic principle stated early and honoured throughout; one of the book's genuinely memorable sentences."
+    },
+    {
+      "quote": "The chain does not remove human aggression; it gives aggression a route, a vocabulary, and a repeatable reach.",
+      "judgment": "The thesis in one line — institutional routing, not appetite, is the book's explanatory unit; it earns its place in Chapter 1."
+    },
+    {
+      "quote": "At Wannsee, the state did not discover violence; it made extermination compatible with paperwork.",
+      "judgment": "Strong, but it is also the book's signature move — a negated-then-restated antithesis that recurs dozens of times and loses force by repetition."
+    },
+    {
+      "quote": "To say that inequality caused the Zong killings is less precise than saying that maritime insurance, plantation slavery, and property law allowed a captain to claim that murdered captives were an allowable loss. To say that technology caused Auschwitz is less precise than tracing the ministries, police, railways, guards, gassing installations, and orders that made murder systematic.",
+      "judgment": "Chapter 15 does real analytic work rather than recapping; the causal-vocabulary ladder is the book's best original contribution."
+    },
+    {
+      "quote": "At Nataruk, west of Lake Turkana, eleven skeletons were found in sediments dated to about 9,500 to 10,500 years ago",
+      "judgment": "Weakness: Chapter 2 re-describes the same site as 'twelve skeletons and scattered human remains' — an internal inconsistency inside a book that preaches evidentiary care."
+    },
+    {
+      "quote": "Fred Wendorf's *The Prehistory of Nubia*, an excavation report, records the Jebel Sahaba cemetery in the Nile Valley, dated to c. 13,400–18,600 years ago, where men, women, and children were buried with projectile injuries",
+      "judgment": "Weakness: a bibliographic sentence dropped as a chapter's final paragraph, an apparatus artifact that reads as an unfinished citation and also contradicts Chapter 1's dating (13,000–12,000 years ago)."
+    },
+    {
+      "quote": "Cortés dismounted.\n\nMoctezuma stepped down from the litter.",
+      "judgment": "The Tenochtitlan causeway scene is the book's best narrative writing — short declaratives, sensory specificity, no editorialising — and shows what the prose can do when it stops explaining."
+    },
+    {
+      "quote": "A king could call such arrangements protection. A priest could call them divine order. A scribe could enter them as a quantity. The prisoner experienced them as capture.",
+      "judgment": "Effective, but this four-beat anaphoric cadence closing a chapter recurs so often across chapters that it becomes a template rather than a flourish."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The negated-inventory closer: 'X did not invent/create Y; it did Z' — used to end nearly every chapter and many sections, so that the book's central claim is asserted in the same syntactic mould rather than re-argued.",
+      "instances": [
+        "The early city did not invent the human capacity to strike, raid, or kill. It created offices that could decide which people would be gathered",
+        "Neither episode began with an uncontrolled eruption of aggression. Each began with a rule issued by an office"
+      ]
+    },
+    {
+      "pattern": "Two-item comparison scaffolding — a scene from site A, a scene from site B, then an explicit paragraph declaring that their difference is 'not that one was violent and another restrained' but a difference of institution. Nearly every chapter runs this identical A/B/comparison-caveat machine.",
+      "instances": [
+        "The difference is not that one society was violent and another restrained. Cahokia organised labour to defend a centre.",
+        "Comparisons between Assyria, Persia, and Rome cannot rest on a scale from cruel to tolerant."
+      ]
+    },
+    {
+      "pattern": "The evidentiary-limits paragraph: after each piece of evidence, a paragraph enumerating what the source cannot show. Epistemically admirable the first four times, then predictable enough that the reader can anticipate its arrival and its cadence.",
+      "instances": [
+        "It can show that people died together, but not whether they belonged to a political community with a recognised leader.",
+        "The relief preserves more than an account of cruelty. It records a decision about scale."
+      ]
+    },
+    {
+      "pattern": "The enumerated-office chain: a sentence or paragraph listing five to eight functionaries in sequence to demonstrate mediation. Powerful once per chapter; used two or three times per chapter it becomes a filler rhythm.",
+      "instances": [
+        "A ruler permitted the campaign. Officers organised the companies. Teachers prepared the young warrior.",
+        "A ministry estimated a need, a railway moved material, a factory produced it, a telegraph adjusted the schedule, a conscription office removed labour"
+      ]
+    },
+    {
+      "pattern": "Rhetorical question used as a section hinge or chapter exit, often left explicitly unanswered ('the question left open is…'), which substitutes for an argumentative transition.",
+      "instances": [
+        "Could an empire whose king listed every defeated ruler govern without deciding what a rebel was?",
+        "The question left open is how far a wound, a grave, or a law can carry us toward the people who decided that another person could be harmed."
+      ]
+    }
+  ],
+  "summary": "This is a serious, thesis-driven global history of organised violence, and its controlling idea — that aggression becomes historically large only when an office, register, law or market routes it and makes it repeatable — is stated early, tested against genuinely varied evidence, and sharpened rather than merely restated in the final chapter's discussion of causal vocabulary. The specificity is real: Tophane's foundry registers, Yuan household categories, Casement's quota chain, the Zong insurance suit and the Kibuye prefecture are handled with named actors, dates and, crucially, explicit statements of what each source cannot support. The prose is clean, unfussy and free of the usual commercial-nonfiction tics; there is almost no stock AI vocabulary, no 'here's the thing', no self-congratulatory signposting. What holds it back is uniformity of shape rather than weakness of content: nearly every chapter runs the same machine (immersive scene, second contrasting case, evidentiary-limits paragraph, enumerated chain of offices, negated-antithesis closer), the paired-antithesis sentence is the default rhetorical unit, and by Chapter 9 the reader is completing the paragraphs in advance. Several apparatus defects survive — bibliographic sentences stranded as final paragraphs, garbled epigraph attributions, and a Nataruk/Jebel Sahaba figure and date that disagree between Chapters 1 and 2 — which a book this insistent on evidentiary discipline cannot afford. With a pass to break the templated chapter architecture, vary the closing move, cut roughly ten percent of the restatement, and reconcile the numbers, this would be a publishable synthesis."
+}

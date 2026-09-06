@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 7,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 4
+  },
+  "overall": 7.1,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "High",
+  "highlights": [
+    {
+      "quote": "The surviving record does not reveal an unchanging human aggression beneath history; it shows who could organise harm, whom that organisation reached, and what the society required violence to accomplish.",
+      "judgment": "This is a lucid, forceful statement of the book’s governing thesis and method."
+    },
+    {
+      "quote": "The ledger and the spear belonged to one chain.",
+      "judgment": "A concise and memorable formulation turns administrative detail into conceptual insight."
+    },
+    {
+      "quote": "The same imperial network that had carried armies now carried letters, priests, craftsmen, and diplomatic expectations.",
+      "judgment": "The sentence captures historical aftereffects without reducing exchange to either enrichment or coercion."
+    },
+    {
+      "quote": "A modern army could be tightly connected and badly informed at the same time.",
+      "judgment": "The paradox is precise, economical, and well earned by the preceding communications detail."
+    },
+    {
+      "quote": "The stone does not offer a private confession from Naram-Sin about what he believed himself to be.",
+      "judgment": "This models responsible source criticism by separating what an artifact supports from speculation."
+    },
+    {
+      "quote": "The record of aggression had become a record of jurisdiction.",
+      "judgment": "The aphoristic close is effective in isolation but exemplifies a heavily repeated end-of-section cadence."
+    },
+    {
+      "quote": "A weapon, a railway schedule, or a broadcast changes what can be done quickly and at distance; an office, commander, party, or militia determines where it will be directed.",
+      "judgment": "This clear synthesis also reveals the manuscript’s tendency to route almost every case through the same institutional formula."
+    },
+    {
+      "quote": "The question left by these cases is not whether violence declined, but which population and which death a trend has made visible.",
+      "judgment": "The rhetorical pivot is strong, yet repeated versions of this ‘not whether, but which’ construction make the prose feel templated."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Sources are repeatedly treated as bounded fields of visibility whose omissions shape the historical claim.",
+      "instances": [
+        "Each source has a field of vision, and each field is shaped by the society that produced it.",
+        "The archive measures both an extraordinary violence and an extraordinary reach."
+      ]
+    },
+    {
+      "pattern": "A material object is first denied autonomous agency, then connected to the officials who enforce it.",
+      "instances": [
+        "The tablet did not feed anyone by itself. It made the delivery accountable, and accountability allowed a palace or temple to plan beyond the immediate household.",
+        "The map did not itself carry a rifle. Magistrates, police, surveyors, and employers gave its colours force."
+      ]
+    },
+    {
+      "pattern": "Scarcity is reframed from environmental pressure into an institutional decision about dispossession.",
+      "instances": [
+        "Scarcity became killing where someone could decide that another household’s field, animals, or storehouse was available for seizure.",
+        "Scarcity became lethal when the command decided that a population’s resources belonged to the campaign."
+      ]
+    },
+    {
+      "pattern": "Sections close by widening a well-supported case into an unresolved comparative question.",
+      "instances": [
+        "Did the early state increase violence, or did it increase the chances that violence would survive as evidence?",
+        "How far can such comparisons guide a future that will not repeat the past?"
+      ]
+    },
+    {
+      "pattern": "Paired clauses contrast visible violence with the administrative process that gives it duration.",
+      "instances": [
+        "Terror announced the terms. Administration collected them.",
+        "Violence opened the city, while administration determined what could be carried forward."
+      ]
+    }
+  ],
+  "summary": "The manuscript advances a coherent and persuasive thesis: aggression is historically shaped by institutions that classify targets, mobilize resources, authorize force, and determine what enters the archive. Its chronological architecture is ambitious and generally effective, and individual cases often combine concrete material detail with careful limits on inference. The breadth sometimes substitutes accumulation for deeper adjudication among interpretations, while vivid reconstructed openings occasionally carry more narrative certainty than the later source cautions appear to warrant internally. Most seriously, chapters repeatedly use the same object-to-office analysis, paired negations, balanced contrasts, rhetorical questions, and aphoristic endings, producing substantial redundancy and a conspicuously templated cadence across an otherwise polished book. A moderate revision should compress repeated explanations, vary transitions and paragraph shapes, and distinguish more sharply between documented detail, plausible reconstruction, and interpretive synthesis."
+}

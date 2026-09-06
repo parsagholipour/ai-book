@@ -1,0 +1,108 @@
+[
+  {
+    "chapter": 1,
+    "case": "The Trial of Socrates",
+    "review": {
+      "relevant": true,
+      "claims": [
+        {
+          "id": "claim-1",
+          "supported": true,
+          "reason": "The excerpt explicitly says, \u201cAs he expected, and probably intended, he is convicted.\u201d"
+        },
+        {
+          "id": "claim-2",
+          "supported": true,
+          "reason": "The excerpt explicitly says Anytus proposes death and describes Socrates considering maintenance in the Prytaneum, a mina, or thirty minae secured by his friends."
+        },
+        {
+          "id": "claim-3",
+          "supported": true,
+          "reason": "The excerpt explicitly says the speech becomes \u201cmore lofty and commanding\u201d rather than more conciliatory, and then states, \u201c[He is condemned to death.]\u201d"
+        }
+      ],
+      "sequenceSupported": true,
+      "disagreementsSupported": true,
+      "unknownsAccurate": true
+    }
+  },
+  {
+    "chapter": 4,
+    "case": "The Achaemenid Royal Inscriptions at Behistun",
+    "review": {
+      "relevant": true,
+      "claims": [
+        {
+          "id": "c1",
+          "supported": true,
+          "reason": "Excerpt ch4-x2 explicitly states that Cambyses, son of Cyrus and of Darius's dynasty, was king before Darius and that Cambyses had a brother named Smerdis (Bardiya)."
+        },
+        {
+          "id": "c2",
+          "supported": true,
+          "reason": "Excerpt ch4-x2 explicitly attributes to Darius the statement that Cambyses slew Smerdis and that the people did not know Smerdis had been killed."
+        },
+        {
+          "id": "c3",
+          "supported": true,
+          "reason": "Excerpt ch4-x2 states that Cambyses went to Egypt, that the people became hostile after his departure, and that 'the lie' multiplied in Persia, Media, and other provinces."
+        },
+        {
+          "id": "c4",
+          "supported": true,
+          "reason": "Excerpt ch4-x4 states that Elam revolted from Darius in the second and third years of his rule and that Atamaita was made its leader."
+        },
+        {
+          "id": "c5",
+          "supported": true,
+          "reason": "Excerpt ch4-x4 states that Darius sent an army to Elam and made his Persian servant Gobryas its leader."
+        },
+        {
+          "id": "c6",
+          "supported": true,
+          "reason": "Excerpt ch4-x4 states that Gobryas fought the Elamites, destroyed many of their host, captured Atamaita, brought him to Darius, that Darius killed him, and that Elam then became Darius's province."
+        },
+        {
+          "id": "c7",
+          "supported": true,
+          "reason": "Excerpt ch4-x3 states that Darius made the inscription by the grace of Ahuramazda, composed it in Aryan script on clay tablets and parchment, made a sculptured figure and his lineage, had it read before him, and sent it throughout the provinces."
+        },
+        {
+          "id": "c8",
+          "supported": true,
+          "reason": "Excerpt ch4-x1 states that the countries subject to Darius brought tribute and performed his commands by night and day, and attributes their subjection to the grace of Ahuramazda."
+        },
+        {
+          "id": "c9",
+          "supported": true,
+          "reason": "Excerpt ch4-x3 states that after the inscription was sent among the provinces, the people worked upon it unitedly, supporting the claim that they worked collectively after distribution."
+        }
+      ],
+      "sequenceSupported": false,
+      "disagreementsSupported": true,
+      "unknownsAccurate": true
+    }
+  },
+  {
+    "chapter": 4,
+    "case": "The Assyrian Deportations",
+    "review": {
+      "relevant": false,
+      "claims": [
+        {
+          "id": "c1",
+          "supported": true,
+          "reason": "The excerpt explicitly states that the center of Sabaean authority in northwestern Arabia was Dajd\u00e2n and that the author locates there the headquarters of Chief It\u2019amara, governor of the land of Saba."
+        },
+        {
+          "id": "c2",
+          "supported": true,
+          "reason": "The excerpt explicitly states that Chief It\u2019amara of Saba sent tribute to King Sargon II before 707 B.C."
+        }
+      ],
+      "sequenceSupported": true,
+      "disagreementsSupported": true,
+      "unknownsAccurate": true
+    }
+  }
+]

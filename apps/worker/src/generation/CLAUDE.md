@@ -44,16 +44,74 @@ may have been edited in the meantime.
   stance written back onto the approved `PlanVersion.planningPackage` — best-effort, never fatal,
   and never over a stance the plan already carried.
 - **A composed chapter's figures are checked once, right after the compose call, and taken out of
-  every pass after it.** `composedFigures.ts`: `validateComposedChapterFigures` drops an unreadable
-  or unplanned block (run log event `generation.composed_chapters.figure_dropped`) and re-serialises
+  every pass after it.** `composedFigures.ts`: `validateComposedChapterFigures` drops an unreadable,
+  unterminated or unplanned block — over the count, or the wrong kind when a kind was planned
+  (run log event `generation.composed_chapters.figure_dropped`) — and re-serialises
   the rest to the canonical line; `finishChapter` strips the blocks before the line edit and puts
   them back just before the cut into pages, so the editor sees a stand-in, and the couplet rewrite,
   the quote guard, the reshaping and the epigraph never meet the JSON; the read pass, its cut and
   the seams get the same treatment; `finalizePendingPages` runs the local checks, a revise and the
-  story delta on figure-free drafts (`figureFreeDrafts`) and restores each page's blocks before it
+  story delta on figure-free drafts (`stripDraftFigures`) and restores each page's blocks before it
   is staged (`restoreFigures`). A chat rewrite (`textEditRewrite.ts`) does the same unless the
   request names the figure, in which case the model sees the block and may change or drop it. The
   derived brief says which page carries the figure, so chat and continuation know it is there.
+  The run log line is written through the `runLog` the pass is handed (`createRunLogger(job)` in
+  `generateBook.ts`), never through `console.warn` alone: the JSONL under `runs/` is what a rerun is
+  measured from, and the first implementation's event reached only stdout.
+- **A composed chapter's unsupported case claims are repaired twice, then recorded and flagged for
+  review; a prose-review quote that resolves to nothing is re-asked once, then dropped.**
+  `repairChapterEvidence` (`composedEvidenceRepair.ts`) runs the prose-evidence review, then at most
+  `EVIDENCE_REPAIR_ROUNDS` targeted edits — the first told to narrow each quoted span to what the
+  passage states, the last told to delete the detail outright rather than hedge it — keeping a
+  repaired text only when it carries fewer findings than the one it replaced, and never throwing.
+  What stands goes on the chapter report as `evidence.unresolved` (`{ quote, reason }`), into the
+  run log as `generation.composed_chapters.evidence_unresolved`, and, because a compile's page rows
+  already carry their chapter's brief, `unsupportedCaseClaimIssues`
+  (`composedEvidenceResiduals.ts`) matches the quotes against the pages at compile time and appends
+  one error-severity `UNSUPPORTED_CASE_CLAIMS` issue naming those pages — so the book publishes as
+  REVIEW_REQUIRED with the assertions on the card, and a page a reader has edited past the span
+  clears itself. The finalize-time review of a leak-repaired chapter takes the same door through
+  `recordChapterEvidenceResiduals` instead of failing the book. Before this, the first two books to
+  reach composition (development-fixes-1c and 2a-retry, 2026-09-05) failed on chapters 1 and 2
+  after a complete evidence stage and a passed developmental replan each.
+- **Every per-page path reads a stored figure as its stand-in and stores no figure of its own.**
+  `toPriorPageContext` (`bookHelpers.ts`) is where a stored page becomes a prompt's prior-page
+  context, so the block becomes `[Figure: title]` there and the summary is run through
+  `pageDraftSummary` — for the page writer, the reviewer, the
+  style lock, the continuation outline (`continuationOutlineWithModel` cuts its excerpt the same
+  way, and its `recentPageSummaries` the same summary helper) and every rewrite path; core's `compactPageContexts` (`compactPriorPages` / `compactFollowingPages`) and `pinStyleExcerpts` do it again for a
+  context built in memory, and `reviewAppliedBookEdit` reads its before and after pages the same
+  way unless the instruction names the figure. The first implementation sent the raw JSON to the
+  continuation's outline and page writer. The other direction lives in core, where the draft is
+  parsed: `generatePageDraft`, `polishPageDraft`, `revisePageDraft` and the tools writer return
+  `figureFreeDraft` — a fence in a page writer's reply is a fabrication and a stand-in line an echo
+  of a neighbour's excerpt — so nothing in this package strips a draft after the fact. The first
+  fix did (`continuationPageDraft`, a strip at the end of `textEditRewrite.ts`), and every review,
+  audit and revision between the model and that strip had already read the invention. Replan
+  generate is figure-free the same way; `pageFigureRewriteForDraft` plants the source page's fences
+  onto that new prose (`reinsertFigureFences`: stand-in, else after the matching anchor, else before
+  the follower, else at the end) and then keep-or-holds them. First generate plants; after a keep
+  revise it does not — keep at most one fence from what came back, so a clean omit stays omitted.
+  Chat (`textEditRewrite.ts`) and replan
+  (`reviewReplanCandidate`) both go through `pageFigureRewrite` (replan via that helper) in
+  `composedFigures.ts`, so the keep-or-hold decision and the restore cannot be spelled twice.
+  `reviewAndSaveGeneratedPage` forwards `figures` into `runPageQualityLoop` the way the loop already
+  forwards it to every revise. Restore runs after review returns, not before: the reviewer and a
+  later loop revise see stand-ins on hold (or the block on keep), and a default figure-free revise
+  cannot strip the chart. The one per-page call allowed a figure is a rewrite whose request names
+  the page's figure: `figures: "keep"` on the revise and on the quality loop, keeping at most one
+  block from what comes back. A rewrite that is not about the figure holds the block aside — stand-in
+  prose, `figures: "hold"` so later revises strip invented fences but keep the `[Figure: …]`
+  stand-in, and `restore` puts the original block back beside the paragraph it followed. The compile's
+  final-QA repair (`compileExportRepair.ts`) always holds with `holdFiguresAside` and never runs the
+  mention test: the first revise is shown stand-in prose, later revises and reviews keep that stand-in
+  via `figures: "hold"`, and `restore` puts the original blocks back on the published draft. A page
+  with no figure omits the key, so a neighbour's stand-in echoed into the reply is still stripped. It
+  has to: core's figure-free revise meant a page repaired from its raw markdown came back without its
+  chart and shipped that way, and although `compileExport.ts` skips this loop for a composed book,
+  that gate reads the strategy off the *current* input, so a continuation that moves `targetPages` or
+  a routing change sends the same stored pages through it. Parse-time `figureFreeDraft` on a replan
+  generate or adherence revise would otherwise publish the rebuilt page without its chart.
 
 ## Illustrated page publication
 

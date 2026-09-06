@@ -1,0 +1,21 @@
+                                           book.md         book.md         book.md         book.md
+words                                        52758           56342           52802           59336
+sentences                                     3140            3546            3195            3522
+mean sentence length                          16.8            15.9            16.5            16.8
+sentence-length CV (higher=varied)           0.472           0.497           0.483           0.488
+top 2-word opener                     the same ×21      at the ×22      at the ×28      in the ×34
+top-5 openers share                           2.7%            2.3%            2.8%            2.7%
+sentences starting 'The'                     25.9%           26.9%           28.8%           26.0%
+4+ item list sentences                       21.3%           16.8%           15.4%           17.7%
+concession markers /1000w                     10.0             7.1             7.2             7.8
+abstract nouns /1000w                          6.8             5.4             6.3             5.7
+paragraphs (40w+)                              561             642             599             662
+paragraph-length CV                          0.347           0.362           0.344           0.334
+paragraphs ending on a hedge                  8.0%            7.8%            7.5%            8.2%
+negation-correction /1000 sent.               32.9            23.0            23.0            24.2
+couplets /1000 sent.                          32.0             9.8            11.2             5.6
+paragraphs ending on a truism                33.9%           35.7%           33.1%           32.4%
+stock pivots /1000w                           0.40            0.46            0.25            0.35
+pages measured                                 116             123             115             129
+distinct page shapes                            16              17              24              22
+top-5 page shapes cover                      87.9%           80.5%           73.9%           74.4%

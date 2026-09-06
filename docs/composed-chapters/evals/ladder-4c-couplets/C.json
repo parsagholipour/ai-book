@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.3,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A body can establish that harm occurred. A document can establish that harm was authorised. The distance between those statements begins with the institution that decided whose injury would be recorded and whose could disappear.",
+      "judgment": "The book's controlling thesis, stated early and genuinely earned by the evidence that follows — though the paired-sentence form it takes here becomes a tic."
+    },
+    {
+      "quote": "A healed skull fracture can establish that someone was struck and lived. It cannot by itself establish who struck the person, why the blow was delivered, or whether the event was exceptional. Yet uncertainty does not make the evidence empty.",
+      "judgment": "Excellent epistemic discipline: the book consistently states what a source can and cannot bear, which is rare and lifts the reasoning score."
+    },
+    {
+      "quote": "The bodies are not drawn as bodies. Repeated marks stand for them, each allotted a rectangle, while the caption supplies the number: 454 enslaved people... The plan turned compression into arithmetic.",
+      "judgment": "The strongest kind of passage in the book — a close reading of one document that does real argumentative work rather than illustrating a point already made."
+    },
+    {
+      "quote": "Its verbs are tidy: prepare, clarify, coordinate, align, carry out. The violence lies in the object toward which those verbs are directed.",
+      "judgment": "Sharp, specific handling of the Wannsee protocol's language; the analysis of bureaucratic euphemism is the book's best sustained sequence."
+    },
+    {
+      "quote": "The old man's name was Francisco de San Antón Chimalpahin. He had been a boy when the Mexica still ruled from the island... Sahagún asked about the wars that were made for captives.",
+      "judgment": "A serious weakness: the vignettes are invented dramatisations presented in the same flat documentary register as the sourced analysis, and this one attaches a real named historian to a scene he could not have been in."
+    },
+    {
+      "quote": "Its graves had been dug and filled more than once, documenting a cemetery that accumulated burials over time.",
+      "judgment": "Circular and clumsy — a rare craft lapse in otherwise controlled prose, and a sign the drafting sometimes restates rather than advances."
+    },
+    {
+      "quote": "The raid consumed a place. The conquest attempted to incorporate one.",
+      "judgment": "Crisp in isolation, but this exact two-beat antithesis closes dozens of sections and is the book's most conspicuous templated move."
+    },
+    {
+      "quote": "A society that gives a gun to a faction and a voice to no one has chosen one future. A society that gives its former enemies land titles, courts, elections, and protection has chosen another.",
+      "judgment": "The final paragraph reaches for an aphoristic balanced closer of exactly the kind the book has used at every seam, ending on formula rather than on thought."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter opens with an invented cinematic vignette (present-tense-feeling scene, named minor actors, weather, sensory detail, a short one-line paragraph as a beat), then pivots to analysis via a bridging sentence that names the institution behind the scene.",
+      "instances": [
+        "The jurors had begun to count the pebbles when Socrates looked across the court and saw that the water-clock was nearly empty.",
+        "The lookout on the USS *Washington* saw the schooner before noon on 26 August 1839, standing northward off Long Island."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis as the default closing cadence for sections and chapters — two clauses of near-identical shape contrasting two cases, almost always the last sentence of a block.",
+      "instances": [
+        "One empire made the broken city its central image; the other made the ordered list of subject lands its proof of rule.",
+        "The belt joined speech to memory and memory to reciprocal obligation. The road joined command to transport and transport to labour."
+      ]
+    },
+    {
+      "pattern": "The thesis restated as a near-verbatim refrain rather than developed, using the same 'weapon pointed by an institution' formula.",
+      "instances": [
+        "Every weapon in these scenes was pointed by an institution, and the institution determined whose injury became the foundation of rule.",
+        "every weapon in these frontiers was pointed by an institution, and the institution decided whether the people before it would be robbed, ransomed, taxed, expelled, or ruled."
+      ]
+    },
+    {
+      "pattern": "The 'it cannot / it can' evidentiary hedge, deployed at the close of nearly every case study in the same two-move shape.",
+      "instances": [
+        "The bone records an intrusion and the direction of force; it does not preserve the hand that held the point.",
+        "A relief does not count the deportees one by one. It makes the people of a defeated city visible as a moving population."
+      ]
+    },
+    {
+      "pattern": "Mid-chapter catalogue sections that enumerate an inventory of indicators or instruments one paragraph each, with uniform paragraph length and near-identical opening syntax.",
+      "instances": [
+        "Defensive walls offer a second kind of evidence... Burned layers are more treacherous... Weapon caches make the next entry in the catalogue.",
+        "Artillery trains turned mobility into a problem of animals and roads... Powder magazines gave violence a memory... Drill manuals translated bodily movement into written sequence."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely argued work of comparative history, not a survey: a single thesis — that aggression acquires its reach from the offices, records and classifications that organise it — is stated in chapter one and tested against fifteen chronological settings from Çatalhöyük to Mesetas. Its best material is close reading of single documents (the Brookes plan, the Behistun inscription, the Wannsee protocol), where the analysis is specific, methodologically careful about what each source can bear, and honest about archival silence. The prose is clean, concrete and unpretentious, with almost none of the lexical tells of machine writing. The weaknesses are structural rather than verbal: every chapter runs the same vignette-then-analysis-then-paired-comparison template, the thesis is restated in near-identical wording instead of complicated, and paired antithesis has become the automatic closing cadence at every seam, which flattens fifteen chapters into one shape and dulls the ending. The opening dramatisations are invented and are narrated in the same documentary register as the sourced argument, which in at least one case (Sahagún interviewing Chimalpahin) puts a real historian in a scene he cannot have occupied — a revision pass should either mark these as reconstructions or cut them. With the refrain thinned, the closers varied, and the vignettes verified or framed, this would be publishable non-fiction."
+}

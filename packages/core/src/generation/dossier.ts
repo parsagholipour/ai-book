@@ -1,10 +1,11 @@
 import { z } from "zod";
+import { isStopOrAbortError } from "../adapters/retry.js";
 import type { TextModelAdapter } from "../adapters/types.js";
 import { targetLanguageGenerationGuidance, targetLanguagePayload } from "../prompting/language.js";
 import type { ChapterPlan, CreateProjectInput } from "../schemas/book.js";
 import type { ChapterEpisode, DossierExcerpt } from "../schemas/episodes.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
-import { fetchPrimaryText, searchPrimarySources, textLooksLikeLanguage, type PrimarySourceCandidate, type PrimarySourceFetch } from "./primarySources.js";
+import { fetchPrimaryText, searchPrimarySources, textLooksLikeLanguage, type PrimarySourceCandidate, type PrimarySourceFetch, type PrimarySourceSearch } from "./primarySources.js";
 import { foldQuoteText } from "./quoteProvenance.js";
 
 /**
@@ -205,6 +206,7 @@ export async function extractExcerpts(options: {
   windows: readonly DossierWindow[];
   documents: readonly DossierDocument[];
   textModel: TextModelAdapter;
+  evidence?: boolean | undefined;
   log?: ((event: string, detail: Record<string, unknown>) => void) | undefined;
 }): Promise<DossierExcerpt[]> {
   if (options.windows.length === 0) return [];
@@ -221,7 +223,9 @@ export async function extractExcerpts(options: {
         role: "system",
         content: [
           `You are choosing passages from primary sources for chapter ${options.chapter.index}, "${options.chapter.title}". Each window in windows is a stretch of a document's own text.`,
-          "Choose up to six passages of 30 to 300 words that bear on one of the chapter's episodes and would be worth quoting: a voice, an order, an oath, a figure, a description of something seen. A passage is one continuous stretch of a window. Skip a window that has nothing quotable.",
+          options.evidence
+            ? "Choose up to six passages of 30 to 300 words that establish the episode's actors, consequential events, chronology, quantities, decisions, outcome, or disagreement. Include ordinary factual prose, not only quotable lines. Preserve the context needed to distinguish an allegation from a finding. A passage is one continuous stretch of a window. Skip irrelevant windows."
+            : "Choose up to six passages of 30 to 300 words that bear on one of the chapter's episodes and would be worth quoting: a voice, an order, an oath, a figure, a description of something seen. A passage is one continuous stretch of a window. Skip a window that has nothing quotable.",
           "Report each passage as its first six to eight words and its last six to eight words, copied exactly from the window — never paraphrased, never the whole passage. speaker: who wrote or said it, if the window says. episodeTitle: which episode it serves.",
           "Return one JSON object shaped exactly like outputContract.",
           ...targetLanguageGenerationGuidance(options.input.language)
@@ -299,9 +303,13 @@ export async function buildChapterDossier(options: {
   episodes: readonly ChapterEpisode[];
   textModel: TextModelAdapter;
   fetch: PrimarySourceFetch;
+  searchSources?: PrimarySourceSearch | undefined;
   log?: ((event: string, detail: Record<string, unknown>) => void) | undefined;
   /** Epoch ms after which no further search or fetch starts: the dossier is a bounded step, never the book's clock. */
   deadline?: number | undefined;
+  evidence?: boolean | undefined;
+  /** A bounded second retrieval uses the next planned query instead of repeating the failed search. */
+  queryOffset?: number | undefined;
 }): Promise<ChapterDossier> {
   const documents: DossierDocument[] = [];
   const seenUrls = new Set<string>();
@@ -314,13 +322,15 @@ export async function buildChapterDossier(options: {
     }
     // One search per episode: Wikimedia answers about thirty requests a
     // minute, and a book's dossier has to fit in its budget.
-    const queries = episode.searchQueries.filter(Boolean).slice(0, 1);
+    const queryOffset = options.queryOffset ?? 0;
+    const queries = episode.searchQueries.filter(Boolean).slice(queryOffset, queryOffset + 1);
     if (queries.length === 0 && episode.document) queries.push(`${episode.document} ${episode.person}`.trim());
     const candidates: PrimarySourceCandidate[] = [];
     for (const query of queries) {
       try {
-        candidates.push(...(await searchPrimarySources(query, { fetch: options.fetch, language: options.input.language, limit: 2 })));
+        candidates.push(...(await searchPrimarySources(query, { fetch: options.fetch, language: options.input.language, limit: 2, search: options.evidence ? options.searchSources : undefined })));
       } catch (error) {
+        if (isStopOrAbortError(error)) throw error;
         log("dossier.search_failed", { query, error: error instanceof Error ? error.message : String(error) });
       }
     }
@@ -374,7 +384,7 @@ export async function buildChapterDossier(options: {
   let excerpts: DossierExcerpt[] = [];
   if (kept.length > 0) {
     try {
-      excerpts = await extractExcerpts({ input: options.input, chapter: options.chapter, episodes: options.episodes, windows: kept, documents, textModel: options.textModel, log });
+      excerpts = await extractExcerpts({ input: options.input, chapter: options.chapter, episodes: options.episodes, windows: kept, documents, textModel: options.textModel, evidence: options.evidence, log });
     } catch (error) {
       if (error instanceof Error && /stop|abort/i.test(error.name + error.message)) throw error;
       log("dossier.extract_failed", { chapterIndex: options.chapter.index, error: error instanceof Error ? error.message : String(error) });

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 5,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 6.8,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Without it, a feeling becomes an action, an action becomes a crowd, and a crowd becomes an explanation.",
+      "judgment": "Strong opening-chapter formulation: the escalating triad earns its rhetoric and states the book's method in one line."
+    },
+    {
+      "quote": "A healed injury records an earlier encounter with danger; an unhealed wound records the final one, or at least the injury nearest to death. When both appear in one skeleton, the body carries a sequence rather than a single moment.",
+      "judgment": "Excellent evidentiary reasoning \u2014 the inference is built from the material and its limits are stated in the same breath."
+    },
+    {
+      "quote": "One hundred and thirty-two lives became an amount that could be claimed, contested, and measured against the terms of a contract.",
+      "judgment": "The book at its best: moral weight carried entirely by precise description of an administrative form."
+    },
+    {
+      "quote": "The people being moved disappear from the sentence before they disappear from the world.",
+      "judgment": "The single most memorable sentence in the book; rhetorically sharp without overreaching the evidence."
+    },
+    {
+      "quote": "Technology altered the practical relation between attacker and wall; it did not provide the motive.",
+      "judgment": "True but restated in near-identical form in at least eight chapters; the book's thesis hardens into a refrain."
+    },
+    {
+      "quote": "The crowd was crowded with purposes, not governed by one mind.",
+      "judgment": "Unpolished \u2014 the accidental repetition of 'crowd/crowded' undercuts a sentence meant to land."
+    },
+    {
+      "quote": "After British occupation in 1903, the emir Abbas was removed and Muhammad Abbas was installed",
+      "judgment": "Garbled factual sentence (same name on both sides of a removal); a small but telling lapse in a book that trades on evidentiary care."
+    },
+    {
+      "quote": "It can show restraint being built, defended, and sometimes lost. It cannot promise that recognition will always defeat fear",
+      "judgment": "Competent close, but the can/cannot antithesis is the book's most overused shape and lands as formula rather than conclusion."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The 'tool did not supply the motive' clause, applied to nearly every technology in every chapter, becoming the book's fixed refrain rather than a developing argument.",
+      "instances": [
+        "The clay sling bullets show how technology changed the reach of aggression without supplying its purpose.",
+        "Technologies extended command without deciding its purpose."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis as the default paragraph engine: a negated clause immediately followed by its corrected twin, often several times per page.",
+      "instances": [
+        "Institutions do not simply remove violence from social life. They can contain one form while building the means for another.",
+        "Memory did not merely preserve the event. It fought over its meaning."
+      ]
+    },
+    {
+      "pattern": "Two-case comparison scaffolding, each pairing introduced with an explicit disclaimer that it is not a scale or a ladder \u2014 the same conceptual move performed in nearly every chapter.",
+      "instances": [
+        "Set side by side, they do not provide a scale from civilised to savage, or from private violence to public peace.",
+        "These four cases do not form a ladder from simple to complex, or from ancient passion to modern calculation."
+      ]
+    },
+    {
+      "pattern": "Chapter-closing recap that re-lists every case just discussed and re-derives the four-factor thesis (institutions, resources, technology, belonging), producing a uniform terminal cadence.",
+      "instances": [
+        "At Uruk, accounting made collective projects governable. At Hamoukar, collective force reached a wall. On the Narmer Palette, conquest became an image of political order.",
+        "In the Mexica campaign, the Bonampak court, the Haudenosaunee council, the Mississippian plaza, and the Inka road, political institutions gave aggression its reach, its targets, and its reasons."
+      ]
+    },
+    {
+      "pattern": "The 'silence of the record' meditation \u2014 a set-piece on whose voices the sources omit, deployed near the end of most chapters in near-identical terms.",
+      "instances": [
+        "Their presence is clear. Their speech is scarce.",
+        "The records left by genocidal regimes preserve the language of command more fully than the experience of those commanded."
+      ]
+    }
+  ],
+  "summary": "This is a serious, evidentially disciplined comparative history arguing that aggression has no single nature: institutions, resources, technology, and ideas of belonging decide its targets, scale, and meaning, while tools never supply motives. Its strengths are real \u2014 case selection is specific and well handled, the source criticism is consistently applied rather than announced, and counter-arguments (ritual-war Mexica, spontaneous-crowd September massacres, the long-decline thesis) are engaged rather than strawmanned. The prose is clear, unshowy, and occasionally excellent, especially where an administrative document is made to carry moral weight. The weaknesses are structural and cumulative: the thesis is restated rather than developed, so by chapter eight the reader can predict each chapter's shape \u2014 case, counter-case, disclaimer against ladders, technology caveat, closing list \u2014 and paragraph rhythm flattens into relentless paired antithesis. Chapter fifteen recycles earlier material at length instead of advancing, and engagement suffers throughout from a uniform, affectless register with no scene, no narrative pressure, and rhetorical questions used as pacing devices. A few unpolished or garbled sentences and a name error suggest an unfinished final pass; with compression, varied paragraph architecture, and a genuinely developing rather than repeating argument, this would be a strong book."
+}

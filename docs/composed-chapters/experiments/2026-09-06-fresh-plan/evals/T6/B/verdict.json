@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 9,
+    "clarity": 8,
+    "voice": 6,
+    "engagement": 5,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 6.9,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A count of injuries is not a count of violent encounters, and a count of injured people is not a measure of the whole population’s exposure.",
+      "judgment": "Exemplary evidentiary discipline: the book's core methodological move, stated with precision."
+    },
+    {
+      "quote": "Archaeology preserves the dead more readily than the intervals of safety.",
+      "judgment": "A genuinely memorable formulation of survivorship bias in the record."
+    },
+    {
+      "quote": "The state counted its bullets more precisely than it counted the people struck by them.",
+      "judgment": "Rare moment where the analytical thesis lands as rhetoric rather than qualification."
+    },
+    {
+      "quote": "Its blows were authorized, but they were priced.",
+      "judgment": "Sharp chapter-opening thesis for the law chapter; the book is at its best when it commits like this."
+    },
+    {
+      "quote": "The evidence supports a group catastrophe; it does not settle the attackers’ selection process.",
+      "judgment": "Sound reasoning, but the semicolon-balanced concession is a template used hundreds of times across the book."
+    },
+    {
+      "quote": "The first evidence here comes not from a battlefield or a mass grave but from individuals whose bodies were altered in different ways by injury and survival.",
+      "judgment": "Clear signposting, though the 'not X but Y' frame recurs so often it flattens the prose."
+    },
+    {
+      "quote": "Aggression changes when those connections change. So does restraint.",
+      "judgment": "Aphoristic closer of the kind the book reaches for at nearly every chapter end; effective once, formulaic by the twelfth time."
+    },
+    {
+      "quote": "It cannot establish the frequency of attacks across northern Britain, and it cannot prove that Roman patrols protected everyone living near Vindolanda.",
+      "judgment": "Chapter 7 stretches two fragmentary letters across thousands of words by restating their limits; the thinnest chapter for content per page."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Symmetrical hedge: a clause asserting what evidence shows, immediately balanced by a clause of equal shape denying what it shows. Used as the default sentence rhythm in every chapter.",
+      "instances": [
+        "Context narrows possibilities; it rarely supplies motive.",
+        "Mobility changes the geography of danger; it does not abolish danger."
+      ]
+    },
+    {
+      "pattern": "The 'can establish X without establishing Y' formula, deployed as the standard way of closing an evidentiary paragraph.",
+      "instances": [
+        "The evidence can support interpersonal blows without proving a systematic practice of assault.",
+        "The material can establish recurrent bodily harm without establishing a culture of constant aggression."
+      ]
+    },
+    {
+      "pattern": "Paired-case architecture summarised by an antithetical couplet: every chapter yokes two sites or documents and then compresses them into a 'one does A; the other does B' sentence.",
+      "instances": [
+        "One site makes the event visible; the other makes repetition visible.",
+        "One source gives a victor’s chronology; the other gives an imperial grammar of victory."
+      ]
+    },
+    {
+      "pattern": "Aphoristic closers on abstract nouns (institutions, technology, language) that restate the thesis rather than advance it, typically in the last paragraph of a section.",
+      "instances": [
+        "Technology affects the speed and reach of action; institutions determine what action is authorised, rewarded, or blocked.",
+        "Restraint is therefore not the absence of power."
+      ]
+    },
+    {
+      "pattern": "Recap loop: after a chapter's argument is complete, several further paragraphs re-enumerate both cases and their limits, producing chapter tails of near-identical shape.",
+      "instances": [
+        "Shanidar 1 is an individual case, and its strength lies in the sequence preserved within one body.",
+        "Nataruk and Jebel Sahaba preserve two related histories of violence before states and standing armies."
+      ]
+    }
+  ],
+  "summary": "This is a serious, evidence-first history of organised aggression from Palaeolithic skeletons to Rwanda and the Good Friday Agreement, held together by a genuine controlling argument: violence becomes durable when institutions classify people, move resources, and authorise force, and the historian's job is to keep each conclusion tied to what the record can bear. The reasoning is the book's outstanding quality — alternative explanations are stated and weighed, denominators and sample bias are taken seriously, royal inscriptions and chronicles are read for their political work rather than mined for facts — and the specificity is real, from the Taylor Prism and the Lachish ramp to wergild schedules, Vindolanda Tablet 291, the Hunter Committee's 1,650 rounds, and Eisner's homicide series. The cost is severe monotony. The epistemic caution that makes the argument trustworthy hardens into a single sentence rhythm — assert, then symmetrically retract — repeated across every chapter, joined by paired-site comparisons, recap tails, and aphoristic closers, so that pacing drags badly (Chapter 7 in particular expands two fragmentary letters far past their yield) and the authorial voice never varies in register or temperature. The slop here is academic-template rather than chatbot cliché, but it is pervasive enough to blunt engagement. With aggressive compression, more varied paragraph architecture, and permission to narrate occasionally rather than qualify continuously, this would be a strong book; as it stands it needs moderate revision."
+}

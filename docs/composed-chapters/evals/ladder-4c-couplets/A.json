@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.8,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A body can establish that harm occurred. A document can establish that harm was authorised. The distance between those statements begins with the institution that decided whose injury would be recorded and whose could disappear.",
+      "judgment": "The book's thesis stated with real precision at the end of Chapter 1; it earns the rest of the book."
+    },
+    {
+      "quote": "A healed skull fracture can establish that someone was struck and lived. It cannot by itself establish who struck the person, why the blow was delivered, or whether the event was exceptional.",
+      "judgment": "Exemplary evidentiary discipline — the book repeatedly states what a source cannot support, which is rare and valuable."
+    },
+    {
+      "quote": "The severed hand served an administrative purpose as well as a physical one. It allowed a soldier or officer to demonstrate that a cartridge had not been wasted. A body part became a receipt",
+      "judgment": "Original, chilling, and exactly on-thesis: the strongest single paragraph in the book."
+    },
+    {
+      "quote": "A tablet from the late fourth millennium BCE might distinguish a supervisor from an ordinary worker, or a brewer from a porter, because different bodies had different claims upon the store.",
+      "judgment": "Specificity used argumentatively rather than decoratively — the detail does analytic work."
+    },
+    {
+      "quote": "The sentence is long because the crime required a chain, and each link had its own bureaucratic name.",
+      "judgment": "Close reading of the Wannsee Protocol's syntax as evidence; the book's most sophisticated interpretive move."
+    },
+    {
+      "quote": "A third looked through a bronze tube towards the gate and called out the movement of the defenders.",
+      "judgment": "The dramatized openings invent sensory detail (here an implausible optical instrument at Lachish) that the book's own analytic passages would refuse to license — an unacknowledged internal contradiction."
+    },
+    {
+      "quote": "The raid consumed a place. The conquest attempted to incorporate one.",
+      "judgment": "Elegant, but one of dozens of identical two-beat antitheses; the device is deployed until it stops registering."
+    },
+    {
+      "quote": "Every weapon in these frontiers was pointed by an institution, and the institution decided whether the people before it would be robbed, ransomed, taxed, expelled, or ruled.",
+      "judgment": "A near-verbatim reuse of Chapter 3's closer ('Every weapon in these scenes was pointed by an institution'); the thesis is restated as a formula rather than advanced."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter opens with a cinematic present-tense-feeling historical vignette (named individual, weather, sensory detail, dialogue), runs 15-25 short paragraphs, then breaks to analytic prose via a pivot sentence. Fifteen chapters, fifteen identical overtures.",
+      "instances": [
+        "The jurors had begun to count the pebbles when Socrates looked across the court and saw that the water-clock was nearly empty.",
+        "The arrow struck Toghachar Noyan beneath the arm on a morning in April 1221, while he rode close enough to the walls of Nishapur for the men above to see the metal bosses on his harness."
+      ]
+    },
+    {
+      "pattern": "The paired-case comparison is the sole analytic engine of every chapter: two sites/regimes/settlements set against each other, differences enumerated, then a synthesis paragraph naming 'the difference'. Predictable to the point that a reader can anticipate each chapter's second half.",
+      "instances": [
+        "The difference between Talheim and Crow Creek is sharper because both sites preserve mass death, but they belong to different social worlds and different moments.",
+        "The difference between the two imperial styles lay partly in what each government feared."
+      ]
+    },
+    {
+      "pattern": "Aphoristic chapter- and section-closers built on the same abstract-noun-as-verb formula, arriving on schedule at the end of nearly every analytic block.",
+      "instances": [
+        "The pass converted geography into permission.",
+        "Security and coercion travelled the same road."
+      ]
+    },
+    {
+      "pattern": "The 'X is not Y; it is Z' corrective, used to open or close arguments dozens of times, often against a strawman reading nobody proposed.",
+      "instances": [
+        "The contrast is not between barbaric appetite and civilised restraint.",
+        "Proxy war was therefore neither a puppet theatre nor an ordinary local conflict with foreign spectators."
+      ]
+    },
+    {
+      "pattern": "Cumulative noun-catalogue sentences (five to nine parallel items) used to stand in for the analysis of a system's parts; effective once, wearying by the tenth chapter.",
+      "instances": [
+        "It needed a succession of usable facts: where fodder stood, how many days' march lay between water points, which bridge could bear carts, and which town contained rival factions.",
+        "The timetable, register, factory, wire, ration card, and blockade notice formed one chain."
+      ]
+    }
+  ],
+  "summary": "This is a serious, coherent work of comparative history with a genuine thesis — that aggression acquires its reach not from feeling but from the offices, records, and classifications that name targets and distribute permission — and it holds that thesis across fifteen chapters and roughly six millennia without drifting. Its research texture is unusually dense and its epistemic manners are excellent: it states repeatedly what a bone, a stele, or a chronicle cannot support, and it treats archival silence as itself historical evidence. Clarity and sentence-level control are high, and the prose is free of the obvious commercial tics of machine writing — no listicles, no stock pivots, no false intimacy. What weakens it is uniformity of shape rather than weakness of thought: every chapter runs the same three-movement machine (vignette, paired comparison, aphoristic synthesis), the two-beat antithesis is deployed hundreds of times, and the thesis sentence is restated near-verbatim in several chapter codas rather than being complicated. Pacing suffers most — long undifferentiated paragraph blocks, several of which appear to be two or three paragraphs fused, and no variation in rhythm across 55,000 words. There is also an unacknowledged tension between the invented sensory detail of the openings and the evidentiary scrupulousness the book preaches everywhere else. With paragraph surgery, a third of the antitheses cut, and three or four chapters restructured away from the standing template, this would be publishable non-fiction."
+}

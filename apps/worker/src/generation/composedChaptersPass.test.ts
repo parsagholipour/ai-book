@@ -69,6 +69,10 @@ const mocks = vi.hoisted(() => {
     project: { update: vi.fn(async () => ({})) },
     planVersion: {
       findUnique: vi.fn(async () => ({ planningPackage: store.planningPackage })),
+      updateMany: vi.fn(async (args: { data: { planningPackage: unknown } }) => {
+        store.planningPackage = args.data.planningPackage as Record<string, unknown>;
+        return { count: 1 };
+      }),
       update: vi.fn(async (args: { data: { planningPackage: unknown } }) => {
         store.planningPackage = args.data.planningPackage as Record<string, unknown>;
         return {};
@@ -105,6 +109,7 @@ const mocks = vi.hoisted(() => {
     }),
     publishStagedGeneratedPage: vi.fn(async () => "completed"),
     persistKeeperStoryDelta: vi.fn(async () => null),
+    developmentEnabled: false,
     qualityEnabled: vi.fn((_feature: string): boolean => true)
   };
 });
@@ -150,7 +155,7 @@ vi.mock("./pagePublication.js", () => ({
 }));
 vi.mock("./qualityEnrichment.js", () => ({ persistKeeperStoryDelta: mocks.persistKeeperStoryDelta }));
 vi.mock("./qualitySettings.js", () => ({
-  loadQualityContext: async () => ({ tier: "balanced", enabled: mocks.qualityEnabled, settings: {}, pageReviewPromptMode: "normal" })
+  loadQualityContext: async () => ({ tier: "balanced", enabled: (feature: string) => ["bookDevelopment", "caseEvidence", "developmentalEdit"].includes(feature) ? mocks.developmentEnabled : mocks.qualityEnabled(feature), settings: {}, pageReviewPromptMode: "normal" })
 }));
 vi.mock("./storyStateStore.js", async () => {
   const core = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
@@ -165,7 +170,7 @@ vi.mock("./wholeBookPageReview.js", () => ({
     }))
 }));
 
-import { FakeTextModelAdapter, figureCapFor, figureSpecSchema, makeFallbackPlan, type CreateProjectInput, type ProviderSet } from "@book-maker/core";
+import { FakeTextModelAdapter, caseEvidencePacketSchema, figureCapFor, figureSpecSchema, makeFallbackPlan, type CreateProjectInput, type ProviderSet } from "@book-maker/core";
 import { composedChaptersStrategy } from "@book-maker/core";
 import { composedResumeState, derivedChapterBrief, generateBookComposedChapters } from "./composedChaptersPass.js";
 
@@ -213,6 +218,7 @@ beforeEach(() => {
   store.planningPackage = { title: "Plan" };
   vi.clearAllMocks();
   mocks.qualityEnabled.mockImplementation(() => true);
+  mocks.developmentEnabled = false;
 });
 
 describe("composedResumeState", () => {
@@ -495,5 +501,152 @@ describe("figures in the composed pass", () => {
     await run();
     expect(store.pages.some((page) => page.markdown.includes("```figure"))).toBe(false);
     expect(briefs().every((brief) => brief.composition.sections.every((section) => !section.figure))).toBe(true);
+  });
+});
+
+
+describe("developed nonfiction manuscript integration", () => {
+  it("finishes staged chapters through one extractive development plan, then resumes without repeating it", async () => {
+    mocks.developmentEnabled = true;
+    mocks.qualityEnabled.mockImplementation((feature) => !["figures", "coupletRewrite", "chapterApparatus"].includes(feature));
+    const chapters = [1, 2].map((index) => ({ index, title: `Trial ${index}`, summary: `Finding ${index}`, keyBeats: [`Evidence ${index}`], targetPages: 12 }));
+    const packets = chapters.map((chapter) => caseEvidencePacketSchema.parse({
+      id: `case-${chapter.index}`, sourceChapterIndex: chapter.index, reviewVersion: 1,
+      episode: { title: `Test case ${chapter.index}`, kind: "document", document: `Test record ${chapter.index}` },
+      claims: [{ id: "a", text: "First finding", kind: "fact", excerptIds: ["e"] }, { id: "b", text: "Second finding", kind: "fact", excerptIds: ["e"] }],
+      sequence: [], disagreements: [], unknowns: ["No scene is documented"],
+      excerpts: [{ id: "e", chapterIndex: chapter.index, episodeTitle: `Test case ${chapter.index}`, documentTitle: "Test record", documentUrl: "https://example.org/test", text: "A test record of two separate findings." }]
+    }));
+    const plan = {
+      ...makeFallbackPlan(input), chapters,
+      authorStance: { thesis: "The evidence changes the finding.", positions: ["Findings can change", "A verdict can be reopened"], refusals: [], voiceSample: "The clerk carried the court record into the next room. ".repeat(10) },
+      episodes: { chapters: chapters.map((chapter, i) => ({ index: chapter.index, episodes: [packets[i]!.episode] })) },
+      dossier: { excerpts: packets.flatMap((packet) => packet.excerpts), documents: [], evidencePackets: packets },
+      bookDevelopment: { version: 1 as const, question: "What changes a finding?", answer: "The evidence changes the finding.", coverage: [{ id: "evidence", requirement: "Examine findings" }], chapters: chapters.map((chapter, i) => ({ ...chapter, contribution: `New inference ${chapter.index}`, requires: i ? [1] : [], covers: ["evidence"], caseIds: [packets[i]!.id], callbacks: [] })) }
+    };
+    store.planningPackage = structuredClone(plan);
+    const { fake, purposes } = recordingFake();
+    const json = fake.generateJson.bind(fake);
+    const text = fake.generateText.bind(fake);
+    fake.generateJson = async (options) => {
+      const data = options.purpose === "plan-developmental-edit" ? { groups: [] } : options.purpose === "review-chapter-evidence" ? { issues: [] } : undefined;
+      if (!data) return json(options);
+      purposes.push(options.purpose!);
+      return { data: options.schema.parse(data), text: JSON.stringify(data), provider: "fixture", model: "fixture" };
+    };
+    fake.generateText = async (options) => {
+      if (options.purpose !== "compose-chapter") return text(options);
+      purposes.push(options.purpose);
+      const markdown = Array.from({ length: 600 }, (_, i) => `Record ${i} supplies another detail about the disputed original judgment.`).join("\n\n");
+      return { text: markdown, provider: "fixture", model: "fixture" };
+    };
+    const args = { projectId: "project-1", planId: "plan-1", input, plan, providers: providersWith(fake), strategy: composedChaptersStrategy };
+    await generateBookComposedChapters(args);
+    expect(store.pages).toHaveLength(24);
+    expect(store.pages.every((page) => page.status === "COMPLETED")).toBe(true);
+    expect(purposes.filter((purpose) => purpose === "plan-developmental-edit")).toHaveLength(1);
+    expect(purposes).not.toContain("read-manuscript");
+    expect(purposes.slice(purposes.indexOf("plan-developmental-edit") + 1)).not.toContain("edit-chapter");
+    expect(store.planningPackage.developmentalEdit).toMatchObject({ version: 1, appliedGroups: [] });
+    const before = [...purposes];
+    await generateBookComposedChapters(args);
+    expect(purposes).toEqual(before);
+  });
+});
+
+describe("manuscript read cuts", () => {
+  // A draft long enough to have room over its page floor, with a distinct
+  // opening on every sentence so the degeneracy guard reads it as prose.
+  function longDraft(words: number): string {
+    const sentences = Array.from({ length: Math.ceil(words / 14) }, (_, index) =>
+      `Ledger ${index} records the fee the office charged for the hearing of that season.`
+    );
+    const paragraphs: string[] = [];
+    for (let at = 0; at < sentences.length; at += 5) paragraphs.push(sentences.slice(at, at + 5).join(" "));
+    return paragraphs.join("\n\n");
+  }
+
+  // The read flags chapter 1; the cut answers with a share of the draft's
+  // paragraphs, which is a deletion the code can verify.
+  function readingFake(options: { keepShare?: number | undefined }) {
+    const { fake, purposes } = recordingFake();
+    const json = fake.generateJson.bind(fake);
+    const text = fake.generateText.bind(fake);
+    fake.generateJson = async (callOptions) => {
+      if (callOptions.purpose !== "read-manuscript") return json(callOptions);
+      purposes.push(callOptions.purpose);
+      const data = {
+        chapters: [{ chapterIndex: 1, edit: true, notes: ["Paragraph beginning 'Ledger 0': cut the closing paragraph."] }],
+        bookNotes: ["The book restates its argument at every close."]
+      };
+      return { data: callOptions.schema.parse(data), text: JSON.stringify(data), provider: "fixture", model: "fixture" };
+    };
+    fake.generateText = async (callOptions) => {
+      if (callOptions.purpose === "compose-chapter") {
+        purposes.push(callOptions.purpose);
+        return { text: longDraft(5800), provider: "fixture", model: "fixture" };
+      }
+      if (callOptions.purpose !== "cut-chapter") return text(callOptions);
+      purposes.push(callOptions.purpose);
+      const draft = (JSON.parse(callOptions.messages.find((message) => message.role === "user")!.content) as { draft: string }).draft;
+      const paragraphs = draft.split(/\n\s*\n/).filter((paragraph) => paragraph.trim().length > 0);
+      const keep = options.keepShare === undefined
+        ? paragraphs.length - 1
+        : Math.max(1, Math.round(paragraphs.length * options.keepShare));
+      return { text: paragraphs.slice(0, keep).join("\n\n"), provider: "fixture", model: "fixture" };
+    };
+    return { fake, purposes };
+  }
+
+  const gatesOffFor = (extra: string[]) => {
+    // The line edit and the couplet rewrite would replace the scripted draft.
+    mocks.qualityEnabled.mockImplementation((feature: string) => !["chapterEditorPass", "coupletRewrite", ...extra].includes(feature));
+  };
+
+  const run = async (fake: FakeTextModelAdapter) => {
+    const plan = makeFallbackPlan(input);
+    await generateBookComposedChapters({
+      projectId: "project-1",
+      planId: "plan-1",
+      input,
+      plan,
+      providers: providersWith(fake),
+      strategy: composedChaptersStrategy,
+      generationJobId: "job-1"
+    });
+    return plan;
+  };
+  const reports = () =>
+    store.chapters.map((chapter) => (chapter.productionBrief as { report: { readNotes: string[]; secondEditApplied: boolean } }).report);
+
+  it("cuts exactly the flagged chapter when the gate is on", async () => {
+    gatesOffFor([]);
+    const { fake, purposes } = readingFake({});
+    await run(fake);
+    expect(purposes.filter((purpose) => purpose === "cut-chapter")).toHaveLength(1);
+    expect(reports()[0]!.readNotes).toHaveLength(1);
+    expect(reports()[0]!.secondEditApplied).toBe(true);
+    expect(reports().slice(1).every((report) => report.readNotes.length === 0)).toBe(true);
+    expect(store.pages).toHaveLength(input.targetPages);
+    expect(store.pages.every((page) => page.status === "COMPLETED")).toBe(true);
+  });
+
+  it("keeps the chapter when the cut would drop it under its word floor", async () => {
+    gatesOffFor([]);
+    const { fake, purposes } = readingFake({ keepShare: 0.8 });
+    await run(fake);
+    expect(purposes.filter((purpose) => purpose === "cut-chapter")).toHaveLength(1);
+    expect(reports()[0]!.readNotes).toHaveLength(1);
+    expect(reports()[0]!.secondEditApplied).toBe(false);
+    expect(store.pages).toHaveLength(input.targetPages);
+  });
+
+  it("makes no cut call with the gate off, and still records the read's notes", async () => {
+    gatesOffFor(["manuscriptReadCuts"]);
+    const { fake, purposes } = readingFake({});
+    await run(fake);
+    expect(purposes).not.toContain("cut-chapter");
+    expect(reports()[0]!.readNotes).toHaveLength(1);
+    expect(reports()[0]!.secondEditApplied).toBe(false);
   });
 });

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.6,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "An armed seizure can therefore enter history as invasion, judgment, succession, or liberation, according to the record and the community for whom the record speaks.",
+      "judgment": "The book's controlling thesis stated early, concretely, and without inflation \u2014 a genuinely strong opening move."
+    },
+    {
+      "quote": "The bodies found by archaeologists are therefore not a simple remainder of all those who were attacked. They are the result of injury, survival, movement, treatment, burial, preservation, discovery, and selection.",
+      "judgment": "Excellent methodological reasoning; the book consistently interrogates how evidence is produced rather than citing it flatly."
+    },
+    {
+      "quote": "The power of gunpowder appeared in the ledger before it appeared in the breach.",
+      "judgment": "Rare instance of genuine sentence-level wit; the manuscript could use far more of these."
+    },
+    {
+      "quote": "Uncertainty about identity became a reason to kill everyone instead of a reason to restrain the attack.",
+      "judgment": "Sharp, load-bearing analytic sentence that earns its rhetorical compression at B\u00e9ziers."
+    },
+    {
+      "quote": "Interpersonal aggression directs force through personal encounters. Raiding organizes movement around seizure or destruction. Warfare joins armed groups to political objectives.",
+      "judgment": "Near-verbatim restatement of a definition given sixteen paragraphs earlier in the same chapter \u2014 unmotivated recap redundancy."
+    },
+    {
+      "quote": "Hideyoshi's coercion belonged to the same political system that made a campaign possible.",
+      "judgment": "A sentence recycled verbatim from the Qin corv\u00e9e discussion earlier in the same chapter, applied to a different subject \u2014 a drafting artifact, not a deliberate echo."
+    },
+    {
+      "quote": "They still leave priority unsettled between the category that selected a population and the railway, factory, ship, or gun that acted upon it.",
+      "judgment": "Chapter 11 ends on a hedged, unresolved question that reads as an abandoned argument rather than a considered aporia."
+    },
+    {
+      "quote": "The law's insistence on witnesses and procedures placed disputes before a court or official instead of leaving every accusation to the injured party and his kin.",
+      "judgment": "Clear and precise, but typical of a prose register that stays uniformly mid-level for 55,000 words with almost no variation in temperature."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The balanced antithesis as default analytic move: nearly every judgment is delivered as 'X restrained one violence while enabling another,' often several times per chapter, until the shape itself becomes predictable and the reader can anticipate the second clause from the first.",
+      "instances": [
+        "The law narrowed private violence by claiming the right to define injury, determine evidence, and prescribe punishment. It also made unequal value official.",
+        "A state monopoly may close the path of feud while opening the path of deportation."
+      ]
+    },
+    {
+      "pattern": "Chapter-closing inventory recap: the final one or two paragraphs enumerate every case study named earlier in the chapter, in order, each with a one-clause gloss, then restate the thesis.",
+      "instances": [
+        "Naram-Sin's stele, Hammurabi's laws, Ur III ration tablets, and Sennacherib's reliefs do not measure aggression on one scale.",
+        "The Liberian reconstruction records, Rwandan local-government reports, Costa Rican constitutional records, and comparative peacebuilding evaluations do not measure one timeless quantity called aggression."
+      ]
+    },
+    {
+      "pattern": "Rigid three-part chapter architecture: a concrete artefact opened at close range, then a mid-chapter taxonomy or numbered procedure, then a comparative pairing \u2014 repeated with so little variation that the sixteenth chapter has the same silhouette as the third.",
+      "instances": [
+        "The Victory Stele of Naram-Sin shows how a king could turn a campaign into a permanent account of the world.",
+        "The guillotine was designed to make execution quick, visible, and equal in form."
+      ]
+    },
+    {
+      "pattern": "Anaphoric list paragraphs built from short parallel subject-verb sentences, used to summarise mechanisms rather than to argue about them.",
+      "instances": [
+        "Someone produced or collected the grain. Someone transported it. Someone measured it. Someone wrote down the amount.",
+        "The blockade worked through ships and prices. The submarine worked through concealment and sinking. Gas worked through atmosphere and exposure."
+      ]
+    },
+    {
+      "pattern": "The negating disclaimer that ends a passage \u2014 'this does not show', 'it does not tell us', 'neither can be read as' \u2014 deployed so often that the epistemic caution stops functioning as thought and becomes a cadence.",
+      "instances": [
+        "Counting both as instances of aggression creates a number, but it does not yet create a history.",
+        "The number of damaged skeletons is meaningful only after the burial population has been defined."
+      ]
+    }
+  ],
+  "summary": "This is an unusually disciplined work of comparative history with a clear and genuinely sustained thesis: aggression has no timeless quantity, and what varies is the organisation, authorisation, classification and recording of force. The evidentiary reasoning is the strongest thing here \u2014 the manuscript repeatedly explains how a claim is built from a trace and where the chain weakens, and it applies that scepticism to its own comparisons rather than only to others'. Depth and specificity are high across all sixteen chapters, and the prose is clean, precise, and free of stock AI vocabulary. The costs are formal: chapters are built to an identical template, the paired-antithesis sentence is the default analytic gesture, and the closing inventory-recap appears at the end of nearly every chapter, which flattens pacing badly over 55,000 words. There is also real redundancy \u2014 Chapter 1 restates its six-category definitions verbatim, and a sentence about coercion 'belonging to the same political system that made a campaign possible' is recycled inside Chapter 5. Light revision to break the templating, cut the recaps, and let the voice vary in temperature would lift this considerably; the argument and research do not need rebuilding."
+}

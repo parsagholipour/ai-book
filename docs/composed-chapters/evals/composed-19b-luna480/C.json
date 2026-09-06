@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.9,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A wound is not anger. Aggression, in the working sense used here, is behaviour intended to harm another person who is motivated to avoid that harm.",
+      "judgment": "Excellent: the definitional apparatus is introduced through a concrete object rather than a glossary, and it governs the whole book."
+    },
+    {
+      "quote": "The stone, the raft, the shoreline, the crowd, the police response, and the Commission's prose do not describe one thing at different sizes. They describe different kinds of action connected by decisions about identity and belonging.",
+      "judgment": "The thesis stated with real precision \u2014 scale is not the variable, kind of action is."
+    },
+    {
+      "quote": "Silence is evidence of preservation and discovery before it becomes evidence of peace.",
+      "judgment": "Sharp, earned aphorism about negative evidence; one of the few closers that adds rather than restates."
+    },
+    {
+      "quote": "The Yassa is best read as a political memory with practical uses.",
+      "judgment": "Genuinely original handling of a contested source: the chapter dismantles a reified 'code' and rebuilds it as a claim-making device."
+    },
+    {
+      "quote": "There was no wall at the horizon, but there was nowhere to go.",
+      "judgment": "A rare short sentence with rhetorical force, and it lands \u2014 though it also shows how seldom the prose permits itself this register."
+    },
+    {
+      "quote": "The evidence supports no simple rise or fall in human aggressiveness. It shows power learning to travel through cities.",
+      "judgment": "Effective chapter close, but the exact shape (negate a crude reading, then supply an elegant reformulation) closes nearly every chapter and section."
+    },
+    {
+      "quote": "Their differences are the evidence, not an inconvenience to be smoothed away.",
+      "judgment": "The book's methodological creed, stated well here and then re-stated, with variations, perhaps thirty times."
+    },
+    {
+      "quote": "The report's language turns scattered experiences into a public account; its categories show how officials understood the crisis as well as what happened within it.",
+      "judgment": "Representative of a source-critical paragraph that appears, almost interchangeably, after every single piece of evidence introduced in the book."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The negate-then-restate antithesis as the default sentence engine: a crude reading is named, denied, and replaced by a refined one. It carries the argument, but it also fixes the rhythm of almost every paragraph and every section close.",
+      "instances": [
+        "State formation did not simply add violence to an otherwise peaceful human world. It altered where violence occurred, who could authorise it, and how long it could be sustained.",
+        "Revolution did not release a fixed quantity of human aggression. It rearranged the routes by which fear, grievance, hope, and power reached other bodies."
+      ]
+    },
+    {
+      "pattern": "An obligatory source-caution paragraph after each exhibit, stating what the evidence can and cannot bear. Individually admirable; cumulatively a template the reader can predict and skim.",
+      "instances": [
+        "The numbers in the Persian chronicles are enormous and difficult to verify. Their scale communicates catastrophe, but it should not be repeated as though an exact enumeration had been preserved.",
+        "The chronicle records the city's terror in terms that later readers have often repeated as an exact measure of the dead. Those figures cannot be lifted from the account as though they were the product of a census."
+      ]
+    },
+    {
+      "pattern": "Four-part inventory recapitulation before a chapter ends: each named source is assigned one clause beginning with the same verb, producing a roll-call that repeats material already argued.",
+      "instances": [
+        "Narmer's image tells us that royal violence was suitable for public display... The Lagash inscriptions tell us that boundary enforcement could be framed as... Uruk's tablets tell us that labour and food could be made administratively legible. Hamoukar's bullets tell us that a settlement could be subjected to a prepared attack.",
+        "The Al\u00feingi worked through compensation and public judgment. Ashanti diplomacy depended on protocol among rulers. Tokugawa villages used collective surveillance and local accountability. Costa Rica altered the national distribution of armed power."
+      ]
+    },
+    {
+      "pattern": "The 'economic pressure supplies force, political ideas supply direction' formula, delivered near the end of most chapters in near-identical wording.",
+      "instances": [
+        "Economic pressure supplies force; political ideas decide where that force is directed.",
+        "Material deprivation supplied urgency. Political identities supplied enemies and allies."
+      ]
+    },
+    {
+      "pattern": "The 'technology extends reach but does not supply motive' beat, appearing at least once per chapter with the same logical shape and a fresh object substituted in.",
+      "instances": [
+        "None of these devices contains a motive. Their historical importance lies in the new relations they permit...",
+        "Technology extended reach; political decisions determined who would be treated as an enemy."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, source-first history of organized violence that argues, chapter after chapter, that a general human capacity for harm explains almost nothing while institutions, classifications, records and technologies of reach explain a great deal. Its strengths are unusual: real specificity in every exhibit (\u00c7atalh\u00f6y\u00fck bone, Uruk ration tablets, Ottoman artillery registers, Wannsee's eleven million, UCDP versus UNHCR series), a genuinely controlled comparative method that refuses to convert unlike sources into one scale, and a voice that never breaks tone across fifteen chapters. The reasoning is careful about what each archive can carry, and several chapters \u2014 the Yassa, the Mongol administrative comparison, the post-1945 measurement chapter \u2014 do original conceptual work rather than survey. The costs are pacing and structural monotony: the same three or four rhetorical machines (negate-then-refine, the source-caution paragraph, the four-source roll call, the technology-has-no-motive beat) drive nearly every section, paragraphs run to a uniform length and shape, and the thesis is re-derived so often that later chapters read as instantiations rather than developments. Lexical AI tells are almost absent and the prose is clean and precise, but the structural templating is pervasive enough to flatten the reading experience. Light revision \u2014 pruning recapitulations, varying paragraph and closing shapes, letting a few sections end without a maxim \u2014 would leave a genuinely strong book."
+}

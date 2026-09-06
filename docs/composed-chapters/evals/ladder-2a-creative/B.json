@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.3,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The men at the barrier did not need to discover who belonged to which category. The category had already been printed, repeated, and made politically dangerous.",
+      "judgment": "Opening page states the book's whole argument through a concrete object rather than an abstraction; among the strongest passages in the manuscript."
+    },
+    {
+      "quote": "The city’s durable innovation was not the sword but the office that could tell a sword where to go.",
+      "judgment": "Memorable, but it is the first of roughly a dozen chapter-closing antitheses built on the identical weapon-versus-office frame."
+    },
+    {
+      "quote": "Archaeology preserves bodies, objects, walls, ash, and patterns of placement with extraordinary power, but it preserves ordinary fear badly.",
+      "judgment": "Exemplary epistemic discipline: the book consistently says what a source cannot bear, which is its chief intellectual virtue."
+    },
+    {
+      "quote": "The bird was a metaphor, but the cage had gates, roads, guards, lists, and a king seated before them.",
+      "judgment": "Fine sentence-level craft; an image from the source is turned into an argument without being over-explained."
+    },
+    {
+      "quote": "Their deaths could be claimed as loss because the law recognized ownership more readily than personhood. The sea magnified a decision prepared on land.",
+      "judgment": "The Zong chapter is the book's peak — restraint, specificity and moral weight held together without editorialising."
+    },
+    {
+      "quote": "Popular anger opened the door. Administrators decided which doors remained open.",
+      "judgment": "A one-line paragraph functioning as an aphoristic closer; the same rhetorical unit recurs in at least six chapters and reads as a template."
+    },
+    {
+      "quote": "Technology has no target until an officer assigns one. A cannon has no campaign until a government pays for transport.",
+      "judgment": "Clear, but the anaphoric triple restates a claim the chapter has already proved three times; symptomatic of the book's redundancy."
+    },
+    {
+      "quote": "It can keep asking who acted, who authorised the act, who was made legible, and whose suffering had to struggle to enter the record.",
+      "judgment": "An earned ending: the closing chapter is the one place the thesis is genuinely complicated rather than reasserted."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Chapters close on a paired antithesis contrasting an instrument with the office behind it — the book's single most templated move, appearing in nearly every chapter.",
+      "instances": [
+        "The horse carried the order; the institution decided where it would fall.",
+        "The weapon enlarged human power; offices gave that power direction."
+      ]
+    },
+    {
+      "pattern": "A steelman-then-qualify section near each chapter's end: the popular explanation is granted 'genuine strength/force' in one paragraph, then declared insufficient in the next, always by naming offices.",
+      "instances": [
+        "The claim that imperial violence was chiefly cultural brutality has genuine strength.",
+        "European racial ideology offers a powerful explanation for colonial violence."
+      ]
+    },
+    {
+      "pattern": "The negative-inference formula 'the evidence establishes X; it does not establish Y' — epistemically admirable but so frequent it becomes a rhythm the reader can predict.",
+      "instances": [
+        "The bones establish repeated lethal encounters at this locality. They do not provide a calendar of raids or the name of the group that carried them out.",
+        "A wall does not name the enemy. It does establish that Cahokia’s leaders and builders treated defence as important enough to redirect labour."
+      ]
+    },
+    {
+      "pattern": "Identical chapter architecture: an in-scene dated opening, close reading of one document or object, a two-case comparison, then a thesis restatement — repeated with almost no variation across fifteen chapters.",
+      "instances": [
+        "The Ottoman Arsenal register for the Vienna campaign of 1683 begins with things too ordinary to look like the machinery of war.",
+        "The Barbados Slave Code of 1661 makes that preparation easier to read because it speaks in the language of colonial government."
+      ]
+    },
+    {
+      "pattern": "Chain-of-offices catenations — a semicolon or comma cascade in which each clerk hands the act to the next — used as the standard proof device rather than varied argument.",
+      "instances": [
+        "A coastal broker turned capture into a sale; a ship’s officer turned sale into a manifest; an insurer turned death into a claim...",
+        "A district commissioner issued an order; a police sergeant assembled men; a constable identified a suspect; a magistrate imposed a fine..."
+      ]
+    }
+  ],
+  "summary": "A serious, unusually disciplined work of comparative history arguing that the scale of human violence is produced by administration — categories, registers, offices, chains of custody — rather than by anger, weapons or ideology alone. Its research texture is excellent: named sites, dated documents, specific objects, and a consistently scrupulous account of what each source can and cannot bear, with almost none of the generic abstraction or lexical filler typical of machine prose. The cost of that discipline is monotony. Fifteen chapters share one internal template (scene, document close-read, two-case comparison, steelman, thesis restatement) and close on the same chiastic aphorism about instruments versus offices, so the book accumulates instances rather than developing an argument; by the midpoint the thesis is being reconfirmed rather than tested. Engagement and pacing suffer accordingly — the openings are gripping, the middles airless, and the paragraph shapes rarely vary. The slop here is structural rather than verbal, which makes it less obtrusive but harder to edit out. With compression, more variation in chapter form, and a willingness to let one or two cases resist the thesis, this would be close to publishable non-fiction."
+}

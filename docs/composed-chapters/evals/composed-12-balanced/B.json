@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 8,
+    "slopResistance": 7
+  },
+  "overall": 7.6,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A measure does not merely collect violence. It defines the kind of violence that can be seen.",
+      "judgment": "The book's methodological thesis stated compactly and early; it genuinely governs the following fourteen chapters rather than decorating them."
+    },
+    {
+      "quote": "A point may serve hunting or fishing; lodged in human bone, it enters another category of evidence.",
+      "judgment": "Excellent concrete reasoning \u2014 the epistemic argument is carried by the object itself rather than asserted abstractly."
+    },
+    {
+      "quote": "A cannon was a weapon at the front and an account at the rear.",
+      "judgment": "Sentence-level craft at its best: compressed, unshowy, and doing real analytic work."
+    },
+    {
+      "quote": "The human impulse to harm requires no single historical origin; the power to make harm collective has a history.",
+      "judgment": "Strong chapter landing, but also the template for a dozen near-identical closers elsewhere; the move loses force by repetition."
+    },
+    {
+      "quote": "A file can be clean while its subject is filthy.",
+      "judgment": "One of several one-line aphoristic paragraphs dropped at intervals; effective here, but the device is deployed on a schedule."
+    },
+    {
+      "quote": "Restraint and coercion travelled through the same office.",
+      "judgment": "Compact and true, yet it is the book's single most-repeated idea, restated in some form in nearly every chapter."
+    },
+    {
+      "quote": "The first well-known victim was the prison official Armand de Launay, commonly called the abb\u00e9 de Launay in contemporary accounts",
+      "judgment": "A rare factual wobble \u2014 the name and title are confused \u2014 in a book that otherwise handles detail with unusual care."
+    },
+    {
+      "quote": "Their difference is not an obstacle to comparison. They are what comparison has to preserve.",
+      "judgment": "A well-earned formulation the first time; by chapters 13\u201315 it has become a reflex used to close arguments rather than advance them."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Negative-then-positive definition ('X did not do A; it did B') used as the default analytic sentence, hundreds of times across every chapter.",
+      "instances": [
+        "The state did not simply add a new quantity of aggression to an unchanged human world. It altered who could authorise harm",
+        "The sugar mill did not create racial slavery. It gave the idea a relentless daily use."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis in which protection and coercion are shown to share one channel \u2014 the book's governing figure, restated rather than developed.",
+      "instances": [
+        "Security and extraction travelled along the same route.",
+        "Order and harm travelled together."
+      ]
+    },
+    {
+      "pattern": "Symmetrical evidentiary hedge closing a section: the source 'supports' a bounded claim but 'does not' support a larger one.",
+      "instances": [
+        "The bones and objects support the judgement that the event was violent. They do not require the event to become a miniature version of later warfare.",
+        "The evidence supports repeated projectile violence affecting men, women, and children. It does not provide a complete account of the attacks."
+      ]
+    },
+    {
+      "pattern": "Chapter architecture is identical throughout: an opening artefact-scene, two or three paired cases, an explicit refusal to rank them, and a recap paragraph listing every case by name.",
+      "instances": [
+        "A healed cranial wound, a mass grave, a ration bowl, a boundary stone, a royal inscription, and a ceremonial palette do not measure one underlying quantity.",
+        "A burial, a palace relief, a ration bowl, a deportation order, a satellite image, and a testimony session do not observe the same thing."
+      ]
+    },
+    {
+      "pattern": "Aphoristic one-sentence paragraph inserted as a beat before a transition, roughly once per chapter.",
+      "instances": [
+        "Order had a price.",
+        "A season can be harsh. A war is made."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, genuinely learned comparative history whose thesis \u2014 that the record measures not human aggressiveness but the institutions that authorise, scale, direct and occasionally restrain harm \u2014 is argued consistently across fifteen chapters and refreshed with unusually specific evidence, from Nataruk projectile points and Uruk ration bowls to Wannsee's population table and Rwandan gacaca sessions. Its strongest quality is evidentiary conscience: it repeatedly and precisely distinguishes what a grave, a royal inscription, a coroner's roll, a tax schedule or a satellite image can support from what a reader would like it to support. Clarity and sentence craft are high, and the austere, unemphatic voice is held steady for sixty thousand words without slipping into promotional or explanatory register. The failures are of shape rather than substance. Every chapter runs the same machine \u2014 opening artefact, paired cases, refusal to rank, name-checking recap \u2014 and the same two rhetorical figures (the 'not A but B' definition and the protection/coercion antithesis) carry almost every analytic sentence, so the book restates its argument far more often than it extends it, and pacing suffers badly after chapter ten. It resists surface AI slop almost entirely, but its templated symmetries and scheduled aphorisms are a structural signature of the same kind; cutting perhaps a fifth of the recapitulation and varying the chapter form would leave a book close to ready."
+}

@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 6,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 6.8,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Soil keeps bodies more readily than motives.",
+      "judgment": "A genuinely fine aphorism that earns its place by compressing the book's whole epistemological argument into six words."
+    },
+    {
+      "quote": "The language is cold because it performs a conversion. A person becomes an object of freight; a killing becomes a disposal; a decision becomes an average; an insurance dispute becomes the visible form in which violence survives.",
+      "judgment": "The book's strongest passage: analysis and rhetoric fused, and the escalating clause structure does real work rather than decorating."
+    },
+    {
+      "quote": "Precision does not remove uncertainty. It tells us where uncertainty begins.",
+      "judgment": "Crisp statement of the governing method, though the paired-antithesis shape it uses recurs so often it later loses force."
+    },
+    {
+      "quote": "The office did not replace hatred. It gave hatred procedures.",
+      "judgment": "Sharp and earned, but it is also the hundredth instance of the same two-beat negation-then-substitution cadence."
+    },
+    {
+      "quote": "A code is not a perfect description of practice. Its existence does not show that every provision was applied in every place... It shows that colonial authorities considered the regulation of enslaved people a matter requiring formal legislation.",
+      "judgment": "Near-verbatim repetition of a caveat delivered six paragraphs earlier in the same chapter \u2014 an unedited duplication, not a deliberate refrain."
+    },
+    {
+      "quote": "They could also impose taxes, seize labour, confine movement, destroy rival settlements, and send soldiers towards a border whose meaning had been fixed by royal decree.",
+      "judgment": "This exact sentence appears in both Chapter 3 and Chapter 4; the reuse of stock clause-strings is the manuscript's clearest mechanical weakness."
+    },
+    {
+      "quote": "A wall can protect against attack, organise internal movement, display collective authority, and respond to environmental conditions.",
+      "judgment": "Representative of the multi-possibility list that substitutes for argument: every candidate explanation is named, none is weighed, and the paragraph ends without a verdict."
+    },
+    {
+      "quote": "History does not supply a reliable forecast; it shows when institutions are being taught to treat some lives as administratively removable, without mistaking recognition for certainty.",
+      "judgment": "A strong closing note for Chapter 13, but the semicolon-plus-qualifying-coda shape is the book's default terminal move and by this point reads as a formula."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The evidentiary disclaimer triad: a source is named, one thing it establishes is stated, then a list of things it cannot establish. It closes almost every analytical unit in the book, so the reader can predict the paragraph's last sentence from its first.",
+      "instances": [
+        "The stele is strongest evidence for the political presentation of organized violence and weaker evidence for the total course of the war.",
+        "Its value is narrower and more powerful: it shows that the state possessed a practice for treating populations as movable resources and political instruments."
+      ]
+    },
+    {
+      "pattern": "The 'X did not cause Y; institutions/ideas decided' closer, deployed as the terminal beat of nearly every technology or economics discussion, always in the same negate-then-relocate-agency shape.",
+      "instances": [
+        "Technology changes the organisation and reach of violence; it does not decide whether a disputed resource will be shared or seized.",
+        "Horses did not decide to conquer. Composite bows did not determine the treatment of captives. Relay stations did not require a ruler to impose tribute."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis about restraint and enlargement: virtually every chapter contains a sentence saying the same institution reduced one violence while enabling another, usually in balanced clauses of near-identical length.",
+      "instances": [
+        "A city could make private violence harder while making public violence more powerful.",
+        "The capacity to reduce one kind of violence did not prevent the creation of another kind on a wider scale."
+      ]
+    },
+    {
+      "pattern": "The chapter-end inventory recap: a closing paragraph that re-lists the chapter's cases in parallel apposition ('X leaves us with... Y leaves us with...'), restating conclusions already drawn rather than advancing them.",
+      "instances": [
+        "The Stele of the Vultures leaves us with a field of bodies and a claim of rightful victory. The Standard of Ur leaves us with ranked movement...",
+        "The murals at Bonampak leave the captives visible but unheard. The roads of the Andes preserve connection without preserving every burden imposed along them."
+      ]
+    },
+    {
+      "pattern": "Numbered or enumerated mechanism-building ('First... Second... Third...') used to model a hypothetical social process in the absence of evidence, then immediately disclaimed as a model rather than a finding.",
+      "instances": [
+        "First, a resource becomes seasonally valuable... Fifth, kin alliances turn an individual injury into a group matter.",
+        "First, the state classified populations by race and legal status. Second, it tied movement and residence to labour needs. Third, it required African people to carry or produce documents..."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, intellectually serious global history of organized aggression, held together by a genuinely load-bearing thesis: violence acquires scale through institutions, while technology and material pressure supply capacity rather than motive. The reasoning is its best quality \u2014 the book is unusually honest about what each monument, tablet, relief, code or dataset can and cannot support, and its case-first openings (the Zong, Wannsee, the Bastille, the Reims cathedral) are often excellent. The cost is that this admirable caution has hardened into a template. The disclaimer triad, the negate-then-relocate-agency closer, the balanced restraint/enlargement antithesis and the chapter-end inventory recap recur in every chapter, so paragraphs become predictable and the middle stretches of long chapters flatten into cataloguing. Specificity is thinner than the ambition implies: dates, figures and named individuals are sparse, and multi-possibility lists frequently stand in for adjudication. There is also outright duplication \u2014 a caveat repeated near-verbatim within Chapter 8, and a stock clause-string reused word for word across Chapters 3 and 4 \u2014 which points to insufficient editing rather than a rhetorical choice. Sentence craft is high and the diction is free of obvious AI tics, but the uniform paragraph mass, symmetrical hedging and aphoristic closers give it a subtler machine signature. With aggressive cutting, some varied paragraph architecture, and more hard particulars in the middle of chapters, this would be a strong book."
+}

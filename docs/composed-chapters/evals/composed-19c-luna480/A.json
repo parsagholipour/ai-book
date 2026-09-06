@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 7,
+    "slopResistance": 7
+  },
+  "overall": 7.2,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The number is an argument built from records, not a body recovered whole from the past.",
+      "judgment": "The book's methodological thesis in one earned, concrete sentence \u2014 a genuine high point of the prose."
+    },
+    {
+      "quote": "A healed fracture in a skeleton tells us that bone was damaged and that the person survived long enough for the body to repair it.",
+      "judgment": "Exemplary evidentiary discipline: the claim is sized exactly to what the trace supports."
+    },
+    {
+      "quote": "Its language is composed, technical, and almost aggressively ordinary.",
+      "judgment": "Rare instance of a voiced, evaluative phrase; the register lifts precisely where the subject demands it."
+    },
+    {
+      "quote": "At a roadblock, the distance between bureaucratic category and bodily danger was only a question.",
+      "judgment": "Effective one-line paragraph, but also the book's most conspicuous aphoristic closer \u2014 a device it otherwise avoids and here indulges."
+    },
+    {
+      "quote": "Technology widened the reach of coercion, but political decisions gave coercion its targets.",
+      "judgment": "True to the argument, yet this exact proposition is restated in nearly every chapter, becoming a refrain rather than a finding."
+    },
+    {
+      "quote": "Security and subordination could grow together.",
+      "judgment": "A paired antithesis that recurs in a dozen variants; individually crisp, cumulatively formulaic."
+    },
+    {
+      "quote": "A city wall turned labour into protection and siege. A ration tablet turned grain into an obligation. The Narmer Palette turned a blow into a definition of kingship.",
+      "judgment": "The signature closing move \u2014 an anaphoric inventory of the chapter's exhibits \u2014 used to end most chapters and drained of surprise by repetition."
+    },
+    {
+      "quote": "Al-Musta\u02bfsim sent envoys, but the terms of surrender did not preserve the caliphate.",
+      "judgment": "The 1258 siege of Baghdad is narrated at length in both Chapter 6 and Chapter 7; the second telling adds engineers but repeats the frame, a real redundancy."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Two-case-plus-comparison chapter architecture: a vivid document or site, a second contrasting case, an explicit paired comparison, then a recap paragraph. Almost every chapter follows it, so chapter openings and endings become predictable.",
+      "instances": [
+        "Achaemenid satrapal governance beside Roman provincial administration shows why comparison must keep its scale.",
+        "French corv\u00e9e labour and Dutch cultivation differed in their immediate object."
+      ]
+    },
+    {
+      "pattern": "The 'technology/economics did not decide; politics did' disclaimer, restated as a closing beat in chapter after chapter.",
+      "instances": [
+        "Technology altered the reach and organisation of force, but it did not supply the motive that made a wall a boundary or a weapon an instrument of attack.",
+        "The language of risk did not cause the violence. It made the violence financeable."
+      ]
+    },
+    {
+      "pattern": "Symmetrical antithesis about protection and coercion issuing from the same institution \u2014 a single conceptual move rephrased dozens of times.",
+      "instances": [
+        "Courts and militias restrained some violence among slaveholders while authorising violence against the enslaved.",
+        "The same sign restrained one kind of private violence and authorised another form of extraction."
+      ]
+    },
+    {
+      "pattern": "Enumerated 'sequence' or 'chain' paragraphs that decompose an event into numbered or serial operations, then warn that the sequence is not a law.",
+      "instances": [
+        "The model has a practical sequence. First, a resource becomes concentrated in time or space. Second, people alter their routes to reach it.",
+        "The action proceeds through recognizable steps. First, the king is made larger than the captive..."
+      ]
+    },
+    {
+      "pattern": "Uniform epistemic hedging formula \u2014 'the evidence establishes X; it does not tell us Y' \u2014 applied to nearly every source, which is admirable once and deadening at scale.",
+      "instances": [
+        "Material evidence marks the force used; it does not automatically supply the intention.",
+        "A darkened square on an image is evidence of change. The reason for the change must be joined from testimony, weather records, military announcements, and other traces."
+      ]
+    }
+  ],
+  "summary": "This is a serious, unusually disciplined comparative history whose thesis \u2014 that violence acquires scale and direction from records, categories, and institutions rather than from a constant human aggressiveness \u2014 is stated in Chapter 1 and genuinely carried through fifteen chapters to a well-earned close. Its strengths are evidentiary: specific sites, statutes, tablets, reliefs, and protocols are handled with real care, and the prose consistently sizes each claim to what the trace can bear, which is rare and valuable. The weaknesses are structural rather than lexical. Nearly every chapter uses the same two-case-plus-comparison architecture and the same closing inventory of exhibits, and the argument's central caveat ('technology widened reach; politics supplied direction') is restated so often that it stops functioning as analysis. Paragraph shapes and sentence rhythms are highly uniform, engagement flags in the long middle chapters, and the fall of Baghdad is narrated twice across Chapters 6 and 7 with substantial overlap. With variation in chapter form, pruning of the repeated disclaimers and paired antitheses, and one merge of the duplicated material, this would be close to publishable as a strong survey."
+}

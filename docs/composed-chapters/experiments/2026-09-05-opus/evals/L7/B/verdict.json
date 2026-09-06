@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 9,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.8,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The hand can be similar; the world directing it is not.",
+      "judgment": "A crisp statement of the book's governing thesis — and the template for a closer repeated in nearly every chapter."
+    },
+    {
+      "quote": "A cemetery is an event made visible by preservation and excavation.",
+      "judgment": "Exemplary evidentiary discipline: the book consistently distinguishes what a source records from what it proves."
+    },
+    {
+      "quote": "Violence had become a method of sorting.",
+      "judgment": "Compressed, earned analytic line that emerges from the Chicago testimony rather than being imposed on it."
+    },
+    {
+      "quote": "The bag was closed, and the pump began again while the team lowered the next square.",
+      "judgment": "The reconstructed openings are genuinely well observed and do real work in grounding abstraction."
+    },
+    {
+      "quote": "The first bones had come from the riverbank in 1997, when an amateur archaeologist named Detlef Jantzen found a human upper-arm bone with a flint arrowhead embedded in it.",
+      "judgment": "Internal inconsistency: the same name is given both to the lead excavator of 2009 and to a separate amateur finder of 1997."
+    },
+    {
+      "quote": "The weapon supplied force; an office selected its target.",
+      "judgment": "True to the argument, but by chapter 9 this exact antithesis has been restated so often it reads as a refrain rather than a conclusion."
+    },
+    {
+      "quote": "The iron did not organise itself.",
+      "judgment": "Aphoristic one-line closer — effective once, but one of a long series of identically shaped section endings."
+    },
+    {
+      "quote": "The past leaves constraints; people still decide what those constraints will permit.",
+      "judgment": "The book's final sentence lands the thesis, though it again uses the semicolon-antithesis mould that dominates the prose."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Chapter and section endings built on a paired antithesis or a two-clause chiasmus restating the institutions-over-instinct thesis.",
+      "instances": [
+        "The hand can be similar; the world directing it is not.",
+        "The object supplied movement. An office supplied direction."
+      ]
+    },
+    {
+      "pattern": "The 'X establishes A; it does not establish B' evidentiary hedge, applied to nearly every source discussed.",
+      "instances": [
+        "The bones establish a violent meeting; they do not identify its command.",
+        "The material record supports mass killing in a defended settlement; it does not supply a single motive."
+      ]
+    },
+    {
+      "pattern": "Each chapter opens with a reconstructed sensory scene focused on a named excavator, ruler or official, before pivoting to documents.",
+      "instances": [
+        "The trowel struck something that was not stone.",
+        "The copper helmet came off the skull in Leonard Woolley’s hand."
+      ]
+    },
+    {
+      "pattern": "Symmetrical comparative disclaimers refusing a moral ranking after each paired case study.",
+      "instances": [
+        "Neither permits a simple ranking of peacefulness.",
+        "Neither model was gentler by definition."
+      ]
+    },
+    {
+      "pattern": "Long enumerated noun-lists of offices, materials and functionaries used as the standard unit of analysis.",
+      "instances": [
+        "Kinship, marriage, reputation and legal standing determine who can support a claim.",
+        "Officials supplied initiatives; the SS supplied coordination; police battalions supplied shooters; railways supplied movement."
+      ]
+    }
+  ],
+  "summary": "This is a serious, disciplined comparative history whose thesis — that aggression is a family of institutionally organised acts rather than a single human substance — is stated in chapter 1 and honoured with unusual rigour across fifteen chapters spanning Tollense to Benghazi. Its greatest strength is evidentiary self-awareness: sources are weighed for what they can and cannot show, numbers are treated as artefacts of the offices that produced them, and the recurring refusal to rank societies on a violence scale is argued rather than asserted. Specificity is high and often excellent, from the Tophane arsenal register to the Wannsee table and the Libyan checkpoint economy, and the reconstructed openings give each chapter a concrete anchor. The costs are pacing and sameness: the argument does not develop much after chapter 1, so later chapters restate the office/classification point at almost every section break, and the prose leans hard on one rhetorical mould — the paired antithesis, the 'establishes A, not B' hedge, the aphoristic single-line closer. There is at least one internal slip (Detlef Jantzen named as both the 2009 excavator and the 1997 amateur finder), and the invented minor figures inside otherwise documentary scenes sit uneasily beside the book's own strictures about evidence. Light revision to vary chapter architecture, prune the repeated thesis restatements and break the antithesis habit would lift it considerably."
+}

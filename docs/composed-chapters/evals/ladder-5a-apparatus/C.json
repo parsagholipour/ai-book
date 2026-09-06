@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 7,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.5,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The bone does not contain the direction of intention. It contains the direction of force.",
+      "judgment": "The book's epistemic discipline at its best: a real methodological distinction stated in nine words, and it governs the reading of every later source."
+    },
+    {
+      "quote": "A captive became merchandise at the coast, merchandise became insured cargo at sea, cargo became labour on a plantation, labour became sugar in a warehouse, and sugar became credit for another purchase.",
+      "judgment": "The strongest single sentence in the book: the thesis (violence travels through institutional translations) enacted rather than asserted."
+    },
+    {
+      "quote": "Machinery enlarged the hand, but political authority chose where it would close.",
+      "judgment": "Elegant, but symptomatic — nearly every chapter lands on a closer of exactly this antithetical shape, so the elegance reads as a manufactured cadence by chapter 9."
+    },
+    {
+      "quote": "In 1789, John James Audubon painted the famous image often called *The Zong Massacre*, though the best-known visual representation of the event came later",
+      "judgment": "A straightforward factual fabrication that the same sentence then half-retracts; it undermines the credibility the surrounding source criticism works hard to earn."
+    },
+    {
+      "quote": "The Dar al-Hadith al-Nuriyya in Damascus, founded in 1172 after Nur al-Din's death had already occurred",
+      "judgment": "Internally incoherent — the chapter later dates his death to 1174; a careless seam in an otherwise carefully dated narrative."
+    },
+    {
+      "quote": "The Korean armistice and the Iran-Iraq ceasefire therefore point to different endings for organized violence.",
+      "judgment": "A comparison drawn against material the book never supplied: Korea appears only as an epigraph and passing mentions, never as a narrated case."
+    },
+    {
+      "quote": "The promise did not last beyond the counting of the people.",
+      "judgment": "Effective as a hinge in the Merv chapter, but it is the fourth or fifth isolated one-line paragraph of identical function; the device is on a schedule."
+    },
+    {
+      "quote": "Prison authorities communicated with municipal officials, and some did.",
+      "judgment": "A broken sentence left in the finished text — evidence that late polish was uneven."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Every chapter runs the same five-beat template: novelistic cold open with invented sensory detail and dialogue, pivot to a primary document, paired comparison of two polities, a steelman-then-qualify section, and a closing paragraph restating the institutional thesis.",
+      "instances": [
+        "The four men stood beneath the painted beams of the chapter house at Canterbury ... rain came off the close and struck the leaded windows in a thin, hard rattle.",
+        "The stone was wet when Narmer's men carried it into the open court at Nekhen. It lay on a mat of woven rushes, taller than a man's forearm"
+      ]
+    },
+    {
+      "pattern": "The 'neither case fits the simple contrast' pivot, used to close almost every paired comparison, so the reader learns to anticipate the refusal before the comparison is made.",
+      "instances": [
+        "Neither case fits a simple contrast between barbarian raiders and settled states.",
+        "Neither case fits the picture of nomads who only raided and moved on."
+      ]
+    },
+    {
+      "pattern": "Paired antithetical clauses in which one term supplies energy and the other supplies direction — the book's signature sentence rhythm, repeated dozens of times.",
+      "instances": [
+        "Suspicion supplied the energy. The prison, the warrant, the militia, and the emergency government supplied its reach.",
+        "The environment supplied pressure; kin obligations, remembered boundaries, and expectations about possession supplied its direction."
+      ]
+    },
+    {
+      "pattern": "Isolated single-sentence paragraphs deployed as aphoristic beats at roughly the same position in each chapter, giving the prose a metronomic rather than earned emphasis.",
+      "instances": [
+        "The religious reputation had to survive contact with administration.",
+        "A population appears as the object of a command."
+      ]
+    },
+    {
+      "pattern": "The thesis is restated in near-identical terms at each chapter's end rather than advanced, so cumulative argument is replaced by cumulative recapitulation.",
+      "instances": [
+        "not an eruption from human nature, but a chain in which stores, offices, bodies, walls, and sanctioned targets became parts of the same work.",
+        "Mounted warfare opened the empire, but the offices that counted people, moved messages, and collected revenue determined whether conquest became a passing raid or a government."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined comparative history with an unusually clear and consistently held thesis: aggression becomes historically consequential not through emotion, biology, or technology but through offices — the records, authorisations, and chains of command that convert impulse into policy. Its best qualities are real and rare: dense concrete specificity, genuine source criticism that distinguishes what a chronicle, a bone, a ledger, and a monument can each support, and prose that is precise without being dry. The cost is structural monotony. Every chapter runs the same five-beat template, closes on the same antithetical cadence, and restates rather than advances the argument, so a book that is excellent at chapter length becomes predictable at book length. Reasoning is generally careful but marred by a few hard errors (an invented Audubon painting of the Zong, a Damascus foundation dated after a death the book elsewhere places two years later) and one structural gap (a Korean armistice compared to but never narrated). There is no lexical AI slop — no stock connectives, no hollow abstraction — but the templating, the paired antitheses, and the scheduled one-line aphorisms are structural slop of a more sophisticated kind. With trimming, factual repair, and deliberate variation of chapter shape, this would be publishable non-fiction."
+}

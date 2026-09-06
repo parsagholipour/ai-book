@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 9,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 7,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 4
+  },
+  "overall": 7.2,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "The forensic record narrows possibilities; it does not turn possibilities into motives.",
+      "judgment": "A lucid early statement of the book’s strongest epistemic discipline."
+    },
+    {
+      "quote": "Confirmation of an act does not validate the category through which a conqueror explained an entire society.",
+      "judgment": "Precisely separates material corroboration from inherited ideological framing."
+    },
+    {
+      "quote": "Violence could open a corridor, but it could not by itself maintain the road.",
+      "judgment": "Memorably compresses the thesis that conquest depends on subsequent institutional labor."
+    },
+    {
+      "quote": "The violence at sea was an extreme act made intelligible by ordinary accounting.",
+      "judgment": "The Zong analysis effectively connects atrocity to routine commercial categories without sensationalism."
+    },
+    {
+      "quote": "The civilian population was mobilized even when it never received a uniform",
+      "judgment": "A strong reframing that makes logistical burdens on noncombatants conceptually visible."
+    },
+    {
+      "quote": "The text makes intention unusually plain, but the text alone did not kill anyone.",
+      "judgment": "Accurately insists on implementation, though it repeats a source-versus-action pivot used throughout the manuscript."
+    },
+    {
+      "quote": "The postwar decline is real in one register and unsettled in another.",
+      "judgment": "An appropriately qualified conclusion that refuses to turn one metric into an unsupported universal claim."
+    },
+    {
+      "quote": "The city did not merely house violence.",
+      "judgment": "Forceful in isolation, but representative of the manuscript’s frequent aphoristic hinge sentences."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Evidence is repeatedly bounded against explanations it cannot support.",
+      "instances": [
+        "The forensic record narrows possibilities; it does not turn possibilities into motives.",
+        "The grave provides the event. Other evidence must carry the cause."
+      ]
+    },
+    {
+      "pattern": "Administrative systems convert force into repeatable routines.",
+      "instances": [
+        "Imperial violence appears here after the battle as a schedule.",
+        "Registration became an address that could turn into a target."
+      ]
+    },
+    {
+      "pattern": "Short corrective negatives introduce a broader institutional account.",
+      "instances": [
+        "The city did not merely house violence.",
+        "The Mongols did not govern by replacing every existing elite with men from Mongolia."
+      ]
+    },
+    {
+      "pattern": "Compact antitheses separate capacity from implementation.",
+      "instances": [
+        "Divine kingship did not feed an army.",
+        "Norms could name the act. They could not by themselves protect the next trench or village."
+      ]
+    },
+    {
+      "pattern": "Chapter syntheses use open questions to preserve contingency.",
+      "instances": [
+        "When a crowd approaches a fortress, who can still offer a concession that will be believed?",
+        "Can the two cases be compared without making one the standard for the other?"
+      ]
+    }
+  ],
+  "summary": "The manuscript sustains a clear and valuable thesis: violence becomes historically consequential through institutions that classify, supply, authorize, record, and contest it, while surviving evidence must not be made to prove motives it cannot carry. Its chronological breadth, source awareness, and repeated distinction among intent, policy, implementation, and consequence provide unusual depth, and the best case studies make administrative mechanisms concrete. The fifteen-chapter progression is coherent, but chapters repeatedly use the same three-case architecture, corrective negative, evidence-limiting qualification, and synthetic question, making the book feel more templated and much longer than its argument requires. The prose is consistently polished and cautious, yet its uniform paragraph shapes, recurring antitheses, recap loops, and aphoristic hinge lines reduce voice and momentum. Moderate revision should preserve the evidentiary care while cutting repeated methodological restatements, varying chapter forms, and allowing selected cases more narrative and interpretive pressure."
+}

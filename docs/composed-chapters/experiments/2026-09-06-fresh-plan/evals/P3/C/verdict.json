@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 8,
+    "structure": 7,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 7,
+    "engagement": 6,
+    "pacing": 5,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 6.9,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "Aggression is thus a word that opens the inquiry only when it is followed by more exact names: assault, feud, raid, coercion, punishment, defence, conquest, humiliation, or war.",
+      "judgment": "The controlling thesis is stated early, in the book's own terms, and every later chapter genuinely works from it."
+    },
+    {
+      "quote": "The word translated as “man” may refer to a free or socially superior person, not to every human being living under Babylonian rule.",
+      "judgment": "Representative of the book's real strength: the argument is carried by close, specific reading of a source rather than by assertion."
+    },
+    {
+      "quote": "The absence of a projectile is not the absence of a shot.",
+      "judgment": "Compressed, memorable, and doing analytic work — the best of the book's aphoristic sentences."
+    },
+    {
+      "quote": "Human aggression had acquired an architecture large enough to hide its authors without removing their choices.",
+      "judgment": "A chapter closer that earns its rhetoric because the preceding twenty pages built the architecture it names."
+    },
+    {
+      "quote": "Claudianus may have disliked service, accepted it, valued it, or regarded it as work. His mother may have feared for him, resented the demand, or taken pride in his position.",
+      "judgment": "Chapter 7 is the book's weakest stretch: a document whose content is never quoted is analysed almost entirely through stacked hypotheticals."
+    },
+    {
+      "quote": "One record is rich in classification and poor in ordinary voices; the other is rich in physical traces and poor in intentions.",
+      "judgment": "Elegant in isolation, but this exact balanced-antithesis shape recurs so often that it stops reading as thought and starts reading as cadence."
+    },
+    {
+      "quote": "The Anglo-Egyptian force numbered roughly 25,000 men; the Mahdist army may have numbered between 40,000 and 50,000.",
+      "judgment": "Concrete figures, with their uncertainty stated rather than smoothed — the evidential discipline pays off in prose that can be trusted."
+    },
+    {
+      "quote": "The timeless-aggression thesis is right that fear, anger, and competition recur. It is wrong when recurrence becomes sameness.",
+      "judgment": "A useful foil, but this concede-then-correct move against the same named thesis returns in at least four chapters in nearly identical wording."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "The epistemic disclaimer — nearly every evidential paragraph ends by naming what the source cannot show. Individually admirable, collectively the book's dominant tic and the main source of its slack pacing.",
+      "instances": [
+        "The bones establish harm more securely than they establish the sequence of events that produced it.",
+        "The evidence is powerful at the level of event and limited at the level of motive."
+      ]
+    },
+    {
+      "pattern": "Chapters and sections close on an unanswered rhetorical question about archival silence, rather than on a claim the chapter has earned.",
+      "instances": [
+        "how many conflicts vanished before they left a body, and how many peaceful settlements left no trace because peace required nothing to be buried?",
+        "How much of an army can be heard through the voices that happened to survive?"
+      ]
+    },
+    {
+      "pattern": "Paired antithesis as terminal cadence: two clauses of matched length divided by a semicolon, one for each of the two cases just compared.",
+      "instances": [
+        "Archaeology makes recurrence visible; ethnography makes response visible.",
+        "The palace inscription freezes the king’s judgement into stone. The Athenian assembly allowed a second judgement to pursue the first across the sea."
+      ]
+    },
+    {
+      "pattern": "The “same X also Y” reversal, used to convert almost every institution into an ambivalence — protection is also subordination, defence is also provocation.",
+      "instances": [
+        "The same features that increase resilience can increase the reward of conquest.",
+        "Safety and vulnerability are produced together."
+      ]
+    },
+    {
+      "pattern": "Chapter architecture is fixed: two to four case studies, each opened with a dated scene-setting sentence, source-criticised, then explicitly compared to the previous case, then followed by an itemised list of pressures (mobility, kinship, exchange, policing, classification).",
+      "instances": [
+        "The monument stood in Babylon around 1750 BCE: a dark stone covered with a long inscription in Akkadian.",
+        "Political factions supplied names; neighbourhoods supplied targets; material pressure supplied time and bodies; rumour supplied urgency; policing determined whether the first attack ended or multiplied."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined comparative history of aggression from Nataruk and Hammurabi to Cambodia and the South African commission, organised around a clear and genuinely sustained thesis: recurring human capacities for harm are given their form by classification, authority, material conditions and learned expectation, so the historian's job is to keep the vocabulary close to what each source can bear. Its finest quality is evidential craft — observation is separated from inference case by case, figures come with their uncertainty attached, and normative texts are read for what a ruler wanted made legible rather than for what people did. The prose is clear, the voice consistent, and the specificity real: Hammurabi's laws 195–214, Jebel Sahaba's healed and unhealed wounds, Hamoukar's sling bullets, the Schlieffen railway tables, the Stockholm court series. What holds it back is repetition of method rather than poverty of material. The what-this-source-cannot-show disclaimer, the balanced semicolon antithesis, the chapter-ending question about archival silence and the concede-then-correct pass at the “timeless-aggression thesis” recur so regularly that by the later chapters the reader can predict the shape of a paragraph before reading it, and the Roman-letter chapter, built on a document never quoted, is largely hypotheticals. A firm pass cutting the redundant hedges, varying the closing cadences and either strengthening or absorbing Chapter 7 would leave a genuinely good book."
+}

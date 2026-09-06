@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 7,
+    "depth": 6,
+    "reasoning": 7,
+    "clarity": 8,
+    "voice": 6,
+    "engagement": 5,
+    "pacing": 4,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 6.5,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "His account is therefore narrow, but its narrowness is the condition under which the episode can be known.",
+      "judgment": "Excellent compression of the book's source-critical thesis; the kind of sentence the manuscript should produce more often."
+    },
+    {
+      "quote": "Jebel Sahaba should remain a graveyard before it becomes an emblem.",
+      "judgment": "Rare flash of genuine rhetorical force and a memorable formulation of the anti-symbolism argument."
+    },
+    {
+      "quote": "A ton in a shipping register measured carrying capacity, not the air, movement, privacy, or safety available to an individual captive.",
+      "judgment": "The strongest evidential passage in the book: a concrete legal artefact read closely enough to yield an argument."
+    },
+    {
+      "quote": "The state turned ancestry into an administrative instrument and then treated the result as though it were a natural distinction.",
+      "judgment": "Precise, load-bearing analysis; the Wannsee chapter is where close reading and thesis finally coincide."
+    },
+    {
+      "quote": "Order and harm can be produced by the same institutions. The question is always: order for whom, enforced by whom, and at whose expense?",
+      "judgment": "A genuine insight, but it and its variants recur in nearly every chapter, so its force erodes into a refrain."
+    },
+    {
+      "quote": "Technology altered the reach and organisation of violence without determining its motive by itself. ... Tools expand possibilities; institutions and ideas help select among them.",
+      "judgment": "Sound, but this exact claim is restated in at least ten chapters with almost identical wording \u2014 the book's single largest redundancy."
+    },
+    {
+      "quote": "It does not measure the aggressiveness of prehistoric people, explain why the attacks occurred, or establish that violence dominated their society.",
+      "judgment": "Symptomatic of a hedging reflex: the negative catalogue tells the reader what cannot be concluded far more often than the text advances a conclusion."
+    },
+    {
+      "quote": "What history can explain is how those possibilities were built. What it cannot decide for us is which one we will build next.",
+      "judgment": "An aphoristic paired-antithesis closer \u2014 polished but generic, and the paired-clause cadence it exemplifies dominates every chapter ending."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Chapter template: open with one artefact rendered in cinematic present detail, then dissolve into abstract source-criticism for the rest of the chapter. The concrete never returns except as a name.",
+      "instances": [
+        "At Jebel Sahaba, the cemetery does not present violence as a scene caught in motion. It presents bodies placed in the ground...",
+        "Palace reliefs turn warfare into a sequence of actions. At Nineveh, the walls of Sennacherib\u2019s palace show Lachish on a slope..."
+      ]
+    },
+    {
+      "pattern": "The 'it does not tell us X; it does tell us Y' negation pair, used as the default analytic move hundreds of times, so that the evidence is chiefly characterised by what it cannot support.",
+      "instances": [
+        "It does not give us the frequency of every act it names.",
+        "It shows that bodies were penetrated; it does not say whether the attackers understood themselves as defending a resource..."
+      ]
+    },
+    {
+      "pattern": "A fixed four-factor coda \u2014 economic pressure, technology, identity, institutions \u2014 reappears near the end of nearly every chapter in the same order and near-identical phrasing.",
+      "instances": [
+        "Economic pressure requires the same care. ... Technology alters the reach and organisation of violence without determining its motive by itself. ... Identity works through these arrangements.",
+        "Technology changed reach without supplying motive. ... Institutions give economic pressure a target by defining who belongs inside the obligation..."
+      ]
+    },
+    {
+      "pattern": "Symmetrical two-case comparison that is set up, developed, and then explicitly refused as a ranking \u2014 the same rhetorical arc in every chapter.",
+      "instances": [
+        "Nataruk and Man Bac do not produce a ranking of violent and peaceful societies.",
+        "The contrast is not between a violent empire and a humane one. Both systems joined order to coercion and capacity to inequality."
+      ]
+    },
+    {
+      "pattern": "Recap loops: chapters end with a list-summary of their own cases, followed by a caveat about archival unevenness, followed by an aphoristic paired-clause closer.",
+      "instances": [
+        "The reliefs of Lachish do not measure all Assyrian life. The tablets from Puzrish-Dagan do not record every use of grain... The Royal Cemetery at Ur does not represent every burial...",
+        "Amatus gives a Norman-centred account of Bari. The memory of Lindisfarne comes through a Christian record of shock and loss. ... Anna Komnene gives a sophisticated but partial view from the Byzantine court."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, intellectually serious world history of organised violence, built on a clear and sustained thesis: aggression has no fixed human shape, and what varies is the institutional machinery that names targets, supplies force, and records the result. The prose is precise, grammatically immaculate, and free of the usual lexical AI tells \u2014 no breathless hooks, no listicle rhetoric, no false intimacy \u2014 and the best passages (the Dolben Act ratios, the Wannsee euphemisms, the Jebel Sahaba wounds) read like competent academic writing. The book's failure is structural rather than verbal: it runs one analytic move \u2014 assert what a source cannot establish, then restate the institutions-not-nature thesis \u2014 several hundred times, and appends the same four-factor coda (economy, technology, identity, institutions) to nearly every chapter, so that fifteen chapters accumulate rather than build. Specificity is thin for the length: cases are named and framed but rarely quoted, dated, or numbered, and the relentless hedging withholds conclusions the evidence would support. The voice is consistent to the point of anonymity, with uniform paragraph shapes and paired-antithesis closers that read as manufactured rather than earned. Cutting perhaps a third of the caveats and forcing each chapter to reach a claim its predecessor did not would raise this substantially; as it stands it needs moderate revision, chiefly by compression."
+}

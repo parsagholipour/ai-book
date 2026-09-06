@@ -44,6 +44,7 @@ import { advanceJobStep, editOperationIdFromJob, updateJobProgress } from "../ru
 import { type ExportPageForRepair, type JobCompletion } from "../runtime/jobTypes.js";
 import { effectiveSavedWholeBookExportContext } from "../generation/wholeBookTolerance.js";
 import { runCompileManuscriptChecks } from "../generation/compileManuscriptChecks.js";
+import { unsupportedCaseClaimIssues } from "../generation/composedEvidenceResiduals.js";
 import { maybeEnqueueCharacterCandidatePreparation } from "./characters.js";
 import { runBoundedChapterQualityReview } from "./compileExportChapterReview.js";
 import { reviewManuscriptStructure } from "./compileExportStructuralReview.js";
@@ -475,6 +476,9 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
       expectedPageCount: input.targetPages,
       ...(input.language ? { language: input.language } : {})
     }),
+    // A case assertion the composed chapter's repair could not narrow: recorded on the chapter's
+    // report, matched against the pages that still carry it, and a blocking issue on the card.
+    ...(strategyComposesChapters(strategy) ? unsupportedCaseClaimIssues(pages) : []),
     ...(repairVerificationIncomplete
       ? [{
           code: "FINAL_QA_REPAIR_INCOMPLETE",

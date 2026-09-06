@@ -1,0 +1,57 @@
+[
+  {
+    "sampleId": "K1",
+    "usable": false,
+    "defects": [
+      {
+        "dimension": "sequence",
+        "claimId": "c8",
+        "quote": "A Latin patriarchate was founded at Jerusalem, with Dagobert, a haughty, ambitious prelate, as its first occupant",
+        "reason": "The passage establishes the founding but does not establish that it occurred after the surviving Crusaders returned home (c6), so the c6-to-c8 sequence relation is unsupported. The packet's own unknowns also acknowledge that this chronology is not provided."
+      },
+      {
+        "dimension": "canonical_metadata",
+        "quote": "These passages are attributed to an unknown author of The Greek and Eastern Churches, not to Fulcher of Chartres or the document named in the proposed episode.",
+        "reason": "This unknown incorrectly says the passages are not from the document named in the episode. The episode and every excerpt identify the same chapter of The Greek and Eastern Churches. The author attribution is appropriately provisional, but the asserted document mismatch is false and materially misstates provenance."
+      }
+    ],
+    "summary": "All eight claims are relevant and supported with appropriate passage-level attribution. The packet is unusable because it asserts an unsupported final sequence edge and includes a materially false provenance unknown; routine variations in abbreviated document-title formatting are harmless."
+  },
+  {
+    "sampleId": "K2",
+    "usable": true,
+    "defects": [],
+    "summary": "The episode is relevant, all five claims are fully entailed by Jowett's summary, attribution and modality are preserved, and the proposed sequence follows the penalty-stage events and proposals described. The unknowns appropriately limit legal detail, dialogue, motives, payment, and finer chronology."
+  },
+  {
+    "sampleId": "K3",
+    "usable": true,
+    "defects": [],
+    "summary": "The episode and seven claims accurately represent Morgenthau's account, including Talaat's allegations and denials as attributed statements rather than independently verified facts. Quantities, communications controls, diary attribution, and deliberation modality are preserved. The single-event sequence is valid, and the unknowns capture the main evidentiary limits."
+  },
+  {
+    "sampleId": "K4",
+    "usable": true,
+    "defects": [],
+    "summary": "The six claims are relevant and fully supported by the protocol passages. Actors, quantities, dates, modality, and the described labor, geographic, transit-ghetto, and transport measures are represented accurately. An empty sequence is appropriate, and the unknowns do not overstate what the excerpts establish."
+  },
+  {
+    "sampleId": "K5",
+    "usable": true,
+    "defects": [],
+    "summary": "All seven claims accurately summarize Keeley's arguments and retain his comparative scope and qualifications. The episode metadata is adequate despite harmless title and year variation between the two source records. The empty sequence and stated unknowns are appropriate for non-event comparative claims."
+  },
+  {
+    "sampleId": "K7",
+    "usable": false,
+    "defects": [
+      {
+        "dimension": "sequence",
+        "claimId": "c7",
+        "quote": "But what was done by the inhabitants of Scythopolis was the most impious and most highly criminal of all",
+        "reason": "The comparison marks Scythopolis as an especially grave example but does not establish that the Scythopolis events occurred after the killings in the other neighboring Syrian cities summarized by c6. Thus the c6-to-c7 sequence relation is unsupported."
+      }
+    ],
+    "summary": "The eight claims are faithful to Josephus's attributed account and preserve his interpretations, allegations, actor roles, and the conflicting Scythopolis quantity. The packet is unusable only because it imposes an unsupported chronological order between the general Syrian-city killings and the Scythopolis episode."
+  }
+]

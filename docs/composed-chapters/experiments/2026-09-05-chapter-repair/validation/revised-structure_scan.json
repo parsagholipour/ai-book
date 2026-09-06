@@ -1,0 +1,36 @@
+{
+  "flags": [
+    {
+      "metric": "sentence_burstiness",
+      "value": 0.547,
+      "threshold": "< 0.55 over at least 8 prose sentences",
+      "severity": "soft",
+      "detail": "Sentence lengths are unusually uniform for running prose.",
+      "suggestion": "Vary sentence length and cadence; if this is formal reference prose, review before treating it as blocking."
+    }
+  ],
+  "flagged": {
+    "sentence_burstiness": true
+  },
+  "metrics": {
+    "sentence_burstiness": 0.547,
+    "summary_sandwich": 0.008,
+    "paragraph_cv": 0.287,
+    "sentence_mean_len": 19.7,
+    "triad_density": 4.97,
+    "em_dash_per_1k": 0.497,
+    "bold_colon_listicle_count": 0,
+    "one_line_staccato_share": 0.0,
+    "connective_paragraph_openers": 0,
+    "every_template_openers": 0,
+    "signpost_density": 0.0,
+    "opener_unique_ratio": 0.587,
+    "top_opener_share": 0.159,
+    "max_consecutive_opener": 2,
+    "participial_closer_share": 0.0,
+    "conclusion_coda": false
+  },
+  "genre": "prose",
+  "prose_sentences": 102,
+  "prose_paragraphs": 22
+}

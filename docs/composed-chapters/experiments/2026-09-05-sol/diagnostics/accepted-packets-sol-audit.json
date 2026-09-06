@@ -1,0 +1,126 @@
+{
+  "packets": [
+    {
+      "attempt": "development-1a",
+      "caseId": "case-1-1",
+      "episodeTitle": "The Trial of Socrates",
+      "usableAsProposedCase": false,
+      "issues": [
+        {
+          "kind": "claim-content",
+          "claimId": "claim-3",
+          "claimQuote": "characterizes his speech after the penalty proposal as becoming more lofty and commanding rather than more conciliatory",
+          "sourceQuote": "And now the tone of the speech, instead of being more conciliatory, becomes more lofty and commanding. Anytus proposes death as the penalty",
+          "reason": "The claim places the change of tone after Anytus's penalty proposal, but the passage narrates the change of tone before introducing that proposal."
+        },
+        {
+          "kind": "sequence",
+          "claimId": "claim-3",
+          "claimQuote": "claim-1, claim-2, claim-3",
+          "sourceQuote": "he is convicted. And now the tone of the speech ... becomes more lofty and commanding. Anytus proposes death as the penalty ... [He is condemned to death.]",
+          "reason": "Claim 3 combines a change of tone that the source places between claims 1 and 2 with condemnation, which the source places after claim 2. The proposed sequence therefore cannot preserve both parts of claim 3."
+        }
+      ]
+    },
+    {
+      "attempt": "development-1a",
+      "caseId": "case-6-2",
+      "episodeTitle": "The First Crusade at Jerusalem",
+      "usableAsProposedCase": false,
+      "issues": [
+        {
+          "kind": "source-episode-mismatch",
+          "sourceQuote": "Unknown author of The Greek and Eastern Churches",
+          "reason": "The proposed document and person are Fulcher of Chartres and his History of the Expedition to Jerusalem, but every supplied passage is from The Greek and Eastern Churches and is attributed to an unknown author. The passages concern the First Crusade, including Jerusalem, but do not supply the proposed Fulcher episode or Fulcher's narrative."
+        }
+      ]
+    },
+    {
+      "attempt": "development-1a",
+      "caseId": "case-12-1",
+      "episodeTitle": "The Armenian Deportations during World War I",
+      "usableAsProposedCase": true,
+      "issues": []
+    },
+    {
+      "attempt": "development-1a",
+      "caseId": "case-13-1",
+      "episodeTitle": "The Wannsee Protocol",
+      "usableAsProposedCase": false,
+      "issues": [
+        {
+          "kind": "sequence",
+          "claimId": "claim-2",
+          "claimQuote": "claim-1, claim-2, claim-3",
+          "sourceQuote": "At the beginning of the discussion ... Heydrich, reported that the Reich Marshal had appointed him delegate",
+          "reason": "The protocol passage explicitly places Heydrich's report at the beginning of the discussion, while the proposed sequence puts the emigration report in claim 1 before it. The supplied passages do not document that proposed ordering."
+        }
+      ]
+    },
+    {
+      "attempt": "development-1a-retry",
+      "caseId": "case-2-3",
+      "episodeTitle": "War before agriculture in ethnographic comparison",
+      "usableAsProposedCase": true,
+      "issues": []
+    },
+    {
+      "attempt": "development-1a-retry",
+      "caseId": "case-4-3",
+      "episodeTitle": "The revolt of the Jews against Rome",
+      "usableAsProposedCase": false,
+      "issues": [
+        {
+          "kind": "source-episode-mismatch",
+          "sourceQuote": "But we have given a more accurate account of these things in the books of the Jewish war. I only mention them now",
+          "reason": "The proposed document is The Jewish War, but both supplied passages are from The Life of Flavius Josephus. The quoted sentence expressly distinguishes the present account from the account in The Jewish War. The passages concern the revolt, but they cannot serve as the proposed documentary case."
+        }
+      ]
+    },
+    {
+      "attempt": "development-1a-retry",
+      "caseId": "case-3-1",
+      "episodeTitle": "The Standard Inscription of Gudea",
+      "usableAsProposedCase": false,
+      "issues": [
+        {
+          "kind": "source-episode-mismatch",
+          "sourceQuote": "The ancient Babylonian king Gudea states incidentally that he has built the temple according to the Number Fifty, and erected within it a mausoleum of cedar wood.",
+          "reason": "The proposed document is Gudea's Cylinders in Pritchard and the episode is the Standard Inscription, but the sole passage is Alfred Jeremias's secondary discussion and only mentions an unidentified statement by Gudea incidentally. It does not identify or reproduce the proposed inscription."
+        }
+      ]
+    },
+    {
+      "attempt": "development-1a-retry",
+      "caseId": "case-5-3",
+      "episodeTitle": "The Iroquois Mourning War",
+      "usableAsProposedCase": false,
+      "issues": [
+        {
+          "kind": "source-episode-mismatch",
+          "sourceQuote": "Another historian of the Indians was Dr. Cadwallader Colden",
+          "reason": "One passage is only a secondary biographical and bibliographical notice about Colden; it supplies no mourning-war account from Colden's History of the Five Indian Nations."
+        },
+        {
+          "kind": "source-episode-mismatch",
+          "claimId": "c3",
+          "claimQuote": "Germaine's promises to redress grievances after the war ... securing Brant's adhesion to the English cause",
+          "sourceQuote": "Probably on Germaine, more than on any other man, must responsibility rest, for Brant's destructive zeal in the border warfare.",
+          "reason": "The Brant-Germaine passage concerns adhesion to the English cause and later border warfare, not an Iroquois mourning war or Colden's document. Claims c3-c5 therefore do not concern the proposed episode."
+        },
+        {
+          "kind": "sequence",
+          "claimQuote": "c1, c2",
+          "sourceQuote": "In the second of these speeches it is plain that Germaine ... made sure of Brant's adhesion to the English cause.",
+          "reason": "The proposed sequence omits claims c3-c5 entirely, and the supplied excerpts provide no documented chronological relation between the Colden biographical notice and the separate Brant-Germaine discussion."
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "packetsPresent": 8,
+    "packetsWithDefects": 6,
+    "packetsWithNoDefectFound": 2,
+    "note": "All eight supplied packets were read before judgments were made. No external knowledge or files were used as evidence."
+  }
+}

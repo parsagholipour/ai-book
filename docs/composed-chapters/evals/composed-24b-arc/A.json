@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 7,
+    "reasoning": 8,
+    "clarity": 8,
+    "voice": 8,
+    "engagement": 6,
+    "pacing": 6,
+    "craft": 7,
+    "slopResistance": 6
+  },
+  "overall": 7.3,
+  "readiness": "Needs moderate revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A wound is an event in a body. It is not automatically an event between groups.",
+      "judgment": "The book's governing distinction stated with real economy; this is the thesis in two sentences and it is earned rather than asserted."
+    },
+    {
+      "quote": "The first cities did not cure aggression. They gave it offices, rations, walls, formations, and names.",
+      "judgment": "Strong close, but exemplifies the manuscript's most repeated tic: the aphoristic one-line paragraph capping a chapter with a noun-list."
+    },
+    {
+      "quote": "A report intended to show military efficiency could therefore turn a human body into a receipt.",
+      "judgment": "The best sentence in the book — the administrative thesis compressed into a single concrete image."
+    },
+    {
+      "quote": "Gunfire broke out as protesters entered the inner yard, though the surviving account summarized in the evidence does not establish every movement that produced the exchange.",
+      "judgment": "A frame break: 'the evidence' and, elsewhere, 'the research note gives a range from 1.2 million to 10 million' expose the drafting apparatus inside the finished prose."
+    },
+    {
+      "quote": "Parker is right about connection. Black is right about unevenness.",
+      "judgment": "The recurring adjudication formula — a symmetrical split verdict that resolves almost every historiographical dispute in the book and blunts its argumentative bite."
+    },
+    {
+      "quote": "The grave is a sample, sometimes an unusually grave sample, and samples do not become populations merely because their contents are dramatic.",
+      "judgment": "An accidental pun in an otherwise sober register; small but symptomatic of uneven final polish."
+    },
+    {
+      "quote": "The Barbados Code of 1661 defined enslaved people as “goods and Chattels” and authorized owners extensive powers of punishment, including mutilation and burning alive.",
+      "judgment": "Chapter 10 restates Chapter 8's Barbados and Codrington material almost point for point, including the 300 people and 763 acres — pure redundancy rather than deliberate callback."
+    },
+    {
+      "quote": "The historian has to resist the scene that the object appears to demand and first describe the object with enough care that several possible scenes remain available.",
+      "judgment": "Clear, disciplined statement of method that the following fourteen chapters actually obey — a genuine coherence strength."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Two named scholars are introduced as opponents, each granted a partial victory, and the chapter's 'verdict' is a balanced concession rather than a claim.",
+      "instances": [
+        "Morgan is right to make conquest intelligible through the Mongol state; Weatherford is right to insist that the state generated connections beyond the battlefield.",
+        "Cooper’s correction is necessary, but it does not dissolve Mamdani’s structure."
+      ]
+    },
+    {
+      "pattern": "The 'can show X / cannot show Y' epistemic couplet, used dozens of times to close paragraphs about a source or artifact.",
+      "instances": [
+        "It can show that the dead were treated as a population of concern... It cannot identify the intentions of those who shot the projectiles.",
+        "It can tell us that labor was directed toward a collective enclosure... The structure cannot tell us whether fear preceded political consolidation."
+      ]
+    },
+    {
+      "pattern": "Every chapter opens on a single artifact or site rendered in slow physical description, then pivots to what the object 'cannot' carry — an identical hook shape fifteen times over.",
+      "instances": [
+        "At Çatalhöyük, a house was a place for sleeping, cooking, storing grain, burying the dead...",
+        "An arsenal register does not resemble a battlefield. It does not show a horse falling, a wall collapsing..."
+      ]
+    },
+    {
+      "pattern": "Sequences of bare nouns or verbs strung in fours to sixes as a rhythmic substitute for analysis.",
+      "instances": [
+        "harvest, collection, storage, measurement, assignment, movement, and repair",
+        "They fled, slowed, broke, fought, negotiated, remembered, and wrote."
+      ]
+    },
+    {
+      "pattern": "Isolated one-sentence paragraphs deployed as section hinges, always in a portentous declarative register.",
+      "instances": [
+        "The royal image was a lesson.",
+        "A ledger does not travel evenly across a landscape."
+      ]
+    }
+  ],
+  "summary": "This is a disciplined, intellectually serious global history of organized aggression whose thesis — that the historically decisive variable is not the human capacity to harm but the administrative arrangements that make harm repeatable, supplied and remembered — is stated in Chapter 1 and genuinely sustained through fifteen chapters and back into the conclusion. Its evidentiary manners are its greatest asset: the prose is scrupulous about the difference between a wound, an event, a conflict and a social order, and it repeatedly refuses inferences the sources cannot carry. The cost is a heavy structural formula: an artifact opening, a slow physical description, an epistemic 'can show / cannot show' couplet, two named historians granted symmetrical partial victories, and an aphoristic one-line closer, repeated with little variation from Çatalhöyük to Kigali. Redundancy compounds this, with Jebel Sahaba re-argued across two chapters and the Barbados code and Codrington estates restated nearly verbatim in Chapter 10 after Chapter 8, and a handful of sentences leak the drafting apparatus into the text ('the surviving account summarized in the evidence', 'the research note gives a range'). Sentence-level craft is clean and the voice is consistent and dignified, but unrelieved sobriety and the split-verdict habit hold engagement and argumentative force below what the research supports. With the duplicated case material cut, the adjudication formula varied, and the process artifacts removed, this would be a genuinely strong book."
+}

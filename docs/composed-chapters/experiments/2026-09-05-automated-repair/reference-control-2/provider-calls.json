@@ -1,0 +1,21 @@
+[
+  {
+    "id": "cmto6pq2x00008np23dxcku5q",
+    "provider": "openai",
+    "model": "gpt-5.6-luna",
+    "purpose": "plan-developmental-edit",
+    "promptTokens": 69378,
+    "outputTokens": 239,
+    "costHint": 0.017631,
+    "durationMs": 5634,
+    "metadata": {
+      "callId": "db0f0c79-f978-444d-b2da-32cc1c065bf6",
+      "operation": "text.generateJson",
+      "liveStatus": "settled",
+      "provisional": false,
+      "reasoningTokens": 226,
+      "outputTokensEstimated": false,
+      "promptTokensEstimated": false
+    }
+  }
+]

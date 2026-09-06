@@ -1,0 +1,45 @@
+[
+  {
+    "sampleId": "P1",
+    "usable": false,
+    "defects": [
+      {
+        "dimension": "whole-claim entailment",
+        "claimId": "c2",
+        "quote": "At length Jerusalem was surrounded, besieged, and taken (July 15, 1099). [ 5 ] Then, with lighted torches, but still among scenes of blood, the Crusaders made their way to the goal of their difficult undertaking\u2014the Holy Sepulchre.",
+        "reason": "The passage places the torchlit movement after Jerusalem had been taken and says that the Crusaders made their way to the Holy Sepulchre. It does not say that they entered Jerusalem with the torches. The procession and bloodshed portions of the claim are supported, but the claimed act of entering the city is not."
+      },
+      {
+        "dimension": "event chronology",
+        "claimId": "c3",
+        "quote": "Godfrey died the next year, and his brother Baldwin, when summoned from Edessa to succeed him, being less scrupulous, allowed himself to be crowned at Bethlehem ( a.d. 1100).",
+        "reason": "The sequence places all of c3 before c5, but c3 bundles Godfrey's initial acceptance of rule with his later death and Baldwin's coronation in 1100. The return in c5 follows fulfillment of the Crusaders' vow and belongs in the post-capture sequel; c3 therefore straddles that intervening event and cannot occupy a single slot before c5."
+      }
+    ],
+    "summary": "Substantive defects: c2 overstates the cited passage by turning a post-capture movement toward the Holy Sepulchre into entry into Jerusalem, and the sequence treats the multi-event c3 as wholly earlier than c5 even though c3 spans an intervening return event. The remaining claims are attributable to and entailed by their passages. No material disagreement or unknown is omitted, and no harmless metadata correction is needed."
+  },
+  {
+    "sampleId": "P3",
+    "usable": true,
+    "defects": [
+      {
+        "dimension": "canonical metadata (harmless)",
+        "quote": "such is the entry which I find in my diary on August 3d",
+        "reason": "The episode date gives only early April, although the packet also uses a diary entry dated August 3 and conversations whose dates are not fully established. This is a harmless metadata narrowing because the title and why still identify the case and the unknowns expressly preserve the chronological uncertainty."
+      }
+    ],
+    "summary": "No substantive defect. Every claim preserves Morgenthau's or Talaat's attribution, including the distinction between Talaat's assertions and Morgenthau's impression. The disagreements correctly retain the tension in policy scope and motive. Harmless metadata edit: broaden the episode date beyond early April or leave it unspecified."
+  },
+  {
+    "sampleId": "P5",
+    "usable": true,
+    "defects": [],
+    "summary": "No substantive defect and no necessary metadata edit. The claims are relevant to the named protocol, preserve the document's quantities and official attributions, and do not expand the euphemistic language beyond what the passages state. The partial sequence from the reported emigration total to the later prohibition is valid; omitted chronology remains covered by the unknowns."
+  },
+  {
+    "sampleId": "P6",
+    "usable": true,
+    "defects": [],
+    "summary": "No substantive defect and no necessary metadata edit. The claims consistently attribute assertions and interpretations to Josephus, preserve the actors and causal characterizations in the passages, and follow the underlying event order from hopes of revolt through failed persuasion, Roman defeat, retaliatory killings, and Josephus's concluding interpretation. The unknowns appropriately limit dates, scale, motives, and corroboration."
+  }
+]

@@ -1,0 +1,143 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => {
+  const tx = { page: { updateMany: vi.fn() }, chapter: { update: vi.fn() }, planVersion: { findUnique: vi.fn(), updateMany: vi.fn() } };
+  return {
+    tx, transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback(tx)),
+    state: vi.fn(), edit: vi.fn(), line: vi.fn(), evidence: vi.fn()
+  };
+});
+vi.mock("@book-maker/db", () => ({ Prisma: {}, prisma: { $transaction: mocks.transaction, planVersion: mocks.tx.planVersion } }));
+vi.mock("../runtime/jobLifecycle.js", () => ({ updateJobProgress: vi.fn() }));
+vi.mock("./composedChaptersState.js", async (original) => ({ ...await original<object>(), loadComposedBookState: mocks.state }));
+vi.mock("@book-maker/core", async (original) => ({ ...await original<object>(), editManuscriptDevelopment: mocks.edit, editChapter: mocks.line, reviewChapterCaseEvidence: mocks.evidence }));
+
+import { FakeTextModelAdapter, makeFallbackPlan, chapterWordBudget, FIGURE_WORD_EQUIVALENT, type CreateProjectInput, type ChapterComposition } from "@book-maker/core";
+import { commitComposedDevelopment, composedManuscriptDigest, runComposedDevelopmentalEdit } from "./composedDevelopmentalEdit.js";
+
+const input = { prompt: "Explain legal appeals", category: "EDUCATION", targetPages: 1, complexity: 3, language: "en", temperature: 0.4, mediaSettings: { fullIllustrations: false, illustrationCadence: "manual", includeCover: false, coverTemplate: "auto", finalReview: true, toneProfile: "neutral" } } as CreateProjectInput;
+const chapter = { index: 1, title: "Appeal", targetPages: 1, summary: "What an appeal changes", keyBeats: ["Judgment"] };
+const plan = { ...makeFallbackPlan(input), chapters: [chapter] };
+const setup = { chapter, startPage: 1, endPage: 1 };
+const composition = { index: 1, throughLine: "The judgment", landing: "The appeal reopened the claim", sections: [{ subject: "Verdict", form: "explanation", share: 1 }] } as unknown as ChapterComposition;
+const prose = Array.from({ length: 44 }, (_, i) => `Record ${i} supplies another detail about the disputed original judgment.`).join("\n\n");
+const page = { index: 1, status: "PENDING", title: "Verdict", markdown: prose, summary: "Initial finding", imagePrompt: null };
+const marker = { version: 1, sourceDigest: "before", resultDigest: "after", beforeWords: 440, afterWords: 440, appliedGroups: ["move"], rejectedGroups: [] };
+
+function runOptions() {
+  return {
+    projectId: "project", planId: "plan", input, plan, textModel: new FakeTextModelAdapter(input),
+    setups: [setup], chapterIds: new Map([[1, "chapter"]]), finalText: new Map([[1, prose]]), reports: new Map(),
+    compositionFor: () => composition,
+    composeOptionsFor: vi.fn(async () => ({ input, plan, chapter, composition, textModel: new FakeTextModelAdapter(input), previousChapters: [], researchNotes: [], continuityNotes: [], startPage: 1, endPage: 1 })) as unknown as Parameters<typeof runComposedDevelopmentalEdit>[0]["composeOptionsFor"],
+    describePages: vi.fn(async (_setup: unknown, markdown: string) => [{ index: 1, title: "New title", markdown, summary: "New disposition", continuityNotes: ["Appeal ordered"] }]),
+    lineEdit: true
+  };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.state.mockResolvedValue({ chapters: [], pages: [page] });
+  mocks.tx.planVersion.findUnique.mockResolvedValue({ planningPackage: plan });
+  mocks.tx.page.updateMany.mockResolvedValue({ count: 1 });
+  mocks.tx.planVersion.updateMany.mockResolvedValue({ count: 1 });
+  mocks.edit.mockImplementation(async (options) => ({ chapters: options.chapters, plan: { groups: [] }, appliedGroups: [], rejectedGroups: [], beforeWords: 440, afterWords: 440 }));
+  mocks.line.mockImplementation(async (options) => ({ markdown: options.markdown, changed: false }));
+  mocks.evidence.mockResolvedValue({ issues: [], dropped: [] });
+});
+
+describe("developmental edit persistence and restart", () => {
+  it("skips an already committed manuscript even if pagination changed whitespace", async () => {
+    const resultDigest = composedManuscriptDigest([{ index: 1, markdown: prose.replaceAll("\n\n", "\n\n\n") }]);
+    mocks.tx.planVersion.findUnique.mockResolvedValue({ planningPackage: { ...plan, developmentalEdit: { version: 1, resultDigest } } });
+    await runComposedDevelopmentalEdit(runOptions());
+    expect(mocks.edit).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("does not rewrite pages once finalization has begun", async () => {
+    mocks.state.mockResolvedValue({ chapters: [], pages: [{ ...page, status: "COMPLETED" }] });
+    await runComposedDevelopmentalEdit(runOptions());
+    expect(mocks.edit).not.toHaveBeenCalled();
+  });
+
+  it("runs the final line edit without length padding and saves pages, derived briefs and marker together", async () => {
+    const options = runOptions();
+    await runComposedDevelopmentalEdit(options);
+    expect(mocks.line).toHaveBeenCalledWith(expect.objectContaining({ allowExtension: false }));
+    expect(mocks.transaction).toHaveBeenCalledOnce();
+    expect(mocks.tx.page.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ markdown: prose, status: "PENDING", title: "Verdict", imagePrompt: null }) }));
+    expect(mocks.tx.chapter.update.mock.calls[0]![0].data.productionBrief.pages[0].requiredContinuity).toEqual(["Appeal ordered"]);
+    expect(mocks.tx.planVersion.updateMany.mock.calls[0]![0].data.planningPackage.developmentalEdit.resultDigest).toBe(composedManuscriptDigest([{ index: 1, markdown: prose }]));
+  });
+
+  it("repairs an unsupported case claim twice, then saves the pages with the residual recorded for the compile to flag", async () => {
+    mocks.evidence.mockResolvedValue({ issues: ["“The verdict has been reversed”: The record says the appeal is pending."], dropped: [] });
+    await runComposedDevelopmentalEdit(runOptions());
+    expect(mocks.line).toHaveBeenCalledTimes(3);
+    expect(mocks.line.mock.calls[2]![0].readerNotes[0]).toContain("Delete the unsupported detail outright");
+    expect(mocks.transaction).toHaveBeenCalledOnce();
+    const brief = mocks.tx.chapter.update.mock.calls[0]![0].data.productionBrief;
+    expect(brief.report.evidence).toMatchObject({ findings: 1, repairs: 2, dropped: 0, unresolved: [{ quote: "The verdict has been reversed", reason: "The record says the appeal is pending." }] });
+  });
+
+  it("develops the chapters furthest under budget when the developmental edit takes the book under its floor, then commits", async () => {
+    const { min } = chapterWordBudget(input, 1);
+    const cut = prose.split("\n\n").slice(0, Math.floor(min / 10) - 5).join("\n\n");
+    const grown = Array.from({ length: Math.floor(min / 10) + 6 }, (_, i) => `Record ${i} supplies another detail about the disputed original judgment.`).join("\n\n");
+    mocks.edit.mockImplementation(async () => ({ chapters: [{ index: 1, title: "Appeal", markdown: cut }], plan: { groups: [{ id: "cut", changes: [{ chapterIndex: 1 }] }] }, appliedGroups: ["cut"], rejectedGroups: [], beforeWords: 440, afterWords: 250 }));
+    mocks.line.mockImplementation(async (options) => ({ markdown: options.allowExtension === true ? grown : options.markdown, changed: options.allowExtension === true }));
+    const options = runOptions();
+    await runComposedDevelopmentalEdit(options);
+    expect(mocks.line.mock.calls.some((call) => call[0].allowExtension === true)).toBe(true);
+    expect(mocks.transaction).toHaveBeenCalledOnce();
+    const marker = mocks.tx.planVersion.updateMany.mock.calls[0]![0].data.planningPackage.developmentalEdit;
+    expect(marker.extension).toEqual({ chapters: [1], addedWords: 110 });
+    expect(marker).not.toHaveProperty("lengthShortfall");
+    expect(options.finalText.get(1)).toBe(grown);
+  });
+
+  it("records the shortfall and still commits when the extension cannot buy the floor back", async () => {
+    const { min } = chapterWordBudget(input, 1);
+    const cut = prose.split("\n\n").slice(0, Math.floor(min / 10) - 5).join("\n\n");
+    mocks.edit.mockImplementation(async () => ({ chapters: [{ index: 1, title: "Appeal", markdown: cut }], plan: { groups: [] }, appliedGroups: [], rejectedGroups: [], beforeWords: 440, afterWords: 250 }));
+    const options = runOptions();
+    await runComposedDevelopmentalEdit(options);
+    expect(mocks.line.mock.calls.some((call) => call[0].allowExtension === true)).toBe(true);
+    expect(mocks.transaction).toHaveBeenCalledOnce();
+    const marker = mocks.tx.planVersion.updateMany.mock.calls[0]![0].data.planningPackage.developmentalEdit;
+    expect(marker.lengthShortfall).toBe(50);
+    expect(marker.extension).toEqual({ chapters: [], addedWords: 0 });
+  });
+
+  it("rejects a changed plan before starting any linked page writes", async () => {
+    await expect(commitComposedDevelopment({ projectId: "project", planId: "plan", expectedPlan: { title: "An old plan" }, originalPages: [], chapters: [], marker })).rejects.toThrow("plan changed");
+    expect(mocks.tx.page.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("requires every staged page exactly once in the coordinated rewrite", async () => {
+    await expect(commitComposedDevelopment({ projectId: "project", planId: "plan", expectedPlan: plan, originalPages: [page], chapters: [], marker })).rejects.toThrow("every staged page exactly once");
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("holds a figure outside both edits, preserves it exactly and deducts its space from the word budget", async () => {
+    const fence = '```figure\n{"kind":"timeline","title":"Court dates","events":[{"date":"1783","label":"First verdict"},{"date":"1784","label":"Appeal"}]}\n```';
+    const short = prose.split("\n\n").slice(0, 28).join("\n\n");
+    const markdown = `${short}\n\n${fence}`;
+    mocks.state.mockResolvedValue({ chapters: [], pages: [{ ...page, markdown }] });
+    const options = runOptions(); options.finalText.set(1, markdown);
+    await runComposedDevelopmentalEdit(options);
+    const { min, target, max } = chapterWordBudget(input, 1, { figureWords: FIGURE_WORD_EQUIVALENT });
+    expect(mocks.edit.mock.calls[0]![0].wordBudget).toEqual({ min, target, max });
+    expect(mocks.edit.mock.calls[0]![0].chapters[0].markdown).not.toContain("```figure");
+    expect(mocks.line.mock.calls[0]![0].markdown).not.toContain("```figure");
+    expect(options.finalText.get(1)).toContain(fence);
+    expect(options.finalText.get(1)).not.toContain("[Figure:");
+  });
+
+  it("throws inside the transaction when a staged page was concurrently edited", async () => {
+    mocks.tx.page.updateMany.mockResolvedValue({ count: 0 });
+    await expect(runComposedDevelopmentalEdit(runOptions())).rejects.toThrow("staged page changed");
+    expect(mocks.tx.planVersion.updateMany).not.toHaveBeenCalled();
+  });
+});

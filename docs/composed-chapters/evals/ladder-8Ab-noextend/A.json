@@ -1,0 +1,89 @@
+{
+  "scores": {
+    "thesis": 9,
+    "structure": 8,
+    "depth": 8,
+    "reasoning": 8,
+    "clarity": 9,
+    "voice": 8,
+    "engagement": 7,
+    "pacing": 6,
+    "craft": 8,
+    "slopResistance": 6
+  },
+  "overall": 7.7,
+  "readiness": "Needs light revision",
+  "slopSeverity": "Medium",
+  "highlights": [
+    {
+      "quote": "A fracture tells us that force entered a life; it does not tell us whether that force came from an assault, a fall from a roof, an accident during work, or a conflict between settlements. The body records violence more readily than intention.",
+      "judgment": "Exemplary handling of evidence: states precisely what the trace can and cannot support, and does so in the book's own idiom rather than a borrowed hedge."
+    },
+    {
+      "quote": "A divine net and a military line could represent victory; only administration could collect it.",
+      "judgment": "The thesis compressed into one line that earns itself from the preceding paragraphs on the grain payment; also a specimen of the aphoristic closer the book overuses."
+    },
+    {
+      "quote": "The Einsatzgruppe report gives an operation, a date, and a total. Pronicheva gives the approach to the ravine, the crowd's confusion, the nearness of the shooters, and the decision to lie still among corpses.",
+      "judgment": "The document/testimony pairing is the book's strongest analytic move, here used with restraint and real moral weight."
+    },
+    {
+      "quote": "Regions with long bureaucratic traditions appear more densely violent partly because their officials wrote more of what they did.",
+      "judgment": "A genuinely useful methodological point, stated once, cleanly, without being belaboured."
+    },
+    {
+      "quote": "The comparison is not between a violent Europe and a peaceful Africa.",
+      "judgment": "A disclaimer template that recurs with only the nouns swapped across at least four chapters; by the third instance it reads as a reflex, not a caution."
+    },
+    {
+      "quote": "Assyria altered the social map by displacement. Persia arranged obligations around the map it found.",
+      "judgment": "Elegant, but symptomatic: the paired antithesis is the book's default cadence for closing almost every comparison."
+    },
+    {
+      "quote": "Charles moved towards the standard, but Lord Carnarvon seized his bridle.",
+      "judgment": "The Naseby set-piece drops into confident novelistic detail that the book's own epistemology elsewhere would refuse; a rare lapse of internal discipline about what the sources can support."
+    },
+    {
+      "quote": "Across the steppe and beyond it, power travelled mounted, documented, supplied, and prepared to punish.",
+      "judgment": "A four-beat cadenced closer of exactly the kind that ends nearly every chapter; individually fine, cumulatively formulaic."
+    }
+  ],
+  "recurringPatterns": [
+    {
+      "pattern": "Two-case comparative chassis in every chapter: pick two societies or sites, deny a moralised contrast, then split the difference by institutional form. The chapters become architecturally interchangeable.",
+      "instances": [
+        "This contrast is not one between a violent society and a peaceful one. Mexica warfare was not uncontrolled ferocity, and Haudenosaunee diplomacy did not abolish killing.",
+        "The comparison is not Ottoman permissiveness against Japanese pacification. Ottoman officials also licensed, collected, and restricted weapons."
+      ]
+    },
+    {
+      "pattern": "Paired antithesis as terminal cadence: two short parallel clauses assigning one behaviour to each case, used to close sections and chapters throughout.",
+      "instances": [
+        "One system made war productive for an imperial capital; the other could make war survivable for a community by changing the meaning of the person taken.",
+        "The army created the opening; offices filled it."
+      ]
+    },
+    {
+      "pattern": "List-of-objects recapitulation: an inventory of the chapter's exhibits, each assigned a one-clause verdict, deployed as a summary paragraph. Effective once, mechanical by the tenth use.",
+      "instances": [
+        "The ledger shows value; the plan shows confinement; Equiano's narrative restores a life; the Zong records show a court translating killing into loss; the Code Noir shows a king's government making domination durable.",
+        "At Jebel Sahaba, recurrent attacks accumulated in a cemetery. At Nataruk, a lakeshore gathering ended with bodies left behind. At Talheim and Crow Creek, concentrated populations made a place itself worth attacking."
+      ]
+    },
+    {
+      "pattern": "Symmetrical double negation ('neither proves X nor Y', 'nor does the absence of A mean B') used to withhold a conclusion the chapter has already reached, so the hedge adds caution rather than information.",
+      "instances": [
+        "None of this proves a culture of violence, and the absence of fortifications proves no culture of peace.",
+        "Neither case supports a universal law that cities always produce the same violence."
+      ]
+    },
+    {
+      "pattern": "The thesis restated in near-identical words at the close of most chapters, producing a recap loop across 55,000 words: violence becomes historically extensive when an office selects, records, and repeats it.",
+      "instances": [
+        "Force became government when it could be repeated according to a record.",
+        "Aggression became administrative when the state could repeat such demands and punish refusal through offices that appeared separate from conquest."
+      ]
+    }
+  ],
+  "summary": "This is a genuinely coherent work of comparative history with an argument it can state and defend: aggression is a human constant, but organised harm is made by offices, records, categories and schedules, and the surviving evidence is shaped by the same institutions. The specificity is real and sustained — Eannatum's grain clause, the Persepolis ration tablets, the Brookes tonnage rule, the Wannsee population table, the Rwandan identity card — and the epistemic handling is unusually disciplined, repeatedly saying what a bone, a stele or a chronicle's death toll cannot support. Prose is clean, concrete and consistent in register, with almost none of the lexical tells of machine writing: no stock transitions, no 'in today's world', very few empty abstractions. The weakness is structural rather than verbal. Every chapter runs the same chassis (two cases, a denied moral contrast, an institutional split), every section closes on a paired antithesis or an inventory recap, and the thesis is restated so often that by chapter eleven the book is confirming itself rather than developing. Pacing suffers accordingly: material repeats across chapters (Jebel Sahaba, Talheim, Juvaini's Baghdad), and the two novelistic set-pieces at Naseby and the Somme break the book's own evidentiary discipline. Light revision — pruning the terminal cadences, varying chapter architecture, cutting perhaps a fifth of the recapitulation — would leave a strong book."
+}
