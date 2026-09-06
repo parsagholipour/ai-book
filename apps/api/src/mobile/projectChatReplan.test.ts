@@ -8,6 +8,7 @@ vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMoc
 import { reserveCredits } from "@book-maker/db/billing";
 
 import { enqueueGenerationJob } from "../queue.js";
+import { fakeDecideModel } from "../testing/bookEditIntentFixtures.js";
 import {
   approvedPlanRecord,
   bearer,
@@ -30,6 +31,72 @@ import {
 describe("mobile project chat book replan", () => {
   beforeEach(resetMobileHarness);
   afterEach(teardownMobileHarness);
+
+  it.each(["available", "unavailable"])("quotes Generate again and waits for Apply with the router %s", async (availability) => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(projectRecord({
+      id: "project-1",
+      status: "COMPLETE",
+      currentPlanId: "plan-1",
+      currentPlan: approvedPlanRecord(),
+      pages: generatedPages()
+    }));
+    const routingTextModel = fakeDecideModel({
+      action: "answer",
+      confidence: 0.85,
+      reasoning: "Generate again is ambiguous and not a specific change request.",
+      assistantMessage: "I'm not sure what you'd like me to regenerate.",
+      clarification: "none",
+      pageIndexes: [],
+      chapterIndex: null,
+      targetLanguage: null
+    });
+    routingTextModel.generateText = vi.fn(async () => ({
+      text: "I've regenerated the content. Here's the updated version with fresh prose for each page.",
+      model: "test-router",
+      provider: "test"
+    }));
+    const app = await buildMobileApp(availability === "available" ? { routingTextModel } : {});
+    const proposal = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Generate again" }
+    });
+    expect(proposal.statusCode).toBe(200);
+    const body = proposal.json();
+    expect(body.operation).toBeNull();
+    expect(body.reply.metadata).toMatchObject({
+      editProposal: { kind: "book_replan", credits: expect.any(Number) },
+      pendingEdit: { clarification: "confirm" }
+    });
+    const quotedCredits = body.reply.metadata.editProposal.credits;
+    expect(quotedCredits).toBeGreaterThan(0);
+    expect(reserveCredits).not.toHaveBeenCalled();
+    expect(enqueueGenerationJob).not.toHaveBeenCalled();
+    expect(mockPrisma.project.create).not.toHaveBeenCalled();
+    expect(routingTextModel.generateText).not.toHaveBeenCalled();
+
+    const confirmation = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "apply it" }
+    });
+    expect(confirmation.statusCode).toBe(200);
+    expect(confirmation.json().operation.kind).toBe("book_replan");
+    expect(reserveCredits).toHaveBeenCalledWith(expect.objectContaining({ amountCredits: quotedCredits }));
+    expect(enqueueGenerationJob).toHaveBeenCalledWith(expect.objectContaining({
+      projectId: "project-copy",
+      type: "REPLAN_BOOK",
+      payload: expect.objectContaining({
+        sourceProjectId: "project-1",
+        sourcePlanId: "plan-1",
+        editInstruction: expect.stringMatching(/Regenerate the entire book/)
+      })
+    }));
+    await app.close();
+  });
 
   it("proposes a completed-book structural character change as a book replan", async () => {
     mockAccessTokens({ "token-a": "user-a" });

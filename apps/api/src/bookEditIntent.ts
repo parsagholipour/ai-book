@@ -27,6 +27,7 @@ import {
 } from "./bookPageNumbering.js";
 import { pdfSpanForModelPages, printedPageForPdfPage, printedPageOffset, totalPrintedPages } from "@book-maker/core";
 import { withTimeout } from "./withTimeout.js";
+import { bookRegenerationIntent } from "./bookRegenerationIntent.js";
 
 // The message readers and the model-free classifier live next door; both are
 // part of this module's public surface and are re-exported unchanged.
@@ -304,6 +305,10 @@ export async function classifyProjectChatMessage(options: {
     options.pages.some((page) => page.index === options.readerSelection?.pageIndex)
       ? { pageIndex: options.readerSelection.pageIndex }
       : undefined;
+  const regeneration = options.stage === "complete"
+    ? bookRegenerationIntent(message, Boolean(readerSelection || options.replyTo || options.recentMessages?.length))
+    : null;
+  if (regeneration) return regeneration;
   // The sources list is compiled back matter, so no page edit can touch it.
   // Catching that here keeps it from being priced as a page rewrite that would
   // then leave the section in place.
