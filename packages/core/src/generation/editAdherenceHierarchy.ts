@@ -4,6 +4,31 @@ import { z } from "zod";
 import type { ChatMessage, TextModelAdapter } from "../adapters/types.js";
 import { mapWithConcurrency } from "../concurrency.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
+import {
+  EDIT_ADHERENCE_EVIDENCE_CAPACITY,
+  EVIDENCE_OVERFLOW_CEILING,
+  FACT_ID_HEX_LENGTH,
+  finalResponseSchema,
+  leafEvidenceResponseSchema,
+  MAX_EVIDENCE_ITEM_LENGTH,
+  MAX_FINAL_NEGATIVE_FACTS,
+  MAX_INPUT_ID_LENGTH,
+  MAX_LEAF_INPUTS_PER_CALL,
+  MAX_LEAF_PAGE_INDEXES,
+  MAX_REDUCER_INPUTS_PER_CALL,
+  MAX_VERDICT_PROSE_ITEMS,
+  MAX_VERDICT_PROSE_LENGTH,
+  MAX_VERDICT_REVISION_INDEXES,
+  reducerEvidenceResponseSchema
+} from "./editAdherenceSchemas.js";
+import {
+  evidenceSystemMessage,
+  FINAL_VERDICT_CONTRACT,
+  finalSystemMessage,
+  LEAF_EVIDENCE_CONTRACT,
+  REDUCED_EVIDENCE_CONTRACT,
+  reducerSystemMessage
+} from "./editAdherencePrompts.js";
 
 import type { EditAdherenceFindings, EditAdherencePage } from "./editAdherence.js";
 
@@ -14,26 +39,7 @@ import type { EditAdherenceFindings, EditAdherencePage } from "./editAdherence.j
  */
 export const EDIT_ADHERENCE_MESSAGE_BUDGET_BYTES = 20 * 1024;
 
-const MAX_LEAF_INPUTS_PER_CALL = 16;
-const MAX_REDUCER_INPUTS_PER_CALL = 2;
 const LEAF_REVIEW_CONCURRENCY = 4;
-export const EDIT_ADHERENCE_EVIDENCE_CAPACITY = 8;
-/**
- * One slot above the capacity the prompts advertise, and deliberately never
- * offered to the provider. A list clipped by its ceiling and a list that simply
- * used every slot it was given are otherwise the same length, so refusing both
- * refuses an edit that was applied correctly. Reaching this slot is the
- * observable overflow: the model needed more room than it was told it had, and
- * its evidence is incomplete however it filled `evidenceComplete` in.
- */
-const EVIDENCE_OVERFLOW_CEILING = EDIT_ADHERENCE_EVIDENCE_CAPACITY + 1;
-const MAX_EVIDENCE_ITEM_LENGTH = 180;
-const MAX_LEAF_PAGE_INDEXES = 64;
-/** One operation-level verdict's bounds, whichever call produced it. */
-export const MAX_VERDICT_PROSE_ITEMS = 30;
-export const MAX_VERDICT_PROSE_LENGTH = 500;
-export const MAX_VERDICT_REVISION_INDEXES = 100;
-const MAX_INPUT_ID_LENGTH = 160;
 const POSITIVE_EVIDENCE_KINDS = ["observedChanges", "requirementEvidence"] as const;
 
 /**
@@ -46,27 +52,7 @@ const POSITIVE_EVIDENCE_KINDS = ["observedChanges", "requirementEvidence"] as co
  */
 const MAX_LEAF_SPLIT_DEPTH = 2;
 
-/**
- * How many negative facts the final call may account for. Possible omissions
- * and contradictions never pass through a reducer, so this grows with the
- * manuscript at up to `EDIT_ADHERENCE_EVIDENCE_CAPACITY` of each per leaf. It
- * was 48, sized against an echo of 69-character ids at 40 output tokens apiece;
- * at the width below, 96 negatives *and* 96 resolved omissions measure 2,340
- * tokens rather than 3,783, so an oversized final call is refused by what
- * actually fits — `assertMessagesFit` — not by a count sized for a gone cost.
- */
-const MAX_FINAL_NEGATIVE_FACTS = 96;
 
-/**
- * **A fact id is transcribed character for character by the model that accepts
- * it, so its width is an output budget.** The id must be unique inside one
- * review and a function of the node, kind, text and lineage behind it; 64 bits
- * of the SHA-256 is both, and `assertUniqueFactIds` fails closed on the
- * collision truncation makes possible at around one in 10^16. The full digest
- * only bought price — measured against cl100k_base and o200k_base, which agree:
- * `"fact-<64 hex>",` costs 40 output tokens and `"fact-<16 hex>",` costs 13.
- */
-const FACT_ID_HEX_LENGTH = 16;
 /** One id, and one page index, quoted or not, and comma'd. */
 const MAX_FACT_ID_CHARS = FACT_ID_HEX_LENGTH + 8;
 const MAX_PAGE_INDEX_CHARS = 8;
@@ -87,9 +73,9 @@ const REVIEW_RESPONSE_FRAME_CHARS = 400;
  * contradictions of a leaf's own 180 characters — that one being the call
  * nobody re-measured, and the common one, since everything under
  * `EDIT_ADHERENCE_MESSAGE_BUDGET_BYTES` takes it and most edits are one to
- * three pages. Truncation is a parse error that `repairAttempts: 0` turns into
- * `EDIT_ADHERENCE_FAILED`, refunding a reader whose edit may have been applied
- * correctly. `maxTokens` is a runaway fuse rather than a reservation, the
+ * three pages. Truncation is a parse error that, past the one repair re-ask each
+ * call now has, turns into `EDIT_ADHERENCE_FAILED`, refunding a reader whose
+ * edit may have been applied correctly. `maxTokens` is a runaway fuse rather than a reservation, the
  * reading `pages.ts` asks 64,000 output tokens on, so the schema-derived fuse
  * costs nothing until output is actually spent.
  */
@@ -101,87 +87,10 @@ const VERDICT_PROSE_CHARS =
   MAX_VERDICT_REVISION_INDEXES * MAX_PAGE_INDEX_CHARS + REVIEW_RESPONSE_FRAME_CHARS;
 export const WHOLE_SET_REVIEW_MAX_TOKENS = reviewMaxTokens(VERDICT_PROSE_CHARS);
 
-const EVIDENCE_SYSTEM_MESSAGE = [
-  "You collect bounded evidence for an instruction-adherence review of an approved book edit.",
-  "Inspect every supplied manuscript segment and report concrete facts relevant to the approved instruction.",
-  "Do not make the operation-level satisfied or missing judgment: a requirement may be fulfilled in another segment.",
-  "Preserve evidence of performed changes, possible omissions or softening, and contradictions for the global reviewer.",
-  `Each evidence list has capacity ${EDIT_ADHERENCE_EVIDENCE_CAPACITY}; set evidenceComplete=false rather than omitting, sampling, or truncating a material fact, and a smaller slice of the same manuscript will be sent back to you.`,
-  "Copy every supplied segment id into acceptedInputIds exactly once. Return only the required JSON object."
-].join(" ");
+const EVIDENCE_SYSTEM_MESSAGE = evidenceSystemMessage(EDIT_ADHERENCE_EVIDENCE_CAPACITY, MAX_EVIDENCE_ITEM_LENGTH);
+const REDUCER_SYSTEM_MESSAGE = reducerSystemMessage(EDIT_ADHERENCE_EVIDENCE_CAPACITY, MAX_EVIDENCE_ITEM_LENGTH);
+const FINAL_SYSTEM_MESSAGE = finalSystemMessage(MAX_VERDICT_PROSE_LENGTH);
 
-const REDUCER_SYSTEM_MESSAGE = [
-  "You merge complete bounded evidence for an instruction-adherence review of an approved book edit.",
-  "Summarize the supplied positive facts without inventing or dropping any of them.",
-  "Combine complementary evidence because one requirement may be distributed across nodes.",
-  "Every output fact must list the exact sourceFactIds it summarizes; across each category, those ids must reproduce every supplied fact id exactly once and in order.",
-  `Each output list has capacity ${EDIT_ADHERENCE_EVIDENCE_CAPACITY}: name more source facts in one summary rather than omitting, sampling, or truncating any of them, and set evidenceComplete=false only if you could not name every supplied fact id.`,
-  "Do not make the operation-level satisfied judgment. Copy every supplied node id into acceptedInputIds exactly once.",
-  "Return only the required JSON object."
-].join(" ");
-
-const FINAL_SYSTEM_MESSAGE = [
-  "You are the final instruction-adherence checker for an already approved book edit.",
-  "The evidence covers the complete before/after candidate set. Make one operation-level judgment over all of it.",
-  "Judge only whether the after pages fully perform the approved instruction when compared with the before pages.",
-  "Do not judge morality, safety, taste, advisability, writing style, or whether you would have chosen this edit.",
-  "Requirements may be distributed across evidence nodes, but a material omission, contradiction, substitution, or silent softening means satisfied is false.",
-  "Copy every supplied negative fact id into acceptedNegativeFactIds exactly once and in order.",
-  "A possible omission may appear in resolvedPossibleOmissionIds only when the complete positive evidence proves that exact concern was fulfilled elsewhere; preserve order and never include a contradiction id.",
-  "missingRequirements, contradictions and pageIndexesToRevise are the repair order a satisfied=false verdict carries: name the concrete unmet requirements, the contradictions, and the after pages that can repair them. Leave all three empty when satisfied is true — nothing else is read from a satisfied verdict, and this review has no field for optional improvements.",
-  "Copy the supplied evidence id, coverage digest, and evidence digest exactly. Return only the required JSON object."
-].join(" ");
-
-const evidenceStringSchema = z.string().trim().min(1).max(MAX_EVIDENCE_ITEM_LENGTH);
-const factIdSchema = z.string().regex(new RegExp(`^fact-[a-f0-9]{${FACT_ID_HEX_LENGTH}}$`));
-const finalProseSchema = z.string().trim().min(1).max(MAX_VERDICT_PROSE_LENGTH);
-const inputIdSchema = z.string().trim().min(1).max(MAX_INPUT_ID_LENGTH);
-
-const leafEvidenceResponseSchema = z
-  .object({
-    acceptedInputIds: z.array(inputIdSchema).min(1).max(MAX_LEAF_INPUTS_PER_CALL),
-    evidenceComplete: z.boolean(),
-    observedChanges: evidenceStringsSchema(),
-    requirementEvidence: evidenceStringsSchema(),
-    possibleOmissions: evidenceStringsSchema(),
-    contradictions: evidenceStringsSchema(),
-    pageIndexes: z.array(z.number().int()).max(MAX_LEAF_PAGE_INDEXES)
-  })
-  .strict();
-
-const reducedEvidenceFactSchema = z
-  .object({
-    text: evidenceStringSchema,
-    // Every accepted node holds at most the advertised capacity per category,
-    // because an overflowing one never becomes a node, so a summary of both
-    // reducer inputs can name at most twice that many source facts.
-    sourceFactIds: z.array(factIdSchema).min(1).max(EDIT_ADHERENCE_EVIDENCE_CAPACITY * 2)
-  })
-  .strict();
-
-const reducerEvidenceResponseSchema = z
-  .object({
-    acceptedInputIds: z.array(inputIdSchema).min(2).max(MAX_REDUCER_INPUTS_PER_CALL),
-    evidenceComplete: z.boolean(),
-    observedChanges: z.array(reducedEvidenceFactSchema).max(EVIDENCE_OVERFLOW_CEILING),
-    requirementEvidence: z.array(reducedEvidenceFactSchema).max(EVIDENCE_OVERFLOW_CEILING)
-  })
-  .strict();
-
-const finalResponseSchema = z
-  .object({
-    satisfied: z.boolean(),
-    confidence: z.number().min(0).max(1),
-    missingRequirements: z.array(finalProseSchema).max(MAX_VERDICT_PROSE_ITEMS),
-    contradictions: z.array(finalProseSchema).max(MAX_VERDICT_PROSE_ITEMS),
-    pageIndexesToRevise: z.array(z.number().int().positive()).max(MAX_VERDICT_REVISION_INDEXES),
-    acceptedEvidenceId: inputIdSchema,
-    coverageDigest: z.string().regex(/^[a-f0-9]{64}$/),
-    evidenceDigest: z.string().regex(/^[a-f0-9]{64}$/),
-    acceptedNegativeFactIds: z.array(factIdSchema).max(MAX_FINAL_NEGATIVE_FACTS),
-    resolvedPossibleOmissionIds: z.array(factIdSchema).max(MAX_FINAL_NEGATIVE_FACTS)
-  })
-  .strict();
 
 type AdherenceSide = "before" | "after";
 
@@ -277,9 +186,6 @@ export async function reviewHierarchically(
   return decideGlobalVerdict(options, nodes[0]!, segments.length);
 }
 
-function evidenceStringsSchema() {
-  return z.array(evidenceStringSchema).max(EVIDENCE_OVERFLOW_CEILING);
-}
 
 function buildSegments(options: HierarchicalAdherenceReviewOptions): ManuscriptSegment[] {
   const segments: ManuscriptSegment[] = [];
@@ -468,7 +374,9 @@ async function decideGlobalVerdict(
     purpose: "review-edit-adherence",
     temperature: 0,
     maxTokens: reviewMaxTokens(finalResponseChars(root)),
-    repairAttempts: 0,
+    // One repair re-asks the same call with the validation issues and the
+    // schema: a first reply one key short used to be the whole review.
+    repairAttempts: 1,
     schema: finalResponseSchema,
     messages
   });
@@ -528,7 +436,9 @@ async function generateLeafEvidence(
     purpose: "review-edit-adherence",
     temperature: 0,
     maxTokens: reviewMaxTokens(leafResponseChars(group)),
-    repairAttempts: 0,
+    // One repair re-asks the same call with the validation issues and the
+    // schema: a first reply one key short used to be the whole review.
+    repairAttempts: 1,
     schema: leafEvidenceResponseSchema,
     messages
   });
@@ -545,7 +455,9 @@ async function generateReducerEvidence(
     purpose: "review-edit-adherence",
     temperature: 0,
     maxTokens: reviewMaxTokens(reducerResponseChars(nodes)),
-    repairAttempts: 0,
+    // One repair re-asks the same call with the validation issues and the
+    // schema: a first reply one key short used to be the whole review.
+    repairAttempts: 1,
     schema: reducerEvidenceResponseSchema,
     messages
   });
@@ -568,7 +480,8 @@ function leafMessages(instruction: string, segments: ManuscriptSegment[], totalS
         reviewPhase: "collect-evidence",
         approvedInstruction: instruction,
         completeCoverage: { totalSegments },
-        segments
+        segments,
+        outputContract: LEAF_EVIDENCE_CONTRACT
       })
     }
   ];
@@ -582,7 +495,8 @@ function reducerMessages(instruction: string, nodes: EvidenceNode[]): ChatMessag
       content: JSON.stringify({
         reviewPhase: "reduce-evidence",
         approvedInstruction: instruction,
-        evidenceNodes: nodes.map(reducerInputNode)
+        evidenceNodes: nodes.map(reducerInputNode),
+        outputContract: REDUCED_EVIDENCE_CONTRACT
       })
     }
   ];
@@ -610,7 +524,8 @@ function finalMessages(instruction: string, root: EvidenceNode): ChatMessage[] {
         negativeEvidence: {
           possibleOmissions: root.evidence.possibleOmissions,
           contradictions: root.evidence.contradictions
-        }
+        },
+        outputContract: FINAL_VERDICT_CONTRACT
       })
     }
   ];

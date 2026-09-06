@@ -642,6 +642,24 @@ eleven. The classifier's `previousAssets` / `demotedAssets` are arrays for the s
 an operation applied before that change is still inside its undo window and still has a card
 to draw.
 
+## Chat page rewrites
+
+- **A rewrite that kept the page's prose inherits the page's approval.** `rewritePageForUserRequest`
+  (`textEditRewrite.ts`) is the whole-page tier of a chat edit, reached when the surgical tier
+  declined (→ handlers/CLAUDE.md). Its revise used to be followed unconditionally by the model
+  page reviewer and the bounded QA loop, and that reviewer is not deterministic between sittings:
+  on 2026-09-06 it rejected three pages a code conversion had kept at 0.97–1.00 of their sentences
+  — pages it had approved at generation — for "restaging the previous page", and every rejection
+  was answered by a from-scratch repair. `retainedProseFraction` (core, `proseRetention.ts`) measures
+  what share of the stored page's sentences survive verbatim outside fenced blocks; at or above
+  `REWRITE_APPROVAL_INHERITANCE_FLOOR` (0.9), when the stored report was approved and the two
+  integrity checks pass on the new text, the rewrite returns with that report annotated and no
+  review is spent. The adherence review still judges the change itself. Below the floor, or on a
+  page that was FAILED_QA before the edit, or when the new text carries a placeholder or a prompt
+  leak, the review runs as before. The revise prompt in core says the same thing in words when
+  `editInstruction` is present — keep every sentence nothing named, byte for byte — in place of the
+  two generic lines that told it to move the beat and freshen the wording.
+
 ## Compiling and publishing
 
 - **A recompile makes no model call, and that is a cache with one rule.**

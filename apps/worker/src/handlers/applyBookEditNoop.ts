@@ -4,7 +4,7 @@ import {
 } from "../generation/textEditLease.js";
 import { restoreEditProjectStatus } from "../generation/editProjectStatus.js";
 import { refundSkippedEditOperation } from "../runtime/jobLifecycle.js";
-import { jsonPayloadToRecord, type SettledProjectStatus } from "@book-maker/core";
+import { jsonPayloadToRecord, type SettledProjectStatus, type TextEditSkipReason } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import type { ApplyBookEditJob } from "../runtime/jobPayloads.js";
 
@@ -34,6 +34,8 @@ export async function settleSkippedExactTextEdit(options: {
   operationId: string;
   ownerToken: string;
   skippedPageIndexes: number[];
+  /** Why every page was left alone; the card reads it back. */
+  reason: TextEditSkipReason;
   fallbackStatus: SettledProjectStatus;
   assertLease: () => Promise<void>;
 }): Promise<boolean> {
@@ -47,7 +49,9 @@ export async function settleSkippedExactTextEdit(options: {
 
   await refundSkippedEditOperation(
     options.job,
-    "Exact text edit skipped because the requested literal disappeared from every target"
+    options.reason === "literal_gone"
+      ? "Exact text edit skipped because the requested literal disappeared from every target"
+      : "Text edit skipped because no target page had anything the instruction covers"
   );
 
   const lostLeaseAfterStatusClaim = {};
@@ -73,6 +77,7 @@ export async function settleSkippedExactTextEdit(options: {
           classifier: {
             ...jsonPayloadToRecord(owned.classifier),
             skippedPageIndexes,
+            skippedPageReason: options.reason,
             [TEXT_EXACT_SKIPPED_MARKER]: true
           } as Prisma.InputJsonValue
         }

@@ -1,5 +1,9 @@
 import {
   applyExactReplacement,
+  composedPageQualityReport,
+  pageQualityReportSchema,
+  retainedProseFraction,
+  reviewPageDraftLocally,
   type BookGenerationStrategy,
   type BookPlan,
   type CreateProjectInput,
@@ -70,6 +74,8 @@ export async function rewritePageForUserRequest(options: {
     markdown: string;
     summary: string;
     imagePrompt: string | null;
+    /** The page's standing verdict; a faithful rewrite inherits it (see below). */
+    qualityReport?: unknown;
     chapterId: string | null;
     chapter?: { index: number; productionBrief: unknown } | null;
   };
@@ -210,6 +216,17 @@ export async function rewritePageForUserRequest(options: {
       ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
     }
   });
+  // A rewrite that kept the page's prose inherits the page's approval. The
+  // reviewer approved this prose once; asking it again re-litigates sentences
+  // the edit never touched against a verdict that is not deterministic between
+  // sittings, and on 2026-09-06 that rejected three pages a code conversion
+  // had kept at 0.97-1.00 and rewrote each from scratch in the repair round.
+  // Only the two integrity checks that can fail any page still run; a page
+  // they refuse takes the full review below like any other.
+  const inherited = inheritedApproval(options, draft);
+  if (inherited) {
+    return { ...rewrite.restore(draft), qualityReport: inherited };
+  }
   await options.onPhase?.("review");
   const initialReport = await reviewPageWithQualityGates({
     strategy: options.strategy,
@@ -277,3 +294,40 @@ export async function rewritePageForUserRequest(options: {
  * so a stubborn page gets two extra attempts, not six.
  */
 const USER_EDIT_MAX_CANDIDATES = 3;
+
+/**
+ * The share of the original page's sentences a rewrite has to keep, verbatim,
+ * to inherit the page's standing approval. The code-conversion pages of the
+ * 2026-09-06 edit measured 0.97 to 1.00; the pages whose rewrite had invented
+ * new listings measured 0.67 to 0.91.
+ */
+export const REWRITE_APPROVAL_INHERITANCE_FLOOR = 0.9;
+
+function inheritedApproval(
+  options: Parameters<typeof rewritePageForUserRequest>[0],
+  draft: PageDraft
+): PageQualityReport | null {
+  const stored = pageQualityReportSchema.safeParse(options.page.qualityReport);
+  if (!stored.success || !stored.data.approved) {
+    return null;
+  }
+  const retained = retainedProseFraction(options.page.markdown, draft.markdown);
+  if (retained < REWRITE_APPROVAL_INHERITANCE_FLOOR) {
+    return null;
+  }
+  const integrity = composedPageQualityReport(
+    reviewPageDraftLocally({
+      input: options.input,
+      plan: options.plan,
+      pageIndex: options.page.index,
+      draft,
+      previousPages: [],
+      continuityNotes: []
+    })
+  );
+  if (!integrity.approved) {
+    return null;
+  }
+  const note = `Rewrite kept ${Math.round(retained * 100)}% of the page's sentences; the standing approval is inherited.`;
+  return { ...stored.data, notes: [stored.data.notes, note].filter(Boolean).join(" ") };
+}

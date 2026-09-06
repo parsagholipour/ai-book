@@ -136,6 +136,10 @@ vi.mock("../generation/textEditPublication.js", () => ({
   textEditPublicationIdentity: mocks.textEditPublicationIdentity,
   adoptLegacyTextEditTail: mocks.adoptLegacyTextEditTail
 }));
+// The surgical tier declines here so every case keeps exercising the rewrite path it was written against.
+vi.mock("../generation/textEditPatch.js", () => ({
+  patchPageForUserRequest: vi.fn(async () => ({ kind: "whole_page", reason: "declined in this suite" }))
+}));
 vi.mock("../generation/textEditRewrite.js", async () => {
   const actual = await vi.importActual<typeof import("../generation/textEditRewrite.js")>(
     "../generation/textEditRewrite.js"

@@ -10,6 +10,7 @@ import { z } from "zod";
 import type { StructuralPageEdit } from "@book-maker/core";
 import { backMatterIntentFromMessage, type BackMatterEdit } from "./bookEditBackMatter.js";
 import { chapterHeadingIntentFromMessage, type ChapterHeadingEdit } from "./bookEditChapterHeading.js";
+import { narrowCodeLanguageIntent } from "./bookEditCodeScope.js";
 import { intentFromDecideAction } from "./bookEditDecision.js";
 import { classifyWithDegradedHeuristics, classifyWithHeuristics } from "./bookEditHeuristics.js";
 import { type ImageInsertionEdit, type ImageLayoutEdit } from "./bookEditImage.js";
@@ -83,6 +84,21 @@ export type BookEditPageContext = {
   title: string;
   summary: string;
   previewText: string;
+  /**
+   * How many fenced code blocks the page carries, counted in SQL by
+   * `loadChatPageFeatures`. It is what lets the router scope "use JavaScript in
+   * the codes" to the pages that have code instead of the whole book, and what
+   * the model-free fallback scopes it by. Absent when the caller did not load
+   * features, which reads as unknown rather than zero.
+   */
+  codeBlocks?: number | undefined;
+  /**
+   * The distinct fence tags of those blocks, lowercased (`javascript`,
+   * `python`, `pseudocode`…), from the same query. A request to write the
+   * code in one language is an edit of the pages whose blocks are not already
+   * in it, and this is how both the router and the model-free pass tell.
+   */
+  codeLanguages?: string[] | undefined;
 };
 
 export type BookEditChapterContext = {
@@ -350,9 +366,20 @@ export async function classifyProjectChatMessage(options: {
     );
   };
   const textModel = options.textModel;
+  // The one deterministic pass that runs over every path out of here: a request
+  // to write the code in a language is scoped to the pages whose code is not
+  // already in it, and is answered outright when there are none — the router
+  // once carried the previous turn's page numbers into a new request and
+  // priced two pages that were already JavaScript.
+  const narrowCode = (intent: BookEditIntent) =>
+    narrowCodeLanguageIntent(intent, message, options.pages, {
+      stage: options.stage,
+      numbering,
+      readerSelected: readerSelection !== undefined
+    });
   if (!textModel || options.stage === "other") {
     // Without a router model, fall back to the richer English heuristic tree.
-    return normalizeIntentForStage(degraded(), options.stage, clarifyExhausted);
+    return narrowCode(normalizeIntentForStage(degraded(), options.stage, clarifyExhausted));
   }
   const stage = options.stage;
 
@@ -373,13 +400,11 @@ export async function classifyProjectChatMessage(options: {
       ...(options.replyTo ? { replyTo: options.replyTo } : {}),
       ...(options.language ? { language: options.language } : {})
     });
-    return normalizeIntentForStage(
-      withDeterministicContentTarget(routed, message, numbering),
-      stage,
-      clarifyExhausted
+    return narrowCode(
+      normalizeIntentForStage(withDeterministicContentTarget(routed, message, numbering), stage, clarifyExhausted)
     );
   } catch {
-    return normalizeIntentForStage(degraded(), options.stage, clarifyExhausted);
+    return narrowCode(normalizeIntentForStage(degraded(), options.stage, clarifyExhausted));
   }
 }
 
@@ -514,7 +539,9 @@ async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditI
               index: page.index,
               title: page.title,
               summary: page.summary.slice(0, 240),
-              ...(readerPages !== undefined ? { readerPages } : {})
+              ...(readerPages !== undefined ? { readerPages } : {}),
+              ...(page.codeBlocks ? { codeBlocks: page.codeBlocks } : {}),
+              ...(page.codeBlocks && page.codeLanguages?.length ? { codeLanguages: page.codeLanguages } : {})
             };
           }),
           pageContext: {

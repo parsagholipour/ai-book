@@ -137,6 +137,10 @@ vi.mock("../generation/textEditPublication.js", () => ({
   textEditPublicationIdentity: mocks.textEditPublicationIdentity,
   adoptLegacyTextEditTail: mocks.adoptLegacyTextEditTail
 }));
+// The surgical tier declines here so every case keeps exercising the rewrite path it was written against.
+vi.mock("../generation/textEditPatch.js", () => ({
+  patchPageForUserRequest: vi.fn(async () => ({ kind: "whole_page", reason: "declined in this suite" }))
+}));
 vi.mock("../generation/textEditRewrite.js", () => ({ locallyPatchedPage: vi.fn(), rewritePageForUserRequest: mocks.rewritePageForUserRequest }));
 vi.mock("@book-maker/core", async () => {
   const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
@@ -424,6 +428,7 @@ describe("applyBookEdit exact all-skipped settlement", () => {
         classifier: {
           preservedClassifierField: "keep",
           skippedPageIndexes: [1],
+          skippedPageReason: "literal_gone",
           textExactSkipped: true
         }
       }

@@ -10,14 +10,14 @@ import {
 import { figureStandInMarkdown, pageFigureSpecs } from "./figures/figureBlocks.js";
 import { mentionsFigure } from "./figures/figureMentions.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
+import { WHOLE_SET_VERDICT_CONTRACT, wholeSetSystemMessage } from "./editAdherencePrompts.js";
+import { adherenceMessagesFit, reviewHierarchically, WHOLE_SET_REVIEW_MAX_TOKENS } from "./editAdherenceHierarchy.js";
 import {
-  adherenceMessagesFit,
+  clipEvidenceText,
   MAX_VERDICT_PROSE_ITEMS,
   MAX_VERDICT_PROSE_LENGTH,
-  MAX_VERDICT_REVISION_INDEXES,
-  reviewHierarchically,
-  WHOLE_SET_REVIEW_MAX_TOKENS
-} from "./editAdherenceHierarchy.js";
+  MAX_VERDICT_REVISION_INDEXES
+} from "./editAdherenceSchemas.js";
 
 export type EditAdherencePage = {
   index: number;
@@ -62,7 +62,11 @@ export type ReviewAppliedBookEditOptions = {
   exactReplacement?: ExactReplacement | undefined;
 };
 
-const verdictProseSchema = z.string().trim().min(1).max(MAX_VERDICT_PROSE_LENGTH);
+const verdictProseSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .transform((value) => clipEvidenceText(value, MAX_VERDICT_PROSE_LENGTH));
 
 export const editAdherenceVerdictSchema = z
   .object({
@@ -74,15 +78,6 @@ export const editAdherenceVerdictSchema = z
   })
   .strict();
 
-const WHOLE_SET_SYSTEM_MESSAGE = [
-  "You are an instruction-adherence checker for an already approved book edit.",
-  "Judge only whether the after pages fully perform the approved instruction when compared with the before pages.",
-  "Do not judge morality, safety, taste, advisability, writing style, or whether you would have chosen this edit.",
-  "Review the changed page set jointly, because one requirement may be distributed across several pages.",
-  "A material omission, contradiction, substitution, or silent softening means satisfied is false.",
-  "missingRequirements, contradictions and pageIndexesToRevise are the repair order a satisfied=false verdict carries: name the concrete unmet requirements, the contradictions, and the after pages that can repair them. Leave all three empty when satisfied is true — nothing else is read from a satisfied verdict, and this review has no field for optional improvements.",
-  "Return only the required JSON object."
-].join(" ");
 
 /**
  * Reviews only whether the approved edit instruction was applied. It is not a
@@ -129,14 +124,15 @@ function figureBlindPages(options: ReviewAppliedBookEditOptions): ReviewAppliedB
 
 function wholeSetReviewMessages(options: ReviewAppliedBookEditOptions): ChatMessage[] {
   return [
-    { role: "system", content: WHOLE_SET_SYSTEM_MESSAGE },
+    { role: "system", content: wholeSetSystemMessage(MAX_VERDICT_PROSE_LENGTH) },
     {
       role: "user",
       content: JSON.stringify({
         reviewPhase: "global-whole-set",
         approvedInstruction: options.instruction,
         beforePages: options.beforePages,
-        afterPages: options.afterPages
+        afterPages: options.afterPages,
+        outputContract: WHOLE_SET_VERDICT_CONTRACT
       })
     }
   ];

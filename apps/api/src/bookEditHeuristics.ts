@@ -28,6 +28,7 @@ import type {
 } from "./bookEditIntent.js";
 import { MODEL_PAGE_NUMBERING, type ReaderPageNumbering } from "./bookPageNumbering.js";
 import { structuralPageEditFromMessage, structuralPageIntent } from "./bookEditStructure.js";
+import { codeLanguageRequest, pageIndexesNeedingCodeLanguage } from "./bookEditCodeScope.js";
 import { totalPrintedPages, type ReplanSettings, type StructuralPageEdit } from "@book-maker/core";
 
 /**
@@ -194,7 +195,11 @@ export function classifyWithDegradedHeuristics(
       message
     ) || languageVersionRequest;
   const dislike = dislikePreferenceFromMessage(message);
-  const hasChangeIntent = hasEditVerb || dislike !== null;
+  // "Use JavaScript in the codes" carries no edit verb, so without this it
+  // read as no intent at all and was answered rather than edited.
+  const codeLanguage = stage === "complete" && !/\?\s*$/.test(message.trim()) ? codeLanguageRequest(message) : null;
+  const codeScoped = codeLanguage !== null;
+  const hasChangeIntent = hasEditVerb || dislike !== null || codeScoped;
   const asksQuestion = /\?$|^(what|why|how|can you explain|tell me|summari[sz]e|where|when)\b/i.test(message.trim());
   const scopeOnly = isBookEditScopeOnlyMessage(message);
   const contentTarget = showContentTargetFromMessage(message, { pdfPageMap: numbering.pdfPageMap });
@@ -301,6 +306,27 @@ export function classifyWithDegradedHeuristics(
       affectedChapterIndex: chapterRegen
     };
   }
+  if (codeLanguage !== null && !structural && replacement === null) {
+    // The model-free twin of the router's content-scoped rule: an edit about
+    // the code blocks touches the pages that carry one and are not already in
+    // the language asked for. With no features loaded nothing is known about
+    // the pages, so the request keeps the wider scope it would have had and the
+    // patch tier declines the code-less pages.
+    const codePages = explicitPages.length > 0 ? explicitPages : pageIndexesNeedingCodeLanguage(pages, codeLanguage);
+    if (codePages.length > 0) {
+      return {
+        kind: "page_rewrite",
+        confidence: 0.84,
+        reasoning: "The request is about the book's code blocks, which these pages carry.",
+        affectedPageIndexes: codePages,
+        assistantMessage: `I’ll update the code on page ${formatPageList(numbering.displayPages(codePages))}.`,
+        scope: "explicit_pages",
+        impact: "style_rewrite",
+        clarification: "none"
+      };
+    }
+  }
+
   const patch =
     replacement !== null ||
     /\b(typo|spelling|grammar|punctuation|capitali[sz]ation|rename)\b/i.test(message) ||

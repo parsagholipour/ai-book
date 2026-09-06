@@ -692,6 +692,37 @@ of the same manuscript can have fixed.
   pass the busy gate makes its transaction meet an ordinary edit's `EDITING` with no presentation
   predecessor to supply the settled-status fallback; guessing one would let the reprint steal that
   edit's lifecycle and quality policy.
+- **A request about one kind of content is an edit of the pages that carry it, and the router is
+  told what each page carries.** The router sees page titles and summaries, and a summary does not
+  say whether a page has a code block; "Use JavaScript in the codes" therefore routed as
+  `whole_book` on 2026-09-06, quoting and re-drafting four pages that had no code at all (the
+  worker's patch tier now declines those, but they were still priced). `loadChatPageFeatures`
+  (`projectChat.ts`) counts each page's fenced code blocks in SQL — bound-parameter patterns,
+  because a template literal cannot hold the backticks — and `chatPagesForProject` puts
+  `codeBlocks` on `BookEditPageContext` when a caller loaded them; absent means unknown, never
+  zero. The router payload carries it per page entry and the prompt says a request about one kind
+  of content (code, a figure, a picture, a named character, a quoted phrase) is `pages` naming the
+  entries that show it, even when the user says "all" or "throughout", with `read_page` for the
+  cases the entries cannot tell. The model-free twin is `codeLanguageRequest` +
+  `pageIndexesNeedingCodeLanguage` (`bookEditCodeScope.ts`, read by `bookEditHeuristics.ts`): a
+  code request that names one language and is not asking to *add* code is an `explicit_pages`
+  rewrite of the pages whose blocks are not already in it, and it counts as change intent, since "use X in the codes" carries none of the edit verbs — routed on a
+  router outage it used to be answered rather than edited. With no features loaded the heuristic
+  guesses no pages. **The same query reads each page's fence tags (`codeLanguages`), because
+  which pages carry code is only half the question.** The first reader to try the scoped router
+  sent "Use JavaScript in the codes" straight after "On pages 3 and 4, use Python…": the router
+  carried those two pages out of `recentConversation` into the new request, both were already
+  JavaScript, the patch tier declined both, and the card said "Nothing was changed" over five
+  Python pages. So `narrowCodeLanguageIntent` (`bookEditCodeScope.ts`) runs on every path out of
+  `classifyProjectChatMessage`: a `page_rewrite` whose message names code and exactly one
+  language (`codeLanguageRequest`) is scoped to the pages whose tags are not already that language
+  (`pageNeedsCodeLanguage`; unknown tags count as needing it, since a declined patch is one cheap
+  call and a dropped page is a request left half done); a message naming no page and sent from no
+  reader selection is scoped over every code page, whatever the previous turn named; and when no
+  page needs it the reply is an `answer` — "The code in this book is already in JavaScript" —
+  rather than a priced no-op. The router prompt says both halves too. It never widens past the
+  pages that carry code and never touches `local_patch`, whose literal may sit in prose on a page
+  whose fences are all the named language.
 - **A verified exact replacement is free, and the verification is what makes it safe.**
   Exact eligibility is proved from the complete standalone `editInstruction`, never inferred by
   taking everything between a replacement verb and its connector. Unquoted terms must each be one

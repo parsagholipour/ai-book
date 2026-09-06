@@ -190,9 +190,15 @@ export function currentActionForEditOperation(
       ? skipped.filter((index): index is number => Number.isInteger(index) && (index as number) > 0)
       : [];
     if (skippedPages.length > 0) {
+      // Two reasons a priced page is left alone, and the card has to say which:
+      // the exact path found the quoted text gone, the patch tier found nothing
+      // on the page the instruction covers. A row written before the reason was
+      // recorded is an exact edit, the only kind that skipped pages then.
+      const nothingToChange = jsonRecord(operation.classifier).skippedPageReason === "nothing_to_change";
+      const because = nothingToChange ? "had nothing that change applies to" : "no longer contained that text";
       return operation.affectedPageIndexes.length === 0
-        ? `Nothing was changed: ${describeEditPages(skippedPages, numbering)} no longer contained that text.`
-        : `${appliedEditSummary(operation, numbering)} ${capitalizeFirst(describeEditPages(skippedPages, numbering))} no longer contained that text and ${skippedPages.length === 1 ? "was" : "were"} left unchanged.`;
+        ? `Nothing was changed: ${describeEditPages(skippedPages, numbering)} ${because}.`
+        : `${appliedEditSummary(operation, numbering)} ${capitalizeFirst(describeEditPages(skippedPages, numbering))} ${because} and ${skippedPages.length === 1 ? "was" : "were"} left unchanged.`;
     }
     const layoutSkip = layoutSkipSummary(operation);
     if (layoutSkip) {

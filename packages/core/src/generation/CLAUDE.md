@@ -42,6 +42,7 @@ holds the event loop open and vitest will never exit.
 - [Style contract routing](#style-contract-routing)
 - [Repetition gates and the evidence ledger](#repetition-gates-and-the-evidence-ledger)
 - [Whole-set edit adherence](#whole-set-edit-adherence)
+- [Surgical page patches](#surgical-page-patches)
 - [Best-of candidate sampling](#best-of-candidate-sampling)
 - [Covers](#covers)
 - [PDF typesetting and the render transport](#pdf-typesetting-and-the-render-transport)
@@ -625,6 +626,47 @@ holds the event loop open and vitest will never exit.
   unsatisfied, backpressure, truncation and provider-error paths. Without it the fake always said
   satisfied, so every failure path this protocol has was invisible in the repo's default way of
   working.
+
+  **Every adherence prompt names its keys and shows the shape, or the guard is inert on a real
+  model.** The leaf prompt said "each evidence list has capacity 8" and named only
+  `evidenceComplete` and `acceptedInputIds`; on 2026-09-06 all twelve `collect-evidence` calls of
+  one edit — and all twelve of the replan before it — came back with a coined `evidence` key and
+  none of the four lists the schema requires, and across every stored run the phase had never once
+  parsed on a real model. The whole-set prompt had the same gap one key wide (`confidence`) and
+  survived only because it gets a repair attempt; the leaf, reducer and final calls ran at zero,
+  so one omission was a fail-closed `unverified` verdict and a delivered edit nobody had checked.
+  `editAdherencePrompts.ts` holds the four system messages, each ending with a sentence naming its
+  keys, beside an `outputContract` the payload carries; `editAdherencePrompts.test.ts` measures
+  every schema key against its prompt and every contract against its schema's key set, and the
+  three hierarchical calls take one repair. The adapter never sends the zod schema to the model —
+  validation is after the fact — so the prompt is the only place the keys are ever stated. **And
+  every bound is stated the same way, then enforced by cutting rather than refusing**: the first
+  live run after the keys were named failed its leaves on `MAX_EVIDENCE_ITEM_LENGTH` instead — 35
+  of 179 facts ran past 180 characters, the longest 293, and a limit the prompt never mentioned
+  was again a fail-closed verdict. The limit is 240 now, the prompts say it, and
+  `clipEvidenceText` cuts a longer fact (and a longer verdict sentence at
+  `MAX_VERDICT_PROSE_LENGTH`) because the bound is an output budget, not a signal — unlike the
+  list capacity, whose overflow slot *is* the backpressure signal and stays a refusal. Every
+  bound and every response schema lives in `editAdherenceSchemas.ts`, which the prompts state,
+  the hierarchy sizes its budgets from, and the whole-set review parses with.
+  `apps/worker/scripts/replay-adherence-leaf.ts` re-sends a run log's logged leaf payloads to the
+  live model under the current prompt and schema, so the next prompt change is measured on the
+  calls that failed rather than on the next paid edit; 5 of 5 previously failed calls parsed.
+
+## Surgical page patches
+
+- **A model-backed page edit is patches first and a page second, and only a rewrite answers to
+  page QA.** `pagePatchEdit.ts` is the core half of the chat's surgical tier (the worker's half and
+  the incident are in `apps/worker/src/handlers/CLAUDE.md`): the prompt asks for
+  `{find, replace}` pairs and names its keys with an `outputContract`; `applyPagePatches` applies
+  them in order against the text the earlier ones left, requires each `find` to occur exactly once
+  (exact first, then trimmed, then whitespace-insensitive, still unique), and applies none when any
+  fails — a partial application would be a silent softening the adherence review then has to
+  catch. A result that empties the page or leaves a fence open is refused the same way.
+  `pagePatchDecision` reads a patched reply with no replacements as `unchanged`. The budget follows
+  the page at one token per character, since the reply echoes every replaced span. `MOCK_AI`
+  reaches the declines through `[mock-patch:unchanged|whole_page|miss|failed]` in the instruction,
+  the way the adherence fake does.
 
 ## Best-of candidate sampling
 

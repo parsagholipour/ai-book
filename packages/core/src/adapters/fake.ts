@@ -15,6 +15,8 @@ import { MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE } from "../generation/manuscriptSt
 import { dryRunDetail, dryRunPageBeat, rotate } from "./fakeDryRunBeats.js";
 import { fakeChapterForms, fakeComposedChapter, fakeDescribedPages, fakeBookArc, fakeCutChapter, fakeSeams, fakeDetemplatedChapter } from "./fakeComposedChapters.js";
 import { fakeEditAdherence } from "./fakeEditAdherence.js";
+import { fakePagePatch } from "./fakePagePatch.js";
+import { PAGE_PATCH_PURPOSE } from "../generation/pagePatchEdit.js";
 import { parseSchemaWithContext } from "./json.js";
 import type {
   EmbeddingAdapter,
@@ -250,6 +252,10 @@ export class FakeTextModelAdapter implements TextModelAdapter {
 
     if (options.purpose === "review-edit-adherence") {
       return fakeEditAdherence(options);
+    }
+
+    if (options.purpose === PAGE_PATCH_PURPOSE) {
+      return fakePagePatch(options);
     }
 
     if (schema === bookPlanSchema && this.input) {

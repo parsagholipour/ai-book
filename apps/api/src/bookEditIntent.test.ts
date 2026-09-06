@@ -198,3 +198,56 @@ describe("continuation intent", () => {
     expect(intent.continuation).toEqual({ chapterCount: 3 });
   });
 });
+
+describe("code-scoped edits without a router model", () => {
+  const codePages = [
+    { id: "p1", index: 1, title: "Why it matters", summary: "The small test hides the cost.", previewText: "", codeBlocks: 0 },
+    { id: "p2", index: 2, title: "Lookup", summary: "A lookup routine.", previewText: "", codeBlocks: 1 },
+    { id: "p3", index: 3, title: "Structures", summary: "Queues and stacks.", previewText: "", codeBlocks: 0 },
+    { id: "p4", index: 4, title: "Halving", summary: "Binary search.", previewText: "", codeBlocks: 2 }
+  ];
+
+  it("scopes a code conversion to the pages that carry code", async () => {
+    const intent = await classifyProjectChatMessage({
+      message: "Use JavaScript in the codes",
+      stage: "complete",
+      pages: codePages,
+      chapters
+    });
+
+    expect(intent.kind).toBe("page_rewrite");
+    expect(intent.scope).toBe("explicit_pages");
+    expect(intent.affectedPageIndexes).toEqual([2, 4]);
+  });
+
+  it("keeps a question about the code an answer, and a request to add code off the code pages", async () => {
+    const question = await classifyProjectChatMessage({
+      message: "Which language do the codes use, JavaScript?",
+      stage: "complete",
+      pages: codePages,
+      chapters
+    });
+    expect(question.kind).toBe("answer");
+
+    const addition = await classifyProjectChatMessage({
+      message: "Add a JavaScript code example to every page",
+      stage: "complete",
+      pages: codePages,
+      chapters
+    });
+    expect(addition.affectedPageIndexes).not.toEqual([2, 4]);
+  });
+
+  it("does not guess pages when nothing is known about their content", async () => {
+    const intent = await classifyProjectChatMessage({
+      message: "Use JavaScript in the codes",
+      stage: "complete",
+      pages,
+      chapters
+    });
+
+    expect(intent.kind).not.toBe("answer");
+    expect(intent.affectedPageIndexes).toEqual([]);
+  });
+});
+

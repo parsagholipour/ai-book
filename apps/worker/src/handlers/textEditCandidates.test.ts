@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   reviewAppliedBookEdit: vi.fn(),
-  rewritePageForUserRequest: vi.fn()
+  rewritePageForUserRequest: vi.fn(),
+  patchPageForUserRequest: vi.fn()
 }));
 
 vi.mock("@book-maker/core", async () => {
@@ -19,6 +20,10 @@ vi.mock("../generation/textEditRewrite.js", async () => {
     rewritePageForUserRequest: mocks.rewritePageForUserRequest
   };
 });
+
+vi.mock("../generation/textEditPatch.js", () => ({
+  patchPageForUserRequest: mocks.patchPageForUserRequest
+}));
 
 import { EDIT_ADHERENCE_FAILED } from "@book-maker/core/editFailure";
 import { draftTextEditCandidates, type TextEditSourcePage } from "./textEditCandidates.js";
@@ -59,6 +64,9 @@ const baseOptions = () => ({
 describe("draftTextEditCandidates", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // The surgical tier declines by default, so every case below that predates
+    // it still exercises the whole-page path it was written against.
+    mocks.patchPageForUserRequest.mockResolvedValue({ kind: "whole_page", reason: "declined" });
     const revisions = new Map<number, number>();
     mocks.rewritePageForUserRequest.mockImplementation(async (options: { page: { index: number } }) => {
       const revision = (revisions.get(options.page.index) ?? 0) + 1;
@@ -388,3 +396,150 @@ describe("draftTextEditCandidates", () => {
     expect(result.candidates[1]?.updated.qualityReport.approved).toBe(false);
   });
 });
+
+describe("draftTextEditCandidates surgical tier", () => {
+  const satisfied = {
+    satisfied: true,
+    confidence: 0.98,
+    missingRequirements: [],
+    contradictions: [],
+    pageIndexesToRevise: [],
+    basis: "reviewed"
+  };
+  const patched = (index: number, approved = true) => ({
+    kind: "patched" as const,
+    applied: 1,
+    draft: {
+      title: `Page ${index}`,
+      markdown: `Patched ${index}`,
+      summary: `Original summary ${index}`,
+      continuityNotes: [],
+      qualityReport: { approved, score: approved ? 90 : 58 }
+    }
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.reviewAppliedBookEdit.mockResolvedValue(satisfied);
+    mocks.rewritePageForUserRequest.mockImplementation(async (options: { page: { index: number } }) =>
+      approvedDraft(options.page.index, 1)
+    );
+  });
+
+  it("offers every page to the patch tier first and rewrites only the pages it declines", async () => {
+    mocks.patchPageForUserRequest
+      .mockResolvedValueOnce(patched(1))
+      .mockResolvedValueOnce({ kind: "whole_page", reason: "re-plots the scene" });
+
+    const result = await draftTextEditCandidates(baseOptions());
+
+    expect(result.candidates.map((candidate) => [candidate.page.index, candidate.tier])).toEqual([
+      [1, "patch"],
+      [2, "rewrite"]
+    ]);
+    expect(result.candidates[0]!.updated.markdown).toBe("Patched 1");
+    expect(mocks.rewritePageForUserRequest).toHaveBeenCalledTimes(1);
+    expect(mocks.rewritePageForUserRequest.mock.calls[0]![0].page.index).toBe(2);
+    expect(mocks.reviewAppliedBookEdit.mock.calls[0]![0].afterPages.map((page: { markdown: string }) => page.markdown)).toEqual([
+      "Patched 1",
+      "Candidate 2.1"
+    ]);
+  });
+
+  it("never sends a patched page back over page QA, whatever report it inherited", async () => {
+    mocks.patchPageForUserRequest.mockResolvedValueOnce(patched(1, false)).mockResolvedValueOnce(patched(2, false));
+
+    const result = await draftTextEditCandidates(baseOptions());
+
+    expect(result.satisfied).toBe(true);
+    expect(result.audit).toMatchObject({ attempts: 1, proseApproved: true });
+    expect(mocks.patchPageForUserRequest).toHaveBeenCalledTimes(2);
+    expect(mocks.rewritePageForUserRequest).not.toHaveBeenCalled();
+    expect(result.candidates.every((candidate) => candidate.updated.qualityReport.approved === false)).toBe(true);
+  });
+
+  it("skips a page the tier reports unchanged, and settles as a no-op when every page is", async () => {
+    mocks.patchPageForUserRequest
+      .mockResolvedValueOnce({ kind: "unchanged", reason: "no code here" })
+      .mockResolvedValueOnce(patched(2));
+
+    const partial = await draftTextEditCandidates(baseOptions());
+
+    expect(partial.skippedPageIndexes).toEqual([1]);
+    expect(partial.candidates.map((candidate) => candidate.page.index)).toEqual([2]);
+    expect(mocks.rewritePageForUserRequest).not.toHaveBeenCalled();
+
+    vi.clearAllMocks();
+    mocks.patchPageForUserRequest.mockResolvedValue({ kind: "unchanged", reason: "no code here" });
+    const none = await draftTextEditCandidates(baseOptions());
+
+    expect(none).toEqual({ candidates: [], skippedPageIndexes: [1, 2], audit: null, satisfied: true });
+    expect(mocks.reviewAppliedBookEdit).not.toHaveBeenCalled();
+  });
+
+  it("re-patches a flagged page from the stored page with the omissions, and rewrites it when the tier then declines", async () => {
+    mocks.patchPageForUserRequest
+      .mockResolvedValueOnce(patched(1))
+      .mockResolvedValueOnce(patched(2))
+      .mockResolvedValueOnce(patched(1))
+      .mockResolvedValueOnce({ kind: "whole_page", reason: "cannot place it" });
+    mocks.reviewAppliedBookEdit
+      .mockResolvedValueOnce({
+        ...satisfied,
+        satisfied: false,
+        missingRequirements: ["Page 1 keeps a pseudocode block."],
+        pageIndexesToRevise: [1]
+      })
+      .mockResolvedValueOnce({
+        ...satisfied,
+        satisfied: false,
+        missingRequirements: ["Page 2 keeps a pseudocode block."],
+        pageIndexesToRevise: [2]
+      })
+      .mockResolvedValueOnce(satisfied);
+
+    const result = await draftTextEditCandidates(baseOptions());
+
+    expect(result.satisfied).toBe(true);
+    expect(result.audit).toMatchObject({ attempts: 3 });
+    const repairs = mocks.patchPageForUserRequest.mock.calls.slice(2).map((call) => call[0] as { page: { index: number; markdown: string }; adherenceRepair?: string[] });
+    expect(repairs.map((call) => call.page.index)).toEqual([1, 2]);
+    expect(repairs[0]).toMatchObject({ page: { markdown: "Original 1" }, adherenceRepair: ["Page 1 keeps a pseudocode block."] });
+    expect(mocks.rewritePageForUserRequest).toHaveBeenCalledTimes(1);
+    expect(mocks.rewritePageForUserRequest.mock.calls[0]![0]).toMatchObject({
+      page: { index: 2, markdown: "Original 2" },
+      adherenceRepair: ["Page 2 keeps a pseudocode block."]
+    });
+    expect(result.candidates.map((candidate) => [candidate.page.index, candidate.tier])).toEqual([
+      [1, "patch"],
+      [2, "rewrite"]
+    ]);
+  });
+
+  it("does not ask the tier at all when the caller turns it off", async () => {
+    await draftTextEditCandidates({ ...baseOptions(), surgical: false });
+
+    expect(mocks.patchPageForUserRequest).not.toHaveBeenCalled();
+    expect(mocks.rewritePageForUserRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it("hands the page's own guidance and the character canon to the tier", async () => {
+    mocks.patchPageForUserRequest.mockResolvedValue(patched(1));
+
+    await draftTextEditCandidates({
+      ...baseOptions(),
+      characterContext: "Mentioned character profiles:\n- Luna: a careful navigator",
+      perPageInstructions: [{ pageIndex: 2, instruction: "Only the second block on this page." }]
+    });
+
+    expect(mocks.patchPageForUserRequest.mock.calls[0]![0]).toMatchObject({
+      editInstruction: "Reveal the red key on page 2 and foreshadow it on page 1.",
+      characterContext: "Mentioned character profiles:\n- Luna: a careful navigator"
+    });
+    expect(mocks.patchPageForUserRequest.mock.calls[0]![0]).not.toHaveProperty("pageEditGuidance");
+    expect(mocks.patchPageForUserRequest.mock.calls[1]![0]).toMatchObject({
+      pageEditGuidance: "Only the second block on this page."
+    });
+  });
+});
+

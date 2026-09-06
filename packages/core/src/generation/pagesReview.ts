@@ -488,8 +488,18 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
               ]
             : []),
           "Return a complete replacement page, not notes.",
-          "Change the actual story or explanation beat when needed; do not merely rephrase repeated material.",
-          "The replacement must advance beyond the prior pages and satisfy the current page brief.",
+          ...(options.editInstruction
+            ? [
+                // A reader's edit lands in finished, approved prose. The two
+                // generic lines below it told the model to move the beat and
+                // freshen wording, and a QA repair round after a code
+                // conversion rewrote whole pages from scratch on their say-so.
+                "This is a reader-requested edit of finished prose: keep every sentence of rejectedDraft that neither editInstruction nor a listed issue requires you to change, byte for byte. Do not freshen wording, examples, openings or transitions that nothing named, and do not add material the instruction did not ask for."
+              ]
+            : [
+                "Change the actual story or explanation beat when needed; do not merely rephrase repeated material.",
+                "The replacement must advance beyond the prior pages and satisfy the current page brief."
+              ]),
           INTERNAL_PAGE_TITLE_RULE,
           GROUNDED_FACTUALITY_RULE,
           ...citation.rules,

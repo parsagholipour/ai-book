@@ -1,7 +1,8 @@
 import {
   jsonPayloadToRecord,
   type SettledProjectStatus,
-  type StoryState
+  type StoryState,
+  type TextEditSkipReason
 } from "@book-maker/core";
 import {
   MANUSCRIPT_PUBLICATION_TRANSACTION_OPTIONS,
@@ -90,6 +91,8 @@ export async function publishTextEditManuscript(options: {
   editInstruction: string;
   audit: unknown | null;
   skippedPageIndexes: number[];
+  /** Why the skipped pages were left alone; recorded only beside a non-empty list. */
+  skippedPageReason?: TextEditSkipReason | undefined;
   pages: readonly TextEditPublicationPage[];
   storyStateAfter: StoryState;
   completion: DurableEditCompletionClaim;
@@ -198,7 +201,10 @@ export async function publishTextEditManuscript(options: {
     const classifier = {
       ...followUpClassifier(root, nextIdentity, []),
       ...(options.skippedPageIndexes.length > 0
-        ? { skippedPageIndexes: options.skippedPageIndexes }
+        ? {
+            skippedPageIndexes: options.skippedPageIndexes,
+            ...(options.skippedPageReason ? { skippedPageReason: options.skippedPageReason } : {})
+          }
         : {})
     } as Prisma.InputJsonObject;
     // `updateMany`, so the row this transaction read under the lease is the row

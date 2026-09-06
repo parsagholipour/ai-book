@@ -15,6 +15,7 @@ import {
 import { EDIT_ADHERENCE_FAILED, ReaderEditFailure } from "@book-maker/core/editFailure";
 
 import type { QualityGateContext } from "../generation/qualityEnrichment.js";
+import { patchPageForUserRequest } from "../generation/textEditPatch.js";
 import { locallyPatchedPage, rewritePageForUserRequest } from "../generation/textEditRewrite.js";
 
 export type TextEditSourcePage = {
@@ -31,9 +32,19 @@ export type TextEditSourcePage = {
   chapter?: { index: number; productionBrief: unknown } | null;
 };
 
+/**
+ * Which tier produced a candidate. `exact` is the verified literal swap,
+ * `patch` the model-named replacements code applied, `rewrite` a whole page
+ * regenerated through the QA loop. The repair rounds below re-run the tier
+ * that produced the page, and only a `rewrite` can be sent back over page QA:
+ * a patched page changed nothing the reviewer's verdict was about.
+ */
+export type TextEditCandidateTier = "exact" | "patch" | "rewrite";
+
 export type TextEditCandidate = {
   page: TextEditSourcePage;
   updated: PageDraft & { qualityReport: PageQualityReport };
+  tier: TextEditCandidateTier;
 };
 
 export type TextEditAdherenceAudit = {
@@ -70,6 +81,12 @@ export async function draftTextEditCandidates(options: {
   /** Validated router terms stored with the operation; null is a durable mismatch sentinel. */
   operationExactReplacement?: ExactReplacement | null | undefined;
   mode?: "exact" | undefined;
+  /**
+   * Whether a model-backed page is first offered to the surgical patch tier.
+   * On by default; a chapter regeneration turns it off, because its instruction
+   * is a whole-page rewrite by definition and the tier would only decline.
+   */
+  surgical?: boolean | undefined;
   quality: QualityGateContext;
   generationJobId?: string | undefined;
   onPhase?: ((page: TextEditSourcePage, offset: number, phase: "draft" | "review") => Promise<void>) | undefined;
@@ -108,11 +125,69 @@ export async function draftTextEditCandidates(options: {
     // through the ordinary refund path and asks for the change in other words.
     throw new ReaderEditFailure(EDIT_ADHERENCE_FAILED);
   }
+  const surgical = options.surgical ?? true;
   const instructionForPage = new Map(
     (options.perPageInstructions ?? []).map((entry) => [entry.pageIndex, entry.instruction])
   );
   const candidates = new Map<number, TextEditCandidate>();
   const skippedPageIndexes: number[] = [];
+
+  const rewriteFrom = (
+    page: TextEditSourcePage,
+    offset: number,
+    source: { title: string; markdown: string; summary: string; imagePrompt: string | null },
+    adherenceRepair: string[]
+  ) => {
+    const pageEditGuidance = instructionForPage.get(page.index);
+    return rewritePageForUserRequest({
+      projectId: options.projectId,
+      page: { ...page, ...source },
+      input: options.input,
+      plan: options.plan,
+      strategy: options.strategy,
+      providers: options.providers,
+      request: pageEditGuidance ?? options.editInstruction,
+      editInstruction: options.editInstruction,
+      ...(options.characterContext ? { characterContext: options.characterContext } : {}),
+      ...(pageEditGuidance ? { pageEditGuidance } : {}),
+      priorPageOverrides: priorDrafts(candidates),
+      ...(adherenceRepair.length > 0 ? { adherenceRepair } : {}),
+      maxCandidates: 1,
+      quality: options.quality,
+      generationJobId: options.generationJobId,
+      onPhase: async (phase) => {
+        await options.onPhase?.(page, offset, phase);
+      }
+    });
+  };
+
+  /**
+   * The surgical tier: exact replacements on the stored page, applied by code.
+   * `null` when the tier declined or is off, in which case the page is
+   * rewritten whole; an `unchanged` answer skips the page altogether.
+   */
+  const patchFrom = async (page: TextEditSourcePage, adherenceRepair: string[]) => {
+    if (!surgical) return null;
+    const pageEditGuidance = instructionForPage.get(page.index);
+    const outcome = await patchPageForUserRequest({
+      page,
+      input: options.input,
+      plan: options.plan,
+      providers: options.providers,
+      editInstruction: options.editInstruction,
+      ...(pageEditGuidance ? { pageEditGuidance } : {}),
+      ...(options.characterContext ? { characterContext: options.characterContext } : {}),
+      ...(adherenceRepair.length > 0 ? { adherenceRepair } : {})
+    });
+    console.info("Text edit page patch tier decided", {
+      event: "book_edit.page_patch",
+      projectId: options.projectId,
+      pageIndex: page.index,
+      outcome: outcome.kind,
+      ...(outcome.kind === "patched" ? { applied: outcome.applied } : { reason: outcome.reason })
+    });
+    return outcome;
+  };
 
   for (const [offset, page] of options.pages.entries()) {
     await options.onPhase?.(page, offset, "draft");
@@ -130,29 +205,23 @@ export async function draftTextEditCandidates(options: {
       skippedPageIndexes.push(page.index);
       continue;
     }
-    const pageEditGuidance = instructionForPage.get(page.index);
-    const updated = exactPatch && patchable
-      ? locallyPatchedPage(page, exactPatch)
-      : await rewritePageForUserRequest({
-          projectId: options.projectId,
-          page,
-          input: options.input,
-          plan: options.plan,
-          strategy: options.strategy,
-          providers: options.providers,
-          request: pageEditGuidance ?? options.editInstruction,
-          editInstruction: options.editInstruction,
-          ...(options.characterContext ? { characterContext: options.characterContext } : {}),
-          ...(pageEditGuidance ? { pageEditGuidance } : {}),
-          priorPageOverrides: priorDrafts(candidates),
-          maxCandidates: 1,
-          quality: options.quality,
-          generationJobId: options.generationJobId,
-          onPhase: async (phase) => {
-            await options.onPhase?.(page, offset, phase);
-          }
-        });
-    candidates.set(page.index, { page, updated });
+    if (exactPatch && patchable) {
+      candidates.set(page.index, { page, updated: locallyPatchedPage(page, exactPatch), tier: "exact" });
+      continue;
+    }
+    const patched = await patchFrom(page, []);
+    if (patched?.kind === "patched") {
+      candidates.set(page.index, { page, updated: patched.draft, tier: "patch" });
+      continue;
+    }
+    if (patched?.kind === "unchanged") {
+      // Nothing on this page is covered by the instruction. Left as it is and
+      // settled like an exact edit whose literal was gone: the reader's card
+      // says so, and an edit that touched no page refunds itself.
+      skippedPageIndexes.push(page.index);
+      continue;
+    }
+    candidates.set(page.index, { page, updated: await rewriteFrom(page, offset, page, []), tier: "rewrite" });
   }
 
   if (candidates.size === 0) {
@@ -161,7 +230,7 @@ export async function draftTextEditCandidates(options: {
 
   let verdict = await reviewCandidates(options, candidates, exactPatch);
   let attempts = 1;
-  let proseApproved = everyCandidateApproved(candidates);
+  let proseApproved = everyRewriteApproved(candidates);
 
   while ((!verdict.satisfied || !proseApproved) && attempts < 3) {
     attempts += 1;
@@ -170,7 +239,10 @@ export async function draftTextEditCandidates(options: {
     const unverified = verdict.basis === "unverified";
     const requested = new Set(unverified ? [] : verdict.pageIndexesToRevise);
     for (const candidate of candidates.values()) {
-      if (!candidate.updated.qualityReport.approved) requested.add(candidate.page.index);
+      // Only a whole-page rewrite can be sent back over page QA. A patched or
+      // exact page carries the report it had before the edit, and re-drafting
+      // it on that report is the collateral rewrite this tier exists to stop.
+      if (candidate.tier === "rewrite" && !candidate.updated.qualityReport.approved) requested.add(candidate.page.index);
     }
     const repairIndexes = requested.size > 0
       ? requested
@@ -185,42 +257,43 @@ export async function draftTextEditCandidates(options: {
       const current = candidates.get(page.index);
       if (!current || !repairIndexes.has(page.index)) continue;
       await options.onPhase?.(page, offset, "draft");
-      const pageEditGuidance = instructionForPage.get(page.index);
+      if (current.tier === "patch") {
+        // Patches apply to the stored page, so the repair is asked of the
+        // original with the reviewer's omissions; a tier that now declines
+        // hands the page to the whole-page path rather than leaving the
+        // omission standing.
+        const repaired = await patchFrom(page, adherenceRequirements);
+        if (repaired?.kind === "patched") {
+          candidates.set(page.index, { page, updated: repaired.draft, tier: "patch" });
+          continue;
+        }
+        candidates.set(page.index, {
+          page,
+          updated: await rewriteFrom(page, offset, page, adherenceRequirements),
+          tier: "rewrite"
+        });
+        continue;
+      }
       const repairRequirements = uniqueRequirements([
         ...adherenceRequirements,
         ...(current.updated.qualityReport.requiredRevisions ?? []),
         ...(current.updated.qualityReport.issues ?? [])
       ]);
-      const updated = await rewritePageForUserRequest({
-        projectId: options.projectId,
-        page: {
-          ...page,
+      const updated = await rewriteFrom(
+        page,
+        offset,
+        {
           title: current.updated.title,
           markdown: current.updated.markdown,
           summary: current.updated.summary,
           imagePrompt: current.updated.imagePrompt ?? page.imagePrompt
         },
-        input: options.input,
-        plan: options.plan,
-        strategy: options.strategy,
-        providers: options.providers,
-        request: pageEditGuidance ?? options.editInstruction,
-        editInstruction: options.editInstruction,
-        ...(options.characterContext ? { characterContext: options.characterContext } : {}),
-        ...(pageEditGuidance ? { pageEditGuidance } : {}),
-        priorPageOverrides: priorDrafts(candidates),
-        adherenceRepair: repairRequirements,
-        maxCandidates: 1,
-        quality: options.quality,
-        generationJobId: options.generationJobId,
-        onPhase: async (phase) => {
-          await options.onPhase?.(page, offset, phase);
-        }
-      });
-      candidates.set(page.index, { page, updated });
+        repairRequirements
+      );
+      candidates.set(page.index, { page, updated, tier: "rewrite" });
     }
     verdict = await reviewCandidates(options, candidates, exactPatch);
-    proseApproved = everyCandidateApproved(candidates);
+    proseApproved = everyRewriteApproved(candidates);
   }
 
   const audit: TextEditAdherenceAudit = {
@@ -319,8 +392,11 @@ function priorDrafts(candidates: Map<number, TextEditCandidate>): PriorPageConte
   }));
 }
 
-function everyCandidateApproved(candidates: Map<number, TextEditCandidate>): boolean {
-  return [...candidates.values()].every((candidate) => candidate.updated.qualityReport.approved);
+/** Only rewritten pages answer to page QA here; see `TextEditCandidateTier`. */
+function everyRewriteApproved(candidates: Map<number, TextEditCandidate>): boolean {
+  return [...candidates.values()].every(
+    (candidate) => candidate.tier !== "rewrite" || candidate.updated.qualityReport.approved
+  );
 }
 
 function uniqueRequirements(requirements: string[]): string[] {

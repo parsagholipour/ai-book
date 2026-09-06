@@ -337,3 +337,40 @@ describe("an applied insert that wrote fewer pages than it created", () => {
     expect(summary).not.toMatch(/page \d/);
   });
 });
+
+describe("currentActionForEditOperation for skipped text-edit pages", () => {
+  const applied = (classifier: Record<string, unknown>, affectedPageIndexes: number[]): MobileBookEditOperationRecord => ({
+    id: "op-2",
+    projectId: "project-1",
+    kind: "PAGE_REWRITE",
+    status: "APPLIED",
+    request: "Use JavaScript in the codes",
+    classifier,
+    affectedPageIndexes,
+    creditsCharged: 120,
+    createdAt: new Date("2026-09-06T00:00:00.000Z"),
+    appliedAt: new Date("2026-09-06T00:01:00.000Z")
+  });
+
+  it("says a page the patch tier declined had nothing the change applies to", () => {
+    expect(
+      currentActionForEditOperation(
+        applied({ skippedPageIndexes: [1, 3], skippedPageReason: "nothing_to_change" }, [2, 4]),
+        MODEL_PAGE_NUMBERING
+      )
+    ).toMatch(/Pages 1 and 3 had nothing that change applies to and were left unchanged\.$/);
+    expect(
+      currentActionForEditOperation(applied({ skippedPageIndexes: [1], skippedPageReason: "nothing_to_change" }, []), MODEL_PAGE_NUMBERING)
+    ).toBe("Nothing was changed: page 1 had nothing that change applies to.");
+  });
+
+  it("keeps the exact edit's wording, with and without the recorded reason", () => {
+    expect(
+      currentActionForEditOperation(applied({ skippedPageIndexes: [1], skippedPageReason: "literal_gone" }, []), MODEL_PAGE_NUMBERING)
+    ).toBe("Nothing was changed: page 1 no longer contained that text.");
+    expect(currentActionForEditOperation(applied({ skippedPageIndexes: [1] }, []), MODEL_PAGE_NUMBERING)).toBe(
+      "Nothing was changed: page 1 no longer contained that text."
+    );
+  });
+});
+

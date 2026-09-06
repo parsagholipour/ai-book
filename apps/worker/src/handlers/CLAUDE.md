@@ -369,6 +369,32 @@ reason, and a null answer refuses the whole move rather than half-applying it.
   the completed lease (or waits for it after losing the post-refund CAS), so neither delivery repeats
   the refund, invalidates exports, advances `contentRevision`, or queues a compile.
 
+- **A model-backed page edit is patches first and a page second, and only a rewrite answers to
+  page QA.** "Use JavaScript in the codes" (2026-09-06, project `cmtpoenxu0016u1tayw02das3`)
+  was routed as a `page_rewrite` of all eight pages, and every page went through
+  `rewritePageForUserRequest`: the QA revise prompt, handed the stored page as a *rejected draft
+  scoring 50*, at 0.65, under rules that tell it to move the beat and freshen the wording. The
+  first round was mostly faithful (0.97–1.00 of the prose kept on the pages that had code), but
+  the generic page reviewer then rejected seven of eight for "restaging the previous page", and
+  each rejection bought a repair revise that rewrote the page from scratch (0.03–0.11 kept): a
+  topological sort became a staircase recursion, a warehouse became a delivery service. Nothing
+  between the free literal swap and that regeneration existed. `draftTextEditCandidates` now
+  offers every model-backed page to `patchPageForUserRequest` (`generation/textEditPatch.ts`)
+  first: the model returns `{find, replace}` pairs against the stored page (a figure as its
+  stand-in), core applies them with an exact, unique match or applies none, a miss is re-asked
+  once with the failures and then hands the page to the whole-page path, and the model may
+  decline with `unchanged` (the page is skipped and settled like an exact edit whose literal was
+  gone — `skippedPageReason: "nothing_to_change"` on the classifier, which the card reads) or
+  `whole_page` (a re-plot or a restructure, the case the regeneration path exists for). Each
+  candidate carries its `tier`, and the repair rounds re-run the tier that produced it — a patch
+  is re-asked of the *stored* page with the adherence reviewer's omissions, and falls through to a
+  rewrite only when the tier then declines. Only a `rewrite` candidate can be sent back over page
+  QA: a patched page keeps the report it had, because nothing the verdict was about changed, and
+  re-drafting it on that report is the collateral rewrite the tier exists to stop. A chapter
+  regeneration passes `surgical: false`, since its instruction is a whole page by definition. The
+  two integrity checks that can fail any page still run on a patched result
+  (`composedPageQualityReport`), and a page they refuse takes the full path.
+
 ## Structural page edits
 
 - **Every fork out of `applyBookEdit` — structural and both image ones — is decided by the operation's `kind`, never by the payload.**

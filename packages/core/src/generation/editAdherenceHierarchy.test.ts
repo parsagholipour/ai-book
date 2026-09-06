@@ -4,11 +4,11 @@ import type { GenerateJsonOptions, TextModelAdapter } from "../adapters/types.js
 import { reviewAppliedBookEdit } from "./editAdherence.js";
 import {
   canonicalAdherencePageText,
-  EDIT_ADHERENCE_EVIDENCE_CAPACITY,
   EDIT_ADHERENCE_MESSAGE_BUDGET_BYTES,
   reviewHierarchically,
   serializedAdherenceMessageBytes
 } from "./editAdherenceHierarchy.js";
+import { EDIT_ADHERENCE_EVIDENCE_CAPACITY } from "./editAdherenceSchemas.js";
 
 type Payload = Record<string, unknown>;
 type ProtocolOptions = {
@@ -513,7 +513,8 @@ describe("hierarchical edit adherence coverage", () => {
     const callsByPhase = new Map(
       generateJson.mock.calls.map(([request]) => [userPayload(request).reviewPhase, request])
     );
-    expect(callsByPhase.get("collect-evidence")?.maxTokens).toBe(10_108);
+    // 10_108 at the old 180-character fact; the four lists grew by 4 × 9 × 60.
+    expect(callsByPhase.get("collect-evidence")?.maxTokens).toBe(12_268);
     expect(callsByPhase.get("global-verdict")?.maxTokens).toBe(31_380);
   });
 

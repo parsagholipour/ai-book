@@ -36,6 +36,7 @@ import {
   applyStoryDelta,
   bookPlanSchema,
   createProviders,
+  type TextEditSkipReason,
   parseStoryDelta,
   preEditProjectStatus,
   rebuildStoryState,
@@ -322,11 +323,17 @@ export async function applyBookEdit(job: ApplyBookEditJob): Promise<JobCompletio
         ? { operationExactReplacement: storedExactReplacement.replacement }
         : {}),
       mode,
+      // A chapter regeneration is a whole-page rewrite by definition; every
+      // other text edit is offered to the surgical patch tier first.
+      surgical: operation.kind !== "CHAPTER_REGENERATE",
       quality,
       generationJobId,
       onPhase: reportPage
     });
     const { candidates, skippedPageIndexes, audit } = candidateResult;
+    // Why a page in the priced set was left alone: the exact path skips a page
+    // whose literal is gone, the patch tier one the instruction does not cover.
+    const skippedPageReason: TextEditSkipReason = mode === "exact" ? "literal_gone" : "nothing_to_change";
     const updatedPageIndexes = candidates.map((candidate) => candidate.page.index);
 
     // `unverified` means the review did not run, not that the reader's edit was
@@ -350,6 +357,7 @@ export async function applyBookEdit(job: ApplyBookEditJob): Promise<JobCompletio
         operationId,
         ownerToken,
         skippedPageIndexes,
+        reason: skippedPageReason,
         fallbackStatus,
         assertLease: heartbeat.assertHeld
       });
@@ -435,6 +443,7 @@ export async function applyBookEdit(job: ApplyBookEditJob): Promise<JobCompletio
       editInstruction,
       audit,
       skippedPageIndexes,
+      skippedPageReason,
       storyStateAfter: await storyStateForPublishedEdit(projectId, seedPromises, publishedPages),
       completion: durableCompletion,
       pages: publishedPages

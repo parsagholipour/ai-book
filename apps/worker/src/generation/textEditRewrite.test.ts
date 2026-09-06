@@ -316,6 +316,111 @@ describe("rewritePageForUserRequest style audit", () => {
   });
 });
 
+describe("rewritePageForUserRequest approval inheritance", () => {
+  const strategy = { revisePageDraft: vi.fn(), reviewPageDraft: vi.fn() };
+  const original = [
+    "A warehouse dashboard lists outgoing packages by tracking number, and the clerk needs one of them.",
+    "A sequential search inspects the packages one at a time until the number appears or the list ends.",
+    "",
+    "```pseudocode",
+    "search(items, target):",
+    "    scan every item",
+    "```",
+    "",
+    "Each comparison discards half of what remains, which is why the ordering matters so much here.",
+    "The clerk can therefore trust the answer even when the list grows to many thousands of entries."
+  ].join("\n");
+  const approved = {
+    approved: true,
+    score: 91,
+    issues: [] as string[],
+    requiredRevisions: [] as string[],
+    notes: "Reviewer approved.",
+    groundedOk: true,
+    unsupportedClaims: [] as string[],
+    checks: {
+      placeholderFree: true,
+      promptLeakFree: true,
+      titleClean: true,
+      repetitionOk: true,
+      progressionOk: true,
+      styleNatural: true
+    }
+  };
+  const options = (qualityReport: unknown = approved) =>
+    ({
+      projectId: "project-1",
+      page: {
+        id: "page-4",
+        index: 4,
+        title: "Halving",
+        markdown: original,
+        summary: "Binary search.",
+        imagePrompt: null,
+        qualityReport,
+        chapterId: null,
+        chapter: null
+      },
+      input: { targetPages: 12, mediaSettings: {}, category: "CUSTOM", language: "en" },
+      plan: { title: "Book", chapters: [], voiceGuide: ["Warm and plain."] },
+      strategy,
+      providers: { text: {} },
+      request: "Use JavaScript in the codes",
+      editInstruction: "Rewrite every code block in JavaScript; keep the prose unchanged.",
+      maxCandidates: 1,
+      quality: pagePipelineQualityGates({
+        defaultFeatureEnabled: mocks.pageQualityEnabled,
+        otherFeatureEnabled: mocks.qualityEnabled
+      }),
+      generationJobId: "gj-1"
+    }) as never;
+  const draft = (markdown: string) => ({ title: "Halving", markdown, summary: "Binary search.", continuityNotes: [] as string[] });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.qualityEnabled.mockReturnValue(false);
+    mocks.pageQualityEnabled.mockReturnValue(true);
+    mocks.loadContinuityNotes.mockResolvedValue([]);
+    mocks.loadStyleLockPages.mockResolvedValue([]);
+    mocks.prisma.page.findMany.mockResolvedValue([]);
+    strategy.reviewPageDraft.mockResolvedValue({ ...approved, approved: false, score: 58, issues: ["restages the previous page"] });
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  it("inherits the page's standing approval when the rewrite kept its prose", async () => {
+    const converted = original.replace(/```pseudocode[\s\S]*?```/, "```javascript\nconst search = () => {};\n```");
+    strategy.revisePageDraft.mockResolvedValue(draft(converted));
+
+    const result = await rewritePageForUserRequest(options());
+
+    expect(strategy.reviewPageDraft).not.toHaveBeenCalled();
+    expect(result.markdown).toBe(converted);
+    expect(result.qualityReport).toMatchObject({ approved: true, score: 91 });
+    expect(result.qualityReport.notes).toContain("inherited");
+  });
+
+  it("reviews a rewrite that kept less than the floor, and one of a page that was not approved", async () => {
+    strategy.revisePageDraft.mockResolvedValue(draft("A delivery service keeps pickup codes in order. Nothing of the old page survives here."));
+    const rewritten = await rewritePageForUserRequest(options());
+    expect(strategy.reviewPageDraft).toHaveBeenCalledTimes(1);
+    expect(rewritten.qualityReport.approved).toBe(false);
+
+    vi.clearAllMocks();
+    strategy.revisePageDraft.mockResolvedValue(draft(original));
+    strategy.reviewPageDraft.mockResolvedValue({ ...approved, approved: false, score: 58 });
+    await rewritePageForUserRequest(options({ ...approved, approved: false, score: 58 }));
+    expect(strategy.reviewPageDraft).toHaveBeenCalledTimes(1);
+  });
+
+  it("still reviews a faithful rewrite whose new text leaks the prompt", async () => {
+    strategy.revisePageDraft.mockResolvedValue(draft(original.replace("Each comparison discards half", "This placeholder page discards half")));
+
+    await rewritePageForUserRequest(options());
+
+    expect(strategy.reviewPageDraft).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("rewritePageForUserRequest with a figure on the page", () => {
   const strategy = { revisePageDraft: vi.fn(), reviewPageDraft: vi.fn() };
   const fence =

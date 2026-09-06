@@ -281,6 +281,75 @@ describe("book edit intent AI router", () => {
     expect(prompt.pages.map((page: { index: number }) => page.index)).toContain(412);
   });
 
+  it("tells the router which pages carry code blocks, and nothing about the ones that do not", async () => {
+    const model = fakeDecideModel({
+      action: "answer",
+      confidence: 0.9,
+      reasoning: "Question.",
+      assistantMessage: "Reply.",
+      clarification: "none",
+      pageIndexes: [],
+      chapterIndex: null,
+      targetLanguage: null
+    });
+
+    await classifyProjectChatMessage({
+      message: "Use JavaScript in the codes",
+      stage: "complete",
+      pages: pages.map((page, offset) =>
+        offset === 1 ? { ...page, codeBlocks: 2, codeLanguages: ["python"] } : { ...page, codeBlocks: 0, codeLanguages: [] }
+      ),
+      textModel: model
+    });
+
+    const call = vi.mocked(model.generateWithTools).mock.calls[0]![0];
+    const prompt = JSON.parse(call.messages.at(-1)!.content);
+    expect(prompt.pages[1]).toMatchObject({ codeBlocks: 2, codeLanguages: ["python"] });
+    expect(prompt.pages[0]).not.toHaveProperty("codeBlocks");
+    expect(prompt.pages[0]).not.toHaveProperty("codeLanguages");
+    expect(call.messages[0]!.content).toContain("codeLanguages");
+    expect(call.messages[0]!.content).toContain("never carry an earlier turn's pages");
+  });
+
+  it("re-scopes a pageless code request the router pinned to the previous turn's pages", async () => {
+    const model = fakeDecideModel({
+      action: "propose_edit",
+      confidence: 0.9,
+      reasoning: "The previous request named pages 3 and 4.",
+      assistantMessage: "I'll update the code on pages 3 and 4.",
+      clarification: "none",
+      pageIndexes: [2, 3],
+      chapterIndex: null,
+      targetLanguage: null,
+      editTarget: "pages",
+      editStyle: "rewrite",
+      editInstruction: "Rewrite the code on pages 2 and 3 in JavaScript."
+    });
+    const book = [1, 2, 3, 4, 5].map((index) => ({
+      id: `p${index}`,
+      index,
+      title: `Page ${index}`,
+      summary: "",
+      previewText: "",
+      codeBlocks: index === 1 ? 0 : 1,
+      codeLanguages: index === 1 ? [] : index <= 3 ? ["javascript"] : ["python"]
+    }));
+
+    const intent = await classifyProjectChatMessage({
+      message: "Use JavaScript in the codes",
+      stage: "complete",
+      pages: book,
+      recentMessages: [
+        { role: "user", content: "On pages 3 and 4, use Python in the codes" },
+        { role: "assistant", content: "I’ll rewrite pages 3, 4, 5 and refresh the exports." }
+      ],
+      textModel: model
+    });
+
+    expect(intent.kind).toBe("page_rewrite");
+    expect(intent.affectedPageIndexes).toEqual([4, 5]);
+  });
+
   it("does not tell the router a version-1 cover is unnumbered", async () => {
     const map = {
       version: 2 as 1 | 2,

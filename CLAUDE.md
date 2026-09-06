@@ -265,6 +265,10 @@ code in that area, however obvious the rule looks.
 - **A cited source is stored as the publisher's own address, never Google's.** → packages/core/src/adapters/CLAUDE.md
 - **Chapter headings are not page text either, and the word "Chapter" is stored nowhere.** → apps/api/src/mobile/CLAUDE.md
 - **A verified exact replacement is free, and the verification is what makes it safe.** → apps/api/src/mobile/CLAUDE.md
+- **A model-backed page edit is patches first and a page second, and only a rewrite answers to page QA.** → apps/worker/src/handlers/CLAUDE.md + packages/core/src/generation/CLAUDE.md
+- **A rewrite that kept the page's prose inherits the page's approval.** → apps/worker/src/generation/CLAUDE.md
+- **A request about one kind of content is an edit of the pages that carry it, and the router is told what each page carries.** → apps/api/src/mobile/CLAUDE.md
+- **Every adherence prompt names its keys and shows the shape, or the guard is inert on a real model.** → packages/core/src/generation/CLAUDE.md
 - **The model-free recogniser fires only when the verb's object *is* the page.** → apps/api/src/mobile/CLAUDE.md
 - **The chat speaks the printed page numbers, and the model indexes never reach the reader.** → apps/api/src/mobile/CLAUDE.md
 - **Changing *which* pages a book has is its own edit, and it used to be a whole new project.** → apps/api/src/mobile/CLAUDE.md

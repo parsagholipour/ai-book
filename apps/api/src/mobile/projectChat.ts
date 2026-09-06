@@ -676,17 +676,62 @@ export function chatChaptersForProject(project: ProjectForChat): BookEditChapter
 
 export type ProjectForChat = NonNullable<Awaited<ReturnType<typeof loadProjectForChat>>>;
 
-export function chatPagesForProject(project: ProjectForChat): BookEditPageContext[] {
-  return project.pages.map((page) => ({
-    id: page.id,
-    index: page.index,
-    title: page.title,
-    summary: page.summary,
-    // Summary-based on purpose: page markdown is no longer loaded per chat
-    // message. Quoted-text targeting matches against the DB instead
-    // (pagesMatchingNeedle), so this preview only feeds display/heuristics.
-    previewText: clipText(page.summary, 900)
-  }));
+/** What a page holds that the router cannot read off its summary. */
+export type ChatPageFeatures = Map<number, { codeBlocks: number; codeLanguages: string[] }>;
+
+/**
+ * Per-page structure the router is shown beside each summary, computed in SQL
+ * so the markdown never leaves Postgres: one row per page, the number of fenced
+ * code blocks. A fence line is one that opens with three backticks; a code
+ * block is two of them, less the figure blocks, which are charts rather than
+ * code. This is what lets "use JavaScript in the codes" reach only the pages
+ * that have code — the 2026-09-06 edit re-drafted four pages that had none.
+ */
+export async function loadChatPageFeatures(projectId: string): Promise<ChatPageFeatures> {
+  // Bound parameters rather than literals: the patterns hold the three
+  // backticks a fence opens with, which a template literal cannot.
+  const rows = await prisma.$queryRaw<
+    Array<{ index: number; fenceLines: number; figureFences: number; fenceTags: string[] | null }>
+  >`
+    SELECT "index",
+           (SELECT count(*)::int FROM regexp_matches("markdown", ${CODE_FENCE_LINE_PATTERN}, 'gn')) AS "fenceLines",
+           (SELECT count(*)::int FROM regexp_matches("markdown", ${FIGURE_FENCE_LINE_PATTERN}, 'gn')) AS "figureFences",
+           (SELECT array_agg(DISTINCT lower(tag[1])) FROM regexp_matches("markdown", ${CODE_FENCE_TAG_PATTERN}, 'gn') AS tag) AS "fenceTags"
+      FROM "Page"
+     WHERE "projectId" = ${projectId}
+  `;
+  return new Map(
+    rows.map((row) => [
+      row.index,
+      {
+        codeBlocks: Math.max(0, Math.floor((row.fenceLines - 2 * row.figureFences) / 2)),
+        codeLanguages: (row.fenceTags ?? []).filter((tag) => tag !== "figure")
+      }
+    ])
+  );
+}
+
+/** Postgres AREs, newline-sensitive (`n` flag): a line that opens with three backticks, and one that opens a figure block. */
+const CODE_FENCE_LINE_PATTERN = "^[ \\t]*```";
+const FIGURE_FENCE_LINE_PATTERN = "^[ \\t]*```figure[ \\t]*$";
+/** The info string of an opening fence: the language the block is tagged with. */
+const CODE_FENCE_TAG_PATTERN = "^[ \\t]*```([A-Za-z0-9_+#.-]+)";
+
+export function chatPagesForProject(project: ProjectForChat, features?: ChatPageFeatures): BookEditPageContext[] {
+  return project.pages.map((page) => {
+    const feature = features?.get(page.index);
+    return {
+      id: page.id,
+      index: page.index,
+      title: page.title,
+      summary: page.summary,
+      // Summary-based on purpose: page markdown is no longer loaded per chat
+      // message. Quoted-text targeting matches against the DB instead
+      // (pagesMatchingNeedle), so this preview only feeds display/heuristics.
+      previewText: clipText(page.summary, 900),
+      ...(feature ? { codeBlocks: feature.codeBlocks, codeLanguages: feature.codeLanguages } : {})
+    };
+  });
 }
 
 export function chatStageForProject(status: string, currentPlan: ProjectForChat["currentPlan"]): BookEditProjectStage {
