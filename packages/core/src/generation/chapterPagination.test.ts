@@ -2,10 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   chapterBlocks,
   chapterTail,
-  dropDuplicateSentences,
   normalizeChapterMarkdown,
-  paginateChapterMarkdown,
-  varyParagraphs
+  paginateChapterMarkdown
 } from "./chapterPagination.js";
 import { countReadableWords } from "./proseShape.js";
 
@@ -97,29 +95,6 @@ describe("chapterTail", () => {
   });
 });
 
-describe("varyParagraphs and dropDuplicateSentences", () => {
-  it("merges a continuation into the paragraph it continues and leaves everything else alone", () => {
-    const a = paragraph(90, "a");
-    const b = "This " + paragraph(80, "b");
-    const c = [paragraph(40, "c"), paragraph(40, "e"), paragraph(40, "f"), paragraph(40, "g")].join(" ") + " The ledger closed.";
-    const quoted = "“Not here,” she said. " + paragraph(30, "d");
-    const varied = varyParagraphs([a, b, c, quoted].join("\n\n"));
-    const blocks = chapterBlocks(varied);
-    expect(blocks).toHaveLength(3);
-    expect(blocks[0]).toBe(`${a} ${b}`);
-    expect(blocks[1]).toBe(c);
-    expect(blocks[2]).toBe(quoted);
-  });
-
-  it("drops a later verbatim copy of a long sentence and keeps short repeated ones", () => {
-    const long = "Sacred language could enlarge or narrow the field of legitimate violence, but its practical force depended on institutions.";
-    const text = `${long} The council met.\n\nAnother paragraph here with its own matter for the reader. ${long}\n\nThe council met.`;
-    const cleaned = dropDuplicateSentences(text);
-    expect(cleaned.split(long).length - 1).toBe(1);
-    expect(cleaned.split("The council met.").length - 1).toBe(2);
-  });
-});
-
 describe("figure blocks in pagination", () => {
   const fence =
     "```figure\n" +
@@ -141,8 +116,4 @@ describe("figure blocks in pagination", () => {
     expect(tail).toBe(paragraph(30, "a"));
   });
 
-  it("never merges a paragraph into a figure block or a stand-in line", () => {
-    const chapter = ["First paragraph here.", fence, "This continues the thought.", "[Figure: Carts by decade]", "This also continues."].join("\n\n");
-    expect(varyParagraphs(chapter).split("\n\n")).toHaveLength(5);
-  });
 });

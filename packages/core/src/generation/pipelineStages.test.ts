@@ -5,9 +5,10 @@ import { autoStrategyRoutingMatrix, ROUTING_MATRIX_PAGE_BANDS } from "./strategi
 import { bookGenerationStrategies, composedChaptersStrategy, pageMapSequentialStrategy } from "./strategies/index.js";
 
 describe("quality gate pipeline metadata", () => {
-  it("places every gate on at least one pipeline with a stage label", () => {
+  it("places active gates on pipelines and keeps retired compatibility keys off pipelines", () => {
     for (const feature of QUALITY_FEATURES) {
-      expect(feature.pipelines.length, feature.id).toBeGreaterThan(0);
+      if (feature.retired) expect(feature.pipelines).toEqual([]);
+      else expect(feature.pipelines.length, feature.id).toBeGreaterThan(0);
       expect(feature.stage, feature.id).not.toBe("");
       for (const pipeline of feature.pipelines) {
         expect(QUALITY_PIPELINES).toContain(pipeline);

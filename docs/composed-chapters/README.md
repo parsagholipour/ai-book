@@ -1,5 +1,7 @@
 # Composed-chapters quality research, 2 to 6 September 2026
 
+**Latest code change (6 September):** removed automatic heuristic prose edits and lexical plan enforcement; the existing Luna editor judges passages in context. This change has no new whole-book score. See [the removal, regression evidence and source-first proposal](heuristic-removal-2026-09-06.md). The measured configurations below are historical.
+
 The complete record of the programme that took the balanced tier's non-fiction books from a blind-panel mean of
 7.46 to the configuration shipped at commit `2984fe4`: what was built, what was measured, what moved, what did
 not, and why the panel mean did not cross 8. Every document, rubric, verdict, patch and generated book from the

@@ -7,7 +7,6 @@ import {
   chapterWordBudget,
   composeChapter,
   describeChapterPages,
-  dropDuplicateSentences,
   editChapter,
   formatStoryStateLines,
   judgeChapterDrafts,
@@ -22,7 +21,6 @@ import {
   range,
   readManuscript,
   sampleSentenceLeaks,
-  varyParagraphs,
   figureStandInMarkdown,
   plannedFigures,
   proseWordCount,
@@ -55,9 +53,6 @@ import {
   composeScene,
   episodesForChapter,
   openingEpisode,
-  capParagraphFinalDisclaimers,
-  episodeAnchors,
-  rewriteCouplets,
   stripMisattributedQuotes,
   type ChapterMaterial,
   type ComposedScene,
@@ -136,7 +131,7 @@ export async function generateBookComposedChapters(options: {
   const originalState = await loadComposedBookState(projectId);
   // A method-shaped stance is refused only on a fresh run: a resumed one
   // composes from the stance its finished chapters were written to.
-  let stance = planAuthorStance(plan, { rejectMethodShaped: originalState.pages.length === 0 });
+  let stance = planAuthorStance(plan);
   if (!stance) {
     stance = await generateAuthorStance({ input, plan, textModel });
     await persistGeneratedAuthorStance(planId, stance);
@@ -474,34 +469,8 @@ export async function generateBookComposedChapters(options: {
       }
       shapePassApplied = shapeNotes.length > 0;
     }
-    // The couplet rewrite: the pairs the detector finds, sent alone to the
-    // editor lane, accepted only when the pattern is gone (coupletRewrite.ts).
-    let couplets: ComposedChapterReport["couplets"];
-    let disclaimers: ComposedChapterReport["disclaimers"];
-    if (quality.enabled("coupletRewrite")) {
-      await updateJobProgress(generationJobId, { message: `Breaking the couplets of chapter ${position}` });
-      try {
-        const rewritten = await rewriteCouplets({ input, plan, chapter: setup.chapter, markdown, textModel });
-        couplets = { found: rewritten.found, rewritten: rewritten.rewritten };
-        if (rewritten.changed) markdown = rewritten.markdown;
-      } catch (error) {
-        if (error instanceof Error && /stop|abort/i.test(error.name + error.message)) throw error;
-        console.warn("Couplet rewrite skipped", {
-          event: "generation.composed_chapters.couplet_rewrite_failed",
-          projectId,
-          chapterIndex: setup.chapter.index,
-          error: error instanceof Error ? error.message : String(error)
-        });
-      }
-      // The same pass's deterministic half: the paragraph-final epistemic-limit
-      // disclaimers, capped at every third one and never below the floor.
-      const capped = capParagraphFinalDisclaimers(markdown, { minWords: chapterWordBudget(input, setup.endPage - setup.startPage + 1).min });
-      markdown = capped.markdown;
-      disclaimers = { found: capped.found, removed: capped.removed, words: capped.words };
-    }
-    // Paragraph variety by merge, since no instruction produced it, and one
-    // copy of any sentence the edits wrote twice.
-    markdown = dropDuplicateSentences(varyParagraphs(markdown));
+    // Editorial judgments belong to the contextual editor. Pattern matches do
+    // not authorize rewriting claims, deleting qualifications or joining paragraphs.
     // The prose-evidence review: two targeted repairs, then whatever stands is recorded on the
     // chapter and flagged at compile time (composedEvidenceResiduals.ts), never a failed book.
     const evidencePackets = chapterCaseEvidence(plan, setup.chapter.index);
@@ -543,7 +512,7 @@ export async function generateBookComposedChapters(options: {
     // The epigraph: verbatim from the dossier, attributed, ahead of the prose.
     let epigraph = false;
     if (quality.enabled("chapterApparatus") && material && material.excerpts.length > 0) {
-      const block = chapterEpigraph(material.excerpts, { body: markdown, anchors: episodeAnchors(material.episodes) });
+      const block = chapterEpigraph(material.excerpts, { body: markdown });
       if (block) {
         markdown = withEpigraph(markdown, block);
         epigraph = true;
@@ -569,8 +538,6 @@ export async function generateBookComposedChapters(options: {
           }
         : {}),
       ...(quotes ? { quotes } : {}),
-      ...(couplets ? { couplets } : {}),
-      ...(disclaimers ? { disclaimers } : {}),
       ...(epigraph ? { epigraph } : {}),
       ...(evidence ? { evidence } : {})
     };
@@ -843,7 +810,7 @@ export async function generateBookComposedChapters(options: {
         ...(edited.changed ? { editedWords: edited.words, paragraphCv: paragraphShapeReport(edited.markdown).cv } : {})
       };
       reports.set(setup.chapter.index, report);
-      const reshaped = edited.changed ? reinsertFigureFences(dropDuplicateSentences(varyParagraphs(edited.markdown)), currentFences) : undefined;
+      const reshaped = edited.changed ? reinsertFigureFences(edited.markdown, currentFences) : undefined;
       const pages = reshaped ? await describePages(setup, reshaped) : undefined;
       if (!pages) {
         // The notes are still worth keeping beside the chapter: the console

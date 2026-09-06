@@ -12,31 +12,37 @@ const stance: AuthorStance = {
 
 const plan = originalDevelopmentPlan();
 
-const METHOD_CONTRIBUTION =
-  "The reader can distinguish evidence of what a court decided from evidence of what the parties believed, rather than treating them as one record.";
+/**
+ * A valid contribution the old shape rule blanked: it says "rather than" and
+ * it is careful about its evidence, and it is a claim about the material.
+ */
+const CAUTIOUS_CONTRIBUTION =
+  "The reader will know that the marshals' refusal to march on Paris forced the abdication rather than the Allied armies alone, and that the only evidence for the Fontainebleau conversation is Caulaincourt's memoir, written years later.";
 
-function episode(title: string) {
-  return { title, kind: "document", person: "", place: "", date: "", document: "", why: "", searchQueries: [] };
+function episode(title: string, fields: { person?: string; place?: string; date?: string } = {}) {
+  return { title, kind: "document", person: fields.person ?? "", place: fields.place ?? "", date: fields.date ?? "", document: "", why: "", searchQueries: [] };
 }
 
-function answer(options: { collide: boolean; methodContribution: boolean }) {
+/** One person in two chapters, ten years apart: two cases, not one case told twice. */
+const CORONATION = episode("Napoleon Bonaparte's coronation", { person: "Napoleon Bonaparte", place: "Notre-Dame, Paris", date: "2 December 1804" });
+const ABDICATION = episode("Napoleon Bonaparte's first abdication", { person: "Napoleon Bonaparte", place: "Fontainebleau", date: "6 April 1814" });
+
+function answer() {
   return {
     chapters: [
-      { index: 1, episodes: [episode("The Nataruk mass-killing site at Lake Turkana")], focus: { question: "How did the first jury reach its verdict?", investigation: ["the sequence of decisions", "the fees paid"], contribution: "The reader will know who paid the jury and when." } },
+      { index: 1, episodes: [CORONATION], focus: { question: "How did the first jury reach its verdict?", investigation: ["the sequence of decisions", "the fees paid"], contribution: "The reader will know who paid the jury and when." } },
       {
         index: 2,
         episodes: [episode("A Suffolk assize roll")],
         focus: {
           question: "How was an appeal filed in 1783?",
           investigation: ["the clerk's fee schedule", "the calendar of sittings"],
-          contribution: options.methodContribution ? METHOD_CONTRIBUTION : "The reader will know what an appeal cost and who could pay it."
+          contribution: CAUTIOUS_CONTRIBUTION
         }
       },
       {
         index: 3,
-        episodes: options.collide
-          ? [episode("The Nataruk site at Lake Turkana revisited"), episode("A Norfolk quarter-sessions book")]
-          : [episode("A Norfolk quarter-sessions book")],
+        episodes: [ABDICATION, episode("A Norfolk quarter-sessions book")],
         focus: { question: "What did the second trial change?", investigation: ["the second jury's composition", "the damages awarded"], contribution: "The reader will know what the retrial altered." }
       }
     ]
@@ -54,47 +60,43 @@ function systemPrompt(call: { messages: Array<{ role: string; content: string }>
   return call.messages.find((message) => message.role === "system")!.content;
 }
 
-describe("planEpisodes and the plan contract", () => {
-  it("re-asks once, naming the method-shaped chapter and the colliding pair", async () => {
-    const { model, calls } = scriptedDevelopmentModel([
-      answer({ collide: true, methodContribution: true }),
-      answer({ collide: false, methodContribution: false })
-    ]);
-    const result = await planEpisodes({ input: developmentInput, plan, stance, textModel: model });
-    expect(calls).toHaveLength(2);
-    const feedback = userPayload(calls[1]!).feedback ?? [];
-    expect(feedback.some((line) => line.startsWith("Chapter 2: contribution"))).toBe(true);
-    expect(feedback.some((line) => line.startsWith("Chapters 1 and 3 both take"))).toBe(true);
-    expect(result.contract?.reasked).toBe(true);
-    expect(result.contract?.issuesBefore).toBe(1);
-    expect(result.contract?.collisionsBefore).toBe(1);
-    expect(result.contract?.issuesAfter).toBe(0);
-    expect(result.contract?.collisionsAfter).toBe(0);
-    expect(result.episodes?.chapters[1]!.focus?.contribution).toBe("The reader will know what an appeal cost and who could pay it.");
-  });
-
-  it("makes one call when the first answer honours the contract", async () => {
-    const { model, calls } = scriptedDevelopmentModel([answer({ collide: false, methodContribution: false })]);
+describe("planEpisodes keeps a valid first answer", () => {
+  // The old plan contract re-asked the paid model when two chapters named the
+  // same person and when a contribution said "rather than", then dropped the
+  // later chapter's episode and blanked the contribution. The coronation and
+  // the abdication are two cases; the cautious contribution is a claim.
+  it("retains both Napoleon episodes and the cautious contribution, in one call", async () => {
+    const { model, calls } = scriptedDevelopmentModel([answer()]);
     const result = await planEpisodes({ input: developmentInput, plan, stance, textModel: model });
     expect(calls).toHaveLength(1);
     expect(userPayload(calls[0]!).feedback).toBeUndefined();
-    expect(result.contract).toEqual({ reasked: false, issuesBefore: 0, collisionsBefore: 0, issuesAfter: 0, collisionsAfter: 0, dropped: [], blanked: [] });
+    expect(result.failure).toBeUndefined();
+    expect(result.episodes?.chapters[0]!.episodes.map((entry) => entry.title)).toEqual([CORONATION.title]);
+    expect(result.episodes?.chapters[2]!.episodes.map((entry) => entry.title)).toEqual([ABDICATION.title, "A Norfolk quarter-sessions book"]);
+    expect(result.episodes?.chapters[1]!.focus?.contribution).toBe(CAUTIOUS_CONTRIBUTION);
+    expect(result.episodes?.chapters[1]!.focus?.investigation).toEqual(["the clerk's fee schedule", "the calendar of sittings"]);
   });
 
-  it("cleans a second answer that still violates rather than failing the book", async () => {
-    const { model, calls } = scriptedDevelopmentModel([
-      answer({ collide: true, methodContribution: true }),
-      answer({ collide: true, methodContribution: true })
-    ]);
+  it("reports the diagnostics as advisory: never re-asked, nothing dropped or blanked", async () => {
+    const { model } = scriptedDevelopmentModel([answer()]);
     const result = await planEpisodes({ input: developmentInput, plan, stance, textModel: model });
-    expect(calls).toHaveLength(2);
-    expect(result.contract?.reasked).toBe(true);
-    expect(result.contract?.blanked).toEqual([{ chapterIndex: 2, kind: "contribution" }]);
-    expect(result.contract?.dropped).toHaveLength(1);
-    expect(result.contract?.dropped[0]!.chapterIndex).toBe(3);
-    expect(result.episodes?.chapters[1]!.focus?.contribution).toBe("");
-    // The colliding episode goes; chapter 3 keeps the material that is its own.
-    expect(result.episodes?.chapters[2]!.episodes.map((entry) => entry.title)).toEqual(["A Norfolk quarter-sessions book"]);
+    expect(result.contract).toEqual({ reasked: false, issues: 1, collisions: 1, dropped: [], blanked: [] });
+  });
+
+  it("passes the caller's own feedback through, and only that", async () => {
+    const { model, calls } = scriptedDevelopmentModel([answer()]);
+    const feedback = ["Chapter 2 needs a different document: the Suffolk roll is not available."];
+    await planEpisodes({ input: developmentInput, plan, stance, textModel: model, feedback });
+    expect(calls).toHaveLength(1);
+    expect(userPayload(calls[0]!).feedback).toEqual(feedback);
+    expect(systemPrompt(calls[0]!)).toContain("Select each case for one chapter only");
+  });
+
+  it("still keeps only the plan's chapters and reports an empty answer as a failure", async () => {
+    const { model } = scriptedDevelopmentModel([{ chapters: [{ index: 9, episodes: [episode("Nobody's chapter")] }] }]);
+    const result = await planEpisodes({ input: developmentInput, plan, stance, textModel: model });
+    expect(result.episodes).toBeUndefined();
+    expect(result.failure).toBe("no chapter of the plan received episodes");
   });
 });
 

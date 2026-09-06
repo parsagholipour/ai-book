@@ -635,6 +635,28 @@ describe("manuscript read cuts", () => {
   const reports = () =>
     store.chapters.map((chapter) => (chapter.productionBrief as { report: { readNotes: string[]; secondEditApplied: boolean } }).report);
 
+  it("preserves valid qualifications, repetitions and paragraphs with the legacy rewrite flag on", async () => {
+    mocks.qualityEnabled.mockImplementation((feature: string) => feature === "coupletRewrite");
+    const { fake, purposes } = recordingFake();
+    const generateText = fake.generateText.bind(fake);
+    const qualification = "The grave held several bodies. Excavators found wounds on the bones. The wounds do not prove that the deaths occurred in battle.";
+    const claim = "The decree did not free the prisoners. It transferred them to another prison.";
+    const repeated = "The witness repeated the same words because the clerk had asked her to repeat them.";
+    const paragraphs = "The clerk closed the ledger after the hearing.\n\nThat afternoon brought another hearing before a different judge.";
+    fake.generateText = async (options) => {
+      if (options.purpose !== "compose-chapter") return generateText(options);
+      purposes.push(options.purpose);
+      return { text: [qualification, claim, repeated, paragraphs, repeated, longDraft(6200)].join("\n\n"), provider: "fixture", model: "fixture" };
+    };
+    await run(fake);
+    const first = store.pages.filter((page) => page.chapterId === store.chapters[0]!.id).map((page) => page.markdown).join("\n\n");
+    expect(first).toContain(qualification);
+    expect(first).toContain(claim);
+    expect(first).toContain(paragraphs);
+    expect(first.split(repeated)).toHaveLength(3);
+    expect(purposes).not.toContain("rewrite-couplets");
+  });
+
   it("cuts exactly the flagged chapter when the gate is on", async () => {
     gatesOffFor([]);
     const { fake, purposes } = readingFake({});

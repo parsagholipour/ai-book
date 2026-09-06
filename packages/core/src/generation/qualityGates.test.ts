@@ -9,6 +9,12 @@ import {
 } from "./qualityGates.js";
 
 describe("qualityFeatureEnabled", () => {
+  it("cannot reactivate the retired pattern rewrite from a saved revision", () => {
+    const settings = parseQualityFeatureSettings({ coupletRewrite: ["balanced", "fast", "premium", "ultra"] });
+    for (const tier of ["balanced", "fast", "premium", "ultra"] as const) {
+      expect(qualityFeatureEnabled(settings, "coupletRewrite", tier)).toBe(false);
+    }
+  });
   it("uses compiled defaults when there are no rows", () => {
     for (const feature of ["pageLocalQa", "smartUnslop", "pageModelReview", "pageQaRewrite", "finalBookQa"] as const) {
       for (const tier of ["ultra", "premium", "balanced", "fast"] as const) {

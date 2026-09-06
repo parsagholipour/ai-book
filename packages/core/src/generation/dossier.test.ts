@@ -1,11 +1,27 @@
-import { describe, expect, it } from "vitest";
-import { candidateWindows, documentIsRelevant, sliceByAnchors, type DossierDocument } from "./dossier.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { buildChapterDossier, candidateWindows, documentIsRelevant, sliceByAnchors, type DossierDocument } from "./dossier.js";
+import * as primarySources from "./primarySources.js";
+import { chapterEpisodeSchema } from "../schemas/episodes.js";
+import { developmentInput, originalDevelopmentPlan, scriptedDevelopmentModel } from "./testing/bookDevelopmentFixtures.js";
+
+afterEach(() => vi.restoreAllMocks());
 
 const filler = (n: number, word = "lorem") => Array.from({ length: n }, (_, i) => `${word}${i % 7}`).join(" ");
 const passage =
   "Then Temüjin said to Jamukha: “Let us make the Merkit our prey, and take back what they took from us; let no man of them escape across the Selenge.” And they rode that night.";
 
 describe("dossier", () => {
+  it("lets the extractor assess a passage without shared names instead of dropping its source", async () => {
+    const episode = chapterEpisodeSchema.parse({ title: "The coronation", person: "Napoleon Bonaparte", place: "Paris", document: "Coronation memoir", searchQueries: ["coronation witness"] });
+    const text = "We watched him take the crown from the cushion and raise it above his head. The company stood as the music began, and the clerk recorded the ceremony before the guests departed through the western door.";
+    vi.spyOn(primarySources, "searchPrimarySources").mockResolvedValue([{ host: "web", title: "A witness's recollections", url: "https://example.org/record", textUrl: "https://example.org/record", author: "", year: "" }]);
+    vi.spyOn(primarySources, "fetchPrimaryText").mockResolvedValue(`${text} ${filler(100)}`);
+    const chapter = originalDevelopmentPlan().chapters[0]!;
+    const { model, calls } = scriptedDevelopmentModel([{ excerpts: [{ windowId: `ch${chapter.index}-d1-w1`, firstWords: "We watched him take the crown from", lastWords: "guests departed through the western door.", episodeTitle: episode.title }] }]);
+    const result = await buildChapterDossier({ input: developmentInput, chapter, episodes: [episode], textModel: model, fetch: async () => ({ status: 200, text: "" }) });
+    expect(calls).toHaveLength(1);
+    expect(result.excerpts[0]?.text).toBe(text);
+  });
   it("ranks windows by distinct episode-term hits and falls back to the opening", () => {
     const document: DossierDocument = {
       id: "d1", title: "T", url: "u", host: "wikisource", author: "", year: "", episodeTitle: "e",

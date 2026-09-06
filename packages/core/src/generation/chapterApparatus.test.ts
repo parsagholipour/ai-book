@@ -40,18 +40,9 @@ describe("chapterApparatus", () => {
     expect(chapterEpigraph([quoted], { body })).toBeUndefined();
   });
 
-  it("skips an excerpt sharing no anchor with the chapter's episodes", () => {
-    const unrelated = excerpt("Several clergymen of Portland gathered to hear the reading of the will that morning.", { speaker: "A clerk" });
-    const related = excerpt("The Merkit came down the Onon before the ice broke and took three of the tents.", { speaker: "Temüjin" });
-    const anchors = episodeAnchors([
-      chapterEpisodeSchema.parse({ title: "The Merkit raid", kind: "scene", person: "Temüjin", place: "Onon" })
-    ]);
-    expect(anchors).toEqual(expect.arrayContaining(["Merkit", "Temüjin", "Onon"]));
-    expect(chapterEpigraph([unrelated, related], { anchors })).toContain("The Merkit came down the Onon");
-    expect(chapterEpigraph([unrelated], { anchors })).toBeUndefined();
-    // No options is today's behaviour: the unrelated excerpt is chosen.
-    expect(chapterEpigraph([unrelated, related])).toContain("Several clergymen of Portland");
-    expect(chapterEpigraph([unrelated, related], {})).toContain("Several clergymen of Portland");
-    expect(chapterEpigraph([unrelated, related], { anchors: [] })).toContain("Several clergymen of Portland");
+  it("keeps a source passage using pronouns without requiring shared capitalized words", () => {
+    const relevant = excerpt("We watched him take the crown from the cushion and raise it above his head.");
+    const anchors = episodeAnchors([chapterEpisodeSchema.parse({ title: "The coronation", person: "Napoleon Bonaparte", place: "Paris" })]);
+    expect(chapterEpigraph([relevant], { anchors })).toContain(relevant.text);
   });
 });

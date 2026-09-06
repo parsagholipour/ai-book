@@ -1,4 +1,4 @@
-import { figureFreeProse, figureWordEquivalent, isFigureFenceBlock, isFigureStandIn, proseWordCount } from "./figures/figureBlocks.js";
+import { figureFreeProse, figureWordEquivalent, isFigureFenceBlock, proseWordCount } from "./figures/figureBlocks.js";
 import { countReadableWords } from "./proseShape.js";
 
 /**
@@ -212,77 +212,4 @@ export function chapterTail(markdown: string, wordLimit: number): string {
     }
   }
   return tail.join("\n\n");
-}
-
-const CONTINUATION_CUE =
-  /^(?:This|That|These|Those|Such|The same|It|Its|They|Their|He|His|She|Her|Here|Yet|But|Nor|So|Still|Instead|Even|Only|Nothing|None|Neither|Both)\b/;
-const MAX_MERGED_WORDS = 340;
-
-function isProseParagraph(block: string): boolean {
-  return (
-    !/^\s*(?:```|[-*+]\s|\d+[.)]\s|>|#|\|)/.test(block) && !/```/.test(block) && !isFigureStandIn(block) && !/[“"]/.test(block.slice(0, 2))
-  );
-}
-
-/**
- * Deterministic paragraph variety for a chapter whose paragraphs all came out
- * one size.
- *
- * Three composed books and six edit passes told the writer to vary paragraph
- * length, in plain words and with measured numbers, and every chapter came
- * back at a coefficient of variation of 0.15–0.25 (paragraphs "all about 104
- * words", as the note said). Merging a paragraph into the one before it when
- * it opens on a continuation cue — This, That, Yet, The same, It — joins a
- * thought to the thought it continues, and splitting a long paragraph's last
- * short sentence off gives a turn its own line. Neither changes a word. On the
- * third composed book this took chapters from 0.15–0.25 to 0.33–0.44 with at
- * most two paragraphs under forty words.
- */
-export function varyParagraphs(markdown: string): string {
-  const blocks = chapterBlocks(markdown);
-  const merged: string[] = [];
-  for (const block of blocks) {
-    const previous = merged.at(-1);
-    if (
-      previous !== undefined &&
-      isProseParagraph(block) &&
-      isProseParagraph(previous) &&
-      CONTINUATION_CUE.test(block) &&
-      countReadableWords(previous) + countReadableWords(block) <= MAX_MERGED_WORDS
-    ) {
-      merged[merged.length - 1] = `${previous} ${block}`;
-      continue;
-    }
-    merged.push(block);
-  }
-  return merged.join("\n\n");
-}
-
-const DUPLICATE_SENTENCE_MIN_WORDS = 12;
-
-/**
- * Drop a sentence that repeats an earlier sentence of the chapter word for
- * word. The fourth composed book's line edit and its second edit each wrote
- * the chapter's conclusion, so two chapters closed on the same sentence
- * twice, two paragraphs apart. The later copy goes; fenced blocks are left
- * alone.
- */
-export function dropDuplicateSentences(markdown: string): string {
-  const seen = new Set<string>();
-  return chapterBlocks(markdown)
-    .map((block) => {
-      if (/^\s*```/m.test(block)) return block;
-      const kept = block
-        .split(SENTENCE_BREAK)
-        .filter((sentence) => {
-          const key = sentence.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
-          if (countReadableWords(sentence) < DUPLICATE_SENTENCE_MIN_WORDS) return true;
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-      return kept.join(" ");
-    })
-    .filter((block) => block.trim().length > 0)
-    .join("\n\n");
 }

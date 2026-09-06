@@ -143,12 +143,12 @@ describe("the writer's style notes", () => {
     "Use moderate confidence. Name competing interpretations when the available evidence supports more than one reading."
   ];
 
-  it("omits the method rules and keeps the rest", async () => {
+  it("preserves the voice guide including evidence cautions", async () => {
     const model = new CapturingModel();
     const options = composeOptions(model, true);
     await composeChapter({ ...options, plan: { ...plan, voiceGuide } });
     const payload = JSON.parse(model.textCalls[0]!.messages[1]!.content);
-    expect(payload.book.styleNotes).toEqual([voiceGuide[0]]);
+    expect(payload.book.styleNotes).toEqual(voiceGuide);
   });
 });
 
@@ -239,13 +239,13 @@ describe("focused chapters follow their investigation, not the form quotas", () 
     const editSystem = model.textCalls[1]!.messages[0]!.content;
     expect(editSystem).not.toContain("Reshape paragraphs wherever");
     expect(editSystem).not.toContain("Only the chapter's final paragraph");
-    expect(editSystem).toContain("Keep every fact, name, date, number, place and quotation");
-    expect(editSystem).toContain("Cut what a reader would skim");
+    expect(editSystem).toContain("negation, scope, uncertainty, names, dates, quantities and exact quotations");
+    expect(editSystem).toContain("Edit where the surrounding passage gives a concrete reason");
     expect(editSystem).toContain(readerNote);
     expect(JSON.parse(model.textCalls[1]!.messages[1]!.content).readerNotes).toEqual([readerNote]);
   });
 
-  it("keeps the composition, the shape rules and the measurements without a focus", async () => {
+  it("keeps the composition and treats editor measurements as advisory without a focus", async () => {
     const model = new CapturingModel();
     await composeChapter(composeOptions(model, false));
     await editChapter({ ...composeOptions(model, false), markdown: longProse, measurementNotes: [measurementNote], readerNotes: [readerNote] });
@@ -253,8 +253,6 @@ describe("focused chapters follow their investigation, not the form quotas", () 
     for (const call of model.textCalls) {
       const system = call.messages[0]!.content;
       expect(system).toContain(formSubject);
-      expect(system).toContain("two hundred words or more");
-      expect(system).toContain("It can show X");
       expect(system).not.toContain("Keep consequential sequences together");
     }
     const composePayload = JSON.parse(model.textCalls[0]!.messages[1]!.content);
@@ -263,6 +261,9 @@ describe("focused chapters follow their investigation, not the form quotas", () 
     expect(model.textCalls[0]!.messages[0]!.content).toContain("Give each episode a real stretch of the chapter");
     const editSystem = model.textCalls[1]!.messages[0]!.content;
     expect(editSystem).toContain(measurementNote);
+    expect(editSystem).toContain("not editing targets");
+    expect(editSystem).not.toContain("two hundred words or more");
+    expect(editSystem).not.toContain("It can show X");
     expect(editSystem).toContain(readerNote);
     expect(JSON.parse(model.textCalls[1]!.messages[1]!.content).measurementNotes).toEqual([measurementNote]);
   });

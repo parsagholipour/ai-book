@@ -187,6 +187,8 @@ export type QualityFeatureDescription = {
   id: QualityFeatureId;
   label: string;
   summary: string;
+  /** Saved revisions may retain this key, but it no longer controls a pipeline. */
+  retired?: boolean;
   /** The pipelines whose books this gate can change. */
   pipelines: readonly QualityPipeline[];
   /** Where in that pipeline it fires, as the console labels it. */
@@ -358,9 +360,10 @@ export const QUALITY_FEATURES: QualityFeatureDescription[] = [
   },
   {
     id: "coupletRewrite",
-    label: "Couplet rewrite (composed chapters)",
-    summary: "A deterministic detector finds the negation-then-assertion sentence pairs; one line-edit call per chapter on the writer rewrites only those, accepted only when the pattern is gone and every name and number survives.",
-    pipelines: ["composed"],
+    retired: true,
+    label: "Retired: pattern-driven couplet rewrite",
+    summary: "Compatibility key for saved revisions. Has no effect: contextual chapter editing handles prose; pattern matches never trigger rewrites or disclaimer deletion.",
+    pipelines: [],
     stage: "Line edit"
   },
   {
@@ -453,6 +456,7 @@ export function qualityFeatureEnabled(
   feature: QualityFeatureId,
   modelTier: ModelTier
 ): boolean {
+  if (QUALITY_FEATURES.find((entry) => entry.id === feature)?.retired) return false;
   const resolved = settings ?? parseQualityFeatureSettings(undefined);
   const tiers = resolved[feature] ?? QUALITY_FEATURE_DEFAULTS[feature];
   return tiers.includes(modelTier);

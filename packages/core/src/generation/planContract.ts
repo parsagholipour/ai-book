@@ -1,26 +1,27 @@
 import { type BookEpisodes, type ChapterEpisode } from "../schemas/episodes.js";
 
 /**
- * The plan contract: a chapter's assignment is a claim about the world, never
- * a distinction between two ways of reading evidence.
+ * Plan diagnostics. Advisory only: nothing in this module changes a plan,
+ * withholds a line from a prompt, or buys a model call.
  *
- * Three blind readers of the same balanced-tier book (fresh-plan-5,
- * 6 September 2026) named one paragraph engine — "what a source establishes,
- * then what it cannot establish", closing on a balanced antithesis — in nearly
- * every paragraph of fourteen chapters. The writer never saw the stance
- * positions, so the shape was not imitated: it was assigned. `focus.contribution`
- * was a distinction in 13 of 14 chapters, five `focus.question`s asked what the
- * evidence can and cannot establish, and three of seven `voiceGuide` lines were
- * method rules shown on every compose and edit call. A rule about handling
- * evidence, shown in every call, is performed in every paragraph.
- *
- * Everything here is soft and English-only by design: it names shapes, it never
- * fails a book, and a non-English plan simply is not gated.
+ * It began as an enforced contract (fresh-plan-5, 6 September 2026): regexes
+ * over `focus.*`, the stance and the voice guide, a paid re-ask of the episode
+ * planner, then a deterministic clean-up that blanked contributions, filtered
+ * investigation lines, dropped the later chapter's episode when two chapters
+ * shared a name, and withheld voice-guide lines from every chapter call. The
+ * heuristics rejected valid answers: two cases about one person ten years
+ * apart, a contribution that says "rather than" while stating a claim, a
+ * source caution the planner wrote on purpose. The enforcement is gone. What
+ * remains is read-only — `focusContractIssues`, `episodeCollisions`,
+ * `stanceIsMethodShaped`, `focusFeedbackLines` — for the run log and the
+ * archived replay script under `docs/composed-chapters/experiments/`, plus
+ * two compatibility wrappers that hand their input back unchanged
+ * (`chapterStyleNotes`, `applyFocusContract`). English-only by construction.
  */
 
 /**
- * Shape patterns, always on: the sentence is a distinction or a rule about
- * reading, rather than a claim about what happened and why.
+ * Shape patterns: the sentence reads as a distinction or a rule about reading
+ * rather than a claim about what happened. A reading, not a verdict.
  */
 const SHAPE_PATTERNS: readonly RegExp[] = [
   // "distinguish evidence of violent capability … from evidence of violence's frequency"
@@ -52,7 +53,7 @@ const SHAPE_PATTERNS: readonly RegExp[] = [
  */
 const KEYWORD_PATTERN = /\b(evidence|sources?|the record|records|interpretations?|inferences?|scholars|readings? of)\b/i;
 
-/** True when the text is a rule about reading rather than a claim about the world. */
+/** Advisory: the text reads as a rule about reading rather than a claim about the world. */
 export function isMethodShaped(text: string, options: { keywords?: boolean | undefined } = {}): boolean {
   const value = text.trim();
   if (!value) return false;
@@ -60,32 +61,21 @@ export function isMethodShaped(text: string, options: { keywords?: boolean | und
   return Boolean(options.keywords) && KEYWORD_PATTERN.test(value);
 }
 
-/** A stance whose thesis or positions are hedged evidence statements. */
+/** Advisory: a stance whose thesis or positions read as hedged evidence statements. Nothing rejects a stance on it. */
 export function stanceIsMethodShaped(stance: { thesis: string; positions: readonly string[] }): boolean {
   if (isMethodShaped(stance.thesis, { keywords: true })) return true;
   return stance.positions.some((position) => isMethodShaped(position, { keywords: true }));
 }
 
 /**
- * A voice-guide line that is a rule about *shape* — where a chapter, section or
- * paragraph ends, opens or how long it runs. "Vary chapter endings. Some should
- * close on a bounded conclusion, some on an unresolved question…" was shown on
- * every compose call, and three Opus readers heard it performed on schedule:
- * chapters ending on an unanswered question in the same two-clause shape. Rules
- * about tone and about what carries the narrative stay; rules about shape do not.
- */
-const SHAPE_RULE_PATTERN =
-  /\b(chapter|section|paragraph)s?\b[^.]{0,60}\b(end|ends|ending|endings|close|closes|closing|open|opens|opening|openings|begin|begins|length|lengths|shape|shapes)\b|\b(end|close|open|begin)\s+(each|every|some|most|a|the)\s+(chapter|section|paragraph)\b|\bvary\b[^.]{0,40}\b(endings|openings|closings|paragraph|sentence)/i;
-
-/**
- * The voice-guide lines a per-chapter call may see. Taking styleNotes out
- * wholesale measured worse (composed-20); only the method rules are withheld.
- * A guide made entirely of method rules is kept as it is, because a chapter
- * with no style notes at all is the arm that was already measured.
+ * The voice-guide lines a per-chapter call sees: all of them, verbatim and in
+ * order. This used to withhold lines matching a method keyword or a rule about
+ * shape, which took a valid distinction and a valid source caution off every
+ * chapter prompt. Kept as a seam so `composedChapter.ts` has one place to read
+ * the guide from.
  */
 export function chapterStyleNotes(voiceGuide: readonly string[]): string[] {
-  const kept = voiceGuide.filter((line) => !isMethodShaped(line, { keywords: true }) && !SHAPE_RULE_PATTERN.test(line));
-  return kept.length > 0 ? kept : [...voiceGuide];
+  return [...voiceGuide];
 }
 
 export type FocusContractIssue = {
@@ -102,7 +92,7 @@ export type EpisodeCollision = {
   strong: string[];
 };
 
-/** Method-shaped focus fields, by chapter. Shape patterns only: no keyword rule here. */
+/** Advisory: focus fields the shape patterns notice, by chapter. Counted, never acted on. */
 export function focusContractIssues(episodes: BookEpisodes): FocusContractIssue[] {
   const issues: FocusContractIssue[] = [];
   for (const chapter of episodes.chapters) {
@@ -282,53 +272,12 @@ export type FocusContractResult = {
 };
 
 /**
- * The deterministic clean-up after the single re-ask. A method-shaped
- * contribution becomes no assigned payoff at all; a method-shaped question is
- * kept, because there is nothing to put in its place; a colliding episode is
- * dropped from the later chapter only while that chapter keeps material. One
- * strong token is enough to *report* a collision to the planner and not enough
- * to take an episode away: a single shared name is as often a trial held where
- * an earlier case was decided as it is the same case told twice.
+ * @deprecated Compatibility wrapper for the archived replay script. It used to
+ * blank a method-shaped contribution, filter investigation lines and drop the
+ * later chapter's episode over shared names; every one of those took valid
+ * material off a plan. It now returns the episodes it was given, untouched,
+ * with nothing dropped and nothing blanked. New code should not call it.
  */
 export function applyFocusContract(episodes: BookEpisodes): FocusContractResult {
-  const dropped: FocusContractResult["dropped"] = [];
-  const blanked: FocusContractResult["blanked"] = [];
-  const droppedTitles = new Map<number, Set<string>>();
-  for (const collision of episodeCollisions(episodes)) {
-    if (collision.strong.length < 2) continue;
-    const chapter = episodes.chapters.find((entry) => entry.index === collision.later.chapterIndex);
-    if (!chapter) continue;
-    const already = droppedTitles.get(chapter.index) ?? new Set<string>();
-    if (already.has(collision.later.title)) continue;
-    const remaining = chapter.episodes.filter((episode) => !already.has(episode.title) && episode.title !== collision.later.title);
-    if (remaining.length === 0) continue;
-    already.add(collision.later.title);
-    droppedTitles.set(chapter.index, already);
-    dropped.push({
-      chapterIndex: chapter.index,
-      title: collision.later.title,
-      reason: `its full account belongs to chapter ${collision.earlier.chapterIndex} (shared: ${collision.shared.join(", ")})`
-    });
-  }
-  const chapters = episodes.chapters.map((chapter) => {
-    const drops = droppedTitles.get(chapter.index);
-    const kept = drops ? chapter.episodes.filter((episode) => !drops.has(episode.title)) : chapter.episodes;
-    if (!chapter.focus) return { ...chapter, episodes: kept };
-    const focus = chapter.focus;
-    let investigation = focus.investigation;
-    const clean = investigation.filter((line) => !isMethodShaped(line));
-    if (clean.length >= 2 && clean.length < investigation.length) {
-      for (const line of investigation) {
-        if (!clean.includes(line)) blanked.push({ chapterIndex: chapter.index, kind: "investigation" });
-      }
-      investigation = clean;
-    }
-    let contribution = focus.contribution;
-    if (isMethodShaped(contribution)) {
-      contribution = "";
-      blanked.push({ chapterIndex: chapter.index, kind: "contribution" });
-    }
-    return { ...chapter, episodes: kept, focus: { ...focus, investigation, contribution } };
-  });
-  return { episodes: { chapters }, dropped, blanked };
+  return { episodes, dropped: [], blanked: [] };
 }

@@ -73,7 +73,7 @@ export function episodeNameTerms(episode: ChapterEpisode): string[] {
 }
 
 /**
- * Whether a fetched document is about the episode: its title carries one of
+ * Historical lexical relevance signal, never a rejection gate: its title carries one of
  * the episode's names, or one of its best windows does. An episode with no
  * names of its own (a document titled only in generic words) falls back to
  * two distinct term hits in a window.
@@ -227,6 +227,7 @@ export async function extractExcerpts(options: {
             ? "Choose up to six passages of 30 to 300 words that establish the episode's actors, consequential events, chronology, quantities, decisions, outcome, or disagreement. Include ordinary factual prose, not only quotable lines. Preserve the context needed to distinguish an allegation from a finding. A passage is one continuous stretch of a window. Skip irrelevant windows."
             : "Choose up to six passages of 30 to 300 words that bear on one of the chapter's episodes and would be worth quoting: a voice, an order, an oath, a figure, a description of something seen. A passage is one continuous stretch of a window. Skip a window that has nothing quotable.",
           "Report each passage as its first six to eight words and its last six to eight words, copied exactly from the window — never paraphrased, never the whole passage. speaker: who wrote or said it, if the window says. episodeTitle: which episode it serves.",
+          "Judge relevance from the passage and document context. A shared name does not prove relevance and a passage using pronouns or alternate names can still concern the episode. Keep qualifications and return no excerpt where relevance is uncertain. Copy episodeTitle exactly from an episode in episodes.",
           "Return one JSON object shaped exactly like outputContract.",
           ...targetLanguageGenerationGuidance(options.input.language)
         ].join(" ")
@@ -364,20 +365,13 @@ export async function buildChapterDossier(options: {
       }
     }
   }
-  // A repository search answers a query about a 1968 excavation report with
-  // whatever old book shares a word, and an extractor asked for "something
-  // quotable" would find it. A document stays only when it is about the
-  // episode: its title shares a term with the episode's document, person or
-  // place, or its best window hits two distinct episode terms.
+  // Term hits rank bounded windows; the existing extractor judges relevance.
+  // Lexical absence cannot reject a source containing pronouns or alternate names.
   const windows: DossierWindow[] = [];
   for (const document of documents) {
     const episode = options.episodes.find((entry) => entry.title === document.episodeTitle);
     const terms = episode ? episodeTerms(episode) : [];
     const candidates = candidateWindows(document, terms, { maxWindows: 2 });
-    if (!episode || !documentIsRelevant(document, episode, candidates)) {
-      log("dossier.document_dropped", { chapterIndex: options.chapter.index, title: document.title, episode: document.episodeTitle });
-      continue;
-    }
     windows.push(...candidates);
   }
   const kept = windows.slice(0, DOSSIER_MAX_WINDOWS_PER_CHAPTER);

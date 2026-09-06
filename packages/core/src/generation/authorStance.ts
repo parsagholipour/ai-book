@@ -4,7 +4,6 @@ import { kidsReadingGuidanceLines } from "../prompting/readingLevel.js";
 import { authorStanceSchema, type AuthorStance, type BookPlan, type CreateProjectInput } from "../schemas/book.js";
 import { isRecord } from "../schemas/jsonCoercion.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
-import { stanceIsMethodShaped } from "./planContract.js";
 import { inferWritingMode, type WritingMode } from "./styleContract.js";
 
 /**
@@ -178,12 +177,14 @@ export function authorStancePromptLines(
 }
 
 /**
- * `rejectMethodShaped` is a *fresh* run's decision and never a resumed one's: a
- * resumed run composes from the stance it started with, exactly as it re-uses
- * the stored material and form plan, so re-reading a persisted stance must not
- * regenerate it.
+ * The stance a plan stores, or nothing when the pass cannot write from it.
+ * The questions asked are structural only — schema-valid, enough positions,
+ * a sample long enough to carry a voice. A fresh run used to also refuse a
+ * stance whose thesis or positions matched a method or evidence regex
+ * (`rejectMethodShaped`) and pay for a regenerated one; that rejected valid,
+ * evidence-focused stances, and the option is gone.
  */
-export function planAuthorStance(plan: BookPlan, options: { rejectMethodShaped?: boolean | undefined } = {}): AuthorStance | undefined {
+export function planAuthorStance(plan: BookPlan): AuthorStance | undefined {
   const stance = plan.authorStance;
   if (!isRecord(stance)) {
     return undefined;
@@ -199,15 +200,6 @@ export function planAuthorStance(plan: BookPlan, options: { rejectMethodShaped?:
     return undefined;
   }
   if (parsed.data.voiceSample.trim().split(/\s+/).length < MIN_VOICE_SAMPLE_WORDS) {
-    return undefined;
-  }
-  // A stance whose thesis or positions are hedged evidence statements
-  // ("Archaeological evidence shows … but it does not establish …") is copied
-  // by the episode planner into every chapter's assignment, and the writer
-  // then performs the hedge in every paragraph. Regenerating through
-  // `generateAuthorStance` is the existing door: it already asks for plain
-  // assertions about the world and refuses a method as a thesis.
-  if (options.rejectMethodShaped && stanceIsMethodShaped(parsed.data)) {
     return undefined;
   }
   return parsed.data;

@@ -493,7 +493,6 @@ export async function cutChapterTail(
 
 /** The cut may remove between half a percent and a quarter of the chapter. */
 const CUT_MIN_KEPT_SHARE = 0.75;
-const CUT_MAX_KEPT_SHARE = 0.995;
 
 function cutParagraphs(markdown: string): string[] {
   return markdown
@@ -512,7 +511,7 @@ function cutSentences(paragraph: string): string[] {
 /**
  * Accepts a cut only if it is one: every kept paragraph is one of the draft's
  * paragraphs with zero or more whole sentences removed, in order, and the
- * chapter kept between 75% and 99.5% of its words. Anything else — a rewrite,
+ * chapter kept at least 75% of its words and made a cut. Anything else — a rewrite,
  * a merge, a fragment, a refusal, an over-cut — returns undefined and the draft
  * stands. Nothing the model writes can enter the book through this pass.
  */
@@ -547,7 +546,7 @@ export function deletionOnlyResult(draft: string, candidate: string): string | u
   const draftWords = countReadableWords(draft);
   const keptWords = countReadableWords(candidate);
   const share = draftWords > 0 ? keptWords / draftWords : 0;
-  if (share < CUT_MIN_KEPT_SHARE || share > CUT_MAX_KEPT_SHARE) {
+  if (share < CUT_MIN_KEPT_SHARE || keptWords >= draftWords) {
     return undefined;
   }
   return keptParagraphs.join("\n\n");
@@ -568,6 +567,10 @@ export async function cutChapter(
   const draftWords = countReadableWords(options.markdown);
   const pages = options.chapterPageEnd - options.chapterPageStart + 1;
   const budget = chapterWordBudget(options.input, pages);
+  const removableWords = Math.max(0, Math.min(draftWords - budget.min, options.maxRemovableWords ?? Infinity));
+  if (removableWords === 0) {
+    return { markdown: options.markdown, words: draftWords, attempts: 0, changed: false };
+  }
   const result = await options.textModel.generateText({
     purpose: CUT_CHAPTER_PURPOSE,
     temperature: Math.min(0.3, options.input.temperature),
@@ -578,8 +581,8 @@ export async function cutChapter(
         content: [
           `You are cutting chapter ${options.chapter.index}, "${options.chapter.title}", of "${options.plan.title}" after a reader's notes on the whole manuscript.`,
           "The only operation is deletion of whole sentences or whole paragraphs. Do not rewrite, reorder, merge or add a word; every sentence you keep stays exactly as written, in its paragraph. Delete what the notes name, and anything else that restates what this chapter or an earlier chapter already established, repeats a caveat the chapter already made, re-lists the chapter's cases at its end, or restates the book's argument in a sentence of its own.",
-          "Never delete a sentence carrying a fact, name, date, number, place or quotation that appears nowhere else in the chapter, and never delete the chapter's first paragraph.",
-          `Remove at least a few sentences and at most a quarter of the chapter${options.maxRemovableWords === undefined ? "" : ` and never more than ${options.maxRemovableWords} words`}.`,
+          "Preserve all claims, negations, causal relationships, scope, uncertainty and quotations. A repeated name is not a repeated fact, and a disclaimer may be essential. Delete only when you can identify the retained passage that already conveys the same information with the same scope and context. Preserve intentional repetition and the first paragraph. Return the draft unchanged if no such cut is justified.",
+          `Remove only demonstrably redundant material, at most a quarter of the chapter${options.maxRemovableWords === undefined ? "" : ` and never more than ${options.maxRemovableWords} words`}.`,
           "Return only the cut chapter as Markdown paragraphs, nothing else."
         ].join(" ")
       },
@@ -599,7 +602,7 @@ export async function cutChapter(
   });
   const cut = deletionOnlyResult(options.markdown, normalizeChapterMarkdown(unfence(result.text), { chapterTitle: options.chapter.title }));
   // A cut that takes the chapter under the pages it was paid for is refused, deletion-only or not.
-  if (!cut || countReadableWords(cut) < budget.min) {
+  if (!cut || countReadableWords(cut) < budget.min || draftWords - countReadableWords(cut) > removableWords) {
     return { markdown: options.markdown, words: draftWords, attempts: 1, changed: false };
   }
   return { markdown: cut, words: countReadableWords(cut), attempts: 1, changed: true };
@@ -617,31 +620,22 @@ export async function editChapter(options: EditChapterOptions): Promise<EditedCh
   const systemLines = [
     `You are the line editor for "${options.plan.title}", revising each chapter into its finished form in the author's own voice.`,
     ...stanceLinesFor(options),
-    "Keep every fact, name, date, number, place and quotation, and the order of sections. Keep the opening section's material, though you may and should rewrite an opening sentence that makes a general claim about a common noun. The chapter ends where its last section ends.",
-    STOCK_PIVOT_BAN,
+    "Preserve the chapter's claims, causal relationships, negation, scope, uncertainty, names, dates, quantities and exact quotations. Keep the section order and the material of the opening. A qualification may be essential even when its names and numbers occur elsewhere.",
+    "Edit where the surrounding passage gives a concrete reason: clarify a confusing sentence or remove a repetition that adds no fact, distinction, context or narrative purpose. Sentence shape alone is not a defect. Intentional repetition, dialogue and quotations may recur. Keep a passage unchanged when an improvement would lose meaning or require guessing.",
     narrative
-      ? "Cut what a reader would skim: reflection that explains what a scene already showed, feelings stated after they were dramatised, transitions that announce time passing, and any line in which a character states the theme. Where the draft summarises, dramatise or cut."
-      : "Cut what a reader would skim: caveats that repeat an earlier caveat, sentences that restate what the previous sentence showed, closing sentences that weigh, balance or generalise, transitions that announce what comes next, lists longer than three items outside a catalogue or procedure, and abstract nouns standing in for a nameable thing. Merge two thin examples into one developed example when the facts allow.",
-    // These three shape rules were removed for composed-8/9 on the theory that
-    // every rule about shape becomes a shape; on the same plan the book scored
-    // 6.73 against 7.73 with them, so they stand (spec.md, iterations 8-10).
-    ...(focused ? focusedProgressionLines() : ["Reshape paragraphs wherever the draft is uniform: merge paragraphs that continue one movement into long ones of two hundred words or more, let a turn or a landing stand alone as a one- or two-sentence paragraph, and leave no run of paragraphs of the same length. Vary sentence length and openings the same way; no two consecutive paragraphs open on the same construction."]),
-    options.contract === "creative"
-      ? "Where the author holds a position, let the prose commit: delete the counterweight that hedges a stated position. You may sharpen a particular the draft already carries; add no new episode or source. Use one spelling convention throughout, the one the book's title and premise use."
-      : "Where the author holds a position, let the prose commit: delete the counterweight that hedges a stated position. Add no new claim, example, or source. Use one spelling convention throughout, the one the book's title and premise use.",
-    ...(focused ? [] : [narrative
-      ? "Only the chapter's final paragraph may reflect; every other paragraph ends on action, speech, or an image."
-      : "Only the chapter's final paragraph lands an idea; every other paragraph ends where its matter ends, and not on a placed object for effect."]),
-    ...(focused ? [] : ["Cut the \"It can show X. It cannot show Y.\" pair wherever it appears more than three times in the chapter, cut runs of rhetorical questions to one, and cut any list of four or more items to the one detail that matters unless the section is a catalogue or a procedure."]),
+      ? "Judge pacing through the scene's actions and consequences; keep reflection when it changes what the reader understands."
+      : "Judge pacing through the chapter's evidence and explanation. Keep a caveat when it limits an inference; cut it only when the same limitation is already stated with the same scope and context.",
+    "Use the book's spelling convention. Add no new claim, episode or source during this edit.",
+    ...(focused ? focusedProgressionLines() : []),
     `Now chapter ${options.chapter.index}, "${options.chapter.title}".`,
     ...(focused ? [] : compositionWriterLines(options.composition, palette, budget.target)),
     ...figureEditRules(options.composition),
     ...(/```/.test(options.markdown) ? ["Every fenced code block in the draft is returned byte for byte, its language tag included."] : []),
     ...(!focused && options.measurementNotes && options.measurementNotes.length > 0
-      ? [`Measured on this draft, with the sentences that put each measure over its ceiling; rewrite those sentences and bring every measure under: ${options.measurementNotes.join(" || ")}`]
+      ? [`Optional measurements for orientation only; they are not editing targets and a match does not establish a defect: ${options.measurementNotes.join(" || ")}`]
       : []),
     ...(options.readerNotes && options.readerNotes.length > 0
-      ? [`A reader of the whole manuscript left these notes on this chapter; they outrank every keep-rule above, so act on each one: ${options.readerNotes.join(" | ")}`]
+      ? [`A reader of the whole manuscript left these notes. Assess them against the passage and preserve its facts and qualifications; leave the passage unchanged if a note is unsupported: ${options.readerNotes.join(" | ")}`]
       : []),
     options.allowExtension === false
       ? "This is a final line edit. Improve clarity and sentence craft while preserving substantive content and its evidence. Do not add facts, sections, examples or explanation to fill a length target. Do not undo a developmental cut or move. Keep the draft's length within ten percent unless readerNotes explicitly requires a factual correction."

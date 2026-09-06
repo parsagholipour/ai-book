@@ -249,9 +249,11 @@ describe("editChapter", () => {
       readerNotes: ["Paragraph beginning 'The wall': cut the closing sentence."],
       textModel: recording
     });
-    expect(system).toContain("caveats that repeat an earlier caveat");
+    expect(system).toContain("Keep a caveat when it limits an inference");
     expect(system).toContain("Paragraph beginning 'The wall'");
-    expect(system).toContain("Add no new claim, example, or source.");
+    expect(system).toContain("Add no new claim, episode or source during this edit.");
+    expect(system).toContain("negation, scope, uncertainty");
+    expect(system).not.toContain("outrank every keep-rule");
   });
 });
 
@@ -369,6 +371,11 @@ describe("deletionOnlyResult", () => {
     expect(deletionOnlyResult(draft, draft.split("\n\n")[0]!)).toBeUndefined();
     expect(deletionOnlyResult(draft, draft)).toBeUndefined();
   });
+
+  it("accepts a small valid cut without requiring a percentage of the chapter to disappear", () => {
+    const kept = Array.from({ length: 200 }, (_, index) => `Record ${index} names the fee the clerk collected that day.`).join(" ");
+    expect(deletionOnlyResult(`${kept} This is redundant.`, kept)).toBe(kept);
+  });
 });
 
 describe("figures in the compose and edit prompts", () => {
@@ -478,16 +485,18 @@ describe("cutChapter", () => {
     }).join("\n\n");
   }
 
-  async function cut(reply: (draft: string) => string) {
+  async function cut(reply: (draft: string) => string, ceiling = 600) {
     const { plan, chapter, composition } = setup();
     const fake = new FakeTextModelAdapter(input);
     const stance = await generateAuthorStance({ input, plan, textModel: fake });
     const budget = chapterWordBudget(input, chapter.targetPages);
     const markdown = draftOf(budget.min);
     let system = "";
+    let calls = 0;
     const model = {
       ...fake,
       generateText: async (options: GenerateTextOptions) => {
+        calls += 1;
         system = options.messages[0]!.content;
         return { text: reply(markdown), model: "fake", provider: "fake" };
       }
@@ -505,15 +514,15 @@ describe("cutChapter", () => {
       researchNotes: [],
       markdown,
       notes: ["Paragraph beginning 'Record 10-0': cut the closing sentences."],
-      maxRemovableWords: 120,
+      maxRemovableWords: ceiling,
       textModel: model
     });
-    return { result, system, markdown, budget };
+    return { result, system, markdown, budget, calls };
   }
 
   it("names the removable-word ceiling in the prompt and keeps a cut that stays above the floor", async () => {
     const { result, system, markdown, budget } = await cut((draft) => draft.split("\n\n").slice(0, -1).join("\n\n"));
-    expect(system).toContain("never more than 120 words");
+    expect(system).toContain("never more than 600 words");
     expect(result.changed).toBe(true);
     expect(result.markdown).not.toBe(markdown);
     expect(result.words).toBeGreaterThanOrEqual(budget.min);
@@ -527,6 +536,17 @@ describe("cutChapter", () => {
     expect(countReadableWords(deeper(markdown))).toBeLessThan(budget.min);
     expect(result.changed).toBe(false);
     expect(result.markdown).toBe(markdown);
+  });
+
+  it("makes no paid request when no words may be removed", async () => {
+    const { result, markdown, calls } = await cut((draft) => draft, 0);
+    expect(calls).toBe(0);
+    expect(result).toMatchObject({ markdown, changed: false, attempts: 0 });
+  });
+
+  it("enforces the explicit ceiling even when the cut stays above the page floor", async () => {
+    const { result, markdown } = await cut((draft) => draft.split("\n\n").slice(0, -1).join("\n\n"), 1);
+    expect(result).toMatchObject({ markdown, changed: false });
   });
 
   it("says nothing about a ceiling when none is given", async () => {
@@ -552,7 +572,7 @@ describe("cutChapter", () => {
       earlierChapters: [],
       continuityNotes: [],
       researchNotes: [],
-      markdown: "A draft.\n\nA second paragraph.",
+      markdown: draftOf(chapterWordBudget(input, chapter.targetPages).min),
       notes: [],
       textModel: model
     });

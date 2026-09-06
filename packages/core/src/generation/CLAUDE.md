@@ -52,6 +52,8 @@ holds the event loop open and vitest will never exit.
 
 ## Composed chapters
 
+- **Pattern measurements never authorize editing or rejecting valid material.** The 6 September user request removed the coupled rewrite/disclaimer pass, automatic sentence deduplication and paragraph merging, and lexical plan enforcement. Episode overlap and focus counts are advisory; a valid stance and the voice guide survive unchanged. Use the contextual Luna editor and manuscript reader for editorial decisions. Preserve negation, causal relationships, scope, uncertainty and quotations. A cut's code checks verify its operation and hard word allowance, not its meaning. For this change's regressions and the next source-first experiment, read [heuristic removal](../../../../docs/composed-chapters/heuristic-removal-2026-09-06.md). Earlier experiments below describe historical configurations, not instructions to restore their heuristics.
+
 - **For every long book but a picture book the chapter is the unit of composition, and a page is
   where the typesetter cut.** Two 120-page balanced books were blind-reviewed at 6.40 and 5.55/10
   on 2026-09-02 (`.scratch/composed-chapters/spec.md`). The phrase scanner found one and four
@@ -114,33 +116,8 @@ holds the event loop open and vitest will never exit.
   (`run --reuse-plan <projectId> --tier <tier>`, `retry`, `resume`, `export`) with
   `scripts/dev-set-tier-writer.ts` for writer A/B through an appended quality revision and
   `scripts/dev-stop-project.ts` to stop a book.
-- **A plan field that names a distinction as the chapter's payoff is a couplet assignment, so the
-  contract on it is checked before the first prose call.** Three blind Opus readers of `fresh-plan-5`
-  (6 September 2026, 6.87 against rung 5's 7.63 in the same sitting) named one paragraph engine — what a
-  source establishes, then what it cannot — and the live compose prompts showed it assigned rather than
-  imitated: the writer never sees the stance positions on the focused path, but `focus.contribution` was a
-  distinction ("the reader can distinguish A from B", "rather than", "without treating") in 13 of 14
-  chapters, and in 13/15 and 11/15 of the two earlier focused books, because `CHAPTER_FOCUS_RULES` asked for
-  "the new distinction the reader can make"; three voice-guide method rules rode every call as `styleNotes`;
-  the episode plan gave Nataruk to three chapters and Keeley to two. `planContract.ts` is the check —
-  `isMethodShaped` (shape patterns always; the evidence/sources keyword for stance and voice guide only, since
-  it over-fires on an investigation line), `focusContractIssues`, `episodeCollisions` (two or more shared
-  proper nouns with one that is not a nationality or an institution word: "British Museum" and
-  "British, German" were two false positives on a stored plan), calibrated on the stored plans of candidates
-  2, 3 and 5 and on the hand-written flat positions, which must pass (`replay-contract.ts` under
-  `docs/composed-chapters/experiments/2026-09-06-fresh-plan/`). `planEpisodes` re-asks once with the
-  violations named, then `applyFocusContract` blanks a method contribution, drops method investigation lines
-  and drops the later chapter's colliding episode while it keeps material; `chapterStyleNotes` withholds the
-  method lines from `bookPayload`; `planAuthorStance(plan, { rejectMethodShaped })` regenerates a hedged
-  stance **on a fresh run only** — a resumed book composes from the stance it started with, and the first
-  whole-repo run caught the pass regenerating its own persisted stance. Nothing here fails a book and a
-  non-English plan is not gated. Measured on `plan-contract-6`: the first episode plan went from 21 flagged
-  fields and 5 collisions to 2 and 1, the prompts carried claim-shaped contributions and four of eight voice
-  lines, no reader named a re-narrated case — and the book read 7.00, its readers naming the same
-  assert-then-retract sentence with nothing assigning it. The contract removes what the pipeline manufactures;
-  the writer's own register (23 negation contrasts per 1,000 sentences at rung 5, 31–43 on every focused-path
-  book) and the strict reconstruction rule's cost in told scenes (rung 5a: 8 scenes, engagement 7.0; candidates
-  3, 5, 6: none, engagement 5.0–5.3) are not its business.
+- **The earlier plan contract is historical.** It reacted to the fresh-plan books' repeated "what the source can and cannot establish" assignments by re-asking on regex hits and pruning episodes with shared names. It measured 7.00, then later audit fixtures showed legitimate distinct events and cautious claims being removed. Those interventions are retired. Read the [fresh-plan report](../../../../docs/composed-chapters/experiments/2026-09-06-fresh-plan/report.md) for the measured configurations; the diagnostic helpers in `planContract.ts` have no authority to change a plan.
+
 - **A nonfiction scene needs a passage of the record, and a fresh plan rarely has one; telling it anyway was
   measured and reverted.** `composeScene` returns before any call when the chapter's dossier holds no excerpt for
   the episode, so `readers-prescription-8` asked for scene episodes in eleven chapters, made two calls (both on an
@@ -150,15 +127,8 @@ holds the event loop open and vitest will never exit.
   → cases → coda shape became the chapter template again (rung 3's finding) and two chapters re-trod cases the
   collision rule cannot see (Ur-Nammu then Hammurabi share no proper noun). The excerpt gate stays; the lever on
   engagement for a fresh plan is retrieval that reaches its episodes, not a licence to reconstruct.
-- **A code-accepted rewrite can keep every anchor and lose the sense, and the readers of three books caught it.**
-  The broadened antithesis rewrite (`coupletRewrite.ts`: assert-then-retract, semicolon retraction, "without
-  proving", cap 12) took those forms off the page (0.9 and 2.2 per 1,000 sentences against 4.6 and 10.6) and
-  candidate 8 read slop resistance 7.0; it also produced "The cemetery communicated through bodies, burial
-  positions, implements, and the relation between them, whose evidence required interpretation beyond sentences"
-  from a clean two-sentence pair, and "with X doing no Y". `acceptCoupletRewrite` now refuses a two-sentence pair
-  merged into one long sentence on a relative clause, the "doing no" and "with no …ing" shapes, and a replacement
-  that ends on a relative pronoun, preposition or conjunction. Read the couplet report's `rewritten` count beside
-  the readers' craft score before raising the cap.
+- **Names and numbers do not prove that an edit preserves meaning.** Candidate 9's coupled rewrite garbled a clean sentence while preserving its anchors. The later audit also demonstrated polarity reversal. The rewrite and acceptance rules were removed; historical results remain in the experiment reports.
+
 - **A composed draft that is not prose is recomposed once and then fails the job; it is never
   edited, paginated and published.** The fast tier's writer returned 12,005 words of a rotating
   three-subject verb-chain with stray CJK tokens for one chapter (composed-13), the short-draft

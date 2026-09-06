@@ -96,27 +96,21 @@ describe("isMethodShaped", () => {
 });
 
 describe("chapterStyleNotes", () => {
-  it("withholds the method rules and keeps the rest", () => {
-    expect(chapterStyleNotes([...PLAIN_VOICE_LINES, ...METHOD_VOICE_LINES])).toEqual(PLAIN_VOICE_LINES);
-  });
-
-  it("withholds a rule about shape, which the writer performs on schedule", () => {
-    expect(chapterStyleNotes([...PLAIN_VOICE_LINES, ...SHAPE_VOICE_LINES])).toEqual(PLAIN_VOICE_LINES);
-  });
-
-  it("leaves the method rule's own lines to the method rule", () => {
-    // Both are already withheld by `isMethodShaped`, and stay withheld: the
-    // first on "rather than", the second on the keyword "interpretation".
+  // The voice guide is the planner's own answer about how the book sounds.
+  // A keyword or shape filter over it used to withhold a valid distinction
+  // ("rather than") and a valid source caution from every chapter call.
+  it("keeps every voiceGuide line verbatim and in order, distinctions and source caution included", () => {
     const carried =
       "Let places, objects, bodies, settlements, laws, and documents carry the narrative rather than relying on sweeping abstractions.";
-    const analytical =
-      "Write as a clear analytical history for intelligent general readers, using concrete episodes before broad interpretation.";
-    expect(chapterStyleNotes([...PLAIN_VOICE_LINES, carried, analytical])).toEqual(PLAIN_VOICE_LINES);
+    const guide = [...PLAIN_VOICE_LINES, carried, ...METHOD_VOICE_LINES, ...SHAPE_VOICE_LINES];
+    expect(chapterStyleNotes(guide)).toEqual(guide);
   });
 
-  it("never returns an empty list", () => {
-    expect(chapterStyleNotes(METHOD_VOICE_LINES)).toEqual(METHOD_VOICE_LINES);
-    expect(chapterStyleNotes(SHAPE_VOICE_LINES)).toEqual(SHAPE_VOICE_LINES);
+  it("returns a copy, and an empty guide stays empty", () => {
+    const guide = [...METHOD_VOICE_LINES];
+    const notes = chapterStyleNotes(guide);
+    expect(notes).toEqual(guide);
+    expect(notes).not.toBe(guide);
     expect(chapterStyleNotes([])).toEqual([]);
   });
 });
@@ -422,67 +416,25 @@ describe("focusFeedbackLines", () => {
   });
 });
 
-describe("applyFocusContract", () => {
-  it("blanks a method-shaped contribution, keeps the question, and still parses", () => {
+describe("applyFocusContract (compatibility wrapper)", () => {
+  // The wrapper exists for the archived replay script. It used to blank a
+  // contribution, filter investigation lines and drop a later chapter's
+  // episode on the same heuristics; it now hands the episodes back untouched.
+  it("returns the episodes as they were, with nothing dropped or blanked", () => {
     const episodes = episodesOf([
       {
         index: 1,
-        titles: ["A statute"],
-        focus: { question: METHOD_QUESTIONS[0], investigation: ["the sequence of decisions", "the carting costs"], contribution: METHOD_CONTRIBUTIONS[0] }
-      }
+        titles: ["The Nataruk mass-killing site at Lake Turkana"],
+        focus: { question: METHOD_QUESTIONS[0], investigation: ["the sequence of decisions", "the carting costs", METHOD_CONTRIBUTIONS[0]], contribution: METHOD_CONTRIBUTIONS[0] }
+      },
+      { index: 3, titles: ["The Nataruk site at Lake Turkana revisited", "A Roman tax register"] }
     ]);
     const result = applyFocusContract(episodes);
-    const focus = result.episodes.chapters[0]!.focus!;
-    expect(focus.contribution).toBe("");
-    expect(focus.question).toBe(METHOD_QUESTIONS[0]);
-    expect(result.blanked).toEqual([{ chapterIndex: 1, kind: "contribution" }]);
-    expect(bookEpisodesSchema.parse(result.episodes)).toEqual(result.episodes);
-  });
-
-  it("filters method-shaped investigation lines, but never below two", () => {
-    const filtered = applyFocusContract(
-      episodesOf([
-        {
-          index: 1,
-          titles: ["A statute"],
-          focus: { question: PLAIN_QUESTIONS[0], investigation: ["the sequence of decisions", "the carting costs", METHOD_CONTRIBUTIONS[0]], contribution: "The reader will know who paid." }
-        }
-      ])
-    );
-    expect(filtered.episodes.chapters[0]!.focus!.investigation).toEqual(["the sequence of decisions", "the carting costs"]);
-    expect(filtered.blanked).toEqual([{ chapterIndex: 1, kind: "investigation" }]);
-
-    const kept = applyFocusContract(
-      episodesOf([
-        {
-          index: 1,
-          titles: ["A statute"],
-          focus: { question: PLAIN_QUESTIONS[0], investigation: [METHOD_CONTRIBUTIONS[0], METHOD_CONTRIBUTIONS[1]], contribution: "The reader will know who paid." }
-        }
-      ])
-    );
-    expect(kept.episodes.chapters[0]!.focus!.investigation).toEqual([METHOD_CONTRIBUTIONS[0], METHOD_CONTRIBUTIONS[1]]);
-    expect(kept.blanked).toEqual([]);
-  });
-
-  it("drops the later chapter's colliding episode only while that chapter keeps one", () => {
-    const dropped = applyFocusContract(
-      episodesOf([
-        { index: 1, titles: ["The Nataruk mass-killing site at Lake Turkana"] },
-        { index: 3, titles: ["The Nataruk site at Lake Turkana revisited", "A Roman tax register"] }
-      ])
-    );
-    expect(dropped.episodes.chapters[1]!.episodes.map((episode) => episode.title)).toEqual(["A Roman tax register"]);
-    expect(dropped.dropped[0]!.chapterIndex).toBe(3);
-    expect(bookEpisodesSchema.parse(dropped.episodes)).toEqual(dropped.episodes);
-
-    const kept = applyFocusContract(
-      episodesOf([
-        { index: 1, titles: ["The Nataruk mass-killing site at Lake Turkana"] },
-        { index: 3, titles: ["The Nataruk site at Lake Turkana revisited"] }
-      ])
-    );
-    expect(kept.episodes.chapters[1]!.episodes.map((episode) => episode.title)).toEqual(["The Nataruk site at Lake Turkana revisited"]);
-    expect(kept.dropped).toEqual([]);
+    expect(result.episodes).toBe(episodes);
+    expect(result.dropped).toEqual([]);
+    expect(result.blanked).toEqual([]);
+    expect(result.episodes.chapters[0]!.focus!.contribution).toBe(METHOD_CONTRIBUTIONS[0]);
+    expect(result.episodes.chapters[0]!.focus!.investigation).toHaveLength(3);
+    expect(result.episodes.chapters[1]!.episodes.map((episode) => episode.title)).toEqual(["The Nataruk site at Lake Turkana revisited", "A Roman tax register"]);
   });
 });

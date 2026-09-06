@@ -110,7 +110,7 @@ export const COMPOSED_STAGES: readonly PipelineStage[] = [
     purposes: ["edit-chapter", "rewrite-couplets"],
     lane: "prose",
     calls: "1 per chapter",
-    gates: ["chapterEditorPass", "coupletRewrite"]
+    gates: ["chapterEditorPass"]
   },
   {
     id: "describe",

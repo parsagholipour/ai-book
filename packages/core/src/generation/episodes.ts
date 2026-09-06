@@ -6,7 +6,7 @@ import { bookDossierSchema, bookEpisodesSchema, type BookDossier, type BookEpiso
 import type { AuthorStance } from "../schemas/plan.js";
 import { isNarrativeWritingMode } from "./authorStance.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
-import { applyFocusContract, episodeCollisions, focusContractIssues, focusFeedbackLines } from "./planContract.js";
+import { episodeCollisions, focusContractIssues } from "./planContract.js";
 import { inferWritingMode } from "./styleContract.js";
 
 /**
@@ -66,18 +66,19 @@ export function episodesForChapter(episodes: BookEpisodes | undefined, chapterIn
 }
 
 /**
- * What the plan contract found and did. The re-ask is one extra call at most,
- * and nothing here may fail a book: a contract that cannot be satisfied is
- * recorded and the plan proceeds.
+ * Advisory diagnostics over the answer that was kept, for the run log. The
+ * planner's first valid answer is the plan: `reasked` is always false, and
+ * `dropped` and `blanked` are always empty, because nothing here re-asks the
+ * model or edits what it returned. `issues` counts focus fields the shape
+ * patterns noticed and `collisions` counts episode pairs across chapters that
+ * share an identifying name — both readings, neither a validation failure.
  */
 export type EpisodePlanContract = {
-  reasked: boolean;
-  issuesBefore: number;
-  collisionsBefore: number;
-  issuesAfter: number;
-  collisionsAfter: number;
-  dropped: Array<{ chapterIndex: number; title: string; reason: string }>;
-  blanked: Array<{ chapterIndex: number; kind: "question" | "contribution" | "investigation" }>;
+  reasked: false;
+  issues: number;
+  collisions: number;
+  dropped: never[];
+  blanked: never[];
 };
 
 export type PlanEpisodesResult = {
@@ -181,35 +182,20 @@ export async function planEpisodes(options: {
     if (!first) {
       return { failure: "no chapter of the plan received episodes" };
     }
-    // One re-ask, with the offending fields and the colliding chapters named,
-    // then a deterministic clean-up of whatever comes back. A distinction
-    // assigned as a chapter's payoff is performed in every paragraph of it.
-    const issues = focusContractIssues(first);
-    const collisions = episodeCollisions(first);
-    let episodes = first;
-    let reasked = false;
-    if (issues.length > 0 || collisions.length > 0) {
-      reasked = true;
-      try {
-        const second = await ask([...(options.feedback ?? []), ...focusFeedbackLines(issues, collisions)]);
-        if (second) episodes = second;
-      } catch (error) {
-        if (error instanceof Error && /stop|abort/i.test(error.name + error.message)) {
-          throw error;
-        }
-      }
-    }
-    const applied = applyFocusContract(episodes);
+    // The first schema-valid answer is the plan. This used to re-ask the model
+    // when a contribution said "rather than" or two chapters named one person,
+    // then drop and blank what came back; the coronation and the abdication
+    // are two cases, and a cautious contribution is still a claim. The
+    // instructions to assign distinct material stay in the prompt, and the
+    // caller's own feedback rides through unchanged.
     return {
-      episodes: applied.episodes,
+      episodes: first,
       contract: {
-        reasked,
-        issuesBefore: issues.length,
-        collisionsBefore: collisions.length,
-        issuesAfter: focusContractIssues(applied.episodes).length,
-        collisionsAfter: episodeCollisions(applied.episodes).length,
-        dropped: applied.dropped,
-        blanked: applied.blanked
+        reasked: false,
+        issues: focusContractIssues(first).length,
+        collisions: episodeCollisions(first).length,
+        dropped: [],
+        blanked: []
       }
     };
   } catch (error) {

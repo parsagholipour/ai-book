@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { acceptCoupletRewrite, antithesesPer1000Sentences, coupletsPer1000Sentences, findCouplets } from "./coupletRewrite.js";
+import { antithesesPer1000Sentences, coupletsPer1000Sentences, findCouplets } from "./coupletRewrite.js";
 
 const chapter = [
   "A Mongol army did not carry its whole world behind it in wagons. It carried a moving pasture. Each warrior might have several horses, and the army's speed depended on changing them.",
@@ -22,18 +22,6 @@ describe("coupletRewrite", () => {
     expect(antithesesPer1000Sentences(chapter)).toBe(coupletsPer1000Sentences(chapter));
   });
 
-  it("accepts a rewrite only when the pattern is gone and every anchor survives", () => {
-    const couplet = findCouplets(chapter)[1]!;
-    expect(acceptCoupletRewrite(couplet, "Under Batu in 1241 the wagon train set the limits of the army's reach, whatever the riders could do without it.")).toBe(true);
-    // Pattern kept.
-    expect(acceptCoupletRewrite(couplet, "The wagon train was not decoration in 1241. It set Batu's limits.")).toBe(false);
-    // A number and a name dropped.
-    expect(acceptCoupletRewrite(couplet, "The wagon train set the limits of the army's reach, whatever the riders could do without it.")).toBe(false);
-    // Too short.
-    expect(acceptCoupletRewrite(couplet, "Batu, 1241: the train ruled.")).toBe(false);
-    // Semicolon antithesis.
-    expect(acceptCoupletRewrite(couplet, "In 1241 the wagon train limited Batu's army; the other half of the story was the riders' endurance.")).toBe(false);
-  });
 });
 
 const MUST_FLAG: Array<{ kind: string; markdown: string; text: string }> = [
@@ -135,25 +123,9 @@ describe("the broadened antithesis detector", () => {
     expect(findCouplets(markdown)).toEqual([]);
   });
 
-  it("refuses a replacement that is itself a retraction of either new shape", () => {
-    const couplet = findCouplets("Context narrows possibilities; it rarely supplies motive.")[0]!;
-    expect(acceptCoupletRewrite(couplet, "Context narrows the possibilities a reader may entertain about the motive.")).toBe(true);
-    expect(acceptCoupletRewrite(couplet, "Context narrows the possibilities; it does not supply the motive at all.")).toBe(false);
-    expect(acceptCoupletRewrite(couplet, "Context can narrow the possibilities without supplying the motive itself.")).toBe(false);
-    const withoutProving = findCouplets("The evidence can support interpersonal blows without proving a systematic practice of assault.")[0]!;
-    expect(
-      acceptCoupletRewrite(withoutProving, "The evidence supports interpersonal blows and says nothing about a systematic practice of assault.")
-    ).toBe(true);
-    expect(
-      acceptCoupletRewrite(withoutProving, "The evidence supports interpersonal blows; it does not establish a systematic practice of assault.")
-    ).toBe(false);
-    expect(
-      acceptCoupletRewrite(withoutProving, "The evidence shows interpersonal blows. It does not establish a systematic practice of assault.")
-    ).toBe(false);
-  });
 });
 
-describe("a replacement that folds the pair into one garbled sentence", () => {
+describe("historical cadence measurement", () => {
   const pair = [
     "The cemetery did not speak in sentences.",
     "Its evidence lay in bodies, burial positions, implements, and the relation between them."
@@ -165,43 +137,6 @@ describe("a replacement that folds the pair into one garbled sentence", () => {
     expect(couplet.text).toBe(pair);
   });
 
-  it("refuses the fold onto a relative clause, however intact the anchors", () => {
-    expect(
-      acceptCoupletRewrite(
-        couplet,
-        "The cemetery communicated through bodies, burial positions, implements, and the relation between them, whose evidence required interpretation beyond sentences."
-      )
-    ).toBe(false);
-  });
 
-  it("keeps a clean two-sentence replacement of the same pair", () => {
-    expect(
-      acceptCoupletRewrite(
-        couplet,
-        "The cemetery held its evidence in bodies, burial positions, implements, and the relation between them. None of it came in sentences."
-      )
-    ).toBe(true);
-  });
 
-  it("refuses a replacement that stops on a relative pronoun", () => {
-    expect(
-      acceptCoupletRewrite(couplet, "The cemetery kept its evidence in bodies, burial positions, implements, and the relation between them, whose")
-    ).toBe(false);
-    expect(
-      acceptCoupletRewrite(couplet, "The cemetery kept its evidence in bodies, burial positions, implements, and the relation between them, whose.")
-    ).toBe(false);
-  });
-
-  it("keeps a twenty-six word single sentence with no relative clause", () => {
-    const replacement =
-      "The cemetery kept its evidence in the bodies themselves, in the burial positions, in the implements laid beside them, and in the relation among all three.";
-    expect(replacement.split(/\s+/).filter(Boolean)).toHaveLength(26);
-    expect(acceptCoupletRewrite(couplet, replacement)).toBe(true);
-  });
-
-  it("refuses a participial stand-in for the negation, whatever the kind", () => {
-    expect(acceptCoupletRewrite(couplet, "The cemetery held its evidence in bodies and burial positions, with no speaking of its own at all.")).toBe(false);
-    const semicolon = findCouplets("Context narrows possibilities; it rarely supplies motive.")[0]!;
-    expect(acceptCoupletRewrite(semicolon, "Context narrows the possibilities a reader may entertain, doing no work on the motive itself.")).toBe(false);
-  });
 });

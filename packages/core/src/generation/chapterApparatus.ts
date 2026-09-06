@@ -61,17 +61,12 @@ export function episodeAnchors(episodes: readonly ChapterEpisode[]): string[] {
  * else the shortest. Undefined when no excerpt gives twelve whole-sentence
  * words under the cap.
  *
- * Two epigraphs of `legacy-cuts-7b` were wrong in ways the ranking cannot see:
- * one reprinted a sentence the chapter body already quoted verbatim, and one
- * was an OCR fragment about Portland clergymen in a chapter about neither. So
- * an excerpt already in `body` is skipped, and — when the caller can say what
- * the chapter is about — so is one sharing no anchor with its episodes. Both
- * only ever move the choice down the ranking; a chapter with no eligible
- * excerpt simply prints no epigraph, as it always could.
+ * Exact duplication with the chapter body is skipped. Relevance is judged
+ * when the dossier is extracted; shared capitalized tokens cannot establish it.
  */
 export function chapterEpigraph(
   excerpts: readonly DossierExcerpt[],
-  options: { body?: string | undefined; anchors?: readonly string[] | undefined } = {}
+  options: { body?: string | undefined; /** @deprecated Ignored; lexical overlap does not establish relevance. */ anchors?: readonly string[] | undefined } = {}
 ): string | undefined {
   const ranked = [...excerpts].sort((a, b) => {
     const aNamed = a.speaker || a.author ? 0 : 1;
@@ -79,12 +74,10 @@ export function chapterEpigraph(
     return aNamed - bNamed || a.words - b.words;
   });
   const body = options.body ? options.body.replace(/\s+/g, " ") : undefined;
-  const wanted = options.anchors && options.anchors.length > 0 ? new Set(options.anchors) : undefined;
   for (const excerpt of ranked) {
     const text = epigraphText(excerpt.text);
     if (!text) continue;
     if (body && body.includes(text.replace(/\s+/g, " "))) continue;
-    if (wanted && ![...coupletAnchors(text)].some((anchor) => wanted.has(anchor))) continue;
     const quoted = /^[“"]/.test(text) ? text : `“${text.replace(/[”"]+$/, "")}”`;
     return `> ${quoted}\n>\n> — ${epigraphAttribution(excerpt)}`;
   }
