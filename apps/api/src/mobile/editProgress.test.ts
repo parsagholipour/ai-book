@@ -289,7 +289,37 @@ describe("mobile edit progress", () => {
       expect(status.editProgress.steps[2].detail).toBe("1 of 3 pages");
     }
 
-    expect(phrases).toEqual(["Rewriting page 8", "Reading back page 8", "Saving page 8"]);
+    expect(phrases).toEqual([
+      "Rewriting page 8 (2 of 3)",
+      "Reading back page 8 (2 of 3)",
+      "Saving page 8 (2 of 3)"
+    ]);
+  });
+
+  it("speaks the printed page the reader can see", async () => {
+    const status = await readStatus(
+      editingStatus({
+        project: {
+          contentRevision: 1,
+          pdfPageMap: {
+            version: 2,
+            totalPdfPages: 20,
+            hasCoverPage: true,
+            contentsStartPdfPage: 2,
+            pages: [{ index: 8, startPdfPage: 12, endPdfPage: 12 }],
+            contentRevision: 1
+          },
+          jobs: [
+            editJob({
+              progress: 52,
+              steps: steps("apply", undefined, { done: 0, total: 11, phase: "draft", pageIndex: 8 })
+            })
+          ]
+        }
+      })
+    );
+
+    expect(status.currentAction).toBe("Rewriting page 11 (1 of 11)");
   });
 
   it("counts the new pages a continuation has written", async () => {
@@ -312,7 +342,7 @@ describe("mobile edit progress", () => {
       })
     );
 
-    expect(status.currentAction).toBe("Writing page 15");
+    expect(status.currentAction).toBe("Writing page 15 (3 of 6)");
     expect(status.editProgress.steps[1].detail).toBe("2 of 6 new pages");
   });
 

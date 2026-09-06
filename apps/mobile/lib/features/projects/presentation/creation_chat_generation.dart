@@ -142,7 +142,9 @@ class _GenerationProgressBubbleState
         // The step list's own number when there is one: it is what the bar
         // sits next to, and the two must never read differently.
         final progress = _monotonicPercent(
-          (status.generationProgress?.percent ?? status.progressPercent)
+          (status.generationProgress?.percent ??
+                  status.editProgress?.percent ??
+                  status.progressPercent)
               .clamp(0, 100)
               .toInt(),
         );
@@ -168,6 +170,7 @@ class _GenerationProgressBubbleState
         // bar-and-counters layout this bubble has always had.
         final rawSteps =
             status.generationProgress?.steps ??
+            status.editProgress?.steps ??
             (isGenerating ? _fallbackGenerationSteps() : const []);
         final steps = imageAwareGenerationSteps(rawSteps, status);
         final title = reviewRequired
@@ -188,7 +191,9 @@ class _GenerationProgressBubbleState
             ? status.quality.issues.first.message
             // Never a client-side guess over something the server said: the
             // fallback steps exist to shape the list, not to narrate.
-            : status.generationProgress?.detail ?? status.currentAction;
+            : status.generationProgress?.detail ??
+                  status.editProgress?.detail ??
+                  status.currentAction;
         return _GenerationProgressShell(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -268,24 +273,26 @@ class _GenerationProgressBubbleState
                 for (final step in steps)
                   ProgressStepRow(step: step, showDetail: true),
               ],
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  AppMetricChip(
-                    icon: Icons.menu_book_outlined,
-                    label:
-                        '${status.pageProgress.completed}/${status.pageProgress.target} pages',
-                  ),
-                  AppMetricChip(
-                    icon: Icons.image_outlined,
-                    label: status.imageCount == 1
-                        ? '1 visual'
-                        : '${status.imageCount} visuals',
-                  ),
-                ],
-              ),
+              if (status.status != 'editing') ...[
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    AppMetricChip(
+                      icon: Icons.menu_book_outlined,
+                      label:
+                          '${status.pageProgress.completed}/${status.pageProgress.target} pages',
+                    ),
+                    AppMetricChip(
+                      icon: Icons.image_outlined,
+                      label: status.imageCount == 1
+                          ? '1 visual'
+                          : '${status.imageCount} visuals',
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,

@@ -92,9 +92,15 @@ class _Transcript extends StatelessWidget {
     final currentProject = planValue?.asData?.value;
     final currentPlan = currentProject?.plan;
     final currentPlanKey = currentPlan == null ? null : _planKey(currentPlan);
-    final showGenerationForCurrentPlan =
-        generationStatusValue != null && (currentPlan?.isApproved ?? false);
     final projectOperations = _projectTranscriptOperations(projectChat);
+    final liveStatus = generationStatusValue?.asData?.value;
+    // A running edit already draws its own progress on the operation card
+    // under the reply. The generation bubble sits on the plan, often scrolled
+    // out of view, and must not repeat the same bar next to a finished book.
+    final showGenerationForCurrentPlan =
+        generationStatusValue != null &&
+        (currentPlan?.isApproved ?? false) &&
+        !(liveStatus?.status == 'editing' && projectOperations.hasRunning);
     final projectItems = _projectTranscriptItems(
       projectChat,
       projectOperations,
@@ -198,6 +204,7 @@ class _Transcript extends StatelessWidget {
           operation: operation,
           retrying: planBusyAction == 'retry-${operation.id}',
           undoing: undoingProjectEdit,
+          liveStatus: generationStatusValue?.asData?.value,
           onRetry: onRetryFailedOperation == null
               ? null
               : () => onRetryFailedOperation!(operation),

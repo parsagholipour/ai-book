@@ -295,6 +295,7 @@ MobileProjectStatus projectStatus({
   bool? illustrationsEnabled,
   MobilePlanningProgress? planningProgress,
   MobileGenerationProgress? generationProgress,
+  MobileGenerationProgress? editProgress,
   MobileExportSet exports = _exports,
 }) {
   final complete = status == 'complete';
@@ -307,6 +308,7 @@ MobileProjectStatus projectStatus({
     currentAction: currentAction,
     planningProgress: planningProgress,
     generationProgress: generationProgress,
+    editProgress: editProgress,
     failureMessage: failureMessage,
     retryAvailable: retryAvailable,
     recoveryQuote: retryAvailable

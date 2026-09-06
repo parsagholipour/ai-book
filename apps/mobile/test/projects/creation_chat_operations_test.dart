@@ -272,6 +272,109 @@ void main() {
     await tester.teardownScreen();
   });
 
+  testWidgets('a running page rewrite names the current page and how far '
+      'through the batch it is', (tester) async {
+    final creation = ScriptedCreationRepository(
+      sessions: [
+        chatSession(
+          draftId: 'draft-done',
+          title: 'Completed book',
+          status: 'COMPLETED',
+          createdProjectId: 'project-1',
+          outputs: [
+            creationOutput(projectId: 'project-1', title: planTitle, sequence: 1),
+          ],
+        ),
+      ],
+    );
+    creation.resumeAssistantMessages['draft-done'] = 'Book transcript';
+    final projects = PlanProjectsRepository(
+      project: plannedProject(status: 'editing', plan: approvedPlan()),
+      status: projectStatus(
+        status: 'editing',
+        statusLabel: 'Editing your book',
+        progressPercent: 58,
+        currentAction: 'Rewriting page 8 (2 of 11)',
+        editProgress: const MobileGenerationProgress(
+          percent: 58,
+          detail: 'Rewriting page 8 (2 of 11)',
+          steps: [
+            MobileProjectStatusStep(
+              key: 'prepare',
+              label: 'Reading your book',
+              status: 'done',
+            ),
+            MobileProjectStatusStep(
+              key: 'snapshot',
+              label: 'Saving a version to undo',
+              status: 'done',
+            ),
+            MobileProjectStatusStep(
+              key: 'apply',
+              label: 'Making your changes',
+              status: 'active',
+              detail: '1 of 11 pages',
+            ),
+            MobileProjectStatusStep(
+              key: 'export',
+              label: 'Rebuilding your book',
+              status: 'pending',
+            ),
+          ],
+        ),
+      ),
+    );
+    projects.chatMessages.addAll([
+      _message(
+        id: 'chat-ask',
+        parentId: null,
+        role: 'user',
+        content: 'Tighten the middle chapters.',
+      ),
+      _message(
+        id: 'chat-reply',
+        parentId: 'chat-ask',
+        role: 'assistant',
+        content: 'Rewriting those pages now.',
+        operationId: 'op-rewrite',
+        minute: 1,
+      ),
+    ]);
+    projects.chatOperations.add(
+      MobileBookEditOperation(
+        id: 'op-rewrite',
+        projectId: 'project-1',
+        kind: 'page_rewrite',
+        status: 'active',
+        affectedPageIndexes: const [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+        creditsCharged: 135,
+        currentAction: 'Rewriting 11 pages.',
+        anchorMessageId: 'chat-reply',
+        createdAt: DateTime.utc(2026, 8, 13, 21, 59, 1),
+      ),
+    );
+
+    await tester.pumpWidget(
+      app(creation: creation, projects: projects, draftId: 'draft-done'),
+    );
+    await tester.pump();
+    for (var frame = 0; frame < 6; frame++) {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+
+    expect(bubbleText('Rewriting 11 pages.'), findsOneWidget);
+    expect(bubbleText('Rewriting page 8 (2 of 11)'), findsOneWidget);
+    expect(bubbleText('58%'), findsOneWidget);
+    expect(bubbleText('Making your changes'), findsOneWidget);
+    expect(bubbleText('1 of 11 pages'), findsOneWidget);
+    expect(bubbleText('Rebuilding your book'), findsOneWidget);
+    // The plan-side generation bubble used to be the only progress UI, and it
+    // sat next to the plan — out of view of the reply this card belongs under.
+    expect(find.text('120/120 pages'), findsNothing);
+
+    await tester.teardownScreen();
+  });
+
   testWidgets(
     'a finished page rewrite retry does not show plan revision work',
     (tester) async {

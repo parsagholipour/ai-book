@@ -160,6 +160,7 @@ class OperationBubble extends StatelessWidget {
     required this.operation,
     required this.retrying,
     this.undoing = false,
+    this.liveProgress,
     this.onRetry,
     this.onUndo,
     this.onViewPlan,
@@ -171,6 +172,9 @@ class OperationBubble extends StatelessWidget {
   final MobileBookEditOperation operation;
   final bool retrying;
   final bool undoing;
+
+  /// Live bar, percent and steps while this edit is still running.
+  final Widget? liveProgress;
   final VoidCallback? onRetry;
   final VoidCallback? onUndo;
   final VoidCallback? onViewPlan;
@@ -244,6 +248,10 @@ class OperationBubble extends StatelessWidget {
                 ],
               ],
             ),
+            if (liveProgress != null) ...[
+              const SizedBox(height: 10),
+              liveProgress!,
+            ],
             if (failed ||
                 onUndo != null ||
                 onOpenBook != null ||

@@ -1,3 +1,4 @@
+import { MODEL_PAGE_NUMBERING, numberingForProject, type ReaderPageNumbering } from "../bookPageNumbering.js";
 import type { MobileProjectStatusDto, ProjectStatusResult } from "./dto.js";
 import { compilePhrase } from "./generationProgress.js";
 import { jsonRecord } from "./support.js";
@@ -140,7 +141,7 @@ export function serializeEditProgress(status: ProjectStatusResult): MobileProjec
   }
   const job = openEditJob(status);
   if (job) {
-    return fromEditJob(job);
+    return fromEditJob(job, pageNumberingForStatus(status));
   }
   // Nothing is editing, but the book is being rebuilt: either the edit job just
   // handed off, or the reader made the change themselves (a manual edit, an
@@ -152,11 +153,11 @@ export function serializeEditProgress(status: ProjectStatusResult): MobileProjec
   return rebuild ? fromRebuild(rebuild, editBehindRebuild(status, rebuild)) : null;
 }
 
-function fromEditJob(job: StatusJob): EditProgressDto {
+function fromEditJob(job: StatusJob, numbering: ReaderPageNumbering): EditProgressDto {
   const type = job.type as EditJobType;
   return {
     percent: editProgressPercent(job),
-    detail: liveDetail(job),
+    detail: liveDetail(job, numbering),
     steps: readSteps(job, type)
   };
 }
@@ -313,11 +314,14 @@ function settledStepDetail(key: EditStepKey, total: number): string | null {
  * worker has not named one (an older job row mid-upgrade), the phrase falls
  * back to the page *count*, which the payload the API itself wrote guarantees.
  */
-export function liveDetail(job: StatusJob): string | null {
+export function liveDetail(job: StatusJob, numbering: ReaderPageNumbering = MODEL_PAGE_NUMBERING): string | null {
   const active = job.steps.find((step) => step.status === "active");
   const activeKey = active?.key;
-  const page = typeof active?.pageIndex === "number" ? active.pageIndex : null;
+  const page = typeof active?.pageIndex === "number" ? numbering.displayPage(active.pageIndex) : null;
+  const done = typeof active?.done === "number" ? active.done : null;
+  const stepTotal = typeof active?.total === "number" && active.total > 0 ? active.total : 0;
   const pages = affectedPageCount(job);
+  const total = stepTotal > 0 ? stepTotal : pages;
   if (job.type === "REPLAN_BOOK") {
     switch (activeKey) {
       case "revise":
@@ -335,7 +339,7 @@ export function liveDetail(job: StatusJob): string | null {
       case "outline":
         return "Planning the new chapters";
       case "draft":
-        return page === null ? "Writing the new pages" : `Writing page ${page}`;
+        return page === null ? "Writing the new pages" : `Writing page ${page}${positionSuffix(done, total)}`;
       case "save":
         return "Saving the new chapters";
       case "export":
@@ -354,7 +358,7 @@ export function liveDetail(job: StatusJob): string | null {
         ? pages > 0
           ? `Rewriting ${pages} ${pages === 1 ? "page" : "pages"}`
           : "Making your changes"
-        : applyPhrase(active?.phase, page);
+        : applyPhrase(active?.phase, page, done, total);
     case "export":
       return "Rebuilding your book";
     default:
@@ -363,15 +367,39 @@ export function liveDetail(job: StatusJob): string | null {
 }
 
 /** Rewriting a page is two model calls and a save; each one is worth naming. */
-function applyPhrase(phase: string | undefined, page: number): string {
+function applyPhrase(phase: string | undefined, page: number, done: number | null, total: number): string {
+  const place = positionSuffix(done, total);
   switch (phase) {
     case "review":
-      return `Reading back page ${page}`;
+      return `Reading back page ${page}${place}`;
     case "save":
-      return `Saving page ${page}`;
+      return `Saving page ${page}${place}`;
     default:
-      return `Rewriting page ${page}`;
+      return `Rewriting page ${page}${place}`;
   }
+}
+
+/** Where this page sits in the batch, omitted for a one-page edit. */
+function positionSuffix(done: number | null, total: number): string {
+  if (total <= 1) {
+    return "";
+  }
+  const current = (done ?? 0) + 1;
+  if (current < 1 || current > total) {
+    return "";
+  }
+  return ` (${current} of ${total})`;
+}
+
+function pageNumberingForStatus(status: ProjectStatusResult): ReaderPageNumbering {
+  const project = status.project as { pdfPageMap?: unknown; contentRevision?: unknown; status?: unknown };
+  const contentRevision = typeof project.contentRevision === "number" ? project.contentRevision : 0;
+  const projectStatus = typeof project.status === "string" ? project.status : undefined;
+  return numberingForProject({
+    pdfPageMap: project.pdfPageMap,
+    contentRevision,
+    ...(projectStatus ? { status: projectStatus } : {})
+  });
 }
 
 /**

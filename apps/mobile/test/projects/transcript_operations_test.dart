@@ -94,6 +94,7 @@ void main() {
     );
     expect(settledOnly.anchoredTo('chat-reply'), isEmpty);
     expect(settledOnly.unanchored, isEmpty);
+    expect(settledOnly.hasRunning, isFalse);
 
     final withRunning = splitTranscriptOperations(
       operations: operations,
@@ -102,5 +103,6 @@ void main() {
           operation.isRunning || operation.isApplied || operation.isFailed,
     );
     expect(withRunning.anchoredTo('chat-reply').single.id, 'op-1');
+    expect(withRunning.hasRunning, isTrue);
   });
 }

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../shared/ui/motion.dart';
 import '../domain/project_models.dart';
+import 'progress_step_row.dart';
 import 'project_chat_bubbles.dart';
 
 // Where an edit operation sits in the transcript, and what its card offers.
@@ -19,6 +21,15 @@ class TranscriptOperations {
 
   List<MobileBookEditOperation> anchoredTo(String messageId) =>
       anchored[messageId] ?? const [];
+
+  /// True when a card in this split is still in flight, so the transcript
+  /// already has a place to draw live progress and the plan-side generation
+  /// bubble must not tell the same story a second time.
+  bool get hasRunning =>
+      unanchored.any((operation) => operation.isRunning) ||
+      anchored.values.any(
+        (operations) => operations.any((operation) => operation.isRunning),
+      );
 }
 
 /// Settled work, whose outcome the reader can act on. The creation chat widens
@@ -90,6 +101,7 @@ class ProjectChatOperationBubble extends StatelessWidget {
     required this.operation,
     required this.retrying,
     required this.undoing,
+    this.liveStatus,
     this.onRetry,
     this.onUndo,
     super.key,
@@ -99,6 +111,10 @@ class ProjectChatOperationBubble extends StatelessWidget {
   final MobileBookEditOperation operation;
   final bool retrying;
   final bool undoing;
+
+  /// The project's live status, used only while [operation] is still running
+  /// so the card can name the page and step the worker is on right now.
+  final MobileProjectStatus? liveStatus;
   final VoidCallback? onRetry;
   final VoidCallback? onUndo;
 
@@ -111,6 +127,7 @@ class ProjectChatOperationBubble extends StatelessWidget {
       operation: operation,
       retrying: retrying,
       undoing: undoing,
+      liveProgress: _liveEditProgress(operation, liveStatus),
       onRetry: operation.isFailed ? onRetry : null,
       onUndo: operation.canUndo ? onUndo : null,
       onViewPlan: operation.isPlanRevision
@@ -127,6 +144,120 @@ class ProjectChatOperationBubble extends StatelessWidget {
       onSeeChanges: operation.isApplied && operation.changesAvailable
           ? () => context.push('/projects/$projectId/changes/${operation.id}')
           : null,
+    );
+  }
+}
+
+Widget? _liveEditProgress(
+  MobileBookEditOperation operation,
+  MobileProjectStatus? status,
+) {
+  if (!operation.isRunning || status?.editProgress == null) {
+    return null;
+  }
+  return LiveEditOperationProgress(
+    status: status!,
+    overallAction: operation.displayAction,
+  );
+}
+
+/// Bar, percent, current page, and the edit's own steps on a running card.
+///
+/// The creation chat has no separate progress bubble for a finished-book edit
+/// — the spinner used to sit on this card next to a frozen "Rewriting 11
+/// pages." until the job settled. The status stream already names the page
+/// and phase; this is what draws them.
+class LiveEditOperationProgress extends StatefulWidget {
+  const LiveEditOperationProgress({
+    required this.status,
+    required this.overallAction,
+    super.key,
+  });
+
+  final MobileProjectStatus status;
+  final String overallAction;
+
+  @override
+  State<LiveEditOperationProgress> createState() =>
+      _LiveEditOperationProgressState();
+}
+
+class _LiveEditOperationProgressState extends State<LiveEditOperationProgress> {
+  int _shownPercent = 0;
+  String? _shownStatus;
+
+  int _monotonicPercent(String phase, int next) {
+    if (phase != _shownStatus) {
+      _shownStatus = phase;
+      _shownPercent = next;
+      return _shownPercent;
+    }
+    if (next > _shownPercent) {
+      _shownPercent = next;
+    }
+    return _shownPercent;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final status = widget.status;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final progress = status.editProgress!;
+    final percent = _monotonicPercent(
+      status.status,
+      progress.percent.clamp(0, 100),
+    );
+    final current = (progress.detail ?? status.currentAction).trim();
+    final overall = widget.overallAction.trim().replaceAll(RegExp(r'\.+$'), '');
+    final currentBare = current.replaceAll(RegExp(r'\.+$'), '');
+    final showCurrent = current.isNotEmpty && currentBare != overall;
+    final steps = progress.steps;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: showCurrent
+                  ? AppSwitcher(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        current,
+                        key: ValueKey(current),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colors.onSecondaryContainer,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+            AppAnimatedCount(
+              value: percent,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: colors.onSecondaryContainer,
+                fontWeight: FontWeight.w700,
+              ),
+              builder: (value) => '$value%',
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: AppAnimatedProgressBar(
+            value: percent / 100,
+            semanticLabel: showCurrent ? current : widget.overallAction,
+          ),
+        ),
+        if (steps.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          for (final step in steps)
+            ProgressStepRow(step: step, showDetail: true),
+        ],
+      ],
     );
   }
 }
