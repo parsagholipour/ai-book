@@ -467,6 +467,147 @@ describe("mobile generation progress", () => {
     expect(editing.progressPercent).toBe(92);
   });
 
+  it("treats composed-chapter setup counters as writing, not preparing", async () => {
+    const status = await readStatus(
+      generatingStatus({
+        project: {
+          currentPlan: { planningPackage: { chapters: Array.from({ length: 15 }, (_, index) => ({ index: index + 1 })) } },
+          jobs: [
+            job({
+              id: "job-book",
+              progress: 22,
+              steps: [
+                {
+                  key: "setup",
+                  label: "Create pages",
+                  status: "active",
+                  done: 2,
+                  total: 15,
+                  phase: "compose",
+                  chapterIndex: 3
+                }
+              ]
+            })
+          ]
+        },
+        progress: { pages: { complete: 0, target: 10 } }
+      })
+    );
+
+    expect(status.generationProgress.steps[0]).toMatchObject({ key: "prepare", status: "done" });
+    expect(status.generationProgress.steps[1]).toMatchObject({
+      key: "write",
+      label: "Writing your chapters",
+      status: "active",
+      detail: "2 of 15 chapters"
+    });
+    expect(status.generationProgress.detail).toBe("Writing chapter 3 of 15");
+    expect(status.currentAction).toBe("Writing chapter 3 of 15");
+    expect(status.generationProgress.percent).toBeGreaterThan(28);
+    expect(status.generationProgress.percent).toBeLessThan(80);
+  });
+
+  it("phrases the manuscript read and page finalize from chapter-write phases", async () => {
+    const phrases: Record<string, string> = {
+      scene: "Telling chapter 3's opening",
+      edit: "Editing chapter 3",
+      read: "Reading the whole manuscript",
+      finalize: "Getting your pages ready"
+    };
+    for (const [phase, phrase] of Object.entries(phrases)) {
+      const status = await readStatus(
+        generatingStatus({
+          project: {
+            jobs: [
+              job({
+                id: "job-book",
+                progress: 70,
+                steps: [
+                  {
+                    key: "setup",
+                    label: "Create pages",
+                    status: "active",
+                    done: 15,
+                    total: 15,
+                    phase,
+                    chapterIndex: 3
+                  }
+                ]
+              })
+            ]
+          },
+          progress: { pages: { complete: 0, target: 10 } }
+        })
+      );
+      expect(status.generationProgress.detail).toBe(phrase);
+      expect(status.generationProgress.steps[1].status).toBe("active");
+    }
+  });
+
+  it("keeps sequential setup without counters on preparing", async () => {
+    const status = await readStatus(
+      generatingStatus({
+        project: {
+          jobs: [
+            job({
+              id: "job-book",
+              progress: 35,
+              steps: [{ key: "setup", label: "Create pages", status: "active" }]
+            })
+          ]
+        },
+        progress: { pages: { complete: 0, target: 10 } }
+      })
+    );
+
+    expect(status.generationProgress.steps.map((step: any) => step.status)).toEqual([
+      "active",
+      "pending",
+      "pending",
+      "pending"
+    ]);
+    expect(status.generationProgress.steps[0].label).toBe("Preparing your chapters");
+    expect(status.generationProgress.detail).toBe("Setting up your chapters and pages");
+    expect(status.generationProgress.percent).toBeGreaterThanOrEqual(20);
+    expect(status.generationProgress.percent).toBeLessThanOrEqual(28);
+  });
+
+  it("walks the write band as composed chapters finish while pages stay pending", async () => {
+    const percents: number[] = [];
+    for (const done of [0, 1, 8]) {
+      const status = await readStatus(
+        generatingStatus({
+          project: {
+            jobs: [
+              job({
+                id: "job-book",
+                progress: 22,
+                steps: [
+                  {
+                    key: "setup",
+                    label: "Create pages",
+                    status: "active",
+                    done,
+                    total: 15,
+                    phase: "compose",
+                    chapterIndex: done + 1
+                  }
+                ]
+              })
+            ]
+          },
+          progress: { pages: { complete: 0, target: 10 } }
+        })
+      );
+      percents.push(status.generationProgress.percent);
+    }
+
+    expect(percents).toEqual([...percents].sort((left, right) => left - right));
+    expect(new Set(percents).size).toBe(percents.length);
+    expect(percents[0]).toBeGreaterThanOrEqual(28);
+    expect(Math.max(...percents)).toBeLessThan(80);
+  });
+
   it("never disagrees with the headline percent", async () => {
     for (const complete of [0, 5, 10]) {
       const status = await readStatus(

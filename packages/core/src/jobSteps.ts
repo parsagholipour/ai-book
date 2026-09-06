@@ -24,6 +24,8 @@ export type JobStep = {
   phase?: string;
   /** The book page the current unit is working on. */
   pageIndex?: number;
+  /** The plan chapter the current unit is working on. */
+  chapterIndex?: number;
 };
 
 /** One authored milestone, before a run gives it a status. */

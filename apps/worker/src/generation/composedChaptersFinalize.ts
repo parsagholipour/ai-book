@@ -51,7 +51,11 @@ export async function finalizePendingPages(options: {
       chapterIdByIndex.set(pageIndex, chapter.id);
     }
   }
-  await advanceJobStep(generationJobId, "setup", 76, `Finalizing ${pending.length} pages`);
+  await advanceJobStep(generationJobId, "setup", 76, `Finalizing ${pending.length} pages`, {
+    done: plan.chapters.length,
+    total: plan.chapters.length,
+    phase: "finalize"
+  });
   // Figures aside: the local checks, a revise and the story delta read prose;
   // each page's blocks go back before it is staged (`composedFigures.ts`).
   const pendingDrafts: IndexedPageDraft[] = pending.map((page) => ({

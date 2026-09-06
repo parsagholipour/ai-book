@@ -172,6 +172,7 @@ vi.mock("./wholeBookPageReview.js", () => ({
 
 import { FakeTextModelAdapter, caseEvidencePacketSchema, figureCapFor, figureSpecSchema, makeFallbackPlan, type CreateProjectInput, type ProviderSet } from "@book-maker/core";
 import { composedChaptersStrategy } from "@book-maker/core";
+import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import { composedResumeState, derivedChapterBrief, generateBookComposedChapters } from "./composedChaptersPass.js";
 
 const input: CreateProjectInput = {
@@ -374,6 +375,21 @@ describe("generateBookComposedChapters", () => {
     expect(store.notes.length).toBeGreaterThan(0);
     expect(mocks.publishStagedGeneratedPage).not.toHaveBeenCalled();
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
+
+    const setupCounters = vi
+      .mocked(advanceJobStep)
+      .mock.calls.filter((call) => call[1] === "setup" && call[4] && typeof call[4].total === "number")
+      .map((call) => call[4]);
+    expect(setupCounters[0]).toMatchObject({
+      done: 0,
+      total: plan.chapters.length,
+      phase: "compose",
+      chapterIndex: 1
+    });
+    expect(setupCounters.some((counters) => counters?.phase === "compose" && counters.chapterIndex === 1)).toBe(true);
+    expect(setupCounters.some((counters) => counters?.phase === "edit" && counters.chapterIndex === 1)).toBe(true);
+    expect(setupCounters.some((counters) => counters?.phase === "read" && counters.total === plan.chapters.length)).toBe(true);
+    expect(setupCounters.some((counters) => counters?.phase === "finalize" && counters.done === plan.chapters.length)).toBe(true);
   });
 
   it("resumes after a restart without rewriting finished chapters or resetting the book", async () => {

@@ -77,6 +77,7 @@ export type JobStepCounters = {
   total?: number;
   phase?: string;
   pageIndex?: number;
+  chapterIndex?: number;
 };
 
 function withCounters(step: JobStep, counters: JobStepCounters | undefined): JobStep {
@@ -88,7 +89,8 @@ function withCounters(step: JobStep, counters: JobStepCounters | undefined): Job
     ...(typeof counters.done === "number" ? { done: counters.done } : {}),
     ...(typeof counters.total === "number" ? { total: counters.total } : {}),
     ...(counters.phase ? { phase: counters.phase } : {}),
-    ...(typeof counters.pageIndex === "number" ? { pageIndex: counters.pageIndex } : {})
+    ...(typeof counters.pageIndex === "number" ? { pageIndex: counters.pageIndex } : {}),
+    ...(typeof counters.chapterIndex === "number" ? { chapterIndex: counters.chapterIndex } : {})
   };
 }
 

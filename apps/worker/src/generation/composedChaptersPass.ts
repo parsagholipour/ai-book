@@ -244,6 +244,19 @@ export async function generateBookComposedChapters(options: {
 
   let chapterIds: Map<number, string>;
   const doneChapters = new Set<number>();
+  const chapterTotal = setups.length;
+  const reportChapter = (
+    progress: number,
+    message: string,
+    phase: "compose" | "scene" | "edit" | "read" | "finalize",
+    chapterIndex?: number
+  ) =>
+    advanceJobStep(generationJobId, "setup", progress, message, {
+      done: doneChapters.size,
+      total: chapterTotal,
+      phase,
+      ...(typeof chapterIndex === "number" ? { chapterIndex } : {})
+    });
   if (resume.kind === "fresh") {
     chapterIds = await resetBookForDirectGeneration(projectId, setups, plan.promises ?? []);
     stored.chapters = [];
@@ -264,7 +277,7 @@ export async function generateBookComposedChapters(options: {
       );
     }
     await prisma.project.update({ where: { id: projectId }, data: { status: "GENERATING" } });
-    await advanceJobStep(generationJobId, "setup", 20, `Resuming with ${doneChapters.size} finished chapters`);
+    await reportChapter(20, `Resuming with ${doneChapters.size} finished chapters`, "compose");
   }
 
   await ensureCharacterReferenceAssets({ projectId, planId, input, plan, providers, strategy, generationJobId });
@@ -434,7 +447,7 @@ export async function generateBookComposedChapters(options: {
     let editorChanged = false;
     let shapePassApplied = false;
     if (editorEnabled) {
-      await updateJobProgress(generationJobId, { message: `Editing chapter ${position}` });
+      await reportChapter(22 + Math.round((doneChapters.size / Math.max(chapterTotal, 1)) * 46), `Editing chapter ${position}`, "edit", setup.chapter.index);
       // One edit with everything measured on the draft: the second composed
       // book ran a cutting edit and then a reshaping edit that re-expanded
       // it, and the paragraphs came out the same size either way.
@@ -563,6 +576,7 @@ export async function generateBookComposedChapters(options: {
     };
     reports.set(setup.chapter.index, report);
     await stageComposedChapter({ projectId, chapterId, setup, composition: compositionFor(setup), pages, report, replace: false });
+    doneChapters.add(setup.chapter.index);
     finalText.set(setup.chapter.index, markdown);
     edges.set(setup.chapter.index, chapterEdges(markdown));
     digests.set(setup.chapter.index, chapterDigest(pages.map((page) => page.summary)));
@@ -586,14 +600,11 @@ export async function generateBookComposedChapters(options: {
     return described.map((page, offset) => ({ ...page, markdown: pagesForDescription[offset]!.markdown }));
   };
 
-  await advanceJobStep(generationJobId, "setup", 22, "Writing chapters");
+  await reportChapter(22, "Writing chapters", "compose", todo[0]?.chapter.index);
   let pendingFinish: Promise<void> | undefined;
   for (const [offset, setup] of todo.entries()) {
     const position = `${setup.chapter.index}/${setups.length}`;
-    await updateJobProgress(generationJobId, {
-      progress: 22 + Math.round((offset / Math.max(todo.length, 1)) * 46),
-      message: `Writing chapter ${position}`
-    });
+    const progress = 22 + Math.round((offset / Math.max(todo.length, 1)) * 46);
     // Material-first: the chapter's opening episode is told first by a call
     // whose only job is to narrate, then the chapter is composed to continue
     // from it. The scene is printed ahead of the draft, so the degeneracy
@@ -602,7 +613,7 @@ export async function generateBookComposedChapters(options: {
     const opening = openingMaterial ? openingEpisode(openingMaterial.episodes) : undefined;
     const previousOpenedOnScene = scenes.has(setup.chapter.index - 1);
     if (openingMaterial && opening && !(rotateOpenings && previousOpenedOnScene)) {
-      await updateJobProgress(generationJobId, { message: `Telling the opening episode of chapter ${position}` });
+      await reportChapter(progress, `Telling the opening episode of chapter ${position}`, "scene", setup.chapter.index);
       const scene = await composeScene({
         input,
         plan,
@@ -616,6 +627,7 @@ export async function generateBookComposedChapters(options: {
       });
       if (scene) scenes.set(setup.chapter.index, scene);
     }
+    await reportChapter(progress, `Writing chapter ${position}`, "compose", setup.chapter.index);
     const composeOptions = await composeOptionsFor(setup, drafts);
     const withScene = (draft: { markdown: string; words: number; attempts: number }) => {
       const scene = scenes.get(setup.chapter.index);
@@ -710,6 +722,7 @@ export async function generateBookComposedChapters(options: {
   }
 
   if (developmentalEditing) {
+    await reportChapter(69, "Editing the manuscript's progression and overlapping sections", "read");
     await runComposedDevelopmentalEdit({
       projectId, planId, input, plan, textModel, setups, chapterIds, finalText, reports,
       compositionFor, composeOptionsFor, describePages, lineEdit: editorEnabled, generationJobId
@@ -718,7 +731,7 @@ export async function generateBookComposedChapters(options: {
 
   const readCuts = quality.enabled("manuscriptReadCuts");
   if (!developmentalEditing && quality.enabled("manuscriptReadPass") && setups.length > 1) {
-    await updateJobProgress(generationJobId, { progress: 70, message: "Reading the whole manuscript" });
+    await reportChapter(70, "Reading the whole manuscript", "read");
     // Every chapter's first and last paragraph rewritten in one call, so the
     // seams differ from each other; a paragraph the deterministic check refuses
     // keeps the original. Changed chapters are re-described and re-staged.

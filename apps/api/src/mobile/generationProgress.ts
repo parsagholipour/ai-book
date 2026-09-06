@@ -27,6 +27,11 @@ const STEP_LABELS: Omit<Record<GenerationStepKey, string>, "illustrate"> = {
   finish: "Building your book"
 };
 
+const CHAPTER_WRITE_LABEL = "Writing your chapters";
+
+/** Closed tokens the composed-chapters pass stamps on GENERATE_BOOK `setup`. */
+const CHAPTER_WRITE_PHASES = new Set(["compose", "scene", "edit", "read", "finalize"]);
+
 /**
  * A page draft's own output, used only to ease the bar between page
  * completions. Deliberately a single number: the point is a believable rate of
@@ -77,9 +82,10 @@ export function serializeGenerationProgress(
   }
 
   const phase = readPhase(status);
+  const writingChapters = phase.chapterWrite !== null && !phase.pagesDone;
   const steps = keys.map((key) => ({
     key,
-    label: stepLabel(key, imageMode),
+    label: stepLabel(key, imageMode, writingChapters),
     status: stepStatus(key, phase),
     detail: stepDetail(key, status, phase, imageMode)
   }));
@@ -91,6 +97,13 @@ export function serializeGenerationProgress(
   };
 }
 
+type ChapterWrite = {
+  done: number;
+  total: number;
+  phase?: string;
+  chapterIndex?: number;
+};
+
 type GenerationPhase = {
   bookJob: StatusJob | undefined;
   activeBookStep: string | undefined;
@@ -100,6 +113,8 @@ type GenerationPhase = {
   compileJob: StatusJob | undefined;
   activeCompileStep: string | undefined;
   writingStarted: boolean;
+  /** Composed-chapters counters on GENERATE_BOOK `setup`; sequential setup has none. */
+  chapterWrite: ChapterWrite | null;
   pagesDone: boolean;
   imagesDone: boolean;
   failedStep: GenerationStepKey | null;
@@ -121,14 +136,17 @@ function readPhase(status: ProjectStatusResult): GenerationPhase {
   // Preparing owns the window before any page work exists. Once a page has
   // landed, a page job is open, or the book job has reached its fan-out step,
   // the story is writing — including the direct execution modes, where the book
-  // job sits on `setup` for the whole book.
+  // job sits on `setup` for the whole book. Composed-chapters also write on
+  // `setup`, but they stamp chapter counters instead of completing pages.
+  const chapterWrite = chapterWriteFrom(bookJob, activeBookStep);
   const writingStarted =
     pages.complete > 0 ||
     openPageJobs.length > 0 ||
     activeBookStep === "enqueue" ||
     bookJob === undefined ||
     bookJob.status === "COMPLETED" ||
-    (activeBookStep === "setup" && pages.complete > 0);
+    (activeBookStep === "setup" && pages.complete > 0) ||
+    chapterWrite !== null;
 
   return {
     bookJob,
@@ -138,6 +156,7 @@ function readPhase(status: ProjectStatusResult): GenerationPhase {
     compileJob,
     activeCompileStep: activeStepKey(compileJob),
     writingStarted,
+    chapterWrite,
     pagesDone: pages.target > 0 && pages.complete >= pages.target,
     imagesDone: pipelineStatus("images") === "done",
     failedStep: failedStepFor(jobs, writingStarted)
@@ -176,6 +195,9 @@ function stepDetail(
       return chapters > 0 ? `${chapters} ${chapters === 1 ? "chapter" : "chapters"}` : null;
     }
     case "write":
+      if (phase.chapterWrite && !phase.pagesDone) {
+        return `${phase.chapterWrite.done} of ${phase.chapterWrite.total} chapters`;
+      }
       return pages.target > 0 ? `${pages.complete} of ${pages.target} pages` : null;
     case "illustrate": {
       const done = status.progress.images;
@@ -223,7 +245,12 @@ function generationImageMode(options: {
   return null;
 }
 
-function stepLabel(key: GenerationStepKey, imageMode: GenerationImageMode | null): string {
+function stepLabel(
+  key: GenerationStepKey,
+  imageMode: GenerationImageMode | null,
+  writingChapters = false
+): string {
+  if (key === "write" && writingChapters) return CHAPTER_WRITE_LABEL;
   if (key !== "illustrate") return STEP_LABELS[key];
   if (imageMode === "cover") return "Creating your cover";
   if (imageMode === "illustrations") return "Creating your illustrations";
@@ -261,6 +288,10 @@ export function liveDetail(status: ProjectStatusResult, phase: GenerationPhase):
     return pagePhrase(phase.activePageJob, status);
   }
   if (phase.writingStarted) {
+    const chapterPhrase = chapterWritePhrase(phase.chapterWrite);
+    if (chapterPhrase) {
+      return chapterPhrase;
+    }
     const pages = status.progress.pages;
     if (pages.target > 0 && pages.complete < pages.target) {
       return `Writing page ${pages.complete + 1} of ${pages.target}`;
@@ -268,6 +299,27 @@ export function liveDetail(status: ProjectStatusResult, phase: GenerationPhase):
     return null;
   }
   return bookPhrase(phase.activeBookStep, status);
+}
+
+function chapterWritePhrase(write: ChapterWrite | null): string | null {
+  if (!write) {
+    return null;
+  }
+  const chapter = typeof write.chapterIndex === "number" ? write.chapterIndex : undefined;
+  switch (write.phase) {
+    case "compose":
+      return chapter !== undefined ? `Writing chapter ${chapter} of ${write.total}` : CHAPTER_WRITE_LABEL;
+    case "scene":
+      return chapter !== undefined ? `Telling chapter ${chapter}'s opening` : "Telling the opening";
+    case "edit":
+      return chapter !== undefined ? `Editing chapter ${chapter}` : "Editing your chapters";
+    case "read":
+      return "Reading the whole manuscript";
+    case "finalize":
+      return "Getting your pages ready";
+    default:
+      return chapter !== undefined ? `Writing chapter ${chapter} of ${write.total}` : CHAPTER_WRITE_LABEL;
+  }
 }
 
 function bookPhrase(stepKey: string | undefined, status: ProjectStatusResult): string | null {
@@ -357,10 +409,14 @@ export function generationProgressPercent(
   // The nudge is capped at a single page's worth of the bar, so a long-running
   // draft keeps the bar alive without ever overtaking the pages actually saved.
   const pageRatio = clamp01(pages.complete / Math.max(1, pages.target));
+  const chapterRatio = phase.chapterWrite
+    ? clamp01(phase.chapterWrite.done / phase.chapterWrite.total)
+    : 0;
+  const writeRatio = Math.max(chapterRatio, pageRatio);
   const pageSlice = 1 / Math.max(1, pages.target);
   const nudge = pageSlice * (1 - Math.exp((-1.6 * activeWriteTokens(phase)) / EXPECTED_PAGE_OUTPUT_TOKENS));
   const write = phase.writingStarted
-    ? PREPARE_BAND.end + (writeEnd - PREPARE_BAND.end) * Math.min(1, pageRatio + nudge)
+    ? PREPARE_BAND.end + (writeEnd - PREPARE_BAND.end) * Math.min(1, writeRatio + nudge)
     : 0;
 
   // Gated behind finished pages: a newly enqueued image job grows the
@@ -415,6 +471,29 @@ function chapterCount(status: ProjectStatusResult): number {
 
 function activeStepKey(job: StatusJob | undefined): string | undefined {
   return job?.steps?.find((step) => step.status === "active")?.key;
+}
+
+function chapterWriteFrom(bookJob: StatusJob | undefined, activeBookStep: string | undefined): ChapterWrite | null {
+  if (activeBookStep !== "setup" || !bookJob) {
+    return null;
+  }
+  const step = bookJob.steps.find((entry) => entry.status === "active" && entry.key === "setup");
+  if (!step || typeof step.total !== "number" || step.total <= 0) {
+    return null;
+  }
+  const phase = typeof step.phase === "string" ? step.phase : undefined;
+  const chapterIndex = typeof step.chapterIndex === "number" ? step.chapterIndex : undefined;
+  // Sequential setup stamps no counters. Replan/page work on this key uses
+  // `pageIndex` and draft/revise phases — those are not a chapter write.
+  if (chapterIndex === undefined && (phase === undefined || !CHAPTER_WRITE_PHASES.has(phase))) {
+    return null;
+  }
+  return {
+    done: typeof step.done === "number" ? step.done : 0,
+    total: step.total,
+    ...(phase ? { phase } : {}),
+    ...(chapterIndex !== undefined ? { chapterIndex } : {})
+  };
 }
 
 /** A job that has been created but never started carries no steps yet. */
