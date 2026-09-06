@@ -22,6 +22,41 @@ describe("dossier", () => {
     expect(calls).toHaveLength(1);
     expect(result.excerpts[0]?.text).toBe(text);
   });
+  it("shows every fetched document to the extractor before spending slots on second windows", async () => {
+    const episodes = [1, 2, 3].map((index) => chapterEpisodeSchema.parse({
+      title: `The coronation ${index}`, person: "Napoleon Bonaparte", place: "Paris",
+      document: "Coronation memoir", searchQueries: [`coronation witness ${index}`]
+    }));
+    const sources = [1, 2, 3, 4, 5].map((index) => ({
+      host: "web" as const, title: `Witness ${index}`, url: `https://example.org/${index}`,
+      textUrl: `https://example.org/${index}`, author: "", year: ""
+    }));
+    vi.spyOn(primarySources, "searchPrimarySources")
+      .mockResolvedValueOnce(sources.slice(0, 2))
+      .mockResolvedValueOnce(sources.slice(2, 4))
+      .mockResolvedValueOnce(sources.slice(4));
+    const relevantPassage = "We watched him take the crown from the cushion and raise it above his head. The company stood as the music began, and the clerk recorded the ceremony before the guests departed through the western door.";
+    vi.spyOn(primarySources, "fetchPrimaryText").mockImplementation(async (source) => source === sources[4]
+      ? `${relevantPassage} ${filler(100)}`
+      : Array(300).fill("The coronation was recorded in the memoir.").join(" "));
+    const chapter = originalDevelopmentPlan().chapters[0]!;
+    const { model, calls } = scriptedDevelopmentModel([{ excerpts: [{
+      windowId: `ch${chapter.index}-d5-w1`, firstWords: "We watched him take the crown from",
+      lastWords: "guests departed through the western door.", episodeTitle: episodes[2]!.title
+    }] }]);
+
+    const result = await buildChapterDossier({ input: developmentInput, chapter, episodes, textModel: model, fetch: async () => ({ status: 200, text: "" }) });
+
+    expect(result.documents).toHaveLength(5);
+    expect(calls).toHaveLength(1);
+    const payload: { windows: Array<{ id: string; document: string; text: string }> } = JSON.parse(calls[0]!.messages[1]!.content);
+    expect(payload.windows).toHaveLength(8);
+    expect(new Set(payload.windows.map((window) => window.document))).toEqual(new Set(sources.map((source) => source.title)));
+    expect(new Set(payload.windows.map((window) => window.id)).size).toBe(8);
+    expect(payload.windows.find((window) => window.document === "Witness 5")?.text).toContain(relevantPassage);
+    expect(result.excerpts[0]?.text).toBe(relevantPassage);
+  });
+
   it("ranks windows by distinct episode-term hits and falls back to the opening", () => {
     const document: DossierDocument = {
       id: "d1", title: "T", url: "u", host: "wikisource", author: "", year: "", episodeTitle: "e",

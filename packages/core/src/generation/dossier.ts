@@ -367,12 +367,20 @@ export async function buildChapterDossier(options: {
   }
   // Term hits rank bounded windows; the existing extractor judges relevance.
   // Lexical absence cannot reject a source containing pronouns or alternate names.
-  const windows: DossierWindow[] = [];
-  for (const document of documents) {
+  const maxWindowsPerDocument = 2;
+  const windowsByDocument = documents.map((document) => {
     const episode = options.episodes.find((entry) => entry.title === document.episodeTitle);
     const terms = episode ? episodeTerms(episode) : [];
-    const candidates = candidateWindows(document, terms, { maxWindows: 2 });
-    windows.push(...candidates);
+    return candidateWindows(document, terms, { maxWindows: maxWindowsPerDocument });
+  });
+  // Give every document a window before allocating seconds, so early sources
+  // cannot exhaust the chapter budget before later sources reach the extractor.
+  const windows: DossierWindow[] = [];
+  for (let index = 0; index < maxWindowsPerDocument; index += 1) {
+    for (const candidates of windowsByDocument) {
+      const window = candidates[index];
+      if (window) windows.push(window);
+    }
   }
   const kept = windows.slice(0, DOSSIER_MAX_WINDOWS_PER_CHAPTER);
   let excerpts: DossierExcerpt[] = [];
