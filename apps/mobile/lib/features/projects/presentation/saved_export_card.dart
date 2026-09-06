@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/polling_state_mixin.dart';
 import '../../billing/data/billing_repository.dart';
+import '../../billing/domain/billing_models.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
 import 'project_export_actions.dart';
@@ -153,12 +154,7 @@ class _SavedExportCardState extends ConsumerState<SavedExportCard>
     final colors = Theme.of(context).colorScheme;
     final manualEdit = widget.message.manualEdit;
     final statusValue = ref.watch(projectStatusProvider(_projectId));
-    final availableCredits = ref
-        .watch(billingProvider)
-        .asData
-        ?.value
-        .credits
-        .available;
+    final billing = ref.watch(billingProvider).asData?.value;
     final status = statusValue.asData?.value;
     final exports = status?.exports;
     final rebuildingExports =
@@ -234,10 +230,9 @@ class _SavedExportCardState extends ConsumerState<SavedExportCard>
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  if (exports != null) ...[
-                    _exportButton(exports.pdf, availableCredits),
-                    _exportButton(exports.epub, availableCredits),
-                  ],
+                  if (exports != null)
+                    for (final export in exports.all)
+                      _exportButton(export, billing),
                   AppButton.outlined(
                     onPressed: () => context.push(
                       '/projects/$_projectId/edit?savedExportMessageId=${widget.message.id}',
@@ -254,23 +249,31 @@ class _SavedExportCardState extends ConsumerState<SavedExportCard>
     );
   }
 
-  Widget _exportButton(MobileExportAvailability export, int? availableCredits) {
+  Widget _exportButton(MobileExportAvailability export, MobileBilling? billing) {
     final action = projectExportDownloadAction(export);
     final isDownloading = _busyAction == action;
-    final needsCredits = projectExportNeedsCredits(export, availableCredits);
+    final locked = projectExportLockedBySubscription(export, billing);
+    final needsCredits = projectExportNeedsCredits(
+      export,
+      billing?.credits.available,
+    );
     return AppButton.tonal(
       onPressed: export.available && !isDownloading
-          ? () => needsCredits ? _openPaywall(export) : _download(export)
+          ? () => locked || needsCredits
+                ? _openPaywall(export)
+                : _download(export)
           : null,
       loading: isDownloading,
       loadingLabel: 'Downloading export',
       leading: Icon(
-        export.format == 'pdf'
-            ? Icons.picture_as_pdf_outlined
-            : Icons.menu_book_outlined,
+        locked ? Icons.lock_outline : projectExportIcon(export),
         size: 18,
       ),
-      label: projectExportDownloadLabel(export, needsCredits),
+      label: projectExportDownloadLabel(
+        export,
+        needsCredits,
+        lockedBySubscription: locked,
+      ),
     );
   }
 }

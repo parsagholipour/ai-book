@@ -1,4 +1,5 @@
 import { generationJobTypeForWorkerName, type GenerationJobType } from "./jobDispatch.js";
+import { isExportFormat, type ExportFormat } from "./generation/exportFormats.js";
 
 /**
  * Jobs that produce optional experiences from an existing book rather than
@@ -194,14 +195,14 @@ export function workerJobRestoresPreEditProjectStatus(name: string): boolean {
 /** The one artifact a detached export repair was asked to replace. */
 export const EXPORT_REPAIR_FORMAT = "exportRepairFormat";
 
-export type ExportRepairFormat = "pdf" | "epub";
+export type ExportRepairFormat = ExportFormat;
 
 export function exportRepairFormatFromPayload(payload: unknown): ExportRepairFormat | null {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return null;
   }
   const value = (payload as Record<string, unknown>)[EXPORT_REPAIR_FORMAT];
-  return value === "pdf" || value === "epub" ? value : null;
+  return isExportFormat(value) ? value : null;
 }
 
 /** Project status a compile observed when it was enqueued and may publish over. */

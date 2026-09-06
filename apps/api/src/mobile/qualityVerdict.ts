@@ -1,5 +1,6 @@
 import { Prisma, prisma } from "@book-maker/db";
 import type { ProjectQualityStatus } from "../projectStatus.js";
+import { COMPANION_EXPORT_FORMATS, companionExportFailedIssueCode, type CompanionExportFormat } from "@book-maker/core";
 
 /**
  * Which compile's quality report is the *book's* verdict, and what the report
@@ -66,13 +67,11 @@ export async function loadProjectQualityReport(projectId: string): Promise<unkno
   return owner?.qualityReport ?? null;
 }
 
-const EPUB_EXPORT_FAILED = "EPUB_EXPORT_FAILED";
-
 /**
- * Drops the one issue that describes a file rather than the manuscript.
+ * Drops the issues that describe a file rather than the manuscript.
  *
- * `EPUB_EXPORT_FAILED` is recorded by the compile whose conversion failed, and
- * it is the whole reason the missing EPUB gets repaired at all. The repair that
+ * `EPUB_EXPORT_FAILED` (and its Word twin) is recorded by the compile whose
+ * conversion failed, and it is the whole reason the missing file gets repaired at all. The repair that
  * succeeds is a newer and better-informed statement about that file, but it is
  * detached, so it owns no verdict and `loadProjectQualityReport` deliberately
  * refuses to hear it — which would leave a book whose EPUB is sitting on disk
@@ -83,21 +82,24 @@ const EPUB_EXPORT_FAILED = "EPUB_EXPORT_FAILED";
  * lane keeps retrying whatever the quality card says.
  *
  * The file itself settles it: `serializeExportSet` already reports
- * availability from disk, and disk beats a historical job row. Only this issue
- * is resolvable this way — every other one is about the book's prose, which no
- * later compile of the same manuscript can have fixed.
+ * availability from disk, and disk beats a historical job row. Only these
+ * issues are resolvable this way — every other one is about the book's prose,
+ * which no later compile of the same manuscript can have fixed.
  *
- * `affectedPageIndexes` is left alone: an EPUB failure names no pages, so the
- * list cannot contain anything this drops.
+ * `affectedPageIndexes` is left alone: a companion failure names no pages, so
+ * the list cannot contain anything this drops.
  */
 export function qualityWithExportsOnDisk(
   quality: ProjectQualityStatus,
-  exports: { epub: { available: boolean } }
+  exports: Record<CompanionExportFormat, { available: boolean }>
 ): ProjectQualityStatus {
-  if (!exports.epub.available || !quality.issues.some((issue) => issue.code === EPUB_EXPORT_FAILED)) {
+  const settled = new Set(
+    COMPANION_EXPORT_FORMATS.filter((format) => exports[format].available).map(companionExportFailedIssueCode)
+  );
+  if (!quality.issues.some((issue) => settled.has(issue.code))) {
     return quality;
   }
-  const issues = quality.issues.filter((issue) => issue.code !== EPUB_EXPORT_FAILED);
+  const issues = quality.issues.filter((issue) => !settled.has(issue.code));
   const blocked = issues.some((issue) => issue.severity === "error" && issue.source === "deterministic");
   return {
     ...quality,

@@ -14,6 +14,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { EXPORT_FORMATS } from "./exportFormats.js";
 import {
   DEFAULT_EXPORT_TEMP_MIN_AGE_MS,
   EXPORT_TEMP_MIN_AGE_FLOOR_MS,
@@ -87,11 +88,15 @@ describe("export temp sweep", () => {
       expect(isPendingExportTempName(`.book-${token}.pdf`)).toBe(true);
       expect(isPendingExportTempName(`.book-${token}.md`)).toBe(true);
       expect(isPendingExportTempName(`.book-${token}.epub`)).toBe(true);
+      expect(isPendingExportTempName(`.book-${token}.docx`)).toBe(true);
       expect(isPendingExportTempName(`.book-${token}.pdf.provenance.json`)).toBe(true);
       expect(isPendingExportTempName(`.book-${token}.epub.provenance.json`)).toBe(true);
+      expect(isPendingExportTempName(`.book-${token}.docx.provenance.json`)).toBe(true);
       expect(isPendingExportTempName(`.book-superseded-${token}.pdf`)).toBe(true);
+      expect(isPendingExportTempName(`.book-superseded-${token}.docx`)).toBe(true);
       expect(isPendingExportTempName(`.book-superseded-${token}.pdf.provenance.json`)).toBe(true);
       expect(isPendingExportTempName(`.book-superseded-${token}.epub.provenance.json`)).toBe(true);
+      expect(isPendingExportTempName(`.book-superseded-${token}.docx.provenance.json`)).toBe(true);
       expect(isRenderDocumentTempName(`.book-render-${token}.html`)).toBe(true);
     });
 
@@ -101,8 +106,10 @@ describe("export temp sweep", () => {
         "book.pdf",
         "book.md",
         "book.epub",
+        "book.docx",
         "book.pdf.provenance.json",
         "book.epub.provenance.json",
+        "book.docx.provenance.json",
         "cover.jpg",
         `book-${token}.pdf`,
         ".book-scratch.pdf",
@@ -129,7 +136,7 @@ describe("export temp sweep", () => {
     it("names every scratch export so its own sweep recognises it", () => {
       // The drift this closes is silent: a writer whose name stops matching
       // strands files nothing collects, and nothing fails.
-      for (const extension of ["md", "pdf", "epub"] as const) {
+      for (const extension of ["md", ...EXPORT_FORMATS] as const) {
         expect(isPendingExportTempName(basename(pendingExportTempPath("/books/p", extension)))).toBe(true);
         expect(
           isPendingExportTempName(basename(pendingExportTempPath("/books/p", extension, supersededExportToken())))

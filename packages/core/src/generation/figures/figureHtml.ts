@@ -30,10 +30,27 @@ function withPeriod(text: string): string {
   return /[.!?…؟。:;]$/u.test(trimmed) ? trimmed : `${trimmed}.`;
 }
 
+/**
+ * The caption's three pieces, as sentences: the title, the optional caption and
+ * the source line. Both the HTML figure and the Word export print exactly these
+ * words, so the two renderers cannot drift apart on a period or a label.
+ */
+export function figureCaptionText(
+  spec: FigureSpec,
+  context: FigureRenderContext
+): { title: string; caption: string | undefined; sourceLine: string } {
+  const caption = spec.caption?.trim();
+  return {
+    title: withPeriod(spec.title),
+    caption: caption ? withPeriod(caption) : undefined,
+    sourceLine: `${context.labels.source}: ${withPeriod(spec.source)}`
+  };
+}
+
 export function figureHtml(spec: FigureSpec, context: FigureRenderContext): string {
   const direction = context.profile.direction === "rtl" ? ' dir="rtl"' : "";
-  const caption = spec.caption?.trim();
-  const captionHtml = `<strong style="color:${FIGURE_INK.primary}">${escapeXml(withPeriod(spec.title))}</strong>${caption ? ` ${escapeXml(withPeriod(caption))}` : ""} ${escapeXml(context.labels.source)}: ${escapeXml(withPeriod(spec.source))}`;
+  const text = figureCaptionText(spec, context);
+  const captionHtml = `<strong style="color:${FIGURE_INK.primary}">${escapeXml(text.title)}</strong>${text.caption ? ` ${escapeXml(text.caption)}` : ""} ${escapeXml(text.sourceLine)}`;
   return [
     `<figure class="book-figure" style="margin:1.4em 0;break-inside:avoid;page-break-inside:avoid"${direction}>`,
     figureSvg(spec, context),

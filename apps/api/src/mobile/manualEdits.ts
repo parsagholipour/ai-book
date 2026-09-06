@@ -23,6 +23,8 @@ import {
 import { jsonInputValue, jsonRecord } from "./support.js";
 import { rebuildStoryStateAfterUndo } from "./rebuildStoryState.js";
 import {
+  publishedExportFilename,
+  EXPORT_FORMATS,
   compilePolicyPayload,
   compilePublicationDedupeKey,
   compilePublicationPolicyFromPayload,
@@ -80,7 +82,7 @@ export async function invalidateCompiledProjectExports(bookStorageDir: string, p
   const projectDir = join(bookStorageDir, projectId);
   await Promise.all(
     [
-      ...["book.md", "README.md", "book.pdf", "book.epub"].map((filename) => join(projectDir, filename)),
+      ...["book.md", "README.md", ...EXPORT_FORMATS.map(publishedExportFilename)].map((filename) => join(projectDir, filename)),
       ...exportProvenancePaths(projectDir)
     ].map((path) => rm(path, { force: true }).catch(() => undefined))
   );

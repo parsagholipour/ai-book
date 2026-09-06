@@ -197,6 +197,88 @@ void main() {
     expect(find.text('Share EPUB'), findsOneWidget);
   });
 
+  testWidgets('holding a finished book offers Word to a subscriber', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      shelfTestApp(
+        [
+          shelfProject(
+            id: 'done',
+            title: 'Finished Book',
+            status: 'complete',
+            hasPlan: true,
+            exportsReady: true,
+            epubReady: true,
+            docxReady: true,
+            includeDocx: true,
+          ),
+        ],
+        creator: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.longPress(find.byType(BookCover));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Open Word'), findsOneWidget);
+    expect(find.text('Share Word'), findsOneWidget);
+    expect(find.byIcon(Icons.lock_outline), findsNothing);
+  });
+
+  testWidgets('a free account sees the Word rows locked', (tester) async {
+    await tester.pumpWidget(
+      shelfTestApp([
+        shelfProject(
+          id: 'done',
+          title: 'Finished Book',
+          status: 'complete',
+          hasPlan: true,
+          exportsReady: true,
+          epubReady: true,
+          docxReady: true,
+          includeDocx: true,
+        ),
+      ]),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.longPress(find.byType(BookCover));
+    await tester.pumpAndSettle();
+
+    // Plenty of credits, so the only locks are the plan's: both Word rows
+    // offer the upgrade, matching the tile.
+    expect(find.text('Upgrade for Word'), findsNWidgets(2));
+    expect(find.text('Open Word'), findsNothing);
+    expect(find.byIcon(Icons.lock_outline), findsNWidgets(2));
+  });
+
+  testWidgets('a book the server offers no Word file for shows no Word rows', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      shelfTestApp([
+        shelfProject(
+          id: 'done',
+          title: 'Finished Book',
+          status: 'complete',
+          hasPlan: true,
+          exportsReady: true,
+          epubReady: true,
+        ),
+      ]),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.longPress(find.byType(BookCover));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Open Word'), findsNothing);
+    expect(find.text('Upgrade for Word'), findsNothing);
+    expect(find.text('Open EPUB'), findsOneWidget);
+  });
+
   testWidgets('Go to chat opens the selected book chat', (tester) async {
     final router = GoRouter(
       initialLocation: '/',
@@ -267,10 +349,11 @@ void main() {
     await tester.pumpAndSettle();
 
     // Export entries do not change shape mid-generation, while chat stays
-    // available so the user can continue working on the book.
+    // available so the user can continue working on the book. Open uses the
+    // same preparing words as the tile; Share keeps its own suffix.
     expect(find.text('Go to chat'), findsOneWidget);
-    expect(find.text('Open PDF — preparing'), findsOneWidget);
-    expect(find.text('Open EPUB — preparing'), findsOneWidget);
+    expect(find.text('Preparing PDF'), findsOneWidget);
+    expect(find.text('Preparing EPUB'), findsOneWidget);
     expect(find.text('Share PDF — preparing'), findsOneWidget);
     expect(find.text('Share EPUB — preparing'), findsOneWidget);
 
@@ -302,7 +385,7 @@ void main() {
       await tester.longPress(find.byType(BookCover));
       await tester.pumpAndSettle();
 
-      expect(find.text('Open PDF'), findsOneWidget);
+      expect(find.text('Unlock PDF'), findsOneWidget);
       expect(find.byIcon(Icons.lock_outline), findsNothing);
     },
   );
@@ -416,14 +499,20 @@ class _LiveShelfRepository implements ProjectsRepository {
   }
 }
 
-Widget shelfTestApp(List<MobileProjectSummary> projects, {int credits = 900}) {
+Widget shelfTestApp(
+  List<MobileProjectSummary> projects, {
+  int credits = 900,
+  bool creator = false,
+}) {
   return ProviderScope(
     overrides: [
       projectsProvider.overrideWith((ref) async => projects),
       projectStatusProvider.overrideWith(
         (ref, id) => const Stream<MobileProjectStatus>.empty(),
       ),
-      billingProvider.overrideWith((ref) async => billingWith(credits)),
+      billingProvider.overrideWith(
+        (ref) async => billingWith(credits, creator: creator),
+      ),
     ],
     child: const MaterialApp(
       home: Scaffold(body: SizedBox(width: 400, child: BookShelf())),
@@ -455,7 +544,7 @@ MobileProjectStatus projectStatus({
   );
 }
 
-MobileBilling billingWith(int available) {
+MobileBilling billingWith(int available, {bool creator = false}) {
   return MobileBilling(
     credits: CreditBalance(
       available: available,
@@ -463,7 +552,17 @@ MobileBilling billingWith(int available) {
       lifetimeGranted: available,
       lifetimeSpent: 0,
     ),
-    entitlements: const [],
+    entitlements: [
+      if (creator)
+        MobileEntitlement(
+          id: 'ent-creator',
+          type: 'CREATOR_PLAN',
+          status: 'ACTIVE',
+          source: 'google_play',
+          creditsCost: 0,
+          startsAt: DateTime.utc(2026, 6, 1),
+        ),
+    ],
     products: const [],
     creditCosts: const {},
   );
@@ -513,6 +612,8 @@ MobileProjectSummary shelfProject({
   bool hasPlan = false,
   bool exportsReady = false,
   bool epubReady = false,
+  bool docxReady = false,
+  bool includeDocx = false,
   int progressPercent = 0,
   int? pageCount,
   DateTime? updatedAt,
@@ -533,14 +634,37 @@ MobileProjectSummary shelfProject({
     pageCount: pageCount ?? (hasPlan ? 6 : 0),
     imageCount: 0,
     hasPlan: hasPlan,
-    exports: shelfExports(ready: exportsReady, epubReady: epubReady),
+    exports: shelfExports(
+      ready: exportsReady,
+      epubReady: epubReady,
+      docxReady: docxReady,
+      includeDocx: includeDocx,
+    ),
     createdAt: DateTime.utc(2026, 6, 1),
     updatedAt: updatedAt ?? DateTime.utc(2026, 6, 1),
   );
 }
 
-MobileExportSet shelfExports({required bool ready, bool epubReady = false}) {
+MobileExportSet shelfExports({
+  required bool ready,
+  bool epubReady = false,
+  bool docxReady = false,
+  bool includeDocx = false,
+}) {
   return MobileExportSet(
+    docx: includeDocx
+        ? MobileExportAvailability(
+            format: 'docx',
+            available: docxReady,
+            unlocked: docxReady,
+            requiresSubscription: true,
+            creditsRequired: 150,
+            downloadUrl: '/api/mobile/projects/p/export/docx',
+            filename: 'book.docx',
+            contentType:
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          )
+        : null,
     pdf: MobileExportAvailability(
       format: 'pdf',
       available: ready,

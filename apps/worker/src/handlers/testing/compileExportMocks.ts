@@ -155,6 +155,7 @@ export const mocks = {
   inputForPlanVersion: vi.fn(),
   createReaderChaptersForExport: vi.fn(),
   generateBookEpub: vi.fn(),
+  generateBookDocx: vi.fn(),
   exportPublicationSuperseded: vi.fn(),
   pendingExportPaths: vi.fn(),
   publishCompiledExports: vi.fn(),
@@ -323,6 +324,7 @@ export const coreModuleMock = (actual: typeof import("@book-maker/core")) => ({
   // the repair suite is whether it happens at all.
   createReaderChaptersForExport: mocks.createReaderChaptersForExport,
   generateBookEpub: mocks.generateBookEpub,
+  generateBookDocx: mocks.generateBookDocx,
   runDeterministicManuscriptChecks: (...args: Parameters<typeof actual.runDeterministicManuscriptChecks>) => {
     mocks.runDeterministicManuscriptChecks(...args);
     return actual.runDeterministicManuscriptChecks(...args);

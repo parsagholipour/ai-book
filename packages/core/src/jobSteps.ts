@@ -80,7 +80,8 @@ export const JOB_STEP_TEMPLATES: Record<GenerationJobType, readonly JobStepTempl
     { key: "compile", label: "Compile markdown" },
     { key: "write", label: "Write Markdown" },
     { key: "pdf", label: "Generate PDF" },
-    { key: "epub", label: "Generate EPUB" }
+    { key: "epub", label: "Generate EPUB" },
+    { key: "docx", label: "Generate Word" }
   ],
   APPLY_BOOK_EDIT: [
     { key: "prepare", label: "Prepare edit" },

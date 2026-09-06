@@ -979,6 +979,27 @@ resume cursor) and single-flight, and `shutdown()` stops it **before** `worker.c
 holds an open directory handle and has no job to finish, so it is cancelled through the signal it
 checks between entries and awaited, rather than left running into `prisma.$disconnect()`.
 
+- **A companion export never fails the compile, and a new one is one registry entry.** The EPUB
+  and the Word file (`docx.ts`, shipped 2026-09-06 as a plan perk) are best-effort: a render that
+  fails twice records `<FORMAT>_EXPORT_FAILED` on the quality report, the publication retires that
+  format's predecessor and its provenance, and the export-repair lane rebuilds it on demand. The
+  PDF is the book and is never one of these. Every list that enumerates the formats derives from
+  `exportFormats.ts` — the scratch-file sweep's suffixes, `exportProvenancePaths`, the worker's
+  pending paths and `artifactPublications`, the mobile DTO and route table, the repair priority,
+  the policy identity letter — because they used to be a dozen `"pdf" | "epub"` spellings that did
+  not typecheck against each other, and adding the third format meant finding all of them. Only
+  `jobSteps.ts` still spells its `docx` step as a literal: it is a subpath entry and may import
+  nothing at runtime. The Word renderer takes the same compiled markdown string the other two
+  take and renders **no HTML**: the compiler's title page and Contents are read back into fields
+  (`prepareDocxSource`), chapter anchors are dropped and re-made as bookmarks, every other tag is
+  discarded, and only `http`, `https` and `mailto` links survive — which is this export's whole
+  `stripEmbeddedDocuments` story, since a hyperlink target is the one active thing a manuscript can
+  still smuggle into a Word file. Fonts are named per script and never embedded (the EPUB's rule),
+  the Contents is a static list of hyperlinks rather than a TOC field (Word would ask to update
+  fields on every open), and a figure is rasterised through sharp's librsvg — which cannot see the
+  PDF's embedded face, so its labels are set in whatever fontconfig substitutes — and degrades to
+  the stand-in sentence when it cannot be drawn.
+
 ## Chapter apparatus
 
 - **A book only earns the word "Chapter" by being long enough to need it.** The planner is told to

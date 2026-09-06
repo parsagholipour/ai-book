@@ -5,17 +5,26 @@ import {
   ensureExportEntitlementForDownload,
   requireMobileAuth,
   sendMobileError,
-  sendProjectNotFound
+  sendProjectNotFound,
+  sendSubscriptionRequired
 } from "../httpErrors.js";
 import { ensureExportRepairQueued } from "../exportRepair.js";
 import { idParamsSchema, mobileAuthError } from "../schemas.js";
 import { prisma } from "@book-maker/db";
-import type { ExportArtifact } from "@book-maker/core";
+import { hasActiveSubscriptionEntitlement } from "@book-maker/db/billing";
+import {
+  EXPORT_FORMATS,
+  exportContentType,
+  exportRequiresSubscription,
+  type ExportArtifact,
+  type ExportFormat
+} from "@book-maker/core";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { MobileRouteContext } from "../routeContext.js";
 
 /**
- * Entitlement-gated PDF and EPUB downloads.
+ * Entitlement-gated PDF, EPUB and Word downloads, one route per format in the
+ * registry.
  *
  * These never render. A missing file used to be compiled inside the request —
  * an unbounded Chromium render inside a Fastify handler, with no dedupe, on a
@@ -23,7 +32,10 @@ import type { MobileRouteContext } from "../routeContext.js";
  * window a user edit opens: `invalidateCompiledProjectExports` deletes the files
  * and `queueUserEditExportRecompile` queues the rebuild a moment later. The
  * route now queues that same compile and answers `EXPORT_NOT_READY`, which the
- * app already knows how to poll through.
+ * app already knows how to poll through. The repair is keyed on the caller's
+ * own format even when another is missing too: this caller asked for this file,
+ * and the PDF's own repair stays available to the status hooks, which is where
+ * it is actually noticed.
  *
  * The operator console still renders inline (`sendProjectPdfExport`): it
  * downloads through a plain link, where a 404 would just break the download,
@@ -31,7 +43,23 @@ import type { MobileRouteContext } from "../routeContext.js";
  *
  * The queueing is a *repair*, not an edit — see `exportRepairDedupeKey` for why
  * it cannot borrow the edit recompile's key.
+ *
+ * **The Word file is a plan perk, and the refusal comes before anything else.**
+ * A free account is answered 403 `SUBSCRIPTION_REQUIRED` before a byte is read
+ * and before any repair is queued — a compile for a file the reader cannot
+ * download is spend for nothing. The subscription gates the *format*; the
+ * per-book export unlock below gates the *book*, and applies to every format
+ * alike, so a subscriber who has already unlocked the PDF gets the Word file at
+ * no further charge. The plan check is a fresh read, never the 60-second cache
+ * `isSubscriberForRateLimit` keeps for rate ceilings: that cache reads a lookup
+ * failure as "free", which is the right default for a ceiling and the wrong one
+ * for a refusal.
  */
+
+/** What a free account is told when it asks for a plan-gated format. */
+const SUBSCRIPTION_MESSAGE: Partial<Record<ExportFormat, string>> = {
+  docx: "Word export is part of the Creator plan."
+};
 
 function sendExportNotReady(reply: FastifyReply) {
   return sendMobileError(reply, 404, "EXPORT_NOT_READY", "This export is not ready yet.");
@@ -102,74 +130,51 @@ async function sendUnlocked(
 export async function registerMobileExportRoutes(fastify: FastifyInstance, context: MobileRouteContext): Promise<void> {
   const { appConfig } = context;
 
-  fastify.get(
-    "/api/mobile/projects/:id/export/pdf",
-    { schema: { tags: ["mobile"], response: { 401: mobileAuthError, 404: mobileAuthError } } },
-    async (request, reply) => {
-      const auth = await requireMobileAuth(request, reply);
-      if (!auth) {
-        return;
+  for (const format of EXPORT_FORMATS) {
+    const gated = exportRequiresSubscription(format);
+    fastify.get(
+      `/api/mobile/projects/:id/export/${format}`,
+      {
+        schema: {
+          tags: ["mobile"],
+          response: { 401: mobileAuthError, ...(gated ? { 403: mobileAuthError } : {}), 404: mobileAuthError }
+        }
+      },
+      async (request, reply) => {
+        const auth = await requireMobileAuth(request, reply);
+        if (!auth) {
+          return;
+        }
+        const { id } = idParamsSchema.parse(request.params);
+        const project = await prisma.project.findFirst({
+          where: { id, userId: auth.user.id },
+          select: { title: true, status: true, currentPlanId: true, contentRevision: true }
+        });
+        if (!project) {
+          return sendProjectNotFound(reply);
+        }
+        if (gated && !(await hasActiveSubscriptionEntitlement(auth.user.id))) {
+          return sendSubscriptionRequired(reply, SUBSCRIPTION_MESSAGE[format] ?? "This export is part of the Creator plan.");
+        }
+        // REVIEW_REQUIRED no longer refuses the download: the compile always
+        // produces the best available book, and the flagged issues travel on the
+        // serialized quality report for the app to warn with. The reader paid
+        // for this book; QA gets to warn, not to withhold.
+        //
+        // The bytes are in hand before anything is spent — see `sendUnlocked`.
+        const artifact = await readProjectExportArtifact(appConfig, id, format, project);
+        if (!artifact) {
+          await ensureExportRepairQueued({ id, ...project }, format, appConfig);
+          return sendExportNotReady(reply);
+        }
+        return sendUnlocked(reply, {
+          userId: auth.user.id,
+          projectId: id,
+          artifact,
+          contentType: exportContentType(format),
+          filename: `${sanitizeDownloadFilename(project.title)}.${format}`
+        });
       }
-      const { id } = idParamsSchema.parse(request.params);
-      const project = await prisma.project.findFirst({
-        where: { id, userId: auth.user.id },
-        select: { title: true, status: true, currentPlanId: true, contentRevision: true }
-      });
-      if (!project) {
-        return sendProjectNotFound(reply);
-      }
-      // REVIEW_REQUIRED no longer refuses the download: the compile always
-      // produces the best available book, and the flagged issues travel on the
-      // serialized quality report for the app to warn with. The reader paid
-      // for this book; QA gets to warn, not to withhold.
-      //
-      // The bytes are in hand before anything is spent — see `sendUnlocked`.
-      const pdf = await readProjectExportArtifact(appConfig, id, "pdf", project);
-      if (!pdf) {
-        await ensureExportRepairQueued({ id, ...project }, "pdf", appConfig);
-        return sendExportNotReady(reply);
-      }
-      return sendUnlocked(reply, {
-        userId: auth.user.id,
-        projectId: id,
-        artifact: pdf,
-        contentType: "application/pdf",
-        filename: `${sanitizeDownloadFilename(project.title)}.pdf`
-      });
-    }
-  );
-
-  fastify.get(
-    "/api/mobile/projects/:id/export/epub",
-    { schema: { tags: ["mobile"], response: { 401: mobileAuthError, 404: mobileAuthError } } },
-    async (request, reply) => {
-      const auth = await requireMobileAuth(request, reply);
-      if (!auth) {
-        return;
-      }
-      const { id } = idParamsSchema.parse(request.params);
-      const project = await prisma.project.findFirst({
-        where: { id, userId: auth.user.id },
-        select: { title: true, status: true, currentPlanId: true, contentRevision: true }
-      });
-      if (!project) {
-        return sendProjectNotFound(reply);
-      }
-      const epub = await readProjectExportArtifact(appConfig, id, "epub", project);
-      if (!epub) {
-        // Deliberately keyed as an EPUB repair even when the PDF is missing
-        // too: this caller asked for the EPUB, and the PDF's own repair stays
-        // available to the status hooks, which is where it is actually noticed.
-        await ensureExportRepairQueued({ id, ...project }, "epub", appConfig);
-        return sendExportNotReady(reply);
-      }
-      return sendUnlocked(reply, {
-        userId: auth.user.id,
-        projectId: id,
-        artifact: epub,
-        contentType: "application/epub+zip",
-        filename: `${sanitizeDownloadFilename(project.title)}.epub`
-      });
-    }
-  );
+    );
+  }
 }

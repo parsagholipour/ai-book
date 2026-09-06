@@ -66,13 +66,17 @@ vi.mock("@book-maker/core", async () => {
 });
 
 import { compileExport } from "./compileExport.js";
+import { pendingExportPaths } from "../generation/exportArtifacts.js";
 import {
+  DETACHED_FROM_PROJECT_LIFECYCLE,
+  EXPORT_REPAIR_FORMAT,
   PRESENTATION_ONLY_RECOMPILE,
   PRESENTATION_RECOMPILE_FALLBACK_STATUS
 } from "@book-maker/core";
+import { StopRequestedError } from "../runtime/jobTypes.js";
 import { mocks } from "./testing/compileExportMocks.js";
 
-describe("compileExport EPUB failure publication", () => {
+describe("compileExport companion-format failure publication", () => {
   const dirs: string[] = [];
   const plan = { title: "The Long Walk", premise: "A walk home.", audience: "adults", chapters: [] };
   const input = {
@@ -110,7 +114,7 @@ describe("compileExport EPUB failure publication", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    const storage = await mkdtemp(join(tmpdir(), "compile-export-epub-failure-"));
+    const storage = await mkdtemp(join(tmpdir(), "compile-export-companion-failure-"));
     dirs.push(storage);
     mocks.config.BOOK_STORAGE_DIR = storage;
     mocks.config.IMAGE_STORAGE_DIR = join(storage, "images");
@@ -143,11 +147,8 @@ describe("compileExport EPUB failure publication", () => {
     mocks.createReaderChaptersForExport.mockResolvedValue({ chapters: modelChapters, source: "model" });
     mocks.generateJsonWithRetry.mockResolvedValue({ data: { issues: [] } });
     mocks.exportPublicationSuperseded.mockResolvedValue(false);
-    mocks.pendingExportPaths.mockImplementation((projectDir: string) => ({
-      markdown: join(projectDir, ".book-test.md"),
-      pdf: join(projectDir, ".book-test.pdf"),
-      epub: join(projectDir, ".book-test.epub")
-    }));
+    // The real scratch names under a fixed token: `.book-test.md`, `.book-test.pdf`, …
+    mocks.pendingExportPaths.mockImplementation((projectDir: string) => pendingExportPaths(projectDir, "test"));
     mocks.publishCompiledExports.mockImplementation(async (options: { characterPreparation?: unknown }) => ({
       published: true,
       characterPreparationJobId: options.characterPreparation ? "character-job-1" : null
@@ -179,7 +180,11 @@ describe("compileExport EPUB failure publication", () => {
     );
 
     expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
-      expect.objectContaining({ epubProduced: false, repairFormat: null, status: "REVIEW_REQUIRED" })
+      expect.objectContaining({
+        companionsProduced: { epub: false, docx: true },
+        repairFormat: null,
+        status: "REVIEW_REQUIRED"
+      })
     );
     logged.mockRestore();
   });
@@ -191,8 +196,127 @@ describe("compileExport EPUB failure publication", () => {
     await compileExport(job({ contentRevision: 4, skipFinalReview: true }));
 
     expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
-      expect.objectContaining({ epubProduced: false, repairFormat: null, ownsProjectStatus: true })
+      expect.objectContaining({
+        companionsProduced: { epub: false, docx: true },
+        repairFormat: null,
+        ownsProjectStatus: true
+      })
     );
     logged.mockRestore();
+  });
+
+  it("records a Word failure and still publishes the EPUB", async () => {
+    // `clearAllMocks` keeps implementations, so the EPUB rejection an earlier
+    // case installed has to be put back to a render that succeeds.
+    mocks.generateBookEpub.mockResolvedValue(Buffer.alloc(0));
+    mocks.generateBookDocx.mockRejectedValue(new Error("docx converter failed"));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await compileExport(job({ contentRevision: 4, skipFinalReview: true }));
+
+    expect(mocks.generateBookDocx).toHaveBeenCalledTimes(2);
+    expect(mocks.generateBookEpub).toHaveBeenCalledTimes(1);
+    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
+      expect.objectContaining({ companionsProduced: { epub: true, docx: false }, repairFormat: null })
+    );
+    const reports = mocks.prisma.generationJob.update.mock.calls
+      .map(([call]) => (call as { data?: { qualityReport?: { issues?: { code: string }[] } } }).data?.qualityReport)
+      .filter((report) => report !== undefined);
+    const codes = reports.at(-1)?.issues?.map((issue) => issue.code) ?? [];
+    expect(codes).toContain("DOCX_EXPORT_FAILED");
+    expect(codes).not.toContain("EPUB_EXPORT_FAILED");
+    logged.mockRestore();
+  });
+
+  it("keeps both warnings when both companions fail", async () => {
+    mocks.generateBookEpub.mockRejectedValue(new Error("epub converter failed"));
+    mocks.generateBookDocx.mockRejectedValue(new Error("docx converter failed"));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await compileExport(job({ contentRevision: 4, skipFinalReview: true }));
+
+    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
+      expect.objectContaining({ companionsProduced: { epub: false, docx: false } })
+    );
+    const reports = mocks.prisma.generationJob.update.mock.calls
+      .map(([call]) => (call as { data?: { qualityReport?: { issues?: { code: string }[] } } }).data?.qualityReport)
+      .filter((report) => report !== undefined);
+    const codes = reports.at(-1)?.issues?.map((issue) => issue.code) ?? [];
+    expect(codes).toContain("EPUB_EXPORT_FAILED");
+    expect(codes).toContain("DOCX_EXPORT_FAILED");
+    logged.mockRestore();
+  });
+  it("renders only the Word file for a Word repair, from the exact published markdown", async () => {
+    mocks.generateBookEpub.mockResolvedValue(Buffer.alloc(0));
+    mocks.generateBookDocx.mockResolvedValue(Buffer.alloc(0));
+    await compileExport(
+      job({
+        skipFinalReview: true,
+        contentRevision: 4,
+        [DETACHED_FROM_PROJECT_LIFECYCLE]: true,
+        [EXPORT_REPAIR_FORMAT]: "docx"
+      })
+    );
+
+    expect(mocks.strategy.generatePdf).not.toHaveBeenCalled();
+    expect(mocks.generateBookEpub).not.toHaveBeenCalled();
+    expect(mocks.generateBookDocx).toHaveBeenCalledWith(
+      publishedMarkdown,
+      expect.objectContaining({ outputPath: expect.stringContaining(".book-test.docx"), projectId: "project-1" })
+    );
+    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repairFormat: "docx",
+        companionsProduced: { epub: true, docx: true },
+        ownsProjectStatus: false
+      })
+    );
+    // A Word repair renders no PDF, so it owes the stored page map nothing.
+    expect(mocks.publishCompiledExports.mock.calls[0]?.[0]).not.toHaveProperty("pdfPageMap");
+  });
+
+  it("rethrows a StopRequestedError from the first EPUB render without publishing", async () => {
+    const stop = new StopRequestedError();
+    mocks.generateBookEpub.mockRejectedValue(stop);
+    mocks.generateBookDocx.mockResolvedValue(Buffer.alloc(0));
+
+    await expect(compileExport(job({ contentRevision: 4, skipFinalReview: true }))).rejects.toBe(stop);
+
+    expect(mocks.generateBookEpub).toHaveBeenCalledTimes(1);
+    expect(mocks.publishCompiledExports).not.toHaveBeenCalled();
+    const reports = mocks.prisma.generationJob.update.mock.calls
+      .map(([call]) => (call as { data?: { qualityReport?: { issues?: { code: string }[] } } }).data?.qualityReport)
+      .filter((report) => report !== undefined);
+    const codes = reports.at(-1)?.issues?.map((issue) => issue.code) ?? [];
+    expect(codes).not.toContain("EPUB_EXPORT_FAILED");
+  });
+
+  it("rethrows a StopRequestedError from the EPUB retry without publishing", async () => {
+    const stop = new StopRequestedError();
+    mocks.generateBookEpub
+      .mockRejectedValueOnce(new Error("epub converter failed"))
+      .mockRejectedValueOnce(stop);
+    mocks.generateBookDocx.mockResolvedValue(Buffer.alloc(0));
+
+    await expect(compileExport(job({ contentRevision: 4, skipFinalReview: true }))).rejects.toBe(stop);
+
+    expect(mocks.publishCompiledExports).not.toHaveBeenCalled();
+  });
+
+  it("rethrows a StopRequestedError from the first Word render without publishing", async () => {
+    const stop = new StopRequestedError();
+    mocks.generateBookEpub.mockResolvedValue(Buffer.alloc(0));
+    mocks.generateBookDocx.mockRejectedValue(stop);
+
+    await expect(compileExport(job({ contentRevision: 4, skipFinalReview: true }))).rejects.toBe(stop);
+
+    expect(mocks.generateBookEpub).toHaveBeenCalledTimes(1);
+    expect(mocks.generateBookDocx).toHaveBeenCalledTimes(1);
+    expect(mocks.publishCompiledExports).not.toHaveBeenCalled();
+    const reports = mocks.prisma.generationJob.update.mock.calls
+      .map(([call]) => (call as { data?: { qualityReport?: { issues?: { code: string }[] } } }).data?.qualityReport)
+      .filter((report) => report !== undefined);
+    const codes = reports.at(-1)?.issues?.map((issue) => issue.code) ?? [];
+    expect(codes).not.toContain("DOCX_EXPORT_FAILED");
   });
 });

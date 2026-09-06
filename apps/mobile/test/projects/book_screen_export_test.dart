@@ -193,6 +193,90 @@ void main() {
     },
   );
 
+  testWidgets('a free account sees the Word export locked and is offered the plan', (
+    tester,
+  ) async {
+    final openedFormats = <String>[];
+    final paywalledFormats = <String>[];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ProjectExportPanel(
+            exports: fakeExports(includeDocx: true),
+            billing: fakeBilling(availableCredits: 1000),
+            onOpen: (export) async => openedFormats.add(export.format),
+            onDownload: (_) async {},
+            onOpenPaywall: (export) async => paywalledFormats.add(export.format),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Word'), findsOneWidget);
+    expect(find.text('Upgrade for Word'), findsOneWidget);
+    expect(find.text('Word export is part of the Creator plan.'), findsOneWidget);
+    expect(find.byIcon(Icons.lock_outline), findsOneWidget);
+    // The unlocked PDF and EPUB keep their Download buttons; the locked Word
+    // file offers none.
+    expect(find.text('Download'), findsNWidgets(2));
+
+    await tester.tap(find.text('Upgrade for Word'));
+    await tester.pump();
+
+    expect(paywalledFormats, ['docx']);
+    expect(openedFormats, isEmpty);
+  });
+
+  testWidgets('a subscriber opens the Word export like any other', (tester) async {
+    final openedFormats = <String>[];
+    final paywalledFormats = <String>[];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ProjectExportPanel(
+            exports: fakeExports(includeDocx: true),
+            billing: fakeBilling(availableCredits: 1000, creator: true),
+            onOpen: (export) async => openedFormats.add(export.format),
+            onDownload: (_) async {},
+            onOpenPaywall: (export) async => paywalledFormats.add(export.format),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Open Word'), findsOneWidget);
+    expect(find.byIcon(Icons.lock_outline), findsNothing);
+    expect(find.text('Download'), findsNWidgets(3));
+
+    await tester.tap(find.text('Open Word'));
+    await tester.pump();
+
+    expect(openedFormats, ['docx']);
+    expect(paywalledFormats, isEmpty);
+  });
+
+  testWidgets('no Word tile is drawn when the server offers none', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ProjectExportPanel(
+            exports: fakeExports(),
+            billing: fakeBilling(),
+            onOpen: (_) async {},
+            onDownload: (_) async {},
+            onOpenPaywall: (_) async {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Word'), findsNothing);
+    expect(find.text('PDF'), findsOneWidget);
+    expect(find.text('EPUB'), findsOneWidget);
+  });
+
   testWidgets('export panel opens paywall when credits are short', (
     tester,
   ) async {
@@ -232,7 +316,7 @@ void main() {
   });
 }
 
-MobileBilling fakeBilling({int availableCredits = 1000}) {
+MobileBilling fakeBilling({int availableCredits = 1000, bool creator = false}) {
   return MobileBilling(
     credits: CreditBalance(
       available: availableCredits,
@@ -240,7 +324,17 @@ MobileBilling fakeBilling({int availableCredits = 1000}) {
       lifetimeGranted: availableCredits,
       lifetimeSpent: 0,
     ),
-    entitlements: const [],
+    entitlements: [
+      if (creator)
+        MobileEntitlement(
+          id: 'ent-creator',
+          type: 'CREATOR_PLAN',
+          status: 'ACTIVE',
+          source: 'google_play',
+          creditsCost: 0,
+          startsAt: DateTime.utc(2026, 6, 1),
+        ),
+    ],
     products: const [],
     creditCosts: const {'exportUnlock': 150},
   );
@@ -339,8 +433,24 @@ MobileExportSet fakeExports({
   bool pdfAvailable = true,
   bool epubUnlocked = true,
   bool epubAvailable = true,
+  bool includeDocx = false,
+  bool docxUnlocked = true,
+  bool docxAvailable = true,
 }) {
   return MobileExportSet(
+    docx: includeDocx
+        ? MobileExportAvailability(
+            format: 'docx',
+            available: docxAvailable,
+            unlocked: docxUnlocked,
+            requiresSubscription: true,
+            creditsRequired: docxUnlocked ? 0 : 150,
+            downloadUrl: '/api/mobile/projects/project-1/export/docx',
+            filename: 'Launch-Course-Workbook.docx',
+            contentType:
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          )
+        : null,
     pdf: MobileExportAvailability(
       format: 'pdf',
       available: pdfAvailable,

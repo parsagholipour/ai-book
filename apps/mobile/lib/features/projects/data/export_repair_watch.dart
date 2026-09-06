@@ -31,14 +31,39 @@ const exportRepairWatchCooldown = Duration(minutes: 5);
 /// API invents cannot register a wait nothing here would ever satisfy.
 enum ExportRepairFormat {
   pdf,
-  epub;
+  epub,
+  docx;
 
-  static ExportRepairFormat? fromFormat(String format) => switch (format) {
-    'pdf' => ExportRepairFormat.pdf,
-    'epub' => ExportRepairFormat.epub,
-    _ => null,
+  static final _byName = {for (final v in values) v.name: v};
+
+  static ExportRepairFormat? fromFormat(String format) => _byName[format];
+
+  /// The file's presence in a status, or null when the server offered no such
+  /// file at all — which is never a file to wait for.
+  bool? availableIn(MobileProjectStatus status) => switch (this) {
+    ExportRepairFormat.pdf => status.exports.pdf.available,
+    ExportRepairFormat.epub => status.exports.epub.available,
+    ExportRepairFormat.docx => status.exports.docx?.available,
+  };
+
+  /// The name a reader knows the format by when the server sent no label.
+  /// Word is the product, not the extension; the other two are their initials.
+  String get fallbackLabel => switch (this) {
+    pdf => 'PDF',
+    epub => 'EPUB',
+    docx => 'Word',
+  };
+
+  /// The iOS uniform type identifier, so the system can pick a viewer.
+  String get uniformTypeIdentifier => switch (this) {
+    pdf => 'com.adobe.pdf',
+    epub => 'org.idpf.epub-container',
+    docx => 'org.openxmlformats.wordprocessingml.document',
   };
 }
+
+/// The best-effort formats: never watched on sight, only once asked for.
+const _companionFormats = [ExportRepairFormat.epub, ExportRepairFormat.docx];
 
 /// Decides whether the status stream keeps watching, for one project.
 ///
@@ -78,9 +103,8 @@ class ExportRepairWatchBudget {
 
   DateTime? _watchStartedAt;
   DateTime? _gaveUpAt;
-  bool? _pdfWasAvailable;
-  bool? _epubWasAvailable;
-  bool _epubRequested = false;
+  final Map<ExportRepairFormat, bool?> _wasAvailable = {};
+  final Set<ExportRepairFormat> _requested = {};
 
   /// Whether an episode is currently running.
   @visibleForTesting
@@ -92,23 +116,27 @@ class ExportRepairWatchBudget {
 
   /// Whether a surface has asked for the EPUB and has not been given one yet.
   @visibleForTesting
-  bool get isAwaitingEpub => _epubRequested;
+  bool get isAwaitingEpub => isAwaiting(ExportRepairFormat.epub);
+
+  /// Whether a surface has asked for [format] and has not been given it yet.
+  @visibleForTesting
+  bool isAwaiting(ExportRepairFormat format) => _requested.contains(format);
 
   /// Records that a surface asked the server for [format] and was answered
   /// `EXPORT_NOT_READY` — the file is missing and a repair has been queued for
   /// it, whatever the status the app is holding still says.
   ///
   /// The PDF needs no asking: a settled book without one cannot be read, opened
-  /// or shared at all, so it is watched on sight. The EPUB is the format this
-  /// exists for. It is a companion file — a book whose PDF is on disk is a
-  /// finished, usable book — so watching every project's missing EPUB would buy
-  /// a whole Chromium compile per cooldown for a file nobody is waiting for.
-  /// A download that answered `EXPORT_NOT_READY` is exactly the signal that
-  /// somebody *is*: only then does the EPUB join the wait, and only until it
+  /// or shared at all, so it is watched on sight. The companions — the EPUB and
+  /// the Word file — are what this exists for. A book whose PDF is on disk is a
+  /// finished, usable book, so watching every project's missing companion would
+  /// buy a whole compile per cooldown for a file nobody is waiting for. A
+  /// download that answered `EXPORT_NOT_READY` is exactly the signal that
+  /// somebody *is*: only then does that file join the wait, and only until it
   /// lands.
   void noteExportRequested(ExportRepairFormat format) {
-    if (format == ExportRepairFormat.epub) {
-      _epubRequested = true;
+    if (_companionFormats.contains(format)) {
+      _requested.add(format);
     }
   }
 
@@ -118,19 +146,16 @@ class ExportRepairWatchBudget {
   /// itself, and a status read for a book that is not finished queues no
   /// repair. Only the settled-with-a-file-missing case is metered.
   bool shouldKeepWatching(MobileProjectStatus status) {
-    final pdfAvailable = status.exports.pdf.available;
-    final epubAvailable = status.exports.epub.available;
-    final pdfWasAvailable = _pdfWasAvailable;
-    final epubWasAvailable = _epubWasAvailable;
-    _pdfWasAvailable = pdfAvailable;
-    _epubWasAvailable = epubAvailable;
+    final wasAvailable = Map<ExportRepairFormat, bool?>.of(_wasAvailable);
+    for (final format in ExportRepairFormat.values) {
+      _wasAvailable[format] = format.availableIn(status);
+    }
     // The requested file landing is the end of that wait, wherever the book is
     // in its own lifecycle. Clearing it above the live check rather than inside
-    // the settled branch is what stops an EPUB that arrived during an edit from
-    // still being waited for when the edit finishes.
-    if (epubAvailable) {
-      _epubRequested = false;
-    }
+    // the settled branch is what stops a companion that arrived during an edit
+    // from still being waited for when the edit finishes. A file the server no
+    // longer offers at all is not one to keep waiting for either.
+    _requested.removeWhere((format) => format.availableIn(status) != false);
 
     if (status.isLive) {
       // Planning, generating, editing or a scheduled retry. Whatever this book
@@ -140,24 +165,25 @@ class ExportRepairWatchBudget {
       return true;
     }
 
-    // What this project is still short of. The PDF always counts; the EPUB
+    // What this project is still short of. The PDF always counts; a companion
     // counts only once something asked for it — see [noteExportRequested].
-    // Both are metered by the one window below, so a book missing both files
-    // is one episode rather than two, and the format that lands first simply
-    // leaves the other one waiting.
-    final awaitingPdf = !pdfAvailable;
-    final awaitingEpub = _epubRequested && !epubAvailable;
-    if (!status.isSettled || !(awaitingPdf || awaitingEpub)) {
+    // All are metered by the one window below, so a book missing several files
+    // is one episode rather than several, and the format that lands first
+    // simply leaves the others waiting.
+    final awaiting = {
+      if (status.exports.pdf.available == false) ExportRepairFormat.pdf,
+      ..._requested,
+    };
+    if (!status.isSettled || awaiting.isEmpty) {
       _reset();
       return false;
     }
 
     // A file that was on disk a moment ago and is gone now is an edit's
     // rebuild, not the wait this budget may already have given up on. It gets
-    // the whole allowance — this is the case the watch exists for. Either file
-    // disappearing says the same thing, because one compile publishes both.
-    if ((awaitingPdf && pdfWasAvailable == true) ||
-        (awaitingEpub && epubWasAvailable == true)) {
+    // the whole allowance — this is the case the watch exists for. Any file
+    // disappearing says the same thing, because one compile publishes them all.
+    if (awaiting.any((format) => wasAvailable[format] == true)) {
       _reset();
     }
 

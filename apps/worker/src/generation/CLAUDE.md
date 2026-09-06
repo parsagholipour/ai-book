@@ -769,6 +769,19 @@ to draw.
   parser can read a cover flag out of is a row every reader already refuses, so it is left alone
   rather than replaced by a guess.
 
+- **A companion export never fails the compile, and a new one is one registry entry.** The
+  handler's side of that rule is `compileExportCompanions.ts`: one table of renderers keyed by
+  `CompanionExportFormat` — step key, one plain retry, the warning issue and the progress
+  sentence — so the EPUB and the Word file take one code path and a third companion is one row.
+  `exportArtifacts.ts` is the filesystem half of publication, split out of
+  `exportPublication.ts` when the Word file pushed it past its budget: `publishedExportFormats`
+  decides what a full compile or a repair installs, `artifactPublications` retires every
+  companion the compile owed and could not render (`companionsProduced`), and both derive from
+  the registry in core. A companion repair (`repairFormat` epub or docx) renders no PDF, so it
+  neither measures nor degrades the page map — the predicate is `publishesPdf`, never
+  `repairFormat !== "epub"`, which would have stamped a cover-numbering stub over a measured map
+  on every Word repair.
+
 ## Character reference sheets
 
 - **A refused reference sheet is a settled fact about the plan, and the book finishes without it.**

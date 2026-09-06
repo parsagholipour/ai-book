@@ -33,6 +33,10 @@
  * ordering differ run to run.
  *
  * Needs poppler-utils (`pdfinfo`, `pdftoppm`) for `--compare`.
+ *
+ * `--docx` writes a Word file beside each PDF, for eyeballing only: nothing
+ * compares them, and LibreOffice headless (`--convert-to pdf`) is the cheapest
+ * way to learn whether one is malformed.
  */
 
 import { execFileSync } from "node:child_process";
@@ -55,6 +59,18 @@ type FixtureCore = {
   generateBookPdf: (
     markdown: string,
     options: {
+      imageStorageDir: string;
+      publicApiUrl: string;
+      outputPath: string;
+      language: string;
+      projectId: string;
+    }
+  ) => Promise<unknown>;
+  /** Absent on a checkout older than the Word export. */
+  generateBookDocx?: (
+    markdown: string,
+    options: {
+      title: string;
       imageStorageDir: string;
       publicApiUrl: string;
       outputPath: string;
@@ -445,8 +461,11 @@ async function writeFixtureImages(directory: string): Promise<void> {
   await writeFile(join(directory, FIXTURE_PROJECT, "cover.svg"), flat(1800, 2400, "#1e3c8c"), "utf8");
 }
 
-async function renderAll(outputDir: string): Promise<void> {
+async function renderAll(outputDir: string, options: { docx?: boolean } = {}): Promise<void> {
   const core = await loadCore();
+  if (options.docx && !core.generateBookDocx) {
+    throw new Error("this checkout of packages/core has no Word export to render");
+  }
   const removeSignalHandlers = core.installSharedBrowserSignalHandlers?.() ?? (() => undefined);
   await mkdir(outputDir, { recursive: true });
   const imageStorageDir = await mkdtemp(join(tmpdir(), "book-fixture-images-"));
@@ -461,6 +480,16 @@ async function renderAll(outputDir: string): Promise<void> {
         language: fixture.language,
         projectId: FIXTURE_PROJECT
       });
+      if (options.docx) {
+        await core.generateBookDocx!(fixture.markdown, {
+          title: fixture.name,
+          imageStorageDir,
+          publicApiUrl: PUBLIC_API_URL,
+          outputPath: join(outputDir, `${fixture.name}.docx`),
+          language: fixture.language,
+          projectId: FIXTURE_PROJECT
+        });
+      }
       console.log(`${fixture.name.padEnd(18)} ${Date.now() - startedAt} ms`);
     }
     console.log(`\n${FIXTURES.length} fixtures → ${outputDir}`);
@@ -688,7 +717,8 @@ async function compare(beforeDir: string, afterDir: string): Promise<number> {
 
 const argv = process.argv.slice(2);
 const install = argv.includes("--install");
-const [first, ...rest] = argv.filter((argument) => argument !== "--install");
+const docx = argv.includes("--docx");
+const [first, ...rest] = argv.filter((argument) => argument !== "--install" && argument !== "--docx");
 if (first === "--compare") {
   const [beforeDir, afterDir] = rest;
   if (!beforeDir || !afterDir) {
@@ -703,7 +733,7 @@ if (first === "--compare") {
   // Resolved here: the render runs with the worktree as its working directory.
   await renderBaseline(ref, resolvePath(outputDir ?? "output/book-fixtures-before"), install);
 } else {
-  await renderAll(first ?? "output/book-fixtures");
+  await renderAll(first ?? "output/book-fixtures", { docx });
   await writeFile(
     join(first ?? "output/book-fixtures", "README.txt"),
     "Rendered by `pnpm render:fixtures`. Compare two of these directories with\n" +

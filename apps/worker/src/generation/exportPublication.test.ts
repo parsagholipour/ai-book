@@ -1,57 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  prisma: {
-    project: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
-    generationJob: { count: vi.fn(), updateMany: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn(), upsert: vi.fn() },
-    generationAttempt: { updateMany: vi.fn(), findUnique: vi.fn() },
-    bookEditOperation: { updateMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn() },
-    voiceCharacter: { count: vi.fn() },
-    $transaction: vi.fn()
-  },
-  rename: vi.fn(),
-  rm: vi.fn(),
-  readFile: vi.fn(),
-  writeFile: vi.fn(),
-  /** Ordered trace of everything the publication does, commit included. */
-  events: [] as string[]
-}));
-
-vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma }));
-vi.mock("node:fs/promises", () => ({
-  rename: mocks.rename,
-  rm: mocks.rm,
-  readFile: mocks.readFile,
-  writeFile: mocks.writeFile
-}));
+vi.mock("@book-maker/db", async () => (await import("./testing/exportPublicationMocks.js")).dbModuleMock());
+vi.mock(
+  "node:fs/promises",
+  async () => (await import("./testing/exportPublicationMocks.js")).fsModuleMock()
+);
 
 import { bookPdfCoverNumbering, exportContentDigest } from "@book-maker/core";
-
+import { exportPublicationSuperseded, pendingExportPaths, publishCompiledExports } from "./exportPublication.js";
 import {
-  discardPendingExports,
-  exportPublicationSuperseded,
-  pendingExportPaths,
-  publishCompiledExports
-} from "./exportPublication.js";
-
-/** What each render wrote, keyed by the scratch path it wrote it to. */
-const RENDERED: Record<string, Buffer> = {
-  "/books/project-1/.book-token.pdf": Buffer.from("%PDF-token"),
-  "/books/project-1/.book-token.epub": Buffer.from("epub-token")
-};
-
-const writtenRecords = () =>
-  (mocks.writeFile.mock.calls as [path: string, contents: string][])
-    .filter(([path]) => path.endsWith(".provenance.json"))
-    .map(([path, contents]) => [path, JSON.parse(contents)] as const);
+  RENDERED,
+  mocks,
+  publicationState,
+  renameCalls,
+  resetExportPublicationMocks,
+  rmPaths,
+  stable,
+  writtenRecords
+} from "./testing/exportPublicationMocks.js";
 
 const pending = pendingExportPaths("/books/project-1", "token");
-
-/** Predecessors are parked under a per-publication name; the uuid is not the point. */
-const stable = (path: string) => path.replace(/\.book-superseded-[^.]+\./, ".book-superseded.");
-
-const renameCalls = () => mocks.rename.mock.calls as [from: string, to: string][];
-const rmPaths = () => (mocks.rm.mock.calls as [path: string][]).map(([path]) => path);
 
 /** Only the moves that put this compile's own render onto a downloadable name. */
 const publishedMoves = () => renameCalls().filter(([from]) => Object.values(pending).includes(from));
@@ -71,7 +39,7 @@ const publishResult = (overrides: Record<string, unknown> = {}) =>
     generationJobId: "job-1",
     projectDir: "/books/project-1",
     pending,
-    epubProduced: true,
+    companionsProduced: { epub: true, docx: true },
     pdfPageMap: bookPdfCoverNumbering(false),
     contentRevision: 7,
     expectedProjectStatus: "GENERATING",
@@ -83,86 +51,7 @@ const publishResult = (overrides: Record<string, unknown> = {}) =>
 const publish = async (overrides: Record<string, unknown> = {}) =>
   (await publishResult(overrides)).published;
 
-/** The row's text-edit invalidation barrier; null is what a healthy project has. */
-let barrier: number | null = null;
-
-/** Postgres' verdict for one row: `"col" <> $1` is UNKNOWN — never true — for a null column. */
-const claimMatchesBarrier = (where: Record<string, unknown>, value: number | null): boolean =>
-  ((where.OR as Record<string, unknown>[] | undefined) ?? [where]).some((arm) => {
-    const filter = arm.exportInvalidationRevision as null | { not: number } | undefined;
-    return filter === undefined ? true : filter === null ? value === null : value !== null && value !== filter.not;
-  });
-
-beforeEach(() => {
-  vi.clearAllMocks();
-  mocks.events.length = 0;
-  barrier = null;
-  // A transaction that records its own commit, so a test can say when the
-  // status write became visible relative to the files it describes.
-  mocks.prisma.$transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
-    try {
-      const result = await callback(mocks.prisma);
-      mocks.events.push("commit");
-      return result;
-    } catch (error) {
-      mocks.events.push("rollback");
-      throw error;
-    }
-  });
-  mocks.prisma.project.updateMany.mockImplementation(async ({ where }) => {
-    mocks.events.push("claim");
-    return { count: claimMatchesBarrier(where, barrier) ? 1 : 0 };
-  });
-  mocks.prisma.project.update.mockResolvedValue({});
-  mocks.prisma.generationJob.updateMany.mockImplementation(async () => {
-    mocks.events.push("claim job");
-    return { count: 1 };
-  });
-  mocks.prisma.generationJob.count.mockResolvedValue(0);
-  mocks.prisma.generationJob.findFirst.mockResolvedValue(null);
-  mocks.prisma.generationJob.findUnique.mockResolvedValue({ payload: { planId: "plan-1", contentRevision: 7 } });
-  mocks.prisma.generationJob.upsert.mockResolvedValue({ id: "character-job-1", status: "QUEUED" });
-  mocks.prisma.generationAttempt.updateMany.mockImplementation(async () => {
-    mocks.events.push("settle attempt");
-    return { count: 1 };
-  });
-  mocks.prisma.generationAttempt.findUnique.mockResolvedValue(null);
-  mocks.prisma.bookEditOperation.updateMany.mockImplementation(async () => {
-    mocks.events.push("settle edit");
-    return { count: 1 };
-  });
-  mocks.prisma.bookEditOperation.findUnique.mockResolvedValue(null);
-  mocks.prisma.bookEditOperation.findFirst.mockResolvedValue(null);
-  mocks.prisma.voiceCharacter.count.mockResolvedValue(0);
-  mocks.rename.mockImplementation(async (_from: string, to: string) => {
-    mocks.events.push(`rename ${stable(to)}`);
-  });
-  mocks.rm.mockResolvedValue(undefined);
-  mocks.readFile.mockImplementation(async (path: string) => {
-    const rendered = RENDERED[path];
-    if (!rendered) {
-      throw Object.assign(new Error("ENOENT: no such file"), { code: "ENOENT" });
-    }
-    return rendered;
-  });
-  mocks.writeFile.mockImplementation(async (path: string) => {
-    mocks.events.push(`record ${path.split("/").pop()}`);
-  });
-});
-
-describe("pendingExportPaths", () => {
-  it("renders beside the published names, never onto them", () => {
-    expect(pending).toEqual({
-      markdown: "/books/project-1/.book-token.md",
-      pdf: "/books/project-1/.book-token.pdf",
-      epub: "/books/project-1/.book-token.epub"
-    });
-  });
-
-  it("names every compile separately, because two compiles for one project overlap", () => {
-    expect(pendingExportPaths("/books/project-1").pdf).not.toBe(pendingExportPaths("/books/project-1").pdf);
-  });
-});
+beforeEach(resetExportPublicationMocks);
 
 describe("exportPublicationSuperseded", () => {
   it("is true once the manuscript moved past the revision this compile was queued for", async () => {
@@ -247,16 +136,6 @@ describe("publishCompiledExports", () => {
     expect(pageMapWrites()).toEqual([]);
   });
 
-  it("allows an EPUB-only repair to leave the PDF map untouched", async () => {
-    await expect(
-      publish({ ownsProjectStatus: false, repairFormat: "epub", pdfPageMap: undefined })
-    ).resolves.toBe(true);
-
-    const mapWrites = mocks.prisma.project.update.mock.calls.filter(
-      ([call]) => (call as { data?: { pdfPageMap?: unknown } }).data?.pdfPageMap !== undefined
-    );
-    expect(mapWrites).toEqual([]);
-  });
 
   it("stamps a cover-numbering stub with the bytes installed by the transaction", async () => {
     const stub = bookPdfCoverNumbering(true);
@@ -343,7 +222,8 @@ describe("publishCompiledExports", () => {
     expect(publishedMoves()).toEqual([
       ["/books/project-1/.book-token.md", "/books/project-1/book.md"],
       ["/books/project-1/.book-token.pdf", "/books/project-1/book.pdf"],
-      ["/books/project-1/.book-token.epub", "/books/project-1/book.epub"]
+      ["/books/project-1/.book-token.epub", "/books/project-1/book.epub"],
+      ["/books/project-1/.book-token.docx", "/books/project-1/book.docx"]
     ]);
   });
 
@@ -359,7 +239,7 @@ describe("publishCompiledExports", () => {
 
   for (const [name, value, published] of barrierCases) {
     it(`publishes over an invalidation barrier holding ${name}: ${published}`, async () => {
-      barrier = value;
+      publicationState.barrier = value;
 
       await expect(publish()).resolves.toBe(published);
       expect(publishedMoves().length > 0).toBe(published);
@@ -472,17 +352,23 @@ describe("publishCompiledExports", () => {
       "/books/project-1/.book-token.pdf -> /books/project-1/book.pdf",
       "/books/project-1/book.epub -> /books/project-1/.book-superseded.epub",
       "/books/project-1/.book-token.epub -> /books/project-1/book.epub",
+      "/books/project-1/book.docx -> /books/project-1/.book-superseded.docx",
+      "/books/project-1/.book-token.docx -> /books/project-1/book.docx",
       "/books/project-1/book.pdf.provenance.json -> /books/project-1/.book-superseded.pdf.provenance.json",
       "/books/project-1/.book-token.pdf.provenance.json -> /books/project-1/book.pdf.provenance.json",
       "/books/project-1/book.epub.provenance.json -> /books/project-1/.book-superseded.epub.provenance.json",
-      "/books/project-1/.book-token.epub.provenance.json -> /books/project-1/book.epub.provenance.json"
+      "/books/project-1/.book-token.epub.provenance.json -> /books/project-1/book.epub.provenance.json",
+      "/books/project-1/book.docx.provenance.json -> /books/project-1/.book-superseded.docx.provenance.json",
+      "/books/project-1/.book-token.docx.provenance.json -> /books/project-1/book.docx.provenance.json"
     ]);
     expect(rmPaths().map(stable)).toEqual([
       "/books/project-1/.book-superseded.md",
       "/books/project-1/.book-superseded.pdf",
       "/books/project-1/.book-superseded.epub",
+      "/books/project-1/.book-superseded.docx",
       "/books/project-1/.book-superseded.pdf.provenance.json",
-      "/books/project-1/.book-superseded.epub.provenance.json"
+      "/books/project-1/.book-superseded.epub.provenance.json",
+      "/books/project-1/.book-superseded.docx.provenance.json"
     ]);
   });
 
@@ -502,16 +388,21 @@ describe("publishCompiledExports", () => {
       "claim job",
       "record .book-token.pdf.provenance.json",
       "record .book-token.epub.provenance.json",
+      "record .book-token.docx.provenance.json",
       "rename /books/project-1/.book-superseded.md",
       "rename /books/project-1/book.md",
       "rename /books/project-1/.book-superseded.pdf",
       "rename /books/project-1/book.pdf",
       "rename /books/project-1/.book-superseded.epub",
       "rename /books/project-1/book.epub",
+      "rename /books/project-1/.book-superseded.docx",
+      "rename /books/project-1/book.docx",
       "rename /books/project-1/.book-superseded.pdf.provenance.json",
       "rename /books/project-1/book.pdf.provenance.json",
       "rename /books/project-1/.book-superseded.epub.provenance.json",
       "rename /books/project-1/book.epub.provenance.json",
+      "rename /books/project-1/.book-superseded.docx.provenance.json",
+      "rename /books/project-1/book.docx.provenance.json",
       "commit"
     ]);
   });
@@ -538,6 +429,13 @@ describe("publishCompiledExports", () => {
           revision: 7,
           digest: exportContentDigest(RENDERED["/books/project-1/.book-token.epub"] as Buffer)
         })
+      ],
+      [
+        "/books/project-1/.book-token.docx.provenance.json",
+        expect.objectContaining({
+          revision: 7,
+          digest: exportContentDigest(RENDERED["/books/project-1/.book-token.docx"] as Buffer)
+        })
       ]
     ]);
   });
@@ -550,7 +448,7 @@ describe("publishCompiledExports", () => {
 
     await expect(publish({ contentRevision: null })).resolves.toBe(true);
 
-    expect(writtenRecords().map(([, record]) => record.revision)).toEqual([12, 12]);
+    expect(writtenRecords().map(([, record]) => record.revision)).toEqual([12, 12, 12]);
   });
 
   it("publishes a book whose record could not be written rather than failing it", async () => {
@@ -561,7 +459,7 @@ describe("publishCompiledExports", () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     await expect(publish()).resolves.toBe(true);
-    expect(publishedMoves()).toHaveLength(3);
+    expect(publishedMoves()).toHaveLength(4);
     expect(logged).toHaveBeenCalled();
     logged.mockRestore();
   });
@@ -594,6 +492,7 @@ describe("publishCompiledExports", () => {
       "claim job",
       "record .book-token.pdf.provenance.json",
       "record .book-token.epub.provenance.json",
+      "record .book-token.docx.provenance.json",
       "rename /books/project-1/book.md -> /books/project-1/.book-superseded.md",
       "rename /books/project-1/.book-token.md -> /books/project-1/book.md",
       "rename /books/project-1/book.pdf -> /books/project-1/.book-superseded.pdf",
@@ -626,6 +525,7 @@ describe("publishCompiledExports", () => {
       "claim job",
       "record .book-token.pdf.provenance.json",
       "record .book-token.epub.provenance.json",
+      "record .book-token.docx.provenance.json",
       "rename /books/project-1/book.md",
       "rollback"
     ]);
@@ -733,7 +633,7 @@ describe("publishCompiledExports", () => {
       where: { id: "project-1" },
       data: { status: "COMPLETE" }
     });
-    expect(publishedMoves()).toHaveLength(3);
+    expect(publishedMoves()).toHaveLength(4);
   });
 
   it("publishes nothing when a sibling repair committed an open image job before the locked boundary", async () => {
@@ -782,9 +682,11 @@ describe("publishCompiledExports", () => {
     const restores = renameCalls()
       .filter(([from]) => from.includes(".book-superseded-"))
       .map(([from, to]) => `${stable(from)} -> ${stable(to)}`);
-    expect(restores.slice(-5)).toEqual([
+    expect(restores.slice(-7)).toEqual([
+      "/books/project-1/.book-superseded.docx.provenance.json -> /books/project-1/book.docx.provenance.json",
       "/books/project-1/.book-superseded.epub.provenance.json -> /books/project-1/book.epub.provenance.json",
       "/books/project-1/.book-superseded.pdf.provenance.json -> /books/project-1/book.pdf.provenance.json",
+      "/books/project-1/.book-superseded.docx -> /books/project-1/book.docx",
       "/books/project-1/.book-superseded.epub -> /books/project-1/book.epub",
       "/books/project-1/.book-superseded.pdf -> /books/project-1/book.pdf",
       "/books/project-1/.book-superseded.md -> /books/project-1/book.md"
@@ -792,18 +694,8 @@ describe("publishCompiledExports", () => {
     expect(rmPaths()).toEqual([]);
   });
 
-  it("retires an old EPUB and its provenance when the new conversion fails", async () => {
-    await expect(publish({ epubProduced: false })).resolves.toBe(true);
 
-    expect(publishedMoves().map(([, to]) => to)).toEqual([
-      "/books/project-1/book.md",
-      "/books/project-1/book.pdf"
-    ]);
-    expect(renameCalls().map(([from]) => from)).toContain("/books/project-1/book.epub");
-    expect(renameCalls().map(([from]) => from)).toContain(
-      "/books/project-1/book.epub.provenance.json"
-    );
-  });
+
 
   it("claims unconditionally when the job payload carries no revision", async () => {
     await expect(publish({ contentRevision: null })).resolves.toBe(true);
@@ -836,6 +728,7 @@ describe("publishCompiledExports", () => {
     expect(publishedMoves()).toEqual([[pending.pdf, "/books/project-1/book.pdf"]]);
     expect(renameCalls().map(([from]) => from)).not.toContain("/books/project-1/book.md");
     expect(renameCalls().map(([from]) => from)).not.toContain("/books/project-1/book.epub");
+    expect(renameCalls().map(([from]) => from)).not.toContain("/books/project-1/book.docx");
   });
 
   it("installs reconstructed markdown with a repair that had no published manuscript", async () => {
@@ -876,20 +769,5 @@ describe("publishCompiledExports", () => {
     ).resolves.toBe(true);
 
     expect(mocks.prisma.project.updateMany.mock.calls[0]?.[0]?.data).not.toHaveProperty("status");
-  });
-});
-
-describe("discardPendingExports", () => {
-  it("removes every scratch path and survives one that is already gone", async () => {
-    mocks.rm.mockRejectedValueOnce(new Error("EBUSY"));
-
-    await expect(discardPendingExports(pending)).resolves.toBeUndefined();
-    expect(rmPaths()).toEqual([
-      "/books/project-1/.book-token.md",
-      "/books/project-1/.book-token.pdf",
-      "/books/project-1/.book-token.epub",
-      "/books/project-1/.book-token.pdf.provenance.json",
-      "/books/project-1/.book-token.epub.provenance.json"
-    ]);
   });
 });

@@ -382,6 +382,8 @@ export function compilePhrase(stepKey: string | undefined): string | null {
       return "Making your PDF";
     case "epub":
       return "Making your EPUB";
+    case "docx":
+      return "Making your Word file";
     default:
       return "Building your book";
   }

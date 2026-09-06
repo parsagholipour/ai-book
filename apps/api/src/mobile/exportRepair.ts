@@ -1,8 +1,10 @@
 import {
   DETACHED_FROM_PROJECT_LIFECYCLE,
+  EXPORT_FORMATS,
   EXPORT_PUBLICATION_PROJECT_STATUS,
   EXPORT_REPAIR_FORMAT,
-  type AppConfig
+  type AppConfig,
+  type ExportFormat
 } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
@@ -27,7 +29,7 @@ export type RepairableProject = {
 };
 
 /** The file a caller found missing. It decides how often the repair may repeat. */
-export type MissingExportFormat = "pdf" | "epub";
+export type MissingExportFormat = ExportFormat;
 
 /**
  * All the repair needs of the config: where compiled books live.
@@ -40,22 +42,19 @@ export type MissingExportFormat = "pdf" | "epub";
 export type ExportRepairStorage = Pick<AppConfig, "BOOK_STORAGE_DIR">;
 
 /**
- * Which missing file a status read should repair, or null when both are there.
+ * Which missing file a status read should repair, or null when every one is
+ * there.
  *
- * The PDF wins when both are gone: a compile produces both files anyway, and
- * the PDF's repair is the one that may retry.
+ * The PDF wins when several are gone: a compile produces every file anyway, and
+ * the PDF's repair is the one that may retry. The companions follow in registry
+ * order, so a book compiled before the Word export existed is repaired for it
+ * on its next status read — a render of the published `book.md` with no
+ * Chromium and no model call.
  */
-export function missingExportFormat(exports: {
-  pdf: { available: boolean };
-  epub: { available: boolean };
-}): MissingExportFormat | null {
-  if (!exports.pdf.available) {
-    return "pdf";
-  }
-  if (!exports.epub.available) {
-    return "epub";
-  }
-  return null;
+export function missingExportFormat(
+  exports: Record<ExportFormat, { available: boolean }>
+): MissingExportFormat | null {
+  return EXPORT_FORMATS.find((format) => !exports[format].available) ?? null;
 }
 
 export function exportableStatus(status: string): boolean {
@@ -116,13 +115,15 @@ const EXPORT_REPAIR_DISPATCH_BUDGET_MS = 2_000;
  * card, the actions menu and the status poll can all fire at once — to a single
  * job, through the unique index on `dedupeKey`.
  *
- * EPUB repairs use the same bounded retry window. Keeping `epub` in the key
- * leaves room for one dedicated conversion attempt after a PDF repair completes
- * without producing its companion EPUB; the pending-job guard still collapses
- * compiles that are actually concurrent. The window makes a terminal EPUB row
- * retryable. Without it, one transient conversion failure permanently spends
- * the revision-only key and every later status or download attempt gets that
- * settled row back until the manuscript is edited.
+ * Companion repairs (EPUB, Word) use the same bounded retry window. Keeping the
+ * format in the key leaves room for one dedicated conversion attempt after a
+ * PDF repair completes without producing its companion; the pending-job guard
+ * still collapses compiles that are actually concurrent. The window makes a
+ * terminal companion row retryable. Without it, one transient conversion
+ * failure permanently spends the revision-only key and every later status or
+ * download attempt gets that settled row back until the manuscript is edited.
+ * The PDF's key carries no format so every key written before the companions
+ * existed still means what it meant.
  */
 export function exportRepairDedupeKey(options: {
   projectId: string;
@@ -133,8 +134,8 @@ export function exportRepairDedupeKey(options: {
 }): string {
   const base = `compile-export:${options.projectId}:${options.planId}`;
   const window = Math.floor((options.now ?? Date.now()) / EXPORT_REPAIR_WINDOW_MS);
-  if (options.format === "epub") {
-    return `${base}:repair-epub-${options.contentRevision}-${window}`;
+  if (options.format && options.format !== "pdf") {
+    return `${base}:repair-${options.format}-${options.contentRevision}-${window}`;
   }
   return `${base}:repair-${options.contentRevision}-${window}`;
 }

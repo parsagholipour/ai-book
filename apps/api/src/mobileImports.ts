@@ -25,6 +25,7 @@ import {
   mobileAuthError,
   requireMobileAuth,
   sendMobileError,
+  sendSubscriptionRequired,
   serializeProjectDetail,
   type MobileProjectDetailDto
 } from "./mobileProjects.js";
@@ -303,10 +304,10 @@ export const mobileImportRoutes: FastifyPluginAsync<MobileImportRoutesOptions> =
       }).catch((error: unknown) => {
         // The rollback already handed the quota slot back — the claim lives in
         // this transaction. Only the "slot exhausted" refusal needs a reply of
-        // its own; anything else is a real failure for the outer handler. The
-        // same SUBSCRIPTION_REQUIRED code as before the allowance existed,
-        // because shipped clients answer it with the upgrade sheet — which is
-        // also the right answer to "this month's import is used".
+        // its own; anything else is a real failure for the outer handler.
+        // sendSubscriptionRequired is the same SUBSCRIPTION_REQUIRED code
+        // shipped clients answer with the upgrade sheet — which is also the
+        // right answer to "this month's import is used".
         if (error instanceof ImportQuotaExhaustedError) {
           return null;
         }
@@ -314,10 +315,8 @@ export const mobileImportRoutes: FastifyPluginAsync<MobileImportRoutesOptions> =
       });
       if (!created) {
         const limit = quota?.limit ?? 1;
-        return sendMobileError(
+        return sendSubscriptionRequired(
           reply,
-          403,
-          "SUBSCRIPTION_REQUIRED",
           limit === 1
             ? "You've used this month's free import. Importing more is part of the Creator plan."
             : `Free plans include ${limit} manuscript imports a month and you have used all of them. Importing more is part of the Creator plan.`

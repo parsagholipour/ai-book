@@ -43,9 +43,9 @@ export async function registerMobileStatusRoutes(fastify: FastifyInstance, conte
       // there is, so that is what has to queue the rebuild — here for the app's
       // fallback poll, and in the stream below for the path it normally takes.
       //
-      // Both formats, because neither has a surface that can ask for itself: an
-      // EPUB-only outage is just as unreachable as a missing PDF, the download
-      // route being gated behind the same disabled button. Both use the bounded
+      // Every format, because none has a surface that can ask for itself: an
+      // EPUB-only or Word-only outage is just as unreachable as a missing PDF,
+      // the download route being gated behind the same disabled button. All use the bounded
       // window in `exportRepairDedupeKey`, so a terminal job can be retried
       // without a four-second status poll becoming a job per poll. Everything
       // else this needs — including the in-flight compile guard — is inside

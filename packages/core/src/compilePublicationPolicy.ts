@@ -16,6 +16,7 @@ import {
   type ExportRepairFormat,
   type SettledProjectStatus
 } from "./jobScope.js";
+import type { ExportFormat } from "./generation/exportFormats.js";
 
 /** Every compile behavior that changes QA, verdict ownership, or publication. */
 export type CompilePublicationPolicy = {
@@ -114,6 +115,12 @@ export function compilePolicyPayload(
   };
 }
 
+/**
+ * One letter per repairable format. The letters for the PDF and EPUB predate
+ * the registry and are part of live dedupe keys, so they never move.
+ */
+const REPAIR_FORMAT_CODE: Record<ExportFormat, string> = { pdf: "p", epub: "e", docx: "d" };
+
 const publicationStatusCode: Record<ExportPublicationProjectStatus, string> = {
   GENERATING: "g",
   EDITING: "e",
@@ -131,7 +138,7 @@ export function compilePublicationPolicyIdentity(
     ? "oo"
     : normalized.ownership.kind === "presentation"
       ? `op${normalized.ownership.fallbackStatus === "REVIEW_REQUIRED" ? "r" : "c"}`
-      : `od${normalized.ownership.repairFormat === "pdf" ? "p" : normalized.ownership.repairFormat === "epub" ? "e" : "n"}`;
+      : `od${normalized.ownership.repairFormat ? REPAIR_FORMAT_CODE[normalized.ownership.repairFormat] : "n"}`;
   return [
     `r${normalized.review.skipFinalReview ? 1 : 0}`,
     `v${normalized.review.withoutQualityVerdict ? 1 : 0}`,

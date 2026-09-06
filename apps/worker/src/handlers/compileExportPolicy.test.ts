@@ -66,6 +66,7 @@ vi.mock("@book-maker/core", async () => {
 });
 
 import { compileExport } from "./compileExport.js";
+import { pendingExportPaths } from "../generation/exportArtifacts.js";
 import {
   CORROBORATED_STRUCTURAL_DUPLICATION,
   DETACHED_FROM_PROJECT_LIFECYCLE,
@@ -150,11 +151,8 @@ describe("compileExport publication policy", () => {
     mocks.createReaderChaptersForExport.mockResolvedValue({ chapters: modelChapters, source: "model" });
     mocks.generateJsonWithRetry.mockResolvedValue({ data: { issues: [] } });
     mocks.exportPublicationSuperseded.mockResolvedValue(false);
-    mocks.pendingExportPaths.mockImplementation((projectDir: string) => ({
-      markdown: join(projectDir, ".book-test.md"),
-      pdf: join(projectDir, ".book-test.pdf"),
-      epub: join(projectDir, ".book-test.epub")
-    }));
+    // The real scratch names under a fixed token: `.book-test.md`, `.book-test.pdf`, …
+    mocks.pendingExportPaths.mockImplementation((projectDir: string) => pendingExportPaths(projectDir, "test"));
     mocks.publishCompiledExports.mockImplementation(async (options: { characterPreparation?: unknown }) => ({
       published: true,
       characterPreparationJobId: options.characterPreparation ? "character-job-1" : null

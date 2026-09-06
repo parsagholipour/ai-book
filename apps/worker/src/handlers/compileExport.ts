@@ -47,16 +47,15 @@ import { runCompileManuscriptChecks } from "../generation/compileManuscriptCheck
 import { unsupportedCaseClaimIssues } from "../generation/composedEvidenceResiduals.js";
 import { maybeEnqueueCharacterCandidatePreparation } from "./characters.js";
 import { runBoundedChapterQualityReview } from "./compileExportChapterReview.js";
+import { companionFormatsToRender, renderCompanionExports } from "./compileExportCompanions.js";
 import { reviewManuscriptStructure } from "./compileExportStructuralReview.js";
 import {
-  appendQualityIssue,
   assertBookLikeMarkdown,
   bookPlanSchema,
   compilePublicationPolicyFromPayload,
   createDeterministicReaderChapters,
   createProviders,
   createReaderChaptersForExport,
-  generateBookEpub,
   chapterHeadingLabelPreference,
   chapterHeadingStylePreference,
   includeSourcesPreference,
@@ -80,7 +79,7 @@ import { join } from "node:path";
 import { failedQaPageIndexesForCompile } from "./compileExportCitationRepair.js";
 import { urlBackedResearchNotes } from "../generation/researchSources.js";
 /**
- * `compile-export` job: final QA over the manuscript, then Markdown/PDF/EPUB output.
+ * `compile-export` job: final QA over the manuscript, then Markdown/PDF and companion (EPUB, Word) output.
  */
 export async function compileExport(job: CompileExportJob): Promise<JobCompletion> {
   const { projectId, planId, generationJobId } = job.data;
@@ -660,7 +659,6 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   // succeeds this compile has no right to replace a book somebody may have
   // edited while it worked.
   const pending = pendingExportPaths(projectDir);
-  let epubProduced = true;
   let characterPreparationJobId: string | null = null;
   let pdfPageMapUpdate: PersistableBookPdfPageMap | undefined;
   try {
@@ -686,56 +684,23 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
         hasCoverPage: compiled?.hasCoverPage ?? markdownOpensOnCoverSheet(markdown)
       });
     }
-    const generateEpub = () =>
-      generateBookEpub(markdown, {
-        title: plan.title,
-        ...(project.authorName ? { author: project.authorName } : {}),
-        language: input.language,
-        imageStorageDir: config.IMAGE_STORAGE_DIR,
-        publicApiUrl: config.PUBLIC_API_URL,
-        outputPath: pending.epub,
-        // Scopes the illustrations this book may package to its own, the way the
-        // PDF's renderer policy scopes what the render may read.
-        projectId
-      });
-    if (repairFormat === null || repairFormat === "epub") {
-      await advanceJobStep(generationJobId, "epub", 95);
-      try {
-        try {
-          await generateEpub();
-        } catch {
-          // Local conversion can fail transiently (e.g. resource pressure); one
-          // plain retry before recording the failure.
-          await generateEpub();
-        }
-      } catch (error) {
-        // EPUB is a best-effort companion format; never fail an export that
-        // already produced the markdown and PDF artifacts — but surface the gap
-        // in the quality report so the client shows it instead of a silent
-        // missing download. Publication retires any predecessor EPUB and its
-        // provenance, so an older revision can never masquerade as this one.
-        epubProduced = false;
-        console.error(`EPUB generation failed for project ${projectId}:`, error);
-        const degradedReport = appendQualityIssue(qualityReport, {
-          code: "EPUB_EXPORT_FAILED",
-          severity: "warning",
-          source: "deterministic",
-          message: "EPUB export failed; PDF and markdown are available.",
-          guidance: "Download the PDF, or re-run the export to retry the EPUB.",
-          affectedPageIndexes: []
-        });
-        await recordCompileQualityReport(generationJobId, degradedReport);
-        await updateJobProgress(generationJobId, {
-          message: "EPUB export failed; markdown and PDF were still produced."
-        });
-      }
-    }
+    const companions = await renderCompanionExports({
+      formats: companionFormatsToRender(repairFormat),
+      markdown,
+      pending,
+      projectId,
+      generationJobId,
+      title: plan.title,
+      author: project.authorName,
+      language: input.language,
+      qualityReport
+    });
     const publication = await publishCompiledExports({
       projectId,
       generationJobId,
       projectDir,
       pending,
-      epubProduced,
+      companionsProduced: companions.produced,
       repairFormat,
       ...(pdfPageMapUpdate !== undefined ? { pdfPageMap: pdfPageMapUpdate } : {}),
       publishReconstructedMarkdown: repairReconstructedMarkdown,

@@ -1,6 +1,6 @@
 import { join, resolve, sep } from "node:path";
 import { describe, expect, it } from "vitest";
-import { imageMarkdownRe, resolveBookImageAsset } from "./bookImageAssets.js";
+import { imageMarkdownRe, leadingCoverIllustration, resolveBookImageAsset } from "./bookImageAssets.js";
 
 const imageStorageDir = resolve("/srv/storage/images");
 const publicApiBase = "http://localhost:4001";
@@ -117,5 +117,15 @@ describe("imageMarkdownRe", () => {
     // A second caller starts from the top even while the first is mid-scan.
     expect(imageMarkdownRe().exec(text)?.[2]).toBe("one.png");
     expect(first.exec(text)?.[2]).toBe("two.png");
+  });
+});
+
+describe("leadingCoverIllustration", () => {
+  it("returns alt, src and rest after a leading cover, trimming a leading newline", () => {
+    expect(leadingCoverIllustration("\n![Cover](/assets/images/p/cover.jpg)\n\n# Title\n")).toEqual({
+      alt: "Cover",
+      src: "/assets/images/p/cover.jpg",
+      rest: "# Title\n"
+    });
   });
 });

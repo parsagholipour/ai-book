@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { EXPORT_FORMATS, publishedExportFilename, type ExportFormat } from "./exportFormats.js";
 
 /**
  * Which compile of a book a downloaded file actually came from.
@@ -35,7 +36,7 @@ import { join } from "node:path";
  * whose metadata write failed, become exact without rerendering the book.
  */
 
-export type ExportProvenanceFormat = "pdf" | "epub";
+export type ExportProvenanceFormat = ExportFormat;
 
 /** What a publication recorded about the bytes it installed. */
 export type ExportProvenanceRecord = {
@@ -70,18 +71,13 @@ export type ExportArtifact = {
 
 const PROVENANCE_SUFFIX = ".provenance.json";
 
-/** The published name of an export, which is also what its record is named for. */
-export function publishedExportFilename(format: ExportProvenanceFormat): string {
-  return `book.${format}`;
-}
-
 export function exportProvenancePath(projectDir: string, format: ExportProvenanceFormat): string {
   return join(projectDir, `${publishedExportFilename(format)}${PROVENANCE_SUFFIX}`);
 }
 
-/** Both records a project can hold, for the delete paths that take all of them. */
+/** Every record a project can hold, for the delete paths that take all of them. */
 export function exportProvenancePaths(projectDir: string): string[] {
-  return (["pdf", "epub"] as const).map((format) => exportProvenancePath(projectDir, format));
+  return EXPORT_FORMATS.map((format) => exportProvenancePath(projectDir, format));
 }
 
 export function exportContentDigest(bytes: Buffer): string {

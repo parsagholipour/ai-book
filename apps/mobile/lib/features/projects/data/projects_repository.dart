@@ -15,6 +15,12 @@ import 'export_repair_watch.dart';
 
 enum ExportOpenOutcome { opened, sharedFallback }
 
+/// The iOS uniform type identifier for a compiled export, so the system can
+/// pick a viewer. A format the enum does not know is handed over as plain data.
+String exportUniformTypeIdentifier(String format) =>
+    ExportRepairFormat.fromFormat(format)?.uniformTypeIdentifier ??
+    'public.data';
+
 abstract interface class ProjectsRepository {
   Future<List<MobileProjectSummary>> listProjects();
 
@@ -562,7 +568,7 @@ class MobileProjectsRepository implements ProjectsRepository {
     final result = await OpenFilex.open(
       file.path,
       type: export.contentType,
-      uti: export.format == 'pdf' ? 'com.adobe.pdf' : 'org.idpf.epub-container',
+      uti: exportUniformTypeIdentifier(export.format),
     );
     if (result.type == ResultType.done) {
       return ExportOpenOutcome.opened;

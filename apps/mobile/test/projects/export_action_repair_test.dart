@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tomeza/features/billing/data/billing_repository.dart';
+import 'package:tomeza/features/billing/domain/billing_models.dart';
+import 'package:tomeza/features/billing/presentation/billing_paywall.dart';
 import 'package:tomeza/features/projects/data/export_repair_watch.dart';
 import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
@@ -124,6 +127,71 @@ void main() {
     expect(find.text('pdf:true'), findsOneWidget);
   });
 
+  testWidgets('a Word file refused as not ready rejoins the shared watch', (
+    tester,
+  ) async {
+    final repository = _FakeProjectsRepository(
+      streamed: [
+        _status(pdfAvailable: true, epubAvailable: true, docxAvailable: true),
+        _status(pdfAvailable: true, epubAvailable: true, docxAvailable: false),
+      ],
+      polled: _status(pdfAvailable: true, epubAvailable: true, docxAvailable: true),
+      failure: _notReady,
+    );
+    final budget = _RecordingBudget();
+    final container = _container(repository, budget);
+
+    await _pumpHarness(tester, container, format: 'docx');
+    await tester.tap(find.text('Export'));
+    await tester.pump();
+
+    expect(find.textContaining('Your Word is being rebuilt'), findsOneWidget);
+    expect(budget.requested, [ExportRepairFormat.docx]);
+
+    await tester.pumpAndSettle();
+    expect(repository.watchCalls, 2);
+    expect(find.text('docx:true'), findsOneWidget);
+    expect(budget.isAwaiting(ExportRepairFormat.docx), isFalse);
+  });
+
+  testWidgets('a Word download refused for the plan opens the paywall and waits for nothing', (
+    tester,
+  ) async {
+    // The server said the format needs a plan this account lacks. That is not
+    // a rebuild in progress and not an error to read aloud: the paywall is the
+    // whole answer, and the watch must not be spent on a file that is not
+    // coming.
+    final repository = _FakeProjectsRepository(
+      streamed: [
+        _status(pdfAvailable: true, epubAvailable: true, docxAvailable: true),
+      ],
+      polled: _status(pdfAvailable: true, epubAvailable: true, docxAvailable: true),
+      failure: const ApiException(
+        code: 'SUBSCRIPTION_REQUIRED',
+        message: 'Word export is part of the Creator plan.',
+        statusCode: 403,
+      ),
+    );
+    final budget = _RecordingBudget();
+    final container = _container(repository, budget);
+    var refreshes = 0;
+
+    await _pumpHarness(
+      tester,
+      container,
+      format: 'docx',
+      onRefresh: () => refreshes += 1,
+    );
+    await tester.tap(find.text('Export'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(BillingPaywall), findsOneWidget);
+    expect(find.byType(SnackBar), findsNothing);
+    expect(budget.requested, isEmpty);
+    expect(repository.watchCalls, 1);
+    expect(refreshes, 0);
+  });
+
   testWidgets('any other failure reports itself and leaves the flow alone', (
     tester,
   ) async {
@@ -176,6 +244,8 @@ ProviderContainer _container(
     overrides: [
       projectsRepositoryProvider.overrideWithValue(repository),
       exportRepairWatchProvider.overrideWith((ref, id) => budget),
+      // The paywall a plan refusal opens reads the billing state.
+      billingRepositoryProvider.overrideWithValue(_FakeBillingRepository()),
     ],
   );
   addTearDown(container.dispose);
@@ -242,12 +312,17 @@ class _ExportActionHarness extends ConsumerWidget {
         .exports;
     final export = exports == null
         ? null
-        : (format == 'pdf' ? exports.pdf : exports.epub);
+        : switch (format) {
+            'pdf' => exports.pdf,
+            'docx' => exports.docx,
+            _ => exports.epub,
+          };
     return Scaffold(
       body: Column(
         children: [
           Text('pdf:${exports?.pdf.available}'),
           Text('epub:${exports?.epub.available}'),
+          Text('docx:${exports?.docx?.available}'),
           if (export != null)
             ElevatedButton(
               onPressed: () async {
@@ -335,6 +410,7 @@ class _FakeProjectsRepository implements ProjectsRepository {
 MobileProjectStatus _status({
   required bool pdfAvailable,
   required bool epubAvailable,
+  bool? docxAvailable,
 }) {
   return MobileProjectStatus(
     projectId: 'project-1',
@@ -349,9 +425,32 @@ MobileProjectStatus _status({
     exports: MobileExportSet(
       pdf: _export('pdf', pdfAvailable),
       epub: _export('epub', epubAvailable),
+      docx: docxAvailable == null ? null : _export('docx', docxAvailable),
     ),
     updatedAt: DateTime.utc(2026, 8, 10),
   );
+}
+
+class _FakeBillingRepository implements BillingRepository {
+  @override
+  Future<MobileBilling> getBilling() async {
+    return const MobileBilling(
+      credits: CreditBalance(
+        available: 0,
+        reserved: 0,
+        lifetimeGranted: 0,
+        lifetimeSpent: 0,
+      ),
+      entitlements: [],
+      products: [],
+      creditCosts: {},
+    );
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) {
+    throw UnimplementedError('Not used in this test.');
+  }
 }
 
 MobileExportAvailability _export(String format, bool available) {

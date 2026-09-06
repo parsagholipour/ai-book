@@ -5,7 +5,11 @@ vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApi
 vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js")).queueModuleMock());
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
-import { InsufficientCreditsError, ensureProjectExportEntitlementOrSpend } from "@book-maker/db/billing";
+import {
+  InsufficientCreditsError,
+  ensureProjectExportEntitlementOrSpend,
+  hasActiveSubscriptionEntitlement
+} from "@book-maker/db/billing";
 import { exportContentDigest } from "@book-maker/core";
 
 import { readFileSync, rmSync } from "node:fs";
@@ -214,9 +218,11 @@ describe("mobile rate limits, exports and operator routes", () => {
       currentPlanId: "plan-1",
       contentRevision: 7
     });
+    // A subscriber, so the Word route reaches the file read like the other two.
+    vi.mocked(hasActiveSubscriptionEntitlement).mockResolvedValue(true);
     const app = await buildMobileApp();
 
-    for (const format of ["pdf", "epub"]) {
+    for (const format of ["pdf", "epub", "docx"]) {
       const response = await app.inject({
         method: "GET",
         url: `/api/mobile/projects/project-a/export/${format}`,
@@ -380,6 +386,138 @@ describe("mobile rate limits, exports and operator routes", () => {
       requiredCredits: 150,
       availableCredits: 25
     });
+    await app.close();
+  });
+
+  it("refuses the Word download to a free account before reading or charging anything", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    writeProjectFile(state.bookStorageDir, "project-a", "book.docx", "PK-word-owned");
+    mockPrisma.project.findFirst.mockResolvedValue({
+      id: "project-a",
+      title: "Owned Mobile Book",
+      status: "COMPLETE",
+      currentPlanId: "plan-1",
+      contentRevision: 7
+    });
+    // `resetAllMocks` leaves the plan check answering undefined; say "free" out loud.
+    vi.mocked(hasActiveSubscriptionEntitlement).mockResolvedValue(false);
+    const app = await buildMobileApp();
+
+    const withFile = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-a/export/docx",
+      headers: bearer("token-a")
+    });
+    expect(withFile.statusCode).toBe(403);
+    expect(withFile.json().error).toMatchObject({
+      code: "SUBSCRIPTION_REQUIRED",
+      message: "Word export is part of the Creator plan."
+    });
+
+    // With no file at all the answer is the same, and no repair is queued for a
+    // file this reader could not download.
+    rmSync(join(state.bookStorageDir!, "project-a", "book.docx"));
+    const withoutFile = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-a/export/docx",
+      headers: bearer("token-a")
+    });
+    expect(withoutFile.statusCode).toBe(403);
+    expect(vi.mocked(ensureProjectExportEntitlementOrSpend)).not.toHaveBeenCalled();
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+
+    // The other two formats never ask about the plan.
+    writeProjectFile(state.bookStorageDir, "project-a", "book.pdf", "%PDF-free");
+    const pdf = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-a/export/pdf",
+      headers: bearer("token-a")
+    });
+    expect(pdf.statusCode).toBe(200);
+    await app.close();
+  });
+
+  it("sends the Word file to a subscriber, owner-scoped, and charges the unlock after the bytes", async () => {
+    mockAccessTokens({ "token-a": "user-a", "token-b": "user-b" });
+    const bytes = "PK-word-published";
+    writeProjectFile(state.bookStorageDir, "project-a", "book.docx", bytes);
+    writeProjectFile(
+      state.bookStorageDir,
+      "project-a",
+      "book.docx.provenance.json",
+      JSON.stringify({ revision: 7, digest: exportContentDigest(Buffer.from(bytes)), byteSize: bytes.length })
+    );
+    mockPrisma.project.findFirst.mockImplementation(async ({ where }: { where: { id?: string; userId?: string } }) =>
+      where.id === "project-a" && where.userId === "user-a"
+        ? { id: "project-a", title: "Owned Mobile Book", status: "COMPLETE", currentPlanId: "plan-1", contentRevision: 7 }
+        : null
+    );
+    vi.mocked(hasActiveSubscriptionEntitlement).mockResolvedValue(true);
+    const app = await buildMobileApp();
+
+    const own = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-a/export/docx",
+      headers: bearer("token-a")
+    });
+    const other = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-a/export/docx",
+      headers: bearer("token-b")
+    });
+
+    expect(own.statusCode).toBe(200);
+    expect(own.body).toBe(bytes);
+    expect(own.headers["content-type"]).toContain(
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    );
+    expect(own.headers["content-disposition"]).toBe('attachment; filename="Owned-Mobile-Book.docx"');
+    expect(own.headers["x-export-provenance"]).toBe("exact");
+    expect(own.headers["x-export-content-revision"]).toBe("7");
+    expect(vi.mocked(ensureProjectExportEntitlementOrSpend)).toHaveBeenCalledWith({
+      userId: "user-a",
+      projectId: "project-a",
+      idempotencyKey: "mobile:project:project-a:export-unlock"
+    });
+    expect(other.statusCode).toBe(404);
+    expect(other.json().error.code).toBe("PROJECT_NOT_FOUND");
+    await app.close();
+  });
+
+  it("queues a Word repair for a subscriber whose file is missing", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue({
+      id: "project-a",
+      title: "Owned Mobile Book",
+      status: "COMPLETE",
+      currentPlanId: "plan-1",
+      contentRevision: 7
+    });
+    mockPrisma.generationJob.findFirst.mockResolvedValue(null);
+    vi.mocked(hasActiveSubscriptionEntitlement).mockResolvedValue(true);
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-repair" }));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-a/export/docx",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error.code).toBe("EXPORT_NOT_READY");
+    expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "COMPILE_EXPORT",
+        dedupeKey: expect.stringContaining("repair-docx-7-"),
+        payload: expect.objectContaining({
+          exportRepairFormat: "docx",
+          detachedFromProjectLifecycle: true,
+          skipFinalReview: true
+        })
+      })
+    );
+    expect(vi.mocked(ensureProjectExportEntitlementOrSpend)).not.toHaveBeenCalled();
     await app.close();
   });
 

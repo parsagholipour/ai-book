@@ -86,6 +86,7 @@ vi.mock("@book-maker/core", async () => {
 });
 
 import { compileExport } from "./compileExport.js";
+import { pendingExportPaths } from "../generation/exportArtifacts.js";
 import { qualityReportWithProvenance } from "./compileExportQualityProvenance.js";
 import { ExportRepairFenceUnreadableError, recordTruncatedRepairPass } from "./compileExportFence.js";
 import { StopRequestedError } from "../runtime/jobTypes.js";
@@ -181,11 +182,8 @@ describe("what a superseded compile leaves on its row", () => {
     mocks.config.IMAGE_STORAGE_DIR = join(storage, "images");
     mocks.strategy.compileMarkdown.mockReturnValue("# The Long Walk\n\nProse.\n");
     mocks.createReaderChaptersForExport.mockResolvedValue({ chapters: [], source: "model" });
-    mocks.pendingExportPaths.mockImplementation((projectDir: string) => ({
-      markdown: join(projectDir, ".book-test.md"),
-      pdf: join(projectDir, ".book-test.pdf"),
-      epub: join(projectDir, ".book-test.epub")
-    }));
+    // The real scratch names under a fixed token: `.book-test.md`, `.book-test.pdf`, …
+    mocks.pendingExportPaths.mockImplementation((projectDir: string) => pendingExportPaths(projectDir, "test"));
   };
 
   /** What the project's rows hold, for a case that does not want the default fixture. */

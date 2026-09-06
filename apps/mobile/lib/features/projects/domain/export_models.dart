@@ -5,12 +5,21 @@
 // alone, without the plan, chat and status models around them.
 
 class MobileExportSet {
-  const MobileExportSet({required this.pdf, required this.epub});
+  const MobileExportSet({required this.pdf, required this.epub, this.docx});
 
   final MobileExportAvailability pdf;
   final MobileExportAvailability epub;
 
+  /// The Word export, a plan perk. Null when the server offers none — an
+  /// older API, or a fixture built before the format existed — in which case no
+  /// surface draws a Word tile at all.
+  final MobileExportAvailability? docx;
+
+  /// Every format the server offered, in the order the panel draws them.
+  List<MobileExportAvailability> get all => [pdf, epub, ?docx];
+
   factory MobileExportSet.fromJson(Map<String, dynamic> json) {
+    final docx = json['docx'];
     return MobileExportSet(
       pdf: MobileExportAvailability.fromJson(
         json['pdf'] as Map<String, dynamic>,
@@ -18,6 +27,9 @@ class MobileExportSet {
       epub: MobileExportAvailability.fromJson(
         json['epub'] as Map<String, dynamic>,
       ),
+      docx: docx is Map<String, dynamic>
+          ? MobileExportAvailability.fromJson(docx)
+          : null,
     );
   }
 }
@@ -31,14 +43,24 @@ class MobileExportAvailability {
     required this.downloadUrl,
     required this.filename,
     required this.contentType,
+    this.label,
+    this.requiresSubscription = false,
     this.revision = 0,
     this.byteSize,
     this.updatedAt,
   });
 
   final String format;
+
+  /// Reader-facing name from the export registry, when the server sent one.
+  final String? label;
   final bool available;
   final bool unlocked;
+
+  /// True when the format is gated on an active plan (the Word export). The
+  /// lock is drawn from this beside the billing state; the server enforces it
+  /// on the download regardless.
+  final bool requiresSubscription;
   final int creditsRequired;
   final String downloadUrl;
   final String filename;
@@ -57,8 +79,10 @@ class MobileExportAvailability {
     final updatedAt = json['updatedAt'] as String?;
     return MobileExportAvailability(
       format: json['format'] as String,
+      label: json['label'] as String?,
       available: json['available'] as bool,
       unlocked: json['unlocked'] as bool,
+      requiresSubscription: json['requiresSubscription'] as bool? ?? false,
       creditsRequired: json['creditsRequired'] as int,
       downloadUrl: json['downloadUrl'] as String,
       filename: json['filename'] as String,

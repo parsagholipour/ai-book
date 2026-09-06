@@ -235,10 +235,11 @@ describe("mobile export repair queueing", () => {
     }
   });
 
-  it("does not queue a repair from the status stream once both files are there", async () => {
+  it("does not queue a repair from the status stream once every file is there", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     writeProjectFile(state.bookStorageDir, "project-a", "book.pdf", "%PDF-present");
     writeProjectFile(state.bookStorageDir, "project-a", "book.epub", "epub-present");
+    writeProjectFile(state.bookStorageDir, "project-a", "book.docx", "PK-present");
     mockPrisma.project.findFirst.mockResolvedValue(
       projectRecord({ id: "project-a", status: "COMPLETE", currentPlanId: "plan-1", contentRevision: 7 })
     );
@@ -314,10 +315,11 @@ describe("mobile export repair queueing", () => {
     await app.close();
   });
 
-  it("does not queue a repair from the status poll once both files are there", async () => {
+  it("does not queue a repair from the status poll once every file is there", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     writeProjectFile(state.bookStorageDir, "project-a", "book.pdf", "%PDF-present");
     writeProjectFile(state.bookStorageDir, "project-a", "book.epub", "epub-present");
+    writeProjectFile(state.bookStorageDir, "project-a", "book.docx", "PK-present");
     mockPrisma.project.findFirst.mockResolvedValue(
       projectRecord({ id: "project-a", status: "COMPLETE", currentPlanId: "plan-1", contentRevision: 7 })
     );
@@ -374,6 +376,55 @@ describe("mobile export repair queueing", () => {
     expect(queued.size).toBe(1);
     const [job] = [...queued.values()];
     expect(job?.dedupeKey).toContain("compile-export:project-a:plan-1:repair-epub-7-");
+    await app.close();
+  });
+
+  it("repairs a Word-only outage from the status read, after the PDF and EPUB are there", async () => {
+    // A book compiled before the Word export existed has a PDF and an EPUB and
+    // no `book.docx`; its next status read is what buys it one.
+    mockAccessTokens({ "token-a": "user-a" });
+    writeProjectFile(state.bookStorageDir, "project-a", "book.pdf", "%PDF-present");
+    writeProjectFile(state.bookStorageDir, "project-a", "book.epub", "epub-present");
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({ id: "project-a", status: "COMPLETE", currentPlanId: "plan-1", contentRevision: 7 })
+    );
+    mockProjectStatus.buildProjectStatus.mockResolvedValue(statusRecord({ project: { status: "COMPLETE" } }));
+    mockPrisma.generationJob.findFirst.mockResolvedValue(null);
+    const queued = fakeDedupingQueue();
+    const app = await buildMobileApp();
+
+    const poll = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-a/status",
+      headers: bearer("token-a")
+    });
+
+    expect(poll.json().status.exports).toMatchObject({
+      pdf: { available: true },
+      epub: { available: true },
+      docx: { available: false, requiresSubscription: true }
+    });
+    expect(queued.size).toBe(1);
+    const [job] = [...queued.values()];
+    expect(job?.dedupeKey).toContain("compile-export:project-a:plan-1:repair-docx-7-");
+    await app.close();
+  });
+
+  it("still repairs the PDF first when every file is missing", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({ id: "project-a", status: "COMPLETE", currentPlanId: "plan-1", contentRevision: 7 })
+    );
+    mockProjectStatus.buildProjectStatus.mockResolvedValue(statusRecord({ project: { status: "COMPLETE" } }));
+    mockPrisma.generationJob.findFirst.mockResolvedValue(null);
+    const queued = fakeDedupingQueue();
+    const app = await buildMobileApp();
+
+    await app.inject({ method: "GET", url: "/api/mobile/projects/project-a/status", headers: bearer("token-a") });
+
+    expect(queued.size).toBe(1);
+    const [job] = [...queued.values()];
+    expect(job?.dedupeKey).toContain("compile-export:project-a:plan-1:repair-7-");
     await app.close();
   });
 
@@ -456,13 +507,24 @@ describe("mobile export repair queueing", () => {
       exportRepairDedupeKey({ projectId: "project-a", planId: "plan-1", contentRevision: 8, now: windowStart })
     );
 
-    // EPUB repairs use the same bounded retry cadence while retaining a
-    // format-specific key.
+    // Companion repairs use the same bounded retry cadence while retaining a
+    // format-specific key, and the two companions never share one.
     const epubKey = (now: number) =>
       exportRepairDedupeKey({ projectId: "project-a", planId: "plan-1", contentRevision: 7, format: "epub", now });
     expect(epubKey(windowStart)).toBe(epubKey(windowStart + 299_999));
     expect(epubKey(windowStart)).not.toBe(epubKey(windowStart + 300_000));
     expect(epubKey(windowStart)).not.toBe(key(windowStart));
+    const docxKey = (now: number) =>
+      exportRepairDedupeKey({ projectId: "project-a", planId: "plan-1", contentRevision: 7, format: "docx", now });
+    expect(docxKey(windowStart)).toContain("repair-docx-7-");
+    expect(docxKey(windowStart)).toBe(docxKey(windowStart + 299_999));
+    expect(docxKey(windowStart)).not.toBe(docxKey(windowStart + 300_000));
+    expect(docxKey(windowStart)).not.toBe(epubKey(windowStart));
+    expect(docxKey(windowStart)).not.toBe(key(windowStart));
+    // The PDF's key carries no format, as it always did.
+    expect(
+      exportRepairDedupeKey({ projectId: "project-a", planId: "plan-1", contentRevision: 7, format: "pdf", now: windowStart })
+    ).toBe(key(windowStart));
   });
 
   it("dispatches nothing more when a repair for this window already exists", async () => {

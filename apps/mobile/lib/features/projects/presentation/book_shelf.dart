@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../shared/ui/haptics.dart';
 import '../../billing/data/billing_repository.dart';
+import '../../billing/domain/billing_models.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
 import 'book_actions_menu.dart';
@@ -48,9 +49,9 @@ class _BookShelfState extends ConsumerState<BookShelf> {
   @override
   Widget build(BuildContext context) {
     final projects = ref.watch(projectsProvider);
-    // Watched, not read on demand: the hold menu needs the balance the moment
-    // it opens to decide between unlocking and the paywall.
-    final credits = ref.watch(billingProvider).asData?.value.credits.available;
+    // Watched, not read on demand: the hold menu needs the balance and the plan
+    // the moment it opens to decide between unlocking and the paywall.
+    final billing = ref.watch(billingProvider).asData?.value;
 
     return projects.when(
       // Only reached before the first fetch of the app's lifetime. A shelf that
@@ -108,7 +109,7 @@ class _BookShelfState extends ConsumerState<BookShelf> {
                     key: ValueKey(project.id),
                     project: project,
                     width: _coverWidth,
-                    credits: credits,
+                    billing: billing,
                   );
                 },
               ),
@@ -140,12 +141,12 @@ class _ShelfBook extends ConsumerStatefulWidget {
     super.key,
     required this.project,
     required this.width,
-    required this.credits,
+    required this.billing,
   });
 
   final MobileProjectSummary project;
   final double width;
-  final int? credits;
+  final MobileBilling? billing;
 
   @override
   ConsumerState<_ShelfBook> createState() => _ShelfBookState();
@@ -205,7 +206,7 @@ class _ShelfBookState extends ConsumerState<_ShelfBook> {
                 ref: ref,
                 position: details.globalPosition,
                 project: currentProject,
-                credits: widget.credits,
+                billing: widget.billing,
               );
             },
             child: InkWell(

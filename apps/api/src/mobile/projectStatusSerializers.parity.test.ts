@@ -16,8 +16,10 @@ describe("status serializer parity", () => {
     const exports = {
       pdf: {
         format: "pdf" as const,
+        label: "PDF",
         available: true,
         unlocked: true,
+        requiresSubscription: false,
         creditsRequired: 0,
         downloadUrl: "/api/mobile/projects/project-1/export/pdf",
         filename: "Progress-Book.pdf",
@@ -28,12 +30,28 @@ describe("status serializer parity", () => {
       },
       epub: {
         format: "epub" as const,
+        label: "EPUB",
         available: false,
         unlocked: true,
+        requiresSubscription: false,
         creditsRequired: 0,
         downloadUrl: "/api/mobile/projects/project-1/export/epub",
         filename: "Progress-Book.epub",
         contentType: "application/epub+zip",
+        revision: 3,
+        byteSize: null,
+        updatedAt: null
+      },
+      docx: {
+        format: "docx" as const,
+        label: "Word",
+        available: false,
+        unlocked: true,
+        requiresSubscription: true,
+        creditsRequired: 0,
+        downloadUrl: "/api/mobile/projects/project-1/export/docx",
+        filename: "Progress-Book.docx",
+        contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         revision: 3,
         byteSize: null,
         updatedAt: null

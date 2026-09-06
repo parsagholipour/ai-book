@@ -63,25 +63,17 @@ class ProjectExportPanel extends StatelessWidget {
               ),
               const SizedBox(height: 12),
             ],
-            _ExportFormatTile(
-              export: exports.pdf,
-              availableCredits: billing?.credits.available,
-              icon: Icons.picture_as_pdf_outlined,
-              busyAction: busyAction,
-              onOpen: onOpen,
-              onDownload: onDownload,
-              onOpenPaywall: onOpenPaywall,
-            ),
-            const Divider(height: 22),
-            _ExportFormatTile(
-              export: exports.epub,
-              availableCredits: billing?.credits.available,
-              icon: Icons.menu_book_outlined,
-              busyAction: busyAction,
-              onOpen: onOpen,
-              onDownload: onDownload,
-              onOpenPaywall: onOpenPaywall,
-            ),
+            for (final (index, export) in exports.all.indexed) ...[
+              if (index > 0) const Divider(height: 22),
+              _ExportFormatTile(
+                export: export,
+                billing: billing,
+                busyAction: busyAction,
+                onOpen: onOpen,
+                onDownload: onDownload,
+                onOpenPaywall: onOpenPaywall,
+              ),
+            ],
             if (editBookProjectId != null) ...[
               const Divider(height: 22),
               Row(
@@ -115,8 +107,7 @@ class ProjectExportPanel extends StatelessWidget {
 class _ExportFormatTile extends StatelessWidget {
   const _ExportFormatTile({
     required this.export,
-    required this.availableCredits,
-    required this.icon,
+    required this.billing,
     required this.busyAction,
     required this.onOpen,
     required this.onDownload,
@@ -124,8 +115,7 @@ class _ExportFormatTile extends StatelessWidget {
   });
 
   final MobileExportAvailability export;
-  final int? availableCredits;
-  final IconData icon;
+  final MobileBilling? billing;
   final String? busyAction;
   final Future<void> Function(MobileExportAvailability export) onOpen;
   final Future<void> Function(MobileExportAvailability export) onDownload;
@@ -134,12 +124,17 @@ class _ExportFormatTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final availableCredits = billing?.credits.available;
     final openAction = projectExportDownloadAction(export);
     final saveAction = projectExportSaveAction(export);
     final isOpening = busyAction == openAction;
     final isDownloading = busyAction == saveAction;
     final isBusy = isOpening || isDownloading;
+    final locked = projectExportLockedBySubscription(export, billing);
     final needsCredits = projectExportNeedsCredits(export, availableCredits);
+    // A locked tile stays tappable: the tap opens the paywall, and the server
+    // rules on the request either way.
+    final toPaywall = locked || needsCredits;
     final canAct = export.available && !isBusy;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -147,21 +142,25 @@ class _ExportFormatTile extends StatelessWidget {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: colors.primary),
+            Icon(projectExportIcon(export), color: colors.primary),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    export.format.toUpperCase(),
+                    projectExportFormatLabel(export),
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w800,
                     ),
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    projectExportStateText(export, availableCredits),
+                    projectExportStateText(
+                      export,
+                      availableCredits,
+                      lockedBySubscription: locked,
+                    ),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: colors.onSurfaceVariant,
                     ),
@@ -178,20 +177,26 @@ class _ExportFormatTile extends StatelessWidget {
           children: [
             AppButton.primary(
               onPressed: canAct
-                  ? () => needsCredits ? onOpenPaywall(export) : onOpen(export)
+                  ? () => toPaywall ? onOpenPaywall(export) : onOpen(export)
                   : null,
               loading: isOpening,
               loadingLabel: 'Opening export',
               leading: Icon(
-                export.unlocked
+                locked
+                    ? Icons.lock_outline
+                    : export.unlocked
                     ? Icons.open_in_new_outlined
                     : needsCredits
                     ? Icons.add_card_outlined
                     : Icons.lock_open_outlined,
               ),
-              label: projectExportDownloadLabel(export, needsCredits),
+              label: projectExportDownloadLabel(
+                export,
+                needsCredits,
+                lockedBySubscription: locked,
+              ),
             ),
-            if (export.unlocked)
+            if (export.unlocked && !locked)
               AppButton.outlined(
                 onPressed: canAct ? () => onDownload(export) : null,
                 loading: isDownloading,

@@ -55,7 +55,7 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
 };
 
 export { MOBILE_PRODUCT_PRESETS, mobileAuthError } from "./mobile/schemas.js";
-export { hitAuthenticatedLimit, requireMobileAuth, sendMobileError } from "./mobile/httpErrors.js";
+export { hitAuthenticatedLimit, requireMobileAuth, sendMobileError, sendSubscriptionRequired } from "./mobile/httpErrors.js";
 export { buildMobileCreateProjectInput, loadMobileProjectDetail } from "./mobile/projectRecords.js";
 export { serializeProjectDetail } from "./mobile/projectSummarySerializers.js";
 export { reconcileRetryablePlanRevisionOperations } from "./mobile/planRevisionRetries.js";

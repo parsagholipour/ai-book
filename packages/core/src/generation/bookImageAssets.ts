@@ -54,6 +54,35 @@ export function imageMarkdownRe(): RegExp {
   return /!\[([^\]]*)\]\(([^)]+)\)/g;
 }
 
+const LEADING_ILLUSTRATION_RE = /^!\[([^\]]*)]\(([^)]+)\)\s*/;
+
+/**
+ * The illustration a manuscript opens with, and whatever follows it.
+ *
+ * One predicate, because two callers ask the same question and have to get the
+ * same answer: {@link import("./pdf.js").markdownOpensOnCoverSheet} claims the
+ * first sheet is unnumbered, and {@link import("./pdf.js").insertCoverPageBreak}
+ * is what makes it so. They used to carry a regex each and only one of them
+ * trimmed, so a manuscript opening with a blank line — or a `book.md` read back
+ * with a BOM, which counts as whitespace here — was reported as having a cover
+ * sheet that the render never built, and every printed page number the chat, the
+ * Contents and the reader chrome speak came out one ahead of the footer.
+ *
+ * Trimming is the right half of that disagreement rather than merely the
+ * agreed one. Leading whitespace is not content — marked renders the same
+ * document with or without it — so the same book must not typeset differently
+ * for a newline nobody can see, and the cover-div branch below was already
+ * whitespace-tolerant on both sides.
+ */
+export function leadingCoverIllustration(markdown: string): { alt: string; src: string; rest: string } | undefined {
+  const start = markdown.trimStart();
+  const match = start.match(LEADING_ILLUSTRATION_RE);
+  if (!match) {
+    return undefined;
+  }
+  return { alt: match[1] ?? "", src: match[2] ?? "", rest: start.slice(match[0].length) };
+}
+
 /**
  * The `/assets/images/<projectId>/<filename>` path inside a stored image path,
  * whatever host or path prefix it carries — or null when there is none.

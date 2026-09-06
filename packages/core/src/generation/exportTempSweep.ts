@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Dir, Dirent, Stats } from "node:fs";
 import { lstat, opendir, unlink } from "node:fs/promises";
 import { join } from "node:path";
+import { EXPORT_FORMATS } from "./exportFormats.js";
 
 /**
  * The garbage collector for the scratch files a render and a publication leave
@@ -72,11 +73,11 @@ export const SUPERSEDED_EXPORT_TOKEN_PREFIX = "superseded-";
 /** Token prefix for the HTML document a PDF render hands to Chrome. */
 export const RENDER_DOCUMENT_TOKEN_PREFIX = "render-";
 
-/** The extensions a compile renders beside `book.md`/`book.pdf`/`book.epub`. */
-const PENDING_EXPORT_EXTENSIONS = ["md", "pdf", "epub"] as const;
+/** The extensions a compile renders beside `book.md` and every `book.<format>`. */
+const PENDING_EXPORT_EXTENSIONS = ["md", ...EXPORT_FORMATS] as const;
 
 /** Metadata staged and parked through the same publication transaction. */
-const PENDING_EXPORT_PROVENANCE_SUFFIXES = ["pdf.provenance.json", "epub.provenance.json"] as const;
+const PENDING_EXPORT_PROVENANCE_SUFFIXES = EXPORT_FORMATS.map((format) => `${format}.provenance.json`);
 
 const PENDING_EXPORT_SUFFIXES = [...PENDING_EXPORT_EXTENSIONS, ...PENDING_EXPORT_PROVENANCE_SUFFIXES];
 

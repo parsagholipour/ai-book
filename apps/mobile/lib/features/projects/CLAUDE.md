@@ -32,7 +32,11 @@ faster than the poll. Standing down never blanks a screen — a rebuilt stream s
 a status, it just does not start a poll loop — a live book is never metered, and a PDF that was on
 disk a moment ago and is gone now is an edit's rebuild, which gets the whole allowance however the
 last wait ended. The saved-export card keeps its own allowance because it also watches the EPUB,
-which the shared watch deliberately does not.
+which the shared watch deliberately does not. The Word file joins the wait the same way the EPUB
+does — only after a download of it was refused `EXPORT_NOT_READY` (`noteExportRequested`), never
+on sight — and a status that offers no Word file at all is never awaited for one. A `SUBSCRIPTION_REQUIRED`
+refusal is neither: the shared failure reporter opens the paywall and touches no watch, because
+nothing is coming.
 
 ## Quoting credits in the app
 

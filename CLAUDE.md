@@ -362,6 +362,8 @@ code in that area, however obvious the rule looks.
 - **A recompile makes no model call, and that is a cache with one rule.** → apps/worker/src/generation/CLAUDE.md
 - **The mobile export routes never render.** → apps/api/src/mobile/CLAUDE.md + apps/mobile/lib/features/projects/CLAUDE.md + apps/api/src/routes/CLAUDE.md
 - **A download says which compile answered it, because the URL cannot.** → packages/core/src/generation/CLAUDE.md + apps/mobile/lib/features/reader/CLAUDE.md
+- **A companion export never fails the compile, and a new one is one registry entry.** → packages/core/src/generation/CLAUDE.md + apps/worker/src/generation/CLAUDE.md
+- **The Word route refuses a free account before it reads a byte or queues a repair, and charges the unlock only after the bytes are in hand.** → apps/api/src/mobile/CLAUDE.md
 - **A sheet number belongs to one file, so it may only be sent with that file's digest.** → apps/mobile/lib/features/reader/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
 - **A compile publishes by claiming the revision it compiled, and it renders somewhere else until it has.** → apps/worker/src/generation/CLAUDE.md + packages/core/src/generation/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
 - **The export barrier blocks the revision it names, not every revision, and only an expired publication lease lets recovery retire it.** → apps/worker/src/generation/CLAUDE.md + apps/api/src/routes/CLAUDE.md

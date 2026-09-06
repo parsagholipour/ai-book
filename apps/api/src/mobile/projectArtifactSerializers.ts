@@ -9,6 +9,10 @@ import {
 import { mobileAssetFilenameSchema } from "./schemas.js";
 import { jsonRecord, sanitizeDownloadFilename, stringField } from "./support.js";
 import {
+  exportRequiresSubscription,
+  exportContentType,
+  exportFormatLabel,
+  EXPORT_FORMATS,
   bookPlanSchema,
   creditCostForOperation,
   loadConfig,
@@ -101,6 +105,20 @@ export function fallbackPlan(value: unknown): BookPlan {
   };
 }
 
+function completeExportSet(
+  entries: ReadonlyArray<{ format: ProjectExportFormat; dto: MobileExportAvailabilityDto }>
+): MobileExportSetDto {
+  const set: Partial<MobileExportSetDto> = {};
+  for (const { format, dto } of entries) {
+    set[format] = dto;
+  }
+  const missing = EXPORT_FORMATS.filter((format) => set[format] === undefined);
+  if (missing.length > 0) {
+    throw new Error(`serializeExportSet is missing ${missing.join(", ")}`);
+  }
+  return set as MobileExportSetDto;
+}
+
 export async function serializeExportSet(
   projectId: string,
   title: string,
@@ -108,15 +126,19 @@ export async function serializeExportSet(
   userId: string,
   contentRevision: number
 ): Promise<MobileExportSetDto> {
-  const [pdf, epub, unlocked] = await Promise.all([
-    projectExportAvailability(appConfig, projectId, "pdf"),
-    projectExportAvailability(appConfig, projectId, "epub"),
-    hasActiveProjectEntitlement({ userId, projectId, type: "EXPORT_UNLOCK" })
+  const [unlocked, ...files] = await Promise.all([
+    hasActiveProjectEntitlement({ userId, projectId, type: "EXPORT_UNLOCK" }),
+    ...EXPORT_FORMATS.map(async (format) => ({
+      format,
+      file: await projectExportAvailability(appConfig, projectId, format)
+    }))
   ]);
-  return {
-    pdf: serializeExport(projectId, title, "pdf", pdf, unlocked, contentRevision),
-    epub: serializeExport(projectId, title, "epub", epub, unlocked, contentRevision)
-  };
+  return completeExportSet(
+    files.map(({ format, file }) => ({
+      format,
+      dto: serializeExport(projectId, title, format, file, unlocked, contentRevision)
+    }))
+  );
 }
 
 export function serializeExport(
@@ -129,12 +151,14 @@ export function serializeExport(
 ): MobileExportAvailabilityDto {
   return {
     format,
+    label: exportFormatLabel(format),
     available: file.available,
     unlocked,
+    requiresSubscription: exportRequiresSubscription(format),
     creditsRequired: unlocked ? 0 : creditCostForOperation("EXPORT_UNLOCK"),
     downloadUrl: `/api/mobile/projects/${encodeURIComponent(projectId)}/export/${format}`,
     filename: `${sanitizeDownloadFilename(title)}.${format}`,
-    contentType: format === "pdf" ? "application/pdf" : "application/epub+zip",
+    contentType: exportContentType(format),
     revision: contentRevision,
     byteSize: file.byteSize,
     updatedAt: file.modifiedAt?.toISOString() ?? null

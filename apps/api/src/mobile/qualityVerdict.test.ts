@@ -78,19 +78,55 @@ describe("qualityWithExportsOnDisk", () => {
     affectedPageIndexes: []
   };
 
+  const docxFailed: ProjectQualityStatus = {
+    state: "review_recommended",
+    score: 95,
+    issues: [
+      {
+        code: "DOCX_EXPORT_FAILED",
+        severity: "warning",
+        source: "deterministic",
+        message: "Word export failed; PDF and EPUB are available.",
+        guidance: "Download the PDF, or re-run the export to retry the Word file.",
+        affectedPageIndexes: []
+      }
+    ],
+    affectedPageIndexes: []
+  };
+
   it("drops the EPUB failure once a repair has produced the file", () => {
-    const quality = qualityWithExportsOnDisk(epubFailed, { epub: { available: true } });
+    const quality = qualityWithExportsOnDisk(epubFailed, { epub: { available: true }, docx: { available: false } });
+
+    expect(quality.issues).toEqual([]);
+    expect(quality.state).toBe("passed");
+  });
+
+  it("drops the Word failure once a repair has produced the file", () => {
+    const quality = qualityWithExportsOnDisk(docxFailed, { epub: { available: false }, docx: { available: true } });
 
     expect(quality.issues).toEqual([]);
     expect(quality.state).toBe("passed");
   });
 
   it("keeps it while the EPUB is still missing", () => {
-    expect(qualityWithExportsOnDisk(epubFailed, { epub: { available: false } })).toBe(epubFailed);
+    expect(qualityWithExportsOnDisk(epubFailed, { epub: { available: false }, docx: { available: true } })).toBe(epubFailed);
+  });
+
+  it("keeps only the companion still missing when the other has landed", () => {
+    const both: ProjectQualityStatus = {
+      ...epubFailed,
+      issues: [...epubFailed.issues, ...docxFailed.issues]
+    };
+    const quality = qualityWithExportsOnDisk(both, { epub: { available: true }, docx: { available: false } });
+
+    expect(quality.issues.map((issue) => issue.code)).toEqual(["DOCX_EXPORT_FAILED"]);
+    expect(quality.state).toBe("review_recommended");
   });
 
   it("leaves manuscript issues alone", () => {
-    expect(qualityWithExportsOnDisk(reviewRecommended, { epub: { available: true } })).toBe(reviewRecommended);
+    expect(
+      qualityWithExportsOnDisk(reviewRecommended, { epub: { available: true }, docx: { available: true } })
+    ).toBe(reviewRecommended);
   });
 
   it("stays blocked when a deterministic error survives the drop", () => {
@@ -111,7 +147,7 @@ describe("qualityWithExportsOnDisk", () => {
       affectedPageIndexes: [4]
     };
 
-    const quality = qualityWithExportsOnDisk(blocked, { epub: { available: true } });
+    const quality = qualityWithExportsOnDisk(blocked, { epub: { available: true }, docx: { available: true } });
 
     expect(quality.state).toBe("blocked");
     expect(quality.issues.map((issue) => issue.code)).toEqual(["PAGE_TOO_SHORT"]);

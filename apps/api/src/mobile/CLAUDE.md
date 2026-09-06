@@ -635,6 +635,26 @@ listening to, and a book whose EPUB is now on disk may not keep saying the expor
 historical job row — and nothing else, because every other issue is about prose no later compile
 of the same manuscript can have fixed.
 
+- **The Word route refuses a free account before it reads a byte or queues a repair, and charges
+  the unlock only after the bytes are in hand.** The Word file (shipped 2026-09-06) is a plan perk:
+  `routes/exports.ts` registers one route per format in the core registry, and a format whose
+  `exportRequiresSubscription` is true asks `hasActiveSubscriptionEntitlement` — a fresh read, never
+  the 60-second `isSubscriberForRateLimit` cache, which reads a lookup failure as "free" — right
+  after the owner lookup and *before* `readProjectExportArtifact` and `ensureExportRepairQueued`,
+  because a repair compile for a file the reader cannot download is spend for nothing. The answer
+  is `sendSubscriptionRequired`, 403 `SUBSCRIPTION_REQUIRED`: the manuscript-import route's code,
+  so every shipped app already opens the paywall on it. The subscription gates the *format*; the
+  per-book `EXPORT_UNLOCK` in `sendUnlocked` gates the *book* and applies to every format alike, so
+  a subscriber who unlocked the PDF gets the Word file at no further charge, and a subscriber who
+  has not pays the same unlock the PDF would have cost — after the bytes, as always.
+  `missingExportFormat` answers in registry order (pdf, epub, docx), so a book compiled before the
+  Word export existed queues one detached Word repair on its next status read — Chromium-free and
+  model-free, at most one per five-minute window, keyed `repair-docx-…` so it never shares the
+  EPUB's window — and `qualityWithExportsOnDisk` drops `DOCX_EXPORT_FAILED` the same way it drops
+  the EPUB's issue once the file is on disk.   The DTO carries `requiresSubscription` per format so
+  the app draws the lock from the export entry beside its own billing state rather than asking for
+  a second read, and ships `label` from the same registry; the route enforces the lock regardless.
+
 ## Free presentation edits
 
 - **The Sources list at the end of a book is not page text.** `compileBookMarkdown` builds it from

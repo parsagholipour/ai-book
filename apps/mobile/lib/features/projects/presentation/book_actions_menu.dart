@@ -2,11 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../billing/domain/billing_models.dart';
 import '../../voice/presentation/character_cast_sheet.dart';
 import '../domain/project_models.dart';
 import 'project_export_actions.dart';
 
-enum _BookAction { chat, call, listen, openPdf, openEpub, sharePdf, shareEpub }
+enum _BookAction { chat, call, listen, open, share }
+
+/// One row of the menu: what it does, and to which file.
+typedef _ExportChoice = ({_BookAction action, MobileExportAvailability export});
 
 /// Long-press menu for a book on the shelf.
 ///
@@ -17,33 +21,36 @@ enum _BookAction { chat, call, listen, openPdf, openEpub, sharePdf, shareEpub }
 /// mid-write should still show what will be there, rather than a menu whose
 /// items appear and disappear as generation progresses. Formats that are ready
 /// but not unlocked follow the export panel's rule: spend credits when the
-/// balance covers it, and only open the paywall when it does not.
+/// balance covers it, and only open the paywall when it does not. A format the
+/// plan does not include (the Word file) is offered with a lock and opens the
+/// paywall; the server rules on the request either way.
 Future<void> showBookActionsMenu({
   required BuildContext context,
   required WidgetRef ref,
   required Offset position,
   required MobileProjectSummary project,
 
-  /// Spendable credits, or null when the balance has not loaded. Null keeps
-  /// the action enabled and lets the server rule on the unlock, matching the
-  /// export panel rather than guessing that the user cannot pay.
-  required int? credits,
+  /// The account's billing state, or null when it has not loaded. Null keeps
+  /// the credit-gated actions enabled and lets the server rule on the unlock,
+  /// matching the export panel rather than guessing that the user cannot pay —
+  /// and reads a plan-gated format as locked, matching the import tile.
+  required MobileBilling? billing,
   VoidCallback? onRefresh,
 }) async {
   final overlay = Overlay.maybeOf(context)?.context.findRenderObject();
   if (overlay is! RenderBox) return;
 
-  final pdf = project.exports.pdf;
-  final epub = project.exports.epub;
+  final credits = billing?.credits.available;
+  final exports = project.exports.all;
 
-  final action = await showMenu<_BookAction>(
+  final action = await showMenu<Object>(
     context: context,
     position: RelativeRect.fromRect(
       Rect.fromPoints(position, position),
       Offset.zero & overlay.size,
     ),
     items: [
-      const PopupMenuItem<_BookAction>(
+      const PopupMenuItem<Object>(
         value: _BookAction.chat,
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -59,7 +66,7 @@ Future<void> showBookActionsMenu({
       // Characters only exist for a finished book, so unlike the export items
       // this one is hidden rather than disabled: there is nothing to promise.
       if (project.status == 'complete')
-        const PopupMenuItem<_BookAction>(
+        const PopupMenuItem<Object>(
           value: _BookAction.call,
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -77,7 +84,7 @@ Future<void> showBookActionsMenu({
         ),
       // Narration, like characters, needs a finished book to exist at all.
       if (project.status == 'complete')
-        const PopupMenuItem(
+        const PopupMenuItem<Object>(
           value: _BookAction.listen,
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -90,34 +97,20 @@ Future<void> showBookActionsMenu({
             ],
           ),
         ),
-      _bookActionItem(
-        value: _BookAction.openPdf,
-        icon: Icons.picture_as_pdf_outlined,
-        label: 'Open PDF',
-        export: pdf,
-        credits: credits,
-      ),
-      _bookActionItem(
-        value: _BookAction.openEpub,
-        icon: Icons.menu_book_outlined,
-        label: 'Open EPUB',
-        export: epub,
-        credits: credits,
-      ),
-      _bookActionItem(
-        value: _BookAction.sharePdf,
-        icon: Icons.ios_share_outlined,
-        label: 'Share PDF',
-        export: pdf,
-        credits: credits,
-      ),
-      _bookActionItem(
-        value: _BookAction.shareEpub,
-        icon: Icons.ios_share_outlined,
-        label: 'Share EPUB',
-        export: epub,
-        credits: credits,
-      ),
+      for (final export in exports)
+        _bookActionItem(
+          choice: (action: _BookAction.open, export: export),
+          icon: projectExportIcon(export),
+          billing: billing,
+          credits: credits,
+        ),
+      for (final export in exports)
+        _bookActionItem(
+          choice: (action: _BookAction.share, export: export),
+          icon: Icons.ios_share_outlined,
+          billing: billing,
+          credits: credits,
+        ),
     ],
   );
 
@@ -143,18 +136,15 @@ Future<void> showBookActionsMenu({
     return;
   }
 
-  final export = switch (action) {
-    _BookAction.openPdf || _BookAction.sharePdf => pdf,
-    _BookAction.openEpub || _BookAction.shareEpub => epub,
-    _BookAction.chat || _BookAction.call || _BookAction.listen => throw StateError(
-      'Chat, calls and listening are handled before export actions',
-    ),
-  };
+  final choice = action as _ExportChoice;
+  final export = choice.export;
 
   // Same rule the export panel uses: a locked export still goes through when
   // the account can cover it — the download itself spends the credits. Only a
-  // balance that cannot cover the unlock is sent to the paywall.
-  if (projectExportNeedsCredits(export, credits)) {
+  // balance that cannot cover the unlock, or a plan the format needs, is sent
+  // to the paywall.
+  if (projectExportLockedBySubscription(export, billing) ||
+      projectExportNeedsCredits(export, credits)) {
     await openProjectExportPaywall(
       context: context,
       ref: ref,
@@ -166,14 +156,8 @@ Future<void> showBookActionsMenu({
     return;
   }
 
-  switch (action) {
-    case _BookAction.chat:
-    case _BookAction.call:
-    case _BookAction.listen:
-      // Handled above because none of them requires an export.
-      return;
-    case _BookAction.openPdf:
-    case _BookAction.openEpub:
+  switch (choice.action) {
+    case _BookAction.open:
       await openProjectExport(
         context: context,
         ref: ref,
@@ -182,8 +166,7 @@ Future<void> showBookActionsMenu({
         isMounted: () => context.mounted,
         onRefresh: onRefresh,
       );
-    case _BookAction.sharePdf:
-    case _BookAction.shareEpub:
+    case _BookAction.share:
       await downloadProjectExport(
         context: context,
         ref: ref,
@@ -192,22 +175,43 @@ Future<void> showBookActionsMenu({
         isMounted: () => context.mounted,
         onRefresh: onRefresh,
       );
+    case _BookAction.chat:
+    case _BookAction.call:
+    case _BookAction.listen:
+      // Handled above because none of them requires an export.
+      return;
   }
 }
 
-PopupMenuItem<_BookAction> _bookActionItem({
-  required _BookAction value,
+PopupMenuItem<Object> _bookActionItem({
+  required _ExportChoice choice,
   required IconData icon,
-  required String label,
-  required MobileExportAvailability export,
+  required MobileBilling? billing,
   required int? credits,
 }) {
+  final export = choice.export;
   final enabled = export.available;
-  // The lock warns about a purchase, so it only shows when credits are
-  // actually short; a covered unlock is spent silently, as elsewhere.
-  final showLock = enabled && projectExportNeedsCredits(export, credits);
-  return PopupMenuItem<_BookAction>(
-    value: value,
+  final lockedBySubscription = projectExportLockedBySubscription(
+    export,
+    billing,
+  );
+  final needsCredits = projectExportNeedsCredits(export, credits);
+  // Open matches the tile: Upgrade / Get credits / Unlock / Open. Share only
+  // borrows that helper when the plan is missing, so it does not become Open
+  // or Unlock; otherwise it stays "Share Word".
+  final label = choice.action == _BookAction.share && !lockedBySubscription
+      ? 'Share ${projectExportFormatLabel(export)}'
+      : projectExportDownloadLabel(
+          export,
+          needsCredits,
+          lockedBySubscription: lockedBySubscription,
+        );
+  // The lock warns about a purchase or a plan, so it only shows when credits are
+  // actually short or the plan is missing; a covered unlock is spent silently,
+  // as elsewhere.
+  final showLock = enabled && (needsCredits || lockedBySubscription);
+  return PopupMenuItem<Object>(
+    value: choice,
     enabled: enabled,
     child: Row(
       mainAxisSize: MainAxisSize.min,
@@ -215,10 +219,13 @@ PopupMenuItem<_BookAction> _bookActionItem({
         Icon(icon),
         const SizedBox(width: 12),
         // Flexible so the longer states ("preparing") and large text scales
-        // shrink instead of overflowing the menu row.
+        // shrink instead of overflowing the menu row. The download helper
+        // already says "Preparing PDF"; do not append the suffix onto that.
         Flexible(
           child: Text(
-            enabled ? label : '$label — preparing',
+            enabled || label.startsWith('Preparing ')
+                ? label
+                : '$label — preparing',
             overflow: TextOverflow.ellipsis,
           ),
         ),

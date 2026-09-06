@@ -70,6 +70,7 @@ vi.mock("@book-maker/core", async () => {
 });
 
 import { compileExport } from "./compileExport.js";
+import { pendingExportPaths } from "../generation/exportArtifacts.js";
 import { readerChapterCachePath, writeCachedReaderChapters } from "../generation/readerChapterCache.js";
 import {
   DETACHED_FROM_PROJECT_LIFECYCLE,
@@ -202,11 +203,8 @@ describe("compileExport reader chapters", () => {
     mocks.createReaderChaptersForExport.mockResolvedValue({ chapters: modelChapters, source: "model" });
     mocks.generateJsonWithRetry.mockResolvedValue({ data: { issues: [] } });
     mocks.exportPublicationSuperseded.mockResolvedValue(false);
-    mocks.pendingExportPaths.mockImplementation((projectDir: string) => ({
-      markdown: join(projectDir, ".book-test.md"),
-      pdf: join(projectDir, ".book-test.pdf"),
-      epub: join(projectDir, ".book-test.epub")
-    }));
+    // The real scratch names under a fixed token: `.book-test.md`, `.book-test.pdf`, …
+    mocks.pendingExportPaths.mockImplementation((projectDir: string) => pendingExportPaths(projectDir, "test"));
     mocks.publishCompiledExports.mockImplementation(async (options: { characterPreparation?: unknown }) => ({
       published: true,
       characterPreparationJobId: options.characterPreparation ? "character-job-1" : null
@@ -284,6 +282,7 @@ describe("compileExport reader chapters", () => {
       expect.objectContaining({ outputPath: expect.stringContaining(".book-test.pdf") })
     );
     expect(mocks.generateBookEpub).not.toHaveBeenCalled();
+    expect(mocks.generateBookDocx).not.toHaveBeenCalled();
     expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
       expect.objectContaining({
         repairFormat: "pdf",

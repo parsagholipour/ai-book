@@ -559,8 +559,16 @@ export type MobileProjectStatusDto = {
 
 export type MobileExportAvailabilityDto = {
   format: ProjectExportFormat;
+  /** Reader-facing name from the export registry (`exportFormatLabel`). */
+  label: string;
   available: boolean;
   unlocked: boolean;
+  /**
+   * True when the format is gated on an active plan (the Word export). The app
+   * draws the lock from this beside its own billing state rather than asking
+   * for a second read; the download route enforces it regardless.
+   */
+  requiresSubscription: boolean;
   creditsRequired: number;
   downloadUrl: string;
   filename: string;
@@ -573,9 +581,9 @@ export type MobileExportAvailabilityDto = {
   updatedAt: string | null;
 };
 
+/** One availability per compiled export format; keys come from the core registry. */
 export type MobileExportSetDto = {
-  pdf: MobileExportAvailabilityDto;
-  epub: MobileExportAvailabilityDto;
+  [Format in ProjectExportFormat]: MobileExportAvailabilityDto;
 };
 
 export type MobileAudiobookStatus = "generating" | "complete" | "failed";

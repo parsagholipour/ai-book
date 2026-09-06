@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@book-maker/db", async () => (await import("./testing/mobileApiMocks.js")).dbModuleMock());
 vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApiMocks.js")).billingModuleMock());
 
-import { loadConfig } from "@book-maker/core";
+import { EXPORT_FORMATS, loadConfig } from "@book-maker/core";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -78,6 +78,7 @@ describe("project artifact serializers", () => {
 
     const exports = await serializeExportSet("project-1", "A Book: Revised", appConfig, "user-a", 7);
 
+    expect(EXPORT_FORMATS.map((format) => exports[format].format)).toEqual([...EXPORT_FORMATS]);
     expect(mockBilling.hasActiveProjectEntitlement).toHaveBeenCalledTimes(1);
     expect(mockBilling.hasActiveProjectEntitlement).toHaveBeenCalledWith({
       userId: "user-a",
@@ -86,6 +87,7 @@ describe("project artifact serializers", () => {
     });
     expect(exports.pdf).toMatchObject({
       format: "pdf",
+      label: "PDF",
       available: true,
       unlocked: true,
       creditsRequired: 0,
@@ -95,6 +97,7 @@ describe("project artifact serializers", () => {
     });
     expect(exports.epub).toMatchObject({
       format: "epub",
+      label: "EPUB",
       available: false,
       unlocked: true,
       creditsRequired: 0,
@@ -103,5 +106,20 @@ describe("project artifact serializers", () => {
       byteSize: null,
       updatedAt: null
     });
+    expect(exports.docx).toMatchObject({
+      format: "docx",
+      label: "Word",
+      available: false,
+      unlocked: true,
+      requiresSubscription: true,
+      contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      downloadUrl: "/api/mobile/projects/project-1/export/docx",
+      filename: "A-Book-Revised.docx",
+      revision: 7,
+      byteSize: null
+    });
+    // Only the Word file is a plan perk; the app draws the lock from this field.
+    expect(exports.pdf.requiresSubscription).toBe(false);
+    expect(exports.epub.requiresSubscription).toBe(false);
   });
 });

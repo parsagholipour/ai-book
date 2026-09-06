@@ -99,6 +99,69 @@ void main() {
       expect(budget.shouldKeepWatching(missingEpub), isFalse);
     });
 
+    test('a missing Word file alone does not hold the stream open', () {
+      final clock = _FakeClock();
+      final budget = ExportRepairWatchBudget(clock: clock.now);
+
+      expect(
+        budget.shouldKeepWatching(
+          _status(
+            'complete',
+            pdfAvailable: true,
+            epubAvailable: true,
+            docxAvailable: false,
+          ),
+        ),
+        isFalse,
+      );
+    });
+
+    test('a requested Word file is watched until it lands', () {
+      final clock = _FakeClock();
+      final budget = ExportRepairWatchBudget(clock: clock.now);
+      final missingDocx = _status(
+        'complete',
+        pdfAvailable: true,
+        epubAvailable: true,
+        docxAvailable: false,
+      );
+
+      budget.noteExportRequested(ExportRepairFormat.docx);
+      expect(budget.shouldKeepWatching(missingDocx), isTrue);
+      expect(budget.isAwaiting(ExportRepairFormat.docx), isTrue);
+      expect(budget.isAwaitingEpub, isFalse);
+
+      expect(
+        budget.shouldKeepWatching(
+          _status(
+            'complete',
+            pdfAvailable: true,
+            epubAvailable: true,
+            docxAvailable: true,
+          ),
+        ),
+        isFalse,
+      );
+      expect(budget.isAwaiting(ExportRepairFormat.docx), isFalse);
+      expect(budget.shouldKeepWatching(missingDocx), isFalse);
+    });
+
+    test('a status that offers no Word file is never awaited for one', () {
+      // An older server, or a fixture from before the format: asking for the
+      // file must not hold the stream open for something that will never come.
+      final clock = _FakeClock();
+      final budget = ExportRepairWatchBudget(clock: clock.now);
+
+      budget.noteExportRequested(ExportRepairFormat.docx);
+      expect(
+        budget.shouldKeepWatching(
+          _status('complete', pdfAvailable: true, epubAvailable: true),
+        ),
+        isFalse,
+      );
+      expect(budget.isAwaiting(ExportRepairFormat.docx), isFalse);
+    });
+
     test('a requested EPUB is metered by the same window', () {
       final clock = _FakeClock();
       final budget = ExportRepairWatchBudget(clock: clock.now);
@@ -318,6 +381,8 @@ MobileProjectStatus _status(
   String status, {
   required bool pdfAvailable,
   bool epubAvailable = false,
+  /// Null is a server that offers no Word file at all.
+  bool? docxAvailable,
 }) {
   return MobileProjectStatus(
     projectId: 'project-1',
@@ -332,6 +397,7 @@ MobileProjectStatus _status(
     exports: MobileExportSet(
       pdf: _export('pdf', pdfAvailable),
       epub: _export('epub', epubAvailable),
+      docx: docxAvailable == null ? null : _export('docx', docxAvailable),
     ),
     updatedAt: DateTime.utc(2026, 8, 10),
   );

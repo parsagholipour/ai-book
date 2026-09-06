@@ -1,23 +1,29 @@
 import {
   BOOK_PDF_PAGE_MAP_VERSION,
   bookPdfCoverNumbering,
-  exportContentDigest,
-  exportProvenancePath,
   parseStoredBookPdfNumbering,
-  pendingExportTempPath,
-  supersededExportToken,
   type BookPdfCoverNumbering,
   type PersistableBookPdfPageMap,
   type ExportRepairFormat,
-  type ExportPublicationProjectStatus,
-  type ExportProvenanceFormat
+  type ExportPublicationProjectStatus
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { claimAppliedEditPublication } from "./editProjectStatus.js";
-import { randomUUID } from "node:crypto";
-import { readFile, rename, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { characterPreparationDedupeKey } from "./characterPreparation.js";
+import {
+  artifactPublications,
+  discardSupersededArtifacts,
+  formatsTouchedByPublication,
+  installArtifacts,
+  pendingExportDigests,
+  provenancePublications,
+  restoreSupersededArtifacts,
+  type ArtifactPublication,
+  type CompanionsProduced,
+  type PendingExportPaths
+} from "./exportArtifacts.js";
+
+export { discardPendingExports, pendingExportPaths, type PendingExportPaths } from "./exportArtifacts.js";
 import { payloadWithExportPublicationEvidence } from "./exportPublicationEvidence.js";
 
 /**
@@ -103,12 +109,6 @@ import { payloadWithExportPublicationEvidence } from "./exportPublicationEvidenc
  * means the book moved on and this compile is not the one to publish it.
  */
 
-export type PendingExportPaths = {
-  markdown: string;
-  pdf: string;
-  epub: string;
-};
-
 export type ExportPublicationResult = {
   published: boolean;
   /** Publication claim matched, but a page/cover image job still owns fan-in. */
@@ -116,44 +116,6 @@ export type ExportPublicationResult = {
   /** Optional derivative row committed with the export, ready for Redis dispatch. */
   characterPreparationJobId: string | null;
 };
-
-const PUBLISHED_EXPORT_FILENAMES = {
-  markdown: "book.md",
-  pdf: "book.pdf",
-  epub: "book.epub"
-} as const;
-
-/**
- * Where a compile renders, before anything downloadable can see it.
- *
- * Named per compile rather than per project: two compiles for one project
- * overlapping is the case this module exists for, so a shared scratch name
- * would have them writing over each other's half-rendered PDF.
- *
- * The name is built in `@book-maker/core` because the sweep that collects these
- * after a SIGKILL matches on it (`isPendingExportTempName`): a name assembled
- * from a local literal could drift out of that pattern and strand files nothing
- * recognises. `discardPendingExports` is still what removes them in every case
- * where this process gets to run its own `finally`.
- */
-export function pendingExportPaths(projectDir: string, token: string = randomUUID()): PendingExportPaths {
-  return {
-    markdown: pendingExportTempPath(projectDir, "md", token),
-    pdf: pendingExportTempPath(projectDir, "pdf", token),
-    epub: pendingExportTempPath(projectDir, "epub", token)
-  };
-}
-
-/** Removes whatever of a render survived — a no-op once it was published. */
-export async function discardPendingExports(paths: PendingExportPaths): Promise<void> {
-  await Promise.all(
-    [
-      ...Object.values(paths),
-      `${paths.pdf}.provenance.json`,
-      `${paths.epub}.provenance.json`
-    ].map((path) => rm(path, { force: true }).catch(() => undefined))
-  );
-}
 
 /**
  * Whether the manuscript has moved on since this compile was queued.
@@ -199,223 +161,6 @@ const PUBLICATION_TRANSACTION_TIMEOUT_MS = 30_000;
 const PUBLICATION_TRANSACTION_MAX_WAIT_MS = 10_000;
 
 /**
- * Where the artifacts this compile replaces are parked while it moves in.
- *
- * Named per publication for the same reason the render is: two compiles for one
- * project overlapping is the case this module exists for, and a shared name
- * would have each one holding the other's predecessor.
- */
-function supersededExportPaths(projectDir: string): PendingExportPaths {
-  return pendingExportPaths(projectDir, supersededExportToken());
-}
-
-/** One artifact's move onto its published name, and what it displaced. */
-type ArtifactPublication = {
-  /** Null retires a live artifact without installing a successor. */
-  pending: string | null;
-  live: string;
-  superseded: string;
-  /** Whether a predecessor existed and is now parked at `superseded`. */
-  parked: boolean;
-  /** Whether the new artifact has reached `live`. */
-  installed: boolean;
-};
-
-function artifactPublications(options: {
-  projectDir: string;
-  pending: PendingExportPaths;
-  epubProduced: boolean;
-  repairFormat: ExportRepairFormat | null;
-  publishReconstructedMarkdown: boolean;
-}): ArtifactPublication[] {
-  const superseded = supersededExportPaths(options.projectDir);
-  const formats: (keyof PendingExportPaths)[] = options.repairFormat
-    ? options.repairFormat === "epub" && !options.epubProduced
-      ? options.publishReconstructedMarkdown
-        ? ["markdown"]
-        : []
-      : [...(options.publishReconstructedMarkdown ? (["markdown"] as const) : []), options.repairFormat]
-    : options.epubProduced
-      ? ["markdown", "pdf", "epub"]
-      : ["markdown", "pdf"];
-  const publications: ArtifactPublication[] = formats.map((format) => ({
-    pending: options.pending[format],
-    live: join(options.projectDir, PUBLISHED_EXPORT_FILENAMES[format]),
-    superseded: superseded[format],
-    parked: false,
-    installed: false
-  }));
-  if (!options.epubProduced && (options.repairFormat === null || options.repairFormat === "epub")) {
-    publications.push({
-      pending: null,
-      live: join(options.projectDir, PUBLISHED_EXPORT_FILENAMES.epub),
-      superseded: superseded.epub,
-      parked: false,
-      installed: false
-    });
-  }
-  return publications;
-}
-
-function isMissingFileError(error: unknown): boolean {
-  return (
-    typeof error === "object" && error !== null && (error as NodeJS.ErrnoException).code === "ENOENT"
-  );
-}
-
-/**
- * Parks a published artifact. False when there was none to park — the first
- * compile of a book, or one whose files an edit deleted a moment ago.
- *
- * Parked by `rename` rather than checked for first: an edit's
- * `invalidateCompiledProjectExports` deletes these files without taking the
- * project row lock this publication holds, so anything the check learned could
- * be wrong by the time the move ran.
- */
-async function parkPublishedArtifact(live: string, superseded: string): Promise<boolean> {
-  try {
-    await rename(live, superseded);
-    return true;
-  } catch (error) {
-    if (isMissingFileError(error)) {
-      return false;
-    }
-    throw error;
-  }
-}
-
-/** Moves the whole set into place, recording enough to undo a partial one. */
-async function installArtifacts(publications: ArtifactPublication[]): Promise<void> {
-  for (const publication of publications) {
-    publication.parked = await parkPublishedArtifact(publication.live, publication.superseded);
-    if (publication.pending) {
-      await rename(publication.pending, publication.live);
-      publication.installed = true;
-    }
-  }
-}
-
-/**
- * Puts back exactly what `installArtifacts` moved, newest move first.
- *
- * Best-effort by necessity: this runs because something has already failed, and
- * the caller needs *that* failure rather than one raised while tidying up. A
- * restore that cannot complete is the mixed set this exists to prevent, which is
- * why it is the one thing here worth a log line.
- */
-async function restoreSupersededArtifacts(publications: ArtifactPublication[]): Promise<void> {
-  for (const publication of [...publications].reverse()) {
-    try {
-      if (publication.parked) {
-        // Overwrites the new artifact where it landed and fills the gap where it
-        // did not: either way the published name ends up back on its predecessor.
-        await rename(publication.superseded, publication.live);
-      } else if (publication.installed) {
-        // Nothing to put back, so the published name returns to being absent —
-        // which is a state the repair lane knows how to answer.
-        await rm(publication.live, { force: true });
-      }
-      publication.parked = false;
-      publication.installed = false;
-    } catch (error) {
-      console.error(`Failed to restore ${publication.live} after an interrupted publication:`, error);
-    }
-  }
-}
-
-/**
- * The digest of each downloadable artifact this compile is about to install.
- *
- * Hashed from the scratch files *before* the transaction opens. They are this
- * compile's own and cannot change under it, and the transaction holds a lock
- * every edit to this book has to take — a few megabytes of sha256 has no
- * business inside it. A file that cannot be read here simply gets no record:
- * the rename below will fail on it too, and that is the failure worth
- * reporting.
- */
-async function pendingExportDigests(options: {
-  pending: PendingExportPaths;
-  epubProduced: boolean;
-  repairFormat: ExportRepairFormat | null;
-}): Promise<Map<ExportProvenanceFormat, { digest: string; byteSize: number }>> {
-  const formats: ExportProvenanceFormat[] = options.repairFormat
-    ? options.repairFormat === "epub" && !options.epubProduced
-      ? []
-      : [options.repairFormat]
-    : options.epubProduced
-      ? ["pdf", "epub"]
-      : ["pdf"];
-  const digests = new Map<ExportProvenanceFormat, { digest: string; byteSize: number }>();
-  for (const format of formats) {
-    try {
-      const bytes = await readFile(options.pending[format]);
-      digests.set(format, { digest: exportContentDigest(bytes), byteSize: bytes.length });
-    } catch {
-      // Left unrecorded rather than guessed at.
-    }
-  }
-  return digests;
-}
-
-/**
- * Files the installed bytes under the revision this compile published them for.
- *
- * Inside the transaction and after the artifacts have moved, so a rollback
- * leaves the previous record describing the file `restoreSupersededArtifacts`
- * puts back. Never fatal: a book that is on disk and downloadable must not be
- * failed — and refunded — because a hundred bytes of metadata beside it could
- * not be written. A download of bytes no record describes is answered as
- * exactly that, and the next publication of this book writes the record again.
- *
- * The revision is the claimed one, which the compare-and-set has just proved is
- * the row's. A payload carrying none (older rows) claimed unconditionally, so
- * the row is read here instead — under the lock this transaction is already
- * holding, which is the one place that read cannot race the files it describes.
- */
-async function provenancePublications(options: {
-  projectDir: string;
-  pending: PendingExportPaths;
-  contentRevision: number;
-  digests: Map<ExportProvenanceFormat, { digest: string; byteSize: number }>;
-  formatsTouched: ReadonlySet<ExportProvenanceFormat>;
-}): Promise<ArtifactPublication[]> {
-  const superseded = supersededExportPaths(options.projectDir);
-  const publications: ArtifactPublication[] = [];
-  for (const format of options.formatsTouched) {
-    const artifact = options.digests.get(format);
-    const pending = `${options.pending[format]}.provenance.json`;
-    let prepared: string | null = null;
-    if (artifact) {
-      try {
-        await writeFile(
-          pending,
-          JSON.stringify({
-            revision: options.contentRevision,
-            digest: artifact.digest,
-            byteSize: artifact.byteSize,
-            publishedAt: new Date().toISOString()
-          }),
-          "utf8"
-        );
-        prepared = pending;
-      } catch (error) {
-        // The new bytes remain publishable, but an old record must not be left
-        // describing them. Retiring it makes the download honestly `unknown`.
-        console.error("Failed to prepare export provenance for publication:", error);
-      }
-    }
-    publications.push({
-      pending: prepared,
-      live: exportProvenancePath(options.projectDir, format),
-      superseded: `${superseded[format]}.provenance.json`,
-      parked: false,
-      installed: false
-    });
-  }
-  return publications;
-}
-
-/**
  * What replaces the stored ranges when a PDF is published without a current
  * measurement of it.
  *
@@ -447,15 +192,6 @@ async function degradedPdfNumbering(
   });
   const stored = parseStoredBookPdfNumbering(project?.pdfPageMap);
   return stored ? bookPdfCoverNumbering(stored.hasCoverPage) : undefined;
-}
-
-/** Drops the parked predecessors once the whole set is published. */
-async function discardSupersededArtifacts(publications: ArtifactPublication[]): Promise<void> {
-  await Promise.all(
-    publications
-      .filter((publication) => publication.parked)
-      .map((publication) => rm(publication.superseded, { force: true }).catch(() => undefined))
-  );
 }
 
 async function settlePublishedGenerationAttempt(
@@ -590,8 +326,8 @@ export async function publishCompiledExports(options: {
   generationJobId: string;
   projectDir: string;
   pending: PendingExportPaths;
-  /** The EPUB is best-effort; a compile publishes without one. */
-  epubProduced: boolean;
+  /** The companions are best-effort; a compile publishes without any of them. */
+  companionsProduced: CompanionsProduced;
   /** A detached repair replaces only the file the caller found unreadable. */
   repairFormat?: ExportRepairFormat | null;
   /**
@@ -603,7 +339,7 @@ export async function publishCompiledExports(options: {
   contentRevision: number | null;
   /**
    * Where each model page landed in the PDF this publication installs.
-   * Omitted only for an EPUB-only repair. A version-2 persistable map —
+   * Omitted only for a companion-only repair. A version-2 persistable map —
    * measured, including one whose `pages` is empty, or a cover-numbering stub —
    * is stamped as-is. Empty `pages` is not "was never a measurement": that row
    * still has totals, cover-skip and furniture starts. A missing or version-1
@@ -644,7 +380,8 @@ export async function publishCompiledExports(options: {
   // same call the provenance record in this file already makes. So a missing
   // or version-1 map degrades to the stub — which is what clears the ranges
   // the rule is actually about — and says so.
-  const degradesPdfPageMap = repairFormat !== "epub" && !pdfPageMapIsCurrent;
+  const publishesPdf = repairFormat === null || repairFormat === "pdf";
+  const degradesPdfPageMap = publishesPdf && !pdfPageMapIsCurrent;
   if (degradesPdfPageMap) {
     console.warn("Publishing a PDF without a current page map; storing cover numbering instead.", {
       projectId: options.projectId,
@@ -816,7 +553,7 @@ export async function publishCompiledExports(options: {
         if (revision === undefined) {
           throw new Error("Export publication lost its claimed project revision");
         }
-        if (repairFormat !== "epub") {
+        if (publishesPdf) {
           // Before the renames: a rename failure rolls this back with the rest
           // of the claim, leaving the previous map describing the file
           // `restoreSupersededArtifacts` puts back.
@@ -842,19 +579,12 @@ export async function publishCompiledExports(options: {
           repairFormat,
           publishReconstructedMarkdown: options.publishReconstructedMarkdown === true
         });
-        const formatsTouched = new Set<ExportProvenanceFormat>();
-        if (repairFormat) {
-          formatsTouched.add(repairFormat);
-        } else {
-          formatsTouched.add("pdf");
-          formatsTouched.add("epub");
-        }
         const metadataPublications = await provenancePublications({
           projectDir: options.projectDir,
           pending: options.pending,
           contentRevision: revision,
           digests,
-          formatsTouched
+          formatsTouched: formatsTouchedByPublication(repairFormat)
         });
         publications = [...exportPublications, ...metadataPublications];
         publicationStarted = true;

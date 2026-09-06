@@ -52,6 +52,23 @@ describe("compile publication policy", () => {
     expect(new Set(identities).size).toBe(identities.length);
   });
 
+  it("gives each repairable format its own detached identity, keeping the PDF and EPUB letters", () => {
+    const repair = (exportRepairFormat: string) =>
+      compilePublicationPolicyIdentity(
+        compilePublicationPolicyFromPayload({
+          skipFinalReview: true,
+          exportPublicationProjectStatus: "COMPLETE",
+          detachedFromProjectLifecycle: true,
+          exportRepairFormat
+        }),
+        "COMPLETE"
+      );
+    expect(repair("pdf")).toMatch(/odp$/);
+    expect(repair("epub")).toMatch(/ode$/);
+    expect(repair("docx")).toMatch(/odd$/);
+    expect(new Set([repair("pdf"), repair("epub"), repair("docx")]).size).toBe(3);
+  });
+
   it("makes exact duplicates idempotent while revision and policy create successors", () => {
     const key = (contentRevision: number, policy = normal) =>
       compilePublicationDedupeKey({

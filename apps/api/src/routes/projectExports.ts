@@ -7,7 +7,9 @@ import {
   writeExportProvenance,
   markdownOpensOnCoverSheet,
   persistablePdfPageMapAfterRender,
+  publishedExportFilename,
   type AppConfig,
+  type ExportFormat,
   type PersistableBookPdfPageMap,
   type ExportArtifact
 } from "@book-maker/core";
@@ -34,8 +36,6 @@ import { requireOperatorActor, type ProjectActor } from "../requestAuth.js";
 
 const BOOK_MARKDOWN_FILENAME = "book.md";
 const LEGACY_BOOK_MARKDOWN_FILENAME = "README.md";
-const BOOK_PDF_FILENAME = "book.pdf";
-const BOOK_EPUB_FILENAME = "book.epub";
 
 export type ProjectPdfExportSource = {
   title: string;
@@ -62,7 +62,8 @@ export type ProjectEpubExportSource = {
   status: ProjectStatus;
 };
 
-export type ProjectExportFormat = "pdf" | "epub";
+/** Every compiled format a project can hold, from the registry in core. */
+export type ProjectExportFormat = ExportFormat;
 
 export type ProjectExportProvenanceSource = {
   contentRevision: number;
@@ -87,8 +88,7 @@ export async function probeReadableProjectExport(
   projectId: string,
   format: ProjectExportFormat
 ): Promise<ReadableProjectExport | null> {
-  const filename = format === "pdf" ? BOOK_PDF_FILENAME : BOOK_EPUB_FILENAME;
-  return probeReadableExportPath(join(appConfig.BOOK_STORAGE_DIR, projectId, filename));
+  return probeReadableExportPath(join(appConfig.BOOK_STORAGE_DIR, projectId, publishedExportFilename(format)));
 }
 
 async function probeReadableExportPath(path: string): Promise<ReadableProjectExport | null> {
@@ -391,7 +391,7 @@ async function renderAndPublishExport(options: {
         rendered,
         ...(pdfPageMap !== undefined ? { pdfPageMap } : {}),
         pendingPath,
-        publishedPath: join(projectDir, format === "pdf" ? BOOK_PDF_FILENAME : BOOK_EPUB_FILENAME)
+        publishedPath: join(projectDir, publishedExportFilename(format))
       }));
     if (published) {
       return rendered;
@@ -509,7 +509,7 @@ export async function readProjectExportFile(
   projectId: string,
   format: ProjectExportFormat
 ): Promise<Buffer | null> {
-  const path = join(appConfig.BOOK_STORAGE_DIR, projectId, format === "pdf" ? BOOK_PDF_FILENAME : BOOK_EPUB_FILENAME);
+  const path = join(appConfig.BOOK_STORAGE_DIR, projectId, publishedExportFilename(format));
   try {
     await access(path);
     return await readFile(path);

@@ -369,6 +369,18 @@ export function sendGenerationAttemptError(reply: FastifyReply, error: unknown):
   return false;
 }
 
+/**
+ * The one sentence a plan-gated surface answers a free account with.
+ *
+ * `SUBSCRIPTION_REQUIRED` is the code the manuscript-import route has always
+ * used, so every shipped app already opens the paywall on it. The message is
+ * the caller's: it names what the plan brings, in the voice of the import
+ * route's own sentence.
+ */
+export function sendSubscriptionRequired(reply: FastifyReply, message: string) {
+  return sendMobileError(reply, 403, "SUBSCRIPTION_REQUIRED", message);
+}
+
 export async function ensureExportEntitlementForDownload(
   reply: FastifyReply,
   userId: string,

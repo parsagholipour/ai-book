@@ -64,6 +64,8 @@ vi.mock("./mobileProjects.js", () => ({
   hitAuthenticatedLimit: vi.fn(() => true),
   sendMobileError: (reply: FastifyReply, statusCode: number, code: string, message: string) =>
     reply.code(statusCode).send({ error: { code, message } }),
+  sendSubscriptionRequired: (reply: FastifyReply, message: string) =>
+    reply.code(403).send({ error: { code: "SUBSCRIPTION_REQUIRED", message } }),
   loadMobileProjectDetail: vi.fn(),
   serializeProjectDetail: vi.fn(async (project: { id: string; title: string }) => ({
     id: project.id,

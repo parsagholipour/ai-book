@@ -233,6 +233,7 @@ describe("mobile export repair publication races", () => {
     });
     publishAtPendingCompileRead("book.pdf", "%PDF-from-the-canonical-compile", () => {
       writeProjectFile(state.bookStorageDir, "project-a", "book.epub", "epub-from-the-canonical-compile");
+      writeProjectFile(state.bookStorageDir, "project-a", "book.docx", "docx-from-the-canonical-compile");
       writeProjectFile(state.bookStorageDir, "project-a", "book.pdf.provenance.json", provenance);
     });
     const queued = fakeDedupingQueue();

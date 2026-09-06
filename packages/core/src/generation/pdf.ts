@@ -3,7 +3,7 @@ import { access, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { scriptProfileForLanguage, type ScriptProfile } from "../prompting/script.js";
-import { imageMarkdownRe, resolveBookImageAsset } from "./bookImageAssets.js";
+import { imageMarkdownRe, leadingCoverIllustration, resolveBookImageAsset } from "./bookImageAssets.js";
 import { withRenderPage } from "./browserPool.js";
 import { renderDocumentTempPath } from "./exportTempSweep.js";
 import { bookFontSetForLanguage, type BookFontSet } from "./bookFonts.js";
@@ -116,34 +116,6 @@ async function prepareMarkdownImagesForPdf(
 
 const COVER_PAGE_DIV_RE = /^<div\b[^>]*class=["'][^"']*\bpdf-cover-page\b/i;
 const TITLE_PAGE_SECTION_RE = /^<section\b[^>]*class=["'][^"']*\bbook-title-page\b/i;
-const LEADING_ILLUSTRATION_RE = /^!\[([^\]]*)]\(([^)]+)\)\s*/;
-
-/**
- * The illustration a manuscript opens with, and whatever follows it.
- *
- * One predicate, because two callers ask the same question and have to get the
- * same answer: {@link markdownOpensOnCoverSheet} claims the first sheet is
- * unnumbered, and {@link insertCoverPageBreak} is what makes it so. They used to
- * carry a regex each and only one of them trimmed, so a manuscript opening with
- * a blank line — or a `book.md` read back with a BOM, which counts as
- * whitespace here — was reported as having a cover sheet that the render never
- * built, and every printed page number the chat, the Contents and the reader
- * chrome speak came out one ahead of the footer.
- *
- * Trimming is the right half of that disagreement rather than merely the
- * agreed one. Leading whitespace is not content — marked renders the same
- * document with or without it — so the same book must not typeset differently
- * for a newline nobody can see, and the cover-div branch below was already
- * whitespace-tolerant on both sides.
- */
-function leadingCoverIllustration(markdown: string): { alt: string; src: string; rest: string } | undefined {
-  const start = markdown.trimStart();
-  const match = start.match(LEADING_ILLUSTRATION_RE);
-  if (!match) {
-    return undefined;
-  }
-  return { alt: match[1] ?? "", src: match[2] ?? "", rest: start.slice(match[0].length) };
-}
 
 /**
  * Whether this manuscript will print an unnumbered first sheet — a cover or
