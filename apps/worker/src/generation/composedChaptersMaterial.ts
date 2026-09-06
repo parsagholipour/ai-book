@@ -19,7 +19,7 @@ import {
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { fetchSourceDocument as primarySourceFetch } from "./sourceDocumentFetch.js";
-import { updateJobProgress } from "../runtime/jobLifecycle.js";
+import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import type { loadQualityContext } from "./qualitySettings.js";
 
 /**
@@ -56,7 +56,7 @@ export async function prepareBookMaterial(options: {
   if (quality.enabled("materialFirst") || options.evidenceRequired) {
     episodes = planEpisodesFromPlan(plan);
     if (!episodes) {
-      await updateJobProgress(generationJobId, { progress: 14, message: "Planning the book's episodes" });
+      await advanceJobStep(generationJobId, "briefs", 14, "Planning the book's episodes", { phase: "episodes" });
       // The chapter focus is the `chapterFocus` gate's: off, the episodes
       // carry no question and the chapter composes from the stance.
       const planned = await planEpisodes({ input, plan, stance, textModel, evidenceRequired: options.evidenceRequired, focus: quality.enabled("chapterFocus") });
@@ -81,13 +81,21 @@ export async function prepareBookMaterial(options: {
     if (episodes) {
       dossier = planDossierFromPlan(plan);
       if (!dossier) {
-        await updateJobProgress(generationJobId, { progress: 15, message: "Gathering primary sources for every chapter" });
+        await advanceJobStep(generationJobId, "briefs", 15, "Gathering primary sources for every chapter", {
+          phase: "sources",
+          total: plan.chapters.length
+        });
         const plannedEpisodes = episodes;
         // The whole book's dossier gets a fixed budget; a slow repository
         // shortens the dossier, never the book's schedule.
         const dossierDeadline = Date.now() + DOSSIER_TIME_BUDGET_MS;
-        const chapterDossiers = await mapWithConcurrency(plan.chapters, 3, (chapter) =>
-          buildChapterDossier({
+        const chapterDossiers = await mapWithConcurrency(plan.chapters, 3, async (chapter) => {
+          await advanceJobStep(generationJobId, "briefs", 15, "Gathering primary sources for every chapter", {
+            phase: "sources",
+            chapterIndex: chapter.index,
+            total: plan.chapters.length
+          });
+          return buildChapterDossier({
             input,
             chapter,
             episodes: episodesForChapter(plannedEpisodes, chapter.index),
@@ -97,8 +105,8 @@ export async function prepareBookMaterial(options: {
             deadline: dossierDeadline,
             evidence: options.evidenceRequired,
             log: (event, detail) => console.warn("Dossier step", { event: `generation.composed_chapters.${event}`, projectId, ...detail })
-          })
-        );
+          });
+        });
         dossier = {
           excerpts: chapterDossiers.flatMap((entry) => entry.excerpts),
           documents: chapterDossiers.flatMap((entry) => entry.documents)

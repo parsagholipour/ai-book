@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => {
 });
 vi.mock("@book-maker/db", () => ({ Prisma: {}, prisma: { $transaction: mocks.transaction, planVersion: mocks.tx.planVersion } }));
 vi.mock("../runtime/config.js", () => ({ config: mocks.config }));
-vi.mock("../runtime/jobLifecycle.js", () => ({ updateJobProgress: vi.fn() }));
+vi.mock("../runtime/jobLifecycle.js", () => ({ advanceJobStep: vi.fn(), updateJobProgress: vi.fn() }));
 vi.mock("./composedChaptersMaterial.js", () => ({ prepareBookMaterial: mocks.material, recordDossierSources: mocks.sources }));
 vi.mock("./composedEvidence.js", () => ({ prepareVerifiedCases: mocks.verify }));
 vi.mock("@book-maker/core", async (original) => ({ ...await original<object>(), developBookPlan: mocks.develop }));

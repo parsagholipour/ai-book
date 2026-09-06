@@ -544,6 +544,76 @@ describe("mobile generation progress", () => {
     }
   });
 
+  it("walks the prepare phrase through the book's own briefing phases", async () => {
+    const phrases: Record<string, string> = {
+      stance: "Finding the book's voice",
+      arc: "Planning how the book unfolds",
+      episodes: "Planning what each chapter covers",
+      sources: "Gathering sources for chapter 3 of 15",
+      evidence: "Checking the book's sources",
+      develop: "Shaping how the chapters connect",
+      forms: "Planning the shape of every chapter",
+      briefs: "Mapping out chapter 3 of 15",
+      references: "Drawing your characters",
+      research: "Looking up background for your 15 chapters"
+    };
+    for (const [phase, phrase] of Object.entries(phrases)) {
+      const status = await readStatus(
+        generatingStatus({
+          project: {
+            currentPlan: { planningPackage: { chapters: Array.from({ length: 15 }, (_, index) => ({ index: index + 1 })) } },
+            jobs: [
+              job({
+                id: "job-book",
+                progress: 15,
+                steps: [
+                  {
+                    key: "briefs",
+                    label: "Prepare book",
+                    status: "active",
+                    phase,
+                    ...(phase === "sources" || phase === "briefs" ? { chapterIndex: 3, total: 15 } : {})
+                  }
+                ]
+              })
+            ]
+          },
+          progress: { pages: { complete: 0, target: 10 } }
+        })
+      );
+      expect(status.generationProgress.detail).toBe(phrase);
+      expect(status.generationProgress.steps[0]).toMatchObject({
+        key: "prepare",
+        label: "Preparing your chapters",
+        status: "active"
+      });
+      if (phase === "sources" || phase === "briefs") {
+        expect(status.generationProgress.steps[0].detail).toBe("3 of 15 chapters");
+      }
+    }
+  });
+
+  it("keeps drawing characters on preparing when sequential setup has no write counters", async () => {
+    const status = await readStatus(
+      generatingStatus({
+        project: {
+          jobs: [
+            job({
+              id: "job-book",
+              progress: 70,
+              steps: [{ key: "setup", label: "Create pages", status: "active", phase: "references" }]
+            })
+          ]
+        },
+        progress: { pages: { complete: 0, target: 10 } }
+      })
+    );
+
+    expect(status.generationProgress.steps[0]).toMatchObject({ key: "prepare", status: "active" });
+    expect(status.generationProgress.steps[1].status).toBe("pending");
+    expect(status.generationProgress.detail).toBe("Drawing your characters");
+  });
+
   it("keeps sequential setup without counters on preparing", async () => {
     const status = await readStatus(
       generatingStatus({

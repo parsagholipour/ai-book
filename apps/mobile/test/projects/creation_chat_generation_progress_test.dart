@@ -57,7 +57,9 @@ void main() {
     expect(find.text('Writing page 18 of 40'), findsOneWidget);
     expect(find.text('46%'), findsOneWidget);
     expect(find.text('Preparing your chapters'), findsOneWidget);
+    expect(find.text('6 chapters'), findsOneWidget);
     expect(find.text('Writing your pages'), findsOneWidget);
+    expect(find.text('17 of 40 pages'), findsOneWidget);
     expect(find.text('Creating your book images'), findsOneWidget);
     expect(find.text('Building your book'), findsOneWidget);
     expect(
@@ -65,7 +67,9 @@ void main() {
       findsOneWidget,
     );
 
-    final activeRow = find.bySemanticsLabel('Writing your pages. In progress.');
+    final activeRow = find.bySemanticsLabel(
+      'Writing your pages. In progress. 17 of 40 pages.',
+    );
     expect(activeRow, findsOneWidget);
     expect(
       find.descendant(
@@ -75,7 +79,7 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.bySemanticsLabel('Preparing your chapters. Done.'),
+      find.bySemanticsLabel('Preparing your chapters. Done. 6 chapters.'),
       findsOneWidget,
     );
   });

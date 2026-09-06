@@ -56,7 +56,7 @@ import {
   stripMisattributedQuotes,
   type ChapterMaterial,
   type ComposedScene,
-  chapterCaseEvidence, supportsBookDevelopment, reviewChapterCaseEvidence
+  chapterCaseEvidence, shouldGenerateCharacterReferences, supportsBookDevelopment, reviewChapterCaseEvidence
 } from "@book-maker/core";
 import { persistBookArc, persistGeneratedAuthorStance, prepareComposedDevelopment } from "./composedPreparation.js";
 import { prepareBookMaterial } from "./composedChaptersMaterial.js";
@@ -127,7 +127,7 @@ export async function generateBookComposedChapters(options: {
   let plan = options.plan;
   const textModel = providers.text;
   const quality = await loadQualityContext(input);
-  await advanceJobStep(generationJobId, "briefs", 12, "Deciding the author's stance");
+  await advanceJobStep(generationJobId, "briefs", 12, "Deciding the author's stance", { phase: "stance" });
   const originalState = await loadComposedBookState(projectId);
   // A method-shaped stance is refused only on a fresh run: a resumed one
   // composes from the stance its finished chapters were written to.
@@ -150,7 +150,7 @@ export async function generateBookComposedChapters(options: {
   let arc = planBookArc(plan);
   let arcSource: "stored" | "model" | undefined = arc ? "stored" : undefined;
   if (!arc && BOOK_ARC) {
-    await updateJobProgress(generationJobId, { progress: 13, message: "Planning the book's arc" });
+    await advanceJobStep(generationJobId, "briefs", 13, "Planning the book's arc", { phase: "arc" });
     const architected = await architectBook({ input, plan, stance, textModel });
     if (architected.arc) {
       arc = architected.arc;
@@ -252,6 +252,7 @@ export async function generateBookComposedChapters(options: {
       phase,
       ...(typeof chapterIndex === "number" ? { chapterIndex } : {})
     });
+  let stillPreparing = true;
   if (resume.kind === "fresh") {
     chapterIds = await resetBookForDirectGeneration(projectId, setups, plan.promises ?? []);
     stored.chapters = [];
@@ -273,12 +274,20 @@ export async function generateBookComposedChapters(options: {
     }
     await prisma.project.update({ where: { id: projectId }, data: { status: "GENERATING" } });
     await reportChapter(20, `Resuming with ${doneChapters.size} finished chapters`, "compose");
+    stillPreparing = false;
   }
 
+  if (stillPreparing && shouldGenerateCharacterReferences(input, plan)) {
+    await advanceJobStep(generationJobId, "briefs", 16, "Drawing character reference sheets", { phase: "references" });
+  }
   await ensureCharacterReferenceAssets({ projectId, planId, input, plan, providers, strategy, generationJobId });
   await maybeEnqueueCover(projectId, planId, input);
 
-  await updateJobProgress(generationJobId, { progress: 16, message: "Planning the shape of every chapter" });
+  if (stillPreparing) {
+    await advanceJobStep(generationJobId, "briefs", 16, "Planning the shape of every chapter", { phase: "forms" });
+  } else {
+    await updateJobProgress(generationJobId, { progress: 16, message: "Planning the shape of every chapter" });
+  }
   const fixed = stored.chapters
     .filter((chapter) => doneChapters.has(chapter.index) && chapter.composition)
     .map((chapter) => chapter.composition!);

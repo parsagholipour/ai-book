@@ -4,7 +4,7 @@ import { chapterSetupsForPlan, normalizedChapters, planInputSnapshot } from "./b
 import { chapterSetupForPage } from "./generationContext.js";
 import { enforceProductionMapIntegrity } from "./productionMapIntegrity.js";
 import { applyPlanThinkingBoost, loadQualityContext } from "./qualitySettings.js";
-import { updateJobProgress } from "../runtime/jobLifecycle.js";
+import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
 import { type ChapterSetup } from "../runtime/jobTypes.js";
 import { jsonInputValue } from "../runtime/serialization.js";
 import {
@@ -79,10 +79,7 @@ export async function prepareChapterSetups(options: {
   const quality = lazyQualityGate(options.input);
   const createChapterBriefs = options.strategy.createChapterBriefs;
   if (createChapterBriefs) {
-    await updateJobProgress(options.generationJobId, {
-      progress: 25,
-      message: "Creating global page map"
-    });
+    await advanceJobStep(options.generationJobId, "briefs", 25, "Creating global page map", { phase: "briefs" });
     applyPlanThinkingBoost(options.providers.text, await quality("planThinkingBoost"));
     const briefs = await createChapterBriefs({
       input: options.input,
@@ -146,10 +143,13 @@ export async function prepareChapterSetups(options: {
   // reports the brief being *started*; order can interleave, the results
   // cannot — mapWithConcurrency preserves positions.
   const briefs = await mapWithConcurrency(chapterRanges, 3, async (setup, chapterIndex) => {
-    await updateJobProgress(options.generationJobId, {
-      progress: 15 + Math.round((chapterIndex / Math.max(chapterRanges.length, 1)) * 40),
-      message: `Chapter brief ${chapterIndex + 1}/${chapterRanges.length}`
-    });
+    await advanceJobStep(
+      options.generationJobId,
+      "briefs",
+      15 + Math.round((chapterIndex / Math.max(chapterRanges.length, 1)) * 40),
+      `Chapter brief ${chapterIndex + 1}/${chapterRanges.length}`,
+      { phase: "briefs", chapterIndex: setup.chapter.index, total: chapterRanges.length }
+    );
     return options.strategy.generateChapterBrief({
       input: options.input,
       plan: options.plan,

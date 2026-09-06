@@ -20,6 +20,7 @@ vi.mock("@book-maker/db", async () => ({
   ...(await import("../testing/dbScopeMocks.js")).dbScopeMocks()
 }));
 vi.mock("../runtime/jobLifecycle.js", () => ({
+  advanceJobStep: vi.fn(),
   updateJobProgress: mocks.updateJobProgress
 }));
 vi.mock("./qualitySettings.js", () => ({

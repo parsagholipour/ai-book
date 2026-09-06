@@ -265,7 +265,8 @@ class _GenerationProgressBubbleState
               ),
               if (steps.isNotEmpty) ...[
                 const SizedBox(height: 12),
-                for (final step in steps) ProgressStepRow(step: step),
+                for (final step in steps)
+                  ProgressStepRow(step: step, showDetail: true),
               ],
               const SizedBox(height: 12),
               Wrap(

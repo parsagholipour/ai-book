@@ -6,7 +6,7 @@ import { Prisma, prisma } from "@book-maker/db";
 import { config } from "../runtime/config.js";
 import { prepareBookMaterial, recordDossierSources } from "./composedChaptersMaterial.js";
 import { prepareVerifiedCases } from "./composedEvidence.js";
-import { updateJobProgress } from "../runtime/jobLifecycle.js";
+import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import type { loadQualityContext } from "./qualitySettings.js";
 
 /** Freeze the research and new structure together before any page can use either. */
@@ -45,11 +45,11 @@ export async function prepareComposedDevelopment(options: {
   const before = await prisma.planVersion.findUnique({ where: { id: options.planId }, select: { planningPackage: true } });
   if (!before || !isRecord(before.planningPackage)) throw new Error("The book plan is unavailable for development.");
   const material = await prepareBookMaterial({ ...options, evidenceRequired: verify, persist: false });
-  await updateJobProgress(options.generationJobId, { progress: 15, message: "Checking evidence for the book's main cases" });
+  await advanceJobStep(options.generationJobId, "briefs", 15, "Checking evidence for the book's main cases", { phase: "evidence" });
   const verified = await prepareVerifiedCases({ ...options, episodes: material.episodes, dossier: material.dossier, coverage: replan ? "book" : "chapter" });
   let plan: BookPlan = { ...options.plan, ...verified, authorStance: options.stance };
   if (replan) {
-    await updateJobProgress(options.generationJobId, { progress: 16, message: "Developing the book's chapter progression" });
+    await advanceJobStep(options.generationJobId, "briefs", 16, "Developing the book's chapter progression", { phase: "develop" });
     plan = await developBookPlan({ ...options, plan, dossier: verified.dossier });
   }
   const persisted = await persistPreparedComposedPlan(options.projectId, options.planId, plan, before.planningPackage);

@@ -9,9 +9,9 @@ import { jsonRecord, stringField } from "./support.js";
  * chapter is being outlined, which page is being polished, how far the export
  * has got. None of it can be forwarded verbatim: `GenerationJob.message` is
  * internal text full of queue and provider vocabulary. So this module reads the
- * *step keys* the worker sets and maps them through a curated table, exactly as
- * `serializePlanningProgress` does for planning, and takes every number from
- * counts rather than prose.
+ * *step keys* and closed `phase` tokens the worker sets and maps them through a
+ * curated table, exactly as `serializePlanningProgress` does for planning, and
+ * takes every number from counts rather than prose.
  */
 
 type GenerationProgressDto = NonNullable<MobileProjectStatusDto["generationProgress"]>;
@@ -31,6 +31,20 @@ const CHAPTER_WRITE_LABEL = "Writing your chapters";
 
 /** Closed tokens the composed-chapters pass stamps on GENERATE_BOOK `setup`. */
 const CHAPTER_WRITE_PHASES = new Set(["compose", "scene", "edit", "read", "finalize"]);
+
+/** Closed tokens GENERATE_BOOK stamps on `briefs` (and sequential `setup`) before writing. */
+const PREPARE_PHASES = new Set([
+  "stance",
+  "arc",
+  "episodes",
+  "sources",
+  "evidence",
+  "develop",
+  "forms",
+  "briefs",
+  "references",
+  "research"
+]);
 
 /**
  * A page draft's own output, used only to ease the bar between page
@@ -104,6 +118,13 @@ type ChapterWrite = {
   chapterIndex?: number;
 };
 
+type PrepareProgress = {
+  phase?: string;
+  done?: number;
+  total?: number;
+  chapterIndex?: number;
+};
+
 type GenerationPhase = {
   bookJob: StatusJob | undefined;
   activeBookStep: string | undefined;
@@ -115,6 +136,8 @@ type GenerationPhase = {
   writingStarted: boolean;
   /** Composed-chapters counters on GENERATE_BOOK `setup`; sequential setup has none. */
   chapterWrite: ChapterWrite | null;
+  /** Structured prepare work on `briefs`, or on sequential `setup` before pages exist. */
+  prepare: PrepareProgress | null;
   pagesDone: boolean;
   imagesDone: boolean;
   failedStep: GenerationStepKey | null;
@@ -157,6 +180,7 @@ function readPhase(status: ProjectStatusResult): GenerationPhase {
     activeCompileStep: activeStepKey(compileJob),
     writingStarted,
     chapterWrite,
+    prepare: prepareFrom(bookJob, activeBookStep, chapterWrite),
     pagesDone: pages.target > 0 && pages.complete >= pages.target,
     imagesDone: pipelineStatus("images") === "done",
     failedStep: failedStepFor(jobs, writingStarted)
@@ -191,6 +215,12 @@ function stepDetail(
   const pages = status.progress.pages;
   switch (key) {
     case "prepare": {
+      if (!phase.writingStarted) {
+        const counted = prepareCountDetail(phase.prepare);
+        if (counted) {
+          return counted;
+        }
+      }
       const chapters = chapterCount(status);
       return chapters > 0 ? `${chapters} ${chapters === 1 ? "chapter" : "chapters"}` : null;
     }
@@ -298,7 +328,7 @@ export function liveDetail(status: ProjectStatusResult, phase: GenerationPhase):
     }
     return null;
   }
-  return bookPhrase(phase.activeBookStep, status);
+  return bookPhrase(phase.activeBookStep, status, phase.prepare);
 }
 
 function chapterWritePhrase(write: ChapterWrite | null): string | null {
@@ -322,7 +352,15 @@ function chapterWritePhrase(write: ChapterWrite | null): string | null {
   }
 }
 
-function bookPhrase(stepKey: string | undefined, status: ProjectStatusResult): string | null {
+function bookPhrase(
+  stepKey: string | undefined,
+  status: ProjectStatusResult,
+  prepare: PrepareProgress | null
+): string | null {
+  const phrase = preparePhrase(prepare, chapterCount(status));
+  if (phrase) {
+    return phrase;
+  }
   switch (stepKey) {
     case "briefs": {
       const chapters = chapterCount(status);
@@ -335,6 +373,85 @@ function bookPhrase(stepKey: string | undefined, status: ProjectStatusResult): s
     default:
       return "Preparing to write your book";
   }
+}
+
+function preparePhrase(prepare: PrepareProgress | null, chapters: number): string | null {
+  if (!prepare?.phase || !PREPARE_PHASES.has(prepare.phase)) {
+    return null;
+  }
+  const chapter = typeof prepare.chapterIndex === "number" ? prepare.chapterIndex : undefined;
+  const total = typeof prepare.total === "number" ? prepare.total : undefined;
+  switch (prepare.phase) {
+    case "stance":
+      return "Finding the book's voice";
+    case "arc":
+      return "Planning how the book unfolds";
+    case "episodes":
+      return "Planning what each chapter covers";
+    case "sources":
+      return chapter !== undefined && total !== undefined
+        ? `Gathering sources for chapter ${chapter} of ${total}`
+        : "Gathering sources for your chapters";
+    case "evidence":
+      return "Checking the book's sources";
+    case "develop":
+      return "Shaping how the chapters connect";
+    case "forms":
+      return "Planning the shape of every chapter";
+    case "briefs":
+      return chapter !== undefined && total !== undefined
+        ? `Mapping out chapter ${chapter} of ${total}`
+        : chapters > 0
+          ? `Mapping out your ${chapters} chapters`
+          : "Mapping out your chapters";
+    case "references":
+      return "Drawing your characters";
+    case "research":
+      return chapters > 0 ? `Looking up background for your ${chapters} chapters` : "Looking up background for your book";
+    default:
+      return null;
+  }
+}
+
+function prepareCountDetail(prepare: PrepareProgress | null): string | null {
+  if (!prepare) {
+    return null;
+  }
+  if (prepare.phase === "references" && typeof prepare.total === "number" && prepare.total > 0) {
+    const done = typeof prepare.done === "number" ? prepare.done : 0;
+    return `${done} of ${prepare.total} ${prepare.total === 1 ? "character" : "characters"}`;
+  }
+  if (typeof prepare.chapterIndex === "number" && typeof prepare.total === "number" && prepare.total > 0) {
+    return `${prepare.chapterIndex} of ${prepare.total} chapters`;
+  }
+  return null;
+}
+
+function prepareFrom(
+  bookJob: StatusJob | undefined,
+  activeBookStep: string | undefined,
+  chapterWrite: ChapterWrite | null
+): PrepareProgress | null {
+  if (chapterWrite || (activeBookStep !== "briefs" && activeBookStep !== "setup") || !bookJob) {
+    return null;
+  }
+  const step = bookJob.steps.find((entry) => entry.status === "active" && entry.key === activeBookStep);
+  if (!step) {
+    return null;
+  }
+  const phase = typeof step.phase === "string" ? step.phase : undefined;
+  const chapterIndex = typeof step.chapterIndex === "number" ? step.chapterIndex : undefined;
+  const done = typeof step.done === "number" ? step.done : undefined;
+  const total = typeof step.total === "number" ? step.total : undefined;
+  if (phase === undefined && chapterIndex === undefined && done === undefined && total === undefined) {
+    return null;
+  }
+  return {
+    ...(phase ? { phase } : {}),
+    ...(done !== undefined ? { done } : {}),
+    ...(total !== undefined ? { total } : {}),
+    ...(chapterIndex !== undefined ? { chapterIndex } : {})
+  };
 }
 
 function pagePhrase(job: StatusJob, status: ProjectStatusResult): string | null {
@@ -406,7 +523,17 @@ export function generationProgressPercent(
   const writeEnd = imagesEnabled ? 80 : 86;
   const finishStart = imagesEnabled ? ILLUSTRATE_BAND.end : writeEnd;
 
-  const prepare = PREPARE_BAND.start + band(PREPARE_BAND) * clamp01((phase.bookJob?.progress ?? 0) / PREPARE_PROGRESS_CEILING);
+  const prepareRatio = Math.max(
+    clamp01((phase.bookJob?.progress ?? 0) / PREPARE_PROGRESS_CEILING),
+    phase.prepare?.total
+      ? clamp01(
+          (phase.prepare.done ??
+            (typeof phase.prepare.chapterIndex === "number" ? Math.max(0, phase.prepare.chapterIndex - 1) : 0)) /
+            phase.prepare.total
+        )
+      : 0
+  );
+  const prepare = PREPARE_BAND.start + band(PREPARE_BAND) * prepareRatio;
 
   // The nudge is capped at a single page's worth of the bar, so a long-running
   // draft keeps the bar alive without ever overtaking the pages actually saved.

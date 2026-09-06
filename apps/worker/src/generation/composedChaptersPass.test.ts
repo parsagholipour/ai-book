@@ -376,6 +376,13 @@ describe("generateBookComposedChapters", () => {
     expect(mocks.publishStagedGeneratedPage).not.toHaveBeenCalled();
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
 
+    const briefPhases = vi
+      .mocked(advanceJobStep)
+      .mock.calls.filter((call) => call[1] === "briefs")
+      .map((call) => call[4]?.phase);
+    expect(briefPhases).toContain("stance");
+    expect(briefPhases).toContain("forms");
+
     const setupCounters = vi
       .mocked(advanceJobStep)
       .mock.calls.filter((call) => call[1] === "setup" && call[4] && typeof call[4].total === "number")

@@ -16,7 +16,7 @@ import { createLoggedJudgeTextModel, createLoggedProviders } from "../providers/
 import { createRunLogger } from "../providers/runLogging.js";
 import { config } from "../runtime/config.js";
 import { enqueueWorkerJob, maybeEnqueueCompile, maybeEnqueueCover, parallelPageWaveSize } from "../runtime/dispatch.js";
-import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
+import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import { type JobCompletion } from "../runtime/jobTypes.js";
 import {
   bookPlanSchema,
@@ -435,10 +435,7 @@ export async function maybeExpandStrategyResearch(options: {
     return;
   }
 
-  await updateJobProgress(options.generationJobId, {
-    progress: 15,
-    message: "Expanding chapter research"
-  });
+  await advanceJobStep(options.generationJobId, "briefs", 15, "Expanding chapter research", { phase: "research" });
   const sources = await expandChapterResearch({
     input: options.input,
     plan: options.plan,
