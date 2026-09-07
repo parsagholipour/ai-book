@@ -21,6 +21,7 @@ import {
   queueChatPlanRevision
 } from "./editOperations.js";
 import { sendMobileError, sendProjectNotFound } from "./httpErrors.js";
+import { redoLastBookEdit } from "./bookEditRedoApply.js";
 import { undoLastBookEdit } from "./manualEdits.js";
 import {
   activeProjectChatLeafId,
@@ -289,6 +290,11 @@ export async function handleProjectChatIntent(options: {
 
   if (intent.kind === "undo_last_edit") {
     const reply = await undoLastBookEdit(project, intent, userMessageId);
+    return { reply, operation: null };
+  }
+
+  if (intent.kind === "redo_last_edit") {
+    const reply = await redoLastBookEdit(project, intent, userMessageId);
     return { reply, operation: null };
   }
 

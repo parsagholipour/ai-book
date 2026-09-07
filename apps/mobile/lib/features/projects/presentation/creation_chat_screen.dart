@@ -437,6 +437,14 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                                     ),
                                   ),
                             undoingProjectEdit: _undoingProjectEdit,
+                            onRedoProjectEdit: activeProjectId == null
+                                ? null
+                                : () => unawaited(
+                                    _redoProjectEdit(
+                                      projectId: activeProjectId,
+                                    ),
+                                  ),
+                            redoingProjectEdit: _redoingProjectEdit,
                             onRetryFailedMessage: (localId) => unawaited(
                               ref
                                   .read(creationChatControllerProvider.notifier)

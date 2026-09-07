@@ -30,6 +30,8 @@ class _Transcript extends StatelessWidget {
     this.onCancelEditProposal,
     this.onUndoProjectEdit,
     this.undoingProjectEdit = false,
+    this.onRedoProjectEdit,
+    this.redoingProjectEdit = false,
     this.onRetryFailedMessage,
     this.onDismissFailedMessage,
     this.onRetryFailedOperation,
@@ -75,6 +77,10 @@ class _Transcript extends StatelessWidget {
 
   /// Whether the undo the card offered is still in flight.
   final bool undoingProjectEdit;
+  final VoidCallback? onRedoProjectEdit;
+
+  /// Whether the redo the card offered is still in flight.
+  final bool redoingProjectEdit;
   final ValueChanged<String>? onRetryFailedMessage;
   final ValueChanged<String>? onDismissFailedMessage;
   final void Function(MobileBookEditOperation operation)?
@@ -204,11 +210,13 @@ class _Transcript extends StatelessWidget {
           operation: operation,
           retrying: planBusyAction == 'retry-${operation.id}',
           undoing: undoingProjectEdit,
+          redoing: redoingProjectEdit,
           liveStatus: generationStatusValue?.asData?.value,
           onRetry: onRetryFailedOperation == null
               ? null
               : () => onRetryFailedOperation!(operation),
           onUndo: onUndoProjectEdit,
+          onRedo: onRedoProjectEdit,
         );
       }
       return _ProjectChatMessageBubble(

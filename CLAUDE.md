@@ -274,6 +274,7 @@ code in that area, however obvious the rule looks.
 - **Changing *which* pages a book has is its own edit, and it used to be a whole new project.** → apps/api/src/mobile/CLAUDE.md
 - **Undoing a structural edit moves the book to a different plan version, and the recompile has to follow it there.** → packages/db/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
 - **Undo is offered only for an edit the undo would actually revert, and that is one predicate.** → apps/api/src/mobile/CLAUDE.md
+- **Redo is offered only for an undone edit the redo would actually restore, and that is one predicate.** → apps/api/src/mobile/CLAUDE.md
 
 ### Drafting and page quality
 

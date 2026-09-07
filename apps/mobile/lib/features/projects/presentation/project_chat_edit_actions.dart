@@ -1,7 +1,7 @@
 part of 'project_chat_screen.dart';
 
 // Acting on an edit that already exists: retrying a failed operation, applying
-// or cancelling a priced proposal, and undoing the last edit.
+// or cancelling a priced proposal, and undoing or redoing the last edit.
 //
 // A mixin rather than plain helpers because these need `setState`, `ref`,
 // `context` and `mounted`, and because the two in-flight flags below are read
@@ -12,19 +12,23 @@ mixin _ProjectChatEditActions on ConsumerState<ProjectChatScreen> {
   /// The operation whose retry is in flight, if any.
   String? _retryingOperationId;
   bool _undoing = false;
-  bool _awaitingUndoStatus = false;
+  bool _redoing = false;
+  bool _awaitingRebuildStatus = false;
 
   bool get _hasPendingOperationAction =>
-      _undoing || _awaitingUndoStatus || _retryingOperationId != null;
+      _undoing ||
+      _redoing ||
+      _awaitingRebuildStatus ||
+      _retryingOperationId != null;
 
   List<String> get _operationThinkingStages =>
-      _awaitingUndoStatus ? undoRebuildThinkingStages : bookChatThinkingStages;
+      _awaitingRebuildStatus ? undoRebuildThinkingStages : bookChatThinkingStages;
 
-  /// Replaces the local Undo handoff with streamed progress (or removes it if
-  /// a very fast rebuild already settled before the first status tick).
+  /// Replaces the local Undo/Redo handoff with streamed progress (or removes it
+  /// if a very fast rebuild already settled before the first status tick).
   void _didReceiveProjectStatus() {
-    if (!_awaitingUndoStatus) return;
-    setState(() => _awaitingUndoStatus = false);
+    if (!_awaitingRebuildStatus) return;
+    setState(() => _awaitingRebuildStatus = false);
   }
 
   // Provided by the screen this mixin is applied to.
@@ -178,7 +182,10 @@ mixin _ProjectChatEditActions on ConsumerState<ProjectChatScreen> {
   }
 
   Future<void> _undoLastEdit() async {
-    if (_undoing || _sending) return;
+    // After Undo B, card B can offer Redo while an older card A still offers
+    // Undo. Both fire unawaited; starting A while B's Redo is in flight races
+    // two manuscript writes.
+    if (_redoing || _undoing || _sending) return;
     final requestId = _newRequestId('undo');
     setState(() => _undoing = true);
     try {
@@ -189,7 +196,7 @@ mixin _ProjectChatEditActions on ConsumerState<ProjectChatScreen> {
       _armFallingEdge(result.operation);
       setState(() {
         _undoing = false;
-        _awaitingUndoStatus = result.reply.metadata['undo'] is Map;
+        _awaitingRebuildStatus = result.reply.metadata['undo'] is Map;
       });
       _refresh();
       _scrollToBottomSoon();
@@ -197,7 +204,35 @@ mixin _ProjectChatEditActions on ConsumerState<ProjectChatScreen> {
       if (!mounted) return;
       setState(() {
         _undoing = false;
-        _awaitingUndoStatus = false;
+        _awaitingRebuildStatus = false;
+      });
+        ScaffoldMessenger.of(
+        context,
+      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
+    }
+  }
+
+  Future<void> _redoLastEdit() async {
+    if (_redoing || _undoing || _sending) return;
+    final requestId = _newRequestId('redo');
+    setState(() => _redoing = true);
+    try {
+      final result = await ref
+          .read(projectsRepositoryProvider)
+          .redoLastBookEdit(projectId: widget.projectId, requestId: requestId);
+      if (!mounted) return;
+      _armFallingEdge(result.operation);
+      setState(() {
+        _redoing = false;
+        _awaitingRebuildStatus = result.reply.metadata['redo'] is Map;
+      });
+      _refresh();
+      _scrollToBottomSoon();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _redoing = false;
+        _awaitingRebuildStatus = false;
       });
       ScaffoldMessenger.of(
         context,

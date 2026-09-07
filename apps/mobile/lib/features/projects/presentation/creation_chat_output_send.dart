@@ -21,6 +21,7 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
   /// True only while the undo request itself is on the wire, so the card's
   /// Undo button can show its own spinner without every other send doing so.
   bool _undoingProjectEdit = false;
+  bool _redoingProjectEdit = false;
   String? _editingProjectMessageId;
   String? _pendingProjectRequestId;
   String? _pendingProjectRequestText;
@@ -358,6 +359,36 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
       setState(() {
         _projectChatSending = false;
         _undoingProjectEdit = false;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
+    }
+  }
+
+  Future<void> _redoProjectEdit({required String projectId}) async {
+    if (_projectChatSending) return;
+    final requestId = 'project-redo-${DateTime.now().microsecondsSinceEpoch}';
+    setState(() {
+      _projectChatSending = true;
+      _redoingProjectEdit = true;
+    });
+    _resumeStickToBottom();
+    try {
+      await ref
+          .read(projectsRepositoryProvider)
+          .redoLastBookEdit(projectId: projectId, requestId: requestId);
+      _refreshOutput(projectId);
+      if (!mounted) return;
+      setState(() {
+        _projectChatSending = false;
+        _redoingProjectEdit = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _projectChatSending = false;
+        _redoingProjectEdit = false;
       });
       ScaffoldMessenger.of(
         context,

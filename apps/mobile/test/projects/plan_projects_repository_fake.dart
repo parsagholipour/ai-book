@@ -336,6 +336,14 @@ class PlanProjectsRepository implements ProjectsRepository {
   }
 
   @override
+  Future<MobileProjectChatSendResult> redoLastBookEdit({
+    required String projectId,
+    String? requestId,
+  }) async {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<MobileProjectChat> switchProjectChatBranch({
     required String projectId,
     required String messageId,

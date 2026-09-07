@@ -496,8 +496,10 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
       operation: operation,
       retrying: _retryingOperationId == operation.id,
       undoing: _undoing,
+      redoing: _redoing,
       onRetry: () => _retryOperation(operation),
       onUndo: () => unawaited(_undoLastEdit()),
+      onRedo: () => unawaited(_redoLastEdit()),
     );
   }
 

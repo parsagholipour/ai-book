@@ -19,6 +19,7 @@ import { type MobileProjectChatMessageRecord, type MobileProjectChatMessageRespo
 import { hasOpenProjectWork } from "../editOperations.js";
 import { resolvePendingEditTurn } from "../pendingEditTurn.js";
 import { hitAuthenticatedLimit, requireMobileAuth, sendMobileError, sendProjectNotFound } from "../httpErrors.js";
+import { redoLastBookEdit } from "../bookEditRedoApply.js";
 import { undoLastBookEdit } from "../manualEdits.js";
 import {
   activeProjectChatLeafId,
@@ -60,7 +61,7 @@ import { expandLibraryCharacterGraph, generationDescription } from "../libraryMe
 import { orderedCharacterRefs } from "../libraryMentionRows.js";
 
 /**
- * Post-generation chat: messages, edit proposals, undo and branch switching.
+ * Post-generation chat: messages, edit proposals, undo, redo and branch switching.
  */
 
 export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, context: MobileRouteContext): Promise<void> {
@@ -556,6 +557,89 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
         clarification: "none"
       };
       const replyMessage = await undoLastBookEdit(project, intent, userMessage.id);
+      return {
+        ...(await loadProjectChatResponse(id)),
+        reply: serializeProjectChatMessage(replyMessage),
+        operation: null
+      } satisfies MobileProjectChatMessageResponseDto;
+    }
+  );
+
+  fastify.post(
+    "/api/mobile/projects/:id/chat/edits/redo",
+    {
+      attachValidation: true,
+      schema: {
+        tags: ["mobile"],
+        body: mobileChatUndoOpenApiBody,
+        response: { 401: mobileAuthError, 404: mobileAuthError }
+      }
+    },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      if (!hitAuthenticatedLimit(draftLimiter, reply, auth.user.id, "project-chat")) {
+        return;
+      }
+      const { id } = idParamsSchema.parse(request.params);
+      const parsed = mobileChatUndoBodySchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Could not redo that edit.");
+      }
+      const project = await loadProjectForChat(auth.user.id, id);
+      if (!project) {
+        return sendProjectNotFound(reply);
+      }
+      if (parsed.data.requestId) {
+        const replay = await replayProjectChatRequest(id, parsed.data.requestId);
+        if (replay) {
+          return replay;
+        }
+      }
+
+      if (await hasOpenProjectWork(id)) {
+        return sendMobileError(
+          reply,
+          409,
+          "PROJECT_BUSY",
+          "This book is still being worked on. Try the redo again once the current job finishes."
+        );
+      }
+
+      const activeMessages = await loadActiveProjectChatMessages(id);
+      let userMessage: MobileProjectChatMessageRecord;
+      try {
+        userMessage = await createUserProjectChatMessage({
+          projectId: id,
+          parentId: activeProjectChatLeafId(activeMessages),
+          content: "Redo",
+          requestId: parsed.data.requestId,
+          metadata: { redoAction: true }
+        });
+      } catch (error) {
+        if (parsed.data.requestId && isPrismaUniqueConflict(error)) {
+          const replay = await replayProjectChatRequest(id, parsed.data.requestId);
+          if (replay) {
+            return replay;
+          }
+          return sendMobileError(reply, 409, "REQUEST_IN_PROGRESS", "That request is still being processed. Try again in a moment.");
+        }
+        throw error;
+      }
+
+      const intent: BookEditIntent = {
+        kind: "redo_last_edit",
+        confidence: 1,
+        reasoning: "Explicit redo API.",
+        affectedPageIndexes: [],
+        assistantMessage: "I’ll put the last undone edit back.",
+        scope: "none",
+        impact: "small_text",
+        clarification: "none"
+      };
+      const replyMessage = await redoLastBookEdit(project, intent, userMessage.id);
       return {
         ...(await loadProjectChatResponse(id)),
         reply: serializeProjectChatMessage(replyMessage),

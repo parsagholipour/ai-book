@@ -97,6 +97,18 @@ export function intentFromDecideAction(
       clarification: "none"
     };
   }
+  if (decision.action === "redo_last_edit") {
+    return {
+      kind: "redo_last_edit",
+      confidence: decision.confidence,
+      reasoning: decision.reasoning,
+      affectedPageIndexes: [],
+      assistantMessage: decision.assistantMessage,
+      scope: "none",
+      impact: "small_text",
+      clarification: "none"
+    };
+  }
   if (decision.action === "plan_revision") {
     return {
       kind: "plan_revision",

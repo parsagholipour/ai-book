@@ -101,9 +101,11 @@ class ProjectChatOperationBubble extends StatelessWidget {
     required this.operation,
     required this.retrying,
     required this.undoing,
+    this.redoing = false,
     this.liveStatus,
     this.onRetry,
     this.onUndo,
+    this.onRedo,
     super.key,
   });
 
@@ -111,12 +113,14 @@ class ProjectChatOperationBubble extends StatelessWidget {
   final MobileBookEditOperation operation;
   final bool retrying;
   final bool undoing;
+  final bool redoing;
 
   /// The project's live status, used only while [operation] is still running
   /// so the card can name the page and step the worker is on right now.
   final MobileProjectStatus? liveStatus;
   final VoidCallback? onRetry;
   final VoidCallback? onUndo;
+  final VoidCallback? onRedo;
 
   @override
   Widget build(BuildContext context) {
@@ -127,9 +131,11 @@ class ProjectChatOperationBubble extends StatelessWidget {
       operation: operation,
       retrying: retrying,
       undoing: undoing,
+      redoing: redoing,
       liveProgress: _liveEditProgress(operation, liveStatus),
       onRetry: operation.isFailed ? onRetry : null,
       onUndo: operation.canUndo ? onUndo : null,
+      onRedo: operation.canRedo ? onRedo : null,
       onViewPlan: operation.isPlanRevision
           ? () => context.push('/projects/$projectId')
           : null,

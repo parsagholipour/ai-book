@@ -306,6 +306,29 @@ export function isUndoRequestMessage(message: string): boolean {
   );
 }
 
+/**
+ * Bare redo / reapply, or “redo the last edit”.
+ *
+ * “Redo the plan” / “redo the outline” are plan regenerations, and
+ * “redo chapter 3” / “redo the book” / “redo page 2” are content ones —
+ * `chapterRegenerateFromMessage` already claims the chapter form. A
+ * prefix match on redo would restore an undone snapshot instead of
+ * revising the plan. Rejecting those nouns keeps this recogniser from
+ * stealing them.
+ */
+export function isRedoRequestMessage(message: string): boolean {
+  const normalized = message.toLowerCase().replace(/[.!?]+$/g, "").trim();
+  if (/\b(?:chapter(?:s|\s+list)?|book|pages?|plan|outline|toc|table of contents|structure)\b/.test(normalized)) {
+    return false;
+  }
+  return (
+    /^(?:please\s+)?(?:can\s+you\s+|could\s+you\s+)?(?:redo|reapply)$/.test(normalized) ||
+    /\b(?:redo|reapply)\s+(?:the\s+|that\s+|my\s+)?(?:last|latest|previous|recent)?\s*(?:edit|change|revision|rewrite)?$/.test(
+      normalized
+    )
+  );
+}
+
 /** Extracts the chapter index from "rewrite chapter 3, make it funnier"-style requests. */
 export function chapterRegenerateFromMessage(message: string): number | null {
   const match = message.match(

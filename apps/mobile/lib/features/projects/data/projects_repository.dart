@@ -86,6 +86,11 @@ abstract interface class ProjectsRepository {
     String? requestId,
   });
 
+  Future<MobileProjectChatSendResult> redoLastBookEdit({
+    required String projectId,
+    String? requestId,
+  });
+
   Future<MobileProjectChat> switchProjectChatBranch({
     required String projectId,
     required String messageId,
@@ -359,6 +364,19 @@ class MobileProjectsRepository implements ProjectsRepository {
   }) async {
     final data = await apiClient.postMap(
       '/api/mobile/projects/$projectId/chat/edits/undo',
+      data: {'requestId': ?requestId},
+      receiveTimeout: llmReceiveTimeout,
+    );
+    return MobileProjectChatSendResult.fromJson(data);
+  }
+
+  @override
+  Future<MobileProjectChatSendResult> redoLastBookEdit({
+    required String projectId,
+    String? requestId,
+  }) async {
+    final data = await apiClient.postMap(
+      '/api/mobile/projects/$projectId/chat/edits/redo',
       data: {'requestId': ?requestId},
       receiveTimeout: llmReceiveTimeout,
     );

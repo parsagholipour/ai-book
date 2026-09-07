@@ -458,6 +458,27 @@ edit instead.
   the chain sees the older edit whole again. If the delete instead becomes permanent, the archive's
   plain key outlives retirement of the structural operation and keeps that partial history hidden.
 
+- **Redo is offered only for an undone edit the redo would actually restore, and that is one predicate.**
+  `canRedoBookEdit` (`mobile/bookEditRedo.ts`) is the whole rule: APPLIED, an undoable kind, already
+  undone (`undoneAt` is a string), and carrying a snapshot-backed record Redo can invert — not a
+  `structuralApplication` stamp. The API cannot replay a structural shift, and the stamp does not
+  keep the after-order or inserted bodies, so a structural undo is honest: no button. The card
+  (`pickRedoableBookEdit` in `loadProjectChatResponse`), the picker inside `redoLastBookEdit` and
+  the claim under the operation row lock all read that predicate. A later not-undone APPLIED
+  undoable edit blocks Redo — restoring the older after-state over the newer one would be the
+  wrong edit. Among unblocked candidates the newest `undoneAt` wins, not `appliedAt`: after Undo B
+  then Undo A, Redo puts A back. `find(canRedo)` on `createdAt desc` would pick B. Undo stamps
+  `redoable` when the snapshots have after fields or a picture record to invert, so a row with
+  nothing to write does not advertise the button. A refusal answers "nothing to redo" rather than
+  falling through to another undone row.
+  Undo stamps each snapshot page's live `Page.storyDelta` onto
+  `classifier.storyDeltasAfter` (JSON `null` when the after extract is empty — never `DbNull`)
+  because `PageEditSnapshot` has no after column; Redo writes those back before
+  `rebuildStoryStateAfterUndo`. Leaving the page on the undone before leaves `Project.storyState`
+  on the undone fold while the reader sees the after prose — later AI work reads the wrong book.
+  A legacy undo with no stash leaves `storyDelta` off the page write rather than inventing one.
+  Redo drops the stash with `undoneAt` so the next Undo restamps from the live pages.
+
 ## Export repair and the quality verdict
 
 - **The mobile export routes never render.** A missing `book.pdf` used to be compiled inside the

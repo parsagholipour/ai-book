@@ -20,6 +20,7 @@ import {
   serializeProjectChatMessage,
   type ProjectForChat
 } from "./projectChat.js";
+import { storyDeltaToRestore, storyDeltasAfterFromPages } from "./bookEditRedo.js";
 import { jsonInputValue, jsonRecord } from "./support.js";
 import { rebuildStoryStateAfterUndo } from "./rebuildStoryState.js";
 import {
@@ -433,6 +434,17 @@ export async function undoLastBookEdit(
       // and a book whose length no longer matches its plan version.
       ({ currentPlanId: planId } = await revertStructuralPageChange(tx, project.id, structural));
     }
+    // Live storyDelta is still the after. Snapshot has no after column;
+    // writing storyDeltaBefore first leaves Redo folding the undone book.
+    const snapshotPageIds = operation.snapshots.map((snapshot) => snapshot.pageId);
+    const liveStoryDeltas =
+      snapshotPageIds.length === 0
+        ? []
+        : await tx.page.findMany({
+            where: { id: { in: snapshotPageIds } },
+            select: { id: true, storyDelta: true }
+          });
+    const storyDeltasAfter = storyDeltasAfterFromPages(liveStoryDeltas, snapshotPageIds);
     for (const snapshot of operation.snapshots) {
       const imagePrompt = imagePromptToRestore(snapshot.pageId, previousAssets, demotedAssets);
       await tx.page.update({
@@ -506,7 +518,17 @@ export async function undoLastBookEdit(
           // concurrent rollback's `structuralRolledBackAt` — or the stamp it
           // deleted — is exactly what that would reinstate.
           ...jsonRecord(held.classifier),
-          undoneAt: new Date().toISOString()
+          undoneAt: new Date().toISOString(),
+          redoable:
+            parseStructuralApplication(held.classifier) === null &&
+            (previousAssets.length > 0 ||
+              operation.snapshots.some(
+                (snapshot) =>
+                  snapshot.titleAfter != null ||
+                  snapshot.markdownAfter != null ||
+                  snapshot.summaryAfter != null
+              )),
+          ...(snapshotPageIds.length > 0 ? { storyDeltasAfter } : {})
         })
       }
     });
@@ -670,11 +692,6 @@ function imagePromptToRestore(
       (typeof asset.destImagePrompt === "string" || asset.destImagePrompt === null)
   );
   return dest ? dest.destImagePrompt : undefined;
-}
-
-/** SQL NULL when the page had no extract; otherwise the snapshotted JSON. */
-function storyDeltaToRestore(storyDeltaBefore: unknown): Prisma.InputJsonValue | typeof Prisma.DbNull {
-  return storyDeltaBefore == null ? Prisma.DbNull : (storyDeltaBefore as Prisma.InputJsonValue);
 }
 
 export const UNDOABLE_EDIT_KINDS = [

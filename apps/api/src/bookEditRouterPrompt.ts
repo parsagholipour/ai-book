@@ -28,7 +28,7 @@ const decideActionsByStage: Record<
 > = {
   plan_ready: ["answer", "clarify", "plan_revision", "show_content"],
   approved_plan: ["answer", "clarify", "plan_revision", "show_content"],
-  complete: ["answer", "clarify", "show_content", "undo_last_edit", "propose_edit"]
+  complete: ["answer", "clarify", "show_content", "undo_last_edit", "redo_last_edit", "propose_edit"]
 };
 
 /**
@@ -55,6 +55,7 @@ export type DecideAction =
   | "clarify"
   | "show_content"
   | "undo_last_edit"
+  | "redo_last_edit"
   | "plan_revision"
   | "propose_edit";
 
@@ -276,6 +277,7 @@ export function routerSystemPrompt(
     stage === "complete"
       ? [
           "Use action undo_last_edit when the user wants to undo, revert, or roll back the most recent edit.",
+          "Use action redo_last_edit when the user wants to redo, reapply, or put back the edit they just undid. Not for regenerating a chapter, a page, or the book.",
           "Regeneration is an actionable change even when no creative change is specified. For 'Generate again', 'Regenerate', or 'Rebuild this book', default to regenerating the current completed book as a new copy: use propose_edit with editTarget structural, preserve its brief and settings, and write a standalone regeneration instruction. If a reply, reader selection, or recent conversation identifies a specific page, chapter, or image to regenerate, use that narrower target. Never answer by writing replacement book text in chat or claiming generation is done. The server must show the cost and get Apply approval before generation starts.",
           "For any charged book change, use action propose_edit. Set editTarget to pages (named pages), matching (find phrase matches), whole_book, chapter, structural (replacing the premise/main character/audience/ending/structure/visual identity), language_copy (new language version), or continuation (continue the book: write the next chapter(s), keep writing, finish the story; set newChapterCount when the user says how many).",
           "For propose_edit, editInstruction is the durable instruction that will execute after this conversation is gone. Write a complete, standalone instruction that resolves fragments and pronouns from userMessage, replyingTo, and recentConversation. State the requested change, the content to add or alter, and its placement or scope. Never refer to ‘it’, ‘that’, ‘the earlier request’, or chat history. For every other action, set editInstruction to an empty string.",

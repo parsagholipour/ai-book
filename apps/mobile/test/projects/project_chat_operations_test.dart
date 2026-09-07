@@ -275,6 +275,110 @@ void main() {
     expect(find.text('See changes'), findsNothing);
   });
 
+  testWidgets('an undone edit offers Redo instead of Undo', (tester) async {
+    final repository = ScriptedProjectsRepository()
+      ..withAppliedEditThenPendingProposal();
+    final operation = repository.operations.first;
+    repository.operations[0] = MobileBookEditOperation(
+      id: operation.id,
+      projectId: operation.projectId,
+      kind: operation.kind,
+      status: operation.status,
+      affectedPageIndexes: operation.affectedPageIndexes,
+      creditsCharged: operation.creditsCharged,
+      currentAction: operation.currentAction,
+      createdAt: operation.createdAt,
+      anchorMessageId: operation.anchorMessageId,
+      canUndo: false,
+      canRedo: true,
+      changesAvailable: operation.changesAvailable,
+    );
+    await tester.pumpWidget(chatApp(repository));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Redo'), findsOneWidget);
+    expect(find.text('Undo'), findsNothing);
+  });
+
+  testWidgets(
+    'undo on an older card does not start while redo is in flight',
+    (tester) async {
+      // After Undo B, card B offers Redo and older card A can still offer
+      // Undo. Both fire unawaited; tapping A while B is spinning would
+      // race two manuscript writes.
+      final repository = ScriptedProjectsRepository()
+        ..withAppliedEditThenPendingProposal()
+        ..withSecondAppliedEdit();
+      final newer = repository.operations[0];
+      final older = repository.operations[1];
+      repository.operations[0] = MobileBookEditOperation(
+        id: newer.id,
+        projectId: newer.projectId,
+        kind: newer.kind,
+        status: newer.status,
+        affectedPageIndexes: newer.affectedPageIndexes,
+        creditsCharged: newer.creditsCharged,
+        currentAction: newer.currentAction,
+        createdAt: newer.createdAt,
+        anchorMessageId: newer.anchorMessageId,
+        canUndo: false,
+        canRedo: true,
+        changesAvailable: newer.changesAvailable,
+      );
+      repository.operations[1] = MobileBookEditOperation(
+        id: older.id,
+        projectId: older.projectId,
+        kind: older.kind,
+        status: older.status,
+        affectedPageIndexes: older.affectedPageIndexes,
+        creditsCharged: older.creditsCharged,
+        currentAction: older.currentAction,
+        createdAt: older.createdAt,
+        anchorMessageId: older.anchorMessageId,
+        canUndo: true,
+        canRedo: false,
+        changesAvailable: older.changesAvailable,
+      );
+      final redoHang = Completer<void>();
+      repository.redoGates.add(redoHang);
+      repository.redoResult = repository.successfulRedoResult;
+
+      await tester.pumpWidget(chatApp(repository));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Redo'));
+      for (var frame = 0; frame < 4; frame++) {
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+
+      expect(repository.redoCalls, 1);
+      // The older Undo sits under the app bar until we scroll to it. A tap
+      // that misses still leaves undoCalls at 0, which would pass this
+      // test without ever exercising the gate.
+      await tester.ensureVisible(find.text('Undo'));
+      await tester.pump();
+      expect(
+        tester
+            .widget<TextButton>(find.widgetWithText(TextButton, 'Undo'))
+            .onPressed,
+        isNull,
+        reason: 'the live Redo has to disable the sibling Undo too',
+      );
+      // Disabled buttons drop pointer events; the tap is the reader trying.
+      await tester.tap(find.text('Undo'), warnIfMissed: false);
+      await tester.pump();
+
+      expect(
+        repository.undoCalls,
+        0,
+        reason: 'Redo is still in flight; Undo must not start a second write',
+      );
+
+      redoHang.complete();
+      await tester.pumpAndSettle();
+    },
+  );
+
   testWidgets('every applied edit gets its own entry, not just the newest', (
     tester,
   ) async {

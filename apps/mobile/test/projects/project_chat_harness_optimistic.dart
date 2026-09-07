@@ -53,6 +53,10 @@ class ScriptedProjectsRepository implements ProjectsRepository {
   final statusController = StreamController<MobileProjectStatus>.broadcast();
   MobileProjectChatSendResult Function()? applyResult;
   MobileProjectChatSendResult Function()? undoResult;
+  MobileProjectChatSendResult Function()? redoResult;
+  final redoGates = <Completer<void>>[];
+  int undoCalls = 0;
+  int redoCalls = 0;
 
   /// The operation a send comes back with, when the message queued real work.
   MobileBookEditOperation? sendOperation;
@@ -262,6 +266,24 @@ class ScriptedProjectsRepository implements ProjectsRepository {
     );
   }
 
+  /// Settles Redo without rebuild-handoff metadata, so a test that only needed
+  /// the request to finish can [WidgetTester.pumpAndSettle].
+  MobileProjectChatSendResult successfulRedoResult() {
+    _contents.add((role: 'user', content: 'Redo'));
+    _contents.add((
+      role: 'assistant',
+      content:
+          'I put the last change back and I’m rebuilding your book now. '
+          'Redo is free.',
+    ));
+    final chat = _chat();
+    return MobileProjectChatSendResult(
+      messages: chat.messages,
+      operations: chat.operations,
+      reply: chat.messages.last,
+    );
+  }
+
   @override
   Future<MobileProjectChat> getProjectChat(
     String id, {
@@ -330,7 +352,22 @@ class ScriptedProjectsRepository implements ProjectsRepository {
     required String projectId,
     String? requestId,
   }) async {
+    undoCalls += 1;
     final build = undoResult;
+    if (build == null) throw UnimplementedError();
+    return build();
+  }
+
+  @override
+  Future<MobileProjectChatSendResult> redoLastBookEdit({
+    required String projectId,
+    String? requestId,
+  }) async {
+    redoCalls += 1;
+    if (redoGates.isNotEmpty) {
+      await redoGates.removeAt(0).future;
+    }
+    final build = redoResult;
     if (build == null) throw UnimplementedError();
     return build();
   }

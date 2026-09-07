@@ -360,6 +360,8 @@ export type MobileBookEditOperationDto = {
   anchorMessageId: string | null;
   /** True when this applied edit is the latest undoable snapshot-backed change. */
   canUndo: boolean;
+  /** True when this applied edit is the undone change Redo would restore. */
+  canRedo: boolean;
   /** True when before/after page snapshots exist, so the edit can be reviewed. */
   changesAvailable: boolean;
   /**

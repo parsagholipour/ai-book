@@ -15,6 +15,11 @@ import {
   type MobileProjectChatMessageResponseDto,
   type MobileProjectChatResponseDto
 } from "./dto.js";
+import {
+  bookEditRedoCandidate,
+  canRedoBookEdit,
+  pickRedoableBookEdit
+} from "./bookEditRedo.js";
 import { canUndoBookEdit, hasBookEditUndoRecord } from "./manualEdits.js";
 import { findOpenProposalId } from "./pendingEditState.js";
 import { currentActionForEditOperation } from "./editOperationCopy.js";
@@ -103,11 +108,17 @@ export async function loadProjectChatResponse(
     .filter((operation) => shouldExposeChatOperation(operation, planVersions))
     .filter((operation) => shouldExposeChatOperationForBranch(operation, activeMessageIds, activeOperationIds));
   const latestUndoableId = exposedOperations.find((operation) => operationCanUndo(operation))?.id ?? null;
+  const latestRedoableId =
+    pickRedoableBookEdit(exposedOperations.map((operation) => bookEditRedoCandidate(operation)))?.id ?? null;
   return {
     messages: exposedMessages.map((message) => serializeProjectChatMessage(message, activeChat.branches.get(message.id) ?? null)),
     plans: planVersions.map((planVersion) => serializePlan(planVersion)),
     operations: exposedOperations.map((operation) =>
-      serializeBookEditOperation(operation, { canUndo: operation.id === latestUndoableId, pageNumbering })
+      serializeBookEditOperation(operation, {
+        canUndo: operation.id === latestUndoableId,
+        canRedo: operation.id === latestRedoableId,
+        pageNumbering
+      })
     ),
     hasMore,
     nextCursor: hasMore ? exposedMessages[0]?.id ?? null : null,
@@ -491,7 +502,7 @@ export function sanitizePublicChatMetadata(value: MobileJsonValue): MobileJsonVa
 
 export function serializeBookEditOperation(
   operation: MobileBookEditOperationRecord,
-  options?: { canUndo?: boolean; pageNumbering?: ReaderPageNumbering }
+  options?: { canUndo?: boolean; canRedo?: boolean; pageNumbering?: ReaderPageNumbering }
 ): MobileBookEditOperationDto {
   const numbering = options?.pageNumbering ?? MODEL_PAGE_NUMBERING;
   const latestAttempt = operation.generationAttempts?.[0] ?? null;
@@ -539,6 +550,7 @@ export function serializeBookEditOperation(
     appliedAt: operation.appliedAt?.toISOString() ?? null,
     anchorMessageId: operation.assistantMessageId ?? operation.userMessageId ?? null,
     canUndo: options?.canUndo ?? false,
+    canRedo: options?.canRedo ?? false,
     changesAvailable: editChangesAvailable(operation),
     creditsRefunded: operationCreditsRefunded(operation),
     creditsRefundedAmount: operationCreditsRefundedAmount(operation)
@@ -615,6 +627,18 @@ export function operationCanUndo(operation: MobileBookEditOperationRecord): bool
     snapshotCount: operation._count?.snapshots ?? 0,
     archivedSnapshotCount: operation._count?.archivedSnapshots ?? 0
   });
+}
+
+/**
+ * Whether to draw Redo on this operation's card.
+ *
+ * It is `canRedoBookEdit` and nothing else, because `redoLastBookEdit` picks
+ * with the same call. The chat load still asks `pickRedoableBookEdit` so a
+ * later not-undone edit, or a more recently undone one, keeps the button on
+ * the row Redo would actually restore.
+ */
+export function operationCanRedo(operation: MobileBookEditOperationRecord): boolean {
+  return canRedoBookEdit(bookEditRedoCandidate(operation));
 }
 
 export async function loadProjectForChat(userId: string, projectId: string) {

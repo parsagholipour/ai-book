@@ -883,6 +883,14 @@ describe("mobile editable book and manual edits", () => {
       where: { id: "page-2" },
       data: expect.objectContaining({ storyDelta: Prisma.DbNull })
     });
+    expect(operation.classifier).toEqual(
+      expect.objectContaining({
+        storyDeltasAfter: {
+          "page-1": { factsAdded: ["Stale."] },
+          "page-2": { factsAdded: ["Stale."] }
+        }
+      })
+    );
     expect(casRebuildProjectStoryState).toHaveBeenCalledWith("project-1", expect.any(Array));
     await app.close();
   });

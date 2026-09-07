@@ -160,9 +160,11 @@ class OperationBubble extends StatelessWidget {
     required this.operation,
     required this.retrying,
     this.undoing = false,
+    this.redoing = false,
     this.liveProgress,
     this.onRetry,
     this.onUndo,
+    this.onRedo,
     this.onViewPlan,
     this.onOpenBook,
     this.onSeeChanges,
@@ -172,11 +174,13 @@ class OperationBubble extends StatelessWidget {
   final MobileBookEditOperation operation;
   final bool retrying;
   final bool undoing;
+  final bool redoing;
 
   /// Live bar, percent and steps while this edit is still running.
   final Widget? liveProgress;
   final VoidCallback? onRetry;
   final VoidCallback? onUndo;
+  final VoidCallback? onRedo;
   final VoidCallback? onViewPlan;
 
   /// Opens the book at the first page this edit touched.
@@ -254,6 +258,7 @@ class OperationBubble extends StatelessWidget {
             ],
             if (failed ||
                 onUndo != null ||
+                onRedo != null ||
                 onOpenBook != null ||
                 onSeeChanges != null) ...[
               const SizedBox(height: 8),
@@ -294,9 +299,11 @@ class OperationBubble extends StatelessWidget {
                             : 'Edit request',
                       ),
                     ),
+                  // Screen-level flags: Redo spinning on B has to disable Undo
+                  // on A too, or the two unawaited writes race the manuscript.
                   if (onUndo != null)
                     TextButton.icon(
-                      onPressed: undoing ? null : onUndo,
+                      onPressed: undoing || redoing ? null : onUndo,
                       icon: undoing
                           ? const SizedBox.square(
                               dimension: 16,
@@ -304,6 +311,17 @@ class OperationBubble extends StatelessWidget {
                             )
                           : const Icon(Icons.undo),
                       label: const Text('Undo'),
+                    ),
+                  if (onRedo != null)
+                    TextButton.icon(
+                      onPressed: redoing || undoing ? null : onRedo,
+                      icon: redoing
+                          ? const SizedBox.square(
+                              dimension: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.redo),
+                      label: const Text('Redo'),
                     ),
                   if (onViewPlan != null)
                     TextButton.icon(

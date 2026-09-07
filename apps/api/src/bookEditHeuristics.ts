@@ -6,6 +6,7 @@ import {
   hasEditVerbBeyondShow,
   isBookEditScopeOnlyMessage,
   isIdentityChangeSubject,
+  isRedoRequestMessage,
   isUndoRequestMessage,
   languageDisplayName,
   looksLikeChangeRequest,
@@ -91,6 +92,19 @@ export function classifyWithHeuristics(
       reasoning: "The user asked to undo the most recent edit.",
       affectedPageIndexes: [],
       assistantMessage: "I’ll undo the last edit and restore the previous version of those pages.",
+      scope: "none",
+      impact: "small_text",
+      clarification: "none"
+    };
+  }
+
+  if (isRedoRequestMessage(message)) {
+    return {
+      kind: "redo_last_edit",
+      confidence: 0.9,
+      reasoning: "The user asked to put the last undone edit back.",
+      affectedPageIndexes: [],
+      assistantMessage: "I’ll put the last undone edit back.",
       scope: "none",
       impact: "small_text",
       clarification: "none"
@@ -204,6 +218,7 @@ export function classifyWithDegradedHeuristics(
   const scopeOnly = isBookEditScopeOnlyMessage(message);
   const contentTarget = showContentTargetFromMessage(message, { pdfPageMap: numbering.pdfPageMap });
   const undoRequest = isUndoRequestMessage(message);
+  const redoRequest = isRedoRequestMessage(message);
   const chapterRegen = chapterRegenerateFromMessage(message);
   // A new length or a decision about pictures can only be honoured by replanning
   // — a page rewrite cannot change how many pages there are — so naming either
@@ -254,6 +269,19 @@ export function classifyWithDegradedHeuristics(
       reasoning: "The user asked to undo the most recent edit.",
       affectedPageIndexes: [],
       assistantMessage: "I’ll undo the last edit and restore the previous version of those pages.",
+      scope: "none",
+      impact: "small_text",
+      clarification: "none"
+    };
+  }
+
+  if (redoRequest) {
+    return {
+      kind: "redo_last_edit",
+      confidence: 0.9,
+      reasoning: "The user asked to put the last undone edit back.",
+      affectedPageIndexes: [],
+      assistantMessage: "I’ll put the last undone edit back.",
       scope: "none",
       impact: "small_text",
       clarification: "none"

@@ -39,6 +39,7 @@ export {
   continuationRequestFromMessage,
   dislikePreferenceFromMessage,
   isBookEditScopeOnlyMessage,
+  isRedoRequestMessage,
   isUndoRequestMessage,
   messageWithFollowUp,
   messageWithScope,
@@ -63,6 +64,7 @@ export type BookEditIntentKind =
   | "page_rewrite"
   | "chapter_regenerate"
   | "undo_last_edit"
+  | "redo_last_edit"
   | "show_content"
   | "book_replan"
   | "continue_book"
@@ -348,9 +350,13 @@ export async function classifyProjectChatMessage(options: {
   // outage-only cost was accepted when the recognizer was removed.
   const reader = { numbering, ...(readerSelection ? { selectionPageIndex: readerSelection.pageIndex } : {}) };
   const heuristic = classifyWithHeuristics(message, options.stage, options.pages, options.planSummary, chapters, reader);
-  // Only ultra-high-precision read/undo shortcuts skip the model; everything
+  // Only ultra-high-precision read/undo/redo shortcuts skip the model; everything
   // else (including chapter regen and language copies) goes through the tool agent.
-  if (heuristic.kind === "show_content" || heuristic.kind === "undo_last_edit") {
+  if (
+    heuristic.kind === "show_content" ||
+    heuristic.kind === "undo_last_edit" ||
+    heuristic.kind === "redo_last_edit"
+  ) {
     return normalizeIntentForStage(heuristic, options.stage, clarifyExhausted);
   }
   // Only the router model knows the furniture pages from readerPageContext;

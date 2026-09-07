@@ -410,6 +410,14 @@ class FakeProjectsRepository implements ProjectsRepository {
   }
 
   @override
+  Future<MobileProjectChatSendResult> redoLastBookEdit({
+    required String projectId,
+    String? requestId,
+  }) async {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<MobileImportedBook> importBook({
     required List<int> bytes,
     required String filename,

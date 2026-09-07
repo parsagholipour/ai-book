@@ -4,6 +4,7 @@ import {
   classifierPageSample,
   classifyProjectChatMessage,
   classifyWithHeuristics,
+  intentFromDecideAction,
   intentFromProposeEdit,
   continuationRequestFromMessage,
   isBookEditScopeOnlyMessage,
@@ -48,7 +49,7 @@ describe("book edit intent heuristics", () => {
       "Move the ending earlier in the outline."
     ]) {
       const intent = classifyWithHeuristics(message, "complete", pages, undefined, chapters);
-      expect(["clarify", "answer", "show_content", "undo_last_edit"]).toContain(intent.kind);
+      expect(["clarify", "answer", "show_content", "undo_last_edit", "redo_last_edit"]).toContain(intent.kind);
       expect(intent.kind).not.toBe("local_patch");
       expect(intent.kind).not.toBe("page_rewrite");
       expect(intent.kind).not.toBe("book_replan");
@@ -86,6 +87,49 @@ describe("book edit intent heuristics", () => {
       expect(intent.kind).toBe("undo_last_edit");
       expect(intent.confidence).toBeGreaterThanOrEqual(0.72);
     }
+  });
+
+  it("routes redo requests to redo_last_edit", () => {
+    for (const message of ["Redo", "Please redo the last edit", "Reapply that change"]) {
+      const intent = classifyWithHeuristics(message, "complete", pages, undefined, chapters);
+
+      expect(intent.kind).toBe("redo_last_edit");
+      expect(intent.confidence).toBeGreaterThanOrEqual(0.72);
+    }
+  });
+
+  it("does not treat regenerating a chapter as redo_last_edit", () => {
+    const intent = classifyWithHeuristics("Redo chapter 3", "complete", pages, undefined, chapters);
+
+    expect(intent.kind).not.toBe("redo_last_edit");
+  });
+
+  it("does not treat regenerating the plan, outline, or ending as redo_last_edit", () => {
+    for (const message of ["Redo the plan", "Redo the outline", "Redo the ending"]) {
+      const intent = classifyWithHeuristics(message, "complete", pages, undefined, chapters);
+
+      expect(intent.kind).not.toBe("redo_last_edit");
+    }
+  });
+
+  it("maps the router redo_last_edit action", () => {
+    const intent = intentFromDecideAction(
+      {
+        action: "redo_last_edit",
+        confidence: 0.94,
+        reasoning: "They asked to put the last undone edit back.",
+        assistantMessage: "I’ll put that edit back.",
+        editInstruction: "",
+        clarification: "none",
+        pageIndexes: [],
+        chapterIndex: null,
+        targetLanguage: null
+      },
+      "Redo"
+    );
+
+    expect(intent.kind).toBe("redo_last_edit");
+    expect(intent.affectedPageIndexes).toEqual([]);
   });
 
   it("passes small books to the classifier prompt without sampling", () => {

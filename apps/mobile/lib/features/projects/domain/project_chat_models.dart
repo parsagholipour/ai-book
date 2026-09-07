@@ -494,6 +494,7 @@ class MobileBookEditOperation {
     this.requestId,
     this.anchorMessageId,
     this.canUndo = false,
+    this.canRedo = false,
     this.changesAvailable = false,
     this.creditsRefunded = false,
     this.creditsRefundedAmount = 0,
@@ -528,6 +529,9 @@ class MobileBookEditOperation {
 
   /// True when this applied edit can be undone from the chat transcript.
   final bool canUndo;
+
+  /// True when this applied edit was undone and can be put back.
+  final bool canRedo;
 
   /// True when the server kept before/after snapshots, so the edit can be
   /// reviewed as a diff. False for older rows and for edits that never touched
@@ -605,6 +609,7 @@ class MobileBookEditOperation {
           json['assistantMessageId'] as String? ??
           json['userMessageId'] as String?,
       canUndo: json['canUndo'] as bool? ?? false,
+      canRedo: json['canRedo'] as bool? ?? false,
       changesAvailable: json['changesAvailable'] as bool? ?? false,
       creditsRefunded: creditsRefunded,
       // Older servers exposed only the full-refund boolean.

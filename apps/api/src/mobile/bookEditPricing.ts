@@ -46,6 +46,9 @@ export function bookEditCreditCost(
 ): number {
   // One snapshot for the whole quote. Reading the live prices twice could
   // straddle an operator's save and produce a total that no price list explains.
+  if (kind === "undo_last_edit" || kind === "redo_last_edit") {
+    return 0;
+  }
   const pricing = creditPricing();
   // Rewriting a page of a premium book runs the premium prose model, so the
   // per-page rates follow the book's own tier exactly as its generation did.
