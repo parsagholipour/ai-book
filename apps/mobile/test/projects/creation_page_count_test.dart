@@ -95,6 +95,10 @@ void main() {
       expect((recommended.shape! as RoundedRectangleBorder).side.width, 2);
       expect(creation.buildCount, 0);
       expect(creation.buildPresets, isNull);
+      final continueButton = find.widgetWithText(FilledButton, 'Continue');
+      expect(continueButton, findsOneWidget);
+      expect(tester.widget<FilledButton>(continueButton).onPressed, isNotNull);
+      expect(find.widgetWithText(FilledButton, 'Use custom'), findsNothing);
       expect(find.text('Choose book images'), findsNothing);
       await tester.teardownScreen();
     },
@@ -116,6 +120,21 @@ void main() {
     });
   }
 
+  testWidgets('continue uses the recommended count', (tester) async {
+    final creation = ScriptedCreationRepository(
+      preflightRequiresPageCount: true,
+    );
+    await openPages(tester, creation);
+    final continueButton = find.widgetWithText(FilledButton, 'Continue');
+    await tester.ensureVisible(continueButton);
+    await tester.tap(continueButton);
+    await tester.continuePastVisualsPrompt();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(creation.buildPresets?.targetPages, 8);
+    expect(creation.buildPresets?.pageCountSource, 'recommended');
+    await tester.teardownScreen();
+  });
+
   testWidgets(
     'custom entry validates the range and continues with that count',
     (tester) async {
@@ -124,15 +143,18 @@ void main() {
       );
       await openPages(tester, creation);
       final custom = find.widgetWithText(TextField, 'Custom pages');
-      final useCustom = find.widgetWithText(FilledButton, 'Use custom');
-      for (final value in ['', '0', '601']) {
+      final continueButton = find.widgetWithText(FilledButton, 'Continue');
+      expect(tester.widget<FilledButton>(continueButton).onPressed, isNotNull);
+      for (final value in ['0', '601']) {
         await tester.enterText(custom, value);
         await tester.pump();
+        final useCustom = find.widgetWithText(FilledButton, 'Use custom');
         expect(tester.widget<FilledButton>(useCustom).onPressed, isNull);
       }
       await tester.enterText(custom, '37');
       await tester.pump();
       expect(find.textContaining('credits for 37 pages'), findsOneWidget);
+      final useCustom = find.widgetWithText(FilledButton, 'Use custom');
       await tester.ensureVisible(useCustom);
       await tester.tap(useCustom);
       await tester.continuePastVisualsPrompt();

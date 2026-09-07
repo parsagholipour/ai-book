@@ -98,6 +98,24 @@ class _PageCountPromptSheetState extends State<_PageCountPromptSheet> {
     return value;
   }
 
+  /// The count Continue submits when the custom field is empty: the flagged
+  /// recommendation, or the first option if the payload omitted the flag.
+  MobilePageCountRecommendation? get _continueRecommendation {
+    for (final recommendation in widget.preflight.recommendations) {
+      if (recommendation.isRecommended) {
+        return recommendation;
+      }
+    }
+    final recommendations = widget.preflight.recommendations;
+    return recommendations.isEmpty ? null : recommendations.first;
+  }
+
+  void _popSelection(int targetPages, String source) {
+    Navigator.of(context).pop(
+      _PageCountSelection(targetPages: targetPages, source: source),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
@@ -117,97 +135,17 @@ class _PageCountPromptSheetState extends State<_PageCountPromptSheet> {
                 context,
               ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
             ),
-            const SizedBox(height: 6),
-            Text(
-              'Pick a page count before I build the plan. The estimate is the later book package, charged only after you approve the plan.',
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-            ),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.sm),
             for (final recommendation in recommendations) ...[
-              Card(
-                margin: EdgeInsets.zero,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  side: BorderSide(
-                    color: recommendation.isRecommended
-                        ? colors.primary
-                        : colors.outlineVariant,
-                    width: recommendation.isRecommended ? 2 : 1,
-                  ),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  onTap: () => Navigator.of(context).pop(
-                    _PageCountSelection(
-                      targetPages: recommendation.targetPages,
-                      source: 'recommended',
-                    ),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Wrap(
-                          spacing: 12,
-                          runSpacing: 8,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            Text(
-                              '${recommendation.targetPages} pages',
-                              style: Theme.of(context).textTheme.titleLarge
-                                  ?.copyWith(fontWeight: FontWeight.w800),
-                            ),
-                            if (recommendation.isRecommended)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: colors.primaryContainer,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Text(
-                                  'Recommended',
-                                  style: Theme.of(context).textTheme.labelMedium
-                                      ?.copyWith(
-                                        color: colors.onPrimaryContainer,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                ),
-                              ),
-                          ],
-                        ),
-                        if (recommendation.label !=
-                            '${recommendation.targetPages} pages') ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            recommendation.label,
-                            style: Theme.of(context).textTheme.labelLarge,
-                          ),
-                        ],
-                        if (recommendation.description.isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          Text(recommendation.description),
-                        ],
-                        const SizedBox(height: 8),
-                        Text(
-                          '≈ ${widget.estimateCredits(recommendation.targetPages)} credits',
-                          style: Theme.of(context).textTheme.labelLarge
-                              ?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                color: colors.primary,
-                              ),
-                        ),
-                      ],
-                    ),
-                  ),
+              _PageCountOption(
+                recommendation: recommendation,
+                credits: widget.estimateCredits(recommendation.targetPages),
+                onTap: () => _popSelection(
+                  recommendation.targetPages,
+                  'recommended',
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: AppSpacing.xs),
             ],
             if (recommendations.isNotEmpty) ...[
               Text(
@@ -216,7 +154,7 @@ class _PageCountPromptSheetState extends State<_PageCountPromptSheet> {
                   context,
                 ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: AppSpacing.md),
             ],
             TextField(
               controller: _customController,
@@ -234,9 +172,7 @@ class _PageCountPromptSheetState extends State<_PageCountPromptSheet> {
               onSubmitted: (_) {
                 final pages = _customPages;
                 if (pages != null) {
-                  Navigator.of(context).pop(
-                    _PageCountSelection(targetPages: pages, source: 'settings'),
-                  );
+                  _popSelection(pages, 'settings');
                 }
               },
             ),
@@ -245,17 +181,25 @@ class _PageCountPromptSheetState extends State<_PageCountPromptSheet> {
               primary: ValueListenableBuilder<TextEditingValue>(
                 valueListenable: _customController,
                 builder: (context, value, child) {
-                  final pages = _customPages;
+                  final customPages = _customPages;
+                  if (value.text.trim().isNotEmpty) {
+                    return AppButton.primary(
+                      onPressed: customPages == null
+                          ? null
+                          : () => _popSelection(customPages, 'settings'),
+                      label: 'Use custom',
+                      expanded: true,
+                    );
+                  }
+                  final recommended = _continueRecommendation;
                   return AppButton.primary(
-                    onPressed: pages == null
+                    onPressed: recommended == null
                         ? null
-                        : () => Navigator.of(context).pop(
-                            _PageCountSelection(
-                              targetPages: pages,
-                              source: 'settings',
-                            ),
+                        : () => _popSelection(
+                            recommended.targetPages,
+                            'recommended',
                           ),
-                    label: 'Use custom',
+                    label: 'Continue',
                     expanded: true,
                   );
                 },
@@ -268,6 +212,100 @@ class _PageCountPromptSheetState extends State<_PageCountPromptSheet> {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One recommended count: pages, price, and why — two tight rows instead of
+/// a stacked card, so three options still fit above the custom field.
+class _PageCountOption extends StatelessWidget {
+  const _PageCountOption({
+    required this.recommendation,
+    required this.credits,
+    required this.onTap,
+  });
+
+  final MobilePageCountRecommendation recommendation;
+  final int credits;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final pagesLabel = '${recommendation.targetPages} pages';
+    return Card(
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadii.control),
+        side: BorderSide(
+          color: recommendation.isRecommended
+              ? colors.primary
+              : colors.outlineVariant,
+          width: recommendation.isRecommended ? 2 : 1,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: AppSpacing.xs,
+                runSpacing: AppSpacing.xxs,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(
+                    pagesLabel,
+                    style: text.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  if (recommendation.isRecommended)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.xs,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colors.primaryContainer,
+                        borderRadius: BorderRadius.circular(AppRadii.compact),
+                      ),
+                      child: Text(
+                        'Recommended',
+                        style: text.labelSmall?.copyWith(
+                          color: colors.onPrimaryContainer,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  Text(
+                    '≈ $credits credits',
+                    style: text.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: colors.primary,
+                    ),
+                  ),
+                ],
+              ),
+              if (recommendation.label != pagesLabel) ...[
+                const SizedBox(height: 2),
+                Text(recommendation.label, style: text.labelMedium),
+              ],
+              if (recommendation.description.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(recommendation.description, style: text.bodySmall),
+              ],
+            ],
+          ),
         ),
       ),
     );
