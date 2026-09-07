@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -22,9 +21,10 @@ void main() {
     await tester.pumpWidget(testPaywall(store: store, repository: repository));
     await tester.pumpAndSettle();
 
-    expect(find.text('Creator monthly'), findsOneWidget);
-    expect(find.text('100'), findsOneWidget);
-    expect(find.text('credits available'), findsOneWidget);
+    expect(find.text('Creator'), findsOneWidget);
+    expect(find.textContaining('100 credits available'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('paywall-buy-credits')));
+    await tester.pumpAndSettle();
 
     // Plans lead the sheet, so the one-off purchases are a scroll away.
     await tester.scrollUntilVisible(
@@ -89,11 +89,11 @@ void main() {
 
     expect(find.text('1000 credits added.'), findsNothing);
     await tester.scrollUntilVisible(
-      find.text('1,100'),
+      find.textContaining('1,100 credits available'),
       -200,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.text('1,100'), findsOneWidget);
+    expect(find.textContaining('1,100 credits available'), findsOneWidget);
   });
 
   testWidgets('a verified purchase closes the paywall before its dialog', (
@@ -108,21 +108,8 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('open-billing-paywall')));
     await tester.pumpAndSettle();
 
-    final creditPack = find.byKey(
-      const ValueKey('paywall-topup-tomeza.credit_pack_1'),
-    );
-    await tester.scrollUntilVisible(
-      creditPack,
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
-    final buyButton = find.descendant(
-      of: creditPack,
-      matching: find.byType(FilledButton),
-    );
-    await tester.ensureVisible(buyButton);
-    await tester.pumpAndSettle();
-    await tester.tap(buyButton);
+    await selectPaywallPack(tester);
+    await tester.tap(find.byKey(const ValueKey('paywall-checkout-buy')));
     await tester.pump();
 
     expect(store.buyCalls.single.product.id, 'tomeza.credit_pack_1');
@@ -207,21 +194,8 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('open-billing-paywall')));
     await tester.pumpAndSettle();
 
-    final creditPack = find.byKey(
-      const ValueKey('paywall-topup-tomeza.credit_pack_1'),
-    );
-    await tester.scrollUntilVisible(
-      creditPack,
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
-    final buyButton = find.descendant(
-      of: creditPack,
-      matching: find.byType(FilledButton),
-    );
-    await tester.ensureVisible(buyButton);
-    await tester.pumpAndSettle();
-    await tester.tap(buyButton);
+    await selectPaywallPack(tester);
+    await tester.tap(find.byKey(const ValueKey('paywall-checkout-buy')));
     await tester.pump();
     store.emit(
       const StorePurchaseUpdate(
@@ -262,21 +236,8 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('open-billing-paywall')));
     await tester.pumpAndSettle();
 
-    final creditPack = find.byKey(
-      const ValueKey('paywall-topup-tomeza.credit_pack_1'),
-    );
-    await tester.scrollUntilVisible(
-      creditPack,
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
-    final buyButton = find.descendant(
-      of: creditPack,
-      matching: find.byType(FilledButton),
-    );
-    await tester.ensureVisible(buyButton);
-    await tester.pumpAndSettle();
-    await tester.tap(buyButton);
+    await selectPaywallPack(tester);
+    await tester.tap(find.byKey(const ValueKey('paywall-checkout-buy')));
     await tester.pump();
 
     // Begin dismissing the paywall while its store purchase is still active.

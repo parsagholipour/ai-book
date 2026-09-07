@@ -199,6 +199,7 @@ Future<bool> _reportExportFailure({
       projectId: projectId,
       title: 'Export to ${projectExportFormatLabel(export)}',
       message: projectExportSubscriptionMessage(export),
+      exportFormatLabel: projectExportFormatLabel(export),
     );
     if (isMounted()) {
       ref.invalidate(billingProvider);
@@ -337,6 +338,7 @@ Future<void> openProjectExportPaywall({
       projectId: projectId,
       title: 'Export to ${projectExportFormatLabel(export)}',
       message: projectExportSubscriptionMessage(export),
+      exportFormatLabel: projectExportFormatLabel(export),
     );
   } else {
     await showBillingPaywall(

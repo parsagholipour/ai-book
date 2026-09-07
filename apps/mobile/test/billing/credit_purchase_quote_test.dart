@@ -3,6 +3,65 @@ import 'package:tomeza/features/billing/domain/billing_models.dart';
 import 'package:tomeza/features/billing/domain/credit_purchase_quote.dart';
 
 void main() {
+  group('purchasable credit quotes', () {
+    test(
+      'an unavailable cheap pack does not displace a localized available pack',
+      () {
+        final quote = quotePurchasableCredits(
+          credits: 400,
+          products: _products,
+          storeProducts: {
+            'tomeza.credit_pack_2': _storeProduct('tomeza.credit_pack_2', 8),
+          },
+        );
+        expect(quote.best?.product.sku, 'tomeza.credit_pack_2');
+        expect(quote.totalLabel, r'$8.00');
+        expect(quote.quantity, 1);
+      },
+    );
+
+    test('incompatible currencies do not produce a value recommendation', () {
+      final quote = quotePurchasableCredits(
+        credits: 900,
+        products: _products,
+        storeProducts: {
+          'tomeza.credit_pack_1': _storeProduct('tomeza.credit_pack_1', 5),
+          'tomeza.credit_pack_2': const StoreProduct(
+            id: 'tomeza.credit_pack_2',
+            title: '',
+            description: '',
+            price: '8 €',
+            rawPrice: 8,
+            currencyCode: 'EUR',
+          ),
+        },
+      );
+      expect(quote.isEmpty, isTrue);
+    });
+
+    test('a subscription in another currency is not promoted as cheaper', () {
+      final quote = quotePurchasableCredits(
+        credits: 4000,
+        products: _products,
+        plans: _plans,
+        storeProducts: {
+          'tomeza.credit_pack_1': _storeProduct('tomeza.credit_pack_1', 8),
+          'tomeza.credit_pack_2': _storeProduct('tomeza.credit_pack_2', 15),
+          'tomeza.creator_monthly': const StoreProduct(
+            id: 'tomeza.creator_monthly',
+            title: '',
+            description: '',
+            price: '10 €',
+            rawPrice: 10,
+            currencyCode: 'EUR',
+          ),
+        },
+      );
+      expect(quote.betterPlan, isNull);
+      expect(quote.quantity, 2);
+    });
+  });
+
   group('MoneyFormat', () {
     test('keeps the symbol and the side the store put it on', () {
       final dollars = MoneyFormat.fromStorePrice(r'$14.99');

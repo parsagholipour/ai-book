@@ -2,6 +2,37 @@ import 'dart:math' as math;
 
 import 'billing_models.dart';
 
+/// Recommendations for checkout use only products the store can sell now.
+/// Missing products can still be displayed by the UI, but must not determine
+/// the recommended price or send someone to a disabled checkout.
+CreditQuote quotePurchasableCredits({
+  required int credits,
+  required List<MobileBillingProduct> products,
+  required Map<String, StoreProduct> storeProducts,
+  List<MobileBillingProduct> plans = const [],
+}) {
+  bool available(MobileBillingProduct product) =>
+      (storeProducts[product.sku]?.rawPrice ?? 0) > 0;
+  final purchasable = products.where(available).toList();
+  final currencies = purchasable
+      .map((product) => storeProducts[product.sku]!.currencyCode)
+      .toSet();
+  return quoteCredits(
+    credits: credits,
+    products: currencies.length == 1 ? purchasable : const [],
+    storeProducts: storeProducts,
+    plans: currencies.length == 1
+        ? plans
+              .where(
+                (plan) =>
+                    available(plan) &&
+                    storeProducts[plan.sku]!.currencyCode == currencies.single,
+              )
+              .toList()
+        : const [],
+  );
+}
+
 /// Formats an amount in the currency the store already localized for this
 /// reader.
 ///
@@ -203,12 +234,11 @@ CreditQuote quoteCredits({
 
   // Cheapest way to cover the request in one purchase; the closest fit wins a
   // tie, so nobody is sold 2,000 credits when 1,000 costs the same.
-  final covering =
-      options.where((option) => option.credits >= credits).toList()
-        ..sort((a, b) {
-          final byPrice = a.unitPrice.compareTo(b.unitPrice);
-          return byPrice != 0 ? byPrice : a.credits.compareTo(b.credits);
-        });
+  final covering = options.where((option) => option.credits >= credits).toList()
+    ..sort((a, b) {
+      final byPrice = a.unitPrice.compareTo(b.unitPrice);
+      return byPrice != 0 ? byPrice : a.credits.compareTo(b.credits);
+    });
   final best = covering.isNotEmpty ? covering.first : options.first;
   final quantity = covering.isNotEmpty ? 1 : best.quantityFor(credits);
   final total = best.unitPrice * quantity;

@@ -51,10 +51,9 @@ void main() {
         200,
         scrollable: sheetScrollable,
       );
-      final buyButton = find.descendant(
-        of: creditPack,
-        matching: find.byType(FilledButton),
-      );
+      await tester.tap(creditPack);
+      await tester.pumpAndSettle();
+      final buyButton = find.byKey(const ValueKey('paywall-checkout-buy'));
       await tester.ensureVisible(buyButton);
       await tester.pumpAndSettle();
       await tester.tap(buyButton);

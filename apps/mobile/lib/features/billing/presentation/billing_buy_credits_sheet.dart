@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/ui/app_components.dart';
@@ -9,23 +8,20 @@ import '../../../shared/ui/haptics.dart';
 import '../domain/billing_models.dart';
 import '../domain/credit_purchase_quote.dart';
 import 'billing_controller.dart';
-import 'billing_plan_tiles.dart';
+import 'billing_credit_amount_offer.dart';
 import 'billing_purchase_success_dialog.dart';
 
-/// "How many credits do you need?" — with the cost of that answer, the pack
-/// that delivers it, and the button that buys it.
+/// Finds an available pack for the requested amount. The checkout charges for
+/// one pack and shows its effect on the balance. Goals that need more than one
+/// purchase disclose the count and total separately.
 ///
-/// The paywall lists fixed shelves; this reads the same shelves from the other
-/// end. Someone who is 900 short does not want to work out which pack covers
-/// 900, and a store can only sell whole packs — so the number is theirs to type
-/// and the arithmetic is ours: what it would cost at the best rate on offer,
-/// which pack actually covers it, and what is left over afterwards.
 /// Returns the verified purchase when one completed, so a paywall that opened
 /// this for a shortfall can dismiss itself once the balance covers it.
 Future<BillingPurchaseSuccess?> showBuyCreditsSheet(
   BuildContext context, {
   String? projectId,
   int? shortfall,
+  int? requiredCredits,
   VoidCallback? onSeePlans,
 }) async {
   final success = await showAppBottomSheet<BillingPurchaseSuccess>(
@@ -33,6 +29,7 @@ Future<BillingPurchaseSuccess?> showBuyCreditsSheet(
     builder: (sheetContext) => BuyCreditsSheet(
       projectId: projectId,
       shortfall: shortfall,
+      requiredCredits: requiredCredits,
       onSeePlans: onSeePlans,
       onPurchaseSuccess: (purchase) {
         if (ModalRoute.of(sheetContext)?.isCurrent ?? false) {
@@ -51,6 +48,7 @@ class BuyCreditsSheet extends ConsumerStatefulWidget {
   const BuyCreditsSheet({
     this.projectId,
     this.shortfall,
+    this.requiredCredits,
     this.onSeePlans,
     this.onPurchaseSuccess,
     super.key,
@@ -61,6 +59,7 @@ class BuyCreditsSheet extends ConsumerStatefulWidget {
   /// What the reader was short when the paywall sent them here, so the field
   /// opens on the number they actually need instead of a round guess.
   final int? shortfall;
+  final int? requiredCredits;
 
   /// Closes this sheet and takes the paywall behind it to the plan ladder.
   /// Null when nothing is behind it to take.
@@ -150,7 +149,7 @@ class _BuyCreditsSheetState extends ConsumerState<BuyCreditsSheet> {
   }
 
   void _buy(BillingController controller, MobileBillingProduct product) {
-    if (_completionHandled) {
+    if (_completionHandled || controller.state.pendingProductIds.isNotEmpty) {
       return;
     }
     _purchasesStartedHere.add(product.sku);
@@ -182,305 +181,40 @@ class _BuyCreditsSheetState extends ConsumerState<BuyCreditsSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
     final controller = ref.watch(billingControllerProvider(widget.projectId));
-
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
         final state = controller.state;
-        final available = state.billing?.credits.available;
-        final shortfall = widget.shortfall;
-        final quote = quoteCredits(
+        final quote = quotePurchasableCredits(
           credits: _credits,
           products: controller.topUps,
           storeProducts: state.storeProducts,
-          plans: controller.plans,
+          plans: state.billing?.isPaidPlan == true
+              ? const []
+              : controller.plans,
         );
-
-        return SafeArea(
-          top: false,
-          child: SingleChildScrollView(
-            padding: EdgeInsets.fromLTRB(
-              20,
-              4,
-              20,
-              20 + MediaQuery.viewInsetsOf(context).bottom,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Buy credits',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  available == null
-                      ? 'Bought credits never expire.'
-                      : 'You have ${formatCredits(available)} credits, and '
-                            'bought credits never expire.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  key: const ValueKey('buy-credits-amount'),
-                  controller: _amount,
-                  keyboardType: TextInputType.number,
-                  textInputAction: TextInputAction.done,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                    LengthLimitingTextInputFormatter(6),
-                  ],
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                  decoration: const InputDecoration(
-                    labelText: 'How many credits?',
-                    suffixText: 'credits',
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    if (shortfall != null && shortfall > 0)
-                      ActionChip(
-                        key: const ValueKey('buy-credits-cover-shortfall'),
-                        avatar: const Icon(Icons.flag_outlined, size: 16),
-                        label: const Text('Cover my shortfall'),
-                        onPressed: () => _setCredits(_openingCredits()),
-                      ),
-                    ActionChip(
-                      label: const Text('−500'),
-                      onPressed: _credits <= 0
-                          ? null
-                          : () => _setCredits(_credits - 500),
-                    ),
-                    ActionChip(
-                      label: const Text('+500'),
-                      onPressed: () => _setCredits(_credits + 500),
-                    ),
-                    ActionChip(
-                      label: const Text('+1,000'),
-                      onPressed: () => _setCredits(_credits + 1000),
-                    ),
-                  ],
-                ),
-                if (!quote.isEmpty) ...[
-                  const SizedBox(height: 14),
-                  Text(
-                    '${formatCredits(quote.credits)} credits is about '
-                    '${quote.estimateLabel}, at the best rate on offer of '
-                    '${quote.ratePerThousandLabel} per 1,000.',
-                    key: const ValueKey('buy-credits-estimate'),
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  _QuotePanel(
-                    quote: quote,
-                    available: available,
-                    pending: state.pendingProductIds.contains(
-                      quote.best!.product.sku,
-                    ),
-                    onBuy: state.storeProducts[quote.best!.product.sku] == null
-                        ? null
-                        : () => _buy(controller, quote.best!.product),
-                  ),
-                ],
-                if (quote.betterPlan != null) ...[
-                  const SizedBox(height: 14),
-                  AppInlineNotice(
-                    icon: Icons.workspace_premium_outlined,
-                    title: '${quote.betterPlan!.title} costs less than this',
-                    message:
-                        '${formatCredits(quote.betterPlan!.creditAmount)} '
-                        'credits every month for '
-                        '${quote.betterPlanPriceLabel}, and it renews.',
-                    tone: AppTone.info,
-                  ),
-                  if (widget.onSeePlans != null) ...[
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: AppButton.text(
-                        key: const ValueKey('buy-credits-see-plans'),
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                          widget.onSeePlans!();
-                        },
-                        leading: const Icon(Icons.trending_up, size: 18),
-                        label: 'See plans',
-                      ),
-                    ),
-                  ],
-                ],
-                if (!state.storeAvailable && !state.loading) ...[
-                  const SizedBox(height: 14),
-                  const AppInlineNotice(
-                    icon: Icons.storefront_outlined,
-                    title: 'Google Play billing unavailable',
-                    message:
-                        'Use an Android build installed from a Play testing '
-                        'track or a license tester account to buy credits.',
-                  ),
-                ],
-                if (controller.topUps.isNotEmpty) ...[
-                  const SizedBox(height: 20),
-                  Text(
-                    'EVERYTHING ON SALE',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: colors.onSurfaceVariant,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  for (final product in controller.topUps) ...[
-                    BillingTopUpTile(
-                      key: ValueKey('buy-credits-topup-${product.sku}'),
-                      product: product,
-                      storeProduct: state.storeProducts[product.sku],
-                      pending: state.pendingProductIds.contains(product.sku),
-                      onBuy: () => _buy(controller, product),
-                    ),
-                    const SizedBox(height: 10),
-                  ],
-                ],
-                if (state.message != null) ...[
-                  const SizedBox(height: 12),
-                  AppInlineNotice(
-                    icon: Icons.check_circle_outline,
-                    title: 'Purchase update',
-                    message: state.message!,
-                    tone: AppTone.success,
-                  ),
-                ],
-                if (state.error != null) ...[
-                  const SizedBox(height: 12),
-                  AppInlineNotice(
-                    icon: Icons.error_outline,
-                    title: 'Purchase issue',
-                    message: state.error!,
-                    tone: AppTone.error,
-                  ),
-                ],
-              ],
-            ),
-          ),
+        return BillingCreditAmountOffer(
+          state: state,
+          amount: _amount,
+          quote: quote,
+          shortfall: widget.shortfall,
+          requiredCredits: widget.requiredCredits,
+          onSetAmount: _setCredits,
+          onCoverShortfall: () => _setCredits(_openingCredits()),
+          onBuy: quote.best == null
+              ? null
+              : () => _buy(controller, quote.best!.product),
+          onRetry: controller.load,
+          onClose: () => Navigator.of(context).pop(),
+          onSeePlans: widget.onSeePlans == null
+              ? null
+              : () {
+                  Navigator.of(context).pop();
+                  widget.onSeePlans!();
+                },
         );
       },
     );
-  }
-}
-
-/// The recommendation: what to buy for the number in the field, what it costs,
-/// and what it leaves behind.
-class _QuotePanel extends StatelessWidget {
-  const _QuotePanel({
-    required this.quote,
-    required this.available,
-    required this.pending,
-    required this.onBuy,
-  });
-
-  final CreditQuote quote;
-  final int? available;
-  final bool pending;
-  final VoidCallback? onBuy;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    final best = quote.best!;
-    final multiple = quote.quantity > 1;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(AppRadii.card),
-        border: Border.all(color: colors.primary.withValues(alpha: 0.32)),
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  multiple
-                      ? '${best.product.title} × ${quote.quantity}'
-                      : best.product.title,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-              const AppStatusBadge(
-                label: 'Best match',
-                icon: Icons.check_circle_outline,
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '${formatCredits(quote.creditsDelivered)} credits · '
-            '${quote.totalLabel}',
-            style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            _explanation(),
-            key: const ValueKey('buy-credits-explanation'),
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: colors.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 14),
-          AppButton.primary(
-            key: const ValueKey('buy-credits-buy'),
-            onPressed: pending ? null : onBuy,
-            loading: pending,
-            loadingLabel: 'Purchase pending',
-            leading: const Icon(Icons.add_card_outlined, size: 18),
-            label: multiple
-                ? 'Buy one — ${best.unitLabel}'
-                : 'Buy — ${best.unitLabel}',
-            expanded: true,
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// What the purchase does to the number that was asked for, and to the
-  /// balance. A store that sells whole packs will nearly always deliver more
-  /// than was asked for, and leaving that unsaid makes the price look wrong.
-  String _explanation() {
-    final balance = available == null
-        ? ''
-        : ' Balance after: '
-              '${formatCredits(available! + quote.creditsDelivered)}.';
-    if (quote.quantity > 1) {
-      return 'The biggest pack is ${formatCredits(quote.best!.credits)}, so '
-          'this takes ${quote.quantity} purchases.$balance';
-    }
-    if (quote.surplus == 0) {
-      return 'Exactly what you asked for.$balance';
-    }
-    return 'Covers your ${formatCredits(quote.credits)}, with '
-        '${formatCredits(quote.surplus)} to spare.$balance';
   }
 }

@@ -104,7 +104,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Upgrade your plan'), findsOneWidget);
+    expect(find.text('More room for\nyour next book.'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     // The credits-needed masthead puts a headline, a sentence, a meter and two
@@ -140,7 +140,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Buy credits'), findsOneWidget);
+    expect(find.text('How much room\ndo you need?'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     // The credit log puts an amount hard against the right edge of every row,

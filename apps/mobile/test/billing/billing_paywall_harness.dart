@@ -24,9 +24,7 @@ Widget testPaywall({
     overrides: [
       storeBillingClientProvider.overrideWithValue(store),
       billingRepositoryProvider.overrideWithValue(repository),
-      creditLogRepositoryProvider.overrideWithValue(
-        EmptyCreditLogRepository(),
-      ),
+      creditLogRepositoryProvider.overrideWithValue(EmptyCreditLogRepository()),
     ],
     child: MaterialApp(
       home: Scaffold(
@@ -72,6 +70,38 @@ Widget testPaywallLauncher({
 }
 
 /// The amount the buy sheet opened on, read off the field itself.
+Future<void> selectPaywallPack(
+  WidgetTester tester, {
+  String sku = 'tomeza.credit_pack_1',
+}) async {
+  await tester.ensureVisible(find.byKey(const ValueKey('paywall-buy-credits')));
+  await tester.tap(find.byKey(const ValueKey('paywall-buy-credits')));
+  await tester.pumpAndSettle();
+  final option = find.byKey(ValueKey('paywall-topup-$sku'));
+  await tester.scrollUntilVisible(
+    option,
+    160,
+    scrollable: find.byType(Scrollable).first,
+  );
+  await tester.tap(option);
+  await tester.pumpAndSettle();
+}
+
+Future<void> openCustomCreditAmount(WidgetTester tester) async {
+  await tester.tap(find.byKey(const ValueKey('paywall-buy-credits')));
+  await tester.pumpAndSettle();
+  final choose = find.byKey(const ValueKey('paywall-choose-amount'));
+  await tester.scrollUntilVisible(
+    choose,
+    160,
+    scrollable: find.byType(Scrollable).first,
+  );
+  await tester.ensureVisible(choose);
+  await tester.pumpAndSettle();
+  await tester.tap(choose);
+  await tester.pumpAndSettle();
+}
+
 TextField amountField(WidgetTester tester) =>
     tester.widget<TextField>(find.byKey(const ValueKey('buy-credits-amount')));
 

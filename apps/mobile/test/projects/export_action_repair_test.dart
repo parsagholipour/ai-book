@@ -186,6 +186,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(BillingPaywall), findsOneWidget);
+    expect(
+      tester.widget<BillingPaywall>(find.byType(BillingPaywall)).exportFormatLabel,
+      'Word',
+    );
     expect(find.byType(SnackBar), findsNothing);
     expect(budget.requested, isEmpty);
     expect(repository.watchCalls, 1);

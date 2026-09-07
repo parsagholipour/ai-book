@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/features/billing/domain/billing_models.dart';
@@ -32,8 +31,7 @@ void main() {
 
     // Buying is its own question — how many credits, and what does that cost —
     // so the button opens the sheet that can answer it.
-    await tester.tap(find.byKey(const ValueKey('paywall-buy-credits')));
-    await tester.pumpAndSettle();
+    await openCustomCreditAmount(tester);
     expect(find.byType(BuyCreditsSheet), findsOneWidget);
     // Opened on the number the reader is actually short.
     expect(amountField(tester).controller?.text, '400');
@@ -52,8 +50,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // On Creator, "upgrade" means Pro — and says so.
-    expect(find.text('Upgrade to Pro monthly'), findsOneWidget);
-    expect(find.text('Pro monthly'), findsNothing);
+    expect(find.text('Monthly plans'), findsOneWidget);
+    expect(find.text('Pro'), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('paywall-upgrade-plan')));
     await tester.pumpAndSettle();
@@ -79,13 +77,18 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('open-billing-paywall')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('paywall-buy-credits')));
-    await tester.pumpAndSettle();
+    await openCustomCreditAmount(tester);
 
     // 400 credits: the small pack covers it, with change.
-    expect(find.text('One extra credit'), findsWidgets);
+    expect(find.text('1,000 credits'), findsOneWidget);
     expect(find.textContaining('600 to spare'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, r'Buy — $7.99'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(BuyCreditsSheet),
+        matching: find.text(r'1,000 credits · $7.99 once'),
+      ),
+      findsOneWidget,
+    );
 
     await tester.enterText(
       find.byKey(const ValueKey('buy-credits-amount')),
@@ -95,10 +98,20 @@ void main() {
 
     // Past the largest pack: the sheet says what it would really take, and
     // that the ladder is cheaper than taking it.
-    expect(find.textContaining('2,500 credits is about'), findsOneWidget);
-    expect(find.text('Two extra credits × 2'), findsOneWidget);
+    expect(find.text('2,000 credits'), findsOneWidget);
+    expect(find.textContaining('2,500-credit goal'), findsOneWidget);
     expect(find.textContaining('2 purchases'), findsOneWidget);
-    expect(find.text('Creator monthly costs less than this'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('A monthly plan costs less upfront'),
+      160,
+      scrollable: find
+          .descendant(
+            of: find.byType(BuyCreditsSheet),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    expect(find.text('A monthly plan costs less upfront'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('buy-credits-buy')));
     await tester.pump();
@@ -180,8 +193,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('paywall-buy-credits')));
-    await tester.pumpAndSettle();
+    await openCustomCreditAmount(tester);
     await tester.tap(find.byKey(const ValueKey('buy-credits-buy')));
     await tester.pump();
 
@@ -223,8 +235,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('paywall-buy-credits')));
-    await tester.pumpAndSettle();
+    await openCustomCreditAmount(tester);
     await tester.tap(find.byKey(const ValueKey('buy-credits-buy')));
     await tester.pump();
 
@@ -312,7 +323,9 @@ void main() {
       200,
       scrollable: find.byType(Scrollable).first,
     );
-    await tester.ensureVisible(find.byKey(const ValueKey('paywall-credit-log')));
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('paywall-credit-log')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('paywall-credit-log')));
     await tester.pumpAndSettle();
@@ -320,10 +333,6 @@ void main() {
     expect(find.byType(CreditLogScreen), findsOneWidget);
     // Someone checking where their credits went is usually about to buy more,
     // so the paywall is still underneath when they come back.
-    expect(
-      find.byType(BillingPaywall, skipOffstage: false),
-      findsOneWidget,
-    );
+    expect(find.byType(BillingPaywall, skipOffstage: false), findsOneWidget);
   });
-
 }
