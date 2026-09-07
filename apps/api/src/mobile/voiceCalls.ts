@@ -57,24 +57,51 @@ export class VoiceCallNotFoundError extends Error {
 }
 
 /**
+ * Who a call is to.
+ *
+ * A book call is a cast row inside a finished book, so it carries the project
+ * for the ledger and the cast row for the persona; a library call is one of the
+ * reader's own saved characters and has no project at all. Every metering path
+ * below is the same for both — the callee only decides which columns the row
+ * names, and which earlier calls count as this character's memory.
+ */
+export type VoiceCallee =
+  | { kind: "book"; projectId: string; characterId: string }
+  | { kind: "library"; libraryCharacterId: string };
+
+/** The `VoiceCall` columns a create writes for one callee. */
+export function voiceCalleeColumns(
+  callee: VoiceCallee
+): { projectId: string; characterId: string } | { libraryCharacterId: string } {
+  return callee.kind === "book"
+    ? { projectId: callee.projectId, characterId: callee.characterId }
+    : { libraryCharacterId: callee.libraryCharacterId };
+}
+
+/**
+ * The one column that names a callee in a `where`: a cast row belongs to one
+ * project, so the project adds nothing to the lookup and only changes its plan.
+ */
+export function voiceCalleeIdentity(callee: VoiceCallee): { characterId: string } | { libraryCharacterId: string } {
+  return callee.kind === "book"
+    ? { characterId: callee.characterId }
+    : { libraryCharacterId: callee.libraryCharacterId };
+}
+
+/**
  * Opens a metered call, reserving the first block of credits.
  *
  * Any call the same user left open is settled first. Two live calls would mean
  * two microphones and two holds, and in practice the stale one is a call whose
  * app was killed rather than one the user is still on.
  */
-export async function startVoiceCall(options: {
-  userId: string;
-  projectId: string;
-  characterId: string;
-}): Promise<VoiceCallStart> {
+export async function startVoiceCall(options: { userId: string; callee: VoiceCallee }): Promise<VoiceCallStart> {
   await settleOpenCallsForUser(options.userId, "superseded");
 
   const call = await prisma.voiceCall.create({
     data: {
       userId: options.userId,
-      projectId: options.projectId,
-      characterId: options.characterId,
+      ...voiceCalleeColumns(options.callee),
       status: "ACTIVE"
     },
     select: { id: true }
@@ -84,7 +111,7 @@ export async function startVoiceCall(options: {
     const held = await extendVoiceCallHold({
       callId: call.id,
       userId: options.userId,
-      projectId: options.projectId,
+      projectId: options.callee.kind === "book" ? options.callee.projectId : null,
       elapsedSeconds: 0,
       heldCredits: 0,
       reservationEntryIds: []
@@ -262,6 +289,7 @@ const voiceCallSelect = {
   userId: true,
   projectId: true,
   characterId: true,
+  libraryCharacterId: true,
   status: true,
   reservationEntryIds: true,
   heldCredits: true,
@@ -274,8 +302,9 @@ const voiceCallSelect = {
 type VoiceCallRow = {
   id: string;
   userId: string;
-  projectId: string;
-  characterId: string;
+  projectId: string | null;
+  characterId: string | null;
+  libraryCharacterId: string | null;
   status: string;
   reservationEntryIds: string[];
   heldCredits: number;
@@ -309,7 +338,12 @@ async function settleCall(call: VoiceCallRow, elapsedSeconds: number, reason: st
       amountCredits: settlement.credits,
       idempotencyKey: `mobile:voice-call:${call.id}:charge`,
       description: `Character voice call, ${settlement.billableMinutes} min`,
-      metadata: { characterId: call.characterId, elapsedSeconds: settlement.billableSeconds, reason }
+      metadata: {
+        characterId: call.characterId,
+        libraryCharacterId: call.libraryCharacterId,
+        elapsedSeconds: settlement.billableSeconds,
+        reason
+      }
     }).catch((error: unknown) => {
       if (error instanceof InsufficientCreditsError) {
         return null;
@@ -345,7 +379,7 @@ async function settleCall(call: VoiceCallRow, elapsedSeconds: number, reason: st
 async function extendVoiceCallHold(options: {
   callId: string;
   userId: string;
-  projectId: string;
+  projectId: string | null;
   elapsedSeconds: number;
   heldCredits: number;
   reservationEntryIds: string[];

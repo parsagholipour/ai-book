@@ -795,7 +795,12 @@ export type MobileVoiceCharacterStatus = "ready" | "preparing" | "unavailable";
 
 export type MobileVoiceCharacterDto = {
   id: string;
-  projectId: string;
+  /**
+   * Null for one of the reader's own saved characters, reached through
+   * `/api/mobile/voice/characters`: a library call has no book behind it, so
+   * there is no page to scope it to and no project for the paywall to name.
+   */
+  projectId: string | null;
   name: string;
   role: string;
   description: string;

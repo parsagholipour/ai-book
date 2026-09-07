@@ -106,6 +106,7 @@ export * from "./generation/libraryCharacters.js";
 export * from "./generation/libraryMentions.js";
 export * from "./generation/libraryCharacterImages.js";
 export * from "./generation/voiceCharacters.js";
+export * from "./generation/libraryVoiceCharacters.js";
 export * from "./generation/readerChapters.js";
 export * from "./generation/exactReplacement.js";
 export * from "./generation/editAdherence.js";

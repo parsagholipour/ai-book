@@ -1,4 +1,5 @@
 import { prisma } from "@book-maker/db";
+import { type VoiceCallee, voiceCalleeIdentity } from "./voiceCalls.js";
 
 /**
  * What a character remembers of a reader between calls.
@@ -89,13 +90,17 @@ export async function appendVoiceCallMessages(options: {
  * Bounded twice over — by how many calls are read and by how many messages come
  * out of them — because a reader who rings the same character every day would
  * otherwise carry a year of it into every call.
+ *
+ * Keyed by the callee, so a book's cast member and the library character it
+ * was copied from keep separate memories: the book calls happen inside a story
+ * the library character has never been in, and would leak its plot.
  */
 export async function loadVoiceCallHistory(options: {
   userId: string;
-  characterId: string;
+  callee: VoiceCallee;
 }): Promise<VoiceCallHistoryEntry[]> {
   const calls = await prisma.voiceCall.findMany({
-    where: { userId: options.userId, characterId: options.characterId },
+    where: { userId: options.userId, ...voiceCalleeIdentity(options.callee) },
     orderBy: { startedAt: "desc" },
     take: HISTORY_CALL_LOOKBACK,
     select: { startedAt: true, transcript: true }

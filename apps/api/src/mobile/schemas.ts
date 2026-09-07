@@ -534,6 +534,9 @@ export const voiceCharacterParamsSchema = z.object({
 
 export const voiceCallParamsSchema = z.object({ callId: z.string().min(1) });
 
+/** A saved library character, called from the library rather than from a book. */
+export const libraryVoiceCharacterParamsSchema = z.object({ characterId: z.string().min(1) });
+
 /**
  * `pageIndex` is where the reader was when they placed the call. It scopes what
  * the character is told about the book, which is what keeps a call from the
@@ -571,5 +574,14 @@ export const mobileVoiceCallProgressBodySchema = z
   })
   .strict();
 
+/**
+ * A library call has no page to be scoped to — the character is not in a book
+ * — so the body carries nothing. (Strict, like its book twin; note Fastify's
+ * AJV strips unknown keys before the handler sees them, so a stray `pageIndex`
+ * is dropped rather than refused.)
+ */
+export const mobileLibraryVoiceCallStartBodySchema = z.object({}).strict();
+
 export const mobileVoiceCallStartOpenApiBody = toOpenApiRequestBody(mobileVoiceCallStartBodySchema);
+export const mobileLibraryVoiceCallStartOpenApiBody = toOpenApiRequestBody(mobileLibraryVoiceCallStartBodySchema);
 export const mobileVoiceCallProgressOpenApiBody = toOpenApiRequestBody(mobileVoiceCallProgressBodySchema);

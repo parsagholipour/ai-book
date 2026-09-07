@@ -4,14 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
-import '../../../shared/ui/feedback/app_snack_bar.dart';
-import '../../../shared/ui/haptics.dart';
 import '../../../shared/ui/polling_state_mixin.dart';
 import '../data/voice_repository.dart';
-import '../data/voice_disclosure_store.dart';
 import '../domain/voice_models.dart';
 import 'voice_call_avatar.dart';
-import 'voice_call_screen.dart';
+import 'voice_call_launcher.dart';
 
 /// "Who do you want to talk to?"
 ///
@@ -141,8 +138,7 @@ class _CastList extends StatelessWidget {
             separatorBuilder: (context, index) => const SizedBox(height: 4),
             itemBuilder: (context, index) => _CastRow(
               character: cast.characters[index],
-              affordable: cast.canAfford,
-              creditsToStart: cast.creditsToStart,
+              cast: cast,
               projectId: projectId,
               pageIndex: pageIndex,
             ),
@@ -165,15 +161,13 @@ class _CastList extends StatelessWidget {
 class _CastRow extends ConsumerWidget {
   const _CastRow({
     required this.character,
-    required this.affordable,
-    required this.creditsToStart,
+    required this.cast,
     required this.projectId,
     this.pageIndex,
   });
 
   final VoiceCharacter character;
-  final bool affordable;
-  final int creditsToStart;
+  final VoiceCast cast;
   final String projectId;
   final int? pageIndex;
 
@@ -181,6 +175,7 @@ class _CastRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    final affordable = cast.canAfford;
     // Still tappable when the balance cannot cover the opening hold: a
     // disabled row swallows the tap, and the cost line above is easy to miss.
     // The toast is what names the number.
@@ -231,61 +226,16 @@ class _CastRow extends ConsumerWidget {
     );
   }
 
-  Future<void> _placeCall(BuildContext context, WidgetRef ref) async {
-    if (!affordable) {
-      AppHaptics.warning();
-      final messenger = ScaffoldMessenger.of(context);
-      Navigator.of(context).pop();
-      messenger
-        ..hideCurrentSnackBar()
-        ..showAppSnackBar(
-          SnackBar(
-            content: Text(creditsNeededToStartCallMessage(creditsToStart)),
-          ),
-        );
-      return;
-    }
-    final store = ref.read(voiceDisclosureStoreProvider);
-    if (!await store.hasAcknowledged()) {
-      if (!context.mounted) return;
-      final accepted = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          icon: const Icon(Icons.mic_outlined),
-          title: const Text('Before your first voice call'),
-          content: const Text(
-            'Your microphone audio is sent in real time to the selected AI voice provider. '
-            'Ravanix does not retain live-call audio on its server, but transcript text, call duration, billing records, and call telemetry may be stored with the project. '
-            'Your device will ask for microphone permission next.',
-          ),
-          actions: [
-            AppButton.text(
-              onPressed: () => Navigator.of(context).pop(false),
-              label: 'Not now',
-            ),
-            AppButton.primary(
-              onPressed: () => Navigator.of(context).pop(true),
-              label: 'Continue',
-            ),
-          ],
-        ),
-      );
-      if (accepted != true) return;
-      await store.acknowledge();
-    }
-    if (!context.mounted) return;
-    AppHaptics.commit();
-    final navigator = Navigator.of(context);
-    navigator.pop();
-    await navigator.push(
-      MaterialPageRoute<void>(
-        builder: (context) => VoiceCallScreen(
-          projectId: projectId,
-          character: character,
-          pageIndex: pageIndex,
-        ),
-      ),
+  Future<void> _placeCall(BuildContext context, WidgetRef ref) {
+    // The sheet gets out of the way of both the toast and the call screen.
+    return launchVoiceCall(
+      context: context,
+      ref: ref,
+      projectId: projectId,
+      character: character,
+      cast: cast,
+      pageIndex: pageIndex,
+      leave: Navigator.of(context).pop,
     );
   }
 

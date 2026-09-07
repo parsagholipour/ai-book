@@ -2,7 +2,8 @@ import { enqueueOrRequeueGenerationJob } from "../../queue.js";
 import {
   type MobileVoiceCallMeterDto,
   type MobileVoiceCallSessionDto,
-  type MobileVoiceCastDto
+  type MobileVoiceCastDto,
+  type MobileVoiceCharacterDto
 } from "../dto.js";
 import {
   hitAuthenticatedLimit,
@@ -13,7 +14,10 @@ import {
 } from "../httpErrors.js";
 import {
   idParamsSchema,
+  libraryVoiceCharacterParamsSchema,
   mobileAuthError,
+  mobileLibraryVoiceCallStartBodySchema,
+  mobileLibraryVoiceCallStartOpenApiBody,
   mobileVoiceCallProgressBodySchema,
   mobileVoiceCallProgressOpenApiBody,
   mobileVoiceCallStartBodySchema,
@@ -23,10 +27,12 @@ import {
 } from "../schemas.js";
 import {
   VoiceCallNotFoundError,
+  type VoiceCallee,
   endVoiceCall,
   heartbeatVoiceCall,
   startVoiceCall,
-  voiceCallEntryCredits
+  voiceCallEntryCredits,
+  voiceCalleeColumns
 } from "../voiceCalls.js";
 import {
   appendVoiceCallMessages,
@@ -35,27 +41,56 @@ import {
   type VoiceCallMessage
 } from "../voiceCallHistory.js";
 import { buildVoiceCallInstructions, loadReaderPageContext, loadVoiceCast, voiceCharacterSelect } from "../voiceCast.js";
+import {
+  buildLibraryVoiceCallInstructions,
+  libraryVoiceProfile,
+  loadLibraryAcquaintances,
+  loadLibraryVoiceCast,
+  loadLibraryVoiceCharacter
+} from "../libraryVoiceCast.js";
+import { sendCharacterNotFound } from "../characterWriteConflicts.js";
 import { loadVoiceBookCast } from "../../voiceBookContext.js";
-import { VOICE_CALL_POLICY, creditPricing, normalizeVoiceProfile } from "@book-maker/core";
+import { VOICE_CALL_POLICY, creditPricing, normalizeVoiceProfile, type VoiceProfile } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
-import { InsufficientCreditsError, getCreditBalance } from "@book-maker/db/billing";
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import { InsufficientCreditsError, getCreditBalance, type CreditBalance } from "@book-maker/db/billing";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { MobileAuthContext } from "../../requestAuth.js";
 import type { MobileRouteContext } from "../routeContext.js";
 
 /**
- * Live voice calls with the characters of a finished book.
+ * Live voice calls with the characters of a finished book, and with the
+ * reader's own saved characters.
  *
  * The app talks to Gemini directly — this API only mints the short-lived,
  * single-use token that lets it, and meters the credits while the call is up.
  * Audio never passes through the server, which is what keeps a call from
  * costing us a second hop of bandwidth and latency on every syllable.
+ *
+ * Two casts, one call. `/projects/:id/voice/*` is the book's cast and
+ * `/voice/characters` is the library; each has its own read and its own
+ * gates on who may be rung, and both hand `connectVoiceCall` the same thing —
+ * a callee, a name, a voice and a way to build the instructions. From the hold
+ * onwards, and for every heartbeat and hang-up, a library call is a book call.
  */
 
 const GEMINI_INPUT_SAMPLE_RATE = 16000;
 const GEMINI_OUTPUT_SAMPLE_RATE = 24000;
 
+/** What a route knows about who is being rung, once it has decided they may be. */
+type VoiceCallConnection = {
+  callee: VoiceCallee;
+  characterId: string;
+  characterName: string;
+  voiceProfile: VoiceProfile;
+  /**
+   * Built after the rate limit is counted and before the call row exists — so
+   * a refused call spends no reads, and a call cannot remember itself.
+   */
+  instructions: () => Promise<string>;
+};
+
 export async function registerMobileVoiceRoutes(fastify: FastifyInstance, context: MobileRouteContext): Promise<void> {
-  const { appConfig, voiceCallLimiter, draftLimiter, voiceSession } = context;
+  const { appConfig, draftLimiter } = context;
 
   fastify.get(
     "/api/mobile/projects/:id/voice/cast",
@@ -78,15 +113,23 @@ export async function registerMobileVoiceRoutes(fastify: FastifyInstance, contex
         project.status === "COMPLETE" ? loadVoiceCast(id) : Promise.resolve([]),
         getCreditBalance(auth.user.id)
       ]);
-      return {
-        cast: {
-          characters,
-          creditsPerMinute: creditPricing().voiceCallPerMinute,
-          creditsToStart: voiceCallEntryCredits(),
-          availableCredits: balance.availableCredits,
-          maxCallSeconds: VOICE_CALL_POLICY.maxCallMinutes * 60
-        } satisfies MobileVoiceCastDto
-      };
+      return { cast: castDto(characters, balance) };
+    }
+  );
+
+  fastify.get(
+    "/api/mobile/voice/characters",
+    { schema: { tags: ["mobile"], response: { 401: mobileAuthError } } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      const [characters, balance] = await Promise.all([
+        loadLibraryVoiceCast(auth.user.id),
+        getCreditBalance(auth.user.id)
+      ]);
+      return { cast: castDto(characters, balance) };
     }
   );
 
@@ -125,7 +168,7 @@ export async function registerMobileVoiceRoutes(fastify: FastifyInstance, contex
         return sendMobileError(reply, 409, "CHARACTER_UNAVAILABLE", "That character cannot take calls.");
       }
       if (!appConfig.GEMINI_API_KEY?.trim()) {
-        return sendMobileError(reply, 503, "VOICE_UNAVAILABLE", "Voice calls are unavailable right now.");
+        return sendVoiceUnavailable(reply);
       }
 
       // A character nobody has called yet has no persona. Building one takes a
@@ -141,75 +184,90 @@ export async function registerMobileVoiceRoutes(fastify: FastifyInstance, contex
         );
       }
 
-      // Counted here rather than at the top of the handler: everything above
-      // either failed validation or answered "not yet", and charging a budget
-      // for an answer that did no work is what let one first-time call burn a
-      // whole hour of attempts.
-      if (!hitAuthenticatedLimit(voiceCallLimiter, reply, auth.user.id, "voice-call")) {
+      const callee: VoiceCallee = { kind: "book", projectId: id, characterId: character.id };
+      return connectVoiceCall(request, reply, context, auth, {
+        callee,
+        characterId: character.id,
+        characterName: character.name,
+        voiceProfile: normalizeVoiceProfile(character.voiceProfile),
+        instructions: async () => {
+          // A history read that fails is not worth losing a call over — the
+          // character just meets them fresh.
+          const [readerPage, history, bookCast] = await Promise.all([
+            loadReaderPageContext(id, parsed.data.pageIndex),
+            loadVoiceCallHistory({ userId: auth.user.id, callee }).catch((error: unknown) => {
+              request.log.warn({ err: error, projectId: id }, "Voice call history could not be read");
+              return [];
+            }),
+            loadVoiceBookCast(id)
+          ]);
+          return buildVoiceCallInstructions({
+            character,
+            bookTitle: character.project.title,
+            bookCast,
+            readerPage,
+            history: formatVoiceCallHistory(history)
+          });
+        }
+      });
+    }
+  );
+
+  fastify.post(
+    "/api/mobile/voice/characters/:characterId/calls",
+    {
+      attachValidation: true,
+      schema: {
+        tags: ["mobile"],
+        body: mobileLibraryVoiceCallStartOpenApiBody,
+        response: { 401: mobileAuthError, 404: mobileAuthError }
+      }
+    },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
         return;
       }
+      const { characterId } = libraryVoiceCharacterParamsSchema.parse(request.params);
+      const parsed = mobileLibraryVoiceCallStartBodySchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "That call request was not understood.");
+      }
 
-      // Read before the call row is created, so this call cannot remember
-      // itself. A history read that fails is not worth losing a call over —
-      // the character just meets them fresh.
-      const [readerPage, history, bookCast] = await Promise.all([
-        loadReaderPageContext(id, parsed.data.pageIndex),
-        loadVoiceCallHistory({ userId: auth.user.id, characterId: character.id }).catch((error: unknown) => {
-          request.log.warn({ err: error, projectId: id }, "Voice call history could not be read");
-          return [];
-        }),
-        loadVoiceBookCast(id)
-      ]);
-      const instructions = buildVoiceCallInstructions({
-        character,
-        bookTitle: character.project.title,
-        bookCast,
-        readerPage,
-        history: formatVoiceCallHistory(history)
-      });
+      const character = await loadLibraryVoiceCharacter(characterId, auth.user.id);
+      if (!character) {
+        return sendCharacterNotFound(reply);
+      }
+      if (!appConfig.GEMINI_API_KEY?.trim()) {
+        return sendVoiceUnavailable(reply);
+      }
 
-      let call;
-      try {
-        call = await startVoiceCall({ userId: auth.user.id, projectId: id, characterId: character.id });
-      } catch (error) {
-        if (error instanceof InsufficientCreditsError) {
-          return sendInsufficientCredits(reply, error);
+      // No "preparing" answer here: the persona is the reader's own notes,
+      // composed at call time, so a saved character is always ready to talk.
+      const callee: VoiceCallee = { kind: "library", libraryCharacterId: character.id };
+      return connectVoiceCall(request, reply, context, auth, {
+        callee,
+        characterId: character.id,
+        characterName: character.name,
+        voiceProfile: libraryVoiceProfile(character),
+        instructions: async () => {
+          const [acquaintances, history] = await Promise.all([
+            loadLibraryAcquaintances(character).catch((error: unknown) => {
+              request.log.warn({ err: error, libraryCharacterId: character.id }, "Voice call acquaintances could not be read");
+              return [];
+            }),
+            loadVoiceCallHistory({ userId: auth.user.id, callee }).catch((error: unknown) => {
+              request.log.warn({ err: error, libraryCharacterId: character.id }, "Voice call history could not be read");
+              return [];
+            })
+          ]);
+          return buildLibraryVoiceCallInstructions({
+            character,
+            acquaintances,
+            history: formatVoiceCallHistory(history)
+          });
         }
-        throw error;
-      }
-
-      try {
-        const session = await voiceSession({
-          characterName: character.name,
-          instructions,
-          voiceProfile: normalizeVoiceProfile(character.voiceProfile)
-        });
-        return {
-          session: {
-            callId: call.callId,
-            characterId: character.id,
-            characterName: character.name,
-            token: session.token,
-            model: session.model,
-            expiresAt: session.expiresAt,
-            inputSampleRate: GEMINI_INPUT_SAMPLE_RATE,
-            outputSampleRate: GEMINI_OUTPUT_SAMPLE_RATE,
-            secondsRemaining: call.secondsRemaining,
-            creditsPerMinute: call.creditsPerMinute,
-            heartbeatSeconds: call.heartbeatSeconds,
-            maxCallSeconds: call.maxCallSeconds
-          } satisfies MobileVoiceCallSessionDto
-        };
-      } catch (error) {
-        // The hold was taken a moment ago for a call that never connected.
-        // Releasing it here rather than leaving it to the sweep keeps a failed
-        // provider call from looking like a charge.
-        await endVoiceCall({ callId: call.callId, userId: auth.user.id, elapsedSeconds: 0, reason: "connect_failed" }).catch(
-          () => undefined
-        );
-        request.log.warn({ err: error, projectId: id }, "Mobile voice call could not be started");
-        return sendMobileError(reply, 503, "VOICE_UNAVAILABLE", "That call could not be connected. Try again in a moment.");
-      }
+      });
     }
   );
 
@@ -298,6 +356,86 @@ export async function registerMobileVoiceRoutes(fastify: FastifyInstance, contex
       }
     }
   );
+}
+
+/**
+ * From "they may be rung" to a token the app can dial with.
+ *
+ * The order is the contract. The limit is counted only once every "not yet"
+ * has been answered, because charging a budget for an answer that did no work
+ * is what let one first-time call burn a whole hour of attempts. The
+ * instructions are built before the call row exists, so this call cannot
+ * remember itself. The hold is taken before the token is minted, and released
+ * again if the mint fails, so a failed provider call never looks like a charge.
+ */
+async function connectVoiceCall(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  context: MobileRouteContext,
+  auth: MobileAuthContext,
+  connection: VoiceCallConnection
+): Promise<unknown> {
+  if (!hitAuthenticatedLimit(context.voiceCallLimiter, reply, auth.user.id, "voice-call")) {
+    return;
+  }
+  const instructions = await connection.instructions();
+
+  let call;
+  try {
+    call = await startVoiceCall({ userId: auth.user.id, callee: connection.callee });
+  } catch (error) {
+    if (error instanceof InsufficientCreditsError) {
+      return sendInsufficientCredits(reply, error);
+    }
+    throw error;
+  }
+
+  try {
+    const session = await context.voiceSession({
+      characterName: connection.characterName,
+      instructions,
+      voiceProfile: connection.voiceProfile
+    });
+    return {
+      session: {
+        callId: call.callId,
+        characterId: connection.characterId,
+        characterName: connection.characterName,
+        token: session.token,
+        model: session.model,
+        expiresAt: session.expiresAt,
+        inputSampleRate: GEMINI_INPUT_SAMPLE_RATE,
+        outputSampleRate: GEMINI_OUTPUT_SAMPLE_RATE,
+        secondsRemaining: call.secondsRemaining,
+        creditsPerMinute: call.creditsPerMinute,
+        heartbeatSeconds: call.heartbeatSeconds,
+        maxCallSeconds: call.maxCallSeconds
+      } satisfies MobileVoiceCallSessionDto
+    };
+  } catch (error) {
+    // The hold was taken a moment ago for a call that never connected.
+    // Releasing it here rather than leaving it to the sweep keeps a failed
+    // provider call from looking like a charge.
+    await endVoiceCall({ callId: call.callId, userId: auth.user.id, elapsedSeconds: 0, reason: "connect_failed" }).catch(
+      () => undefined
+    );
+    request.log.warn({ err: error, ...voiceCalleeColumns(connection.callee) }, "Mobile voice call could not be started");
+    return sendMobileError(reply, 503, "VOICE_UNAVAILABLE", "That call could not be connected. Try again in a moment.");
+  }
+}
+
+function castDto(characters: MobileVoiceCharacterDto[], balance: CreditBalance): MobileVoiceCastDto {
+  return {
+    characters,
+    creditsPerMinute: creditPricing().voiceCallPerMinute,
+    creditsToStart: voiceCallEntryCredits(),
+    availableCredits: balance.availableCredits,
+    maxCallSeconds: VOICE_CALL_POLICY.maxCallMinutes * 60
+  };
+}
+
+function sendVoiceUnavailable(reply: FastifyReply): FastifyReply {
+  return sendMobileError(reply, 503, "VOICE_UNAVAILABLE", "Voice calls are unavailable right now.");
 }
 
 /**

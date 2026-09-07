@@ -10,6 +10,7 @@ class CharacterLibraryCard extends StatelessWidget {
   const CharacterLibraryCard({
     required this.character,
     required this.onOpen,
+    required this.onCall,
     required this.onEdit,
     required this.onDelete,
     super.key,
@@ -17,6 +18,7 @@ class CharacterLibraryCard extends StatelessWidget {
 
   final LibraryCharacter character;
   final VoidCallback onOpen;
+  final VoidCallback onCall;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
@@ -61,6 +63,8 @@ class CharacterLibraryCard extends StatelessWidget {
                         icon: const Icon(Icons.more_horiz_rounded, size: 22),
                         onSelected: (action) {
                           switch (action) {
+                            case 'call':
+                              onCall();
                             case 'edit':
                               onEdit();
                             case 'delete':
@@ -70,6 +74,10 @@ class CharacterLibraryCard extends StatelessWidget {
                         // The tap opens the profile; the menu holds what the
                         // tap does not.
                         itemBuilder: (_) => [
+                          const PopupMenuItem(
+                            value: 'call',
+                            child: Text('Call'),
+                          ),
                           const PopupMenuItem(
                             value: 'edit',
                             child: Text('Edit details'),

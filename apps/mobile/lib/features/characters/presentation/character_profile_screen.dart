@@ -19,6 +19,7 @@ import '../data/character_image_share.dart';
 import '../data/characters_repository.dart';
 import '../domain/character_image_models.dart';
 import '../domain/character_models.dart';
+import 'character_call.dart';
 import 'character_editor_sheet.dart';
 import 'character_image_actions.dart';
 import 'character_image_strip.dart';
@@ -77,6 +78,9 @@ class _CharacterProfileScreenState extends ConsumerState<CharacterProfileScreen>
   bool _saving = false;
   bool _portraitBusy = false;
   bool _pictureBusy = false;
+
+  /// The cast read that precedes a call is in flight.
+  bool _calling = false;
 
   /// The frame the reader just approved, drawn before the round trip finishes.
   Uint8List? _pendingUpload;
@@ -423,6 +427,28 @@ class _CharacterProfileScreenState extends ConsumerState<CharacterProfileScreen>
     ref.invalidate(charactersProvider);
   }
 
+  Future<void> _call(LibraryCharacter character) async {
+    if (_busy || _calling) return;
+    setState(() => _calling = true);
+    // The spinner covers the cast read and nothing after it: the disclosure
+    // dialog and the call are the reader's, and a button that spins under a
+    // modal for the length of a call is a button that looks stuck.
+    void settled() {
+      if (mounted && _calling) setState(() => _calling = false);
+    }
+
+    try {
+      await callLibraryCharacter(
+        context: context,
+        ref: ref,
+        character: character,
+        onCastLoaded: settled,
+      );
+    } finally {
+      settled();
+    }
+  }
+
   Future<void> _openMentionedCharacter(String characterId) async {
     await Navigator.of(context).push(characterProfileRoute(characterId));
     if (!mounted) return;
@@ -612,29 +638,46 @@ class _CharacterProfileScreenState extends ConsumerState<CharacterProfileScreen>
                       showNextStep: false,
                     ),
                     const SizedBox(height: AppSpacing.xs),
-                    Align(
-                      alignment: AlignmentDirectional.centerStart,
-                      child: AppButton.text(
-                        label: 'Copy @${character.name}',
-                        leading: const Icon(
-                          Icons.alternate_email_rounded,
-                          size: 18,
+                    // The two things to do with a character that are not
+                    // about their picture: talk to them, or put them in a
+                    // book. A call is the one that happens right here, so it
+                    // gets the filled shape.
+                    Wrap(
+                      spacing: AppSpacing.sm,
+                      runSpacing: AppSpacing.xs,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        AppButton.tonal(
+                          key: const ValueKey('character-profile-call'),
+                          label: 'Call ${character.name}',
+                          leading: const Icon(Icons.call_outlined, size: 18),
+                          loading: _calling,
+                          onPressed: _busy || _calling
+                              ? null
+                              : () => _call(character),
                         ),
-                        onPressed: () async {
-                          final messenger = ScaffoldMessenger.of(context);
-                          await Clipboard.setData(
-                            ClipboardData(text: '@${character.name}'),
-                          );
-                          if (!mounted) return;
-                          messenger.showAppSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Character mention copied. Paste it into your book chat.',
+                        AppButton.text(
+                          label: 'Copy @${character.name}',
+                          leading: const Icon(
+                            Icons.alternate_email_rounded,
+                            size: 18,
+                          ),
+                          onPressed: () async {
+                            final messenger = ScaffoldMessenger.of(context);
+                            await Clipboard.setData(
+                              ClipboardData(text: '@${character.name}'),
+                            );
+                            if (!mounted) return;
+                            messenger.showAppSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Character mention copied. Paste it into your book chat.',
+                                ),
                               ),
-                            ),
-                          );
-                        },
-                      ),
+                            );
+                          },
+                        ),
+                      ],
                     ),
                   ],
                 ),

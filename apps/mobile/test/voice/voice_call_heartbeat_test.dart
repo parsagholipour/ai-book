@@ -127,7 +127,7 @@ class FakeVoiceRepository implements VoiceRepository {
   List<VoiceCallCaption>? endedWith;
 
   @override
-  Future<VoiceCast> getCast(String projectId) async => const VoiceCast(
+  Future<VoiceCast> getCast(String? projectId) async => const VoiceCast(
     characters: [],
     creditsPerMinute: 10,
     creditsToStart: 10,
@@ -137,7 +137,7 @@ class FakeVoiceRepository implements VoiceRepository {
 
   @override
   Future<VoiceCallSession> startCall({
-    required String projectId,
+    required String? projectId,
     required String characterId,
     int? pageIndex,
   }) async => const VoiceCallSession(

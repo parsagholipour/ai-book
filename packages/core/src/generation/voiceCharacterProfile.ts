@@ -51,7 +51,16 @@ export function normalizeVoiceProfile(value: unknown): VoiceProfile {
   return parsed.success ? parsed.data : DEFAULT_VOICE_PROFILE;
 }
 
-export function inferVoiceProfileFromCharacter(input: CreateProjectInput, character: PlanCharacter): VoiceProfile {
+/**
+ * Only `category` and `subcategory` are read: `category` decides whether a
+ * plain description implies a child's voice, and `subcategory` joins the text
+ * the heuristics run over. Narrowed so a library character — which has no
+ * project behind it at all — can be profiled with the same rules.
+ */
+export function inferVoiceProfileFromCharacter(
+  input: Pick<CreateProjectInput, "category" | "subcategory">,
+  character: PlanCharacter
+): VoiceProfile {
   const text = [
     character.name,
     character.role,

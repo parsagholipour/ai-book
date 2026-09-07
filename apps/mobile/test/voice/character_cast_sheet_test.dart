@@ -50,14 +50,14 @@ class FakeVoiceRepository implements VoiceRepository {
   int castCalls = 0;
 
   @override
-  Future<VoiceCast> getCast(String projectId) async {
+  Future<VoiceCast> getCast(String? projectId) async {
     castCalls += 1;
     return _cast;
   }
 
   @override
   Future<VoiceCallSession> startCall({
-    required String projectId,
+    required String? projectId,
     required String characterId,
     int? pageIndex,
   }) => throw UnimplementedError();

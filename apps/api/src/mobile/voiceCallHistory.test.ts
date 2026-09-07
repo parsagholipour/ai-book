@@ -29,6 +29,9 @@ describe("what a character carries between calls", () => {
   beforeEach(resetMobileHarness);
   afterEach(teardownMobileHarness);
 
+  /** The book cast member every read here is about. */
+  const marlow = { kind: "book", projectId: "project-1", characterId: "character-1" } as const;
+
   describe("reading it back", () => {
     it("returns earlier calls oldest first, so the last thing said is the last thing read", async () => {
       mockPrisma.voiceCall.findMany.mockResolvedValue([
@@ -36,7 +39,7 @@ describe("what a character carries between calls", () => {
         callRow({ agoMs: 5 * DAY, messages: [{ speaker: "caller", text: "last week" }] })
       ]);
 
-      const history = await loadVoiceCallHistory({ userId: "user-a", characterId: "character-1" });
+      const history = await loadVoiceCallHistory({ userId: "user-a", callee: marlow });
 
       expect(texts(history)).toEqual(["last week", "yesterday"]);
     });
@@ -47,7 +50,7 @@ describe("what a character carries between calls", () => {
         callRow({ agoMs: 2 * DAY, messages: exchange(60, "older") })
       ]);
 
-      const history = await loadVoiceCallHistory({ userId: "user-a", characterId: "character-1" });
+      const history = await loadVoiceCallHistory({ userId: "user-a", callee: marlow });
       const remembered = texts(history);
 
       expect(remembered).toHaveLength(100);
@@ -64,7 +67,7 @@ describe("what a character carries between calls", () => {
         callRow({ agoMs: 3 * DAY, messages: [{ speaker: "character", text: "the only line" }] })
       ]);
 
-      const history = await loadVoiceCallHistory({ userId: "user-a", characterId: "character-1" });
+      const history = await loadVoiceCallHistory({ userId: "user-a", callee: marlow });
 
       expect(history).toHaveLength(1);
       expect(texts(history)).toEqual(["the only line"]);
@@ -82,7 +85,7 @@ describe("what a character carries between calls", () => {
         })
       ]);
 
-      const history = await loadVoiceCallHistory({ userId: "user-a", characterId: "character-1" });
+      const history = await loadVoiceCallHistory({ userId: "user-a", callee: marlow });
 
       expect(texts(history)).toEqual(["kept"]);
     });
@@ -96,7 +99,7 @@ describe("what a character carries between calls", () => {
       }));
       mockPrisma.voiceCall.findMany.mockResolvedValue([callRow({ agoMs: DAY, messages: long })]);
 
-      const history = await loadVoiceCallHistory({ userId: "user-a", characterId: "character-1" });
+      const history = await loadVoiceCallHistory({ userId: "user-a", callee: marlow });
       const kept = texts(history);
 
       expect(kept.length).toBeLessThan(40);

@@ -38,7 +38,7 @@ class StubVoiceCallController extends VoiceCallController {
 
   @override
   Future<void> dial({
-    required String projectId,
+    required String? projectId,
     required VoiceCharacter character,
     int? pageIndex,
     VoiceCallAudio? audio,

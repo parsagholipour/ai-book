@@ -26,3 +26,16 @@ machinery that binds a description's tokens to other characters.
   grapheme walk, none of which care whether our resolver ran. Twenty times — ~13 printed pages — so
   that anything a reader *meant* as a description hits the refusal with its text whole, and only a
   paste nobody was going to edit down inside a six-line box meets the ceiling.
+- **Calling a saved character is the book's call with `projectId: null`, and the two gates in front
+  of it are the same gates.** `VoiceRepository` takes a nullable project — null routes the cast
+  read to `/api/mobile/voice/characters` and the start to its `/calls`, and sends no `pageIndex`
+  because there is no book for one to be in — and `VoiceCallScreen`, `VoiceCallController.dial`
+  and `VoiceCharacter.projectId` carry the same null through to the paywall. The way in is
+  `callLibraryCharacter` (`presentation/character_call.dart`) from the profile's Call button and
+  the library card's menu; it re-reads the library cast on every tap, because the cast carries the
+  balance and the price and both move between taps, then hands the server's own entry to
+  `launchVoiceCall` (`features/voice/presentation/voice_call_launcher.dart`), which is the balance
+  toast and the microphone disclosure the cast sheet also runs. The sheet passes `Navigator.pop` as
+  its `leave`; a screen that stays put passes nothing. The profile's spinner covers the cast read
+  and nothing after it — `onCastLoaded` is where it stops — because a button spinning under a modal
+  dialog, or for the length of a call, is a button that looks stuck.

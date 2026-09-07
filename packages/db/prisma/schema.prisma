@@ -1093,6 +1093,8 @@ model LibraryCharacter {
   images           LibraryCharacterImage[]
   outgoingMentions LibraryMention[] @relation("LibraryMentionSource")
   incomingMentions LibraryMention[] @relation("LibraryMentionTarget")
+  /// Live calls placed to this character from the library, outside any book.
+  calls            VoiceCall[]
 
   @@unique([userId, name])
   @@index([userId, createdAt])
@@ -1442,8 +1444,15 @@ model ProviderCallLog {
 model VoiceCall {
   id                 String    @id @default(cuid())
   userId             String
-  projectId          String
-  characterId        String
+  /// A call names exactly one callee. A book call carries `projectId` and
+  /// `characterId` together and cascades with the cast row; a library call
+  /// carries `libraryCharacterId` alone and is SetNull on delete, so a saved
+  /// character the reader removes leaves its paid, metered rows in place —
+  /// including an ACTIVE one the stale-call sweep still has to settle. The
+  /// `VoiceCall_one_callee` CHECK in migration 000070 holds both halves.
+  projectId          String?
+  characterId        String?
+  libraryCharacterId String?
   status             String    @default("ACTIVE")
   reservationEntryIds String[]
   heldCredits        Int       @default(0)
@@ -1459,14 +1468,16 @@ model VoiceCall {
   startedAt          DateTime  @default(now())
   endedAt            DateTime?
 
-  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  project        Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  voiceCharacter VoiceCharacter @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project          Project?         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  voiceCharacter   VoiceCharacter?  @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  libraryCharacter LibraryCharacter? @relation(fields: [libraryCharacterId], references: [id], onDelete: SetNull)
 
   @@index([userId, startedAt])
   @@index([projectId, startedAt])
   @@index([status, lastHeartbeatAt])
   @@index([userId, characterId, startedAt])
+  @@index([userId, libraryCharacterId, startedAt])
 }
 
 model VoiceCallEvent {

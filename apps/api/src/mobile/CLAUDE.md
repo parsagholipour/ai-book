@@ -1249,6 +1249,29 @@ the write binds has to be one all three of them can still find.
   into the next one's system instructions. That is *memory, not resumption*: every call is a fresh
   session, and the prompt says so in as many words. Uploads are at-least-once, so the append drops
   the overlap when a retried batch arrives twice.
+- **A call names one callee, and a library character is the callee with no book.** `VoiceCall`
+  carries either `projectId` + `characterId` (a book's cast row, cascading with it as before) or
+  `libraryCharacterId` alone (one of the reader's saved characters, `SetNull` on delete so the
+  metered rows — an ACTIVE one included — outlive the character and the sweep can still settle
+  them); `VoiceCall_one_callee` in migration 000070 is the CHECK that holds both halves.
+  `VoiceCallee` in `voiceCalls.ts` is the discriminated form every metering path takes, and
+  `routes/voice.ts` funnels both casts through one `connectVoiceCall`: the book route and
+  `/api/mobile/voice/characters/:characterId/calls` decide *who may be rung*, and from the rate
+  limit onwards — the hold, the token, the connect-failed release, every heartbeat and hang-up — a
+  library call *is* a book call. What differs is what a library callee lacks. There is no project,
+  so the ledger entries carry `projectId: null` exactly as a portrait charge does. There is no page,
+  so the body is empty and no spoiler guard is written. There is no persona job — the persona is
+  the reader's own notes composed at call time by `buildLibraryCharacterInstructions`
+  (`packages/core/src/generation/libraryVoiceCharacters.ts`), so a saved character is never
+  `preparing` — and the description reaches the prompt through `generationDescription`, `@`
+  markers stripped, with the characters it mentions and the ones that mention it as its cast
+  (`loadLibraryAcquaintances`). And the memory is its own: `loadVoiceCallHistory` is keyed by
+  `voiceCalleeIdentity`, so a book's cast row and the library character it was copied from never
+  read each other's calls — the book calls happen inside a story the library character has never
+  been in, and would leak its plot. The cast avatar is served through the retained picture's
+  immutable `/images/:id` URL rather than the `/portrait` or `/photo` alias, because the call
+  avatar loads with no cache-buster and an alias whose bytes changed would draw the picture the
+  reader just replaced.
 - **Restarting a failed narration resumes it; that is a property of the route, not the worker.** The
   worker has always skipped READY chapters, but `POST /api/mobile/projects/:id/audiobook` used to
   delete and recreate the `Audiobook` row every time, so the skip never had anything to skip. It now

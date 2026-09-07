@@ -17,7 +17,7 @@ VoiceCharacterStatus voiceCharacterStatusFrom(String? value) {
 class VoiceCharacter {
   const VoiceCharacter({
     required this.id,
-    required this.projectId,
+    this.projectId,
     required this.name,
     required this.role,
     required this.description,
@@ -33,7 +33,7 @@ class VoiceCharacter {
     final image = json['image'];
     return VoiceCharacter(
       id: json['id'] as String,
-      projectId: json['projectId'] as String? ?? '',
+      projectId: json['projectId'] as String?,
       name: json['name'] as String? ?? 'Character',
       role: json['role'] as String? ?? '',
       description: json['description'] as String? ?? '',
@@ -51,7 +51,11 @@ class VoiceCharacter {
   }
 
   final String id;
-  final String projectId;
+
+  /// The book this cast member is in, or null for one of the reader's own
+  /// saved characters called straight from the library — no book, no page to
+  /// scope the call to, and nothing for the paywall to name.
+  final String? projectId;
   final String name;
   final String role;
   final String description;

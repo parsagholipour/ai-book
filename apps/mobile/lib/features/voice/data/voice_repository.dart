@@ -9,16 +9,22 @@ import '../domain/voice_models.dart';
 /// The audio itself never comes through here — the app opens its own socket to
 /// Gemini with the token this hands back. What stays server-side is who may
 /// call, and what the call costs.
+///
+/// Two casts, one call. A `projectId` names a finished book's cast; null names
+/// the reader's own character library, which the server serves in the same
+/// shape and meters through the same heartbeat and end. Everything after the
+/// start is identical, which is why it is one repository and not two.
 abstract interface class VoiceRepository {
-  Future<VoiceCast> getCast(String projectId);
+  Future<VoiceCast> getCast(String? projectId);
 
   /// Starts a metered call.
   ///
   /// Throws [VoiceCharacterPreparingException] when the character's persona is
   /// still being built — the caller shows that as ringing and retries, because
-  /// it resolves on its own within seconds.
+  /// it resolves on its own within seconds. A library character is never
+  /// preparing: its persona is the reader's own notes.
   Future<VoiceCallSession> startCall({
-    required String projectId,
+    required String? projectId,
     required String characterId,
     int? pageIndex,
   });
@@ -55,23 +61,29 @@ class HttpVoiceRepository implements VoiceRepository {
   final ApiClient _client;
 
   @override
-  Future<VoiceCast> getCast(String projectId) async {
+  Future<VoiceCast> getCast(String? projectId) async {
     final data = await _client.getMap(
-      '/api/mobile/projects/$projectId/voice/cast',
+      projectId == null
+          ? '/api/mobile/voice/characters'
+          : '/api/mobile/projects/$projectId/voice/cast',
     );
     return VoiceCast.fromJson(data['cast'] as Map<String, dynamic>);
   }
 
   @override
   Future<VoiceCallSession> startCall({
-    required String projectId,
+    required String? projectId,
     required String characterId,
     int? pageIndex,
   }) async {
     try {
+      // A library call carries no page: there is no book for one to be in,
+      // and the server's body schema for it is empty.
       final data = await _client.postMap(
-        '/api/mobile/projects/$projectId/voice/characters/$characterId/calls',
-        data: {'pageIndex': ?pageIndex},
+        projectId == null
+            ? '/api/mobile/voice/characters/$characterId/calls'
+            : '/api/mobile/projects/$projectId/voice/characters/$characterId/calls',
+        data: {if (projectId != null) 'pageIndex': ?pageIndex},
       );
       return VoiceCallSession.fromJson(data['session'] as Map<String, dynamic>);
     } on ApiException catch (error) {
@@ -127,6 +139,7 @@ final voiceRepositoryProvider = Provider<VoiceRepository>((ref) {
   return HttpVoiceRepository(ref.watch(apiClientProvider));
 });
 
-final voiceCastProvider = FutureProvider.family<VoiceCast, String>((ref, projectId) {
+/// The cast of one book, or — keyed by null — the reader's character library.
+final voiceCastProvider = FutureProvider.family<VoiceCast, String?>((ref, projectId) {
   return ref.watch(voiceRepositoryProvider).getCast(projectId);
 });

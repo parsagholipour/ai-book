@@ -24,7 +24,9 @@ class VoiceCallScreen extends ConsumerStatefulWidget {
     super.key,
   });
 
-  final String projectId;
+  /// The book the character is in, or null for a call placed from the
+  /// reader's own character library.
+  final String? projectId;
   final VoiceCharacter character;
 
   /// The book page the caller was reading, when the call came from the reader.
@@ -499,6 +501,10 @@ class _FinishedCallActions extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final outOfCredits = state.endedBecause == VoiceCallEndingReason.credits;
+    // A library call was placed from the character's own page, not a book.
+    final backLabel = state.character?.projectId == null
+        ? 'Back to ${state.character?.name ?? 'the character'}'
+        : 'Back to the book';
     final explanation = switch (state.endedBecause) {
       VoiceCallEndingReason.credits => 'The call ended when your credits ran out.',
       VoiceCallEndingReason.limit =>
@@ -560,7 +566,7 @@ class _FinishedCallActions extends StatelessWidget {
               Navigator.of(context).pop();
             },
             icon: const Icon(Icons.arrow_back),
-            label: const Text('Back to the book'),
+            label: Text(backLabel),
           ),
         ] else
           FilledButton.icon(
@@ -569,7 +575,7 @@ class _FinishedCallActions extends StatelessWidget {
               Navigator.of(context).pop();
             },
             icon: const Icon(Icons.arrow_back),
-            label: const Text('Back to the book'),
+            label: Text(backLabel),
           ),
       ],
     );

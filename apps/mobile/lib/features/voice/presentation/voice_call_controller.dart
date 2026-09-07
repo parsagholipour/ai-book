@@ -95,8 +95,11 @@ class VoiceCallController extends Notifier<VoiceCallState> {
 
   /// Places the call. [pageIndex] is where the reader was, when the call came
   /// from the reader — it scopes what the character will talk about.
+  ///
+  /// A null [projectId] is a call to one of the reader's own saved characters,
+  /// placed from the library rather than from a book.
   Future<void> dial({
-    required String projectId,
+    required String? projectId,
     required VoiceCharacter character,
     int? pageIndex,
     VoiceCallAudio? audio,
@@ -237,7 +240,7 @@ class VoiceCallController extends Notifier<VoiceCallState> {
   /// caller retries the real call either way, so a cast read that fails is
   /// just a slower path, not a failure.
   Future<void> _waitForCharacterReady(
-    String projectId,
+    String? projectId,
     VoiceCharacter character,
     DateTime deadline,
   ) async {
@@ -333,7 +336,7 @@ class VoiceCallController extends Notifier<VoiceCallState> {
   }
 
   Future<VoiceCallSession> _startSession(
-    String projectId,
+    String? projectId,
     VoiceCharacter character,
     int? pageIndex,
   ) async {
@@ -372,7 +375,7 @@ class VoiceCallController extends Notifier<VoiceCallState> {
   }
 
   Future<void> _connectWithRetries(
-    String projectId,
+    String? projectId,
     VoiceCharacter character,
     int? pageIndex,
   ) async {

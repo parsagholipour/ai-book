@@ -8,6 +8,7 @@ import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
 import '../data/characters_repository.dart';
 import '../domain/character_models.dart';
+import 'character_call.dart';
 import 'character_editor_sheet.dart';
 import 'character_library_card.dart';
 import 'character_library_controls.dart';
@@ -81,6 +82,11 @@ class _CharacterLibraryScreenState extends ConsumerState<CharacterLibraryScreen>
     await showCharacterEditorSheet(context, character: character);
     if (!mounted) return;
     ref.invalidate(charactersProvider);
+  }
+
+  Future<void> _call(LibraryCharacter character) {
+    AppHaptics.tap();
+    return callLibraryCharacter(context: context, ref: ref, character: character);
   }
 
   Future<void> _confirmDelete(LibraryCharacter character) async {
@@ -249,6 +255,7 @@ class _CharacterLibraryScreenState extends ConsumerState<CharacterLibraryScreen>
                         key: ValueKey('character-card-${character.id}'),
                         character: character,
                         onOpen: () => _openProfile(character),
+                        onCall: () => _call(character),
                         onEdit: () => _editDetails(character),
                         onDelete: () => _confirmDelete(character),
                       );
