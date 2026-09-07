@@ -13,28 +13,48 @@ mixin _ProjectChatEditActions on ConsumerState<ProjectChatScreen> {
   String? _retryingOperationId;
   bool _undoing = false;
   bool _redoing = false;
-  bool _awaitingRebuildStatus = false;
+  final _rebuildHandoff = UndoRedoRebuildHandoff();
 
   bool get _hasPendingOperationAction =>
-      _undoing ||
-      _redoing ||
-      _awaitingRebuildStatus ||
-      _retryingOperationId != null;
+      _undoing || _redoing || _retryingOperationId != null;
 
-  List<String> get _operationThinkingStages =>
-      _awaitingRebuildStatus ? undoRebuildThinkingStages : bookChatThinkingStages;
+  /// Status held before a `projectStatusProvider` invalidate. Capture it then:
+  /// invalidate parses a new COMPLETE for the same row, and `identical` misses
+  /// that.
+  MobileProjectStatus? _currentProjectStatus() =>
+      ref.read(projectStatusProvider(widget.projectId)).asData?.value;
 
   /// Replaces the local Undo/Redo handoff with streamed progress (or removes it
   /// if a very fast rebuild already settled before the first status tick).
-  void _didReceiveProjectStatus() {
-    if (!_awaitingRebuildStatus) return;
-    setState(() => _awaitingRebuildStatus = false);
+  /// Loading / missing `asData` is not a tick — reconnect `.value` can still
+  /// be the COMPLETE from before Undo. The snapshot captured at arm is that
+  /// same COMPLETE, so it must not clear the rebuild either — nor a later
+  /// parse of the same row (`updatedAt` unchanged).
+  void _didReceiveProjectStatus(MobileProjectStatus status) {
+    if (!_rebuildHandoff.shouldSettle(status)) return;
+    setState(_rebuildHandoff.clear);
+  }
+
+  String? _composerLockLabel(MobileProjectStatus? liveStatus) {
+    if (_rebuildHandoff.awaiting) return 'Regenerating your book…';
+    if (liveStatus == null) return null;
+    return switch (liveStatus.status) {
+      'planning' => 'Revising your plan…',
+      'generating' => 'Generating your book…',
+      _ => 'Regenerating your book…',
+    };
+  }
+
+  bool _showThinking(MobileProjectStatus? liveStatus) {
+    if (liveStatus != null) return false;
+    return _sending || _editing || _hasPendingOperationAction;
   }
 
   // Provided by the screen this mixin is applied to.
   TextEditingController get _controller;
   bool get _sending;
   set _sending(bool value);
+  bool get _editing;
   bool get _bookIsBusy;
   String _newRequestId(String prefix);
   void _refresh();
@@ -43,6 +63,7 @@ mixin _ProjectChatEditActions on ConsumerState<ProjectChatScreen> {
   void _scrollToBottomSoon();
   void _armFallingEdge(MobileBookEditOperation? operation);
   Future<void> _sendMessage(String message);
+  List<MobileProjectChatMessage> _visibleMessages(MobileProjectChat chat);
 
   /// Drops the "You now have enough credits" follow-up: settling any proposal
   /// makes it stale, and its proposal card remains the way to run that edit.
@@ -185,7 +206,9 @@ mixin _ProjectChatEditActions on ConsumerState<ProjectChatScreen> {
     // After Undo B, card B can offer Redo while an older card A still offers
     // Undo. Both fire unawaited; starting A while B's Redo is in flight races
     // two manuscript writes.
-    if (_redoing || _undoing || _sending) return;
+    if (_redoing || _undoing || _sending || _rebuildHandoff.inFlight) {
+      return;
+    }
     final requestId = _newRequestId('undo');
     setState(() => _undoing = true);
     try {
@@ -194,9 +217,10 @@ mixin _ProjectChatEditActions on ConsumerState<ProjectChatScreen> {
           .undoLastBookEdit(projectId: widget.projectId, requestId: requestId);
       if (!mounted) return;
       _armFallingEdge(result.operation);
+      final statusBefore = _currentProjectStatus();
       setState(() {
         _undoing = false;
-        _awaitingRebuildStatus = result.reply.metadata['undo'] is Map;
+        _rebuildHandoff.arm(result, currentStatus: statusBefore);
       });
       _refresh();
       _scrollToBottomSoon();
@@ -204,16 +228,18 @@ mixin _ProjectChatEditActions on ConsumerState<ProjectChatScreen> {
       if (!mounted) return;
       setState(() {
         _undoing = false;
-        _awaitingRebuildStatus = false;
+        _rebuildHandoff.clear();
       });
-        ScaffoldMessenger.of(
+      ScaffoldMessenger.of(
         context,
       ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
   }
 
   Future<void> _redoLastEdit() async {
-    if (_redoing || _undoing || _sending) return;
+    if (_redoing || _undoing || _sending || _rebuildHandoff.inFlight) {
+      return;
+    }
     final requestId = _newRequestId('redo');
     setState(() => _redoing = true);
     try {
@@ -222,9 +248,10 @@ mixin _ProjectChatEditActions on ConsumerState<ProjectChatScreen> {
           .redoLastBookEdit(projectId: widget.projectId, requestId: requestId);
       if (!mounted) return;
       _armFallingEdge(result.operation);
+      final statusBefore = _currentProjectStatus();
       setState(() {
         _redoing = false;
-        _awaitingRebuildStatus = result.reply.metadata['redo'] is Map;
+        _rebuildHandoff.arm(result, currentStatus: statusBefore);
       });
       _refresh();
       _scrollToBottomSoon();
@@ -232,11 +259,37 @@ mixin _ProjectChatEditActions on ConsumerState<ProjectChatScreen> {
       if (!mounted) return;
       setState(() {
         _redoing = false;
-        _awaitingRebuildStatus = false;
+        _rebuildHandoff.clear();
       });
       ScaffoldMessenger.of(
         context,
       ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
+  }
+
+  Widget _operationBubble(
+    MobileBookEditOperation operation,
+    MobileProjectStatus? liveStatus, {
+    required bool rebuilding,
+  }) {
+    return ProjectChatOperationBubble(
+      projectId: widget.projectId,
+      operation: operation,
+      retrying: _retryingOperationId == operation.id,
+      undoing: _undoing,
+      redoing: _redoing,
+      liveStatus: liveStatus,
+      rebuilding: rebuilding,
+      onRetry: () => _retryOperation(operation),
+      onUndo: () => unawaited(_undoLastEdit()),
+      onRedo: () => unawaited(_redoLastEdit()),
+    );
+  }
+
+  TranscriptOperations _transcriptOperations(MobileProjectChat chat) {
+    return splitTranscriptOperations(
+      operations: chat.operations,
+      messages: _visibleMessages(chat),
+    );
   }
 }

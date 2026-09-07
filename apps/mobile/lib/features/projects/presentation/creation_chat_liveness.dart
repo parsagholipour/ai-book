@@ -163,3 +163,55 @@ mixin _LiveOutputRefresh
     });
   }
 }
+
+bool _shouldWatchGenerationStatus(MobileProjectDetail? project) {
+  if (project == null) return false;
+  if (project.plan?.isApproved ?? false) return true;
+  return switch (project.status) {
+    'planning' ||
+    'generating' ||
+    'editing' ||
+    'complete' ||
+    'review_required' ||
+    'failed' => true,
+    _ => false,
+  };
+}
+
+String? _outputMessagingLockLabel({
+  required String? projectStatus,
+  required MobileProjectStatus? liveStatus,
+  bool awaitingRebuild = false,
+}) {
+  if (awaitingRebuild) {
+    return 'Regenerating your book…';
+  }
+  if (liveStatus?.isLive ?? false) {
+    return liveStatus!.status == 'generating'
+        ? 'Generating your book…'
+        : 'Regenerating your book…';
+  }
+  if (projectStatus == 'generating') {
+    return 'Generating your book…';
+  }
+  if (projectStatus == 'editing') {
+    return 'Regenerating your book…';
+  }
+  return null;
+}
+
+Object? _generationScrollKey(AsyncValue<MobileProjectStatus>? statusValue) {
+  if (statusValue == null) return null;
+  return statusValue.when(
+    loading: () => 'loading',
+    error: (error, _) => 'error:$error',
+    data: (status) => (
+      status.status,
+      status.isComplete,
+      status.hasFailure,
+      status.quality.state,
+      // Export actions change the bubble height when they appear.
+      primaryUnlockedAvailableExport(status.exports)?.format,
+    ),
+  );
+}

@@ -8,6 +8,56 @@ import 'package:tomeza/shared/api/api_error.dart';
 
 import 'project_chat_harness_optimistic.dart';
 
+TextButton _undoButton(WidgetTester tester) =>
+    tester.widget<TextButton>(find.widgetWithText(TextButton, 'Undo'));
+
+void _expectCardDuringRebuild(WidgetTester tester) {
+  expect(
+    find.text('Open book'),
+    findsNothing,
+    reason: 'the previous PDF is still on disk until the compile finishes',
+  );
+  expect(find.text('See changes'), findsOneWidget);
+  expect(find.widgetWithText(TextButton, 'Undo'), findsOneWidget);
+  expect(_undoButton(tester).onPressed, isNull);
+}
+
+void _expectCardAfterRebuild(WidgetTester tester) {
+  expect(find.text('Open book'), findsOneWidget);
+  expect(find.text('See changes'), findsOneWidget);
+  expect(_undoButton(tester).onPressed, isNotNull);
+}
+
+Future<void> _pumpHandoffFrames(WidgetTester tester) async {
+  for (var frame = 0; frame < 4; frame++) {
+    await tester.pump(const Duration(milliseconds: 200));
+  }
+}
+
+Future<void> _emitLiveRebuildThenComplete(
+  WidgetTester tester,
+  ScriptedProjectsRepository repository,
+) async {
+  repository.emitStatus(
+    status: 'editing',
+    progressPercent: 92,
+    action: 'Laying out your updated book',
+    editProgress: editProgress(92, active: 'Rebuilding your book'),
+  );
+  await tester.pump();
+  await tester.pump();
+
+  expect(find.text('Rebuilding your book…'), findsNothing);
+  expect(find.text('Laying out your updated book'), findsOneWidget);
+  _expectCardDuringRebuild(tester);
+
+  repository.emitStatus(status: 'complete', progressPercent: 100);
+  await tester.pump();
+  await tester.pump();
+
+  _expectCardAfterRebuild(tester);
+}
+
 void main() {
   testWidgets(
     'undo keeps showing a rebuild indicator until live status arrives',
@@ -21,9 +71,7 @@ void main() {
       await tester.tap(find.text('Undo'));
       // Not pumpAndSettle: the handoff spinner is expected to keep animating
       // until the status stream produces its first post-Undo event.
-      for (var frame = 0; frame < 4; frame++) {
-        await tester.pump(const Duration(milliseconds: 200));
-      }
+      await _pumpHandoffFrames(tester);
 
       expect(
         find.text('Rebuilding your book…'),
@@ -32,18 +80,155 @@ void main() {
             'the request has queued a compile, but the status stream has not '
             'reported it yet',
       );
+      expect(find.text('0%'), findsOneWidget);
+      expect(find.text('Rebuilding your book'), findsOneWidget);
+      expect(find.text('Reading your message…'), findsNothing);
+      _expectCardDuringRebuild(tester);
+
+      await _emitLiveRebuildThenComplete(tester, repository);
+    },
+  );
+
+  testWidgets(
+    'a typed Undo keeps the rebuild indicator until live status arrives',
+    (tester) async {
+      final repository = ScriptedProjectsRepository()
+        ..withAppliedEditThenPendingProposal();
+      repository.sendResult = repository.successfulUndoResult;
+      await tester.pumpWidget(chatApp(repository));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'Undo');
+      await tester.tap(find.byIcon(Icons.send_outlined));
+      await _pumpHandoffFrames(tester);
+
+      expect(
+        find.text('Rebuilding your book…'),
+        findsOneWidget,
+        reason:
+            'typed Undo queues a compile the same way the card does; the '
+            'transcript must not go idle before the first status tick',
+      );
+      expect(find.text('0%'), findsOneWidget);
+      expect(find.text('Rebuilding your book'), findsOneWidget);
+      expect(find.text('Reading your message…'), findsNothing);
+      _expectCardDuringRebuild(tester);
+
+      await _emitLiveRebuildThenComplete(tester, repository);
+    },
+  );
+
+  testWidgets(
+    'undo ignores a stale complete status with the same updatedAt',
+    (tester) async {
+      final repository = ScriptedProjectsRepository()
+        ..withAppliedEditThenPendingProposal();
+      repository.undoResult = repository.successfulUndoResult;
+      await tester.pumpWidget(chatApp(repository));
+      await tester.pumpAndSettle();
+
+      final seededAt = DateTime.utc(2026, 6, 15, 12);
+      repository.emitStatus(
+        status: 'complete',
+        progressPercent: 100,
+        updatedAt: seededAt,
+      );
+      await tester.pump();
+      await tester.pump();
+
+      await tester.tap(find.text('Undo'));
+      await _pumpHandoffFrames(tester);
+
+      expect(find.text('Rebuilding your book…'), findsOneWidget);
+      expect(find.text('0%'), findsOneWidget);
+      expect(find.text('Rebuilding your book'), findsOneWidget);
+      expect(find.text('Reading your message…'), findsNothing);
+      _expectCardDuringRebuild(tester);
 
       repository.emitStatus(
-        status: 'editing',
-        progressPercent: 92,
-        action: 'Laying out your updated book',
-        editProgress: editProgress(92, active: 'Rebuilding your book'),
+        status: 'complete',
+        progressPercent: 100,
+        updatedAt: seededAt,
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        find.text('Rebuilding your book…'),
+        findsOneWidget,
+        reason:
+            'a refetch of the same COMPLETE row is the status from before Undo, '
+            'not a finished rebuild',
+      );
+      expect(find.text('0%'), findsOneWidget);
+      expect(find.text('Rebuilding your book'), findsOneWidget);
+      _expectCardDuringRebuild(tester);
+
+      repository.emitStatus(
+        status: 'complete',
+        progressPercent: 100,
+        updatedAt: DateTime.utc(2026, 6, 15, 13),
       );
       await tester.pump();
       await tester.pump();
 
       expect(find.text('Rebuilding your book…'), findsNothing);
-      expect(find.text('Laying out your updated book'), findsOneWidget);
+      _expectCardAfterRebuild(tester);
+    },
+  );
+
+  testWidgets(
+    'a typed Undo drops the rebuild indicator when the first status is already settled',
+    (tester) async {
+      final repository = ScriptedProjectsRepository()
+        ..withAppliedEditThenPendingProposal();
+      repository.sendResult = repository.successfulUndoResult;
+      await tester.pumpWidget(chatApp(repository));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'Undo');
+      await tester.tap(find.byIcon(Icons.send_outlined));
+      await _pumpHandoffFrames(tester);
+
+      expect(find.text('Rebuilding your book…'), findsOneWidget);
+      expect(find.text('0%'), findsOneWidget);
+      expect(find.text('Rebuilding your book'), findsOneWidget);
+
+      repository.emitStatus(status: 'complete', progressPercent: 100);
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        find.text('Rebuilding your book…'),
+        findsNothing,
+        reason:
+            'a very fast rebuild already settled before the first status tick; '
+            'keeping the handoff would leave Regenerating up',
+      );
+      _expectCardAfterRebuild(tester);
+    },
+  );
+
+  testWidgets(
+    'a typed Redo keeps the rebuild indicator until live status arrives',
+    (tester) async {
+      final repository = ScriptedProjectsRepository()
+        ..withAppliedEditThenPendingProposal();
+      repository.sendResult = repository.successfulRedoRebuildResult;
+      await tester.pumpWidget(chatApp(repository));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'Redo');
+      await tester.tap(find.byIcon(Icons.send_outlined));
+      await _pumpHandoffFrames(tester);
+
+      expect(find.text('Rebuilding your book…'), findsOneWidget);
+      expect(find.text('0%'), findsOneWidget);
+      expect(find.text('Rebuilding your book'), findsOneWidget);
+      expect(find.text('Reading your message…'), findsNothing);
+      _expectCardDuringRebuild(tester);
+
+      await _emitLiveRebuildThenComplete(tester, repository);
     },
   );
 
@@ -300,84 +485,81 @@ void main() {
     expect(find.text('Undo'), findsNothing);
   });
 
-  testWidgets(
-    'undo on an older card does not start while redo is in flight',
-    (tester) async {
-      // After Undo B, card B offers Redo and older card A can still offer
-      // Undo. Both fire unawaited; tapping A while B is spinning would
-      // race two manuscript writes.
-      final repository = ScriptedProjectsRepository()
-        ..withAppliedEditThenPendingProposal()
-        ..withSecondAppliedEdit();
-      final newer = repository.operations[0];
-      final older = repository.operations[1];
-      repository.operations[0] = MobileBookEditOperation(
-        id: newer.id,
-        projectId: newer.projectId,
-        kind: newer.kind,
-        status: newer.status,
-        affectedPageIndexes: newer.affectedPageIndexes,
-        creditsCharged: newer.creditsCharged,
-        currentAction: newer.currentAction,
-        createdAt: newer.createdAt,
-        anchorMessageId: newer.anchorMessageId,
-        canUndo: false,
-        canRedo: true,
-        changesAvailable: newer.changesAvailable,
-      );
-      repository.operations[1] = MobileBookEditOperation(
-        id: older.id,
-        projectId: older.projectId,
-        kind: older.kind,
-        status: older.status,
-        affectedPageIndexes: older.affectedPageIndexes,
-        creditsCharged: older.creditsCharged,
-        currentAction: older.currentAction,
-        createdAt: older.createdAt,
-        anchorMessageId: older.anchorMessageId,
-        canUndo: true,
-        canRedo: false,
-        changesAvailable: older.changesAvailable,
-      );
-      final redoHang = Completer<void>();
-      repository.redoGates.add(redoHang);
-      repository.redoResult = repository.successfulRedoResult;
+  testWidgets('undo on an older card does not start while redo is in flight', (
+    tester,
+  ) async {
+    // After Undo B, card B offers Redo and older card A can still offer
+    // Undo. Both fire unawaited; tapping A while B is spinning would
+    // race two manuscript writes.
+    final repository = ScriptedProjectsRepository()
+      ..withAppliedEditThenPendingProposal()
+      ..withSecondAppliedEdit();
+    final newer = repository.operations[0];
+    final older = repository.operations[1];
+    repository.operations[0] = MobileBookEditOperation(
+      id: newer.id,
+      projectId: newer.projectId,
+      kind: newer.kind,
+      status: newer.status,
+      affectedPageIndexes: newer.affectedPageIndexes,
+      creditsCharged: newer.creditsCharged,
+      currentAction: newer.currentAction,
+      createdAt: newer.createdAt,
+      anchorMessageId: newer.anchorMessageId,
+      canUndo: false,
+      canRedo: true,
+      changesAvailable: newer.changesAvailable,
+    );
+    repository.operations[1] = MobileBookEditOperation(
+      id: older.id,
+      projectId: older.projectId,
+      kind: older.kind,
+      status: older.status,
+      affectedPageIndexes: older.affectedPageIndexes,
+      creditsCharged: older.creditsCharged,
+      currentAction: older.currentAction,
+      createdAt: older.createdAt,
+      anchorMessageId: older.anchorMessageId,
+      canUndo: true,
+      canRedo: false,
+      changesAvailable: older.changesAvailable,
+    );
+    final redoHang = Completer<void>();
+    repository.redoGates.add(redoHang);
+    repository.redoResult = repository.successfulRedoResult;
 
-      await tester.pumpWidget(chatApp(repository));
-      await tester.pumpAndSettle();
+    await tester.pumpWidget(chatApp(repository));
+    await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Redo'));
-      for (var frame = 0; frame < 4; frame++) {
-        await tester.pump(const Duration(milliseconds: 200));
-      }
+    await tester.tap(find.text('Redo'));
+    await _pumpHandoffFrames(tester);
 
-      expect(repository.redoCalls, 1);
-      // The older Undo sits under the app bar until we scroll to it. A tap
-      // that misses still leaves undoCalls at 0, which would pass this
-      // test without ever exercising the gate.
-      await tester.ensureVisible(find.text('Undo'));
-      await tester.pump();
-      expect(
-        tester
-            .widget<TextButton>(find.widgetWithText(TextButton, 'Undo'))
-            .onPressed,
-        isNull,
-        reason: 'the live Redo has to disable the sibling Undo too',
-      );
-      // Disabled buttons drop pointer events; the tap is the reader trying.
-      await tester.tap(find.text('Undo'), warnIfMissed: false);
-      await tester.pump();
+    expect(repository.redoCalls, 1);
+    // The older Undo sits under the app bar until we scroll to it. A tap
+    // that misses still leaves undoCalls at 0, which would pass this
+    // test without ever exercising the gate.
+    await tester.ensureVisible(find.text('Undo'));
+    await tester.pump();
+    expect(
+      tester
+          .widget<TextButton>(find.widgetWithText(TextButton, 'Undo'))
+          .onPressed,
+      isNull,
+      reason: 'the live Redo has to disable the sibling Undo too',
+    );
+    // Disabled buttons drop pointer events; the tap is the reader trying.
+    await tester.tap(find.text('Undo'), warnIfMissed: false);
+    await tester.pump();
 
-      expect(
-        repository.undoCalls,
-        0,
-        reason: 'Redo is still in flight; Undo must not start a second write',
-      );
+    expect(
+      repository.undoCalls,
+      0,
+      reason: 'Redo is still in flight; Undo must not start a second write',
+    );
 
-      redoHang.complete();
-      await tester.pumpAndSettle();
-    },
-  );
+    redoHang.complete();
+    await tester.pumpAndSettle();
+  });
 
   testWidgets('every applied edit gets its own entry, not just the newest', (
     tester,

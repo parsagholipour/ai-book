@@ -78,6 +78,25 @@ class MobileProjectChatMessage {
     return charged;
   }
 
+  /// Undo/Redo actually restored pages and queued a compile. A "nothing to
+  /// undo" reply has no such map, so the chat must not keep a rebuild spinner
+  /// up for a turn that changed nothing.
+  bool get queuedRebuildAfterUndoRedo =>
+      metadata['undo'] is Map || metadata['redo'] is Map;
+
+  /// The operation this Undo/Redo reply is about, from metadata. The wire
+  /// [operationId] is preferred at call sites; this is what a reply written
+  /// before that column was stamped still carries.
+  String? get undoRedoOperationId {
+    for (final key in ['undo', 'redo']) {
+      final raw = metadata[key];
+      if (raw is! Map) continue;
+      final id = raw['operationId'];
+      if (id is String && id.trim().isNotEmpty) return id.trim();
+    }
+    return null;
+  }
+
   /// Structured read-only book content (outline/chapter/page) attached to
   /// this message by the show-content intent.
   MobileChatContentCard? get contentCard {

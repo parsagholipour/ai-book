@@ -135,6 +135,7 @@ extension _CreationChatTranscriptActions on _CreationChatScreenState {
     if (_outputMessagingLockLabel(
           projectStatus: projectStatus,
           liveStatus: liveStatus,
+          awaitingRebuild: _rebuildHandoff.awaiting,
         ) !=
         null) {
       return;

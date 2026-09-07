@@ -32,8 +32,9 @@ class _BuiltHeaderView {
 /// 'Generating your book · 46%' stay distinct by construction.
 _BuiltHeaderView? _builtHeaderView(
   MobileProjectStatus? liveStatus,
-  MobileProjectDetail? project,
-) {
+  MobileProjectDetail? project, {
+  bool awaitingRebuild = false,
+}) {
   final status = liveStatus?.status ?? project?.status;
   if (status == null) {
     return null;
@@ -89,6 +90,16 @@ _BuiltHeaderView? _builtHeaderView(
         badgeTone: AppTone.info,
       );
   }
+  if (awaitingRebuild) {
+    // The compile is queued but the stream still says complete. Leaving
+    // Ready here is the gap typed Undo/Redo used to sit in.
+    return const _BuiltHeaderView(
+      pitch: 'Rebuilding your book…',
+      badgeLabel: 'Updating',
+      badgeIcon: Icons.autorenew_outlined,
+      badgeTone: AppTone.info,
+    );
+  }
   final requiresReview =
       liveStatus?.requiresReview ?? status == 'review_required';
   if (requiresReview) {
@@ -140,6 +151,7 @@ class _BriefHeader extends StatefulWidget {
     this.statusValue,
     this.onOpenAdvanced,
     this.onEditTitle,
+    this.awaitingRebuild = false,
   });
 
   final CreationChatState state;
@@ -166,6 +178,9 @@ class _BriefHeader extends StatefulWidget {
   /// Opens the title sheet from the pen chip in the expanded panel; null
   /// once built, when the title belongs to the book rather than the brief.
   final Future<void> Function()? onEditTitle;
+
+  /// Undo/Redo queued a compile but status is still the settled book.
+  final bool awaitingRebuild;
 
   @override
   State<_BriefHeader> createState() => _BriefHeaderState();
@@ -204,7 +219,13 @@ class _BriefHeaderState extends State<_BriefHeader> {
     final built = widget.activeProjectId != null;
     final project = built ? widget.planValue?.asData?.value : null;
     final liveStatus = built ? widget.statusValue?.asData?.value : null;
-    final builtView = built ? _builtHeaderView(liveStatus, project) : null;
+    final builtView = built
+        ? _builtHeaderView(
+            liveStatus,
+            project,
+            awaitingRebuild: widget.awaitingRebuild,
+          )
+        : null;
     final brief = state.brief;
     final colors = Theme.of(context).colorScheme;
     final presets = state.presets;
@@ -418,4 +439,32 @@ class _OutputSwitcher extends StatelessWidget {
       ),
     );
   }
+}
+
+String _planSnapshotLabel(MobilePlan plan) {
+  if (plan.isSuperseded) return 'Previous plan';
+  if (plan.version > 1) return 'Revised plan ready';
+  return 'Book plan ready';
+}
+
+String _planProgressLabel(MobileProjectDetail project) {
+  final currentAction = project.currentAction.trim();
+  final hasExistingPlan = project.plan != null;
+  if (hasExistingPlan && project.status == 'planning') {
+    return currentAction.isNotEmpty &&
+            currentAction != 'Creating your book plan.' &&
+            currentAction != 'Ready for review.'
+        ? currentAction
+        : 'Revising your book plan…';
+  }
+  if (hasExistingPlan &&
+      (currentAction.isEmpty || currentAction == 'Creating your book plan.')) {
+    return 'Revising your book plan…';
+  }
+  if (currentAction.isNotEmpty) {
+    return currentAction;
+  }
+  return hasExistingPlan
+      ? 'Revising your book plan…'
+      : 'Building your book plan…';
 }

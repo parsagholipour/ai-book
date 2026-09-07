@@ -44,6 +44,7 @@ class ScriptedProjectsRepository implements ProjectsRepository {
     (role: 'assistant', content: 'Hi! What should we edit?'),
     (role: 'user', content: 'Existing user message'),
   ];
+  final _messageOverrides = <String, MobileProjectChatMessage>{};
   final sendGates = <Completer<void>>[];
   final editGates = <Completer<void>>[];
   final sendRequestIds = <String?>[];
@@ -52,6 +53,7 @@ class ScriptedProjectsRepository implements ProjectsRepository {
   final chatFetches = <String>[];
   final statusController = StreamController<MobileProjectStatus>.broadcast();
   MobileProjectChatSendResult Function()? applyResult;
+  MobileProjectChatSendResult Function()? sendResult;
   MobileProjectChatSendResult Function()? undoResult;
   MobileProjectChatSendResult Function()? redoResult;
   final redoGates = <Completer<void>>[];
@@ -67,6 +69,7 @@ class ScriptedProjectsRepository implements ProjectsRepository {
     int progressPercent = 0,
     String action = '',
     MobileGenerationProgress? editProgress,
+    DateTime? updatedAt,
   }) {
     statusController.add(
       MobileProjectStatus(
@@ -100,7 +103,7 @@ class ScriptedProjectsRepository implements ProjectsRepository {
             contentType: 'application/epub+zip',
           ),
         ),
-        updatedAt: DateTime.utc(2026, 6, 15),
+        updatedAt: updatedAt ?? DateTime.utc(2026, 6, 15),
       ),
     );
   }
@@ -210,15 +213,20 @@ class ScriptedProjectsRepository implements ProjectsRepository {
     return MobileProjectChat(
       messages: [
         for (final (index, entry) in _contents.indexed)
-          MobileProjectChatMessage(
-            id: 'm$index',
-            projectId: 'project-1',
-            parentId: index == 0 ? null : 'm${index - 1}',
-            role: entry.role,
-            content: entry.content,
-            metadata: const {},
-            createdAt: DateTime.utc(2026, 6, 15).add(Duration(minutes: index)),
-          ),
+          _messageOverrides['m$index'] ??
+              MobileProjectChatMessage(
+                id: 'm$index',
+                projectId: 'project-1',
+                parentId: index == 0 ? null : 'm${index - 1}',
+                role: entry.role,
+                content: entry.content,
+                metadata: const {},
+                createdAt: DateTime.utc(
+                  2026,
+                  6,
+                  15,
+                ).add(Duration(minutes: index)),
+              ),
       ],
       operations: List.of(operations),
     );
@@ -236,6 +244,29 @@ class ScriptedProjectsRepository implements ProjectsRepository {
     );
   }
 
+  MobileProjectChatMessage _stampRebuildReply(
+    MobileProjectChatMessage reply, {
+    required String action,
+  }) {
+    final stamped = MobileProjectChatMessage(
+      id: reply.id,
+      projectId: reply.projectId,
+      parentId: reply.parentId,
+      role: reply.role,
+      content: reply.content,
+      operationId: 'op-1',
+      metadata: {
+        action: {
+          'operationId': 'op-1',
+          'restoredPageIndexes': [1],
+        },
+      },
+      createdAt: reply.createdAt,
+    );
+    _messageOverrides[stamped.id] = stamped;
+    return stamped;
+  }
+
   MobileProjectChatSendResult successfulUndoResult() {
     _contents.add((role: 'user', content: 'Undo'));
     _contents.add((
@@ -245,24 +276,10 @@ class ScriptedProjectsRepository implements ProjectsRepository {
           'Undo is free.',
     ));
     final chat = _chat();
-    final reply = chat.messages.last;
     return MobileProjectChatSendResult(
       messages: chat.messages,
       operations: chat.operations,
-      reply: MobileProjectChatMessage(
-        id: reply.id,
-        projectId: reply.projectId,
-        parentId: reply.parentId,
-        role: reply.role,
-        content: reply.content,
-        metadata: const {
-          'undo': {
-            'operationId': 'op-1',
-            'restoredPageIndexes': [1],
-          },
-        },
-        createdAt: reply.createdAt,
-      ),
+      reply: _stampRebuildReply(chat.messages.last, action: 'undo'),
     );
   }
 
@@ -281,6 +298,15 @@ class ScriptedProjectsRepository implements ProjectsRepository {
       messages: chat.messages,
       operations: chat.operations,
       reply: chat.messages.last,
+    );
+  }
+
+  MobileProjectChatSendResult successfulRedoRebuildResult() {
+    final result = successfulRedoResult();
+    return MobileProjectChatSendResult(
+      messages: result.messages,
+      operations: result.operations,
+      reply: _stampRebuildReply(result.reply, action: 'redo'),
     );
   }
 
@@ -309,6 +335,8 @@ class ScriptedProjectsRepository implements ProjectsRepository {
     if (sendGates.isNotEmpty) {
       await sendGates.removeAt(0).future;
     }
+    final build = sendResult;
+    if (build != null) return build();
     return _appendTurn(message);
   }
 

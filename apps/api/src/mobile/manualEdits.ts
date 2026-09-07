@@ -566,6 +566,7 @@ export async function undoLastBookEdit(
   return createAssistantChatMessage({
     projectId: project.id,
     parentId,
+    operationId: operation.id,
     content: undoConfirmation(operation.request, structural, restoredPageIndexes),
     metadata: {
       intent,

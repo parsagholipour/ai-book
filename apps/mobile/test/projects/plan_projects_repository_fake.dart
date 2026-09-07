@@ -46,6 +46,14 @@ class PlanProjectsRepository implements ProjectsRepository {
   /// Makes the next chat send fail.
   Object? sendFailure;
 
+  /// Stamped onto the next assistant chat reply, then cleared.
+  Map<String, dynamic>? nextSendReplyMetadata;
+
+  /// Status the next chat send should start watching, then cleared.
+  MobileProjectStatus? nextSendStatus;
+
+  final statusPushes = StreamController<MobileProjectStatus>.broadcast();
+
   /// Makes the next generation recovery fail.
   Object? resumeFailure;
 
@@ -67,12 +75,13 @@ class PlanProjectsRepository implements ProjectsRepository {
   Stream<MobileProjectStatus> watchProjectStatus(String id) async* {
     final status = await getProjectStatus(id);
     yield status;
-    // The server holds this open for as long as the book is live and closes it
-    // the moment it settles — and a stream that ends early is exactly what
-    // makes the client fall back to polling. Ending one here on a live book
-    // would leave that poll's timer pending past the end of the test.
-    if (status.isLive) {
-      await Completer<void>().future;
+    yield* statusPushes.stream;
+  }
+
+  void emitStatus(MobileProjectStatus next) {
+    status = next;
+    if (!statusPushes.isClosed) {
+      statusPushes.add(next);
     }
   }
 
@@ -246,6 +255,13 @@ class PlanProjectsRepository implements ProjectsRepository {
     }
     final isPlanQuestion =
         !(project.plan?.isApproved ?? false) && message.trim().endsWith('?');
+    final replyMetadata = nextSendReplyMetadata ?? const <String, dynamic>{};
+    nextSendReplyMetadata = null;
+    final nextStatus = nextSendStatus;
+    nextSendStatus = null;
+    if (nextStatus != null) {
+      status = nextStatus;
+    }
     final userMessage = MobileProjectChatMessage(
       id: 'chat-user-${chatMessages.length + 1}',
       projectId: projectId,
@@ -254,17 +270,19 @@ class PlanProjectsRepository implements ProjectsRepository {
       metadata: const {},
       createdAt: DateTime.utc(2026, 6, 15, 12, chatMessages.length),
     );
-    final assistantMessage = MobileProjectChatMessage(
-      id: 'chat-assistant-${chatMessages.length + 2}',
-      projectId: projectId,
-      role: 'assistant',
-      content: isPlanQuestion
-          ? 'Here’s the current plan.'
-          : (project.plan?.isApproved ?? false)
-          ? 'I can help edit this book.'
-          : 'I’ll revise the plan now.',
-      metadata: const {},
-      createdAt: DateTime.utc(2026, 6, 15, 12, chatMessages.length + 1),
+    final assistantMessage = _withOperationId(
+      MobileProjectChatMessage(
+        id: 'chat-assistant-${chatMessages.length + 2}',
+        projectId: projectId,
+        role: 'assistant',
+        content: isPlanQuestion
+            ? 'Here’s the current plan.'
+            : (project.plan?.isApproved ?? false)
+            ? 'I can help edit this book.'
+            : 'I’ll revise the plan now.',
+        metadata: replyMetadata,
+        createdAt: DateTime.utc(2026, 6, 15, 12, chatMessages.length + 1),
+      ),
     );
     chatMessages.addAll([userMessage, assistantMessage]);
     MobileBookEditOperation? operation;
@@ -304,7 +322,7 @@ class PlanProjectsRepository implements ProjectsRepository {
     required String messageId,
     required String message,
     String? requestId,
-      List<String>? mentionedCharacterIds,
+    List<String>? mentionedCharacterIds,
   }) {
     return sendProjectChatMessage(projectId: projectId, message: message);
   }
@@ -331,16 +349,24 @@ class PlanProjectsRepository implements ProjectsRepository {
   Future<MobileProjectChatSendResult> undoLastBookEdit({
     required String projectId,
     String? requestId,
-  }) async {
-    throw UnimplementedError();
+  }) {
+    return sendProjectChatMessage(
+      projectId: projectId,
+      message: 'Undo',
+      requestId: requestId,
+    );
   }
 
   @override
   Future<MobileProjectChatSendResult> redoLastBookEdit({
     required String projectId,
     String? requestId,
-  }) async {
-    throw UnimplementedError();
+  }) {
+    return sendProjectChatMessage(
+      projectId: projectId,
+      message: 'Redo',
+      requestId: requestId,
+    );
   }
 
   @override
@@ -420,4 +446,20 @@ class PlanProjectsRepository implements ProjectsRepository {
   dynamic noSuchMethod(Invocation invocation) {
     throw UnimplementedError('Not used in this test.');
   }
+}
+
+MobileProjectChatMessage _withOperationId(MobileProjectChatMessage reply) {
+  final operationId = reply.undoRedoOperationId;
+  if (operationId == null) return reply;
+  return MobileProjectChatMessage(
+    id: reply.id,
+    projectId: reply.projectId,
+    parentId: reply.parentId,
+    role: reply.role,
+    content: reply.content,
+    operationId: operationId,
+    metadata: reply.metadata,
+    createdAt: reply.createdAt,
+    branch: reply.branch,
+  );
 }

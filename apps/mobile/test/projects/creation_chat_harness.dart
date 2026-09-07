@@ -297,6 +297,7 @@ MobileProjectStatus projectStatus({
   MobileGenerationProgress? generationProgress,
   MobileGenerationProgress? editProgress,
   MobileExportSet exports = _exports,
+  DateTime? updatedAt,
 }) {
   final complete = status == 'complete';
   final failed = status == 'failed';
@@ -350,7 +351,7 @@ MobileProjectStatus projectStatus({
     exports: exports,
     coverEnabled: coverEnabled,
     illustrationsEnabled: illustrationsEnabled,
-    updatedAt: DateTime.utc(2026, 6, 15),
+    updatedAt: updatedAt ?? DateTime.utc(2026, 6, 15),
   );
 }
 

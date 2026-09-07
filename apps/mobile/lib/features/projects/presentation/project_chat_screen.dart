@@ -84,6 +84,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
   );
   @override
   bool _sending = false;
+  @override
   bool _editing = false;
   bool _switchingBranch = false;
   bool _loadingEarlier = false;
@@ -167,32 +168,9 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
   /// the composer's disabled state was already decided by the last build.
   @override
   bool get _bookIsBusy =>
-      ref.read(projectStatusProvider(widget.projectId)).asData?.value.isLive ??
-      false;
-
-  /// The hint the composer shows while it is closed, or null while it is open.
-  ///
-  /// A book being rewritten cannot take a second request — the API refuses one
-  /// until the current job settles — so the chat says so rather than accepting
-  /// messages that would only be parked.
-  String? _composerLockLabel(MobileProjectStatus? liveStatus) {
-    if (liveStatus == null) return null;
-    return switch (liveStatus.status) {
-      'planning' => 'Revising your plan…',
-      'generating' => 'Generating your book…',
-      _ => 'Regenerating your book…',
-    };
-  }
-
-  /// Whether to draw the assistant-side "thinking" bubble.
-  ///
-  /// Every one of these flags is a request the user is waiting on a reply to.
-  /// Hidden once the work is live, because the progress card says the same
-  /// thing with real numbers and two busy indicators read as two jobs.
-  bool _showThinking(MobileProjectStatus? liveStatus) {
-    if (liveStatus != null) return false;
-    return _sending || _editing || _hasPendingOperationAction;
-  }
+      _rebuildHandoff.awaiting ||
+      (ref.read(projectStatusProvider(widget.projectId)).asData?.value.isLive ??
+          false);
 
   /// Remembers that work was handed to the worker.
   ///
@@ -215,7 +193,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
   void _onStatusChanged(AsyncValue<MobileProjectStatus> value) {
     final status = value.asData?.value;
     if (status == null) return;
-    _didReceiveProjectStatus();
+    _didReceiveProjectStatus(status);
     final live = status.isLive;
     if (live) {
       _wasLive = true;
@@ -298,6 +276,12 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
         data: (chat) {
           _scheduleInitialScroll();
           final operations = _transcriptOperations(chat);
+          final rebuild = undoRedoRebuildView(
+            messages: _visibleMessages(chat),
+            localRebuildOperationId: _rebuildHandoff.operationId,
+            awaitingRebuild: _rebuildHandoff.awaiting,
+            liveEditing: liveStatus?.status == 'editing',
+          );
           return Column(
             children: [
               Expanded(
@@ -349,8 +333,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
                             // that invites a tap the API can only replay.
                             showProposalActions:
                                 message.editProposal != null &&
-                                message.editProposal!.id ==
-                                    chat.openProposalId,
+                                message.editProposal!.id == chat.openProposalId,
                             // A live job closes the proposal card's Apply for
                             // the same reason it closes the composer: it would
                             // queue a second edit the API has to refuse.
@@ -374,8 +357,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
                                     projectValue.asData?.value,
                                     credits:
                                         message.insufficientCreditsRequired,
-                                    resumeProposalId:
-                                        message.editProposal?.id,
+                                    resumeProposalId: message.editProposal?.id,
                                   )
                                 : null,
                             onOpenReplanCopy:
@@ -399,7 +381,11 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
                           for (final operation in operations.anchoredTo(
                             message.id,
                           )) ...[
-                            _operationBubble(operation),
+                            _operationBubble(
+                              operation,
+                              liveStatus,
+                              rebuilding: rebuild.isRebuilding(operation.id),
+                            ),
                             const SizedBox(height: 10),
                           ],
                         ],
@@ -413,13 +399,11 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
                       ],
                       if (_creditsReadyProposalId != null) ...[
                         CreditsReadyBubble(
-                          onProceed:
-                              _sending || _editing || liveStatus != null
+                          onProceed: _sending || _editing || liveStatus != null
                               ? null
                               : _proceedWithCreditsReadyEdit,
-                          onDismiss: () => setState(
-                            () => _creditsReadyProposalId = null,
-                          ),
+                          onDismiss: () =>
+                              setState(() => _creditsReadyProposalId = null),
                         ),
                         const SizedBox(height: 10),
                       ],
@@ -429,15 +413,22 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
                       // card below says the same thing with real numbers, and
                       // two busy indicators read as two things happening.
                       if (_showThinking(liveStatus)) ...[
-                        ChatThinkingBubble(stages: _operationThinkingStages),
+                        const ChatThinkingBubble(
+                          stages: bookChatThinkingStages,
+                        ),
                         const SizedBox(height: 10),
                       ],
                       for (final operation in operations.unanchored)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 8),
-                          child: _operationBubble(operation),
+                          child: _operationBubble(
+                            operation,
+                            liveStatus,
+                            rebuilding: rebuild.isRebuilding(operation.id),
+                          ),
                         ),
-                      if (liveStatus != null) ...[
+                      if (liveStatus != null &&
+                          !(rebuild.inFlight && !operations.hasRunning)) ...[
                         const SizedBox(height: 4),
                         ChatOperationProgressCard(status: liveStatus),
                         const SizedBox(height: 8),
@@ -483,26 +474,6 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
     ref.invalidate(projectStatusProvider(widget.projectId));
   }
 
-  TranscriptOperations _transcriptOperations(MobileProjectChat chat) {
-    return splitTranscriptOperations(
-      operations: chat.operations,
-      messages: _visibleMessages(chat),
-    );
-  }
-
-  Widget _operationBubble(MobileBookEditOperation operation) {
-    return ProjectChatOperationBubble(
-      projectId: widget.projectId,
-      operation: operation,
-      retrying: _retryingOperationId == operation.id,
-      undoing: _undoing,
-      redoing: _redoing,
-      onRetry: () => _retryOperation(operation),
-      onUndo: () => unawaited(_undoLastEdit()),
-      onRedo: () => unawaited(_redoLastEdit()),
-    );
-  }
-
   String? _replanCopyTargetProjectId(MobileProjectChatMessage message) {
     if (!message.isAssistant) return null;
     final targetProjectId = message.replanCopyTargetProjectId;
@@ -521,7 +492,9 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
         _messageAnchors.forget();
       });
     }
-    final parkedContext = message == _parkedMessage ? _parkedReaderContext : null;
+    final parkedContext = message == _parkedMessage
+        ? _parkedReaderContext
+        : null;
     _parkedReaderContext = null;
     _parkedMessage = null;
     await _sendMessage(message, replyTo: replyTo, readerContext: parkedContext);
@@ -620,6 +593,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
       _pendingSendReplyTo = null;
       _pendingSendReaderContext = null;
       _armFallingEdge(result.operation);
+      final statusBefore = _currentProjectStatus();
       ref.invalidate(projectChatProvider(widget.projectId));
       ref.invalidate(projectDetailProvider(widget.projectId));
       ref.invalidate(projectStatusProvider(widget.projectId));
@@ -635,6 +609,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
       setState(() {
         _sending = false;
         _pendingEcho = null;
+        _rebuildHandoff.arm(result, currentStatus: statusBefore);
       });
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
       if (result.operation != null && !result.operation!.isPlanRevision) {
@@ -859,6 +834,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
   bool _canLoadEarlier(MobileProjectChat chat) =>
       _historyHasMore ?? chat.hasMore;
 
+  @override
   List<MobileProjectChatMessage> _visibleMessages(MobileProjectChat chat) {
     final byId = <String, MobileProjectChatMessage>{};
     for (final message in [..._olderMessages, ...chat.messages]) {

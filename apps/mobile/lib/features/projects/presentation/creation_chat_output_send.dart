@@ -22,6 +22,11 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
   /// Undo button can show its own spinner without every other send doing so.
   bool _undoingProjectEdit = false;
   bool _redoingProjectEdit = false;
+
+  /// Typed or tapped Undo/Redo has queued a compile. Kept until the project
+  /// settles, not only until the first status tick — EDITING is still a
+  /// rebuild, and Open book must wait for the new PDF.
+  final _rebuildHandoff = UndoRedoRebuildHandoff();
   String? _editingProjectMessageId;
   String? _pendingProjectRequestId;
   String? _pendingProjectRequestText;
@@ -53,6 +58,27 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
   void _startPlanPoll();
   void _resumeStickToBottom();
   Future<void> _openReplanCopy(String projectId);
+
+  /// Loading (`asData` missing) is not a tick — `.value` during a reconnect
+  /// can still be the COMPLETE from before Undo. The snapshot captured at
+  /// arm is that same COMPLETE, so it must not clear the rebuild either —
+  /// nor a later parse of the same row (`updatedAt` unchanged).
+  ///
+  /// Called from build via a post-frame setState: `_syncLivePolling` already
+  /// runs during build and must not setState there.
+  void _didReceiveProjectStatus(AsyncValue<MobileProjectStatus> statusValue) {
+    final status = statusValue.asData?.value;
+    if (status == null) return;
+    if (!_rebuildHandoff.shouldSettle(status)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (!_rebuildHandoff.shouldSettle(status)) return;
+      setState(_rebuildHandoff.clear);
+    });
+  }
+
+  MobileProjectStatus? _currentProjectStatus(String projectId) =>
+      ref.read(projectStatusProvider(projectId)).asData?.value;
 
   /// Drops the "You now have enough credits" follow-up: a new request or a
   /// settled proposal supersedes it, and its proposal card in the transcript
@@ -171,6 +197,7 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
       _pendingProjectEditMessageId = null;
       _pendingProjectReplyTo = null;
       _pendingProjectMentionIds = null;
+      final statusBefore = _currentProjectStatus(projectId);
       _refreshOutput(projectId);
       ref.invalidate(projectsProvider);
       ref.invalidate(billingProvider);
@@ -180,9 +207,12 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
         _pendingProjectEcho = null;
         _editingProjectMessageId = null;
         _messageAnchors.forget();
+        _rebuildHandoff.arm(result, currentStatus: statusBefore);
       });
-      if (result.operation != null) {
+      if (result.operation != null || _rebuildHandoff.awaiting) {
         _startPlanPoll();
+      }
+      if (result.operation != null) {
         // Plan revision already surfaces in the transcript and plan footer;
         // a toast would just duplicate that.
         if (!result.operation!.isPlanRevision) {
@@ -337,7 +367,9 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
   }
 
   Future<void> _undoProjectEdit({required String projectId}) async {
-    if (_projectChatSending) return;
+    if (_projectChatSending || _rebuildHandoff.inFlight) {
+      return;
+    }
     final requestId = 'project-undo-${DateTime.now().microsecondsSinceEpoch}';
     setState(() {
       _projectChatSending = true;
@@ -345,20 +377,24 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
     });
     _resumeStickToBottom();
     try {
-      await ref
+      final result = await ref
           .read(projectsRepositoryProvider)
           .undoLastBookEdit(projectId: projectId, requestId: requestId);
+      final statusBefore = _currentProjectStatus(projectId);
       _refreshOutput(projectId);
       if (!mounted) return;
       setState(() {
         _projectChatSending = false;
         _undoingProjectEdit = false;
+        _rebuildHandoff.arm(result, currentStatus: statusBefore);
       });
+      if (_rebuildHandoff.awaiting) _startPlanPoll();
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _projectChatSending = false;
         _undoingProjectEdit = false;
+        _rebuildHandoff.clear();
       });
       ScaffoldMessenger.of(
         context,
@@ -367,7 +403,9 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
   }
 
   Future<void> _redoProjectEdit({required String projectId}) async {
-    if (_projectChatSending) return;
+    if (_projectChatSending || _rebuildHandoff.inFlight) {
+      return;
+    }
     final requestId = 'project-redo-${DateTime.now().microsecondsSinceEpoch}';
     setState(() {
       _projectChatSending = true;
@@ -375,20 +413,24 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
     });
     _resumeStickToBottom();
     try {
-      await ref
+      final result = await ref
           .read(projectsRepositoryProvider)
           .redoLastBookEdit(projectId: projectId, requestId: requestId);
+      final statusBefore = _currentProjectStatus(projectId);
       _refreshOutput(projectId);
       if (!mounted) return;
       setState(() {
         _projectChatSending = false;
         _redoingProjectEdit = false;
+        _rebuildHandoff.arm(result, currentStatus: statusBefore);
       });
+      if (_rebuildHandoff.awaiting) _startPlanPoll();
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _projectChatSending = false;
         _redoingProjectEdit = false;
+        _rebuildHandoff.clear();
       });
       ScaffoldMessenger.of(
         context,

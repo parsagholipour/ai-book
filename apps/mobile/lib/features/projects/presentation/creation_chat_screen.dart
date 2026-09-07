@@ -262,8 +262,12 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
         // The status stream is the only thing that knows the book is still
         // being worked on; the plan and the transcript arrive by polling.
         _syncLivePolling(activeProjectId, statusValue);
+        _didReceiveProjectStatus(statusValue);
       }
-      planValue?.whenData(_stopPollingWhenSettled);
+      planValue?.whenData((project) {
+        if (_rebuildHandoff.awaiting) return;
+        _stopPollingWhenSettled(project);
+      });
       projectChatValue?.whenData(_stopPollingWhenRevisionFailed);
     }
 
@@ -355,6 +359,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                         activeProjectId: activeProjectId,
                         planValue: planValue,
                         statusValue: generationStatusValue,
+                        awaitingRebuild: _rebuildHandoff.awaiting,
                         onOpenAdvanced: isInOutputStage
                             ? null
                             : openAdvancedSheet,
@@ -383,6 +388,8 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                             switchingProjectBranch: _projectChatBranchSwitching,
                             pendingProjectEcho: _pendingProjectEcho,
                             projectChatSending: _projectChatSending,
+                            awaitingRebuildStatus: _rebuildHandoff.awaiting,
+                            rebuildOperationId: _rebuildHandoff.operationId,
                             onRetryPendingProjectEcho: activeProjectId == null
                                 ? null
                                 : () => unawaited(
@@ -410,9 +417,8 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                                 : () => _proceedWithCreditsReadyEdit(
                                     activeProjectId,
                                   ),
-                            onDismissCreditsReady: () => setState(
-                              () => _creditsReadyProposalId = null,
-                            ),
+                            onDismissCreditsReady: () =>
+                                setState(() => _creditsReadyProposalId = null),
                             onApplyEditProposal: activeProjectId == null
                                 ? null
                                 : (proposalId) => unawaited(
@@ -778,6 +784,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
             lockedLabel: _outputMessagingLockLabel(
               projectStatus: project.status,
               liveStatus: planningStatusValue?.asData?.value,
+              awaitingRebuild: _rebuildHandoff.awaiting,
             ),
             projectStatus: project.status,
             onSend: (message) =>
@@ -807,89 +814,3 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
 }
 
 String _planKey(MobilePlan plan) => '${plan.id}:${plan.version}';
-
-// Applied stays visible even once it can no longer be undone — the book chat
-// keeps every applied and failed card as the book's history, and this
-// transcript must read the same.
-bool _showsOperationInTranscript(MobileBookEditOperation operation) =>
-    operation.isRunning || operation.isFailed || operation.isApplied;
-
-String _planSnapshotLabel(MobilePlan plan) {
-  if (plan.isSuperseded) return 'Previous plan';
-  if (plan.version > 1) return 'Revised plan ready';
-  return 'Book plan ready';
-}
-
-String _planProgressLabel(MobileProjectDetail project) {
-  final currentAction = project.currentAction.trim();
-  final hasExistingPlan = project.plan != null;
-  if (hasExistingPlan && project.status == 'planning') {
-    return currentAction.isNotEmpty &&
-            currentAction != 'Creating your book plan.' &&
-            currentAction != 'Ready for review.'
-        ? currentAction
-        : 'Revising your book plan…';
-  }
-  if (hasExistingPlan &&
-      (currentAction.isEmpty || currentAction == 'Creating your book plan.')) {
-    return 'Revising your book plan…';
-  }
-  if (currentAction.isNotEmpty) {
-    return currentAction;
-  }
-  return hasExistingPlan
-      ? 'Revising your book plan…'
-      : 'Building your book plan…';
-}
-
-bool _shouldWatchGenerationStatus(MobileProjectDetail? project) {
-  if (project == null) return false;
-  if (project.plan?.isApproved ?? false) return true;
-  return switch (project.status) {
-    'planning' ||
-    'generating' ||
-    'editing' ||
-    'complete' ||
-    'review_required' ||
-    'failed' => true,
-    _ => false,
-  };
-}
-
-String? _outputMessagingLockLabel({
-  required String? projectStatus,
-  required MobileProjectStatus? liveStatus,
-}) {
-  if (liveStatus?.isLive ?? false) {
-    return liveStatus!.status == 'generating'
-        ? 'Generating your book…'
-        : 'Regenerating your book…';
-  }
-  if (projectStatus == 'generating') {
-    return 'Generating your book…';
-  }
-  if (projectStatus == 'editing') {
-    return 'Regenerating your book…';
-  }
-  return null;
-}
-
-Object? _generationScrollKey(AsyncValue<MobileProjectStatus>? statusValue) {
-  if (statusValue == null) return null;
-  return statusValue.when(
-    loading: () => 'loading',
-    error: (error, _) => 'error:$error',
-    data: (status) => (
-      status.status,
-      status.isComplete,
-      status.hasFailure,
-      status.quality.state,
-      // Export actions change the bubble height when they appear.
-      primaryUnlockedAvailableExport(status.exports)?.format,
-    ),
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Plan bubble (shown in the transcript once build is triggered)
-// ---------------------------------------------------------------------------

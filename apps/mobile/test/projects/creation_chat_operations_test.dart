@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/credit_cost_badge.dart';
@@ -117,11 +118,9 @@ void _seedAppliedIllustrationEdit(
   );
 }
 
-Future<PlanProjectsRepository> _pumpFinishedBook(
+Future<PlanProjectsRepository> _pumpCompletedApprovedBook(
   WidgetTester tester, {
-  required String status,
-  String? anchorMessageId = 'chat-reply',
-  bool proposalStillOpen = false,
+  required void Function(PlanProjectsRepository projects) seed,
 }) async {
   final creation = ScriptedCreationRepository(
     sessions: [
@@ -140,12 +139,7 @@ Future<PlanProjectsRepository> _pumpFinishedBook(
   final projects = PlanProjectsRepository(
     project: plannedProject(status: 'complete', plan: approvedPlan()),
   );
-  _seedAppliedIllustrationEdit(
-    projects,
-    status: status,
-    anchorMessageId: anchorMessageId,
-    proposalStillOpen: proposalStillOpen,
-  );
+  seed(projects);
 
   await tester.pumpWidget(
     app(creation: creation, projects: projects, draftId: 'draft-done'),
@@ -156,6 +150,73 @@ Future<PlanProjectsRepository> _pumpFinishedBook(
     await tester.pump(const Duration(milliseconds: 200));
   }
   return projects;
+}
+
+Future<PlanProjectsRepository> _pumpFinishedBook(
+  WidgetTester tester, {
+  required String status,
+  String? anchorMessageId = 'chat-reply',
+  bool proposalStillOpen = false,
+}) {
+  return _pumpCompletedApprovedBook(
+    tester,
+    seed: (projects) => _seedAppliedIllustrationEdit(
+      projects,
+      status: status,
+      anchorMessageId: anchorMessageId,
+      proposalStillOpen: proposalStillOpen,
+    ),
+  );
+}
+
+Future<PlanProjectsRepository> _pumpShortAppliedBook(
+  WidgetTester tester, {
+  bool canRedo = false,
+}) async {
+  await tester.binding.setSurfaceSize(const Size(400, 2400));
+  addTearDown(() => tester.binding.setSurfaceSize(null));
+  return _pumpCompletedApprovedBook(
+    tester,
+    seed: (projects) {
+      projects.status = projectStatus(
+        status: 'complete',
+        progressPercent: 100,
+        currentAction: '',
+      );
+      projects.chatMessages.addAll([
+        _message(
+          id: 'chat-ask',
+          parentId: null,
+          role: 'user',
+          content: 'make the illustration on page 1 more aggressive',
+        ),
+        _message(
+          id: 'chat-reply',
+          parentId: 'chat-ask',
+          role: 'assistant',
+          content: _queuedReply,
+          operationId: 'op-1',
+          minute: 1,
+        ),
+      ]);
+      projects.chatOperations.add(
+        MobileBookEditOperation(
+          id: 'op-1',
+          projectId: 'project-1',
+          kind: 'add_image',
+          status: 'applied',
+          affectedPageIndexes: const [1],
+          creditsCharged: 45,
+          currentAction: 'Illustration replaced on page 1.',
+          canUndo: !canRedo,
+          canRedo: canRedo,
+          changesAvailable: true,
+          anchorMessageId: 'chat-reply',
+          createdAt: DateTime.utc(2026, 8, 13, 21, 59, 1),
+        ),
+      );
+    },
+  );
 }
 
 class _AppliedPageRewriteRetryRepository extends PlanProjectsRepository {
@@ -193,6 +254,94 @@ class _AppliedPageRewriteRetryRepository extends PlanProjectsRepository {
     chatOperations[index] = applied;
     status = projectStatusFromProject(project);
     return applied;
+  }
+}
+
+MobileProjectStatus _editingRebuildStatus() {
+  return projectStatus(
+    status: 'editing',
+    statusLabel: 'Editing your book',
+    progressPercent: 92,
+    currentAction: 'Laying out your updated book',
+    editProgress: const MobileGenerationProgress(
+      percent: 92,
+      detail: 'Laying out your updated book',
+      steps: [
+        MobileProjectStatusStep(
+          key: 'export',
+          label: 'Rebuilding your book',
+          status: 'active',
+        ),
+      ],
+    ),
+  );
+}
+
+void _armUndoRedoRebuild(
+  PlanProjectsRepository projects, {
+  required String action,
+  bool armNextSendStatus = true,
+}) {
+  projects.nextSendReplyMetadata = {
+    action: {
+      'operationId': 'op-1',
+      'restoredPageIndexes': [1],
+    },
+  };
+  if (armNextSendStatus) {
+    projects.nextSendStatus = _editingRebuildStatus();
+  }
+}
+
+Future<void> _expectRebuildThenOpenBook(
+  WidgetTester tester,
+  PlanProjectsRepository projects, {
+  bool expectUndo = true,
+}) async {
+  for (var frame = 0; frame < 8; frame++) {
+    await tester.pump(const Duration(milliseconds: 200));
+  }
+
+  expect(bubbleText('Laying out your updated book'), findsOneWidget);
+  expect(bubbleText('Rebuilding your book'), findsOneWidget);
+  expect(
+    bubbleText('Open book'),
+    findsNothing,
+    reason: 'the previous PDF is still on disk until the compile finishes',
+  );
+  expect(bubbleText('See changes'), findsOneWidget);
+  expect(find.text('Regenerating your book…'), findsOneWidget);
+  if (expectUndo) {
+    expect(find.widgetWithText(TextButton, 'Undo'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextButton>(find.widgetWithText(TextButton, 'Undo'))
+          .onPressed,
+      isNull,
+    );
+  }
+
+  projects.emitStatus(
+    projectStatus(
+      status: 'complete',
+      progressPercent: 100,
+      currentAction: '',
+      updatedAt: DateTime.utc(2026, 6, 15, 13),
+    ),
+  );
+  await tester.pump();
+  await tester.pump();
+
+  expect(bubbleText('Open book'), findsOneWidget);
+  expect(bubbleText('See changes'), findsOneWidget);
+  expect(find.text('Regenerating your book…'), findsNothing);
+  if (expectUndo) {
+    expect(
+      tester
+          .widget<TextButton>(find.widgetWithText(TextButton, 'Undo'))
+          .onPressed,
+      isNotNull,
+    );
   }
 }
 
@@ -282,7 +431,11 @@ void main() {
           status: 'COMPLETED',
           createdProjectId: 'project-1',
           outputs: [
-            creationOutput(projectId: 'project-1', title: planTitle, sequence: 1),
+            creationOutput(
+              projectId: 'project-1',
+              title: planTitle,
+              sequence: 1,
+            ),
           ],
         ),
       ],
@@ -460,4 +613,214 @@ void main() {
 
     await tester.teardownScreen();
   });
+
+  testWidgets(
+    'a typed Undo shows rebuild progress on the latest turn',
+    (tester) async {
+      final projects = await _pumpShortAppliedBook(tester);
+      expect(bubbleText('Open book'), findsOneWidget);
+
+      _armUndoRedoRebuild(projects, action: 'undo');
+      await tester.enterText(find.byType(TextField).last, 'Undo');
+      await tester.pump();
+      await tester.tap(find.byTooltip('Send'));
+      await _expectRebuildThenOpenBook(tester, projects);
+
+      await tester.teardownScreen();
+    },
+  );
+
+  testWidgets(
+    'a typed Redo shows rebuild progress on the latest turn',
+    (tester) async {
+      final projects = await _pumpShortAppliedBook(tester);
+      expect(bubbleText('Open book'), findsOneWidget);
+
+      _armUndoRedoRebuild(projects, action: 'redo');
+      await tester.enterText(find.byType(TextField).last, 'Redo');
+      await tester.pump();
+      await tester.tap(find.byTooltip('Send'));
+      await _expectRebuildThenOpenBook(tester, projects);
+
+      await tester.teardownScreen();
+    },
+  );
+
+  testWidgets(
+    'a card Undo shows rebuild progress on the latest turn',
+    (tester) async {
+      final projects = await _pumpShortAppliedBook(tester);
+      expect(bubbleText('Open book'), findsOneWidget);
+
+      _armUndoRedoRebuild(projects, action: 'undo');
+      final undo = find.text('Undo');
+      await tester.ensureVisible(undo);
+      await tester.tap(undo);
+      await _expectRebuildThenOpenBook(tester, projects);
+
+      await tester.teardownScreen();
+    },
+  );
+
+  testWidgets(
+    'a card Redo shows rebuild progress on the latest turn',
+    (tester) async {
+      final projects = await _pumpShortAppliedBook(tester, canRedo: true);
+      expect(bubbleText('Open book'), findsOneWidget);
+
+      _armUndoRedoRebuild(projects, action: 'redo');
+      final redo = find.text('Redo');
+      await tester.ensureVisible(redo);
+      await tester.tap(redo);
+      await _expectRebuildThenOpenBook(tester, projects, expectUndo: false);
+
+      await tester.teardownScreen();
+    },
+  );
+
+  testWidgets(
+    'a typed Undo sits at 0% until live rebuild progress arrives',
+    (tester) async {
+      final projects = await _pumpShortAppliedBook(tester);
+      expect(bubbleText('Open book'), findsOneWidget);
+
+      _armUndoRedoRebuild(projects, action: 'undo', armNextSendStatus: false);
+      await tester.enterText(find.byType(TextField).last, 'Undo');
+      await tester.pump();
+      await tester.tap(find.byTooltip('Send'));
+      for (var frame = 0; frame < 8; frame++) {
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+
+      expect(find.text('0%'), findsOneWidget);
+      expect(bubbleText('Rebuilding your book…'), findsOneWidget);
+      expect(
+        find.text('100%'),
+        findsNothing,
+        reason:
+            'the pre-undo COMPLETE snapshot is still on the stream; its '
+            'progressPercent is the previous book, not this rebuild',
+      );
+      expect(bubbleText('Open book'), findsNothing);
+
+      projects.emitStatus(_editingRebuildStatus());
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('92%'), findsOneWidget);
+      expect(bubbleText('Laying out your updated book'), findsOneWidget);
+      expect(bubbleText('Open book'), findsNothing);
+
+      projects.emitStatus(
+        projectStatus(
+          status: 'complete',
+          progressPercent: 100,
+          currentAction: '',
+          updatedAt: DateTime.utc(2026, 6, 15, 13),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(bubbleText('Open book'), findsOneWidget);
+
+      await tester.teardownScreen();
+    },
+  );
+
+  testWidgets(
+    'a card Undo sits at 0% until live rebuild progress arrives',
+    (tester) async {
+      final projects = await _pumpShortAppliedBook(tester);
+      expect(bubbleText('Open book'), findsOneWidget);
+
+      _armUndoRedoRebuild(projects, action: 'undo', armNextSendStatus: false);
+      final undo = find.text('Undo');
+      await tester.ensureVisible(undo);
+      await tester.tap(undo);
+      for (var frame = 0; frame < 8; frame++) {
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+
+      expect(find.text('0%'), findsOneWidget);
+      expect(bubbleText('Rebuilding your book…'), findsOneWidget);
+      expect(
+        find.text('100%'),
+        findsNothing,
+        reason:
+            'the pre-undo COMPLETE snapshot is still on the stream; its '
+            'progressPercent is the previous book, not this rebuild',
+      );
+      expect(bubbleText('Open book'), findsNothing);
+
+      projects.emitStatus(_editingRebuildStatus());
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('92%'), findsOneWidget);
+      expect(bubbleText('Laying out your updated book'), findsOneWidget);
+      expect(bubbleText('Open book'), findsNothing);
+
+      projects.emitStatus(
+        projectStatus(
+          status: 'complete',
+          progressPercent: 100,
+          currentAction: '',
+          updatedAt: DateTime.utc(2026, 6, 15, 13),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(bubbleText('Open book'), findsOneWidget);
+
+      await tester.teardownScreen();
+    },
+  );
+
+  testWidgets(
+    'a typed Undo drops the rebuild spinner when the first status is already settled',
+    (tester) async {
+      final projects = await _pumpShortAppliedBook(tester);
+      projects.nextSendReplyMetadata = {
+        'undo': {
+          'operationId': 'op-1',
+          'restoredPageIndexes': [1],
+        },
+      };
+      projects.nextSendStatus = projectStatus(
+        status: 'complete',
+        progressPercent: 100,
+        currentAction: '',
+        updatedAt: DateTime.utc(2026, 6, 15, 13),
+      );
+
+      await tester.enterText(find.byType(TextField).last, 'Undo');
+      await tester.pump();
+      await tester.tap(find.byTooltip('Send'));
+      for (var frame = 0; frame < 8; frame++) {
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+
+      expect(projects.chatMessages.last.queuedRebuildAfterUndoRedo, isTrue);
+      expect(
+        bubbleText('Rebuilding your book…'),
+        findsNothing,
+        reason:
+            'the compile already finished before the first status tick; '
+            'keeping the handoff would leave Regenerating up',
+      );
+      expect(find.text('Regenerating your book…'), findsNothing);
+      expect(bubbleText('Open book'), findsOneWidget);
+      expect(bubbleText('See changes'), findsOneWidget);
+      expect(
+        tester
+            .widget<TextButton>(find.widgetWithText(TextButton, 'Undo'))
+            .onPressed,
+        isNotNull,
+      );
+
+      await tester.teardownScreen();
+    },
+  );
 }

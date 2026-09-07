@@ -10,6 +10,7 @@ MobileProjectChatMessage _message({
   String role = 'assistant',
   String content = 'reply',
   String? operationId,
+  Map<String, dynamic> metadata = const {},
 }) {
   return MobileProjectChatMessage(
     id: id,
@@ -18,7 +19,7 @@ MobileProjectChatMessage _message({
     role: role,
     content: content,
     operationId: operationId,
-    metadata: const {},
+    metadata: metadata,
     createdAt: DateTime.utc(2026, 8, 13, 21, 59),
   );
 }
@@ -44,6 +45,44 @@ MobileBookEditOperation _operation({
 }
 
 void main() {
+  test('an Undo reply re-homes the card under that turn', () {
+    final split = splitTranscriptOperations(
+      operations: [_operation(anchorMessageId: 'chat-reply')],
+      messages: [
+        _message(id: 'chat-reply', operationId: 'op-1'),
+        _message(id: 'chat-undo', operationId: 'op-1', content: 'rebuilding'),
+      ],
+    );
+
+    expect(split.anchoredTo('chat-undo').single.id, 'op-1');
+    expect(split.anchoredTo('chat-reply'), isEmpty);
+  });
+
+  test(
+    'an Undo reply with only metadata re-homes the card under that turn',
+    () {
+      final split = splitTranscriptOperations(
+        operations: [_operation(anchorMessageId: 'chat-reply')],
+        messages: [
+          _message(id: 'chat-reply', operationId: 'op-1'),
+          _message(
+            id: 'chat-undo',
+            content: 'rebuilding',
+            metadata: {
+              'undo': {
+                'operationId': 'op-1',
+                'restoredPageIndexes': [1],
+              },
+            },
+          ),
+        ],
+      );
+
+      expect(split.anchoredTo('chat-undo').single.id, 'op-1');
+      expect(split.anchoredTo('chat-reply'), isEmpty);
+    },
+  );
+
   test('the reply that announced an edit outranks a stale stored anchor', () {
     // The Apply user row is what `anchorMessageId` falls back to until the
     // server stamps the reply onto the operation, and a transcript read inside
@@ -104,5 +143,115 @@ void main() {
     );
     expect(withRunning.anchoredTo('chat-reply').single.id, 'op-1');
     expect(withRunning.hasRunning, isTrue);
+  });
+
+  test('UndoRedoRebuildView rebuilds only the in-flight operation', () {
+    final view = undoRedoRebuildView(
+      messages: [
+        _message(
+          id: 'chat-undo',
+          operationId: 'op-1',
+          content: 'rebuilding',
+          metadata: {
+            'undo': {
+              'operationId': 'op-1',
+              'restoredPageIndexes': [1],
+            },
+          },
+        ),
+      ],
+      awaitingRebuild: true,
+      liveEditing: false,
+    );
+
+    expect(view.operationId, 'op-1');
+    expect(view.inFlight, isTrue);
+    expect(view.isRebuilding('op-1'), isTrue);
+    expect(view.isRebuilding('op-2'), isFalse);
+  });
+
+  test('UndoRedoRebuildView prefers the local handoff id', () {
+    final view = undoRedoRebuildView(
+      messages: const [],
+      localRebuildOperationId: 'op-local',
+      awaitingRebuild: false,
+      liveEditing: true,
+    );
+
+    expect(view.operationId, 'op-local');
+    expect(view.isRebuilding('op-local'), isTrue);
+  });
+
+  test('UndoRedoRebuildHandoff ignores a COMPLETE with the same updatedAt', () {
+    final handoff = UndoRedoRebuildHandoff();
+    final before = _status();
+    handoff.arm(_undoSendResult(), currentStatus: before);
+
+    expect(handoff.awaiting, isTrue);
+    expect(handoff.operationId, 'op-1');
+    expect(handoff.inFlight, isTrue);
+    expect(handoff.shouldSettle(_status(status: 'editing')), isFalse);
+    expect(handoff.shouldSettle(before), isFalse);
+    expect(handoff.shouldSettle(_status()), isFalse);
+
+    final rebuilt = _status(updatedAt: DateTime.utc(2026, 6, 15, 13));
+    expect(handoff.shouldSettle(rebuilt), isTrue);
+    handoff.clear();
+    expect(handoff.inFlight, isFalse);
+    expect(handoff.shouldSettle(rebuilt), isFalse);
+  });
+}
+
+MobileProjectChatSendResult _undoSendResult() {
+  final reply = _message(
+    id: 'chat-undo',
+    content: 'rebuilding',
+    operationId: 'op-1',
+    metadata: {
+      'undo': {
+        'operationId': 'op-1',
+        'restoredPageIndexes': [1],
+      },
+    },
+  );
+  return MobileProjectChatSendResult(
+    messages: [reply],
+    operations: const [],
+    reply: reply,
+  );
+}
+
+MobileProjectStatus _status({String status = 'complete', DateTime? updatedAt}) {
+  return MobileProjectStatus.fromJson({
+    'projectId': 'project-1',
+    'status': status,
+    'statusLabel': status,
+    'progressPercent': status == 'editing' ? 50 : 100,
+    'currentAction': '',
+    'retryAvailable': false,
+    'steps': <Object?>[],
+    'pageProgress': {'completed': 1, 'target': 1},
+    'imageCount': 0,
+    'exports': {
+      'pdf': {
+        'format': 'pdf',
+        'available': false,
+        'unlocked': true,
+        'creditsRequired': 0,
+        'downloadUrl': '',
+        'filename': 'book.pdf',
+        'contentType': 'application/pdf',
+      },
+      'epub': {
+        'format': 'epub',
+        'available': false,
+        'unlocked': true,
+        'creditsRequired': 0,
+        'downloadUrl': '',
+        'filename': 'book.epub',
+        'contentType': 'application/epub+zip',
+      },
+    },
+    'updatedAt': (updatedAt ?? DateTime.utc(2026, 6, 15)).toIso8601String(),
   });
 }

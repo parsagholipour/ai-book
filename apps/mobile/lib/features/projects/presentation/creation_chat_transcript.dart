@@ -16,6 +16,8 @@ class _Transcript extends StatelessWidget {
     this.switchingProjectBranch = false,
     this.pendingProjectEcho,
     this.projectChatSending = false,
+    this.awaitingRebuildStatus = false,
+    this.rebuildOperationId,
     this.creditsReady = false,
     this.onProceedCreditsReady,
     this.onDismissCreditsReady,
@@ -55,6 +57,13 @@ class _Transcript extends StatelessWidget {
 
   /// Whether a request about the finished book is waiting on the server.
   final bool projectChatSending;
+
+  /// Undo/Redo has queued a compile; kept until the project settles, not only
+  /// until the first status tick.
+  final bool awaitingRebuildStatus;
+
+  /// Local identity of the Undo/Redo operation until the transcript refresh.
+  final String? rebuildOperationId;
 
   /// Whether a top-up just covered a credits-blocked edit, so the transcript
   /// ends on a "You now have enough credits" bubble offering to run it.
@@ -99,11 +108,24 @@ class _Transcript extends StatelessWidget {
     final currentPlan = currentProject?.plan;
     final currentPlanKey = currentPlan == null ? null : _planKey(currentPlan);
     final projectOperations = _projectTranscriptOperations(projectChat);
-    final liveStatus = generationStatusValue?.asData?.value;
+    final generationStatus = generationStatusValue?.asData?.value;
+    final liveStatus = generationStatus != null && generationStatus.isLive
+        ? generationStatus
+        : null;
+    final rebuild = undoRedoRebuildView(
+      messages: projectChat?.messages ?? const <MobileProjectChatMessage>[],
+      localRebuildOperationId: rebuildOperationId,
+      awaitingRebuild: awaitingRebuildStatus,
+      liveEditing: liveStatus?.status == 'editing',
+    );
     // A running edit already draws its own progress on the operation card
     // under the reply. The generation bubble sits on the plan, often scrolled
     // out of view, and must not repeat the same bar next to a finished book.
+    // Undo/Redo stays APPLIED, so hasRunning is false — treat that rebuild
+    // like running work or the bar jumps back onto the plan.
     final showGenerationForCurrentPlan =
+        !rebuild.inFlight &&
+        !awaitingRebuildStatus &&
         generationStatusValue != null &&
         (currentPlan?.isApproved ?? false) &&
         !(liveStatus?.status == 'editing' && projectOperations.hasRunning);
@@ -148,6 +170,8 @@ class _Transcript extends StatelessWidget {
           currentProject: currentProject,
           currentPlanKey: currentPlanKey,
           showGenerationForCurrentPlan: showGenerationForCurrentPlan,
+          rebuild: rebuild,
+          liveStatus: liveStatus,
           hasLivePlanBubble: hasLivePlanBubble,
           hasTyping: hasTyping,
           hasProjectEcho: hasProjectEcho,
@@ -178,6 +202,8 @@ class _Transcript extends StatelessWidget {
     required MobileProjectDetail? currentProject,
     required String? currentPlanKey,
     required bool showGenerationForCurrentPlan,
+    required UndoRedoRebuildView rebuild,
+    required MobileProjectStatus? liveStatus,
     required bool hasLivePlanBubble,
     required bool hasTyping,
     required bool hasProjectEcho,
@@ -211,7 +237,8 @@ class _Transcript extends StatelessWidget {
           retrying: planBusyAction == 'retry-${operation.id}',
           undoing: undoingProjectEdit,
           redoing: redoingProjectEdit,
-          liveStatus: generationStatusValue?.asData?.value,
+          liveStatus: liveStatus,
+          rebuilding: rebuild.isRebuilding(operation.id),
           onRetry: onRetryFailedOperation == null
               ? null
               : () => onRetryFailedOperation!(operation),
@@ -330,6 +357,12 @@ class _Transcript extends StatelessWidget {
   }
 }
 
+// Applied stays visible even once it can no longer be undone — the book chat
+// keeps every applied and failed card as the book's history, and this
+// transcript must read the same.
+bool _showsOperationInTranscript(MobileBookEditOperation operation) =>
+    operation.isRunning || operation.isFailed || operation.isApplied;
+
 /// The operation cards by id *and* status, so the transcript follows an edit to
 /// its outcome. Counting them alone moved nothing when work settled — the
 /// spinner card becoming a result with Open book, See changes and Undo on it is
@@ -421,84 +454,6 @@ class _ProjectTranscriptItem {
   /// Only plans and messages are sorted; operation cards are placed against the
   /// message that produced them rather than by time.
   int get sortPriority => plan != null ? 0 : 1;
-}
-
-class _ChatWarningsBanner extends StatelessWidget {
-  const _ChatWarningsBanner({required this.warnings});
-
-  final List<String> warnings;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Material(
-      color: colors.tertiaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              Icons.info_outline,
-              size: 18,
-              color: colors.onTertiaryContainer,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                warnings.join(' '),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colors.onTertiaryContainer,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PlanErrorFooter extends StatelessWidget {
-  const _PlanErrorFooter({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Material(
-      color: colors.surface,
-      elevation: 8,
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-          child: Row(
-            children: [
-              Icon(Icons.error_outline, color: colors.error, size: 20),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  message,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              AppButton.outlined(
-                label: 'Retry',
-                onPressed: onRetry,
-                leading: const Icon(Icons.refresh, size: 18),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 String? _formatChatTimestamp(DateTime? value) {

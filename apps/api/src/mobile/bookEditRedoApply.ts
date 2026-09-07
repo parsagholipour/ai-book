@@ -209,6 +209,7 @@ export async function redoLastBookEdit(
   return createAssistantChatMessage({
     projectId: project.id,
     parentId,
+    operationId: operation.id,
     content: redoConfirmation(operation.request, restoredPageIndexes),
     metadata: {
       intent,

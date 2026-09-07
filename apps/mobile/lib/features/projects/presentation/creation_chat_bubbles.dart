@@ -269,6 +269,84 @@ class _ContentCardBubbleState extends State<_ContentCardBubble> {
   }
 }
 
+class _ChatWarningsBanner extends StatelessWidget {
+  const _ChatWarningsBanner({required this.warnings});
+
+  final List<String> warnings;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: colors.tertiaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.info_outline,
+              size: 18,
+              color: colors.onTertiaryContainer,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                warnings.join(' '),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colors.onTertiaryContainer,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PlanErrorFooter extends StatelessWidget {
+  const _PlanErrorFooter({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: colors.surface,
+      elevation: 8,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+          child: Row(
+            children: [
+              Icon(Icons.error_outline, color: colors.error, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  message,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              AppButton.outlined(
+                label: 'Retry',
+                onPressed: onRetry,
+                leading: const Icon(Icons.refresh, size: 18),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // The edit operation card lives in `project_chat_operations.dart`: the book
 // chat draws the same one, which is what keeps an applied edit offering the
 // same follow-ups on both surfaces.

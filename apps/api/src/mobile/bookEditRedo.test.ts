@@ -201,6 +201,7 @@ describe("redoing an undone book edit", () => {
     });
     expect(redo.statusCode).toBe(200);
     expect(redo.json().reply.content).toContain("Redo is free");
+    expect(redo.json().reply.operationId).toBe("operation-applied");
     expect(redo.json().reply.metadata.redo).toEqual({
       operationId: "operation-applied",
       restoredPageIndexes: [1]
@@ -236,6 +237,7 @@ describe("redoing an undone book edit", () => {
     });
     expect(redo.statusCode).toBe(200);
     expect(redo.json().reply.content).toContain("no undone edit");
+    expect(redo.json().reply.operationId).toBeNull();
     expect(redo.json().reply.metadata.redo).toBeUndefined();
     await app.close();
   });

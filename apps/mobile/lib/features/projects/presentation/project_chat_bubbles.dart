@@ -161,6 +161,7 @@ class OperationBubble extends StatelessWidget {
     required this.retrying,
     this.undoing = false,
     this.redoing = false,
+    this.rebuilding = false,
     this.liveProgress,
     this.onRetry,
     this.onUndo,
@@ -175,6 +176,9 @@ class OperationBubble extends StatelessWidget {
   final bool retrying;
   final bool undoing;
   final bool redoing;
+
+  /// Applied, but the free recompile has not published yet.
+  final bool rebuilding;
 
   /// Live bar, percent and steps while this edit is still running.
   final Widget? liveProgress;
@@ -194,7 +198,7 @@ class OperationBubble extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final waitingForRetry = operation.isAutomaticRetryPending;
     final failed = operation.isFailed && !waitingForRetry;
-    final applied = operation.isApplied && !failed;
+    final applied = operation.isApplied && !failed && !rebuilding;
     return Card(
       color: failed ? colors.errorContainer : colors.secondaryContainer,
       child: Padding(
@@ -301,9 +305,12 @@ class OperationBubble extends StatelessWidget {
                     ),
                   // Screen-level flags: Redo spinning on B has to disable Undo
                   // on A too, or the two unawaited writes race the manuscript.
+                  // A compile still in flight after Undo is the same race.
                   if (onUndo != null)
                     TextButton.icon(
-                      onPressed: undoing || redoing ? null : onUndo,
+                      onPressed: undoing || redoing || rebuilding
+                          ? null
+                          : onUndo,
                       icon: undoing
                           ? const SizedBox.square(
                               dimension: 16,
@@ -314,7 +321,9 @@ class OperationBubble extends StatelessWidget {
                     ),
                   if (onRedo != null)
                     TextButton.icon(
-                      onPressed: redoing || undoing ? null : onRedo,
+                      onPressed: redoing || undoing || rebuilding
+                          ? null
+                          : onRedo,
                       icon: redoing
                           ? const SizedBox.square(
                               dimension: 16,
