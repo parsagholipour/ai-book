@@ -144,6 +144,27 @@ void main() {
   /// and that a length past the cap costs the reader nothing but a refusal:
   /// the text stays whole, the sheet stops resolving links in it, and the only
   /// bound that ever clips is the ceiling twenty times further up.
+  testWidgets('the @name hint waits for someone else to name', (tester) async {
+    await pumpCharacterEditorSheet(tester, testCharacter());
+    expect(find.textContaining('Use @name'), findsNothing);
+  });
+
+  testWidgets(
+    'the @name hint appears once the library has a second character',
+    (tester) async {
+      final saved = testCharacter();
+      await pumpCharacterEditorSheet(
+        tester,
+        saved,
+        libraryCharacters: [
+          saved,
+          testCharacter(id: 'char-2', name: 'Bram'),
+        ],
+      );
+      expect(find.textContaining('Use @name'), findsOneWidget);
+    },
+  );
+
   group('the description cap', () {
     const field = ValueKey('character-description-field');
     const save = ValueKey('character-editor-save');
@@ -341,10 +362,16 @@ void main() {
       await pumpCharacterEditorSheet(
         tester,
         mina,
-        libraryCharacters: [mina, testCharacter(id: 'char-2', name: 'Nova')],
+        libraryCharacters: [
+          mina,
+          testCharacter(id: 'char-2', name: 'Nova'),
+        ],
       );
 
-      await tester.enterText(find.byKey(field), '${'x' * _descriptionMax} @Nova');
+      await tester.enterText(
+        find.byKey(field),
+        '${'x' * _descriptionMax} @Nova',
+      );
       await tester.pumpAndSettle();
 
       expect(

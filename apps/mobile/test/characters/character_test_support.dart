@@ -16,6 +16,7 @@ Future<FakeCharactersRepository> pumpCharacterEditorSheet(
   WidgetTester tester,
   LibraryCharacter saved, {
   List<LibraryCharacter>? libraryCharacters,
+  ThemeData? theme,
 }) async {
   final repository = FakeCharactersRepository(
     saved,
@@ -25,6 +26,7 @@ Future<FakeCharactersRepository> pumpCharacterEditorSheet(
     ProviderScope(
       overrides: [charactersRepositoryProvider.overrideWithValue(repository)],
       child: MaterialApp(
+        theme: theme,
         home: Scaffold(
           body: Builder(
             builder: (context) => TextButton(

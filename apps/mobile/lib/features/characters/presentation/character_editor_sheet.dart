@@ -8,6 +8,7 @@ import '../data/characters_repository.dart';
 import '../domain/character_models.dart';
 import '../domain/library_mentions.dart';
 import 'character_editor_fields.dart';
+import 'character_editor_layout.dart';
 
 part 'character_editor_mentions.dart';
 
@@ -24,6 +25,11 @@ Future<LibraryCharacter?> showCharacterEditorSheet(
 }) {
   return showAppBottomSheet<LibraryCharacter>(
     context,
+    // Flutter's drag dismissal pops directly, bypassing PopScope. Keep
+    // dismissal on the close button, backdrop, and system back so edits can
+    // be saved or explicitly discarded; omit the handle for this form.
+    enableDrag: false,
+    showDragHandle: false,
     builder: (_) => _CharacterEditorSheet(character: character),
   );
 }
@@ -72,6 +78,9 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
   @override
   late LibraryCharacter? _saved = widget.character;
 
+  bool _allowClose = false;
+  bool _askingToClose = false;
+  final _nameFocus = FocusNode();
   bool _saving = false;
   bool _suggestionBusy = false;
   String? _nameError;
@@ -100,6 +109,7 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
   @override
   void dispose() {
     _characterLibraryWatch?.close();
+    _nameFocus.dispose();
     _nameController.dispose();
     _descriptionController.dispose();
     for (final row in _fields) {
@@ -113,6 +123,48 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
 
   @override
   bool get _busy => _saving || _suggestionBusy;
+
+  bool get _hasUnsavedChanges {
+    final original = widget.character;
+    if (_nameController.text.trim() != (original?.name ?? '')) return true;
+    if (_descriptionEdited &&
+        _descriptionController.text.trim() != (original?.description ?? '')) {
+      return true;
+    }
+    final fields = [
+      for (final row in _fields)
+        if (row.key.text.trim().isNotEmpty || row.value.text.trim().isNotEmpty)
+          CharacterField(
+            key: row.key.text.trim(),
+            value: row.value.text.trim(),
+          ),
+    ];
+    return !_sameFields(fields, original?.fields ?? const []);
+  }
+
+  Future<void> _finish([LibraryCharacter? character]) async {
+    setState(() => _allowClose = true);
+    // Let PopScope publish permission before the route is popped.
+    await WidgetsBinding.instance.endOfFrame;
+    if (mounted) Navigator.of(context).pop(character);
+  }
+
+  Future<void> _requestClose() async {
+    if (_busy || _askingToClose) return;
+    _askingToClose = true;
+    final discard =
+        !_hasUnsavedChanges ||
+        await showAppConfirmationDialog(
+          context,
+          title: 'Discard changes?',
+          message: 'The changes to this character have not been saved.',
+          confirmLabel: 'Discard changes',
+          cancelLabel: 'Keep editing',
+          destructive: true,
+        );
+    _askingToClose = false;
+    if (discard && mounted && !_busy) await _finish();
+  }
 
   /// The description read off the photo, while it is still on offer.
   String? get _suggestion {
@@ -175,6 +227,7 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
     final name = _nameController.text.trim();
     if (name.isEmpty) {
       setState(() => _nameError = 'Give the character a name.');
+      _nameFocus.requestFocus();
       return;
     }
     final fields = _collectFields();
@@ -211,7 +264,7 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
           changedDescription == null &&
           changedFields == null &&
           changedMentions == null) {
-        Navigator.of(context).pop();
+        await _finish();
         return;
       }
     }
@@ -269,7 +322,7 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
         ref.invalidate(charactersProvider);
         // Closes and hands the character back: their page is where a face gets
         // added, so staying open with newly-unlocked sections was a waypoint.
-        Navigator.of(context).pop(created);
+        await _finish(created);
       } else {
         final updated = await ref
             .read(charactersRepositoryProvider)
@@ -289,7 +342,7 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
             );
         if (!mounted) return;
         ref.invalidate(charactersProvider);
-        Navigator.of(context).pop(updated);
+        await _finish(updated);
       }
     } on ApiException catch (error) {
       if (!mounted) return;
@@ -374,130 +427,136 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
     final theme = Theme.of(context);
     final creating = _saved == null;
     final suggestion = _suggestion;
+    // The @name hint is only true once there is someone else to name.
+    final canMentionOthers =
+        ref
+            .watch(charactersProvider)
+            .value
+            ?.characters
+            .any((character) => character.id != _saved?.id) ??
+        false;
 
-    return SafeArea(
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(context).height * 0.88,
-        ),
-        child: SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(
-            18,
-            4,
-            18,
-            18 + MediaQuery.viewInsetsOf(context).bottom,
+    return PopScope<LibraryCharacter>(
+      canPop: _allowClose,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) _requestClose();
+      },
+      child: CharacterEditorLayout(
+        creating: creating,
+        busy: _busy,
+        saving: _saving,
+        onClose: _requestClose,
+        onSave: _save,
+        children: [
+          TextField(
+            controller: _nameController,
+            focusNode: _nameFocus,
+            // A new character has nothing to read yet, so the keyboard may
+            // come up at once; an existing one is opened to be looked at.
+            autofocus: creating,
+            textInputAction: TextInputAction.next,
+            maxLength: _nameMax,
+            textCapitalization: TextCapitalization.words,
+            decoration: InputDecoration(
+              labelText: 'Name',
+              floatingLabelBehavior: FloatingLabelBehavior.always,
+              hintText: 'e.g. Mina, Captain Fern, or you',
+              counterText: '',
+              errorText: _nameError,
+            ),
+            onChanged: (_) {
+              if (_nameError != null) setState(() => _nameError = null);
+            },
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                creating ? 'New character' : 'Edit character',
-                style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
+          const SizedBox(height: AppSpacing.lg),
+          CharacterDescriptionField(
+            controller: _descriptionController,
+            max: _descriptionMax,
+            overflow: _descriptionOverflow,
+            onChanged: () => _descriptionEdited = true,
+          ),
+          if (canMentionOthers) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Use @name to connect them to another character.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
-              const SizedBox(height: 4),
-              Text(
-                'Saved characters can be written and drawn consistently across '
-                'every book you make.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _nameController,
-                maxLength: _nameMax,
-                textCapitalization: TextCapitalization.words,
-                decoration: InputDecoration(
-                  labelText: 'Name',
-                  counterText: '',
-                  errorText: _nameError,
-                ),
-                onChanged: (_) {
-                  if (_nameError != null) setState(() => _nameError = null);
-                },
-              ),
-              const SizedBox(height: 12),
-              CharacterDescriptionField(
-                controller: _descriptionController,
-                max: _descriptionMax,
-                overflow: _descriptionOverflow,
-                onChanged: () => _descriptionEdited = true,
-              ),
-              if (_mentionQuery != null) ...[
-                const SizedBox(height: 8),
-                _mentionSuggestions(_mentionQuery!),
-              ],
-              if (_attachedMentions.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Wrap(
-                  key: const ValueKey('character-description-mentions'),
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    for (final mention in _attachedMentions)
-                      Chip(
-                        avatar: const Icon(Icons.person_outline, size: 16),
-                        label: Text('@${mention.name}'),
-                      ),
-                  ],
-                ),
-              ],
-              if (suggestion != null) ...[
-                const SizedBox(height: 12),
-                CharacterSuggestionCard(
-                  suggestion: suggestion,
-                  onUse: _busy ? null : () => _useSuggestion(suggestion),
-                  onDismiss: _busy ? null : _dismissSuggestion,
-                ),
-              ],
-              const SizedBox(height: 16),
-              Text(
-                'Details',
-                style: theme.textTheme.labelMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 8),
-              for (final row in _fields)
-                CharacterDetailRowField(
-                  row: row,
-                  keyMax: _fieldKeyMax,
-                  valueMax: _fieldValueMax,
-                  onRemove: () => _removeField(row),
-                ),
-              Wrap(
-                spacing: 8,
-                children: [
-                  for (final key in _suggestedFieldKeys)
-                    if (!_hasFieldKey(key))
-                      ActionChip(
-                        label: Text(key),
-                        onPressed: _fields.length >= _fieldsMax
-                            ? null
-                            : () => _addField(key: key),
-                      ),
-                  ActionChip(
-                    label: const Text('Add detail'),
-                    avatar: const Icon(Icons.add, size: 16),
-                    onPressed: _fields.length >= _fieldsMax ? null : _addField,
+            ),
+          ],
+          if (_mentionQuery != null) ...[
+            const SizedBox(height: 8),
+            _mentionSuggestions(_mentionQuery!),
+          ],
+          if (_attachedMentions.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              key: const ValueKey('character-description-mentions'),
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final mention in _attachedMentions)
+                  Chip(
+                    avatar: const Icon(Icons.person_outline, size: 16),
+                    label: Text('@${mention.name}'),
                   ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              AppButton.primary(
-                key: const ValueKey('character-editor-save'),
-                label: creating ? 'Create character' : 'Save changes',
-                loading: _saving,
-                expanded: true,
-                onPressed: _busy ? null : _save,
+              ],
+            ),
+          ],
+          if (suggestion != null) ...[
+            const SizedBox(height: 12),
+            CharacterSuggestionCard(
+              suggestion: suggestion,
+              onUse: _busy ? null : () => _useSuggestion(suggestion),
+              onDismiss: _busy ? null : _dismissSuggestion,
+            ),
+          ],
+          const SizedBox(height: 16),
+          Text(
+            'Details · optional',
+            style: theme.textTheme.labelMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          for (final row in _fields)
+            CharacterDetailRowField(
+              row: row,
+              keyMax: _fieldKeyMax,
+              valueMax: _fieldValueMax,
+              onRemove: () => _removeField(row),
+            ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              for (final key in _suggestedFieldKeys)
+                if (!_hasFieldKey(key))
+                  ActionChip(
+                    label: Text(key),
+                    avatar: const Icon(Icons.add_rounded, size: 16),
+                    onPressed: _fields.length >= _fieldsMax
+                        ? null
+                        : () => _addField(key: key),
+                  ),
+              ActionChip(
+                label: const Text('Add detail'),
+                avatar: const Icon(Icons.add, size: 16),
+                onPressed: _fields.length >= _fieldsMax ? null : _addField,
               ),
             ],
           ),
-        ),
+          if (creating) ...[
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              'Next, add a picture or create their illustration.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
-
 }

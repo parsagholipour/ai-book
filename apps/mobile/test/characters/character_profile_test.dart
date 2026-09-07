@@ -619,6 +619,27 @@ void main() {
     });
   });
 
+  testWidgets(
+    'the app bar names the character once the headline scrolls away',
+    (tester) async {
+      await pumpProfile(tester, testCharacter());
+      tester.view.physicalSize = const Size(390, 844);
+      await tester.pumpAndSettle();
+      final title = find.byKey(const ValueKey('character-profile-title'));
+      expect(tester.widget<AnimatedOpacity>(title).opacity, 0);
+      // The headline under the picture is the name until then.
+      expect(find.text('Mina Park'), findsNWidgets(2));
+
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, -420));
+      await tester.pumpAndSettle();
+      expect(tester.widget<AnimatedOpacity>(title).opacity, 1);
+
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, 420));
+      await tester.pumpAndSettle();
+      expect(tester.widget<AnimatedOpacity>(title).opacity, 0);
+    },
+  );
+
   testWidgets('coming back to a drawing in progress re-reads it', (
     tester,
   ) async {

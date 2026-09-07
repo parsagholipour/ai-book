@@ -11,11 +11,15 @@ const _actionSheetMaxHeightRatio = 9 / 16;
 Future<T?> showAppBottomSheet<T>(
   BuildContext context, {
   required WidgetBuilder builder,
+  bool enableDrag = true,
+  bool? showDragHandle,
 }) {
   return showModalBottomSheet<T>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
+    enableDrag: enableDrag,
+    showDragHandle: showDragHandle,
     builder: (sheetContext) =>
         SafeArea(top: false, child: builder(sheetContext)),
   );

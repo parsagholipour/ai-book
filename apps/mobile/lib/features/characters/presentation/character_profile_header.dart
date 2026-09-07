@@ -5,6 +5,7 @@ import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/motion.dart';
 import '../domain/character_image_models.dart';
 import '../domain/character_models.dart';
+import 'character_identity.dart';
 import 'character_network_image.dart';
 
 /// The character's picture at the size it deserves.
@@ -77,21 +78,16 @@ class CharacterProfileHeader extends StatelessWidget {
             child: picture,
           ),
         ),
-        // The one hardcoded colour on this screen, and it earns it: it sits
-        // over a photograph rather than over a themed surface, so the app bar
-        // title has to stay readable whatever the picture is.
-        const IgnorePointer(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Color(0x66000000), Color(0x00000000), Color(0x44000000)],
-                stops: [0, 0.45, 1],
-              ),
+        if (mainImage != null && pending == null)
+          PositionedDirectional(
+            bottom: AppSpacing.sm,
+            end: AppSpacing.sm,
+            child: IconButton.filledTonal(
+              tooltip: 'View full picture',
+              onPressed: onTapPicture,
+              icon: const Icon(Icons.open_in_full_rounded),
             ),
           ),
-        ),
         if (character.portraitStatus.isBusy)
           IgnorePointer(
             child: ColoredBox(
@@ -130,29 +126,24 @@ class _InitialsPlate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return ColoredBox(
-      color: theme.colorScheme.surfaceContainerHigh,
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              character.initials,
-              style: theme.textTheme.displayMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            AppButton.tonal(
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        CharacterIdentityArt(character: character),
+        Positioned(
+          left: AppSpacing.md,
+          right: AppSpacing.md,
+          bottom: AppSpacing.md,
+          child: Center(
+            child: AppButton.tonal(
               key: const ValueKey('character-header-add-picture'),
               label: 'Add a picture',
               leading: const Icon(Icons.add_photo_alternate_outlined),
               onPressed: onAdd,
             ),
-          ],
+          ),
         ),
-      ),
+      ],
     );
   }
 }

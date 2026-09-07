@@ -8,8 +8,10 @@ import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
 import '../data/characters_repository.dart';
 import '../domain/character_models.dart';
-import 'character_avatar.dart';
 import 'character_editor_sheet.dart';
+import 'character_library_card.dart';
+import 'character_library_controls.dart';
+import 'character_library_empty.dart';
 import 'character_portrait_polling.dart';
 import 'character_profile_screen.dart';
 
@@ -26,6 +28,33 @@ class CharacterLibraryScreen extends ConsumerStatefulWidget {
 class _CharacterLibraryScreenState extends ConsumerState<CharacterLibraryScreen>
     with CharacterPortraitPolling {
   bool _anyDrawing = false;
+  final _searchController = TextEditingController();
+  CharacterLibrarySort _sort = CharacterLibrarySort.updated;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _resetSearch() {
+    _searchController.clear();
+    setState(() {});
+  }
+
+  List<LibraryCharacter> _visibleCharacters(CharacterLibrary library) {
+    final words = _searchController.text.trim().toLowerCase().split(
+      RegExp(r'\s+'),
+    );
+    return library.characters.where((character) {
+      final searchable = [
+        character.name,
+        character.description,
+        for (final field in character.fields) '${field.key} ${field.value}',
+      ].join(' ').toLowerCase();
+      return words.every(searchable.contains);
+    }).toList()..sort(_sort.compare);
+  }
 
   @override
   bool get isDrawing => _anyDrawing;
@@ -87,130 +116,162 @@ class _CharacterLibraryScreenState extends ConsumerState<CharacterLibraryScreen>
 
     return Scaffold(
       appBar: AppBar(title: const Text('My characters')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _newCharacter,
-        icon: const Icon(Icons.person_add_alt_1_outlined),
-        label: const Text('New character'),
-      ),
-      body: RefreshIndicator(
-        onRefresh: _refresh,
-        child: libraryValue.when(
-          loading: () =>
-              const AppLoadingState(message: 'Loading your characters'),
-          error: (error, stackTrace) => ListView(
-            padding: const EdgeInsets.only(top: 24),
-            children: [
-              AppErrorState(
-                title: 'Could not load your characters',
-                message: userFacingError(error),
-                onRetry: () => ref.invalidate(charactersProvider),
-              ),
-            ],
-          ),
-          data: (library) => library.characters.isEmpty
-              ? ListView(
-                  padding: const EdgeInsets.only(top: 24),
-                  children: [
-                    AppEmptyState(
-                      icon: Icons.people_alt_outlined,
-                      title: 'No characters yet',
-                      message:
-                          'Create the people your stories keep coming back '
-                          'to — a hero, a sidekick, even you — and reuse them '
-                          'across books.',
-                      actionLabel: 'New character',
-                      onAction: _newCharacter,
+      // Only once the library is in and has someone in it: the empty state
+      // carries its own single create action, and a button that appears while
+      // loading only to vanish is a flicker.
+      bottomNavigationBar: libraryValue.value?.characters.isNotEmpty == true
+          ? SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 12),
+                child: Center(
+                  heightFactor: 1,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 560),
+                    child: AppButton.primary(
+                      label: 'New character',
+                      leading: const Icon(Icons.add_rounded),
+                      expanded: true,
+                      onPressed: _newCharacter,
                     ),
-                  ],
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(8, 8, 8, 96),
-                  itemCount: library.characters.length,
-                  itemBuilder: (context, index) {
-                    final character = library.characters[index];
-                    return _CharacterTile(
-                      character: character,
-                      onOpen: () => _openProfile(character),
-                      onEdit: () => _editDetails(character),
-                      onDelete: () => _confirmDelete(character),
-                    );
-                  },
+                  ),
                 ),
+              ),
+            )
+          : null,
+      body: SafeArea(
+        top: false,
+        bottom: false,
+        child: RefreshIndicator(
+          onRefresh: _refresh,
+          child: libraryValue.when(
+            loading: () =>
+                const AppLoadingState(message: 'Loading your characters'),
+            error: (error, stackTrace) => ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.only(top: 24),
+              children: [
+                AppErrorState(
+                  title: 'Could not load your characters',
+                  message: userFacingError(error),
+                  onRetry: () => ref.invalidate(charactersProvider),
+                ),
+              ],
+            ),
+            data: _library,
+          ),
         ),
       ),
     );
   }
-}
 
-class _CharacterTile extends StatelessWidget {
-  const _CharacterTile({
-    required this.character,
-    required this.onOpen,
-    required this.onEdit,
-    required this.onDelete,
-  });
-
-  final LibraryCharacter character;
-  final VoidCallback onOpen;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
-
-  String get _subtitle {
-    if (character.portraitStatus == CharacterPortraitStatus.failed) {
-      return 'Illustration failed — open to retry';
-    }
-    // Ranked above the description because it is the one thing the tile would
-    // otherwise get wrong: the avatar shows their face, and the book will not.
-    if (character.needsCartoonReference) {
-      return 'Photo saved — open to make a version your books can draw';
-    }
-    if (character.description.isNotEmpty) return character.description;
-    if (character.fields.isNotEmpty) {
-      return character.fields.map((field) => field.value).join(' · ');
-    }
-    return 'No description yet';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final failed = character.portraitStatus == CharacterPortraitStatus.failed;
-    return ListTile(
-      onTap: onOpen,
-      onLongPress: onDelete,
-      leading: CharacterAvatar(character: character),
-      title: Text(
-        character.name,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontWeight: FontWeight.w600),
-      ),
-      subtitle: Text(
-        _subtitle,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: failed ? TextStyle(color: colors.error) : null,
-      ),
-      trailing: PopupMenuButton<String>(
-        tooltip: 'Character actions',
-        onSelected: (action) {
-          switch (action) {
-            case 'open':
-              onOpen();
-            case 'edit':
-              onEdit();
-            case 'delete':
-              onDelete();
-          }
-        },
-        // "Open" and "Edit details" are two different places now: the tap opens
-        // their page, and the form is one more tap in.
-        itemBuilder: (context) => const [
-          PopupMenuItem(value: 'open', child: Text('Open')),
-          PopupMenuItem(value: 'edit', child: Text('Edit details')),
-          PopupMenuItem(value: 'delete', child: Text('Delete')),
-        ],
-      ),
+  Widget _library(CharacterLibrary library) {
+    final visible = _visibleCharacters(library);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth.clamp(0.0, 1120.0);
+        final sidePadding = (constraints.maxWidth - width) / 2 + 18;
+        final textScale = MediaQuery.textScalerOf(context).scale(14) / 14;
+        // Make room for complete controls and readable names at larger type.
+        final columns = textScale > 1.35 || width < 360
+            ? 1
+            : width >= 1000
+            ? 4
+            : width >= 700
+            ? 3
+            : 2;
+        return CustomScrollView(
+          key: const PageStorageKey('character-library-scroll'),
+          physics: const AlwaysScrollableScrollPhysics(),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          // The app bar already says whose page this is, so the list leads
+          // with the search rather than a second heading.
+          slivers: [
+            if (library.characters.isEmpty)
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(sidePadding, 12, sidePadding, 32),
+                sliver: SliverToBoxAdapter(
+                  child: CharacterLibraryEmpty(onCreate: _newCharacter),
+                ),
+              )
+            else ...[
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(sidePadding, 8, sidePadding, 0),
+                sliver: SliverToBoxAdapter(
+                  child: CharacterLibraryControls(
+                    controller: _searchController,
+                    characters: library.characters,
+                    sort: _sort,
+                    resultCount: visible.length,
+                    onSearch: () => setState(() {}),
+                    onSort: (value) => setState(() => _sort = value),
+                  ),
+                ),
+              ),
+              if (portraitWaitGaveUp && _anyDrawing)
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(sidePadding, 0, sidePadding, 12),
+                  sliver: SliverToBoxAdapter(
+                    child: AppInlineNotice(
+                      title: 'Still waiting on an illustration',
+                      message:
+                          'Your characters are saved. Check for the finished picture again.',
+                      actionLabel: 'Check again',
+                      onAction: resumePortraitPolling,
+                    ),
+                  ),
+                ),
+              if (visible.isEmpty)
+                SliverToBoxAdapter(
+                  child: AppEmptyState(
+                    icon: Icons.search_off_rounded,
+                    title: 'No characters here',
+                    message:
+                        'Try another name or detail, or show your whole cast.',
+                    actionLabel: 'Reset search',
+                    onAction: _resetSearch,
+                  ),
+                )
+              else ...[
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(sidePadding, 8, sidePadding, 24),
+                  sliver: SliverGrid.builder(
+                    itemCount: visible.length,
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: columns,
+                      crossAxisSpacing: AppSpacing.sm,
+                      mainAxisSpacing: AppSpacing.md,
+                      mainAxisExtent: 170 + 154 * textScale,
+                    ),
+                    itemBuilder: (context, index) {
+                      final character = visible[index];
+                      return CharacterLibraryCard(
+                        key: ValueKey('character-card-${character.id}'),
+                        character: character,
+                        onOpen: () => _openProfile(character),
+                        onEdit: () => _editDetails(character),
+                        onDelete: () => _confirmDelete(character),
+                      );
+                    },
+                  ),
+                ),
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(sidePadding, 0, sidePadding, 24),
+                  sliver: SliverToBoxAdapter(
+                    child: Text(
+                      'Bring them into a story with @name in your book chat.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ],
+        );
+      },
     );
   }
 }

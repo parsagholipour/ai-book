@@ -69,8 +69,10 @@ class CharacterDescriptionField extends StatelessWidget {
       ],
       minLines: 3,
       maxLines: 6,
+      textCapitalization: TextCapitalization.sentences,
       decoration: InputDecoration(
         labelText: 'Description',
+        floatingLabelBehavior: FloatingLabelBehavior.always,
         // The counter every field here hides, shown for the one state it
         // answers, and the only thing that says why a Save was refused.
         counterText: overflow == 0 ? '' : '${max + overflow}/$max',
@@ -135,38 +137,50 @@ class CharacterDetailRowField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AppRadii.control),
+      ),
+      child: Column(
         children: [
-          Expanded(
-            flex: 2,
-            child: TextField(
-              controller: row.key,
-              maxLength: keyMax,
-              decoration: const InputDecoration(
-                labelText: 'Detail',
-                counterText: '',
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: row.key,
+                  maxLength: keyMax,
+                  textCapitalization: TextCapitalization.words,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(
+                    labelText: 'Detail',
+                    hintText: 'e.g. Personality',
+                    counterText: '',
+                  ),
+                ),
               ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            flex: 3,
-            child: TextField(
-              controller: row.value,
-              maxLength: valueMax,
-              decoration: const InputDecoration(
-                labelText: 'Value',
-                counterText: '',
+              IconButton(
+                tooltip: 'Remove detail',
+                icon: const Icon(Icons.close_rounded),
+                onPressed: onRemove,
               ),
-            ),
+            ],
           ),
-          IconButton(
-            tooltip: 'Remove detail',
-            icon: const Icon(Icons.close),
-            onPressed: onRemove,
+          const SizedBox(height: AppSpacing.xs),
+          TextField(
+            controller: row.value,
+            maxLength: valueMax,
+            minLines: 1,
+            maxLines: 3,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              labelText: 'Value',
+              hintText: 'What should your stories remember?',
+              counterText: '',
+            ),
           ),
         ],
       ),

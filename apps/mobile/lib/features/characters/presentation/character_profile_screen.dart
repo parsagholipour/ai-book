@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/api/api_client.dart';
@@ -21,6 +22,7 @@ import '../domain/character_models.dart';
 import 'character_editor_sheet.dart';
 import 'character_image_actions.dart';
 import 'character_image_strip.dart';
+import 'character_identity.dart';
 import 'character_image_viewer.dart';
 import 'character_photo_pick.dart';
 import 'character_portrait_polling.dart';
@@ -70,8 +72,7 @@ class CharacterProfileScreen extends ConsumerStatefulWidget {
       _CharacterProfileScreenState();
 }
 
-class _CharacterProfileScreenState
-    extends ConsumerState<CharacterProfileScreen>
+class _CharacterProfileScreenState extends ConsumerState<CharacterProfileScreen>
     with CharacterPortraitPolling {
   bool _saving = false;
   bool _portraitBusy = false;
@@ -93,6 +94,29 @@ class _CharacterProfileScreenState
   /// outside the build that owns it, which is a subtlety this screen does not
   /// need to carry. `CharacterLibraryScreen` caches the same way.
   bool _drawing = false;
+
+  /// The app bar names the character only once the headline under the picture
+  /// has scrolled beneath it; until then the name is on the page exactly once.
+  final _scrollController = ScrollController();
+  double _titleRevealOffset = 0;
+  bool _titleShown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_syncTitle);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _syncTitle() {
+    final shown = _scrollController.offset >= _titleRevealOffset;
+    if (shown != _titleShown) setState(() => _titleShown = shown);
+  }
 
   LibraryCharacter? get _character {
     final library = ref.watch(charactersProvider).value;
@@ -161,7 +185,9 @@ class _CharacterProfileScreenState
         _uploadProgress = null;
         _pictureBusy = false;
       });
-      messenger.showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
+      messenger.showAppSnackBar(
+        SnackBar(content: Text(userFacingError(error))),
+      );
     }
   }
 
@@ -173,8 +199,7 @@ class _CharacterProfileScreenState
     // drawing. Only the first can ever be a redraw, but a guard the other two
     // route around is a guard that stops holding the day one of them can.
     if (referenceIsRedraw(character)) {
-      final credits =
-          ref.read(charactersProvider).value?.portraitCredits ?? 0;
+      final credits = ref.read(charactersProvider).value?.portraitCredits ?? 0;
       final confirmed = await showAppConfirmationDialog(
         context,
         title: redrawConfirmationTitle(character),
@@ -188,8 +213,8 @@ class _CharacterProfileScreenState
     final messenger = ScaffoldMessenger.of(context);
     // Reused across retries: the API treats a repeated requestId as the same
     // attempt, so a tap after a timeout cannot charge twice.
-    final requestId =
-        _portraitRequestId ??= 'portrait-${DateTime.now().microsecondsSinceEpoch}';
+    final requestId = _portraitRequestId ??=
+        'portrait-${DateTime.now().microsecondsSinceEpoch}';
     AppHaptics.commit();
     setState(() => _portraitBusy = true);
     try {
@@ -227,7 +252,9 @@ class _CharacterProfileScreenState
         ref.invalidate(billingProvider);
         return;
       }
-      messenger.showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
+      messenger.showAppSnackBar(
+        SnackBar(content: Text(userFacingError(error))),
+      );
     }
   }
 
@@ -256,7 +283,9 @@ class _CharacterProfileScreenState
       if (!mounted) return;
       setState(() => _pictureBusy = false);
       _refreshAll();
-      messenger.showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
+      messenger.showAppSnackBar(
+        SnackBar(content: Text(userFacingError(error))),
+      );
     }
   }
 
@@ -291,7 +320,9 @@ class _CharacterProfileScreenState
       if (!mounted) return;
       setState(() => _pictureBusy = false);
       _refreshAll();
-      messenger.showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
+      messenger.showAppSnackBar(
+        SnackBar(content: Text(userFacingError(error))),
+      );
     }
   }
 
@@ -320,7 +351,9 @@ class _CharacterProfileScreenState
       );
     } catch (error) {
       if (!mounted) return;
-      messenger.showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
+      messenger.showAppSnackBar(
+        SnackBar(content: Text(userFacingError(error))),
+      );
     }
   }
 
@@ -416,7 +449,9 @@ class _CharacterProfileScreenState
     } catch (error) {
       if (!mounted) return;
       setState(() => _saving = false);
-      messenger.showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
+      messenger.showAppSnackBar(
+        SnackBar(content: Text(userFacingError(error))),
+      );
     }
   }
 
@@ -439,7 +474,9 @@ class _CharacterProfileScreenState
       ref.invalidate(charactersProvider);
       navigator.pop();
     } catch (error) {
-      messenger.showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
+      messenger.showAppSnackBar(
+        SnackBar(content: Text(userFacingError(error))),
+      );
     }
   }
 
@@ -454,7 +491,8 @@ class _CharacterProfileScreenState
       return Scaffold(
         appBar: AppBar(),
         body: libraryValue.when(
-          loading: () => const AppLoadingState(message: 'Loading this character'),
+          loading: () =>
+              const AppLoadingState(message: 'Loading this character'),
           error: (error, stackTrace) => AppErrorState(
             title: 'Could not load this character',
             message: userFacingError(error),
@@ -478,6 +516,12 @@ class _CharacterProfileScreenState
       if (image.isMain) mainImage = image;
     }
 
+    final pictureHeight = math.min(
+      MediaQuery.sizeOf(context).width * 0.82,
+      380.0,
+    );
+    _titleRevealOffset = pictureHeight;
+
     return Scaffold(
       body: RefreshIndicator(
         onRefresh: () async {
@@ -485,21 +529,28 @@ class _CharacterProfileScreenState
           await ref.read(charactersProvider.future);
         },
         child: CustomScrollView(
+          controller: _scrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
             SliverAppBar(
               pinned: true,
-              expandedHeight: math.min(
-                MediaQuery.sizeOf(context).width,
-                420,
-              ),
-              // A bare title overflows at a 1.6 text scale; the picture behind
-              // it is already the identity, so one clipped line is enough.
-              title: Text(
-                character.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              title: AnimatedOpacity(
+                key: const ValueKey('character-profile-title'),
+                opacity: _titleShown ? 1 : 0,
+                duration: AppMotion.fast,
+                child: Text(
+                  character.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
               actions: [
+                IconButton(
+                  key: const ValueKey('character-profile-edit'),
+                  tooltip: 'Edit character',
+                  onPressed: _busy ? null : () => _editDetails(character),
+                  icon: const Icon(Icons.edit_outlined),
+                ),
                 PopupMenuButton<String>(
                   key: const ValueKey('character-profile-menu'),
                   tooltip: 'Character actions',
@@ -520,20 +571,72 @@ class _CharacterProfileScreenState
                   ],
                 ),
               ],
-              flexibleSpace: FlexibleSpaceBar(
-                collapseMode: CollapseMode.parallax,
-                background: CharacterProfileHeader(
-                  character: character,
-                  mainImage: mainImage,
-                  fallbackImageUrl: character.displayImageUrl,
-                  pendingUpload: _pendingUpload,
-                  uploadProgress: _uploadProgress,
-                  onTapPicture: () => _openViewer(
-                    character,
-                    images,
-                    mainImage == null ? 0 : images.indexOf(mainImage),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
+              sliver: SliverToBoxAdapter(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(AppRadii.sheet),
+                  child: SizedBox(
+                    height: pictureHeight,
+                    child: CharacterProfileHeader(
+                      character: character,
+                      mainImage: mainImage,
+                      fallbackImageUrl: character.displayImageUrl,
+                      pendingUpload: _pendingUpload,
+                      uploadProgress: _uploadProgress,
+                      onTapPicture: () => _openViewer(
+                        character,
+                        images,
+                        mainImage == null ? 0 : images.indexOf(mainImage),
+                      ),
+                      onAddPicture: _addPicture,
+                    ),
                   ),
-                  onAddPicture: _addPicture,
+                ),
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(18, 20, 18, 0),
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      character.name,
+                      style: Theme.of(context).textTheme.headlineMedium,
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    CharacterIllustrationStatus(
+                      character: character,
+                      showNextStep: false,
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: AppButton.text(
+                        label: 'Copy @${character.name}',
+                        leading: const Icon(
+                          Icons.alternate_email_rounded,
+                          size: 18,
+                        ),
+                        onPressed: () async {
+                          final messenger = ScaffoldMessenger.of(context);
+                          await Clipboard.setData(
+                            ClipboardData(text: '@${character.name}'),
+                          );
+                          if (!mounted) return;
+                          messenger.showAppSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Character mention copied. Paste it into your book chat.',
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -588,22 +691,22 @@ class _CharacterProfileScreenState
                 ),
               )
             else
-            SliverPadding(
-              padding: const EdgeInsets.only(top: AppSpacing.lg, bottom: 32),
-              sliver: SliverToBoxAdapter(
-                child: CharacterImageStrip(
-                  images: images,
-                  loading: imagesValue.isLoading,
-                  pendingUpload: _pendingUpload,
-                  uploadProgress: _uploadProgress,
-                  drawingInProgress: character.portraitStatus.isBusy,
-                  onOpen: (index) => _openViewer(character, images, index),
-                  onOptions: (image) =>
-                      _openOptions(character, image, images),
-                  onAdd: _addPicture,
+              SliverPadding(
+                padding: const EdgeInsets.only(top: AppSpacing.lg, bottom: 32),
+                sliver: SliverToBoxAdapter(
+                  child: CharacterImageStrip(
+                    images: images,
+                    loading: imagesValue.isLoading,
+                    pendingUpload: _pendingUpload,
+                    uploadProgress: _uploadProgress,
+                    drawingInProgress: character.portraitStatus.isBusy,
+                    onOpen: (index) => _openViewer(character, images, index),
+                    onOptions: (image) =>
+                        _openOptions(character, image, images),
+                    onAdd: _addPicture,
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),

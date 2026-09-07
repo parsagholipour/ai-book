@@ -41,15 +41,9 @@ class CharacterProfileDetails extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        AppSectionHeader(
-          title: 'About',
-          action: IconButton(
-            key: const ValueKey('character-edit-details'),
-            tooltip: 'Edit details',
-            onPressed: busy ? null : onEdit,
-            icon: const Icon(Icons.edit_outlined),
-          ),
-        ),
+        // No pencil here: the app bar's is always on screen, and a second one
+        // beside the heading read as a different action.
+        const AppSectionHeader(title: 'About'),
         const SizedBox(height: AppSpacing.xs),
         if (character.description.trim().isEmpty)
           Align(
@@ -100,13 +94,43 @@ class CharacterProfileDetails extends StatelessWidget {
         ],
         if (character.fields.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.md),
-          Wrap(
-            spacing: AppSpacing.xs,
-            runSpacing: AppSpacing.xs,
-            children: [
-              for (final field in character.fields)
-                AppMetricChip(label: field.key, value: field.value),
-            ],
+          Text('Details', style: theme.textTheme.titleSmall),
+          const SizedBox(height: AppSpacing.sm),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final columns = constraints.maxWidth >= 520 ? 2 : 1;
+              final width =
+                  (constraints.maxWidth - (columns - 1) * AppSpacing.sm) /
+                  columns;
+              return Wrap(
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.sm,
+                children: [
+                  for (final field in character.fields)
+                    Container(
+                      width: width,
+                      padding: const EdgeInsets.all(AppSpacing.md),
+                      decoration: BoxDecoration(
+                        color: colors.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(AppRadii.control),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            field.key,
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.xxs),
+                          Text(field.value, style: theme.textTheme.bodyMedium),
+                        ],
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
         ] else ...[
           const SizedBox(height: AppSpacing.xs),
@@ -123,7 +147,11 @@ class CharacterProfileDetails extends StatelessWidget {
           const SizedBox(height: AppSpacing.sm),
           Row(
             children: [
-              Icon(Icons.menu_book_outlined, size: 16, color: colors.onSurfaceVariant),
+              Icon(
+                Icons.menu_book_outlined,
+                size: 16,
+                color: colors.onSurfaceVariant,
+              ),
               const SizedBox(width: AppSpacing.xxs),
               Expanded(
                 child: Text(
