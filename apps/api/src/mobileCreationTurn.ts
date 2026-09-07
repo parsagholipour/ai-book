@@ -360,7 +360,7 @@ export function applyCreationTurnPatch(base: MobileCreationTurn, patch: Partial<
   const readiness = {
     ...base.readiness,
     canBuild: base.readiness.canBuild || buildRequested,
-    missing: question ? [stripTrailingPunctuation(question.prompt)] : []
+    missing: question ? [readinessLabelForQuestion(question.prompt)] : []
   };
   // The base message embeds the base question's wording; if the patch swaps
   // the question without its own message, echo the new prompt instead of
@@ -391,4 +391,25 @@ export function applyCreationTurnPatch(base: MobileCreationTurn, patch: Partial<
 
 function stripTrailingPunctuation(value: string): string {
   return value.replace(/[?.!:\s]+$/g, "").trim() || value.trim();
+}
+
+function readinessLabelForQuestion(prompt: string): string {
+  const label = stripTrailingPunctuation(prompt);
+  if (label.length <= 80) {
+    return label;
+  }
+
+  const characters = Array.from(label);
+  let shortened = "";
+  for (const character of characters) {
+    if ((shortened + character).length > 79) {
+      break;
+    }
+    shortened += character;
+  }
+  const lastSpace = shortened.lastIndexOf(" ");
+  if (lastSpace >= 48) {
+    shortened = shortened.slice(0, lastSpace);
+  }
+  return `${shortened.trimEnd()}…`;
 }

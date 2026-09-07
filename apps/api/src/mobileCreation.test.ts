@@ -290,6 +290,41 @@ describe("runCreationTurn", () => {
     expect(turn.readiness.missing).toEqual(["Sobre o que deve ser a história"]);
   });
 
+  it("keeps a useful answer when the follow-up question is longer than the readiness label", async () => {
+    const assistantMessage =
+      "The food is usually called a chocolate-filled wafer biscuit, chocolate wafer, or wafer sandwich.";
+    const questionPrompt =
+      "Are you evaluating a machine for home use, or equipment for commercial production of chocolate-filled wafer biscuits?";
+    const turn = await runCreationTurn(
+      {
+        messages: [
+          {
+            role: "user",
+            content:
+              "A book on whether a wafer-making machine with chocolate in between can be a successful product"
+          },
+          { role: "user", content: "What's the name of the food?" }
+        ]
+      },
+      {
+        enrich: async () => ({
+          assistantMessage,
+          question: {
+            prompt: questionPrompt,
+            answerKind: "open",
+            options: [],
+            allowCustom: true
+          }
+        })
+      }
+    );
+
+    expect(turn.assistantMessage).toBe(assistantMessage);
+    expect(turn.question?.prompt).toBe(questionPrompt);
+    expect(turn.readiness.missing).toHaveLength(1);
+    expect(turn.readiness.missing[0]!.length).toBeLessThanOrEqual(80);
+  });
+
   it("reports enrichment failures through onEnrichError", async () => {
     const failure = new Error("model unavailable");
     let reported: unknown;
