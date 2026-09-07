@@ -68,6 +68,26 @@ class _ScrollableFooterContextState extends State<_ScrollableFooterContext> {
     });
   }
 
+  /// Page-down the clipped body so the cue is a control, not just a hint.
+  void _scrollForMore() {
+    if (!_controller.hasClients) return;
+    final position = _controller.position;
+    if (position.extentAfter <= 0) return;
+    final step = math.max(position.viewportDimension * 0.75, 80.0);
+    final target = math.min(position.pixels + step, position.maxScrollExtent);
+    if (AppMotion.reducedMotion(context)) {
+      _controller.jumpTo(target);
+      return;
+    }
+    unawaited(
+      _controller.animateTo(
+        target,
+        duration: AppMotion.medium,
+        curve: AppMotion.enter,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
@@ -97,23 +117,29 @@ class _ScrollableFooterContextState extends State<_ScrollableFooterContext> {
             start: 0,
             end: 12,
             bottom: 0,
-            child: IgnorePointer(
-              child: Container(
-                height: 42,
-                alignment: Alignment.bottomCenter,
-                padding: const EdgeInsets.only(bottom: 3),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      (widget.fadeColor ?? colors.surface).withValues(alpha: 0),
-                      widget.fadeColor ?? colors.surface,
-                    ],
+            child: Semantics(
+              button: true,
+              label: 'More options below. Scroll for more.',
+              onTap: _scrollForMore,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _scrollForMore,
+                child: Container(
+                  height: 42,
+                  alignment: Alignment.bottomCenter,
+                  padding: const EdgeInsets.only(bottom: 3),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        (widget.fadeColor ?? colors.surface).withValues(
+                          alpha: 0,
+                        ),
+                        widget.fadeColor ?? colors.surface,
+                      ],
+                    ),
                   ),
-                ),
-                child: Semantics(
-                  label: 'More options below. Scroll for more.',
                   child: ExcludeSemantics(
                     child: Row(
                       mainAxisSize: MainAxisSize.min,

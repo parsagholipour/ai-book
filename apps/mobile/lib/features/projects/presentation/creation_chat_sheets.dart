@@ -111,9 +111,9 @@ class _PageCountPromptSheetState extends State<_PageCountPromptSheet> {
   }
 
   void _popSelection(int targetPages, String source) {
-    Navigator.of(context).pop(
-      _PageCountSelection(targetPages: targetPages, source: source),
-    );
+    Navigator.of(
+      context,
+    ).pop(_PageCountSelection(targetPages: targetPages, source: source));
   }
 
   @override
@@ -124,7 +124,9 @@ class _PageCountPromptSheetState extends State<_PageCountPromptSheet> {
       ..sort((a, b) => a.targetPages.compareTo(b.targetPages));
     return Padding(
       padding: EdgeInsets.fromLTRB(18, 4, 18, 18 + bottomInset),
-      child: SingleChildScrollView(
+      child: _ScrollableFooterContext(
+        key: const ValueKey('page-count-scroll'),
+        fadeColor: colors.surfaceContainerLowest,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -140,10 +142,8 @@ class _PageCountPromptSheetState extends State<_PageCountPromptSheet> {
               _PageCountOption(
                 recommendation: recommendation,
                 credits: widget.estimateCredits(recommendation.targetPages),
-                onTap: () => _popSelection(
-                  recommendation.targetPages,
-                  'recommended',
-                ),
+                onTap: () =>
+                    _popSelection(recommendation.targetPages, 'recommended'),
               ),
               const SizedBox(height: AppSpacing.xs),
             ],

@@ -1219,6 +1219,19 @@ void main() {
       greaterThan(0),
     );
     expect(find.text('Scroll for more'), findsOneWidget);
+    final before = tester
+        .state<ScrollableState>(questionScrollable)
+        .position
+        .pixels;
+    await tester.tap(find.text('Scroll for more'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.state<ScrollableState>(questionScrollable).position.pixels,
+      greaterThan(before),
+    );
+    await tester.drag(questionScroll, const Offset(0, 1000));
+    await tester.pumpAndSettle();
+    expect(find.text('Scroll for more'), findsOneWidget);
     final scrollbar = tester.widget<Scrollbar>(
       find.descendant(of: questionScroll, matching: find.byType(Scrollbar)),
     );
