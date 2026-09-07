@@ -39,8 +39,14 @@ export function TermsPage() {
 
       <Section title="3. Credits, purchases, and subscriptions">
         <p>
-          Some operations use credits. The app shows the applicable credit amount before a paid operation. Credits
-          are a limited contractual right to use eligible Service features; they are not money, transferable
+          Some operations use credits. Building a book plan uses credits at the then-current rate for the effort
+          setting you choose. At the default rates, Balanced planning uses 40 credits; other effort settings use a
+          different amount. Writing the book after you approve the plan is a separate charge. Current amounts are
+          shown in Account and in Effort settings. The app shows the applicable credit amount before you approve
+          writing, apply an edit, or start another paid operation.
+        </p>
+        <p>
+          Credits are a limited contractual right to use eligible Service features; they are not money, transferable
           property, or redeemable for cash. Purchased credits do not expire unless law requires otherwise. Plan
           allowances reset at the stated period and do not accumulate.
         </p>

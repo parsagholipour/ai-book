@@ -79,6 +79,12 @@ class MobileBilling {
 
   bool get isPaidPlan => planTier != 'free';
 
+  /// Balanced planning charge from the live table, when the server sent one.
+  int? get planGenerationCredits {
+    final raw = creditCosts['planGeneration'];
+    return raw is num ? raw.toInt() : null;
+  }
+
   /// Any paid plan — gates "bring your own book" import.
   bool get hasCreatorSubscription {
     if (isPaidPlan) {

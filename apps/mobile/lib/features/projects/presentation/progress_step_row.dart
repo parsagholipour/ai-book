@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/ui/motion.dart';
 import '../domain/project_models.dart';
 
 /// One milestone in a live pipeline — planning, writing, narrating.
@@ -67,17 +68,13 @@ class ProgressStepRow extends StatelessWidget {
             children: [
               SizedBox.square(
                 dimension: iconSize,
-                child: step.isActive
-                    ? Center(
-                        child: SizedBox.square(
-                          dimension: iconSize - 3,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: color,
-                          ),
-                        ),
-                      )
-                    : Icon(icon, size: iconSize, color: color),
+                child: _StepIcon(
+                  status: step.status,
+                  active: step.isActive,
+                  icon: icon,
+                  size: iconSize,
+                  color: color,
+                ),
               ),
               SizedBox(width: dense ? 9 : 10),
               Expanded(
@@ -113,6 +110,50 @@ class ProgressStepRow extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The step's glyph, and the switch that scales each new state into place.
+class _StepIcon extends StatelessWidget {
+  const _StepIcon({
+    required this.status,
+    required this.active,
+    required this.icon,
+    required this.size,
+    required this.color,
+  });
+
+  /// Keys the switch: a step landing pops its check in rather than swapping
+  /// glyphs between one frame and the next.
+  final String status;
+  final bool active;
+  final IconData icon;
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget glyph = active
+        ? Center(
+            child: SizedBox.square(
+              dimension: size - 3,
+              child: CircularProgressIndicator(strokeWidth: 2, color: color),
+            ),
+          )
+        : Icon(icon, size: size, color: color);
+    if (AppMotion.reducedMotion(context)) {
+      return glyph;
+    }
+    return AnimatedSwitcher(
+      duration: AppMotion.medium,
+      switchInCurve: AppMotion.emphasized,
+      switchOutCurve: AppMotion.exit,
+      transitionBuilder: (child, animation) => ScaleTransition(
+        scale: animation,
+        child: FadeTransition(opacity: animation, child: child),
+      ),
+      child: KeyedSubtree(key: ValueKey(status), child: glyph),
     );
   }
 }

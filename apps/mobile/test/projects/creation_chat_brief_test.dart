@@ -5,6 +5,7 @@ import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/creation_chat_controller.dart';
 import 'package:tomeza/features/projects/presentation/creation_chat_screen.dart';
 import 'package:tomeza/features/projects/presentation/creation_labels.dart';
+import 'package:tomeza/features/projects/presentation/credit_cost_badge.dart';
 import 'package:tomeza/shared/api/api_error.dart';
 
 import 'creation_chat_fakes.dart';
@@ -343,6 +344,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('A kids book'));
     await tester.pumpAndSettle();
+
+    // Planning cost lives in Account and Terms, not on the Build CTA.
+    expect(find.widgetWithText(FilledButton, 'Build the plan'), findsOneWidget);
+    expect(find.byType(CreditCostBadge), findsNothing);
 
     // Paste notes exactly as the attach sheet would hand them over.
     final container = ProviderScope.containerOf(

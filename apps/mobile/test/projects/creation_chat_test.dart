@@ -8,6 +8,7 @@ import 'package:tomeza/features/projects/domain/creation_message_models.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/chat_history_drawer.dart';
 import 'package:tomeza/features/projects/presentation/chat_thinking_bubble.dart';
+import 'package:tomeza/features/projects/presentation/plan_build_progress.dart';
 import 'package:tomeza/shared/api/api_error.dart';
 import 'package:tomeza/shared/ui/app_components.dart';
 import 'creation_chat_fakes.dart';
@@ -1822,7 +1823,7 @@ void main() {
       find.text('You can leave this chat — we’ll keep working.'),
       findsNothing,
     );
-    expect(find.byType(LinearProgressIndicator), findsNothing);
+    expect(find.byType(PlanBuildProgressBar), findsNothing);
     expect(find.byType(CircularProgressIndicator), findsNothing);
 
     await tester.tap(
@@ -2135,7 +2136,7 @@ void main() {
     );
     final semantics = tester.ensureSemantics();
     expect(
-      tester.getSemantics(find.byType(LinearProgressIndicator)),
+      tester.getSemantics(find.byType(PlanBuildProgressBar)),
       matchesSemantics(
         label: 'Book plan progress',
         value: '55 percent complete',
@@ -2277,7 +2278,7 @@ void main() {
     expect(find.text('Understanding your idea'), findsWidgets);
     expect(find.text('Shaping the chapters and flow'), findsOneWidget);
     expect(find.text('Finalizing your plan'), findsOneWidget);
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.byType(PlanBuildProgressBar), findsOneWidget);
 
     await tester.teardownScreen();
   });

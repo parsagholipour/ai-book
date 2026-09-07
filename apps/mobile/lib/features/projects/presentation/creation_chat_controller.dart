@@ -94,7 +94,9 @@ class CreationChatController extends Notifier<CreationChatState>
         return;
       }
       _applyConversation(
-        const MobileCreationConversationResponse(turn: creationChatLocalGreetingTurn),
+        const MobileCreationConversationResponse(
+          turn: creationChatLocalGreetingTurn,
+        ),
         initializing: false,
       );
     } catch (error) {
@@ -683,7 +685,7 @@ class CreationChatController extends Notifier<CreationChatState>
         message: 'Start describing your book before building the plan.',
       );
     }
-    state = state.copyWith(building: true);
+    state = state.copyWith(buildPhase: CreationBuildPhase.building);
     final presets = _presetsForRequest();
     final sourceNotes = state.hasSourceNotes ? state.sourceNotes.trim() : null;
     final optionalDetails = state.optionalDetails.hasContent
@@ -710,7 +712,7 @@ class CreationChatController extends Notifier<CreationChatState>
       _pendingBuildServerRequestId = null;
       _pendingBuildFingerprint = null;
       state = state.copyWith(
-        building: false,
+        buildPhase: CreationBuildPhase.idle,
         createdProjectId: response.project.id,
         activeProjectId: response.project.id,
         composingNewOutput: false,
@@ -726,7 +728,7 @@ class CreationChatController extends Notifier<CreationChatState>
         _pendingBuildFingerprint = null;
         await _refreshAfterSessionConflict(draftId);
       }
-      state = state.copyWith(building: false);
+      state = state.copyWith(buildPhase: CreationBuildPhase.idle);
       rethrow;
     }
   }
@@ -739,7 +741,7 @@ class CreationChatController extends Notifier<CreationChatState>
         message: 'Start describing your book before building the plan.',
       );
     }
-    state = state.copyWith(building: true);
+    state = state.copyWith(buildPhase: CreationBuildPhase.preparing);
     try {
       final response = await _repository.preflightBuildConversation(
         draftId: draftId,
@@ -750,10 +752,10 @@ class CreationChatController extends Notifier<CreationChatState>
             : null,
         language: state.language == 'en' ? null : state.language,
       );
-      state = state.copyWith(building: false);
+      state = state.copyWith(buildPhase: CreationBuildPhase.idle);
       return response;
     } catch (error) {
-      state = state.copyWith(building: false);
+      state = state.copyWith(buildPhase: CreationBuildPhase.idle);
       rethrow;
     }
   }
@@ -890,7 +892,6 @@ class CreationChatController extends Notifier<CreationChatState>
     );
   }
 
-
   void _cacheSyncedOutputs({
     required String draftId,
     required MobileCreationConversationResponse response,
@@ -981,7 +982,10 @@ class CreationChatController extends Notifier<CreationChatState>
         !state.userChoices.contains(CreationChoice.language);
     final pendingAttachments = session == null
         ? state.pendingAttachments
-        : reconcilePendingCreationAttachments(session, state.pendingAttachments);
+        : reconcilePendingCreationAttachments(
+            session,
+            state.pendingAttachments,
+          );
     final attachmentUrls = session == null
         ? state.attachmentUrls
         : {
@@ -1029,7 +1033,6 @@ class CreationChatController extends Notifier<CreationChatState>
     );
     _lastSyncedPresets = turn.presets;
   }
-
 
   MobileCreationPresets? _lastSyncedPresets;
 }

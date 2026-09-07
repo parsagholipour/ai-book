@@ -175,7 +175,7 @@ const CREATION_ASSISTANT_FACTS = [
   "Books can be written in almost any language; the user can just write in their language or ask for one.",
   "Page count can be set in chat (for example: make it 40 pages) or picked when building; 1 to 600 pages are supported.",
   "The cover and in-book illustrations are independent choices that can be changed by asking in chat or in Advanced settings.",
-  "Building the plan and generating the book use credits from the account balance; the exact amount is always shown before anything is charged.",
+  "Building the plan and generating the book use credits from the account balance. Planning costs depend on the Effort setting and are listed in Account; writing is a separate charge shown before you approve.",
   "A typical book takes a few minutes to plan and several minutes to fully write, depending on length.",
   "After generation the user can keep chatting to fix wording, rewrite pages or chapters, undo the last edit, or rebuild the whole book as a new copy."
 ].join(" ");

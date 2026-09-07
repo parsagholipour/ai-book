@@ -38,6 +38,17 @@ enum CreationChoice {
 
 enum PendingAttachmentStatus { uploading, ready, failed }
 
+/// Where one Build tap is between the two calls it makes.
+///
+/// [preparing] is the preflight: the advisor model reads the conversation and
+/// settles the page count, which is most of the wait. [building] is the build
+/// itself: the project is created and the planner queued. The Build button
+/// paces a different stretch of its progress for each, so the second call
+/// visibly continues the first instead of starting over. Between the two the
+/// page-count and visuals prompts may be up, and the phase is [idle] again so a
+/// cancelled prompt leaves an ordinary button behind.
+enum CreationBuildPhase { idle, preparing, building }
+
 /// A file picked in the composer: uploading, ready to send, or failed.
 @immutable
 class PendingCreationAttachment {
@@ -107,7 +118,7 @@ class CreationChatState {
     this.sessionRevision = 1,
     this.messages = const <MobileCreationMessage>[],
     this.assistantTyping = false,
-    this.building = false,
+    this.buildPhase = CreationBuildPhase.idle,
     this.brief,
     this.presets = defaultCreationPresets,
     this.detectedLane = 'auto',
@@ -141,7 +152,7 @@ class CreationChatState {
   final int sessionRevision;
   final List<MobileCreationMessage> messages;
   final bool assistantTyping;
-  final bool building;
+  final CreationBuildPhase buildPhase;
   final MobileBookRecipe? brief;
   final MobileCreationPresets presets;
   final String detectedLane;
@@ -204,6 +215,9 @@ class CreationChatState {
     return title == null || title.isEmpty ? 'New book' : title;
   }
 
+  /// True from the Build tap until the plan is queued or the tap fails.
+  bool get building => buildPhase != CreationBuildPhase.idle;
+
   bool get isBusy => assistantTyping || building;
 
   bool get canBuild => hasSession && readiness.canBuild && !isBusy;
@@ -220,7 +234,7 @@ class CreationChatState {
     int? sessionRevision,
     List<MobileCreationMessage>? messages,
     bool? assistantTyping,
-    bool? building,
+    CreationBuildPhase? buildPhase,
     Object? brief = _sentinel,
     MobileCreationPresets? presets,
     String? detectedLane,
@@ -256,7 +270,7 @@ class CreationChatState {
       sessionRevision: sessionRevision ?? this.sessionRevision,
       messages: messages ?? this.messages,
       assistantTyping: assistantTyping ?? this.assistantTyping,
-      building: building ?? this.building,
+      buildPhase: buildPhase ?? this.buildPhase,
       brief: brief == _sentinel ? this.brief : brief as MobileBookRecipe?,
       presets: presets ?? this.presets,
       detectedLane: detectedLane ?? this.detectedLane,

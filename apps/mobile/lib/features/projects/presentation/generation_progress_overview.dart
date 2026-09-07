@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/motion.dart';
 import '../domain/project_models.dart';
+import 'plan_build_progress.dart';
 import 'progress_step_row.dart';
 
 /// The live "what is happening to my book right now" card on /handoff.
@@ -51,21 +52,42 @@ class GenerationProgressOverviewCard extends StatelessWidget {
         (status.status == 'planning' ? status.planningProgress?.steps : null) ??
         status.steps;
     final steps = imageAwareGenerationSteps(rawSteps, status);
+    final stopped = status.hasFailure || status.status == 'failed';
+    // Working while the server says so; the chat bubble draws the same
+    // sparkle for the same book.
+    final working =
+        !stopped &&
+        !status.isAutomaticRetryPending &&
+        const {'planning', 'generating', 'editing'}.contains(status.status);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              status.statusLabel,
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (working) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(top: 3),
+                    child: PlanBuildSparkle(color: colors.primary, size: 24),
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                Expanded(
+                  child: Text(
+                    status.statusLabel,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 6),
-            Text(
-              status.effectiveAction,
+            RisingStatusText(
+              text: status.effectiveAction,
               style: Theme.of(
                 context,
               ).textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
@@ -84,8 +106,9 @@ class GenerationProgressOverviewCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: AppAnimatedProgressBar(
+                  child: PlanBuildProgressBar(
                     value: progress / 100,
+                    active: !stopped,
                     semanticLabel: 'Book generation progress',
                   ),
                 ),
@@ -141,8 +164,7 @@ class GenerationProgressOverviewCard extends StatelessWidget {
               if (onResume != null) ...[
                 const SizedBox(height: 10),
                 AppButton.primary(
-                  label:
-                      status.recoveryQuote?.requiresConfirmation == false
+                  label: status.recoveryQuote?.requiresConfirmation == false
                       ? 'Retry plan · ${status.recoveryQuote!.credits} credits'
                       : 'Retry generation',
                   onPressed: busyAction == 'resume' ? null : () => onResume!(),

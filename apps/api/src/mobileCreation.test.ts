@@ -174,7 +174,7 @@ describe("runCreationTurn", () => {
   });
 
   it("answers capability questions without derailing the brief", () => {
-    expect(metaAnswerForMessage("How much will this cost?")).toMatch(/credits/i);
+    expect(metaAnswerForMessage("How much will this cost?")).toMatch(/listed in Account/i);
     expect(metaAnswerForMessage("What formats do I get?")).toMatch(/PDF and EPUB/i);
     expect(metaAnswerForMessage("Make the hero a dragon")).toBeNull();
 

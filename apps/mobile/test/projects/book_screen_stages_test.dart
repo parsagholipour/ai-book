@@ -95,7 +95,12 @@ void main() {
     expect(find.text('Premise'), findsNothing);
 
     await tester.tap(find.text('Book plan'));
-    await tester.pumpAndSettle();
+    // A book being written keeps its progress card alive (the sparkle and
+    // the bar's sheen), so settling would never return; the fold itself is
+    // over well inside these frames.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('Set the promise'), findsOneWidget);
   });

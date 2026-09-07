@@ -107,9 +107,7 @@ class _ScrollableFooterContextState extends State<_ScrollableFooterContext> {
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      (widget.fadeColor ?? colors.surface).withValues(
-                        alpha: 0,
-                      ),
+                      (widget.fadeColor ?? colors.surface).withValues(alpha: 0),
                       widget.fadeColor ?? colors.surface,
                     ],
                   ),
@@ -296,9 +294,8 @@ class _ConversationFooterState extends State<_ConversationFooter> {
               const SizedBox(height: 8),
               _BuildButton(
                 canBuild: widget.state.canBuild,
-                building: widget.state.building,
+                phase: widget.state.buildPhase,
                 skipsQuestion: question != null,
-                qualityPreset: widget.state.presets.qualityPreset,
                 onBuild: widget.onBuild,
               ),
             ],
@@ -762,18 +759,19 @@ class _Composer extends StatelessWidget {
   }
 }
 
-class _BuildButton extends ConsumerWidget {
+class _BuildButton extends StatelessWidget {
   const _BuildButton({
     required this.canBuild,
-    required this.building,
+    required this.phase,
     required this.skipsQuestion,
-    required this.qualityPreset,
     required this.onBuild,
   });
 
   final bool canBuild;
-  final bool building;
-  final String qualityPreset;
+
+  /// Idle draws the button; either working phase draws the progress pill in
+  /// its place, paced for that phase.
+  final CreationBuildPhase phase;
 
   /// A question is on screen. Answering it is optional, so the button says so
   /// rather than looking like the wrong way out of the card.
@@ -781,32 +779,35 @@ class _BuildButton extends ConsumerWidget {
   final Future<void> Function() onBuild;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final costs = ref.watch(billingProvider).asData?.value.creditCosts ??
-        const <String, dynamic>{};
-    final planCredits = estimatePlanGenerationCredits(
-      qualityPreset: qualityPreset,
-      creditCosts: costs,
-    );
-    return Row(
-      children: [
-        Expanded(
-          child: AppButton.primary(
-            onPressed: canBuild && !building ? () => onBuild() : null,
-            loading: building,
-            loadingLabel: 'Building the plan',
+  Widget build(BuildContext context) {
+    final working = phase != CreationBuildPhase.idle;
+    final child = working
+        ? PlanBuildProcessingButton(
+            key: const ValueKey('plan-build-working'),
+            phase: phase,
+          )
+        : AppButton.primary(
+            key: const ValueKey('plan-build-idle'),
+            onPressed: canBuild
+                ? () {
+                    AppHaptics.tap();
+                    onBuild();
+                  }
+                : null,
+            expanded: true,
             leading: const Icon(Icons.auto_awesome_outlined),
-            label: skipsQuestion
-                ? 'Skip and build the plan'
-                : 'Build the plan',
-          ),
-        ),
-        const SizedBox(width: 8),
-        CreditCostBadge(
-          credits: planCredits,
-          kind: CreditCostKind.quoted,
-        ),
-      ],
+            label: skipsQuestion ? 'Skip and build the plan' : 'Build the plan',
+          );
+    if (AppMotion.reducedMotion(context)) {
+      return child;
+    }
+    // Both shapes are the same pill, so a short crossfade is all the swap
+    // needs to read as the button itself getting to work.
+    return AnimatedSwitcher(
+      duration: AppMotion.fast,
+      switchInCurve: AppMotion.enter,
+      switchOutCurve: AppMotion.exit,
+      child: child,
     );
   }
 }

@@ -39,7 +39,7 @@ export function metaAnswerForMessage(message: string): string | null {
     return null;
   }
   if (/\b(cost|price|credit|charge|pay|free)\b/.test(text)) {
-    return "Building a plan and generating the book use credits from your balance, and you always see the exact amount before anything is charged. Reading and chatting here are free.";
+    return "Building a plan uses credits from your balance. The current amount depends on your Effort setting and is listed in Account. Writing the book after you approve is a separate charge. Reading and chatting here are free.";
   }
   if (/\b(upload|attach|send|share|give)\b.*\b(photo|image|picture|file|document|pdf|docx?|word|epub|notes?)s?\b/.test(text) ||
       /\b(can|how)\b.*\b(upload|attach)\b/.test(text)) {

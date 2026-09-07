@@ -110,6 +110,10 @@ class _AppEntranceState extends State<AppEntrance>
       builder: (context, child) {
         return Opacity(
           opacity: curved.value,
+          // The first frame is fully transparent, and a transparent subtree
+          // drops out of the semantics tree: a screen reader would lose the
+          // content for exactly as long as it is arriving.
+          alwaysIncludeSemantics: true,
           child: Transform.translate(
             offset: Offset(0, widget.offset * (1 - curved.value)),
             child: child,

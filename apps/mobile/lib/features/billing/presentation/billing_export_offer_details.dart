@@ -155,8 +155,9 @@ class BillingExportOfferDetails extends StatelessWidget {
           title: Text('How do credits work?', style: text.titleSmall),
           children: [
             Text(
-              'Your plan adds credits each month. Writing, editing, illustrations, '
-              'and export unlocks use credits. The amount depends on your book '
+              'Your plan adds credits each month. Building a book plan, writing, '
+              'editing, illustrations, and export unlocks use credits. Planning '
+              'costs are listed in Account; writing costs depend on your book '
               'and settings. Monthly credits reset each billing period; credits '
               'bought separately never expire. Paid plans also remove the monthly '
               'illustrated-book limit; creating illustrations still uses credits.',

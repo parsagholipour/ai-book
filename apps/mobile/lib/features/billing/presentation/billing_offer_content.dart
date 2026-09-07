@@ -222,8 +222,9 @@ class BillingOfferFooter extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(bottom: 16),
               child: Text(
-                'Writing, edits, illustrations, and export unlocks use credits. '
-                'Costs depend on your book and settings. Monthly credits reset each billing period. '
+                'Building a book plan uses credits; the current amount is listed in Account. '
+                'Writing, edits, illustrations, and export unlocks also use credits. '
+                'Writing costs depend on your book and settings. Monthly credits reset each billing period. '
                 'Purchased credits never expire and are spent after your monthly credits. '
                 'Paid plans remove the monthly illustrated-book limit; illustrations still use credits.',
                 style: text.bodySmall,

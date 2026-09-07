@@ -44,7 +44,8 @@ The Effort picker quotes the **plan now** and a **writing rate**, not one blende
 (`estimatePlanGenerationCredits` and `_writingCreditsPerPage` in `creation_chat_sheets.dart`):
 planning is charged when Build starts, the page count is still "auto" while a reader is choosing
 effort, and images are a separate switch priced per image (`_imageCredits`). Folding any of
-those together would make one number answer for independent choices. The writing rate is the
+those together would make one number answer for independent choices. The Build button itself
+does not show that planning price; Account, Terms, and Effort settings do. The writing rate is the
 whole quote for a book with *no* generated images divided by its pages, so the rates still
 compare the way the later approval bill will.
 The app **re-implements both formulas in Dart** (`estimatePlanGenerationCredits` and

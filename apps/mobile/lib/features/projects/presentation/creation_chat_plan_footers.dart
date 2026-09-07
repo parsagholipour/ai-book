@@ -132,6 +132,21 @@ class _PlanBuildingFooter extends StatelessWidget {
         : activeStep?.label ?? message.replaceAll('…', '');
     final colors = Theme.of(context).colorScheme;
 
+    // The icon keeps working until every step has landed, then settles into
+    // a check: the one moment this card is allowed to look finished.
+    final Widget icon = allStepsDone
+        ? Icon(
+            Icons.check_circle,
+            key: const ValueKey('plan-progress-done'),
+            color: colors.primary,
+            size: 22,
+          )
+        : PlanBuildSparkle(
+            key: const ValueKey('plan-progress-working'),
+            color: colors.primary,
+            size: 22,
+          );
+
     return Material(
       color: colors.surface,
       elevation: 8,
@@ -139,97 +154,99 @@ class _PlanBuildingFooter extends StatelessWidget {
         top: false,
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    Icons.auto_awesome_outlined,
-                    color: colors.primary,
-                    size: 21,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 250),
-                          child: Text(
-                            title,
-                            key: ValueKey(title),
-                            style: Theme.of(context).textTheme.titleSmall
-                                ?.copyWith(fontWeight: FontWeight.w800),
+          // The footer arrives as the Build pill leaves, so it rises into
+          // place rather than replacing the pill in a single frame.
+          child: AppEntrance(
+            offset: 14,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 1),
+                      child: AnimatedSwitcher(
+                        duration: AppMotion.medium,
+                        switchInCurve: AppMotion.emphasized,
+                        transitionBuilder: (child, animation) =>
+                            ScaleTransition(
+                              scale: animation,
+                              child: FadeTransition(
+                                opacity: animation,
+                                child: child,
+                              ),
+                            ),
+                        child: icon,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 250),
+                            child: Text(
+                              title,
+                              key: ValueKey(title),
+                              style: Theme.of(context).textTheme.titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.w800),
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 2),
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 250),
-                          child: Text(
-                            detail,
-                            key: ValueKey(detail),
+                          const SizedBox(height: 2),
+                          RisingStatusText(
+                            text: detail,
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(color: colors.onSurfaceVariant),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                  if (progress != null) ...[
-                    const SizedBox(width: 12),
-                    Text(
-                      '$progress%',
-                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: colors.primary,
-                        fontWeight: FontWeight.w800,
+                    if (progress != null) ...[
+                      const SizedBox(width: 12),
+                      AppAnimatedCount(
+                        value: progress,
+                        builder: (value) => '$value%',
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: colors.primary,
+                          fontWeight: FontWeight.w800,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 12),
+                PlanBuildProgressBar(
+                  value: progress == null ? null : progress / 100,
+                  semanticLabel: 'Book plan progress',
+                ),
+                const SizedBox(height: 12),
+                for (final step in steps) ProgressStepRow(step: step),
+                const SizedBox(height: 6),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.notifications_none_outlined,
+                      size: 16,
+                      color: colors.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Text(
+                        'You can leave this chat — we’ll keep working.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
                       ),
                     ),
                   ],
-                ],
-              ),
-              const SizedBox(height: 12),
-              TweenAnimationBuilder<double>(
-                tween: Tween(end: progress == null ? 0 : progress / 100),
-                duration: const Duration(milliseconds: 450),
-                curve: Curves.easeOutCubic,
-                builder: (context, animatedProgress, _) => Semantics(
-                  label: 'Book plan progress',
-                  value: progress == null
-                      ? 'Working'
-                      : '$progress percent complete',
-                  child: ExcludeSemantics(
-                    child: LinearProgressIndicator(
-                      value: progress == null ? null : animatedProgress,
-                    ),
-                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              for (final step in steps) ProgressStepRow(step: step),
-              const SizedBox(height: 6),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    Icons.notifications_none_outlined,
-                    size: 16,
-                    color: colors.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 7),
-                  Expanded(
-                    child: Text(
-                      'You can leave this chat — we’ll keep working.',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colors.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

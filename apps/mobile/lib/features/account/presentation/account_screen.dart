@@ -41,7 +41,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
             onCancelSubscription: _openCancelSheet,
           ),
           const SizedBox(height: 12),
-          _AccountCreditsCard(
+          AccountCreditsCard(
             billing: billing,
             onAddCredits: _openBillingPaywall,
             onRetry: () => ref.invalidate(billingProvider),
@@ -270,11 +270,13 @@ String _formatDate(DateTime value) {
   return '${local.day}/${local.month}/${local.year}';
 }
 
-class _AccountCreditsCard extends StatelessWidget {
-  const _AccountCreditsCard({
+/// Public so it can be pumped on its own, like [AccountPlanCard].
+class AccountCreditsCard extends StatelessWidget {
+  const AccountCreditsCard({
     required this.billing,
     required this.onAddCredits,
     required this.onRetry,
+    super.key,
   });
 
   final AsyncValue<MobileBilling> billing;
@@ -284,13 +286,24 @@ class _AccountCreditsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final value = billing.asData?.value;
     final balance = billing.when(
-      data: (value) => '${value.credits.available} credits available',
+      data: (billingValue) =>
+          '${billingValue.credits.available} credits available',
       loading: () => 'Checking your credit balance',
       error: (error, stackTrace) => userFacingError(error),
     );
+    final planCredits = value?.planGenerationCredits;
+    final planningCopy = planCredits == null
+        ? 'Building a book plan uses credits. The current amount depends on '
+              'your Effort setting.'
+        : 'Building a book plan uses credits. Balanced planning currently '
+              'costs $planCredits credits; other Effort settings cost a '
+              'different amount. Writing the book after you approve is a '
+              'separate charge.';
 
     return Card(
+      key: const ValueKey('account-credits-card'),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -315,6 +328,13 @@ class _AccountCreditsCard extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(balance, style: TextStyle(color: colors.onSurfaceVariant)),
+            if (billing.hasValue) ...[
+              const SizedBox(height: 8),
+              Text(
+                planningCopy,
+                style: TextStyle(color: colors.onSurfaceVariant),
+              ),
+            ],
             const SizedBox(height: 12),
             billing.hasError
                 ? AppButton.outlined(

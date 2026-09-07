@@ -52,6 +52,7 @@ import 'message_actions_menu.dart';
 import 'mention_chips_row.dart';
 import 'message_hold_feedback.dart';
 import 'plan_approval.dart';
+import 'plan_build_progress.dart';
 import 'plan_revision_retry.dart';
 import 'progress_step_row.dart';
 import 'generation_retry_confirmation.dart';

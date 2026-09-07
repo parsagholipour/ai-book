@@ -162,6 +162,15 @@ class _GenerationProgressBubbleState
             widget.onRetryGeneration != null;
         final reviewRequired = status.requiresReview;
         final isGenerating = status.status == 'generating';
+        // The bubble is alive — sparkle turning, sheen crossing the bar —
+        // only while the server says the book is being worked on. A finished
+        // book with a stale percent, a failed one, one waiting for a person or
+        // for a scheduled retry: all of those hold still.
+        final working =
+            !isFailed &&
+            !waitingForRetry &&
+            !reviewRequired &&
+            (isGenerating || status.status == 'editing');
         final downloadExport = status.isComplete && !reviewRequired
             ? primaryUnlockedAvailableExport(status.exports)
             : null;
@@ -194,6 +203,41 @@ class _GenerationProgressBubbleState
             : status.generationProgress?.detail ??
                   status.editProgress?.detail ??
                   status.currentAction;
+        // The icon works while the book does. Once it has settled — finished,
+        // failed, or waiting on a person — it lands on a still glyph.
+        final Widget icon = isFailed || reviewRequired
+            ? Icon(
+                Icons.error_outline,
+                key: const ValueKey('generation-icon-attention'),
+                color: colors.error,
+                size: 20,
+              )
+            : status.isComplete
+            ? Icon(
+                Icons.check_circle_outline,
+                key: const ValueKey('generation-icon-done'),
+                color: colors.primary,
+                size: 20,
+              )
+            : waitingForRetry
+            ? Icon(
+                Icons.autorenew_outlined,
+                key: const ValueKey('generation-icon-retry'),
+                color: colors.primary,
+                size: 20,
+              )
+            : working
+            ? PlanBuildSparkle(
+                key: const ValueKey('generation-icon-working'),
+                color: colors.primary,
+                size: 20,
+              )
+            : Icon(
+                Icons.auto_awesome_outlined,
+                key: const ValueKey('generation-icon-idle'),
+                color: colors.primary,
+                size: 20,
+              );
         return _GenerationProgressShell(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -201,18 +245,14 @@ class _GenerationProgressBubbleState
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    isFailed || reviewRequired
-                        ? Icons.error_outline
-                        : status.isComplete
-                        ? Icons.check_circle_outline
-                        : waitingForRetry
-                        ? Icons.autorenew_outlined
-                        : Icons.auto_awesome_outlined,
-                    color: isFailed || reviewRequired
-                        ? colors.error
-                        : colors.primary,
-                    size: 20,
+                  AnimatedSwitcher(
+                    duration: AppMotion.medium,
+                    switchInCurve: AppMotion.emphasized,
+                    transitionBuilder: (child, animation) => ScaleTransition(
+                      scale: animation,
+                      child: FadeTransition(opacity: animation, child: child),
+                    ),
+                    child: icon,
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -229,44 +269,33 @@ class _GenerationProgressBubbleState
                           ),
                         ),
                         const SizedBox(height: 2),
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 250),
-                          child: Text(
-                            detail,
-                            key: ValueKey(detail),
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: colors.onSurfaceVariant),
-                          ),
+                        RisingStatusText(
+                          text: detail,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: colors.onSurfaceVariant),
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(width: 12),
-                  Text(
-                    '$progress%',
+                  AppAnimatedCount(
+                    value: progress,
+                    builder: (value) => '$value%',
                     style: Theme.of(context).textTheme.labelLarge?.copyWith(
                       color: colors.primary,
                       fontWeight: FontWeight.w800,
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 12),
-              TweenAnimationBuilder<double>(
-                tween: Tween(end: progress / 100),
-                duration: const Duration(milliseconds: 450),
-                curve: Curves.easeOutCubic,
-                builder: (context, animatedProgress, _) => Semantics(
-                  label: 'Book generation progress',
-                  value: '$progress percent complete',
-                  child: ExcludeSemantics(
-                    // Shell is surfaceContainerHighest; theme track matches it.
-                    child: LinearProgressIndicator(
-                      value: animatedProgress,
-                      backgroundColor: colors.surface,
-                    ),
-                  ),
-                ),
+              PlanBuildProgressBar(
+                value: progress / 100,
+                active: working,
+                // Shell is surfaceContainerHighest; theme track matches it.
+                trackColor: colors.surface,
+                semanticLabel: 'Book generation progress',
               ),
               if (steps.isNotEmpty) ...[
                 const SizedBox(height: 12),
@@ -410,7 +439,7 @@ class _GenerationProgressSkeleton extends StatelessWidget {
                 const SizedBox(height: 8),
                 bar(210, 11),
                 const SizedBox(height: 14),
-                LinearProgressIndicator(backgroundColor: colors.surface),
+                PlanBuildProgressBar(value: null, trackColor: colors.surface),
                 const SizedBox(height: 16),
                 for (var row = 0; row < 3; row++) ...[
                   bar(140 + row * 18, 11),
@@ -445,7 +474,8 @@ class _GenerationProgressShell extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: colors.outlineVariant),
           ),
-          child: child,
+          // Rises in once, when the bubble first joins the transcript.
+          child: AppEntrance(offset: 12, child: child),
         ),
       ),
     );

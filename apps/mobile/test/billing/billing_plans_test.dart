@@ -49,7 +49,7 @@ MobileBilling _billing({
     ),
     entitlements: const [],
     products: const [_creator, _max],
-    creditCosts: const {'imageGeneration': 45},
+    creditCosts: const {'imageGeneration': 45, 'planGeneration': 40},
     plan: MobileSubscriptionPlan(
       tier: tier,
       source: tier == 'free' ? 'free' : 'google_play',
@@ -466,6 +466,27 @@ void main() {
       expect(find.byKey(const ValueKey('account-cancel-subscription')), findsNothing);
       expect(find.byKey(const ValueKey('account-resume-subscription')), findsOneWidget);
       expect(cancelTaps, 0);
+    });
+  });
+
+  group('account credits card', () {
+    testWidgets('lists the live Balanced planning charge', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          AccountCreditsCard(
+            billing: AsyncData(_billing()),
+            onAddCredits: () {},
+            onRetry: () {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('account-credits-card')), findsOneWidget);
+      expect(
+        find.textContaining('Balanced planning currently costs 40 credits'),
+        findsOneWidget,
+      );
     });
   });
 
