@@ -134,7 +134,47 @@ void main() {
     expect(find.text('Exports'), findsOneWidget);
     expect(find.text('Read in Tomeza'), findsOneWidget);
     expect(find.text('Book plan'), findsOneWidget);
+    expect(find.text('Type: Workbook'), findsOneWidget);
+    expect(find.text('Length: Standard'), findsOneWidget);
   });
+
+  testWidgets(
+    'the header hides a generic type and shows a custom page count',
+    (tester) async {
+      await _useTallSurface(tester);
+
+      await tester.pumpWidget(
+        _app(
+          BookScreenBody(
+            project: _project(
+              status: 'complete',
+              plan: _plan(approved: true),
+              bookType: 'custom',
+              lengthPreset: 'custom',
+              targetPages: 8,
+              pageCount: 8,
+            ),
+            status: _status(
+              status: 'complete',
+              progressPercent: 100,
+              exports: _readyExports,
+            ),
+            billing: _billing,
+            revisionController: TextEditingController(),
+            onRefresh: () async {},
+            onOpen: (_) async {},
+            onDownload: (_) async {},
+            onOpenPaywall: (_) async {},
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Length: 8 pages'), findsOneWidget);
+      expect(find.text('Type: Book'), findsNothing);
+      expect(find.text('Length: Custom'), findsNothing);
+    },
+  );
 
   testWidgets('a replan copy names the book it was rebuilt from', (
     tester,
@@ -204,13 +244,17 @@ MobileProjectDetail _project({
   MobilePlan? plan,
   List<MobileProjectPage> pages = const [],
   MobileProjectRevisionOrigin? revisedFrom,
+  String bookType = 'workbook',
+  String lengthPreset = 'standard',
+  int? targetPages,
+  int? pageCount,
 }) {
   return MobileProjectDetail(
     revisedFrom: revisedFrom,
     id: 'project-1',
     title: 'Launch Course Workbook',
-    bookType: 'workbook',
-    lengthPreset: 'standard',
+    bookType: bookType,
+    lengthPreset: lengthPreset,
     qualityPreset: 'balanced',
     imagesEnabled: true,
     status: status,
@@ -218,8 +262,8 @@ MobileProjectDetail _project({
     progressPercent: 38,
     currentAction: 'Working.',
     promptPreview: 'Create a workbook for teachers launching a course.',
-    targetPages: 28,
-    pageCount: pages.length,
+    targetPages: targetPages ?? 28,
+    pageCount: pageCount ?? pages.length,
     imageCount: 0,
     hasPlan: plan != null,
     exports: _exports,

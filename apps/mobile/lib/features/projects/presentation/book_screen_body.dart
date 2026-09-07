@@ -293,7 +293,8 @@ class BookHeaderCard extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: [
-                AppMetricChip(label: 'Type', value: project.bookTypeLabel),
+                if (project.hasDistinctBookType)
+                  AppMetricChip(label: 'Type', value: project.bookTypeLabel),
                 AppMetricChip(
                   label: 'Length',
                   value: project.lengthPresetLabel,

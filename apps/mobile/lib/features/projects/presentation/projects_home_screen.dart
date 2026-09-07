@@ -820,7 +820,7 @@ List<MobileProjectSummary> sortProjectsByNextAction(
 
 List<String> projectMeta(MobileProjectSummary project) {
   return [
-    project.bookTypeLabel,
+    if (project.hasDistinctBookType) project.bookTypeLabel,
     project.lengthPresetLabel,
     generatedImagesLabel(
       coverArtSource: project.coverArtSource,

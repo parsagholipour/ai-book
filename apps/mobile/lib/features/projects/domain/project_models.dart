@@ -161,6 +161,12 @@ class MobileProjectSummary {
     };
   }
 
+  /// Named product types are worth a chip; the generic "Book" fallback is not.
+  bool get hasDistinctBookType => switch (bookType) {
+    'lead_magnet' || 'workbook' || 'short_story' => true,
+    _ => false,
+  };
+
   bool get hasReadyExport => exports.pdf.available || exports.epub.available;
 
   String get lengthPresetLabel {
@@ -168,8 +174,16 @@ class MobileProjectSummary {
       'short' => 'Short',
       'standard' => 'Standard',
       'expanded' => 'Expanded',
-      _ => 'Custom',
+      _ => _customLengthLabel,
     };
+  }
+
+  String get _customLengthLabel {
+    final pages = pageCount > 0 ? pageCount : targetPages;
+    if (pages <= 0) {
+      return 'Custom';
+    }
+    return pages == 1 ? '1 page' : '$pages pages';
   }
 
   String get qualityPresetLabel {
