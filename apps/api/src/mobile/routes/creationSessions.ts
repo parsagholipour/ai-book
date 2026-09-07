@@ -696,7 +696,9 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
           )
         }
       });
-      const recommendations = await pageCountRecommendationsForPreflight(prepared.finalPayload, prepared.finalAdvisor);
+      const recommendations = prepared.pageCount.resolved
+        ? []
+        : await pageCountRecommendationsForPreflight(prepared.finalPayload, prepared.finalAdvisor);
       return {
         requiresPageCount: !prepared.pageCount.resolved,
         detectedPageCount: prepared.pageCount.resolved

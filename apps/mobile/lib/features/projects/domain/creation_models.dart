@@ -715,17 +715,20 @@ class MobilePageCountRecommendation {
     required this.targetPages,
     required this.label,
     required this.description,
+    this.isRecommended = false,
   });
 
   final int targetPages;
   final String label;
   final String description;
+  final bool isRecommended;
 
   factory MobilePageCountRecommendation.fromJson(Map<String, dynamic> json) {
     return MobilePageCountRecommendation(
       targetPages: json['targetPages'] as int,
       label: json['label'] as String? ?? '${json['targetPages']} pages',
       description: json['description'] as String? ?? '',
+      isRecommended: json['isRecommended'] as bool? ?? false,
     );
   }
 }

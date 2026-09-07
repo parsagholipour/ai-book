@@ -28,7 +28,7 @@ import {
   MOBILE_TITLE_SOURCE_PLANNER_PENDING,
   UNTITLED_MOBILE_PROJECT_TITLE,
   mobileComposedProjectCreateSchema,
-  mobilePageCountRecommendationSchema,
+  mobilePageCountRecommendationAiSchema,
   mobileProjectCreateBodySchema
 } from "./schemas.js";
 import { cleanTargetLanguage, fingerprintGenerationRequest, jsonInputValue, jsonRecord, jsonValue } from "./support.js";
@@ -44,6 +44,7 @@ import {
 import { Prisma, prisma } from "@book-maker/db";
 import { GenerationAttemptConflictError, startGenerationAttempt } from "@book-maker/db/billing";
 import { z } from "zod";
+import { requestedPageCountScope } from "./pageCountScope.js";
 
 /**
  * Creating and loading mobile Project rows, including page-count resolution and
@@ -215,48 +216,80 @@ export function deterministicPageCountRecommendations(
   payload: MobileCreationDraftPayload,
   advisor: MobileBookAdvisorResponse
 ): MobilePageCountRecommendationDto[] {
-  const lane = advisor.recipe.lane === "auto" ? advisor.detectedLane : advisor.recipe.lane;
-  const bookType = advisor.recommendation.bookType;
-  if (lane === "workbook" || lane === "client_tool" || bookType === "workbook") {
-    return [
-      { targetPages: 16, label: "16 pages", description: "A focused workbook with a few exercises." },
-      { targetPages: 28, label: "28 pages", description: "Recommended for lessons, examples, and practice." },
-      { targetPages: 40, label: "40 pages", description: "A fuller workbook with more sections." }
+  const presets = payload.selectedPresets ?? advisor.recommendation;
+  const choice = presets.bookTypeChoice;
+  // Auto is unresolved. The legacy product field is a compatibility value,
+  // not a book type the user chose, and may outlive a switch back to Auto.
+  const legacyBookType = choice === undefined ? presets.bookType : undefined;
+  const lane = choice === "auto"
+    ? "auto"
+    : choice && choice !== "short_story"
+      ? choice
+      : advisor.recipe.lane === "auto" ? advisor.detectedLane : advisor.recipe.lane;
+  const hasLongNotes = (payload.sourceNotes || payload.brief?.sourceNotes || "").trim().length > 1200;
+  let options: [number, string][];
+  if (lane === "auto" && !legacyBookType) {
+    options = [
+      [8, "A focused version of the central idea, with limited supporting material."],
+      [hasLongNotes ? 18 : 12, "Room to develop the central idea and include supporting detail."],
+      [24, "More room for depth, supporting material, and secondary elements."]
+    ];
+  } else if (lane === "children_story") {
+    options = [
+      [4, "A simple read-aloud with one event and a clear ending."],
+      [8, "A complete read-aloud arc with room for repetition and picture-led scenes."],
+      [12, "More story beats and character moments while keeping scenes short for young readers."]
+    ];
+  } else if (lane === "adult_story" || choice === "short_story" || legacyBookType === "short_story") {
+    options = [
+      [12, "A focused adult short story built around one conflict and a small cast."],
+      [24, "Room to develop the adult story's characters, tension, and resolution across several scenes."],
+      [48, "A longer adult story with layered character development and secondary conflicts."]
+    ];
+  } else if (lane === "workbook" || lane === "client_tool" || legacyBookType === "workbook") {
+    options = [
+      [16, "A focused set of lessons and exercises for practicing the core skill."],
+      [28, "Lessons, worked examples, and space for readers to practice each step."],
+      [40, "More practice rounds, reflection prompts, and examples across the workbook's topics."]
+    ];
+  } else {
+    options = [
+      [8, "The core advice and a short action checklist for a quick read."],
+      [hasLongNotes ? 18 : 12, "Room to explain the main ideas with examples and clear next steps."],
+      [24, "Deeper explanations, additional examples, and more supporting source material."]
     ];
   }
-  if (lane === "children_story" || lane === "adult_story" || bookType === "short_story") {
-    return [
-      { targetPages: 4, label: "4 pages", description: "Very short and simple." },
-      { targetPages: 8, label: "8 pages", description: "Recommended for a compact story arc." },
-      { targetPages: 12, label: "12 pages", description: "More room for scenes and details." }
-    ];
-  }
-  const hasLongNotes = payload.sourceNotes.trim().length > 1200;
-  return [
-    { targetPages: 8, label: "8 pages", description: "A quick, concise read." },
-    { targetPages: hasLongNotes ? 18 : 12, label: hasLongNotes ? "18 pages" : "12 pages", description: "Recommended for a useful first draft." },
-    { targetPages: 24, label: "24 pages", description: "More space for examples and depth." }
-  ];
+  const requestedScope = requestedPageCountScope(payload);
+  const presetIndex = hasLongNotes || presets.lengthPreset === "expanded"
+    ? 2 : presets.lengthPreset === "short" ? 0 : 1;
+  const recommendedIndex = requestedScope?.depth === "concise"
+    ? 0
+    : Math.max(presetIndex, requestedScope ? { balanced: 1, expanded: 2 }[requestedScope.depth] : 0);
+  const reason = requestedScope
+    ? ` ${requestedScope.reason}`
+    : hasLongNotes
+      ? " Best fit for the amount of source material."
+      : recommendedIndex === 0
+        ? " Fits your preference for a short read."
+        : recommendedIndex === 2
+          ? " Fits your preference for expanded coverage."
+          : " Fits your preference for standard coverage.";
+  return options.map(([targetPages, description], index) => ({
+    targetPages,
+    label: ["Concise", "Balanced", "Expanded"][index]!,
+    description: description + (index === recommendedIndex ? reason : ""),
+    isRecommended: index === recommendedIndex
+  }));
 }
 
 export function normalizePageCountRecommendations(
-  recommendations: MobilePageCountRecommendationDto[],
+  recommendations: unknown,
   fallback: MobilePageCountRecommendationDto[]
 ): MobilePageCountRecommendationDto[] {
-  const seen = new Set<number>();
-  const cleaned: MobilePageCountRecommendationDto[] = [];
-  for (const item of recommendations) {
-    const parsed = mobilePageCountRecommendationSchema.safeParse(item);
-    if (!parsed.success || seen.has(parsed.data.targetPages)) {
-      continue;
-    }
-    seen.add(parsed.data.targetPages);
-    cleaned.push(parsed.data);
-    if (cleaned.length >= 4) {
-      break;
-    }
-  }
-  return cleaned.length >= 2 ? cleaned : fallback;
+  const parsed = mobilePageCountRecommendationAiSchema.safeParse({ recommendations });
+  return parsed.success
+    ? parsed.data.recommendations.sort((a, b) => a.targetPages - b.targetPages)
+    : fallback;
 }
 
 export async function createMobileProjectRecord(

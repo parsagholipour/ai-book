@@ -369,15 +369,18 @@ export const mobileCreationBuildBodySchema = z
 
 export const mobilePageCountRecommendationSchema = z
   .object({
-    targetPages: mobileTargetPagesSchema,
+    targetPages: z.number().int().min(1).max(600),
     label: z.string().trim().min(1).max(80),
-    description: z.string().trim().min(1).max(180)
+    description: z.string().trim().min(1).max(180),
+    isRecommended: z.boolean()
   })
   .strict();
 
 export const mobilePageCountRecommendationAiSchema = z
   .object({
-    recommendations: z.array(mobilePageCountRecommendationSchema).min(2).max(4)
+    recommendations: z.array(mobilePageCountRecommendationSchema).length(3)
+      .refine((items) => new Set(items.map((item) => item.targetPages)).size === 3, "Page counts must be distinct")
+      .refine((items) => items.filter((item) => item.isRecommended).length === 1, "Exactly one option must be recommended")
   })
   .strict();
 

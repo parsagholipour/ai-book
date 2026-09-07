@@ -212,6 +212,7 @@ export type MobilePageCountRecommendationDto = {
   targetPages: number;
   label: string;
   description: string;
+  isRecommended: boolean;
 };
 
 export type MobileCreationBuildPreflightResponseDto = {

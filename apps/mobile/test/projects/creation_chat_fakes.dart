@@ -38,16 +38,22 @@ class ScriptedCreationRepository implements CreationRepository {
   /// returns it on the turn for the Advanced-settings sheet to pick up.
   final String? replyAuthorName;
   final bool preflightRequiresPageCount;
-  final List<MobilePageCountRecommendation> preflightRecommendations = const [
+  List<MobilePageCountRecommendation> preflightRecommendations = const [
     MobilePageCountRecommendation(
       targetPages: 8,
       label: '8 pages',
       description: 'Recommended for a compact book.',
+      isRecommended: true,
     ),
     MobilePageCountRecommendation(
       targetPages: 12,
       label: '12 pages',
       description: 'More room for detail.',
+    ),
+    MobilePageCountRecommendation(
+      targetPages: 24,
+      label: 'Expanded',
+      description: 'Room for additional examples and practice.',
     ),
   ];
   Future<void>? resumeByIdGate;
@@ -184,7 +190,7 @@ class ScriptedCreationRepository implements CreationRepository {
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
     String? requestId,
-      List<String>? mentionedCharacterIds,
+    List<String>? mentionedCharacterIds,
   }) async {
     if (message != null) {
       startedMessages.add(message);
@@ -226,7 +232,7 @@ class ScriptedCreationRepository implements CreationRepository {
     String? requestId,
     int? expectedRevision,
     bool skippedQuestion = false,
-      List<String>? mentionedCharacterIds,
+    List<String>? mentionedCharacterIds,
   }) async {
     await sendGate;
     final error = sendError;

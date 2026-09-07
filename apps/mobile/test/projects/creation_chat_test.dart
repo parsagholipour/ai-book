@@ -862,6 +862,7 @@ void main() {
       findsOneWidget,
     );
 
+    await tester.ensureVisible(find.text('8 pages'));
     await tester.tap(find.text('8 pages'));
     await tester.continuePastVisualsPrompt();
     await tester.pump();

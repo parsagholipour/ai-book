@@ -102,7 +102,8 @@ class _PageCountPromptSheetState extends State<_PageCountPromptSheet> {
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
     final colors = Theme.of(context).colorScheme;
-    final recommendations = widget.preflight.recommendations;
+    final recommendations = [...widget.preflight.recommendations]
+      ..sort((a, b) => a.targetPages.compareTo(b.targetPages));
     return Padding(
       padding: EdgeInsets.fromLTRB(18, 4, 18, 18 + bottomInset),
       child: SingleChildScrollView(
@@ -127,23 +128,81 @@ class _PageCountPromptSheetState extends State<_PageCountPromptSheet> {
             for (final recommendation in recommendations) ...[
               Card(
                 margin: EdgeInsets.zero,
-                child: ListTile(
-                  leading: const Icon(Icons.auto_awesome_outlined),
-                  title: Text(recommendation.label),
-                  subtitle: recommendation.description.isEmpty
-                      ? null
-                      : Text(recommendation.description),
-                  trailing: Text(
-                    '≈ ${widget.estimateCredits(recommendation.targetPages)} credits',
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: colors.primary,
-                    ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: BorderSide(
+                    color: recommendation.isRecommended
+                        ? colors.primary
+                        : colors.outlineVariant,
+                    width: recommendation.isRecommended ? 2 : 1,
                   ),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
                   onTap: () => Navigator.of(context).pop(
                     _PageCountSelection(
                       targetPages: recommendation.targetPages,
                       source: 'recommended',
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 8,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(
+                              '${recommendation.targetPages} pages',
+                              style: Theme.of(context).textTheme.titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                            if (recommendation.isRecommended)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: colors.primaryContainer,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  'Recommended',
+                                  style: Theme.of(context).textTheme.labelMedium
+                                      ?.copyWith(
+                                        color: colors.onPrimaryContainer,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        if (recommendation.label !=
+                            '${recommendation.targetPages} pages') ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            recommendation.label,
+                            style: Theme.of(context).textTheme.labelLarge,
+                          ),
+                        ],
+                        if (recommendation.description.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(recommendation.description),
+                        ],
+                        const SizedBox(height: 8),
+                        Text(
+                          '≈ ${widget.estimateCredits(recommendation.targetPages)} credits',
+                          style: Theme.of(context).textTheme.labelLarge
+                              ?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: colors.primary,
+                              ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -165,6 +224,7 @@ class _PageCountPromptSheetState extends State<_PageCountPromptSheet> {
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               decoration: InputDecoration(
                 labelText: 'Custom pages',
+                helperMaxLines: 4,
                 helperText: _customPages == null
                     ? 'Enter a number from 1 to 600.'
                     : '≈ ${widget.estimateCredits(_customPages!)} credits '
