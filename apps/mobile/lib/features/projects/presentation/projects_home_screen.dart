@@ -42,7 +42,13 @@ class _ProjectsHomeScreenState extends ConsumerState<ProjectsHomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Tomeza'),
+        title: TomezaWordmark(
+          markSize: 27,
+          textStyle: Theme.of(context).textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.4,
+          ),
+        ),
         actions: [
           IconButton(
             tooltip: 'Account',

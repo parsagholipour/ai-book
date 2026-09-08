@@ -9,3 +9,4 @@ export 'design_system/app_sheets.dart';
 export 'design_system/app_surfaces.dart';
 export 'design_system/app_tokens.dart';
 export 'design_system/app_tones.dart';
+export 'tomeza_brand.dart';

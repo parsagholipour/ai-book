@@ -441,15 +441,9 @@ class _BrandMark extends StatelessWidget {
         child: Container(
           width: 72,
           height: 72,
+          alignment: Alignment.center,
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                colors.primary,
-                Color.lerp(colors.primary, colors.tertiary, 0.55)!,
-              ],
-            ),
+            color: colors.primary,
             borderRadius: BorderRadius.circular(22),
             boxShadow: [
               BoxShadow(
@@ -459,11 +453,7 @@ class _BrandMark extends StatelessWidget {
               ),
             ],
           ),
-          child: Icon(
-            Icons.auto_stories_outlined,
-            color: colors.onPrimary,
-            size: 34,
-          ),
+          child: TomezaBrandMark(color: colors.onPrimary, size: 52),
         ),
       ),
     );

@@ -168,18 +168,14 @@ class _DrawerHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
       child: Row(
         children: [
-          Icon(Icons.auto_stories, color: colors.primary),
-          const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              'Tomeza',
-              style: Theme.of(
+            child: TomezaWordmark(
+              markSize: 25,
+              textStyle: Theme.of(
                 context,
               ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
             ),

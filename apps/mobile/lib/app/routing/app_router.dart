@@ -20,6 +20,7 @@ import '../../features/reader/presentation/book_reader_screen.dart';
 import '../../shared/api/api_error.dart';
 import '../../shared/ui/feedback/app_feedback.dart';
 import '../../shared/ui/motion.dart';
+import '../../shared/ui/tomeza_brand.dart';
 import 'exit_confirmation.dart';
 
 /// Screen transition used for every route.
@@ -320,12 +321,12 @@ class SplashScreen extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              'Tomeza',
-              style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                fontWeight: FontWeight.w800,
-                color: Theme.of(context).colorScheme.primary,
-              ),
+            TomezaWordmark(
+              markSize: 44,
+              gap: 13,
+              textStyle: Theme.of(
+                context,
+              ).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 24),
             const SizedBox.square(
