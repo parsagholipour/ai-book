@@ -515,7 +515,7 @@ describe("creation chat attachments", () => {
     expect(turn.readiness.canBuild).toBe(true);
   });
 
-  it("acknowledges a photo differently from a document", () => {
+  it("acknowledges receiving a photo without claiming it was fully read", () => {
     const turn = deterministicCreationTurn({
       messages: [
         {
@@ -536,12 +536,12 @@ describe("creation chat attachments", () => {
       ]
     });
 
-    expect(turn.assistantMessage).toContain("I've looked at garden.jpg");
+    expect(turn.assistantMessage).toContain("I’ve received garden.jpg");
   });
 
   it("counts attachments toward build readiness scoring like source notes", () => {
     const withAttachment = deterministicCreationTurn({
-      messages: [{ role: "user", content: "A pricing guide for consultants" }],
+      messages: [{ role: "user", content: "A pricing guide for consultants", attachments: [{ id: pricingDoc.id, kind: pricingDoc.kind, name: pricingDoc.name }] }],
       attachments: [pricingDoc]
     });
     const withoutAttachment = deterministicCreationTurn({
@@ -583,7 +583,7 @@ describe("creation chat attachments", () => {
     const payload = mobileCreationDraftPayloadSchema.parse({
       payloadVersion: 3,
       rawIdea: "A pricing guide for consultants",
-      messages: [{ role: "user", content: "A pricing guide for consultants" }],
+      messages: [{ role: "user", content: "A pricing guide for consultants", attachments: [{ id: pricingDoc.id, kind: pricingDoc.kind, name: pricingDoc.name }] }],
       attachments: [pricingDoc]
     });
     const prompt = composeMobileProjectPrompt(payload, deterministicAdvisor(payload));

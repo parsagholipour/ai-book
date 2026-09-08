@@ -1,3 +1,4 @@
+import 'source_citations.dart';
 import 'package:flutter/material.dart';
 
 import '../../../app/theme/app_theme.dart';
@@ -237,18 +238,15 @@ class OperationBubble extends StatelessWidget {
                               operation.creditsCharged -
                               operation.effectiveCreditsRefundedAmount,
                           kind: CreditCostKind.charged,
-                          foreground: failed
-                              ? colors.onErrorContainer
-                              : null,
+                          foreground: failed ? colors.onErrorContainer : null,
                         ),
                       if (operation.effectiveCreditsRefundedAmount > 0) ...[
-                        if (!operation.creditsRefunded) const SizedBox(height: 4),
+                        if (!operation.creditsRefunded)
+                          const SizedBox(height: 4),
                         CreditCostBadge(
                           credits: operation.effectiveCreditsRefundedAmount,
                           kind: CreditCostKind.refunded,
-                          foreground: failed
-                              ? colors.onErrorContainer
-                              : null,
+                          foreground: failed ? colors.onErrorContainer : null,
                         ),
                       ],
                     ],
@@ -366,9 +364,7 @@ class PendingEchoBubble extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final sent = userChatBubbleColors(colors);
     final background = echo.failed ? colors.errorContainer : sent.background;
-    final foreground = echo.failed
-        ? colors.onErrorContainer
-        : sent.foreground;
+    final foreground = echo.failed ? colors.onErrorContainer : sent.foreground;
     return Align(
       alignment: Alignment.centerRight,
       child: ConstrainedBox(
@@ -548,7 +544,7 @@ class ProjectMessageBubble extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Flexible(
-                        child: Text(
+                        child: SourceCitationText(
                           message.content,
                           style: TextStyle(color: foreground),
                         ),

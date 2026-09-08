@@ -43,6 +43,7 @@ export function modelTierForInput(input: CreateProjectInput): ModelTier {
  * silently degraded.
  */
 export const MECHANICAL_TEXT_PURPOSES: ReadonlySet<string> = new Set([
+  "source-summary",
   "review-page",
   "review-edit-adherence",
   "judge-page-drafts",

@@ -1,3 +1,4 @@
+import type { SourceService } from "@book-maker/core";
 import { type BookEditIntent } from "../bookEditIntent.js";
 import { editProposalMessage, editProposalSummary } from "./bookEditCopy.js";
 import { numberingForProject, MODEL_PAGE_NUMBERING, type ReaderPageNumbering } from "../bookPageNumbering.js";
@@ -246,6 +247,7 @@ export async function handleProjectChatIntent(options: {
   characterContext?: string | undefined;
   /** The turn's already-loaded active messages; saves the grounded answer a re-read. */
   activeMessages?: MobileProjectChatMessageRecord[] | undefined;
+  sourceService?: SourceService | undefined;
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
   const { userId, project, userMessageId, message, intent } = options;
   const pendingRequest = options.pendingRequest?.trim() || message;
@@ -259,7 +261,8 @@ export async function handleProjectChatIntent(options: {
             intent.assistantMessage,
             options.textModel,
             options.replyTo,
-            options.activeMessages
+            options.activeMessages,
+            options.sourceService
           )
         : intent.assistantMessage;
     const reply = await createAssistantChatMessage({

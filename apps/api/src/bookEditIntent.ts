@@ -1,3 +1,4 @@
+import { createSourceTools, SOURCE_INSTRUCTIONS, type SourceService } from "@book-maker/core";
 import {
   chapterDisplayHeading,
   runToolLoop,
@@ -274,6 +275,7 @@ export function classifierPageSample(
 }
 
 export async function classifyProjectChatMessage(options: {
+  sourceService?: SourceService | undefined;
   message: string;
   stage: BookEditProjectStage;
   pages: BookEditPageContext[];
@@ -400,6 +402,7 @@ export async function classifyProjectChatMessage(options: {
       heuristic,
       textModel,
       loadPageBody: options.loadPageBody,
+      sourceService: options.sourceService,
       clarifyExhausted,
       numbering,
       ...(readerSelection ? { readerSelection } : {}),
@@ -420,6 +423,7 @@ const ROUTER_MAX_MODEL_CALLS = 4;
 const ROUTER_READ_PAGE_TEXT_CAP = 4_000;
 
 type RouteAgentOptions = {
+  sourceService?: SourceService | undefined;
   message: string;
   stage: Exclude<BookEditProjectStage, "other">;
   pages: BookEditPageContext[];
@@ -444,7 +448,8 @@ type RouteAgentOptions = {
 async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditIntent> {
   const actions = decideActionsFor(options.stage, options.clarifyExhausted);
   const canReadPages = options.pages.length > 0;
-  const tools = canReadPages ? [readPageTool(options)] : [];
+  const sources = options.sourceService ? createSourceTools(options.sourceService) : undefined;
+  const tools = [...(canReadPages ? [readPageTool(options)] : []), ...(sources?.tools ?? [])];
   const map = options.numbering.pdfPageMap;
   const contentsStartPage =
     map?.contentsStartPdfPage !== undefined ? printedPageForPdfPage(map, map.contentsStartPdfPage) : undefined;
@@ -475,6 +480,8 @@ async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditI
     maxTokens: 1100,
     toolChoice: "required",
     maxModelCalls: ROUTER_MAX_MODEL_CALLS,
+    finishOnLastCall: Boolean(sources),
+    maxToolResultChars: 1_000_000,
     tools,
     finishTool: {
       name: "decide",
@@ -490,7 +497,7 @@ async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditI
     messages: [
       {
         role: "system",
-        content: routerSystemPrompt(options.stage, canReadPages, options.clarifyExhausted, map !== undefined)
+        content: routerSystemPrompt(options.stage, canReadPages, options.clarifyExhausted, map !== undefined) + (sources ? "\n" + SOURCE_INSTRUCTIONS : "")
       },
       {
         role: "user",
@@ -572,7 +579,7 @@ async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditI
   if (result.status !== "finished" || !result.finish) {
     throw new Error("Edit-intent router did not produce a routing decision.");
   }
-  return intentFromDecideAction(result.finish, options.message, options.chapters, {
+  return intentFromDecideAction({ ...result.finish, assistantMessage: sources?.validate(result.finish.assistantMessage) ?? result.finish.assistantMessage }, options.message, options.chapters, {
     clarifyExhausted: options.clarifyExhausted,
     pageNumbering: options.numbering,
     ...(options.readerSelection?.pageIndex !== undefined

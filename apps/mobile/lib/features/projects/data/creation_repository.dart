@@ -285,6 +285,7 @@ class MobileCreationRepository implements CreationRepository {
       bytes: bytes,
       queryParameters: {
         'filename': filename,
+        'async': 'true',
         if (mimeType != null && mimeType.isNotEmpty) 'mimeType': mimeType,
         'expectedRevision': ?expectedRevision?.toString(),
       },

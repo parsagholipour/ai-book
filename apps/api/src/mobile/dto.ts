@@ -1,3 +1,4 @@
+import type { CreationAttachment } from "@book-maker/core";
 import { type CreationChatBranchDto } from "../creationChatTree.js";
 import {
   type MobileBookAdvisorResponse,
@@ -171,6 +172,9 @@ export type MobileCreationSessionDto = {
 };
 
 export type MobileCreationAttachmentDto = {
+  sourceId?: string | undefined;
+  extractionVersion?: number | undefined;
+  processing?: CreationAttachment["processing"] | undefined;
   id: string;
   kind: "document" | "photo";
   name: string;

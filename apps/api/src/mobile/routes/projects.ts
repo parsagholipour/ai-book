@@ -7,6 +7,7 @@ import { prisma } from "@book-maker/db";
 import type { FastifyInstance } from "fastify";
 import type { MobileRouteContext } from "../routeContext.js";
 import { enforceContentRestrictions } from "../../contentRestrictions.js";
+import { hydrateSourceAttachments, sourceReadinessError } from "../sourceAttachments.js";
 
 /**
  * Project list, create and detail.
@@ -78,6 +79,12 @@ export async function registerMobileProjectRoutes(fastify: FastifyInstance, cont
             creationPayload: (({ characters: _characters, ...rest }) => rest)(parsed.data.creationPayload)
           }
         : parsed.data;
+      if (createInput.creationPayload) {
+        const payload = createInput.creationPayload;
+        payload.attachments = await hydrateSourceAttachments(auth.user.id, payload.attachments ?? []);
+        const sourceError = sourceReadinessError(payload.attachments, payload.messages ?? []);
+        if (sourceError) return sendMobileError(reply, 409, sourceError.code, sourceError.message);
+      }
       const project = await createMobileProjectRecord(auth.user.id, buildMobileCreateProjectInput(createInput));
 
       return reply.code(201).send({ project: await serializeProjectDetail(project, appConfig, auth.user.id) } satisfies MobileProjectCreateResponseDto);

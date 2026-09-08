@@ -1,3 +1,6 @@
+import { createSourceEmbedding } from "@book-maker/core";
+import { attachmentSourceRefs, hydrateSourceAttachments, submittedAttachments } from "../sourceAttachments.js";
+import { createSourceService } from "@book-maker/db";
 import { deleteCreationAttachmentDraftDir } from "../../attachmentStorage.js";
 import { registerMobileCreationAttachmentRoutes } from "./creationAttachments.js";
 import { chatReplyQuoteFor } from "../../chatReplyQuote.js";
@@ -446,6 +449,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
         auth.user.id,
         activeCharacterIds
       );
+      const activeAttachments = await hydrateSourceAttachments(auth.user.id, submittedAttachments(attachmentPool, activeMessages));
       const turnRequest: MobileCreationTurnRequest = {
         messages: activeMessages,
         ...(activeCharacters.length > 0
@@ -465,7 +469,8 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
           : persistedPresetsForTurn(parsedPayload.data),
         sourceNotes: parsedBody.data.sourceNotes ?? parsedPayload.data.sourceNotes,
         optionalDetails: parsedBody.data.optionalDetails ?? parsedPayload.data.optionalDetails,
-        attachments: attachmentPool,
+        attachments: activeAttachments,
+        ...(appConfig.FULL_DOCUMENT_SOURCES ? { sourceService: createSourceService(auth.user.id, attachmentSourceRefs(activeAttachments), createSourceEmbedding(appConfig)) } : {}),
         language: parsedPayload.data.language,
         conversationSummary: incoming.conversationSummary
       };

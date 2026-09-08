@@ -1,4 +1,4 @@
-import { type CreationAttachment } from "@book-maker/core";
+import { type SourceService, type CreationAttachment } from "@book-maker/core";
 import { z } from "zod";
 import {
   creationTurnQuestionSchema,
@@ -138,6 +138,7 @@ export type CreationTurnCharacter = {
 };
 
 export type MobileCreationTurnRequest = {
+  sourceService?: SourceService | undefined;
   messages: MobileCreationMessage[];
   brief?: MobileBookRecipe | undefined;
   presets?: MobileCreationPresets | undefined;
@@ -161,6 +162,9 @@ const TURN_ATTACHMENT_EXCERPT_TOTAL_MAX = 7500;
  * matter how much material was uploaded.
  */
 export function attachmentContextForTurn(attachments: CreationAttachment[] | undefined): Array<{
+  sourceId?: string | undefined;
+  extractionVersion?: number | undefined;
+  processing?: CreationAttachment["processing"] | undefined;
   name: string;
   kind: string;
   pages?: number | undefined;
@@ -179,6 +183,9 @@ export function attachmentContextForTurn(attachments: CreationAttachment[] | und
     const excerpt = attachment.content.slice(0, budget);
     remaining -= excerpt.length;
     return {
+      sourceId: attachment.sourceId,
+      extractionVersion: attachment.extractionVersion,
+      processing: attachment.processing,
       name: attachment.name,
       kind: attachment.kind,
       ...(attachment.pages ? { pages: attachment.pages } : {}),

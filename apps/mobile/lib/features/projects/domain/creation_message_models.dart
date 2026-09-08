@@ -329,6 +329,9 @@ class MobileCreationAttachment {
     this.truncated = false,
     this.url,
     this.sessionRevision,
+    this.sourceId,
+    this.extractionVersion,
+    this.processing,
   });
 
   final String id;
@@ -343,6 +346,25 @@ class MobileCreationAttachment {
   /// server-side storage existed or after the retention window.
   final String? url;
   final int? sessionRevision;
+  final String? sourceId;
+  final int? extractionVersion;
+  final Map<String, dynamic>? processing;
+  bool get isProcessing =>
+      ['queued', 'extracting', 'summarizing'].contains(processing?['status']);
+  String get processingLabel {
+    final status = processing?['status'];
+    if (isProcessing) return 'Reading · ${processing?['progress'] ?? 0}%';
+    if (status == 'ready') {
+      return 'Ready · ${processing?['readableSections'] ?? 0} sections read';
+    }
+    if (status == 'partial' || status == 'limited') {
+      return processing?['acceptedPartial'] == true
+          ? 'Using readable content'
+          : 'Partially readable · review required';
+    }
+    if (status == 'failed') return 'Reading failed';
+    return 'Ready';
+  }
 
   bool get isPhoto => kind == 'photo';
 
@@ -357,6 +379,11 @@ class MobileCreationAttachment {
       truncated: json['truncated'] as bool? ?? false,
       url: json['url'] as String?,
       sessionRevision: json['sessionRevision'] as int?,
+      sourceId: json['sourceId'] as String?,
+      extractionVersion: json['extractionVersion'] as int?,
+      processing: json['processing'] is Map
+          ? Map<String, dynamic>.from(json['processing'] as Map)
+          : null,
     );
   }
 }

@@ -1,4 +1,5 @@
 import { parseJsonObject } from "./json.js";
+import { z } from "zod";
 import { isCancellationError } from "./retry.js";
 import {
   bindTextModelCall,
@@ -72,6 +73,8 @@ export type ToolLoopOptions<TFinish = string> = {
   toolChoice?: ToolChoice | undefined;
   /** Model call budget for the whole loop (default 4). */
   maxModelCalls?: number | undefined;
+  /** Reserve the final call for an answer based on the evidence already read. */
+  finishOnLastCall?: boolean | undefined;
   /** Middleware around each model call; wrap with timeouts/retries here. */
   onModelCall?:
     | ((invoke: () => Promise<ToolCallsResult>, context: ToolLoopModelCallContext) => Promise<ToolCallsResult>)
@@ -113,6 +116,7 @@ export type ToolLoopResult<TFinish = string> = {
 
 const DEFAULT_MAX_MODEL_CALLS = 4;
 const DEFAULT_MAX_TOOL_RESULT_CHARS = 16_000;
+const plainAnswerTool = { name: "finish_evidence_answer", description: "Finish with the user-facing answer using the evidence already returned. State clearly when the requested detail was not found.", parameters: z.object({ answer: z.string() }) };
 
 export async function runToolLoop<TFinish = string>(options: ToolLoopOptions<TFinish>): Promise<ToolLoopResult<TFinish>> {
   const maxModelCalls = Math.max(1, options.maxModelCalls ?? DEFAULT_MAX_MODEL_CALLS);
@@ -140,18 +144,31 @@ export async function runToolLoop<TFinish = string>(options: ToolLoopOptions<TFi
     // retries keep one model. The next tool-loop turn is a new logical call and
     // intentionally resolves the newest revision again.
     const bound = await bindTextModelCall(options.textModel, options.purpose);
+    const finishing = options.finishOnLastCall && modelCall === maxModelCalls;
+    if (finishing) messages.push({ role: "system", content: "The evidence lookup budget is complete. Finish now using only the evidence already returned. If the requested detail was not found, say so clearly; do not invent it or announce another search." });
+    // Present completed evidence as data, without an open-ended tool-call
+    // transcript that some providers keep continuing after its tools disappear.
+    const callMessages: ChatMessage[] = finishing ? [
+      ...options.messages,
+      { role: "user", content: JSON.stringify({ returnedEvidence: toolEvents.map((event) => ({ tool: event.call.name, arguments: event.call.arguments, result: event.resultContent, isError: event.isError })) }) },
+      messages.at(-1)!
+    ] : messages;
     const invoke = () =>
       bound.adapter.generateWithTools({
-        messages,
-        tools: toolDefinitions,
-        ...(options.toolChoice !== undefined ? { toolChoice: options.toolChoice } : {}),
+        messages: callMessages,
+        tools: finishing ? [options.finishTool ?? plainAnswerTool] : toolDefinitions,
+        ...(finishing ? { toolChoice: "required" as const } : options.toolChoice !== undefined ? { toolChoice: options.toolChoice } : {}),
         ...(options.purpose !== undefined ? { purpose: options.purpose } : {}),
         ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
         ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {})
       });
-    const result = options.onModelCall
+    let result = options.onModelCall
       ? await options.onModelCall(invoke, { modelCall, maxModelCalls })
       : await invoke();
+    if (finishing && !options.finishTool) {
+      const answer = plainAnswerTool.parameters.safeParse(result.toolCalls.find((call) => call.name === plainAnswerTool.name)?.arguments);
+      if (answer.success) result = { ...result, text: answer.data.answer, toolCalls: [] };
+    }
 
     model = result.model;
     provider = result.provider;

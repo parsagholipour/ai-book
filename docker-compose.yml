@@ -38,6 +38,23 @@ services:
       timeout: 5s
       retries: 20
 
+  ocr:
+    build:
+      context: .
+      dockerfile: Dockerfile.ocr
+    init: true
+    restart: unless-stopped
+    expose:
+      - "8080"
+    ports:
+      - "127.0.0.1:18084:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/docs', timeout=4)"]
+      interval: 15s
+      timeout: 5s
+      start_period: 300s
+      retries: 20
+
   api:
     build:
       context: .
@@ -110,6 +127,8 @@ services:
       BOOK_STORAGE_DIR: /app/storage/books
       IMAGE_STORAGE_DIR: /app/storage/images
       ATTACHMENT_STORAGE_DIR: /app/storage/attachments
+      SOURCE_OCR_URL: http://ocr:8080
+      SOURCE_OCR_TIMEOUT_MS: 600000
       DEV_WATCH_POLLING: "true"
       CHOKIDAR_USEPOLLING: "true"
       DEV_PNPM_FILTER: "@book-maker/worker..."
@@ -140,6 +159,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      ocr:
         condition: service_healthy
 
   web:

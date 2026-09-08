@@ -59,6 +59,8 @@ export const operationParamsSchema = z.object({ id: z.string().min(1), operation
 export const attachmentParamsSchema = z.object({ id: z.string().min(1), attachmentId: z.string().min(1).max(64) });
 
 export const attachmentUploadQuerySchema = z.object({
+  async: z.enum(["true", "false"]).optional(),
+  requestId: z.string().min(1).max(100).optional(),
   filename: z.string().trim().min(1).max(300),
   mimeType: z.string().trim().max(160).optional(),
   expectedRevision: z.coerce.number().int().positive().optional()

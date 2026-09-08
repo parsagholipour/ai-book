@@ -54,6 +54,8 @@ export async function readDocxDocumentXml(data: Buffer): Promise<string> {
 export function docxXmlToText(documentXml: string): string {
   return documentXml
     .replace(/<w:p\b[^>]*>/g, "\n")
+    .replace(/<\/w:tc>/g, "\t")
+    .replace(/<\/w:tr>/g, "\n")
     .replace(/<w:tab\b[^>]*\/>/g, "\t")
     .replace(/<w:br\b[^>]*\/>/g, "\n")
     .replace(/<[^>]+>/g, "")

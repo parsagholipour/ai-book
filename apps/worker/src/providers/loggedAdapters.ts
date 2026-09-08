@@ -1,3 +1,4 @@
+import { withProjectSources } from "./sourceContext.js";
 import { createProviders as createCoreProviders } from "@book-maker/core";
 import { randomUUID } from "node:crypto";
 import {
@@ -88,7 +89,7 @@ export function createLoggedProviders(
   const { generationJobId, projectId } = job.data;
   const textModel = loggedTextModel(input);
   const liveTextModel = liveGenerationTextModel(providers.text, input, logger);
-  const text = new LoggingTextModelAdapter(liveTextModel, logger, generationJobId, projectId, textModel);
+  const text = withProjectSources(new LoggingTextModelAdapter(liveTextModel, logger, generationJobId, projectId, textModel), input, projectId, providers.embedding);
   return {
     text,
     research: new LoggingResearchAdapter(providers.research, logger, generationJobId),
@@ -846,5 +847,5 @@ export function createLoggedJudgeTextModel(job: WorkerRuntimeJob, input: CreateP
         loadRouting: loadLiveGenerationTextRouting(logger),
         onFallbackEvent: (event) => logger.append(`text.routing.${event.event}`, event).then(() => undefined)
       });
-  return new LoggingTextModelAdapter(delegate, logger, generationJobId, projectId, loggedTextModel(input));
+  return withProjectSources(new LoggingTextModelAdapter(delegate, logger, generationJobId, projectId, loggedTextModel(input)), input, projectId);
 }

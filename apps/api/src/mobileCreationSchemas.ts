@@ -292,7 +292,7 @@ export const mobileCreationMessageSchema = z
     role: mobileCreationMessageRoleSchema,
     // Attachment-only messages carry empty text, so emptiness is checked below.
     content: z.string().trim().max(4000),
-    attachments: z.array(mobileCreationMessageAttachmentSchema).max(6).optional(),
+    attachments: z.array(mobileCreationMessageAttachmentSchema).max(8).optional(),
     // Library characters this message @-mentions.
     characters: z.array(mobileCreationMessageCharacterSchema).max(10).optional(),
     // Grounded web research attached to an assistant answer. It travels with

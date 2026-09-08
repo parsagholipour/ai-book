@@ -1,3 +1,4 @@
+import { attachmentSourceRefs, hydrateSourceAttachments, sourceReadinessError, submittedAttachments } from "./sourceAttachments.js";
 import {
   adviseMobileBook,
   authorForMobilePayload,
@@ -161,6 +162,9 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
       ...(overrides.sourceNotes !== undefined ? { sourceNotes: overrides.sourceNotes } : {}),
       ...(overrides.optionalDetails ? { optionalDetails: overrides.optionalDetails } : {})
     };
+    mergedPayload.attachments = await hydrateSourceAttachments(userId, mergedPayload.attachments ?? []);
+    const sourceError = sourceReadinessError(mergedPayload.attachments, mergedPayload.messages ?? []);
+    if (sourceError) return { ok: false as const, status: 409, ...sourceError };
     const restriction = await assessCurrentContentRestrictions(
       [
         mergedPayload.rawIdea ?? "",
@@ -318,6 +322,8 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
           claimedRevision = claimed.revision;
           const createdProject = await createMobileProjectRecord(userId, input, tx);
           project = createdProject;
+          const sourceRefs = attachmentSourceRefs(submittedAttachments(finalPayload.attachments ?? [], finalPayload.messages ?? []));
+          if (sourceRefs.length) await tx.projectSource.createMany({ data: sourceRefs.map((ref) => ({ projectId: createdProject.id, ...ref, acceptedPartial: true })) });
           createdOutput = await createCreationOutputForProject({
             draftId,
             projectId: createdProject.id,

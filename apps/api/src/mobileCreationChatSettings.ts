@@ -255,8 +255,8 @@ export function attachmentAcknowledgement(attachments: MobileCreationMessageAtta
   if (attachments.length === 1) {
     const attachment = attachments[0]!;
     return attachment.kind === "photo"
-      ? `I've looked at ${attachment.name}.`
-      : `I've read ${attachment.name} and will use it as source material.`;
+      ? `I’ve received ${attachment.name}.`
+      : `I’ve received ${attachment.name} as source material.`;
   }
   const documents = attachments.filter((attachment) => attachment.kind === "document").length;
   const photos = attachments.length - documents;
@@ -264,5 +264,5 @@ export function attachmentAcknowledgement(attachments: MobileCreationMessageAtta
     documents > 0 ? (documents === 1 ? "the document" : `${documents} documents`) : "",
     photos > 0 ? (photos === 1 ? "the photo" : `${photos} photos`) : ""
   ].filter(Boolean);
-  return `I've gone through ${parts.join(" and ")} you sent and will use them for the book.`;
+  return `I’ve received ${parts.join(" and ")} you sent as source material.`;
 }

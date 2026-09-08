@@ -1,0 +1,32 @@
+FROM python:3.11-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates libgl1 libglib2.0-0 libgomp1 poppler-utils \
+  && rm -rf /var/lib/apt/lists/*
+
+# PaddleOCR-VL 1.6 is the current 0.9B document parser. Pin the runtime so a
+# rebuild cannot silently change extraction output or its hardware needs.
+RUN python -m pip install --no-cache-dir paddlepaddle==3.2.1 \
+  && python -m pip install --no-cache-dir "paddleocr[doc-parser]==3.7.0" \
+  && paddlex --install serving
+
+# Store the model in the image. Runtime OCR remains local and does not need to
+# download weights or send source pages to an external provider.
+RUN python -c "from paddleocr import PaddleOCRVL; PaddleOCRVL(device='cpu', pipeline_version='v1.6')"
+RUN python -c "from paddleocr import PaddleOCRVL; PaddleOCRVL(device='cpu', pipeline_version='v1.6', use_doc_orientation_classify=True, use_doc_unwarping=True)" \
+  && cp /usr/local/lib/python3.11/site-packages/paddlex/configs/pipelines/PaddleOCR-VL-1.6.yaml /opt/paddleocr-vl.yaml \
+  && sed -i 's/use_doc_preprocessor: False/use_doc_preprocessor: True/' /opt/paddleocr-vl.yaml
+
+# PaddleX renders diagnostic result images while serializing its response. Point
+# every script at a bundled Unicode font so serving never downloads one at run
+# time (DejaVu Sans covers Latin, Arabic and Persian text).
+ENV PADDLE_PDX_LOCAL_FONT_FILE_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+
+EXPOSE 8080
+HEALTHCHECK --interval=15s --timeout=5s --start-period=300s --retries=20 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/docs', timeout=4)"
+CMD ["paddlex", "--serve", "--pipeline", "/opt/paddleocr-vl.yaml", "--device", "cpu", "--host", "0.0.0.0", "--port", "8080"]

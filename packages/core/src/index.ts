@@ -171,3 +171,11 @@ export { isRecord, jsonRecord } from "./schemas/jsonCoercion.js";
 // serializer reads too, so it leaves the package by name from the module that
 // owns the rule. See its docstring for why there is one of it.
 export { isImportedManuscript } from "./schemas/mediaSettings.js";
+export * from "./sources/types.js";
+export * from "./sources/retrieval.js";
+export * from "./sources/tools.js";
+export * from "./sources/extraction.js";
+export * from "./sources/summarization.js";
+export * from "./sources/ocr.js";
+export * from "./sources/generation.js";
+export * from "./sources/embedding.js";

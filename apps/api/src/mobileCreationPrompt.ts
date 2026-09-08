@@ -133,6 +133,7 @@ export function mobileBriefMetadata(
     sourceNotes: normalized.sourceNotes,
     messages: normalized.messages ?? [],
     attachments: normalized.attachments ?? [],
+    sourceRefs: (normalized.attachments ?? []).flatMap((attachment) => attachment.sourceId && attachment.extractionVersion ? [{ sourceId: attachment.sourceId, version: attachment.extractionVersion }] : []),
     // The build-time character snapshots; `mediaSettings.mobile.characters` is
     // what the planner guidance and the reference-sheet seeding read.
     ...(normalized.characters && normalized.characters.length > 0 ? { characters: normalized.characters } : {}),

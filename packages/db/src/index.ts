@@ -78,3 +78,4 @@ export async function ensureSeedTemplates() {
     });
   }
 }
+export * from "./sources.ts";

@@ -48,6 +48,8 @@ const envSchema = z.object({
   OPENROUTER_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   GEMINI_API_KEY: z.string().optional(),
+  SOURCE_OCR_URL: z.string().url().optional(),
+  SOURCE_OCR_TIMEOUT_MS: z.coerce.number().int().min(10_000).max(900_000).default(600_000),
   ALIBABA_API_KEY: z.string().optional(),
   ALIBABA_API_HOST: z.string().url().default(DEFAULT_ALIBABA_API_HOST),
   ALIBABA_TEXT_MODEL: z.string().default(DEFAULT_ALIBABA_TEXT_MODEL),
@@ -145,6 +147,7 @@ const envSchema = z.object({
   ATTACHMENT_STORAGE_DIR: z.string().default("./storage/attachments"),
   /** How long uploaded user files are kept before deletion. Generated books and plans are kept forever. */
   ATTACHMENT_RETENTION_DAYS: z.coerce.number().int().min(1).default(180),
+  FULL_DOCUMENT_SOURCES: z.coerce.string().transform((value) => value === "true").default(false),
   /**
    * How long a render or publication scratch file must sit untouched before the
    * worker's sweep treats it as abandoned (a process killed before its own

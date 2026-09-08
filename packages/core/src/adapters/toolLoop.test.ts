@@ -58,6 +58,27 @@ const finishTool = {
 };
 
 describe("runToolLoop", () => {
+  it("reserves the final source call for the finish tool", async () => {
+    const model = scriptedModel([
+      { toolCalls: [{ name: "echo", arguments: { value: "evidence" } }] },
+      { toolCalls: [{ name: "finish", arguments: { answer: "Not stated" } }] }
+    ]);
+    const result = await runToolLoop({ textModel: model, messages: [{ role: "user", content: "What is missing?" }], tools: [echoTool], finishTool, maxModelCalls: 2, finishOnLastCall: true });
+    expect(result.finish).toEqual({ answer: "Not stated" });
+    expect(model.calls[1]!.tools.map((tool) => tool.name)).toEqual(["finish"]);
+    expect(model.calls[1]!.toolChoice).toBe("required");
+    expect(model.calls[1]!.messages.at(-1)!.content).toContain("do not invent");
+  });
+  it("finishes a plain source answer without more tools on the final call", async () => {
+    const model = scriptedModel([
+      { toolCalls: [{ name: "echo", arguments: { value: "evidence" } }] },
+      { toolCalls: [{ name: "finish_evidence_answer", arguments: { answer: "Not found in the evidence." } }] }
+    ]);
+    const result = await runToolLoop({ textModel: model, messages: [{ role: "user", content: "What is missing?" }], tools: [echoTool], maxModelCalls: 2, finishOnLastCall: true });
+    expect(result.status).toBe("finished");
+    expect(result.finalText).toBe("Not found in the evidence.");
+    expect(model.calls[1]!.tools.map((tool) => tool.name)).toEqual(["finish_evidence_answer"]);
+  });
   it("executes tool calls, feeds results back, and returns the finish payload", async () => {
     const model = scriptedModel([
       { toolCalls: [{ name: "echo", arguments: { value: "hello" } }] },

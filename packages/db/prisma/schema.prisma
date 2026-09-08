@@ -609,6 +609,7 @@ model SubscriptionState {
 }
 
 model Project {
+  sourceSelections ProjectSource[]
   id            String           @id @default(cuid())
   userId        String
   title         String
@@ -716,6 +717,7 @@ model MobileCreationDraft {
 
   user    User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
   outputs MobileCreationOutput[]
+  sources SourceDocument[]
 
   @@index([userId, status, updatedAt])
   @@index([createdProjectId])
@@ -1593,4 +1595,80 @@ model Embedding {
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, scope])
+}
+
+
+/// Upload identity and original-file retention are independent of extracted evidence.
+model SourceDocument {
+  id String @id
+  draftId String?
+  userId String
+  uploadKey String
+  contentHash String
+  name String
+  mimeType String
+  kind String
+  sizeBytes Int
+  storageDraftId String
+  currentVersion Int @default(1)
+  createdAt DateTime @default(now())
+  draft MobileCreationDraft? @relation(fields: [draftId], references: [id], onDelete: SetNull)
+  extractions SourceExtraction[]
+  @@unique([storageDraftId, uploadKey])
+  @@index([userId, draftId])
+}
+
+/// This row is also a durable processing job. A lease fences every checkpoint.
+model SourceExtraction {
+  sourceId String
+  version Int
+  status String @default("queued")
+  extractionComplete Boolean @default(false)
+  acceptedPartial Boolean @default(false)
+  checkpoints Json @default("[]")
+  usage Json @default("{}")
+  fullContent String @default("")
+  summary String @default("")
+  totalSections Int @default(0)
+  unreadable Json @default("[]")
+  progress Int @default(0)
+  attempts Int @default(0)
+  error String?
+  retryKey String?
+  leaseToken String?
+  leaseExpiresAt DateTime?
+  createdAt DateTime @default(now())
+  completedAt DateTime?
+  source SourceDocument @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  chunks SourceChunk[]
+  selections ProjectSource[]
+  @@id([sourceId, version])
+  @@unique([sourceId, retryKey])
+  @@index([status, leaseExpiresAt])
+}
+
+model SourceChunk {
+  sourceId String
+  version Int
+  ordinal Int
+  section Int
+  locator String
+  content String
+  summary String @default("")
+  embedding Json?
+  extraction SourceExtraction @relation(fields: [sourceId, version], references: [sourceId, version], onDelete: Cascade)
+  @@id([sourceId, version, ordinal])
+  @@index([sourceId, version, section])
+}
+
+/// Keeps citations alive after the draft or original file is removed.
+/// Plan input snapshots select immutable versions from this retained set.
+model ProjectSource {
+  projectId String
+  sourceId String
+  version Int
+  acceptedPartial Boolean @default(false)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  extraction SourceExtraction @relation(fields: [sourceId, version], references: [sourceId, version], onDelete: Restrict)
+  @@id([projectId, sourceId, version])
 }

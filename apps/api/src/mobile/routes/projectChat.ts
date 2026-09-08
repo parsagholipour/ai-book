@@ -1,3 +1,5 @@
+import { createSourceService } from "@book-maker/db";
+import { jsonRecord, createSourceEmbedding, sourceRefsFromInput } from "@book-maker/core";
 import { bookEditScopeFromMessage, classifyProjectChatMessage, type BookEditIntent } from "../../bookEditIntent.js";
 import { modelPageForReaderContext, numberingForProject } from "../../bookPageNumbering.js";
 import { chatReplyQuoteFor } from "../../chatReplyQuote.js";
@@ -284,6 +286,7 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
       const pages = chatPagesForProject(project, await loadChatPageFeatures(project.id));
       const stage = chatStageForProject(project.status, project.currentPlan);
       const routingTextModel = safeFastRoutingTextModel();
+      const sourceRefs = sourceRefsFromInput({ mediaSettings: jsonRecord(jsonRecord(project.currentPlan?.inputSnapshot).mediaSettings ?? project.mediaSettings) });
       // With a current page map, the numbers the user types are the printed PDF
       // pages they can see; without one everything stays in model indexes.
       const pageNumbering = numberingForProject(project);
@@ -332,6 +335,7 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
               content: message.content
             })),
             textModel: routingTextModel,
+            ...(sourceRefs.length ? { sourceService: createSourceService(auth.user.id, sourceRefs, createSourceEmbedding(context.appConfig)) } : {}),
             loadPageBody: async (index) => (await loadChatPageBodies(id, [index])).get(index) ?? null,
             clarifyExhausted,
             pageNumbering,
@@ -387,6 +391,7 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
         message: resolvedMessage,
         intent,
         textModel: routingTextModel,
+        ...(sourceRefs.length ? { sourceService: createSourceService(auth.user.id, sourceRefs, createSourceEmbedding(context.appConfig)) } : {}),
         executeProposal: Boolean(confirmedProposal),
         ...(confirmedProposal?.proposalId ? { executionCommandId: confirmedProposal.proposalId } : {}),
         ...(confirmedProposal?.credits !== undefined ? { quotedCredits: confirmedProposal.credits } : {}),

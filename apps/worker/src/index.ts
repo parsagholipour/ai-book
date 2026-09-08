@@ -1,3 +1,4 @@
+import { startSourceProcessing } from "./runtime/sourceProcessing.js";
 import { Worker } from "bullmq";
 import { browserPoolStatus, closeSharedBrowser } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
@@ -12,6 +13,7 @@ import { BOOK_QUEUE_NAME, connection, queue } from "./runtime/queue.js";
 import { processWorkerJob } from "./processJob.js";
 
 
+const sourceProcessing = startSourceProcessing();
 const worker = new Worker(BOOK_QUEUE_NAME, processWorkerJob, {
   connection,
   concurrency: Math.max(config.MAX_PARALLEL_PAGE_JOBS, config.MAX_PARALLEL_IMAGE_JOBS)
@@ -96,6 +98,7 @@ async function shutdown() {
   // job to finish: it is cancelled between entries and settles immediately,
   // rather than running on into the disconnects below.
   await exportTempCleanup.stop();
+  await sourceProcessing.stop();
   await worker.close();
   // After the worker, so no render is mid-flight; before the database, because
   // a pooled Chromium outlives the job that opened it and would otherwise keep

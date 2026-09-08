@@ -152,7 +152,8 @@ function activeThreadPayload(payload: MobileCreationDraftPayload): MobileCreatio
     return payload;
   }
   const active = linearizeCreationMessages(payload.messages).active;
-  return active.length === payload.messages.length ? payload : { ...payload, messages: active };
+  const ids = new Set(active.flatMap((message) => (message.attachments ?? []).map((ref) => ref.id)));
+  return { ...payload, messages: active, ...(payload.attachments ? { attachments: payload.attachments.filter((attachment) => ids.has(attachment.id)) } : {}) };
 }
 
 export function normalizePayload(payload: MobileCreationDraftPayload): MobileCreationDraftPayload {

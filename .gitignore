@@ -50,3 +50,7 @@ docs/english-regeneration-chat-router-incident.md
 .scratch/review-page-sensitivity/
 # Blinded manuscript copies for the reader panels are generated books; they live only on the machine that ran them
 docs/composed-chapters/**/blind/
+
+# Generated source acceptance-test artifacts.
+.scratch/source-book-live/
+.scratch/source-book-pdf80/

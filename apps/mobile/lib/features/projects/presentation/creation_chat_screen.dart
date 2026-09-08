@@ -1,3 +1,5 @@
+import 'source_citations.dart';
+import 'source_processing_panel.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
@@ -371,6 +373,28 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                           outputs: state.outputs,
                           activeProjectId: activeProjectId,
                           onSelect: _selectOutput,
+                        ),
+                      if (!isInOutputStage &&
+                          state.draftId != null &&
+                          (state.messages.any(
+                                (message) => message.attachments.isNotEmpty,
+                              ) ||
+                              state.pendingAttachments.any(
+                                (entry) => entry.attachment != null,
+                              )))
+                        SourceProcessingPanel(
+                          key: ValueKey(state.draftId),
+                          draftId: state.draftId!,
+                          ids: {
+                            ...state.messages.expand(
+                              (message) => message.attachments.map(
+                                (attachment) => attachment.id,
+                              ),
+                            ),
+                            ...state.pendingAttachments
+                                .where((entry) => entry.attachment != null)
+                                .map((entry) => entry.attachment!.id),
+                          },
                         ),
                       if (state.warnings.isNotEmpty)
                         _ChatWarningsBanner(warnings: state.warnings),

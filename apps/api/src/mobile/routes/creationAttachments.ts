@@ -1,3 +1,5 @@
+import { hydrateSourceAttachments, saveSourceUpload, SourceUploadError, waitForSourceUpload } from "../sourceAttachments.js";
+import { registerSourceRoutes } from "./sources.js";
 import {
   deleteCreationAttachmentFile,
   readCreationAttachmentFile,
@@ -40,12 +42,13 @@ export async function registerMobileCreationAttachmentRoutes(
   context: MobileRouteContext
 ): Promise<void> {
   const { appConfig, attachmentLimiter, attachmentIngestion } = context;
+  await registerSourceRoutes(fastify);
 
   fastify.post(
     "/api/mobile/creation-sessions/:id/attachments",
     {
       bodyLimit: CREATION_ATTACHMENT_MAX_BYTES + 64 * 1024,
-      schema: { tags: ["mobile"], response: { 201: {}, 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError, 422: mobileAuthError } }
+      schema: { tags: ["mobile"], response: { 201: {}, 202: {}, 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError, 422: mobileAuthError } }
     },
     async (request, reply) => {
       const auth = await requireMobileAuth(request, reply);
@@ -73,6 +76,18 @@ export async function registerMobileCreationAttachmentRoutes(
       const parsedPayload = mobileCreationDraftPayloadSchema.safeParse(draft.payload);
       if (!parsedPayload.success) {
         return sendMobileError(reply, 400, "VALIDATION_ERROR", "This book chat needs to be restarted.");
+      }
+      if (appConfig.FULL_DOCUMENT_SOURCES) {
+        try {
+          const saved = await saveSourceUpload({ userId: auth.user.id, draftId: id, root: appConfig.ATTACHMENT_STORAGE_DIR, data, ...query.data });
+          const attachment = query.data.async === "true"
+            ? (await hydrateSourceAttachments(auth.user.id, [saved.attachment]))[0]!
+            : await waitForSourceUpload(auth.user.id, saved.attachment);
+          return reply.code(query.data.async === "true" ? 202 : 201).send({ attachment: serializeCreationAttachment(attachment, id), revision: saved.revision });
+        } catch (error) {
+          if (error instanceof SourceUploadError) return sendMobileError(reply, error.code === "SOURCE_PROCESSING" ? 503 : 409, error.code, error.message);
+          throw error;
+        }
       }
       const existing = parsedPayload.data.attachments ?? [];
       if (existing.length >= CREATION_ATTACHMENT_MAX_COUNT) {

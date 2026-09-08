@@ -368,6 +368,7 @@ export function serializeCreationAttachment(
     name: attachment.name,
     mimeType: attachment.mimeType,
     sizeBytes: attachment.sizeBytes,
+    ...(attachment.sourceId ? { sourceId: attachment.sourceId, extractionVersion: attachment.extractionVersion, processing: attachment.processing } : {}),
     summary: attachment.summary,
     pages: attachment.pages ?? null,
     truncated: attachment.truncated,

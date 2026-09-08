@@ -42,6 +42,18 @@ export const creationAttachmentSchema = z
     summary: z.string().trim().max(CREATION_ATTACHMENT_SUMMARY_MAX).default(""),
     content: z.string().max(CREATION_ATTACHMENT_CONTENT_MAX).default(""),
     truncated: z.boolean().default(false),
+    sourceId: z.string().max(64).optional(),
+    extractionVersion: z.number().int().min(1).optional(),
+    processing: z.object({
+      status: z.enum(["queued", "extracting", "summarizing", "ready", "partial", "failed", "limited"]),
+      progress: z.number().min(0).max(100),
+      readableSections: z.number().int().min(0),
+      totalSections: z.number().int().min(0),
+      unreadable: z.array(z.string()),
+      retryable: z.boolean(),
+      error: z.string().optional(),
+      acceptedPartial: z.boolean().optional()
+    }).optional(),
     pages: z.number().int().min(1).max(5000).optional(),
     language: z.string().trim().min(2).max(40).optional(),
     createdAt: z.string().trim().min(1).max(40)

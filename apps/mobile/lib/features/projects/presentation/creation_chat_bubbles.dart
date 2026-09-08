@@ -101,7 +101,7 @@ class _ProjectChatMessageBubble extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Flexible(
-                  child: Text(
+                  child: SourceCitationText(
                     message.content,
                     style: Theme.of(
                       context,
