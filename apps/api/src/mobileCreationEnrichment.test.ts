@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { GenerateWithToolsOptions, ResearchAdapter, TextModelAdapter } from "@book-maker/core";
 import {
   CREATION_ASSISTANT_MESSAGE_MAX_CHARS,
@@ -7,6 +7,7 @@ import {
   runCreationTurn,
   type MobileCreationTurnRequest
 } from "./mobileCreation.js";
+import { DEFAULT_CREATION_TURN_TIMEOUT_MS } from "./mobile/schemas.js";
 
 /** One scripted assistant turn for the tools-enabled creation chat model. */
 type ScriptedToolTurn =
@@ -514,6 +515,39 @@ describe("creation chat web search", () => {
     expect(patch.assistantMessage).toContain("nearby exoplanet");
     expect(patch.question).toBeNull();
     expect(patch.research?.sources[0]?.title).toBe("NASA discovery brief");
+  });
+
+  it("delivers a successful Mars search that takes longer than the old 25-second cutoff", async () => {
+    vi.useFakeTimers();
+    try {
+      const marsRequest: MobileCreationTurnRequest = {
+        messages: [{ role: "user", content: "Search NASA and ESA for five challenges of someone's first day on Mars: breathing, water, food, warmth, and radiation. Show the sources." }]
+      };
+      const search = vi.fn(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 30_000));
+        return {
+          query: "NASA ESA first day on Mars",
+          summary: "Breathing, water, food, warmth, and radiation require life support.",
+          sources: [{ title: "NASA", url: "https://www.nasa.gov/humans-in-space/", summary: "Life support for explorers." }]
+        };
+      });
+      const model = toolModel([
+        { toolCalls: [{ name: "web_search", arguments: { query: "NASA ESA first day on Mars" } }] },
+        { finish: { assistantMessage: "Here are five findings from NASA and ESA.", question: null } }
+      ]);
+      const pending = runCreationTurn(marsRequest, {
+        timeoutMs: DEFAULT_CREATION_TURN_TIMEOUT_MS,
+        enrich: (input, base) => enrichCreationTurnWithSearch({ textModel: model, research: { search } }, input, base)
+      });
+      await vi.advanceTimersByTimeAsync(30_000);
+      const turn = await pending;
+
+      expect(turn.research?.sources[0]?.url).toBe("https://www.nasa.gov/humans-in-space/");
+      expect(search).toHaveBeenCalledTimes(1);
+      expect(model.calls[1]?.messages.find((message) => message.role === "tool")?.content).not.toContain("failed");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does not retry timed-out searches, avoiding duplicate provider work", async () => {

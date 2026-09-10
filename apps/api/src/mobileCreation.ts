@@ -254,7 +254,10 @@ type SearchCreationTurnOptions = {
 };
 
 const CREATION_TURN_FIRST_CALL_TIMEOUT_MS = 15_000;
-const CREATION_SEARCH_TIMEOUT_MS = 25_000;
+// Grounded searches over several topics can take 30s, including citation
+// resolution. Leave 25s for the answer and 5s of headroom inside the route's
+// 85s turn budget, instead of discarding successful results after 25s.
+const CREATION_SEARCH_TIMEOUT_MS = 40_000;
 const CREATION_TURN_NEXT_CALL_TIMEOUT_MS = 25_000;
 const CREATION_TURN_MAX_MODEL_CALLS = 4;
 
