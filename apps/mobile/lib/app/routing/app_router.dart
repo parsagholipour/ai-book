@@ -10,6 +10,7 @@ import '../../features/auth/presentation/forgot_password_screen.dart';
 import '../../features/auth/presentation/legal_acceptance_screen.dart';
 import '../../features/auth/presentation/sample_book_screen.dart';
 import '../../features/projects/presentation/book_edit_screen.dart';
+import '../../features/projects/presentation/book_library_screen.dart';
 import '../../features/projects/presentation/book_screen.dart';
 import '../../features/projects/presentation/creation_chat_screen.dart';
 import '../../features/projects/presentation/edit_changes_screen.dart';
@@ -161,6 +162,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/account',
         pageBuilder: (context, state) => _appPage(state, const AccountScreen()),
+      ),
+      GoRoute(
+        path: '/books',
+        pageBuilder: (context, state) =>
+            _appPage(state, const BookLibraryScreen()),
       ),
       GoRoute(
         path: '/books/new',

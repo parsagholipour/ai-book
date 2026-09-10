@@ -6,6 +6,7 @@ import '../../../shared/ui/haptics.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
 import '../data/projects_repository.dart';
+import '../domain/book_library.dart';
 import '../domain/project_models.dart';
 import 'book_actions_menu.dart';
 import 'book_cover.dart';
@@ -53,14 +54,14 @@ class _BookShelfState extends ConsumerState<BookShelf> {
     // the moment it opens to decide between unlocking and the paywall.
     final billing = ref.watch(billingProvider).asData?.value;
 
-    return projects.when(
+    final shelf = projects.when(
       // Only reached before the first fetch of the app's lifetime. A shelf that
       // has never loaded should take no space rather than show a spinner: the
       // chat list below is the more important content.
       loading: () => const SizedBox.shrink(),
       error: (error, stackTrace) => const SizedBox.shrink(),
       data: (items) {
-        final books = _shelfBooks(items);
+        final books = libraryBooks(items);
         if (books.isEmpty) {
           return const SizedBox.shrink();
         }
@@ -68,29 +69,6 @@ class _BookShelfState extends ConsumerState<BookShelf> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Your books',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    '${books.length}',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
             SizedBox(
               // Cover + the two label lines beneath it.
               height: _coverWidth / kBookCoverAspectRatio + 46,
@@ -115,25 +93,56 @@ class _BookShelfState extends ConsumerState<BookShelf> {
               ),
             ),
             const SizedBox(height: 12),
-            const Divider(height: 1),
           ],
         );
       },
     );
+    final count = projects.value == null
+        ? null
+        : libraryBooks(projects.value!).length;
+    final colors = Theme.of(context).colorScheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Material(
+          type: MaterialType.transparency,
+          child: ListTile(
+            key: const ValueKey('drawer-books-row'),
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            leading: Icon(
+              Icons.menu_book_outlined,
+              color: colors.onSurfaceVariant,
+            ),
+            title: const Text('Your books'),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (count != null)
+                  Text(
+                    '$count',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                const SizedBox(width: 4),
+                Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
+              ],
+            ),
+            onTap: () {
+              AppHaptics.tap();
+              Navigator.of(context).pop();
+              context.push('/books');
+            },
+          ),
+        ),
+        shelf,
+        const Divider(height: 1),
+      ],
+    );
   }
-}
-
-/// Books worth shelving: projects with generated manuscript pages.
-///
-/// Ideas and plans remain available in chat, but they are not books yet and
-/// should not appear under "Your books" until writing has actually started.
-List<MobileProjectSummary> _shelfBooks(List<MobileProjectSummary> projects) {
-  final books = projects.where((project) => project.pageCount > 0).toList();
-  // Most recently touched first, whatever state it is in. Ranking finished
-  // books above the rest buried the book being written right now — the one the
-  // user is most likely to be waiting on — behind every book they already read.
-  books.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-  return books;
 }
 
 class _ShelfBook extends ConsumerStatefulWidget {

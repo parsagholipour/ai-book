@@ -118,7 +118,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Your books'), findsNothing);
+    expect(find.text('Your books'), findsOneWidget);
     expect(find.byType(BookCover), findsNothing);
   });
 
