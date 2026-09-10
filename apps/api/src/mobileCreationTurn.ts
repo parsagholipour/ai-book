@@ -29,10 +29,20 @@ import {
 /** Catalog palettes are hex today, but the shape is the catalog's to change. */
 const coverPreviewColor = z.string().trim().min(4).max(32);
 
+/**
+ * Ceiling on one assistant bubble. Ordinary interview turns are 1-3 sentences,
+ * but a turn that delivers what a web search found has to carry the answer
+ * itself: the app renders the reply and a row of source links, never the
+ * research summary. A six-item list with a clause each did not fit the old
+ * 900, and a finish_turn the schema rejects costs another model call or falls
+ * back to the raw summary.
+ */
+export const CREATION_ASSISTANT_MESSAGE_MAX_CHARS = 2000;
+
 export const mobileCreationTurnSchema = z
   .object({
     // Branch navigation intentionally returns no new chat bubble.
-    assistantMessage: z.string().trim().max(900),
+    assistantMessage: z.string().trim().max(CREATION_ASSISTANT_MESSAGE_MAX_CHARS),
     brief: mobileBookRecipeSchema,
     presets: mobileCreationPresetsSchema,
     detectedLane: mobileCreationLaneSchema,
@@ -81,7 +91,7 @@ const creationTurnAiPatchObjectSchema = z
     // These two fields are a coherence pair. Requiring an explicit question
     // state keeps a localized assistant reply from silently inheriting the
     // deterministic English question card when the model omits `question`.
-    assistantMessage: z.string().trim().max(900),
+    assistantMessage: z.string().trim().max(CREATION_ASSISTANT_MESSAGE_MAX_CHARS),
     brief: mobileBookRecipeSchema.optional(),
     presets: mobileCreationPresetsSchema.optional(),
     quickReplies: z.array(z.string()).max(4).optional(),

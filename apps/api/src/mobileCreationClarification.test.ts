@@ -209,6 +209,12 @@ describe("creation chat clarification policy", () => {
     expect(systemPrompt).toContain('Set answerKind to "multi" with up to 6 options');
     expect(systemPrompt).toContain("Never invent options that only describe how the user will answer");
     expect(systemPrompt).toContain("Never ask a follow-up that narrows a fact you already asked about");
+    // A search turn once replied "Here are the six conflicts..." with the six
+    // living only in the research summary, which the app never renders.
+    expect(systemPrompt).toContain("the search summary itself is never shown to them");
+    expect(systemPrompt).toContain("put the actual answer inside assistantMessage");
+    expect(systemPrompt).toContain("unless the items follow in that same message");
+    expect(systemPrompt).toContain("shown as plain text: no markdown");
     expect(payload.conversation).toEqual(request.messages);
     expect(payload.conversationSummary).toBe(request.conversationSummary);
     expect(payload.attachments[0]).toMatchObject({

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { GenerateWithToolsOptions, ResearchAdapter, TextModelAdapter } from "@book-maker/core";
 import {
+  CREATION_ASSISTANT_MESSAGE_MAX_CHARS,
   deterministicCreationTurn,
   enrichCreationTurnWithSearch,
   runCreationTurn,
@@ -394,6 +395,34 @@ describe("creation chat web search", () => {
     });
   });
 
+  it("keeps a delivered search list longer than the old 900-char cap in the reply", async () => {
+    // The user asked for the list; the model has to carry it in the bubble
+    // because the research summary never reaches the screen. Six wars with a
+    // date and a clause each ran past 900 characters, and a rejected
+    // finish_turn either cost another model call or fell back to the raw
+    // markdown summary.
+    const items = Array.from({ length: 6 }, (_, index) =>
+      `${index + 1}. War number ${index + 1} of the continent (18${20 + index * 10}–18${25 + index * 10}), fought between two neighbouring republics over a disputed frontier province and its river trade.`
+    );
+    const list = `Here are the six wars that come up most:\n${items.join("\n")}\nI'll make these the backbone of the book.`;
+    expect(list.length).toBeGreaterThan(900);
+    expect(list.length).toBeLessThanOrEqual(CREATION_ASSISTANT_MESSAGE_MAX_CHARS);
+    const model = toolModel([
+      { toolCalls: [{ name: "web_search", arguments: { query: "most important wars in South America" } }] },
+      { finish: { assistantMessage: list, question: null } }
+    ]);
+
+    const patch = await enrichCreationTurnWithSearch(
+      { textModel: model, research: groundedResearch },
+      request,
+      deterministicCreationTurn(request)
+    );
+
+    expect(model.calls).toHaveLength(2);
+    expect(patch.assistantMessage).toBe(list);
+    expect(patch.research?.sources).toHaveLength(1);
+  });
+
   it("keeps ordinary chat to one model call without searching", async () => {
     let searches = 0;
     const research: ResearchAdapter = {
@@ -604,7 +633,7 @@ describe("creation chat web search", () => {
 
   it("feeds invalid finish arguments back to the model for repair", async () => {
     const model = toolModel([
-      { finish: { assistantMessage: "x".repeat(1000), question: null } },
+      { finish: { assistantMessage: "x".repeat(CREATION_ASSISTANT_MESSAGE_MAX_CHARS + 1), question: null } },
       { finish: { assistantMessage: "A corrected concise reply.", question: null } }
     ]);
 
