@@ -72,7 +72,7 @@ class _ProjectChatMessageBubble extends StatelessWidget {
       onLongPressStart: (details) => showMessageActionsMenu(
         context: context,
         position: details.globalPosition,
-        message: message.content,
+        message: chatBubbleCopyText(message.content, role: message.role),
         onEdit: isUser && onEdit != null ? () => onEdit!(message) : null,
         onReply: startReply,
       ),
@@ -101,8 +101,9 @@ class _ProjectChatMessageBubble extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Flexible(
-                  child: SourceCitationText(
+                  child: ChatMessageText.forRole(
                     message.content,
+                    role: message.role,
                     style: Theme.of(
                       context,
                     ).textTheme.bodyMedium?.copyWith(color: foreground),

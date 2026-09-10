@@ -26,6 +26,24 @@
 import { z } from "zod";
 
 export const DEFAULT_CREDIT_COSTS = {
+  // Ordinary chat is priced by subscription plan, independently of book effort.
+  messageCreditsFree: 0,
+  messageDailyLimitFree: 50,
+  messageResetCreditsFree: 50,
+  messageResetEnabledFree: 1,
+  messageCreditsCreator: 0,
+  messageDailyLimitCreator: 150,
+  messageResetCreditsCreator: 100,
+  messageResetEnabledCreator: 1,
+  messageCreditsPro: 0,
+  messageDailyLimitPro: 300,
+  messageResetCreditsPro: 150,
+  messageResetEnabledPro: 1,
+  messageCreditsMax: 0,
+  messageDailyLimitMax: 600,
+  messageResetCreditsMax: 200,
+  messageResetEnabledMax: 1,
+
   // Initial planning follows the same model tier as the book it shapes. The
   // unsuffixed key remains Balanced; `planGenerationCreditCost` is the only
   // initial-plan resolver and selects the concrete key for the other tiers.
@@ -106,6 +124,15 @@ export const CREDIT_PRICING_KEYS = Object.keys(DEFAULT_CREDIT_COSTS) as CreditPr
  * from the free tier.
  */
 export const PLAN_ALLOWANCE_KEYS = [
+  "messageDailyLimitFree",
+  "messageResetEnabledFree",
+  "messageDailyLimitCreator",
+  "messageResetEnabledCreator",
+  "messageDailyLimitPro",
+  "messageResetEnabledPro",
+  "messageDailyLimitMax",
+  "messageResetEnabledMax",
+
   "freeMonthlyCredits",
   "freeIllustratedBooksPerMonth",
   "freeManuscriptImportsPerMonth"
@@ -127,6 +154,23 @@ export const CREDIT_PRICE_KEYS = CREDIT_PRICING_KEYS.filter(
  * 300-page book twenty-four million credits before anyone noticed.
  */
 export const CREDIT_PRICING_LIMITS: Record<CreditPricingKey, number> = {
+  messageCreditsFree: 1000,
+  messageDailyLimitFree: 100000,
+  messageResetCreditsFree: 100000,
+  messageResetEnabledFree: 1,
+  messageCreditsCreator: 1000,
+  messageDailyLimitCreator: 100000,
+  messageResetCreditsCreator: 100000,
+  messageResetEnabledCreator: 1,
+  messageCreditsPro: 1000,
+  messageDailyLimitPro: 100000,
+  messageResetCreditsPro: 100000,
+  messageResetEnabledPro: 1,
+  messageCreditsMax: 1000,
+  messageDailyLimitMax: 100000,
+  messageResetCreditsMax: 100000,
+  messageResetEnabledMax: 1,
+
   planGeneration: 5_000,
   planGenerationFast: 5_000,
   planGenerationPremium: 5_000,

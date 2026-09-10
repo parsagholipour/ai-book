@@ -522,7 +522,7 @@ class _MessageBubble extends StatelessWidget {
         onLongPressStart: (details) => showMessageActionsMenu(
           context: context,
           position: details.globalPosition,
-          message: message.content,
+          message: chatBubbleCopyText(message.content, role: message.role),
           onEdit: canEdit ? () => onEdit!(message) : null,
           onReply: startReply,
         ),
@@ -574,8 +574,9 @@ class _MessageBubble extends StatelessWidget {
                 if (hasText) const SizedBox(height: 6),
               ],
               if (hasText)
-                Text(
+                ChatMessageText.forRole(
                   message.content,
+                  role: message.role,
                   style: Theme.of(
                     context,
                   ).textTheme.bodyMedium?.copyWith(color: foreground),

@@ -65,3 +65,31 @@ rejects any wire key containing "model".
   affordance (`creation_chat_mentions.dart`) derives its state from the composer text alone —
   clearing the composer clears the mentions — and one strip serves both chat stages because the
   composer does.
+
+## Chat bubbles are light markdown
+
+**A chat reply is light markdown on both sides of the wire, and neither side may forget the other.**
+Every assistant bubble — the creation interview, the post-generation book chat and the
+project chat — goes through `ChatMessageText` (`presentation/chat_message_text.dart`). The
+prompts that write those replies (`creationTurnMessages` in `apps/api/src/mobileCreation.ts`,
+the grounded answer in `apps/api/src/mobile/groundedAnswer.ts`) ask for **bold**, numbered
+and bulleted lists, and a blank line between paragraphs. The parser in
+`domain/chat_markdown.dart` also renders italic, headings, quotes, fenced code, `http(s)`
+links and the server's `[source:…]` citation tokens — research-fallback summaries arrive
+as real markdown, and a model may emit extra constructs. A prompt that forgets the markup
+makes the model number lists by hand, and a bubble that draws a plain `Text` shows the
+asterisks. A user's own message is drawn verbatim (`markdown: false`) — people type asterisks.
+
+Two chat-shaped rules differ from CommonMark on purpose: a newline inside a paragraph is a line
+break, because the deterministic server messages use newlines that way; and a flush-left line
+after a list item is a new paragraph, not a lazy continuation, because "9. Falklands War\nCasualty
+figures are…" is a list and then a sentence. Whatever the parser does not recognise stays
+literal, so an unbalanced `**` or a `_` inside a title is shown rather than eaten.
+
+Wherever a message is shown as *text* rather than a bubble — the reply quote
+(`ChatReplyTarget.from`), the long-press Copy, the drawer's one-line preview and the reply
+excerpt the server stores (`chatMessagePlainText` in `apps/api/src/chatMessagePlainText.ts`) —
+assistant markup is stripped first, keeping list markers so a quoted list still reads as one;
+a user's own text stays as typed. The bubble is also laid out in the direction of the
+message's first strong character (`chatTextDirection`), so a Persian reply in an English UI
+reads from the right with its list markers on the right.

@@ -195,6 +195,57 @@ describe("mobile creation sessions", () => {
     await app.close();
   });
 
+  it("lists a user last-turn preview as typed and strips assistant markup", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.mobileCreationDraft.findMany.mockResolvedValueOnce([
+      creationDraftRecord({
+        id: "draft-user-note",
+        payload: {
+          payloadVersion: 3,
+          messages: [
+            { role: "assistant", content: "What should we call the note?" },
+            { role: "user", content: "**note**" }
+          ]
+        }
+      }),
+      creationDraftRecord({
+        id: "draft-user-list",
+        payload: {
+          payloadVersion: 3,
+          messages: [
+            { role: "assistant", content: "What do you need?" },
+            { role: "user", content: "- milk" }
+          ]
+        }
+      }),
+      creationDraftRecord({
+        id: "draft-assistant",
+        payload: {
+          payloadVersion: 3,
+          messages: [
+            { role: "user", content: "Give me a timeline" },
+            { role: "assistant", content: "1. **Wars of Independence**, early 1800s" }
+          ]
+        }
+      })
+    ]);
+    const app = await buildMobileApp({ creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/creation-sessions",
+      headers: bearer("token-a")
+    });
+    const sessions = response.json().sessions as Array<{ draftId: string; preview: string }>;
+    const byId = Object.fromEntries(sessions.map((session) => [session.draftId, session]));
+
+    expect(response.statusCode).toBe(200);
+    expect(byId["draft-user-note"]?.preview).toBe("**note**");
+    expect(byId["draft-user-list"]?.preview).toBe("- milk");
+    expect(byId["draft-assistant"]?.preview).toBe("1. Wars of Independence, early 1800s");
+    await app.close();
+  });
+
   it("orders creation sessions by last conversation activity, not row updatedAt", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.mobileCreationDraft.findMany.mockResolvedValueOnce([

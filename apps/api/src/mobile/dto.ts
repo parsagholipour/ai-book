@@ -659,6 +659,7 @@ export type {
 } from "./recordTypes.js";
 
 export type MobileBillingDto = {
+  messageAllowance: import("@book-maker/db/billing").MessageAllowance;
   credits: {
     /** Everything the user can spend right now: allowance plus purchased. */
     available: number;

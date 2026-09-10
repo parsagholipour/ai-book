@@ -39,7 +39,7 @@ export async function replayClaimedProposal(
       // read as the cancellation it was, not as running work.
       content:
         operation.status === "CANCELED"
-          ? "That request was cancelled before it ran. Nothing was changed or charged."
+          ? "That request was cancelled before it ran. No edit was applied."
           : "This edit request is already being handled.",
       metadata: { replayedOperation: true, charged: false, proposalId }
     }));

@@ -1,12 +1,13 @@
-import 'source_citations.dart';
 import 'package:flutter/material.dart';
 
 import '../../../app/theme/app_theme.dart';
 import '../../../shared/ui/motion.dart';
 
 import '../../../shared/ui/feedback/app_feedback.dart';
+import '../domain/chat_markdown.dart';
 import '../domain/project_models.dart';
 import 'branch_navigator.dart';
+import 'chat_message_text.dart';
 import 'chat_reply_quote.dart';
 import 'credit_cost_badge.dart';
 import 'edit_proposal_card.dart';
@@ -513,7 +514,7 @@ class ProjectMessageBubble extends StatelessWidget {
       onLongPressStart: (details) => showMessageActionsMenu(
         context: context,
         position: details.globalPosition,
-        message: message.content,
+        message: chatBubbleCopyText(message.content, role: message.role),
         onEdit: isUser ? onStartEdit : null,
         onReply: startReply,
       ),
@@ -544,8 +545,9 @@ class ProjectMessageBubble extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Flexible(
-                        child: SourceCitationText(
+                        child: ChatMessageText.forRole(
                           message.content,
+                          role: message.role,
                           style: TextStyle(color: foreground),
                         ),
                       ),

@@ -89,3 +89,16 @@ export {
   settledGenerationAttemptIds,
   startGenerationAttempt
 } from "./generationAttempts.ts";
+
+export {
+  MessageAllowanceError,
+  type MessageAllowance,
+  getMessageAllowance,
+  reserveMessageUsage,
+  type MessageUsageLease,
+  completeMessageUsage,
+  renewMessageUsage,
+  recoverMessageUsage,
+  settleMessageUsage,
+  resetMessageAllowance
+} from "./messageUsage.ts";

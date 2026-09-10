@@ -155,16 +155,16 @@ export function layoutScopeMissReply(
 ): string {
   if (miss === "chapter_unknown") {
     const index = selection?.kind === "chapter" ? selection.chapterIndex : undefined;
-    return `I couldn’t find chapter ${index ?? ""} in this book. Nothing was changed or charged.`.replace("  ", " ");
+    return `I couldn’t find chapter ${index ?? ""} in this book. No edit was applied.`.replace("  ", " ");
   }
   if (miss === "chapter_empty") {
     const index = selection?.kind === "chapter" ? selection.chapterIndex : undefined;
-    return `There are no illustrations in chapter ${index ?? ""} to remove. Nothing was changed or charged.`.replace(
+    return `There are no illustrations in chapter ${index ?? ""} to remove. No edit was applied.`.replace(
       "  ",
       " "
     );
   }
   return selection
-    ? "This book has no illustrations to remove. Nothing was changed or charged."
-    : `I couldn’t find an illustration in this book to ${action}. Nothing was changed or charged.`;
+    ? "This book has no illustrations to remove. No edit was applied."
+    : `I couldn’t find an illustration in this book to ${action}. No edit was applied.`;
 }

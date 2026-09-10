@@ -128,6 +128,8 @@ export type AdminOperationEconomics = {
  * conclude voice is the better business.
  */
 const OPERATION_NOTES: Record<string, string> = {
+  CHAT_MESSAGE: "Inline chat provider costs are included in total spend but are not linked to individual message charges. This operation margin excludes those costs.",
+  MESSAGE_LIMIT_RESET: "Restores the daily message allowance without calling a provider.",
   VOICE_CALL_MINUTE:
     "The app holds its own socket to Gemini, so realtime audio never reaches our server and none of its cost is in these logs. Real margin is lower.",
   EXPORT_UNLOCK: "Compiled from text that was already generated and paid for, so it makes no provider calls of its own.",
@@ -166,6 +168,8 @@ const LABELS: Record<string, string> = {
   BOOK_TEXT_EDIT: "Book text edit",
   PAGE_REGENERATION: "Page regeneration",
   BOOK_REPLAN: "Book replan",
+  CHAT_MESSAGE: "Chat messages",
+  MESSAGE_LIMIT_RESET: "Message allowance resets",
   VOICE_CALL_MINUTE: "Voice calls",
   AUDIOBOOK_GENERATION: "Audiobook",
   CHARACTER_PORTRAIT_GENERATION: "Character portraits"

@@ -19,6 +19,17 @@ export type PricingFieldGroup = {
  * the same thing — abuse, or a margin that moved.
  */
 export const PRICING_FIELD_GROUPS: PricingFieldGroup[] = [
+  ...(["Free", "Creator", "Pro", "Max"] as const).map((plan): PricingFieldGroup => ({
+    title: `Ordinary messages — ${plan}`,
+    blurb: "Shared across creation and book chats. The allowance renews at midnight UTC. A reset restores the full allowance until that same midnight.",
+    fields: [
+      { key: `messageCredits${plan}`, label: "Credits per message", help: "0 makes ordinary messages free. Generation and edit charges still apply separately." },
+      { key: `messageDailyLimit${plan}`, label: "Daily messages", help: "Total user sends across all chats, including edited messages. 0 disables messaging." },
+      { key: `messageResetEnabled${plan}`, label: "Allow credit resets", help: "1 enables the reset option at the cap; 0 disables it." },
+      { key: `messageResetCredits${plan}`, label: "Credits per reset", help: "Charged only after the reader confirms. 0 offers a free reset when enabled." }
+    ]
+  })),
+
   {
     title: "Making a book",
     blurb: "Planning is charged when it starts; the book package is charged later, after plan approval.",

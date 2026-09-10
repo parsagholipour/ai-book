@@ -271,6 +271,7 @@ code in that area, however obvious the rule looks.
 - **Every adherence prompt names its keys and shows the shape, or the guard is inert on a real model.** → packages/core/src/generation/CLAUDE.md
 - **The model-free recogniser fires only when the verb's object *is* the page.** → apps/api/src/mobile/CLAUDE.md
 - **The chat speaks the printed page numbers, and the model indexes never reach the reader.** → apps/api/src/mobile/CLAUDE.md
+- **A chat reply is light markdown on both sides of the wire, and neither side may forget the other.** → apps/mobile/lib/features/projects/CLAUDE.md
 - **Changing *which* pages a book has is its own edit, and it used to be a whole new project.** → apps/api/src/mobile/CLAUDE.md
 - **Undoing a structural edit moves the book to a different plan version, and the recompile has to follow it there.** → packages/db/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
 - **Undo is offered only for an edit the undo would actually revert, and that is one predicate.** → apps/api/src/mobile/CLAUDE.md

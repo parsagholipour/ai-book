@@ -267,6 +267,10 @@ export async function loadPricingDrivers(
       : tierPriceKey("planGeneration", row.project_id ? projectTiers.get(row.project_id) ?? "balanced" : "balanced");
     drivers[key] += Number(row.count);
   }
+  for (const row of spendRows.filter((candidate) => ["CHAT_MESSAGE", "MESSAGE_LIMIT_RESET"].includes(candidate.operation))) {
+    const key = row.pricing_key as CreditPriceKey | null;
+    if (key && CREDIT_PRICE_KEYS.includes(key)) drivers[key] += Number(row.count);
+  }
   drivers.previewGeneration += countOf("PREVIEW_GENERATION");
   drivers.coverRegeneration += countOf("COVER_REGENERATION");
   drivers.characterPortraitGeneration += countOf("CHARACTER_PORTRAIT_GENERATION");

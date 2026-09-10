@@ -1,3 +1,5 @@
+import 'message_allowance.dart';
+
 /// Plan tiers, cheapest first. The names match the server's `PlanTier`.
 const planTierOrder = <String>['free', 'creator', 'pro', 'max'];
 
@@ -10,6 +12,7 @@ class MobileBilling {
     this.plan,
     this.allowance,
     this.imageQuota,
+    this.messageAllowance,
     this.freeTier = const MobileFreeTier(),
   });
 
@@ -30,6 +33,7 @@ class MobileBilling {
 
   /// Null means this plan has no image limit at all. Only meaningful on free.
   final MobileImageQuota? imageQuota;
+  final MessageAllowance? messageAllowance;
 
   factory MobileBilling.fromJson(Map<String, dynamic> json) {
     final entitlements = json['entitlements'] as List<dynamic>;
@@ -37,6 +41,7 @@ class MobileBilling {
     final plan = json['plan'];
     final allowance = json['allowance'];
     final imageQuota = json['imageQuota'];
+    final messageAllowance = json['messageAllowance'];
     final freeTier = json['freeTier'];
     return MobileBilling(
       credits: CreditBalance.fromJson(json['credits'] as Map<String, dynamic>),
@@ -59,6 +64,9 @@ class MobileBilling {
           : null,
       allowance: allowance is Map<String, dynamic>
           ? MobileAllowance.fromJson(allowance)
+          : null,
+      messageAllowance: messageAllowance is Map<String, dynamic>
+          ? MessageAllowance.fromJson(messageAllowance)
           : null,
       imageQuota: imageQuota is Map<String, dynamic>
           ? MobileImageQuota.fromJson(imageQuota)

@@ -66,8 +66,8 @@ export async function proposeImageLayoutEdit(options: ProposedChatEdit & {
         parentId: userMessageId,
         content:
           layout.destPlacement === "page"
-            ? "That page is no longer in this book, so there’s nowhere to move the picture. Nothing was changed or charged."
-            : "This book has no pages to hold an illustration yet, so nothing was changed or charged.",
+            ? "That page is no longer in this book, so there’s nowhere to move the picture. No edit was applied."
+            : "This book has no pages to hold an illustration yet, so no edit was applied.",
         metadata: { intent, charged: false, pendingEditCancelled: true }
       });
       return { reply, operation: null };
@@ -78,7 +78,7 @@ export async function proposeImageLayoutEdit(options: ProposedChatEdit & {
       const reply = await createAssistantChatMessage({
         projectId: project.id,
         parentId: userMessageId,
-        content: `That picture is already on page ${sourcePageIndex === undefined ? sourcePageIndex : numberingForProject(project).displayPage(sourcePageIndex)}, so nothing was changed or charged.`,
+        content: `That picture is already on page ${sourcePageIndex === undefined ? sourcePageIndex : numberingForProject(project).displayPage(sourcePageIndex)}, so no edit was applied.`,
         metadata: { intent, charged: false, pendingEditCancelled: true }
       });
       return { reply, operation: null };
@@ -159,7 +159,7 @@ export async function queueChatImageLayout(options: QueuedChatEdit): Promise<{
       const reply = await createAssistantChatMessage({
         projectId: project.id,
         parentId: userMessageId,
-        content: `That picture is already on page ${alreadyOn === undefined ? alreadyOn : numberingForProject(project).displayPage(alreadyOn)}, so nothing was changed or charged.`,
+        content: `That picture is already on page ${alreadyOn === undefined ? alreadyOn : numberingForProject(project).displayPage(alreadyOn)}, so no edit was applied.`,
         metadata: {
           intent,
           charged: false,

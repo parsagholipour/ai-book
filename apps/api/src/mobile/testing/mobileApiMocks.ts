@@ -601,6 +601,15 @@ export const mockBilling = (() => {
     })),
     // Null is "no limit on this plan". Suites that want the free tier's limit
     // override this with a quota object.
+    MessageAllowanceError: class MessageAllowanceError extends Error {
+      constructor(readonly code: string) { super(code); }
+    },
+    reserveMessageUsage: vi.fn(async () => "message-reservation-1"),
+    completeMessageUsage: vi.fn(async (_lease, write) => write(mockPrisma)),
+    renewMessageUsage: vi.fn(async () => true),
+    settleMessageUsage: vi.fn(async () => {}),
+    resetMessageAllowance: vi.fn(async () => {}),
+    getMessageAllowance: vi.fn(async () => ({ tier: "free", used: 0, limit: 50, remaining: 50, creditsPerMessage: 0, resetEnabled: true, resetCredits: 50, resetsAt: "2026-09-11T00:00:00.000Z", resetToken: "2026-09-10:0:50" })),
     getImageQuota: vi.fn(async () => null),
     consumeIllustratedBookUse: vi.fn(async (_options?: unknown) => ({
       allowed: true,

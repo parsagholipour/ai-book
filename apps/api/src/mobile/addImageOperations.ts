@@ -167,7 +167,7 @@ export async function proposeAddImageEdit(options: ProposedChatEdit & {
     const reply = await createAssistantChatMessage({
       projectId: project.id,
       parentId: userMessageId,
-      content: "This book has no pages to hold an illustration yet, so nothing was changed or charged.",
+      content: "This book has no pages to hold an illustration yet, so no edit was applied.",
       metadata: { intent, charged: false, pendingEditCancelled: true }
     });
     return { reply, operation: null };

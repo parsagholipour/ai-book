@@ -8,6 +8,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { browserPoolStatus, closeSharedBrowser, loadConfig } from "@book-maker/core";
 import { loadCreditPricing, prisma } from "@book-maker/db";
+import { recoverMessageUsage } from "@book-maker/db/billing";
 import { sweepExpiredCreationAttachments } from "./attachmentStorage.js";
 import { registerAuth } from "./auth.js";
 import { CORS_OPTIONS } from "./cors.js";
@@ -87,6 +88,22 @@ const sweepVoiceCalls = async () => {
 await sweepVoiceCalls();
 const voiceCallSweepTimer = setInterval(() => void sweepVoiceCalls(), 30_000);
 voiceCallSweepTimer.unref();
+
+let recoveringMessages = false;
+const recoverMessages = async () => {
+  if (recoveringMessages) return;
+  recoveringMessages = true;
+  try {
+    await recoverMessageUsage();
+  } catch (error) {
+    app.log.warn({ err: error }, "Message reservation recovery failed");
+  } finally {
+    recoveringMessages = false;
+  }
+};
+await recoverMessages();
+const messageRecoveryTimer = setInterval(() => void recoverMessages(), 30_000);
+messageRecoveryTimer.unref();
 
 // Credit prices are operator-editable and live in the database. Load them before
 // anything can be charged, then re-read on a timer so a second API instance
@@ -195,6 +212,7 @@ if (webDistDir) {
 const shutdown = async () => {
   clearInterval(attachmentSweepTimer);
   clearInterval(voiceCallSweepTimer);
+  clearInterval(messageRecoveryTimer);
   clearInterval(pricingRefreshTimer);
   clearInterval(queueReconcileTimer);
   await app.close();

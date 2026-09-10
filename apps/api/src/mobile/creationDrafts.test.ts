@@ -5,7 +5,7 @@ vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApi
 vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js")).queueModuleMock());
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
-import { reserveCredits } from "@book-maker/db/billing";
+import { reserveCredits, reserveMessageUsage } from "@book-maker/db/billing";
 
 import { enqueueGenerationJob } from "../queue.js";
 import {
@@ -188,6 +188,7 @@ describe("mobile creation drafts and advisor", () => {
       bookShapePreview: expect.arrayContaining([expect.stringContaining("lessons")])
     });
     expect(vi.mocked(reserveCredits)).not.toHaveBeenCalled();
+    expect(vi.mocked(reserveMessageUsage)).not.toHaveBeenCalled();
     expect(JSON.stringify(body)).not.toMatch(/provider|model|temperature|credits|billing/);
     await app.close();
   });
@@ -226,6 +227,7 @@ describe("mobile creation drafts and advisor", () => {
       bookShapePreview: expect.arrayContaining([expect.stringContaining("Planner chooses")])
     });
     expect(vi.mocked(reserveCredits)).not.toHaveBeenCalled();
+    expect(vi.mocked(reserveMessageUsage)).not.toHaveBeenCalled();
     expect(JSON.stringify(body)).not.toMatch(/provider|model|temperature|credits|billing/);
     await app.close();
   });

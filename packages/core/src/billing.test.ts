@@ -474,3 +474,41 @@ describe("audiobook pricing", () => {
     expect(revenueUsd).toBeGreaterThan(providerUsd * 2);
   });
 });
+
+describe("creditCostForOperation message quotes", () => {
+  const pricing = {
+    ...DEFAULT_CREDIT_COSTS,
+    messageCreditsFree: 1,
+    messageResetCreditsFree: 11,
+    messageCreditsCreator: 2,
+    messageResetCreditsCreator: 22,
+    messageCreditsPro: 3,
+    messageResetCreditsPro: 33,
+    messageCreditsMax: 4,
+    messageResetCreditsMax: 44,
+    exportUnlock: 777
+  };
+
+  it("quotes Free message keys when the plan tier is omitted", () => {
+    expect(creditCostForOperation("CHAT_MESSAGE", pricing)).toBe(1);
+    expect(creditCostForOperation("MESSAGE_LIMIT_RESET", pricing)).toBe(11);
+    expect(creditCostForOperation("CHAT_MESSAGE")).toBe(DEFAULT_CREDIT_COSTS.messageCreditsFree);
+    expect(creditCostForOperation("MESSAGE_LIMIT_RESET")).toBe(DEFAULT_CREDIT_COSTS.messageResetCreditsFree);
+    expect(creditCostForOperation("CHAT_MESSAGE", pricing, "free")).toBe(1);
+    expect(creditCostForOperation("MESSAGE_LIMIT_RESET", pricing, "free")).toBe(11);
+  });
+
+  it.each([
+    ["creator", 2, 22],
+    ["pro", 3, 33],
+    ["max", 4, 44]
+  ] as const)("quotes %s message keys from an explicit pricing object", (tier, messageCredits, resetCredits) => {
+    expect(creditCostForOperation("CHAT_MESSAGE", pricing, tier)).toBe(messageCredits);
+    expect(creditCostForOperation("MESSAGE_LIMIT_RESET", pricing, tier)).toBe(resetCredits);
+  });
+
+  it("ignores planTier for operations that are not message-priced", () => {
+    expect(creditCostForOperation("EXPORT_UNLOCK", pricing, "max")).toBe(777);
+    expect(creditCostForOperation("EXPORT_UNLOCK", pricing)).toBe(777);
+  });
+});

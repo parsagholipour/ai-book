@@ -31,6 +31,7 @@ import { isPaidRetryableBookEditFailure } from "./bookEditRetryPolicy.js";
 import { clipText, jsonInputValue, jsonValue } from "./support.js";
 import { prisma } from "@book-maker/db";
 import { InsufficientCreditsError } from "@book-maker/db/billing";
+import { persistMessageReply } from "./messageUsage.js";
 
 /**
  * Post-generation chat storage: the message tree, branch selection, and
@@ -368,7 +369,7 @@ export async function createAssistantChatMessage(options: {
   metadata: Record<string, unknown>;
   operationId?: string | undefined;
 }): Promise<MobileProjectChatMessageRecord> {
-  return prisma.projectChatMessage.create({
+  return persistMessageReply((tx) => tx.projectChatMessage.create({
     data: {
       projectId: options.projectId,
       parentId: options.parentId,
@@ -377,7 +378,7 @@ export async function createAssistantChatMessage(options: {
       ...(options.operationId ? { operationId: options.operationId } : {}),
       metadata: jsonInputValue(options.metadata)
     }
-  });
+  }));
 }
 
 export async function insufficientCreditsChatMessage(

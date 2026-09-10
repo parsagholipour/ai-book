@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../billing/presentation/message_allowance_banner.dart';
 import '../../../app/config/app_config.dart';
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
@@ -170,6 +171,7 @@ class AccountPlanCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 6),
+            const MessageAllowanceBanner(),
             if (allowance != null && allowance.monthlyCredits > 0)
               Text(
                 '${allowance.planCredits} of ${allowance.monthlyCredits} monthly credits left',

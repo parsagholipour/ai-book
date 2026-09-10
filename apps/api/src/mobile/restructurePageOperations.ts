@@ -47,7 +47,7 @@ export async function queueChatRestructurePages(options: QueuedChatEdit): Promis
     return settleStructuralProposal({
       ...options,
       content:
-        "I couldn’t tell what that page change was any more, so nothing was changed or charged. Tell me again what to add, remove or move and I’ll set it up."
+        "I couldn’t tell what that page change was any more, so no edit was applied. Tell me again what to add, remove or move and I’ll set it up."
     });
   }
   // Resolved again here rather than read off the card: this is the number that

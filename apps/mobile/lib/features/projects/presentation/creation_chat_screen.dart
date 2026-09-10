@@ -1,4 +1,3 @@
-import 'source_citations.dart';
 import 'source_processing_panel.dart';
 import 'dart:async';
 import 'dart:io';
@@ -15,6 +14,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'chat_history_drawer.dart';
 import 'creation_chat_navigation.dart';
+import '../../billing/presentation/message_allowance_banner.dart';
 import '../../../app/config/app_config.dart';
 import '../../../app/theme/app_theme.dart';
 import '../../../shared/api/api_client.dart';
@@ -38,11 +38,13 @@ import '../../characters/presentation/character_avatar.dart';
 import '../../characters/presentation/character_library_screen.dart';
 import '../data/creation_prefs_store.dart';
 import '../data/projects_repository.dart';
+import '../domain/chat_markdown.dart';
 import '../domain/creation_message_models.dart';
 import '../domain/creation_models.dart';
 import '../domain/project_models.dart';
 import 'branch_navigator.dart';
 import 'chat_media_preview.dart';
+import 'chat_message_text.dart';
 import 'chat_reply_quote.dart';
 import 'chat_thinking_bubble.dart';
 import 'creation_chat_controller.dart';
@@ -477,10 +479,30 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                                   ),
                             redoingProjectEdit: _redoingProjectEdit,
                             onRetryFailedMessage: (localId) => unawaited(
-                              ref
-                                  .read(creationChatControllerProvider.notifier)
-                                  .retryFailedMessage(localId)
-                                  .catchError((_) {}),
+                              () async {
+                                if (!await ensureMessageAllowance(
+                                      context,
+                                      ref,
+                                    ) ||
+                                    !mounted) {
+                                  return;
+                                }
+                                try {
+                                  await ref
+                                      .read(
+                                        creationChatControllerProvider.notifier,
+                                      )
+                                      .retryFailedMessage(localId);
+                                } catch (error) {
+                                  if (mounted) {
+                                    await handleMessageAllowanceError(
+                                      context,
+                                      ref,
+                                      error,
+                                    );
+                                  }
+                                }
+                              }(),
                             ),
                             onDismissFailedMessage: (localId) => ref
                                 .read(creationChatControllerProvider.notifier)
@@ -533,6 +555,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                       // registered, or silently de-registered — which is how a
                       // book came to invent its own version of a saved
                       // character with nothing on screen to warn anyone.
+                      const MessageAllowanceBanner(),
                       MentionChipsRow(mentions: _attachedMentions),
                       // Above whichever footer is active: the same composer
                       // serves both stages, so one strip serves both too.

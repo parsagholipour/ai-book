@@ -526,7 +526,7 @@ describe("structural page edits in the chat", () => {
     expect(reply.metadata.editProposal).toBeUndefined();
     expect(reply.metadata.pendingEditCancelled).toBe(true);
     expect(reply.metadata.charged).toBe(false);
-    expect(reply.content).toContain("nothing was changed or charged");
+    expect(reply.content).toContain("no edit was applied");
     expect(reply.content).not.toContain("new page");
     await app.close();
   });

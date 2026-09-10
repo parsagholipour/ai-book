@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../billing/presentation/message_allowance_banner.dart';
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
@@ -437,6 +438,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
                   ),
                 ),
               ),
+              const MessageAllowanceBanner(),
               ProjectChatComposerBar(
                 controller: _controller,
                 sending: _sending || _editing,
@@ -484,6 +486,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
   Future<void> _send() async {
     final message = _controller.text.trim();
     if (message.isEmpty || _sending || _bookIsBusy) return;
+    if (!await ensureMessageAllowance(context, ref) || !mounted) return;
     _controller.clear();
     final replyTo = _replyTarget;
     if (replyTo != null) {
@@ -558,6 +561,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
     ChatReplyTarget? replyTo,
     Map<String, Object>? readerContext,
   }) async {
+    if (!await ensureMessageAllowance(context, ref) || !mounted) return;
     // Retrying the same text reuses the request ID, so the server replays
     // the original turn instead of duplicating it. The quoted message is part
     // of the request: the same words replying to a different turn are a
@@ -619,6 +623,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
       }
     } catch (error) {
       if (!mounted) return;
+      unawaited(handleMessageAllowanceError(context, ref, error));
       setState(() {
         _sending = false;
         _pendingEcho = PendingEcho(
@@ -659,6 +664,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
     final messageId = _editingMessageId;
     final message = _editController.text.trim();
     if (messageId == null || message.isEmpty || _editing || _bookIsBusy) return;
+    if (!await ensureMessageAllowance(context, ref) || !mounted) return;
     setState(() => _editing = true);
     if (_pendingEditMessage != message) {
       _pendingEditRequestId = _newRequestId('edit');
@@ -696,6 +702,12 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
     } catch (error) {
       if (!mounted) return;
       setState(() => _editing = false);
+      unawaited(handleMessageAllowanceError(context, ref, error));
+      if (error is ApiException &&
+          (error.code == 'MESSAGE_LIMIT_REACHED' ||
+              error.code == 'INSUFFICIENT_CREDITS')) {
+        return;
+      }
       ScaffoldMessenger.of(
         context,
       ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));

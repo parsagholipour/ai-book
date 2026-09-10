@@ -1,3 +1,4 @@
+import { registerMobileMessageAllowanceRoutes } from "./mobile/routes/messageAllowance.js";
 import type { FastifyPluginAsync } from "fastify";
 import { ensureSeedTemplates } from "@book-maker/db";
 import { ensureDefaultProductCatalog } from "@book-maker/db/billing";
@@ -40,6 +41,7 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
   );
 
   await registerMobileAccountRoutes(fastify, context);
+  await registerMobileMessageAllowanceRoutes(fastify, context);
   await registerMobileCreationDraftRoutes(fastify, context);
   await registerMobileCreationSessionRoutes(fastify, context);
   await registerMobileProjectRoutes(fastify, context);

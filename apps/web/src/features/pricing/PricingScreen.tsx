@@ -55,16 +55,23 @@ export function PricingScreen() {
                           {field.label}
                           {isDirty ? <em className="pricing-flag">changed</em> : null}
                         </span>
-                        <input
-                          type="number"
-                          min={0}
-                          max={pricing.state!.limits[field.key]}
-                          step={1}
-                          value={pricing.draft![field.key]}
-                          onChange={(event) => pricing.setField(field.key, event.target.value)}
-                        />
+                        {field.key.startsWith("messageResetEnabled") ? (
+                          <select value={pricing.draft![field.key]} onChange={(event) => pricing.setField(field.key, event.target.value)}>
+                            <option value="1">Enabled</option>
+                            <option value="0">Disabled</option>
+                          </select>
+                        ) : (
+                          <input
+                            type="number"
+                            min={0}
+                            max={pricing.state!.limits[field.key]}
+                            step={1}
+                            value={pricing.draft![field.key]}
+                            onChange={(event) => pricing.setField(field.key, event.target.value)}
+                          />
+                        )}
                         <span className="muted pricing-field-help">
-                          {field.help} Default {defaultValue}.
+                          {field.help} Default {field.key.startsWith("messageResetEnabled") ? (defaultValue === 1 ? "enabled" : "disabled") : defaultValue}.
                         </span>
                       </label>
                     );

@@ -398,7 +398,7 @@ export async function queueChatBookEdit(options: QueuedChatEdit): Promise<{
     const reply = await createAssistantChatMessage({
       projectId: project.id,
       parentId: userMessageId,
-      content: "That text no longer appears in the book, so there’s nothing to change. Nothing was changed or charged.",
+      content: "That text no longer appears in the book, so there’s nothing to change. No edit was applied.",
       metadata: {
         intent,
         charged: false,
@@ -418,8 +418,8 @@ export async function queueChatBookEdit(options: QueuedChatEdit): Promise<{
       parentId: userMessageId,
       content:
         intent.kind === "chapter_regenerate"
-          ? `I couldn’t find chapter ${intent.affectedChapterIndex ?? ""} in this book any more, so nothing was changed or charged.`.replace("  ", " ")
-          : "I couldn’t find the pages that edit targeted any more, so nothing was changed or charged.",
+          ? `I couldn’t find chapter ${intent.affectedChapterIndex ?? ""} in this book any more, so no edit was applied.`.replace("  ", " ")
+          : "I couldn’t find the pages that edit targeted any more, so no edit was applied.",
       metadata: {
         intent,
         charged: false,

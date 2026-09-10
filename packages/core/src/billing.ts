@@ -1,5 +1,6 @@
 import { modelTierForInput } from "./adapters/modelTiers.js";
 import { type CreditPricing, creditPricing } from "./creditPricing.js";
+import { messagePolicy } from "./messagePricing.js";
 import { coverArtSourceFor } from "./generation/coverSource.js";
 import { interiorIllustrationSlotCount } from "./generation/illustrationSlots.js";
 import { modelTierSchema } from "./schemas/book.js";
@@ -311,6 +312,8 @@ export const DEFAULT_BILLING_PRODUCTS = [
 ] as const;
 
 export type BillingOperation =
+  | "CHAT_MESSAGE"
+  | "MESSAGE_LIMIT_RESET"
   | "PLAN_GENERATION"
   | "PREVIEW_GENERATION"
   | "FULL_BOOK_GENERATION"
@@ -379,9 +382,20 @@ export type MarginEstimate = {
  * `pricing` defaults to the live snapshot. Pass it explicitly only to price
  * against values that are not (or not yet) in effect — the pricing dashboard's
  * preview does exactly that, which is why the parameter exists at all.
+ *
+ * Message operations (`CHAT_MESSAGE`, `MESSAGE_LIMIT_RESET`) are quoted for
+ * `planTier` (default free). Other operations ignore the tier.
  */
-export function creditCostForOperation(operation: BillingOperation, pricing: CreditPricing = creditPricing()): number {
+export function creditCostForOperation(
+  operation: BillingOperation,
+  pricing: CreditPricing = creditPricing(),
+  planTier: PlanTier = "free"
+): number {
   switch (operation) {
+    case "CHAT_MESSAGE":
+      return messagePolicy(planTier, pricing).creditsPerMessage;
+    case "MESSAGE_LIMIT_RESET":
+      return messagePolicy(planTier, pricing).resetCredits;
     case "PLAN_GENERATION":
       return pricing.planGeneration;
     case "PREVIEW_GENERATION":

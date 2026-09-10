@@ -69,13 +69,16 @@ extension _CreationChatTranscriptActions on _CreationChatScreenState {
   /// A question-skip tap: sends the localized skip text as a normal chat
   /// message, flagged so the server keeps it out of the composed book prompt.
   Future<void> _sendQuestionSkip(String text) async {
+    if (!await ensureMessageAllowance(context, ref) || !mounted) return;
     AppHaptics.tap();
     _resumeStickToBottom();
     try {
       await ref
           .read(creationChatControllerProvider.notifier)
           .sendMessage(text, skippedQuestion: true);
-    } catch (_) {}
+    } catch (error) {
+      if (mounted) await handleMessageAllowanceError(context, ref, error);
+    }
   }
 
   Future<void> _send(String text) async {
@@ -92,6 +95,7 @@ extension _CreationChatTranscriptActions on _CreationChatScreenState {
     }
     // Attachment-only sends are allowed, like handing a file to a person.
     if (trimmed.isEmpty && !state.hasReadyAttachments) return;
+    if (!await ensureMessageAllowance(context, ref) || !mounted) return;
     final editingCreationMessageId = _editingCreationMessageId;
     if (editingCreationMessageId != null) {
       await _sendCreationEdit(trimmed, editingCreationMessageId);
@@ -116,13 +120,16 @@ extension _CreationChatTranscriptActions on _CreationChatScreenState {
             replyTo: replyTo,
             mentionedCharacterIds: mentionedCharacterIds,
           );
-    } catch (_) {}
+    } catch (error) {
+      if (mounted) await handleMessageAllowanceError(context, ref, error);
+    }
   }
 
   /// Routes an output-stage composer submit: an in-progress brainstorm edit
   /// goes to the creation chat (forking a branch there); everything else is
   /// a normal project chat message.
   Future<void> _sendOutputMessage(String projectId, String message) async {
+    if (!await ensureMessageAllowance(context, ref) || !mounted) return;
     final projectStatus = ref
         .read(projectDetailProvider(projectId))
         .asData
@@ -161,6 +168,7 @@ extension _CreationChatTranscriptActions on _CreationChatScreenState {
   }
 
   Future<void> _sendCreationEdit(String message, String editMessageId) async {
+    if (!await ensureMessageAllowance(context, ref) || !mounted) return;
     final mentionedCharacterIds = _mentionedCharacterIdsFor(message);
     _updateState(() {
       _editingCreationMessageId = null;
@@ -176,7 +184,9 @@ extension _CreationChatTranscriptActions on _CreationChatScreenState {
             editMessageId: editMessageId,
             mentionedCharacterIds: mentionedCharacterIds,
           );
-    } catch (_) {}
+    } catch (error) {
+      if (mounted) await handleMessageAllowanceError(context, ref, error);
+    }
   }
 
   Future<void> _switchProjectBranch(

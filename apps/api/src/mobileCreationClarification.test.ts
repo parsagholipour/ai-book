@@ -214,7 +214,13 @@ describe("creation chat clarification policy", () => {
     expect(systemPrompt).toContain("the search summary itself is never shown to them");
     expect(systemPrompt).toContain("put the actual answer inside assistantMessage");
     expect(systemPrompt).toContain("unless the items follow in that same message");
-    expect(systemPrompt).toContain("shown as plain text: no markdown");
+    expect(systemPrompt).toContain("rendered as light markdown");
+    expect(systemPrompt).toContain("No headings, tables, code blocks or links");
+    // Lists are for any reply that names several things, not a search-only exception.
+    expect(systemPrompt).not.toContain(
+      "the one exception is a turn that delivers what a web search found"
+    );
+    expect(systemPrompt).toContain("whenever the reply lists several things");
     expect(payload.conversation).toEqual(request.messages);
     expect(payload.conversationSummary).toBe(request.conversationSummary);
     expect(payload.attachments[0]).toMatchObject({

@@ -3,7 +3,7 @@ import { buildBookPdfDocument } from "./pdfDocument.js";
 import { scriptProfileForLanguage } from "../prompting/script.js";
 
 // The regenerated algorithms book's binary-search listing is explicitly
-// pseudocode, so it must keep that label while still gaining token colours.
+// pseudocode, so it keeps that label and stays plaintext (generation/CLAUDE.md).
 const listing = [
   "```pseudocode",
   "binarySearch(items, target):",
@@ -18,11 +18,12 @@ const listing = [
 ].join("\n");
 
 describe("pseudocode highlighting in book exports", () => {
-  it("colours the regenerated book's pseudocode in the PDF document", async () => {
+  it("preserves explicitly tagged pseudocode as plaintext in the PDF document", async () => {
     const html = await buildBookPdfDocument({ markdown: listing, css: "", profile: scriptProfileForLanguage("en") });
     const block = html.match(/<pre><code[^>]*>[\s\S]*?<\/code><\/pre>/)?.[0];
     expect(block).toContain('class="hljs pseudocode"');
-    expect(block).toContain('<span class="hljs-keyword">while</span>');
-    expect(block).toContain('<span class="hljs-number">0</span>');
+    expect(block).toContain("while low &lt;= high:");
+    expect(block).toContain("    low = 0");
+    expect(block).not.toContain('<span class="hljs-');
   });
 });

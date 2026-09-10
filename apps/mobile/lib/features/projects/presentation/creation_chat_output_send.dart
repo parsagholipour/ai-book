@@ -147,6 +147,7 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
   }) async {
     final trimmed = message.trim();
     if (trimmed.isEmpty || _projectChatSending) return null;
+    if (!await ensureMessageAllowance(context, ref) || !mounted) return null;
     final editingMessageId = _editingProjectMessageId;
     // The quoted message is part of what makes a request distinct: the same
     // words replying to a different turn are a different ask, so reusing the
@@ -224,6 +225,7 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
       return result;
     } catch (error) {
       if (!mounted) return null;
+      unawaited(handleMessageAllowanceError(context, ref, error));
       // The message stays on screen with its own Retry rather than being
       // pushed back into the composer, so a failure never loses the text and
       // never fights with anything typed while the request was in flight.
@@ -244,7 +246,9 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
   Future<void> _retryPendingProjectEcho(String projectId) async {
     final echo = _pendingProjectEcho;
     if (echo == null || !echo.failed || _projectChatSending) return;
-    setState(() => _pendingProjectEcho = null);
+    // Leave the failed bubble up until `_sendProjectMessage` replaces it
+    // after the allowance gate. Clearing first would drop the retry if the
+    // sheet refused.
     // Carrying the stored reply target is what keeps `samePendingRequest`
     // true, so the retry reuses the original request id — a timed-out send
     // that landed server-side is replayed, not charged a second time.

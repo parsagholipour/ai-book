@@ -583,8 +583,8 @@ export function structuralRefusalMessage(
       return "This book has no pages yet, so there is nothing to add to or remove.";
     case "unknown_pages":
       return named
-        ? `I couldn’t find page ${named} in this book any more, so nothing was changed or charged.`
-        : "I couldn’t find the pages that edit named any more, so nothing was changed or charged.";
+        ? `I couldn’t find page ${named} in this book any more, so no edit was applied.`
+        : "I couldn’t find the pages that edit named any more, so no edit was applied.";
     case "anchor_out_of_range":
       return "I couldn’t tell where in the book those pages should go. Tell me the page they should follow.";
     case "too_many_pages":
@@ -596,7 +596,7 @@ export function structuralRefusalMessage(
     case "anchor_inside_selection":
       return "Those pages can’t move to a place inside themselves. Tell me a page they should follow that isn’t one of them.";
     case "undo_history_too_large":
-      return "I couldn’t remove those pages without losing older Undo history, so nothing was changed or charged.";
+      return "I couldn’t remove those pages without losing older Undo history, so no edit was applied.";
     case "nothing_to_do":
       return structuralNothingToDoMessage(structuralEditForProposal(intent));
   }

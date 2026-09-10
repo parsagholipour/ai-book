@@ -791,7 +791,7 @@ describe("proposal settlement", () => {
     expect(lateApply.statusCode).toBe(200);
     // The replay reuses the cancel reply when it exists, or phrases the
     // cancellation itself; either way nothing ran and nothing was charged.
-    expect(lateApply.json().reply.content).toContain("Nothing was changed or charged");
+    expect(lateApply.json().reply.content).toContain("No edit was applied");
     expect(vi.mocked(reserveCredits)).not.toHaveBeenCalled();
     expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
     await app.close();

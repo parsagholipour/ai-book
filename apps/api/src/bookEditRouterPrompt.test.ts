@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { decideActionSchema, decideActionsFor } from "./bookEditRouterPrompt.js";
+import { CHAT_REPLY_MARKDOWN_PROMPT } from "./chatReplyMarkdownPrompt.js";
+import { decideActionSchema, decideActionsFor, routerSystemPrompt } from "./bookEditRouterPrompt.js";
 
 /**
  * The decide tool has two contracts and only one of them is code the model
@@ -89,5 +90,11 @@ describe("the decide tool schema the provider receives", () => {
 
     expect(answered.success).toBe(true);
     expect(answered.success && answered.data.editInstruction).toBe("");
+  });
+});
+
+describe("routerSystemPrompt", () => {
+  it("asks for the same light markdown as every other chat-reply prompt", () => {
+    expect(routerSystemPrompt("complete", true, false, false)).toContain(CHAT_REPLY_MARKDOWN_PROMPT);
   });
 });

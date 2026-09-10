@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import 'chat_markdown.dart';
+
 /// The message a reply points at, snapshotted when the reply is sent.
 ///
 /// The excerpt travels with the reply rather than being looked up later: both
@@ -38,7 +40,13 @@ class ChatReplyTarget {
     required String content,
   }) {
     final id = messageId?.trim() ?? '';
-    final excerpt = content.replaceAll(RegExp(r'\s+'), ' ').trim();
+    // User quotes stay as typed — people type asterisks. Assistant quotes
+    // are as the bubble reads, so a reply to a list item does not carry
+    // the asterisks the bubble never showed.
+    final excerpt = chatBubbleCopyText(
+      content,
+      role: role,
+    ).replaceAll(RegExp(r'\s+'), ' ').trim();
     if (id.isEmpty || excerpt.isEmpty) return null;
     return ChatReplyTarget(
       messageId: id,
@@ -49,16 +57,20 @@ class ChatReplyTarget {
     );
   }
 
+  /// Hydrates the stored snapshot. The excerpt is already clipped and
+  /// stripped (or left as typed) on the way in — do not run [from] on it.
   static ChatReplyTarget? fromJson(Object? json) {
     if (json is! Map) return null;
     final map = json.cast<String, dynamic>();
     final messageId = map['messageId'];
     final excerpt = map['excerpt'];
     if (messageId is! String || excerpt is! String) return null;
-    return ChatReplyTarget.from(
-      messageId: messageId,
-      role: map['role'] is String ? map['role'] as String : 'assistant',
-      content: excerpt,
+    final id = messageId.trim();
+    if (id.isEmpty || excerpt.trim().isEmpty) return null;
+    return ChatReplyTarget(
+      messageId: id,
+      role: map['role'] == 'user' ? 'user' : 'assistant',
+      excerpt: excerpt,
     );
   }
 

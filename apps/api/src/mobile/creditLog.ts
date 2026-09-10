@@ -40,6 +40,8 @@ type CreditLogRow = {
  * cannot leave the log showing `SCREAMING_SNAKE_CASE` to a reader.
  */
 const OPERATION_TITLES: Record<string, string> = {
+  CHAT_MESSAGE: "Chat message",
+  MESSAGE_LIMIT_RESET: "Message allowance reset",
   PLAN_GENERATION: "Book plan",
   PREVIEW_GENERATION: "Page preview",
   FULL_BOOK_GENERATION: "Book generation",

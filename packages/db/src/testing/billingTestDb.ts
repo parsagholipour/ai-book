@@ -102,6 +102,7 @@ export type Subscription = {
 };
 
 export type Usage = {
+  resetCount?: number;
   id: string;
   userId: string;
   kind: string;
@@ -152,6 +153,9 @@ export function createBillingTestDb() {
     purchases: new Map<string, Purchase>(),
     subscriptions: new Map<string, Subscription>(),
     usage: new Map<string, Usage>(),
+    messageReservations: new Map<string, Record<string, any>>(),
+    projectChatMessages: new Map<string, Record<string, any>>(),
+    creationDrafts: new Map<string, Record<string, any>>(),
     ledgerSeq: 0,
     entitlementSeq: 0,
     purchaseSeq: 0,
@@ -292,6 +296,7 @@ export function createBillingTestDb() {
   }
 
   const prisma = {
+    $queryRaw: vi.fn(async () => [{ id: "user-a" }]),
     $transaction: vi.fn(async (callback: (tx: any) => Promise<unknown>) => callback(prisma)),
     productCatalog: {
       upsert: vi.fn(),
@@ -459,7 +464,51 @@ export function createBillingTestDb() {
         return { count: 1 };
       })
     },
+    messageUsageReservation: {
+      findMany: vi.fn(async ({ where, take }: any) => [...state.messageReservations.values()].filter((row) =>
+        (!where.userId || row.userId === where.userId) && row.status === where.status && row.expiresAt <= where.expiresAt.lte).slice(0, take)),
+      updateMany: vi.fn(async ({ where, data }: any) => {
+        const rows = [...state.messageReservations.values()].filter((row) => row.userId === where.userId && row.requestKey === where.requestKey &&
+          row.leaseId === where.leaseId && row.status === where.status && row.expiresAt > where.expiresAt.gt);
+        for (const row of rows) Object.assign(row, data);
+        return { count: rows.length };
+      }),
+      findUnique: vi.fn(async ({ where }: any) =>
+        [...state.messageReservations.values()].find((row) => row.userId === where.userId_requestKey.userId && row.requestKey === where.userId_requestKey.requestKey) ?? null),
+      upsert: vi.fn(async ({ where, create, update }: any) => {
+        const row = [...state.messageReservations.values()].find((item) => item.userId === where.userId_requestKey.userId && item.requestKey === where.userId_requestKey.requestKey);
+        if (row) { Object.assign(row, update); return row; }
+        const created = { id: `message-${state.messageReservations.size + 1}`, ...create };
+        state.messageReservations.set(created.id, created);
+        return created;
+      }),
+      update: vi.fn(async ({ where, data }: any) => {
+        const row = state.messageReservations.get(where.id)!;
+        Object.assign(row, data);
+        return row;
+      })
+    },
+    projectChatMessage: {
+      create: vi.fn(async ({ data }: any) => {
+        const row = { id: `chat-${state.projectChatMessages.size + 1}`, ...data };
+        state.projectChatMessages.set(row.id, row);
+        return row;
+      }),
+      findUnique: vi.fn(async ({ where }: any) => [...state.projectChatMessages.values()].find((row) =>
+        row.projectId === where.projectId_requestId.projectId && row.requestId === where.projectId_requestId.requestId) ?? null),
+      findFirst: vi.fn(async ({ where }: any) => [...state.projectChatMessages.values()].find((row) =>
+        Object.entries(where).every(([key, value]) => row[key] === value)) ?? null)
+    },
+    mobileCreationDraft: {
+      findFirst: vi.fn(async ({ where }: any) => [...state.creationDrafts.values()].find((row) =>
+        Object.entries(where).every(([key, value]) => row[key] === value)) ?? null)
+    },
     usageCounter: {
+      update: vi.fn(async ({ where, data }: any) => {
+        const row = [...state.usage.values()].find((item) => item.id === where.id)!;
+        applyMutation(row, data);
+        return row;
+      }),
       findUnique: vi.fn(async ({ where }: any) => state.usage.get(usageKey(where.userId_kind_periodKey)) ?? null),
       create: vi.fn(async ({ data }: any) => {
         const row: Usage = {
@@ -467,6 +516,7 @@ export function createBillingTestDb() {
           userId: data.userId,
           kind: data.kind,
           periodKey: data.periodKey,
+          resetCount: data.resetCount ?? 0,
           used: data.used ?? 0
         };
         state.usage.set(usageKey(row), row);
@@ -474,7 +524,7 @@ export function createBillingTestDb() {
       }),
       updateMany: vi.fn(async ({ where, data }: any) => {
         const row = state.usage.get(usageKey(where));
-        if (!row || !meetsNumericGuards(row, where)) {
+        if (!row || !meetsNumericGuards(row, where) || (where.resetCount !== undefined && row.resetCount !== where.resetCount)) {
           return { count: 0 };
         }
         applyMutation(row, data);
@@ -490,6 +540,7 @@ export function createBillingTestDb() {
           userId: create.userId,
           kind: create.kind,
           periodKey: create.periodKey,
+          resetCount: create.resetCount ?? 0,
           used: create.used ?? 0
         };
         state.usage.set(usageKey(row), row);
@@ -627,6 +678,9 @@ export function createBillingTestDb() {
     state.purchases.clear();
     state.subscriptions.clear();
     state.usage.clear();
+    state.messageReservations.clear();
+    state.projectChatMessages.clear();
+    state.creationDrafts.clear();
     state.ledgerSeq = 0;
     state.entitlementSeq = 0;
     state.purchaseSeq = 0;

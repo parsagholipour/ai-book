@@ -2,6 +2,7 @@ import { type MobileBillingDto } from "./dto.js";
 import { DEFAULT_BILLING_PRODUCTS, creditPricing } from "@book-maker/core";
 import {
   getCreditBalance,
+  getMessageAllowance,
   getImageQuota,
   getPlanSummary,
   listActiveUserEntitlements
@@ -21,6 +22,9 @@ export async function serializeMobileBilling(
 ): Promise<MobileBillingDto> {
   // `getCreditBalance` rolls the plan period forward first, so simply opening
   // the app is enough to be granted the month's allowance.
+  // Recover expired message holds before reading the balance so a returned
+  // slot and its refunded credits are visible in the same billing response.
+  const messageAllowance = await getMessageAllowance(userId);
   const [balance, entitlements, plan, imageQuota] = await Promise.all([
     getCreditBalance(userId),
     listActiveUserEntitlements(userId),
@@ -31,6 +35,7 @@ export async function serializeMobileBilling(
   // would otherwise describe the free tier two different ways in one payload.
   const pricing = creditPricing();
   return {
+    messageAllowance,
     credits: {
       available: balance.availableCredits,
       purchased: balance.purchasedCredits,

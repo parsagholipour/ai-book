@@ -14,9 +14,11 @@
  * reads any "page 4" as a page selection, so a quoted assistant sentence would
  * silently retarget and reprice an edit. Pass it as its own argument instead.
  *
- * This module deliberately imports nothing: it is reached from `bookEditIntent`,
- * whose suite runs without the database mocks the mobile modules need.
+ * This module deliberately imports nothing but the dependency-free plain-text
+ * helper: it is reached from `bookEditIntent`, whose suite runs without the
+ * database mocks the mobile modules need.
  */
+import { chatMessagePreviewSource, chatRoleIsUser } from "./chatMessagePlainText.js";
 
 export const CHAT_REPLY_EXCERPT_MAX = 240;
 
@@ -28,9 +30,14 @@ export type ChatReplyQuote = {
   excerpt: string;
 };
 
-/** Collapses whitespace and clips on a word boundary when there is a near one. */
-function clipExcerpt(value: string): string {
-  const normalized = value.replace(/\s+/g, " ").trim();
+/**
+ * Collapses whitespace and clips on a word boundary when there is a near one.
+ * Assistant quotes are stripped of markup first so the one-line quote and the
+ * model see the words the bubble showed; user quotes stay as typed.
+ */
+function clipExcerpt(role: string, content: string): string {
+  const source = chatMessagePreviewSource(role, content);
+  const normalized = source.replace(/\s+/g, " ").trim();
   if (normalized.length <= CHAT_REPLY_EXCERPT_MAX) {
     return normalized;
   }
@@ -49,13 +56,13 @@ export function chatReplyQuoteFor(message: {
   role: string;
   content: string;
 }): ChatReplyQuote | null {
-  const excerpt = clipExcerpt(message.content);
+  const excerpt = clipExcerpt(message.role, message.content);
   if (!excerpt) {
     return null;
   }
   return {
     messageId: message.id,
-    role: message.role.toUpperCase() === "USER" ? "user" : "assistant",
+    role: chatRoleIsUser(message.role) ? "user" : "assistant",
     excerpt
   };
 }

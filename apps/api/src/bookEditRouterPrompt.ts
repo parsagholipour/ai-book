@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { type BookEditProjectStage } from "./bookEditIntent.js";
+import { CHAT_REPLY_MARKDOWN_PROMPT } from "./chatReplyMarkdownPrompt.js";
 
 /**
  * What the edit router is allowed to decide, and what it is told.
@@ -303,6 +304,7 @@ export function routerSystemPrompt(
   const closing = [
     "For change actions, write assistantMessage as a short confirmation of the specific change that will be proposed or made.",
     "For action answer, keep assistantMessage to two or three concise sentences: a separate grounded pass with the book's full context writes the final answer and only falls back to yours.",
+    `assistantMessage is ${CHAT_REPLY_MARKDOWN_PROMPT} A list or a key term uses markup instead of hand-numbered "1) 2) 3)" prose.`,
     "Write assistantMessage in the same language the user's message is written in, even when the book's pages are in a different language.",
     "pages may be a sample of a longer book; pageContext reports totalPages and whether the list was truncated, and pages not listed still exist.",
     "Never include provider, model, chain-of-thought, or internal routing details in assistantMessage."

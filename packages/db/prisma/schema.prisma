@@ -154,6 +154,8 @@ enum CreditLedgerEntryStatus {
 }
 
 enum CreditOperation {
+  CHAT_MESSAGE
+  MESSAGE_LIMIT_RESET
   PLAN_GENERATION
   PREVIEW_GENERATION
   FULL_BOOK_GENERATION
@@ -292,6 +294,7 @@ model User {
   generationAttempts      GenerationAttempt[]
   passwordResetRequests   PasswordResetRequest[]
   libraryCharacters       LibraryCharacter[]
+  messageUsageReservations MessageUsageReservation[]
 }
 
 /// Append-only proof that a user affirmatively accepted a specific pair of
@@ -458,14 +461,15 @@ model UserCreditAccount {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-/// Non-credit monthly limits, one row per user per counter per period.
-/// Today only `illustrated_books` (free tier: N illustrated generations a
-/// month); the shape is generic so the next limit needs no migration.
+/// Shared usage limits, one row per user per counter per calendar period.
+/// Image/import limits use months; ordinary messages use UTC days.
 model UsageCounter {
+  /// Paid message resets advance the cycle; older failures cannot refund into it.
+  resetCount Int @default(0)
   id        String   @id @default(cuid())
   userId    String
   kind      String
-  /// UTC calendar month, `2026-08`.
+  /// UTC calendar month (`2026-08`) or day (`2026-09-10`).
   periodKey String
   used      Int      @default(0)
   createdAt DateTime @default(now())
@@ -1671,4 +1675,25 @@ model ProjectSource {
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   extraction SourceExtraction @relation(fields: [sourceId, version], references: [sourceId, version], onDelete: Restrict)
   @@id([projectId, sourceId, version])
+}
+
+/// A durable claim, including zero-credit sends. Retries share a requestKey.
+model MessageUsageReservation {
+  id            String   @id @default(cuid())
+  userId        String
+  requestKey    String
+  periodKey     String
+  resetCount    Int
+  status        String   @default("RESERVED")
+  leaseId       String   @default(cuid())
+  expiresAt     DateTime @default(now())
+  ledgerEntryId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, requestKey])
+  @@index([status, updatedAt])
+  @@index([status, expiresAt])
 }

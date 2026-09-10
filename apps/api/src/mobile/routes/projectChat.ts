@@ -1,3 +1,5 @@
+import { settleMessageUsage } from "@book-maker/db/billing";
+import { messageRequestKey, withMessageUsage } from "../messageUsage.js";
 import { createSourceService } from "@book-maker/db";
 import { jsonRecord, createSourceEmbedding, sourceRefsFromInput } from "@book-maker/core";
 import { bookEditScopeFromMessage, classifyProjectChatMessage, type BookEditIntent } from "../../bookEditIntent.js";
@@ -122,6 +124,7 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
       if (parsed.data.requestId) {
         const replay = await replayProjectChatRequest(id, parsed.data.requestId);
         if (replay) {
+          await settleMessageUsage(auth.user.id, messageRequestKey(`project:${id}`, parsed.data.requestId), true);
           return replay;
         }
       }
@@ -205,209 +208,216 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
       const { resolvedPendingEdit, clarifyExhausted, resolvedMessage, confirmedPendingEdit, pendingScopeIsRecoverable, resolvesPendingScope } =
         resolvePendingEditTurn(pendingScope, parsed.data.message, { currentScope });
 
-      let userMessage: MobileProjectChatMessageRecord;
-      try {
-        userMessage = await createUserProjectChatMessage({
-          projectId: id,
-          parentId,
-          content: parsed.data.message,
-          requestId: parsed.data.requestId,
-          metadata: {
-            ...(resolvedPendingEdit
-              ? { resolvedPendingEdit }
-              : editedMessage
-                ? { editedFromMessageId: editedMessage.id }
-                : {}),
-            ...(replyTo ? { replyTo } : {}),
-            ...(characterRefs.length > 0 ? { characters: characterRefs } : {})
-          },
-          selectSibling: Boolean(editedMessage)
-        });
-      } catch (error) {
-        if (parsed.data.requestId && isPrismaUniqueConflict(error)) {
-          const replay = await replayProjectChatRequest(id, parsed.data.requestId);
-          if (replay) {
-            return replay;
-          }
-          // The user row exists but its reply does not yet: the same requestId
-          // is still in flight, so answer with a retryable conflict rather
-          // than rethrowing the unique violation as a 500.
-          return sendMobileError(reply, 409, "REQUEST_IN_PROGRESS", "That request is still being processed. Try again in a moment.");
-        }
-        throw error;
-      }
-
-      if (pendingScope && isPendingEditCancellationMessage(parsed.data.message)) {
-        const replyMessage = await createAssistantChatMessage({
-          projectId: id,
-          parentId: userMessage.id,
-          content: "Okay, I dropped that request. Nothing was changed or charged.",
-          metadata: { pendingEditCancelled: true, charged: false }
-        });
-        return {
-          ...(await loadProjectChatResponse(id)),
-          reply: serializeProjectChatMessage(replyMessage),
-          operation: null
-        } satisfies MobileProjectChatMessageResponseDto;
-      }
-
-      // Only short-circuit to the recovery reply when there is something to
-      // recover — a stranded scope or a priced proposal. For a bare scope
-      // clarification that message is itself another question, so an insistent
-      // follow-up falls through to the forced decision below instead.
-      if (
-        pendingScope &&
-        pendingScopeIsRecoverable &&
-        !resolvesPendingScope &&
-        isPendingEditNudgeMessage(parsed.data.message)
-      ) {
-        const replyMessage = await createAssistantChatMessage({
-          projectId: id,
-          parentId: userMessage.id,
-          content: pendingScopeRecoveryMessage(pendingScope),
-          metadata: {
-            pendingEdit: pendingEditMetadataFromState(pendingScope),
-            ...(editProposalCardFromState(pendingScope, numberingForProject(project))
-              ? { editProposal: editProposalCardFromState(pendingScope, numberingForProject(project)) }
-              : {}),
-            recoveredPendingScope: pendingScope.scope,
-            charged: false
-          }
-        });
-        return {
-          ...(await loadProjectChatResponse(id)),
-          reply: serializeProjectChatMessage(replyMessage),
-          operation: null
-        } satisfies MobileProjectChatMessageResponseDto;
-      }
-
-      // What each page carries, so a request about one kind of content can be
-      // scoped to the pages that have it rather than quoted for the whole book.
-      const pages = chatPagesForProject(project, await loadChatPageFeatures(project.id));
-      const stage = chatStageForProject(project.status, project.currentPlan);
-      const routingTextModel = safeFastRoutingTextModel();
-      const sourceRefs = sourceRefsFromInput({ mediaSettings: jsonRecord(jsonRecord(project.currentPlan?.inputSnapshot).mediaSettings ?? project.mediaSettings) });
-      // With a current page map, the numbers the user types are the printed PDF
-      // pages they can see; without one everything stays in model indexes.
-      const pageNumbering = numberingForProject(project);
-      // The app's locator already resolved the selection to a model page; it is
-      // authoritative over re-parsing the composed text. A selection the
-      // locator could not place still names the printed page it came from,
-      // which the map can resolve.
-      const readerSelection = (() => {
-        const context = parsed.data.readerContext;
-        if (!context) {
-          return undefined;
-        }
-        if (context.pageIndex !== undefined) {
-          return { pageIndex: context.pageIndex };
-        }
-        // A physical PDF page is only meaningful against the exact file it was
-        // read from, which is why the request carries that file's digest and
-        // not just its revision: during EDITING the map in force is the
-        // previous compile's, still on screen, and a repair can republish the
-        // same revision over different bytes. A sheet that cannot be tied to
-        // the map in force names no page — the message's own printed numbers
-        // are re-read as they always were, rather than a sheet being resolved
-        // through the wrong book.
-        const resolved = modelPageForReaderContext(pageNumbering, context, project.contentRevision);
-        return resolved !== undefined ? { pageIndex: resolved } : undefined;
-      })();
-
-      // A pure confirmation of a priced proposal skips re-routing so the
-      // already-quoted credit cost and page targets stay authoritative.
-      const confirmedProposal =
-        confirmedPendingEdit && pendingScope?.intent
-          ? pendingScope
-          : null;
-      const intent = confirmedProposal?.intent
-        ? confirmedProposal.intent
-        : await classifyProjectChatMessage({
-            message: resolvedMessage,
-            stage,
-            pages,
-            chapters: chatChaptersForProject(project),
-            planSummary: project.currentPlan
-              ? planSummaryForClassifier(project.currentPlan, project.language)
-              : undefined,
-            recentMessages: activeMessages.slice(-12).map((message) => ({
-              role: message.role === "USER" ? "user" : "assistant",
-              content: message.content
-            })),
-            textModel: routingTextModel,
-            ...(sourceRefs.length ? { sourceService: createSourceService(auth.user.id, sourceRefs, createSourceEmbedding(context.appConfig)) } : {}),
-            loadPageBody: async (index) => (await loadChatPageBodies(id, [index])).get(index) ?? null,
-            clarifyExhausted,
-            pageNumbering,
-            ...(project.language ? { language: project.language } : {}),
-            ...(readerSelection ? { readerSelection } : {}),
-            // Given to the router, not merged into the message: without a
-            // referent "make that shorter" falls to the heuristics' catch-all
-            // clarify, and a second unresolved turn is forced into a whole-book
-            // rewrite. The heuristics and page targeting never see it.
-            ...(replyTo ? { replyTo } : {})
+      return withMessageUsage({ userId: auth.user.id, projectId: id, requestKey: messageRequestKey(`project:${id}`, parsed.data.requestId) }, reply, async () => {
+        let userMessage: MobileProjectChatMessageRecord;
+        try {
+          // A recovered attempt can have saved its USER row before dying.
+          // Its exclusive message lease permits resuming that same turn.
+          const abandoned = parsed.data.requestId ? await prisma.projectChatMessage.findUnique({
+            where: { projectId_requestId: { projectId: id, requestId: parsed.data.requestId } }
+          }) : null;
+          userMessage = abandoned ?? await createUserProjectChatMessage({
+            projectId: id,
+            parentId,
+            content: parsed.data.message,
+            requestId: parsed.data.requestId,
+            metadata: {
+              ...(resolvedPendingEdit
+                ? { resolvedPendingEdit }
+                : editedMessage
+                  ? { editedFromMessageId: editedMessage.id }
+                  : {}),
+              ...(replyTo ? { replyTo } : {}),
+              ...(characterRefs.length > 0 ? { characters: characterRefs } : {})
+            },
+            selectSibling: Boolean(editedMessage)
           });
-
-      // Answering questions and reading content are always allowed while a job
-      // runs; every write, including a free presentation preference, is saved
-      // as the project's one pending edit. A presentation recompile owns an
-      // EDITING revision and its settled-status fallback, so it may not start
-      // alongside an ordinary edit that already owns that lifecycle.
-      // This turn's mentions win; a resumed pending edit otherwise keeps the
-      // sheets it was created with. Computed before the busy gate so a
-      // deflected mention edit saves its sheets for the resume.
-      const characterContext = mentionContext ?? pendingScope?.characterContext;
-      const openEditBlocked = await hasOpenProjectWork(id);
-      const alwaysAllowedWhileBusy = ["answer", "clarify", "show_content"];
-      if (openEditBlocked && !alwaysAllowedWhileBusy.includes(intent.kind)) {
-        // A typed confirmation racing the Apply button: when the "busy" job is
-        // the button's own execution of this very proposal, saving the request
-        // as a pending edit would let a later nudge rebuild and re-charge it.
-        if (confirmedProposal?.proposalId) {
-          const claimed = await replayClaimedProposal(id, confirmedProposal.proposalId);
-          if (claimed) return claimed;
+        } catch (error) {
+          if (parsed.data.requestId && isPrismaUniqueConflict(error)) {
+            const replay = await replayProjectChatRequest(id, parsed.data.requestId);
+            if (replay) {
+              return replay;
+            }
+            // The user row exists but its reply does not yet: the same requestId
+            // is still in flight, so answer with a retryable conflict rather
+            // than rethrowing the unique violation as a 500.
+            return sendMobileError(reply, 409, "REQUEST_IN_PROGRESS", "That request is still being processed. Try again in a moment.");
+          }
+          throw error;
         }
-        const replyMessage = await busyEditReply({
-          projectId: id,
-          parentMessageId: userMessage.id,
+
+        if (pendingScope && isPendingEditCancellationMessage(parsed.data.message)) {
+          const replyMessage = await createAssistantChatMessage({
+            projectId: id,
+            parentId: userMessage.id,
+            content: "Okay, I dropped that request. No edit was applied.",
+            metadata: { pendingEditCancelled: true, charged: false }
+          });
+          return {
+            ...(await loadProjectChatResponse(id)),
+            reply: serializeProjectChatMessage(replyMessage),
+            operation: null
+          } satisfies MobileProjectChatMessageResponseDto;
+        }
+
+        // Only short-circuit to the recovery reply when there is something to
+        // recover — a stranded scope or a priced proposal. For a bare scope
+        // clarification that message is itself another question, so an insistent
+        // follow-up falls through to the forced decision below instead.
+        if (
+          pendingScope &&
+          pendingScopeIsRecoverable &&
+          !resolvesPendingScope &&
+          isPendingEditNudgeMessage(parsed.data.message)
+        ) {
+          const replyMessage = await createAssistantChatMessage({
+            projectId: id,
+            parentId: userMessage.id,
+            content: pendingScopeRecoveryMessage(pendingScope),
+            metadata: {
+              pendingEdit: pendingEditMetadataFromState(pendingScope),
+              ...(editProposalCardFromState(pendingScope, numberingForProject(project))
+                ? { editProposal: editProposalCardFromState(pendingScope, numberingForProject(project)) }
+                : {}),
+              recoveredPendingScope: pendingScope.scope,
+              charged: false
+            }
+          });
+          return {
+            ...(await loadProjectChatResponse(id)),
+            reply: serializeProjectChatMessage(replyMessage),
+            operation: null
+          } satisfies MobileProjectChatMessageResponseDto;
+        }
+
+        // What each page carries, so a request about one kind of content can be
+        // scoped to the pages that have it rather than quoted for the whole book.
+        const pages = chatPagesForProject(project, await loadChatPageFeatures(project.id));
+        const stage = chatStageForProject(project.status, project.currentPlan);
+        const routingTextModel = safeFastRoutingTextModel();
+        const sourceRefs = sourceRefsFromInput({ mediaSettings: jsonRecord(jsonRecord(project.currentPlan?.inputSnapshot).mediaSettings ?? project.mediaSettings) });
+        // With a current page map, the numbers the user types are the printed PDF
+        // pages they can see; without one everything stays in model indexes.
+        const pageNumbering = numberingForProject(project);
+        // The app's locator already resolved the selection to a model page; it is
+        // authoritative over re-parsing the composed text. A selection the
+        // locator could not place still names the printed page it came from,
+        // which the map can resolve.
+        const readerSelection = (() => {
+          const context = parsed.data.readerContext;
+          if (!context) {
+            return undefined;
+          }
+          if (context.pageIndex !== undefined) {
+            return { pageIndex: context.pageIndex };
+          }
+          // A physical PDF page is only meaningful against the exact file it was
+          // read from, which is why the request carries that file's digest and
+          // not just its revision: during EDITING the map in force is the
+          // previous compile's, still on screen, and a repair can republish the
+          // same revision over different bytes. A sheet that cannot be tied to
+          // the map in force names no page — the message's own printed numbers
+          // are re-read as they always were, rather than a sheet being resolved
+          // through the wrong book.
+          const resolved = modelPageForReaderContext(pageNumbering, context, project.contentRevision);
+          return resolved !== undefined ? { pageIndex: resolved } : undefined;
+        })();
+
+        // A pure confirmation of a priced proposal skips re-routing so the
+        // already-quoted credit cost and page targets stay authoritative.
+        const confirmedProposal =
+          confirmedPendingEdit && pendingScope?.intent
+            ? pendingScope
+            : null;
+        const intent = confirmedProposal?.intent
+          ? confirmedProposal.intent
+          : await classifyProjectChatMessage({
+              message: resolvedMessage,
+              stage,
+              pages,
+              chapters: chatChaptersForProject(project),
+              planSummary: project.currentPlan
+                ? planSummaryForClassifier(project.currentPlan, project.language)
+                : undefined,
+              recentMessages: activeMessages.slice(-12).map((message) => ({
+                role: message.role === "USER" ? "user" : "assistant",
+                content: message.content
+              })),
+              textModel: routingTextModel,
+              ...(sourceRefs.length ? { sourceService: createSourceService(auth.user.id, sourceRefs, createSourceEmbedding(context.appConfig)) } : {}),
+              loadPageBody: async (index) => (await loadChatPageBodies(id, [index])).get(index) ?? null,
+              clarifyExhausted,
+              pageNumbering,
+              ...(project.language ? { language: project.language } : {}),
+              ...(readerSelection ? { readerSelection } : {}),
+              // Given to the router, not merged into the message: without a
+              // referent "make that shorter" falls to the heuristics' catch-all
+              // clarify, and a second unresolved turn is forced into a whole-book
+              // rewrite. The heuristics and page targeting never see it.
+              ...(replyTo ? { replyTo } : {})
+            });
+
+        // Answering questions and reading content are always allowed while a job
+        // runs; every write, including a free presentation preference, is saved
+        // as the project's one pending edit. A presentation recompile owns an
+        // EDITING revision and its settled-status fallback, so it may not start
+        // alongside an ordinary edit that already owns that lifecycle.
+        // This turn's mentions win; a resumed pending edit otherwise keeps the
+        // sheets it was created with. Computed before the busy gate so a
+        // deflected mention edit saves its sheets for the resume.
+        const characterContext = mentionContext ?? pendingScope?.characterContext;
+        const openEditBlocked = await hasOpenProjectWork(id);
+        const alwaysAllowedWhileBusy = ["answer", "clarify", "show_content"];
+        if (openEditBlocked && !alwaysAllowedWhileBusy.includes(intent.kind)) {
+          // A typed confirmation racing the Apply button: when the "busy" job is
+          // the button's own execution of this very proposal, saving the request
+          // as a pending edit would let a later nudge rebuild and re-charge it.
+          if (confirmedProposal?.proposalId) {
+            const claimed = await replayClaimedProposal(id, confirmedProposal.proposalId);
+            if (claimed) return claimed;
+          }
+          const replyMessage = await busyEditReply({
+            projectId: id,
+            parentMessageId: userMessage.id,
+            intent,
+            request: resolvedMessage,
+            // A deflected confirmation keeps its priced proposal, so the resume
+            // after the job settles executes it instead of re-proposing.
+            ...(confirmedProposal ? { pendingState: confirmedProposal } : {}),
+            ...(characterContext ? { characterContext } : {})
+          });
+          return {
+            ...(await loadProjectChatResponse(id)),
+            reply: serializeProjectChatMessage(replyMessage),
+            operation: null
+          } satisfies MobileProjectChatMessageResponseDto;
+        }
+
+        const outcome = await handleProjectChatIntent({
+          userId: auth.user.id,
+          project,
+          userMessageId: userMessage.id,
+          message: resolvedMessage,
           intent,
-          request: resolvedMessage,
-          // A deflected confirmation keeps its priced proposal, so the resume
-          // after the job settles executes it instead of re-proposing.
-          ...(confirmedProposal ? { pendingState: confirmedProposal } : {}),
-          ...(characterContext ? { characterContext } : {})
+          textModel: routingTextModel,
+          ...(sourceRefs.length ? { sourceService: createSourceService(auth.user.id, sourceRefs, createSourceEmbedding(context.appConfig)) } : {}),
+          executeProposal: Boolean(confirmedProposal),
+          ...(confirmedProposal?.proposalId ? { executionCommandId: confirmedProposal.proposalId } : {}),
+          ...(confirmedProposal?.credits !== undefined ? { quotedCredits: confirmedProposal.credits } : {}),
+          ...(clarifyExhausted && pendingScope ? { pendingRequest: pendingScope.request } : {}),
+          ...(replyTo ? { replyTo } : {}),
+          ...(characterContext ? { characterContext } : {}),
+          activeMessages
         });
+
         return {
           ...(await loadProjectChatResponse(id)),
-          reply: serializeProjectChatMessage(replyMessage),
-          operation: null
+          reply: serializeProjectChatMessage(outcome.reply),
+          operation: outcome.operation
+            ? serializeBookEditOperation(outcome.operation, { pageNumbering })
+            : null
         } satisfies MobileProjectChatMessageResponseDto;
-      }
-
-      const outcome = await handleProjectChatIntent({
-        userId: auth.user.id,
-        project,
-        userMessageId: userMessage.id,
-        message: resolvedMessage,
-        intent,
-        textModel: routingTextModel,
-        ...(sourceRefs.length ? { sourceService: createSourceService(auth.user.id, sourceRefs, createSourceEmbedding(context.appConfig)) } : {}),
-        executeProposal: Boolean(confirmedProposal),
-        ...(confirmedProposal?.proposalId ? { executionCommandId: confirmedProposal.proposalId } : {}),
-        ...(confirmedProposal?.credits !== undefined ? { quotedCredits: confirmedProposal.credits } : {}),
-        ...(clarifyExhausted && pendingScope ? { pendingRequest: pendingScope.request } : {}),
-        ...(replyTo ? { replyTo } : {}),
-        ...(characterContext ? { characterContext } : {}),
-        activeMessages
       });
-
-      return {
-        ...(await loadProjectChatResponse(id)),
-        reply: serializeProjectChatMessage(outcome.reply),
-        operation: outcome.operation
-          ? serializeBookEditOperation(outcome.operation, { pageNumbering })
-          : null
-      } satisfies MobileProjectChatMessageResponseDto;
     }
   );
 

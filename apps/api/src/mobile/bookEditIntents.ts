@@ -152,7 +152,7 @@ export async function applyOrCancelEditProposal(options: {
       projectId,
       parentId: userMessage.id,
       ...(cancelClaim ? { operationId: cancelClaim.id } : {}),
-      content: "Okay, I dropped that request. Nothing was changed or charged.",
+      content: "Okay, I dropped that request. No edit was applied.",
       metadata: { pendingEditCancelled: true, charged: false, proposalId }
     });
     return {
@@ -577,7 +577,7 @@ export async function proposeBookEdit(options: ProposedChatEdit & {
       const reply = await createAssistantChatMessage({
         projectId: project.id,
         parentId: userMessageId,
-        content: `I couldn’t find chapter ${intent.affectedChapterIndex ?? ""} in this book — it has ${project.chapters.length} chapter${project.chapters.length === 1 ? "" : "s"}. Nothing was changed or charged. To go ahead, tell me which one — for example “rewrite chapter 2”.`.replace("  ", " "),
+        content: `I couldn’t find chapter ${intent.affectedChapterIndex ?? ""} in this book — it has ${project.chapters.length} chapter${project.chapters.length === 1 ? "" : "s"}. No edit was applied. To go ahead, tell me which one — for example “rewrite chapter 2”.`.replace("  ", " "),
         metadata: {
           intent: { ...intent, kind: "clarify", affectedPageIndexes, clarification: "none" },
           pendingEditCancelled: true,

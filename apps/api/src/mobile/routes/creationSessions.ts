@@ -1,9 +1,12 @@
+import { settleMessageUsage } from "@book-maker/db/billing";
+import { messageRequestKey, persistMessageReply, withMessageUsage } from "../messageUsage.js";
 import { createSourceEmbedding } from "@book-maker/core";
 import { attachmentSourceRefs, hydrateSourceAttachments, submittedAttachments } from "../sourceAttachments.js";
 import { createSourceService } from "@book-maker/db";
 import { deleteCreationAttachmentDraftDir } from "../../attachmentStorage.js";
 import { registerMobileCreationAttachmentRoutes } from "./creationAttachments.js";
 import { chatReplyQuoteFor } from "../../chatReplyQuote.js";
+import { chatMessagePreviewSource } from "../../chatMessagePlainText.js";
 import {
   appendCreationMessage,
   foldCreationTranscriptTree,
@@ -72,6 +75,10 @@ import { orderedCharacterRefs } from "../libraryMentionRows.js";
  * Branching creation chat: sessions, messages, attachments, preflight and build.
  */
 
+function historyDrawerPreview(message: { role: string; content: string }): string {
+  return chatMessagePreviewSource(message.role, message.content).replace(/\s+/g, " ").trim().slice(0, 100);
+}
+
 export async function registerMobileCreationSessionRoutes(fastify: FastifyInstance, context: MobileRouteContext): Promise<void> {
   const { appConfig, generationLimiter, advisorLimiter, draftLimiter, creationEnrichment, options } = context;
   const { finalizeMobileCreationDraft, pageCountRecommendationsForPreflight, prepareMobileCreationBuild } = createCreationBuildHelpers(context);
@@ -97,7 +104,8 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
         const messages = payload.messages && payload.messages.length > 0 ? conversationMessagesFromPayload(payload) : [];
         const title = _chatTitleForPayload(payload);
         const lastMsg = messages.length > 0 ? messages[messages.length - 1] : undefined;
-        const preview = lastMsg ? lastMsg.content.trim().slice(0, 100) : "";
+        // Assistant markup is stripped; a user's last turn stays as typed.
+        const preview = lastMsg ? historyDrawerPreview(lastMsg) : "";
         const outputs = creationOutputsForDraft(draft, payload);
         return [{
           draftId: draft.id,
@@ -206,6 +214,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
         if (existing) {
           const existingPayload = mobileCreationDraftPayloadSchema.safeParse(existing.payload);
           if (existingPayload.success) {
+            await settleMessageUsage(auth.user.id, messageRequestKey("creation-start", parsedBody.data.requestId), true);
             const existingMessages = conversationMessagesFromPayload(existingPayload.data);
             return reply.code(201).send({
               session: serializeCreationSession(existing, creationTreeFromPayload(existingPayload.data)),
@@ -222,91 +231,97 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       if (firstMessage && !(await enforceContentRestrictions(reply, firstMessage))) {
         return;
       }
-      let turn = greeting;
-      let messages = normalizeCreationMessageIds(greetingMessages);
-      let payload: MobileCreationDraftPayload;
-      if (firstMessage) {
-        // Same resolution as the message route: mentions must work on a chat's
-        // very first message, not only once a session exists.
-        const startMentionIds = [...new Set(parsedBody.data.mentionedCharacterIds ?? [])];
-        // One scoped read: the graph names the ids it could not find, so the
-        // ownership check is not a second query over the same rows.
-        const { characters: startContextCharacters, missingIds: startMissingIds } =
-          await expandLibraryCharacterGraph(auth.user.id, startMentionIds);
-        if (startMissingIds.length > 0) {
-          return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "A mentioned character is no longer in your library.");
-        }
-        // The message records what the reader tapped; the linked characters
-        // ride the turn only.
-        const startCharacterRefs = orderedCharacterRefs(startMentionIds, startContextCharacters);
-        const nextMessages: MobileCreationMessage[] = [
-          ...greetingMessages,
-          {
-            role: "user" as const,
-            content: firstMessage,
-            ...(startCharacterRefs.length > 0 ? { characters: startCharacterRefs } : {})
+      const runMessage = async () => {
+        let turn = greeting;
+        let messages = normalizeCreationMessageIds(greetingMessages);
+        let payload: MobileCreationDraftPayload;
+        if (firstMessage) {
+          // Same resolution as the message route: mentions must work on a chat's
+          // very first message, not only once a session exists.
+          const startMentionIds = [...new Set(parsedBody.data.mentionedCharacterIds ?? [])];
+          // One scoped read: the graph names the ids it could not find, so the
+          // ownership check is not a second query over the same rows.
+          const { characters: startContextCharacters, missingIds: startMissingIds } =
+            await expandLibraryCharacterGraph(auth.user.id, startMentionIds);
+          if (startMissingIds.length > 0) {
+            return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "A mentioned character is no longer in your library.");
           }
-        ].slice(-60);
-        const turnRequest: MobileCreationTurnRequest = {
-          messages: nextMessages,
-          presets: parsedBody.data.presets ? mobileCreationPresetsSchema.parse(parsedBody.data.presets) : undefined,
-          sourceNotes: parsedBody.data.sourceNotes,
-          optionalDetails: parsedBody.data.optionalDetails,
-          ...(startContextCharacters.length > 0
-            ? {
-                characters: startContextCharacters.map((character) => ({
-                  id: character.id,
-                  name: character.name,
-                  description: generationDescription(character),
-                  ...(character.appearance ? { appearance: character.appearance } : {}),
-                  fields: characterFieldsFromJson(character.fields)
-                }))
-              }
-            : {})
-        };
-        turn = await runCreationTurn(turnRequest, {
-          enrich: creationEnrichment,
-          timeoutMs: options.creationTurnTimeoutMs ?? DEFAULT_CREATION_TURN_TIMEOUT_MS,
-          onEnrichError: (error) =>
-            request.log.warn({ err: error }, "creation turn enrichment failed; using safe fallback")
-        });
-        messages = normalizeCreationMessageIds(
-          [...nextMessages, creationAssistantMessage(turn)].slice(-60)
-        );
-        payload = mobileCreationDraftPayloadSchema.parse({
-          payloadVersion: 3,
-          rawIdea: userTextFromMessages(messages),
-          optionalDetails: mergeCreationOptionalDetails(turnRequest.optionalDetails, turn),
-          sourceNotes: turnRequest.sourceNotes ?? "",
-          detectedLane: turn.brief.lane,
-          recipe: turn.brief,
-          selectedPresets: turn.presets,
-          ...(turn.language ? { language: turn.language } : {}),
-          messages
-        });
-      } else {
-        payload = mobileCreationDraftPayloadSchema.parse({
-          payloadVersion: 3,
-          messages,
-          ...(parsedBody.data.presets
-            ? { selectedPresets: mobileCreationPresetsSchema.parse(parsedBody.data.presets) }
-            : {})
-        });
-      }
-      payload = { ...payload, lastMessageAt: new Date().toISOString() };
-      const draft = await prisma.mobileCreationDraft.create({
-        data: {
-          ...(parsedBody.data.requestId ? { requestId: parsedBody.data.requestId } : {}),
-          userId: auth.user.id,
-          status: "ACTIVE",
-          payload: jsonInputValue(payload),
-          lastTurn: jsonInputValue(turn)
+          // The message records what the reader tapped; the linked characters
+          // ride the turn only.
+          const startCharacterRefs = orderedCharacterRefs(startMentionIds, startContextCharacters);
+          const nextMessages: MobileCreationMessage[] = [
+            ...greetingMessages,
+            {
+              role: "user" as const,
+              content: firstMessage,
+              ...(startCharacterRefs.length > 0 ? { characters: startCharacterRefs } : {})
+            }
+          ].slice(-60);
+          const turnRequest: MobileCreationTurnRequest = {
+            messages: nextMessages,
+            presets: parsedBody.data.presets ? mobileCreationPresetsSchema.parse(parsedBody.data.presets) : undefined,
+            sourceNotes: parsedBody.data.sourceNotes,
+            optionalDetails: parsedBody.data.optionalDetails,
+            ...(startContextCharacters.length > 0
+              ? {
+                  characters: startContextCharacters.map((character) => ({
+                    id: character.id,
+                    name: character.name,
+                    description: generationDescription(character),
+                    ...(character.appearance ? { appearance: character.appearance } : {}),
+                    fields: characterFieldsFromJson(character.fields)
+                  }))
+                }
+              : {})
+          };
+          turn = await runCreationTurn(turnRequest, {
+            enrich: creationEnrichment,
+            timeoutMs: options.creationTurnTimeoutMs ?? DEFAULT_CREATION_TURN_TIMEOUT_MS,
+            onEnrichError: (error) =>
+              request.log.warn({ err: error }, "creation turn enrichment failed; using safe fallback")
+          });
+          messages = normalizeCreationMessageIds(
+            [...nextMessages, creationAssistantMessage(turn)].slice(-60)
+          );
+          payload = mobileCreationDraftPayloadSchema.parse({
+            payloadVersion: 3,
+            rawIdea: userTextFromMessages(messages),
+            optionalDetails: mergeCreationOptionalDetails(turnRequest.optionalDetails, turn),
+            sourceNotes: turnRequest.sourceNotes ?? "",
+            detectedLane: turn.brief.lane,
+            recipe: turn.brief,
+            selectedPresets: turn.presets,
+            ...(turn.language ? { language: turn.language } : {}),
+            messages
+          });
+        } else {
+          payload = mobileCreationDraftPayloadSchema.parse({
+            payloadVersion: 3,
+            messages,
+            ...(parsedBody.data.presets
+              ? { selectedPresets: mobileCreationPresetsSchema.parse(parsedBody.data.presets) }
+              : {})
+          });
         }
-      });
-      return reply.code(201).send({
-        session: serializeCreationSession(draft, messages),
-        turn
-      } satisfies MobileCreationConversationResponseDto);
+        payload = { ...payload, lastMessageAt: new Date().toISOString() };
+        const draft = await persistMessageReply((tx) => tx.mobileCreationDraft.create({
+          data: {
+            ...(parsedBody.data.requestId ? { requestId: parsedBody.data.requestId } : {}),
+            userId: auth.user.id,
+            status: "ACTIVE",
+            payload: jsonInputValue(payload),
+            lastTurn: jsonInputValue(turn)
+          }
+        }));
+        reply.code(201);
+        return {
+          session: serializeCreationSession(draft, messages),
+          turn
+        } satisfies MobileCreationConversationResponseDto;
+      };
+      return firstMessage
+        ? withMessageUsage({ userId: auth.user.id, requestKey: messageRequestKey("creation-start", parsedBody.data.requestId) }, reply, runMessage)
+        : runMessage();
     }
   );
 
@@ -353,6 +368,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
           (message) => message.role === "user" && message.requestId === parsedBody.data.requestId
         );
         if (replayed) {
+          await settleMessageUsage(auth.user.id, messageRequestKey(`creation:${id}`, parsedBody.data.requestId), true);
           const replayMessages = conversationMessagesFromPayload(parsedPayload.data);
           return {
             session: serializeCreationSession(draft, creationTreeFromPayload(parsedPayload.data)),
@@ -430,91 +446,94 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       } else {
         treeWithUser = appendCreationMessage(priorTree, userMessage).messages;
       }
-      const incoming = foldCreationTranscriptTree(treeWithUser, parsedPayload.data.conversationSummary);
-      const activeMessages = linearizeCreationMessages(incoming.messages).active;
-      // Every character mentioned anywhere on the ACTIVE branch rides the turn
-      // as fresh library rows — re-read each turn so edits propagate, and
-      // branch-scoped so an edited-away mention stays out of this thread.
-      //
-      // **The union is not capped, and must not be.** Each message caps its own
-      // picks at ten, but a chat is many messages, and the system prompt tells
-      // the model every selected sheet arrives under `characters`. Only the
-      // linked characters behind them are bounded. A character deleted since
-      // being mentioned drops out silently — the reader is not editing it now,
-      // so `missingIds` is not a 404 here.
-      const activeCharacterIds = [
-        ...new Set(activeMessages.flatMap((message) => (message.characters ?? []).map((ref) => ref.id)))
-      ];
-      const { characters: activeCharacters } = await expandLibraryCharacterGraph(
-        auth.user.id,
-        activeCharacterIds
-      );
-      const activeAttachments = await hydrateSourceAttachments(auth.user.id, submittedAttachments(attachmentPool, activeMessages));
-      const turnRequest: MobileCreationTurnRequest = {
-        messages: activeMessages,
-        ...(activeCharacters.length > 0
-          ? {
-              characters: activeCharacters.map((character) => ({
-                id: character.id,
-                name: character.name,
-                description: generationDescription(character),
-                ...(character.appearance ? { appearance: character.appearance } : {}),
-                fields: characterFieldsFromJson(character.fields)
-              }))
-            }
-          : {}),
-        brief: parsedPayload.data.recipe,
-        presets: parsedBody.data.presets
-          ? mergeMobileCreationPresets(persistedPresetsForTurn(parsedPayload.data), parsedBody.data.presets)
-          : persistedPresetsForTurn(parsedPayload.data),
-        sourceNotes: parsedBody.data.sourceNotes ?? parsedPayload.data.sourceNotes,
-        optionalDetails: parsedBody.data.optionalDetails ?? parsedPayload.data.optionalDetails,
-        attachments: activeAttachments,
-        ...(appConfig.FULL_DOCUMENT_SOURCES ? { sourceService: createSourceService(auth.user.id, attachmentSourceRefs(activeAttachments), createSourceEmbedding(appConfig)) } : {}),
-        language: parsedPayload.data.language,
-        conversationSummary: incoming.conversationSummary
-      };
-      const turn = await runCreationTurn(turnRequest, {
-        enrich: creationEnrichment,
-        timeoutMs: options.creationTurnTimeoutMs ?? DEFAULT_CREATION_TURN_TIMEOUT_MS,
-        onEnrichError: (error) =>
-          request.log.warn({ err: error }, "creation turn enrichment failed; using safe fallback")
-      });
-      const persisted = foldCreationTranscriptTree(
-        appendCreationMessage(incoming.messages, creationAssistantMessage(turn)).messages,
-        incoming.conversationSummary
-      );
-      const language = turn.language ?? parsedPayload.data.language;
-      const updatedPayload = mobileCreationDraftPayloadSchema.parse({
-        payloadVersion: 3,
-        rawIdea: userTextFromMessages(linearizeCreationMessages(persisted.messages).active),
-        optionalDetails: mergeCreationOptionalDetails(turnRequest.optionalDetails, turn),
-        sourceNotes: turnRequest.sourceNotes ?? "",
-        detectedLane: turn.brief.lane,
-        recipe: turn.brief,
-        selectedPresets: turn.presets,
-        ...(attachmentPool.length > 0 ? { attachments: attachmentPool } : {}),
-        ...(language ? { language } : {}),
-        ...(persisted.conversationSummary ? { conversationSummary: persisted.conversationSummary } : {}),
-        lastMessageAt: new Date().toISOString(),
-        messages: persisted.messages
-      });
-      const updated = await updateCreationDraftCas({
-        draft,
-        expectedRevision: parsedBody.data.expectedRevision,
-        data: {
-          payload: jsonInputValue(updatedPayload),
-          status: "ACTIVE",
-          lastTurn: jsonInputValue(turn)
+      return withMessageUsage({ userId: auth.user.id, requestKey: messageRequestKey(`creation:${id}`, parsedBody.data.requestId) }, reply, async () => {
+        const incoming = foldCreationTranscriptTree(treeWithUser, parsedPayload.data.conversationSummary);
+        const activeMessages = linearizeCreationMessages(incoming.messages).active;
+        // Every character mentioned anywhere on the ACTIVE branch rides the turn
+        // as fresh library rows — re-read each turn so edits propagate, and
+        // branch-scoped so an edited-away mention stays out of this thread.
+        //
+        // **The union is not capped, and must not be.** Each message caps its own
+        // picks at ten, but a chat is many messages, and the system prompt tells
+        // the model every selected sheet arrives under `characters`. Only the
+        // linked characters behind them are bounded. A character deleted since
+        // being mentioned drops out silently — the reader is not editing it now,
+        // so `missingIds` is not a 404 here.
+        const activeCharacterIds = [
+          ...new Set(activeMessages.flatMap((message) => (message.characters ?? []).map((ref) => ref.id)))
+        ];
+        const { characters: activeCharacters } = await expandLibraryCharacterGraph(
+          auth.user.id,
+          activeCharacterIds
+        );
+        const activeAttachments = await hydrateSourceAttachments(auth.user.id, submittedAttachments(attachmentPool, activeMessages));
+        const turnRequest: MobileCreationTurnRequest = {
+          messages: activeMessages,
+          ...(activeCharacters.length > 0
+            ? {
+                characters: activeCharacters.map((character) => ({
+                  id: character.id,
+                  name: character.name,
+                  description: generationDescription(character),
+                  ...(character.appearance ? { appearance: character.appearance } : {}),
+                  fields: characterFieldsFromJson(character.fields)
+                }))
+              }
+            : {}),
+          brief: parsedPayload.data.recipe,
+          presets: parsedBody.data.presets
+            ? mergeMobileCreationPresets(persistedPresetsForTurn(parsedPayload.data), parsedBody.data.presets)
+            : persistedPresetsForTurn(parsedPayload.data),
+          sourceNotes: parsedBody.data.sourceNotes ?? parsedPayload.data.sourceNotes,
+          optionalDetails: parsedBody.data.optionalDetails ?? parsedPayload.data.optionalDetails,
+          attachments: activeAttachments,
+          ...(appConfig.FULL_DOCUMENT_SOURCES ? { sourceService: createSourceService(auth.user.id, attachmentSourceRefs(activeAttachments), createSourceEmbedding(appConfig)) } : {}),
+          language: parsedPayload.data.language,
+          conversationSummary: incoming.conversationSummary
+        };
+        const turn = await runCreationTurn(turnRequest, {
+          enrich: creationEnrichment,
+          timeoutMs: options.creationTurnTimeoutMs ?? DEFAULT_CREATION_TURN_TIMEOUT_MS,
+          onEnrichError: (error) =>
+            request.log.warn({ err: error }, "creation turn enrichment failed; using safe fallback")
+        });
+        const persisted = foldCreationTranscriptTree(
+          appendCreationMessage(incoming.messages, creationAssistantMessage(turn)).messages,
+          incoming.conversationSummary
+        );
+        const language = turn.language ?? parsedPayload.data.language;
+        const updatedPayload = mobileCreationDraftPayloadSchema.parse({
+          payloadVersion: 3,
+          rawIdea: userTextFromMessages(linearizeCreationMessages(persisted.messages).active),
+          optionalDetails: mergeCreationOptionalDetails(turnRequest.optionalDetails, turn),
+          sourceNotes: turnRequest.sourceNotes ?? "",
+          detectedLane: turn.brief.lane,
+          recipe: turn.brief,
+          selectedPresets: turn.presets,
+          ...(attachmentPool.length > 0 ? { attachments: attachmentPool } : {}),
+          ...(language ? { language } : {}),
+          ...(persisted.conversationSummary ? { conversationSummary: persisted.conversationSummary } : {}),
+          lastMessageAt: new Date().toISOString(),
+          messages: persisted.messages
+        });
+        const updated = await persistMessageReply((tx) => updateCreationDraftCas({
+          transaction: tx,
+          draft,
+          expectedRevision: parsedBody.data.expectedRevision,
+          data: {
+            payload: jsonInputValue(updatedPayload),
+            status: "ACTIVE",
+            lastTurn: jsonInputValue(turn)
+          }
+        }));
+        if (!updated) {
+          return sendCreationSessionConflict(reply, auth.user.id, id);
         }
+        return {
+          session: serializeCreationSession({ ...updated, outputs: draft.outputs }, persisted.messages),
+          turn
+        } satisfies MobileCreationConversationResponseDto;
       });
-      if (!updated) {
-        return sendCreationSessionConflict(reply, auth.user.id, id);
-      }
-      return {
-        session: serializeCreationSession({ ...updated, outputs: draft.outputs }, persisted.messages),
-        turn
-      } satisfies MobileCreationConversationResponseDto;
     }
   );
 

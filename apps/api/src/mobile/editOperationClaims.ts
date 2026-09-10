@@ -78,7 +78,7 @@ export async function replayClaimedChatOperation(options: {
     operationId: operation.id,
     content:
       operation.status === "CANCELED"
-        ? "That request was cancelled before it ran. Nothing was changed or charged."
+        ? "That request was cancelled before it ran. No edit was applied."
         : "This edit request is already being handled.",
     metadata: {
       intent: options.intent,

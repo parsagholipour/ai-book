@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../billing/data/billing_repository.dart';
 import '../../../shared/api/api_error.dart';
 import '../data/creation_repository.dart';
 import '../domain/creation_message_models.dart';
@@ -310,6 +311,7 @@ class CreationChatController extends Notifier<CreationChatState>
       );
       rethrow;
     } finally {
+      ref.invalidate(billingProvider);
       keepAliveLink.close();
     }
   }
@@ -495,6 +497,7 @@ class CreationChatController extends Notifier<CreationChatState>
       );
       rethrow;
     } finally {
+      ref.invalidate(billingProvider);
       keepAliveLink.close();
     }
   }
@@ -650,6 +653,7 @@ class CreationChatController extends Notifier<CreationChatState>
       }
       return draftId;
     } finally {
+      ref.invalidate(billingProvider);
       keepAliveLink.close();
     }
   }

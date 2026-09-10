@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { FakeTextModelAdapter, type SourceService } from "@book-maker/core";
+import { CHAT_REPLY_MARKDOWN_PROMPT } from "../chatReplyMarkdownPrompt.js";
 import { generateGroundedProjectAnswer } from "./groundedAnswer.js";
 
 vi.mock("@book-maker/db", () => ({ prisma: { bookEditOperation: { findMany: async () => [] } } }));
@@ -23,6 +24,8 @@ describe("source-grounded book answers", () => {
     const answer = await generateGroundedProjectAnswer(project, "What is the archive code?", "Unavailable", model, undefined, [], service);
     expect(search).toHaveBeenCalledWith("What is the archive code?", undefined);
     expect(answer).toBe(`The code is CYAN-482. ${citation}`);
-    expect(JSON.stringify(generate.mock.calls[0]![0].messages)).toContain(passage.content);
+    const messages = JSON.stringify(generate.mock.calls[0]![0].messages);
+    expect(messages).toContain(passage.content);
+    expect(messages).toContain(CHAT_REPLY_MARKDOWN_PROMPT);
   });
 });

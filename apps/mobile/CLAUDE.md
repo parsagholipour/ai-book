@@ -43,6 +43,10 @@ at once:
 - **The question pickers.** `answerKind` (`choice` / `multi` / `open`) is declared by the server and
   obeyed by four pickers; fewer than two options is `open` whatever the model said. A `multi`
   answer travels as one line.
+- **The chat plain-text parser.** `chatMessagePlainText` in
+  `lib/features/projects/domain/chat_markdown.dart` is the twin of
+  `chatMessagePlainText` in `apps/api/src/chatMessagePlainText.ts`; they must
+  move together. Both sides spell the shared fixtures out in tests.
 - **Job progress steps** are *not* mirrored — the app renders whatever the server serializes, and
   greps for job-type names in `lib/` return nothing. Keep it that way.
 - **Prices are not hardcoded** anywhere in the app; they arrive in the billing payload. Keep that
