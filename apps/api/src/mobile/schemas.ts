@@ -345,6 +345,11 @@ export const mobileCreationMessageBodySchema = z
     message: "Send a message or an attachment."
   });
 
+export const mobileChatArchiveBodySchema = z.object({ archived: z.boolean() }).strict();
+export const mobileChatArchiveOpenApiBody = toOpenApiRequestBody(mobileChatArchiveBodySchema);
+export const mobileChatListQuerySchema = z.object({ archived: z.enum(["true", "false"]).default("false") });
+export const mobileChatListOpenApiQuery = toOpenApiRequestBody(mobileChatListQuerySchema);
+
 export const mobileCreationSessionStartBodySchema = z
   .object({
     message: z.string().trim().min(1).max(4000).optional(),

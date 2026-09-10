@@ -93,7 +93,7 @@ describe("mobile creation drafts and advisor", () => {
       payload: { brief: expect.objectContaining({ topic: "Pricing guide", audience: "solo consultants" }) }
     });
     expect(mockPrisma.mobileCreationDraft.findFirst).toHaveBeenCalledWith({
-      where: { userId: "user-a", status: "ACTIVE" },
+      where: { userId: "user-a", status: "ACTIVE", archived: false },
       orderBy: { updatedAt: "desc" }
     });
     expect(rejected.statusCode).toBe(400);

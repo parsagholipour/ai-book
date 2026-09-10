@@ -162,6 +162,7 @@ export type MobileCreationSessionDto = {
   revision: number;
   title: string;
   status: string;
+  archived: boolean;
   messages: MobileCreationMessageDto[];
   createdProjectId: string | null;
   activeProjectId: string | null;
@@ -207,6 +208,8 @@ export type MobileCreationConversationResponseDto = {
   session: MobileCreationSessionDto | null;
   turn: MobileCreationTurn;
 };
+
+export type MobileChatArchiveResponseDto = { ok: true; archived: boolean };
 
 export type MobileBookAdvisorResponseDto = {
   advisor: MobileBookAdvisorResponse;

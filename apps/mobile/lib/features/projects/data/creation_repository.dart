@@ -7,6 +7,13 @@ import '../domain/creation_models.dart';
 abstract interface class CreationRepository {
   Future<List<MobileChatSession>> listSessions();
 
+  Future<List<MobileChatSession>> listArchivedSessions();
+
+  Future<void> setSessionArchived({
+    required String draftId,
+    required bool archived,
+  });
+
   Future<MobileCreationDraft?> getActiveDraft();
 
   Future<MobileCreationDraft> createDraft(MobileCreationDraftPayload payload);
@@ -107,8 +114,19 @@ class MobileCreationRepository implements CreationRepository {
   final ApiClient apiClient;
 
   @override
-  Future<List<MobileChatSession>> listSessions() async {
-    final data = await apiClient.getMap('/api/mobile/creation-sessions');
+  Future<List<MobileChatSession>> listSessions() =>
+      _listSessions(archived: false);
+
+  @override
+  Future<List<MobileChatSession>> listArchivedSessions() =>
+      _listSessions(archived: true);
+
+  Future<List<MobileChatSession>> _listSessions({
+    required bool archived,
+  }) async {
+    final data = await apiClient.getMap(
+      '/api/mobile/creation-sessions${archived ? '?archived=true' : ''}',
+    );
     final list = data['sessions'] as List<dynamic>;
     final sessions = list
         .cast<Map<String, dynamic>>()
@@ -118,6 +136,17 @@ class MobileCreationRepository implements CreationRepository {
     // by row updatedAt (which builds and copies bump without a new message).
     sessions.sort((a, b) => b.lastMessageAt.compareTo(a.lastMessageAt));
     return sessions;
+  }
+
+  @override
+  Future<void> setSessionArchived({
+    required String draftId,
+    required bool archived,
+  }) async {
+    await apiClient.patchJson(
+      '/api/mobile/creation-sessions/$draftId/archive',
+      data: {'archived': archived},
+    );
   }
 
   @override
@@ -384,7 +413,11 @@ class MobileCreationRepository implements CreationRepository {
 
 class CreationConversationCache {
   final _byDraftId = <String, MobileCreationConversationResponse>{};
+  final _archivedOverrides = <String, bool>{};
   String? _activeDraftId;
+  int _archiveGeneration = 0;
+
+  int get archiveGeneration => _archiveGeneration;
 
   MobileCreationConversationResponse? readById(String draftId) {
     return _byDraftId[draftId];
@@ -395,13 +428,57 @@ class CreationConversationCache {
     return draftId == null ? null : _byDraftId[draftId];
   }
 
+  bool? archivedOverride(String draftId) => _archivedOverrides[draftId];
+
+  void setArchived(String draftId, bool archived) {
+    _archiveGeneration++;
+    _archivedOverrides[draftId] = archived;
+    final current = _byDraftId[draftId];
+    final session = current?.session;
+    if (current != null && session != null) {
+      _byDraftId[draftId] = _withArchived(current, archived);
+      _electActive(draftId, status: session.status, archived: archived);
+      return;
+    }
+    if (archived && _activeDraftId == draftId) {
+      _activeDraftId = null;
+    }
+  }
+
+  void clearArchivedOverride(String draftId) {
+    _archivedOverrides.remove(draftId);
+  }
+
   void write(MobileCreationConversationResponse response) {
     final session = response.session;
     if (session == null) return;
-    _byDraftId[session.draftId] = response;
-    if (session.status == 'ACTIVE') {
-      _activeDraftId = session.draftId;
+    final archived = _archivedOverrides[session.draftId] ?? session.archived;
+    _byDraftId[session.draftId] = _withArchived(response, archived);
+    _electActive(session.draftId, status: session.status, archived: archived);
+  }
+
+  void _electActive(
+    String draftId, {
+    required String status,
+    required bool archived,
+  }) {
+    if (status == 'ACTIVE' && !archived) {
+      _activeDraftId = draftId;
+    } else if (_activeDraftId == draftId) {
+      _activeDraftId = null;
     }
+  }
+
+  MobileCreationConversationResponse _withArchived(
+    MobileCreationConversationResponse response,
+    bool archived,
+  ) {
+    final session = response.session;
+    if (session == null || session.archived == archived) return response;
+    return MobileCreationConversationResponse(
+      turn: response.turn,
+      session: session.copyWith(archived: archived),
+    );
   }
 
   void updateTitle({required String draftId, required String title}) {
@@ -410,18 +487,7 @@ class CreationConversationCache {
     if (current == null || session == null) return;
     _byDraftId[draftId] = MobileCreationConversationResponse(
       turn: current.turn,
-      session: MobileCreationSession(
-        draftId: session.draftId,
-        revision: session.revision,
-        title: title,
-        status: session.status,
-        messages: session.messages,
-        createdProjectId: session.createdProjectId,
-        activeProjectId: session.activeProjectId,
-        outputs: session.outputs,
-        attachments: session.attachments,
-        updatedAt: session.updatedAt,
-      ),
+      session: session.copyWith(title: title),
     );
   }
 
@@ -446,3 +512,37 @@ final creationConversationCacheProvider = Provider<CreationConversationCache>((
 final chatSessionsProvider = FutureProvider<List<MobileChatSession>>((ref) {
   return ref.watch(creationRepositoryProvider).listSessions();
 });
+
+final archivedChatSessionsProvider = FutureProvider<List<MobileChatSession>>((
+  ref,
+) {
+  return ref.watch(creationRepositoryProvider).listArchivedSessions();
+});
+
+void invalidateChatSessionLists(Ref ref) {
+  ref.invalidate(chatSessionsProvider);
+  ref.invalidate(archivedChatSessionsProvider);
+}
+
+/// Refresh both lists even if the initiating widget closes during the request.
+final chatArchiveActionsProvider = Provider<ChatArchiveActions>(
+  ChatArchiveActions.new,
+);
+
+class ChatArchiveActions {
+  ChatArchiveActions(this.ref);
+
+  final Ref ref;
+
+  Future<void> setArchived({
+    required String draftId,
+    required bool archived,
+  }) async {
+    await ref
+        .read(creationRepositoryProvider)
+        .setSessionArchived(draftId: draftId, archived: archived);
+    if (!ref.mounted) return;
+    ref.read(creationConversationCacheProvider).setArchived(draftId, archived);
+    invalidateChatSessionLists(ref);
+  }
+}

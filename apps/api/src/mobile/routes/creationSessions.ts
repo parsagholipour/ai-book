@@ -45,12 +45,17 @@ import {
 import {
   type MobileCreationBuildPreflightResponseDto,
   type MobileCreationConversationResponseDto,
+  type MobileChatArchiveResponseDto,
 } from "../dto.js";
 import { hitAuthenticatedLimit, hitTieredLimit, requireMobileAuth, sendMobileError } from "../httpErrors.js";
 import {
   DEFAULT_CREATION_TURN_TIMEOUT_MS,
   idParamsSchema,
   mobileAuthError,
+  mobileChatArchiveBodySchema,
+  mobileChatArchiveOpenApiBody,
+  mobileChatListOpenApiQuery,
+  mobileChatListQuerySchema,
   mobileCreationBranchBodySchema,
   mobileCreationBranchOpenApiBody,
   mobileCreationBuildBodySchema,
@@ -85,16 +90,29 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
 
   fastify.get(
     "/api/mobile/creation-sessions",
-    { schema: { tags: ["mobile"], response: { 401: mobileAuthError } } },
+    {
+      attachValidation: true,
+      schema: {
+        tags: ["mobile"],
+        querystring: mobileChatListOpenApiQuery,
+        response: { 400: mobileAuthError, 401: mobileAuthError }
+      }
+    },
     async (request, reply) => {
       const auth = await requireMobileAuth(request, reply);
       if (!auth) {
         return;
       }
+      const query = mobileChatListQuerySchema.safeParse(request.query);
+      if (!query.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Choose active or archived chats.");
+      }
+      const archived = query.data.archived === "true";
       const drafts = await prisma.mobileCreationDraft.findMany({
-        where: { userId: auth.user.id },
+        where: { userId: auth.user.id, archived },
         orderBy: { updatedAt: "desc" },
-        take: 100,
+        // Every archived chat must remain reachable from Account.
+        ...(!archived ? { take: 100 } : {}),
         include: mobileCreationDraftOutputsInclude()
       });
       const sessions = drafts.flatMap((draft) => {
@@ -113,6 +131,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
           preview,
           messageCount: messages.length,
           status: draft.status,
+          archived: draft.archived,
           createdProjectId: draft.createdProjectId,
           activeProjectId: activeProjectIdForDraft(draft, outputs),
           outputs,
@@ -139,7 +158,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
         return;
       }
       const draft = await prisma.mobileCreationDraft.findFirst({
-        where: { userId: auth.user.id, status: "ACTIVE" },
+        where: { userId: auth.user.id, status: "ACTIVE", archived: false },
         orderBy: { updatedAt: "desc" },
         include: mobileCreationDraftOutputsInclude()
       });
@@ -610,6 +629,42 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
   );
 
   await registerMobileCreationAttachmentRoutes(fastify, context);
+
+  fastify.patch(
+    "/api/mobile/creation-sessions/:id/archive",
+    {
+      attachValidation: true,
+      // Keep JSON null/strings from being coerced into an archive decision.
+      validatorCompiler: () => (data) => {
+        const parsed = mobileChatArchiveBodySchema.safeParse(data);
+        return parsed.success ? { value: parsed.data } : { error: parsed.error };
+      },
+      schema: {
+        tags: ["mobile"],
+        body: mobileChatArchiveOpenApiBody,
+        response: { 400: mobileAuthError, 401: mobileAuthError, 404: mobileAuthError }
+      }
+    },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) return;
+      const { id } = idParamsSchema.parse(request.params);
+      const parsed = mobileChatArchiveBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Choose whether to archive this chat.");
+      }
+      // Archive state is independent of the transcript revision and lifecycle:
+      // an in-flight reply or build must neither conflict with nor undo it.
+      const result = await prisma.mobileCreationDraft.updateMany({
+        where: { id, userId: auth.user.id },
+        data: { archived: parsed.data.archived }
+      });
+      if (result.count === 0) {
+        return sendMobileError(reply, 404, "NOT_FOUND", "Chat session not found.");
+      }
+      return { ok: true, archived: parsed.data.archived } satisfies MobileChatArchiveResponseDto;
+    }
+  );
 
   fastify.patch(
     "/api/mobile/creation-sessions/:id/title",

@@ -69,28 +69,46 @@ class CreationChatController extends Notifier<CreationChatState>
     }
     try {
       if (draftId != null) {
+        final archiveGeneration = _cache.archiveGeneration;
         final resumed = await _repository.resumeConversationById(draftId);
-        _cache.write(resumed);
         if (!_canApplyInitResponse(
           requestId: requestId,
           messageRequestId: messageRequestId,
           expectedDraftId: cached == null ? null : draftId,
         )) {
+          _cache.write(resumed);
           return;
         }
+        if (archiveGeneration == _cache.archiveGeneration) {
+          _cache.clearArchivedOverride(draftId);
+        }
+        _cache.write(resumed);
         _applyConversation(resumed, initializing: false);
         return;
       }
       if (!fresh) {
+        final archiveGeneration = _cache.archiveGeneration;
         final resumed = await _repository.resumeConversation();
-        _cache.write(resumed);
         if (!_canApplyInitResponse(
           requestId: requestId,
           messageRequestId: messageRequestId,
           expectedDraftId: cached?.session?.draftId,
         )) {
+          _cache.write(resumed);
           return;
         }
+        final generationChanged = archiveGeneration != _cache.archiveGeneration;
+        final resumedId = resumed.session?.draftId;
+        if (generationChanged &&
+            state.archived &&
+            (resumedId == null || resumedId != state.draftId)) {
+          state = state.copyWith(initializing: false);
+          return;
+        }
+        if (!generationChanged && resumedId != null) {
+          _cache.clearArchivedOverride(resumedId);
+        }
+        _cache.write(resumed);
         _applyConversation(resumed, initializing: false);
         return;
       }
@@ -266,7 +284,7 @@ class CreationChatController extends Notifier<CreationChatState>
           allowBuildRequest: true,
         );
       }
-      ref.invalidate(chatSessionsProvider);
+      invalidateChatSessionLists(ref);
     } catch (error) {
       if (isNewChat) {
         pendingSessions.remove(localId);
@@ -342,7 +360,7 @@ class CreationChatController extends Notifier<CreationChatState>
         expectedRevision: state.sessionRevision,
       );
       _cache.write(response);
-      ref.invalidate(chatSessionsProvider);
+      invalidateChatSessionLists(ref);
       if (requestId != _messageRequestId || state.draftId != draftId) return;
       _applyConversation(response, assistantTyping: false);
       if (failedLocals.isNotEmpty) {
@@ -459,7 +477,7 @@ class CreationChatController extends Notifier<CreationChatState>
           allowBuildRequest: true,
         );
       }
-      ref.invalidate(chatSessionsProvider);
+      invalidateChatSessionLists(ref);
     } catch (error) {
       if (isNewChat) {
         pendingSessions.remove(localId);
@@ -643,7 +661,7 @@ class CreationChatController extends Notifier<CreationChatState>
       if (state.draftId == null) {
         _applyConversation(response, initializing: false);
       }
-      ref.invalidate(chatSessionsProvider);
+      invalidateChatSessionLists(ref);
       final draftId = response.session?.draftId ?? state.draftId;
       if (draftId == null) {
         throw const ApiException(
@@ -724,7 +742,7 @@ class CreationChatController extends Notifier<CreationChatState>
         sessionRevision: response.sessionRevision ?? state.sessionRevision,
       );
       _cacheCreatedProject(response.project.id, response.output);
-      ref.invalidate(chatSessionsProvider);
+      invalidateChatSessionLists(ref);
       return response;
     } catch (error) {
       if (_isSessionConflict(error)) {
@@ -780,6 +798,11 @@ class CreationChatController extends Notifier<CreationChatState>
     }
   }
 
+  void setArchived(bool archived) {
+    if (state.archived == archived) return;
+    state = state.copyWith(archived: archived);
+  }
+
   void selectOutput(String projectId) {
     if (projectId.trim().isEmpty) return;
     state = state.copyWith(
@@ -833,9 +856,13 @@ class CreationChatController extends Notifier<CreationChatState>
     List<MobileCreationMessage> failedMessages = const [],
   }) async {
     try {
+      final archiveGeneration = _cache.archiveGeneration;
       final latest = await _repository.resumeConversationById(draftId);
       if (state.draftId != draftId) {
         return false;
+      }
+      if (archiveGeneration == _cache.archiveGeneration) {
+        _cache.clearArchivedOverride(draftId);
       }
       _cache.write(latest);
       _applyConversation(latest, assistantTyping: false);
@@ -844,7 +871,7 @@ class CreationChatController extends Notifier<CreationChatState>
         initError:
             'This chat changed on another device. I reloaded the latest version; your unsent message is still available to retry.',
       );
-      ref.invalidate(chatSessionsProvider);
+      invalidateChatSessionLists(ref);
       return true;
     } catch (_) {
       return false;
@@ -907,18 +934,7 @@ class CreationChatController extends Notifier<CreationChatState>
     _cache.write(
       MobileCreationConversationResponse(
         turn: current?.turn ?? response.turn,
-        session: MobileCreationSession(
-          draftId: session.draftId,
-          revision: session.revision,
-          title: session.title,
-          status: session.status,
-          messages: session.messages,
-          createdProjectId: session.createdProjectId,
-          activeProjectId: session.activeProjectId,
-          outputs: outputs,
-          attachments: session.attachments,
-          updatedAt: session.updatedAt,
-        ),
+        session: session.copyWith(outputs: outputs),
       ),
     );
   }
@@ -938,17 +954,10 @@ class CreationChatController extends Notifier<CreationChatState>
     _cache.write(
       MobileCreationConversationResponse(
         turn: current.turn,
-        session: MobileCreationSession(
-          draftId: session.draftId,
-          revision: session.revision,
-          title: session.title,
-          status: session.status,
-          messages: session.messages,
+        session: session.copyWith(
           createdProjectId: projectId,
           activeProjectId: projectId,
           outputs: outputs,
-          attachments: session.attachments,
-          updatedAt: session.updatedAt,
         ),
       ),
     );
@@ -997,6 +1006,11 @@ class CreationChatController extends Notifier<CreationChatState>
             for (final attachment in session.attachments)
               if (attachment.url != null) attachment.id: attachment.url!,
           };
+    final draftId = session?.draftId ?? state.draftId;
+    final archived =
+        (draftId == null ? null : _cache.archivedOverride(draftId)) ??
+        session?.archived ??
+        state.archived;
     state = state.copyWith(
       pendingAttachments: pendingAttachments,
       attachmentUrls: attachmentUrls,
@@ -1005,6 +1019,7 @@ class CreationChatController extends Notifier<CreationChatState>
       draftId: session?.draftId ?? state.draftId,
       sessionRevision: session?.revision,
       sessionTitle: session?.title,
+      archived: archived,
       messages: messages,
       createdProjectId: session?.createdProjectId,
       brief: turn.brief,

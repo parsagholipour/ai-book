@@ -49,7 +49,7 @@ export async function registerMobileCreationDraftRoutes(fastify: FastifyInstance
         return;
       }
       const draft = await prisma.mobileCreationDraft.findFirst({
-        where: { userId: auth.user.id, status: "ACTIVE" },
+        where: { userId: auth.user.id, status: "ACTIVE", archived: false },
         orderBy: { updatedAt: "desc" }
       });
       return { draft: serializeCreationDraft(draft) } satisfies MobileCreationDraftResponseDto;

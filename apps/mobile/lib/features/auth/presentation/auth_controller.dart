@@ -79,6 +79,7 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     // previous account's list.
     ref.invalidate(projectsProvider, asReload: true);
     ref.invalidate(chatSessionsProvider, asReload: true);
+    ref.invalidate(archivedChatSessionsProvider, asReload: true);
     ref.invalidate(creationConversationCacheProvider);
     state = const AsyncData(null);
   }

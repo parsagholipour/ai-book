@@ -716,6 +716,7 @@ model MobileCreationDraft {
   revision         Int      @default(1)
   createdProjectId String?
   status           String   @default("ACTIVE")
+  archived         Boolean  @default(false)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -724,6 +725,7 @@ model MobileCreationDraft {
   sources SourceDocument[]
 
   @@index([userId, status, updatedAt])
+  @@index([userId, archived, updatedAt])
   @@index([createdProjectId])
 }
 

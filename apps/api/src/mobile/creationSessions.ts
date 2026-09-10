@@ -174,6 +174,7 @@ export function serializeCreationSession(
   draft: {
     id: string;
     status: string;
+    archived?: boolean;
     payload: unknown;
     createdProjectId: string | null;
     updatedAt: Date;
@@ -190,6 +191,7 @@ export function serializeCreationSession(
     revision: draft.revision ?? 1,
     title: payload.success ? _chatTitleForPayload(payload.data) : "New book",
     status: draft.status,
+    archived: draft.archived ?? false,
     messages: serializeCreationMessages(messages),
     createdProjectId: draft.createdProjectId,
     activeProjectId: activeProjectIdForDraft(draft, outputs),

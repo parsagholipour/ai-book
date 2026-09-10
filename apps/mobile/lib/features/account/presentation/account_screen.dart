@@ -15,6 +15,7 @@ import '../../billing/presentation/billing_paywall.dart';
 import '../../billing/presentation/billing_tier_style.dart';
 import '../../billing/presentation/play_subscriptions_link.dart';
 import '../data/account_repository.dart';
+import 'archived_chats_screen.dart';
 
 class AccountScreen extends ConsumerStatefulWidget {
   const AccountScreen({super.key});
@@ -47,6 +48,8 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
             onAddCredits: _openBillingPaywall,
             onRetry: () => ref.invalidate(billingProvider),
           ),
+          const SizedBox(height: 12),
+          const AccountArchivedChatsCard(),
           const SizedBox(height: 12),
           AccountPrivacyControls(
             config: config,

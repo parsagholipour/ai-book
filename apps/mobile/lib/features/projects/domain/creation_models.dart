@@ -1,6 +1,8 @@
 import 'creation_message_models.dart';
 import 'project_models.dart';
 
+export 'chat_session_models.dart';
+
 class MobileCreationOptionalDetails {
   const MobileCreationOptionalDetails({
     this.title = '',
@@ -600,6 +602,7 @@ class MobileCreationSession {
     required this.messages,
     required this.updatedAt,
     this.revision = 1,
+    this.archived = false,
     this.outputs = const [],
     this.attachments = const [],
     this.createdProjectId,
@@ -608,6 +611,7 @@ class MobileCreationSession {
 
   final String draftId;
   final int revision;
+  final bool archived;
   final String title;
   final String status;
   final List<MobileCreationMessage> messages;
@@ -626,6 +630,7 @@ class MobileCreationSession {
     return MobileCreationSession(
       draftId: json['draftId'] as String,
       revision: json['revision'] as int? ?? 1,
+      archived: json['archived'] as bool? ?? false,
       title: json['title'] as String? ?? 'New book',
       status: json['status'] as String,
       messages: messages
@@ -652,6 +657,34 @@ class MobileCreationSession {
           )
           .toList(),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
+    );
+  }
+
+  MobileCreationSession copyWith({
+    String? draftId,
+    int? revision,
+    bool? archived,
+    String? title,
+    String? status,
+    List<MobileCreationMessage>? messages,
+    String? createdProjectId,
+    String? activeProjectId,
+    List<MobileCreationOutput>? outputs,
+    List<MobileCreationAttachment>? attachments,
+    DateTime? updatedAt,
+  }) {
+    return MobileCreationSession(
+      draftId: draftId ?? this.draftId,
+      revision: revision ?? this.revision,
+      archived: archived ?? this.archived,
+      title: title ?? this.title,
+      status: status ?? this.status,
+      messages: messages ?? this.messages,
+      createdProjectId: createdProjectId ?? this.createdProjectId,
+      activeProjectId: activeProjectId ?? this.activeProjectId,
+      outputs: outputs ?? this.outputs,
+      attachments: attachments ?? this.attachments,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 }
@@ -808,65 +841,6 @@ class MobileCreationFinalizeResponse {
           ? null
           : MobilePlanOperation.fromJson(operation as Map<String, dynamic>),
       sessionRevision: json['sessionRevision'] as int?,
-    );
-  }
-}
-
-class MobileChatSession {
-  const MobileChatSession({
-    required this.draftId,
-    required this.title,
-    required this.preview,
-    required this.messageCount,
-    required this.status,
-    required this.createdAt,
-    required this.updatedAt,
-    DateTime? lastMessageAt,
-    this.outputs = const [],
-    this.createdProjectId,
-    this.activeProjectId,
-  }) : lastMessageAt = lastMessageAt ?? updatedAt;
-
-  final String draftId;
-  final String title;
-  final String preview;
-  final int messageCount;
-  final String status;
-  final String? createdProjectId;
-  final String? activeProjectId;
-  final List<MobileCreationOutput> outputs;
-  final DateTime createdAt;
-  final DateTime updatedAt;
-
-  /// Time of the last conversation turn; unlike [updatedAt] it is not bumped
-  /// by builds or other background updates, so lists order by it.
-  final DateTime lastMessageAt;
-
-  bool get isActive => status == 'ACTIVE';
-
-  factory MobileChatSession.fromJson(Map<String, dynamic> json) {
-    final outputs = json['outputs'] as List<dynamic>? ?? const [];
-    return MobileChatSession(
-      draftId: json['draftId'] as String,
-      title: json['title'] as String,
-      preview: json['preview'] as String,
-      messageCount: json['messageCount'] as int,
-      status: json['status'] as String,
-      createdProjectId: json['createdProjectId'] as String?,
-      activeProjectId:
-          json['activeProjectId'] as String? ??
-          json['createdProjectId'] as String?,
-      outputs: outputs
-          .map(
-            (output) =>
-                MobileCreationOutput.fromJson(output as Map<String, dynamic>),
-          )
-          .toList(),
-      createdAt: DateTime.parse(json['createdAt'] as String),
-      updatedAt: DateTime.parse(json['updatedAt'] as String),
-      lastMessageAt: json['lastMessageAt'] is String
-          ? DateTime.parse(json['lastMessageAt'] as String)
-          : null,
     );
   }
 }

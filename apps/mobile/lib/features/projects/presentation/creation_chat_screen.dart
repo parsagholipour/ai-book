@@ -12,6 +12,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'chat_archive_feedback.dart';
 import 'chat_history_drawer.dart';
 import 'creation_chat_navigation.dart';
 import '../../billing/presentation/message_allowance_banner.dart';
@@ -138,6 +139,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
   Timer? _stickScrollTimer;
   Object? _lastScrollTrigger;
   bool _stickToBottom = true;
+  bool _restoring = false;
   bool _projectChatBranchSwitching = false;
   final Set<String> _requestedReplanCopyOutputSyncs = <String>{};
 
@@ -193,6 +195,26 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
         );
       }),
     );
+  }
+
+  Future<void> _restoreArchivedChat() async {
+    if (_restoring) return;
+    final draftId = ref.read(creationChatControllerProvider).draftId;
+    if (draftId == null) return;
+    setState(() => _restoring = true);
+    try {
+      final restored = await setChatArchivedWithFeedback(
+        ref: ref,
+        messenger: ScaffoldMessenger.of(context),
+        draftId: draftId,
+        archived: false,
+      );
+      if (restored && mounted) {
+        ref.read(creationChatControllerProvider.notifier).setArchived(false);
+      }
+    } finally {
+      if (mounted) setState(() => _restoring = false);
+    }
   }
 
   void _resetLocalConversationState() {
@@ -397,6 +419,12 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                                 .where((entry) => entry.attachment != null)
                                 .map((entry) => entry.attachment!.id),
                           },
+                        ),
+                      if (state.archived)
+                        ArchivedChatBanner(
+                          onRestore: _restoring
+                              ? null
+                              : () => unawaited(_restoreArchivedChat()),
                         ),
                       if (state.warnings.isNotEmpty)
                         _ChatWarningsBanner(warnings: state.warnings),

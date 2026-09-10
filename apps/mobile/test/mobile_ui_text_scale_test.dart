@@ -349,6 +349,15 @@ class _FakeCreationRepository implements CreationRepository {
   Future<List<MobileChatSession>> listSessions() async => const [];
 
   @override
+  Future<List<MobileChatSession>> listArchivedSessions() async => const [];
+
+  @override
+  Future<void> setSessionArchived({
+    required String draftId,
+    required bool archived,
+  }) async {}
+
+  @override
   Future<void> renameSession({
     required String draftId,
     required String title,

@@ -14,6 +14,7 @@ import '../../characters/presentation/character_library_screen.dart';
 import '../data/creation_repository.dart';
 import '../domain/creation_models.dart';
 import 'book_shelf.dart';
+import 'chat_archive_feedback.dart';
 import 'chat_session_activity.dart';
 import 'creation_chat_controller.dart';
 import 'creation_chat_navigation.dart';
@@ -333,6 +334,7 @@ class _ChatList extends StatelessWidget {
                 itemBuilder: (context, index) {
                   final session = group.sessions[index];
                   return _ChatTile(
+                    key: ValueKey(session.draftId),
                     session: session,
                     isSelected: session.draftId == activeDraftId,
                   );
@@ -505,7 +507,7 @@ class _PendingChatTile extends StatelessWidget {
 }
 
 class _ChatTile extends ConsumerStatefulWidget {
-  const _ChatTile({required this.session, required this.isSelected});
+  const _ChatTile({required this.session, required this.isSelected, super.key});
 
   final MobileChatSession session;
   final bool isSelected;
@@ -515,6 +517,8 @@ class _ChatTile extends ConsumerStatefulWidget {
 }
 
 class _ChatTileState extends ConsumerState<_ChatTile> {
+  bool _archiving = false;
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
@@ -582,10 +586,12 @@ class _ChatTileState extends ConsumerState<_ChatTile> {
                 )
               : null,
           onTap: () => _open(context),
-          onLongPress: () {
-            AppHaptics.longPress();
-            _showOptions(context);
-          },
+          onLongPress: _archiving
+              ? null
+              : () {
+                  AppHaptics.longPress();
+                  _showOptions(context);
+                },
         ),
       ),
     );
@@ -609,6 +615,14 @@ class _ChatTileState extends ConsumerState<_ChatTile> {
             onTap: () {
               Navigator.of(ctx).pop();
               _showRenameDialog(context);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.archive_outlined),
+            title: const Text('Archive'),
+            onTap: () {
+              Navigator.of(ctx).pop();
+              _archive();
             },
           ),
           ListTile(
@@ -693,6 +707,21 @@ class _ChatTileState extends ConsumerState<_ChatTile> {
       destructive: true,
     );
     if (confirmed && mounted) await _doDelete();
+  }
+
+  Future<void> _archive() async {
+    if (_archiving) return;
+    setState(() => _archiving = true);
+    try {
+      await setChatArchivedWithFeedback(
+        ref: ref,
+        messenger: ScaffoldMessenger.of(context),
+        draftId: widget.session.draftId,
+        archived: true,
+      );
+    } finally {
+      if (mounted) setState(() => _archiving = false);
+    }
   }
 
   Future<void> _doDelete() async {

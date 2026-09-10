@@ -116,6 +116,7 @@ class CreationChatState {
     this.draftId,
     this.sessionTitle,
     this.sessionRevision = 1,
+    this.archived = false,
     this.messages = const <MobileCreationMessage>[],
     this.assistantTyping = false,
     this.buildPhase = CreationBuildPhase.idle,
@@ -150,6 +151,7 @@ class CreationChatState {
   final String? draftId;
   final String? sessionTitle;
   final int sessionRevision;
+  final bool archived;
   final List<MobileCreationMessage> messages;
   final bool assistantTyping;
   final CreationBuildPhase buildPhase;
@@ -232,6 +234,7 @@ class CreationChatState {
     String? draftId,
     Object? sessionTitle = _sentinel,
     int? sessionRevision,
+    bool? archived,
     List<MobileCreationMessage>? messages,
     bool? assistantTyping,
     CreationBuildPhase? buildPhase,
@@ -268,6 +271,7 @@ class CreationChatState {
           ? this.sessionTitle
           : sessionTitle as String?,
       sessionRevision: sessionRevision ?? this.sessionRevision,
+      archived: archived ?? this.archived,
       messages: messages ?? this.messages,
       assistantTyping: assistantTyping ?? this.assistantTyping,
       buildPhase: buildPhase ?? this.buildPhase,

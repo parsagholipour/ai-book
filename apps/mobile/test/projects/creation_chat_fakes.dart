@@ -58,9 +58,19 @@ class ScriptedCreationRepository implements CreationRepository {
   ];
   Future<void>? resumeByIdGate;
 
+  /// When set, `/creation-sessions/active` waits on this before responding.
+  Future<void>? resumeGate;
+
+  /// When set, `/home` resume returns this instead of the first unarchived
+  /// session (or the greeting when none remain).
+  MobileCreationConversationResponse? resumeConversationResult;
+
   /// When set, message sends (including the one starting a new chat) wait on
   /// this before responding; completing it with an error fails the send.
   Future<void>? sendGate;
+
+  /// When set, archive/restore waits on this before applying the change.
+  Future<void>? changeGate;
   int listSessionsCalls = 0;
   final List<MobileChatSession> sessions;
   final sentMessages = <String>[];
@@ -94,6 +104,7 @@ class ScriptedCreationRepository implements CreationRepository {
   MobileCreationOptionalDetails? buildOptionalDetails;
   String? buildDraftId;
   int buildCount = 0;
+  final archiveChanges = <({String draftId, bool archived})>[];
 
   /// Overrides the title the build response stamps on its output — the real
   /// server snapshots "Untitled Book" there until the plan chooses a name.
@@ -102,7 +113,37 @@ class ScriptedCreationRepository implements CreationRepository {
   @override
   Future<List<MobileChatSession>> listSessions() async {
     listSessionsCalls++;
-    return List.of(sessions);
+    return List.of(sessions.where((session) => !session.archived));
+  }
+
+  @override
+  Future<List<MobileChatSession>> listArchivedSessions() async =>
+      List.of(sessions.where((session) => session.archived));
+
+  @override
+  Future<void> setSessionArchived({
+    required String draftId,
+    required bool archived,
+  }) async {
+    archiveChanges.add((draftId: draftId, archived: archived));
+    await changeGate;
+    final index = sessions.indexWhere((session) => session.draftId == draftId);
+    if (index < 0) return;
+    final current = sessions[index];
+    sessions[index] = MobileChatSession(
+      draftId: current.draftId,
+      title: current.title,
+      preview: current.preview,
+      messageCount: current.messageCount,
+      status: current.status,
+      createdAt: current.createdAt,
+      updatedAt: current.updatedAt,
+      lastMessageAt: current.lastMessageAt,
+      archived: archived,
+      outputs: current.outputs,
+      createdProjectId: current.createdProjectId,
+      activeProjectId: current.activeProjectId,
+    );
   }
 
   @override
@@ -117,6 +158,16 @@ class ScriptedCreationRepository implements CreationRepository {
 
   @override
   Future<MobileCreationConversationResponse> resumeConversation() async {
+    await resumeGate;
+    final scripted = resumeConversationResult;
+    if (scripted != null) {
+      return scripted;
+    }
+    for (final session in sessions) {
+      if (!session.archived) {
+        return resumeConversationById(session.draftId);
+      }
+    }
     return MobileCreationConversationResponse.fromJson({
       'turn': turnJson(
         assistantMessage: greeting,
@@ -145,6 +196,7 @@ class ScriptedCreationRepository implements CreationRepository {
         'draftId': draftId,
         'title': session?.title ?? 'Title for $draftId',
         'status': session?.status ?? 'ACTIVE',
+        'archived': session?.archived ?? false,
         'messages':
             resumeMessages[draftId] ??
             [

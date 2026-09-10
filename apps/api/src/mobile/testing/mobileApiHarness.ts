@@ -782,6 +782,7 @@ export function creationDraftRecord(overrides: Record<string, unknown> = {}) {
     advisorSnapshot: null,
     createdProjectId: null,
     status: "ACTIVE",
+    archived: false,
     createdAt: new Date("2026-06-15T12:00:00.000Z"),
     updatedAt: new Date("2026-06-15T12:00:00.000Z"),
     ...overrides
