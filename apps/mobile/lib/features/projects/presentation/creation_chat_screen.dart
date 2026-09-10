@@ -494,7 +494,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                                       )
                                       .retryFailedMessage(localId);
                                 } catch (error) {
-                                  if (mounted) {
+                                  if (context.mounted) {
                                     await handleMessageAllowanceError(
                                       context,
                                       ref,
@@ -555,7 +555,6 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                       // registered, or silently de-registered — which is how a
                       // book came to invent its own version of a saved
                       // character with nothing on screen to warn anyone.
-                      const MessageAllowanceBanner(),
                       MentionChipsRow(mentions: _attachedMentions),
                       // Above whichever footer is active: the same composer
                       // serves both stages, so one strip serves both too.

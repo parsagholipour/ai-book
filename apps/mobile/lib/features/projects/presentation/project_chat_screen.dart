@@ -438,7 +438,6 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
                   ),
                 ),
               ),
-              const MessageAllowanceBanner(),
               ProjectChatComposerBar(
                 controller: _controller,
                 sending: _sending || _editing,

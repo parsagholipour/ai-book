@@ -36,7 +36,7 @@ Future<bool> _checkMessageAllowance(BuildContext context, WidgetRef ref) async {
     return true;
   }
   // A second device or an admin may have restored the allowance while this
-  // banner kept the provider alive. Refresh before making a local refusal.
+  // screen kept the provider alive. Refresh before making a local refusal.
   try {
     final latest = await ref.refresh(billingProvider.future);
     if (!context.mounted) return false;
@@ -46,6 +46,16 @@ Future<bool> _checkMessageAllowance(BuildContext context, WidgetRef ref) async {
         (!current.isExhausted &&
             latest.credits.available >= current.creditsPerMessage)) {
       return true;
+    }
+    if (!current.isExhausted) {
+      await showBillingPaywall(
+        context,
+        creditsNeeded: PaywallCreditsNeeded(
+          credits: current.creditsPerMessage,
+          reason: 'Sending this message.',
+        ),
+      );
+      return false;
     }
   } catch (_) {
     // Let the actual send report any connectivity failure; cached data cannot
@@ -63,10 +73,17 @@ Future<void> handleMessageAllowanceError(
   Object error,
 ) async {
   ref.invalidate(billingProvider);
-  if (error is ApiException &&
-      (error.code == 'MESSAGE_LIMIT_REACHED' ||
-          error.code == 'INSUFFICIENT_CREDITS')) {
+  if (error is! ApiException) return;
+  if (error.code == 'MESSAGE_LIMIT_REACHED') {
     await showMessageAllowance(context);
+  } else if (error.code == 'INSUFFICIENT_CREDITS') {
+    await showBillingPaywall(
+      context,
+      creditsNeeded: PaywallCreditsNeeded.fromApiError(
+        error,
+        reason: 'Sending this message.',
+      ),
+    );
   }
 }
 
