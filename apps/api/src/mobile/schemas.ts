@@ -347,7 +347,12 @@ export const mobileCreationMessageBodySchema = z
 
 export const mobileChatArchiveBodySchema = z.object({ archived: z.boolean() }).strict();
 export const mobileChatArchiveOpenApiBody = toOpenApiRequestBody(mobileChatArchiveBodySchema);
-export const mobileChatListQuerySchema = z.object({ archived: z.enum(["true", "false"]).default("false") });
+export const mobileChatListQuerySchema = z.object({
+  archived: z.enum(["true", "false"]).default("false"),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  cursor: z.string().min(1).max(2048).optional(),
+  q: z.string().trim().max(200).optional()
+});
 export const mobileChatListOpenApiQuery = toOpenApiRequestBody(mobileChatListQuerySchema);
 
 export const mobileCreationSessionStartBodySchema = z

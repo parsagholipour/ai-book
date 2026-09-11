@@ -1,3 +1,4 @@
+import 'chat_session_page_fixture.dart';
 import 'package:tomeza/features/projects/data/creation_repository.dart';
 import 'package:tomeza/features/projects/domain/creation_message_models.dart';
 import 'package:tomeza/features/projects/domain/creation_models.dart';
@@ -11,7 +12,9 @@ export 'plan_projects_repository_fake.dart';
 // The scripted repositories the creation-chat suites run against.
 // Fixtures they build live in creation_chat_harness.dart.
 
-class ScriptedCreationRepository implements CreationRepository {
+class ScriptedCreationRepository
+    with ListSessionsPageFromList
+    implements CreationRepository {
   ScriptedCreationRepository({
     this.replyWithQuestion = false,
     this.replyWithOpenQuestion = false,

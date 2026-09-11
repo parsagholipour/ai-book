@@ -4,6 +4,8 @@
 /// outgrew the file-size budget.
 library;
 
+import '../projects/chat_session_page_fixture.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tomeza/app/app.dart';
@@ -132,7 +134,9 @@ class FakeAuthRepository implements AuthRepository {
   }
 }
 
-class FakeCreationRepository implements CreationRepository {
+class FakeCreationRepository
+    with ListSessionsPageFromList
+    implements CreationRepository {
   @override
   Future<List<MobileChatSession>> listSessions() async => const [];
 
@@ -202,7 +206,7 @@ class FakeCreationRepository implements CreationRepository {
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
     String? requestId,
-      List<String>? mentionedCharacterIds,
+    List<String>? mentionedCharacterIds,
   }) async {
     return fakeGreetingConversation(withSession: true);
   }
@@ -220,7 +224,7 @@ class FakeCreationRepository implements CreationRepository {
     String? requestId,
     int? expectedRevision,
     bool skippedQuestion = false,
-      List<String>? mentionedCharacterIds,
+    List<String>? mentionedCharacterIds,
   }) async {
     return fakeGreetingConversation(withSession: true);
   }
@@ -377,7 +381,7 @@ class FakeProjectsRepository implements ProjectsRepository {
     required String messageId,
     required String message,
     String? requestId,
-      List<String>? mentionedCharacterIds,
+    List<String>? mentionedCharacterIds,
   }) {
     return sendProjectChatMessage(projectId: projectId, message: message);
   }

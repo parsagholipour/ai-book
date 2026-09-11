@@ -1,5 +1,23 @@
 import 'creation_models.dart' show MobileCreationOutput;
 
+class MobileChatSessionPage {
+  const MobileChatSessionPage({required this.sessions, this.nextCursor});
+
+  final List<MobileChatSession> sessions;
+  final String? nextCursor;
+
+  factory MobileChatSessionPage.fromJson(Map<String, dynamic> json) {
+    return MobileChatSessionPage(
+      sessions: (json['sessions'] as List<dynamic>)
+          .map(
+            (item) => MobileChatSession.fromJson(item as Map<String, dynamic>),
+          )
+          .toList(),
+      nextCursor: json['nextCursor'] as String?,
+    );
+  }
+}
+
 class MobileChatSession {
   const MobileChatSession({
     required this.draftId,

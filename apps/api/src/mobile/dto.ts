@@ -211,6 +211,33 @@ export type MobileCreationConversationResponseDto = {
 
 export type MobileChatArchiveResponseDto = { ok: true; archived: boolean };
 
+/** Drawer / Account archive row. Matches Flutter `MobileChatSession`. */
+export type MobileChatSessionDto = {
+  draftId: string;
+  title: string;
+  preview: string;
+  messageCount: number;
+  status: string;
+  archived: boolean;
+  createdProjectId: string | null;
+  activeProjectId: string | null;
+  outputs: MobileCreationOutputDto[];
+  createdAt: string;
+  updatedAt: string;
+  lastMessageAt: string;
+};
+
+/** Unpaged list used by older clients and the Account archive. */
+export type MobileChatHistoryDto = {
+  sessions: MobileChatSessionDto[];
+};
+
+/** Cursor page used when `limit`, `cursor`, or `q` is present. */
+export type MobileChatHistoryPageDto = {
+  sessions: MobileChatSessionDto[];
+  nextCursor: string | null;
+};
+
 export type MobileBookAdvisorResponseDto = {
   advisor: MobileBookAdvisorResponse;
 };

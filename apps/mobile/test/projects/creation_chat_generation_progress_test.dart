@@ -1,3 +1,4 @@
+import 'chat_session_page_fixture.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -628,7 +629,9 @@ class _StubProjectsRepository implements ProjectsRepository {
   }
 }
 
-class _StubCreationRepository implements CreationRepository {
+class _StubCreationRepository
+    with ListSessionsPageFromList
+    implements CreationRepository {
   @override
   Future<List<MobileChatSession>> listSessions() async {
     return [

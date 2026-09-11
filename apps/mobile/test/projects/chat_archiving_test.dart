@@ -1,3 +1,4 @@
+import 'chat_session_page_fixture.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -217,7 +218,9 @@ class _TestAuthController extends AuthController {
   Future<AuthSession?> build() async => null;
 }
 
-class _ArchiveRepository implements CreationRepository {
+class _ArchiveRepository
+    with ListSessionsPageFromList
+    implements CreationRepository {
   bool archived = false;
   bool failChange = false;
   Future<void>? changeGate;

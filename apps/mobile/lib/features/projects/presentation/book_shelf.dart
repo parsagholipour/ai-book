@@ -109,8 +109,7 @@ class _BookShelfState extends ConsumerState<BookShelf> {
           type: MaterialType.transparency,
           child: ListTile(
             key: const ValueKey('drawer-books-row'),
-            dense: true,
-            visualDensity: VisualDensity.compact,
+            minTileHeight: 48,
             contentPadding: const EdgeInsets.symmetric(horizontal: 16),
             leading: Icon(
               Icons.menu_book_outlined,

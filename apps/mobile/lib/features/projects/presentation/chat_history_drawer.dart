@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,45 +9,101 @@ import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../billing/data/billing_repository.dart';
-import '../../billing/domain/billing_models.dart';
-import '../../billing/presentation/billing_paywall.dart';
 import '../../characters/data/characters_repository.dart';
 import '../../characters/presentation/character_library_screen.dart';
 import '../data/creation_repository.dart';
 import '../domain/creation_models.dart';
 import 'book_shelf.dart';
-import 'chat_archive_feedback.dart';
-import 'chat_session_activity.dart';
-import 'creation_chat_controller.dart';
-import 'creation_chat_navigation.dart';
+import 'chat_drawer_chrome.dart';
+import 'chat_history_tile.dart';
 import 'pending_chat_sessions.dart';
 
-class ChatHistoryDrawer extends ConsumerWidget {
+/// Room for at least one chat row when the pinned chrome is taller than the
+/// remaining viewport (large text plus a keyboard).
+const double _minChatList = 160;
+
+class ChatHistoryDrawer extends ConsumerStatefulWidget {
   const ChatHistoryDrawer({super.key, this.activeDraftId});
 
   final String? activeDraftId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final sessions = ref.watch(chatSessionsProvider);
-    // Chats whose first send is still in flight (or just resolved but not yet
-    // in the fetched list) so a brand-new chat is never invisible.
-    final fetchedIds =
-        sessions.value?.map((session) => session.draftId).toSet() ??
-        const <String>{};
+  ConsumerState<ChatHistoryDrawer> createState() => _ChatHistoryDrawerState();
+}
+
+class _ChatHistoryDrawerState extends ConsumerState<ChatHistoryDrawer> {
+  final _search = TextEditingController();
+  final _searchFocus = FocusNode();
+  final _scroll = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _searchFocus.addListener(_focusChanged);
+    _scroll.addListener(_loadNearEnd);
+  }
+
+  void _focusChanged() => setState(() {});
+
+  String get _query => _search.text.trim().toLowerCase();
+
+  AsyncNotifierProvider<ChatHistoryController, ChatHistoryState>
+  get _historyProvider =>
+      _query.isEmpty ? chatSessionsProvider : chatSearchProvider(_query);
+
+  void _loadNearEnd() {
+    if (!mounted || !_scroll.hasClients) {
+      return;
+    }
+    final provider = _historyProvider;
+    final history = ref.read(provider).value;
+    final keepScanning =
+        history != null &&
+        history.nextCursor != null &&
+        (history.sessions.isEmpty || _scroll.position.maxScrollExtent <= 240);
+    if (!keepScanning && _scroll.position.extentAfter > 240) {
+      return;
+    }
+    ref.read(provider.notifier).loadMore();
+  }
+
+  @override
+  void dispose() {
+    _searchFocus.removeListener(_focusChanged);
+    _searchFocus.dispose();
+    _search.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _searchChanged(String value) {
+    setState(() {});
+    if (_scroll.hasClients) _scroll.jumpTo(0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final query = _query;
+    final provider = _historyProvider;
+    final sessions = ref.watch(provider);
+    // Also fill a tall viewport or a short page without requiring a new drag.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadNearEnd());
+    final searching = query.isNotEmpty;
+    final focused = _searchFocus.hasFocus;
+    final history = sessions.isReloading ? null : sessions.value;
+    final fetched = history?.sessions ?? const <MobileChatSession>[];
+    final fetchedIds = fetched.map((session) => session.draftId).toSet();
     final pending = [
       for (final entry in ref.watch(pendingChatSessionsProvider))
-        if (entry.draftId == null || !fetchedIds.contains(entry.draftId)) entry,
+        if ((entry.draftId == null || !fetchedIds.contains(entry.draftId)) &&
+            (!searching || entry.title.toLowerCase().contains(query)))
+          entry,
     ];
-    final billing = ref.watch(billingProvider);
     final colors = Theme.of(context).colorScheme;
     final drawerBackground =
         DrawerTheme.of(context).backgroundColor ?? colors.surfaceContainerLow;
 
-    // Own messenger: the page Scaffold's snackbars sit under this overlay
-    // (EasyDrawer) and under Material's drawer slot, so an archive toast
-    // shown there is behind the sidebar. Hosting the bar in the drawer
-    // itself keeps it on the panel the reader just used.
+    // Keep feedback above the drawer in both Material and EasyDrawer hosts.
     return Drawer(
       backgroundColor: drawerBackground,
       child: ScaffoldMessenger(
@@ -57,70 +115,179 @@ class ChatHistoryDrawer extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                ColoredBox(
-                  color: drawerBackground,
-                  child: const Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _DrawerHeader(),
-                      SizedBox(height: 4),
-                      _CharactersRow(),
-                      BookShelf(),
-                    ],
-                  ),
-                ),
                 Expanded(
-                  // The chat list fills the region and "New book" floats over
-                  // its bottom-left corner, so the drawer's primary action
-                  // stays put however far down a long history the reader has
-                  // scrolled.
-                  child: Stack(
+                  child: CustomMultiChildLayout(
+                    delegate: _DrawerBodyDelegate(minListHeight: _minChatList),
                     children: [
-                      Positioned.fill(
-                        child: ClipRect(
-                          key: const ValueKey('chat-history-scroll-clip'),
-                          child: sessions.when(
-                            data: (items) => items.isEmpty && pending.isEmpty
-                                ? const AppEmptyState(
-                                    title: 'No chats yet',
-                                    message:
-                                        'Start a new book to begin a conversation.',
-                                    icon: Icons.chat_bubble_outline,
-                                  )
-                                : _ChatList(
-                                    sessions: items,
-                                    activeDraftId: activeDraftId,
-                                    pending: pending,
-                                  ),
-                            loading: () => const Center(
-                              child: CircularProgressIndicator(),
-                            ),
-                            error: (_, _) => AppErrorState(
-                              title: 'Chats unavailable',
-                              message: 'Could not load your chats.',
-                              onRetry: () =>
-                                  ref.invalidate(chatSessionsProvider),
+                      LayoutId(
+                        id: _DrawerBodyDelegate.chromeId,
+                        child: ColoredBox(
+                          color: drawerBackground,
+                          child: const SingleChildScrollView(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ChatDrawerHeader(),
+                                SizedBox(height: 4),
+                                _CharactersRow(),
+                                BookShelf(),
+                              ],
                             ),
                           ),
                         ),
                       ),
-                      const Positioned(
-                        left: 12,
-                        bottom: 12,
-                        child: _NewBookButton(),
+                      LayoutId(
+                        id: _DrawerBodyDelegate.searchId,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _search,
+                                  maxLength: 200,
+                                  focusNode: _searchFocus,
+                                  onChanged: _searchChanged,
+                                  textInputAction: TextInputAction.search,
+                                  onSubmitted: (_) => _searchFocus.unfocus(),
+                                  decoration: InputDecoration(
+                                    hintText: 'Search chats',
+                                    counterText: '',
+                                    prefixIcon: const Icon(
+                                      Icons.search,
+                                      size: 21,
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
+                                    fillColor: colors.surfaceContainerHigh,
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(
+                                        AppRadii.control,
+                                      ),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    suffixIcon: _search.text.isEmpty
+                                        ? null
+                                        : IconButton(
+                                            tooltip: 'Clear search',
+                                            icon: const Icon(
+                                              Icons.close,
+                                              size: 18,
+                                            ),
+                                            onPressed: () {
+                                              _search.clear();
+                                              _searchChanged('');
+                                            },
+                                          ),
+                                  ),
+                                ),
+                              ),
+                              if (focused)
+                                IconButton(
+                                  tooltip: 'Done searching',
+                                  icon: const Icon(Icons.check),
+                                  onPressed: () => _searchFocus.unfocus(),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      LayoutId(
+                        id: _DrawerBodyDelegate.listId,
+                        // The chat list fills the region and "New book" floats
+                        // over its bottom-left corner, so the drawer's primary
+                        // action stays put however far down a long history the
+                        // reader has scrolled.
+                        child: Stack(
+                          children: [
+                            Positioned.fill(
+                              child: ClipRect(
+                                key: const ValueKey('chat-history-scroll-clip'),
+                                child: _ChatList(
+                                  history: history,
+                                  activeDraftId: widget.activeDraftId,
+                                  pending: pending,
+                                  controller: _scroll,
+                                  searching: searching,
+                                  loading:
+                                      sessions.isLoading && history == null,
+                                  failed: sessions.hasError && history == null,
+                                  onRetry: () => ref.invalidate(provider),
+                                  onRetryMore: () => ref
+                                      .read(provider.notifier)
+                                      .loadMore(retry: true),
+                                ),
+                              ),
+                            ),
+                            const Positioned(
+                              left: 12,
+                              bottom: 12,
+                              child: ChatDrawerNewBookButton(),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
                 ),
                 const Divider(height: 1),
-                _DrawerFooter(billing: billing, colors: colors),
+                ChatDrawerFooter(
+                  billing: ref.watch(billingProvider),
+                  colors: colors,
+                ),
               ],
             ),
           ),
         ),
       ),
     );
+  }
+}
+
+/// Pins Header / Characters / BookShelf above search and the chat list, and
+/// shrinks that chrome first so a short viewport still shows search results.
+class _DrawerBodyDelegate extends MultiChildLayoutDelegate {
+  _DrawerBodyDelegate({required this.minListHeight});
+
+  static const chromeId = 'chrome';
+  static const searchId = 'search';
+  static const listId = 'list';
+
+  final double minListHeight;
+
+  @override
+  void performLayout(Size size) {
+    final searchSize = layoutChild(searchId, BoxConstraints.loose(size));
+    final listMin = math.min(
+      minListHeight,
+      math.max(0, size.height - searchSize.height),
+    );
+    final chromeSize = layoutChild(
+      chromeId,
+      BoxConstraints(
+        maxWidth: size.width,
+        maxHeight: math.max(0, size.height - searchSize.height - listMin),
+      ),
+    );
+    layoutChild(
+      listId,
+      BoxConstraints.tight(
+        Size(
+          size.width,
+          math.max(0, size.height - chromeSize.height - searchSize.height),
+        ),
+      ),
+    );
+    positionChild(chromeId, Offset.zero);
+    positionChild(searchId, Offset(0, chromeSize.height));
+    positionChild(listId, Offset(0, chromeSize.height + searchSize.height));
+  }
+
+  @override
+  bool shouldRelayout(_DrawerBodyDelegate oldDelegate) {
+    return oldDelegate.minListHeight != minListHeight;
   }
 }
 
@@ -178,68 +345,6 @@ class _CharactersRow extends ConsumerWidget {
   }
 }
 
-class _DrawerHeader extends StatelessWidget {
-  const _DrawerHeader();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: TomezaWordmark(
-              markSize: 25,
-              textStyle: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Close',
-            icon: const Icon(Icons.close),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// The drawer's primary action, hovering over the chat list rather than sitting
-/// in its scroll flow. It hugs its label so the corner it floats in reads as a
-/// deliberate anchor, and carries a shadow because chats scroll underneath it.
-class _NewBookButton extends StatelessWidget {
-  const _NewBookButton();
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: ShapeDecoration(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadii.control),
-        ),
-        shadows: [
-          BoxShadow(
-            color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.28),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: AppButton.primary(
-        label: 'New book',
-        onPressed: () {
-          AppHaptics.tap();
-          Navigator.of(context).pop();
-          context.go(newBookChatLocation());
-        },
-        leading: const Icon(Icons.edit_document),
-      ),
-    );
-  }
-}
-
 class _GroupData {
   const _GroupData({required this.label, required this.sessions});
   final String label;
@@ -283,37 +388,84 @@ List<_GroupData> _groupByDate(List<MobileChatSession> sorted) {
 
 class _ChatList extends StatelessWidget {
   const _ChatList({
-    required this.sessions,
+    this.history,
     required this.activeDraftId,
     this.pending = const [],
+    required this.controller,
+    required this.searching,
+    required this.loading,
+    required this.failed,
+    required this.onRetry,
+    required this.onRetryMore,
   });
 
-  final List<MobileChatSession> sessions;
+  final ChatHistoryState? history;
   final String? activeDraftId;
   final List<PendingChatSession> pending;
+  final ScrollController controller;
+  final bool searching;
+  final bool loading;
+  final bool failed;
+  final VoidCallback onRetry;
+  final VoidCallback onRetryMore;
 
   @override
   Widget build(BuildContext context) {
-    if (sessions.isEmpty && pending.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.all(16),
-        child: Text(
-          'No chats yet. Start your first book.',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-        ),
-      );
-    }
-
-    final groups = _groupByDate(sessions);
+    final sessions = history?.sessions ?? const <MobileChatSession>[];
+    final hasMore = history?.nextCursor != null;
+    final loadingMore = history?.loadingMore ?? false;
+    final loadMoreFailed = history?.loadMoreFailed ?? false;
+    final resultCount = sessions.length + pending.length;
+    final groups = searching
+        ? [
+            if (resultCount > 0)
+              _GroupData(
+                label: hasMore
+                    ? ''
+                    : '$resultCount ${resultCount == 1 ? 'result' : 'results'}',
+                sessions: sessions,
+              ),
+          ]
+        : _groupByDate(sessions);
     final headerExtent = _groupHeaderExtent(context);
     final background =
         DrawerTheme.of(context).backgroundColor ??
         Theme.of(context).colorScheme.surfaceContainerLow;
 
     return CustomScrollView(
+      controller: controller,
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       slivers: [
+        if (loading)
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          ),
+        if (failed)
+          SliverToBoxAdapter(
+            child: AppErrorState(
+              title: 'Chats unavailable',
+              message: 'Could not load your chats.',
+              onRetry: onRetry,
+            ),
+          ),
+        if (!loading &&
+            !failed &&
+            sessions.isEmpty &&
+            pending.isEmpty &&
+            !hasMore &&
+            !loadingMore)
+          SliverToBoxAdapter(
+            child: AppEmptyState(
+              title: searching ? 'No matching chats' : 'No chats yet',
+              message: searching
+                  ? 'Try another title or words from the latest message.'
+                  : 'Start a new book. Your conversations will appear here.',
+              icon: searching ? Icons.search_off : Icons.chat_bubble_outline,
+            ),
+          ),
         if (pending.isNotEmpty)
           SliverMainAxisGroup(
             slivers: [
@@ -335,19 +487,20 @@ class _ChatList extends StatelessWidget {
         for (final group in groups)
           SliverMainAxisGroup(
             slivers: [
-              SliverPersistentHeader(
-                pinned: true,
-                delegate: _GroupHeaderDelegate(
-                  label: group.label,
-                  extent: headerExtent,
-                  background: background,
+              if (group.label.isNotEmpty)
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: _GroupHeaderDelegate(
+                    label: group.label,
+                    extent: headerExtent,
+                    background: background,
+                  ),
                 ),
-              ),
               SliverList.builder(
                 itemCount: group.sessions.length,
                 itemBuilder: (context, index) {
                   final session = group.sessions[index];
-                  return _ChatTile(
+                  return ChatHistoryTile(
                     key: ValueKey(session.draftId),
                     session: session,
                     isSelected: session.draftId == activeDraftId,
@@ -355,6 +508,33 @@ class _ChatList extends StatelessWidget {
                 },
               ),
             ],
+          ),
+        if (loadingMore)
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.all(20),
+              child: Center(
+                child: SizedBox.square(
+                  dimension: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    semanticsLabel: 'Loading older chats',
+                  ),
+                ),
+              ),
+            ),
+          ),
+        if (loadMoreFailed)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  const Text('Could not load more chats.'),
+                  AppButton.text(label: 'Try again', onPressed: onRetryMore),
+                ],
+              ),
+            ),
           ),
         // Clearance for the floating "New book" button, so the last chat can
         // still be scrolled out from under it.
@@ -428,37 +608,6 @@ class _GroupHeaderDelegate extends SliverPersistentHeaderDelegate {
   }
 }
 
-/// The leading glyph of a chat row: a spinner while that chat has work of its
-/// own running — its book being planned, written or edited, or its own turn
-/// still in flight — and the chat icon otherwise.
-///
-/// Both are drawn in the same 20px box, so a row does not shift sideways when
-/// the work starts or stops.
-class _ChatGlyph extends StatelessWidget {
-  const _ChatGlyph({required this.busy, required this.color});
-
-  final bool busy;
-
-  /// Drawn in this colour either way. Rows pass the brand colour while busy,
-  /// because work running is worth noticing from across the list.
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    if (!busy) {
-      return Icon(Icons.chat_bubble_outline, size: 20, color: color);
-    }
-    return Semantics(
-      label: 'Working',
-      child: SizedBox(
-        width: 20,
-        height: 20,
-        child: CircularProgressIndicator(strokeWidth: 2, color: color),
-      ),
-    );
-  }
-}
-
 class _PendingChatTile extends StatelessWidget {
   const _PendingChatTile({required this.entry});
 
@@ -478,7 +627,7 @@ class _PendingChatTile extends StatelessWidget {
         contentPadding: const EdgeInsets.symmetric(horizontal: 12),
         minVerticalPadding: 2,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        leading: _ChatGlyph(
+        leading: ChatHistoryGlyph(
           busy: creating,
           color: creating ? colors.primary : colors.onSurfaceVariant,
         ),
@@ -517,315 +666,5 @@ class _PendingChatTile extends StatelessWidget {
     }
     Navigator.of(context).pop();
     context.go('/books/chat/$draftId');
-  }
-}
-
-class _ChatTile extends ConsumerStatefulWidget {
-  const _ChatTile({required this.session, required this.isSelected, super.key});
-
-  final MobileChatSession session;
-  final bool isSelected;
-
-  @override
-  ConsumerState<_ChatTile> createState() => _ChatTileState();
-}
-
-class _ChatTileState extends ConsumerState<_ChatTile> {
-  bool _archiving = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final selected = widget.isSelected;
-    final shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(12),
-    );
-    // Two kinds of work, one glyph: the book this chat is making being planned,
-    // written or edited, and — for the chat that is open — its own turn still
-    // running. The second is only knowable for the open chat, since that is the
-    // only conversation the controller holds.
-    final session = widget.session;
-    final chatBusy = ref.watch(
-      creationChatControllerProvider.select((state) => state.isBusy),
-    );
-    final busy =
-        ref.watch(
-          chatBookBusyProvider(
-            session.activeProjectId ?? session.createdProjectId,
-          ),
-        ) ||
-        (selected && chatBusy);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      child: Material(
-        color: selected
-            ? colors.primaryContainer.withValues(alpha: 0.55)
-            : Colors.transparent,
-        shape: shape,
-        clipBehavior: Clip.antiAlias,
-        child: ListTile(
-          dense: true,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-          minVerticalPadding: 2,
-          selected: selected,
-          tileColor: Colors.transparent,
-          selectedTileColor: Colors.transparent,
-          shape: shape,
-          leading: _ChatGlyph(
-            busy: busy,
-            color: selected
-                ? colors.onPrimaryContainer
-                : busy
-                ? colors.primary
-                : colors.onSurfaceVariant,
-          ),
-          title: Text(
-            widget.session.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: selected ? colors.onPrimaryContainer : null,
-              fontWeight: selected ? FontWeight.w700 : null,
-            ),
-          ),
-          subtitle: widget.session.preview.isNotEmpty
-              ? Text(
-                  widget.session.preview,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
-                )
-              : null,
-          onTap: () => _open(context),
-          onLongPress: _archiving
-              ? null
-              : () {
-                  AppHaptics.longPress();
-                  _showOptions(context);
-                },
-        ),
-      ),
-    );
-  }
-
-  void _open(BuildContext context) {
-    AppHaptics.tap();
-    Navigator.of(context).pop();
-    context.go('/books/chat/${widget.session.draftId}');
-  }
-
-  void _showOptions(BuildContext context) {
-    showAppActionSheet<void>(
-      context,
-      builder: (ctx) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: const Icon(Icons.edit_outlined),
-            title: const Text('Rename'),
-            onTap: () {
-              Navigator.of(ctx).pop();
-              _showRenameDialog(context);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.archive_outlined),
-            title: const Text('Archive'),
-            onTap: () {
-              Navigator.of(ctx).pop();
-              _archive();
-            },
-          ),
-          ListTile(
-            leading: Icon(
-              Icons.delete_outline,
-              color: Theme.of(context).colorScheme.error,
-            ),
-            title: Text(
-              'Delete',
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-            onTap: () {
-              Navigator.of(ctx).pop();
-              _confirmDelete(context);
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showRenameDialog(BuildContext context) {
-    final controller = TextEditingController(text: widget.session.title);
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Rename chat'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 160,
-          decoration: const InputDecoration(hintText: 'Chat title'),
-          textCapitalization: TextCapitalization.sentences,
-          onSubmitted: (_) => _doRename(ctx, controller.text),
-        ),
-        actions: [
-          AppButton.text(
-            onPressed: () => Navigator.of(ctx).pop(),
-            label: 'Cancel',
-          ),
-          AppButton.primary(
-            onPressed: () => _doRename(ctx, controller.text),
-            label: 'Save',
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _doRename(BuildContext ctx, String newTitle) async {
-    final trimmed = newTitle.trim();
-    if (trimmed.isEmpty) return;
-    Navigator.of(ctx).pop();
-    try {
-      await ref
-          .read(creationRepositoryProvider)
-          .renameSession(draftId: widget.session.draftId, title: trimmed);
-      ref
-          .read(creationConversationCacheProvider)
-          .updateTitle(draftId: widget.session.draftId, title: trimmed);
-      if (widget.isSelected) {
-        ref
-            .read(creationChatControllerProvider.notifier)
-            .setSessionTitle(trimmed);
-      }
-      ref.invalidate(chatSessionsProvider);
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showAppSnackBar(
-          const SnackBar(content: Text('Could not rename the chat.')),
-        );
-      }
-    }
-  }
-
-  Future<void> _confirmDelete(BuildContext context) async {
-    final confirmed = await showAppConfirmationDialog(
-      context,
-      title: 'Delete chat?',
-      message: 'This chat will be permanently deleted.',
-      confirmLabel: 'Delete',
-      destructive: true,
-    );
-    if (confirmed && mounted) await _doDelete();
-  }
-
-  Future<void> _archive() async {
-    if (_archiving) return;
-    setState(() => _archiving = true);
-    try {
-      await setChatArchivedWithFeedback(
-        ref: ref,
-        messenger: ScaffoldMessenger.of(context),
-        draftId: widget.session.draftId,
-        archived: true,
-      );
-    } finally {
-      if (mounted) setState(() => _archiving = false);
-    }
-  }
-
-  Future<void> _doDelete() async {
-    try {
-      await ref
-          .read(creationRepositoryProvider)
-          .deleteSession(widget.session.draftId);
-      ref
-          .read(creationConversationCacheProvider)
-          .remove(widget.session.draftId);
-      ref.invalidate(chatSessionsProvider);
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showAppSnackBar(
-          const SnackBar(content: Text('Could not delete the chat.')),
-        );
-      }
-    }
-  }
-}
-
-class _DrawerFooter extends StatelessWidget {
-  const _DrawerFooter({required this.billing, required this.colors});
-
-  final AsyncValue<MobileBilling> billing;
-  final ColorScheme colors;
-
-  @override
-  Widget build(BuildContext context) {
-    final creditLabel = billing.whenOrNull(
-      data: (b) => '${b.credits.available} credits',
-    );
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-      child: Row(
-        children: [
-          AppButton.text(
-            label: 'Account',
-            onPressed: () {
-              Navigator.of(context).pop();
-              context.push('/account');
-            },
-            leading: const Icon(Icons.account_circle_outlined),
-          ),
-          if (creditLabel != null) ...[
-            const SizedBox(width: 8),
-            Flexible(
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: Theme(
-                    data: Theme.of(context).copyWith(
-                      textButtonTheme: TextButtonThemeData(
-                        style:
-                            (Theme.of(context).textButtonTheme.style ??
-                                    const ButtonStyle())
-                                .copyWith(
-                                  foregroundColor: WidgetStatePropertyAll(
-                                    colors.onSurfaceVariant,
-                                  ),
-                                  textStyle: WidgetStatePropertyAll(
-                                    Theme.of(context).textTheme.labelSmall,
-                                  ),
-                                ),
-                      ),
-                    ),
-                    child: AppButton.text(
-                      label: creditLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      onPressed: () {
-                        final navigator = Navigator.of(context);
-                        navigator.pop();
-                        showBillingPaywall(
-                          navigator.context,
-                          title: 'Add book credits',
-                          message:
-                              'Credits are used when you approve a full book or unlock finished exports.',
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
   }
 }

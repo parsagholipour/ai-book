@@ -1,3 +1,4 @@
+import 'projects/chat_session_page_fixture.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -344,7 +345,9 @@ class _NeverProjectsRepository implements ProjectsRepository {
   }
 }
 
-class _FakeCreationRepository implements CreationRepository {
+class _FakeCreationRepository
+    with ListSessionsPageFromList
+    implements CreationRepository {
   @override
   Future<List<MobileChatSession>> listSessions() async => const [];
 
@@ -414,7 +417,7 @@ class _FakeCreationRepository implements CreationRepository {
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
     String? requestId,
-      List<String>? mentionedCharacterIds,
+    List<String>? mentionedCharacterIds,
   }) async {
     return fakeCreationConversation(withSession: true);
   }
@@ -432,7 +435,7 @@ class _FakeCreationRepository implements CreationRepository {
     String? requestId,
     int? expectedRevision,
     bool skippedQuestion = false,
-      List<String>? mentionedCharacterIds,
+    List<String>? mentionedCharacterIds,
   }) async {
     return fakeCreationConversation(withSession: true);
   }
@@ -537,7 +540,6 @@ class _FakeBillingRepository implements BillingRepository {
 
   @override
   Future<MobileBilling> cancelSubscription() async => _fakeBilling();
-
 
   @override
   Future<GooglePlayVerificationResult> verifyGooglePlayPurchase({

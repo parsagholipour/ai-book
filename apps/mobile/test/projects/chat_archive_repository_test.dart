@@ -17,6 +17,25 @@ void main() {
   });
 
   test(
+    'paged history encodes search and cursor and reads the next cursor',
+    () async {
+      final api = _ArchiveApiClient();
+      final page = await MobileCreationRepository(
+        apiClient: api,
+      ).listSessionsPage(cursor: 'opaque/cursor+value', query: 'moon & garden');
+      final uri = Uri.parse(api.paths.single);
+      expect(uri.path, '/api/mobile/creation-sessions');
+      expect(uri.queryParameters, {
+        'limit': '30',
+        'cursor': 'opaque/cursor+value',
+        'q': 'moon & garden',
+      });
+      expect(page.sessions.single.draftId, 'draft-1');
+      expect(page.nextCursor, 'next-page');
+    },
+  );
+
+  test(
     'archive and unarchive send explicit booleans to the same chat',
     () async {
       final api = _ArchiveApiClient();
@@ -124,6 +143,7 @@ class _ArchiveApiClient implements ApiClient {
     expect(requiresAuth, isTrue);
     paths.add(path);
     return {
+      'nextCursor': 'next-page',
       'sessions': [
         {
           'draftId': 'draft-1',

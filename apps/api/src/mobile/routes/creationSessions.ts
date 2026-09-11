@@ -1,3 +1,4 @@
+import { registerCreationSessionHistoryRoute } from "./creationSessionHistory.js";
 import { settleMessageUsage } from "@book-maker/db/billing";
 import { messageRequestKey, persistMessageReply, withMessageUsage } from "../messageUsage.js";
 import { createSourceEmbedding } from "@book-maker/core";
@@ -6,7 +7,6 @@ import { createSourceService } from "@book-maker/db";
 import { deleteCreationAttachmentDraftDir } from "../../attachmentStorage.js";
 import { registerMobileCreationAttachmentRoutes } from "./creationAttachments.js";
 import { chatReplyQuoteFor } from "../../chatReplyQuote.js";
-import { chatMessagePreviewSource } from "../../chatMessagePlainText.js";
 import {
   appendCreationMessage,
   foldCreationTranscriptTree,
@@ -28,11 +28,9 @@ import {
 } from "../../mobileCreation.js";
 import {
   _chatTitleForPayload,
-  activeProjectIdForDraft,
   conversationMessagesFromPayload,
   creationAssistantMessage,
   creationBranchTurn,
-  creationOutputsForDraft,
   creationTreeFromPayload,
   creationTurnForStoredDraft,
   mobileCreationDraftOutputsInclude,
@@ -54,8 +52,6 @@ import {
   mobileAuthError,
   mobileChatArchiveBodySchema,
   mobileChatArchiveOpenApiBody,
-  mobileChatListOpenApiQuery,
-  mobileChatListQuerySchema,
   mobileCreationBranchBodySchema,
   mobileCreationBranchOpenApiBody,
   mobileCreationBuildBodySchema,
@@ -80,74 +76,11 @@ import { orderedCharacterRefs } from "../libraryMentionRows.js";
  * Branching creation chat: sessions, messages, attachments, preflight and build.
  */
 
-function historyDrawerPreview(message: { role: string; content: string }): string {
-  return chatMessagePreviewSource(message.role, message.content).replace(/\s+/g, " ").trim().slice(0, 100);
-}
-
 export async function registerMobileCreationSessionRoutes(fastify: FastifyInstance, context: MobileRouteContext): Promise<void> {
   const { appConfig, generationLimiter, advisorLimiter, draftLimiter, creationEnrichment, options } = context;
   const { finalizeMobileCreationDraft, pageCountRecommendationsForPreflight, prepareMobileCreationBuild } = createCreationBuildHelpers(context);
 
-  fastify.get(
-    "/api/mobile/creation-sessions",
-    {
-      attachValidation: true,
-      schema: {
-        tags: ["mobile"],
-        querystring: mobileChatListOpenApiQuery,
-        response: { 400: mobileAuthError, 401: mobileAuthError }
-      }
-    },
-    async (request, reply) => {
-      const auth = await requireMobileAuth(request, reply);
-      if (!auth) {
-        return;
-      }
-      const query = mobileChatListQuerySchema.safeParse(request.query);
-      if (!query.success) {
-        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Choose active or archived chats.");
-      }
-      const archived = query.data.archived === "true";
-      const drafts = await prisma.mobileCreationDraft.findMany({
-        where: { userId: auth.user.id, archived },
-        orderBy: { updatedAt: "desc" },
-        // Every archived chat must remain reachable from Account.
-        ...(!archived ? { take: 100 } : {}),
-        include: mobileCreationDraftOutputsInclude()
-      });
-      const sessions = drafts.flatMap((draft) => {
-        const parsed = mobileCreationDraftPayloadSchema.safeParse(draft.payload);
-        if (!parsed.success) return [];
-        const payload = parsed.data;
-        const messages = payload.messages && payload.messages.length > 0 ? conversationMessagesFromPayload(payload) : [];
-        const title = _chatTitleForPayload(payload);
-        const lastMsg = messages.length > 0 ? messages[messages.length - 1] : undefined;
-        // Assistant markup is stripped; a user's last turn stays as typed.
-        const preview = lastMsg ? historyDrawerPreview(lastMsg) : "";
-        const outputs = creationOutputsForDraft(draft, payload);
-        return [{
-          draftId: draft.id,
-          title,
-          preview,
-          messageCount: messages.length,
-          status: draft.status,
-          archived: draft.archived,
-          createdProjectId: draft.createdProjectId,
-          activeProjectId: activeProjectIdForDraft(draft, outputs),
-          outputs,
-          createdAt: draft.createdAt.toISOString(),
-          updatedAt: draft.updatedAt.toISOString(),
-          // Drafts from before lastMessageAt existed fall back to updatedAt.
-          lastMessageAt: payload.lastMessageAt ?? draft.updatedAt.toISOString()
-        }];
-      });
-      // Order by conversation activity: builds, copies, and other background
-      // updates bump the row's updatedAt without any new message and would
-      // otherwise push stale chats above newer ones.
-      sessions.sort((a, b) => (a.lastMessageAt < b.lastMessageAt ? 1 : a.lastMessageAt > b.lastMessageAt ? -1 : 0));
-      return { sessions };
-    }
-  );
+  registerCreationSessionHistoryRoute(fastify);
 
   fastify.get(
     "/api/mobile/creation-sessions/active",

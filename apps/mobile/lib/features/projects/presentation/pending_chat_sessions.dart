@@ -41,7 +41,7 @@ class PendingChatSessionsNotifier extends Notifier<List<PendingChatSession>> {
     // Once the fetched list contains a resolved entry, the real tile takes
     // over and the pending one is dropped.
     ref.listen(chatSessionsProvider, (previous, next) {
-      final sessions = next.value;
+      final sessions = next.value?.sessions;
       if (sessions == null || state.isEmpty) {
         return;
       }

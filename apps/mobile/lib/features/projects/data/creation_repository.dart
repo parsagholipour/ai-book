@@ -7,6 +7,11 @@ import '../domain/creation_models.dart';
 abstract interface class CreationRepository {
   Future<List<MobileChatSession>> listSessions();
 
+  Future<MobileChatSessionPage> listSessionsPage({
+    String? cursor,
+    String query = '',
+  });
+
   Future<List<MobileChatSession>> listArchivedSessions();
 
   Future<void> setSessionArchived({
@@ -116,6 +121,22 @@ class MobileCreationRepository implements CreationRepository {
   @override
   Future<List<MobileChatSession>> listSessions() =>
       _listSessions(archived: false);
+
+  @override
+  Future<MobileChatSessionPage> listSessionsPage({
+    String? cursor,
+    String query = '',
+  }) async {
+    final path = Uri(
+      path: '/api/mobile/creation-sessions',
+      queryParameters: {
+        'limit': '30',
+        'cursor': ?cursor,
+        if (query.isNotEmpty) 'q': query,
+      },
+    ).toString();
+    return MobileChatSessionPage.fromJson(await apiClient.getMap(path));
+  }
 
   @override
   Future<List<MobileChatSession>> listArchivedSessions() =>
@@ -509,9 +530,102 @@ final creationConversationCacheProvider = Provider<CreationConversationCache>((
   return CreationConversationCache();
 });
 
-final chatSessionsProvider = FutureProvider<List<MobileChatSession>>((ref) {
-  return ref.watch(creationRepositoryProvider).listSessions();
-});
+class ChatHistoryState {
+  const ChatHistoryState({
+    required this.sessions,
+    this.nextCursor,
+    this.loadingMore = false,
+    this.loadMoreFailed = false,
+  });
+
+  final List<MobileChatSession> sessions;
+  final String? nextCursor;
+  final bool loadingMore;
+  final bool loadMoreFailed;
+
+  ChatHistoryState asLoadingMore() => ChatHistoryState(
+    sessions: sessions,
+    nextCursor: nextCursor,
+    loadingMore: true,
+  );
+
+  ChatHistoryState asLoadMoreFailed() => ChatHistoryState(
+    sessions: sessions,
+    nextCursor: nextCursor,
+    loadMoreFailed: true,
+  );
+}
+
+/// One history per query. Requests from an old query, refresh, or signed-out
+/// account cannot append to the currently displayed list.
+class ChatHistoryController extends AsyncNotifier<ChatHistoryState> {
+  ChatHistoryController([this.query = '']);
+
+  final String query;
+  int _generation = 0;
+
+  @override
+  Future<ChatHistoryState> build() async {
+    _generation++;
+    ref.onDispose(() => _generation++);
+    final repository = ref.watch(creationRepositoryProvider);
+    if (query.isNotEmpty) {
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      if (!ref.mounted) return const ChatHistoryState(sessions: []);
+    }
+    final page = await repository.listSessionsPage(query: query);
+    return ChatHistoryState(
+      sessions: page.sessions,
+      nextCursor: page.nextCursor,
+    );
+  }
+
+  Future<void> loadMore({bool retry = false}) async {
+    final current = state.value;
+    if (state.isLoading ||
+        current == null ||
+        current.nextCursor == null ||
+        current.loadingMore ||
+        (current.loadMoreFailed && !retry)) {
+      return;
+    }
+    final generation = _generation;
+    state = AsyncData(current.asLoadingMore());
+    try {
+      final page = await ref
+          .read(creationRepositoryProvider)
+          .listSessionsPage(cursor: current.nextCursor, query: query);
+      if (!ref.mounted || generation != _generation) return;
+      if (page.nextCursor == current.nextCursor) {
+        throw StateError('Chat history cursor did not advance.');
+      }
+      final seen = current.sessions.map((session) => session.draftId).toSet();
+      state = AsyncData(
+        ChatHistoryState(
+          sessions: [
+            ...current.sessions,
+            for (final session in page.sessions)
+              if (seen.add(session.draftId)) session,
+          ],
+          nextCursor: page.nextCursor,
+        ),
+      );
+    } catch (_) {
+      if (!ref.mounted || generation != _generation) return;
+      state = AsyncData(current.asLoadMoreFailed());
+    }
+  }
+}
+
+final chatSessionsProvider =
+    AsyncNotifierProvider<ChatHistoryController, ChatHistoryState>(
+      ChatHistoryController.new,
+    );
+
+final chatSearchProvider = AsyncNotifierProvider.autoDispose
+    .family<ChatHistoryController, ChatHistoryState, String>(
+      ChatHistoryController.new,
+    );
 
 final archivedChatSessionsProvider = FutureProvider<List<MobileChatSession>>((
   ref,
@@ -519,9 +633,15 @@ final archivedChatSessionsProvider = FutureProvider<List<MobileChatSession>>((
   return ref.watch(creationRepositoryProvider).listArchivedSessions();
 });
 
-void invalidateChatSessionLists(Ref ref) {
-  ref.invalidate(chatSessionsProvider);
-  ref.invalidate(archivedChatSessionsProvider);
+void invalidateChatSessionLists(Object ref) {
+  final invalidate = switch (ref) {
+    final Ref r => r.invalidate,
+    final WidgetRef r => r.invalidate,
+    _ => throw ArgumentError.value(ref, 'ref', 'Expected Ref or WidgetRef'),
+  };
+  invalidate(chatSessionsProvider);
+  invalidate(chatSearchProvider);
+  invalidate(archivedChatSessionsProvider);
 }
 
 /// Refresh both lists even if the initiating widget closes during the request.
