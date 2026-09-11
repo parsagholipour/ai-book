@@ -33,6 +33,12 @@ void main() {
     expect(repository.changes, [true]);
     expect(find.text('My story'), findsNothing);
     expect(find.text('No chats yet'), findsOneWidget);
+    expect(
+      find
+          .text('Chat archived. Find it in Account → Archived chats.')
+          .hitTestable(),
+      findsOneWidget,
+    );
 
     await tester.tap(find.text('Account'));
     await tester.pumpAndSettle();
@@ -87,7 +93,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('My story'), findsOneWidget);
       expect(
-        find.text('Could not archive the chat. Try again.'),
+        find.text('Could not archive the chat. Try again.').hitTestable(),
         findsOneWidget,
       );
       repository.failChange = false;

@@ -76,6 +76,12 @@ void main() {
 
       expect(creation.archiveChanges, [(draftId: 'draft-1', archived: true)]);
       expect(find.byType(ArchivedChatBanner), findsOneWidget);
+      expect(
+        find
+            .text('Chat archived. Find it in Account → Archived chats.')
+            .hitTestable(),
+        findsOneWidget,
+      );
 
       await tester.teardownScreen();
     },

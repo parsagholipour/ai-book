@@ -42,68 +42,82 @@ class ChatHistoryDrawer extends ConsumerWidget {
     final drawerBackground =
         DrawerTheme.of(context).backgroundColor ?? colors.surfaceContainerLow;
 
+    // Own messenger: the page Scaffold's snackbars sit under this overlay
+    // (EasyDrawer) and under Material's drawer slot, so an archive toast
+    // shown there is behind the sidebar. Hosting the bar in the drawer
+    // itself keeps it on the panel the reader just used.
     return Drawer(
       backgroundColor: drawerBackground,
-      child: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            ColoredBox(
-              color: drawerBackground,
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _DrawerHeader(),
-                  SizedBox(height: 4),
-                  _CharactersRow(),
-                  BookShelf(),
-                ],
-              ),
-            ),
-            Expanded(
-              // The chat list fills the region and "New book" floats over its
-              // bottom-left corner, so the drawer's primary action stays put
-              // however far down a long history the reader has scrolled.
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: ClipRect(
-                      key: const ValueKey('chat-history-scroll-clip'),
-                      child: sessions.when(
-                        data: (items) => items.isEmpty && pending.isEmpty
-                            ? const AppEmptyState(
-                                title: 'No chats yet',
-                                message:
-                                    'Start a new book to begin a conversation.',
-                                icon: Icons.chat_bubble_outline,
-                              )
-                            : _ChatList(
-                                sessions: items,
-                                activeDraftId: activeDraftId,
-                                pending: pending,
-                              ),
-                        loading: () =>
-                            const Center(child: CircularProgressIndicator()),
-                        error: (_, _) => AppErrorState(
-                          title: 'Chats unavailable',
-                          message: 'Could not load your chats.',
-                          onRetry: () => ref.invalidate(chatSessionsProvider),
+      child: ScaffoldMessenger(
+        child: Scaffold(
+          primary: false,
+          backgroundColor: drawerBackground,
+          resizeToAvoidBottomInset: false,
+          body: SafeArea(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ColoredBox(
+                  color: drawerBackground,
+                  child: const Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _DrawerHeader(),
+                      SizedBox(height: 4),
+                      _CharactersRow(),
+                      BookShelf(),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  // The chat list fills the region and "New book" floats over
+                  // its bottom-left corner, so the drawer's primary action
+                  // stays put however far down a long history the reader has
+                  // scrolled.
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: ClipRect(
+                          key: const ValueKey('chat-history-scroll-clip'),
+                          child: sessions.when(
+                            data: (items) => items.isEmpty && pending.isEmpty
+                                ? const AppEmptyState(
+                                    title: 'No chats yet',
+                                    message:
+                                        'Start a new book to begin a conversation.',
+                                    icon: Icons.chat_bubble_outline,
+                                  )
+                                : _ChatList(
+                                    sessions: items,
+                                    activeDraftId: activeDraftId,
+                                    pending: pending,
+                                  ),
+                            loading: () => const Center(
+                              child: CircularProgressIndicator(),
+                            ),
+                            error: (_, _) => AppErrorState(
+                              title: 'Chats unavailable',
+                              message: 'Could not load your chats.',
+                              onRetry: () =>
+                                  ref.invalidate(chatSessionsProvider),
+                            ),
+                          ),
                         ),
                       ),
-                    ),
+                      const Positioned(
+                        left: 12,
+                        bottom: 12,
+                        child: _NewBookButton(),
+                      ),
+                    ],
                   ),
-                  const Positioned(
-                    left: 12,
-                    bottom: 12,
-                    child: _NewBookButton(),
-                  ),
-                ],
-              ),
+                ),
+                const Divider(height: 1),
+                _DrawerFooter(billing: billing, colors: colors),
+              ],
             ),
-            const Divider(height: 1),
-            _DrawerFooter(billing: billing, colors: colors),
-          ],
+          ),
         ),
       ),
     );
