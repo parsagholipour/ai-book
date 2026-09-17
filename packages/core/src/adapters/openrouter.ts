@@ -6,12 +6,14 @@ import {
   usageFromOpenAiChatCompletions
 } from "./openAiChatCompletionsText.js";
 import { toOpenAiChatMessages } from "./openaiToolCalling.js";
+import { optionalMaxRetries } from "./optionalMaxRetries.js";
 import { DEFAULT_OPENROUTER_BASE_URL, OPENROUTER_GLM_53_FLASH_MODEL } from "./openrouterModels.js";
 
 const PROVIDER_LABEL = "OpenRouter";
 const PROVIDER_ID = "openrouter";
 
 export type OpenRouterAdapterOptions = {
+  maxRetries?: number | undefined;
   apiKey: string | undefined;
   baseURL?: string | undefined;
   model?: string | undefined;
@@ -31,6 +33,7 @@ export class OpenRouterAdapter extends OpenAIChatCompletionsTextAdapter {
     const thinkingEffort = openRouterReasoningEffort(options.thinkingEffort, options.thinkingEnabled);
     super({
       client: new OpenAI({
+        ...optionalMaxRetries(options.maxRetries),
         apiKey: options.apiKey,
         baseURL: options.baseURL ?? DEFAULT_OPENROUTER_BASE_URL
       }),

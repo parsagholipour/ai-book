@@ -47,6 +47,7 @@ const envSchema = z.object({
   DEEPINFRA_API_KEY: z.string().optional(),
   OPENROUTER_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
+  VERCEL_AI_GATEWAY_API_KEY: z.string().optional(),
   GEMINI_API_KEY: z.string().optional(),
   SOURCE_OCR_URL: z.string().url().optional(),
   SOURCE_OCR_TIMEOUT_MS: z.coerce.number().int().min(10_000).max(900_000).default(600_000),

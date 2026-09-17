@@ -7,10 +7,12 @@ import {
   AdapterJsonValidationError as DeepSeekJsonValidationError,
   parseJsonObject as parseAdapterJsonObject
 } from "./json.js";
+import { optionalMaxRetries } from "./optionalMaxRetries.js";
 
 export { DeepSeekJsonParseError, DeepSeekJsonValidationError };
 
 export type DeepSeekAdapterOptions = {
+  maxRetries?: number | undefined;
   apiKey: string | undefined;
   baseURL?: string | undefined;
   model?: string | undefined;
@@ -33,6 +35,7 @@ export class DeepSeekAdapter extends OpenAIChatCompletionsTextAdapter {
     const thinkingEffort = deepSeekReasoningEffort(options.thinkingEffort, thinkingEnabled);
     super({
       client: new OpenAI({
+        ...optionalMaxRetries(options.maxRetries),
         apiKey: options.apiKey,
         baseURL: options.baseURL ?? "https://api.deepseek.com"
       }),

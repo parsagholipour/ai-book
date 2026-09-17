@@ -1,7 +1,18 @@
 import Fastify from "fastify";
-import { OPENROUTER_GLM_53_FLASH_MODEL, QUALITY_FEATURE_DEFAULTS } from "@book-maker/core";
+import {
+  JEV_SELECTION,
+  OPENROUTER_GLM_53_FLASH_MODEL,
+  QUALITY_FEATURE_DEFAULTS,
+  type GenerationTextModelRouting
+} from "@book-maker/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { adminGenerationQualityRoutes } from "./adminGenerationQuality.js";
+import {
+  generationModelsPatchSchema,
+  GenerationModelSelectionError,
+  mergeGenerationModelPatch,
+  type GenerationModelsPatch
+} from "./adminGenerationQualityModels.js";
 
 const mockPrisma = vi.hoisted(() => ({
   generationQualityRevision: { findFirst: vi.fn(), create: vi.fn() }
@@ -23,6 +34,192 @@ describe("admin generation model routing", () => {
       MOCK_AI: "false"
     });
     mockRequireOperatorActor.mockResolvedValue({ kind: "operator", userId: "local-admin" });
+  });
+
+  it("saves and disables finite decisions independently from text judgments", async () => {
+    vi.stubEnv("VERCEL_AI_GATEWAY_API_KEY", "test-key");
+    mockStoredRevision({ version: 1, settings: {} });
+    const app = Fastify({ logger: false });
+    await app.register(adminGenerationQualityRoutes);
+    const saved = await app.inject({ method: "PATCH", url: "/api/admin/generation-quality", payload: { models: { fastDecisions: JEV_SELECTION } } });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json()).toMatchObject({ jevAvailable: true, models: { fastDecisions: JEV_SELECTION } });
+    expect(createdSettings(0).models).toHaveProperty("fastDecisionsFallback");
+    const disabled = await app.inject({ method: "PATCH", url: "/api/admin/generation-quality", payload: { models: { fastDecisions: null } } });
+    expect(disabled.statusCode).toBe(200);
+    expect(disabled.json().models.fastDecisions).toBeNull();
+    const catalogPrimary = await app.inject({
+      method: "PATCH",
+      url: "/api/admin/generation-quality",
+      payload: { models: { fastDecisions: { provider: "deepseek", model: "deepseek-v4-flash" } } }
+    });
+    expect(catalogPrimary.statusCode).toBe(400);
+    const fallback = await app.inject({
+      method: "PATCH",
+      url: "/api/admin/generation-quality",
+      payload: { models: { fastDecisionsFallback: { provider: "deepseek", model: "deepseek-v4-flash" } } }
+    });
+    expect(fallback.statusCode).toBe(400);
+    expect((fallback.json() as { error: string }).error).toContain("Fast decisions fallback");
+    await app.close();
+    vi.unstubAllEnvs();
+  });
+
+  it("saves a Fast decisions fallback when Jev is already stored", async () => {
+    vi.stubEnv("VERCEL_AI_GATEWAY_API_KEY", "test-key");
+    mockStoredRevision({ version: 1, settings: { models: { fastDecisions: JEV_SELECTION } } });
+    const app = Fastify({ logger: false });
+    await app.register(adminGenerationQualityRoutes);
+    const fallback = await app.inject({
+      method: "PATCH",
+      url: "/api/admin/generation-quality",
+      payload: { models: { fastDecisionsFallback: { provider: "deepseek", model: "deepseek-v4-flash" } } }
+    });
+    expect(fallback.statusCode).toBe(200);
+    expect(fallback.json().models).toMatchObject({
+      fastDecisions: JEV_SELECTION,
+      fastDecisionsFallback: { provider: "deepseek", model: "deepseek-v4-flash" }
+    });
+    await app.close();
+    vi.unstubAllEnvs();
+  });
+
+  it("enables Jev and a Fast decisions fallback in one patch", async () => {
+    vi.stubEnv("VERCEL_AI_GATEWAY_API_KEY", "test-key");
+    mockStoredRevision({ version: 1, settings: {} });
+    const app = Fastify({ logger: false });
+    await app.register(adminGenerationQualityRoutes);
+    const saved = await app.inject({
+      method: "PATCH",
+      url: "/api/admin/generation-quality",
+      payload: {
+        models: {
+          fastDecisions: JEV_SELECTION,
+          fastDecisionsFallback: { provider: "deepseek", model: "deepseek-v4-flash" }
+        }
+      }
+    });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json().models).toMatchObject({
+      fastDecisions: JEV_SELECTION,
+      fastDecisionsFallback: { provider: "deepseek", model: "deepseek-v4-flash" }
+    });
+    await app.close();
+    vi.unstubAllEnvs();
+  });
+
+  it("pins Fast decisions fallback from current Fast judgments after a leftover reset fallback", () => {
+    const leftover = { provider: "alibaba" as const, model: "qwen-plus" };
+    const merged = mergeGenerationModelPatch(
+      { models: { fastDecisions: null, fastDecisionsFallback: leftover, fastJudgments: llm } },
+      { fastDecisions: JEV_SELECTION },
+      routingFixture(llm),
+      catalogFor(llm, leftover),
+      true
+    );
+    expect(merged).toMatchObject({
+      fastDecisions: JEV_SELECTION,
+      fastDecisionsFallback: llm,
+      fastJudgments: llm
+    });
+  });
+
+  it("pins a same-request Fast judgments change when enabling Jev without an explicit fallback", () => {
+    const leftover = { provider: "deepinfra" as const, model: "deepseek-ai/DeepSeek-V4-Flash" };
+    const newLlm = { provider: "alibaba" as const, model: "qwen-plus" };
+    const merged = mergeGenerationModelPatch(
+      { models: { fastDecisions: null, fastDecisionsFallback: leftover, fastJudgments: llm } },
+      { fastDecisions: JEV_SELECTION, fastJudgments: newLlm },
+      routingFixture(llm),
+      catalogFor(llm, leftover, newLlm),
+      true
+    );
+    expect(merged).toMatchObject({
+      fastDecisions: JEV_SELECTION,
+      fastDecisionsFallback: newLlm,
+      fastJudgments: newLlm
+    });
+  });
+
+  it("does not retarget a pinned Fast decisions fallback when Jev is already on", () => {
+    const leftover = { provider: "alibaba" as const, model: "qwen-plus" };
+    const newLlm = { provider: "deepinfra" as const, model: "deepseek-ai/DeepSeek-V4-Flash" };
+    const merged = mergeGenerationModelPatch(
+      { models: { fastDecisions: JEV_SELECTION, fastDecisionsFallback: leftover, fastJudgments: llm } },
+      { fastJudgments: newLlm },
+      routingFixture(llm),
+      catalogFor(llm, leftover, newLlm),
+      true
+    );
+    expect(merged).toMatchObject({
+      fastDecisions: JEV_SELECTION,
+      fastDecisionsFallback: leftover,
+      fastJudgments: newLlm
+    });
+  });
+
+  it("keeps an explicit Fast decisions fallback when enabling Jev in the same patch", () => {
+    const leftover = { provider: "deepinfra" as const, model: "deepseek-ai/DeepSeek-V4-Flash" };
+    const explicit = { provider: "alibaba" as const, model: "qwen-plus" };
+    const merged = mergeGenerationModelPatch(
+      { models: { fastDecisions: null, fastDecisionsFallback: leftover, fastJudgments: llm } },
+      { fastDecisions: JEV_SELECTION, fastDecisionsFallback: explicit },
+      routingFixture(llm),
+      catalogFor(llm, leftover, explicit),
+      true
+    );
+    expect(merged).toMatchObject({
+      fastDecisions: JEV_SELECTION,
+      fastDecisionsFallback: explicit
+    });
+  });
+
+  it("rejects a catalog LLM as the Fast decisions primary in the schema and merge", () => {
+    const llm = { provider: "deepseek" as const, model: "deepseek-v4-flash" };
+    expect(generationModelsPatchSchema.safeParse({ fastDecisions: llm }).success).toBe(false);
+    expect(generationModelsPatchSchema.safeParse({ fastDecisions: JEV_SELECTION }).success).toBe(true);
+    expect(generationModelsPatchSchema.safeParse({ fastDecisions: null }).success).toBe(true);
+    expect(generationModelsPatchSchema.safeParse({ fastDecisionsFallback: llm }).success).toBe(true);
+    expect(generationModelsPatchSchema.safeParse({ fastDecisionsFallback: JEV_SELECTION }).success).toBe(false);
+    expect(() => mergeGenerationModelPatch(
+      {},
+      { fastDecisions: llm } as unknown as GenerationModelsPatch,
+      routingFixture(llm),
+      [{ ...llm, label: "DeepSeek Flash" }],
+      true
+    )).toThrow(GenerationModelSelectionError);
+    expect(() => mergeGenerationModelPatch(
+      {},
+      { fastDecisionsFallback: llm },
+      routingFixture(llm),
+      [{ ...llm, label: "DeepSeek Flash" }],
+      true
+    )).toThrow(/Fast decisions fallback can only be set when Fast decisions is Jev/);
+    expect(() => mergeGenerationModelPatch(
+      { models: { fastDecisions: JEV_SELECTION } },
+      { fastDecisions: null, fastDecisionsFallback: llm },
+      routingFixture(llm),
+      [{ ...llm, label: "DeepSeek Flash" }],
+      true
+    )).toThrow(GenerationModelSelectionError);
+  });
+
+  it("keeps saved Jev visible after credential removal, without admitting it to text-only routes", async () => {
+    vi.stubEnv("VERCEL_AI_GATEWAY_API_KEY", "");
+    mockStoredRevision({ version: 1, settings: { models: { fastDecisions: JEV_SELECTION } } });
+    const app = Fastify({ logger: false });
+    await app.register(adminGenerationQualityRoutes);
+    const read = await app.inject({ method: "GET", url: "/api/admin/generation-quality" });
+    expect(read.json()).toMatchObject({ jevAvailable: false, models: { fastDecisions: JEV_SELECTION } });
+    for (const models of [{ fastDecisions: { ...JEV_SELECTION, thinkingBudget: 100 } }, { fastJudgments: JEV_SELECTION }, { fastDecisionsFallback: JEV_SELECTION }, { balanced: { writer: JEV_SELECTION } }, { fastDecisions: JEV_SELECTION }]) {
+      expect((await app.inject({ method: "PATCH", url: "/api/admin/generation-quality", payload: { models } })).statusCode).toBe(400);
+    }
+    expect(mockPrisma.generationQualityRevision.create).not.toHaveBeenCalled();
+    const reset = await app.inject({ method: "POST", url: "/api/admin/generation-quality/models/reset", payload: {} });
+    expect(reset.statusCode).toBe(200);
+    expect(reset.json().models.fastDecisions).toBeNull();
+    await app.close();
+    vi.unstubAllEnvs();
   });
 
   it("backfills compact context defaults in a stored pre-feature revision", async () => {
@@ -325,6 +522,24 @@ describe("admin generation model routing", () => {
     await app.close();
   });
 });
+
+const llm = { provider: "deepseek" as const, model: "deepseek-v4-flash" };
+
+function catalogFor(...leaves: Array<{ provider: typeof llm.provider | "alibaba" | "deepinfra"; model: string }>) {
+  return leaves.map((leaf) => ({ ...leaf, label: `${leaf.provider}/${leaf.model}` }));
+}
+
+function routingFixture(leaf: { provider: "deepseek"; model: string }): GenerationTextModelRouting {
+  const pair = { writer: leaf, writerFallback: leaf, judgment: leaf, judgmentFallback: leaf };
+  return {
+    fastJudgments: leaf,
+    fastJudgmentsFallback: leaf,
+    fast: pair,
+    balanced: pair,
+    premium: pair,
+    ultra: pair
+  };
+}
 
 function mockStoredRevision(current: { version: number; settings?: unknown } | null): void {
   mockPrisma.generationQualityRevision.findFirst.mockResolvedValue(

@@ -1,4 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+const openAIAdapterOptions = vi.hoisted(() => ({ last: undefined as object | undefined }));
+
+vi.mock("./openai.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./openai.js")>();
+  return {
+    ...actual,
+    OpenAITextAdapter: class extends actual.OpenAITextAdapter {
+      constructor(options: ConstructorParameters<typeof actual.OpenAITextAdapter>[0]) {
+        openAIAdapterOptions.last = options;
+        super(options);
+      }
+    }
+  };
+});
 import { loadConfig } from "../config.js";
 import { createProjectSchema } from "../schemas/book.js";
 import { AlibabaImageAdapter, AlibabaTextAdapter } from "./alibaba.js";
@@ -63,6 +78,17 @@ describe("text model provider selection", () => {
     expect((createTextModelAdapter(config, { provider: "deepinfra", model: "mistral-small-latest" }) as any).model).toBe(
       "mistralai/Mistral-Small-3.2-24B-Instruct-2506"
     );
+  });
+
+  it("omits maxRetries on adapter construction unless the caller sets it", () => {
+    const config = testConfig({});
+    const selection = { provider: "openai" as const, model: "gpt-5.6-sol" };
+
+    createTextModelAdapter(config, selection);
+    expect(openAIAdapterOptions.last).not.toHaveProperty("maxRetries");
+
+    createTextModelAdapter(config, selection, { maxRetries: 0 });
+    expect(openAIAdapterOptions.last).toEqual(expect.objectContaining({ maxRetries: 0 }));
   });
 
   it("keeps mock mode on fake text even when Gemini is selected", () => {

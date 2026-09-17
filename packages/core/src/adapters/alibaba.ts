@@ -24,11 +24,13 @@ import {
 } from "./alibabaModels.js";
 import { alibabaContentRefusal, alibabaRefusalReason } from "./alibabaImageRefusal.js";
 import { ImageContentRefusedError, isImageContentRefusalError } from "./imageRefusal.js";
+import { optionalMaxRetries } from "./optionalMaxRetries.js";
 import { ProviderHttpError } from "./retry.js";
 
 export { AlibabaJsonParseError, AlibabaJsonValidationError };
 
 export type AlibabaAdapterOptions = {
+  maxRetries?: number | undefined;
   apiKey: string | undefined;
   apiHost?: string | undefined;
   textModel?: string | undefined;
@@ -46,6 +48,7 @@ export class AlibabaTextAdapter extends OpenAIChatCompletionsTextAdapter {
     const model = normalizeAlibabaModel(options.textModel, DEFAULT_ALIBABA_TEXT_MODEL);
     super({
       client: new OpenAI({
+        ...optionalMaxRetries(options.maxRetries),
         apiKey: options.apiKey,
         baseURL: alibabaCompatibleBaseURL(options.apiHost)
       }),

@@ -1,4 +1,5 @@
 import { withProjectSources } from "./sourceContext.js";
+import { createLoggedDecisions } from "./loggedDecisions.js";
 import { createProviders as createCoreProviders } from "@book-maker/core";
 import { randomUUID } from "node:crypto";
 import {
@@ -92,6 +93,7 @@ export function createLoggedProviders(
   const text = withProjectSources(new LoggingTextModelAdapter(liveTextModel, logger, generationJobId, projectId, textModel), input, projectId, providers.embedding);
   return {
     text,
+    decisions: createLoggedDecisions(job, input, providers.embedding),
     research: new LoggingResearchAdapter(providers.research, logger, generationJobId),
     // Outside the provider fallback, so only a request both providers refused
     // reaches the rewrite.

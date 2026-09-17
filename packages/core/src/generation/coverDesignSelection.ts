@@ -1,12 +1,16 @@
+import type { DecisionModelRoute } from "../adapters/decisions.js";
+import { isCancellationError } from "../adapters/retry.js";
 import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
 import {
   COVER_DESIGN_SELECTION_PURPOSE,
+  COVER_DESIGNS,
   coverDesign,
   coverDesignCatalogLines,
   fallbackCoverDesign,
   type CoverDesign
 } from "./coverDesigns.js";
+import { decideFromCandidates } from "./decisionSelection.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
 
@@ -19,6 +23,7 @@ export type CoverDesignChoice = {
 
 export type SelectCoverDesignOptions = {
   textModel: TextModelAdapter;
+  decisions?: DecisionModelRoute | undefined;
   input: CreateProjectInput;
   plan: BookPlan;
   /** Breaks ties in the model-free pick — pass the project id. */
@@ -59,53 +64,69 @@ export async function selectCoverDesign(options: SelectCoverDesignOptions): Prom
     selectedBy: "fallback"
   });
 
+  const decisionModel = await options.decisions?.resolve();
   try {
-    const result = await generateJsonWithRetry(options.textModel, {
-      purpose: COVER_DESIGN_SELECTION_PURPOSE,
-      temperature: 0.2,
-      maxTokens: 300,
-      schema: coverDesignSelectionSchema,
-      messages: [
-        {
-          role: "system",
-          content: [
-            "You choose one pre-made cover design for a finished book from a fixed catalog.",
-            "Answer with the design whose artwork best matches the book's subject, genre and mood.",
-            "The book's title and author are typeset over the artwork afterwards, so ignore typography and pick on imagery alone.",
-            `Reply as JSON: {"designId": "<one id from the catalog>", "reason": "<max 20 words>"}.`,
-            "Catalog:",
-            coverDesignCatalogLines()
-          ].join("\n")
-        },
-        {
-          role: "user",
-          content: JSON.stringify(
+    return await decideFromCandidates({
+      ...(decisionModel ? { decisionModel } : {}),
+      request: {
+        purpose: COVER_DESIGN_SELECTION_PURPOSE,
+        instructions: "Choose one pre-made cover design whose artwork best matches the book's subject, genre and mood. The title and author are typeset afterwards; ignore typography and pick on imagery alone.",
+        context: JSON.stringify({ title: options.title ?? options.plan.title, subtitle: options.subtitle ?? options.plan.subtitle, category: options.input.category, subcategory: options.input.subcategory, audience: options.plan.audience, premise: options.plan.premise, language: options.input.language }),
+        options: COVER_DESIGNS.map((design) => ({ id: design.id, description: `${design.name}: ${design.description} (${design.tags.join(", ")})` }))
+      },
+      fromDecision: (result) => {
+        const design = coverDesign(result.selectedOption);
+        return design ? { design, selectedBy: "model", ...(result.explanation ? { reason: result.explanation } : {}) } : fallback();
+      },
+      fallback: async () => {
+        const result = await generateJsonWithRetry(options.textModel, {
+          purpose: COVER_DESIGN_SELECTION_PURPOSE,
+          temperature: 0.2,
+          maxTokens: 300,
+          schema: coverDesignSelectionSchema,
+          messages: [
             {
-              title: options.title ?? options.plan.title,
-              subtitle: options.subtitle ?? options.plan.subtitle,
-              category: options.input.category,
-              subcategory: options.input.subcategory,
-              audience: options.plan.audience,
-              premise: options.plan.premise,
-              language: options.input.language
+              role: "system",
+              content: [
+                "You choose one pre-made cover design for a finished book from a fixed catalog.",
+                "Answer with the design whose artwork best matches the book's subject, genre and mood.",
+                "The book's title and author are typeset over the artwork afterwards, so ignore typography and pick on imagery alone.",
+                `Reply as JSON: {"designId": "<one id from the catalog>", "reason": "<max 20 words>"}.`,
+                "Catalog:",
+                coverDesignCatalogLines()
+              ].join("\n")
             },
-            null,
-            2
-          )
+            {
+              role: "user",
+              content: JSON.stringify(
+                {
+                  title: options.title ?? options.plan.title,
+                  subtitle: options.subtitle ?? options.plan.subtitle,
+                  category: options.input.category,
+                  subcategory: options.input.subcategory,
+                  audience: options.plan.audience,
+                  premise: options.plan.premise,
+                  language: options.input.language
+                },
+                null,
+                2
+              )
+            }
+          ]
+        });
+        const design = coverDesign(result.data.designId.trim());
+        if (!design) {
+          return fallback();
         }
-      ]
+        return {
+          design,
+          selectedBy: "model",
+          ...(result.data.reason ? { reason: result.data.reason } : {})
+        };
+      }
     });
-    const design = coverDesign(result.data.designId.trim());
-    if (!design) {
-      return fallback();
-    }
-    return {
-      design,
-      selectedBy: "model",
-      ...(result.data.reason ? { reason: result.data.reason } : {})
-    };
   } catch (error) {
-    if (options.bailOnError?.(error)) {
+    if (isCancellationError(error) || options.bailOnError?.(error)) {
       throw error;
     }
     return fallback();

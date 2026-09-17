@@ -26,8 +26,10 @@ export type GenerationTextModelTierRouting = {
   judgmentFallback: TextModelSelection;
 };
 
-/** The nine text-model routes and their operator-controlled fallback selections. */
+/** Per-tier writer and judgment routes, Fast judgments, and optional Fast decisions, each with an operator-controlled fallback. */
 export type GenerationTextModelRouting = {
+  fastDecisions?: DecisionModelSelection | null;
+  fastDecisionsFallback?: TextModelSelection;
   fastJudgments: TextModelSelection;
   fastJudgmentsFallback: TextModelSelection;
   fast: GenerationTextModelTierRouting;
@@ -35,6 +37,21 @@ export type GenerationTextModelRouting = {
   premium: GenerationTextModelTierRouting;
   ultra: GenerationTextModelTierRouting;
 };
+
+export const JEV_SELECTION = { provider: "vercel-ai-gateway", model: "typesafe-ai/jev" } as const;
+export type DecisionModelSelection = TextModelSelection | typeof JEV_SELECTION;
+
+export function isJevSelection(value: unknown): value is typeof JEV_SELECTION {
+  const candidate = record(value);
+  return candidate?.provider === JEV_SELECTION.provider && candidate.model === JEV_SELECTION.model;
+}
+
+export function parseDecisionModelSelection(value: unknown): DecisionModelSelection | undefined {
+  const candidate = record(value);
+  if (isJevSelection(candidate) &&
+      Object.keys(candidate).every((key) => key === "provider" || key === "model")) return { ...JEV_SELECTION };
+  return parseTextModelSelection(value);
+}
 
 export type GenerationTextModelOption = TextModelSelection & {
   label: string;
@@ -118,6 +135,8 @@ export function compiledGenerationTextModelRouting(
     configuredOptions
   );
   return {
+    fastDecisions: null,
+    fastDecisionsFallback: cloneSelection(fast.primary),
     fastJudgments: fast.primary,
     fastJudgmentsFallback: fast.fallback,
     fast: tierRoute(fast, fast),
@@ -141,6 +160,8 @@ export function resolveGenerationTextModelRouting(
   const stored = record(settings?.models);
   const fastJudgments = parseTextModelSelection(stored?.fastJudgments) ?? cloneSelection(compiled.fastJudgments);
   return {
+    fastDecisions: parseDecisionModelSelection(stored?.fastDecisions) ?? null,
+    fastDecisionsFallback: parseTextModelSelection(stored?.fastDecisionsFallback) ?? cloneSelection(fastJudgments),
     fastJudgments,
     fastJudgmentsFallback:
       parseTextModelSelection(stored?.fastJudgmentsFallback) ??

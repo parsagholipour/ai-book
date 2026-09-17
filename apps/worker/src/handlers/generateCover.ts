@@ -86,6 +86,7 @@ export async function generateCover(job: GenerateImageJob) {
   const designedCover = async (fallbackReason?: string): Promise<CoverArtworkResult> => {
     await updateJobProgress(generationJobId, { message: "Choosing a cover design" });
     const choice = await selectCoverDesign({
+      decisions: providers.decisions,
       textModel: providers.text,
       input,
       plan,

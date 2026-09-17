@@ -34,6 +34,7 @@ import {
 } from "./modelTiers.js";
 import { RoutingTextModelAdapter } from "./textRouting.js";
 import { FallbackTextModelAdapter, type TextFallbackEvent } from "./textFallback.js";
+import { optionalMaxRetries } from "./optionalMaxRetries.js";
 import { isTextProviderFallbackError } from "./retry.js";
 import {
   compiledGenerationTextModelRouting,
@@ -55,6 +56,7 @@ import type {
 } from "../schemas/book.js";
 
 export type ProviderSet = {
+  decisions?: import("./decisions.js").DecisionModelRoute | undefined;
   text: TextModelAdapter;
   research: ResearchAdapter;
   image: ImageAdapter;
@@ -529,9 +531,11 @@ function sameTextSelection(a: TextModelSelection, b: TextModelSelection): boolea
   );
 }
 
-export function createTextModelAdapter(config: AppConfig, selection: TextModelSelection): TextModelAdapter {
+export function createTextModelAdapter(config: AppConfig, selection: TextModelSelection, options: { maxRetries?: number } = {}): TextModelAdapter {
+  const maxRetries = optionalMaxRetries(options.maxRetries);
   if (selection.provider === "gemini") {
     return new GeminiTextAdapter({
+      ...maxRetries,
       apiKey: config.GEMINI_API_KEY,
       textModel: selection.model,
       thinkingBudget: selection.thinkingBudget,
@@ -541,6 +545,7 @@ export function createTextModelAdapter(config: AppConfig, selection: TextModelSe
   }
   if (selection.provider === "alibaba") {
     return new AlibabaTextAdapter({
+      ...maxRetries,
       apiKey: config.ALIBABA_API_KEY,
       apiHost: config.ALIBABA_API_HOST,
       textModel: selection.model
@@ -548,6 +553,7 @@ export function createTextModelAdapter(config: AppConfig, selection: TextModelSe
   }
   if (selection.provider === "openai") {
     return new OpenAITextAdapter({
+      ...maxRetries,
       apiKey: config.OPENAI_API_KEY,
       model: selection.model,
       thinkingEnabled: selection.thinkingEnabled,
@@ -556,6 +562,7 @@ export function createTextModelAdapter(config: AppConfig, selection: TextModelSe
   }
   if (selection.provider === "openai-compatible") {
     return new OpenAICompatibleTextAdapter({
+      ...maxRetries,
       baseURL: config.LOCAL_TEXT_BASE_URL,
       model: selection.model || config.LOCAL_TEXT_MODEL,
       apiKey: config.LOCAL_TEXT_API_KEY
@@ -563,6 +570,7 @@ export function createTextModelAdapter(config: AppConfig, selection: TextModelSe
   }
   if (selection.provider === "deepinfra") {
     return new DeepInfraAdapter({
+      ...maxRetries,
       apiKey: config.DEEPINFRA_API_KEY,
       baseURL: config.DEEPINFRA_BASE_URL,
       model: normalizeDeepInfraTextModel(selection.model),
@@ -572,6 +580,7 @@ export function createTextModelAdapter(config: AppConfig, selection: TextModelSe
   }
   if (selection.provider === "openrouter") {
     return new OpenRouterAdapter({
+      ...maxRetries,
       apiKey: config.OPENROUTER_API_KEY,
       baseURL: config.OPENROUTER_BASE_URL,
       model: selection.model,
@@ -581,6 +590,7 @@ export function createTextModelAdapter(config: AppConfig, selection: TextModelSe
   }
 
   return new DeepSeekAdapter({
+    ...maxRetries,
     apiKey: config.DEEPSEEK_API_KEY,
     baseURL: config.DEEPSEEK_BASE_URL,
     model: selection.model,

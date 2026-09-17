@@ -106,6 +106,11 @@ export function calculateTextGenerationCost(log: ProviderCostLog): number | null
     return roundCost(hintedCost);
   }
 
+  // Decision rows are settled by the attempt logger. Missing usage and failed
+  // requests must stay unpriced when a project summary replays the rate card.
+  if (metadataString(log.metadata, "operation") === "decision.choose" &&
+      metadataString(log.metadata, "liveStatus") !== null) return null;
+
   const provider = normalizeProvider(log.provider);
   const model = normalizeModel(log.model);
   const rate = resolveTextRate(provider, model, finiteTokenCount(log.promptTokens), resolveBilledAt(log));
@@ -316,6 +321,10 @@ function resolveTextRateCard(
     return null;
   }
 
+  if (provider === "vercel-ai-gateway" && model === "typesafe-ai/jev") {
+    return { inputPerMillion: 0.042, outputPerMillion: 0 };
+  }
+
   if (provider === "deepseek") {
     if (model === "deepseek-v4-pro" || model.startsWith("deepseek-v4-pro-")) {
       return DEEPSEEK_V4_PRO_RATES;
@@ -441,7 +450,7 @@ function compactTokenCount(tokens: number): string {
 
 function isTextProviderLog(log: ProviderCostLog): boolean {
   const operation = metadataString(log.metadata, "operation");
-  if (operation?.startsWith("text.")) {
+  if (operation?.startsWith("text.") || operation === "decision.choose") {
     return true;
   }
   if (operation && !operation.startsWith("text.")) {

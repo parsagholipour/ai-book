@@ -9,11 +9,13 @@ import {
   DEFAULT_DEEPINFRA_BASE_URL,
   DEFAULT_DEEPINFRA_MODEL
 } from "./deepinfraModels.js";
+import { optionalMaxRetries } from "./optionalMaxRetries.js";
 
 const PROVIDER_LABEL = "DeepInfra";
 const PROVIDER_ID = "deepinfra";
 
 export type DeepInfraAdapterOptions = {
+  maxRetries?: number | undefined;
   apiKey: string | undefined;
   baseURL?: string | undefined;
   model?: string | undefined;
@@ -35,6 +37,7 @@ export class DeepInfraAdapter extends OpenAIChatCompletionsTextAdapter {
     const thinkingEffort = deepInfraReasoningEffort(options.thinkingEffort, thinkingEnabled);
     super({
       client: new OpenAI({
+        ...optionalMaxRetries(options.maxRetries),
         apiKey: options.apiKey,
         baseURL: options.baseURL ?? DEFAULT_DEEPINFRA_BASE_URL
       }),

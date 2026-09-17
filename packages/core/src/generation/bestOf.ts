@@ -1,9 +1,11 @@
+import type { DecisionModelAdapter, DecisionModelRoute } from "../adapters/decisions.js";
 import { z } from "zod";
 import { isCancellationError } from "../adapters/retry.js";
 import type { TextModelAdapter } from "../adapters/types.js";
 import { modelTierForInput } from "../adapters/modelTiers.js";
 import type { CreateProjectInput, PageDraft } from "../schemas/book.js";
 import type { ModelTier } from "../schemas/mediaSettings.js";
+import { decideFromCandidates } from "./decisionSelection.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 
 const draftJudgementSchema = z.object({
@@ -24,6 +26,7 @@ export type GenerateBestOfPageDraftsOptions<T extends BestOfDraftBase = BestOfDr
   baseOptions: T;
   candidateCount: number;
   judgeModel: TextModelAdapter;
+  decisions?: DecisionModelRoute | undefined;
 };
 
 /** Temperature stagger between best-of candidates, when the band has room for it. */
@@ -237,6 +240,7 @@ export async function generateBestOfPageDrafts<T extends BestOfDraftBase>(
     return drafts[0]!;
   }
 
+  const decisionModel = await options.decisions?.resolve();
   try {
     const chosenIndex = await judgePageDrafts({
       input: options.baseOptions.input,
@@ -245,7 +249,8 @@ export async function generateBestOfPageDrafts<T extends BestOfDraftBase>(
         ? `${options.baseOptions.pageBrief.purpose} ${options.baseOptions.pageBrief.beat}`
         : undefined,
       drafts,
-      judgeModel: options.judgeModel
+      judgeModel: options.judgeModel,
+      decisionModel
     });
     return drafts[chosenIndex] ?? drafts[0]!;
   } catch (error) {
@@ -268,54 +273,68 @@ async function judgePageDrafts(options: {
   pageBriefSummary?: string | undefined;
   drafts: PageDraft[];
   judgeModel: TextModelAdapter;
+  decisionModel?: DecisionModelAdapter | undefined;
 }): Promise<number> {
-  const result = await generateJsonWithRetry(options.judgeModel, {
-    purpose: "judge-page-drafts",
-    temperature: 0.1,
-    maxTokens: 600,
-    schema: draftJudgementSchema,
-    messages: [
-      {
-        role: "system",
-        content: [
-          "You are a senior fiction and non-fiction line editor judging competing drafts of the same book page.",
-          "Pick the single strongest draft using this rubric, in priority order:",
-          "1. Faithfulness to the page brief and concrete forward progression.",
-          "2. Natural human prose: no scaffold phrases, no formulaic AI rhetoric, no placeholder text.",
-          "3. Continuity with the book voice and characters.",
-          "4. Specificity: concrete detail beats generic summary.",
-          ...(options.pageIndex === 1
-            ? [
-                "This is the book's opening page: weigh the strength and speed of the hook heavily - how fast the first paragraph gives a reader a concrete reason to keep reading."
-              ]
-            : []),
-          "Return JSON with chosenIndex (0-based index of the winning draft) and a one-sentence rationale."
-        ].join(" ")
-      },
-      {
-        role: "user",
-        content: JSON.stringify(
+  const instructions = [
+    "You are a senior fiction and non-fiction line editor judging competing drafts of the same book page.",
+    "Pick the single strongest draft using this rubric, in priority order:",
+    "1. Faithfulness to the page brief and concrete forward progression.",
+    "2. Natural human prose: no scaffold phrases, no formulaic AI rhetoric, no placeholder text.",
+    "3. Continuity with the book voice and characters.",
+    "4. Specificity: concrete detail beats generic summary.",
+    ...(options.pageIndex === 1
+      ? [
+          "This is the book's opening page: weigh the strength and speed of the hook heavily - how fast the first paragraph gives a reader a concrete reason to keep reading."
+        ]
+      : []),
+    "Return JSON with chosenIndex (0-based index of the winning draft) and a one-sentence rationale."
+  ].join(" ");
+  return decideFromCandidates({
+    ...(options.decisionModel ? { decisionModel: options.decisionModel } : {}),
+    request: {
+      purpose: "judge-page-drafts",
+      instructions: instructions.replace("Return JSON with chosenIndex (0-based index of the winning draft) and a one-sentence rationale.", "Choose exactly one draft."),
+      context: JSON.stringify({ pageIndex: options.pageIndex, pageBrief: options.pageBriefSummary, category: options.input.category }),
+      options: options.drafts.map((draft, index) => ({ id: String(index), description: JSON.stringify({ title: draft.title, markdown: draft.markdown, summary: draft.summary }) }))
+    },
+    fromDecision: (result) => options.drafts.findIndex((_, index) => String(index) === result.selectedOption),
+    fallback: async () => {
+      const result = await generateJsonWithRetry(options.judgeModel, {
+        purpose: "judge-page-drafts",
+        temperature: 0.1,
+        maxTokens: 600,
+        schema: draftJudgementSchema,
+        messages: [
           {
-            pageIndex: options.pageIndex,
-            pageBrief: options.pageBriefSummary,
-            category: options.input.category,
-            candidates: options.drafts.map((draft, index) => ({
-              index,
-              title: draft.title,
-              markdown: draft.markdown,
-              summary: draft.summary
-            }))
+            role: "system",
+            content: instructions
           },
-          null,
-          2
-        )
-      }
-    ]
-  });
+          {
+            role: "user",
+            content: JSON.stringify(
+              {
+                pageIndex: options.pageIndex,
+                pageBrief: options.pageBriefSummary,
+                category: options.input.category,
+                candidates: options.drafts.map((draft, index) => ({
+                  index,
+                  title: draft.title,
+                  markdown: draft.markdown,
+                  summary: draft.summary
+                }))
+              },
+              null,
+              2
+            )
+          }
+        ]
+      });
 
-  const chosenIndex = result.data.chosenIndex;
-  if (chosenIndex < 0 || chosenIndex >= options.drafts.length) {
-    return 0;
-  }
-  return chosenIndex;
+      const chosenIndex = result.data.chosenIndex;
+      if (chosenIndex < 0 || chosenIndex >= options.drafts.length) {
+        return 0;
+      }
+      return chosenIndex;
+    }
+  });
 }

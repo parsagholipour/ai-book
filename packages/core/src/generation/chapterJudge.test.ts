@@ -50,6 +50,27 @@ describe("judgeChapterDrafts", () => {
     });
     expect(calls).toHaveLength(0);
   });
+
+  it("sends equal excerpts on the generateJson path so length cannot decide", async () => {
+    const first = Array.from({ length: 3000 }, (_, index) => `a${index}`).join(" ");
+    const second = Array.from({ length: 4000 }, (_, index) => `b${index}`).join(" ");
+    const { judge, calls } = judgePreferring(undefined);
+    await judgeChapterDrafts({ input, plan, chapter, drafts: [first, second], judge });
+    expect(calls).toEqual([
+      [judgeExcerpt(first), judgeExcerpt(second)],
+      [judgeExcerpt(second), judgeExcerpt(first)]
+    ]);
+    const unresolved = judgePreferring(undefined);
+    await judgeChapterDrafts({
+      input,
+      plan,
+      chapter,
+      drafts: [first, second],
+      judge: unresolved.judge,
+      decisions: { resolve: async () => undefined }
+    });
+    expect(unresolved.calls).toEqual(calls);
+  });
 });
 
 describe("judgeExcerpt", () => {

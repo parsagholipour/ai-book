@@ -40,6 +40,7 @@ import { jsonInputValue, jsonPayloadToRecord, serializeError } from "../runtime/
  */
 
 export async function recordProviderUsage(options: {
+  decisionMetadata?: { role: string; selectedOption?: string; probabilities?: Record<string, number>; escalationReason?: string };
   projectId: string | undefined;
   generationJobId: string | undefined;
   provider: string;
@@ -73,6 +74,7 @@ export async function recordProviderUsage(options: {
     if (options.liveUsageId) {
       await markLiveTextUsageFailed(options.liveUsageId, {
         durationMs: options.durationMs,
+        ...(options.decisionMetadata ? { decisionMetadata: options.decisionMetadata } : {}),
         ...(options.providerCallError !== undefined ? { error: options.providerCallError } : {}),
         ...optionalProviderCallMetadata(options.providerCallMetadata)
       });
@@ -81,7 +83,7 @@ export async function recordProviderUsage(options: {
   }
   const promptTokensEstimated = exactPromptTokens === null && promptTokens !== null;
   const outputTokensEstimated = exactOutputTokens === null && outputTokens !== null;
-  const provisional = promptTokensEstimated || outputTokensEstimated;
+  const provisional = promptTokensEstimated || outputTokensEstimated || Boolean(options.decisionMetadata && exactPromptTokens === null);
   // reasoningTokens are already inside outputTokens for billing — do not add them again.
   const costHint = provisional
     ? null
@@ -97,6 +99,7 @@ export async function recordProviderUsage(options: {
     operation: options.operation,
     callId: options.callId,
     liveStatus: "settled",
+    ...(options.decisionMetadata ? { decision: options.decisionMetadata } : {}),
     provisional,
     promptTokensEstimated,
     outputTokensEstimated,
@@ -414,6 +417,7 @@ export async function settleLiveTextUsageEstimate(
 export async function markLiveTextUsageFailed(
   liveUsageId: string | undefined,
   options: {
+    decisionMetadata?: { role: string; selectedOption?: string; probabilities?: Record<string, number>; escalationReason?: string };
     durationMs: number | null;
     error?: unknown;
     providerCallMetadata?: ProviderCallMetadata;
@@ -435,6 +439,7 @@ export async function markLiveTextUsageFailed(
         metadata: jsonInputValue({
           ...jsonPayloadToRecord(current?.metadata),
           liveStatus: "failed",
+          ...(options.decisionMetadata ? { decision: options.decisionMetadata } : {}),
           provisional: true,
           ...boundedProviderCallMetadata(
             options.providerCallMetadata,

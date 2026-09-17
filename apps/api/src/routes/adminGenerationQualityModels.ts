@@ -1,4 +1,6 @@
 import {
+  JEV_SELECTION,
+  isJevSelection,
   GENERATION_TEXT_MODEL_ROUTE_FIELDS,
   GENERATION_TEXT_MODEL_TIERS,
   generationTextModelOptionKey,
@@ -12,6 +14,10 @@ import {
 import type { Prisma } from "@book-maker/db";
 import { z } from "zod";
 
+const jevSelectionSchema = z.object({
+  provider: z.literal(JEV_SELECTION.provider),
+  model: z.literal(JEV_SELECTION.model)
+}).strict();
 const partialSelectionSchema = textModelSelectionSchema
   .partial()
   .strict()
@@ -32,6 +38,8 @@ export const generationModelsPatchSchema = z
   .object({
     fastJudgments: partialSelectionSchema.optional(),
     fastJudgmentsFallback: partialSelectionSchema.optional(),
+    fastDecisions: jevSelectionSchema.nullable().optional(),
+    fastDecisionsFallback: partialSelectionSchema.optional(),
     fast: tierModelsPatchSchema.optional(),
     balanced: tierModelsPatchSchema.optional(),
     premium: tierModelsPatchSchema.optional(),
@@ -42,6 +50,7 @@ export const generationModelsPatchSchema = z
     (value) =>
       value.fastJudgments !== undefined ||
       value.fastJudgmentsFallback !== undefined ||
+      value.fastDecisions !== undefined || value.fastDecisionsFallback !== undefined ||
       GENERATION_TEXT_MODEL_TIERS.some((tier) => value[tier] !== undefined),
     { message: "Name at least one model role." }
   );
@@ -87,6 +96,11 @@ export const generationModelsPatchOpenApi = {
   properties: {
     fastJudgments: partialSelectionOpenApi,
     fastJudgmentsFallback: partialSelectionOpenApi,
+    fastDecisions: { anyOf: [{
+      type: "object", additionalProperties: false, required: ["provider", "model"],
+      properties: { provider: { const: JEV_SELECTION.provider }, model: { const: JEV_SELECTION.model } }
+    }, { type: "null" }] },
+    fastDecisionsFallback: partialSelectionOpenApi,
     fast: tierModelsPatchOpenApi,
     balanced: tierModelsPatchOpenApi,
     premium: tierModelsPatchOpenApi,
@@ -109,7 +123,7 @@ export function unknownGenerationModelPaths(body: unknown): string[] {
     return [];
   }
   const unknown: string[] = [];
-  const rootKeys = new Set<string>(["fastJudgments", "fastJudgmentsFallback", ...GENERATION_TEXT_MODEL_TIERS]);
+  const rootKeys = new Set<string>(["fastJudgments", "fastJudgmentsFallback", "fastDecisions", "fastDecisionsFallback", ...GENERATION_TEXT_MODEL_TIERS]);
   for (const key of Object.keys(models)) {
     if (!rootKeys.has(key)) {
       unknown.push(`models.${key}`);
@@ -117,6 +131,8 @@ export function unknownGenerationModelPaths(body: unknown): string[] {
   }
   inspectSelection(models.fastJudgments, "models.fastJudgments", unknown);
   inspectSelection(models.fastJudgmentsFallback, "models.fastJudgmentsFallback", unknown);
+  inspectSelection(models.fastDecisions, "models.fastDecisions", unknown);
+  inspectSelection(models.fastDecisionsFallback, "models.fastDecisionsFallback", unknown);
   for (const tier of GENERATION_TEXT_MODEL_TIERS) {
     const tierValue = record(models[tier]);
     if (!tierValue) {
@@ -143,7 +159,8 @@ export function mergeGenerationModelPatch(
   storedSettings: unknown,
   patch: GenerationModelsPatch,
   compiled: GenerationTextModelRouting,
-  options: readonly GenerationTextModelOption[]
+  options: readonly GenerationTextModelOption[],
+  jevAvailable = false
 ): Prisma.InputJsonObject {
   const current = resolveGenerationTextModelRouting(storedSettings, compiled);
   const rawModels = cloneJsonObject(record(record(storedSettings)?.models));
@@ -177,16 +194,47 @@ export function mergeGenerationModelPatch(
     }
     rawModels[tier] = rawTier;
   }
+  if (patch.fastDecisions !== undefined) {
+    if (patch.fastDecisions === null) rawModels.fastDecisions = null;
+    else {
+      if (!isJevSelection(patch.fastDecisions)) {
+        throw new GenerationModelSelectionError(
+          "Fast decisions: only Jev or the existing judgment routes are allowed."
+        );
+      }
+      if (!jevAvailable) throw new GenerationModelSelectionError("Fast decisions: Jev credentials are unavailable.");
+      rawModels.fastDecisions = { ...JEV_SELECTION };
+      // Fresh enable pins from the post-patch Fast judgments leaf, never leftover fallback.
+      if (!isJevSelection(current.fastDecisions) && patch.fastDecisionsFallback === undefined) {
+        rawModels.fastDecisionsFallback = {
+          ...(patch.fastJudgments ? rawModels.fastJudgments as object : current.fastJudgments)
+        } as Prisma.InputJsonObject;
+      }
+    }
+  }
+  if (patch.fastDecisionsFallback) {
+    const resultingPrimaryIsJev = patch.fastDecisions !== undefined
+      ? isJevSelection(patch.fastDecisions)
+      : isJevSelection(current.fastDecisions);
+    if (!resultingPrimaryIsJev) {
+      throw new GenerationModelSelectionError(
+        "Fast decisions fallback can only be set when Fast decisions is Jev."
+      );
+    }
+    rawModels.fastDecisionsFallback = validatedSelection(current.fastDecisionsFallback ?? current.fastJudgments, patch.fastDecisionsFallback, options, "Fast decisions fallback") as Prisma.InputJsonObject;
+  }
   return rawModels;
 }
 
-/** Reset the nine known primary/fallback route pairs and preserve routing a newer build may own. */
+/** Reset the known writer, judgment, and Fast-decision primary/fallback routes and preserve routing a newer build may own. */
 export function resetGenerationModels(
   storedSettings: unknown,
   compiled: GenerationTextModelRouting
 ): Prisma.InputJsonObject {
   const rawModels = cloneJsonObject(record(record(storedSettings)?.models));
   rawModels.fastJudgments = { ...compiled.fastJudgments } as Prisma.InputJsonObject;
+  rawModels.fastDecisions = null;
+  rawModels.fastDecisionsFallback = { ...(compiled.fastDecisionsFallback ?? compiled.fastJudgments) } as Prisma.InputJsonObject;
   rawModels.fastJudgmentsFallback = { ...compiled.fastJudgmentsFallback } as Prisma.InputJsonObject;
   for (const tier of GENERATION_TEXT_MODEL_TIERS) {
     const rawTier = cloneJsonObject(record(rawModels[tier]));
@@ -259,7 +307,7 @@ function inspectSelection(value: unknown, path: string, unknown: string[]): void
   if (!selection) {
     return;
   }
-  const allowed = new Set(Object.keys(selectionProperties));
+  const allowed = new Set(isJevSelection(selection) ? ["provider", "model"] : Object.keys(selectionProperties));
   for (const key of Object.keys(selection)) {
     if (!allowed.has(key)) {
       unknown.push(`${path}.${key}`);
@@ -267,8 +315,8 @@ function inspectSelection(value: unknown, path: string, unknown: string[]): void
   }
 }
 
-function cloneJsonObject(value: Record<string, unknown> | undefined): Record<string, Prisma.InputJsonValue> {
-  return value ? (JSON.parse(JSON.stringify(value)) as Record<string, Prisma.InputJsonValue>) : {};
+function cloneJsonObject(value: Record<string, unknown> | undefined): Record<string, Prisma.InputJsonValue | null> {
+  return value ? (JSON.parse(JSON.stringify(value)) as Record<string, Prisma.InputJsonValue | null>) : {};
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {

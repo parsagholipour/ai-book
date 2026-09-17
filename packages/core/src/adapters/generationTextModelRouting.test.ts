@@ -13,6 +13,8 @@ import { ProviderHttpError } from "./retry.js";
 import {
   compiledGenerationTextModelRouting,
   generationTextModelOptionKey,
+  isJevSelection,
+  JEV_SELECTION,
   resolveGenerationTextModelRouting,
   type GenerationTextModelRouting
 } from "./generationTextModelRouting.js";
@@ -25,11 +27,19 @@ import type {
 } from "./types.js";
 
 describe("generation text model routing", () => {
+  it("identifies Jev by provider and model together", () => {
+    expect(isJevSelection(JEV_SELECTION)).toBe(true);
+    expect(isJevSelection({ provider: JEV_SELECTION.provider, model: "other" })).toBe(false);
+    expect(isJevSelection({ provider: "deepseek", model: JEV_SELECTION.model })).toBe(false);
+  });
+
   it("reproduces all nine historical defaults and resolves legacy revisions", () => {
     const config = testConfig({});
     const defaults = compiledGenerationTextModelRouting(config, generationTextModelOptions(config));
 
     expect(defaults).toEqual({
+      fastDecisions: null,
+      fastDecisionsFallback: { provider: "deepseek", model: "deepseek-v4-flash", thinkingEnabled: false },
       fastJudgments: { provider: "deepseek", model: "deepseek-v4-flash", thinkingEnabled: false },
       fastJudgmentsFallback: { provider: "deepinfra", model: "deepseek-ai/DeepSeek-V4-Flash", thinkingEnabled: false },
       fast: {

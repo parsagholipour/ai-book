@@ -1,5 +1,7 @@
 import type { FastifyBaseLogger, FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import {
+  JEV_SELECTION,
+  textGenerationCostRates,
   PAGE_REVIEW_PROMPT_MODES,
   PAGE_REVIEW_PROMPT_MODE_DEFAULTS,
   QUALITY_EFFORT_TIERS,
@@ -341,6 +343,7 @@ export const adminGenerationQualityRoutes: FastifyPluginAsync = async (fastify) 
   const appConfig = loadConfig();
   const modelOptions = generationTextModelOptions(appConfig);
   const compiledModels = compiledGenerationTextModelRouting(appConfig, modelOptions);
+  const jevAvailable = appConfig.MOCK_AI || Boolean(appConfig.VERCEL_AI_GATEWAY_API_KEY?.trim());
   fastify.get("/api/admin/generation-quality", {
     onRequest: requireGenerationQualityOperator,
     schema: { tags: ["admin"] }
@@ -348,7 +351,7 @@ export const adminGenerationQualityRoutes: FastifyPluginAsync = async (fastify) 
     const current = (await prisma.generationQualityRevision.findFirst({
       orderBy: { version: "desc" }
     })) as GenerationQualityRecord | null;
-    return serializeGenerationQuality(current, compiledModels, modelOptions);
+    return serializeGenerationQuality(current, compiledModels, modelOptions, jevAvailable);
   });
 
   fastify.patch(
@@ -374,13 +377,14 @@ export const adminGenerationQualityRoutes: FastifyPluginAsync = async (fastify) 
           ...(models ? { models } : {}),
           ...(pageReviewPromptModes ? { pageReviewPromptModes } : {}),
           compiledModels,
-          modelOptions
+          modelOptions,
+          jevAvailable
         });
         request.log.info(
           { event: "generation_quality.updated", version: record.version },
           "Generation quality settings updated"
         );
-        return serializeGenerationQuality(record, compiledModels, modelOptions);
+        return serializeGenerationQuality(record, compiledModels, modelOptions, jevAvailable);
       });
     }
   );
@@ -403,13 +407,13 @@ export const adminGenerationQualityRoutes: FastifyPluginAsync = async (fastify) 
           request.log,
           cloneDefaults(),
           parsed.data.note?.trim() || "Reset to compiled defaults",
-          { resetPageReviewPromptModes: true, compiledModels, modelOptions }
+          { resetPageReviewPromptModes: true, compiledModels, modelOptions, jevAvailable }
         );
         request.log.info(
           { event: "generation_quality.reset", version: record.version },
           "Generation quality settings reset to compiled defaults"
         );
-        return serializeGenerationQuality(record, compiledModels, modelOptions);
+        return serializeGenerationQuality(record, compiledModels, modelOptions, jevAvailable);
       });
     }
   );
@@ -432,13 +436,13 @@ export const adminGenerationQualityRoutes: FastifyPluginAsync = async (fastify) 
           request.log,
           {},
           parsed.data.note?.trim() || "Reset model routing to compiled defaults",
-          { resetModels: true, compiledModels, modelOptions }
+          { resetModels: true, compiledModels, modelOptions, jevAvailable }
         );
         request.log.info(
           { event: "generation_quality.models_reset", version: record.version },
           "Generation text model routing reset to compiled defaults"
         );
-        return serializeGenerationQuality(record, compiledModels, modelOptions);
+        return serializeGenerationQuality(record, compiledModels, modelOptions, jevAvailable);
       });
     }
   );
@@ -633,6 +637,7 @@ async function appendGenerationQualityRevision(
     resetModels?: boolean | undefined;
     compiledModels: GenerationTextModelRouting;
     modelOptions: readonly GenerationTextModelOption[];
+    jevAvailable?: boolean;
   }
 ): Promise<GenerationQualityRecord> {
   for (let attempt = 0; ; attempt += 1) {
@@ -658,7 +663,8 @@ async function appendGenerationQualityRevision(
           current?.settings,
           modelChange.models,
           modelChange.compiledModels,
-          modelChange.modelOptions
+          modelChange.modelOptions,
+          modelChange.jevAvailable
         );
       } else if (modelChange.resetModels) {
         settings.models = resetGenerationModels(current?.settings, modelChange.compiledModels);
@@ -787,7 +793,8 @@ function cloneDefaults(): QualityFeatureSettings {
 function serializeGenerationQuality(
   record: GenerationQualityRecord | null,
   compiledModels: GenerationTextModelRouting,
-  modelOptions: readonly GenerationTextModelOption[]
+  modelOptions: readonly GenerationTextModelOption[],
+  jevAvailable = false
 ) {
   return {
     version: record?.version ?? 0,
@@ -795,6 +802,8 @@ function serializeGenerationQuality(
     pageReviewPromptModes: parsePageReviewPromptModes(record?.settings),
     models: resolveGenerationTextModelRouting(record?.settings, compiledModels),
     modelOptions,
+    jevAvailable,
+    jevCosts: textGenerationCostRates(JEV_SELECTION),
     usingCompiledDefaults: record == null,
     features: QUALITY_FEATURES,
     pipelines: serializeGenerationPipelines(),

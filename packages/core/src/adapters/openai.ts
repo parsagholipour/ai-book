@@ -9,6 +9,7 @@ import {
   serializeOpenAiToolArguments,
   toolParametersJsonSchema
 } from "./openaiToolCalling.js";
+import { optionalMaxRetries } from "./optionalMaxRetries.js";
 import { isCancellationError, ProviderHttpError } from "./retry.js";
 import type {
   ChatMessage,
@@ -33,6 +34,7 @@ const JSON_SYSTEM_MESSAGE: ChatMessage = {
 };
 
 export type OpenAITextAdapterOptions = {
+  maxRetries?: number | undefined;
   apiKey: string | undefined;
   model?: string | undefined;
   thinkingEnabled?: boolean | undefined;
@@ -64,7 +66,7 @@ export class OpenAITextAdapter implements TextModelAdapter {
     if (!options.apiKey) {
       throw new Error("OPENAI_API_KEY is required for OpenAI text generation.");
     }
-    this.client = new OpenAI({ apiKey: options.apiKey });
+    this.client = new OpenAI({ apiKey: options.apiKey, ...optionalMaxRetries(options.maxRetries) });
     this.model = options.model ?? OPENAI_GPT_5_6_SOL_MODEL;
     this.thinkingEffort = options.thinkingEffort ?? enabledEffort(options.thinkingEnabled);
   }

@@ -17,6 +17,7 @@ import {
   cloneGenerationModelRouting,
   generationModelRoutingClaim,
   readGenerationModelOptions,
+  readGenerationModelCosts,
   readGenerationModelRouting,
   rebaseGenerationModelRouting,
   type GenerationModelRoutingPatch
@@ -83,6 +84,8 @@ export type GenerationQuality = {
   pageReviewPromptModes: PageReviewPromptModes;
   models: GenerationTextModelRouting;
   modelOptions: GenerationTextModelOption[];
+  jevAvailable?: boolean;
+  jevCosts?: GenerationTextModelOption["costs"];
   usingCompiledDefaults: boolean;
   features: QualityFeature[];
   /** Strategies, routing and stages; null from a server that predates them. */
@@ -259,6 +262,8 @@ export function GenerationQualityScreen() {
           <GenerationModelRoutingSection
             models={modelDraft}
             options={state.modelOptions}
+            jevAvailable={state.jevAvailable ?? false}
+            jevCosts={state.jevCosts}
             disabled={busy}
             onChange={(models) => {
               if (busyRef.current) return;
@@ -641,6 +646,8 @@ export function readQualityHead(value: unknown): GenerationQuality | null {
     pageReviewPromptModes,
     models,
     modelOptions,
+    ...(readGenerationModelCosts(value.jevCosts) ? { jevCosts: readGenerationModelCosts(value.jevCosts)! } : {}),
+    ...(typeof value.jevAvailable === "boolean" ? { jevAvailable: value.jevAvailable } : {}),
     usingCompiledDefaults: value.usingCompiledDefaults === true,
     features,
     // Omitted rather than null when the server sent none, so a head from an

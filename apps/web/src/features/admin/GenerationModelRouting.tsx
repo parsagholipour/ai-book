@@ -1,5 +1,9 @@
 import { AlertTriangle, Cpu } from "lucide-react";
 import {
+  JEV_SELECTION,
+  isJevSelection,
+  parseDecisionModelSelection,
+  type DecisionModelSelection,
   GENERATION_TEXT_MODEL_ROUTE_FIELDS,
   GENERATION_TEXT_MODEL_TIERS,
   generationTextModelOptionKey,
@@ -14,6 +18,8 @@ import {
 } from "@book-maker/core/generationTextModelRouting";
 
 export type GenerationModelRoutingPatch = {
+  fastDecisions?: DecisionModelSelection | null;
+  fastDecisionsFallback?: Partial<TextModelSelection>;
   fastJudgments?: Partial<TextModelSelection> | undefined;
   fastJudgmentsFallback?: Partial<TextModelSelection> | undefined;
   fast?: Partial<Record<GenerationTextModelRouteField, Partial<TextModelSelection>>> | undefined;
@@ -32,10 +38,14 @@ const TIER_LABELS: Record<ModelTier, string> = {
 export function GenerationModelRoutingSection({
   models,
   options,
+  jevAvailable = false,
+  jevCosts,
   disabled,
   onChange
 }: {
   models: GenerationTextModelRouting;
+  jevAvailable?: boolean;
+  jevCosts?: GenerationTextModelOption["costs"];
   options: GenerationTextModelOption[];
   disabled: boolean;
   onChange: (next: GenerationTextModelRouting) => void;
@@ -74,6 +84,7 @@ export function GenerationModelRoutingSection({
           Short inline creation, routing, advisor, and language-detection decisions.
         </small>
       </div>
+      <FastDecisionFields models={models} options={options} jevAvailable={jevAvailable} jevCosts={jevCosts} disabled={disabled} onChange={onChange} />
       <div className="quality-model-table" role="table" aria-label="Tier model routing">
         <div className="quality-model-head" role="row">
           <span role="columnheader">Tier</span>
@@ -109,6 +120,37 @@ export function GenerationModelRoutingSection({
       </div>
     </section>
   );
+}
+
+function FastDecisionFields({ models, options, jevAvailable, jevCosts, disabled, onChange }: {
+  models: GenerationTextModelRouting;
+  options: GenerationTextModelOption[];
+  jevAvailable: boolean;
+  jevCosts?: GenerationTextModelOption["costs"];
+  disabled: boolean;
+  onChange: (models: GenerationTextModelRouting) => void;
+}) {
+  const selected = models.fastDecisions ?? null;
+  const isJev = isJevSelection(selected);
+  const savedText = selected && !isJev ? `${selected.provider}/${selected.model}` : "";
+  const key = !selected ? "" : isJev ? "jev" : savedText;
+  return <div className="quality-model-fast">
+    <div className="quality-model-field">
+      <label><span>Fast decisions</span>
+        <select aria-label="Fast decisions" disabled={disabled} value={key} onChange={(event) => {
+          onChange(applyFastDecisionsPrimaryChange(models, event.target.value));
+        }}>
+          <option value="">Use existing judgment routes</option>
+          {selected && isJev && !jevAvailable && <option disabled value="jev">Jev · TypeSafe (unavailable)</option>}
+          {savedText ? <option disabled value={savedText}>{savedText}</option> : null}
+          {jevAvailable && <option value="jev">Jev · TypeSafe{modelCostSuffix(jevCosts)}</option>}
+        </select>
+      </label>
+      {selected && isJev && !jevAvailable && <span className="quality-model-warning" role="status">Saved provider credentials are unavailable.</span>}
+    </div>
+    <ModelSelectionField label="Fast decisions fallback" selection={models.fastDecisionsFallback ?? models.fastJudgments} options={options} disabled={disabled || !isJev} onChange={(selection) => onChange({ ...models, fastDecisionsFallback: selection })} />
+    <small className="quality-model-fast-summary">Page drafts, chapter drafts, and catalog covers. Jev returns a choice without a written rationale; a winning probability below 70% or a provider failure uses the LLM fallback. Other judgments keep their existing routes.</small>
+  </div>;
 }
 
 function ModelRoutePair({
@@ -232,11 +274,31 @@ export function ModelSelectionField({
   );
 }
 
+/** Off → Jev pins fallback to the current Fast judgments leaf; turning Off leaves fallback untouched. */
+export function applyFastDecisionsPrimaryChange(
+  models: GenerationTextModelRouting,
+  value: string
+): GenerationTextModelRouting {
+  if (value === "jev") {
+    return {
+      ...models,
+      fastDecisions: { ...JEV_SELECTION },
+      ...(!isJevSelection(models.fastDecisions) ? { fastDecisionsFallback: { ...models.fastJudgments } } : {})
+    };
+  }
+  return { ...models, fastDecisions: null };
+}
+
 export function generationModelRoutingClaim(
   stored: GenerationTextModelRouting,
   draft: GenerationTextModelRouting
 ): GenerationModelRoutingPatch | null {
   const patch: GenerationModelRoutingPatch = {};
+  if (JSON.stringify(stored.fastDecisions ?? null) !== JSON.stringify(draft.fastDecisions ?? null)) patch.fastDecisions = draft.fastDecisions ?? null;
+  if (isJevSelection(draft.fastDecisions)) {
+    const decisionFallback = selectionDiff(stored.fastDecisionsFallback ?? stored.fastJudgments, draft.fastDecisionsFallback ?? draft.fastJudgments);
+    if (decisionFallback) patch.fastDecisionsFallback = decisionFallback;
+  }
   const fast = selectionDiff(stored.fastJudgments, draft.fastJudgments);
   if (fast) patch.fastJudgments = fast;
   const fastFallback = selectionDiff(stored.fastJudgmentsFallback, draft.fastJudgmentsFallback);
@@ -259,6 +321,8 @@ export function rebaseGenerationModelRouting(
   draft: GenerationTextModelRouting
 ): GenerationTextModelRouting {
   const rebased = cloneGenerationModelRouting(head);
+  if (JSON.stringify(loaded.fastDecisions ?? null) !== JSON.stringify(draft.fastDecisions ?? null)) rebased.fastDecisions = draft.fastDecisions ? { ...draft.fastDecisions } : null;
+  if (selectionDiff(loaded.fastDecisionsFallback ?? loaded.fastJudgments, draft.fastDecisionsFallback ?? draft.fastJudgments)) rebased.fastDecisionsFallback = { ...(draft.fastDecisionsFallback ?? draft.fastJudgments) };
   if (selectionDiff(loaded.fastJudgments, draft.fastJudgments)) rebased.fastJudgments = { ...draft.fastJudgments };
   if (selectionDiff(loaded.fastJudgmentsFallback, draft.fastJudgmentsFallback)) {
     rebased.fastJudgmentsFallback = { ...draft.fastJudgmentsFallback };
@@ -275,6 +339,8 @@ export function rebaseGenerationModelRouting(
 
 export function cloneGenerationModelRouting(models: GenerationTextModelRouting): GenerationTextModelRouting {
   return {
+    ...(models.fastDecisions !== undefined ? { fastDecisions: models.fastDecisions ? { ...models.fastDecisions } : null } : {}),
+    ...(models.fastDecisionsFallback ? { fastDecisionsFallback: { ...models.fastDecisionsFallback } } : {}),
     fastJudgments: { ...models.fastJudgments },
     fastJudgmentsFallback: { ...models.fastJudgmentsFallback },
     fast: cloneTier(models.fast),
@@ -289,12 +355,15 @@ export function readGenerationModelRouting(value: unknown): GenerationTextModelR
   if (!candidate) return null;
   const fastJudgments = readTextModelSelection(candidate.fastJudgments);
   const fastJudgmentsFallback = readTextModelSelection(candidate.fastJudgmentsFallback);
+  const fastDecisions = candidate.fastDecisions == null ? null : parseDecisionModelSelection(candidate.fastDecisions);
+  const fastDecisionsFallback = candidate.fastDecisionsFallback === undefined ? undefined : readTextModelSelection(candidate.fastDecisionsFallback);
+  if (fastDecisions === undefined || fastDecisionsFallback === null) return null;
   const fast = readTierModels(candidate.fast);
   const balanced = readTierModels(candidate.balanced);
   const premium = readTierModels(candidate.premium);
   const ultra = readTierModels(candidate.ultra);
   return fastJudgments && fastJudgmentsFallback && fast && balanced && premium && ultra
-    ? { fastJudgments, fastJudgmentsFallback, fast, balanced, premium, ultra }
+    ? { fastJudgments, fastJudgmentsFallback, fast, balanced, premium, ultra, ...(candidate.fastDecisions !== undefined ? { fastDecisions } : {}), ...(fastDecisionsFallback ? { fastDecisionsFallback } : {}) }
     : null;
 }
 
@@ -317,16 +386,7 @@ export function readGenerationModelOptions(value: unknown): GenerationTextModelO
       label: candidate.label,
       ...(Array.isArray(costs)
         ? {
-            costs: costs.map((cost) => {
-              const rate = cost as Record<string, number | string | undefined>;
-              return {
-                inputPerMillion: rate.inputPerMillion as number,
-                outputPerMillion: rate.outputPerMillion as number,
-                ...(typeof rate.cacheHitPerMillion === "number" ? { cacheHitPerMillion: rate.cacheHitPerMillion } : {}),
-                ...(typeof rate.cacheWritePerMillion === "number" ? { cacheWritePerMillion: rate.cacheWritePerMillion } : {}),
-                ...(typeof rate.label === "string" ? { label: rate.label } : {})
-              };
-            })
+            costs: readGenerationModelCosts(costs)!
           }
         : {}),
       ...(candidate.preview === true ? { preview: true } : {}),
@@ -343,6 +403,17 @@ export function readGenerationModelOptions(value: unknown): GenerationTextModelO
     });
   }
   return options;
+}
+
+export function readGenerationModelCosts(value: unknown): GenerationTextModelOption["costs"] | null {
+  if (!Array.isArray(value) || value.some((cost) => !validCostEntry(cost))) return null;
+  return value.map((cost) => ({
+    inputPerMillion: cost.inputPerMillion as number,
+    outputPerMillion: cost.outputPerMillion as number,
+    ...(typeof cost.cacheHitPerMillion === "number" ? { cacheHitPerMillion: cost.cacheHitPerMillion } : {}),
+    ...(typeof cost.cacheWritePerMillion === "number" ? { cacheWritePerMillion: cost.cacheWritePerMillion } : {}),
+    ...(typeof cost.label === "string" ? { label: cost.label } : {})
+  }));
 }
 
 function readTierModels(value: unknown): GenerationTextModelRouting["fast"] | null {

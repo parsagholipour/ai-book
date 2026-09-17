@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
+import type { DecisionRequest } from "../adapters/decisions.js";
 import { FakeTextModelAdapter } from "../adapters/fake.js";
 import type { GenerateJsonOptions } from "../adapters/types.js";
-import { SourceAwareTextModel } from "./generation.js";
+import { SourceAwareTextModel, SourceEvidenceContext } from "./generation.js";
 import { summarizeSource, summarizeSourceOverview } from "./summarization.js";
 import { type SourcePassage, type SourceService, sourceCitation } from "./types.js";
 
@@ -36,6 +37,23 @@ describe("sources through generation", () => {
     await new SourceAwareTextModel(inner, async () => service).generateText({ purpose: "page-qa", messages: [{ role: "user", content: `The archive closed in 2047. ${sourceCitation(passage)}` }] });
     expect(read).toHaveBeenCalledWith("source1", 3, 41);
     expect(JSON.stringify(generate.mock.calls[0]![0].messages)).toContain("ORCHID-913");
+  });
+  it("prepares a decision with the same cited evidence generation uses", async () => {
+    const read = vi.fn(async () => passage);
+    const service: SourceService = { overview: async () => [], search: async () => [], read };
+    const request: DecisionRequest = {
+      purpose: "judge-page-drafts",
+      instructions: "Choose the faithful draft",
+      context: "Book context",
+      options: [{ id: "a", description: `Archive closed. ${sourceCitation(passage)}` }, { id: "b", description: "It stayed open." }]
+    };
+    const prepared = await new SourceEvidenceContext(async () => service).prepareDecision(request);
+    expect(prepared.context).toContain("Book context");
+    expect(prepared.context).toContain(passage.content);
+    expect(prepared.context).toContain(sourceCitation(passage));
+    expect(prepared.context).toContain("\"privateSourcePassages\"");
+    expect(prepared.context).toContain("\"citation\"");
+    expect(read).toHaveBeenCalledWith("source1", 3, 41);
   });
   it("includes all section summaries in the hierarchical document summary", async () => {
     class SummaryModel extends FakeTextModelAdapter {

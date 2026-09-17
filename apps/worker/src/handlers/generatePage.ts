@@ -303,6 +303,7 @@ export async function generatePage(job: GeneratePageJob) {
           draftPage,
           baseOptions: draftOptions,
           candidateCount,
+          decisions: providers.decisions,
           judgeModel: providers.text
         })
       : await draftPage(draftOptions);

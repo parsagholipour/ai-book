@@ -28,7 +28,8 @@
     "db:deploy": "pnpm --filter @book-maker/db prisma migrate deploy",
     "db:seed": "pnpm --filter @book-maker/db seed",
     "docker:up": "docker compose up --build --watch",
-    "docker:up:detached": "docker compose up --build --watch -d"
+    "docker:up:detached": "docker compose up --build --watch -d",
+    "decisions:compare": "tsx scripts/compare-fast-decisions.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",

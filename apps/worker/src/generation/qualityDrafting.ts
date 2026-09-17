@@ -39,6 +39,7 @@ export async function polishPageWithQualityGates(options: {
       }
     },
     candidateCount,
+    decisions: options.providers.decisions,
     judgeModel: options.providers.text
   });
 }

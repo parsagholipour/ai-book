@@ -28,8 +28,10 @@ import { missingImagenImageError } from "./geminiImagenRefusal.js";
 import { missingNativeImageError } from "./geminiNativeImageRefusal.js";
 import { resolveGroundingRedirects } from "./groundingRedirect.js";
 import type { TextModelThinkingEffort } from "../schemas/book.js";
+import { optionalMaxRetries } from "./optionalMaxRetries.js";
 
 export type GeminiAdapterOptions = {
+  maxRetries?: number | undefined;
   apiKey: string | undefined;
   textModel?: string | undefined;
   thinkingBudget?: number | undefined;
@@ -50,7 +52,8 @@ export class GeminiTextAdapter implements TextModelAdapter {
     if (!options.apiKey) {
       throw new Error("GEMINI_API_KEY is required for Gemini text generation.");
     }
-    this.ai = new GoogleGenAI({ apiKey: options.apiKey });
+    const { maxRetries } = optionalMaxRetries(options.maxRetries);
+    this.ai = new GoogleGenAI({ apiKey: options.apiKey, ...(maxRetries !== undefined ? { httpOptions: { retryOptions: { attempts: maxRetries + 1 } } } : {}) });
     this.model = options.textModel ?? "gemini-2.5-flash";
     this.thinkingBudget = options.thinkingBudget;
     this.thinkingEnabled = options.thinkingEnabled;

@@ -672,6 +672,7 @@ export async function generateBookComposedChapters(options: {
         plan,
         chapter: setup.chapter,
         drafts: validated.map(figureStandInMarkdown),
+        decisions: providers.decisions,
         judge: judgeTextModel
       });
       draft = { ...(candidates[verdict.pick] ?? draft), markdown: validated[verdict.pick] ?? validated[0]! };

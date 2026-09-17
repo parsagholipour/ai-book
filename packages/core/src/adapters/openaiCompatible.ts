@@ -4,12 +4,14 @@ import {
   OpenAIChatCompletionsTextAdapter,
   type OpenAIChatCompletionsRequestKind
 } from "./openAiChatCompletionsText.js";
+import { optionalMaxRetries } from "./optionalMaxRetries.js";
 import { toOpenAiChatMessages } from "./openaiToolCalling.js";
 
 const PROVIDER_LABEL = "OpenAICompatible";
 const PROVIDER_ID = "openai-compatible";
 
 export type OpenAICompatibleAdapterOptions = {
+  maxRetries?: number | undefined;
   /** Chat-completions base URL, e.g. http://localhost:11434/v1 (Ollama) or http://localhost:8000/v1 (vLLM). */
   baseURL: string | undefined;
   model: string | undefined;
@@ -32,6 +34,7 @@ export class OpenAICompatibleTextAdapter extends OpenAIChatCompletionsTextAdapte
     }
     super({
       client: new OpenAI({
+        ...optionalMaxRetries(options.maxRetries),
         apiKey: options.apiKey?.trim() || "local",
         baseURL: options.baseURL
       }),

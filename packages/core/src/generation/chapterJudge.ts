@@ -1,6 +1,8 @@
+import type { DecisionModelAdapter, DecisionModelRoute } from "../adapters/decisions.js";
 import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
 import type { BookPlan, ChapterPlan, CreateProjectInput } from "../schemas/book.js";
+import { decideFromCandidates } from "./decisionSelection.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 
 /**
@@ -34,19 +36,35 @@ async function judgeOnce(
   judge: TextModelAdapter,
   header: Record<string, unknown>,
   first: string,
-  second: string
+  second: string,
+  decisionModel?: DecisionModelAdapter
 ): Promise<{ winner: "A" | "B"; reason: string }> {
-  const result = await generateJsonWithRetry(judge, {
-    purpose: JUDGE_CHAPTER_DRAFTS_PURPOSE,
-    temperature: 0.2,
-    maxTokens: 400,
-    schema: verdictSchema,
-    messages: [
-      { role: "system", content: JUDGE_RUBRIC },
-      { role: "user", content: JSON.stringify({ ...header, draftA: first, draftB: second }, null, 2) }
-    ]
+  return decideFromCandidates({
+    ...(decisionModel ? { decisionModel } : {}),
+    request: {
+      purpose: JUDGE_CHAPTER_DRAFTS_PURPOSE,
+      instructions: JUDGE_RUBRIC.split("A forced choice:")[0]! + "Choose A or B. Never answer with a tie.",
+      context: JSON.stringify(header),
+      options: [{ id: "A", description: first }, { id: "B", description: second }]
+    },
+    fromDecision: (result) => {
+      const winner = z.enum(["A", "B"]).parse(result.selectedOption);
+      return { winner, reason: result.explanation ?? "" };
+    },
+    fallback: async () => {
+      const result = await generateJsonWithRetry(judge, {
+        purpose: JUDGE_CHAPTER_DRAFTS_PURPOSE,
+        temperature: 0.2,
+        maxTokens: 400,
+        schema: verdictSchema,
+        messages: [
+          { role: "system", content: JUDGE_RUBRIC },
+          { role: "user", content: JSON.stringify({ ...header, draftA: first, draftB: second }, null, 2) }
+        ]
+      });
+      return result.data;
+    }
   });
-  return result.data;
 }
 
 const EXCERPT_HEAD_WORDS = 900;
@@ -67,18 +85,24 @@ export async function judgeChapterDrafts(options: {
   chapter: ChapterPlan;
   drafts: readonly string[];
   judge: TextModelAdapter;
+  decisions?: DecisionModelRoute | undefined;
 }): Promise<ChapterDraftVerdict> {
   if (options.drafts.length < 2) {
     return { pick: 0, agreed: true, reasons: [] };
   }
-  const [first, second] = [judgeExcerpt(options.drafts[0]!), judgeExcerpt(options.drafts[1]!)];
   const header = {
     book: { title: options.plan.title, audience: options.plan.audience },
     chapter: { index: options.chapter.index, title: options.chapter.title }
   };
+  const decisionModel = await options.decisions?.resolve();
+  const rawFirst = options.drafts[0]!;
+  const rawSecond = options.drafts[1]!;
+  const [first, second] = decisionModel
+    ? [rawFirst, rawSecond]
+    : [judgeExcerpt(rawFirst), judgeExcerpt(rawSecond)];
   const [forward, reversed] = await Promise.all([
-    judgeOnce(options.judge, header, first, second),
-    judgeOnce(options.judge, header, second, first)
+    judgeOnce(options.judge, header, first, second, decisionModel),
+    judgeOnce(options.judge, header, second, first, decisionModel)
   ]);
   // In the reversed order "A" is the second draft.
   const forwardPick = forward.winner === "A" ? 0 : 1;
