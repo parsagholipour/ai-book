@@ -7,19 +7,24 @@ infrastructure and never deploy. GitHub serializes the full apply/deploy workflo
 it does not cancel an active production deployment when another commit arrives.
 
 The API and worker run in separate containers using the shared `app` Docker
-target. The `web` target serves Vite's production build through Nginx on port 80
-and proxies `/api`, `/docs`, and generated assets to the API. Browser requests use
-the same origin, so no build-time API URL is needed. PostgreSQL/pgvector and Redis
-run on the private Compose network. Only Nginx publishes a host port.
-Durable files live in a private S3 bucket provisioned by Terraform. API and worker
-containers have separate disposable scratch directories and share files through S3.
+target. The `web` target serves Vite's production build through Nginx and proxies
+`/api`, `/docs`, and generated assets to the API. Browser requests use the same
+origin, so no build-time API URL is needed. A `caddy` container is the only
+service with host ports: it owns 80 and 443 on the instance's Elastic IP,
+terminates TLS for **https://tomeza.ravanix.app** with a Let's Encrypt certificate,
+and forwards to Nginx, which stays HTTP-only on the private Compose network
+alongside PostgreSQL/pgvector and Redis. Durable files live in a private S3 bucket
+provisioned by Terraform. API and worker containers have separate disposable
+scratch directories and share files through S3.
 
 ## One-time setup
 
 1. Keep the existing repository secrets `AWS_ACCESS_KEY_ID` and
    `AWS_SECRET_ACCESS_KEY`. The AWS principal must have the existing Terraform
    permissions plus permission to create/configure the S3 assets bucket, create ECR repositories, manage/pass the EC2
-   IAM role, push ECR images, write the `/book-maker/production/env` SSM parameter,
+   IAM role, allocate/associate an Elastic IP (`ec2:AllocateAddress`,
+   `ec2:AssociateAddress`, `ec2:DisassociateAddress`, `ec2:ReleaseAddress`,
+   `ec2:DescribeAddresses`), push ECR images, write the `/book-maker/production/env` SSM parameter,
    and call `ssm:DescribeInstanceInformation`, `ssm:SendCommand` (the
    `AWS-RunShellScript` document and the EC2 instance), and
    `ssm:GetCommandInvocation`. ECR push uses `ecr:GetAuthorizationToken`,
@@ -46,14 +51,82 @@ containers have separate disposable scratch directories and share files through 
    The deployment waits up to ten minutes for the instance to become online in
    SSM, then installs Docker, Compose, and the AWS CLI if absent. The installer
    supports Ubuntu/Debian and Amazon Linux on x86_64.
-4. Choose a reachable origin for `PUBLIC_API_URL`. **The existing Terraform
-   security group still permits HTTP/HTTPS only from the VPC subnet**. This change
-   does not make the app public or configure DNS/TLS. For public use, put an HTTPS
-   reverse proxy/load balancer in front and configure its ingress deliberately.
-   For private testing, use SSM port forwarding to port 80 or a host in the subnet.
+4. Point DNS at the instance and set `PUBLIC_API_URL=https://tomeza.ravanix.app`.
+   See [Public hostname and TLS](#public-hostname-and-tls) below for the exact
+   Hetzner record, the secret to update, and the post-DNS check.
+
+## Public hostname and TLS
+
+Visitors reach EC2 directly; there is no load balancer, Route 53, ACM, or CDN.
+
+- **Elastic IP.** Terraform allocates an Elastic IP (`aws_eip.book_maker`) and
+  associates it with the instance. Read it with `terraform output -raw elastic_ip`
+  (the `public_ip` output is the same address); the apply job also prints it at the
+  end of the Terraform step. The instance's auto-assigned address is superseded and
+  never used. Resizing the instance keeps the Elastic IP. Replacing the instance
+  must re-associate **the same** Elastic IP: `aws_eip_association` does that
+  automatically when Terraform replaces `aws_instance.book_maker`; if you replace
+  the server by hand, associate the existing allocation rather than a new one, or
+  the DNS record below goes stale.
+- **Security group.** Inbound TCP 80 and 443 from `0.0.0.0/0`, nothing else. Port
+  80 exists for the ACME HTTP-01 challenge and the redirect to HTTPS. SSH,
+  PostgreSQL, Redis, and the API port are closed; deployment uses SSM. The S3 assets
+  bucket stays private. The first plan after this change shows the security group
+  being **replaced**: its description changed, which AWS cannot edit in place.
+  Terraform creates the new group first, moves the running instance onto it in
+  place, then deletes the old one; the instance itself is not replaced.
+- **TLS on the instance.** The `caddy` service in
+  [`docker-compose.production.yml`](../docker-compose.production.yml) runs
+  [`deploy/Caddyfile`](../deploy/Caddyfile): automatic HTTPS for
+  `tomeza.ravanix.app` only, `http://` redirected to `https://`, and every request
+  reverse-proxied to `web:80` with `Host`, `X-Real-IP`, `X-Forwarded-For`, and
+  `X-Forwarded-Proto`. Nginx passes the edge's `X-Real-IP` and `X-Forwarded-Proto`
+  on to the API. Request bodies up to 100 MB and the 600 s upstream read timeout
+  are enforced once, in `deploy/nginx.conf`; Caddy adds no lower limit and
+  disables response buffering like Nginx does for `/api`. Certificates and the
+  Let's Encrypt account live in the `caddy-data` volume, so renewals survive
+  redeploys; the deploy script never removes volumes. The account contact is
+  `ACME_EMAIL` in `PRODUCTION_ENV`, default `support@ravanix.app`. Caddy also
+  answers plain HTTP for `Host: 127.0.0.1` from private addresses only, which is
+  how the deploy script checks `http://127.0.0.1/api/health` through the whole
+  edge without a certificate. No Certbot on the host, no TLS in the web image.
+- **One origin.** `https://tomeza.ravanix.app` serves the operator console, `/api`,
+  `/docs`, and `/assets/...`. There is no separate API hostname.
+
+### DNS at Hetzner (manual)
+
+The registrar stays GoDaddy and the nameservers stay at Hetzner; do not change
+either. `ravanix.app` itself already serves other sites from Hetzner, so touch only
+the `tomeza` subdomain:
+
+1. Run the Terraform workflow (or `terraform apply`) and read `elastic_ip`.
+2. In Hetzner DNS Console for the `ravanix.app` zone, add or replace one record:
+   type **A**, name **tomeza**, value **the Elastic IP**, TTL short (300 s) until it
+   works, then raise it if you like.
+3. Do **not** add an AAAA record: the instance has no public IPv6.
+4. Leave the apex (`@`) and every other record as they are.
+5. After the record resolves (`dig +short tomeza.ravanix.app` returns the Elastic
+   IP), Caddy obtains the certificate on its own and renews it later. It starts
+   trying at container start, so if Caddy was already running before the record
+   existed its retries are backing off; `docker compose ... restart caddy` (see
+   Operations) forces an immediate attempt. `docker compose ... logs caddy` shows
+   `certificate obtained successfully`.
+
+### Switch the app to the hostname
+
+1. In the GitHub environment secret `PRODUCTION_ENV`, set
+   `PUBLIC_API_URL=https://tomeza.ravanix.app` (optionally
+   `ACME_EMAIL=support@ravanix.app`), then rerun the Terraform workflow or push to
+   `master` to redeploy. Image and asset URLs are built from this value.
+2. Flutter production builds require an HTTPS API origin:
+   `--dart-define=APP_ENV=production --dart-define=API_BASE_URL=https://tomeza.ravanix.app`.
+   The legal-page defaults already use this hostname.
+3. Post-DNS check: `curl -i https://tomeza.ravanix.app/healthz` returns `ok` with a
+   valid certificate, and `curl -i http://tomeza.ravanix.app/` returns a 308 to
+   `https://`.
 
 Terraform uses a **t3.small (2 GiB RAM)** and **20 GiB gp3 disk**. Resizing the
-existing instance can stop/start it and change its public IP. Worker concurrency
+existing instance can stop/start it; the Elastic IP is unchanged. Worker concurrency
 defaults to one job because the database and Chromium share those 2 GiB. Large
 PDF/image jobs can still exhaust that memory. The OCR model container is not
 included on this 2 GiB host. Set `GEMINI_API_KEY` in `PRODUCTION_ENV` to read scanned
@@ -99,12 +172,17 @@ The workflow does not replace a server to shrink its disk.
 - A host lock prevents overlapping deployment commands. Images are pulled first;
   then the worker gets up to five minutes to drain. The API and web stop while
   migrations and idempotent seeding run, so deployments have a brief outage.
+  Caddy keeps running and answers 502 meanwhile, so TLS and certificate renewal
+  are unaffected; it is recreated once web is healthy, then the release is checked
+  with `http://127.0.0.1/api/health` through the edge.
 - A failed migration or unhealthy service fails the GitHub job. There is no
   automatic schema rollback. After fixing a failed release, rerun the workflow.
-- Compose's named volumes retain PostgreSQL data and Redis AOF on the instance
-  disk; snapshot/back up them before replacing or terminating the instance.
-  Durable files survive independently in S3. The deploy script never deletes
-  volumes or the assets bucket. S3 storage does not back up the database.
+- Compose's named volumes retain PostgreSQL data, Redis AOF, and Caddy's
+  certificates on the instance disk; snapshot/back up them before replacing or
+  terminating the instance. Durable files survive independently in S3. The deploy
+  script never deletes volumes or the assets bucket. S3 storage does not back up
+  the database. Losing `caddy-data` only costs a fresh certificate request, within
+  Let's Encrypt rate limits.
 - Successful releases live under `/opt/book-maker/releases/`; `current` points to
   the last successful one. Unused local images older than seven days are pruned.
   ECR images are retained so an earlier image remains available for recovery.
@@ -120,7 +198,8 @@ set -a
 . ./images.env
 set +a
 docker compose --env-file .env -f docker-compose.production.yml ps
-docker compose --env-file .env -f docker-compose.production.yml logs --tail 100 api worker web
+docker compose --env-file .env -f docker-compose.production.yml logs --tail 100 api worker web caddy
+curl --fail http://127.0.0.1/api/health   # through Caddy and Nginx
 ```
 
 `images.env` contains image digests and the non-secret S3 bucket/region. Do not source the application `.env` as
@@ -136,8 +215,10 @@ docker build --target web -t book-maker:web .
 APP_IMAGE=book-maker:app WEB_IMAGE=book-maker:web bash scripts/check-production-docker.sh
 ```
 
-The smoke test binds an ephemeral localhost port and removes only its own test
-volumes. `docker-compose.yml` remains the development stack.
+The smoke test binds an ephemeral localhost port directly on Nginx, validates the
+Caddyfile with `caddy validate` without starting Caddy (so it never contacts
+Let's Encrypt), and removes only its own test volumes. `docker-compose.yml`
+remains the development stack and has no Caddy service.
 
 References: [SSM Run Command](https://docs.aws.amazon.com/systems-manager/latest/userguide/run-command.html),
 [AMIs with SSM Agent](https://docs.aws.amazon.com/systems-manager/latest/userguide/ami-preinstalled-agent.html),

@@ -32,9 +32,14 @@ compose=(docker compose --env-file .env -f docker-compose.production.yml)
 
 # Drain jobs before changing the database schema. Failed migrations leave the
 # applications stopped and fail the deployment; they must never be ignored.
+# Caddy keeps running: it answers 502 meanwhile, keeps TLS up and its
+# certificates, and re-resolves web:80 when the new container appears.
 "${compose[@]}" stop worker api web
 "${compose[@]}" run --rm --no-deps migrate
 "${compose[@]}" up -d --no-deps --wait --wait-timeout 240 api worker web
+# Recreated after web is healthy so a new edge never waits on an absent upstream.
+"${compose[@]}" up -d --no-deps --wait --wait-timeout 120 caddy
+# Through the published edge: Caddy -> Nginx -> API.
 curl --fail --silent --show-error http://127.0.0.1/api/health
 
 # Only mark a release current after every service passes its checks.

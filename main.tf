@@ -96,17 +96,22 @@ resource "aws_key_pair" "deploy" {
   public_key = var.ssh_public_key
 }
 
+# Only the Caddy edge in docker-compose.production.yml is reachable from the
+# internet. SSH, PostgreSQL, Redis and the API stay closed; deployment uses SSM.
 resource "aws_security_group" "book_maker" {
-  name        = "book-maker"
-  description = "HTTP/HTTPS from the book-maker subnet only"
+  # `description` forces a new group, and a static `name` cannot coexist with
+  # its replacement, so the group is created before the old one is destroyed
+  # and the instance is moved across in place.
+  name_prefix = "book-maker-"
+  description = "Public HTTP/HTTPS to the Caddy edge; no other inbound traffic"
   vpc_id      = aws_vpc.book_maker.id
 
   ingress {
-    description = "HTTP"
+    description = "HTTP (ACME HTTP-01 and redirect to HTTPS)"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = [aws_subnet.book_maker.cidr_block]
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
@@ -114,7 +119,7 @@ resource "aws_security_group" "book_maker" {
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = [aws_subnet.book_maker.cidr_block]
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
@@ -123,8 +128,18 @@ resource "aws_security_group" "book_maker" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  tags = {
+    Name = "book-maker"
+  }
 }
 
+# associate_public_ip_address stays true: changing it replaces the instance, and
+# the Elastic IP association below supersedes the auto-assigned address anyway.
 resource "aws_instance" "book_maker" {
   ami                         = "ami-0303e2e4a29f041a3"
   instance_type               = var.instance_type
@@ -149,6 +164,29 @@ resource "aws_instance" "book_maker" {
   }
 }
 
+# The address the tomeza.ravanix.app A record at Hetzner points to. The
+# instance's auto-assigned public IP changes on every stop/start; this one
+# survives resizing and even replacing the instance as long as the
+# association is re-applied.
+resource "aws_eip" "book_maker" {
+  domain     = "vpc"
+  depends_on = [aws_internet_gateway.book_maker]
+
+  tags = {
+    Name = "book-maker"
+  }
+}
+
+resource "aws_eip_association" "book_maker" {
+  instance_id   = aws_instance.book_maker.id
+  allocation_id = aws_eip.book_maker.id
+}
+
+output "elastic_ip" {
+  value = aws_eip.book_maker.public_ip
+}
+
+# Kept for existing callers; it is the Elastic IP, never the ephemeral address.
 output "public_ip" {
-  value = aws_instance.book_maker.public_ip
+  value = aws_eip.book_maker.public_ip
 }

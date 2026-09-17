@@ -69,3 +69,4 @@ override.tf.json
 *_override.tf.json
 .terraform.tfvars
 *.auto.tfvars
+.env.production

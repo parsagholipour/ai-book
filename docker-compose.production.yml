@@ -113,11 +113,10 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # HTTP only, on the Compose network; Caddy is the only host-published edge.
   web:
     image: ${WEB_IMAGE:?Set WEB_IMAGE to the web image digest}
     restart: unless-stopped
-    ports:
-      - "80:80"
     healthcheck:
       test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1/healthz]
       interval: 10s
@@ -128,6 +127,33 @@ services:
         condition: service_healthy
     logging: *logging
 
+  # TLS termination for tomeza.ravanix.app (deploy/Caddyfile). Certificates
+  # live in caddy-data so Let's Encrypt renewals survive redeploys.
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Let's Encrypt expiry/problem notices. Not a secret.
+      ACME_EMAIL: ${ACME_EMAIL:-support@ravanix.app}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    # Through Caddy's private-only HTTP site to Nginx to the API.
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1/api/health]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 12
+    depends_on:
+      web:
+        condition: service_healthy
+    logging: *logging
+
 volumes:
   postgres-data:
   redis-data:
+  caddy-data:

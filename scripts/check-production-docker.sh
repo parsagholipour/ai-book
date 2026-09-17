@@ -9,6 +9,9 @@ export S3_BUCKET=book-maker-smoke S3_REGION=us-east-1
 repo_dir=$(cd "$(dirname "$0")/.." && pwd)
 smoke_dir=$(mktemp -d)
 project="book-maker-smoke-${GITHUB_RUN_ID:-$$}"
+# The Compose file mounts ./deploy/Caddyfile relative to the project directory.
+mkdir -p "$smoke_dir/deploy"
+cp "$repo_dir/deploy/Caddyfile" "$smoke_dir/deploy/Caddyfile"
 cat > "$smoke_dir/.env" <<'ENV'
 POSTGRES_PASSWORD=smoke-test-password
 WEB_PASSWORD=smoke-test-operator
@@ -45,6 +48,8 @@ services:
     depends_on:
       minio:
         condition: service_healthy
+  # Caddy (the production edge) is never started here: no Let's Encrypt from
+  # CI. The smoke test stays HTTP against Nginx on an ephemeral localhost port.
   web:
     ports: !override
       - "127.0.0.1::80"
@@ -65,6 +70,8 @@ trap cleanup EXIT
 
 "${compose[@]}" up -d --wait --wait-timeout 60 minio
 "${compose[@]}" run --rm --no-deps minio-init
+# Parse and provision the edge config without starting it (no ACME traffic).
+"${compose[@]}" run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile
 "${compose[@]}" up -d --wait --wait-timeout 240 postgres redis api worker web
 address=$("${compose[@]}" port web 80)
 curl --fail --silent --show-error "http://$address/api/health"

@@ -33,8 +33,8 @@ def main():
 
     bundle = io.BytesIO()
     with tarfile.open(fileobj=bundle, mode="w:gz") as archive:
-        for path in ["docker-compose.production.yml", "scripts/install-production-docker.sh",
-                     "scripts/deploy-production.sh"]:
+        for path in ["docker-compose.production.yml", "deploy/Caddyfile",
+                     "scripts/install-production-docker.sh", "scripts/deploy-production.sh"]:
             archive.add(path, arcname=path)
     encoded = base64.b64encode(bundle.getvalue()).decode("ascii")
     release = "/opt/book-maker/releases/" + os.environ["RELEASE_ID"]
