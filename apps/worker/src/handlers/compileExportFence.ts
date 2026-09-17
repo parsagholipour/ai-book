@@ -379,7 +379,7 @@ export function exportRepairOwnershipFence(
  * an operator greps `generation.consistency_warning` for across every book on
  * the box, in the shape the siblings already use. The run log is where somebody
  * who already has one book in front of them and is asking "why is this one
- * unrepaired" actually looks: `<BOOK_STORAGE_DIR>/<projectId>/runs/`, the same
+ * unrepaired" actually looks: `books/<projectId>/runs/`, the same
  * file every provider call this compile made is in, so the line lands in
  * sequence between the repair's last rewrite and the render that followed it.
  * `RunLogger.append` swallows its own write failures, which is what makes it

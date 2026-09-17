@@ -1,7 +1,6 @@
 import { config } from "../runtime/config.js";
 import { updateJobProgress } from "../runtime/jobLifecycle.js";
 import { type WorkerImageAsset } from "../runtime/jobTypes.js";
-import { safeJsonStringify } from "../runtime/serialization.js";
 import {
   buildCharacterReferencePrompt,
   characterReferenceSeedInstruction,
@@ -9,7 +8,7 @@ import {
   imageAdapterCapabilities,
   imageRefusalReason,
   isImageContentRefusalError,
-  libraryCharacterDiskPath,
+  libraryCharacterObjectKey,
   libraryCharactersFromMediaSettings,
   matchLibraryCharacter,
   optimizeImageForStorage,
@@ -37,16 +36,14 @@ import {
 } from "./characterReferenceSettlement.js";
 import {
   discardCharacterReferenceSheetFiles,
-  localImagePathForAsset,
-  projectImageDir,
+  imageReferenceForAsset,
   renderedSheetFileNames
 } from "./characterReferenceSheetFiles.js";
 import type { CharacterReferenceSelection } from "./characterReferencePrompt.js";
 import { runCharacterReferenceRenderPass } from "./characterReferenceRenderLease.js";
 import { Prisma, prisma } from "@book-maker/db";
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdir, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { appendRunLog, objectKey, objectReference, objectStore } from "@book-maker/storage";
 
 /**
  * Character reference sheets: the DB/FS half of keeping illustrated casts
@@ -251,8 +248,6 @@ type RenderedCharacterReferences = {
 async function renderCharacterReferenceSheets(
   options: CharacterReferenceRenderOptions
 ): Promise<RenderedCharacterReferences> {
-  const imageDir = projectImageDir(options.projectId);
-  await mkdir(imageDir, { recursive: true });
 
   // The renders are independent, so a small worker pool runs them
   // concurrently instead of paying one image-model latency per character in
@@ -344,7 +339,7 @@ async function renderCharacterReferenceSheets(
         });
         const optimizedImage = await optimizeImageForStorage({ bytes: image.bytes, mimeType: image.mimeType });
         const filename = `${fileStems[index]!}.${optimizedImage.extension}`;
-        await writeFile(join(imageDir, filename), optimizedImage.bytes);
+        await objectStore().put(objectKey("images", options.projectId, filename), optimizedImage.bytes, { contentType: optimizedImage.mimeType });
         rendered[index] = {
           character,
           prompt,
@@ -434,10 +429,10 @@ function publishedCharacterReferenceSheets(
   current: CharacterReferenceState
 ): boolean {
   const written = new Set(
-    renderedSheetFileNames(result.rendered).map((filename) => join(projectImageDir(projectId), filename))
+    renderedSheetFileNames(result.rendered).map((filename) => objectReference(objectKey("images", projectId, filename)))
   );
   return current.assets.some((asset) => {
-    const stored = localImagePathForAsset(asset.path, projectId);
+    const stored = imageReferenceForAsset(asset.path, projectId);
     return stored !== undefined && written.has(stored);
   });
 }
@@ -592,7 +587,7 @@ async function libraryPortraitSeedForName(
 
 /**
  * The security-relevant ownership trio — owner-prefix check,
- * `libraryCharacterDiskPath`, `stat` — lives here and only here; every path
+ * `libraryCharacterObjectKey`, object HEAD — lives here and only here; every path
  * that reads a portrait off a stored snapshot (seeding, page faces, the chat
  * `add_image` insertion) resolves through it.
  */
@@ -615,18 +610,14 @@ export async function resolveLibraryPortraitSeed(
   if (!match.portraitFile.startsWith(`${ownerUserId}/`)) {
     return { seeded: false, reason: "portrait_owned_by_another_user", ...matched };
   }
-  const path = libraryCharacterDiskPath(config.IMAGE_STORAGE_DIR, match.portraitFile);
+  const path = libraryCharacterObjectKey(match.portraitFile);
   if (!path) {
     return { seeded: false, reason: "portrait_path_rejected", ...matched };
   }
-  try {
-    if (!(await stat(path)).isFile()) {
-      return { seeded: false, reason: "portrait_file_missing", ...matched };
-    }
-  } catch {
+  if (!(await objectStore().head(path))) {
     return { seeded: false, reason: "portrait_file_missing", ...matched };
   }
-  return { seeded: true, seed: { id: match.id, path, source: match.portraitSource ?? "generated" } };
+  return { seeded: true, seed: { id: match.id, path: objectReference(path), source: match.portraitSource ?? "generated" } };
 }
 
 /** What a rendered sheet's row records about its seeding, successful or not. */
@@ -668,7 +659,7 @@ async function logLibrarySeedSkipped(options: {
   characterName: string;
   outcome: Extract<LibraryPortraitSeedOutcome, { seeded: false }>;
 }): Promise<void> {
-  const logDir = join(config.BOOK_STORAGE_DIR, options.projectId, "runs");
+  const logDir = objectKey("books", options.projectId, "runs");
   const runId = safePathPart(options.generationJobId ?? "unknown-run");
   const entry = {
     timestamp: new Date().toISOString(),
@@ -681,8 +672,7 @@ async function logLibrarySeedSkipped(options: {
     libraryCharacterId: options.outcome.libraryCharacterId
   };
   try {
-    await mkdir(logDir, { recursive: true });
-    await appendFile(join(logDir, `${runId}-character-references.jsonl`), `${safeJsonStringify(entry)}\n`, "utf8");
+    await appendRunLog(`${logDir}/${runId}-character-references.jsonl`, entry);
   } catch (error) {
     console.error(`Failed to record a skipped character portrait seed for ${options.projectId}`, error);
   }
@@ -714,7 +704,7 @@ async function logCharacterReferenceRefused(options: {
     characterName: options.characterName,
     reason: options.reason
   });
-  const logDir = join(config.BOOK_STORAGE_DIR, options.projectId, "runs");
+  const logDir = objectKey("books", options.projectId, "runs");
   const runId = safePathPart(options.generationJobId ?? "unknown-run");
   const entry = {
     timestamp: new Date().toISOString(),
@@ -727,8 +717,7 @@ async function logCharacterReferenceRefused(options: {
     detail: options.detail
   };
   try {
-    await mkdir(logDir, { recursive: true });
-    await appendFile(join(logDir, `${runId}-character-references.jsonl`), `${safeJsonStringify(entry)}\n`, "utf8");
+    await appendRunLog(`${logDir}/${runId}-character-references.jsonl`, entry);
   } catch (error) {
     console.error(`Failed to record a refused character reference sheet for ${options.projectId}`, error);
   }
@@ -754,7 +743,7 @@ export async function selectReferenceImagePaths(options: {
     return { paths: [], libraryFaceNames: [] };
   }
   const localAssets = options.assets.flatMap((asset) => {
-    const path = localImagePathForAsset(asset.path, options.projectId);
+    const path = imageReferenceForAsset(asset.path, options.projectId);
     return path ? [{ path, metadata: asset.metadata }] : [];
   });
   const sheets = selectCharacterReferenceAssets({

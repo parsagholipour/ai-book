@@ -2,13 +2,29 @@ node_modules
 .pnpm-store
 .git
 .env
-.env.local
+.env.*
+!.env.example
+.terraform
+*.tfstate*
+.scratch
+.codex-delegations
+.claude
+.cursor
+apps/mobile
+output
+docs
 dist
 coverage
 playwright-report
 test-results
-storage/books/**
-storage/images/**
+# Local render scratch only; durable files live in S3. Not `**/storage`: that
+# also matches packages/storage, the workspace package the app image is built from.
+storage
+apps/*/storage
+**/node_modules
+**/dist
+**/src/generated
+**/__pycache__
 logs
 *.log
 *.jsonl

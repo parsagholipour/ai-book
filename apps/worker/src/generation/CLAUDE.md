@@ -662,10 +662,16 @@ to draw.
 
 ## Compiling and publishing
 
+The live export names are private S3 keys. `exportArtifacts.ts` copies each predecessor to
+a unique `books/.export-backups/<projectId>/` key, uploads one local candidate at a time under the database claim, and
+restores the predecessor set on failure. Local pending files live only inside
+`withTemporaryDirectory`. The worker sweeps old S3 backups; each container sweeps its own
+heartbeat-protected scratch directories. S3 copies and uploads preserve the publication ordering in the incidents below.
+
 - **A recompile makes no model call, and that is a cache with one rule.**
   `createReaderChaptersForExport` used to run on *every* compile, including the ones the user was
   told are free and instant — a presentation toggle, an undo, a manual edit. It now returns
-  `{ chapters, source }` and `readerChapterCache.ts` memoizes it to `<projectDir>/reader-chapters.json`
+  `{ chapters, source }` and `readerChapterCache.ts` memoizes it to `books/<projectId>/reader-chapters.json`
   keyed by `readerChapterFingerprint`. Only `source === "model"` is written, and the union has three
   members because there are three outcomes: `"fallback"` is the deterministic grouping standing in
   for a call that failed or whose boundaries were rejected, and `"rejected"` is a reply that came
@@ -676,8 +682,7 @@ to draw.
   `schema: z.unknown()` accepts any JSON, so a misshaped reply is never retried and would otherwise
   be pinned for as long as the manuscript's text is unchanged. A genuine empty array is `"model"`
   and **is** cached — that is the case worth caching. The
-  `projectDir` mkdir is hoisted above the call site for this; do not move it back down beside the
-  `book.md` write.
+  cache lives independently of the compile’s scoped local render directory.
   **The cache is not the whole cost control, because that write rule makes a miss ordinary.** A book
   compiled before the cache existed has no entry, and neither does one whose chapterization fell
   back or came back unreadable — and a detached export repair is queued by a status read or a
@@ -702,7 +707,7 @@ to draw.
   EDITING and queues its own recompile. The stale compile used to write `book.md`/`book.pdf`/
   `book.epub` over the fresh ones and then set COMPLETE *unconditionally*, so a book could sit
   finished with the pre-edit PDF for good. `generation/exportPublication.ts` renders to
-  `.book-<uuid>.{md,pdf,epub}` beside the real names and publishes only after
+  `.book-<uuid>.{md,pdf,epub}` in scoped local scratch and publishes S3 objects only after
   `project.updateMany({ where: { id, contentRevision, OR: [{ exportInvalidationRevision: null },
   { exportInvalidationRevision: { not: contentRevision } }] } })` matches
   a row: the claim is first, so a
@@ -735,7 +740,7 @@ to draw.
   `ensureExportRepairQueued` — which takes only COMPLETE and REVIEW_REQUIRED — could not reach it.
   Each reader therefore blocks only on a barrier equal to *its own* claimed revision, which the
   revision CAS beside it has already pinned to the row. What that trades away is a compile for a
-  *later* revision publishing files a delayed tail then unlinks — the tail's barrier survives a
+  *later* revision publishing objects a delayed tail then deletes — the tail's barrier survives a
   non-text revision bump, since only another text edit overwrites it — and that is recoverable,
   because a settled project with a missing file is exactly what the repair lane rebuilds. But that
   trade only ever covered a barrier left at an *older* revision. The value a dying tail strands is
@@ -748,7 +753,7 @@ to draw.
   only when no APPLIED publication operation holds an unexpired lease, using `CURRENT_TIMESTAMP`
   in the same statement; it queues no doomed compile while a live tail owns the gap.
   `invalidateRevisionOwnedExports` reads a null barrier as "already retired", so a late redelivery
-  checkpoints instead of unlinking files the recovery compile may have installed. Only the text,
+  checkpoints instead of deleting objects the recovery compile may have installed. Only the text,
   continuation and replan forks stamp; the
   structural insert deliberately does not, because its clear would have to live in two other files
   and it has two publication arms, and a stranded barrier is worse than an absent one. The null arm is not decoration: Prisma compiles a bare
@@ -776,7 +781,7 @@ to draw.
   do: `compile-export` owns the project's outcome and has no retry budget, so the throw reached
   `markFailed` — a book whose pages were already written going FAILED and refunded, or its edit
   settled as a failure, over a few hundred bytes of metadata beside it. That is the same call the
-  provenance write two functions away already makes ("a book on disk must not be failed and refunded
+  provenance write two functions away already makes ("a book in object storage must not be failed and refunded
   because a hundred bytes of metadata could not be written"), and "no compile may fail, publish
   differently, or retry over the map" is the rule in `packages/core/src/generation/CLAUDE.md`. So an
   unmeasured, legacy or missing map is **degraded** to the stub instead, with a warn line naming the
@@ -791,7 +796,7 @@ to draw.
   handler's side of that rule is `compileExportCompanions.ts`: one table of renderers keyed by
   `CompanionExportFormat` — step key, one plain retry, the warning issue and the progress
   sentence — so the EPUB and the Word file take one code path and a third companion is one row.
-  `exportArtifacts.ts` is the filesystem half of publication, split out of
+  `exportArtifacts.ts` owns local candidates and S3 publication, split out of
   `exportPublication.ts` when the Word file pushed it past its budget: `publishedExportFormats`
   decides what a full compile or a repair installs, `artifactPublications` retires every
   companion the compile owed and could not render (`companionsProduced`), and both derive from
@@ -842,7 +847,7 @@ to draw.
   `generate-cover` job for that plan is what redraws the cast, which for a finished book means
   regenerating one page's illustration afterwards. The refusal's own `console.warn` names the
   `planId` for that reason. It is the line an operator sees — the run-log entry beside it is a file
-  inside the project's directory — and without the plan version it named the fact rather than the
+  inside the project’s object prefix — and without the plan version it named the fact rather than the
   row that holds it. What it does *not* write is a
   settlement the row already holds — the ordinary pass refuses nobody against a column already NULL,
   and `DbNull` over NULL is a row version and a dead tuple for no change inside the transaction that
@@ -857,7 +862,7 @@ to draw.
   and a *copyright* refusal additionally buys a text call to rewrite the prompt (two, if the reply
   needs repairing) plus a second full primary→fallback render. A cast with two or three of those
   outruns 300s, and the abort was the worst answer available — every sheet already rendered and paid
-  for rolled back, its files left on disk with no rows, and every waiting image job blocked for the
+  for rolled back, its objects left in storage with no rows, and every waiting image job blocked for the
   whole window. `characterReferenceRenderLease.ts` splits it into **claim, render, commit**: the
   advisory lock is still taken and still fences the check-then-claim, but what it now protects is a
   `PlanVersion.characterReferenceLease*` compare-and-set, in database time, taken and released in
@@ -944,7 +949,7 @@ to draw.
   an orphan file, which is the same storage noise `generateImage` and `applyImageInsertion` accept.
   **What that narrowing hands the reader is a cast per plan version, so the reader collapses.**
   Nothing sweeps a superseded cast — no replan, no continuation, no undo, and nothing in this repo
-  unlinks under `IMAGE_STORAGE_DIR/<projectId>/` short of the project being deleted — so a book's
+  deletes under `images/<projectId>/` short of the project being deleted — so a book's
   `CHARACTER_REFERENCE` rows now grow by one full cast per plan version, for good. Every reader
   scoped to a plan is unaffected by construction, and the one that is not,
   `insertionReferenceSelection`, met three identically-scoring drawings of one character where it
@@ -966,7 +971,7 @@ to draw.
   byte-for-byte unchanged so no existing book's files move.
   **And cast-wide uniqueness is only half of it, because the passes overlap now too.** Once the
   renders left the advisory lock, two of them can run over one cast — a lease that expired under a
-  slow render, or two plan versions of one book, whose leases are separate rows while this directory
+  slow render, or two plan versions of one book, whose leases are separate rows while this prefix
   is shared. Named from
   the cast alone that is one path with two writers, and the loser is the dangerous half: `writeFile`
   truncates in place under a page render reading the same path, and its bytes land on a sheet the
@@ -978,10 +983,10 @@ to draw.
   reached its size budget, as `characterReferenceSettlement.ts` and `characterReferenceSheetFiles.ts`
   later did.
 - **A pass owns every sheet file it wrote, because a per-pass name is unbounded and nothing else
-  sweeps that directory.** Naming a stem after its character alone made the file set bounded by the
+  sweeps that object prefix.** Naming a stem after its character alone made the object set bounded by the
   cast: a re-render overwrote the same paths however many times a book redrew them, which is what
   made "a losing pass leaves an orphan file" the cheap trade it was written as. The render id took
-  that away. Nothing in this repo unlinks anything under `IMAGE_STORAGE_DIR/<projectId>/` short of
+  that away. Nothing in this repo deletes anything under `images/<projectId>/` short of
   the project being deleted — `attachmentStorage.ts` expires user uploads and
   `startExportTempCleanup` expires export scratch, and that is the whole list — so **every** pass
   that does not publish leaves a *whole cast* behind for good: a provider timeout half way through
@@ -1000,7 +1005,7 @@ to draw.
   that does not sweep is a pass nothing sweeps for. And the render's first failure is *held* rather
   than thrown — a rejected `Promise.all` settles while its siblings are still inside a render, and
   their `writeFile`s would land behind the sweep.
-- **Which of those files the sweep may unlink is decided by a re-read of the rows, never by an
+- **Which of those objects the sweep may delete is decided by a re-read of the rows, never by an
   exception.** The hook above is called at the ways out that keep somebody else's answer, and three
   of them are settled by the commit transaction *returning*: it committed, it stood down against an
   answer this pass does not supersede, or its plan version had gone. The fourth is a throw, and the
@@ -1008,7 +1013,7 @@ to draw.
   `settlement?.kind !== "committed"` swept. But a throw out of `prisma.$transaction` is not one fact:
   a callback that raised did roll back, while a `P1017`, a socket dropped between the server's COMMIT
   and the client seeing the ack, and a `$transaction` timeout raised after the callback had already
-  returned all name a commit that **landed**. Sweeping those unlinked every sheet of a cast whose
+  returned all name a commit that **landed**. Sweeping those deleted every sheet of a cast whose
   rows are on the table, and the rows are what makes it unrecoverable rather than merely wasteful:
   `characterReferenceSetIsSettled` is satisfied by them, so no page, no cover and no retry ever
   redraws that cast, and every reference path the book resolves for the life of the plan version
@@ -1019,7 +1024,7 @@ to draw.
   carries, which is what makes a read taken after the lease was released sound — a rival's cast can
   neither answer for this pass nor be mistaken for it. **Both ways the question can fail lean the
   same way.** A database that cannot be read and a predicate that throws both keep the files, because
-  an unlink cannot be taken back while a leaked cast is the bounded storage noise the paragraph above
+  an object deletion cannot be taken back while a leaked cast is the bounded storage noise the paragraph above
   already accepts; the two are not close enough in cost to be raced. A kept cast is written to the
   run log as `character.reference.sweep_declined` rather than left silent, since nothing else will
   ever sweep it. A stand-down that really did write nothing still sweeps, and asks the rows nothing
@@ -1035,5 +1040,5 @@ to draw.
   sheet render's own sentence is source-aware (`characterReferenceSeedInstruction`): a drawn
   portrait is a likeness to *extend into* the book's style, adopted artwork is a design to *re-pose*
   and not restyle. That is why `portraitSource` rides the snapshot at all — and the ownership trio
-  (owner-prefix, `libraryCharacterDiskPath`, `stat`) is shared by both paths, so a snapshot naming
+  (owner-prefix, `libraryCharacterObjectKey`, object HEAD) is shared by both paths, so a snapshot naming
   another user's file resolves to nothing on the page path exactly as it does on the seeding path.

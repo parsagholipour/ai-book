@@ -10,8 +10,7 @@ import {
   type BookPageMapPlan
 } from "@book-maker/core";
 import { prisma, researchCitationsForExport } from "@book-maker/db";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { objectKey, objectStore } from "@book-maker/storage";
 
 /**
  * Compiling a project's manuscript for the operator export routes.
@@ -106,13 +105,12 @@ async function savedBookManuscript(
   return markdown === null ? null : { markdown };
 }
 
-async function readSavedBookMarkdown(projectId: string, bookStorageDir: string): Promise<string | null> {
+async function readSavedBookMarkdown(projectId: string, _bookStorageDir: string): Promise<string | null> {
   for (const filename of [BOOK_MARKDOWN_FILENAME, LEGACY_BOOK_MARKDOWN_FILENAME]) {
-    try {
-      const markdown = await readFile(join(bookStorageDir, projectId, filename), "utf8");
+    const bytes = await objectStore().get(objectKey("books", projectId, filename));
+    if (bytes !== null) {
+      const markdown = bytes.toString("utf8");
       return markdown.trim().length > 0 ? markdown : null;
-    } catch {
-      // Try the next legacy filename.
     }
   }
   return null;

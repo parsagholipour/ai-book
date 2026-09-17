@@ -11,11 +11,16 @@ vi.mock(
   async () => (await import("./testing/exportPublicationMocks.js")).fsModuleMock()
 );
 
+vi.mock("@book-maker/storage", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@book-maker/storage")>(),
+  objectStore: (await import("./testing/exportPublicationMocks.js")).objectStoreMock
+}));
+
 import { bookPdfCoverNumbering } from "@book-maker/core";
 import { discardPendingExports, pendingExportPaths, publishCompiledExports } from "./exportPublication.js";
 import {
   mocks,
-  renameCalls,
+  transferCalls,
   resetExportPublicationMocks,
   rmPaths,
   writtenRecords
@@ -24,13 +29,12 @@ import {
 const pending = pendingExportPaths("/books/project-1", "token");
 
 /** Only the moves that put this compile's own render onto a downloadable name. */
-const publishedMoves = () => renameCalls().filter(([from]) => Object.values(pending).includes(from));
+const publishedMoves = () => transferCalls().filter(([from]) => Object.values(pending).includes(from));
 
 const publishResult = (overrides: Record<string, unknown> = {}) =>
   publishCompiledExports({
     projectId: "project-1",
     generationJobId: "job-1",
-    projectDir: "/books/project-1",
     pending,
     companionsProduced: { epub: true, docx: true },
     pdfPageMap: bookPdfCoverNumbering(false),
@@ -78,26 +82,26 @@ describe("publishCompiledExports with companion formats", () => {
     await expect(publish({ companionsProduced: { epub: false, docx: true } })).resolves.toBe(true);
 
     expect(publishedMoves().map(([, to]) => to)).toEqual([
-      "/books/project-1/book.md",
-      "/books/project-1/book.pdf",
-      "/books/project-1/book.docx"
+      "books/project-1/book.md",
+      "books/project-1/book.pdf",
+      "books/project-1/book.docx"
     ]);
-    expect(renameCalls().map(([from]) => from)).toContain("/books/project-1/book.epub");
-    expect(renameCalls().map(([from]) => from)).toContain(
-      "/books/project-1/book.epub.provenance.json"
+    expect(transferCalls().map(([from]) => from)).toContain("books/project-1/book.epub");
+    expect(transferCalls().map(([from]) => from)).toContain(
+      "books/project-1/book.epub.provenance.json"
     );
   });
   it("retires an old Word file and its provenance when the new conversion fails", async () => {
     await expect(publish({ companionsProduced: { epub: true, docx: false } })).resolves.toBe(true);
 
     expect(publishedMoves().map(([, to]) => to)).toEqual([
-      "/books/project-1/book.md",
-      "/books/project-1/book.pdf",
-      "/books/project-1/book.epub"
+      "books/project-1/book.md",
+      "books/project-1/book.pdf",
+      "books/project-1/book.epub"
     ]);
-    expect(renameCalls().map(([from]) => from)).toContain("/books/project-1/book.docx");
-    expect(renameCalls().map(([from]) => from)).toContain(
-      "/books/project-1/book.docx.provenance.json"
+    expect(transferCalls().map(([from]) => from)).toContain("books/project-1/book.docx");
+    expect(transferCalls().map(([from]) => from)).toContain(
+      "books/project-1/book.docx.provenance.json"
     );
     expect(writtenRecords().map(([path]) => path)).not.toContain(
       "/books/project-1/.book-token.docx.provenance.json"
@@ -105,17 +109,17 @@ describe("publishCompiledExports with companion formats", () => {
   });
   it("installs only the Word file for a Word repair, and retires nothing when that render failed", async () => {
     await expect(publish({ ownsProjectStatus: false, repairFormat: "docx" })).resolves.toBe(true);
-    expect(publishedMoves()).toEqual([[pending.docx, "/books/project-1/book.docx"]]);
-    expect(renameCalls().map(([from]) => from)).not.toContain("/books/project-1/book.pdf");
-    expect(renameCalls().map(([from]) => from)).not.toContain("/books/project-1/book.epub");
+    expect(publishedMoves()).toEqual([[pending.docx, "books/project-1/book.docx"]]);
+    expect(transferCalls().map(([from]) => from)).not.toContain("books/project-1/book.pdf");
+    expect(transferCalls().map(([from]) => from)).not.toContain("books/project-1/book.epub");
 
     vi.clearAllMocks();
     await expect(
       publish({ ownsProjectStatus: false, repairFormat: "docx", companionsProduced: { epub: true, docx: false } })
     ).resolves.toBe(true);
     expect(publishedMoves()).toEqual([]);
-    expect(renameCalls().map(([from]) => from)).toContain("/books/project-1/book.docx");
-    expect(renameCalls().map(([from]) => from)).not.toContain("/books/project-1/book.epub");
+    expect(transferCalls().map(([from]) => from)).toContain("books/project-1/book.docx");
+    expect(transferCalls().map(([from]) => from)).not.toContain("books/project-1/book.epub");
   });
 });
 

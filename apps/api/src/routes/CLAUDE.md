@@ -32,14 +32,14 @@ does**, and for the same reason — it runs for minutes against a project that i
 is the one state in which a reader may edit. The revision is in the key because an edit deletes
 the compiled files, so the request arriving a moment later found them missing for a *new* reason
 and must not be answered from the render already in flight; and the render goes to
-`.book-<uuid>.{pdf,epub}` and is renamed onto `book.pdf` only inside `publishRebuiltExport`'s
+a cleaned temporary directory and is uploaded to `books/<projectId>/book.pdf` only inside `publishRebuiltExport`'s
 transaction, which compare-and-sets `contentRevision` and requires COMPLETE or REVIEW_REQUIRED —
 the same two statuses a detached compile may publish over, refused for the same reason
 (`applyBookEdit` holds the pre-edit revision for as long as it is rewriting pages). Writing
 straight to `book.pdf` meant a render that started before an edit could land *after* the worker's
 recompile published and leave the book sitting finished with its pre-edit PDF until some later
 revision bump rebuilt it. A render that loses the claim publishes nothing and answers with
-whatever is on disk now, falling back to its own bytes — a stale download beats a broken link,
+whatever is stored now, falling back to its own bytes — a stale download beats a broken link,
 but it may not become the book. It also passes `projectId` to `generatePdf`, so the renderer's
 file access is scoped to that book's own illustrations as it is in the worker. An unmeasured
 rebuild (saved `book.md`, no anchor plan) replaces translatable ranges with a cover-numbering
@@ -50,7 +50,7 @@ publication lease lets recovery retire it.** The claim also tests the text-edit 
 barrier — against *its own* revision, never for emptiness:
 `OR: [{ exportInvalidationRevision: null }, { exportInvalidationRevision: { not: contentRevision } }]`.
 A text edit commits its new manuscript before deleting the old shared files, and a barrier naming
-the revision this rename claims *is* that window, so the inline publisher and the provenance repair
+the revision this upload claims *is* that window, so the inline publisher and the provenance repair
 both stand down inside it. A barrier naming any other revision cannot be that window — the revision
 CAS beside it pins the row to this one — so it belongs to a tail that died without a redelivery, and
 refusing on it would lock the book out of rebuilds until the worker's delayed, lease-aware stranded

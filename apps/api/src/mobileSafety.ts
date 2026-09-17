@@ -1,7 +1,5 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
-import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
-import { join } from "node:path";
+import { objectKey, objectStore } from "@book-maker/storage";
 import { loadConfig } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { z } from "zod";
@@ -139,14 +137,13 @@ export const mobileSafetyRoutes: FastifyPluginAsync<SafetyRouteOptions> = async 
   // compiled book, so there is nothing user-owned to protect.
   fastify.get("/api/mobile/sample-book", async (_request, reply) => {
     const projectId = appConfig.SAMPLE_PROJECT_ID;
-    const pdfPath = projectId ? join(appConfig.BOOK_STORAGE_DIR, projectId, "book.pdf") : null;
-    const size = pdfPath ? await stat(pdfPath).then((s) => s.size).catch(() => null) : null;
-    if (!pdfPath || size == null) {
+    const bytes = projectId ? await objectStore().get(objectKey("books", projectId, "book.pdf")) : null;
+    if (!bytes) {
       return sendMobileError(reply, 404, "SAMPLE_UNAVAILABLE", "No sample book is published right now.");
     }
-    reply.header("Content-Length", String(size));
+    reply.header("Content-Length", String(bytes.length));
     reply.header("Cache-Control", "public, max-age=3600");
-    return reply.type("application/pdf").send(createReadStream(pdfPath));
+    return reply.type("application/pdf").send(bytes);
   });
 
   fastify.post("/api/mobile/legal/acceptance", async (request, reply) => {

@@ -26,12 +26,26 @@ worker's share. Use the `add-job-type` skill, which walks the rest.
 `runtime/queue.ts` opens a Redis connection at import time. Only `index.ts` and `runtime/dispatch.ts`
 import it. Keeping handlers off it is what lets them be imported in tests without a broker.
 
+## Storage
+
+Durable books, illustrations, narration, uploads and run logs use the private S3 bucket
+through `@book-maker/storage`; MinIO implements the same contract locally. Use `objectKey`
+for keys and `objectReference` for provider reference images. A missing object is `null`;
+access and network failures propagate. Local files are scoped renderer/provider scratch
+created with `withTemporaryDirectory` and removed in `finally`.
+
+Publication keeps the existing database revision claim and rollback protocol. Back up live
+objects with server-side copies before uploading replacements, and restore backups if
+publication fails. Record an attempted PUT before awaiting it because a failed response may
+follow a successful upload. Run logs append immutable events through `appendRunLog`; read
+them through `readRunLog`, and keep diagnostic failures nonfatal.
+
 ## Providers
 
 Handlers never construct adapters. `createLoggedProviders(job, providers, input)` in
 `providers/loggedAdapters.ts` wraps a job's provider set so every call is:
 
-- appended to the run log at `<BOOK_STORAGE_DIR>/<projectId>/runs/<run>-<job>.jsonl`
+- appended to the run log at `books/<projectId>/runs/<run>-<job>.jsonl.events/`
 - costed into `ProviderCallLog` (opened "live" when streaming starts, settled on completion)
 - checked for a user stop request, which raises `StopRequestedError`
 - retried on recoverable network errors, and for images, failed over to the other provider
@@ -235,7 +249,7 @@ also in `runtime/jobLifecycle.ts`.
   first, then pushed to BullMQ; `reconcileUndispatchedWorkerJobs` re-pushes anything that was
   persisted but never reached Redis. Preserve that order or a crash between the two strands a book.
 - **Run logs are the debugging artifact.** Every provider call is appended as JSON lines under
-  `<BOOK_STORAGE_DIR>/<projectId>/runs/`. Read those before adding new logging.
+  `books/<projectId>/runs/`. Read those before adding new logging.
 
 ## Where the rest of the invariants live
 

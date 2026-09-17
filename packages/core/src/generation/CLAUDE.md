@@ -774,7 +774,7 @@ holds the event loop open and vitest will never exit.
   verified pixel-identical to the centred layout for every title that fits. The corpus renders one
   (`title-page-en`), and `pdf.test.ts` renders the absurd one and reads the opening clause back out.
 - **Chrome reads the book off disk; nothing crosses CDP.** The assembled HTML is written to
-  `.book-render-<uuid>.html` inside `IMAGE_STORAGE_DIR` and opened with `page.goto('file://…')`, so
+  `.book-render-<uuid>.html` inside the renderer’s scoped temporary image directory and opened with `page.goto('file://…')`, so
   the book's relative asset paths (`projectId/filename`) resolve to the real illustrations exactly as
   they did against md-to-pdf's static server. That is what killed the 174 s and 382 s exports: they
   lived in `addStyleTag`/`addScriptTag`, which take **no timeout**, and a legacy illustrated book
@@ -807,7 +807,7 @@ holds the event loop open and vitest will never exit.
   `![x](/assets/images/p/../../../../etc/passwd)` packaged a server file into the reader's download.
   There is now one `resolveBookImageAsset` (`bookImageAssets.ts`), which decodes before it resolves
   (`%2F..%2F` is a separator) and returns null unless the result is exactly
-  `<IMAGE_STORAGE_DIR>/<projectId>/<filename>` — the shape the HTTP route serves.
+  `<temporary image directory>/<projectId>/<filename>` — the shape the HTTP route serves.
   **`<projectId>` there means *this* book's, which is a second option and not a wildcard.** Storage
   is shared, so containment only ever said "some project's illustration": a manuscript naming
   `/assets/images/<another-project>/page-3.png` — and manuscripts are user text — read another
@@ -987,7 +987,7 @@ holds the event loop open and vitest will never exit.
   edit and an undo all produce a book of exactly the same length. So every publication records the
   sha256 of what it installed beside it (`book.pdf.provenance.json`), under the revision it claimed
   — `publishCompiledExports` in the worker and `publishRebuiltExport` in the API, both inside the
-  transaction that already holds the row lock, after the renames, and never fatally: a book on disk
+  transaction that already holds the row lock, after the S3 puts, and never fatally: a published book
   must not be failed and refunded because a hundred bytes of metadata could not be written.
   `readPublishedExport` (`packages/core/src/generation/exportProvenance.ts`) then resolves the bytes
   it read against that record and the mobile route answers with `X-Export-Provenance` and
@@ -998,33 +998,14 @@ holds the event loop open and vitest will never exit.
   read describes whatever compile is current now, which is the same mistake one layer down, and an
   edit moves the row minutes before the compile that publishes for it.
 **Every scratch name in that scheme is built in one module, and swept by age from the same one.**
-A publication renders to `.book-<uuid>.{md,pdf,epub}`, parks each predecessor at
-`.book-superseded-<uuid>.<ext>` while it moves in, and a PDF render writes `.book-render-<uuid>.html`
-into the image store; every one of them is removed by a `finally`, which covers a thrown render, a
-lost claim and a failed publication — and covers nothing at all when the process does not get to
-run it. A SIGKILL, an OOM kill or an evicted container leaves the file for as long as the volume
-lives, invisible until storage fills. `exportTempSweep.ts` (`packages/core`) both *names* them —
-`pendingExportTempPath`, `supersededExportToken`, `renderDocumentTempPath`, used by
-`exportPublication.ts`, `pdf.ts` and the API's inline rebuild — and collects them, because a writer
-whose name drifts out of the sweep's pattern strands files nothing recognises and nothing fails.
-The collection is **age-based only, never a startup wipe**: a rolling deploy runs two workers, the
-API renders into the same project directories, and `make up` and `pnpm dev` share one storage
-directory, so "this process just started, therefore nothing here is live" is false in every
-deployment here. Quiet time is the only signal, which is why the minimum age is clamped up to
-`EXPORT_TEMP_MIN_AGE_FLOOR_MS` whatever the config says and defaults to six hours against a window
-that is really seconds — the file is written and published back to back. Nothing else is a
-candidate: the patterns demand the prefix, the literal `randomUUID()` token shape and the writer's
-extension, and the scan requires a regular file at both the dirent and an `lstat` and removes it
-with `unlink`, so a symlink wearing a scratch name is skipped rather than followed. The timestamp
-is read **twice**, on either side of a decision the whole directory scan could otherwise sit in,
-and `ctime` counts alongside `mtime` because a writer can backdate one and not the other; ENOENT is
-not an error but the other end of the race working. `startExportTempCleanup`
-(`apps/worker/src/runtime/`) is the only thing that runs it — one collector reaches every orphan
-because the volume is shared, and the sweep is age-based rather than ownership-based precisely so
-it can clean up after the *other* process. It is bounded (an entry budget, a per-root cap and a
-resume cursor) and single-flight, and `shutdown()` stops it **before** `worker.close()`: a scan
-holds an open directory handle and has no job to finish, so it is cancelled through the signal it
-checks between entries and awaited, rather than left running into `prisma.$disconnect()`.
+This used to describe a shared filesystem. Durable exports and predecessor backups now use
+private S3; see [docs/storage.md](../../../../docs/storage.md) before changing publication or cleanup.
+There is no migration or legacy disk read fallback. `exportTempSweep.ts` still owns local scratch
+filenames and their strict patterns. `withTemporaryDirectory` scopes pending renders and image
+snapshots to one container, cleans them in `finally`, and maintains a heartbeat for long renders.
+Both API and worker sweep their own abandoned helper directories after crashes. The worker also
+sweeps S3 predecessor backups through `runtime/exportObjectCleanup.ts`, checking age and metadata
+again before deleting. Cleanup is single-flight; shutdown stops it before closing the worker.
 
 - **A companion export never fails the compile, and a new one is one registry entry.** The EPUB
   and the Word file (`docx.ts`, shipped 2026-09-06 as a plan perk) are best-effort: a render that
@@ -1113,9 +1094,9 @@ checks between entries and awaited, rather than left running into `prisma.$disco
   only one of those is recoverable by reading the book. Deleting
   a character deletes rows and files but no book state; a seeding pass that finds the portrait
   file gone skips it silently, which is the deletion-safety valve. Character files live at
-  `IMAGE_STORAGE_DIR/characters/<userId>/` — never swept, unreachable from the project asset
+  `images/characters/<userId>/` in private S3 — never swept, unreachable from the project asset
   route and the render allowlist — and every path to them resolves through
-  `libraryCharacterDiskPath`, which returns null for anything but exactly `<userId>/<fileName>`.
+  `libraryCharacterObjectKey`, which returns null for anything but exactly `<userId>/<fileName>`.
 - **Naming every row is not the same as claiming every marker, and a tie is settled rather than
   left standing.** `claimAt` (`libraryMentions.ts`) refuses a span two candidate names tie over —
   "Bram" and "bram" are two legal rows, since `[userId, name]` is case-sensitive, and neither is

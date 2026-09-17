@@ -7,8 +7,7 @@ vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMoc
 
 import { ensureProjectExportEntitlementOrSpend } from "@book-maker/db/billing";
 import { EXPORT_REPAIR_FORMAT } from "@book-maker/core";
-import { mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { seedObject } from "../testing/objectStorage.js";
 
 import { dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
 import { exportRepairDedupeKey } from "./exportRepair.js";
@@ -78,7 +77,7 @@ describe("mobile export repair queueing", () => {
     await app.close();
   });
 
-  it("queues repair for a stat-able path that the download cannot read", async () => {
+  it("queues repair when only another export format exists", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.project.findFirst.mockResolvedValue({
       id: "project-a",
@@ -87,9 +86,7 @@ describe("mobile export repair queueing", () => {
       currentPlanId: "plan-1",
       contentRevision: 7
     });
-    // `stat` calls this available, but the route's read gets EISDIR. Repair must
-    // use that same read predicate or this path can never heal.
-    mkdirSync(join(state.bookStorageDir!, "project-a", "book.pdf"), { recursive: true });
+    seedObject("books/project-a/book.epub", "epub-only");
     const app = await buildMobileApp();
 
     const response = await app.inject({
@@ -287,15 +284,12 @@ describe("mobile export repair queueing", () => {
     await app.close();
   });
 
-  it("does not advertise a stat-able directory as a downloadable export", async () => {
+  it("does not advertise an unrelated object as the requested export", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.project.findFirst.mockResolvedValue(
       projectRecord({ id: "project-a", status: "COMPLETE", currentPlanId: "plan-1", contentRevision: 7 })
     );
-    // A plain stat succeeds for this path, while opening it as a downloadable
-    // regular file must not. Status and repair suppression need one predicate
-    // or the UI can disable download forever without queueing the repair.
-    mkdirSync(join(state.bookStorageDir!, "project-a", "book.pdf"), { recursive: true });
+    seedObject("books/project-a/book.epub", "epub-only");
     mockPrisma.generationJob.findFirst.mockResolvedValue(null);
     const queued = fakeDedupingQueue();
     const app = await buildMobileApp();

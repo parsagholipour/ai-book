@@ -1,5 +1,6 @@
+import { objectStore } from "@book-maker/storage";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Job } from "bullmq";
@@ -185,7 +186,7 @@ describe("compileExport reader chapters", () => {
     mocks.config.BOOK_STORAGE_DIR = storage;
     mocks.config.IMAGE_STORAGE_DIR = join(storage, "images");
     await mkdir(join(storage, "project-1"), { recursive: true });
-    await writeFile(join(storage, "project-1", "book.md"), publishedMarkdown, "utf8");
+    await objectStore().put("books/project-1/book.md", publishedMarkdown);
     mocks.inputForPlanVersion.mockReturnValue(input);
     mocks.prisma.planVersion.findUnique.mockResolvedValue({
       id: "plan-1",
@@ -223,7 +224,7 @@ describe("compileExport reader chapters", () => {
   });
 
   it("reconstructs and republishes book.md when a manual edit queue failure left every export missing", async () => {
-    await rm(join(mocks.config.BOOK_STORAGE_DIR, "project-1", "book.md"));
+    await objectStore().delete("books/project-1/book.md");
 
     await expect(compileExport(repairJob())).resolves.toEqual({ durableCompletionCommitted: true });
 
@@ -243,15 +244,13 @@ describe("compileExport reader chapters", () => {
         characterPreparation: null
       })
     );
-    await expect(
-      readFile(join(mocks.config.BOOK_STORAGE_DIR, "project-1", ".book-test.md"), "utf8")
-    ).resolves.toBe("# The Long Walk\n\nProse.\n");
+    const pending = mocks.publishCompiledExports.mock.calls.at(-1)![0].pending;
+    await expect(readFile(pending.markdown)).rejects.toThrow();
   });
 
   it("preserves the compatible pre-edit chapter layout when applyBookEdit falls through to repair", async () => {
-    const projectDir = join(mocks.config.BOOK_STORAGE_DIR, "project-1");
-    await rm(join(projectDir, "book.md"));
-    await writeCachedReaderChapters(projectDir, "fingerprint-before-the-edit", {
+    await objectStore().delete("books/project-1/book.md");
+    await writeCachedReaderChapters("project-1", "fingerprint-before-the-edit", {
       chapters: modelChapters,
       source: "model"
     });
@@ -268,7 +267,7 @@ describe("compileExport reader chapters", () => {
   it("renders a repair from the exact published markdown without regrouping chapters", async () => {
     const projectDir = join(mocks.config.BOOK_STORAGE_DIR, "project-1");
     await mkdir(projectDir, { recursive: true });
-    await writeFile(join(projectDir, "book.md"), publishedMarkdown, "utf8");
+    await objectStore().put("books/project-1/book.md", publishedMarkdown);
 
     await compileExport(repairJob());
 
@@ -405,10 +404,9 @@ describe("compileExport reader chapters", () => {
   });
 
   it("records cover-skip from an unmeasured manuscript that opens on a cover", async () => {
-    await writeFile(
-      join(mocks.config.BOOK_STORAGE_DIR, "project-1", "book.md"),
-      "![Cover](/assets/images/p/cover.jpg)\n\n# Published layout\n\nExact compiled prose.\n",
-      "utf8"
+    await objectStore().put(
+      "books/project-1/book.md",
+      "![Cover](/assets/images/p/cover.jpg)\n\n# Published layout\n\nExact compiled prose.\n"
     );
 
     await compileExport(repairJob());
@@ -421,7 +419,7 @@ describe("compileExport reader chapters", () => {
   it("uses published markdown even when a reader-chapter cache exists", async () => {
     await mkdir(join(mocks.config.BOOK_STORAGE_DIR, "project-1"), { recursive: true });
     await writeCachedReaderChapters(
-      join(mocks.config.BOOK_STORAGE_DIR, "project-1"),
+      "project-1",
       readerChapterFingerprint({ input: input as never, plan: plan as never, pages: markdownPages }),
       { chapters: modelChapters, source: "model" }
     );
@@ -451,7 +449,7 @@ describe("compileExport reader chapters", () => {
     expect(compiledChapters()).toEqual(modelChapters);
     // And the answer is kept, so the repairs that follow are the free case.
     expect(
-      JSON.parse(await readFile(readerChapterCachePath(join(mocks.config.BOOK_STORAGE_DIR, "project-1")), "utf8"))
+      JSON.parse((await objectStore().get(readerChapterCachePath("project-1")))!.toString("utf8"))
     ).toMatchObject({ chapters: modelChapters });
   });
 
@@ -527,10 +525,9 @@ describe("compileExport reader chapters", () => {
   });
 
   it("keeps a presentation-only cache miss model-free and preserves its prior settled status", async () => {
-    await writeFile(
-      join(mocks.config.BOOK_STORAGE_DIR, "project-1", "book.md"),
-      publishedChapterMarkdown,
-      "utf8"
+    await objectStore().put(
+      "books/project-1/book.md",
+      publishedChapterMarkdown
     );
     await compileExport(
       job({

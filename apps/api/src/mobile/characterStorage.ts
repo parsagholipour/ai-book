@@ -1,15 +1,15 @@
 import {
-  libraryCharacterDiskPath,
+  libraryCharacterObjectKey,
   libraryCharacterRelativeFile,
   optimizeImageForStorage,
   type OptimizedImage
 } from "@book-maker/core";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, extname } from "node:path";
+import { objectStore } from "@book-maker/storage";
+import { extname } from "node:path";
 
 /**
  * Files for account-level library characters:
- * `IMAGE_STORAGE_DIR/characters/<userId>/<characterId>-{photo,portrait}-<token>.<ext>`.
+ * `images/characters/<userId>/<characterId>-{photo,portrait}-<token>.<ext>`.
  * The token is what makes a version retained rather than overwritten; names
  * are minted by `characterImageStore.ts`, which is the only writer.
  *
@@ -17,7 +17,7 @@ import { dirname, extname } from "node:path";
  * window and a character lives until deleted — and deliberately outside any
  * project directory, so the project asset route, the PDF renderer's allowlist,
  * and the export sweeps can never reach these. The path shape is validated by
- * `libraryCharacterDiskPath` (core), which both this module and the worker's
+ * `libraryCharacterObjectKey` (core), which both this module and the worker's
  * portrait/seeding paths resolve through.
  */
 
@@ -40,7 +40,7 @@ export function resolveCharacterPhotoMimeType(mimeType: string | undefined, file
 }
 
 /**
- * Re-encodes the upload before it touches disk: the pass normalizes the format
+ * Re-encodes the upload before it is uploaded: the pass normalizes the format
  * and drops the metadata (EXIF, GPS) a phone photo carries.
  *
  * `alwaysReencode` is what makes that true. Without it the optimizer keeps the
@@ -55,45 +55,40 @@ export async function optimizeCharacterPhoto(bytes: Buffer, mimeType: string): P
 }
 
 export async function saveLibraryCharacterFile(
-  imageStorageDir: string,
+  _imageStorageDir: string,
   userId: string,
   fileName: string,
   bytes: Buffer
 ): Promise<void> {
-  const path = libraryCharacterDiskPath(imageStorageDir, libraryCharacterRelativeFile(userId, fileName));
+  const path = libraryCharacterObjectKey(libraryCharacterRelativeFile(userId, fileName));
   if (!path) {
     throw new Error(`Unsafe character file path segments: ${userId}/${fileName}`);
   }
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, bytes);
+  await objectStore().put(path, bytes, { contentType: characterFileContentType(fileName) });
 }
 
 export async function readLibraryCharacterFile(
-  imageStorageDir: string,
+  _imageStorageDir: string,
   userId: string,
   fileName: string
 ): Promise<Buffer | null> {
-  const path = libraryCharacterDiskPath(imageStorageDir, libraryCharacterRelativeFile(userId, fileName));
+  const path = libraryCharacterObjectKey(libraryCharacterRelativeFile(userId, fileName));
   if (!path) {
     return null;
   }
-  try {
-    return await readFile(path);
-  } catch {
-    return null;
-  }
+  return objectStore().get(path);
 }
 
 export async function deleteLibraryCharacterFile(
-  imageStorageDir: string,
+  _imageStorageDir: string,
   userId: string,
   fileName: string | null
 ): Promise<void> {
   if (!fileName) {
     return;
   }
-  const path = libraryCharacterDiskPath(imageStorageDir, libraryCharacterRelativeFile(userId, fileName));
+  const path = libraryCharacterObjectKey(libraryCharacterRelativeFile(userId, fileName));
   if (path) {
-    await rm(path, { force: true }).catch(() => undefined);
+    await objectStore().delete(path);
   }
 }

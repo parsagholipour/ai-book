@@ -26,8 +26,7 @@ import {
 } from "./generateAudiobookSupport.js";
 import { prisma } from "@book-maker/db";
 import type { GenerateAudiobookJob } from "../runtime/jobPayloads.js";
-import { mkdir, rename, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { objectKey, objectStore } from "@book-maker/storage";
 import { createLoggedSpeechAdapter } from "../providers/loggedAdapters.js";
 import { createRunLogger } from "../providers/runLogging.js";
 import { config } from "../runtime/config.js";
@@ -89,8 +88,7 @@ export async function generateAudiobook(job: GenerateAudiobookJob) {
     })
   );
 
-  const audioDir = join(config.AUDIO_STORAGE_DIR, projectId, audiobookId);
-  await mkdir(audioDir, { recursive: true });
+  const audioDir = objectKey("audio", projectId, audiobookId);
   // Up front as well as at the end: only this audiobook's files are ever served,
   // so a narration that failed before it could clean up would otherwise leave
   // its chapters on disk forever.
@@ -349,8 +347,7 @@ async function persistOpenAISelection(options: {
     return selected;
   });
   if (options.resetRender) {
-    await rm(options.audioDir, { recursive: true, force: true });
-    await mkdir(options.audioDir, { recursive: true });
+    await objectStore().deletePrefix(`${options.audioDir}/`);
   }
   return updated.renderVersion;
 }
@@ -464,14 +461,12 @@ async function narrateChapter(options: {
     kbps: AUDIOBOOK_MP3_KBPS
   });
 
-  // Both files land under their final names together, so a crash between them
-  // can never leave a chapter that looks ready but cannot be followed.
-  const audioPath = join(options.audioDir, `chapter-${narration.chapterIndex}.mp3`);
-  const timelinePath = join(options.audioDir, `chapter-${narration.chapterIndex}.timeline.json`);
-  await writeFile(`${audioPath}.part`, mp3);
-  await writeFile(`${timelinePath}.part`, serializeAudiobookTimeline(timeline), "utf8");
-  await rename(`${audioPath}.part`, audioPath);
-  await rename(`${timelinePath}.part`, timelinePath);
+  // Each PUT replaces one complete object. READY commits only after both
+  // writes succeed, so a crash between them leaves a resumable pending chapter.
+  const audioPath = `${options.audioDir}/chapter-${narration.chapterIndex}.mp3`;
+  const timelinePath = `${options.audioDir}/chapter-${narration.chapterIndex}.timeline.json`;
+  await objectStore().put(audioPath, mp3, { contentType: "audio/mpeg" });
+  await objectStore().put(timelinePath, serializeAudiobookTimeline(timeline), { contentType: "application/json" });
 
   await prisma.audiobookChapter.update({
     where: { audiobookId_index: { audiobookId: options.audiobookId, index: narration.chapterIndex } },
@@ -516,12 +511,9 @@ async function syncChapterRows(
 
 /** Frees the disk held by a project's previous narration once this one lands. */
 async function removeSupersededAudiobookDirs(projectId: string, audiobookId: string): Promise<void> {
-  const projectDir = join(config.AUDIO_STORAGE_DIR, projectId);
-  const { readdir } = await import("node:fs/promises");
-  const entries = await readdir(projectDir, { withFileTypes: true }).catch(() => []);
-  for (const entry of entries) {
-    if (entry.isDirectory() && entry.name !== audiobookId) {
-      await rm(join(projectDir, entry.name), { recursive: true, force: true }).catch(() => undefined);
-    }
-  }
+  const prefix = `${objectKey("audio", projectId)}/`;
+  const current = `${objectKey("audio", projectId, audiobookId)}/`;
+  const entries = await objectStore().list(prefix).catch(() => []);
+  await Promise.all(entries.filter((entry) => !entry.key.startsWith(current))
+    .map((entry) => objectStore().delete(entry.key).catch(() => undefined)));
 }

@@ -1,4 +1,47 @@
+x-object-storage: &object-storage
+  S3_BUCKET: ${S3_BUCKET:-ai-book-maker}
+  S3_REGION: us-east-1
+  S3_ENDPOINT: http://minio:9000
+  S3_FORCE_PATH_STYLE: "true"
+  AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-bookmaker}
+  AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-bookmaker-local-only}
+
 services:
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: [server, /data, --console-address, ":9001"]
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-bookmaker}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-bookmaker-local-only}
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, http://localhost:9000/minio/health/live]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio-init:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    restart: "no"
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - |
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing "local/$$S3_BUCKET"
+        mc anonymous set none "local/$$S3_BUCKET"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-bookmaker}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-bookmaker-local-only}
+      S3_BUCKET: ${S3_BUCKET:-ai-book-maker}
+    depends_on:
+      minio:
+        condition: service_healthy
+
   postgres:
     image: pgvector/pgvector:pg16
     environment:
@@ -69,6 +112,7 @@ services:
       - .env
     environment:
       CI: "true"
+      <<: *object-storage
       DATABASE_URL: postgresql://bookmaker:bookmaker@postgres:5432/bookmaker?schema=public
       REDIS_URL: redis://redis:6379
       API_HOST: 0.0.0.0
@@ -91,6 +135,9 @@ services:
           path: ./packages/db/src
           target: /app/packages/db/src
         - action: sync
+          path: ./packages/storage/src
+          target: /app/packages/storage/src
+        - action: sync
           path: ./scripts
           target: /app/scripts
     ports:
@@ -104,11 +151,14 @@ services:
       - /app/apps/web/node_modules
       - /app/packages/core/node_modules
       - /app/packages/db/node_modules
+      - /app/packages/storage/node_modules
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
 
   worker:
     build:
@@ -122,6 +172,7 @@ services:
       - .env
     environment:
       CI: "true"
+      <<: *object-storage
       DATABASE_URL: postgresql://bookmaker:bookmaker@postgres:5432/bookmaker?schema=public
       REDIS_URL: redis://redis:6379
       BOOK_STORAGE_DIR: /app/storage/books
@@ -144,6 +195,9 @@ services:
           path: ./packages/db/src
           target: /app/packages/db/src
         - action: sync
+          path: ./packages/storage/src
+          target: /app/packages/storage/src
+        - action: sync
           path: ./scripts
           target: /app/scripts
     volumes:
@@ -155,13 +209,16 @@ services:
       - /app/apps/web/node_modules
       - /app/packages/core/node_modules
       - /app/packages/db/node_modules
+      - /app/packages/storage/node_modules
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      ocr:
-        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      # OCR is optional: the worker can fall back to Gemini while local OCR
+      # starts or is unavailable. Do not gate worker startup on OCR health.
 
   web:
     build:
@@ -214,10 +271,12 @@ services:
       - /app/apps/web/node_modules
       - /app/packages/core/node_modules
       - /app/packages/db/node_modules
+      - /app/packages/storage/node_modules
     depends_on:
       - api
 
 volumes:
+  minio-data:
   postgres-data:
   pgadmin-data:
   pnpm-store:

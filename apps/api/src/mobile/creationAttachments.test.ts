@@ -1,3 +1,4 @@
+import { seedObject, testObjectStore, readObjectText } from "../testing/objectStorage.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@book-maker/db", async () => (await import("./testing/mobileApiMocks.js")).dbModuleMock());
@@ -5,7 +6,7 @@ vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApi
 vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js")).queueModuleMock());
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -87,8 +88,8 @@ describe("creation chat attachments API", () => {
     expect(updateCall.data.payload.attachments).toHaveLength(1);
     expect(updateCall.data.payload.attachments[0]).toMatchObject({ id: "att_ready1", content: "Anchor high and offer three tiers." });
     // Original bytes are kept server-side so the file follows the account across devices.
-    const storedPath = join(tempAttachmentStorageDir!, "session-draft", "att_ready1");
-    expect(readFileSync(storedPath, "utf8")).toBe("Anchor high and offer three tiers.");
+    const storedPath = join("attachments", "session-draft", "att_ready1");
+    expect(readObjectText(storedPath)).toBe("Anchor high and offer three tiers.");
     expect(response.json().attachment.url).toBe(
       "/api/mobile/creation-sessions/session-draft/attachments/att_ready1/file"
     );
@@ -101,9 +102,8 @@ describe("creation chat attachments API", () => {
     mockPrisma.mobileCreationDraft.findFirst.mockResolvedValue(
       creationDraftRecord({ id: "session-draft", payload })
     );
-    const fileDir = join(tempAttachmentStorageDir!, "session-draft");
-    mkdirSync(fileDir, { recursive: true });
-    writeFileSync(join(fileDir, "att_ready1"), "original bytes");
+    const fileDir = join("attachments", "session-draft");
+    seedObject(join(fileDir, "att_ready1"), "original bytes");
     const app = await buildMobileApp();
 
     const served = await app.inject({
@@ -115,7 +115,7 @@ describe("creation chat attachments API", () => {
     expect(served.headers["content-type"]).toContain("text/plain");
     expect(served.body).toBe("original bytes");
 
-    rmSync(join(fileDir, "att_ready1"));
+    await testObjectStore.delete(join(fileDir, "att_ready1"));
     const expired = await app.inject({
       method: "GET",
       url: "/api/mobile/creation-sessions/session-draft/attachments/att_ready1/file",
@@ -216,10 +216,9 @@ describe("creation chat attachments API", () => {
     mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
       creationDraftRecord({ id: "session-draft", ...data })
     );
-    const fileDir = join(tempAttachmentStorageDir!, "session-draft");
-    mkdirSync(fileDir, { recursive: true });
-    writeFileSync(join(fileDir, "att_unsent"), "unsent bytes");
-    writeFileSync(join(fileDir, "att_ready1"), "sent bytes");
+    const fileDir = join("attachments", "session-draft");
+    seedObject(join(fileDir, "att_unsent"), "unsent bytes");
+    seedObject(join(fileDir, "att_ready1"), "sent bytes");
     const app = await buildMobileApp();
 
     const removeUnsent = await app.inject({
@@ -234,10 +233,10 @@ describe("creation chat attachments API", () => {
     });
 
     expect(removeUnsent.statusCode).toBe(200);
-    expect(existsSync(join(fileDir, "att_unsent"))).toBe(false);
+    expect(testObjectStore.objects.has(join(fileDir, "att_unsent"))).toBe(false);
     expect(removeSent.statusCode).toBe(409);
     expect(removeSent.json()).toMatchObject({ error: { code: "ATTACHMENT_IN_USE" } });
-    expect(existsSync(join(fileDir, "att_ready1"))).toBe(true);
+    expect(testObjectStore.objects.has(join(fileDir, "att_ready1"))).toBe(true);
     await app.close();
   });
 

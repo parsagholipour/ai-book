@@ -1,8 +1,10 @@
 import { startSourceProcessing } from "./runtime/sourceProcessing.js";
 import { Worker } from "bullmq";
+import { tmpdir } from "node:os";
 import { browserPoolStatus, closeSharedBrowser } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { reconcileGenerationAttemptRefunds } from "@book-maker/db/billing";
+import { objectStore } from "@book-maker/storage";
 import {
   reconcileStrandedGeneration,
   reconcileUndispatchedWorkerJobs
@@ -12,6 +14,16 @@ import { startExportTempCleanup } from "./runtime/exportTempCleanup.js";
 import { BOOK_QUEUE_NAME, connection, queue } from "./runtime/queue.js";
 import { processWorkerJob } from "./processJob.js";
 
+// Every job here ends in a put to the private bucket, so a worker that cannot
+// reach it would claim jobs only to fail them. Refuse before the first claim —
+// the deployment's health wait sees a container that will not start, rather
+// than a book that failed at its first illustration.
+try {
+  await objectStore().ready();
+} catch (error) {
+  console.error("Object storage is not reachable; refusing to take jobs (local development: docker compose up -d minio-init)", error);
+  process.exit(1);
+}
 
 const sourceProcessing = startSourceProcessing();
 const worker = new Worker(BOOK_QUEUE_NAME, processWorkerJob, {
@@ -49,14 +61,11 @@ void reconcileStrandedGeneration().catch((error) => {
   console.error("Initial stranded generation reconciliation failed", error);
 });
 
-// A compile renders beside its destinations and a PDF render writes the
-// document Chrome reads; both are removed by a `finally` that a SIGKILL or an
-// OOM kill never reaches. Nothing else would ever notice those files, so they
-// are collected by age — never by "this process just started", which would
-// delete the compile a second worker is running right now.
+// Local render scratch and S3 predecessor objects survive an abrupt exit.
+// Collect by age; active local directories carry a heartbeat.
 const exportTempCleanup = startExportTempCleanup({
-  bookStorageDir: config.BOOK_STORAGE_DIR,
-  imageStorageDir: config.IMAGE_STORAGE_DIR,
+  bookStorageDir: tmpdir(),
+  imageStorageDir: tmpdir(),
   minAgeMs: config.EXPORT_TEMP_RETENTION_HOURS * 60 * 60 * 1000
 });
 void exportTempCleanup.runNow();

@@ -17,8 +17,7 @@ import {
 } from "@book-maker/core";
 import { pageScope, Prisma, prisma } from "@book-maker/db";
 import type { ImportBookJob } from "../runtime/jobPayloads.js";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { objectKey, objectStore } from "@book-maker/storage";
 
 /**
  * `import-book` job: parse an uploaded manuscript into chapters, pages and a plan.
@@ -48,7 +47,7 @@ export async function importBook(job: ImportBookJob) {
   try {
     await prisma.bookImport.update({ where: { id: importId }, data: { status: "PARSING", error: null } });
     await advanceJobStep(generationJobId, "read", 10, "Reading your manuscript");
-    const data = await readFile(join(config.ATTACHMENT_STORAGE_DIR, importId, "source")).catch(() => null);
+    const data = await objectStore().get(objectKey("attachments", importId, "source"));
     if (!data) {
       throw new Error("The uploaded manuscript file is no longer available. Import the book again.");
     }

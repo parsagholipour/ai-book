@@ -1,0 +1,111 @@
+name: Deploy Docker applications
+
+on:
+  workflow_call:
+    inputs:
+      instance_id:
+        required: true
+        type: string
+      app_repository:
+        required: true
+        type: string
+      web_repository:
+        required: true
+        type: string
+      env_parameter:
+        required: true
+        type: string
+      assets_bucket:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: eu-central-1
+  AWS_PAGER: ""
+
+jobs:
+  build:
+    name: Build and publish Docker images
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: production
+    outputs:
+      app_image: ${{ inputs.app_repository }}@${{ steps.app.outputs.digest }}
+      web_image: ${{ inputs.web_repository }}@${{ steps.web.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+      - uses: docker/setup-buildx-action@v3
+      - name: Build and publish API/worker image
+        id: app
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: app
+          platforms: linux/amd64
+          push: true
+          tags: ${{ inputs.app_repository }}:${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          cache-from: type=gha,scope=book-maker-app
+          cache-to: type=gha,mode=max,scope=book-maker-app
+      - name: Build and publish web image
+        id: web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: web
+          platforms: linux/amd64
+          push: true
+          tags: ${{ inputs.web_repository }}:${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          cache-from: type=gha,scope=book-maker-app
+          cache-to: type=gha,mode=max,scope=book-maker-web
+      - name: Smoke test production containers
+        env:
+          APP_IMAGE: ${{ inputs.app_repository }}@${{ steps.app.outputs.digest }}
+          WEB_IMAGE: ${{ inputs.web_repository }}@${{ steps.web.outputs.digest }}
+        run: bash scripts/check-production-docker.sh
+
+  deploy:
+    name: Deploy API, web, and worker to EC2
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Store runtime environment securely
+        env:
+          PRODUCTION_ENV: ${{ secrets.PRODUCTION_ENV }}
+          ENV_PARAMETER: ${{ inputs.env_parameter }}
+        run: |
+          if [[ -z "$PRODUCTION_ENV" ]]; then
+            echo "::error::Add PRODUCTION_ENV to the production environment secrets (see deploy/production.env.example)."
+            exit 1
+          fi
+          umask 077
+          env_file=$(mktemp)
+          trap 'rm -f "$env_file"' EXIT
+          printf '%s\n' "$PRODUCTION_ENV" > "$env_file"
+          aws ssm put-parameter --name "$ENV_PARAMETER" --type SecureString \
+            --tier Intelligent-Tiering --overwrite --value "file://$env_file" > /dev/null
+      - name: Deploy and wait for healthy containers
+        env:
+          INSTANCE_ID: ${{ inputs.instance_id }}
+          ENV_PARAMETER: ${{ inputs.env_parameter }}
+          APP_IMAGE: ${{ needs.build.outputs.app_image }}
+          WEB_IMAGE: ${{ needs.build.outputs.web_image }}
+          S3_BUCKET: ${{ inputs.assets_bucket }}
+          RELEASE_ID: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+        run: python3 scripts/deploy-via-ssm.py

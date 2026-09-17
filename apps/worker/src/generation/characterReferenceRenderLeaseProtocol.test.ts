@@ -20,10 +20,10 @@ const mocks = vi.hoisted(() => ({
   transaction: vi.fn(),
   assertJobNotStopped: vi.fn(),
   mkdir: vi.fn(),
-  writeFile: vi.fn(),
-  appendFile: vi.fn(),
-  rm: vi.fn(),
-  stat: vi.fn()
+  put: vi.fn(),
+  appendRunLog: vi.fn(),
+  deleteObject: vi.fn(),
+  head: vi.fn()
 }));
 
 const tx = {
@@ -52,13 +52,10 @@ vi.mock("../runtime/jobLifecycle.js", () => ({
   updateJobProgress: vi.fn(),
   assertJobNotStopped: mocks.assertJobNotStopped
 }));
-vi.mock("node:fs/promises", () => ({
-  mkdir: mocks.mkdir,
-  writeFile: mocks.writeFile,
-  appendFile: mocks.appendFile,
-  rm: mocks.rm,
-  stat: mocks.stat
-}));
+vi.mock("@book-maker/storage", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@book-maker/storage")>();
+  return { ...actual, appendRunLog: mocks.appendRunLog, objectStore: () => ({ put: mocks.put, delete: mocks.deleteObject, head: mocks.head }) };
+});
 
 import { CHARACTER_REFERENCE_LEASE_MS, runCharacterReferenceRenderPass } from "./characterReferenceRenderLease.js";
 
@@ -205,8 +202,8 @@ describe("runCharacterReferenceRenderPass", () => {
         expect(pass.discard).not.toHaveBeenCalled();
         // And it is written down, because a leaked cast nobody sweeps is the
         // price of being safe here and an operator should be able to find it.
-        const line = String(mocks.appendFile.mock.calls.at(-1)?.[1]);
-        expect(JSON.parse(line)).toMatchObject({
+        const line = mocks.appendRunLog.mock.calls.at(-1)?.[1];
+        expect(line).toMatchObject({
           event: "character.reference.sweep_declined",
           reason: "commit_landed"
         });
@@ -244,8 +241,8 @@ describe("runCharacterReferenceRenderPass", () => {
 
         expect(pass.published).not.toHaveBeenCalled();
         expect(pass.discard).not.toHaveBeenCalled();
-        const line = String(mocks.appendFile.mock.calls.at(-1)?.[1]);
-        expect(JSON.parse(line)).toMatchObject({ reason: "outcome_unreadable" });
+        const line = mocks.appendRunLog.mock.calls.at(-1)?.[1];
+        expect(line).toMatchObject({ reason: "outcome_unreadable" });
         warn.mockRestore();
       });
 
@@ -297,9 +294,9 @@ describe("runCharacterReferenceRenderPass", () => {
       answer: "what-exists",
       outcome: "plan-version-gone"
     });
-    const line = mocks.appendFile.mock.calls.at(-1)?.[1];
-    expect(line).toBeTypeOf("string");
-    expect(JSON.parse(String(line))).toMatchObject({
+    const line = mocks.appendRunLog.mock.calls.at(-1)?.[1];
+    expect(line).toBeTypeOf("object");
+    expect(line).toMatchObject({
       event: "character.reference.stand_down",
       reason: "plan_version_gone",
       planId: "plan-1"

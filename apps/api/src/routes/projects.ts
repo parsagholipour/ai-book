@@ -26,8 +26,7 @@ import {
   type VoiceChatProviderId
 } from "@book-maker/core";
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { objectKey, objectStore } from "@book-maker/storage";
 import { ensureSeedTemplates, PLAN_REVISION_AUTOMATIC_RETRY_LIMIT, Prisma, prisma } from "@book-maker/db";
 import { generationFailureJobTypes } from "../generationJobTypes.js";
 import { jobsWithoutRefundedCharges } from "../resumeGuards.js";
@@ -1177,9 +1176,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
       const conversationId = randomUUID();
       const filename = `${safePathPart(conversationId)}.wav`;
-      const projectVoiceDir = join(appConfig.VOICE_STORAGE_DIR, id);
-      await mkdir(projectVoiceDir, { recursive: true });
-      await writeFile(join(projectVoiceDir, filename), synthesis.audio);
+      await objectStore().put(objectKey("voice", id, filename), synthesis.audio, { contentType: synthesis.mimeType });
       const audioPath = publicAssetUrl(appConfig.PUBLIC_API_URL, `/assets/voice/${id}/${filename}`);
       const conversation = await prisma.voiceConversation.create({
         data: {

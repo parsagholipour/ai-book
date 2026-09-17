@@ -12,8 +12,7 @@ import {
 } from "@book-maker/db/billing";
 import { exportContentDigest } from "@book-maker/core";
 
-import { readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { testObjectStore, readObjectText } from "../testing/objectStorage.js";
 
 import { enqueueGenerationJob } from "../queue.js";
 import {
@@ -191,9 +190,8 @@ describe("mobile rate limits, exports and operator routes", () => {
       currentPlanId: "plan-1",
       contentRevision: 7
     });
-    const bookStorageDir = state.bookStorageDir ?? "";
     vi.mocked(ensureProjectExportEntitlementOrSpend).mockImplementationOnce(async () => {
-      rmSync(join(bookStorageDir, "project-a", "book.pdf"));
+      await testObjectStore.delete("books/project-a/book.pdf");
       return undefined as never;
     });
     const app = await buildMobileApp();
@@ -353,7 +351,7 @@ describe("mobile rate limits, exports and operator routes", () => {
     expect(response.headers["x-export-provenance"]).toBe("exact");
     expect(response.headers["x-export-content-revision"]).toBe("7");
     expect(
-      JSON.parse(readFileSync(join(state.bookStorageDir!, "project-a", "book.epub.provenance.json"), "utf8"))
+      JSON.parse(readObjectText("books/project-a/book.epub.provenance.json"))
     ).toMatchObject({ revision: 7 });
     await app.close();
   });
@@ -416,7 +414,7 @@ describe("mobile rate limits, exports and operator routes", () => {
 
     // With no file at all the answer is the same, and no repair is queued for a
     // file this reader could not download.
-    rmSync(join(state.bookStorageDir!, "project-a", "book.docx"));
+    await testObjectStore.delete("books/project-a/book.docx");
     const withoutFile = await app.inject({
       method: "GET",
       url: "/api/mobile/projects/project-a/export/docx",

@@ -23,6 +23,17 @@ than through `fastify.register`, so they share one encapsulation context — the
 `register` would break that. Everything `mobileProjects.ts` re-exports is public API consumed by
 `server.ts`, `mobileImports.ts` or tests; don't narrow those exports without checking callers.
 
+## Private durable objects
+
+Every generated book, illustration, voice clip, narration, uploaded original and run artifact
+lives in private S3 through `@book-maker/storage`. API routes authorize ownership before reading
+bytes and proxy the result; bucket URLs are never returned to clients. Keys use explicit
+`books`, `images`, `voice`, `audio` and `attachments` namespaces. Legacy directory arguments on
+internal helpers do not select storage or enable a disk fallback. Missing objects return null;
+S3 failures propagate rather than masquerading as missing exports and triggering repair work.
+Inline renderers use cleaned temporary directories and `imageSource: "object-storage"`.
+Tests inject `MemoryObjectStore` in `src/testing/setupObjectStorage.ts`; fixtures seed object keys.
+
 ## The two auth systems are unrelated
 
 - **Mobile users** — database-backed accounts under `/api/mobile/auth/*`. Bearer access tokens,

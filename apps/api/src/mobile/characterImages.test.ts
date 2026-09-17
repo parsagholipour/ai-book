@@ -5,7 +5,7 @@ vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApi
 vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js")).queueModuleMock());
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { seedObject } from "../testing/objectStorage.js";
 import { join } from "node:path";
 import { InsufficientCreditsError, reserveCredits } from "@book-maker/db/billing";
 import { enqueueGenerationJob } from "../queue.js";
@@ -82,9 +82,9 @@ const uploadImage = imageRecord({
 
 /** Puts the bytes where `characterImageExists` and the byte route will find them. */
 function writeCharacterFile(fileName: string): void {
-  const userDir = join(state.imageStorageDir!, "characters", "user-a");
-  mkdirSync(userDir, { recursive: true });
-  writeFileSync(join(userDir, fileName), ONE_PIXEL_PNG);
+  const userDir = join("images", "characters", "user-a");
+
+  seedObject(join(userDir, fileName), ONE_PIXEL_PNG);
 }
 
 /**

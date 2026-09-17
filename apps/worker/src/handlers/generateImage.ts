@@ -24,8 +24,7 @@ import {
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import type { GenerateImageJob } from "../runtime/jobPayloads.js";
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { objectKey, objectStore } from "@book-maker/storage";
 
 /**
  * `generate-image` job: render and store one page illustration.
@@ -206,8 +205,6 @@ async function renderAndStorePageIllustration(options: {
     return;
   }
   const ext = optimizedImage.extension;
-  const projectImageDir = join(config.IMAGE_STORAGE_DIR, projectId);
-  await mkdir(projectImageDir, { recursive: true });
   // Every migration path writes immutably. A replacement can commit after the
   // read above and before this write; its final row lock will reject this job,
   // while the orphan file cannot overwrite either the replacement or a page
@@ -216,8 +213,8 @@ async function renderAndStorePageIllustration(options: {
     ownership.kind === "token"
       ? `page-${safePathPart(pageId)}-${ownership.keeperToken}.${ext}`
       : `page-${safePathPart(pageId)}-legacy-${safePathPart(ownership.generationJobId)}.${ext}`;
-  const filePath = join(projectImageDir, filename);
-  await writeFile(filePath, optimizedImage.bytes);
+  const filePath = objectKey("images", projectId, filename);
+  await objectStore().put(filePath, optimizedImage.bytes, { contentType: optimizedImage.mimeType });
 
   const assetType = isDiagramFriendlyBookCategory(input.category) ? "DIAGRAM" : "SCENE_ILLUSTRATION";
   await prisma.$transaction(async (tx) => {

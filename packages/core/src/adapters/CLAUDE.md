@@ -404,8 +404,8 @@ including streamed JSON and tool calls; adapters with no HTTP client ignore it.
   says which provider drew the picture and nothing about what it was handed.
 
 - **A diagnostic write may not decide the render it describes.** `FallbackImageAdapter`'s four
-  `onEvent` emissions are run-log appends — `image.generate.fallback.*`, a file write under
-  `BOOK_STORAGE_DIR` — and each was awaited bare, in a position that settled the render. Three sit
+  `onEvent` emissions are run-log appends — `image.generate.fallback.*`, an immutable S3 event under
+  `books/<projectId>/runs/` — and each was awaited bare, in a position that settled the render. Three sit
   *outside* the try around `fallbackAdapter.generateImage`, so a rejection travelled out of
   `generateImage` as an ordinary `Error`: not an `ImageGenerationFallbackError`, therefore not an
   `isImageContentRefusalError` to anyone downstream, so `renderCharacterReferenceSheets` read a

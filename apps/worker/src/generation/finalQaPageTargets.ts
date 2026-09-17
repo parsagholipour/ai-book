@@ -7,7 +7,7 @@ import type { FinalBookQa } from "@book-maker/core";
  * lifecycle. It lives apart from `bookHelpers.ts` because two very different
  * callers need it and only one of them is a job handler — `exportQualityReview.ts`
  * formats the reader's quality card and has no business opening a Prisma client
- * or reading `BOOK_STORAGE_DIR` to ask which pages a sentence names. It stays in
+ * or reading stored exports to ask which pages a sentence names. It stays in
  * the worker rather than in `packages/core` because both questions below are the
  * final-QA repair pass's own and nothing outside this app asks them; reaching it
  * through the core barrel would swap the three runtime imports it came here to

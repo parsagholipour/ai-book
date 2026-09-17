@@ -1,5 +1,5 @@
 import {
-  libraryCharacterDiskPath,
+  libraryCharacterObjectKey,
   libraryCharacterFileName,
   libraryCharacterFileToken,
   libraryCharacterRelativeFile,
@@ -7,7 +7,7 @@ import {
   type OptimizedImage
 } from "@book-maker/core";
 import { prisma, type LibraryCharacterImageModel, type LibraryCharacterModel } from "@book-maker/db";
-import { stat } from "node:fs/promises";
+import { objectStore } from "@book-maker/storage";
 import { deleteLibraryCharacterFile, saveLibraryCharacterFile } from "./characterStorage.js";
 
 /**
@@ -86,15 +86,14 @@ export type RecordedCharacterImage = { fileName: string; image: LibraryCharacter
  *
  * Row first is the rule on the way in, and its inverse — file first — is the
  * rule on the way out. Both converge on *a row with no file is recoverable, a
- * file with no row is not*: nothing sweeps `IMAGE_STORAGE_DIR/characters/`, so
+ * file with no row is not*: nothing sweeps `images/characters/`, so
  * an unreferenced file is permanent invisible growth, while a row whose write
  * failed renders a broken tile the reader can delete.
  *
  * A failed write hands back both halves: the row *and* whatever the write left
- * behind. `writeFile` truncates into existence before it fails on ENOSPC, and
- * the name carries a token nothing will ever mint again — so without the unlink
- * those bytes are unreachable by every route, the prune and every sweep, for as
- * long as the volume lives.
+ * behind. A failed response can follow a successful object upload, and the
+ * name carries a token nothing will ever mint again, so the failure path
+ * deletes the object before retiring the row that identifies it.
  */
 export async function recordCharacterImage(options: {
   imageStorageDir: string;
@@ -167,25 +166,20 @@ export async function pruneCharacterImages(
 }
 
 /**
- * Whether the bytes are really on disk.
+ * Whether the object exists in private storage.
  *
  * Promote checks this before it moves the reference: a READY row naming a file
  * that is gone would tell every surface — and every book build — that this
  * character reaches a book.
  */
 export async function characterImageExists(
-  imageStorageDir: string,
+  _imageStorageDir: string,
   userId: string,
   fileName: string
 ): Promise<boolean> {
-  const path = libraryCharacterDiskPath(imageStorageDir, libraryCharacterRelativeFile(userId, fileName));
+  const path = libraryCharacterObjectKey(libraryCharacterRelativeFile(userId, fileName));
   if (!path) {
     return false;
   }
-  try {
-    const stats = await stat(path);
-    return stats.isFile();
-  } catch {
-    return false;
-  }
+  return (await objectStore().head(path)) !== null;
 }

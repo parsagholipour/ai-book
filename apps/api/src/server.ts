@@ -4,7 +4,8 @@ import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import Fastify from "fastify";
 import { existsSync } from "node:fs";
-import { mkdir, readFile } from "node:fs/promises";
+import { objectStore, sweepTemporaryDirectories } from "@book-maker/storage";
+import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { browserPoolStatus, closeSharedBrowser, loadConfig } from "@book-maker/core";
 import { loadCreditPricing, prisma } from "@book-maker/db";
@@ -48,11 +49,28 @@ const app = Fastify({
   }
 });
 
-await mkdir(config.BOOK_STORAGE_DIR, { recursive: true });
-await mkdir(config.IMAGE_STORAGE_DIR, { recursive: true });
-await mkdir(config.VOICE_STORAGE_DIR, { recursive: true });
-await mkdir(config.ATTACHMENT_STORAGE_DIR, { recursive: true });
-await mkdir(config.AUDIO_STORAGE_DIR, { recursive: true });
+// Every book asset this process serves or stores is a private S3 object, so an
+// API that cannot reach its bucket has nothing to offer. Refusing to start is
+// what compose's `--wait` and the deployment see; the alternative is a healthy
+// container that fails on the first upload. Locally this means MinIO is down.
+try {
+  await objectStore().ready();
+} catch (error) {
+  app.log.fatal({ err: error }, "Object storage is not reachable (local development: docker compose up -d minio-init)");
+  process.exit(1);
+}
+
+// Renderers have local scratch space only. Reap stale directories after a process crash.
+const sweepTemporaryFiles = async () => {
+  try {
+    await sweepTemporaryDirectories({ minAgeMs: 24 * 60 * 60 * 1000 });
+  } catch (error) {
+    app.log.warn({ err: error }, "Temporary renderer cleanup failed");
+  }
+};
+await sweepTemporaryFiles();
+const temporarySweepTimer = setInterval(() => void sweepTemporaryFiles(), 60 * 60 * 1000);
+temporarySweepTimer.unref();
 
 // Uploaded user files are kept for 6 months; generated books and plans are kept forever.
 const sweepAttachments = async () => {
@@ -210,6 +228,7 @@ if (webDistDir) {
 }
 
 const shutdown = async () => {
+  clearInterval(temporarySweepTimer);
   clearInterval(attachmentSweepTimer);
   clearInterval(voiceCallSweepTimer);
   clearInterval(messageRecoveryTimer);

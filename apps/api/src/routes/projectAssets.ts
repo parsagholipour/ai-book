@@ -1,6 +1,6 @@
 import { prisma } from "@book-maker/db";
-import { readFile } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { objectKey, objectStore } from "@book-maker/storage";
+import { extname } from "node:path";
 import type { AppConfig } from "@book-maker/core";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
@@ -8,7 +8,7 @@ import { resolveProjectActor, sendProjectNotFound } from "../requestAuth.js";
 import { ownedProjectWhere } from "./projectExports.js";
 
 /**
- * A project's illustrations and voice clips, served straight off disk.
+ * A project's illustrations and voice clips, read from private object storage.
  *
  * These live apart from `projects.ts` because they are the one part of that
  * surface both actor kinds reach: the mobile serializers hand the app URLs under
@@ -40,13 +40,13 @@ const MIME_BY_EXT: Record<string, string> = {
   ".ogg": "audio/ogg"
 };
 
-export function registerProjectAssetRoutes(fastify: FastifyInstance, appConfig: AppConfig): void {
+export function registerProjectAssetRoutes(fastify: FastifyInstance, _appConfig: AppConfig): void {
   fastify.get("/assets/images/:projectId/:filename", async (request, reply) => {
     const { projectId, filename } = assetParamsSchema.parse(request.params);
     return sendOwnedProjectAsset(request, reply, {
       projectId,
       filename,
-      storageDir: appConfig.IMAGE_STORAGE_DIR,
+      category: "images",
       missingLabel: "Image not found"
     });
   });
@@ -56,7 +56,7 @@ export function registerProjectAssetRoutes(fastify: FastifyInstance, appConfig: 
     return sendOwnedProjectAsset(request, reply, {
       projectId,
       filename,
-      storageDir: appConfig.VOICE_STORAGE_DIR,
+      category: "voice",
       missingLabel: "Voice file not found"
     });
   });
@@ -68,7 +68,7 @@ async function sendOwnedProjectAsset(
   options: {
     projectId: string;
     filename: string;
-    storageDir: string;
+    category: "images" | "voice";
     missingLabel: string;
   }
 ) {
@@ -84,15 +84,12 @@ async function sendOwnedProjectAsset(
     return sendProjectNotFound(reply, options.missingLabel);
   }
 
-  const filePath = join(options.storageDir, options.projectId, options.filename);
-  try {
-    const file = await readFile(filePath);
-    reply.type(mimeTypeForPath(filePath));
-    reply.header("Cache-Control", "private, max-age=300");
-    return file;
-  } catch {
-    return sendProjectNotFound(reply, options.missingLabel);
-  }
+  const key = objectKey(options.category, options.projectId, options.filename);
+  const file = await objectStore().get(key);
+  if (!file) return sendProjectNotFound(reply, options.missingLabel);
+  reply.type(mimeTypeForPath(options.filename));
+  reply.header("Cache-Control", "private, max-age=300");
+  return file;
 }
 
 function mimeTypeForPath(filePath: string): string {

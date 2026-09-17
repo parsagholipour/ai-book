@@ -1,4 +1,5 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { seedObject, readObjectText, objectNames, testObjectStore } from "../testing/objectStorage.js";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -60,6 +61,7 @@ vi.mock("@book-maker/core", async (importOriginal) => {
 const originalEnv = { ...process.env };
 let bookStorageDir = "";
 let appConfig: AppConfig;
+let renderPaths: string[] = [];
 
 function projectRow(contentRevision: number) {
   return {
@@ -113,13 +115,14 @@ function renderWriting(bytes: string, onRender?: () => void) {
   return async (_markdown: string, options: { outputPath?: string }) => {
     onRender?.();
     await new Promise((resolve) => setTimeout(resolve, 5));
+    renderPaths.push(options.outputPath!);
     writeFileSync(options.outputPath!, bytes);
     return Buffer.from(bytes);
   };
 }
 
 function projectDirEntries(): string[] {
-  return readdirSync(join(bookStorageDir, "project-1"));
+  return objectNames("books/project-1");
 }
 
 /** The row's text-edit invalidation barrier; null is what a healthy project has. */
@@ -137,8 +140,8 @@ describe("lazy export rebuilds", () => {
     vi.resetAllMocks();
     mockProvenanceWrite.failure = null;
     barrier = null;
+    renderPaths = [];
     bookStorageDir = mkdtempSync(join(tmpdir(), "book-maker-exports-"));
-    mkdirSync(join(bookStorageDir, "project-1"), { recursive: true });
     process.env = {
       ...originalEnv,
       OPENAI_API_KEY: "",
@@ -159,7 +162,21 @@ describe("lazy export rebuilds", () => {
 
   afterEach(() => {
     process.env = { ...originalEnv };
+    for (const path of renderPaths) expect(existsSync(path)).toBe(false);
     rmSync(bookStorageDir, { recursive: true, force: true });
+  });
+
+  it("propagates storage outages instead of treating exports as missing", async () => {
+    const { readProjectExportFile, probeReadableProjectExport } = await import("./projectExports.js");
+    const getFailure = vi.spyOn(testObjectStore, "get").mockRejectedValueOnce(new Error("S3 unavailable"));
+    const headFailure = vi.spyOn(testObjectStore, "head").mockRejectedValueOnce(new Error("S3 unavailable"));
+    try {
+      await expect(readProjectExportFile(appConfig, "project-1", "pdf")).rejects.toThrow("S3 unavailable");
+      await expect(probeReadableProjectExport(appConfig, "project-1", "pdf")).rejects.toThrow("S3 unavailable");
+    } finally {
+      getFailure.mockRestore();
+      headFailure.mockRestore();
+    }
   });
 
   it("publishes the render onto book.pdf when the manuscript has not moved", async () => {
@@ -169,7 +186,7 @@ describe("lazy export rebuilds", () => {
     const pdf = await rebuildProjectPdfExport(appConfig, "project-1", exportSource(7));
 
     expect(pdf?.toString()).toBe("rendered-pdf");
-    expect(readFileSync(join(bookStorageDir, "project-1", "book.pdf"), "utf8")).toBe("rendered-pdf");
+    expect(readObjectText(join("books", "project-1", "book.pdf"))).toBe("rendered-pdf");
     expect(mockPrisma.project.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ id: "project-1", contentRevision: 7 })
@@ -182,7 +199,7 @@ describe("lazy export rebuilds", () => {
 
   it("records cover-skip when a rebuild renders saved book.md unmeasured", async () => {
     mockPrisma.project.findUnique.mockResolvedValue({ ...projectRow(7), pages: [] });
-    writeFileSync(join(bookStorageDir, "project-1", "book.md"), "# Saved\n\nProse.\n");
+    seedObject(join("books", "project-1", "book.md"), "# Saved\n\nProse.\n");
     mockGeneratePdf.mockImplementation(renderWriting("unmeasured-pdf"));
     const { rebuildProjectPdfExport } = await import("./projectExports.js");
 
@@ -218,15 +235,15 @@ describe("lazy export rebuilds", () => {
     // A file published before any of this existed, and the shape a same-length
     // replacement leaves behind: the record describes bytes that are no longer
     // the ones on disk. Neither may be answered with a revision.
-    writeFileSync(join(bookStorageDir, "project-1", "book.pdf"), "legacy-pdf");
+    seedObject(join("books", "project-1", "book.pdf"), "legacy-pdf");
     const { readProjectExportArtifact } = await import("./projectExports.js");
 
     expect((await readProjectExportArtifact(appConfig, "project-1", "pdf"))?.provenance).toMatchObject({
       state: "unknown"
     });
 
-    writeFileSync(
-      join(bookStorageDir, "project-1", "book.pdf.provenance.json"),
+    seedObject(
+      join("books", "project-1", "book.pdf.provenance.json"),
       JSON.stringify({
         revision: 7,
         digest: exportContentDigest(Buffer.from("other-pdf")),
@@ -241,7 +258,7 @@ describe("lazy export rebuilds", () => {
   });
 
   it("backfills a legacy export under the publisher lock without rerendering it", async () => {
-    writeFileSync(join(bookStorageDir, "project-1", "book.pdf"), "legacy-pdf");
+    seedObject(join("books", "project-1", "book.pdf"), "legacy-pdf");
     const { readProjectExportArtifact } = await import("./projectExports.js");
 
     const artifact = await readProjectExportArtifact(appConfig, "project-1", "pdf", {
@@ -286,7 +303,7 @@ describe("lazy export rebuilds", () => {
     // failed, and COMPLETE was restored — so the row sits one revision ahead
     // of the bytes on disk. Stamping the row's revision onto them would label
     // a book that does not contain the change as exactly containing it.
-    writeFileSync(join(bookStorageDir, "project-1", "book.pdf"), "pre-toggle-pdf");
+    seedObject(join("books", "project-1", "book.pdf"), "pre-toggle-pdf");
     mockPrisma.generationJob.findFirst.mockResolvedValue(null);
     const { readProjectExportArtifact } = await import("./projectExports.js");
 
@@ -318,7 +335,7 @@ describe("lazy export rebuilds", () => {
 
     expect(artifact?.provenance).toMatchObject({ state: "exact", revision: 7 });
     expect(mockGeneratePdf).not.toHaveBeenCalled();
-    expect(JSON.parse(readFileSync(join(bookStorageDir, "project-1", "book.pdf.provenance.json"), "utf8"))).toMatchObject({
+    expect(JSON.parse(readObjectText(join("books", "project-1", "book.pdf.provenance.json")))).toMatchObject({
       revision: 7,
       digest: exportContentDigest(Buffer.from("current-pdf"))
     });
@@ -326,14 +343,14 @@ describe("lazy export rebuilds", () => {
   });
 
   it("never relabels bytes contradicted by an existing provenance record", async () => {
-    writeFileSync(join(bookStorageDir, "project-1", "book.pdf"), "replacement");
+    seedObject(join("books", "project-1", "book.pdf"), "replacement");
     const oldRecord = JSON.stringify({
       revision: 7,
       digest: exportContentDigest(Buffer.from("old-edition")),
       byteSize: "replacement".length,
       publishedAt: "2026-08-10T00:00:00.000Z"
     });
-    writeFileSync(join(bookStorageDir, "project-1", "book.pdf.provenance.json"), oldRecord);
+    seedObject(join("books", "project-1", "book.pdf.provenance.json"), oldRecord);
     const { readProjectExportArtifact } = await import("./projectExports.js");
 
     const artifact = await readProjectExportArtifact(appConfig, "project-1", "pdf", {
@@ -342,11 +359,11 @@ describe("lazy export rebuilds", () => {
     });
 
     expect(artifact?.provenance).toMatchObject({ state: "mismatch" });
-    expect(readFileSync(join(bookStorageDir, "project-1", "book.pdf.provenance.json"), "utf8")).toBe(oldRecord);
+    expect(readObjectText(join("books", "project-1", "book.pdf.provenance.json"))).toBe(oldRecord);
   });
 
   it("does not backfill when the revision claim loses to an edit", async () => {
-    writeFileSync(join(bookStorageDir, "project-1", "book.pdf"), "legacy-pdf");
+    seedObject(join("books", "project-1", "book.pdf"), "legacy-pdf");
     mockPrisma.project.updateMany.mockResolvedValueOnce({ count: 0 });
     const { readProjectExportArtifact } = await import("./projectExports.js");
 
@@ -365,14 +382,14 @@ describe("lazy export rebuilds", () => {
     mockGeneratePdf.mockImplementation(
       renderWriting("stale-pdf", () => {
         mockPrisma.project.updateMany.mockResolvedValue({ count: 0 });
-        writeFileSync(join(bookStorageDir, "project-1", "book.pdf"), "fresh-pdf");
+        seedObject(join("books", "project-1", "book.pdf"), "fresh-pdf");
       })
     );
     const { rebuildProjectPdfExport } = await import("./projectExports.js");
 
     const pdf = await rebuildProjectPdfExport(appConfig, "project-1", exportSource(7));
 
-    expect(readFileSync(join(bookStorageDir, "project-1", "book.pdf"), "utf8")).toBe("fresh-pdf");
+    expect(readObjectText(join("books", "project-1", "book.pdf"))).toBe("fresh-pdf");
     // The caller is answered with the current book, not the one it rendered.
     expect(pdf?.toString()).toBe("fresh-pdf");
     expect(projectDirEntries()).toEqual(["book.pdf"]);
@@ -402,7 +419,7 @@ describe("lazy export rebuilds", () => {
     });
 
     it(`repairs sidecar-less provenance over an invalidation barrier holding ${name}: ${installs}`, async () => {
-      writeFileSync(join(bookStorageDir, "project-1", "book.pdf"), "legacy-pdf");
+      seedObject(join("books", "project-1", "book.pdf"), "legacy-pdf");
       barrier = value;
       const { readProjectExportArtifact } = await import("./projectExports.js");
 
@@ -432,8 +449,8 @@ describe("lazy export rebuilds", () => {
     // first and committed its same-revision detached repair before the API's
     // transaction callback can acquire that lock.
     mockPrisma.$transaction.mockImplementationOnce((fn: (tx: typeof mockPrisma) => unknown) => {
-      writeFileSync(join(bookStorageDir, "project-1", filename), worker);
-      writeFileSync(join(bookStorageDir, "project-1", `${filename}.provenance.json`), record);
+      seedObject(join("books", "project-1", filename), worker);
+      seedObject(join("books", "project-1", `${filename}.provenance.json`), record);
       return fn(mockPrisma);
     });
     const { rebuildProjectEpubExport, rebuildProjectPdfExport } = await import("./projectExports.js");
@@ -447,10 +464,10 @@ describe("lazy export rebuilds", () => {
       expect.objectContaining({ where: expect.objectContaining({ contentRevision: 7 }) })
     );
     expect(artifact?.toString()).toBe(worker);
-    expect(readFileSync(join(bookStorageDir, "project-1", filename), "utf8")).toBe(worker);
+    expect(readObjectText(join("books", "project-1", filename))).toBe(worker);
     // Standing down must not retire or rewrite the worker's provenance, and the
     // API's scratch artifact is removed by the ordinary loser cleanup.
-    expect(readFileSync(join(bookStorageDir, "project-1", `${filename}.provenance.json`), "utf8")).toBe(record);
+    expect(readObjectText(join("books", "project-1", `${filename}.provenance.json`))).toBe(record);
     expect(projectDirEntries().sort()).toEqual([filename, `${filename}.provenance.json`].sort());
   });
 
@@ -501,7 +518,7 @@ describe("lazy export rebuilds", () => {
   });
 
   it("serves the compiled book during an edit instead of re-rendering it", async () => {
-    writeFileSync(join(bookStorageDir, "project-1", "book.pdf"), "compiled-pdf");
+    seedObject(join("books", "project-1", "book.pdf"), "compiled-pdf");
     const { sendProjectPdfExport } = await import("./projectExports.js");
     const { reply, captured } = fakeReply();
 
@@ -524,7 +541,7 @@ describe("lazy export rebuilds", () => {
     // it, so the claim alone would have let the fragment replace it.
     mockGeneratePdf.mockImplementation(
       renderWriting("partial-pdf", () => {
-        writeFileSync(join(bookStorageDir, "project-1", "book.pdf"), "whole-pdf");
+        seedObject(join("books", "project-1", "book.pdf"), "whole-pdf");
       })
     );
     const { rebuildProjectPdfExport } = await import("./projectExports.js");
@@ -532,7 +549,7 @@ describe("lazy export rebuilds", () => {
     const pdf = await rebuildProjectPdfExport(appConfig, "project-1", exportSource(0, "GENERATING"));
 
     expect(mockPrisma.project.updateMany).not.toHaveBeenCalled();
-    expect(readFileSync(join(bookStorageDir, "project-1", "book.pdf"), "utf8")).toBe("whole-pdf");
+    expect(readObjectText(join("books", "project-1", "book.pdf"))).toBe("whole-pdf");
     // And the caller is answered with the finished book, not the fragment.
     expect(pdf?.toString()).toBe("whole-pdf");
     expect(projectDirEntries()).toEqual(["book.pdf"]);

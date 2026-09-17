@@ -1,7 +1,9 @@
 # Core
 
 Provider adapters, prompts, generation algorithms, schemas. This is the leaf of the dependency
-graph: `apps/* → packages/db → packages/core`. It must not import from `apps/*` or from
+domain graph: `apps/* → packages/db → packages/core`. Durable I/O uses the independent
+`@book-maker/storage` package; read [storage.md](../../docs/storage.md) when changing storage or render inputs.
+Core must not import from `apps/*` or from
 `packages/db`, and nothing in it may open an HTTP server or touch the queue.
 
 Relative imports carry the `.js` extension (`./foo.js`) even from `.ts`. Consumers import the bare

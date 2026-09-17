@@ -1,7 +1,5 @@
-import { mkdtempSync, mkdirSync, rmSync, utimesSync, writeFileSync, existsSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { seedObject, testObjectStore } from "./testing/objectStorage.js";
 import {
   creationAttachmentFilePath,
   deleteCreationAttachmentDraftDir,
@@ -10,81 +8,55 @@ import {
   sweepExpiredCreationAttachments
 } from "./attachmentStorage.js";
 
-describe("attachment storage", () => {
-  let root: string;
+const root = "/unused-local-directory";
 
-  beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "book-maker-attachment-storage-"));
-  });
-
-  afterEach(() => {
-    rmSync(root, { recursive: true, force: true });
-  });
-
-  it("round-trips a stored file", async () => {
+describe("private attachment storage", () => {
+  it("round-trips original bytes without a local storage directory", async () => {
     await saveCreationAttachmentFile(root, "draft-1", "att_1", Buffer.from("photo bytes"));
-    const read = await readCreationAttachmentFile(root, "draft-1", "att_1");
-    expect(read?.toString("utf8")).toBe("photo bytes");
+    expect((await readCreationAttachmentFile(root, "draft-1", "att_1"))?.toString()).toBe("photo bytes");
+    expect([...testObjectStore.objects.keys()]).toEqual(["attachments/draft-1/att_1"]);
   });
 
-  it("rejects path-traversal segments", () => {
+  it("rejects path traversal segments", () => {
     expect(creationAttachmentFilePath(root, "../evil", "att_1")).toBeNull();
     expect(creationAttachmentFilePath(root, "draft-1", "..")).toBeNull();
     expect(creationAttachmentFilePath(root, "draft/1", "att_1")).toBeNull();
   });
 
-  it("returns null for a missing file", async () => {
+  it("returns null only for a missing original", async () => {
     expect(await readCreationAttachmentFile(root, "draft-1", "att_gone")).toBeNull();
+    const failure = vi.spyOn(testObjectStore, "get").mockRejectedValueOnce(new Error("S3 unavailable"));
+    await expect(readCreationAttachmentFile(root, "draft-1", "att_1")).rejects.toThrow("S3 unavailable");
+    failure.mockRestore();
   });
 
-  it("removes a whole draft directory", async () => {
-    await saveCreationAttachmentFile(root, "draft-1", "att_1", Buffer.from("a"));
-    await saveCreationAttachmentFile(root, "draft-1", "att_2", Buffer.from("b"));
+  it("removes only the requested draft prefix", async () => {
+    seedObject("attachments/draft-1/att_1", "a");
+    seedObject("attachments/draft-10/att_1", "b");
     await deleteCreationAttachmentDraftDir(root, "draft-1");
-    expect(existsSync(join(root, "draft-1"))).toBe(false);
+    expect([...testObjectStore.objects.keys()]).toEqual(["attachments/draft-10/att_1"]);
   });
 
-  describe("retention sweep", () => {
-    it("deletes files past the retention window and keeps recent ones", async () => {
-      const now = new Date("2026-07-08T00:00:00.000Z");
-      const oldDir = join(root, "draft-old");
-      const mixedDir = join(root, "draft-mixed");
-      mkdirSync(oldDir);
-      mkdirSync(mixedDir);
-      writeFileSync(join(oldDir, "att_old"), "old");
-      writeFileSync(join(mixedDir, "att_old"), "old");
-      writeFileSync(join(mixedDir, "att_recent"), "recent");
-      const sevenMonthsAgo = new Date("2025-12-01T00:00:00.000Z");
-      utimesSync(join(oldDir, "att_old"), sevenMonthsAgo, sevenMonthsAgo);
-      utimesSync(join(mixedDir, "att_old"), sevenMonthsAgo, sevenMonthsAgo);
+  it("sweeps expired originals using object timestamps and preserves books", async () => {
+    const now = new Date("2026-07-08T00:00:00Z");
+    const old = new Date("2025-12-01T00:00:00Z");
+    seedObject("attachments/draft-old/att_old", "old", old);
+    seedObject("attachments/draft-mixed/att_old", "old", old);
+    seedObject("attachments/draft-mixed/att_recent", "recent", now);
+    seedObject("books/draft-old/book.pdf", "permanent", old);
+    expect(await sweepExpiredCreationAttachments(root, 180, () => now)).toEqual({ deletedFiles: 2, removedDirs: 1 });
+    expect([...testObjectStore.objects.keys()].sort()).toEqual([
+      "attachments/draft-mixed/att_recent", "books/draft-old/book.pdf"
+    ]);
+  });
 
-      const swept = await sweepExpiredCreationAttachments(root, 180, () => now);
+  it("keeps originals exactly at the retention boundary", async () => {
+    const now = new Date("2026-07-08T00:00:00Z");
+    seedObject("attachments/draft-1/att_edge", "edge", new Date(now.getTime() - 180 * 86400_000));
+    expect(await sweepExpiredCreationAttachments(root, 180, () => now)).toEqual({ deletedFiles: 0, removedDirs: 0 });
+  });
 
-      expect(swept.deletedFiles).toBe(2);
-      expect(existsSync(join(mixedDir, "att_old"))).toBe(false);
-      expect(existsSync(join(mixedDir, "att_recent"))).toBe(true);
-      // The fully expired draft directory is pruned once empty.
-      expect(existsSync(oldDir)).toBe(false);
-      expect(swept.removedDirs).toBe(1);
-    });
-
-    it("keeps files exactly inside the window", async () => {
-      const now = new Date("2026-07-08T00:00:00.000Z");
-      const dir = join(root, "draft-1");
-      mkdirSync(dir);
-      writeFileSync(join(dir, "att_edge"), "edge");
-      const insideWindow = new Date(now.getTime() - 179 * 24 * 60 * 60 * 1000);
-      utimesSync(join(dir, "att_edge"), insideWindow, insideWindow);
-
-      const swept = await sweepExpiredCreationAttachments(root, 180, () => now);
-
-      expect(swept.deletedFiles).toBe(0);
-      expect(existsSync(join(dir, "att_edge"))).toBe(true);
-    });
-
-    it("is a no-op when the storage root does not exist", async () => {
-      const swept = await sweepExpiredCreationAttachments(join(root, "missing"), 180);
-      expect(swept).toEqual({ deletedFiles: 0, removedDirs: 0 });
-    });
+  it("does nothing for an empty bucket", async () => {
+    expect(await sweepExpiredCreationAttachments(root, 180)).toEqual({ deletedFiles: 0, removedDirs: 0 });
   });
 });

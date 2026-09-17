@@ -2,8 +2,7 @@ import { estimateAudiobookCreditCost, isAudiobookNarratorVoice } from "@book-mak
 import { prisma } from "@book-maker/db";
 import { GenerationAttemptConflictError, startGenerationAttempt } from "@book-maker/db/billing";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { objectKey, objectStore } from "@book-maker/storage";
 import { dispatchGenerationJob, enqueueGenerationJob } from "../../queue.js";
 import { ensureVoiceSample } from "../audiobookSamples.js";
 import { serializeAudiobook, serializeNarratorVoices } from "../audiobookSerializer.js";
@@ -295,7 +294,7 @@ export async function registerMobileAudiobookRoutes(fastify: FastifyInstance, co
       if (!resolved) {
         return;
       }
-      return sendChapterFile(reply, join(resolved.dir, `chapter-${resolved.index}.mp3`), "audio/mpeg");
+      return sendChapterFile(reply, `${resolved.dir}/chapter-${resolved.index}.mp3`, "audio/mpeg");
     }
   );
 
@@ -307,7 +306,7 @@ export async function registerMobileAudiobookRoutes(fastify: FastifyInstance, co
       if (!resolved) {
         return;
       }
-      return sendChapterFile(reply, join(resolved.dir, `chapter-${resolved.index}.timeline.json`), "application/json");
+      return sendChapterFile(reply, `${resolved.dir}/chapter-${resolved.index}.timeline.json`, "application/json");
     }
   );
 }
@@ -319,7 +318,7 @@ export async function registerMobileAudiobookRoutes(fastify: FastifyInstance, co
 async function resolveReadyChapter(
   request: FastifyRequest,
   reply: FastifyReply,
-  audioStorageDir: string
+  _audioStorageDir: string
 ): Promise<{ dir: string; index: number } | null> {
   const auth = await requireMobileAuth(request, reply);
   if (!auth) {
@@ -340,7 +339,7 @@ async function resolveReadyChapter(
     return null;
   }
 
-  return { dir: join(audioStorageDir, audiobook.projectId, audiobook.id), index: params.data.index };
+  return { dir: objectKey("audio", audiobook.projectId, audiobook.id), index: params.data.index };
 }
 
 /**
@@ -357,7 +356,7 @@ async function loadAudiobook(projectId: string) {
 }
 
 async function sendChapterFile(reply: FastifyReply, path: string, contentType: string) {
-  const bytes = await readFile(path).catch(() => null);
+  const bytes = await objectStore().get(path);
   if (!bytes) {
     return sendMobileError(reply, 404, "AUDIOBOOK_CHAPTER_NOT_FOUND", "That chapter is not ready yet.");
   }

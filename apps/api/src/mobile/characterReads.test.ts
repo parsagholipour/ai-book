@@ -5,7 +5,7 @@ vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApi
 vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js")).queueModuleMock());
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { seedObject } from "../testing/objectStorage.js";
 import { join } from "node:path";
 import { enqueueGenerationJob } from "../queue.js";
 import {
@@ -14,7 +14,6 @@ import {
   mockAccessTokens,
   mockPrisma,
   resetMobileHarness,
-  state,
   teardownMobileHarness
 } from "./testing/mobileApiHarness.js";
 
@@ -84,9 +83,9 @@ const readIncludes = () =>
   mockPrisma.libraryCharacter.findFirst.mock.calls.map((call: any[]) => "include" in call[0]);
 
 function writeCharacterFile(fileName: string): void {
-  const dir = join(state.imageStorageDir!, "characters", "user-a");
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, fileName), "fake-bytes");
+  const dir = join("images", "characters", "user-a");
+
+  seedObject(join(dir, fileName), "fake-bytes");
 }
 
 describe("character route reads", () => {

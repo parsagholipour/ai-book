@@ -1,5 +1,4 @@
-import { appendFile, mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { appendRunLog, objectKey } from "@book-maker/storage";
 import {
   isRecoverableNetworkError,
   providerRetryAfterMs,
@@ -19,7 +18,7 @@ import {
  * Per-job run logs and the retry/reporting policy around provider calls.
  *
  * Every AI call a job makes is appended as a JSON line under
- * `<BOOK_STORAGE_DIR>/<projectId>/runs/`, which is the primary artifact for
+ * `books/<projectId>/runs/`, which is the primary artifact for
  * debugging a generation after the fact.
  */
 
@@ -42,8 +41,8 @@ export function createRunLogger(job: RawWorkerJob): RunLogger {
   const projectId = workerJobStringField(job, "projectId") ?? "_unknown-project";
   const generationJobId = workerJobStringField(job, "generationJobId");
   const runId = generationJobId ?? `bull-${job.id ?? "unknown"}`;
-  const logDir = join(config.BOOK_STORAGE_DIR, projectId, "runs");
-  const filePath = join(logDir, `${safePathPart(runId)}-${safePathPart(job.name)}.jsonl`);
+  const logDir = objectKey("books", projectId, "runs");
+  const filePath = `${logDir}/${safePathPart(runId)}-${safePathPart(job.name)}.jsonl`;
 
   return {
     filePath,
@@ -62,8 +61,7 @@ export function createRunLogger(job: RawWorkerJob): RunLogger {
         ...data
       };
       try {
-        await mkdir(logDir, { recursive: true });
-        await appendFile(filePath, `${safeJsonStringify(entry)}\n`, "utf8");
+        await appendRunLog(filePath, safeJsonStringify(entry));
       } catch (error) {
         console.error(`Failed to write run log ${filePath}`, error);
       }

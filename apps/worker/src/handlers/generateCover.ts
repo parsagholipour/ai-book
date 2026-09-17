@@ -27,8 +27,7 @@ import { coverDesignArtwork } from "../generation/coverArtwork.js";
 import { isStopRequestedError } from "../runtime/jobTypes.js";
 import { prisma } from "@book-maker/db";
 import type { GenerateImageJob } from "../runtime/jobPayloads.js";
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { objectKey, objectStore } from "@book-maker/storage";
 
 /**
  * `generate-cover` work: cover artwork plus the character reference images that
@@ -192,12 +191,10 @@ export async function generateCover(job: GenerateImageJob) {
   });
 
   await advanceJobStep(generationJobId, "store", 84, "Storing cover");
-  const projectImageDir = join(config.IMAGE_STORAGE_DIR, projectId);
-  await mkdir(projectImageDir, { recursive: true });
   const optimizedCover = await optimizeImageForStorage({ bytes: coverPng, mimeType: "image/png" });
   const filename = `cover.${optimizedCover.extension}`;
-  const filePath = join(projectImageDir, filename);
-  await writeFile(filePath, optimizedCover.bytes);
+  const filePath = objectKey("images", projectId, filename);
+  await objectStore().put(filePath, optimizedCover.bytes, { contentType: optimizedCover.mimeType });
   const publicPath = publicAssetUrl(config.PUBLIC_API_URL, `/assets/images/${projectId}/${filename}`);
 
   await prisma.$transaction([

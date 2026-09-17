@@ -6,7 +6,8 @@ import {
   narrationStylePrompt,
   type loadConfig
 } from "@book-maker/core";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
+import { objectKey, objectStore } from "@book-maker/storage";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -30,8 +31,8 @@ const inFlight = new Map<string, Promise<Buffer>>();
 
 export type AudiobookSampleConfig = Pick<ReturnType<typeof loadConfig>, "AUDIO_STORAGE_DIR" | "MOCK_AI" | "GEMINI_API_KEY" | "GEMINI_TTS_MODEL">;
 
-export function voiceSampleDir(appConfig: { AUDIO_STORAGE_DIR: string }): string {
-  return join(appConfig.AUDIO_STORAGE_DIR, "samples");
+export function voiceSampleDir(_appConfig: { AUDIO_STORAGE_DIR: string }): string {
+  return objectKey("audio", "samples");
 }
 
 export async function ensureVoiceSample(appConfig: AudiobookSampleConfig, voice: string): Promise<Buffer> {
@@ -40,8 +41,8 @@ export async function ensureVoiceSample(appConfig: AudiobookSampleConfig, voice:
     return bundled;
   }
 
-  const path = join(voiceSampleDir(appConfig), `${voice}.mp3`);
-  const cached = await readFile(path).catch(() => null);
+  const path = objectKey("audio", "samples", `${voice}.mp3`);
+  const cached = await objectStore().get(path);
   if (cached) {
     return cached;
   }
@@ -75,9 +76,7 @@ async function generateVoiceSample(appConfig: AudiobookSampleConfig, voice: stri
     kbps: AUDIOBOOK_MP3_KBPS
   });
 
-  await mkdir(voiceSampleDir(appConfig), { recursive: true });
-  await writeFile(`${path}.part`, mp3);
-  await rename(`${path}.part`, path);
+  await objectStore().put(path, mp3, { contentType: "audio/mpeg" });
   return mp3;
 }
 

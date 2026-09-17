@@ -1,4 +1,3 @@
-import { config } from "../runtime/config.js";
 import { type ExportPageForRepair } from "../runtime/jobTypes.js";
 import { cleanOptionalText } from "../runtime/serialization.js";
 import { finalQaMessagesForPage } from "./finalQaPageTargets.js";
@@ -27,8 +26,7 @@ import {
   type QualityFeatureId
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
-import { rm } from "node:fs/promises";
-import { join } from "node:path";
+import { objectKey, objectStore } from "@book-maker/storage";
 
 /**
  * Shared plan, page and export helpers used by more than one job handler.
@@ -304,11 +302,10 @@ export function imageGenerationMetadata(image: GeneratedImageBytes): Record<stri
  * no file has nothing to say.
  */
 export async function invalidateProjectExports(projectId: string): Promise<void> {
-  const projectDir = join(config.BOOK_STORAGE_DIR, projectId);
   await Promise.all(
     [
-      ...["book.md", "README.md", "book.pdf", "book.epub"].map((filename) => join(projectDir, filename)),
-      ...exportProvenancePaths(projectDir)
-    ].map((path) => rm(path, { force: true }).catch(() => undefined))
+      ...["book.md", "README.md", "book.pdf", "book.epub", "book.docx"].map((filename) => objectKey("books", projectId, filename)),
+      ...exportProvenancePaths(projectId)
+    ].map((key) => objectStore().delete(key))
   );
 }

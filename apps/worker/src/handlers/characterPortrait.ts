@@ -7,7 +7,7 @@ import {
   createProjectSchema,
   createProviders,
   imageRenderProvenance,
-  libraryCharacterDiskPath,
+  libraryCharacterObjectKey,
   libraryCharacterFileName,
   libraryCharacterFileToken,
   libraryCharacterRelativeFile,
@@ -18,8 +18,7 @@ import {
 import { Prisma, prisma } from "@book-maker/db";
 import { generationDescription, libraryMentionInclude } from "@book-maker/db/libraryMentions";
 import type { GenerateCharacterPortraitJob } from "../runtime/jobPayloads.js";
-import { mkdir, rm, stat, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { objectReference, objectStore } from "@book-maker/storage";
 
 /**
  * `generate-character-portrait`: draws the profile portrait for an
@@ -93,10 +92,7 @@ export async function generateCharacterPortrait(job: GenerateCharacterPortraitJo
     optimizedImage.extension,
     libraryCharacterFileToken()
   );
-  const diskPath = libraryCharacterDiskPath(
-    config.IMAGE_STORAGE_DIR,
-    libraryCharacterRelativeFile(userId, fileName)
-  );
+  const diskPath = libraryCharacterObjectKey(libraryCharacterRelativeFile(userId, fileName));
   if (!diskPath) {
     throw new Error("Could not resolve a storage path for the character portrait.");
   }
@@ -125,13 +121,12 @@ export async function generateCharacterPortrait(job: GenerateCharacterPortraitJo
     }
   });
   try {
-    await mkdir(dirname(diskPath), { recursive: true });
-    await writeFile(diskPath, optimizedImage.bytes);
+    await objectStore().put(diskPath, optimizedImage.bytes, { contentType: optimizedImage.mimeType });
   } catch (error) {
     // Both halves go back, including whatever a failed `writeFile` left on
     // disk: the name carries a token nothing will mint again, so those bytes
     // would be unreachable by every route, the prune and every sweep.
-    await rm(diskPath, { force: true }).catch(() => undefined);
+    await objectStore().delete(diskPath).catch(() => undefined);
     await prisma.libraryCharacterImage.delete({ where: { id: imageRow.id } }).catch(() => undefined);
     throw error;
   }
@@ -180,12 +175,9 @@ async function pruneWorkerCharacterImages(userId: string, characterId: string): 
     keepFileNames: [current.photoPath, current.portraitPath]
   });
   for (const image of doomed) {
-    const path = libraryCharacterDiskPath(
-      config.IMAGE_STORAGE_DIR,
-      libraryCharacterRelativeFile(userId, image.fileName)
-    );
+    const path = libraryCharacterObjectKey(libraryCharacterRelativeFile(userId, image.fileName));
     if (path) {
-      await rm(path, { force: true }).catch(() => undefined);
+      await objectStore().delete(path).catch(() => undefined);
     }
     await prisma.libraryCharacterImage.deleteMany({ where: { id: image.id, userId } });
   }
@@ -195,15 +187,11 @@ async function existingCharacterFile(userId: string, fileName: string | null): P
   if (!fileName) {
     return null;
   }
-  const path = libraryCharacterDiskPath(config.IMAGE_STORAGE_DIR, libraryCharacterRelativeFile(userId, fileName));
+  const path = libraryCharacterObjectKey(libraryCharacterRelativeFile(userId, fileName));
   if (!path) {
     return null;
   }
-  try {
-    return (await stat(path)).isFile() ? path : null;
-  } catch {
-    return null;
-  }
+  return (await objectStore().head(path)) ? objectReference(path) : null;
 }
 
 function fieldsFromJson(value: unknown): LibraryCharacterField[] {

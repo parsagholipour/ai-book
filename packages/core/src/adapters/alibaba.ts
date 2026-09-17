@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readObjectReference } from "@book-maker/storage";
 import { extname } from "node:path";
 import OpenAI from "openai";
 import type {
@@ -440,7 +440,7 @@ function qwenNegativePrompt(): string {
 
 async function imageDataUrl(path: string): Promise<string> {
   const mimeType = mimeTypeForImagePath(path);
-  return `data:${mimeType};base64,${(await readFile(path)).toString("base64")}`;
+  return `data:${mimeType};base64,${(await readObjectReference(path)).toString("base64")}`;
 }
 
 function mimeTypeForImagePath(path: string): string {

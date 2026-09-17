@@ -1,9 +1,8 @@
 import type { ReaderChapter, ReaderChapterResult } from "@book-maker/core";
-import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { objectKey, objectStore } from "@book-maker/storage";
 
 /**
- * The reader-chapter model call, memoized on disk per project.
+ * The reader-chapter model call, memoized in object storage per project.
  *
  * `createReaderChaptersForExport` is one LLM call on *every* compile, including
  * the ones the user was told are free and instant — a presentation toggle
@@ -35,15 +34,15 @@ type IndexedReaderPage = {
   index: number;
 };
 
-export function readerChapterCachePath(projectDir: string): string {
-  return join(projectDir, CACHE_FILENAME);
+export function readerChapterCachePath(projectId: string): string {
+  return objectKey("books", projectId, CACHE_FILENAME);
 }
 
 export async function readCachedReaderChapters(
-  projectDir: string,
+  projectId: string,
   fingerprint: string
 ): Promise<ReaderChapter[] | undefined> {
-  const cached = await readReaderChapterCacheFile(projectDir);
+  const cached = await readReaderChapterCacheFile(projectId);
   return cached && cached.fingerprint === fingerprint ? cached.chapters : undefined;
 }
 
@@ -58,15 +57,15 @@ export async function readCachedReaderChapters(
  * reindex that changed the partition gets a miss instead.
  */
 export async function readCompatibleCachedReaderChapters(
-  projectDir: string,
+  projectId: string,
   pages: ReadonlyArray<IndexedReaderPage>
 ): Promise<ReaderChapter[] | undefined> {
-  const cached = await readReaderChapterCacheFile(projectDir);
+  const cached = await readReaderChapterCacheFile(projectId);
   return cached && readerChapterLayoutFitsPages(cached.chapters, pages) ? cached.chapters : undefined;
 }
 
 export async function writeCachedReaderChapters(
-  projectDir: string,
+  projectId: string,
   fingerprint: string,
   result: ReaderChapterResult
 ): Promise<void> {
@@ -75,7 +74,7 @@ export async function writeCachedReaderChapters(
   }
   const file: ReaderChapterCacheFile = { fingerprint, chapters: result.chapters };
   try {
-    await writeFile(readerChapterCachePath(projectDir), JSON.stringify(file), "utf8");
+    await objectStore().put(readerChapterCachePath(projectId), JSON.stringify(file), { contentType: "application/json" });
   } catch {
     // The cache is an optimization; a book must still export without it.
   }
@@ -96,7 +95,7 @@ export async function writeCachedReaderChapters(
  * down, and writes nothing: the next charged compile is still free to ask.
  */
 export async function readerChaptersWithCache(options: {
-  projectDir: string;
+  projectId: string;
   fingerprint: string;
   /** Whether this compile may pay for the chapterization call on a miss. */
   allowModelCall: boolean;
@@ -105,7 +104,7 @@ export async function readerChaptersWithCache(options: {
   /** Model-free grouping, used on a miss when the call is not allowed. */
   deterministic: () => ReaderChapter[];
 }): Promise<ReaderChapter[]> {
-  const cached = await readCachedReaderChapters(options.projectDir, options.fingerprint);
+  const cached = await readCachedReaderChapters(options.projectId, options.fingerprint);
   if (cached) {
     return cached;
   }
@@ -115,7 +114,7 @@ export async function readerChaptersWithCache(options: {
     return options.deterministic();
   }
   const result = await options.compute();
-  await writeCachedReaderChapters(options.projectDir, options.fingerprint, result);
+  await writeCachedReaderChapters(options.projectId, options.fingerprint, result);
   return result.chapters;
 }
 
@@ -185,9 +184,11 @@ export function readerChaptersFromPublishedMarkdown(
   return readerChapterLayoutFitsPages(chapters, pages) ? chapters : undefined;
 }
 
-async function readReaderChapterCacheFile(projectDir: string): Promise<ReaderChapterCacheFile | undefined> {
+async function readReaderChapterCacheFile(projectId: string): Promise<ReaderChapterCacheFile | undefined> {
   try {
-    const raw = JSON.parse(await readFile(readerChapterCachePath(projectDir), "utf8")) as unknown;
+    const bytes = await objectStore().get(readerChapterCachePath(projectId));
+    if (!bytes) return undefined;
+    const raw = JSON.parse(bytes.toString("utf8")) as unknown;
     return parseReaderChapterCacheFile(raw);
   } catch {
     // A missing, unreadable or malformed cache is a miss, never a failure.

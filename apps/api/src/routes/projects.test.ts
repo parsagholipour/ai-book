@@ -1,5 +1,6 @@
+import { seedObject, objectNames } from "../testing/objectStorage.js";
 import Fastify, { type FastifyInstance } from "fastify";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -227,9 +228,9 @@ describe("project routes", () => {
       })
     );
     expect(mockPrisma.project.delete).toHaveBeenCalledWith({ where: { id: "project-a" } });
-    expect(existsSync(join(tempBookStorageDir!, "project-a"))).toBe(false);
-    expect(existsSync(join(tempImageStorageDir!, "project-a"))).toBe(false);
-    expect(existsSync(join(tempVoiceStorageDir!, "project-a"))).toBe(false);
+    expect(objectNames("books/project-a")).toEqual([]);
+    expect(objectNames("images/project-a")).toEqual([]);
+    expect(objectNames("voice/project-a")).toEqual([]);
     await app.close();
   });
 
@@ -282,6 +283,7 @@ describe("project routes", () => {
     process.env.OPENAI_API_KEY = "openai-key";
     process.env.GEMINI_API_KEY = "gemini-key";
     process.env.VOICE_CHAT_PROVIDER = "gemini_live";
+    process.env.OPENAI_REALTIME_MODEL = "gpt-realtime-2";
     const app = await buildApp();
 
     const response = await app.inject({ method: "GET", url: "/api/voice/providers" });
@@ -1183,9 +1185,8 @@ function writeProjectFile(storageDir: string | null, projectId: string, filename
   if (!storageDir) {
     throw new Error("Storage dir was not initialized");
   }
-  const projectDir = join(storageDir, projectId);
-  mkdirSync(projectDir, { recursive: true });
-  writeFileSync(join(projectDir, filename), content);
+  const category = storageDir === tempBookStorageDir ? "books" : storageDir === tempImageStorageDir ? "images" : "voice";
+  seedObject(`${category}/${projectId}/${filename}`, content);
 }
 
 async function buildApp(options: { auth?: boolean } = {}): Promise<FastifyInstance> {

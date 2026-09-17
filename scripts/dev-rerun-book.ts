@@ -1,3 +1,4 @@
+import { listRunLogs, readRunLog as readStoredRunLog } from "../packages/storage/src/index.ts";
 /**
  * Re-run a finished book's exact creation input through the real pipeline and
  * collect everything needed to judge the result: the text, a step-by-step
@@ -16,7 +17,7 @@
  * and BullMQ payloads are the ones production writes; nothing is charged
  * because the operator path reserves no credits. Development only: it needs
  * the Docker stack (or a host stack) on the default ports and talks to the
- * worker container for run logs.
+ * configured S3/MinIO bucket for run logs.
  *
  * A rerun takes the free designed cover unless `--cover ai` asks for a drawn
  * one (Parsa, 2026-09-04): a test book's cover is provider spend for nothing.
@@ -46,7 +47,6 @@ type Args = {
   outDir: string;
 };
 
-const WORKER_CONTAINER = process.env.BOOK_MAKER_WORKER_CONTAINER ?? "ai-book-maker-worker-1";
 
 function parseArgs(argv: string[]): Args {
   const command = argv[0];
@@ -240,13 +240,10 @@ async function waitForBook(projectId: string, timeoutMs: number): Promise<void> 
 
 type RunLogEvent = { event?: string; callId?: string; request?: { purpose?: string; messages?: Array<{ role: string; content: string }> }; result?: { text?: string; data?: unknown; usage?: Record<string, number> }; error?: unknown; timestamp?: string };
 
-function readRunLog(projectId: string, suffix: string): RunLogEvent[] {
+async function readRunLog(projectId: string, suffix: string): Promise<RunLogEvent[]> {
   try {
-    const text = execFileSync(
-      "docker",
-      ["exec", WORKER_CONTAINER, "sh", "-c", `cat /app/storage/books/${projectId}/runs/*-${suffix}.jsonl 2>/dev/null`],
-      { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }
-    );
+    const logs = (await listRunLogs(projectId)).filter(({ key }) => key.endsWith(`-${suffix}.jsonl`));
+    const text = (await Promise.all(logs.map(({ key }) => readStoredRunLog(key)))).join("\n");
     return text
       .split("\n")
       .filter(Boolean)
@@ -298,7 +295,7 @@ async function exportRun(projectId: string, label: string, outDir: string, basel
   // The trace.
   const planning = (plan?.planningPackage ?? {}) as Record<string, unknown>;
   const stance = planning.authorStance as { thesis?: string; positions?: string[]; refusals?: string[]; voiceSample?: string } | undefined;
-  const bookLog = readRunLog(projectId, "generate-book");
+  const bookLog = await readRunLog(projectId, "generate-book");
   const requests = new Map<string, RunLogEvent["request"]>();
   const traceCalls: Array<Record<string, unknown>> = [];
   let readVerdict: unknown;

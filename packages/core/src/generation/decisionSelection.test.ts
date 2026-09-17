@@ -26,7 +26,7 @@ const request: DecisionRequest = {
 
 describe("decideFromCandidates", () => {
   it("uses the decision path when a model is present", async () => {
-    const choose = vi.fn(async () => result("picked"));
+    const choose = vi.fn<DecisionModelAdapter["choose"]>(async () => result("picked"));
     await expect(
       decideFromCandidates({
         decisionModel: { choose },

@@ -1,10 +1,11 @@
+import { seedObject } from "../testing/objectStorage.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@book-maker/db", async () => (await import("./testing/mobileApiMocks.js")).dbModuleMock());
 vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApiMocks.js")).billingModuleMock());
 
 import { EXPORT_FORMATS, loadConfig } from "@book-maker/core";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -70,9 +71,7 @@ describe("project artifact serializers", () => {
 
   it("probes exports and checks entitlement once while preserving both DTOs", async () => {
     storageDir = await mkdtemp(join(tmpdir(), "mobile-project-artifacts-"));
-    const projectDir = join(storageDir, "project-1");
-    await mkdir(projectDir);
-    await writeFile(join(projectDir, "book.pdf"), "pdf bytes");
+    seedObject("books/project-1/book.pdf", "pdf bytes");
     mockBilling.hasActiveProjectEntitlement.mockResolvedValue(true);
     const appConfig = { ...loadConfig(), BOOK_STORAGE_DIR: storageDir };
 

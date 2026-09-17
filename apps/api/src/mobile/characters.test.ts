@@ -5,7 +5,7 @@ vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApi
 vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js")).queueModuleMock());
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
-import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { seedObject, objectNames } from "../testing/objectStorage.js";
 import { join } from "node:path";
 import { dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
 import { reserveCredits } from "@book-maker/db/billing";
@@ -17,7 +17,6 @@ import {
   MockPrismaKnownRequestError,
   mockPrisma,
   resetMobileHarness,
-  state,
   teardownMobileHarness
 } from "./testing/mobileApiHarness.js";
 import { rawStatementsMatching } from "./testing/mobileApiMocks.js";
@@ -682,10 +681,10 @@ describe("mobile character library routes", () => {
     // overrun past the app's 20 s receive timeout — a bare network error for a
     // delete that had already happened.
     const history = ["char-1-photo-aa1.webp", "char-1-portrait-bb2.webp", "char-1-portrait-cc3.webp"];
-    const userDir = join(state.imageStorageDir!, "characters", "user-a");
-    mkdirSync(userDir, { recursive: true });
+    const userDir = join("images", "characters", "user-a");
+
     for (const fileName of history) {
-      writeFileSync(join(userDir, fileName), "fake-webp");
+      seedObject(join(userDir, fileName), "fake-webp");
     }
     mockPrisma.libraryCharacter.findFirst.mockResolvedValue(
       characterRecord({ photoPath: history[0], portraitPath: history[1] })
@@ -701,7 +700,7 @@ describe("mobile character library routes", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(readdirSync(userDir)).toEqual([]);
+    expect(objectNames(userDir)).toEqual([]);
     // Read *inside* the transaction, after the claim and before the cascade —
     // under the `FOR UPDATE` `unlinkIncomingLibraryMentions` takes on this row.
     // Read before the transaction, as this lane used to, it misses a version row
@@ -788,9 +787,9 @@ describe("mobile character library routes", () => {
     mockPrisma.libraryCharacter.findFirst.mockImplementation(async ({ where }: { where: { userId: string } }) =>
       where.userId === "user-a" ? characterRecord({ portraitPath: "char-1-portrait.webp" }) : null
     );
-    const dir = join(state.imageStorageDir!, "characters", "user-a");
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, "char-1-portrait.webp"), "fake-webp");
+    const dir = join("images", "characters", "user-a");
+
+    seedObject(join(dir, "char-1-portrait.webp"), "fake-webp");
     const app = await buildMobileApp();
     const stranger = await app.inject({
       method: "GET",

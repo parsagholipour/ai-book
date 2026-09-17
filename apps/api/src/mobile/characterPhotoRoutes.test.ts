@@ -5,7 +5,7 @@ vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApi
 vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js")).queueModuleMock());
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { seedObject, testObjectStore, objectNames } from "../testing/objectStorage.js";
 import { join } from "node:path";
 import { dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
 import { reserveCredits } from "@book-maker/db/billing";
@@ -16,7 +16,6 @@ import {
   MockPrismaKnownRequestError,
   mockPrisma,
   resetMobileHarness,
-  state,
   teardownMobileHarness
 } from "./testing/mobileApiHarness.js";
 
@@ -118,8 +117,8 @@ const appearanceFill = () => conditionalWrite("appearance");
  * stand in for.
  */
 const storedFiles = (): string[] => {
-  const userDir = join(state.imageStorageDir!, "characters", "user-a");
-  return existsSync(userDir) ? readdirSync(userDir) : [];
+  const userDir = join("images", "characters", "user-a");
+  return objectNames(userDir);
 };
 
 /**
@@ -225,8 +224,8 @@ describe("mobile character photo routes", () => {
     // a retained history nothing unlinks on that path, and writing the bytes
     // twice would draw a duplicate tile in the strip.
     expect(referenceClaim()!.portraitPath).toBe(uploadWrite().photoPath);
-    const userDir = join(state.imageStorageDir!, "characters", "user-a");
-    expect(readFileSync(join(userDir, uploadWrite().photoPath as string)).length).toBeGreaterThan(0);
+    const userDir = join("images", "characters", "user-a");
+    expect(testObjectStore.objects.get(join(userDir, uploadWrite().photoPath as string))!.length).toBeGreaterThan(0);
     // What makes it free: no charge, no attempt, no job, nothing dispatched.
     expect(reserveCredits).not.toHaveBeenCalled();
     expect(enqueueGenerationJob).not.toHaveBeenCalled();
@@ -563,9 +562,9 @@ describe("mobile character photo routes", () => {
     // the strip and the reference stays one promote away. The app calls the
     // per-image delete instead; this stays for clients already in the wild.
     const photoPath = "char-1-photo-abc123.jpg";
-    const userDir = join(state.imageStorageDir!, "characters", "user-a");
-    mkdirSync(userDir, { recursive: true });
-    writeFileSync(join(userDir, photoPath), ONE_PIXEL_PNG);
+    const userDir = join("images", "characters", "user-a");
+
+    seedObject(join(userDir, photoPath), ONE_PIXEL_PNG);
     mockPrisma.libraryCharacter.findFirst.mockResolvedValue(
       characterRecord({
         photoPath,
@@ -587,7 +586,7 @@ describe("mobile character photo routes", () => {
     expect(written).toMatchObject({ photoPath: null, photoKind: null, suggestedDescription: null });
     expect(written).not.toHaveProperty("portraitPath");
     // And nothing left the disk — an adopted reference shares this very file.
-    expect(readFileSync(join(userDir, photoPath)).length).toBeGreaterThan(0);
+    expect(testObjectStore.objects.get(join(userDir, photoPath))!.length).toBeGreaterThan(0);
     await app.close();
   });
 

@@ -2,8 +2,7 @@ import { backfillLegacyPlanSources } from "./sourceLegacyPlans.js";
 import { SourceUsageModel, sourceUsageFromStored } from "./sourceUsage.js";
 import { backfillLegacySources } from "./sourceBackfill.js";
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { objectKey, objectStore } from "@book-maker/storage";
 import { chunkSourceSection, createProviders, createSourceOcr, extractSource, summarizeSource, summarizeSourceOverview } from "@book-maker/core";
 import { prisma, type Prisma } from "@book-maker/db";
 import { config } from "./config.js";
@@ -47,7 +46,8 @@ export async function processNextSource(): Promise<boolean> {
     let checkpoints = Array.isArray(job.checkpoints) ? job.checkpoints as Array<{ section: number; locator: string; unreadable?: string }> : [];
     if (!job.extractionComplete) {
       await checkpoint({ status: "extracting", error: null });
-      const data = await readFile(join(config.ATTACHMENT_STORAGE_DIR, source.storageDraftId, source.id));
+      const data = await objectStore().get(objectKey("attachments", source.storageDraftId, source.id));
+      if (!data) throw new Error("Source upload no longer exists");
       const sections = await extractSource({ data, name: source.name, mimeType: source.mimeType }, {
         ocr: ocr ? async (data, mimeType) => { usage.ocrCalls++; const result = await ocr(data, mimeType); usage.inputTokens += result.inputTokens ?? 0; usage.outputTokens += result.outputTokens ?? 0; return result; } : undefined,
         completed: checkpoints.map((entry) => ({ ...entry, content: previousChunks.filter((chunk) => chunk.section === entry.section).map((chunk) => chunk.content).join("") })),

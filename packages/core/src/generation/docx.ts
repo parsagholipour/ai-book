@@ -1,3 +1,4 @@
+import { withStoredBookImages, type BookImageOptions } from "./storedBookImages.js";
 import { writeFile } from "node:fs/promises";
 import {
   AlignmentType,
@@ -71,11 +72,10 @@ import { markdownLabels } from "./markdownLabels.js";
  *   is dropped, and only `http`, `https` and `mailto` links survive.
  */
 
-export type GenerateBookDocxOptions = {
+export type GenerateBookDocxOptions = BookImageOptions & {
   title: string;
   author?: string | undefined;
   language?: string | undefined;
-  imageStorageDir: string;
   publicApiUrl: string;
   outputPath?: string | undefined;
   /**
@@ -341,6 +341,10 @@ function isPageBreakingHeading(token: Token | undefined): boolean {
 
 /** Builds a Word document from the compiled book markdown. */
 export async function generateBookDocx(markdown: string, options: GenerateBookDocxOptions): Promise<Buffer> {
+  if (options.imageSource === "object-storage") {
+    return withStoredBookImages(markdown, options, (imageStorageDir) =>
+      generateBookDocx(markdown, { ...options, imageStorageDir, imageSource: "local" }));
+  }
   const profile = scriptProfileForLanguage(options.language);
   const labels = markdownLabels(options.language);
   const fontSet = docxFontsFor(profile);

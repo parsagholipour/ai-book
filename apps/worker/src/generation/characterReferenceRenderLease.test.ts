@@ -26,10 +26,10 @@ const mocks = vi.hoisted(() => ({
   updateJobProgress: vi.fn(),
   assertJobNotStopped: vi.fn(),
   mkdir: vi.fn(),
-  writeFile: vi.fn(),
-  appendFile: vi.fn(),
-  rm: vi.fn(),
-  stat: vi.fn()
+  put: vi.fn(),
+  appendRunLog: vi.fn(),
+  deleteObject: vi.fn(),
+  head: vi.fn()
 }));
 
 const tx = {
@@ -60,13 +60,10 @@ vi.mock("../runtime/jobLifecycle.js", () => ({
   assertJobNotStopped: mocks.assertJobNotStopped
 }));
 vi.mock("./bookHelpers.js", () => ({ imageGenerationMetadata: () => ({}), imageStorageMetadata: () => ({}) }));
-vi.mock("node:fs/promises", () => ({
-  mkdir: mocks.mkdir,
-  writeFile: mocks.writeFile,
-  appendFile: mocks.appendFile,
-  rm: mocks.rm,
-  stat: mocks.stat
-}));
+vi.mock("@book-maker/storage", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@book-maker/storage")>();
+  return { ...actual, appendRunLog: mocks.appendRunLog, objectStore: () => ({ put: mocks.put, delete: mocks.deleteObject, head: mocks.head }) };
+});
 vi.mock("@book-maker/core", () => ({
   shouldGenerateCharacterReferences: () => true,
   shouldUseCharacterReferenceImages: () => true,
@@ -76,7 +73,7 @@ vi.mock("@book-maker/core", () => ({
   selectCharacterReferenceAssets: () => [],
   libraryCharactersFromMediaSettings: () => [],
   matchLibraryCharacter: () => null,
-  libraryCharacterDiskPath: () => null,
+  libraryCharacterObjectKey: () => null,
   errorMessage: (error: unknown) => (error instanceof Error ? error.message : String(error)),
   isImageContentRefusalError: (error: unknown) =>
     Boolean(error && typeof error === "object" && (error as Record<string, unknown>).imageContentRefused === true),
@@ -258,7 +255,7 @@ describe("two live character reference render passes", () => {
       return { count: 1 };
     });
     mocks.projectFindUnique.mockResolvedValue({ userId: "user-1" });
-    mocks.stat.mockRejectedValue(new Error("no file"));
+    mocks.head.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -315,7 +312,7 @@ describe("two live character reference render passes", () => {
     expect(store.refusals).toBeNull();
     // Every published row names a file this pass wrote, so the superseded
     // pass's sheet is replaced rather than half-kept.
-    const written = new Set(mocks.writeFile.mock.calls.map(([path]) => String(path).split("/").pop()));
+    const written = new Set(mocks.put.mock.calls.map(([path]) => String(path).split("/").pop()));
     expect(sheetFiles().every((file) => written.has(file))).toBe(true);
   });
 
@@ -375,14 +372,14 @@ describe("two live character reference render passes", () => {
     gate.open();
     await pending;
 
-    const written = mocks.writeFile.mock.calls.map(([path]) => String(path));
-    const removed = mocks.rm.mock.calls.map(([path]) => String(path));
+    const written = mocks.put.mock.calls.map(([path]) => String(path));
+    const removed = mocks.deleteObject.mock.calls.map(([path]) => String(path));
     const kept = new Set(sheetFiles());
     expect(written).toHaveLength(4);
     // Exactly the files no published row names, and every one of them.
     expect(removed.sort()).toEqual(written.filter((path) => !kept.has(String(path.split("/").pop()))).sort());
     expect(removed).toHaveLength(2);
-    expect(mocks.rm.mock.calls.every(([, options]) => options?.force === true)).toBe(true);
+    expect(mocks.deleteObject.mock.calls.every((args) => args.length === 1)).toBe(true);
   });
 
   it("keeps the sheets of a commit whose rows landed under a dropped connection", async () => {
@@ -411,12 +408,12 @@ describe("two live character reference render passes", () => {
     // The rows really did land, which is the whole premise.
     expect(sheetNames()).toEqual(["Ada", "Beatrice"]);
     // And not one of the files they name was unlinked.
-    const written = mocks.writeFile.mock.calls.map(([path]) => String(path));
+    const written = mocks.put.mock.calls.map(([path]) => String(path));
     expect(written).toHaveLength(2);
-    expect(mocks.rm).not.toHaveBeenCalled();
+    expect(mocks.deleteObject).not.toHaveBeenCalled();
     // Said out loud, because a cast kept on a maybe is a cast nothing sweeps.
-    const line = String(mocks.appendFile.mock.calls.at(-1)?.[1]);
-    expect(JSON.parse(line)).toMatchObject({
+    const line = mocks.appendRunLog.mock.calls.at(-1)?.[1];
+    expect(line).toMatchObject({
       event: "character.reference.sweep_declined",
       reason: "commit_landed"
     });
@@ -428,7 +425,7 @@ describe("two live character reference render passes", () => {
     // render id, so this attempt's sheets are unreachable the moment it throws.
     // Ada is held open until after Beatrice fails, because a rejecting
     // `Promise.all` used to settle the pass while its siblings were still
-    // inside a render: their `writeFile` then landed behind the sweep.
+    // inside a render: their `put` then landed behind the sweep.
     const outage = new Error("the image provider timed out");
     const gate = openGate();
     const generateImageBytes = vi.fn(async ({ prompt }: { prompt: string }) => {
@@ -444,9 +441,9 @@ describe("two live character reference render passes", () => {
     gate.open();
     await expect(pending).rejects.toBe(outage);
 
-    const written = mocks.writeFile.mock.calls.map(([path]) => String(path));
+    const written = mocks.put.mock.calls.map(([path]) => String(path));
     expect(written).toHaveLength(1);
-    expect(mocks.rm.mock.calls.map(([path]) => String(path))).toEqual(written);
+    expect(mocks.deleteObject.mock.calls.map(([path]) => String(path))).toEqual(written);
     expect(store.assets).toEqual([]);
   });
 
@@ -579,9 +576,9 @@ describe("two live character reference render passes", () => {
     // run log is where a book's missing sheets are explained, and "we gave up on
     // a render somebody else was still paying for" is a different fact from
     // "this cast has no sheets" — which is the only thing `[]` says on its own.
-    const standDown = mocks.appendFile.mock.calls.at(-1)?.[1];
-    expect(standDown).toBeTypeOf("string");
-    expect(JSON.parse(String(standDown))).toMatchObject({
+    const standDown = mocks.appendRunLog.mock.calls.at(-1)?.[1];
+    expect(standDown).toBeTypeOf("object");
+    expect(standDown).toMatchObject({
       event: "character.reference.stand_down",
       reason: "lease_abandoned",
       projectId: "project-1",

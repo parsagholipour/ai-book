@@ -19,7 +19,7 @@ export const mocks = {
     voiceCharacter: { count: vi.fn() },
     $transaction: vi.fn()
   },
-  rename: vi.fn(),
+  transfer: vi.fn(),
   rm: vi.fn(),
   readFile: vi.fn(),
   writeFile: vi.fn(),
@@ -30,7 +30,6 @@ export const mocks = {
 export const dbModuleMock = () => ({ prisma: mocks.prisma });
 
 export const fsModuleMock = () => ({
-  rename: mocks.rename,
   rm: mocks.rm,
   readFile: mocks.readFile,
   writeFile: mocks.writeFile
@@ -38,6 +37,7 @@ export const fsModuleMock = () => ({
 
 /** What each render wrote, keyed by the scratch path it wrote it to. */
 export const RENDERED: Record<string, Buffer> = {
+  "/books/project-1/.book-token.md": Buffer.from("# New manuscript"),
   "/books/project-1/.book-token.pdf": Buffer.from("%PDF-token"),
   "/books/project-1/.book-token.epub": Buffer.from("epub-token"),
   "/books/project-1/.book-token.docx": Buffer.from("docx-token")
@@ -54,7 +54,7 @@ export const writtenRecords = () =>
 /** Predecessors are parked under a per-publication name; the uuid is not the point. */
 export const stable = (path: string) => path.replace(/\.book-superseded-[^.]+\./, ".book-superseded.");
 
-export const renameCalls = () => mocks.rename.mock.calls as [from: string, to: string][];
+export const transferCalls = () => mocks.transfer.mock.calls as [from: string, to: string][];
 export const rmPaths = () => (mocks.rm.mock.calls as [path: string][]).map(([path]) => path);
 
 /** Postgres' verdict for one row: `"col" <> $1` is UNKNOWN — never true — for a null column. */
@@ -69,6 +69,7 @@ export function resetExportPublicationMocks(): void {
   vi.clearAllMocks();
   mocks.events.length = 0;
   publicationState.barrier = null;
+  staged.clear();
   // A transaction that records its own commit, so a test can say when the
   // status write became visible relative to the files it describes.
   mocks.prisma.$transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
@@ -106,18 +107,32 @@ export function resetExportPublicationMocks(): void {
   mocks.prisma.bookEditOperation.findUnique.mockResolvedValue(null);
   mocks.prisma.bookEditOperation.findFirst.mockResolvedValue(null);
   mocks.prisma.voiceCharacter.count.mockResolvedValue(0);
-  mocks.rename.mockImplementation(async (_from: string, to: string) => {
-    mocks.events.push(`rename ${stable(to)}`);
+  mocks.transfer.mockImplementation(async (_from: string, to: string) => {
+    mocks.events.push(`transfer ${stable(to)}`);
   });
   mocks.rm.mockResolvedValue(undefined);
   mocks.readFile.mockImplementation(async (path: string) => {
-    const rendered = RENDERED[path];
+    const rendered = RENDERED[path] ?? staged.get(path);
     if (!rendered) {
       throw Object.assign(new Error("ENOENT: no such file"), { code: "ENOENT" });
     }
     return rendered;
   });
-  mocks.writeFile.mockImplementation(async (path: string) => {
+  mocks.writeFile.mockImplementation(async (path: string, data: string) => {
+    staged.set(path, Buffer.from(data));
     mocks.events.push(`record ${path.split("/").pop()}`);
   });
 }
+
+
+const staged = new Map<string, Buffer>();
+/** Records upload/copy transitions without pretending S3 has POSIX rename. */
+export const objectStoreMock = () => ({
+  copy: async (from: string, to: string) => { await mocks.transfer(from, to); },
+  put: async (key: string, data: Buffer) => {
+    const source = [...Object.entries(RENDERED), ...staged.entries()].find(([, bytes]) => bytes.equals(data))?.[0];
+    if (!source) throw new Error(`Unknown staged bytes for ${key}`);
+    await mocks.transfer(source, key);
+  },
+  delete: async (key: string) => { await mocks.rm(key); }
+});

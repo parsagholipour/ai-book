@@ -106,7 +106,7 @@ redelivery bypasses fan-in: a crash after the atomic commit but before dispatch/
 terminal keeper and a QUEUED replacement row, and may not render merely because the page is terminal.
 That entry gate is only a cheap preflight. `publishCompiledExports` repeats the count after taking
 the same project/content-revision lock that repair publication takes as its first statement, before
-the compile-job claim, artifact renames, or project status write. The lock makes the final answer
+the compile-job claim, artifact object publication, or project status write. The lock makes the final answer
 ordered: a sibling cannot commit a replacement job between that count and publication.
 Its after-completion readiness check covers the inverse race where the image finished while the
 redelivered compile row was still ACTIVE and therefore could not queue its own successor. That
@@ -339,7 +339,7 @@ reason, and a null answer refuses the whole move rather than half-applying it.
   advances `contentRevision`, persists the rebuilt project story state, marks the operation APPLIED,
   and settles the job and attempt. Its number of database round trips is independent of page count,
   so a whole-book edit does not turn the publication timeout into a per-page budget.
-  Slow filesystem deletion, optional vector persistence and queue dispatch happen only after that
+  Slow object deletion, optional vector persistence and queue dispatch happen only after that
   commit. Their progress lives in `classifier.textEditFollowUp` (`exports`, `memory`, `compile`,
   `status`), so a crash returns to the missing step instead of redrafting or advancing the revision
   again. `Project.exportInvalidationRevision` is stamped with the new revision in the manuscript
@@ -347,7 +347,7 @@ reason, and a null answer refuses the whole move rather than half-applying it.
   export filenames while it names the revision *they* are claiming — null, or any other revision,
   lets them through, because nothing sweeps this column and a tail killed before it clears would
   otherwise fence the book off from every future compile. The tail removes the files outside SQL, then clears only its exact barrier and
-  checkpoints under the lease. Repeating an unlink is safe; a different pending revision belongs to
+  checkpoints under the lease. Repeating an object deletion is safe; a different pending revision belongs to
   a newer tail and is never touched. Memory writes re-check the project revision/plan/status and the
   exact page id/index/revision/summary, while compile dispatch carries the exact publication revision.
   A superseded tail therefore completes its still-owned lease without touching newer files, memory
@@ -740,9 +740,9 @@ reason, and a null answer refuses the whole move rather than half-applying it.
 - **Narration is chaptered deterministically, never by the model.** `audiobookChapterPlans` uses the
   book's own `Chapter` rows, or `createDeterministicReaderChapters` when it has none — deliberately
   not `createReaderChaptersForExport`, which the exporter uses. A retry has to produce the same
-  partition, or it would renumber chapters whose audio is already on disk and marked READY. For the
+  partition, or it would renumber chapters whose audio is already in object storage and marked READY. For the
   same reason a chapter flips to READY only after *both* `chapter-<n>.mp3` and
-  `chapter-<n>.timeline.json` are renamed into place, which is what makes a resumed job safe.
+  `chapter-<n>.timeline.json` have both been uploaded successfully, which is what makes a resumed job safe.
 - **Sentence timings are measured, not guessed.** A TTS request ("chunk") holds whole consecutive
   sentences of one paragraph under ~400 characters, so every chunk boundary is a real audio boundary
   with an exact time. Only *within* a multi-sentence chunk is the span split by character count, and

@@ -1,7 +1,5 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { objectKey, objectReference, objectStore } from "@book-maker/storage";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   imageStorageDir: "",
@@ -16,7 +14,6 @@ const mocks = vi.hoisted(() => ({
   generateImageBytes: vi.fn(),
   strategyForInput: vi.fn()
 }));
-mocks.imageStorageDir = mkdtempSync(join(tmpdir(), "book-maker-portrait-test-"));
 
 vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma }));
 // A getter, not a value: the factory runs before this module's body assigns
@@ -101,9 +98,6 @@ describe("generateCharacterPortrait", () => {
     mocks.prisma.libraryCharacterImage.findMany.mockResolvedValue([]);
     mocks.prisma.libraryCharacterImage.deleteMany.mockResolvedValue({ count: 0 });
   });
-  afterAll(() => {
-    rmSync(mocks.imageStorageDir, { recursive: true, force: true });
-  });
 
   it("renders from the sheet alone, stores the portrait, and marks the row READY", async () => {
     await generateCharacterPortrait(job);
@@ -117,7 +111,7 @@ describe("generateCharacterPortrait", () => {
     // The name carries a per-write token, so no two drawings of one character
     // can ever land on the same file.
     expect(storedFileName()).toMatch(/^char-1-portrait-[a-z0-9]{12}\.webp$/);
-    const stored = readFileSync(join(mocks.imageStorageDir, "characters", "user-1", storedFileName()));
+    const stored = (await objectStore().get(objectKey("images", "characters", "user-1", storedFileName())))!;
     expect(stored.toString()).toBe("optimized");
     // The row is written before the bytes: a file no row names is permanent,
     // because nothing sweeps this tree.
@@ -231,15 +225,14 @@ describe("generateCharacterPortrait", () => {
   });
 
   it("feeds the uploaded photo as the reference image when it exists on disk", async () => {
-    const userDir = join(mocks.imageStorageDir, "characters", "user-1");
-    mkdirSync(userDir, { recursive: true });
-    writeFileSync(join(userDir, "char-1-photo.jpg"), "photo-bytes");
+    const userDir = "images/characters/user-1";
+    await objectStore().put([userDir, "char-1-photo.jpg"].join("/"), "photo-bytes");
     mocks.prisma.libraryCharacter.findFirst.mockResolvedValue(characterRow({ photoPath: "char-1-photo.jpg" }));
 
     await generateCharacterPortrait(job);
 
     const request = mocks.generateImageBytes.mock.calls[0]![0];
-    expect(request.referenceImagePaths).toEqual([join(userDir, "char-1-photo.jpg")]);
+    expect(request.referenceImagePaths).toEqual([objectReference(`${userDir}/char-1-photo.jpg`)]);
     expect(request.prompt).toContain("reference photo");
   });
 
@@ -255,24 +248,22 @@ describe("generateCharacterPortrait", () => {
     // This used to `rm` the superseded file, which is what made a redraw
     // unrecoverable. It is a retained version now — one promote from being the
     // reference again.
-    const userDir = join(mocks.imageStorageDir, "characters", "user-1");
-    mkdirSync(userDir, { recursive: true });
-    writeFileSync(join(userDir, "char-1-portrait-oldoldoldold.png"), "old-portrait");
+    const userDir = "images/characters/user-1";
+    await objectStore().put([userDir, "char-1-portrait-oldoldoldold.png"].join("/"), "old-portrait");
     mocks.prisma.libraryCharacter.findFirst.mockResolvedValue(
       characterRow({ portraitPath: "char-1-portrait-oldoldoldold.png" })
     );
 
     await generateCharacterPortrait(job);
 
-    expect(existsSync(join(userDir, "char-1-portrait-oldoldoldold.png"))).toBe(true);
-    expect(existsSync(join(userDir, storedFileName()))).toBe(true);
+    expect(Boolean(await objectStore().head([userDir, "char-1-portrait-oldoldoldold.png"].join("/")))).toBe(true);
+    expect(Boolean(await objectStore().head([userDir, storedFileName()].join("/")))).toBe(true);
   });
 
   it("prunes past the retention limit, but never the picture a book draws from", async () => {
-    const userDir = join(mocks.imageStorageDir, "characters", "user-1");
-    mkdirSync(userDir, { recursive: true });
+    const userDir = "images/characters/user-1";
     const doomed = "char-1-portrait-prunemeprune.webp";
-    writeFileSync(join(userDir, doomed), "ancient");
+    await objectStore().put([userDir, doomed].join("/"), "ancient");
     const live = "char-1-portrait-keepmekeepme.webp";
     mocks.prisma.libraryCharacter.findFirst.mockResolvedValue(characterRow({ portraitPath: live }));
     mocks.prisma.libraryCharacterImage.findMany.mockResolvedValue([
@@ -286,7 +277,7 @@ describe("generateCharacterPortrait", () => {
 
     await generateCharacterPortrait(job);
 
-    expect(existsSync(join(userDir, doomed))).toBe(false);
+    expect(Boolean(await objectStore().head([userDir, doomed].join("/")))).toBe(false);
     expect(mocks.prisma.libraryCharacterImage.deleteMany).toHaveBeenCalledWith({
       where: { id: "img-doomed", userId: "user-1" }
     });
@@ -305,7 +296,7 @@ describe("generateCharacterPortrait", () => {
     await generateCharacterPortrait(job);
 
     expect(mocks.prisma.libraryCharacterImage.create).toHaveBeenCalled();
-    expect(existsSync(join(mocks.imageStorageDir, "characters", "user-1", storedFileName()))).toBe(true);
+    expect(await objectStore().head(objectKey("images", "characters", "user-1", storedFileName()))).not.toBeNull();
     expect(
       mocks.prisma.libraryCharacter.updateMany.mock.calls.every(
         (call) => (call[0].where as { portraitStatus?: unknown }).portraitStatus !== undefined

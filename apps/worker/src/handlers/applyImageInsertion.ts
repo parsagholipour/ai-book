@@ -42,8 +42,7 @@ import {
 import { Prisma, prisma } from "@book-maker/db";
 import type { ApplyBookEditJob } from "../runtime/jobPayloads.js";
 import { randomUUID } from "node:crypto";
-import { mkdir, unlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { objectKey, objectStore } from "@book-maker/storage";
 
 /**
  * The `apply-book-edit` image fork: render one chat-requested illustration.
@@ -282,10 +281,8 @@ export async function applyImageInsertion(
   const filename = replaceAsset
     ? `page-${targetPage.index}-${operationId}-${randomUUID()}.${optimizedImage.extension}`
     : `${marker}-${randomUUID()}.${optimizedImage.extension}`;
-  const projectImageDir = join(config.IMAGE_STORAGE_DIR, projectId);
-  const imagePath = join(projectImageDir, filename);
-  await mkdir(projectImageDir, { recursive: true });
-  await writeFile(imagePath, optimizedImage.bytes);
+  const imagePath = objectKey("images", projectId, filename);
+  await objectStore().put(imagePath, optimizedImage.bytes, { contentType: optimizedImage.mimeType });
 
   const alt = imageAltFromSubject(insertion.subject, markdownLabels(project.language).illustration);
   const imageLine = `![${alt}](/assets/images/${projectId}/${filename})`;
@@ -485,7 +482,7 @@ async function refreshExports(
 /** Best-effort: an orphaned image file is storage noise, never a failure. */
 async function removeInsertionImage(path: string): Promise<void> {
   try {
-    await unlink(path);
+    await objectStore().delete(path);
   } catch {
     // Including ENOENT: the other end of the race working is not an error.
   }

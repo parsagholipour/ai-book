@@ -1,5 +1,5 @@
 # PR:  terraform fmt → validate → plan  (commented on the PR)
-# merge to master: terraform apply → AWS (GitHub environment: production)
+# merge to master: terraform apply → build/smoke test Docker images → deploy to EC2
 #
 # Repo secrets required:
 #   AWS_ACCESS_KEY_ID
@@ -8,6 +8,7 @@
 name: Terraform
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - "*.tf"
@@ -17,15 +18,9 @@ on:
       - ".github/workflows/terraform.yml"
   push:
     branches: [master]
-    paths:
-      - "*.tf"
-      - "**/*.tf"
-      - ".terraform.lock.hcl"
-      - "scripts/ensure-tf-backend.sh"
-      - ".github/workflows/terraform.yml"
 
 concurrency:
-  group: terraform
+  group: terraform-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'production' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -38,6 +33,7 @@ env:
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
   TF_IN_AUTOMATION: "true"
+  TF_VAR_root_volume_size: ${{ vars.ROOT_VOLUME_SIZE || '20' }}
 
 jobs:
   fmt:
@@ -122,10 +118,16 @@ jobs:
 
   apply:
     name: terraform apply
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
     needs: [fmt, validate]
     environment: production
     runs-on: ubuntu-latest
+    outputs:
+      instance_id: ${{ steps.outputs.outputs.instance_id }}
+      app_repository: ${{ steps.outputs.outputs.app_repository }}
+      web_repository: ${{ steps.outputs.outputs.web_repository }}
+      env_parameter: ${{ steps.outputs.outputs.env_parameter }}
+      assets_bucket: ${{ steps.outputs.outputs.assets_bucket }}
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
@@ -143,3 +145,25 @@ jobs:
       - run: terraform init -input=false
       - run: terraform plan -input=false -no-color -out=tfplan
       - run: terraform apply -input=false -auto-approve tfplan
+      - id: outputs
+        name: Read deployment outputs
+        run: |
+          {
+            echo "instance_id=$(terraform output -raw instance_id)"
+            echo "app_repository=$(terraform output -raw app_repository)"
+            echo "web_repository=$(terraform output -raw web_repository)"
+            echo "env_parameter=$(terraform output -raw production_env_parameter)"
+            echo "assets_bucket=$(terraform output -raw assets_bucket)"
+          } >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Deploy Docker applications
+    needs: apply
+    uses: ./.github/workflows/deploy.yml
+    with:
+      instance_id: ${{ needs.apply.outputs.instance_id }}
+      app_repository: ${{ needs.apply.outputs.app_repository }}
+      web_repository: ${{ needs.apply.outputs.web_repository }}
+      env_parameter: ${{ needs.apply.outputs.env_parameter }}
+      assets_bucket: ${{ needs.apply.outputs.assets_bucket }}
+    secrets: inherit

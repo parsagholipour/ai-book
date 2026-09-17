@@ -1,5 +1,4 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readObjectText } from "../../testing/objectStorage.js";
 import { mockPrisma, mockQueue } from "./mobileApiMocks.js";
 import { state, writeProjectFile } from "./mobileApiHarness.js";
 
@@ -23,7 +22,7 @@ export function repairStorage(): { BOOK_STORAGE_DIR: string } {
 
 /** A file in the fixture project's storage directory, as it is on disk now. */
 export function readProjectFile(filename: string, projectId = "project-a"): string {
-  return readFileSync(join(repairStorage().BOOK_STORAGE_DIR, projectId, filename), "utf8");
+  return readObjectText(`books/${projectId}/${filename}`);
 }
 
 /**

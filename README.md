@@ -31,7 +31,7 @@ corepack pnpm --filter @book-maker/core exec puppeteer browsers install chrome
 ```bash
 pnpm install
 pnpm db:generate
-docker compose up -d postgres redis
+docker compose up -d postgres redis minio-init
 pnpm db:deploy
 pnpm db:seed
 ```
@@ -52,6 +52,13 @@ pnpm dev:web
 Open `http://localhost:5173`.
 
 The API runs on `http://localhost:4001`, with OpenAPI docs at `http://localhost:4001/docs`.
+
+Durable files use S3 in production and MinIO locally. Copy the S3 settings from
+`.env.example` for host-run API/worker processes; Compose supplies them in containers.
+MinIO's console is at `http://localhost:9001` (local defaults: `bookmaker` /
+`bookmaker-local-only`). Files formerly under `storage/books`, `storage/images`,
+`storage/audio`, `storage/voice`, and `storage/attachments` now live in the private
+bucket. See [storage and inspection](docs/storage.md); old files are not migrated.
 
 Backend dev mode (`pnpm dev:api` or Docker dev, both `NODE_ENV=development`) accepts debug Google Play purchases and grants credits through the normal ledger, so the mobile app can buy credit packs repeatedly without contacting Google Play. Set `MOCK_GOOGLE_PLAY_BILLING=false` if you specifically want to test real Google Play verification in dev.
 
@@ -78,6 +85,17 @@ Docker maps Postgres to host port `55432` to avoid colliding with existing local
 The [Local Run](#local-run) flow above only starts Postgres and Redis in Docker; you run the Node apps on the host with `pnpm`.
 
 If you run the API, worker, or web services with `docker compose up` (or `pnpm docker:up`), Compose bind-mounts the repo into the container. On Windows, pnpm creates junctions under each package `node_modules`, which Linux in the container cannot follow. The compose file therefore uses anonymous volumes for the repo root and for every workspace package `node_modules` (`apps/*`, `packages/*`) so the image’s Linux install is preserved. After changing `pnpm-lock.yaml` or dependencies, rebuild images (`docker compose build`) or recreate those containers so the anonymous volumes pick up the new install layer.
+
+## Production deployment
+
+Pushes to `master` apply Terraform, build Docker images in GitHub Actions, and
+deploy the API, web app, and worker to EC2 using AWS Systems Manager. See the
+[deployment guide](docs/deployment.md) for required secrets, networking, and operations.
+
+Source OCR uses the local PaddleOCR service first when configured, then falls back
+to Google Gemini using `GEMINI_API_KEY` if local OCR is unavailable. With no
+`SOURCE_OCR_URL`, Gemini handles OCR directly. See the
+[source-processing guide](docs/full-document-sources.md) for configuration and coverage.
 
 ## Real Providers
 

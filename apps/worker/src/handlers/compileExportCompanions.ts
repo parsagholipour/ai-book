@@ -56,7 +56,7 @@ const COMPANION_RENDERERS: Record<CompanionExportFormat, CompanionRenderer> = {
         title: input.title,
         ...(input.author ? { author: input.author } : {}),
         language: input.language,
-        imageStorageDir: config.IMAGE_STORAGE_DIR,
+        imageSource: "object-storage",
         publicApiUrl: config.PUBLIC_API_URL,
         outputPath: input.outputPath,
         // Scopes the illustrations this book may package to its own, the way the
@@ -75,7 +75,7 @@ const COMPANION_RENDERERS: Record<CompanionExportFormat, CompanionRenderer> = {
         title: input.title,
         ...(input.author ? { author: input.author } : {}),
         language: input.language,
-        imageStorageDir: config.IMAGE_STORAGE_DIR,
+        imageSource: "object-storage",
         publicApiUrl: config.PUBLIC_API_URL,
         outputPath: input.outputPath,
         projectId: input.projectId

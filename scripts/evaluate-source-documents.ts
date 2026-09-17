@@ -1,3 +1,5 @@
+import { MemoryObjectStore, setObjectStoreForTests } from "../packages/storage/src/index.ts";
+setObjectStoreForTests(new MemoryObjectStore());
 /** Offline integration evaluation. Requires an isolated database with this schema. */
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";

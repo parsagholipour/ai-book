@@ -21,7 +21,7 @@ const mocks = vi.hoisted(() => ({
   transaction: vi.fn(),
   assertJobNotStopped: vi.fn(),
   mkdir: vi.fn(),
-  appendFile: vi.fn()
+  appendRunLog: vi.fn()
 }));
 
 const tx = {
@@ -45,7 +45,10 @@ vi.mock("@book-maker/db", () => ({
 }));
 vi.mock("../runtime/config.js", () => ({ config: { BOOK_STORAGE_DIR: "/tmp/books" } }));
 vi.mock("../runtime/jobLifecycle.js", () => ({ assertJobNotStopped: mocks.assertJobNotStopped }));
-vi.mock("node:fs/promises", () => ({ mkdir: mocks.mkdir, appendFile: mocks.appendFile }));
+vi.mock("@book-maker/storage", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@book-maker/storage")>();
+  return { ...actual, appendRunLog: mocks.appendRunLog, objectStore: () => ({  }) };
+});
 vi.mock("@book-maker/core", () => ({ safePathPart: (value: string) => value }));
 
 import {
@@ -61,7 +64,7 @@ const stopRequested = () => Object.assign(new Error("Stopped by user"), { name: 
 
 /** Every stand-down line this pass appended, oldest first. */
 const standDownLines = (): Array<Record<string, unknown>> =>
-  mocks.appendFile.mock.calls.map(([, line]) => JSON.parse(String(line)) as Record<string, unknown>);
+  mocks.appendRunLog.mock.calls.map(([, line]) => line as Record<string, unknown>);
 
 const isLeaseClaim = (sql: unknown): boolean => String(sql).includes('UPDATE "PlanVersion"');
 

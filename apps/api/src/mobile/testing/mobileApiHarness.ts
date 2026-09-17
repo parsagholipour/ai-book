@@ -1,5 +1,6 @@
+import { seedObject } from "../../testing/objectStorage.js";
 import Fastify, { type FastifyInstance } from "fastify";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { vi } from "vitest";
@@ -873,9 +874,8 @@ export function writeProjectFile(storageDir: string | null, projectId: string, f
   if (!storageDir) {
     throw new Error("Storage dir was not initialized");
   }
-  const projectDir = join(storageDir, projectId);
-  mkdirSync(projectDir, { recursive: true });
-  writeFileSync(join(projectDir, filename), content);
+  const category = storageDir === state.bookStorageDir ? "books" : storageDir === state.imageStorageDir ? "images" : storageDir === state.voiceStorageDir ? "voice" : "audio";
+  seedObject(`${category}/${projectId}/${filename}`, content);
 }
 
 export async function buildMobileApp(options: Record<string, unknown> = {}): Promise<FastifyInstance> {

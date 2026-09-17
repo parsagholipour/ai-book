@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { storageConfig } from "@book-maker/storage";
 import { config as loadDotenv } from "dotenv";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
@@ -67,6 +68,7 @@ const envSchema = z.object({
   LOCAL_TEXT_MODEL: z.string().optional(),
   LOCAL_TEXT_API_KEY: z.string().optional(),
   GEMINI_TEXT_MODEL: z.string().default("gemini-2.5-flash"),
+  GEMINI_OCR_MODEL: z.string().trim().optional().transform((value) => value || undefined),
   GEMINI_IMAGE_MODEL: z.string().optional().transform(normalizeGeminiImageModel),
   GEMINI_EMBEDDING_MODEL: z.string().default("gemini-embedding-001"),
   GEMINI_TTS_MODEL: z.string().default("gemini-3.1-flash-tts-preview"),
@@ -141,6 +143,11 @@ const envSchema = z.object({
       const trimmed = value?.trim();
       return trimmed ? trimmed : undefined;
     }),
+  S3_BUCKET: z.string().optional(),
+  S3_REGION: z.string().default("us-east-1"),
+  S3_ENDPOINT: z.string().url().optional(),
+  S3_FORCE_PATH_STYLE: z.string().optional().transform((value) => booleanEnv("S3_FORCE_PATH_STYLE")(value) ?? false),
+  /** Local scratch only. Durable application assets are stored in S3. */
   BOOK_STORAGE_DIR: z.string().default("./storage/books"),
   IMAGE_STORAGE_DIR: z.string().default("./storage/images"),
   VOICE_STORAGE_DIR: z.string().default("./storage/voice"),
@@ -189,8 +196,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     loadWorkspaceEnv(env);
   }
   const parsed = envSchema.parse(env);
+  const storage = storageConfig(env);
   return {
     ...parsed,
+    S3_BUCKET: storage.bucket,
     BOOK_STORAGE_DIR: resolveFromWorkspace(parsed.BOOK_STORAGE_DIR),
     IMAGE_STORAGE_DIR: resolveFromWorkspace(parsed.IMAGE_STORAGE_DIR),
     VOICE_STORAGE_DIR: resolveFromWorkspace(parsed.VOICE_STORAGE_DIR),

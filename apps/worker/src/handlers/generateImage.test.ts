@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
   maybeEnqueueCompile: vi.fn(),
   updateJobProgress: vi.fn(),
   mkdir: vi.fn(),
-  writeFile: vi.fn(),
+  put: vi.fn(),
   ensureCharacterReferenceAssets: vi.fn(async () => []),
   appendCharacterReferenceRunLog: vi.fn()
 }));
@@ -55,7 +55,10 @@ vi.mock("@book-maker/core", async () => {
     })
   };
 });
-vi.mock("node:fs/promises", () => ({ mkdir: mocks.mkdir, writeFile: mocks.writeFile }));
+vi.mock("@book-maker/storage", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@book-maker/storage")>(),
+  objectStore: () => ({ put: mocks.put,  })
+}));
 
 import { StopRequestedError } from "../runtime/jobTypes.js";
 import { generateImage } from "./generateImage.js";
@@ -217,7 +220,7 @@ describe("generateImage interior rescue", () => {
     } as unknown as Job);
 
     expect(mocks.generateImageBytes).not.toHaveBeenCalled();
-    expect(mocks.writeFile).not.toHaveBeenCalled();
+    expect(mocks.put).not.toHaveBeenCalled();
     expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
     expect(mocks.prisma.imageAsset.create).not.toHaveBeenCalled();
   });
@@ -278,7 +281,7 @@ describe("generateImage interior rescue", () => {
     await generateImage(job);
 
     expect(mocks.generateImageBytes).not.toHaveBeenCalled();
-    expect(mocks.writeFile).not.toHaveBeenCalled();
+    expect(mocks.put).not.toHaveBeenCalled();
     expect(mocks.prisma.imageAsset.create).not.toHaveBeenCalled();
   });
 
@@ -299,7 +302,7 @@ describe("generateImage interior rescue", () => {
     await generateImage(job);
 
     expect(mocks.generateImageBytes).not.toHaveBeenCalled();
-    expect(mocks.writeFile).not.toHaveBeenCalled();
+    expect(mocks.put).not.toHaveBeenCalled();
     expect(mocks.prisma.imageAsset.create).not.toHaveBeenCalled();
   });
 
@@ -335,7 +338,7 @@ describe("generateImage interior rescue", () => {
     await generateImage(job);
 
     expect(mocks.generateImageBytes).toHaveBeenCalledTimes(1);
-    expect(mocks.writeFile).not.toHaveBeenCalled();
+    expect(mocks.put).not.toHaveBeenCalled();
     expect(mocks.prisma.imageAsset.deleteMany).not.toHaveBeenCalled();
     expect(mocks.prisma.imageAsset.create).not.toHaveBeenCalled();
   });
@@ -364,9 +367,10 @@ describe("generateImage interior rescue", () => {
 
     await generateImage({ ...job, data: { ...job.data, keeperToken } } as unknown as Job);
 
-    expect(mocks.writeFile).toHaveBeenCalledWith(
-      `/tmp/test-images/project-1/page-page-1-${keeperToken}.png`,
-      Buffer.from("img")
+    expect(mocks.put).toHaveBeenCalledWith(
+      `images/project-1/page-page-1-${keeperToken}.png`,
+      Buffer.from("img"),
+      { contentType: "image/png" }
     );
     expect(mocks.prisma.imageAsset.create).toHaveBeenCalledTimes(1);
   });

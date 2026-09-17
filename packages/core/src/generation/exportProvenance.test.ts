@@ -1,6 +1,4 @@
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { MemoryObjectStore, objectKey, setObjectStoreForTests } from "@book-maker/storage";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -156,33 +154,35 @@ describe("readExportArtifact", () => {
 });
 
 describe("readPublishedExport", () => {
-  let projectDir: string;
+  const projectId = "test-project";
+  let store: MemoryObjectStore;
 
   beforeEach(async () => {
-    projectDir = await mkdtemp(join(tmpdir(), "export-provenance-"));
+    store = new MemoryObjectStore();
+    setObjectStoreForTests(store);
   });
 
   afterEach(async () => {
-    await rm(projectDir, { recursive: true, force: true });
+    setObjectStoreForTests(null);
   });
 
   it("reads a published file back as the compile that published it", async () => {
-    await writeFile(join(projectDir, "book.pdf"), REVISION_TWO);
+    await store.put(objectKey("books", projectId, "book.pdf"), REVISION_TWO);
     await writeExportProvenance({
-      projectDir,
+      projectId,
       format: "pdf",
       revision: 9,
       digest: exportContentDigest(REVISION_TWO),
       byteSize: REVISION_TWO.length
     });
 
-    const artifact = await readPublishedExport(projectDir, "pdf");
+    const artifact = await readPublishedExport(projectId, "pdf");
 
     expect(artifact?.bytes.toString()).toBe(REVISION_TWO.toString());
     expect(artifact?.provenance).toMatchObject({ state: "exact", revision: 9 });
-    await expect(readdir(projectDir)).resolves.toEqual([
-      "book.pdf",
-      "book.pdf.provenance.json"
+    expect([...store.objects.keys()]).toEqual([
+      "books/test-project/book.pdf",
+      "books/test-project/book.pdf.provenance.json"
     ]);
   });
 
@@ -191,35 +191,35 @@ describe("readPublishedExport", () => {
     // record still describes the book that was there, and the book that is
     // there is the same size. Anything that answered "revision 8" here would
     // cache a newer book under an older compile.
-    await writeFile(join(projectDir, "book.pdf"), REVISION_TWO);
+    await store.put(objectKey("books", projectId, "book.pdf"), REVISION_TWO);
     await writeExportProvenance({
-      projectDir,
+      projectId,
       format: "pdf",
       revision: 8,
       digest: exportContentDigest(REVISION_ONE),
       byteSize: REVISION_ONE.length
     });
 
-    const artifact = await readPublishedExport(projectDir, "pdf");
+    const artifact = await readPublishedExport(projectId, "pdf");
 
     expect(artifact?.provenance).toEqual({ state: "mismatch", digest: exportContentDigest(REVISION_TWO) });
   });
 
   it("reports an unrecorded file as unknown", async () => {
-    await writeFile(join(projectDir, "book.epub"), REVISION_ONE);
+    await store.put(objectKey("books", projectId, "book.epub"), REVISION_ONE);
 
-    expect((await readPublishedExport(projectDir, "epub"))?.provenance).toMatchObject({ state: "unknown" });
+    expect((await readPublishedExport(projectId, "epub"))?.provenance).toMatchObject({ state: "unknown" });
   });
 
   it("treats an unreadable record as no record at all", async () => {
-    await writeFile(join(projectDir, "book.pdf"), REVISION_ONE);
-    await writeFile(exportProvenancePath(projectDir, "pdf"), '{"revision":8,"dig');
+    await store.put(objectKey("books", projectId, "book.pdf"), REVISION_ONE);
+    await store.put(exportProvenancePath(projectId, "pdf"), '{"revision":8,"dig');
 
-    expect((await readPublishedExport(projectDir, "pdf"))?.provenance).toMatchObject({ state: "unknown" });
+    expect((await readPublishedExport(projectId, "pdf"))?.provenance).toMatchObject({ state: "unknown" });
   });
 
   it("is null when the export is not on disk", async () => {
-    expect(await readPublishedExport(projectDir, "pdf")).toBeNull();
+    expect(await readPublishedExport(projectId, "pdf")).toBeNull();
   });
 });
 

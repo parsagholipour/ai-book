@@ -20,22 +20,18 @@ import {
   sanitizeDownloadFilename,
   strategyForMediaSettings
 } from "./projectManuscript.js";
-import { access, mkdir, open, readFile, rename, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { objectKey, objectStore, withTemporaryDirectory } from "@book-maker/storage";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { requireOperatorActor, type ProjectActor } from "../requestAuth.js";
 
 /**
- * The compiled book on disk: how it is named, how it is rebuilt from the
+ * The compiled book in private object storage: how it is named, how it is rebuilt from the
  * database when missing, and how it is sent to a client.
  *
  * Both the operator API and the mobile API serve the same files, so this lives
  * apart from either route module.
  */
-
-const BOOK_MARKDOWN_FILENAME = "book.md";
-const LEGACY_BOOK_MARKDOWN_FILENAME = "README.md";
 
 export type ProjectPdfExportSource = {
   title: string;
@@ -75,49 +71,24 @@ export type ReadableProjectExport = {
   modifiedAt: Date;
 };
 
-/**
- * Cheaply verifies the exact promise made by export availability: the path is
- * a readable regular file. Status is serialized on every poll/SSE tick, so it
- * must not read and hash an entire book just to answer that question. Opening
- * the file, fstat'ing the descriptor and sampling one byte for a non-empty file
- * catches directories, permissions failures and torn/disappearing paths while
- * keeping work constant regardless of book size.
- */
+/** Availability uses S3 metadata and never reads a whole book on each status poll. */
 export async function probeReadableProjectExport(
-  appConfig: Pick<AppConfig, "BOOK_STORAGE_DIR">,
+  _appConfig: Pick<AppConfig, "BOOK_STORAGE_DIR">,
   projectId: string,
   format: ProjectExportFormat
 ): Promise<ReadableProjectExport | null> {
-  return probeReadableExportPath(join(appConfig.BOOK_STORAGE_DIR, projectId, publishedExportFilename(format)));
+  return probeReadableExportPath(objectKey("books", projectId, publishedExportFilename(format)));
 }
 
-async function probeReadableExportPath(path: string): Promise<ReadableProjectExport | null> {
-  let file: Awaited<ReturnType<typeof open>> | null = null;
-  try {
-    file = await open(path, "r");
-    const stats = await file.stat();
-    if (!stats.isFile()) {
-      return null;
-    }
-    if (stats.size > 0) {
-      const sample = Buffer.allocUnsafe(1);
-      const { bytesRead } = await file.read(sample, 0, 1, 0);
-      if (bytesRead !== 1) {
-        return null;
-      }
-    }
-    return { byteSize: stats.size, modifiedAt: stats.mtime };
-  } catch {
-    return null;
-  } finally {
-    await file?.close().catch(() => undefined);
-  }
+async function probeReadableExportPath(key: string): Promise<ReadableProjectExport | null> {
+  const metadata = await objectStore().head(key);
+  return metadata ? { byteSize: metadata.size, modifiedAt: metadata.lastModified ?? new Date(0) } : null;
 }
 
 /**
  * Size and mtime come back alongside availability because the mobile reader
  * caches the downloaded PDF on the device: together they identify the exact
- * file on disk, so a cached copy can be reused without re-downloading and a
+ * stored object, so a cached copy can be reused without re-downloading and a
  * recompiled book is detected as stale.
  *
  * It asks the config for one thing, and says so: `ensureExportRepairQueued`
@@ -203,7 +174,7 @@ function isPublishableExportStatus(status: ProjectStatus): boolean {
  * Refusing the whole request rather than only its publication is deliberate:
  * serving a truncated PDF as the book is the same lie as storing one. Neither
  * client asks for it — the console only links to the download once the project
- * is COMPLETE or the file is already on disk, and the mobile routes never
+ * is COMPLETE or the file is already stored, and the mobile routes never
  * render at all — and the answer they both understand is "not ready yet".
  *
  * A project that is merely *unfinished* (DRAFT, FAILED, a plan awaiting
@@ -235,17 +206,16 @@ const PUBLICATION_TRANSACTION_MAX_WAIT_MS = 10_000;
  * straight to `book.pdf` meant a render that started before an edit could land
  * *after* the worker's recompile published, leaving the book sitting finished
  * with its pre-edit PDF until some later revision bump happened to rebuild it.
- * So the render goes to a scratch name beside the real one and only moves once
- * a compare-and-set says the manuscript has not moved.
+ * The render stays in a temporary directory and is uploaded only once a
+ * compare-and-set says the manuscript has not moved.
  *
- * The claim and the rename are one transaction because the claim alone can go
+ * The claim and upload are one transaction because the claim alone can go
  * stale between deciding to publish and publishing: the no-op write takes the
  * project row's lock, so an edit's own bump — and any compile racing this one —
- * waits behind the rename instead of interleaving with it.
+ * waits behind the upload instead of interleaving with it.
  */
 async function publishRebuiltExport(options: {
   projectId: string;
-  projectDir: string;
   format: ProjectExportFormat;
   contentRevision: number;
   rendered: Buffer;
@@ -258,7 +228,6 @@ async function publishRebuiltExport(options: {
    * whether the CSS skipped the cover.
    */
   pdfPageMap?: PersistableBookPdfPageMap | null | undefined;
-  pendingPath: string;
   publishedPath: string;
 }): Promise<boolean> {
   // Hashed before the transaction, which is holding a lock every edit to this
@@ -272,7 +241,7 @@ async function publishRebuiltExport(options: {
           id: options.projectId,
           contentRevision: options.contentRevision,
           status: { in: [...PUBLISHABLE_EXPORT_STATUSES] },
-          // The text-edit barrier, matched against the revision this rename
+          // The text-edit barrier, matched against the revision this upload
           // claims rather than tested for emptiness. See `publishCompiledExports`:
           // the CAS above pins the row to `options.contentRevision`, so a
           // barrier holding anything else belongs to a tail that died without a
@@ -303,7 +272,7 @@ async function publishRebuiltExport(options: {
         return false;
       }
       if (options.format === "pdf" && options.pdfPageMap !== undefined) {
-        // Before the rename: a failure past this point rolls the map back with
+        // Before the upload: a failure past this point rolls the map back with
         // the claim, and the file stays unpublished.
         await tx.project.update({
           where: { id: options.projectId },
@@ -324,14 +293,16 @@ async function publishRebuiltExport(options: {
       // download-time metadata repair below can heal it; leaving the old
       // record would produce a permanent mismatch indistinguishable from a
       // file being replaced outside the publisher protocol.
-      await removeExportProvenance(options.projectDir, options.format);
-      await rename(options.pendingPath, options.publishedPath);
-      // After the rename, and never fatal: a file that is on disk and
+      await removeExportProvenance(options.projectId, options.format);
+      await objectStore().put(options.publishedPath, options.rendered, {
+        contentType: options.format === "pdf" ? "application/pdf" : "application/epub+zip"
+      });
+      // After uploading, and never fatal: a stored object that is
       // downloadable must not be undone because the metadata beside it could
       // not be written. Bytes no record describes are answered as exactly that.
       try {
         await writeExportProvenance({
-          projectDir: options.projectDir,
+          projectId: options.projectId,
           format: options.format,
           revision: options.contentRevision,
           digest,
@@ -347,12 +318,12 @@ async function publishRebuiltExport(options: {
 }
 
 /**
- * Renders one export beside its destination and publishes it if it is still the
+ * Renders one export in temporary storage and publishes it if it is still the
  * current book.
  *
  * The caller is answered either way — this is a plain-link download in the
  * operator console, where a 404 is a broken download — but a render that lost
- * the claim prefers whatever is on disk now, since that is the newer book and
+ * the claim prefers whatever is stored now, since that is the newer book and
  * this one is stale by definition.
  *
  * `publishable` is the status the project held when the render *began*. The
@@ -369,43 +340,20 @@ async function renderAndPublishExport(options: {
   render: (outputPath: string) => Promise<{ rendered: Buffer; pdfPageMap?: PersistableBookPdfPageMap | null | undefined }>;
 }): Promise<Buffer> {
   const { appConfig, projectId, format } = options;
-  const projectDir = join(appConfig.BOOK_STORAGE_DIR, projectId);
-  await mkdir(projectDir, { recursive: true });
-  // Named per render, because two rebuilds of one project overlapping is the
-  // whole case here: a shared scratch name would have them writing over each
-  // other's half-rendered file. The name comes from the same builder the
-  // worker's compile uses, so the worker's age-based sweep collects one of these
-  // too when this process is killed before its `finally` runs — both processes
-  // write into one storage volume, and the sweep is age-based rather than
-  // ownership-based precisely so it can clean up after the other one.
-  const pendingPath = pendingExportTempPath(projectDir, format);
-  try {
+  return withTemporaryDirectory("book-maker-api-export-", async (directory) => {
+    const pendingPath = pendingExportTempPath(directory, format);
     const { rendered, pdfPageMap } = await options.render(pendingPath);
-    const published =
-      options.publishable &&
-      (await publishRebuiltExport({
-        projectId,
-        projectDir,
-        format,
-        contentRevision: options.contentRevision,
-        rendered,
-        ...(pdfPageMap !== undefined ? { pdfPageMap } : {}),
-        pendingPath,
-        publishedPath: join(projectDir, publishedExportFilename(format))
-      }));
-    if (published) {
-      return rendered;
-    }
-    // Lost the claim, or never held one: whatever is on disk now is the book
-    // this render is not, so it is the better answer. Its own bytes are the
-    // last resort — a stale download beats a broken link, and they are at
-    // least a whole manuscript, because a request that arrives mid-write is
-    // refused outright rather than rendered.
+    const published = options.publishable && (await publishRebuiltExport({
+      projectId,
+      format,
+      contentRevision: options.contentRevision,
+      rendered,
+      ...(pdfPageMap !== undefined ? { pdfPageMap } : {}),
+      publishedPath: objectKey("books", projectId, publishedExportFilename(format))
+    }));
+    if (published) return rendered;
     return (await readProjectExportFile(appConfig, projectId, format)) ?? rendered;
-  } finally {
-    // A no-op once the rename above moved it.
-    await rm(pendingPath, { force: true }).catch(() => undefined);
-  }
+  });
 }
 
 /**
@@ -443,6 +391,7 @@ export function rebuildProjectPdfExport(
       render: async (outputPath) => {
         const result = await strategy.generatePdfWithPageMap(manuscript.markdown, {
           imageStorageDir: appConfig.IMAGE_STORAGE_DIR,
+          imageSource: "object-storage",
           publicApiUrl: appConfig.PUBLIC_API_URL,
           outputPath,
           language: project.language,
@@ -492,6 +441,7 @@ export function rebuildProjectEpubExport(
           ...(project.authorName ? { author: project.authorName } : {}),
           language: project.language,
           imageStorageDir: appConfig.IMAGE_STORAGE_DIR,
+          imageSource: "object-storage",
           publicApiUrl: appConfig.PUBLIC_API_URL,
           outputPath,
           // Scopes the illustrations this book may package to its own, exactly as
@@ -503,19 +453,13 @@ export function rebuildProjectEpubExport(
   });
 }
 
-/** The compiled file, or `null` when it is not on disk. */
+/** The compiled object, or `null` when it is missing. */
 export async function readProjectExportFile(
-  appConfig: AppConfig,
+  _appConfig: AppConfig,
   projectId: string,
   format: ProjectExportFormat
 ): Promise<Buffer | null> {
-  const path = join(appConfig.BOOK_STORAGE_DIR, projectId, publishedExportFilename(format));
-  try {
-    await access(path);
-    return await readFile(path);
-  } catch {
-    return null;
-  }
+  return objectStore().get(objectKey("books", projectId, publishedExportFilename(format)));
 }
 
 /**
@@ -529,13 +473,12 @@ export async function readProjectExportFile(
  * current *now*, which is the same mistake the client was making.
  */
 export async function readProjectExportArtifact(
-  appConfig: Pick<AppConfig, "BOOK_STORAGE_DIR">,
+  _appConfig: Pick<AppConfig, "BOOK_STORAGE_DIR">,
   projectId: string,
   format: ProjectExportFormat,
   source?: ProjectExportProvenanceSource
 ): Promise<ExportArtifact | null> {
-  const projectDir = join(appConfig.BOOK_STORAGE_DIR, projectId);
-  const artifact = await readPublishedExport(projectDir, format);
+  const artifact = await readPublishedExport(projectId, format);
   if (
     !artifact ||
     artifact.provenance.state === "exact" ||
@@ -575,14 +518,14 @@ export async function readProjectExportArtifact(
           return artifact;
         }
 
-        const settled = await readPublishedExport(projectDir, format);
+        const settled = await readPublishedExport(projectId, format);
         if (!settled || settled.provenance.state !== "unknown") {
           return settled;
         }
         // The claim proves the *row* is at this revision; it does not prove the
         // bytes are. A presentation preference bumps the revision without
         // deleting the compiled files, so when its recompile fails, the
-        // restored COMPLETE row sits one revision ahead of the bytes on disk —
+        // restored COMPLETE row sits one revision ahead of the stored bytes —
         // and stamping the row's revision onto them would label a book that
         // does not contain the change as exactly containing it, forever. A
         // compile that COMPLETED for this same revision is the missing proof:
@@ -603,7 +546,7 @@ export async function readProjectExportArtifact(
           return settled;
         }
         await writeExportProvenance({
-          projectDir,
+          projectId,
           format,
           revision: source.contentRevision,
           digest: settled.provenance.digest,

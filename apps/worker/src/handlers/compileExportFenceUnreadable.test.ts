@@ -1,5 +1,6 @@
+import { readRunLog } from "@book-maker/storage";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Job } from "bullmq";
@@ -275,10 +276,7 @@ describe("compileExport when its repair fence cannot be read", () => {
 
   /** The last line of this compile's own run log, which is the file its provider calls are in. */
   const lastRunLogEntry = async (): Promise<Record<string, unknown>> => {
-    const lines = await readFile(
-      join(mocks.config.BOOK_STORAGE_DIR, "project-1", "runs", "gj-1-compile-export.jsonl"),
-      "utf8"
-    );
+    const lines = await readRunLog("books/project-1/runs/gj-1-compile-export.jsonl");
     const last = lines.trim().split("\n").at(-1);
     if (!last) {
       throw new Error("The compile wrote no run log");

@@ -42,8 +42,7 @@ import {
   prisma,
   revertStructuralPageChange
 } from "@book-maker/db";
-import { rm } from "node:fs/promises";
-import { join } from "node:path";
+import { objectKey, objectStore } from "@book-maker/storage";
 
 /**
  * Direct page edits made in the book editor, plus undo and export recompilation.
@@ -79,13 +78,12 @@ export function manualEditInfoFromMessage(message: MobileProjectChatMessageRecor
  * overwrites its own, and a digest that matches nothing is reported as matching
  * nothing — but a record outliving its file has no reader and no meaning.
  */
-export async function invalidateCompiledProjectExports(bookStorageDir: string, projectId: string): Promise<void> {
-  const projectDir = join(bookStorageDir, projectId);
+export async function invalidateCompiledProjectExports(_bookStorageDir: string, projectId: string): Promise<void> {
   await Promise.all(
     [
-      ...["book.md", "README.md", ...EXPORT_FORMATS.map(publishedExportFilename)].map((filename) => join(projectDir, filename)),
-      ...exportProvenancePaths(projectDir)
-    ].map((path) => rm(path, { force: true }).catch(() => undefined))
+      ...["book.md", "README.md", ...EXPORT_FORMATS.map(publishedExportFilename)].map((filename) => objectKey("books", projectId, filename)),
+      ...exportProvenancePaths(projectId)
+    ].map((path) => objectStore().delete(path))
   );
 }
 

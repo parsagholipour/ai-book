@@ -31,7 +31,7 @@ ENV NODE_ENV=development
 # `pnpm --filter @book-maker/<svc> dev`. Do not default to root `pnpm
 # dev` — that script starts all three workspaces in one container.
 
-FROM base AS app
+FROM base AS build
 
 COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml tsconfig.base.json .npmrc ./
 COPY apps ./apps
@@ -41,10 +41,17 @@ RUN pnpm install --frozen-lockfile --prod=false
 RUN pnpm db:generate
 RUN pnpm build
 
+FROM nginx:stable-alpine AS web
+COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/apps/web/dist /usr/share/nginx/html
+
+# Keep the combined app as the default target for existing deployments.
+FROM build AS app
+
 ENV NODE_ENV=production \
     API_HOST=0.0.0.0 \
     BOOK_STORAGE_DIR=/app/storage/books \
     IMAGE_STORAGE_DIR=/app/storage/images
 
-ENTRYPOINT ["/usr/bin/tini", "--"]
+ENTRYPOINT ["/usr/bin/tini", "-g", "--"]
 CMD ["sh", "scripts/start-production.sh"]

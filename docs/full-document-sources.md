@@ -5,7 +5,7 @@ Uploads can be retained as versioned private sources, independently of chat JSON
 ## Rollout
 
 1. Apply `packages/db/prisma/migrations/000071_full_document_sources/migration.sql` through the normal deployment migration process.
-2. Set `FULL_DOCUMENT_SOURCES=true` on the API and worker. Keep `ATTACHMENT_STORAGE_DIR` shared between them. Docker Compose supplies `SOURCE_OCR_URL=http://ocr:8080` to the worker and waits for the private PaddleOCR-VL service to become healthy. The worker polls durable extraction jobs every two seconds, with one active document per worker and at most two concurrent PDF OCR calls per document.
+2. Set `FULL_DOCUMENT_SOURCES=true` on the API and worker. Keep `ATTACHMENT_STORAGE_DIR` shared between them. Development Docker Compose supplies `SOURCE_OCR_URL=http://ocr:8080` to the worker. OCR health does not block worker startup, so configured Google fallback can handle pages while local OCR starts or is unavailable. The worker polls durable extraction jobs every two seconds, with one active document per worker and at most two concurrent PDF OCR calls per document.
 3. Release the mobile changes. New clients send `async=true`; older clients omit it and wait for ingestion. A synchronous timeout returns `SOURCE_PROCESSING`; resending the same upload reuses its saved job.
 
 Turning the flag off stops new source ingestion and backfill. Existing frozen source versions remain readable and continue to supply generated books.
@@ -16,12 +16,27 @@ The upload limits remain eight files per chat and 20 MB per file. Extracted cont
 
 - `SourceDocument` owns upload identity, account ownership, filename and original-file location. Upload request keys are unique within a draft. Without a client key, the SHA-256 content hash is the key. Concurrent/replayed uploads take a draft row lock; a reused key with different bytes is rejected.
 - `SourceExtraction` is the durable processing job and extraction version. Expiring leases fence checkpoint writes; abandoned leases are reclaimed. Successful extraction, page checkpoints, chunks and summaries survive interrupted attempts. Processing updates never advance the chat revision.
-- `SourceChunk` stores ordered, verbatim passages, locators, section summaries and optional embeddings. Native PDF text uses Poppler. Pages with unreadable text or embedded imagery go to the local PaddleOCR-VL 1.6 container, which returns structured Markdown for text, tables, formulas, charts and layout. Unavailable or unreadable regions are recorded explicitly. DOCX, EPUB and text reuse local parsers. Tables retain tab-separated columns where present or Markdown structure from OCR.
+- `SourceChunk` stores ordered, verbatim passages, locators, section summaries and optional embeddings. Native PDF text uses Poppler. Pages with unreadable text or embedded imagery go through the OCR adapter: local PaddleOCR-VL 1.6 first when configured, then Gemini fallback when available. OCR returns structured Markdown for readable text, tables, formulas and diagram labels. Unavailable or unreadable regions are recorded explicitly. DOCX, EPUB and text reuse local parsers. Tables retain tab-separated columns where present or Markdown structure from OCR.
 - `ProjectSource` retains selected versions when a book is built. Plan input snapshots carry `mediaSettings.mobile.sourceRefs`. Retries create a new version; existing books keep the old evidence. Original files retain the existing 180-day policy. Extracted passages survive original expiry and draft deletion while referenced by a book.
 
 Automatic attempts are bounded. Partial/limited sources require an explicit “Use readable content” choice or a retry before Build can proceed. If a summary provider is not configured, a labelled extractive overview remains available; full passages still support lexical retrieval. Embedding failure does not discard extraction or summaries.
 
-PaddleOCR-VL is pinned in `Dockerfile.ocr`, and its model weights are downloaded during the image build. Runtime pages remain inside the Compose network. This machine's 4 GB NVIDIA GPU is below the practical high-performance deployment path, so the service uses the same model on CPU; OCR quality is unchanged but page latency is higher. `SOURCE_OCR_TIMEOUT_MS` defaults to ten minutes so two concurrent CPU page requests retain enough headroom. A worker outside Compose must set `SOURCE_OCR_URL` to a private PaddleOCR-VL service. There is no cloud OCR fallback: if the local service is absent, visual pages are reported as unreadable and can be retried after it returns.
+PaddleOCR-VL is pinned in `Dockerfile.ocr`, and its model weights are downloaded during the image build. Successful local OCR requests remain inside the Compose network. The service runs on CPU. `SOURCE_OCR_TIMEOUT_MS` defaults to ten minutes so two concurrent CPU page requests retain enough headroom.
+
+With `GEMINI_API_KEY` configured, Google Gemini handles OCR when `SOURCE_OCR_URL` is unset or the local service fails. Empty or partial local results also trigger a Google attempt; if that attempt fails, the local result and its unreadable markers are preserved. The fallback sends the affected image or single PDF page to Google and incurs Gemini API usage. Complete local extraction does not call Google. Native-text PDFs and locally parsed text/DOCX/EPUB files continue to use their existing extraction paths. `MOCK_AI=true` keeps OCR offline. Without a Gemini key, the existing local-only behavior remains: unavailable visual content is recorded as unreadable, and failed image extraction can be retried.
+
+`GEMINI_OCR_MODEL` optionally selects a separate OCR model; otherwise OCR uses
+`GEMINI_TEXT_MODEL` (default `gemini-2.5-flash`). `SOURCE_OCR_TIMEOUT_MS` applies to
+each provider request, so a local timeout followed by a Google request may take
+up to two such budgets. Google token usage is returned to the worker's existing
+source-usage accounting. No provider keys are needed for the mocked tests.
+Google fallback accepts PDF, JPEG, PNG, WebP, HEIC, and HEIF. GIF/BMP still require
+successful local OCR or conversion to a supported format; unsupported Google
+input fails explicitly rather than being recorded as a successfully read blank page.
+
+Google's [document input](https://ai.google.dev/gemini-api/docs/document-processing)
+and [image input](https://ai.google.dev/gemini-api/docs/image-understanding)
+documentation describe the provider formats used by this adapter.
 
 Background backfill processes retained draft originals. An expired original becomes a `limited` legacy digest. Existing plan snapshots are upgraded once their legacy source set is available. Source IDs and extraction versions are then frozen in the snapshot.
 

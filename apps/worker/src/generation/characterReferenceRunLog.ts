@@ -1,7 +1,5 @@
 import { safePathPart } from "@book-maker/core";
-import { appendFile, mkdir } from "node:fs/promises";
-import { join } from "node:path";
-import { config } from "../runtime/config.js";
+import { appendRunLog, objectKey } from "@book-maker/storage";
 
 /**
  * What a character reference pass writes into the debugging artifact.
@@ -47,19 +45,18 @@ export async function appendCharacterReferenceRunLog(
   event: string,
   detail: Record<string, string | number | boolean>
 ): Promise<void> {
-  const logDir = join(config.BOOK_STORAGE_DIR, subject.projectId, "runs");
+  const logDir = objectKey("books", subject.projectId, "runs");
   const runId = safePathPart(subject.generationJobId ?? "unknown-run");
   try {
-    const line = JSON.stringify({
+    const entry = {
       timestamp: new Date().toISOString(),
       event,
       projectId: subject.projectId,
       planId: subject.planId,
       generationJobId: subject.generationJobId,
       ...detail
-    });
-    await mkdir(logDir, { recursive: true });
-    await appendFile(join(logDir, `${runId}-character-references.jsonl`), `${line}\n`, "utf8");
+    };
+    await appendRunLog(`${logDir}/${runId}-character-references.jsonl`, entry);
   } catch (error) {
     console.error(`Failed to record a character reference run-log line for ${subject.projectId}`, error);
   }

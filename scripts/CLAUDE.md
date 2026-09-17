@@ -75,7 +75,8 @@ Anything that launches Chromium must go through the shared browser pool and must
 
 - `audit-duplicate-generation-charges.ts` (`pnpm billing:audit-duplicates`) — duplicate credit
   charges per `GenerationJob`, and can refund them.
-- `repair-plan-from-run-log.ts` — rebuilds a project's plan from its provider run log.
+- `repair-plan-from-run-log.ts` — rebuilds a project's plan from its S3 provider run log.
+  `--log-file` names an S3 run key. Storage inspection follows [storage.md](../docs/storage.md).
 - `repair-stuck-plan-revisions.ts` — projects whose plan revision job finished but whose plan never
   advanced.
 - `clear-character-reference-refusals.ts` — takes back a recorded character reference refusal. A
@@ -97,7 +98,7 @@ as **SIGTERM**, because nodemon handles that and not `SIGHUP` — sent verbatim 
 the app holding the browser. See `packages/core/src/generation/CLAUDE.md`.
 
 `docker-dev-entrypoint.sh` sets `umask 0000` so the host user can write into directories the
-container created first. A stray `EACCES` under `storage/` means two stacks are running, not that
-permissions need loosening further.
+container created first. Durable application bytes are in S3; bind-mounted files are development
+artifacts and scratch only.
 
 <!-- gotcha-index: pointer-only -->

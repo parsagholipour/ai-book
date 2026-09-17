@@ -34,8 +34,7 @@ import type {
   BuildCharacterPersonaJob,
   PrepareCharacterCandidatesJob
 } from "../runtime/jobPayloads.js";
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { objectKey, objectStore } from "@book-maker/storage";
 
 /**
  * `prepare-character-candidates` and `build-character-persona` jobs backing the
@@ -329,11 +328,9 @@ export async function generateCharacterProfileImage(options: {
   });
   const optimizedImage = await optimizeImageForStorage({ bytes: image.bytes, mimeType: image.mimeType });
   const ext = optimizedImage.extension;
-  const projectImageDir = join(config.IMAGE_STORAGE_DIR, options.projectId);
-  await mkdir(projectImageDir, { recursive: true });
   const filename = `character-profile-${safePathPart(options.voiceCharacterId)}.${ext}`;
-  const filePath = join(projectImageDir, filename);
-  await writeFile(filePath, optimizedImage.bytes);
+  const filePath = objectKey("images", options.projectId, filename);
+  await objectStore().put(filePath, optimizedImage.bytes, { contentType: optimizedImage.mimeType });
 
   return prisma.imageAsset.create({
     data: {

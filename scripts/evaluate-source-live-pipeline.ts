@@ -1,3 +1,5 @@
+import { MemoryObjectStore, setObjectStoreForTests } from "../packages/storage/src/index.ts";
+setObjectStoreForTests(new MemoryObjectStore());
 /** Real-provider, image-only PDF acceptance test. Uses only synthetic fixture data. */
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";

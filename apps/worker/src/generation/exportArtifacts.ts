@@ -2,7 +2,7 @@ import {
   COMPANION_EXPORT_FORMATS,
   EXPORT_FORMATS,
   exportContentDigest,
-  exportProvenancePath,
+  exportProvenanceKey,
   isCompanionExportFormat,
   pendingExportTempPath,
   publishedExportFilename,
@@ -12,17 +12,16 @@ import {
   type ExportRepairFormat
 } from "@book-maker/core";
 import { randomUUID } from "node:crypto";
-import { readFile, rename, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { readFile, rm, writeFile } from "node:fs/promises";
+import { objectKey, objectStore } from "@book-maker/storage";
 
 /**
- * The filesystem half of publishing a compile: where a render lands before it
- * is published, how the set moves onto its downloadable names, and how a
- * half-moved set is put back.
+ * Local renderer scratch and the object-storage half of a compile publication.
+ * Each artifact has a local candidate, a live object key and a unique backup key.
  *
  * Split out of `exportPublication.ts`, which keeps the claim and the
- * transaction. Everything here is a pure function of paths and flags plus the
- * renames themselves, and every list it builds derives from the format registry
+ * transaction. Object uploads and server-side backup/restore copies run sequentially,
+ * bounding memory to one format. Every list derives from the format registry
  * in core — so a new export format is one registry entry and a renderer, not a
  * fourth spelling of `["md", "pdf", "epub"]`.
  */
@@ -84,8 +83,12 @@ export async function discardPendingExports(paths: PendingExportPaths): Promise<
  * project overlapping is the case this module exists for, and a shared name
  * would have each one holding the other's predecessor.
  */
-function supersededExportPaths(projectDir: string): PendingExportPaths {
-  return pendingExportPaths(projectDir, supersededExportToken());
+function supersededExportPaths(projectId: string): PendingExportPaths {
+  const token = supersededExportToken();
+  return {
+    markdown: objectKey("books", ".export-backups", projectId, `.book-${token}.md`),
+    ...(Object.fromEntries(EXPORT_FORMATS.map((format) => [format, objectKey("books", ".export-backups", projectId, `.book-${token}.${format}`)])) as Record<ExportFormat, string>)
+  };
 }
 
 /** One artifact's move onto its published name, and what it displaced. */
@@ -101,7 +104,7 @@ export type ArtifactPublication = {
 };
 
 export type ArtifactPublicationOptions = {
-  projectDir: string;
+  projectId: string;
   pending: PendingExportPaths;
   companionsProduced: CompanionsProduced;
   repairFormat: ExportRepairFormat | null;
@@ -144,14 +147,14 @@ function retiredCompanionFormats(options: {
 }
 
 export function artifactPublications(options: ArtifactPublicationOptions): ArtifactPublication[] {
-  const superseded = supersededExportPaths(options.projectDir);
+  const superseded = supersededExportPaths(options.projectId);
   const formats: (keyof PendingExportPaths)[] = [
     ...(options.publishReconstructedMarkdown || options.repairFormat === null ? (["markdown"] as const) : []),
     ...publishedExportFormats(options)
   ];
   const publications: ArtifactPublication[] = formats.map((format) => ({
     pending: options.pending[format],
-    live: join(options.projectDir, PUBLISHED_EXPORT_FILENAMES[format]),
+    live: objectKey("books", options.projectId, PUBLISHED_EXPORT_FILENAMES[format]),
     superseded: superseded[format],
     parked: false,
     installed: false
@@ -159,7 +162,7 @@ export function artifactPublications(options: ArtifactPublicationOptions): Artif
   for (const format of retiredCompanionFormats(options)) {
     publications.push({
       pending: null,
-      live: join(options.projectDir, PUBLISHED_EXPORT_FILENAMES[format]),
+      live: objectKey("books", options.projectId, PUBLISHED_EXPORT_FILENAMES[format]),
       superseded: superseded[format],
       parked: false,
       installed: false
@@ -168,29 +171,15 @@ export function artifactPublications(options: ArtifactPublicationOptions): Artif
   return publications;
 }
 
-function isMissingFileError(error: unknown): boolean {
-  return (
-    typeof error === "object" && error !== null && (error as NodeJS.ErrnoException).code === "ENOENT"
-  );
-}
-
-/**
- * Parks a published artifact. False when there was none to park — the first
- * compile of a book, or one whose files an edit deleted a moment ago.
- *
- * Parked by `rename` rather than checked for first: an edit's
- * `invalidateCompiledProjectExports` deletes these files without taking the
- * project row lock this publication holds, so anything the check learned could
- * be wrong by the time the move ran.
- */
+/** Copies a predecessor server-side before replacing it; missing objects need no backup. */
 async function parkPublishedArtifact(live: string, superseded: string): Promise<boolean> {
   try {
-    await rename(live, superseded);
+    await objectStore().copy(live, superseded);
     return true;
   } catch (error) {
-    if (isMissingFileError(error)) {
-      return false;
-    }
+    const failure = error as { name?: string; $metadata?: { httpStatusCode?: number } };
+    if (failure?.name === "NoSuchBucket") throw error;
+    if (failure?.name === "NoSuchKey" || failure?.name === "NotFound" || failure?.$metadata?.httpStatusCode === 404) return false;
     throw error;
   }
 }
@@ -200,8 +189,12 @@ export async function installArtifacts(publications: ArtifactPublication[]): Pro
   for (const publication of publications) {
     publication.parked = await parkPublishedArtifact(publication.live, publication.superseded);
     if (publication.pending) {
-      await rename(publication.pending, publication.live);
+      // Mark before the request: a lost acknowledgement may still mean the PUT landed.
       publication.installed = true;
+      await objectStore().put(publication.live, await readFile(publication.pending));
+    } else if (publication.parked) {
+      publication.installed = true;
+      await objectStore().delete(publication.live);
     }
   }
 }
@@ -220,11 +213,12 @@ export async function restoreSupersededArtifacts(publications: ArtifactPublicati
       if (publication.parked) {
         // Overwrites the new artifact where it landed and fills the gap where it
         // did not: either way the published name ends up back on its predecessor.
-        await rename(publication.superseded, publication.live);
+        await objectStore().copy(publication.superseded, publication.live);
+        await objectStore().delete(publication.superseded);
       } else if (publication.installed) {
         // Nothing to put back, so the published name returns to being absent —
         // which is a state the repair lane knows how to answer.
-        await rm(publication.live, { force: true });
+        await objectStore().delete(publication.live);
       }
       publication.parked = false;
       publication.installed = false;
@@ -243,7 +237,7 @@ export type ExportDigests = Map<ExportFormat, { digest: string; byteSize: number
  * compile's own and cannot change under it, and the transaction holds a lock
  * every edit to this book has to take — a few megabytes of sha256 has no
  * business inside it. A file that cannot be read here simply gets no record:
- * the rename below will fail on it too, and that is the failure worth
+ * the upload below will fail on it too, and that is the failure worth
  * reporting.
  */
 export async function pendingExportDigests(options: {
@@ -268,7 +262,7 @@ export async function pendingExportDigests(options: {
  *
  * Inside the transaction and after the artifacts have moved, so a rollback
  * leaves the previous record describing the file `restoreSupersededArtifacts`
- * puts back. Never fatal: a book that is on disk and downloadable must not be
+ * puts back. Never fatal: a book that is stored and downloadable must not be
  * failed — and refunded — because a hundred bytes of metadata beside it could
  * not be written. A download of bytes no record describes is answered as
  * exactly that, and the next publication of this book writes the record again.
@@ -280,13 +274,13 @@ export async function pendingExportDigests(options: {
  * describes.
  */
 export async function provenancePublications(options: {
-  projectDir: string;
+  projectId: string;
   pending: PendingExportPaths;
   contentRevision: number;
   digests: ExportDigests;
   formatsTouched: ReadonlySet<ExportFormat>;
 }): Promise<ArtifactPublication[]> {
-  const superseded = supersededExportPaths(options.projectDir);
+  const superseded = supersededExportPaths(options.projectId);
   const publications: ArtifactPublication[] = [];
   for (const format of options.formatsTouched) {
     const artifact = options.digests.get(format);
@@ -313,7 +307,7 @@ export async function provenancePublications(options: {
     }
     publications.push({
       pending: prepared,
-      live: exportProvenancePath(options.projectDir, format),
+      live: exportProvenanceKey(options.projectId, format),
       superseded: `${superseded[format]}.provenance.json`,
       parked: false,
       installed: false
@@ -332,6 +326,6 @@ export async function discardSupersededArtifacts(publications: ArtifactPublicati
   await Promise.all(
     publications
       .filter((publication) => publication.parked)
-      .map((publication) => rm(publication.superseded, { force: true }).catch(() => undefined))
+      .map((publication) => objectStore().delete(publication.superseded).catch(() => undefined))
   );
 }

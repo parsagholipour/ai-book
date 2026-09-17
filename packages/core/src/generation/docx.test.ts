@@ -90,7 +90,7 @@ type Docx = {
   rels: string;
 };
 
-async function render(markdown: string, options: Partial<Parameters<typeof generateBookDocx>[1]> = {}): Promise<Docx> {
+async function render(markdown: string, options: Partial<Extract<Parameters<typeof generateBookDocx>[1], { imageSource?: "local" }>> = {}): Promise<Docx> {
   const bytes = await generateBookDocx(markdown, {
     title: "The Clockmaker",
     author: "Test Author",

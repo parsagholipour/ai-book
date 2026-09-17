@@ -7,8 +7,8 @@
  *
  *   docker exec ai-book-maker-worker-1 pnpm -F @book-maker/worker exec tsx scripts/provenance-probe.ts <projectId> [<label>]
  */
-import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
+import { listRunLogs, readRunLog } from "@book-maker/storage";
 import { prisma } from "../../../packages/db/src/index.ts";
 
 const projectId = process.argv[2];
@@ -47,12 +47,11 @@ function fold(text: string): string {
   return text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 }
 
-const runsDir = `/app/storage/books/${projectId}/runs`;
-const logs = readdirSync(runsDir).filter((name) => name.endsWith(".jsonl"));
+const logs = await listRunLogs(projectId);
 const given: string[] = [];
 let bookText = "";
-for (const name of logs) {
-  for (const line of readFileSync(join(runsDir, name), "utf8").split("\n")) {
+for (const log of logs) {
+  for (const line of (await readRunLog(log.key)).split("\n")) {
     if (!line) continue;
     let event: Record<string, unknown>;
     try {

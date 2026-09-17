@@ -8,7 +8,7 @@ vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMoc
 import { PRESENTATION_ONLY_RECOMPILE } from "@book-maker/core";
 import { Prisma, casRebuildProjectStoryState } from "@book-maker/db";
 import { enqueueGenerationJob } from "../queue.js";
-import { existsSync } from "node:fs";
+import { testObjectStore } from "../testing/objectStorage.js";
 import { join } from "node:path";
 import {
   appliedEditOperationRecord,
@@ -144,7 +144,7 @@ describe("mobile editable book and manual edits", () => {
         storyDeltaBefore
       })
     ]);
-    expect(existsSync(join(state.bookStorageDir!, "project-1", "book.pdf"))).toBe(false);
+    expect(testObjectStore.objects.has(join("books", "project-1", "book.pdf"))).toBe(false);
     expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledWith(expect.objectContaining({
       projectId: "project-1",
       type: "COMPILE_EXPORT",
@@ -663,8 +663,8 @@ describe("mobile editable book and manual edits", () => {
       where: { id: "project-1", status: "EDITING", contentRevision: 0 },
       data: { status: "COMPLETE" }
     });
-    expect(existsSync(join(state.bookStorageDir!, "project-1", "book.pdf"))).toBe(false);
-    expect(existsSync(join(state.bookStorageDir!, "project-1", "book.epub"))).toBe(false);
+    expect(testObjectStore.objects.has(join("books", "project-1", "book.pdf"))).toBe(false);
+    expect(testObjectStore.objects.has(join("books", "project-1", "book.epub"))).toBe(false);
     await app.close();
   });
 

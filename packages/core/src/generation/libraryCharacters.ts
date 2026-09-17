@@ -1,3 +1,4 @@
+import { objectKey } from "@book-maker/storage";
 /**
  * User-defined library characters ("consistent characters").
  *
@@ -394,6 +395,13 @@ export function libraryCharacterDiskPath(imageStorageDir: string, relativeFile: 
     return null;
   }
   return join(imageStorageDir, LIBRARY_CHARACTER_STORAGE_SUBDIR, userDir, fileName);
+}
+
+/** Validated durable key for a saved character's image. */
+export function libraryCharacterObjectKey(relativeFile: string): string | null {
+  const [userId, fileName, extra] = relativeFile.split("/");
+  if (!userId || !fileName || extra !== undefined || !SAFE_DIR_SEGMENT.test(userId) || !SAFE_FILE_SEGMENT.test(fileName)) return null;
+  return objectKey("images", LIBRARY_CHARACTER_STORAGE_SUBDIR, userId, fileName);
 }
 
 const PROMPT_BLOCK_CHARACTER_BUDGET = 220;

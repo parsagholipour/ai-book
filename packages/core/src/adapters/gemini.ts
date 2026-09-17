@@ -1,5 +1,5 @@
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
-import { readFile } from "node:fs/promises";
+import { readObjectReference } from "@book-maker/storage";
 import { extname } from "node:path";
 import { z } from "zod";
 import { parseJsonObject, parseSchemaWithContext, throwWithProviderUsage } from "./json.js";
@@ -702,7 +702,7 @@ export class GeminiImageAdapter implements ImageAdapter {
     const referenceParts = await Promise.all(
       referenceImagePaths.map(async (path) => ({
         inlineData: {
-          data: (await readFile(path)).toString("base64"),
+          data: (await readObjectReference(path)).toString("base64"),
           mimeType: mimeTypeForImagePath(path)
         }
       }))

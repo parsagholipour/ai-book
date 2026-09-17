@@ -74,8 +74,8 @@ import {
 } from "@book-maker/core";
 import { prisma, researchCitationsForExport } from "@book-maker/db";
 import type { CompileExportJob } from "../runtime/jobPayloads.js";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { writeFile } from "node:fs/promises";
+import { objectKey, objectStore, withTemporaryDirectory } from "@book-maker/storage";
 import { failedQaPageIndexesForCompile } from "./compileExportCitationRepair.js";
 import { urlBackedResearchNotes } from "../generation/researchSources.js";
 /**
@@ -556,10 +556,6 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     progress: 62,
     message: "Placing reader chapters"
   });
-  // Created here rather than beside the `book.md` write below, because the
-  // reader-chapter cache lives in it and is read before the model call.
-  const projectDir = join(config.BOOK_STORAGE_DIR, projectId);
-  await mkdir(projectDir, { recursive: true });
   // Cheap early exit before the reader-chapter call and the render: an edit
   // applied while this compile was in QA has already queued the recompile that
   // will publish instead. The binding decision is the claim in
@@ -568,7 +564,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     await standDownForNewerExport({ projectId, generationJobId, findings });
     return {};
   }
-  const publishedMarkdownPath = join(projectDir, "book.md");
+  const publishedMarkdownPath = objectKey("books", projectId, "book.md");
   const publishedMarkdown = detachedRepair || presentationOnly
     ? await readOptionalPublishedMarkdown(publishedMarkdownPath)
     : undefined;
@@ -579,11 +575,11 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     // An edit changes the fingerprint but not its page partition. The cache is
     // deliberately retained when exports are invalidated, so a repair can keep
     // the prior model-authored grouping without making an uncharged model call.
-    preservedReaderChapters = await readCompatibleCachedReaderChapters(projectDir, markdownPages);
+    preservedReaderChapters = await readCompatibleCachedReaderChapters(projectId, markdownPages);
   }
   const compileCurrentMarkdown = async (): Promise<CompiledBookMarkdown> => {
     const readerChapters = await readerChaptersWithCache({
-      projectDir,
+      projectId,
       fingerprint: readerChapterFingerprint({ input, plan, pages: markdownPages }),
       // Presentation recompiles and repairs are free. A cache miss must not
       // turn either into an uncharged model request.
@@ -655,111 +651,104 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   }
   assertBookLikeMarkdown(markdown);
   await advanceJobStep(generationJobId, "write", 80);
-  // Rendered beside the real filenames, never onto them: until the claim below
-  // succeeds this compile has no right to replace a book somebody may have
-  // edited while it worked.
-  const pending = pendingExportPaths(projectDir);
-  let characterPreparationJobId: string | null = null;
-  let pdfPageMapUpdate: PersistableBookPdfPageMap | undefined;
-  try {
-    if (repairFormat === null || repairReconstructedMarkdown) {
-      await writeFile(pending.markdown, markdown, "utf8");
-    }
-    if (repairFormat === null || repairFormat === "pdf") {
-      await advanceJobStep(generationJobId, "pdf", 88);
-      const pdfResult = await strategy.generatePdfWithPageMap(markdown, {
-        imageStorageDir: config.IMAGE_STORAGE_DIR,
-        publicApiUrl: config.PUBLIC_API_URL,
-        outputPath: pending.pdf,
-        language: input.language,
-        // Scopes the renderer's file access to this book's own illustrations.
+  // Render in scoped local scratch. Only the final revision claim permits
+  // publishing these bytes to the project’s durable object keys.
+  return withTemporaryDirectory("book-compile-", async (scratchDir) => {
+    const pending = pendingExportPaths(scratchDir);
+    let characterPreparationJobId: string | null = null;
+    let pdfPageMapUpdate: PersistableBookPdfPageMap | undefined;
+    try {
+      if (repairFormat === null || repairReconstructedMarkdown) {
+        await writeFile(pending.markdown, markdown, "utf8");
+      }
+      if (repairFormat === null || repairFormat === "pdf") {
+        await advanceJobStep(generationJobId, "pdf", 88);
+        const pdfResult = await strategy.generatePdfWithPageMap(markdown, {
+          imageSource: "object-storage",
+          publicApiUrl: config.PUBLIC_API_URL,
+          outputPath: pending.pdf,
+          language: input.language,
+          // Scopes the renderer's file access to this book's own illustrations.
+          projectId,
+          ...(compiled ? { pageMapPlan: compiled } : {})
+        });
+        // A complete measurement wins. Every failed or plan-less measurement
+        // replaces stored ranges with cover numbering for these newly rendered
+        // bytes: matching manuscript text does not prove matching pagination.
+        pdfPageMapUpdate = persistablePdfPageMapAfterRender({
+          pageMap: pdfResult.pageMap,
+          hasCoverPage: compiled?.hasCoverPage ?? markdownOpensOnCoverSheet(markdown)
+        });
+      }
+      const companions = await renderCompanionExports({
+        formats: companionFormatsToRender(repairFormat),
+        markdown,
+        pending,
         projectId,
-        ...(compiled ? { pageMapPlan: compiled } : {})
+        generationJobId,
+        title: plan.title,
+        author: project.authorName,
+        language: input.language,
+        qualityReport
       });
-      // A complete measurement wins. Every failed or plan-less measurement
-      // replaces stored ranges with cover numbering for these newly rendered
-      // bytes: matching manuscript text does not prove matching pagination.
-      pdfPageMapUpdate = persistablePdfPageMapAfterRender({
-        pageMap: pdfResult.pageMap,
-        hasCoverPage: compiled?.hasCoverPage ?? markdownOpensOnCoverSheet(markdown)
+      const publication = await publishCompiledExports({
+        projectId,
+        generationJobId,
+        pending,
+        companionsProduced: companions.produced,
+        repairFormat,
+        ...(pdfPageMapUpdate !== undefined ? { pdfPageMap: pdfPageMapUpdate } : {}),
+        publishReconstructedMarkdown: repairReconstructedMarkdown,
+        contentRevision: queuedContentRevision,
+        expectedProjectStatus,
+        status: policy.ownership.kind === "presentation"
+          ? policy.ownership.fallbackStatus
+          : reviewRequired
+            ? "REVIEW_REQUIRED"
+            : "COMPLETE",
+        ownsProjectStatus,
+        generationAttemptId,
+        editOperationId,
+        characterPreparation: shouldPrepareCharacterCandidates
+          ? { planId, attemptId: skipFinalReview ? null : generationAttemptId }
+          : null
       });
+      if (!publication.published) {
+        // The same door as the read above, and the verdict it withdraws now
+        // includes any `EPUB_EXPORT_FAILED` warning appended on the way here:
+        // that warning is about an EPUB in `pending`, which the `finally` below
+        // is about to discard, so it describes a file no reader will ever be
+        // offered.
+        await standDownForNewerExport({ projectId, generationJobId, findings });
+        return publication.blockedByOpenImageJobs
+          ? { lifecycleSettlement: "defer-to-successor", afterJobCompleted: requeueCompile }
+          : {};
+      }
+      characterPreparationJobId = publication.characterPreparationJobId;
+    } finally {
+      await discardPendingExports(pending);
     }
-    const companions = await renderCompanionExports({
-      formats: companionFormatsToRender(repairFormat),
-      markdown,
-      pending,
-      projectId,
-      generationJobId,
-      title: plan.title,
-      author: project.authorName,
-      language: input.language,
-      qualityReport
-    });
-    const publication = await publishCompiledExports({
-      projectId,
-      generationJobId,
-      projectDir,
-      pending,
-      companionsProduced: companions.produced,
-      repairFormat,
-      ...(pdfPageMapUpdate !== undefined ? { pdfPageMap: pdfPageMapUpdate } : {}),
-      publishReconstructedMarkdown: repairReconstructedMarkdown,
-      contentRevision: queuedContentRevision,
-      expectedProjectStatus,
-      status: policy.ownership.kind === "presentation"
-        ? policy.ownership.fallbackStatus
-        : reviewRequired
-          ? "REVIEW_REQUIRED"
-          : "COMPLETE",
-      ownsProjectStatus,
-      generationAttemptId,
-      editOperationId,
-      characterPreparation: shouldPrepareCharacterCandidates
-        ? { planId, attemptId: skipFinalReview ? null : generationAttemptId }
-        : null
-    });
-    if (!publication.published) {
-      // The same door as the read above, and the verdict it withdraws now
-      // includes any `EPUB_EXPORT_FAILED` warning appended on the way here:
-      // that warning is about an EPUB in `pending`, which the `finally` below
-      // is about to discard, so it describes a file no reader will ever be
-      // offered.
-      await standDownForNewerExport({ projectId, generationJobId, findings });
-      return publication.blockedByOpenImageJobs
-        ? { lifecycleSettlement: "defer-to-successor", afterJobCompleted: requeueCompile }
-        : {};
-    }
-    characterPreparationJobId = publication.characterPreparationJobId;
-  } finally {
-    await discardPendingExports(pending);
-  }
-  const persistedCharacterPreparationJobId = characterPreparationJobId;
-  return {
-    // Publication committed the durable job plus attempt/edit settlement in
-    // the same transaction as these files. `processWorkerJob` may therefore
-    // treat later step/message bookkeeping as best-effort without hiding any
-    // pre-publication failure.
-    durableCompletionCommitted: true,
-    ...(persistedCharacterPreparationJobId
-      ? {
-          // The row already exists durably. This hook only pushes that exact id
-          // to Redis; a crash or outage is recovered by the undispatched sweep.
-          afterJobCompleted: () =>
-            maybeEnqueueCharacterCandidatePreparation(projectId, planId, persistedCharacterPreparationJobId)
-        }
-      : {})
-  };
+    const persistedCharacterPreparationJobId = characterPreparationJobId;
+    return {
+      // Publication committed the durable job plus attempt/edit settlement in
+      // the same transaction as these files. `processWorkerJob` may therefore
+      // treat later step/message bookkeeping as best-effort without hiding any
+      // pre-publication failure.
+      durableCompletionCommitted: true,
+      ...(persistedCharacterPreparationJobId
+        ? {
+            // The row already exists durably. This hook only pushes that exact id
+            // to Redis; a crash or outage is recovered by the undispatched sweep.
+            afterJobCompleted: () =>
+              maybeEnqueueCharacterCandidatePreparation(projectId, planId, persistedCharacterPreparationJobId)
+          }
+        : {})
+    };
+  });
 }
 
 async function readOptionalPublishedMarkdown(path: string): Promise<string | undefined> {
-  try {
-    return await readFile(path, "utf8");
-  } catch (error) {
-    if (typeof error === "object" && error !== null && (error as NodeJS.ErrnoException).code === "ENOENT") {
-      return undefined;
-    }
-    throw error;
-  }
+  return (await objectStore().get(path))?.toString("utf8");
 }
 
 export {

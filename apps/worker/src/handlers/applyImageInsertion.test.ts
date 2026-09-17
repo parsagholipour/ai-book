@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Job } from "bullmq";
-import { join } from "node:path";
 
 const mocks = vi.hoisted(() => ({
   prisma: {
@@ -25,9 +24,9 @@ const mocks = vi.hoisted(() => ({
   selectReferenceImagePaths: vi.fn(),
   optimizeImageForStorage: vi.fn(),
   mkdir: vi.fn(),
-  writeFile: vi.fn(),
-  unlink: vi.fn(),
-  stat: vi.fn(),
+  put: vi.fn(),
+  deleteObject: vi.fn(),
+  head: vi.fn(),
   claimAppliedEditPublication: vi.fn(async () => true),
   restoreEditProjectStatus: vi.fn(async () => true)
 }));
@@ -64,12 +63,9 @@ vi.mock("../generation/characterReferences.js", async () => {
     selectReferenceImagePaths: mocks.selectReferenceImagePaths
   };
 });
-vi.mock("node:fs/promises", () => ({
-  mkdir: mocks.mkdir,
-  writeFile: mocks.writeFile,
-  unlink: mocks.unlink,
-  stat: mocks.stat,
-  appendFile: vi.fn()
+vi.mock("@book-maker/storage", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@book-maker/storage")>(),
+  objectStore: () => ({ put: mocks.put, delete: mocks.deleteObject, head: mocks.head })
 }));
 vi.mock("@book-maker/core", async () => {
   const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
@@ -131,7 +127,7 @@ const PRIOR_LINE = "![a dragon](/assets/images/project-1/chat-image-op-1-1111111
 const COMPILE_OPTIONS = { skipFinalReview: true, withoutQualityVerdict: true };
 
 /** The path this delivery wrote its (delivery-unique) file to. */
-const writtenImagePath = () => mocks.writeFile.mock.calls[0]?.[0] as string;
+const writtenImagePath = () => mocks.put.mock.calls[0]?.[0] as string;
 const writtenFilename = () => writtenImagePath().split("/").pop() as string;
 const appendedLine = () => `![a dragon](/assets/images/project-1/${writtenFilename()})`;
 
@@ -181,7 +177,7 @@ beforeEach(() => {
     extension: "jpg"
   });
   mocks.selectReferenceImagePaths.mockResolvedValue({ paths: [], libraryFaceNames: [] });
-  mocks.stat.mockRejectedValue(new Error("ENOENT"));
+  mocks.head.mockResolvedValue(null);
 });
 
 /** The row as `applyBookEdit` reads it: the classifier is the second copy of the request. */
@@ -204,8 +200,8 @@ describe("applyImageInsertion", () => {
     // File written before any markdown names it, under a delivery-unique name:
     // a render failure can never leave a dangling reference, and a losing
     // delivery can never overwrite the winner's published bytes.
-    expect(writtenImagePath()).toMatch(/^\/img\/project-1\/chat-image-op-1-[0-9a-f-]{36}\.jpg$/);
-    expect(mocks.writeFile).toHaveBeenCalledWith(writtenImagePath(), Buffer.from("optimized"));
+    expect(writtenImagePath()).toMatch(/^images\/project-1\/chat-image-op-1-[0-9a-f-]{36}\.jpg$/);
+    expect(mocks.put).toHaveBeenCalledWith(writtenImagePath(), Buffer.from("optimized"), expect.any(Object));
     // The APPLIED claim gates the page write.
     expect(mocks.tx.bookEditOperation.updateMany).toHaveBeenCalledWith({
       where: { id: "op-1", status: { in: ["QUEUED", "ACTIVE"] } },
@@ -251,7 +247,7 @@ describe("applyImageInsertion", () => {
     // A compile on its way publishes the status; no premature restore.
     expect(mocks.prisma.project.updateMany).not.toHaveBeenCalled();
     // Nothing failed, so this delivery's file stays.
-    expect(mocks.unlink).not.toHaveBeenCalled();
+    expect(mocks.deleteObject).not.toHaveBeenCalled();
   });
 
   it("re-resolves end_of_book to the current last page, ignoring the stale target", async () => {
@@ -293,8 +289,8 @@ describe("applyImageInsertion", () => {
 
     // Nothing was rendered or written; the refund path settles the charge.
     expect(mocks.generateImageBytes).not.toHaveBeenCalled();
-    expect(mocks.writeFile).not.toHaveBeenCalled();
-    expect(mocks.unlink).not.toHaveBeenCalled();
+    expect(mocks.put).not.toHaveBeenCalled();
+    expect(mocks.deleteObject).not.toHaveBeenCalled();
     expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
   });
 
@@ -387,7 +383,7 @@ describe("applyImageInsertion", () => {
     await applyImageInsertion(job(), operation());
 
     expect(mocks.generateImageBytes).not.toHaveBeenCalled();
-    expect(mocks.writeFile).not.toHaveBeenCalled();
+    expect(mocks.put).not.toHaveBeenCalled();
     expect(mocks.prisma.project.update).not.toHaveBeenCalled();
     expect(mocks.invalidateProjectExports).not.toHaveBeenCalled();
     expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
@@ -416,7 +412,7 @@ describe("applyImageInsertion", () => {
     const firstPath = writtenImagePath();
     const firstLine = savedMarkdown();
 
-    mocks.writeFile.mockClear();
+    mocks.put.mockClear();
     mocks.tx.page.update.mockClear();
     await applyImageInsertion(job(), operation());
     const secondPath = writtenImagePath();
@@ -448,7 +444,7 @@ describe("applyImageInsertion", () => {
       mocks.tx, "project-1", "op-1", "REVIEW_REQUIRED"
     );
     // Nothing is deleted near an APPLIED operation's published image.
-    expect(mocks.unlink).not.toHaveBeenCalled();
+    expect(mocks.deleteObject).not.toHaveBeenCalled();
     expect(mocks.tx.project.update).toHaveBeenCalledTimes(1);
   });
 
@@ -460,7 +456,7 @@ describe("applyImageInsertion", () => {
 
     expect(mocks.tx.page.update).not.toHaveBeenCalled();
     expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
-    expect(mocks.unlink).toHaveBeenCalledWith(writtenImagePath());
+    expect(mocks.deleteObject).toHaveBeenCalledWith(writtenImagePath());
   });
 
   it("removes the written file when the append transaction fails", async () => {
@@ -470,7 +466,7 @@ describe("applyImageInsertion", () => {
 
     // The unique name is referenced by nothing until its own append commits,
     // so the failure path unlinks it instead of stranding it forever.
-    expect(mocks.unlink).toHaveBeenCalledWith(writtenImagePath());
+    expect(mocks.deleteObject).toHaveBeenCalledWith(writtenImagePath());
     expect(mocks.invalidateProjectExports).not.toHaveBeenCalled();
   });
 
@@ -679,7 +675,7 @@ describe("applyImageInsertion", () => {
         operation()
       )
     ).rejects.toThrow(/no longer in this book/);
-    expect(mocks.writeFile).not.toHaveBeenCalled();
+    expect(mocks.put).not.toHaveBeenCalled();
     expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
   });
 
@@ -690,7 +686,7 @@ describe("applyImageInsertion", () => {
 
     // The page is untouched and the operation was never claimed APPLIED — the
     // attempt settlement refunds the separately paid image.
-    expect(mocks.writeFile).not.toHaveBeenCalled();
+    expect(mocks.put).not.toHaveBeenCalled();
     expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
     expect(mocks.invalidateProjectExports).not.toHaveBeenCalled();
   });
@@ -795,7 +791,7 @@ describe("applyImageInsertion", () => {
       inputSnapshot: { mediaSettings },
       planningPackage: plan
     });
-    mocks.stat.mockResolvedValue({ isFile: () => true });
+    mocks.head.mockResolvedValue({ isFile: () => true });
 
     await applyImageInsertion(
       job({ imageInsertion: { subject: "Luna riding a dragon", placement: "end_of_book", targetPageIndex: 5 } }),
@@ -803,7 +799,7 @@ describe("applyImageInsertion", () => {
     );
 
     const call = mocks.generateImageBytes.mock.calls[0]?.[0] as { referenceImagePaths: string[] };
-    expect(call.referenceImagePaths).toEqual([join("/img", "characters", "user-1", "luna.png")]);
+    expect(call.referenceImagePaths).toEqual(["object://images/characters/user-1/luna.png"]);
   });
 
   it("never reads a portrait owned by another user", async () => {
@@ -815,7 +811,7 @@ describe("applyImageInsertion", () => {
       inputSnapshot: { mediaSettings },
       planningPackage: plan
     });
-    mocks.stat.mockResolvedValue({ isFile: () => true });
+    mocks.head.mockResolvedValue({ isFile: () => true });
 
     await applyImageInsertion(
       job({ imageInsertion: { subject: "Luna riding a dragon", placement: "end_of_book", targetPageIndex: 5 } }),
@@ -838,8 +834,8 @@ describe("applyImageInsertion", () => {
     mocks.prisma.imageAsset.findMany.mockResolvedValue([
       { id: "a1", path: "p1", metadata: { planId: "plan-1", characterName: "Luna", libraryCharacterId: "lc-1" } }
     ]);
-    mocks.selectReferenceImagePaths.mockResolvedValue({ paths: ["/img/project-1/sheet.jpg"], libraryFaceNames: [] });
-    mocks.stat.mockResolvedValue({ isFile: () => true });
+    mocks.selectReferenceImagePaths.mockResolvedValue({ paths: ["images/project-1/sheet.jpg"], libraryFaceNames: [] });
+    mocks.head.mockResolvedValue({ isFile: () => true });
 
     await applyImageInsertion(
       job({ imageInsertion: { subject: "Luna riding a dragon", placement: "end_of_book", targetPageIndex: 5 } }),
@@ -847,7 +843,7 @@ describe("applyImageInsertion", () => {
     );
 
     const call = mocks.generateImageBytes.mock.calls[0]?.[0] as { referenceImagePaths: string[] };
-    expect(call.referenceImagePaths).toEqual(["/img/project-1/sheet.jpg"]);
+    expect(call.referenceImagePaths).toEqual(["images/project-1/sheet.jpg"]);
   });
 });
 
@@ -889,7 +885,7 @@ describe("applyImageInsertion with no imageInsertion on the payload", () => {
     // the charge for a picture the book never gets. Asked before the EDITING
     // write, so a job that cannot run leaves the book where it found it.
     expect(mocks.generateImageBytes).not.toHaveBeenCalled();
-    expect(mocks.writeFile).not.toHaveBeenCalled();
+    expect(mocks.put).not.toHaveBeenCalled();
     expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
     expect(mocks.prisma.project.update).not.toHaveBeenCalled();
   });

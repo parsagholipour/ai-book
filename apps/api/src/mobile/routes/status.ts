@@ -4,8 +4,7 @@ import { imageContentType, mobileAssetFilenameFromPath } from "../projectArtifac
 import { isLiveProjectStatus, loadSerializedProjectStatus } from "../projectStatusSerializers.js";
 import { assetParamsSchema, idParamsSchema, mobileAuthError } from "../schemas.js";
 import { prisma } from "@book-maker/db";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { objectKey, objectStore } from "@book-maker/storage";
 import type { FastifyInstance } from "fastify";
 import type { MobileRouteContext } from "../routeContext.js";
 
@@ -163,14 +162,11 @@ export async function registerMobileStatusRoutes(fastify: FastifyInstance, conte
         return sendMobileError(reply, 404, "ASSET_NOT_FOUND", "Visual not found.");
       }
 
-      try {
-        const file = await readFile(join(appConfig.IMAGE_STORAGE_DIR, id, filename));
-        reply.header("Cache-Control", "private, max-age=300");
-        reply.type(imageContentType(image));
-        return file;
-      } catch {
-        return sendMobileError(reply, 404, "ASSET_NOT_FOUND", "Visual not found.");
-      }
+      const file = await objectStore().get(objectKey("images", id, filename));
+      if (!file) return sendMobileError(reply, 404, "ASSET_NOT_FOUND", "Visual not found.");
+      reply.header("Cache-Control", "private, max-age=300");
+      reply.type(imageContentType(image));
+      return file;
     }
   );
 }

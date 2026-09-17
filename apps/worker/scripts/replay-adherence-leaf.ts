@@ -11,9 +11,9 @@
  * the worker's provider keys are:
  *
  *   docker exec ai-book-maker-worker-1 pnpm -F @book-maker/worker exec tsx \
- *     scripts/replay-adherence-leaf.ts ../../storage/books/<projectId>/runs/<run>-apply-book-edit.jsonl [maxCalls]
+ *     scripts/replay-adherence-leaf.ts books/<projectId>/runs/<run>-apply-book-edit.jsonl [maxCalls]
  */
-import { readFileSync } from "node:fs";
+import { readRunLog } from "@book-maker/storage";
 import {
   createLiveGenerationTextModel,
   EDIT_ADHERENCE_EVIDENCE_CAPACITY,
@@ -35,7 +35,7 @@ const maxCalls = Number.parseInt(maxCallsArg ?? "4", 10);
 
 type LoggedRequest = { callId: string; payload: Record<string, unknown>; failed: boolean };
 const requests = new Map<string, LoggedRequest>();
-for (const line of readFileSync(logPath, "utf8").split("\n")) {
+for (const line of (await readRunLog(logPath)).split("\n")) {
   if (!line.trim()) continue;
   const entry = JSON.parse(line) as { event: string; callId?: string; request?: { purpose?: string; messages?: Array<{ content: string }> } };
   if (!entry.callId) continue;

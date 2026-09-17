@@ -1,3 +1,4 @@
+import { withStoredBookImages, type BookImageOptions } from "./storedBookImages.js";
 import { readFile, writeFile } from "node:fs/promises";
 import { extname } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -47,11 +48,10 @@ pre, code { text-align: left; }
 ${profile.hasItalic ? "" : "em, i, cite, blockquote { font-style: normal; }\nem, i { font-weight: 600; }\n"}`;
 }
 
-export type GenerateBookEpubOptions = {
+export type GenerateBookEpubOptions = BookImageOptions & {
   title: string;
   author?: string | undefined;
   language?: string | undefined;
-  imageStorageDir: string;
   publicApiUrl: string;
   outputPath?: string | undefined;
   /**
@@ -91,6 +91,10 @@ type EpubImage = {
  * assets referenced through the public API are packaged into the archive.
  */
 export async function generateBookEpub(markdown: string, options: GenerateBookEpubOptions): Promise<Buffer> {
+  if (options.imageSource === "object-storage") {
+    return withStoredBookImages(markdown, options, (imageStorageDir) =>
+      generateBookEpub(markdown, { ...options, imageStorageDir, imageSource: "local" }));
+  }
   const images = new Map<string, EpubImage>();
   const localizedMarkdown = await packageLocalImages(markdown, options, images);
   const chapters = splitIntoChapters(localizedMarkdown, options.title);
@@ -213,7 +217,7 @@ export async function generateBookEpub(markdown: string, options: GenerateBookEp
  */
 async function packageLocalImages(
   markdown: string,
-  options: GenerateBookEpubOptions,
+  options: GenerateBookEpubOptions & { imageStorageDir: string },
   images: Map<string, EpubImage>
 ): Promise<string> {
   const publicApiBase = options.publicApiUrl.replace(/\/+$/, "");

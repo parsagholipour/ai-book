@@ -45,7 +45,8 @@
     "openai": "^6.9.1",
     "puppeteer": "^25.0.4",
     "sharp": "^0.34.5",
-    "zod": "^4.1.13"
+    "zod": "^4.1.13",
+    "@book-maker/storage": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

@@ -39,43 +39,18 @@ import { payloadWithExportPublicationEvidence } from "./exportPublicationEvidenc
  * over the fresh ones and set COMPLETE over EDITING, so a book could sit
  * finished with the wrong PDF for good.
  *
- * So a compile renders beside its destinations and moves the artifacts into
- * place only at the end, and only after a compare-and-set on the revision it
- * was compiled for. That write is the claim: the loser publishes nothing at
- * all, rather than publishing a book somebody has since changed.
+ * Candidates are rendered in scoped local scratch. The final revision claim
+ * holds the project row lock while exportArtifacts uploads one artifact at a
+ * time to S3, so an edit or competing publication cannot interleave with it.
+ * The transaction exposes the completed status only after every upload.
  *
- * The claim and the renames are one transaction, and both halves of that are
- * load-bearing. The compare-and-set holds the project row's write lock until
- * commit, so an edit's own `contentRevision` bump — and a competing compile's
- * claim — waits behind the renames instead of interleaving with them: the
- * check can no longer go stale between deciding to publish and publishing,
- * which is what let a compile that stalled after its claim move pre-edit files
- * over a newer compile's, permanently. And the status write is only visible at
- * commit, which is after the last rename, so nothing ever reads a project
- * announced COMPLETE whose `book.pdf` is not on disk yet — a window the app's
- * export polling reads as a missing file and answers with a repair compile.
- * Nothing but the renames belongs inside that transaction; it is holding a lock
- * every edit to this book has to take.
- *
- * **The rollback has to cover the files too, because the transaction cannot.**
- * There are three artifacts and each moves with its own `rename`, so a failure
- * on the second left the first one published: this compile's `book.md` beside
- * the last compile's `book.pdf`, with the status write dutifully rolled back
- * and nothing on either side able to notice. A mixed set is not a state
- * anything recovers from — every download surface checks that a file *exists*,
- * never that the set agrees, and `ensureExportRepairQueued` fires only on a
- * missing one — so it survives until some later edit happens to bump the
- * revision, serving a PDF and a markdown of different books in the meantime.
- * So each artifact's predecessor is parked beside it before the new one moves
- * in, and any failure puts every one of them back. What the reader can download
- * is all of this compile's or none of it.
- *
- * Parking leaves a published name absent for the one syscall between the two
- * renames, and nothing acts on that: a status read finding an export missing
- * queues a repair only when no `COMPILE_EXPORT` is QUEUED or ACTIVE, and this
- * compile is the ACTIVE one for as long as it is publishing. Parked predecessors
- * stay in place until Prisma confirms the commit, so a commit/timeout rejection
- * after the callback restores the filesystem just like a callback failure.
+ * SQL cannot undo object storage. Before replacing each artifact, publication
+ * makes a server-side copy to a unique predecessor key. Any failed upload or
+ * rejected transaction restores predecessors in reverse order; first-time
+ * uploads are deleted instead. A request marked as attempted is rolled back
+ * even if its response failed, since the remote write may have succeeded.
+ * Backups remain until Prisma confirms the commit, then are deleted. Abandoned
+ * backups and local renderer scratch are collected by separate age-based sweeps.
  *
  * Declining to write the status is safe because every `contentRevision` bump
  * queues its own compile — `queueUserEditExportRecompile`, `applyBookEdit` and
@@ -150,7 +125,7 @@ const DETACHED_PUBLISHABLE_STATUSES = ["COMPLETE", "REVIEW_REQUIRED"] as const;
 /**
  * How long the publication transaction may hold the project row.
  *
- * The work inside it is one compare-and-set and three renames within a single
+ * The work inside it is one compare-and-set and three object writes within a single
  * directory — metadata operations, microseconds — so this is an outage bound
  * rather than a budget: storage that has stopped answering must fail the
  * compile rather than pin a lock every edit to this book has to take. The wait
@@ -310,10 +285,10 @@ async function claimCharacterPreparationJob(
  * Both happen under one transaction, so the claim cannot go stale before the
  * files it authorises are published, and no reader sees the status this compile
  * writes until every one of them is on disk. A loser publishes no files at all.
- * A rename that fails rolls the status write back *and* puts the artifacts it
+ * A object write that fails rolls the status write back *and* puts the artifacts it
  * already moved back, leaving the project exactly where the compile found it for
- * the failure path to settle — the filesystem half of that is `installArtifacts`
- * and `restoreSupersededArtifacts`, since SQL cannot undo a rename.
+ * the failure path to settle — the storage half of that is `installArtifacts`
+ * and `restoreSupersededArtifacts`, since SQL cannot undo a object write.
  *
  * A compile whose payload carries no revision (older rows) claims
  * unconditionally, which is exactly what it did before — except that a detached
@@ -324,7 +299,6 @@ export async function publishCompiledExports(options: {
   projectId: string;
   /** Durable row claimed ACTIVE by this Bull delivery. */
   generationJobId: string;
-  projectDir: string;
   pending: PendingExportPaths;
   /** The companions are best-effort; a compile publishes without any of them. */
   companionsProduced: CompanionsProduced;
@@ -485,7 +459,7 @@ export async function publishCompiledExports(options: {
         // publication, whose first statement takes the same lock. A preflight
         // count cannot do that: independent READ COMMITTED snapshots can see
         // zero jobs and then the sibling's repaired page. Here either the
-        // repair committed first and its durable job blocks the renames, or
+        // repair committed first and its durable job blocks the object writes, or
         // this publication won first and the repair waits until these files
         // describe the manuscript that existed before it.
         const openImageJobs = await tx.generationJob.count({
@@ -554,7 +528,7 @@ export async function publishCompiledExports(options: {
           throw new Error("Export publication lost its claimed project revision");
         }
         if (publishesPdf) {
-          // Before the renames: a rename failure rolls this back with the rest
+          // Before the object writes: a object write failure rolls this back with the rest
           // of the claim, leaving the previous map describing the file
           // `restoreSupersededArtifacts` puts back.
           const pdfDigest = digests.get("pdf")?.digest;
@@ -580,7 +554,7 @@ export async function publishCompiledExports(options: {
           publishReconstructedMarkdown: options.publishReconstructedMarkdown === true
         });
         const metadataPublications = await provenancePublications({
-          projectDir: options.projectDir,
+          projectId: options.projectId,
           pending: options.pending,
           contentRevision: revision,
           digests,

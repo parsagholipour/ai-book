@@ -1,7 +1,7 @@
-import { readdir, readFile } from "node:fs/promises";
-import path from "node:path";
+import { listRunLogs, readRunLog } from "../packages/storage/src/index.ts";
 import {
   bookPlanSchema,
+  loadConfig,
   bookPlanSchemaWithFallback,
   createProjectSchema,
   makeFallbackPlan,
@@ -18,7 +18,7 @@ type Args = {
 type PlannerLogPurpose = "plan-book" | "revise-plan";
 
 const args = parseArgs(process.argv.slice(2));
-const bookStorageDir = process.env.BOOK_STORAGE_DIR ?? path.resolve(process.cwd(), "storage/books");
+loadConfig();
 
 try {
   const result = await repairPlanFromRunLog(args);
@@ -165,7 +165,7 @@ async function rawPlannerPayloadFromLog(
   explicitLogFile: string | undefined
 ): Promise<{ rawText: string; purpose: PlannerLogPurpose; logFile: string }> {
   const logFile = explicitLogFile ?? (await latestPlanBookLogFile(projectId));
-  const content = await readFile(logFile, "utf8");
+  const content = await readRunLog(logFile);
   for (const line of content.trim().split("\n").reverse()) {
     if (!line.trim()) {
       continue;
@@ -194,15 +194,10 @@ function purposeFromLogFile(logFile: string): PlannerLogPurpose {
 }
 
 async function latestPlanBookLogFile(projectId: string): Promise<string> {
-  const runDir = path.join(bookStorageDir, projectId, "runs");
-  const files = (await readdir(runDir))
-    .filter((file) => file.endsWith("-plan-book.jsonl"))
-    .sort();
-  const file = files.at(-1);
-  if (!file) {
-    throw new Error(`No plan-book run log found in ${runDir}.`);
-  }
-  return path.join(runDir, file);
+  const logs = (await listRunLogs(projectId)).filter((log) => log.key.endsWith("-plan-book.jsonl"));
+  const latest = logs.sort((a, b) => (a.lastModified?.getTime() ?? 0) - (b.lastModified?.getTime() ?? 0)).at(-1);
+  if (!latest) throw new Error(`No plan-book run log found for ${projectId}.`);
+  return latest.key;
 }
 
 function projectInputFromProject(project: {

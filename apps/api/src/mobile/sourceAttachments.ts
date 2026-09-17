@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { objectKey, objectStore } from "@book-maker/storage";
 import { setTimeout as delay } from "node:timers/promises";
 import { CREATION_ATTACHMENT_MAX_BYTES, loadConfig, creationAttachmentSchema, detectCreationAttachmentType, sanitizeAttachmentName, type CreationAttachment, type SourceRef } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
@@ -50,13 +49,11 @@ export async function saveSourceUpload(options: { userId: string; draftId: strin
   const hash = createHash("sha256").update(options.data).digest("hex");
   const uploadKey = options.requestId ?? hash;
   const id = `src_${createHash("sha256").update(`${options.draftId}:${uploadKey}`).digest("hex").slice(0, 32)}`;
-  // Exclusive write prevents a retry reusing its key with different bytes from changing an original.
-  await mkdir(join(options.root, options.draftId), { recursive: true });
-  const path = join(options.root, options.draftId, id);
-  try { await writeFile(path, options.data, { flag: "wx" }); }
-  catch (error) {
-    if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
-    const existingHash = createHash("sha256").update(await readFile(path)).digest("hex");
+  // Conditional object creation keeps request IDs immutable across concurrent retries.
+  const key = objectKey("attachments", options.draftId, id);
+  if (!(await objectStore().putIfAbsent(key, options.data, { contentType: type.mimeType }))) {
+    const existing = await objectStore().get(key);
+    const existingHash = existing ? createHash("sha256").update(existing).digest("hex") : null;
     if (existingHash !== hash) throw new SourceUploadError("REQUEST_CONFLICT", "That upload request was already used for another file.");
   }
   return prisma.$transaction(async (tx) => {
@@ -100,8 +97,9 @@ export async function retrySourceUpload(userId: string, draftId: string, sourceI
     if (!["failed", "partial", "limited"].includes(previous.status)) return;
     const reuseExtraction = previous.extractionComplete && previous.status !== "limited" && (!Array.isArray(previous.unreadable) || previous.unreadable.length === 0);
     if (!reuseExtraction) {
-      try { await readFile(join(loadConfig().ATTACHMENT_STORAGE_DIR, source.storageDraftId, source.id)); }
-      catch { throw new SourceUploadError("ATTACHMENT_FILE_EXPIRED", "The original file has expired. Its readable passages remain available."); }
+      if (!(await objectStore().head(objectKey("attachments", source.storageDraftId, source.id)))) {
+        throw new SourceUploadError("ATTACHMENT_FILE_EXPIRED", "The original file has expired. Its readable passages remain available.");
+      }
     }
     const version = source.currentVersion + 1;
     await tx.sourceExtraction.create({ data: { sourceId, version, retryKey: requestId, extractionComplete: reuseExtraction, fullContent: previous.fullContent, totalSections: previous.totalSections, checkpoints: previous.checkpoints ?? [], unreadable: previous.unreadable ?? [],

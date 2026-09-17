@@ -43,7 +43,8 @@ const appDir = process.cwd();
 const watchDirs = [
   join(appDir, "src"),
   join(workspaceRoot, "packages/core/src"),
-  join(workspaceRoot, "packages/db/src")
+  join(workspaceRoot, "packages/db/src"),
+  join(workspaceRoot, "packages/storage/src")
 ];
 
 const usePolling =
@@ -61,7 +62,7 @@ const nodemonArgs = [
 ];
 
 console.log(
-  `[dev-watch] ${usePolling ? "polling" : "native"} watch for ${entryArg} (+ core, db)`
+  `[dev-watch] ${usePolling ? "polling" : "native"} watch for ${entryArg} (+ core, db, storage)`
 );
 
 const child = spawn(process.execPath, [nodemonPath, ...nodemonArgs], {

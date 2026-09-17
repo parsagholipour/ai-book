@@ -212,6 +212,7 @@ describe("Google Play billing verifier", () => {
   it("does not accept mock billing in production", () => {
     const config = loadConfig({
       NODE_ENV: "production",
+      S3_BUCKET: "test-private-bucket",
       MOCK_AI: "true",
       MOCK_GOOGLE_PLAY_BILLING: "true"
     });

@@ -1,14 +1,13 @@
 import type { FastifyRequest } from "fastify";
 import type { AppConfig } from "@book-maker/core";
-import { rm } from "node:fs/promises";
-import { join } from "node:path";
+import { objectKey, objectStore } from "@book-maker/storage";
 
-export async function deleteProjectStorage(appConfig: AppConfig, projectId: string, request: FastifyRequest) {
+export async function deleteProjectStorage(_appConfig: AppConfig, projectId: string, request: FastifyRequest) {
   const targets = {
-    book: join(appConfig.BOOK_STORAGE_DIR, projectId),
-    images: join(appConfig.IMAGE_STORAGE_DIR, projectId),
-    voice: join(appConfig.VOICE_STORAGE_DIR, projectId),
-    audio: join(appConfig.AUDIO_STORAGE_DIR, projectId)
+    book: `${objectKey("books", projectId)}/`,
+    images: `${objectKey("images", projectId)}/`,
+    voice: `${objectKey("voice", projectId)}/`,
+    audio: `${objectKey("audio", projectId)}/`
   };
   const results: Record<keyof typeof targets, boolean> = {
     book: false,
@@ -19,7 +18,7 @@ export async function deleteProjectStorage(appConfig: AppConfig, projectId: stri
 
   for (const [key, path] of Object.entries(targets) as Array<[keyof typeof targets, string]>) {
     try {
-      await rm(path, { recursive: true, force: true });
+      await objectStore().deletePrefix(path);
       results[key] = true;
     } catch (error) {
       request.log.warn({ err: error, projectId, path }, "Project asset cleanup failed");

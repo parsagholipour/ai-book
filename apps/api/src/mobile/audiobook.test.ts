@@ -12,7 +12,7 @@ import {
   reserveCredits
 } from "@book-maker/db/billing";
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { seedObject } from "../testing/objectStorage.js";
 import { join } from "node:path";
 import { enqueueGenerationJob } from "../queue.js";
 import {
@@ -64,10 +64,9 @@ function audiobookRecord(overrides: Record<string, unknown> = {}) {
 }
 
 function writeChapterFiles(audiobookId = "audiobook-1", projectId = "project-1") {
-  const dir = join(state.audioStorageDir!, projectId, audiobookId);
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "chapter-1.mp3"), "fake-mp3-bytes");
-  writeFileSync(join(dir, "chapter-1.timeline.json"), JSON.stringify({ version: 1, segments: [] }));
+  const dir = join("audio", projectId, audiobookId);
+  seedObject(join(dir, "chapter-1.mp3"), "fake-mp3-bytes");
+  seedObject(join(dir, "chapter-1.timeline.json"), JSON.stringify({ version: 1, segments: [] }));
   return dir;
 }
 

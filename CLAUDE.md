@@ -61,14 +61,11 @@ That is not a failing test — check the path before believing it.
 
 - Docker bind-mounts the repo, so `node_modules` uses anonymous volumes. After changing
   `pnpm-lock.yaml`, rebuild images or run `make deps`, or the containers keep a stale install.
-- **`make up` and `pnpm dev` are the same queue.** A host worker defaults to
-  `redis://localhost:6379` and `./storage`, which are the published ports and the bind mount of the
-  Docker stack — so running both means two workers racing for one book's jobs, and a
-  `MOCK_AI=true` host worker will happily answer a real generation with canned text. The container
-  writes as root; `scripts/docker-dev-entrypoint.sh` sets `umask 0000` so the host user can still
-  write into directories the container created first, but the fix for a stray `EACCES` under
-  `storage/` is to stop the duplicate stack, not to loosen permissions further. Check with
-  `ps -eo pid,args | grep dev:worker` before blaming the code.
+- **`make up` and `pnpm dev` are the same queue.** Both use the published Redis service and
+  the same MinIO bucket. Running both can race one book's jobs, and a `MOCK_AI=true` host worker
+  can answer a real generation with canned text. Check for duplicate workers before debugging.
+- **Storage:** before changing asset, export, upload, cleanup, or run-log I/O, read
+  [docs/storage.md](docs/storage.md). Durable bytes use `@book-maker/storage`; local paths are scoped scratch.
 
 ## Layout
 
@@ -78,11 +75,12 @@ apps/worker     BullMQ worker — all book generation happens here
 apps/web        React/Vite operator console
 apps/mobile     Flutter app (the product)
 packages/core   Provider adapters, prompts, generation algorithms, schemas. No HTTP, no queue.
+packages/storage Private S3 object I/O, immutable run logs, and scoped local scratch.
 packages/db     Prisma client, schema, billing/credit ledger
 ```
 
-Dependency direction is strictly `apps/* → packages/db → packages/core`. `packages/core` is the
-leaf: it must not import from `apps/*` or from `packages/db`.
+Domain dependency direction is `apps/* → packages/db → packages/core`. Core must not import
+from apps or db. API, worker, and core may use the independent `packages/storage` infrastructure package.
 
 ### apps/worker
 

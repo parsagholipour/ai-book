@@ -28,6 +28,18 @@ variable "ssh_public_key" {
   default     = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGacYmYHBz8/vu8jl2GNYKro+puK9bHJB7QoVb+ISnJa parsa_gholipour@yahoo.com"
 }
 
+variable "instance_type" {
+  type        = string
+  description = "EC2 size for the production Docker stack (t3.small has 2 GiB RAM)."
+  default     = "t3.small"
+}
+
+variable "root_volume_size" {
+  type        = number
+  description = "Root disk size in GiB for Docker, PostgreSQL, Redis, and temporary rendering files. Durable files live in S3."
+  default     = 20
+}
+
 data "aws_availability_zones" "available" {
   state = "available"
 }
@@ -115,19 +127,21 @@ resource "aws_security_group" "book_maker" {
 
 resource "aws_instance" "book_maker" {
   ami                         = "ami-0303e2e4a29f041a3"
-  instance_type               = "t3.nano"
+  instance_type               = var.instance_type
   subnet_id                   = aws_subnet.book_maker.id
   vpc_security_group_ids      = [aws_security_group.book_maker.id]
   key_name                    = aws_key_pair.deploy.key_name
   associate_public_ip_address = true
+  iam_instance_profile        = aws_iam_instance_profile.book_maker.name
 
   root_block_device {
     volume_type = "gp3"
-    volume_size = 8
+    volume_size = var.root_volume_size
   }
 
   metadata_options {
-    http_tokens = "required"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 2 # Allow app containers to use the instance role.
   }
 
   tags = {

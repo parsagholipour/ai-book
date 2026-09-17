@@ -1,3 +1,4 @@
+import { withStoredBookImages, type BookImageOptions } from "./storedBookImages.js";
 import { constants } from "node:fs";
 import { access, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -25,8 +26,7 @@ import {
 } from "./pdfPageMap.js";
 import { applyRenderResourcePolicy } from "./renderResourcePolicy.js";
 
-export type GenerateBookPdfOptions = {
-  imageStorageDir: string;
+export type GenerateBookPdfOptions = BookImageOptions & {
   publicApiUrl: string;
   outputPath?: string | undefined;
   /**
@@ -185,6 +185,10 @@ export async function generateBookPdfWithPageMap(
   markdown: string,
   options: GenerateBookPdfOptions & { pageMapPlan?: BookPageMapPlan | undefined }
 ): Promise<GenerateBookPdfResult> {
+  if (options.imageSource === "object-storage") {
+    return withStoredBookImages(markdown, options, (imageStorageDir) =>
+      generateBookPdfWithPageMap(markdown, { ...options, imageStorageDir, imageSource: "local" }));
+  }
   const plan = options.pageMapPlan;
   // Markers first: the anchor offsets name positions in the *compiled*
   // markdown, which the image rewrite below would shift.

@@ -1,3 +1,5 @@
+import { sweepTemporaryDirectories } from "@book-maker/storage";
+import { sweepStaleExportObjects } from "./exportObjectCleanup.js";
 import {
   DEFAULT_EXPORT_TEMP_MIN_AGE_MS,
   EXPORT_TEMP_SWEEP_START,
@@ -7,29 +9,9 @@ import {
 } from "@book-maker/core";
 
 /**
- * The worker's lifecycle around the scratch-file sweep.
- *
- * The sweep itself is in `@book-maker/core` and knows nothing about processes;
- * this is what starts it, paces it and — the part that matters at shutdown —
- * stops it. A sweep is filesystem work with an open directory handle, so a
- * `clearInterval` alone would leave one running into `prisma.$disconnect()`;
- * `stop()` cancels it through the signal the sweep checks between entries and
- * then waits for it to settle, which is bounded because the check happens
- * before every entry it examines.
- *
- * **The worker is the only process that sweeps.** The API renders inline
- * exports and writes the same scratch names, but both processes share one
- * storage volume, so one collector reaches every orphan and two would spend
- * their scans racing each other to the same `unlink`. Nothing about the sweep
- * needs to run where the file was written: it is age-based, not
- * ownership-based, precisely because the process that wrote an orphan is by
- * definition gone.
- *
- * It runs once at startup and then hourly. The startup pass is not a wipe —
- * there is no "this process just started, so nothing here is live" rule
- * anywhere in it — it is the same age-based pass, run early because a container
- * that OOMs mid-compile is usually restarted immediately and the orphan it left
- * would otherwise wait a full interval.
+ * Starts, paces and stops cleanup. Each container sweeps its own scoped local
+ * scratch; the worker also collects stale S3 publication backups. A heartbeat
+ * protects active temporary directories. Cleanup failures remain diagnostic.
  */
 
 const DEFAULT_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
@@ -75,6 +57,11 @@ export function startExportTempCleanup(options: ExportTempCleanupOptions): Expor
         signal: controller.signal
       });
       cursor = result.nextCursor;
+      await sweepTemporaryDirectories({ minAgeMs: options.minAgeMs ?? DEFAULT_EXPORT_TEMP_MIN_AGE_MS });
+      const deletedObjects = await sweepStaleExportObjects({
+        minAgeMs: options.minAgeMs ?? DEFAULT_EXPORT_TEMP_MIN_AGE_MS, signal: controller.signal
+      });
+      if (deletedObjects) log("Abandoned export predecessor objects swept", { deletedObjects });
       if (isWorthReporting(result)) {
         log("Abandoned export scratch files swept", {
           event: "export_temp.swept",

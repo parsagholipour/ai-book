@@ -1,6 +1,5 @@
-import { createHash, randomUUID } from "node:crypto";
-import { readFile, rename, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { objectKey, objectStore } from "@book-maker/storage";
 import { EXPORT_FORMATS, publishedExportFilename, type ExportFormat } from "./exportFormats.js";
 
 /**
@@ -71,13 +70,16 @@ export type ExportArtifact = {
 
 const PROVENANCE_SUFFIX = ".provenance.json";
 
-export function exportProvenancePath(projectDir: string, format: ExportProvenanceFormat): string {
-  return join(projectDir, `${publishedExportFilename(format)}${PROVENANCE_SUFFIX}`);
+export function exportProvenanceKey(projectId: string, format: ExportProvenanceFormat): string {
+  return objectKey("books", projectId, `${publishedExportFilename(format)}${PROVENANCE_SUFFIX}`);
 }
 
+/** @deprecated Use exportProvenanceKey: this value is an S3 key, never a filesystem path. */
+export const exportProvenancePath = exportProvenanceKey;
+
 /** Every record a project can hold, for the delete paths that take all of them. */
-export function exportProvenancePaths(projectDir: string): string[] {
-  return EXPORT_FORMATS.map((format) => exportProvenancePath(projectDir, format));
+export function exportProvenancePaths(projectId: string): string[] {
+  return EXPORT_FORMATS.map((format) => exportProvenancePath(projectId, format));
 }
 
 export function exportContentDigest(bytes: Buffer): string {
@@ -91,7 +93,7 @@ export function exportContentDigest(bytes: Buffer): string {
  * previous complete record or the next complete record, never a torn JSON write.
  */
 export async function writeExportProvenance(options: {
-  projectDir: string;
+  projectId: string;
   format: ExportProvenanceFormat;
   revision: number;
   digest: string;
@@ -104,26 +106,18 @@ export async function writeExportProvenance(options: {
     byteSize: options.byteSize,
     publishedAt: (options.publishedAt ?? new Date()).toISOString()
   };
-  const publishedPath = exportProvenancePath(options.projectDir, options.format);
-  const pendingPath = `${publishedPath}.${randomUUID()}.tmp`;
-  try {
-    await writeFile(pendingPath, JSON.stringify(record), "utf8");
-    await rename(pendingPath, publishedPath);
-  } finally {
-    await rm(pendingPath, { force: true }).catch(() => undefined);
-  }
+  await objectStore().put(exportProvenancePath(options.projectId, options.format), JSON.stringify(record), {
+    contentType: "application/json"
+  });
 }
 
-/** The stored record, or null when there is none or it cannot be read. */
+/** The stored record, or null when it is absent or malformed. */
 export async function readExportProvenanceRecord(
-  projectDir: string,
+  projectId: string,
   format: ExportProvenanceFormat
 ): Promise<ExportProvenanceRecord | null> {
-  try {
-    return parseExportProvenanceRecord(await readFile(exportProvenancePath(projectDir, format), "utf8"));
-  } catch {
-    return null;
-  }
+  const bytes = await objectStore().get(exportProvenancePath(projectId, format));
+  return bytes ? parseExportProvenanceRecord(bytes.toString("utf8")) : null;
 }
 
 export function parseExportProvenanceRecord(raw: string): ExportProvenanceRecord | null {
@@ -150,8 +144,8 @@ export function parseExportProvenanceRecord(raw: string): ExportProvenanceRecord
 }
 
 /** Drops a format's record. Used where the published file itself is deleted. */
-export async function removeExportProvenance(projectDir: string, format: ExportProvenanceFormat): Promise<void> {
-  await rm(exportProvenancePath(projectDir, format), { force: true }).catch(() => undefined);
+export async function removeExportProvenance(projectId: string, format: ExportProvenanceFormat): Promise<void> {
+  await objectStore().delete(exportProvenancePath(projectId, format));
 }
 
 /**
@@ -186,7 +180,7 @@ export function exportProvenanceFor(
  * filed under a revision.
  *
  * Taking the two reads as arguments is what makes the interleavings testable at
- * all; `readPublishedExport` is the filesystem binding and the only caller that
+ * all; `readPublishedExport` is the S3 binding and the only caller that
  * matters.
  */
 export async function readExportArtifact(readers: {
@@ -237,21 +231,15 @@ async function delay(milliseconds: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-/** The compiled file and its provenance, or null when it is not on disk. */
+/** The compiled file and its provenance, or null when it is absent from object storage. */
 export async function readPublishedExport(
-  projectDir: string,
+  projectId: string,
   format: ExportProvenanceFormat
 ): Promise<ExportArtifact | null> {
   return readExportArtifact({
-    readBytes: async () => {
-      try {
-        return await readFile(join(projectDir, publishedExportFilename(format)));
-      } catch {
-        return null;
-      }
-    },
-    readRecord: () => readExportProvenanceRecord(projectDir, format),
-    // Sidecar installation follows the artifact rename immediately. One short,
+    readBytes: () => objectStore().get(objectKey("books", projectId, publishedExportFilename(format))),
+    readRecord: () => readExportProvenanceRecord(projectId, format),
+    // Sidecar installation follows the artifact PUT immediately. One short,
     // bounded poll closes that gap; a genuinely legacy file still incurs no
     // second read of its potentially large bytes.
     retryDelayMs: 10

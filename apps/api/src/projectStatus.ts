@@ -1,13 +1,11 @@
 import {
-  loadConfig,
   parseManuscriptQualityIssueCluster,
   safePathPart,
   structuralClusterFromIssue,
   type JobStep
 } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { objectKey, readRunLog } from "@book-maker/storage";
 // The four recovery lists live in one leaf module. This file, `routes/projects.ts`
 // and `mobile/schemas.ts` each kept a byte-identical copy with no import between
 // them, which is how a new job type becomes recoverable on one surface only.
@@ -130,7 +128,6 @@ export type ProjectQualityStatus = {
   };
 };
 
-const config = loadConfig();
 
 export async function buildProjectStatus(projectId: string) {
   const project = await prisma.project.findUnique({
@@ -647,15 +644,11 @@ function parseImageFallbackDetails(content: string): JobImageFallbackDetails[] {
 }
 
 async function readOptionalTextFile(path: string): Promise<string | null> {
-  try {
-    return await readFile(path, "utf8");
-  } catch {
-    return null;
-  }
+  return (await readRunLog(path)) || null;
 }
 
 function runLogPath(projectId: string, runId: string, jobName: string): string {
-  return join(config.BOOK_STORAGE_DIR, projectId, "runs", `${safePathPart(runId)}-${safePathPart(jobName)}.jsonl`);
+  return objectKey("books", projectId, "runs", `${safePathPart(runId)}-${safePathPart(jobName)}.jsonl`);
 }
 
 function jobQueueName(type: string): string | null {

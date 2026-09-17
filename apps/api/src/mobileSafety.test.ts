@@ -1,5 +1,6 @@
+import { seedObject } from "./testing/objectStorage.js";
 import Fastify, { type FastifyInstance } from "fastify";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -127,8 +128,7 @@ describe("mobile safety routes", () => {
 
   it("serves the published sample book without authentication", async () => {
     process.env.SAMPLE_PROJECT_ID = "sample-project";
-    mkdirSync(join(tempBookStorageDir!, "sample-project"), { recursive: true });
-    writeFileSync(join(tempBookStorageDir!, "sample-project", "book.pdf"), "%PDF-1.4 sample");
+    seedObject("books/sample-project/book.pdf", "%PDF-1.4 sample");
     const app = await buildApp();
 
     const response = await app.inject({ method: "GET", url: "/api/mobile/sample-book" });

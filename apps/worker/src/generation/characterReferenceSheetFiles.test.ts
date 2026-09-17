@@ -8,22 +8,24 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * two real overlapping passes.
  */
 
-const mocks = vi.hoisted(() => ({ rm: vi.fn() }));
+const mocks = vi.hoisted(() => ({ deleteObject: vi.fn() }));
 
 vi.mock("../runtime/config.js", () => ({ config: { IMAGE_STORAGE_DIR: "/tmp/images" } }));
-vi.mock("node:fs/promises", () => ({ rm: mocks.rm }));
+vi.mock("@book-maker/storage", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@book-maker/storage")>(), objectStore: () => ({ delete: mocks.deleteObject })
+}));
 
 import {
   discardCharacterReferenceSheetFiles,
-  localImagePathForAsset,
-  projectImageDir,
+  imageReferenceForAsset,
+  projectImagePrefix,
   renderedSheetFileNames
 } from "./characterReferenceSheetFiles.js";
 
 describe("character reference sheet files", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.rm.mockResolvedValue(undefined);
+    mocks.deleteObject.mockResolvedValue(undefined);
   });
 
   it("names the files a pass wrote and invents none for the characters it was refused", () => {
@@ -40,13 +42,13 @@ describe("character reference sheet files", () => {
   it("unlinks every named sheet under the project's own image directory, forcing past a file that is gone", async () => {
     await discardCharacterReferenceSheetFiles("project-1", ["character-reference-ada-r1.png", "b.png"]);
 
-    expect(mocks.rm.mock.calls.map(([path]) => String(path))).toEqual([
-      "/tmp/images/project-1/character-reference-ada-r1.png",
-      "/tmp/images/project-1/b.png"
+    expect(mocks.deleteObject.mock.calls.map(([path]) => String(path))).toEqual([
+      "images/project-1/character-reference-ada-r1.png",
+      "images/project-1/b.png"
     ]);
     // `force` is what makes the other end of a race having already won a
     // non-event rather than a caught error.
-    expect(mocks.rm.mock.calls.every(([, options]) => options?.force === true)).toBe(true);
+    expect(mocks.deleteObject.mock.calls.every((args) => args.length === 1)).toBe(true);
   });
 
   it("never lets a failed unlink out, whether the failure is raised or rejected", async () => {
@@ -56,31 +58,31 @@ describe("character reference sheet files", () => {
     // bytes nothing can reach. Both shapes, because a synchronous throw is what
     // an incomplete `node:fs/promises` stand-in produces and a `.catch` on the
     // returned promise would not have seen it.
-    mocks.rm.mockRejectedValueOnce(new Error("EACCES"));
-    mocks.rm.mockImplementationOnce(() => {
+    mocks.deleteObject.mockRejectedValueOnce(new Error("EACCES"));
+    mocks.deleteObject.mockImplementationOnce(() => {
       throw new Error("rm is not a function");
     });
 
     await expect(discardCharacterReferenceSheetFiles("project-1", ["a.png", "b.png"])).resolves.toBeUndefined();
-    expect(mocks.rm).toHaveBeenCalledTimes(2);
+    expect(mocks.deleteObject).toHaveBeenCalledTimes(2);
   });
 
   it("does nothing at all for a pass that wrote nothing", async () => {
     await discardCharacterReferenceSheetFiles("project-1", []);
 
-    expect(mocks.rm).not.toHaveBeenCalled();
+    expect(mocks.deleteObject).not.toHaveBeenCalled();
   });
 
   it("resolves a stored asset URL back to the file under this project, and refuses anything else", () => {
-    expect(projectImageDir("project-1")).toBe("/tmp/images/project-1");
-    expect(localImagePathForAsset("http://api.test/assets/images/project-1/sheet.png", "project-1")).toBe(
-      "/tmp/images/project-1/sheet.png"
+    expect(projectImagePrefix("project-1")).toBe("images/project-1");
+    expect(imageReferenceForAsset("http://api.test/assets/images/project-1/sheet.png", "project-1")).toBe(
+      "object://images/project-1/sheet.png"
     );
     // Another project's asset, and a path that escapes the directory, both
     // resolve to nothing — the sweep may only ever name this project's files.
-    expect(localImagePathForAsset("http://api.test/assets/images/project-2/sheet.png", "project-1")).toBeUndefined();
+    expect(imageReferenceForAsset("http://api.test/assets/images/project-2/sheet.png", "project-1")).toBeUndefined();
     expect(
-      localImagePathForAsset("http://api.test/assets/images/project-1/nested%2Fsheet.png", "project-1")
+      imageReferenceForAsset("http://api.test/assets/images/project-1/nested%2Fsheet.png", "project-1")
     ).toBeUndefined();
   });
 });

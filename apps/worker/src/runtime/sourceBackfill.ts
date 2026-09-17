@@ -1,9 +1,7 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { objectKey, objectStore } from "@book-maker/storage";
 import { chunkSourceSection, creationAttachmentSchema } from "@book-maker/core";
 import { prisma, type Prisma } from "@book-maker/db";
-import { config } from "./config.js";
 
 let afterId = "";
 /** A bounded background backfill; the source table is its restart checkpoint. */
@@ -24,8 +22,7 @@ export async function backfillLegacySources() {
       if (!/^[a-zA-Z0-9_-]{1,64}$/.test(attachment.id) || !/^[a-zA-Z0-9_-]{1,64}$/.test(draft.id)) continue;
       const existing = await prisma.sourceDocument.findUnique({ where: { id: attachment.id } });
       if (existing) continue;
-      let original: Buffer | undefined;
-      try { original = await readFile(join(config.ATTACHMENT_STORAGE_DIR, draft.id, attachment.id)); } catch { /* Original retention has expired. */ }
+      const original = await objectStore().get(objectKey("attachments", draft.id, attachment.id));
       const limited = !original;
       const chunks = limited ? chunkSourceSection({ section: 0, locator: "Legacy digest (limited coverage)", content: attachment.content }) : [];
       await prisma.sourceDocument.upsert({ where: { id: attachment.id }, update: {}, create: {

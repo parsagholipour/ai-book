@@ -1,5 +1,6 @@
+import { objectStore } from "@book-maker/storage";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Job } from "bullmq";
@@ -119,7 +120,7 @@ describe("compileExport companion-format failure publication", () => {
     mocks.config.BOOK_STORAGE_DIR = storage;
     mocks.config.IMAGE_STORAGE_DIR = join(storage, "images");
     await mkdir(join(storage, "project-1"), { recursive: true });
-    await writeFile(join(storage, "project-1", "book.md"), publishedMarkdown, "utf8");
+    await objectStore().put("books/project-1/book.md", publishedMarkdown);
     mocks.inputForPlanVersion.mockReturnValue(input);
     mocks.prisma.planVersion.findUnique.mockResolvedValue({
       id: "plan-1",
