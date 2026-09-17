@@ -1,0 +1,145 @@
+# PR:  terraform fmt → validate → plan  (commented on the PR)
+# merge to master: terraform apply → AWS (GitHub environment: production)
+#
+# Repo secrets required:
+#   AWS_ACCESS_KEY_ID
+#   AWS_SECRET_ACCESS_KEY
+
+name: Terraform
+
+on:
+  pull_request:
+    paths:
+      - "*.tf"
+      - "**/*.tf"
+      - ".terraform.lock.hcl"
+      - "scripts/ensure-tf-backend.sh"
+      - ".github/workflows/terraform.yml"
+  push:
+    branches: [master]
+    paths:
+      - "*.tf"
+      - "**/*.tf"
+      - ".terraform.lock.hcl"
+      - "scripts/ensure-tf-backend.sh"
+      - ".github/workflows/terraform.yml"
+
+concurrency:
+  group: terraform
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  TF_VERSION: "1.16.3"
+  AWS_REGION: eu-central-1
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  fmt:
+    name: terraform fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - run: terraform fmt -check -recursive -diff
+
+  validate:
+    name: terraform validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate
+
+  plan:
+    name: terraform plan
+    if: github.event_name == 'pull_request'
+    needs: [fmt, validate]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - name: Require AWS credentials
+        run: |
+          if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+            echo "::error::Add repository secrets AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY"
+            exit 1
+          fi
+      - name: Ensure remote state bucket
+        run: bash scripts/ensure-tf-backend.sh
+      - run: terraform init -input=false
+      - name: terraform plan
+        run: |
+          set -o pipefail
+          terraform plan -input=false -no-color -out=tfplan | tee plan.txt
+      - name: Comment plan on PR
+        uses: actions/github-script@v7
+        env:
+          PLAN_FILE: plan.txt
+        with:
+          script: |
+            const fs = require('fs');
+            const raw = fs.readFileSync(process.env.PLAN_FILE, 'utf8');
+            const limit = 60000;
+            const plan = raw.length > limit ? `${raw.slice(0, limit)}\n... truncated ...` : raw;
+            const body = `<!-- terraform-plan -->\n### Terraform plan\n\`\`\`\n${plan}\n\`\`\``;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find((c) => c.body.includes('<!-- terraform-plan -->'));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+  apply:
+    name: terraform apply
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: [fmt, validate]
+    environment: production
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - name: Require AWS credentials
+        run: |
+          if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+            echo "::error::Add repository secrets AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY"
+            exit 1
+          fi
+      - name: Ensure remote state bucket
+        run: bash scripts/ensure-tf-backend.sh
+      - run: terraform init -input=false
+      - run: terraform plan -input=false -no-color -out=tfplan
+      - run: terraform apply -input=false -auto-approve tfplan
