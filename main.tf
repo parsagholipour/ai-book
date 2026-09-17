@@ -123,7 +123,7 @@ resource "aws_instance" "book_maker" {
 
   root_block_device {
     volume_type = "gp3"
-    volume_size = 4
+    volume_size = 8
   }
 
   metadata_options {
