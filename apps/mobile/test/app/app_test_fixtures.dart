@@ -9,6 +9,8 @@ import '../projects/chat_session_page_fixture.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tomeza/app/app.dart';
+import 'package:tomeza/features/account/data/app_version.dart';
+import 'package:tomeza/features/account/data/appearance_store.dart';
 import 'package:tomeza/features/auth/data/auth_repository.dart';
 import 'package:tomeza/features/auth/domain/auth_models.dart';
 import 'package:tomeza/features/billing/data/billing_repository.dart';
@@ -37,6 +39,8 @@ Widget testApp({
       billingRepositoryProvider.overrideWithValue(
         billingRepository ?? FakeBillingRepository(),
       ),
+      appearanceStoreProvider.overrideWithValue(MemoryAppearanceStore()),
+      appVersionProvider.overrideWith((ref) async => 'Tomeza 1.0.0 (1)'),
     ],
     child: const TomezaApp(),
   );

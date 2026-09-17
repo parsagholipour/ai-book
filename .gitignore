@@ -54,3 +54,5 @@ docs/composed-chapters/**/blind/
 # Generated source acceptance-test artifacts.
 .scratch/source-book-live/
 .scratch/source-book-pdf80/
+
+rootkey.csv

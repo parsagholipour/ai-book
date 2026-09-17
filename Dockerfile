@@ -27,7 +27,9 @@ FROM base AS dev
 
 ENV NODE_ENV=development
 
-CMD ["pnpm", "dev"]
+# Shared by api, worker and web. Compose supplies each service's
+# `pnpm --filter @book-maker/<svc> dev`. Do not default to root `pnpm
+# dev` — that script starts all three workspaces in one container.
 
 FROM base AS app
 

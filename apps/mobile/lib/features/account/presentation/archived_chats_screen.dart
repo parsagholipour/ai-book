@@ -8,30 +8,6 @@ import '../../projects/data/creation_repository.dart';
 import '../../projects/domain/creation_models.dart';
 import '../../projects/presentation/chat_archive_feedback.dart';
 
-class AccountArchivedChatsCard extends ConsumerWidget {
-  const AccountArchivedChatsCard({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Card(
-      child: ListTile(
-        key: const ValueKey('account-archived-chats'),
-        leading: const Icon(Icons.archive_outlined),
-        title: const Text('Archived chats'),
-        subtitle: const Text('View or restore chats you have archived'),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () {
-          AppHaptics.tap();
-          ref.invalidate(archivedChatSessionsProvider);
-          Navigator.of(context).push<void>(
-            MaterialPageRoute(builder: (_) => const ArchivedChatsScreen()),
-          );
-        },
-      ),
-    );
-  }
-}
-
 class ArchivedChatsScreen extends ConsumerWidget {
   const ArchivedChatsScreen({super.key});
 

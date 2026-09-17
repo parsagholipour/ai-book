@@ -59,8 +59,8 @@ class AppChoiceTile extends StatelessWidget {
     required this.selected,
     required this.icon,
     required this.title,
-    required this.subtitle,
     required this.onTap,
+    this.subtitle,
     this.semanticLabel,
     super.key,
   });
@@ -68,7 +68,7 @@ class AppChoiceTile extends StatelessWidget {
   final bool selected;
   final IconData icon;
   final String title;
-  final String subtitle;
+  final String? subtitle;
   final VoidCallback onTap;
   final String? semanticLabel;
 
@@ -84,7 +84,8 @@ class AppChoiceTile extends StatelessWidget {
       button: true,
       selected: selected,
       inMutuallyExclusiveGroup: true,
-      label: semanticLabel ?? '$title. $subtitle',
+      label:
+          semanticLabel ?? [title, if (subtitle != null) subtitle].join('. '),
       child: ExcludeSemantics(
         child: Card(
           color: selected ? colors.primaryContainer : null,
@@ -135,13 +136,15 @@ class AppChoiceTile extends StatelessWidget {
                                   color: foreground,
                                 ),
                           ),
-                          const SizedBox(height: AppSpacing.xxs),
-                          Text(
-                            subtitle,
-                            style: Theme.of(
-                              context,
-                            ).textTheme.bodyMedium?.copyWith(color: support),
-                          ),
+                          if (subtitle != null) ...[
+                            const SizedBox(height: AppSpacing.xxs),
+                            Text(
+                              subtitle!,
+                              style: Theme.of(
+                                context,
+                              ).textTheme.bodyMedium?.copyWith(color: support),
+                            ),
+                          ],
                         ],
                       ),
                     ),

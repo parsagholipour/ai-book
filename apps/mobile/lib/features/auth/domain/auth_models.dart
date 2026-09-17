@@ -47,6 +47,22 @@ class AuthUser {
     return name == null || name.isEmpty ? email : name;
   }
 
+  String get initials {
+    final name = displayName?.trim();
+    if (name != null && name.isNotEmpty) {
+      final parts = name
+          .split(RegExp(r'\s+'))
+          .where((part) => part.isNotEmpty)
+          .toList();
+      if (parts.length >= 2) {
+        return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+      }
+      return name[0].toUpperCase();
+    }
+    final trimmedEmail = email.trim();
+    return trimmedEmail.isEmpty ? '?' : trimmedEmail[0].toUpperCase();
+  }
+
   AuthUser copyWith({bool? legalAcceptanceRequired}) {
     return AuthUser(
       id: id,

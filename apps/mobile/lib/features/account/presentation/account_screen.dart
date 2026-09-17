@@ -1,657 +1,175 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:go_router/go_router.dart';
 
-import '../../billing/presentation/message_allowance_banner.dart';
 import '../../../app/config/app_config.dart';
-import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
-import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../billing/data/billing_repository.dart';
-import '../../billing/domain/billing_models.dart';
-import '../../billing/presentation/billing_cancel_sheet.dart';
-import '../../billing/presentation/billing_paywall.dart';
-import '../../billing/presentation/billing_tier_style.dart';
-import '../../billing/presentation/play_subscriptions_link.dart';
-import '../data/account_repository.dart';
-import 'archived_chats_screen.dart';
+import '../../projects/data/creation_repository.dart';
+import '../data/app_version.dart';
+import '../data/appearance_store.dart';
+import '../domain/appearance_prefs.dart';
+import 'account_billing_copy.dart';
+import 'account_credit_history_row.dart';
+import 'account_identity_header.dart';
+import 'account_links.dart';
+import 'account_overview_card.dart';
+import 'account_paywall.dart';
+import 'appearance_sheet.dart';
 
-class AccountScreen extends ConsumerStatefulWidget {
+class AccountScreen extends ConsumerWidget {
   const AccountScreen({super.key});
 
   @override
-  ConsumerState<AccountScreen> createState() => _AccountScreenState();
-}
-
-class _AccountScreenState extends ConsumerState<AccountScreen> {
-  bool _requestingDeletion = false;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final config = ref.watch(appConfigProvider);
     final billing = ref.watch(billingProvider);
+    final session = ref.watch(authControllerProvider).asData?.value;
+    final appearance =
+        ref.watch(appearanceModeProvider).value ?? AppearanceMode.system;
+    final version = ref.watch(appVersionProvider).asData?.value;
+    final loggingOut = ref.watch(authControllerProvider).isLoading;
+    final plan = billing.asData?.value;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Account')),
       body: AppScreenLayout(
         children: [
-          AccountPlanCard(
+          if (session != null) AccountIdentityHeader(user: session.user),
+          AccountOverviewCard(
             billing: billing,
-            onUpgrade: _openBillingPaywall,
-            onManageSubscription: (sku) =>
-                ref.read(playSubscriptionsLauncherProvider)(sku),
-            onCancelSubscription: _openCancelSheet,
-          ),
-          const SizedBox(height: 12),
-          AccountCreditsCard(
-            billing: billing,
-            onAddCredits: _openBillingPaywall,
+            onAddCredits: () => openAccountBillingPaywall(context, ref),
+            onManagePlan: () => context.push('/account/plan'),
             onRetry: () => ref.invalidate(billingProvider),
           ),
-          const SizedBox(height: 12),
-          const AccountArchivedChatsCard(),
-          const SizedBox(height: 12),
-          AccountPrivacyControls(
-            config: config,
-            requestingDeletion: _requestingDeletion,
-            onRequestDeletion: _requestAccountDeletion,
-          ),
-          const SizedBox(height: 12),
-          const _AccountSessionCard(),
-        ],
-      ),
-    );
-  }
-
-  /// No masthead: this sheet is reached from the plan and credit cards, so the
-  /// reader is already looking at their balance and needs the plans, not a
-  /// heading telling them what credits are for.
-  Future<void> _openBillingPaywall() async {
-    await showBillingPaywall(context, title: null);
-    if (mounted) {
-      ref.invalidate(billingProvider);
-    }
-  }
-
-  Future<void> _openCancelSheet(MobileBilling value) async {
-    await showCancelSubscriptionSheet(context, billing: value);
-    if (mounted) {
-      ref.invalidate(billingProvider);
-    }
-  }
-
-  Future<void> _requestAccountDeletion() async {
-    final reason = await showDialog<String>(
-      context: context,
-      builder: (context) => const AccountDeletionRequestDialog(),
-    );
-    if (reason == null || !mounted) {
-      return;
-    }
-
-    setState(() => _requestingDeletion = true);
-    try {
-      final receipt = await ref
-          .read(accountRepositoryProvider)
-          .requestAccountDeletion(reason: reason);
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showAppSnackBar(
-        SnackBar(
-          content: Text(
-            receipt.status == 'pending'
-                ? 'Deletion request received for ${receipt.email}.'
-                : 'Deletion request updated.',
-          ),
-        ),
-      );
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(
-        context,
-      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
-    } finally {
-      if (mounted) {
-        setState(() => _requestingDeletion = false);
-      }
-    }
-  }
-}
-
-/// Public so it can be pumped on its own, like [AccountPrivacyControls].
-class AccountPlanCard extends StatelessWidget {
-  const AccountPlanCard({
-    required this.billing,
-    required this.onUpgrade,
-    required this.onManageSubscription,
-    required this.onCancelSubscription,
-    super.key,
-  });
-
-  final AsyncValue<MobileBilling> billing;
-  final VoidCallback onUpgrade;
-  final void Function(String? sku) onManageSubscription;
-  final void Function(MobileBilling billing) onCancelSubscription;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final value = billing.asData?.value;
-    final plan = value?.plan;
-    final allowance = value?.allowance;
-    final quota = value?.imageQuota;
-    final paid = value?.isPaidPlan ?? false;
-    final cancelling = plan?.cancelAtPeriodEnd ?? false;
-    final nextPlan = value == null
-        ? null
-        : nextBetterPlan(
-            value.products.where((product) => product.isSubscription).toList(),
-            value.planTier,
-          );
-
-    return Card(
-      key: const ValueKey('account-plan-card'),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.workspace_premium_outlined, color: colors.primary),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    plan == null ? 'Your plan' : '${plan.label} plan',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            const MessageAllowanceBanner(),
-            if (allowance != null && allowance.monthlyCredits > 0)
-              Text(
-                '${allowance.planCredits} of ${allowance.monthlyCredits} monthly credits left',
-                style: TextStyle(color: colors.onSurfaceVariant),
-              )
-            else if (billing.isLoading)
-              Text(
-                'Checking your plan',
-                style: TextStyle(color: colors.onSurfaceVariant),
-              ),
-            if (quota != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                '${quota.used} of ${quota.limit} illustrated books used this month',
-                style: TextStyle(
-                  color: quota.isExhausted
-                      ? colors.error
-                      : colors.onSurfaceVariant,
-                ),
-              ),
-            ],
-            if (!paid && value != null) ...[
-              const SizedBox(height: 4),
-              // What free grants each month, so the card describes the plan and
-              // not only what is left of it.
-              Text(
-                'Free includes ${value.freeTier.monthlyCredits} credits and '
-                '${value.freeTier.illustratedBooksPerMonth} illustrated books each month',
-                style: TextStyle(color: colors.onSurfaceVariant),
-              ),
-            ],
-            if (paid && plan?.renewsAt != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                'Renews ${_formatDate(plan!.renewsAt!)}',
-                style: TextStyle(color: colors.onSurfaceVariant),
-              ),
-            ],
-            if (paid && cancelling && plan?.endsAt != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                'Ends ${_formatDate(plan!.endsAt!)} · you move to Free then',
-                style: TextStyle(color: colors.onSurfaceVariant),
-              ),
-            ],
-            const SizedBox(height: 12),
-            if (paid)
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  if (nextPlan != null)
-                    AppButton.primary(
-                      key: const ValueKey('account-upgrade-plan'),
-                      onPressed: onUpgrade,
-                      leading: const Icon(Icons.arrow_upward),
-                      label: 'Upgrade plan',
-                    ),
-                  AppButton.outlined(
-                    key: const ValueKey('account-manage-subscription'),
-                    onPressed: () => onManageSubscription(plan?.productSku),
-                    leading: const Icon(Icons.open_in_new),
-                    label: 'Manage subscription',
-                  ),
-                  // Already cancelling: the only thing left to do in Play is
-                  // change your mind, so the button says that instead.
-                  if (cancelling)
-                    AppButton.text(
-                      key: const ValueKey('account-resume-subscription'),
-                      onPressed: () => onManageSubscription(plan?.productSku),
-                      label: 'Resume in Play',
-                    )
-                  else if (value != null)
-                    AppButton.text(
-                      key: const ValueKey('account-cancel-subscription'),
-                      onPressed: () => onCancelSubscription(value),
-                      label: 'Cancel subscription',
-                    ),
-                ],
-              )
-            else if (nextPlan != null)
-              AppButton.primary(
-                key: const ValueKey('account-upgrade-plan'),
-                onPressed: onUpgrade,
-                leading: const Icon(Icons.arrow_upward),
-                label: 'Upgrade plan',
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-String _formatDate(DateTime value) {
-  final local = value.toLocal();
-  return '${local.day}/${local.month}/${local.year}';
-}
-
-/// Public so it can be pumped on its own, like [AccountPlanCard].
-class AccountCreditsCard extends StatelessWidget {
-  const AccountCreditsCard({
-    required this.billing,
-    required this.onAddCredits,
-    required this.onRetry,
-    super.key,
-  });
-
-  final AsyncValue<MobileBilling> billing;
-  final VoidCallback onAddCredits;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final value = billing.asData?.value;
-    final balance = billing.when(
-      data: (billingValue) =>
-          '${billingValue.credits.available} credits available',
-      loading: () => 'Checking your credit balance',
-      error: (error, stackTrace) => userFacingError(error),
-    );
-    final planCredits = value?.planGenerationCredits;
-    final planningCopy = planCredits == null
-        ? 'Building a book plan uses credits. The current amount depends on '
-              'your Effort setting.'
-        : 'Building a book plan uses credits. Balanced planning currently '
-              'costs $planCredits credits; other Effort settings cost a '
-              'different amount. Writing the book after you approve is a '
-              'separate charge.';
-
-    return Card(
-      key: const ValueKey('account-credits-card'),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.account_balance_wallet_outlined,
-                  color: colors.onSurfaceVariant,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Book credits',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Text(balance, style: TextStyle(color: colors.onSurfaceVariant)),
-            if (billing.hasValue) ...[
-              const SizedBox(height: 8),
-              Text(
-                planningCopy,
-                style: TextStyle(color: colors.onSurfaceVariant),
-              ),
-            ],
-            const SizedBox(height: 12),
-            billing.hasError
-                ? AppButton.outlined(
-                    onPressed: onRetry,
-                    leading: const Icon(Icons.refresh),
-                    label: 'Retry',
-                  )
-                : AppButton.primary(
-                    onPressed: onAddCredits,
-                    leading: const Icon(Icons.add_card_outlined),
-                    label: 'Add credits',
-                  ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _AccountSessionCard extends ConsumerWidget {
-  const _AccountSessionCard();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final authState = ref.watch(authControllerProvider);
-    final loggingOut = authState.isLoading;
-    final colors = Theme.of(context).colorScheme;
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Session',
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Log out of this device when you are finished.',
-              style: TextStyle(color: colors.onSurfaceVariant),
-            ),
-            const SizedBox(height: 12),
-            AppButton.outlined(
-              onPressed: loggingOut
-                  ? null
-                  : () => ref.read(authControllerProvider.notifier).logout(),
-              loading: loggingOut,
-              loadingLabel: 'Logging out',
-              leading: const Icon(Icons.logout),
-              label: 'Log out',
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class AccountPrivacyControls extends StatelessWidget {
-  const AccountPrivacyControls({
-    required this.config,
-    required this.onRequestDeletion,
-    this.requestingDeletion = false,
-    super.key,
-  });
-
-  final AppConfig config;
-  final bool requestingDeletion;
-  final Future<void> Function() onRequestDeletion;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        AppSectionHeader(
-          title: 'Privacy and support',
-          subtitle: 'Support, policies, AI disclosure, and deletion controls.',
-          titleStyle: Theme.of(
-            context,
-          ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
-        ),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _SettingsRow(
-                  icon: Icons.support_agent_outlined,
-                  title: 'Support',
-                  value: config.supportEmail,
-                  uri: Uri(scheme: 'mailto', path: config.supportEmail),
-                ),
-                const Divider(height: 24),
-                _SettingsRow(
-                  icon: Icons.privacy_tip_outlined,
-                  title: 'Privacy policy',
-                  value: config.privacyPolicyUrl.toString(),
-                  uri: config.privacyPolicyUrl,
-                ),
-                const Divider(height: 24),
-                _SettingsRow(
-                  icon: Icons.description_outlined,
-                  title: 'Terms',
-                  value: config.termsOfServiceUrl.toString(),
-                  uri: config.termsOfServiceUrl,
-                ),
-                const Divider(height: 24),
-                _SettingsRow(
-                  icon: Icons.manage_accounts_outlined,
-                  title: 'Account deletion page',
-                  value: config.accountDeletionUrl.toString(),
-                  uri: config.accountDeletionUrl,
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'AI-generated content',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Books, page previews, covers, and visuals are generated with AI from your prompt and product presets.',
-                  style: TextStyle(color: colors.onSurfaceVariant),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  'Data retention',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Uploaded source files are kept for up to 180 days. Projects and generated assets remain until you delete them or the account. Limited billing, fraud, security, moderation, support, dispute, and legal records may be retained as required.',
-                  style: TextStyle(color: colors.onSurfaceVariant),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Delete account',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'We target verified requests within 30 days. Account deletion removes projects and user content, subject to limited retained records. It does not cancel a Google Play subscription; cancel that separately in Google Play.',
-                  style: TextStyle(color: colors.onSurfaceVariant),
-                ),
-                const SizedBox(height: 12),
-                AppButton.outlined(
-                  onPressed: requestingDeletion
-                      ? null
-                      : () => onRequestDeletion(),
-                  loading: requestingDeletion,
-                  loadingLabel: 'Requesting account deletion',
-                  leading: const Icon(Icons.delete_outline),
-                  label: 'Request account deletion',
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class AccountDeletionRequestDialog extends StatefulWidget {
-  const AccountDeletionRequestDialog({super.key});
-
-  @override
-  State<AccountDeletionRequestDialog> createState() =>
-      _AccountDeletionRequestDialogState();
-}
-
-class _AccountDeletionRequestDialogState
-    extends State<AccountDeletionRequestDialog> {
-  final _reasonController = TextEditingController();
-
-  @override
-  void dispose() {
-    _reasonController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Request account deletion'),
-      content: TextField(
-        controller: _reasonController,
-        decoration: const InputDecoration(
-          labelText: 'Optional note',
-          hintText: 'Anything support should know?',
-        ),
-        minLines: 3,
-        maxLines: 5,
-      ),
-      actions: [
-        AppButton.text(
-          onPressed: () => Navigator.of(context).pop(),
-          label: 'Cancel',
-        ),
-        AppButton.primary(
-          onPressed: () => Navigator.of(context).pop(_reasonController.text),
-          label: 'Send request',
-        ),
-      ],
-    );
-  }
-}
-
-class _SettingsRow extends StatelessWidget {
-  const _SettingsRow({
-    required this.icon,
-    required this.title,
-    required this.value,
-    this.uri,
-  });
-
-  final IconData icon;
-  final String title;
-  final String value;
-  final Uri? uri;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final row = Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, color: colors.primary),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          AppSettingsSection(
+            title: 'Billing',
             children: [
-              Text(title, style: Theme.of(context).textTheme.labelLarge),
-              const SizedBox(height: 3),
-              Text(
-                value,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colors.onSurfaceVariant,
+              AppSettingsRow(
+                key: const ValueKey('account-plan-row'),
+                icon: Icons.workspace_premium_outlined,
+                title: 'Plan & billing',
+                subtitle: hubPlanSubtitle(context, plan),
+                onTap: () => context.push('/account/plan'),
+              ),
+              AccountCreditHistoryRow(
+                key: const ValueKey('account-credit-history'),
+              ),
+            ],
+          ),
+          AppSettingsSection(
+            title: 'Library',
+            children: [
+              AppSettingsRow(
+                key: const ValueKey('account-archived-chats'),
+                icon: Icons.archive_outlined,
+                title: 'Archived chats',
+                onTap: () {
+                  ref.invalidate(archivedChatSessionsProvider);
+                  context.push('/account/archived-chats');
+                },
+              ),
+            ],
+          ),
+          AppSettingsSection(
+            title: 'Preferences',
+            children: [
+              AppSettingsRow(
+                key: const ValueKey('account-appearance'),
+                icon: Icons.palette_outlined,
+                title: 'Appearance',
+                value: appearance.label,
+                onTap: () => showAppearanceSheet(context),
+              ),
+            ],
+          ),
+          AppSettingsSection(
+            title: 'Privacy',
+            children: [
+              AppSettingsRow(
+                key: const ValueKey('account-privacy-row'),
+                icon: Icons.privacy_tip_outlined,
+                title: 'Privacy & data',
+                onTap: () => context.push('/account/privacy'),
+              ),
+            ],
+          ),
+          AppSettingsSection(
+            title: 'Help & legal',
+            children: [
+              AppSettingsRow(
+                key: const ValueKey('account-support'),
+                icon: Icons.support_agent_outlined,
+                title: 'Contact support',
+                subtitle: config.supportEmail,
+                external: true,
+                onTap: () => openAccountUri(
+                  context,
+                  Uri(scheme: 'mailto', path: config.supportEmail),
+                  config.supportEmail,
+                ),
+              ),
+              AppSettingsRow(
+                key: const ValueKey('account-privacy-policy'),
+                icon: Icons.policy_outlined,
+                title: 'Privacy policy',
+                subtitle: config.privacyPolicyUrl.toString(),
+                external: true,
+                onTap: () => openAccountUri(
+                  context,
+                  config.privacyPolicyUrl,
+                  config.privacyPolicyUrl.toString(),
+                ),
+              ),
+              AppSettingsRow(
+                key: const ValueKey('account-terms'),
+                icon: Icons.description_outlined,
+                title: 'Terms of service',
+                subtitle: config.termsOfServiceUrl.toString(),
+                external: true,
+                onTap: () => openAccountUri(
+                  context,
+                  config.termsOfServiceUrl,
+                  config.termsOfServiceUrl.toString(),
                 ),
               ),
             ],
           ),
-        ),
-        if (uri != null) ...[
-          const SizedBox(width: 8),
-          Icon(Icons.open_in_new, size: 18, color: colors.onSurfaceVariant),
+          const SizedBox(height: AppSpacing.lg),
+          AppButton.outlined(
+            key: const ValueKey('account-log-out'),
+            onPressed: loggingOut ? null : () => _logOut(context, ref),
+            loading: loggingOut,
+            loadingLabel: 'Logging out',
+            leading: const Icon(Icons.logout),
+            label: 'Log out',
+            expanded: true,
+          ),
+          if (version != null) ...[
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              version,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
         ],
-      ],
-    );
-
-    if (uri == null) {
-      return row;
-    }
-
-    return Semantics(
-      button: true,
-      label: '$title. Opens $value',
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () => _open(context),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2),
-          child: row,
-        ),
       ),
     );
   }
+}
 
-  Future<void> _open(BuildContext context) async {
-    final target = uri!;
-    final opened = await launchUrl(
-      target,
-      mode: LaunchMode.externalApplication,
-    );
-    if (!opened && context.mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showAppSnackBar(SnackBar(content: Text('Could not open $value.')));
-    }
+Future<void> _logOut(BuildContext context, WidgetRef ref) async {
+  final confirmed = await showAppConfirmationDialog(
+    context,
+    title: 'Log out of this device?',
+    confirmLabel: 'Log out',
+  );
+  if (!confirmed || !context.mounted) {
+    return;
   }
+  await ref.read(authControllerProvider.notifier).logout();
 }

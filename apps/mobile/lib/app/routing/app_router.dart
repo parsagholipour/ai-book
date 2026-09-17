@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/account/presentation/account_plan_screen.dart';
+import '../../features/account/presentation/account_privacy_screen.dart';
 import '../../features/account/presentation/account_screen.dart';
+import '../../features/account/presentation/archived_chats_screen.dart';
+import '../../features/billing/presentation/credit_log_screen.dart';
 import '../../features/auth/domain/legal_gate.dart';
 import '../../features/auth/presentation/auth_controller.dart';
 import '../../features/auth/presentation/auth_screen.dart';
@@ -107,7 +111,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         // for this session; a refused write un-dismisses it (see the
         // legalGateDismissedProvider listener above).
         if (!ref.read(legalGateDismissedProvider)) {
-          return isLegalAcceptance || path == '/account'
+          return isLegalAcceptance || path.startsWith('/account')
               ? null
               : '/legal/acceptance';
         }
@@ -162,6 +166,26 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/account',
         pageBuilder: (context, state) => _appPage(state, const AccountScreen()),
+      ),
+      GoRoute(
+        path: '/account/plan',
+        pageBuilder: (context, state) =>
+            _appPage(state, const AccountPlanScreen()),
+      ),
+      GoRoute(
+        path: '/account/privacy',
+        pageBuilder: (context, state) =>
+            _appPage(state, const AccountPrivacyScreen()),
+      ),
+      GoRoute(
+        path: '/account/archived-chats',
+        pageBuilder: (context, state) =>
+            _appPage(state, const ArchivedChatsScreen()),
+      ),
+      GoRoute(
+        path: '/account/credit-history',
+        pageBuilder: (context, state) =>
+            _appPage(state, const CreditLogScreen()),
       ),
       GoRoute(
         path: '/books',

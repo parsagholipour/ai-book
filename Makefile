@@ -6,7 +6,7 @@ FLUTTER_APP_ENV ?= local
 # Android emulator: 10.0.2.2 reaches host localhost. Override for a physical device LAN IP.
 FLUTTER_API_BASE_URL ?= http://10.0.2.2:4001
 FLUTTER_DART_DEFINES := --dart-define=APP_ENV=$(FLUTTER_APP_ENV) --dart-define=API_BASE_URL=$(FLUTTER_API_BASE_URL)
-
+	
 # Snap Docker cannot read projects on /run/media until removable-media is connected.
 fix-docker-access:
 	sudo snap connect docker:removable-media

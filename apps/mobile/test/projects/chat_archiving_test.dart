@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:tomeza/app/theme/app_theme.dart';
+import 'package:tomeza/features/account/data/app_version.dart';
+import 'package:tomeza/features/account/data/appearance_store.dart';
 import 'package:tomeza/features/account/presentation/account_screen.dart';
 import 'package:tomeza/features/account/presentation/archived_chats_screen.dart';
 import 'package:tomeza/features/auth/domain/auth_models.dart';
@@ -169,6 +171,10 @@ Future<void> _pumpApp(
       ),
       GoRoute(path: '/account', builder: (_, _) => const AccountScreen()),
       GoRoute(
+        path: '/account/archived-chats',
+        builder: (_, _) => const ArchivedChatsScreen(),
+      ),
+      GoRoute(
         path: '/archives',
         builder: (_, _) => const ArchivedChatsScreen(),
       ),
@@ -199,6 +205,8 @@ Future<void> _pumpApp(
             creditCosts: {},
           ),
         ),
+        appearanceStoreProvider.overrideWithValue(MemoryAppearanceStore()),
+        appVersionProvider.overrideWith((ref) async => 'Tomeza 1.0.0 (1)'),
       ],
       child: MaterialApp.router(
         theme: buildTomezaLightTheme(),

@@ -5,15 +5,15 @@ import 'app_buttons.dart';
 class AppConfirmationDialog extends StatelessWidget {
   const AppConfirmationDialog({
     required this.title,
-    required this.message,
     required this.confirmLabel,
+    this.message,
     this.cancelLabel = 'Cancel',
     this.destructive = false,
     super.key,
   });
 
   final String title;
-  final String message;
+  final String? message;
   final String confirmLabel;
   final String cancelLabel;
   final bool destructive;
@@ -22,7 +22,7 @@ class AppConfirmationDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(title),
-      content: Text(message),
+      content: message == null ? null : Text(message!),
       actions: [
         AppButton.text(
           label: cancelLabel,
@@ -46,8 +46,8 @@ class AppConfirmationDialog extends StatelessWidget {
 Future<bool> showAppConfirmationDialog(
   BuildContext context, {
   required String title,
-  required String message,
   required String confirmLabel,
+  String? message,
   String cancelLabel = 'Cancel',
   bool destructive = false,
 }) async {

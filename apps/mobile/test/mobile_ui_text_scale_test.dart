@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/app/config/app_config.dart';
 import 'package:tomeza/app/theme/app_theme.dart';
-import 'package:tomeza/features/account/presentation/account_screen.dart';
+import 'package:tomeza/features/account/presentation/account_privacy_screen.dart';
 import 'package:tomeza/features/auth/data/auth_repository.dart';
 import 'package:tomeza/features/auth/domain/auth_models.dart';
 import 'package:tomeza/features/auth/presentation/auth_screen.dart';
@@ -167,7 +167,7 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(find.text('Privacy and support'), findsOneWidget);
+    expect(find.text('Privacy & data'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     // The character page is the one surface with a fixed-height row on it: the

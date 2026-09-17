@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/app/config/app_config.dart';
-import 'package:tomeza/features/account/presentation/account_screen.dart';
+import 'package:tomeza/features/account/presentation/account_privacy_screen.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/book_screen_body.dart';
 import 'package:tomeza/shared/api/api_client.dart';
@@ -106,10 +106,7 @@ void main() {
         ),
       );
 
-      expect(find.text('Privacy and support'), findsOneWidget);
-      expect(find.text('support@example.com'), findsOneWidget);
-      expect(find.text('https://example.com/privacy'), findsOneWidget);
-      expect(find.text('https://example.com/terms'), findsOneWidget);
+      expect(find.text('Privacy & data'), findsOneWidget);
       expect(find.text('Request account deletion'), findsOneWidget);
 
       final requestDeletionButton = find.widgetWithText(

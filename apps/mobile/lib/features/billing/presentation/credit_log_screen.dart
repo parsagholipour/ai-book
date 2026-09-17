@@ -389,8 +389,8 @@ String creditLogSemanticLabel(CreditLogEntry entry) {
   ].join(', ');
 }
 
-/// Days are named where a name is clearer than a date, and dated otherwise —
-/// in the same `d/m/y` order the account screen uses.
+/// Days are named where a name is clearer than a date, and dated otherwise
+/// in `d/m/y` order.
 String dayLabelFor(DateTime value, DateTime now) {
   final local = value.toLocal();
   final day = DateTime(local.year, local.month, local.day);
