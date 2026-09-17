@@ -27,7 +27,10 @@ scratch directories and share files through S3.
    `ec2:DescribeAddresses`), push ECR images, write the `/book-maker/production/env` SSM parameter,
    and call `ssm:DescribeInstanceInformation`, `ssm:SendCommand` (the
    `AWS-RunShellScript` document and the EC2 instance), and
-   `ssm:GetCommandInvocation`. ECR push uses `ecr:GetAuthorizationToken`,
+   `ssm:GetCommandInvocation`. Terraform's root-filesystem preparation also needs
+   `ssm:CreateAssociation`, `ssm:DescribeAssociation`, `ssm:DeleteAssociation`,
+   `ssm:ListTagsForResource`, `ssm:AddTagsToResource`, and `ssm:RemoveTagsFromResource`
+   for its association and the `AWS-RunShellScript` document. ECR push uses `ecr:GetAuthorizationToken`,
    `ecr:BatchCheckLayerAvailability`, `ecr:InitiateLayerUpload`,
    `ecr:UploadLayerPart`, `ecr:CompleteLayerUpload`, and `ecr:PutImage`.
 2. Create the GitHub environment **production**. Add a secret **PRODUCTION_ENV**
@@ -49,7 +52,11 @@ scratch directories and share files through S3.
    containers can obtain rotating instance-role credentials. SSM needs outbound HTTPS,
    which the existing network allows. No SSH key or inbound SSH rule is needed.
    The deployment waits up to ten minutes for the instance to become online in
-   SSM, then installs Docker, Compose, and the AWS CLI if absent. The installer
+   SSM. Terraform first expands the root partition/filesystem to use the existing
+   EBS volume and waits for success before the build/deploy jobs can start. The
+   AMI must include `growpart` and its filesystem tool (`resize2fs` for ext4,
+   `xfs_growfs` for XFS). Deployment then installs Docker, Compose, and the AWS CLI
+   if absent. The installer
    supports Ubuntu/Debian and Amazon Linux on x86_64.
 4. Point DNS at the instance and set `PUBLIC_API_URL=https://tomeza.ravanix.app`.
    See [Public hostname and TLS](#public-hostname-and-tls) below for the exact
@@ -206,6 +213,36 @@ curl --fail http://127.0.0.1/api/health   # through Caddy and Nginx
 a shell script. If deployment fails before a `current` link exists, use the release
 directory printed in the SSM command. The GitHub job prints the SSM command ID and
 the final command output for diagnosis.
+
+### Full root filesystem / SSM worker timeout
+
+Increasing `ROOT_VOLUME_SIZE` changes the EBS block device, but an existing Linux
+partition and filesystem can remain at the AMI's original size. This caused the
+September 18 deployment failure: a 20 GiB EBS volume still had a 6.7 GiB root
+filesystem, Docker ran out of space extracting an image, and SSM reported an IPC
+worker timeout because it could no longer write its own state.
+
+Terraform's `aws_ssm_association.root_filesystem` runs
+`scripts/prepare-production-disk.sh` and waits up to ten minutes for success.
+It detects the mounted root device, grows its partition with `growpart`, expands
+ext4 or XFS online, and requires at least 2 GiB free before continuing. It uses
+`/run` for growpart's temporary files so a full `/tmp` does not prevent recovery.
+Repeated runs are safe, including when only the partition was previously grown.
+Unsupported layouts such as LVM fail with an explicit message.
+
+The association is replaced when the instance, configured volume size, or script
+changes. Only the association is replaced; this repair does not replace EC2 or
+its volume. Creation is intentional: AWS provider v5 waits for successful
+creation but does not wait for execution after an in-place association update.
+The 2 GiB check is minimum headroom, not a guarantee that every future image fits.
+
+Compare `lsblk` with `df -h /` when investigating disk errors. If EBS space is
+unallocated, apply Terraform to run the preparation. If the filesystem already
+uses the volume, increase `ROOT_VOLUME_SIZE` and apply Terraform. Never delete
+Docker volumes to recover deployment space. If SSM cannot start any command,
+the association cannot repair the host; inspect EC2 console output and arrange
+host recovery before retrying. See AWS's
+[filesystem expansion procedure](https://docs.aws.amazon.com/ebs/latest/userguide/recognize-expanded-volume-linux.html).
 
 To check images locally using disposable containers and volumes:
 
