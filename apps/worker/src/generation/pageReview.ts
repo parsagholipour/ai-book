@@ -26,6 +26,7 @@ import { revisePageDraftWithRestart } from "./pageRevision.js";
 import { reviewPageWithQualityGates } from "./pageQualityGateReview.js";
 import {
   pageRevisionMessage,
+  keepUserRequestApplied,
   pageRewriteReport,
   recoveryRevisionForLoop,
   repairPageBriefForRecovery,
@@ -33,7 +34,8 @@ import {
   type RepairedPageBrief
 } from "./pageReviewRecovery.js";
 import {
-  hasSmartUnslopCandidates,
+  hasSmartUnslopCandidates, smartUnslopResolved,
+  type DecisionModelRoute,
   styleAuditedScoreBeats,
   type BookGenerationStrategy,
   type BookPlan,
@@ -158,6 +160,7 @@ export async function runPageQualityLoop(options: {
   /** Citeable notes loaded for this page; empty is an explicit citation gate. */
   researchNotes?: string[] | undefined;
   textModel: TextModelAdapter;
+  decisions?: DecisionModelRoute | undefined;
   generationJobId?: string | undefined;
   maxCandidates: number;
   recoveryRevision?: number | undefined;
@@ -271,7 +274,7 @@ export async function runPageQualityLoop(options: {
   // A deterministic candidate cluster buys one contextual rewrite. If the
   // writer returns the page unchanged because every match is protected, the
   // same scanner result must not burn the rest of this page's rewrite budget.
-  let smartUnslopSpent = false;
+  let smartUnslopSpent = smartUnslopResolved(report);
   const maxCandidates = options.quality.enabled("pageQaRewrite") ? options.maxCandidates : 1;
   // Fitted to this loop's budget at both ends, and `undefined` for a loop that
   // has no recovery at all — `recoveryRevisionForLoop` owns both answers, and
@@ -382,6 +385,7 @@ export async function runPageQualityLoop(options: {
     report = await reviewPageWithQualityGates({
       strategy: options.strategy,
       quality: options.quality,
+      decisions: options.decisions, userRequest: options.userRequest,
       allowSmartUnslop: !smartUnslopSpent && !resolvesSmartUnslop,
       reviewOptions: {
         input: options.input,
@@ -401,7 +405,7 @@ export async function runPageQualityLoop(options: {
         ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
       }
     });
-    if (resolvesSmartUnslop) {
+    if (resolvesSmartUnslop || smartUnslopResolved(report)) {
       smartUnslopSpent = true;
     }
     report = await auditApproved(draft, report);
@@ -499,20 +503,6 @@ export async function runPageQualityLoop(options: {
  */
 function alreadyStyleAudited(report: PageQualityReport): boolean {
   return (report as StyleAuditedScore).stylePenalty !== undefined;
-}
-
-/**
- * A quality rewrite of a page the reader asked to change must repair the page
- * *around* their edit, never back out of it — the request is already in the
- * draft, and the rewrite is being asked for because something else about the
- * page failed review.
- */
-function keepUserRequestApplied(report: PageQualityReport, userRequest: string | undefined): PageQualityReport {
-  const instruction = userRequest ? `Keep the user's requested edit applied: ${userRequest}` : "";
-  if (!instruction || report.requiredRevisions.includes(instruction)) {
-    return report;
-  }
-  return { ...report, requiredRevisions: [instruction, ...report.requiredRevisions] };
 }
 
 /**
@@ -634,6 +624,7 @@ export async function reviewAndSaveGeneratedPage(options: {
     quality
   });
   const initialReport = await reviewPageWithQualityGates({
+    decisions: options.providers.decisions, userRequest: options.editInstruction,
     strategy: options.strategy,
     quality,
     reviewOptions: {
@@ -669,6 +660,7 @@ export async function reviewAndSaveGeneratedPage(options: {
   });
 
   const outcome = await runPageQualityLoop({
+    decisions: options.providers.decisions,
     projectId: options.projectId,
     strategy: options.strategy,
     input: options.input,

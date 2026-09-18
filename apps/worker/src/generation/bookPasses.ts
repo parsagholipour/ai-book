@@ -662,6 +662,7 @@ export async function generateBookWholePass(options: {
     acceptanceMessage ? `${acceptanceMessage} Reviewing ${draft.pages.length} generated pages.` : `Reviewing ${draft.pages.length} generated pages`
   );
   const reviewedPages = await reviewWholeBookDraftPages({
+    decisions: options.providers.decisions,
     input: effective.input,
     plan: effective.plan,
     strategy: options.strategy,

@@ -10,6 +10,13 @@ import { isCancellationError, isRecoverableNetworkError, withRecoverableNetworkR
 export const DECISION_MIN_WINNING_PROBABILITY = 0.70;
 export type DecisionEscalationReason = "invalid_choice" | "invalid_probabilities" | "low_probability" | "provider_failure";
 
+export class DecisionEscalationError extends Error {
+  constructor(readonly reason: DecisionEscalationReason, readonly result?: DecisionResult) {
+    super(`Decision requires caller review: ${reason}`);
+    this.name = "DecisionEscalationError";
+  }
+}
+
 export function decisionEscalationReason(request: DecisionRequest, result: DecisionResult, gateWinningProbability: boolean): DecisionEscalationReason | undefined {
   if (!request.options.some((option) => option.id === result.selectedOption)) return "invalid_choice";
   if (!gateWinningProbability) return undefined;
@@ -79,16 +86,22 @@ export class FallbackDecisionAdapter implements DecisionModelAdapter {
   async choose(request: DecisionRequest): Promise<DecisionResult> {
     assertDecisionRequest(request);
     let escalation: DecisionEscalationReason | undefined;
+    let primaryResult: DecisionResult | undefined;
     try {
       const result = await this.run(request, "primary");
+      primaryResult = result;
       escalation = decisionEscalationReason(request, result, this.options.gateWinningProbability);
       if (!escalation) return result;
     } catch (error) {
       request.signal?.throwIfAborted();
       if (isCancellationError(error)) throw error;
+      if (error instanceof InvalidDecisionError) primaryResult = error.result;
       escalation = error instanceof InvalidDecisionError
         ? decisionEscalationReason(request, error.result, this.options.gateWinningProbability) ?? "provider_failure"
         : "provider_failure";
+    }
+    if (request.escalationPolicy === "caller") {
+      throw new DecisionEscalationError(escalation, primaryResult);
     }
     // Exactly one fallback stage, with its own bounded physical network attempts.
     return this.run(request, "fallback", escalation);

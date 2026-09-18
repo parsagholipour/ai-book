@@ -229,6 +229,7 @@ export async function rewritePageForUserRequest(options: {
   }
   await options.onPhase?.("review");
   const initialReport = await reviewPageWithQualityGates({
+    decisions: options.providers.decisions, userRequest: editInstruction,
     strategy: options.strategy,
     quality,
     reviewOptions: {
@@ -253,6 +254,7 @@ export async function rewritePageForUserRequest(options: {
   // the loop is what audits an approved report, this one included, and it
   // returns it untouched when the audit is clean.
   const outcome = await runPageQualityLoop({
+    decisions: options.providers.decisions,
     projectId: options.projectId,
     strategy: options.strategy,
     input: options.input,

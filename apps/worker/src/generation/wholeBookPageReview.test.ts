@@ -16,6 +16,8 @@ vi.mock("./qualitySettings.js", () => ({
 }));
 vi.mock("../runtime/jobLifecycle.js", () => ({ updateJobProgress: mocks.updateJobProgress }));
 
+import { composedChaptersStrategy } from "@book-maker/core";
+import { reviewPageWithQualityGates as reviewPageWithQualityGatesImpl } from "./pageQualityGateReview.js";
 import { reviewWholeBookDraftPages } from "./wholeBookPageReview.js";
 
 const page = {
@@ -55,6 +57,17 @@ describe("reviewWholeBookDraftPages", () => {
     );
     expect(revisePageDraft).not.toHaveBeenCalled();
     expect(reviewed).toEqual([{ draft: page, qualityReport: failedReport, revision: 1 }]);
+  });
+
+  it("propagates a cancelled confirmation while reviewing a revised whole-book page", async () => {
+    const cancelled = new DOMException("Cancelled", "AbortError");
+    mocks.qualityEnabled.mockReturnValue(true);
+    mocks.reviewPageWithQualityGates
+      .mockResolvedValueOnce({ approved: false, score: 42, issues: ["Separate local defect."] })
+      .mockRejectedValueOnce(cancelled);
+    const revisePageDraft = vi.fn().mockResolvedValue(page);
+    await expect(reviewWholeBookDraftPages(baseOptions(revisePageDraft))).rejects.toBe(cancelled);
+    expect(revisePageDraft).toHaveBeenCalledTimes(1);
   });
 
   it("attempts at most one revision when page QA rewrites are enabled", async () => {
@@ -100,6 +113,7 @@ describe("reviewWholeBookDraftPages", () => {
     };
     const approvedReport = { ...candidateReport, approved: true, score: 100, issues: [], requiredRevisions: [] };
     const revisePageDraft = vi.fn().mockResolvedValue(page);
+    const decisions = { resolve: vi.fn(), recordOutcome: vi.fn() };
     mocks.qualityEnabled.mockImplementation(
       (feature: string) => feature === "smartUnslop" || feature === "pageQaRewrite"
     );
@@ -107,13 +121,55 @@ describe("reviewWholeBookDraftPages", () => {
       .mockResolvedValueOnce(candidateReport)
       .mockResolvedValueOnce(approvedReport);
 
-    const reviewed = await reviewWholeBookDraftPages(baseOptions(revisePageDraft));
+    const reviewed = await reviewWholeBookDraftPages({ ...baseOptions(revisePageDraft), decisions });
 
     expect(revisePageDraft).toHaveBeenCalledTimes(1);
     expect(mocks.reviewPageWithQualityGates).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ decisions, allowModelReview: false })
+    );
+    expect(mocks.reviewPageWithQualityGates).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ allowSmartUnslop: false })
+      expect.objectContaining({ allowSmartUnslop: false, decisions, allowModelReview: false })
     );
     expect(reviewed[0]).toMatchObject({ draft: page, qualityReport: approvedReport, revision: 2 });
+  });
+
+  it("does not resolve a Smart Unslop confirmation on the composed finalize path", async () => {
+    mocks.reviewPageWithQualityGates.mockImplementation(reviewPageWithQualityGatesImpl);
+    mocks.qualityEnabled.mockImplementation(
+      (feature: string) => feature === "smartUnslop" || feature === "pageQaRewrite" || feature === "pageLocalQa"
+    );
+    const choose = vi.fn();
+    const resolve = vi.fn(async () => ({ choose }));
+    const recordOutcome = vi.fn();
+    const revisePageDraft = vi.fn();
+    const sloppyPage = {
+      index: 2,
+      title: "Treatment",
+      markdown:
+        "Here's the thing: treatment takes several steps. At its core, filtration removes particles. " +
+        "The result serves as a testament to careful plant operation.",
+      summary: "Plant steps.",
+      continuityNotes: [] as string[]
+    };
+
+    const reviewed = await reviewWholeBookDraftPages({
+      ...baseOptions(revisePageDraft),
+      pages: [sloppyPage],
+      strategy: { ...composedChaptersStrategy, revisePageDraft },
+      decisions: { resolve, recordOutcome }
+    } as never);
+
+    expect(resolve).not.toHaveBeenCalled();
+    expect(choose).not.toHaveBeenCalled();
+    expect(recordOutcome).not.toHaveBeenCalled();
+    expect(revisePageDraft).not.toHaveBeenCalled();
+    expect(reviewed[0]).toMatchObject({ draft: sloppyPage, revision: 1 });
+    expect(reviewed[0]?.qualityReport.approved).toBe(true);
+    expect(mocks.reviewPageWithQualityGates).toHaveBeenCalledWith(
+      expect.objectContaining({ allowModelReview: false })
+    );
+    expect(mocks.reviewPageWithQualityGates.mock.calls[0]?.[0]).not.toHaveProperty("decisions");
   });
 });

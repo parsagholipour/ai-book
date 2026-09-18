@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { PageQualityReport } from "@book-maker/core";
+import { PageQualityReport, createProjectSchema, makeFallbackPlan, JEV_SELECTION } from "@book-maker/core";
 import { stubbedEnrichment, mocks, BALANCED_CANDIDATES, report, draftNamed, qualityGates, anchorPage } from "./testing/pageReviewHarness.js";
-import { reviewAndSaveGeneratedPage, runPageQualityLoop } from "./pageReview.js";
+import { reviewAndSaveGeneratedPage, runPageQualityLoop, reviewPageWithQualityGates } from "./pageReview.js";
 
 describe("runPageQualityLoop style audit", () => {
   /** The excerpts a caller pins once and the loop is expected to reuse whole. */
@@ -149,6 +149,39 @@ describe("runPageQualityLoop style audit", () => {
 });
 
 describe("runPageQualityLoop conditional Smart unslop", () => {
+  it.each(["seed", "revision"])("spends confirmation once on the %s while still repairing other failures and preserving the reader request", async (stage) => {
+    const input = createProjectSchema.parse({ prompt: "Explain treatment", targetPages: 8 });
+    const plan = makeFallbackPlan(input);
+    const candidate = { ...draftNamed("Treatment"), markdown: "The basin is not a tank. It is a settling chamber. Chlorine is not an ordinary additive. It is a timed disinfectant. The reservoir is not spare storage. It is a buffer for peak demand." };
+    const rejected = report(75, { issues: ["Repair a separate continuity defect."] });
+    const approved = report(94, { approved: true });
+    const choose = vi.fn(async () => ({
+      ...JEV_SELECTION, selectedOption: "legitimate_use",
+      probabilities: { legitimate_use: 0.9, contextual_defect: 0.05, needs_review: 0.05 }
+    }));
+    const decisions = { resolve: async () => ({ choose }) };
+    const strategy = {
+      revisePageDraft: vi.fn(async () => candidate),
+      reviewPageDraft: vi.fn().mockResolvedValueOnce(rejected).mockResolvedValue(approved)
+    };
+    const userRequest = "Keep the parallel technical distinctions.";
+    const initialReport = stage === "seed" ? await reviewPageWithQualityGates({
+      strategy: strategy as never, quality: qualityGates(), decisions, userRequest,
+      reviewOptions: { input, plan, pageIndex: 4, draft: candidate, previousPages: [], continuityNotes: [], textModel: {} as never }
+    }) : rejected;
+    const outcome = await runPageQualityLoop({
+      projectId: "project-1", strategy: strategy as never, input, plan, pageIndex: 4,
+      draft: candidate, report: { ...initialReport }, previousPages: [], continuityNotes: [],
+      textModel: {} as never, decisions, userRequest, quality: qualityGates(),
+      maxCandidates: BALANCED_CANDIDATES, reviseContext: "Page 4"
+    });
+    expect(outcome.approved).toBe(true);
+    expect(choose).toHaveBeenCalledTimes(1);
+    expect(strategy.revisePageDraft).toHaveBeenCalledTimes(stage === "seed" ? 1 : 2);
+    expect(strategy.revisePageDraft).toHaveBeenCalledWith(expect.objectContaining({ editInstruction: userRequest }));
+    expect(choose.mock.calls[0]).toEqual([expect.objectContaining({ context: expect.stringContaining(userRequest) })]);
+  });
+
   it("accepts an unchanged contextual no-op without spending another unslop rewrite", async () => {
     const candidateDraft = {
       title: "Treatment",

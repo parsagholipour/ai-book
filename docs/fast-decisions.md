@@ -1,10 +1,11 @@
 # Fast decisions
 
 Quality → Model routing → **Fast decisions** optionally selects page drafts,
-chapter drafts, and catalog covers through `DecisionModelAdapter.choose`.
+chapter drafts, and catalog covers, and confirms Smart Unslop candidates through
+`DecisionModelAdapter.choose`.
 Leave it on **Use existing judgment routes** to retain the original calls.
 Chapter candidate count remains one; this route does not enable more drafting.
-Text judgments, writing, creation chat, summaries, and critiques are unchanged.
+Other text judgments, writing, creation chat, summaries, and critiques are unchanged.
 
 Set `VERCEL_AI_GATEWAY_API_KEY` in the API and worker environments, restart them,
 then select **Jev · TypeSafe** and an available **Fast decisions fallback** LLM.
@@ -53,6 +54,39 @@ Live smoke check on 2026-09-17: all six fixtures completed through the LLM
 fallback. Gateway returned Jev provider errors followed by a free-tier 429.
 No usable Jev answers were obtained, so Jev/LLM agreement remains unmeasured.
 The mock harness and automated tests do not establish real-model quality.
+
+## Smart Unslop confirmation
+
+When Smart Unslop finds a significant cluster and Jev routing is enabled,
+`confirm-smart-unslop` supplies the full draft, every flagged span (with offsets
+in the normalized scanner prose), book/genre and local style guidance, pinned
+style excerpts, and any explicit reader edit request. It protects quotations,
+technical language, intentional repetition, and essential qualifications.
+
+Only `legitimate_use` with a valid winning probability of at least 0.70 removes
+the Smart Unslop rewrite request. Ordinary review and independent local or
+mandatory failures still apply. `contextual_defect`, `needs_review`, malformed or
+low-probability answers, unavailable routing, and provider failures retain the
+existing conditional rewrite, including its permission to return an unchanged
+page. This screen uses `escalationPolicy: caller`: bounded Jev network retries
+still run and are accounted for, but escalation goes directly to that existing
+rewrite instead of buying another finite-choice LLM decision. Cancellation
+escapes without escalation.
+
+A clear legitimate decision or an attempted conditional rewrite spends the
+page loop's one-shot Smart Unslop opportunity. Other quality repairs keep their
+existing budgets. Physical calls retain `decision.choose.attempt` events and
+cost rows; `decision.gate.outcome` separately records the question version,
+choice, probabilities, escalation, and `rewriteAvoided`. That flag describes
+removal of the Smart Unslop rewrite request; it does not claim that an unrelated
+repair was avoided or establish measured cost savings. Logging failures do not
+alter generation.
+
+The focused tests use controlled decisions to verify orchestration. Jev's
+accuracy on these prose distinctions, false acceptance rate, multilingual
+coverage, and end-to-end latency/cost savings remain unmeasured. The 0.70
+threshold is reused routing policy, not calibrated accuracy. No live routing
+setting is enabled by this implementation.
 
 References: [Vercel announcement](https://vercel.com/changelog/typesafe-ai-jev-now-available-on-ai-gateway),
 [evaluation result interface](https://github.com/vercel/ai/blob/main/packages/ai/src/evaluate/evaluation-result.ts),

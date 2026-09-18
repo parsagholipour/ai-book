@@ -185,3 +185,5 @@ export * from "./adapters/decisions.js";
 export * from "./adapters/jevDecision.js";
 export * from "./adapters/llmDecision.js";
 export * from "./adapters/decisionRouting.js";
+export * from "./generation/smartUnslopDecision.js";
+export { scanSmartUnslopCandidates } from "./generation/smartUnslop.js";

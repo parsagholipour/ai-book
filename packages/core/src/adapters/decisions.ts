@@ -6,6 +6,8 @@ export type DecisionRequest = {
   instructions: string;
   options: readonly { id: string; description: string }[];
   purpose: string;
+  /** Screens can escalate directly to their existing diagnostic/rewrite path. */
+  escalationPolicy?: "caller" | undefined;
   signal?: AbortSignal | undefined;
 };
 
@@ -25,7 +27,19 @@ export interface DecisionModelAdapter {
 /** Resolve before a caller's terminal fallback; a settings outage is not a verdict. */
 export interface DecisionModelRoute {
   resolve(): Promise<DecisionModelAdapter | undefined>;
+  /** Best-effort logical outcome, separate from billed physical attempts. */
+  recordOutcome?(outcome: DecisionOutcome): Promise<void>;
 }
+
+export type DecisionOutcome = {
+  purpose: string;
+  version: string;
+  pageIndex: number;
+  selectedOption?: string | undefined;
+  probabilities?: Record<string, number> | undefined;
+  escalationReason?: string | undefined;
+  rewriteAvoided: boolean;
+};
 
 export function assertDecisionRequest(request: DecisionRequest): void {
   request.signal?.throwIfAborted();

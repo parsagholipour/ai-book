@@ -75,6 +75,27 @@ describe("pinned decision routing", () => {
     expect((await route.choose(request)).selectedOption).toBe("b");
     expect(fallback).toHaveBeenCalledTimes(1);
   });
+  it.each(["low_probability", "invalid_choice", "invalid_probabilities", "provider_failure"])("lets a screen own escalation for %s without a finite-choice fallback", async (reason) => {
+    const fallback = vi.fn().mockResolvedValue({ ...llm, selectedOption: "a" });
+    const result = reason === "low_probability" ? answer(0.6)
+      : reason === "invalid_choice" ? { ...answer(), selectedOption: "c" }
+      : { ...answer(), probabilities: undefined };
+    const events: DecisionAttempt[] = [];
+    const route = new FallbackDecisionAdapter({
+      primary: JEV_SELECTION, fallback: llm, gateWinningProbability: true,
+      createAdapter: (selection) => ({ choose: selection.provider === JEV_SELECTION.provider ? async () => {
+        if (reason === "provider_failure") throw new Error("Provider unavailable");
+        return result;
+      } : fallback }),
+      retry: { attempts: 1 },
+      onAttempt: async (event) => { events.push(event); throw new Error("Log unavailable"); }
+    });
+    await expect(route.choose({ ...request, escalationPolicy: "caller" })).rejects.toMatchObject({ name: "DecisionEscalationError", reason });
+    expect(fallback).not.toHaveBeenCalled();
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ role: "primary", escalationReason: reason });
+    if (reason !== "provider_failure") expect(events[0]?.result?.usage?.promptTokens).toBe(1000);
+  });
   it("propagates cancellation from either stage and stops before a fallback", async () => {
     for (const stage of ["primary", "fallback"]) {
       const calls: string[] = [];

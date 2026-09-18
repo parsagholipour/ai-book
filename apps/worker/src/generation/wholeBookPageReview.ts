@@ -1,9 +1,11 @@
 import { updateJobProgress } from "../runtime/jobLifecycle.js";
-import { isStopRequestedError, type IndexedPageDraft } from "../runtime/jobTypes.js";
+import type { IndexedPageDraft } from "../runtime/jobTypes.js";
 import { reviewPageWithQualityGates } from "./pageReview.js";
 import { loadQualityContext } from "./qualitySettings.js";
 import {
-  hasSmartUnslopCandidates,
+  hasSmartUnslopCandidates, smartUnslopResolved,
+  isCancellationError,
+  type DecisionModelRoute,
   CASE_EVIDENCE_WRITER_RULES,
   type BookGenerationStrategy,
   type BookPlan,
@@ -27,17 +29,21 @@ export async function reviewWholeBookDraftPages(options: {
   plan: BookPlan;
   strategy: BookGenerationStrategy;
   textModel: TextModelAdapter;
+  decisions?: DecisionModelRoute | undefined;
   pages: IndexedPageDraft[];
   generationJobId?: string | undefined;
 }): Promise<ReviewedWholeBookPage[]> {
   const quality = await loadQualityContext(options.input);
   const reviewed: ReviewedWholeBookPage[] = [];
   const previousPages: PriorPageContext[] = [];
+  // Composed finalize never rewrites for Smart Unslop, so Jev confirmation is inert.
+  const decisions = strategyComposesChapters(options.strategy) ? undefined : options.decisions;
 
   for (const pageDraft of options.pages) {
     let draft: IndexedPageDraft = pageDraft;
     let revision = 1;
     let report = await reviewPageWithQualityGates({
+      ...(decisions ? { decisions } : {}),
       strategy: options.strategy,
       quality,
       allowModelReview: false,
@@ -76,10 +82,11 @@ export async function reviewWholeBookDraftPages(options: {
           textModel: options.textModel
         });
         const revisedReport = await reviewPageWithQualityGates({
+          ...(decisions ? { decisions } : {}),
           strategy: options.strategy,
           quality,
           allowModelReview: false,
-          allowSmartUnslop: !hasSmartUnslopCandidates(report as PageQualityReport),
+          allowSmartUnslop: !smartUnslopResolved(report) && !hasSmartUnslopCandidates(report as PageQualityReport),
           reviewOptions: {
             input: options.input,
             plan: options.plan,
@@ -96,7 +103,7 @@ export async function reviewWholeBookDraftPages(options: {
           revision = 2;
         }
       } catch (error) {
-        if (isStopRequestedError(error)) {
+        if (isCancellationError(error)) {
           throw error;
         }
       }

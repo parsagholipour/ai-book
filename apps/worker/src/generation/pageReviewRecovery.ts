@@ -596,3 +596,17 @@ function focusWithRepairedContinuity(existing: string[], required: string[]): st
   }
   return uniqueStrings([...existing, ...required]).slice(0, CHAPTER_CONTINUITY_FOCUS_LIMIT);
 }
+
+/**
+ * A quality rewrite of a page the reader asked to change must repair the page
+ * *around* their edit, never back out of it — the request is already in the
+ * draft, and the rewrite is being asked for because something else about the
+ * page failed review.
+ */
+export function keepUserRequestApplied(report: PageQualityReport, userRequest: string | undefined): PageQualityReport {
+  const instruction = userRequest ? `Keep the user's requested edit applied: ${userRequest}` : "";
+  if (!instruction || report.requiredRevisions.includes(instruction)) {
+    return report;
+  }
+  return { ...report, requiredRevisions: [instruction, ...report.requiredRevisions] };
+}

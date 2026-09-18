@@ -375,6 +375,7 @@ export async function repairPagesFromFinalQa(options: {
     // the loop is what pays it, on this seed report the same way it does on
     // every rewrite after it.
     const initialReport = await reviewPageWithQualityGates({
+      decisions: options.providers.decisions,
       strategy: options.strategy,
       quality: options.quality,
       reviewOptions: {
@@ -393,6 +394,7 @@ export async function repairPagesFromFinalQa(options: {
       }
     });
     const outcome = await runPageQualityLoop({
+      decisions: options.providers.decisions,
       projectId: options.projectId,
       strategy: options.strategy,
       input: options.input,

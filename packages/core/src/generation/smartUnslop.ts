@@ -21,12 +21,13 @@ type SmartUnslopRule = {
   pattern: RegExp;
 };
 
-type SmartUnslopMatch = {
+export type SmartUnslopMatch = {
   ruleId: string;
   category: SmartUnslopCategory;
   start: number;
   end: number;
   excerpt: string;
+  text: string;
 };
 
 const SMART_UNSLOP_RULES: readonly SmartUnslopRule[] = [
@@ -83,15 +84,23 @@ export function hasSmartUnslopCandidates(
 }
 
 /** Return a conditional rewrite request only when the scanner evidence is substantial. */
-export function reviewPageDraftForSmartUnslop(options: LocalPageReviewOptions): PageQualityReport {
-  const prose = smartUnslopReaderProse(options.draft.markdown);
+export function scanSmartUnslopCandidates(markdown: string) {
+  const prose = smartUnslopReaderProse(markdown);
   const matches = nonOverlappingMatches(prose);
   const minimumSignals =
     countReadableWords(prose) >= LARGE_PAGE_WORDS
       ? LARGE_PAGE_MINIMUM_SIGNALS
       : NORMAL_MINIMUM_SIGNALS;
 
-  if (!isSignificantSmartUnslopCluster(matches, minimumSignals)) {
+  return { prose, matches, significant: isSignificantSmartUnslopCluster(matches, minimumSignals) };
+}
+
+export function reviewPageDraftForSmartUnslop(
+  options: LocalPageReviewOptions,
+  scan = scanSmartUnslopCandidates(options.draft.markdown)
+): PageQualityReport {
+  const { matches } = scan;
+  if (!scan.significant) {
     return skippedPageQualityReport();
   }
 
@@ -140,7 +149,8 @@ function nonOverlappingMatches(prose: string): SmartUnslopMatch[] {
         category: rule.category,
         start,
         end: start + match[0].length,
-        excerpt
+        excerpt,
+        text: match[0]
       };
     })
   ).sort((left, right) => left.start - right.start || right.end - right.start - (left.end - left.start));

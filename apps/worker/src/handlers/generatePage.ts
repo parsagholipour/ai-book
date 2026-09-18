@@ -311,6 +311,7 @@ export async function generatePage(job: GeneratePageJob) {
     await advanceJobStep(generationJobId, "qa", 55, `Reviewing page ${page.index}`);
   }
   const initialReport = await reviewPageWithQualityGates({
+    decisions: providers.decisions,
     strategy,
     quality,
     reviewOptions: {
@@ -344,6 +345,7 @@ export async function generatePage(job: GeneratePageJob) {
   });
 
   const outcome = await runPageQualityLoop({
+    decisions: providers.decisions,
     projectId,
     strategy,
     input,

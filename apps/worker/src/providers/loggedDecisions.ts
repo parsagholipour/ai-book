@@ -36,6 +36,10 @@ export function createLoggedDecisions(job: WorkerRuntimeJob, input?: CreateProje
     }
   }), input, projectId, embedding);
   return {
+    async recordOutcome(outcome) {
+      try { await logger.append("decision.gate.outcome", { ...outcome }); }
+      catch { /* A diagnostic write cannot change generation. */ }
+    },
     async resolve() {
       await assertJobNotStopped(generationJobId);
       const adapter = await route.resolve();

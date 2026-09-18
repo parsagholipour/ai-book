@@ -35,6 +35,27 @@ beforeEach(() => {
 });
 
 describe("decision accounting and source context", () => {
+  it("records a gate outcome separately from costing and tolerates a failed diagnostic write", async () => {
+    const route = createLoggedDecisions({ id: "1", name: "generate-book", data: { projectId: "p", generationJobId: "j", planId: "plan-1" } } as WorkerRuntimeJob);
+    const outcome = { purpose: "confirm-smart-unslop", version: "smart-unslop-confirmation-v1", pageIndex: 2, selectedOption: "legitimate_use", rewriteAvoided: true };
+    await route.recordOutcome!(outcome);
+    expect(mocks.append).toHaveBeenCalledExactlyOnceWith("decision.gate.outcome", outcome);
+    expect(mocks.prisma.providerCallLog.create).not.toHaveBeenCalled();
+    mocks.append.mockRejectedValue(new Error("Log unavailable"));
+    await expect(route.recordOutcome!(outcome)).resolves.toBeUndefined();
+  });
+
+  it("costs an uncertain screen once while its caller owns the rewrite escalation", async () => {
+    const adapter = new FallbackDecisionAdapter({
+      primary: JEV_SELECTION, fallback, gateWinningProbability: true,
+      createAdapter: () => ({ choose: async () => ({ ...JEV_SELECTION, selectedOption: "a", probabilities: { a: 0.6, b: 0.4 }, usage: { promptTokens: 1000, outputTokens: 0 } }) }),
+      onAttempt: (attempt) => recordDecisionAttempt(attempt, { callId: "screen", projectId: "p", generationJobId: "j" })
+    });
+    await expect(adapter.choose({ ...request, purpose: "confirm-smart-unslop", escalationPolicy: "caller" })).rejects.toMatchObject({ reason: "low_probability" });
+    expect(mocks.prisma.providerCallLog.create).toHaveBeenCalledTimes(1);
+    expect(mocks.prisma.providerCallLog.update).toHaveBeenCalledTimes(1);
+    expect(mocks.prisma.providerCallLog.update.mock.calls[0]![0]).toMatchObject({ data: { costHint: 0.000042, metadata: { decision: { escalationReason: "low_probability" } } } });
+  });
   it("settles one row per physical call, including the uncertain paid Jev call", async () => {
     let calls = 0;
     const route = new FallbackDecisionAdapter({ primary: JEV_SELECTION, fallback, gateWinningProbability: true,

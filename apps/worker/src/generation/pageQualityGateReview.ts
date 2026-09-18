@@ -2,7 +2,11 @@ import type { QualityGateContext } from "./qualityEnrichment.js";
 import {
   reviewPageDraftLocally,
   reviewPageDraftForSmartUnslop,
+  scanSmartUnslopCandidates,
+  confirmSmartUnslopCandidates,
+  withSmartUnslopResolved,
   reviewRequiredPageQualityChecks,
+  type DecisionModelRoute,
   type BookGenerationStrategy,
   type PageReviewPromptMode,
   type PageQualityReport,
@@ -40,16 +44,24 @@ export async function reviewPageWithQualityGates(options: {
   strategy: BookGenerationStrategy;
   quality: QualityGateContext;
   reviewOptions: ReviewPageOptions;
+  decisions?: DecisionModelRoute | undefined;
+  userRequest?: string | undefined;
+  signal?: AbortSignal | undefined;
   /** Whole-book mode deliberately keeps its established local-only review. */
   allowModelReview?: boolean | undefined;
   /** A candidate-triggered rewrite has already spent this one-shot scan. */
   allowSmartUnslop?: boolean | undefined;
 }): Promise<PageQualityReport> {
   const { localEnabled, smartUnslopEnabled, modelEnabled } = pageReviewPassesFor(options);
+  options.signal?.throwIfAborted();
+  const scan = smartUnslopEnabled ? scanSmartUnslopCandidates(options.reviewOptions.draft.markdown) : undefined;
   const unslopReport = smartUnslopEnabled
-    ? reviewPageDraftForSmartUnslop(options.reviewOptions)
+    ? reviewPageDraftForSmartUnslop(options.reviewOptions, scan)
     : undefined;
-  if (unslopReport && !unslopReport.approved) {
+  const rewriteAvoided = scan?.significant && options.decisions
+    ? await confirmSmartUnslopCandidates({ ...options, scan })
+    : false;
+  if (unslopReport && !unslopReport.approved && !rewriteAvoided) {
     // Scanner candidates buy one conditional rewrite before the model review.
     // Local deterministic defects still join that briefing; the rewritten (or
     // deliberately unchanged) candidate then receives the ordinary review.
@@ -75,7 +87,8 @@ export async function reviewPageWithQualityGates(options: {
             skipLocalChecks: !localEnabled
           });
 
-  return baseReport;
+  options.signal?.throwIfAborted();
+  return rewriteAvoided ? withSmartUnslopResolved(baseReport) : baseReport;
 }
 
 function mergePageQualityReports(
