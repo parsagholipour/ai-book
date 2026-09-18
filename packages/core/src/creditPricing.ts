@@ -100,12 +100,13 @@ export const DEFAULT_CREDIT_COSTS = {
   audiobookBase: 80,
   audiobookPerPage: 12,
   characterPortraitGeneration: 45,
-  // Not prices — the free tier's monthly limits. They live here because they are
-  // the same kind of knob: something an operator has to be able to move against
+  // Not prices — the free tier's limits. They live here because they are the
+  // same kind of knob: something an operator has to be able to move against
   // abuse without a deploy, with the same audit trail behind it. Paid tiers take
   // their allowance from the product catalog instead, since those numbers are
   // pinned to a Play price point that cannot change without one.
-  freeMonthlyCredits: 1_000,
+  welcomeCredits: 1_000,
+  welcomeCreditsEnabled: 1,
   freeIllustratedBooksPerMonth: 3,
   freeManuscriptImportsPerMonth: 1
 } as const;
@@ -133,7 +134,8 @@ export const PLAN_ALLOWANCE_KEYS = [
   "messageDailyLimitMax",
   "messageResetEnabledMax",
 
-  "freeMonthlyCredits",
+  "welcomeCredits",
+  "welcomeCreditsEnabled",
   "freeIllustratedBooksPerMonth",
   "freeManuscriptImportsPerMonth"
 ] as const;
@@ -209,8 +211,9 @@ export const CREDIT_PRICING_LIMITS: Record<CreditPricingKey, number> = {
   audiobookPerPage: 2_000,
   characterPortraitGeneration: 5_000,
   // Generous ceilings: the failure mode for an allowance is giving too much
-  // away, which is bounded and reversible next period, not an instant charge.
-  freeMonthlyCredits: 100_000,
+  // away, which is bounded and reversible, not an instant charge.
+  welcomeCredits: 100_000,
+  welcomeCreditsEnabled: 1,
   freeIllustratedBooksPerMonth: 100,
   freeManuscriptImportsPerMonth: 100
 };

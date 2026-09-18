@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// The Keystone symbol: a sculpted T with a bookmark cut into its crown.
+/// The Promptbook symbol: an open book inside a speech bubble.
 class TomezaBrandMark extends StatelessWidget {
   const TomezaBrandMark({
     super.key,
@@ -15,13 +15,14 @@ class TomezaBrandMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final mark = SizedBox.square(
-      dimension: size,
-      child: CustomPaint(
-        painter: _KeystoneMarkPainter(
-          color ?? Theme.of(context).colorScheme.primary,
-        ),
-      ),
+    final mark = Image.asset(
+      'assets/brand/tomeza-promptbook-symbol.png',
+      width: size,
+      height: size,
+      fit: BoxFit.contain,
+      color: color ?? Theme.of(context).colorScheme.primary,
+      colorBlendMode: BlendMode.srcIn,
+      filterQuality: FilterQuality.high,
     );
 
     final label = semanticLabel;
@@ -75,47 +76,4 @@ class TomezaWordmark extends StatelessWidget {
       ),
     );
   }
-}
-
-class _KeystoneMarkPainter extends CustomPainter {
-  const _KeystoneMarkPainter(this.color);
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.save();
-    canvas.scale(size.width / 100, size.height / 100);
-
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-
-    final keystone = Path()
-      ..fillType = PathFillType.evenOdd
-      ..moveTo(10, 13)
-      ..lineTo(90, 13)
-      ..lineTo(82, 35)
-      ..lineTo(61, 35)
-      ..lineTo(61, 66)
-      ..cubicTo(61, 77, 65, 82, 71, 88)
-      ..lineTo(29, 88)
-      ..cubicTo(35, 82, 39, 77, 39, 66)
-      ..lineTo(39, 35)
-      ..lineTo(18, 35)
-      ..close()
-      ..moveTo(45, 13)
-      ..lineTo(55, 13)
-      ..lineTo(55, 25)
-      ..lineTo(50, 31)
-      ..lineTo(45, 25)
-      ..close();
-
-    canvas.drawPath(keystone, paint);
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(_KeystoneMarkPainter oldDelegate) =>
-      oldDelegate.color != color;
 }

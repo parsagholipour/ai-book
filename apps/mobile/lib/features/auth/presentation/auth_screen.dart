@@ -443,17 +443,10 @@ class _BrandMark extends StatelessWidget {
           height: 72,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: colors.primary,
+            color: colors.surface,
             borderRadius: BorderRadius.circular(22),
-            boxShadow: [
-              BoxShadow(
-                color: colors.primary.withValues(alpha: 0.35),
-                blurRadius: 24,
-                offset: const Offset(0, 10),
-              ),
-            ],
           ),
-          child: TomezaBrandMark(color: colors.onPrimary, size: 52),
+          child: TomezaBrandMark(color: colors.primary, size: 52),
         ),
       ),
     );
