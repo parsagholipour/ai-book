@@ -73,6 +73,9 @@ const PROSE_LANE_PURPOSES: ReadonlySet<string> = new Set([
   "review-chapter-evidence", "plan-developmental-edit", "rewrite-developmental-sections"
 ]);
 
+// Finite-choice screens bypass text routing and escalate to their own diagnostic purpose.
+const DECISION_ONLY_PURPOSES: ReadonlySet<string> = new Set(["screen-page-style"]);
+
 /** Model-call purposes are identifier-shaped; `purpose` is also a page brief's own field, whose values are sentences. */
 const PURPOSE_IDENTIFIER = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/;
 
@@ -224,14 +227,14 @@ describe("RoutingTextModelAdapter", () => {
     const emitted = await purposesEmittedByCore();
 
     const unclassified = [...emitted].filter(
-      (purpose) => !MECHANICAL_TEXT_PURPOSES.has(purpose) && !PROSE_LANE_PURPOSES.has(purpose)
+      (purpose) => !MECHANICAL_TEXT_PURPOSES.has(purpose) && !PROSE_LANE_PURPOSES.has(purpose) && !DECISION_ONLY_PURPOSES.has(purpose)
     );
     expect(
       unclassified,
       "A new purpose defaults to the tier's prose model. Decide which it is: add it to " +
         "MECHANICAL_TEXT_PURPOSES (modelTiers.ts) if it is a strict-schema, judging or " +
         "find-and-replace call, or to PROSE_LANE_PURPOSES here if it writes reader-facing prose " +
-        "or reaches a different adapter altogether."
+        "or reaches a different adapter altogether; finite-choice screens belong in DECISION_ONLY_PURPOSES."
     ).toEqual([]);
   });
 });

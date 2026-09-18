@@ -34,11 +34,13 @@ export interface DecisionModelRoute {
 export type DecisionOutcome = {
   purpose: string;
   version: string;
-  pageIndex: number;
+  pageIndex?: number | undefined;
   selectedOption?: string | undefined;
   probabilities?: Record<string, number> | undefined;
   escalationReason?: string | undefined;
   rewriteAvoided: boolean;
+  /** A style screen skipped the diagnostic audit, not the ordinary page review. */
+  auditAvoided?: boolean | undefined;
 };
 
 export function assertDecisionRequest(request: DecisionRequest): void {

@@ -330,6 +330,7 @@ export async function generatePage(job: GeneratePageJob) {
     }
   });
   const enriched = await enrichPageQualityReport({
+    decisions: providers.decisions,
     input,
     plan,
     pageIndex: page.index,

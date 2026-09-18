@@ -4,6 +4,7 @@ import {
   extractStoryState,
   figureFreeProse,
   hasResearchIntent,
+  isCancellationError,
   localStyleInstructions,
   pageDraftSummary,
   unpaidPromiseIssues,
@@ -13,6 +14,7 @@ import {
   withStyleAudit,
   type BookPlan,
   type CreateProjectInput,
+  type DecisionModelRoute,
   type PageDraft,
   type PageQualityReport,
   type PriorPageContext,
@@ -53,6 +55,9 @@ export async function enrichPageQualityReport(options: {
   previousPages: PriorPageContext[];
   researchNotes: string[];
   textModel: TextModelAdapter;
+  decisions?: DecisionModelRoute | undefined;
+  /** The requested edit is authoritative for intentional changes to style. */
+  userRequest?: string | undefined;
   projectId: string;
   /**
    * The caller's pinned style lock — pages 1–2, loaded when its own window no
@@ -146,14 +151,17 @@ export async function enrichPageQualityReport(options: {
     try {
       const audit = await auditPageStyle({
         textModel: options.textModel,
+        ...(options.decisions ? { decisions: options.decisions } : {}),
+        pageIndex: options.pageIndex,
         markdown: figureFreeProse(options.draft.markdown),
         voiceGuide: options.plan.voiceGuide,
         antiAiRules: localStyleInstructions(options.plan),
-        styleExcerpts
+        styleExcerpts,
+        ...(options.userRequest ? { userRequest: options.userRequest } : {})
       });
       report = withStyleAudit(report, audit);
     } catch (error) {
-      if (isStopRequestedError(error)) {
+      if (isCancellationError(error)) {
         throw error;
       }
       console.warn(`Style auditor skipped for project ${options.projectId} page ${options.pageIndex}`, error);
@@ -170,7 +178,7 @@ export type RevisedDraftStyleAuditor = (
 ) => Promise<PageQualityReport>;
 
 /**
- * Ceiling on re-audit provider calls per page. `maxCandidates` bounds the
+ * Ceiling on logical re-audit attempts per page, including screens. `maxCandidates` bounds the
  * revise/review pairs but nothing counted the audits layered on top: every
  * revision the reviewer approved bought one more `auditPageStyle` call, so a
  * page oscillating between the two gates spent up to six uncounted calls on
@@ -195,12 +203,14 @@ const MAX_REVISED_DRAFT_STYLE_AUDITS = 2;
  * against, so `runPageQualityLoop` — its one caller, which builds it out of the
  * same excerpts it revises and reviews with — can simply skip the audit.
  * Failure degrades to the unaudited report, the same bargain
- * `enrichPageQualityReport` makes; only a user stop travels out.
+ * `enrichPageQualityReport` makes; cancellation (`isCancellationError`: abort
+ * and user stop) travels out.
  */
 export function revisedDraftStyleAuditor(options: {
   projectId: string;
   plan: BookPlan;
   textModel: TextModelAdapter;
+  decisions?: DecisionModelRoute | undefined;
   styleExcerpts: string[];
   quality: QualityGateContext;
   /**
@@ -225,6 +235,8 @@ export function revisedDraftStyleAuditor(options: {
     try {
       const audit = await auditPageStyle({
         textModel: options.textModel,
+        ...(options.decisions ? { decisions: options.decisions } : {}),
+        pageIndex,
         markdown: figureFreeProse(draft.markdown),
         voiceGuide: options.plan.voiceGuide,
         antiAiRules: localStyleInstructions(options.plan),
@@ -233,7 +245,7 @@ export function revisedDraftStyleAuditor(options: {
       });
       return withStyleAudit(report, audit);
     } catch (error) {
-      if (isStopRequestedError(error)) {
+      if (isCancellationError(error)) {
         throw error;
       }
       console.warn(`Style auditor skipped for project ${options.projectId} page ${pageIndex}`, error);

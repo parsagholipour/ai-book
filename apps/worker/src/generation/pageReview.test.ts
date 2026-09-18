@@ -54,11 +54,15 @@ describe("runPageQualityLoop style audit", () => {
     const strategy = strategyApproving();
     mocks.auditPageStyle.mockResolvedValue({ styleOk: true, styleIssues: [] });
 
-    await loopWith({ strategy });
+    const decisions = { resolve: vi.fn() };
+    await loopWith({ strategy, decisions, userRequest: "Use a formal register." });
 
     expect(strategy.revisePageDraft.mock.calls[0]![0].styleExcerpts).toBe(excerpts);
     expect(strategy.reviewPageDraft.mock.calls[0]![0].styleExcerpts).toBe(excerpts);
     expect(auditedWith()[0]!.styleExcerpts).toBe(excerpts);
+    expect(mocks.auditPageStyle).toHaveBeenCalledWith(expect.objectContaining({
+      decisions, pageIndex: 4, userRequest: "Use a formal register."
+    }));
   });
 
   it("builds no auditor with the gate off, or with nothing pinned to compare against", async () => {
@@ -336,6 +340,18 @@ describe("reviewAndSaveGeneratedPage", () => {
     expect(fence).toHaveBeenCalledOnce();
     expect(strategy.reviewPageDraft).not.toHaveBeenCalled();
     expect(mocks.prisma.page.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("forwards Jev routing and the requested edit into initial enrichment", async () => {
+    strategy.reviewPageDraft.mockResolvedValue(report(90, { approved: true }));
+    const decisions = { resolve: vi.fn() };
+    await reviewAndSaveGeneratedPage({
+      ...(baseOptions() as object), providers: { text: {}, embedding: {}, decisions },
+      editInstruction: "Use a formal register."
+    } as never);
+    expect(mocks.enrichPageQualityReport).toHaveBeenCalledWith(expect.objectContaining({
+      decisions, userRequest: "Use a formal register."
+    }));
   });
 
   it("keeps the best draft, not the last, when no rewrite is approved", async () => {

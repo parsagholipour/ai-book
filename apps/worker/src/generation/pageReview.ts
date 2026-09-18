@@ -231,6 +231,7 @@ export async function runPageQualityLoop(options: {
 }): Promise<PageQualityLoopOutcome> {
   const styleExcerpts = options.styleExcerpts ?? [];
   const auditApprovedRevision = revisedDraftStyleAuditor({
+    ...(options.decisions ? { decisions: options.decisions } : {}),
     projectId: options.projectId,
     plan: options.plan,
     textModel: options.textModel,
@@ -385,7 +386,8 @@ export async function runPageQualityLoop(options: {
     report = await reviewPageWithQualityGates({
       strategy: options.strategy,
       quality: options.quality,
-      decisions: options.decisions, userRequest: options.userRequest,
+      ...(options.decisions ? { decisions: options.decisions } : {}),
+      ...(options.userRequest ? { userRequest: options.userRequest } : {}),
       allowSmartUnslop: !smartUnslopSpent && !resolvesSmartUnslop,
       reviewOptions: {
         input: options.input,
@@ -624,7 +626,8 @@ export async function reviewAndSaveGeneratedPage(options: {
     quality
   });
   const initialReport = await reviewPageWithQualityGates({
-    decisions: options.providers.decisions, userRequest: options.editInstruction,
+    ...(options.providers.decisions ? { decisions: options.providers.decisions } : {}),
+    ...(options.editInstruction ? { userRequest: options.editInstruction } : {}),
     strategy: options.strategy,
     quality,
     reviewOptions: {
@@ -646,6 +649,8 @@ export async function reviewAndSaveGeneratedPage(options: {
     }
   });
   const enriched = await enrichPageQualityReport({
+    ...(options.providers.decisions ? { decisions: options.providers.decisions } : {}),
+    ...(options.editInstruction ? { userRequest: options.editInstruction } : {}),
     input: options.input,
     plan: options.plan,
     pageIndex: options.draft.index,
@@ -660,7 +665,7 @@ export async function reviewAndSaveGeneratedPage(options: {
   });
 
   const outcome = await runPageQualityLoop({
-    decisions: options.providers.decisions,
+    ...(options.providers.decisions ? { decisions: options.providers.decisions } : {}),
     projectId: options.projectId,
     strategy: options.strategy,
     input: options.input,
