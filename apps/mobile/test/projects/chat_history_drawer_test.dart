@@ -15,6 +15,30 @@ import 'package:tomeza/features/projects/presentation/chat_drawer_chrome.dart';
 import 'package:tomeza/features/projects/presentation/chat_history_drawer.dart';
 
 void main() {
+  testWidgets('search stays behind the overflow until Search chats', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(sessions: const [], activeDraftId: ''));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(TextField), findsNothing);
+    expect(find.byTooltip('More'), findsOneWidget);
+    expect(find.byIcon(Icons.more_vert), findsOneWidget);
+    expect(find.byTooltip('Close'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('More'));
+    await tester.pumpAndSettle();
+    expect(find.text('Search chats'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('drawer-search-chats')));
+    await tester.pumpAndSettle();
+    expect(find.byType(TextField), findsOneWidget);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).focusNode?.hasFocus,
+      isTrue,
+    );
+  });
+
   testWidgets('new book button uses a pen-on-paper icon', (tester) async {
     await tester.pumpWidget(_app(sessions: const [], activeDraftId: ''));
     await tester.pumpAndSettle();
@@ -47,7 +71,9 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('The moon garden'), findsNothing);
+      expect(find.byType(TextField), findsNothing);
 
+      await _openChatSearch(tester);
       await tester.enterText(find.byType(TextField), '  MOON  ');
       await tester.pumpAndSettle();
       expect(find.text('The moon garden'), findsOneWidget);
@@ -68,6 +94,7 @@ void main() {
       expect(find.text('No matching chats'), findsNothing);
       await tester.tap(find.byTooltip('Done searching'));
       await tester.pumpAndSettle();
+      expect(find.byType(TextField), findsNothing);
       expect(find.text('New book'), findsOneWidget);
       expect(find.text('Your books'), findsOneWidget);
     },
@@ -84,6 +111,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    await _openChatSearch(tester);
     await tester.enterText(find.byType(TextField), 'moon');
     await tester.pumpAndSettle();
     expect(find.text('No matching chats'), findsNothing);
@@ -108,6 +136,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await _openChatSearch(tester);
       await tester.enterText(find.byType(TextField), 'moon');
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
@@ -234,6 +263,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
+      await _openChatSearch(tester);
       await tester.enterText(find.byType(TextField), 'long');
       tester.view.viewInsets = const FakeViewPadding(bottom: 280);
       addTearDown(tester.view.resetViewInsets);
@@ -514,6 +544,13 @@ Widget _app({
       home: Scaffold(body: ChatHistoryDrawer(activeDraftId: activeDraftId)),
     ),
   );
+}
+
+Future<void> _openChatSearch(WidgetTester tester) async {
+  await tester.tap(find.byTooltip('More'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const ValueKey('drawer-search-chats')));
+  await tester.pumpAndSettle();
 }
 
 /// Timed pumps rather than `pumpAndSettle`: an indeterminate spinner animates

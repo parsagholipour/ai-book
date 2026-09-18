@@ -9,7 +9,11 @@ import '../../billing/presentation/billing_paywall.dart';
 import 'creation_chat_navigation.dart';
 
 class ChatDrawerHeader extends StatelessWidget {
-  const ChatDrawerHeader({super.key});
+  const ChatDrawerHeader({super.key, required this.onSearchChats});
+
+  /// Opens the chat search field. Search lives behind the overflow rather than
+  /// as a standing field: the list is what the drawer is for.
+  final VoidCallback onSearchChats;
 
   @override
   Widget build(BuildContext context) {
@@ -18,12 +22,41 @@ class ChatDrawerHeader extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: TomezaWordmark(
-              markSize: 25,
-              textStyle: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+            // Two trailing icons on a 320-wide drawer at large text would
+            // overflow the lockup; scale it down rather than clip the name
+            // or the buttons.
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: TomezaWordmark(
+                  markSize: 25,
+                  textStyle: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
             ),
+          ),
+          PopupMenuButton<String>(
+            key: const ValueKey('drawer-more'),
+            tooltip: 'More',
+            icon: const Icon(Icons.more_vert),
+            onSelected: (value) {
+              if (value == 'search') onSearchChats();
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                key: ValueKey('drawer-search-chats'),
+                value: 'search',
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.search),
+                  title: Text('Search chats'),
+                ),
+              ),
+            ],
           ),
           IconButton(
             tooltip: 'Close',

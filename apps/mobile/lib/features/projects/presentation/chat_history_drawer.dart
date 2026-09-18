@@ -35,6 +35,7 @@ class _ChatHistoryDrawerState extends ConsumerState<ChatHistoryDrawer> {
   final _search = TextEditingController();
   final _searchFocus = FocusNode();
   final _scroll = ScrollController();
+  var _searchOpen = false;
 
   @override
   void initState() {
@@ -43,7 +44,23 @@ class _ChatHistoryDrawerState extends ConsumerState<ChatHistoryDrawer> {
     _scroll.addListener(_loadNearEnd);
   }
 
-  void _focusChanged() => setState(() {});
+  void _focusChanged() {
+    // Leaving an empty field without a query is leaving search, so the box
+    // goes away rather than sitting empty over the list it was meant to hide.
+    if (!_searchFocus.hasFocus && _search.text.trim().isEmpty && _searchOpen) {
+      setState(() => _searchOpen = false);
+      return;
+    }
+    setState(() {});
+  }
+
+  void _openSearch() {
+    AppHaptics.tap();
+    setState(() => _searchOpen = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _searchFocus.requestFocus();
+    });
+  }
 
   String get _query => _search.text.trim().toLowerCase();
 
@@ -123,15 +140,15 @@ class _ChatHistoryDrawerState extends ConsumerState<ChatHistoryDrawer> {
                         id: _DrawerBodyDelegate.chromeId,
                         child: ColoredBox(
                           color: drawerBackground,
-                          child: const SingleChildScrollView(
+                          child: SingleChildScrollView(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                ChatDrawerHeader(),
-                                SizedBox(height: 4),
-                                _CharactersRow(),
-                                BookShelf(),
+                                ChatDrawerHeader(onSearchChats: _openSearch),
+                                const SizedBox(height: 4),
+                                const _CharactersRow(),
+                                const BookShelf(),
                               ],
                             ),
                           ),
@@ -139,60 +156,72 @@ class _ChatHistoryDrawerState extends ConsumerState<ChatHistoryDrawer> {
                       ),
                       LayoutId(
                         id: _DrawerBodyDelegate.searchId,
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: _search,
-                                  maxLength: 200,
-                                  focusNode: _searchFocus,
-                                  onChanged: _searchChanged,
-                                  textInputAction: TextInputAction.search,
-                                  onSubmitted: (_) => _searchFocus.unfocus(),
-                                  decoration: InputDecoration(
-                                    hintText: 'Search chats',
-                                    counterText: '',
-                                    prefixIcon: const Icon(
-                                      Icons.search,
-                                      size: 21,
-                                    ),
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      vertical: 12,
-                                    ),
-                                    fillColor: colors.surfaceContainerHigh,
-                                    enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(
-                                        AppRadii.control,
-                                      ),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                    suffixIcon: _search.text.isEmpty
-                                        ? null
-                                        : IconButton(
-                                            tooltip: 'Clear search',
-                                            icon: const Icon(
-                                              Icons.close,
-                                              size: 18,
-                                            ),
-                                            onPressed: () {
-                                              _search.clear();
-                                              _searchChanged('');
-                                            },
+                        child: _searchOpen
+                            ? Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  4,
+                                  16,
+                                  12,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        controller: _search,
+                                        maxLength: 200,
+                                        focusNode: _searchFocus,
+                                        onChanged: _searchChanged,
+                                        textInputAction:
+                                            TextInputAction.search,
+                                        onSubmitted: (_) =>
+                                            _searchFocus.unfocus(),
+                                        decoration: InputDecoration(
+                                          hintText: 'Search chats',
+                                          counterText: '',
+                                          prefixIcon: const Icon(
+                                            Icons.search,
+                                            size: 21,
                                           ),
-                                  ),
+                                          contentPadding:
+                                              const EdgeInsets.symmetric(
+                                                vertical: 12,
+                                              ),
+                                          fillColor:
+                                              colors.surfaceContainerHigh,
+                                          enabledBorder: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              AppRadii.control,
+                                            ),
+                                            borderSide: BorderSide.none,
+                                          ),
+                                          suffixIcon: _search.text.isEmpty
+                                              ? null
+                                              : IconButton(
+                                                  tooltip: 'Clear search',
+                                                  icon: const Icon(
+                                                    Icons.close,
+                                                    size: 18,
+                                                  ),
+                                                  onPressed: () {
+                                                    _search.clear();
+                                                    _searchChanged('');
+                                                  },
+                                                ),
+                                        ),
+                                      ),
+                                    ),
+                                    if (focused)
+                                      IconButton(
+                                        tooltip: 'Done searching',
+                                        icon: const Icon(Icons.check),
+                                        onPressed: () =>
+                                            _searchFocus.unfocus(),
+                                      ),
+                                  ],
                                 ),
-                              ),
-                              if (focused)
-                                IconButton(
-                                  tooltip: 'Done searching',
-                                  icon: const Icon(Icons.check),
-                                  onPressed: () => _searchFocus.unfocus(),
-                                ),
-                            ],
-                          ),
-                        ),
+                              )
+                            : const SizedBox.shrink(),
                       ),
                       LayoutId(
                         id: _DrawerBodyDelegate.listId,
@@ -246,8 +275,9 @@ class _ChatHistoryDrawerState extends ConsumerState<ChatHistoryDrawer> {
   }
 }
 
-/// Pins Header / Characters / BookShelf above search and the chat list, and
-/// shrinks that chrome first so a short viewport still shows search results.
+/// Pins Header / Characters / BookShelf above search (when it is open) and
+/// the chat list, and shrinks that chrome first so a short viewport still
+/// shows search results.
 class _DrawerBodyDelegate extends MultiChildLayoutDelegate {
   _DrawerBodyDelegate({required this.minListHeight});
 
