@@ -50,6 +50,8 @@ export async function repairChapterEvidence(options: {
   while (review.issues.length && repairs < EVIDENCE_REPAIR_ROUNDS) {
     repairs += 1;
     const repaired = await options.edit(markdown, evidenceRepairNotes(review.issues, repairs === EVIDENCE_REPAIR_ROUNDS));
+    // A rejected/unchanged edit has no new evidence: re-reviewing it could erase the findings.
+    if (repaired === markdown) continue;
     if (options.degenerate(repaired)) break;
     const next = await options.review(repaired);
     dropped += next.dropped.length;

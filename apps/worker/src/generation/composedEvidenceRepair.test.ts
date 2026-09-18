@@ -55,6 +55,18 @@ describe("bounded chapter evidence repair", () => {
     expect((await repairChapterEvidence({ markdown: "x", review, edit, degenerate: () => false })).dropped).toBe(1);
   });
 
+  it("keeps findings on rejected or unchanged repairs without re-reviewing the failing original", async () => {
+    const { review, edit, seen } = scripted(
+      [{ issues: [finding("unsupported claim")], dropped: ["unresolvable quote"] }, { issues: [] }],
+      ["original", "original"]
+    );
+    const result = await repairChapterEvidence({ markdown: "original", review, edit, degenerate: () => false });
+    expect(result).toEqual({ markdown: "original", findings: 1, repairs: 2,
+      unresolved: [{ quote: "unsupported claim", reason: "The passage does not say so." }], dropped: 1 });
+    expect(seen.reviewed).toEqual(["original"]);
+    expect(seen.notes[1]![0]).toContain("Delete the unsupported detail outright");
+  });
+
   it("parses the reviewer's format and tolerates a bare string", () => {
     expect(parseEvidenceFinding(finding("a “quoted” span", "why"))).toEqual({ quote: "a “quoted” span", reason: "why" });
     expect(parseEvidenceFinding("bare")).toEqual({ quote: "bare", reason: "" });

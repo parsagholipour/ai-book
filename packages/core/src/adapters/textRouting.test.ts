@@ -70,11 +70,13 @@ const PROSE_LANE_PURPOSES: ReadonlySet<string> = new Set([
   "architect-book",
   "rewrite-seams",
   "develop-book-plan", "review-book-development", "build-case-evidence", "verify-case-evidence",
-  "review-chapter-evidence", "plan-developmental-edit", "rewrite-developmental-sections"
+  "review-chapter-evidence", "plan-developmental-edit", "rewrite-developmental-sections",
+  // Full-context semantic review uses the same prose lane as chapter evidence review.
+  "review-chapter-edit-acceptance"
 ]);
 
 // Finite-choice screens bypass text routing and escalate to their own diagnostic purpose.
-const DECISION_ONLY_PURPOSES: ReadonlySet<string> = new Set(["screen-page-style"]);
+const DECISION_ONLY_PURPOSES: ReadonlySet<string> = new Set(["screen-page-style", "accept-chapter-edit-meaning", "accept-chapter-edit-intent"]);
 
 /** Model-call purposes are identifier-shaped; `purpose` is also a page brief's own field, whose values are sentences. */
 const PURPOSE_IDENTIFIER = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/;

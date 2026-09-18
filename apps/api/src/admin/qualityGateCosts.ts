@@ -43,6 +43,7 @@ const DIRECT_COST_PURPOSES: Partial<Record<QualityFeatureId, ReadonlySet<string>
   writerTools: new Set(["write-page-with-tools"]),
   bestOfPolish: new Set(["polish-page", "judge-page-drafts"]),
   chapterEditorPass: new Set(["edit-chapter"]),
+  chapterEditAcceptance: new Set(["accept-chapter-edit-meaning", "accept-chapter-edit-intent", "review-chapter-edit-acceptance"]),
   manuscriptReadPass: new Set(["read-manuscript", "cut-chapter", "rewrite-seams"])
 };
 

@@ -9,6 +9,15 @@ import {
 } from "./qualityGates.js";
 
 describe("qualityFeatureEnabled", () => {
+  it("enables chapter semantic acceptance by default and supports per-tier opt-out and opt-in", () => {
+    for (const tier of ["ultra", "premium", "balanced", "fast"] as const) {
+      expect(qualityFeatureEnabled(undefined, "chapterEditAcceptance", tier)).toBe(true);
+      expect(qualityFeatureEnabled(parseQualityFeatureSettings({ chapterEditorPass: [] }), "chapterEditAcceptance", tier)).toBe(true);
+      expect(qualityFeatureEnabled(parseQualityFeatureSettings({ chapterEditAcceptance: [] }), "chapterEditAcceptance", tier)).toBe(false);
+      expect(qualityFeatureEnabled(parseQualityFeatureSettings({ chapterEditAcceptance: ["balanced"] }), "chapterEditAcceptance", tier)).toBe(tier === "balanced");
+    }
+    expect(QUALITY_FEATURES.find((feature) => feature.id === "chapterEditAcceptance")).toMatchObject({ pipelines: ["composed"], stage: "Chapter edit" });
+  });
   it("cannot reactivate the retired pattern rewrite from a saved revision", () => {
     const settings = parseQualityFeatureSettings({ coupletRewrite: ["balanced", "fast", "premium", "ultra"] });
     for (const tier of ["balanced", "fast", "premium", "ultra"] as const) {

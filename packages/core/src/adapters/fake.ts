@@ -140,6 +140,9 @@ export class FakeTextModelAdapter implements TextModelAdapter {
   }
 
   private fakeForSchema(schema: z.ZodTypeAny, options: GenerateJsonOptions<unknown>): unknown {
+    if (options.purpose === "review-chapter-edit-acceptance") {
+      return { meaning: "pass", intent: "pass", meaningReason: "Mock preservation judgment.", intentReason: "Mock edit compliance judgment." };
+    }
     if (options.purpose === "extract-story-state") {
       return {
         storyDelta: {

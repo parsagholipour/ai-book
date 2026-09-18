@@ -410,6 +410,8 @@ export async function generateBookComposedChapters(options: {
       researchNotes,
       storyStateLines: formatStoryStateLines(storyState),
       textModel,
+      decisions: providers.decisions,
+      semanticAcceptance: quality.enabled("chapterEditAcceptance"),
       contract,
       ...(materialFor(setup.chapter.index) ? { material: materialFor(setup.chapter.index) } : {})
     };
@@ -461,21 +463,8 @@ export async function generateBookComposedChapters(options: {
         markdown: draftProse,
         measurementNotes: MEASUREMENT_NOTES_TO_EDITOR ? [...notesForDraft(draftProse), ...shapeNotes] : []
       });
-      const editedDegeneracy = chapterDegeneracy(edited.markdown, {
-        maxWords: chapterWordBudget(input, setup.endPage - setup.startPage + 1).max,
-        language: input.language
-      });
-      if (editedDegeneracy.degenerate) {
-        console.warn("Edited chapter degenerate; keeping the draft", {
-          event: "generation.composed_chapters.degenerate_edit",
-          projectId,
-          chapterIndex: setup.chapter.index,
-          reasons: editedDegeneracy.reasons
-        });
-      } else {
-        markdown = edited.markdown;
-        editorChanged = edited.changed;
-      }
+      markdown = edited.markdown;
+      editorChanged = edited.changed;
       shapePassApplied = shapeNotes.length > 0;
     }
     // Editorial judgments belong to the contextual editor. Pattern matches do
@@ -489,7 +478,7 @@ export async function generateBookComposedChapters(options: {
       const repair = await repairChapterEvidence({
         markdown,
         review: (text) => reviewChapterCaseEvidence({ markdown: text, packets: evidencePackets, textModel }),
-        edit: async (text, notes) => (await editChapter({ ...(await composeOptionsFor(setup, drafts)), markdown: text, allowExtension: false, readerNotes: notes })).markdown,
+        edit: async (text, notes) => (await editChapter({ ...(await composeOptionsFor(setup, drafts)), markdown: text, allowExtension: false, degeneracyMaxWords: maxWords, readerNotes: notes, factualCorrection: { instructions: notes, evidence: evidencePackets } })).markdown,
         degenerate: (text) => chapterDegeneracy(text, { maxWords, language: input.language }).degenerate
       });
       markdown = repair.markdown;
@@ -807,6 +796,10 @@ export async function generateBookComposedChapters(options: {
             ...(await composeOptionsFor(setup, new Map())),
             markdown: currentProse,
             notes: entry.notes,
+            surroundingChapters: setups.filter((other) => other.chapter.index !== setup.chapter.index).flatMap((other) => {
+              const text = finalText.get(other.chapter.index);
+              return text ? [{ index: other.chapter.index, title: other.chapter.title, markdown: figureStandInMarkdown(text) }] : [];
+            }),
             bookNotes: read.bookNotes,
             maxRemovableWords: Math.max(0, countReadableWords(currentProse) - cutBudget.min)
           })

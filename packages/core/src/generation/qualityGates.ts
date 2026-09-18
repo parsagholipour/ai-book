@@ -64,6 +64,7 @@ export const QUALITY_FEATURE_IDS = [
   "planThinkingBoost",
   "claimRetrieve",
   "chapterEditorPass",
+  "chapterEditAcceptance",
   "manuscriptReadPass",
   "bookDevelopment",
   "caseEvidence",
@@ -160,6 +161,7 @@ export const QUALITY_FEATURE_DEFAULTS: QualityFeatureSettings = {
   // Composed-chapters strategy only. One prose call per chapter each; the
   // read is one call per book. Both replace the per-page review loop.
   chapterEditorPass: ["ultra", "premium", "balanced", "fast"],
+  chapterEditAcceptance: ["ultra", "premium", "balanced", "fast"],
   manuscriptReadPass: ["ultra", "premium", "balanced", "fast"],
   // The September 5 live experiment regressed quality and runtime. These
   // stages require an explicit opt-in; older settings must not enable them.
@@ -323,6 +325,13 @@ export const QUALITY_FEATURES: QualityFeatureDescription[] = [
     stage: "Chapter edit"
   },
   {
+    id: "chapterEditAcceptance",
+    label: "Chapter edit semantic acceptance",
+    summary: "Checks meaning preservation and edit intent separately after chapter edits and deletion-only cuts. Jev judgments use one contextual review when uncertain; unresolved changes keep the original and its findings. Off skips semantic acceptance only.",
+    pipelines: ["composed"],
+    stage: "Chapter edit"
+  },
+  {
     id: "manuscriptReadPass",
     label: "Whole-manuscript read (composed chapters)",
     summary: "One read of the finished book returning per-chapter notes; at most a third of the chapters get a second line edit.",
@@ -390,7 +399,7 @@ export const QUALITY_FEATURES: QualityFeatureDescription[] = [
   {
     id: "manuscriptReadCuts",
     label: "Manuscript read cuts (composed chapters)",
-    summary: "The chapters the whole-manuscript read flags get one deletion-only cut call each on the writer, accepted by code only when every kept sentence is verbatim, the cut removes between 0.5% and 25% of the chapter, and the chapter stays above its page floor. Needs the manuscript read.",
+    summary: "Flagged chapters get one deletion-only cut call. Every kept sentence must be verbatim, at most 25% may be removed, and the chapter must stay above its page floor. The chapter semantic acceptance gate checks meaning and cut intent when enabled. Needs the manuscript read.",
     pipelines: ["composed"],
     stage: "Manuscript read"
   }

@@ -626,14 +626,14 @@ describe("manuscript read cuts", () => {
     mocks.qualityEnabled.mockImplementation((feature: string) => !["chapterEditorPass", "coupletRewrite", ...extra].includes(feature));
   };
 
-  const run = async (fake: FakeTextModelAdapter) => {
+  const run = async (fake: FakeTextModelAdapter, decisions?: ProviderSet["decisions"]) => {
     const plan = makeFallbackPlan(input);
     await generateBookComposedChapters({
       projectId: "project-1",
       planId: "plan-1",
       input,
       plan,
-      providers: providersWith(fake),
+      providers: { ...providersWith(fake), ...(decisions ? { decisions } : {}) },
       strategy: composedChaptersStrategy,
       generationJobId: "job-1"
     });
@@ -641,6 +641,61 @@ describe("manuscript read cuts", () => {
   };
   const reports = () =>
     store.chapters.map((chapter) => (chapter.productionBrief as { report: { readNotes: string[]; secondEditApplied: boolean } }).report);
+
+  const rejectingDecisions = () => {
+    const choose = vi.fn(async () => ({ provider: "vercel-ai-gateway", model: "typesafe-ai/jev",
+      selectedOption: "regression", probabilities: { pass: 0.05, regression: 0.9, needs_review: 0.05 } }));
+    return { choose, resolve: vi.fn(async () => ({ choose })) };
+  };
+
+  it.each([true, false])("honors the semantic gate (%s) on worker cuts and preserves read findings", async (enabled) => {
+    gatesOffFor(enabled ? [] : ["chapterEditAcceptance"]);
+    const { fake } = readingFake({});
+    const decisions = rejectingDecisions();
+    await run(fake, decisions);
+    expect(reports()[0]!.secondEditApplied).toBe(!enabled);
+    expect(reports()[0]!.readNotes).toHaveLength(1);
+    expect(decisions.choose).toHaveBeenCalledTimes(enabled ? 2 : 0);
+  });
+
+  it.each([true, false])("honors the semantic gate (%s) on the worker line editor", async (enabled) => {
+    mocks.qualityEnabled.mockImplementation((feature: string) => feature === "chapterEditorPass" || (enabled && feature === "chapterEditAcceptance"));
+    const { fake } = readingFake({});
+    const text = fake.generateText.bind(fake);
+    fake.generateText = async (request) => {
+      if (request.purpose !== "edit-chapter") return text(request);
+      const payload = JSON.parse(request.messages.find((message) => message.role === "user")!.content) as { draft: string };
+      return { text: payload.draft.replace("charged", "did not charge"), provider: "fixture", model: "fixture" };
+    };
+    const decisions = rejectingDecisions();
+    const plan = await run(fake, decisions);
+    expect(store.pages.some((page) => page.markdown.includes("did not charge"))).toBe(!enabled);
+    expect(decisions.choose).toHaveBeenCalledTimes(enabled ? plan.chapters.length * 2 : 0);
+  });
+
+  it("discards a degenerate line edit inside editChapter and publishes the draft", async () => {
+    mocks.qualityEnabled.mockImplementation((feature: string) => feature === "chapterEditorPass");
+    const { fake } = readingFake({});
+    const text = fake.generateText.bind(fake);
+    const subjects = ["The codex plate", "The calpulli leaders", "The tribute exchange"];
+    const loop = Array.from(
+      { length: 500 },
+      (_, index) => `${subjects[index % 3]} polished these tables, shining them with oils and creams number ${index}.`
+    ).join(" ");
+    fake.generateText = async (request) => {
+      if (request.purpose !== "edit-chapter") return text(request);
+      return { text: loop, provider: "fixture", model: "fixture" };
+    };
+    await run(fake);
+    const book = store.pages.map((page) => page.markdown).join("\n\n");
+    expect(book).toContain("Ledger 0 records the fee");
+    expect(book).not.toContain("polished these tables");
+    expect(
+      store.chapters.every(
+        (chapter) => (chapter.productionBrief as { report: { editorChanged: boolean } }).report.editorChanged === false
+      )
+    ).toBe(true);
+  });
 
   it("preserves valid qualifications, repetitions and paragraphs with the legacy rewrite flag on", async () => {
     mocks.qualityEnabled.mockImplementation((feature: string) => feature === "coupletRewrite");

@@ -37,6 +37,12 @@ function row(
 }
 
 describe("qualityGateCostsForProject", () => {
+  it("attributes both semantic judgments and contextual review to chapter acceptance", () => {
+    const gates = qualityGateCostsForProject({ mediaSettings: { modelTier: "balanced" }, fallbackAt: at(10), runs: [],
+      revisions: [{ version: 1, settings: settingsWith("chapterEditAcceptance"), createdAt: at(5) }],
+      costRows: [row("accept-chapter-edit-meaning", 0.001), row("accept-chapter-edit-intent", 0.001), row("review-chapter-edit-acceptance", 0.02), row("edit-chapter", 0.1)] });
+    expect(gates.find((gate) => gate.id === "chapterEditAcceptance")).toMatchObject({ calls: 3, providerCostUsd: 0.022 });
+  });
   it("uses the settings revision active for the run and attributes direct provider calls", () => {
     const gates = qualityGateCostsForProject({
       mediaSettings: { modelTier: "balanced" },

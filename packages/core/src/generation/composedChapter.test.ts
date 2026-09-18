@@ -495,6 +495,7 @@ describe("cutChapter", () => {
     let calls = 0;
     const model = {
       ...fake,
+      generateJson: fake.generateJson.bind(fake),
       generateText: async (options: GenerateTextOptions) => {
         calls += 1;
         system = options.messages[0]!.content;
