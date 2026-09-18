@@ -105,6 +105,7 @@ export const DEFAULT_CREDIT_COSTS = {
   // abuse without a deploy, with the same audit trail behind it. Paid tiers take
   // their allowance from the product catalog instead, since those numbers are
   // pinned to a Play price point that cannot change without one.
+  freeMonthlyCredits: 1_000,
   welcomeCredits: 1_000,
   welcomeCreditsEnabled: 1,
   freeIllustratedBooksPerMonth: 3,
@@ -134,6 +135,7 @@ export const PLAN_ALLOWANCE_KEYS = [
   "messageDailyLimitMax",
   "messageResetEnabledMax",
 
+  "freeMonthlyCredits",
   "welcomeCredits",
   "welcomeCreditsEnabled",
   "freeIllustratedBooksPerMonth",
@@ -212,6 +214,7 @@ export const CREDIT_PRICING_LIMITS: Record<CreditPricingKey, number> = {
   characterPortraitGeneration: 5_000,
   // Generous ceilings: the failure mode for an allowance is giving too much
   // away, which is bounded and reversible, not an instant charge.
+  freeMonthlyCredits: 100_000,
   welcomeCredits: 100_000,
   welcomeCreditsEnabled: 1,
   freeIllustratedBooksPerMonth: 100,

@@ -54,6 +54,8 @@ export type CreditPricingKey =
   | "bookTextEditPerPageUltra"
   // Not prices — the free tier's monthly limits. Same table, same audit trail.
   | "freeMonthlyCredits"
+  | "welcomeCredits"
+  | "welcomeCreditsEnabled"
   | "freeIllustratedBooksPerMonth"
   | "freeManuscriptImportsPerMonth";
 

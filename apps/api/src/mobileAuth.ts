@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { createHash, randomBytes, scrypt as nodeScrypt, timingSafeEqual, type ScryptOptions } from "node:crypto";
+import { loadConfig } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { z } from "zod";
 import {
@@ -174,6 +175,7 @@ export const mobileAuthRoutes: FastifyPluginAsync<MobileAuthRouteOptions> = asyn
       }
 
       const passwordHash = await hashPassword(parsed.data.password);
+      const sessionContext = requestSessionContext(request);
       try {
         const user = await prisma.user.create({
           data: {
@@ -184,10 +186,13 @@ export const mobileAuthRoutes: FastifyPluginAsync<MobileAuthRouteOptions> = asyn
             },
             legalAcceptances: {
               create: legalAcceptanceEvidence(parsed.data, "mobile_signup", request)
+            },
+            welcomeCreditGrant: {
+              create: sessionContext.ipHash ? { ipHash: sessionContext.ipHash } : {}
             }
           }
         });
-        const session = await createMobileSession(user.id, requestSessionContext(request));
+        const session = await createMobileSession(user.id, sessionContext);
         return reply.code(201).send(authSessionResponse(user, session, true));
       } catch (error) {
         if (isUniqueConstraintError(error)) {
@@ -588,13 +593,35 @@ function safeEqual(left: Buffer, right: Buffer): boolean {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 
+export function welcomeCreditIpHash(request: FastifyRequest, hops: number): string | undefined {
+  if (!request.ip) {
+    return undefined;
+  }
+  // hops=0 means Fastify will not peel X-Forwarded-For, so request.ip is the
+  // immediate peer — the proxy, not the client. Hashing that would collapse
+  // every signup behind Caddy/Nginx onto one address.
+  if (hops === 0 && requestCarriesForwardedFor(request)) {
+    return undefined;
+  }
+  return hashToken(`ip:${request.ip}`);
+}
+
 export function requestSessionContext(request: FastifyRequest): MobileSessionContext {
   const rawUserAgent = request.headers["user-agent"];
   const userAgent = Array.isArray(rawUserAgent) ? rawUserAgent.join(" ") : rawUserAgent;
+  const ipHash = welcomeCreditIpHash(request, loadConfig().TRUST_PROXY_HOPS);
   return {
     ...(userAgent ? { userAgent: userAgent.slice(0, 500) } : {}),
-    ...(request.ip ? { ipHash: hashToken(`ip:${request.ip}`) } : {})
+    ...(ipHash ? { ipHash } : {})
   };
+}
+
+function requestCarriesForwardedFor(request: FastifyRequest): boolean {
+  const forwarded = request.headers["x-forwarded-for"];
+  if (Array.isArray(forwarded)) {
+    return forwarded.length > 0;
+  }
+  return typeof forwarded === "string" && forwarded.length > 0;
 }
 
 function normalizeEmail(email: string): string {

@@ -24,9 +24,33 @@ const {
   resolvePlanTier
 } = await import("./billing.js");
 
-const ALLOWANCE = DEFAULT_CREDIT_COSTS.freeMonthlyCredits;
+/** A live period we seed so pool-mechanics tests do not depend on a free grant. */
+const ALLOWANCE = 1000;
 const JUNE = new Date("2026-06-15T12:00:00.000Z");
 const JULY = new Date("2026-07-04T12:00:00.000Z");
+const JUNE_START = new Date("2026-06-01T00:00:00.000Z");
+const JULY_START = new Date("2026-07-01T00:00:00.000Z");
+
+function seedLiveFreePeriod(
+  userId: string,
+  options: { planCredits?: number; purchased?: number } = {}
+): void {
+  const existing = fakeDb.state.accounts.get(userId);
+  const planCredits = options.planCredits ?? ALLOWANCE;
+  const purchased = options.purchased ?? existing?.availableCredits ?? 0;
+  fakeDb.state.accounts.set(userId, {
+    userId,
+    availableCredits: purchased,
+    reservedCredits: existing?.reservedCredits ?? 0,
+    lifetimeCreditsGranted: existing?.lifetimeCreditsGranted ?? planCredits + purchased,
+    lifetimeCreditsSpent: existing?.lifetimeCreditsSpent ?? 0,
+    planCredits,
+    planCreditsPerPeriod: ALLOWANCE,
+    planPeriodStart: JUNE_START,
+    planPeriodEnd: JULY_START,
+    planPeriodKey: "free:2026-06"
+  });
+}
 
 describe("monthly plan allowance", () => {
   beforeEach(() => {
@@ -39,17 +63,25 @@ describe("monthly plan allowance", () => {
     await ensureCurrentPlanPeriod("user-a", new Date("2026-06-28T09:00:00.000Z"));
 
     expect(await getCreditBalance("user-a", JUNE)).toMatchObject({
-      availableCredits: ALLOWANCE,
-      planCredits: ALLOWANCE,
-      planCreditsPerPeriod: ALLOWANCE,
+      availableCredits: DEFAULT_CREDIT_COSTS.freeMonthlyCredits,
+      planCredits: DEFAULT_CREDIT_COSTS.freeMonthlyCredits,
+      planCreditsPerPeriod: DEFAULT_CREDIT_COSTS.freeMonthlyCredits,
       purchasedCredits: 0
     });
-    expect([...fakeDb.state.ledger.values()].filter((entry) => entry.operation === "PLAN_ALLOWANCE_GRANT")).toHaveLength(1);
+    const grants = [...fakeDb.state.ledger.values()].filter(
+      (entry) => entry.operation === "PLAN_ALLOWANCE_GRANT" && entry.entryType === "GRANT"
+    );
+    expect(grants).toHaveLength(1);
+    expect(grants[0]).toMatchObject({
+      amountCredits: DEFAULT_CREDIT_COSTS.freeMonthlyCredits,
+      planCreditsDelta: DEFAULT_CREDIT_COSTS.freeMonthlyCredits,
+      idempotencyKey: "plan-period:user-a:free:2026-06"
+    });
     expect(await resolvePlanTier("user-a", JUNE)).toBe("free");
   });
 
   it("resets rather than accumulates, writing off what went unused", async () => {
-    await ensureCurrentPlanPeriod("user-a", JUNE);
+    seedLiveFreePeriod("user-a");
     await reserveCredits({
       userId: "user-a",
       operation: "EXPORT_UNLOCK",
@@ -59,7 +91,7 @@ describe("monthly plan allowance", () => {
     });
     await ensureCurrentPlanPeriod("user-a", JULY);
 
-    // What was left in June does not carry into July.
+    // Unused June credits do not carry; July is a fresh grant.
     expect(await getCreditBalance("user-a", JULY)).toMatchObject({
       planCredits: ALLOWANCE,
       availableCredits: ALLOWANCE
@@ -106,6 +138,7 @@ describe("monthly plan allowance", () => {
   });
 
   it("spends the allowance before purchased credits", async () => {
+    seedLiveFreePeriod("user-a");
     await grantCredits({ userId: "user-a", amountCredits: 500, idempotencyKey: "grant:purchased" });
     const reservation = await reserveCredits({
       userId: "user-a",
@@ -126,6 +159,7 @@ describe("monthly plan allowance", () => {
   });
 
   it("returns a same-period refund to the pool it came from", async () => {
+    seedLiveFreePeriod("user-a");
     const reservation = await reserveCredits({
       userId: "user-a",
       operation: "FULL_BOOK_GENERATION",
@@ -148,6 +182,7 @@ describe("monthly plan allowance", () => {
     // that cannot expire. The settled reversal derives that split itself — it is
     // cumulative, so it has to — and this pins the answer it gives when nothing
     // has been given back yet.
+    seedLiveFreePeriod("user-a");
     await grantCredits({ userId: "user-a", amountCredits: 500, idempotencyKey: "grant:straddle-refund" });
     const reservation = await reserveCredits({
       userId: "user-a",
@@ -182,6 +217,7 @@ describe("monthly plan allowance", () => {
   });
 
   it("releases a held reservation back to the allowance within the period", async () => {
+    seedLiveFreePeriod("user-a");
     const reservation = await reserveCredits({
       userId: "user-a",
       operation: "FULL_BOOK_GENERATION",
@@ -199,6 +235,7 @@ describe("monthly plan allowance", () => {
   });
 
   it("routes a refund to the purchased pool once the period has rolled over", async () => {
+    seedLiveFreePeriod("user-a");
     const reservation = await reserveCredits({
       userId: "user-a",
       operation: "FULL_BOOK_GENERATION",
@@ -210,8 +247,7 @@ describe("monthly plan allowance", () => {
     await ensureCurrentPlanPeriod("user-a", JULY);
     await refundCreditLedgerEntry(spend.id, "Generation failed", JULY);
 
-    // July's allowance is already full; topping it up would hand out more than
-    // the plan allows, so the refund lands where it cannot expire instead.
+    // July gets a fresh allowance; the June refund lands where it cannot expire.
     expect(await getCreditBalance("user-a", JULY)).toMatchObject({
       planCredits: ALLOWANCE,
       purchasedCredits: 600,
@@ -220,6 +256,7 @@ describe("monthly plan allowance", () => {
   });
 
   it("keeps cumulative partial top-ups in the correct period pools", async () => {
+    seedLiveFreePeriod("user-a");
     await grantCredits({ userId: "user-a", amountCredits: 200, idempotencyKey: "grant:partial-periods" });
     const reservation = await reserveCredits({
       userId: "user-a",
@@ -253,6 +290,7 @@ describe("monthly plan allowance", () => {
   });
 
   it("refunds pre-migration entries entirely to the purchased pool", async () => {
+    seedLiveFreePeriod("user-a");
     await grantCredits({ userId: "user-a", amountCredits: 900, idempotencyKey: "grant:legacy" });
     const legacy = await reserveCredits({
       userId: "user-a",
@@ -349,11 +387,11 @@ describe("ending a subscription", () => {
       nextCreditGrantAt: null
     });
     expect(fakeDb.state.entitlements.get("entitlement-plan")).toMatchObject({ status: "EXPIRED", expiresAt: CANCEL_DAY });
-    // Free's month arrives; the subscription's leftover allowance does not
-    // survive it, and the purchased pool is untouched.
+    // They never took this month's free grant, so cancellation adopts June
+    // with the monthly allowance. Leftover paid credits do not survive it.
     expect(await getCreditBalance("user-a", CANCEL_DAY)).toMatchObject({
-      planCredits: ALLOWANCE,
-      planCreditsPerPeriod: ALLOWANCE,
+      planCredits: DEFAULT_CREDIT_COSTS.freeMonthlyCredits,
+      planCreditsPerPeriod: DEFAULT_CREDIT_COSTS.freeMonthlyCredits,
       purchasedCredits: 800
     });
     const forfeiture = [...fakeDb.state.ledger.values()].find((entry) => entry.entryType === "ADJUSTMENT");
@@ -371,13 +409,14 @@ describe("ending a subscription", () => {
 
     expect(await getCreditBalance("user-a", CANCEL_DAY)).toMatchObject({
       planCredits: 0,
-      planCreditsPerPeriod: ALLOWANCE,
+      planCreditsPerPeriod: DEFAULT_CREDIT_COSTS.freeMonthlyCredits,
       availableCredits: 0
     });
     const grants = [...fakeDb.state.ledger.values()].filter((entry) => entry.operation === "PLAN_ALLOWANCE_GRANT" && entry.entryType === "GRANT");
     expect(grants).toHaveLength(1);
-    // Next month is a clean period again.
-    expect(await getCreditBalance("user-a", JULY)).toMatchObject({ planCredits: ALLOWANCE });
+    expect(await getCreditBalance("user-a", JULY)).toMatchObject({
+      planCredits: DEFAULT_CREDIT_COSTS.freeMonthlyCredits
+    });
   });
 
   it("reports nothing to end when the account is already free", async () => {
@@ -436,6 +475,7 @@ describe("illustrated book quota", () => {
   });
 
   it("hands the slot back when the generation it paid for is refunded", async () => {
+    seedLiveFreePeriod("user-a");
     const claim = await consumeIllustratedBookUse({ userId: "user-a", limit: LIMIT, now: JUNE });
     const reservation = await reserveCredits({
       userId: "user-a",
@@ -452,6 +492,7 @@ describe("illustrated book quota", () => {
   });
 
   it("keeps an indivisible quota slot until a partial refund is topped up", async () => {
+    seedLiveFreePeriod("user-a");
     const claim = await consumeIllustratedBookUse({ userId: "user-a", limit: LIMIT, now: JUNE });
     const reservation = await reserveCredits({
       userId: "user-a",

@@ -39,7 +39,9 @@ scratch directories and share files through S3.
    is Compose `.env` syntax; single-quote values containing literal `$` characters.
    `POSTGRES_PASSWORD`, `WEB_PASSWORD`, and `PUBLIC_API_URL` are required. Use a
    URL-safe database password, e.g. `openssl rand -hex 32`. Do not change it after
-   initialization without also rotating the PostgreSQL role password. Do not put
+   initialization without also rotating the PostgreSQL role password. Caddy → Nginx
+   needs `TRUST_PROXY_HOPS=2` (already in the example); production defaults to 2 if
+   the secret omits it. Do not put
    deployment overrides such as `APP_IMAGE`, `WEB_IMAGE`, `S3_BUCKET`, or
    `S3_REGION` in this secret. The workflow supplies the bucket and region from
    Terraform. Keep the local MinIO `S3_ENDPOINT`, `S3_FORCE_PATH_STYLE`, and AWS

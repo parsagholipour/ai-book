@@ -1188,7 +1188,6 @@ function writeProjectFile(storageDir: string | null, projectId: string, filename
   const category = storageDir === tempBookStorageDir ? "books" : storageDir === tempImageStorageDir ? "images" : "voice";
   seedObject(`${category}/${projectId}/${filename}`, content);
 }
-
 async function buildApp(options: { auth?: boolean } = {}): Promise<FastifyInstance> {
   const app = Fastify();
   if (options.auth) {

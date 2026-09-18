@@ -32,6 +32,7 @@ import { projectRoutes } from "./routes/projects.js";
 
 const config = loadConfig();
 const app = Fastify({
+  ...(config.TRUST_PROXY_HOPS > 0 ? { trustProxy: config.TRUST_PROXY_HOPS } : {}),
   logger: {
     redact: [
       "req.headers.authorization",
@@ -48,6 +49,13 @@ const app = Fastify({
     ]
   }
 });
+
+if (config.NODE_ENV === "production" && config.TRUST_PROXY_HOPS === 0) {
+  app.log.warn(
+    { event: "trust_proxy.unconfigured" },
+    "TRUST_PROXY_HOPS is 0 in production; welcome-credit IP checks will treat forwarded clients as unknown (no grant) until TRUST_PROXY_HOPS matches the Caddy→Nginx hop count (2)"
+  );
+}
 
 // Every book asset this process serves or stores is a private S3 object, so an
 // API that cannot reach its bucket has nothing to offer. Refusing to start is

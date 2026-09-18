@@ -97,6 +97,16 @@ const envSchema = z.object({
   REDIS_URL: z.string().default("redis://localhost:6379"),
   API_HOST: z.string().default("0.0.0.0"),
   API_PORT: z.coerce.number().int().positive().optional(),
+  /**
+   * How many reverse-proxy hops Fastify may trust when reading `request.ip`.
+   * Local direct clients: 0. Production Caddy→Nginx is 2; unset production
+   * defaults to 2 so an old PRODUCTION_ENV still works. An explicit 0 still
+   * wins — that is the operator opting out.
+   */
+  TRUST_PROXY_HOPS: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.coerce.number().int().min(0).max(10).optional()
+  ),
   PUBLIC_API_URL: z.string().url().default("http://localhost:4001"),
   PRIVACY_POLICY_URL: z.string().url().default(PUBLIC_PRIVACY_POLICY_URL),
   TERMS_OF_SERVICE_URL: z.string().url().default(PUBLIC_TERMS_OF_SERVICE_URL),
@@ -189,7 +199,9 @@ const envSchema = z.object({
   };
 });
 
-export type AppConfig = z.infer<typeof envSchema>;
+export type AppConfig = Omit<z.infer<typeof envSchema>, "TRUST_PROXY_HOPS"> & {
+  TRUST_PROXY_HOPS: number;
+};
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   if (env === process.env) {
@@ -199,6 +211,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const storage = storageConfig(env);
   return {
     ...parsed,
+    TRUST_PROXY_HOPS: parsed.TRUST_PROXY_HOPS ?? (parsed.NODE_ENV === "production" ? 2 : 0),
     S3_BUCKET: storage.bucket,
     BOOK_STORAGE_DIR: resolveFromWorkspace(parsed.BOOK_STORAGE_DIR),
     IMAGE_STORAGE_DIR: resolveFromWorkspace(parsed.IMAGE_STORAGE_DIR),

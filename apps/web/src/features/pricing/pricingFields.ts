@@ -13,7 +13,7 @@ export type PricingFieldGroup = {
  * number, because that is the question an operator is answering: "what does it
  * cost someone to make a book / change one / read one out loud".
  *
- * The last group is the exception: those two are limits on the free tier, not
+ * The last group is the exception: those are limits on the free tier, not
  * prices. They live in the same table because they need the same audit trail
  * and the same live reload, and an operator tuning one is usually reacting to
  * the same thing — abuse, or a margin that moved.
@@ -117,12 +117,22 @@ export const PRICING_FIELD_GROUPS: PricingFieldGroup[] = [
   },
   {
     title: "Free plan limits",
-    blurb: "What a reader gets each month without paying. Paid tiers take their allowance from the product catalog instead, because those numbers are pinned to a Play price.",
+    blurb: "What a reader gets without paying. Paid tiers take their allowance from the product catalog instead, because those numbers are pinned to a Play price.",
     fields: [
       {
         key: "freeMonthlyCredits",
         label: "Monthly credits",
-        help: "Granted at the start of each calendar month. Resets rather than accumulating."
+        help: "Credits a free reader gets each calendar month. Unused credits do not carry over."
+      },
+      {
+        key: "welcomeCredits",
+        label: "Welcome credits",
+        help: "Granted once, when a new account first opens the app. Never expires."
+      },
+      {
+        key: "welcomeCreditsEnabled",
+        label: "Give welcome credits",
+        help: "1 grants welcome credits to new accounts; 0 turns them off. A second account from the same IP within 30 days is not credited, silently."
       },
       {
         key: "freeIllustratedBooksPerMonth",

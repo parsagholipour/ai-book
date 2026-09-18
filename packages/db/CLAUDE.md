@@ -19,8 +19,8 @@ don't flip the generator setting to make the root convention true.
 ## Importing billing
 
 `src/billing.ts` is a facade over `billingLedger.ts` (balances), `billingEntitlements.ts`,
-`billingSubscriptions.ts` (Google Play), `planPeriods.ts` (allowances and quotas) and
-`billingInternals.ts` (shared plumbing).
+`billingSubscriptions.ts` (Google Play), `planPeriods.ts` (allowances and quotas),
+`welcomeCredits.ts` (one-time welcome grant) and `billingInternals.ts` (shared plumbing).
 
 **Import `@book-maker/db/billing`, never a module behind it.** The API suites mock the facade with
 `vi.mock("@book-maker/db/billing")`; a deep import silently escapes that mock and the test stops
@@ -573,9 +573,9 @@ diff rather than by silently reordering rows.
 - **Credits are reserved, then committed or refunded.** Any new priced operation has to close that
   loop, including on the failure path. `packages/db/src/billing.ts` is a facade over
   `billingLedger.ts` (balances), `billingEntitlements.ts`, `billingSubscriptions.ts` (Google Play),
-  `planPeriods.ts` (allowances and quotas) and `billingInternals.ts` (shared plumbing) — import the
-  facade, never a module behind it, or the `vi.mock("@book-maker/db/billing")` in the API suites
-  stops covering you.
+  `planPeriods.ts` (allowances and quotas), `welcomeCredits.ts` (one-time welcome grant) and
+  `billingInternals.ts` (shared plumbing) — import the facade, never a module behind it, or the
+  `vi.mock("@book-maker/db/billing")` in the API suites stops covering you.
 
 - **A paid attempt may only be parented onto the job its own `create` callback wrote.**
   `startGenerationAttempt` gets that job id from a callback, and every callback gets it from
@@ -669,6 +669,12 @@ diff rather than by silently reordering rows.
   allowance in `planCreditsDelta`, which is what lets a refund put credits back where they came
   from — and after a period rollover a refund goes entirely to the purchased pool, because that
   period's allowance has already been re-granted in full.
+- **Welcome credits are granted lazily, once, not by a cron.** Signup writes a PENDING
+  `WelcomeCreditGrant`; `ensureCurrentPlanPeriod` settles it on the first balance read or reserve.
+  The operator toggle and amount live on the price list (`welcomeCreditsEnabled`, `welcomeCredits`).
+  Same-IP inside 30 days settles silent RECENT_IP; a missing IP settles silent NO_IP — neither
+  writes a ledger GRANT. A user with no row is never welcomed. Credits land in the purchased pool;
+  the free monthly allowance is a separate expiring grant (see below).
 - **The free month is granted lazily, not by a cron.** `ensureCurrentPlanPeriod` runs at the top of
   `reserveCredits` and before `serializeMobileBilling`, so anyone who can spend or look has already
   been granted. It never overwrites a plan period that is still live, which is what stops it

@@ -61,6 +61,43 @@ export type CreditBalance = {
   lifetimeCreditsSpent: number;
 };
 
+export type PlanAccountRow = {
+  userId: string;
+  availableCredits: number;
+  reservedCredits: number;
+  lifetimeCreditsGranted: number;
+  lifetimeCreditsSpent: number;
+  planCredits: number;
+  planCreditsPerPeriod: number;
+  planPeriodStart: Date | null;
+  planPeriodEnd: Date | null;
+  planPeriodKey: string | null;
+};
+
+export const accountSelect = {
+  userId: true,
+  availableCredits: true,
+  reservedCredits: true,
+  lifetimeCreditsGranted: true,
+  lifetimeCreditsSpent: true,
+  planCredits: true,
+  planCreditsPerPeriod: true,
+  planPeriodStart: true,
+  planPeriodEnd: true,
+  planPeriodKey: true
+} as const;
+
+/** Spendable allowance right now: an allowance past its period is already gone. */
+export function effectivePlanCredits(
+  account: Pick<PlanAccountRow, "planCredits" | "planPeriodEnd">,
+  now: Date = new Date()
+): number {
+  if (!account.planPeriodEnd || account.planPeriodEnd <= now) {
+    return 0;
+  }
+  return Math.max(0, account.planCredits);
+}
+
 export type CreditLedgerEntryRecord = {
   id: string;
   userId: string;
@@ -164,9 +201,17 @@ export function ledgerData(options: LedgerContext & {
 }
 
 export async function runSerializable<T>(callback: (tx: BillingTx) => Promise<T>): Promise<T> {
-  return prisma.$transaction(callback, {
-    isolationLevel: Prisma.TransactionIsolationLevel.Serializable
-  });
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await prisma.$transaction(callback, {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable
+      });
+    } catch (error) {
+      // P2034 is a serializable conflict. P2002 is a unique clash — do not retry it here.
+      const code = error && typeof error === "object" && "code" in error ? error.code : null;
+      if (attempt >= 4 || code !== "P2034") throw error;
+    }
+  }
 }
 
 export function jsonInput(value: Record<string, unknown>): Prisma.InputJsonValue {

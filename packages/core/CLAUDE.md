@@ -212,8 +212,10 @@ arrive with one.
   argument so `/api/admin/pricing/preview` can quote unsaved values without moving the live ones —
   and the snapshot must only ever be applied *after* a write commits. The console edits this at
   `/pricing`, and `serializeMobileBilling` (`apps/api/src/mobile/billingSerializer.ts`) ships the
-  result to the Flutter app, so a price change needs no client release. Two keys in that table are
-  free-tier *limits* rather than prices (`freeMonthlyCredits`, `freeIllustratedBooksPerMonth`);
-  anything projecting revenue iterates `CREDIT_PRICE_KEYS`, not every key, or it invents income
-  from the free tier. Paid tiers take their monthly credits from `DEFAULT_BILLING_PRODUCTS`
-  instead, because those numbers are pinned to a Play price point that needs a release anyway.
+  result to the Flutter app, so a price change needs no client release. Several keys in that table
+  are free-tier *limits* rather than prices (`welcomeCredits`, `welcomeCreditsEnabled`,
+  `freeMonthlyCredits`, `freeIllustratedBooksPerMonth`); the message-limit and manuscript-import
+  keys are non-price too. Anything projecting revenue iterates `CREDIT_PRICE_KEYS`, not every key,
+  or it invents income from the free tier. Paid tiers take their monthly credits from
+  `DEFAULT_BILLING_PRODUCTS` instead, because those numbers are pinned to a Play price point that
+  needs a release anyway.

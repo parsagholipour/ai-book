@@ -74,7 +74,8 @@ async function messageTransaction<T>(userId: string, work: (tx: BillingTx) => Pr
       });
     } catch (error) {
       const code = error && typeof error === "object" && "code" in error ? error.code : null;
-      if (attempt >= 4 || (code !== "P2034" && code !== "P2002")) throw error;
+      // P2034 is already retried inside runSerializable. P2002 is a unique clash.
+      if (attempt >= 4 || code !== "P2002") throw error;
     }
   }
 }

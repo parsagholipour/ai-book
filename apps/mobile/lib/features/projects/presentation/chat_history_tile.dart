@@ -18,7 +18,7 @@ import 'creation_chat_controller.dart';
 /// Both are drawn in the same 20px box, so a row does not shift sideways when
 /// the work starts or stops.
 class ChatHistoryGlyph extends StatelessWidget {
-  const ChatHistoryGlyph({required this.busy, required this.color});
+  const ChatHistoryGlyph({super.key, required this.busy, required this.color});
 
   final bool busy;
 

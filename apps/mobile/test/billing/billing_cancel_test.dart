@@ -28,6 +28,7 @@ void main() {
     );
     expect(find.text('Every book you have made stays yours'), findsOneWidget);
     expect(find.text('1,000 credits every month'), findsOneWidget);
+    expect(find.text('1,000 welcome credits'), findsOneWidget);
     expect(find.text('3 illustrated books a month'), findsOneWidget);
     // Nothing has happened yet — the sheet is the explanation, not the action.
     expect(repository.cancelCalls, 0);
@@ -171,6 +172,7 @@ MobileBilling _billing({required bool canCancelInApp}) {
       planCredits: 5000,
       resetsAt: DateTime.utc(2026, 9, 12),
     ),
+    freeTier: const MobileFreeTier(welcomeCredits: 1000),
   );
 }
 

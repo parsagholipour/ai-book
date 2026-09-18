@@ -110,7 +110,10 @@ class BillingFreePlanCard extends StatelessWidget {
 /// it is true whether or not they have used any yet.
 List<String> freePlanBenefits(MobileFreeTier freeTier) {
   return <String>[
-    '${formatCredits(freeTier.monthlyCredits)} credits every month',
+    if (freeTier.monthlyCredits > 0)
+      '${formatCredits(freeTier.monthlyCredits)} credits every month',
+    if (freeTier.welcomeCredits > 0)
+      '${formatCredits(freeTier.welcomeCredits)} welcome credits',
     '${freeTier.illustratedBooksPerMonth} illustrated books a month',
     'Books you have already made stay yours',
   ];

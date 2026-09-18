@@ -7,9 +7,11 @@
  * pool so purchased credits, which never expire, cannot be spent by it or lost
  * with it.
  *
- * Free periods are granted lazily rather than by a cron: `ensureCurrentPlanPeriod`
+ * Free periods are adopted lazily rather than by a cron: `ensureCurrentPlanPeriod`
  * runs at the top of every reservation and before the billing payload is
- * serialized, so anyone who can spend or look has already been granted. The
+ * serialized, so a lapsed subscription's leftover allowance is written off
+ * before anyone spends. Welcome credits are an extra one-time grant into the
+ * purchased pool, not a replacement for this monthly allowance. The
  * period-keyed ledger idempotency key makes concurrent API instances safe.
  *
  * Subscription periods are *not* granted here — the Google Play verify and
@@ -27,13 +29,17 @@ import { prisma } from "./client.ts";
 import {
   type BillingTx,
   type CreditLedgerEntryRecord,
+  type PlanAccountRow,
+  accountSelect,
   activeEntitlementWhere,
+  effectivePlanCredits,
   jsonInput,
   ledgerSelect,
   planPeriodKeyFromMetadata,
   runSerializable
 } from "./billingInternals.ts";
 import { activeCreditPricingVersion } from "./creditPricing.ts";
+import { ensureWelcomeCreditsTx } from "./welcomeCredits.ts";
 
 /** Monthly usage counters. See `UsageCounter` in the schema. */
 export const ILLUSTRATED_BOOK_COUNTER = "illustrated_books";
@@ -67,18 +73,8 @@ export type MonthlyQuota = {
 
 export type ImageQuota = MonthlyQuota;
 
-export type PlanAccountRow = {
-  userId: string;
-  availableCredits: number;
-  reservedCredits: number;
-  lifetimeCreditsGranted: number;
-  lifetimeCreditsSpent: number;
-  planCredits: number;
-  planCreditsPerPeriod: number;
-  planPeriodStart: Date | null;
-  planPeriodEnd: Date | null;
-  planPeriodKey: string | null;
-};
+export type { PlanAccountRow };
+export { effectivePlanCredits };
 
 /** UTC calendar month, the anchor for free allowances and every usage counter. */
 export function calendarPeriodKey(now: Date): string {
@@ -93,17 +89,6 @@ export function calendarPeriodBounds(now: Date): PlanPeriodBounds {
 
 export function subscriptionPeriodKey(tokenHash: string, periodEnd: Date): string {
   return `sub:${tokenHash}:${periodEnd.toISOString()}`;
-}
-
-/** Spendable allowance right now: an allowance past its period is already gone. */
-export function effectivePlanCredits(
-  account: Pick<PlanAccountRow, "planCredits" | "planPeriodEnd">,
-  now: Date = new Date()
-): number {
-  if (!account.planPeriodEnd || account.planPeriodEnd <= now) {
-    return 0;
-  }
-  return Math.max(0, account.planCredits);
 }
 
 export async function ensureCreditAccountRow(tx: BillingTx, userId: string): Promise<PlanAccountRow> {
@@ -131,8 +116,9 @@ export async function resolvePlanTier(userId: string, now: Date = new Date()): P
 }
 
 /**
- * Bring the account onto the current period, granting the free month when one is
- * owed. Safe to call on every request: it is a no-op once the period matches.
+ * Bring the account onto the current period, writing off a lapsed allowance
+ * when one is owed. Safe to call on every request: it is a no-op once the
+ * period matches. Also settles a pending welcome grant.
  */
 export async function ensureCurrentPlanPeriodTx(
   tx: BillingTx,
@@ -140,24 +126,25 @@ export async function ensureCurrentPlanPeriodTx(
   now: Date = new Date()
 ): Promise<PlanAccountRow> {
   const account = await ensureCreditAccountRow(tx, userId);
+  const settled = await ensureWelcomeCreditsTx(tx, account, now);
   // A period that has not run out is owned by whoever granted it. That covers
   // paid periods mid-month and this month's free grant alike, and it is what
   // stops a subscription's allowance being overwritten in the window between
   // the credit grant and the entitlement row that proves it is paid.
-  if (account.planPeriodEnd && account.planPeriodEnd > now) {
-    return account;
+  if (settled.planPeriodEnd && settled.planPeriodEnd > now) {
+    return settled;
   }
   if ((await resolvePlanTierTx(tx, userId, now)) !== "free") {
-    return account;
+    return settled;
   }
 
   const period = calendarPeriodBounds(now);
-  if (account.planPeriodKey === period.key) {
-    return account;
+  if (settled.planPeriodKey === period.key) {
+    return settled;
   }
   const applied = await applyPlanPeriodTx(tx, {
     userId,
-    account,
+    account: settled,
     period,
     allowance: creditPricing().freeMonthlyCredits,
     operation: "PLAN_ALLOWANCE_GRANT",
@@ -393,19 +380,6 @@ export async function releaseManuscriptImportUse(userId: string, periodKey: stri
 
 const FALLBACK_PERIOD_MS = 31 * 24 * 60 * 60 * 1000;
 
-const accountSelect = {
-  userId: true,
-  availableCredits: true,
-  reservedCredits: true,
-  lifetimeCreditsGranted: true,
-  lifetimeCreditsSpent: true,
-  planCredits: true,
-  planCreditsPerPeriod: true,
-  planPeriodStart: true,
-  planPeriodEnd: true,
-  planPeriodKey: true
-} as const;
-
 /**
  * Reset the allowance pool to a new period.
  *
@@ -515,8 +489,8 @@ async function applyPlanPeriodTx(
     where: { userId: options.userId },
     data: {
       planCredits: granted,
-      // The period's size, not what is left of it: an adopted period reads as
-      // "0 of 1,000 monthly credits left" rather than as having no allowance.
+      // The period's size, not what is left of it. The app reads
+      // "0 of 1,000 monthly credits left" from this, not from the leftover.
       planCreditsPerPeriod: allowance,
       planPeriodStart: options.period.start,
       planPeriodEnd: options.period.end,

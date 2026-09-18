@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/motion.dart';
+import '../../account/presentation/account_billing_copy.dart';
 import '../domain/billing_models.dart';
 import 'billing_tier_style.dart';
 
@@ -111,8 +112,10 @@ class BillingPlanBanner extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               tier == 'free'
-                  ? 'Free includes ${formatCredits(billing!.freeTier.monthlyCredits)} credits '
-                        'and ${billing!.freeTier.illustratedBooksPerMonth} illustrated books each month'
+                  ? freeTierGrantLine(
+                      billing!.freeTier,
+                      formatCredits: formatCredits,
+                    )
                   : _paidPlanLine(plan),
               style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
             ),

@@ -14,6 +14,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(now);
   resetCreditPricing();
+  setCreditPricing({ ...DEFAULT_CREDIT_COSTS, welcomeCreditsEnabled: 0, freeMonthlyCredits: 0 });
   // This suite models transaction rollback too: a failed credit reservation
   // must not leak a quota write. Existing billing tests use the lighter fake.
   db.prisma.$transaction.mockImplementation(async (work) => {
@@ -21,11 +22,24 @@ beforeEach(() => {
     try { return await work(db.prisma); }
     catch (error) { Object.assign(db.state, snapshot); throw error; }
   });
+  // Purchased float so this suite tests message charging, not welcome or monthly grants.
+  db.state.accounts.set(userId, {
+    userId,
+    availableCredits: 1000,
+    reservedCredits: 0,
+    lifetimeCreditsGranted: 1000,
+    lifetimeCreditsSpent: 0,
+    planCredits: 0,
+    planCreditsPerPeriod: 0,
+    planPeriodStart: null,
+    planPeriodEnd: null,
+    planPeriodKey: null
+  });
 });
 afterEach(() => { resetCreditPricing(); vi.useRealTimers(); });
 
 function price(values: Partial<typeof DEFAULT_CREDIT_COSTS> | Record<string, number>) {
-  setCreditPricing({ ...DEFAULT_CREDIT_COSTS, ...values });
+  setCreditPricing({ ...DEFAULT_CREDIT_COSTS, welcomeCreditsEnabled: 0, freeMonthlyCredits: 0, ...values });
 }
 
 describe("ordinary message allowance", () => {
@@ -137,7 +151,8 @@ describe("ordinary message allowance", () => {
   });
 
   it("does not spend a slot when there are insufficient credits", async () => {
-    price({ messageCreditsFree: 7, freeMonthlyCredits: 0 });
+    price({ messageCreditsFree: 7, welcomeCreditsEnabled: 0 });
+    db.state.accounts.get(userId)!.availableCredits = 0;
     await expect(send("too-costly")).rejects.toMatchObject({ code: "INSUFFICIENT_CREDITS" });
     expect(await getMessageAllowance(userId, now)).toMatchObject({ used: 0 });
     expect(db.state.messageReservations.size).toBe(0);
@@ -178,8 +193,9 @@ describe("ordinary message allowance", () => {
   });
 
   it("does not reset usage or advance the token if credits are insufficient", async () => {
-    price({ messageDailyLimitFree: 1, freeMonthlyCredits: 0 });
+    price({ messageDailyLimitFree: 1, welcomeCreditsEnabled: 0 });
     await send("first");
+    db.state.accounts.get(userId)!.availableCredits = 0;
     await expect(reset()).rejects.toMatchObject({ code: "INSUFFICIENT_CREDITS" });
     expect(await getMessageAllowance(userId, now)).toMatchObject({ used: 1, resetToken: "2026-09-10:0:1" });
   });

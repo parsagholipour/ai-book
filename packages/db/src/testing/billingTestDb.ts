@@ -110,6 +110,16 @@ export type Usage = {
   used: number;
 };
 
+export type WelcomeGrant = {
+  userId: string;
+  ipHash: string | null;
+  outcome: string;
+  amountCredits: number;
+  ledgerEntryId: string | null;
+  createdAt: Date;
+  settledAt: Date | null;
+};
+
 /** The catalog rows the suites verify purchases against. */
 export const TEST_PRODUCTS: Product[] = [
   {
@@ -153,6 +163,7 @@ export function createBillingTestDb() {
     purchases: new Map<string, Purchase>(),
     subscriptions: new Map<string, Subscription>(),
     usage: new Map<string, Usage>(),
+    welcomeGrants: new Map<string, WelcomeGrant>(),
     messageReservations: new Map<string, Record<string, any>>(),
     projectChatMessages: new Map<string, Record<string, any>>(),
     creationDrafts: new Map<string, Record<string, any>>(),
@@ -295,9 +306,34 @@ export function createBillingTestDb() {
     return `${where.userId}:${where.kind}:${where.periodKey}`;
   }
 
+  function welcomeGrantMatchesWhere(row: WelcomeGrant, where: Record<string, any>) {
+    if (where.ipHash !== undefined && row.ipHash !== where.ipHash) {
+      return false;
+    }
+    if (where.outcome !== undefined && row.outcome !== where.outcome) {
+      return false;
+    }
+    if (where.userId?.not !== undefined && row.userId === where.userId.not) {
+      return false;
+    }
+    if (where.settledAt?.gte instanceof Date) {
+      if (!row.settledAt || row.settledAt < where.settledAt.gte) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // Overlapping ensureCurrentPlanPeriod calls must not interleave writes. Postgres
+  // serializes them on the WelcomeCreditGrant IP lock; this chain is that lock here.
+  let txTail = Promise.resolve();
   const prisma = {
     $queryRaw: vi.fn(async () => [{ id: "user-a" }]),
-    $transaction: vi.fn(async (callback: (tx: any) => Promise<unknown>) => callback(prisma)),
+    $transaction: vi.fn(async (callback: (tx: any) => Promise<unknown>) => {
+      const run = txTail.then(() => callback(prisma));
+      txTail = run.then(() => undefined, () => undefined);
+      return run;
+    }),
     productCatalog: {
       upsert: vi.fn(),
       findUnique: vi.fn(async ({ where }: any) => state.products.get(where.sku) ?? null)
@@ -449,6 +485,7 @@ export function createBillingTestDb() {
       })
     },
     userCreditAccount: {
+      findUnique: vi.fn(async ({ where }: any) => state.accounts.get(where.userId) ?? null),
       upsert: vi.fn(async ({ where, create }: any) => account(where.userId ?? create.userId)),
       update: vi.fn(async ({ where, data }: any) => {
         const target = account(where.userId);
@@ -544,6 +581,20 @@ export function createBillingTestDb() {
           used: create.used ?? 0
         };
         state.usage.set(usageKey(row), row);
+        return row;
+      })
+    },
+    welcomeCreditGrant: {
+      findUnique: vi.fn(async ({ where }: any) => state.welcomeGrants.get(where.userId) ?? null),
+      findFirst: vi.fn(async ({ where }: any) =>
+        [...state.welcomeGrants.values()].find((row) => welcomeGrantMatchesWhere(row, where ?? {})) ?? null
+      ),
+      update: vi.fn(async ({ where, data }: any) => {
+        const row = state.welcomeGrants.get(where.userId);
+        if (!row) {
+          throw new Error("Welcome grant missing");
+        }
+        applyMutation(row, data);
         return row;
       })
     },
@@ -671,6 +722,7 @@ export function createBillingTestDb() {
 
   /** Wipe every table and re-seed the product catalog. Call in `beforeEach`. */
   function reset() {
+    txTail = Promise.resolve();
     state.accounts.clear();
     state.ledger.clear();
     state.entitlements.clear();
@@ -678,6 +730,7 @@ export function createBillingTestDb() {
     state.purchases.clear();
     state.subscriptions.clear();
     state.usage.clear();
+    state.welcomeGrants.clear();
     state.messageReservations.clear();
     state.projectChatMessages.clear();
     state.creationDrafts.clear();

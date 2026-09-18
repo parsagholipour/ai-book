@@ -118,7 +118,11 @@ describe("mobile billing and Google Play", () => {
     });
     // What free *grants*, not what is left of it: the app describes the tier
     // from this whether or not the reader is on it.
-    expect(body.billing.freeTier).toEqual({ monthlyCredits: 1000, illustratedBooksPerMonth: 3 });
+    expect(body.billing.freeTier).toEqual({
+      monthlyCredits: 1000,
+      welcomeCredits: 1000,
+      illustratedBooksPerMonth: 3
+    });
     expect(body.billing.imageQuota).toEqual({ used: 2, limit: 3, resetsAt: "2026-07-01T00:00:00.000Z" });
     // The app reads `available` as everything spendable, allowance included.
     expect(body.billing.credits).toMatchObject({ available: 1400, purchased: 500 });
@@ -158,7 +162,11 @@ describe("mobile billing and Google Play", () => {
     expect(paid.billing.plan).toMatchObject({ tier: "pro", renewsAt: "2026-07-15T00:00:00.000Z", endsAt: null });
     // The limit still ships on a paid plan — the paywall's free rung describes
     // what cancelling would drop you to.
-    expect(paid.billing.freeTier).toEqual({ monthlyCredits: 1000, illustratedBooksPerMonth: 3 });
+    expect(paid.billing.freeTier).toEqual({
+      monthlyCredits: 1000,
+      welcomeCredits: 1000,
+      illustratedBooksPerMonth: 3
+    });
     await app.close();
   });
 

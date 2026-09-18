@@ -84,7 +84,7 @@ class _CancelSubscriptionSheetState
                   style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 10),
-                for (final benefit in freePlanBenefits(freeTier).take(2)) ...[
+                for (final benefit in _freePlanGrants(freeTier)) ...[
                   BillingBenefitRow(
                     label: benefit,
                     accent: colors.onSurfaceVariant,
@@ -181,6 +181,17 @@ class _CancelSubscriptionSheetState
       Navigator.of(context).pop();
     }
   }
+}
+
+/// Monthly credits, welcome credits, illustrated books — not the trailing
+/// "stay yours" line, which [_whatYouKeep] already says in its own words.
+List<String> _freePlanGrants(MobileFreeTier freeTier) {
+  final benefits = freePlanBenefits(freeTier);
+  if (benefits.isNotEmpty &&
+      benefits.last == 'Books you have already made stay yours') {
+    return benefits.sublist(0, benefits.length - 1);
+  }
+  return benefits;
 }
 
 List<String> _whatYouKeep(

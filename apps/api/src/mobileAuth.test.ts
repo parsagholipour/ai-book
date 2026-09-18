@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createMobileSession,
@@ -6,8 +6,10 @@ import {
   hashToken,
   mobileAuthRoutes,
   refreshMobileSession,
+  requestSessionContext,
   verifyMobileAccessToken,
-  verifyPassword
+  verifyPassword,
+  welcomeCreditIpHash
 } from "./mobileAuth.js";
 
 const mockPrisma = vi.hoisted(() => ({
@@ -190,6 +192,31 @@ describe("mobile auth service", () => {
   });
 });
 
+describe("welcome credit IP hash", () => {
+  const clientIp = "203.0.113.10";
+
+  it("hashes a direct client when hops are 0 and no forwarded header is present", () => {
+    const request = sessionRequest({ ip: clientIp });
+    expect(welcomeCreditIpHash(request, 0)).toBe(hashToken(`ip:${clientIp}`));
+    expect(requestSessionContext(request)).toEqual({
+      ipHash: hashToken(`ip:${clientIp}`)
+    });
+  });
+
+  it("omits ipHash when hops are 0 and X-Forwarded-For is present", () => {
+    const asString = sessionRequest({ ip: clientIp, forwardedFor: "198.51.100.1" });
+    const asArray = sessionRequest({ ip: clientIp, forwardedFor: ["198.51.100.1"] });
+
+    expect(welcomeCreditIpHash(asString, 0)).toBeUndefined();
+    expect(welcomeCreditIpHash(asArray, 0)).toBeUndefined();
+  });
+
+  it("hashes request.ip when hops are trusted even if X-Forwarded-For is present", () => {
+    const request = sessionRequest({ ip: clientIp, forwardedFor: "198.51.100.1" });
+    expect(welcomeCreditIpHash(request, 2)).toBe(hashToken(`ip:${clientIp}`));
+  });
+});
+
 describe("mobile auth routes", () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -230,6 +257,9 @@ describe("mobile auth routes", () => {
       termsAttested: true,
       ageGuardianAttested: true,
       source: "mobile_signup"
+    });
+    expect(createCall.data.welcomeCreditGrant.create).toEqual({
+      ipHash: hashToken("ip:127.0.0.1")
     });
     await app.close();
   });
@@ -480,6 +510,18 @@ async function signUp(app: FastifyInstance) {
       ageGuardianAttested: true
     }
   });
+}
+
+function sessionRequest(options: {
+  ip?: string;
+  forwardedFor?: string | string[];
+}): FastifyRequest {
+  return {
+    ip: options.ip ?? "",
+    headers: {
+      ...(options.forwardedFor !== undefined ? { "x-forwarded-for": options.forwardedFor } : {})
+    }
+  } as FastifyRequest;
 }
 
 function mockMobileSessionCreate() {

@@ -1,7 +1,7 @@
 /**
  * Public billing surface — `@book-maker/db/billing`.
  *
- * The implementation is split across four modules; this file is the only entry
+ * The implementation is split across these modules; this file is the only entry
  * point callers (and the `vi.mock("@book-maker/db/billing")` in the API suites)
  * should ever name:
  *
@@ -9,6 +9,8 @@
  *   billingLedger.ts        balances and every credit mutation
  *   billingEntitlements.ts  the durable unlocks credits buy
  *   billingSubscriptions.ts Google Play purchases and subscription state
+ *   planPeriods.ts          allowances and quotas
+ *   welcomeCredits.ts       one-time welcome grant
  */
 export {
   InsufficientCreditsError,
@@ -38,6 +40,8 @@ export {
   hasActiveSubscriptionEntitlement,
   listActiveUserEntitlements
 } from "./billingEntitlements.ts";
+
+export { WELCOME_CREDITS_IP_WINDOW_DAYS, ensureWelcomeCreditsTx } from "./welcomeCredits.ts";
 
 export {
   type ConsumeUsageResult,

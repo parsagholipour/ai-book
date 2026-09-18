@@ -244,7 +244,7 @@ code in that area, however obvious the rule looks.
 - **A charge has one cumulative reversal, and partial settlements name their claim.** → packages/db/CLAUDE.md
 - **A paid attempt may only be parented onto the job its own `create` callback wrote.** → packages/db/CLAUDE.md
 - **A balance is two pools, and spending draws the expiring one first.** → packages/db/CLAUDE.md
-- **The free month is granted lazily, not by a cron.** → packages/db/CLAUDE.md
+- **Welcome credits are granted lazily, once, not by a cron.** → packages/db/CLAUDE.md
 - **Cancelling belongs to Google Play; the app's job is to say what it costs and then re-ask.** → apps/api/src/mobile/CLAUDE.md
 - **A plan period cut short is *adopted*, not re-granted.** → packages/db/CLAUDE.md
 - **The free tier's illustrated-book limit has two claiming doors — plan approval and the chat `add_image` Apply.** → apps/api/src/mobile/CLAUDE.md
@@ -323,8 +323,8 @@ code in that area, however obvious the rule looks.
 - **Nothing used to check that the planner obeyed, and now one pass does.** → packages/core/src/generation/CLAUDE.md
 - **A per-book character list is a copy, and it says which library character it is a copy of.** → apps/api/src/mobile/CLAUDE.md
 - **A reference-sheet filename must survive a non-Latin name.** → apps/worker/src/generation/CLAUDE.md
-- **A pass owns every sheet file it wrote, because a per-pass name is unbounded and nothing else sweeps that directory.** → apps/worker/src/generation/CLAUDE.md
-- **Which of those files the sweep may unlink is decided by a re-read of the rows, never by an exception.** → apps/worker/src/generation/CLAUDE.md
+- **A pass owns every sheet file it wrote, because a per-pass name is unbounded and nothing else sweeps that object prefix.** → apps/worker/src/generation/CLAUDE.md
+- **Which of those objects the sweep may delete is decided by a re-read of the rows, never by an exception.** → apps/worker/src/generation/CLAUDE.md
 - **But no later pass runs, which is why a refusal needs a door out of the product.** → apps/worker/src/generation/CLAUDE.md
 - **And the second waiter's tick is four queries, so what they each read is the price of waiting.** → apps/worker/src/generation/CLAUDE.md
 - **`photoPath` is not a reference; `portraitPath` is, and the upload decides which one an image becomes.** → apps/api/src/mobile/CLAUDE.md

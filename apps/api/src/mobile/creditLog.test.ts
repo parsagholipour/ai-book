@@ -49,6 +49,7 @@ describe("mobile credit log", () => {
     mockPrisma.creditLedgerEntry.findMany.mockResolvedValueOnce([
       ledgerRow({ id: "purchase", entryType: "GRANT", operation: "PURCHASE_CREDIT_GRANT", amountCredits: 1000, projectId: null, project: null }),
       ledgerRow({ id: "monthly", entryType: "GRANT", operation: "PLAN_ALLOWANCE_GRANT", amountCredits: 500, projectId: null, project: null }),
+      ledgerRow({ id: "welcome", entryType: "GRANT", operation: "WELCOME_GRANT", amountCredits: 1000, projectId: null, project: null }),
       ledgerRow({ id: "spend" }),
       ledgerRow({ id: "audiobook", operation: "AUDIOBOOK_GENERATION", status: "RESERVED", entryType: "RESERVE", amountCredits: -120 }),
       // A released hold is the same row mutated: still negative, but given back.
@@ -87,6 +88,7 @@ describe("mobile credit log", () => {
     expect(body.log.entries).toEqual([
       expect.objectContaining({ id: "purchase", direction: "in", credits: 1000, kind: "purchase", title: "Credits purchased" }),
       expect.objectContaining({ id: "monthly", direction: "in", credits: 500, kind: "monthly", title: "Monthly credits" }),
+      expect.objectContaining({ id: "welcome", direction: "in", credits: 1000, kind: "bonus", title: "Welcome credits" }),
       expect.objectContaining({
         id: "spend",
         direction: "out",

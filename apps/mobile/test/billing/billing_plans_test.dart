@@ -38,6 +38,7 @@ MobileBilling _billing({
   int monthlyCredits = 1000,
   MobileImageQuota? imageQuota,
   bool cancelAtPeriodEnd = false,
+  MobileFreeTier freeTier = const MobileFreeTier(welcomeCredits: 1000),
 }) {
   return MobileBilling(
     credits: CreditBalance(
@@ -67,6 +68,7 @@ MobileBilling _billing({
       resetsAt: DateTime.utc(2026, 7, 1),
     ),
     imageQuota: imageQuota,
+    freeTier: freeTier,
   );
 }
 
@@ -284,10 +286,32 @@ void main() {
       // size from what happens to be left of it.
       expect(
         find.text(
+          'Free includes 1,000 welcome credits, 1,000 credits every month, '
+          'and 3 illustrated books each month',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('omits welcome credits when the grant is off', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          BillingPlanBanner(
+            billing: _billing(
+              freeTier: const MobileFreeTier(welcomeCredits: 0),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
           'Free includes 1,000 credits and 3 illustrated books each month',
         ),
         findsOneWidget,
       );
+      expect(find.textContaining('welcome credits'), findsNothing);
     });
 
     testWidgets('a cancelled plan says when it ends, not when it renews', (
@@ -360,7 +384,8 @@ void main() {
       expect(find.text('3 of 3 illustrated books used this month'), findsOneWidget);
       expect(
         find.text(
-          'Free includes 1000 credits and 3 illustrated books each month',
+          'Free includes 1000 welcome credits, 1000 credits every month, '
+          'and 3 illustrated books each month',
         ),
         findsOneWidget,
       );
@@ -497,7 +522,7 @@ void main() {
       await tester.pumpWidget(
         _wrap(
           const BillingFreePlanCard(
-            freeTier: MobileFreeTier(),
+            freeTier: MobileFreeTier(welcomeCredits: 1000),
             isCurrentPlan: true,
           ),
         ),
@@ -505,6 +530,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('1,000 credits every month'), findsOneWidget);
+      expect(find.text('1,000 welcome credits'), findsOneWidget);
       expect(find.text('3 illustrated books a month'), findsOneWidget);
       expect(find.text('YOUR PLAN'), findsOneWidget);
       // No way down from the bottom rung.
@@ -517,7 +543,7 @@ void main() {
         _wrap(
           BillingFreePlanCard(
             freeTier: const MobileFreeTier(
-              monthlyCredits: 1500,
+              welcomeCredits: 1500,
               illustratedBooksPerMonth: 2,
             ),
             isCurrentPlan: false,
@@ -528,7 +554,8 @@ void main() {
       await tester.pumpAndSettle();
 
       // The operator's numbers, not the client's defaults.
-      expect(find.text('1,500 credits every month'), findsOneWidget);
+      expect(find.text('1,000 credits every month'), findsOneWidget);
+      expect(find.text('1,500 welcome credits'), findsOneWidget);
       expect(find.text('2 illustrated books a month'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('paywall-switch-to-free')));
       expect(taps, 1);
@@ -554,6 +581,8 @@ void main() {
       // No quota is not the same as an exhausted one — it must not block anyone.
       expect(billing.isImageQuotaExhausted, isFalse);
       expect(billing.credits.purchased, 0);
+      expect(billing.freeTier.monthlyCredits, 1000);
+      expect(billing.freeTier.welcomeCredits, 0);
     });
 
     test('any paid tier unlocks manuscript import', () {

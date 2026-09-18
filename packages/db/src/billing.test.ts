@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_CREDIT_COSTS, creditCostForOperation, resetCreditPricing, setCreditPricing } from "@book-maker/core";
+import { DEFAULT_CREDIT_COSTS, creditCostForOperation, setCreditPricing } from "@book-maker/core";
 
 const fakeDb = await vi.hoisted(async () => (await import("./testing/billingTestDb.js")).createBillingTestDb());
 
@@ -39,7 +39,7 @@ describe("credit ledger operations", () => {
     // These cover the ledger mechanics, so the free allowance is switched off to
     // keep the arithmetic about the amounts each test sets up. The allowance has
     // its own suite in planPeriods.test.ts.
-    setCreditPricing({ ...DEFAULT_CREDIT_COSTS, freeMonthlyCredits: 0 });
+    setCreditPricing({ ...DEFAULT_CREDIT_COSTS, welcomeCreditsEnabled: 0, freeMonthlyCredits: 0 });
   });
 
   it("grants, reserves, commits, and refunds credits atomically", async () => {
@@ -534,7 +534,7 @@ describe("credit ledger operations", () => {
 describe("google play purchases", () => {
   beforeEach(() => {
     fakeDb.reset();
-    resetCreditPricing();
+    setCreditPricing({ ...DEFAULT_CREDIT_COSTS, welcomeCreditsEnabled: 0, freeMonthlyCredits: 0 });
   });
 
   const creatorVerification = {
@@ -571,9 +571,9 @@ describe("google play purchases", () => {
     expect(first.ledgerEntryId).toBe(duplicate.ledgerEntryId);
     // Bought outright, so it lands in the pool that never expires.
     expect(await getCreditBalance("user-a", JUNE)).toMatchObject({
-      availableCredits: 1000 + DEFAULT_CREDIT_COSTS.freeMonthlyCredits,
+      availableCredits: 1000,
       purchasedCredits: 1000,
-      lifetimeCreditsGranted: 1000 + DEFAULT_CREDIT_COSTS.freeMonthlyCredits
+      lifetimeCreditsGranted: 1000
     });
     expect([...fakeDb.state.ledger.values()].filter((entry) => entry.operation === "PURCHASE_CREDIT_GRANT")).toHaveLength(1);
   });

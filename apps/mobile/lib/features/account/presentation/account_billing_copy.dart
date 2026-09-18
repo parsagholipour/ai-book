@@ -4,16 +4,33 @@ import '../../billing/domain/billing_models.dart';
 import 'account_links.dart';
 
 /// Shared plan / renew / end / free-tier sentences for the account hub,
-/// overview card, and plan card. Amounts stay raw so tests can match them
-/// without `formatCredits`.
+/// overview card, and plan card. Amounts stay raw unless a [formatCredits]
+/// callback is passed, so account tests can match numbers without formatting.
 
 String monthlyCreditsLeftLine(MobileAllowance allowance) {
   return '${allowance.planCredits} of ${allowance.monthlyCredits} monthly credits left';
 }
 
-String freeTierGrantLine(MobileFreeTier freeTier) {
-  return 'Free includes ${freeTier.monthlyCredits} credits and '
+String freeTierGrantLine(
+  MobileFreeTier freeTier, {
+  String Function(int value)? formatCredits,
+}) {
+  String credits(int value) => formatCredits?.call(value) ?? '$value';
+  final books =
       '${freeTier.illustratedBooksPerMonth} illustrated books each month';
+  final welcome = freeTier.welcomeCredits;
+  final monthly = freeTier.monthlyCredits;
+  if (welcome <= 0 && monthly <= 0) {
+    return 'Free includes $books';
+  }
+  if (welcome <= 0 && monthly > 0) {
+    return 'Free includes ${credits(monthly)} credits and $books';
+  }
+  if (welcome > 0 && monthly <= 0) {
+    return 'Free includes ${credits(welcome)} welcome credits and $books';
+  }
+  return 'Free includes ${credits(welcome)} welcome credits, '
+      '${credits(monthly)} credits every month, and $books';
 }
 
 String renewsLine(BuildContext context, DateTime renewsAt) {

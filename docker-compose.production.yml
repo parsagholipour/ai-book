@@ -17,6 +17,7 @@ x-app: &app
     REDIS_URL: redis://redis:6379
     API_HOST: 0.0.0.0
     API_PORT: "4001"
+    TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-2}
     PUBLIC_API_URL: ${PUBLIC_API_URL:?Set the externally reachable API origin}
     WEB_PASSWORD: ${WEB_PASSWORD:?Set an operator password}
     BOOK_STORAGE_DIR: /app/storage/books

@@ -59,6 +59,7 @@ const OPERATION_TITLES: Record<string, string> = {
   PURCHASE_CREDIT_GRANT: "Credits purchased",
   SUBSCRIPTION_CREDIT_GRANT: "Subscription credits",
   PLAN_ALLOWANCE_GRANT: "Monthly credits",
+  WELCOME_GRANT: "Welcome credits",
   ADMIN_GRANT: "Credits from support"
 };
 

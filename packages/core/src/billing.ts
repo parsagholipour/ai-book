@@ -331,6 +331,7 @@ export type BillingOperation =
   | "PURCHASE_CREDIT_GRANT"
   | "SUBSCRIPTION_CREDIT_GRANT"
   | "PLAN_ALLOWANCE_GRANT"
+  | "WELCOME_GRANT"
   | "ADMIN_GRANT";
 
 export type CreditLineItem = {
@@ -427,6 +428,7 @@ export function creditCostForOperation(
     case "PURCHASE_CREDIT_GRANT":
     case "SUBSCRIPTION_CREDIT_GRANT":
     case "PLAN_ALLOWANCE_GRANT":
+    case "WELCOME_GRANT":
     case "ADMIN_GRANT":
       return 0;
     default:

@@ -132,9 +132,10 @@ export async function reserveCreditsTx(
     return existing;
   }
 
-    // Anyone about to spend is owed their allowance first — this is what grants
-    // the free month, and it is deliberately on the charging path rather than a
-    // cron so no user can be missed.
+    // Anyone about to spend is owed their current period first — this is what
+    // settles a pending welcome grant and writes off a lapsed allowance, and
+    // it is deliberately on the charging path rather than a cron so no user
+    // can be missed.
   const account = await ensureCurrentPlanPeriodTx(tx, options.userId, now);
   const spendable = spendableCredits(account, now);
   if (spendable < options.amountCredits) {

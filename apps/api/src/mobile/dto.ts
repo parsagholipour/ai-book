@@ -18,7 +18,7 @@ import {
   mobileLengthPresetSchema,
   mobileQualityPresetSchema
 } from "./schemas.js";
-import { type CoverArtSource, type CreditPricing, type PlanTier } from "@book-maker/core";
+import { type CoverArtSource } from "@book-maker/core";
 import { InsufficientCreditsError } from "@book-maker/db/billing";
 import { z } from "zod";
 
@@ -688,137 +688,14 @@ export type {
   ProjectStatusResult
 } from "./recordTypes.js";
 
-export type MobileBillingDto = {
-  messageAllowance: import("@book-maker/db/billing").MessageAllowance;
-  credits: {
-    /** Everything the user can spend right now: allowance plus purchased. */
-    available: number;
-    /** The part of `available` that came from a purchase and never expires. */
-    purchased: number;
-    reserved: number;
-    lifetimeGranted: number;
-    lifetimeSpent: number;
-  };
-  plan: {
-    tier: PlanTier;
-    source: "free" | "google_play";
-    /** Google Play subscription status, or null on the free tier. */
-    status: string | null;
-    /** Null once the plan has been cancelled — read `endsAt` instead. */
-    renewsAt: string | null;
-    /** The plan is running out its last paid period and then drops to free. */
-    cancelAtPeriodEnd: boolean;
-    /** When that drop happens. Null while the plan is still renewing. */
-    endsAt: string | null;
-    /**
-     * Whether this backend can end the subscription itself. Only the mock Play
-     * verifier can; against real Play the app has to send the reader to the Play
-     * subscription centre, because that is where Google requires it to happen.
-     */
-    canCancelInApp: boolean;
-    productSku: string | null;
-  };
-  /**
-   * What the free tier grants every month, whether or not the reader is on it.
-   * Sent so the app can *describe* free — "1,000 credits and 3 illustrated books
-   * a month" — rather than only counting down what a free user has left.
-   */
-  freeTier: {
-    monthlyCredits: number;
-    illustratedBooksPerMonth: number;
-  };
-  allowance: {
-    /** What this plan grants each period. */
-    monthlyCredits: number;
-    /** What is left of it. Resets rather than carrying over. */
-    planCredits: number;
-    resetsAt: string | null;
-  };
-  /** Null means no image limit on this plan — unlimited, not unknown. */
-  imageQuota: {
-    used: number;
-    limit: number;
-    resetsAt: string;
-  } | null;
-  entitlements: Array<{
-    id: string;
-    type: string;
-    projectId: string | null;
-    status: string;
-    source: string;
-    creditsCost: number;
-    startsAt: string;
-    expiresAt: string | null;
-  }>;
-  creditCosts: CreditPricing;
-  products: Array<{
-    sku: string;
-    title: string;
-    description: string;
-    productType: string;
-    creditAmount: number;
-    priceMicros: number;
-    currency: string;
-  }>;
-};
-
-/**
- * What a ledger row meant to the reader, not what it meant to the ledger.
- * `spend` covers every charge; the rest say where credits came from or why they
- * left without being spent.
- */
-export type MobileCreditLogKind =
-  | "purchase"
-  | "subscription"
-  | "monthly"
-  | "bonus"
-  | "spend"
-  | "refund"
-  | "expired";
-
-export type MobileCreditLogEntryDto = {
-  id: string;
-  createdAt: string;
-  /** `in` added credits, `out` took them. */
-  direction: "in" | "out";
-  /** Whole credits moved, always positive — the sign is `direction`. */
-  credits: number;
-  kind: MobileCreditLogKind;
-  /**
-   * Already in the reader's words. Built here rather than in the app so a new
-   * `CreditOperation` reads correctly without a client release — and because the
-   * stored `description` can carry raw provider errors, which never ship.
-   */
-  title: string;
-  /** Held against work still running: charged, but not yet settled. */
-  pending: boolean;
-  /** The charge came back. The row is history, not a movement. */
-  refunded: boolean;
-  projectId: string | null;
-  /** The book this touched, when it still exists. */
-  projectTitle: string | null;
-};
-
-export type MobileCreditLogDto = {
-  entries: MobileCreditLogEntryDto[];
-  /** Send back as `cursor` for the next page. Null at the end of the history. */
-  nextCursor: string | null;
-};
-
-export type MobileBillingResponseDto = {
-  billing: MobileBillingDto;
-};
-
-export type MobileGooglePlayVerificationResponseDto = {
-  purchase: {
-    id: string;
-    status: string;
-    creditsGranted: number;
-    subscriptionStatus: string | null;
-    entitlementType: string | null;
-  };
-  billing: MobileBillingDto;
-};
+export type {
+  MobileBillingDto,
+  MobileBillingResponseDto,
+  MobileCreditLogDto,
+  MobileCreditLogEntryDto,
+  MobileCreditLogKind,
+  MobileGooglePlayVerificationResponseDto
+} from "./billingDto.js";
 
 export type MobileCreationBuildOverrides = z.infer<typeof mobileCreationBuildBodySchema>;
 

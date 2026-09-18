@@ -26,9 +26,10 @@ class MobileBilling {
   final MobileSubscriptionPlan? plan;
   final MobileAllowance? allowance;
 
-  /// What the free tier grants every month, whoever is asking. This describes
-  /// the tier rather than counting down a reader's remainder, which is what the
-  /// paywall's free rung and the cancel sheet need.
+  /// What the free tier offers: a monthly credit allowance, an optional
+  /// one-time welcome grant, and the illustrated-book quota. This describes
+  /// the offer itself — the same for every reader — rather than a remainder
+  /// or whether this account has already received the welcome.
   final MobileFreeTier freeTier;
 
   /// Null means this plan has no image limit at all. Only meaningful on free.
@@ -111,20 +112,24 @@ class MobileBilling {
   bool get isImageQuotaExhausted => imageQuota?.isExhausted ?? false;
 }
 
-/// The free tier's monthly grant. Defaults match the shipped prices so a server
-/// that predates the field still describes free correctly.
+/// The free tier's grant: a monthly allowance plus an optional one-time
+/// welcome. The numbers describe the offer, not whether this reader has
+/// already received it.
 class MobileFreeTier {
   const MobileFreeTier({
     this.monthlyCredits = 1000,
+    this.welcomeCredits = 0,
     this.illustratedBooksPerMonth = 3,
   });
 
   final int monthlyCredits;
+  final int welcomeCredits;
   final int illustratedBooksPerMonth;
 
   factory MobileFreeTier.fromJson(Map<String, dynamic> json) {
     return MobileFreeTier(
       monthlyCredits: json['monthlyCredits'] as int? ?? 1000,
+      welcomeCredits: json['welcomeCredits'] as int? ?? 0,
       illustratedBooksPerMonth: json['illustratedBooksPerMonth'] as int? ?? 3,
     );
   }

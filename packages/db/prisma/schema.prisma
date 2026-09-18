@@ -173,7 +173,16 @@ enum CreditOperation {
   PURCHASE_CREDIT_GRANT
   SUBSCRIPTION_CREDIT_GRANT
   PLAN_ALLOWANCE_GRANT
+  WELCOME_GRANT
   ADMIN_GRANT
+}
+
+enum WelcomeCreditOutcome {
+  PENDING
+  GRANTED
+  DISABLED
+  RECENT_IP
+  NO_IP
 }
 
 enum GenerationAttemptStatus {
@@ -295,6 +304,7 @@ model User {
   passwordResetRequests   PasswordResetRequest[]
   libraryCharacters       LibraryCharacter[]
   messageUsageReservations MessageUsageReservation[]
+  welcomeCreditGrant       WelcomeCreditGrant?
 }
 
 /// Append-only proof that a user affirmatively accepted a specific pair of
@@ -459,6 +469,24 @@ model UserCreditAccount {
   updatedAt              DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// One-time welcome grant for a new account. Created PENDING at signup; settled
+/// on the first balance read. A user with no row is a pre-existing account and
+/// is never welcomed. Same-IP grants inside 30 days settle as RECENT_IP; a
+/// missing IP settles as NO_IP. Neither of those writes a ledger GRANT.
+model WelcomeCreditGrant {
+  userId        String               @id
+  ipHash        String?
+  outcome       WelcomeCreditOutcome @default(PENDING)
+  amountCredits Int                  @default(0)
+  ledgerEntryId String?              @unique
+  createdAt     DateTime             @default(now())
+  settledAt     DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([ipHash, outcome, settledAt])
 }
 
 /// Shared usage limits, one row per user per counter per calendar period.

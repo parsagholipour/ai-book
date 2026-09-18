@@ -21,7 +21,7 @@ export async function serializeMobileBilling(
   options: { canCancelInApp: boolean }
 ): Promise<MobileBillingDto> {
   // `getCreditBalance` rolls the plan period forward first, so simply opening
-  // the app is enough to be granted the month's allowance.
+  // the app is enough to settle a pending welcome grant.
   // Recover expired message holds before reading the balance so a returned
   // slot and its refunded credits are visible in the same billing response.
   const messageAllowance = await getMessageAllowance(userId);
@@ -56,6 +56,7 @@ export async function serializeMobileBilling(
     },
     freeTier: {
       monthlyCredits: pricing.freeMonthlyCredits,
+      welcomeCredits: pricing.welcomeCreditsEnabled > 0 ? pricing.welcomeCredits : 0,
       illustratedBooksPerMonth: pricing.freeIllustratedBooksPerMonth
     },
     allowance: {

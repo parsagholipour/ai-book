@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/ui/app_components.dart';
+import '../../account/presentation/account_billing_copy.dart';
 import '../domain/billing_models.dart';
 import 'billing_plan_tiles.dart';
 
@@ -181,8 +182,7 @@ class BillingExportOfferDetails extends StatelessWidget {
         if (isFree) ...[
           const SizedBox(height: 12),
           Text(
-            'Free includes ${formatCredits(freeTier.monthlyCredits)} credits and '
-            '${freeTier.illustratedBooksPerMonth} illustrated books each month. '
+            '${freeTierGrantLine(freeTier, formatCredits: formatCredits)}. '
             '$format export requires a paid plan.',
             textAlign: TextAlign.center,
             style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
