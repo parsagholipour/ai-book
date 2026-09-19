@@ -9,6 +9,8 @@ export type DecisionRequest = {
   purpose: string;
   /** Screens can escalate directly to their existing diagnostic/rewrite path. */
   escalationPolicy?: "caller" | undefined;
+  /** Authorized evidence already frozen by prepareReviewContext. */
+  sourceContextPrepared?: boolean | undefined;
   signal?: AbortSignal | undefined;
 };
 
@@ -51,6 +53,7 @@ export type DecisionOutcome = {
   disagreement?: boolean | undefined;
   /** A style screen skipped the diagnostic audit, not the ordinary page review. */
   auditAvoided?: boolean | undefined;
+  verificationAvoided?: boolean | undefined;
 };
 
 export function assertDecisionRequest(request: DecisionRequest): void {

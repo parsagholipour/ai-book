@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
     ): Promise<Array<Record<string, unknown>>> => []
   ),
   loadContinuityNotes: vi.fn(async (): Promise<string[]> => []),
+  loadResearchNotesForGeneration: vi.fn(async () => ["Trial results: no recovery rate was measured."]),
   qualityEnabled: vi.fn((_feature: string): boolean => false),
   pageQualityEnabled: vi.fn((_feature: string): boolean => true),
   // The style audit's provider boundary; `withStyleAudit` above it stays real.
@@ -25,7 +26,7 @@ vi.mock("@book-maker/db", async () => ({
   ...(await import("../testing/dbScopeMocks.js")).dbScopeMocks()
 }));
 vi.mock("../runtime/jobLifecycle.js", () => ({ advanceJobStep: vi.fn(), updateJobProgress: vi.fn() }));
-vi.mock("./generationContext.js", () => ({ loadContinuityNotes: mocks.loadContinuityNotes }));
+vi.mock("./generationContext.js", () => ({ loadContinuityNotes: mocks.loadContinuityNotes, loadResearchNotesForGeneration: mocks.loadResearchNotesForGeneration }));
 vi.mock("./bookHelpers.js", async () => {
   const { pagesForStyleExcerpts, pinStyleExcerpts, sampleExcerptsFromInput } = await vi.importActual<
     typeof import("@book-maker/core")
@@ -397,6 +398,25 @@ describe("rewritePageForUserRequest approval inheritance", () => {
     expect(result.markdown).toBe(converted);
     expect(result.qualityReport).toMatchObject({ approved: true, score: 91 });
     expect(result.qualityReport.notes).toContain("inherited");
+  });
+
+  it("checks new factual claims even when most prose inherits approval", async () => {
+    const { FakeTextModelAdapter, JEV_SELECTION } = await import("@book-maker/core");
+    const text = new FakeTextModelAdapter();
+    const generate = vi.spyOn(text, "generateJson").mockResolvedValue({ data: { groundedOk: false, unsupportedClaims: ["94% recovery is unsupported: remove the statistic."] }, text: "", provider: "fake", model: "fake" });
+    const choose = vi.fn(async () => ({ ...JEV_SELECTION, selectedOption: "defect", probabilities: { supported: 0.02, defect: 0.96, insufficient_context: 0.02 } }));
+    const base: Parameters<typeof rewritePageForUserRequest>[0] = options();
+    strategy.revisePageDraft.mockResolvedValue(draft(original + "\n\n94% recovered."));
+    const result = await rewritePageForUserRequest({
+      ...base, input: { ...base.input, category: "SCIENCE", prompt: "Explain research" },
+      providers: { ...base.providers, text, decisions: { resolve: async () => ({ choose }) } },
+      quality: pagePipelineQualityGates({ additionalFeatures: ["changedCandidateGrounding"] })
+    });
+    expect(strategy.reviewPageDraft).not.toHaveBeenCalled();
+    expect(choose).toHaveBeenCalledOnce();
+    expect(generate).toHaveBeenCalledOnce();
+    expect(result.qualityReport).toMatchObject({ approved: false, groundingStatus: "failed" });
+    expect(mocks.loadResearchNotesForGeneration).toHaveBeenCalled();
   });
 
   it("reviews a rewrite that kept less than the floor, and one of a page that was not approved", async () => {

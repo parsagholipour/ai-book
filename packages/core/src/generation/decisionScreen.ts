@@ -9,7 +9,7 @@ export async function passesDecisionScreen(options: {
   version: string;
   pageIndex?: number | undefined;
   passChoice: string;
-  avoided: "rewriteAvoided" | "auditAvoided";
+  avoided: "rewriteAvoided" | "auditAvoided" | "verificationAvoided";
 }): Promise<boolean> {
   const { decisions, avoided } = options;
   const request = { ...options.request, escalationPolicy: "caller" as const };

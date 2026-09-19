@@ -61,6 +61,7 @@ export * from "./generation/styleContract.js";
 export * from "./generation/antiSlopCalibration.js";
 export * from "./generation/antiSlopQualityRevision.js";
 export * from "./generation/claimVerifier.js";
+export * from "./generation/changedPageGrounding.js";
 export * from "./generation/styleAuditor.js";
 export * from "./generation/pageMapCritic.js";
 export * from "./generation/pageBeatDedup.js";

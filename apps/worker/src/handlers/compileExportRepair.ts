@@ -394,6 +394,7 @@ export async function repairPagesFromFinalQa(options: {
       }
     });
     const outcome = await runPageQualityLoop({
+      originalDraft: { title: page.title, markdown: heldFigures ? heldFigures.prose : page.markdown },
       decisions: options.providers.decisions,
       projectId: options.projectId,
       strategy: options.strategy,

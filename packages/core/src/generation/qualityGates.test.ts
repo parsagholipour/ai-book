@@ -195,3 +195,14 @@ describe("qualityFeatureEnabled", () => {
     }), "beatDedup", "ultra")).toBe(false);
   });
 });
+
+
+it("switches changed-candidate grounding independently of initial claim verification", () => {
+  expect(qualityFeatureEnabled(undefined, "changedCandidateGrounding", "balanced")).toBe(true);
+  const off = parseQualityFeatureSettings({ changedCandidateGrounding: [], claimVerifier: ["balanced"] });
+  expect(qualityFeatureEnabled(off, "changedCandidateGrounding", "balanced")).toBe(false);
+  expect(qualityFeatureEnabled(off, "claimVerifier", "balanced")).toBe(true);
+  const on = parseQualityFeatureSettings({ changedCandidateGrounding: ["balanced"], claimVerifier: [] });
+  expect(qualityFeatureEnabled(on, "changedCandidateGrounding", "balanced")).toBe(true);
+  expect(qualityFeatureEnabled(on, "claimVerifier", "balanced")).toBe(false);
+});

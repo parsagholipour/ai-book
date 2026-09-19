@@ -518,9 +518,7 @@ function sessionRequest(options: {
 }): FastifyRequest {
   return {
     ip: options.ip ?? "",
-    headers: {
-      ...(options.forwardedFor !== undefined ? { "x-forwarded-for": options.forwardedFor } : {})
-    }
+    headers: options.forwardedFor !== undefined ? { "x-forwarded-for": options.forwardedFor } : {}
   } as FastifyRequest;
 }
 

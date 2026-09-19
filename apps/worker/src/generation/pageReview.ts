@@ -1,3 +1,4 @@
+import { changedCandidateGrounding } from "./changedCandidateGrounding.js";
 import { formatQualityFailure, styleExcerptsForPage } from "./bookHelpers.js";
 import { updateJobProgress } from "../runtime/jobLifecycle.js";
 import { type IndexedPageDraft } from "../runtime/jobTypes.js";
@@ -34,7 +35,7 @@ import {
   type RepairedPageBrief
 } from "./pageReviewRecovery.js";
 import {
-  hasSmartUnslopCandidates, smartUnslopResolved,
+  hasSmartUnslopCandidates, smartUnslopResolved, isCancellationError,
   type DecisionModelRoute,
   styleAuditedScoreBeats,
   type BookGenerationStrategy,
@@ -151,6 +152,8 @@ export async function runPageQualityLoop(options: {
   chapterId?: string | null | undefined;
   pageIndex: number;
   draft: PageDraft;
+  /** Before the first rewrite, when the caller has already changed the seed. */
+  originalDraft?: Pick<PageDraft, "title" | "markdown"> | undefined;
   /** The initial draft's review, produced by the caller. */
   report: PageQualityReport;
   previousPages: PriorPageContext[];
@@ -190,7 +193,7 @@ export async function runPageQualityLoop(options: {
    * a comparison against prose the draft was never written from.
    */
   styleExcerpts?: string[] | undefined;
-  /** The operator's gate configuration; the loop reads `styleAuditor` off it. */
+  /** Operator gates for rewrites, style audits, and changed-candidate grounding. */
   quality: QualityGateContext;
   /**
    * The reader's own edit request, set only when this loop is repairing a page
@@ -244,11 +247,13 @@ export async function runPageQualityLoop(options: {
       ? auditApprovedRevision(options.pageIndex, candidate, candidateReport)
       : candidateReport;
 
+  const checkGrounding = changedCandidateGrounding({ ...options, original: options.originalDraft });
+  let researchNotes = options.researchNotes;
   let draft = options.draft;
   // Before `best` is seeded, not after: the audit may flip the seed's approval
   // and stamp its penalty, and a keeper comparison run against the pre-audit
   // copy would hand the page's seat to a rewrite on scores from two scales.
-  let report = await auditApproved(draft, options.report);
+  let report = await auditApproved(draft, await checkGrounding(draft, options.report, researchNotes ?? []));
   let pageBrief = options.pageBrief;
   /**
    * The loop's own, because a brief repair replaces it. The caller's object is
@@ -337,7 +342,7 @@ export async function runPageQualityLoop(options: {
         qualityReport: report,
         previousPages: options.previousPages,
         continuityNotes: options.continuityNotes,
-        researchNotes: options.researchNotes,
+        researchNotes,
         textModel: options.textModel,
         generationJobId: options.generationJobId,
         context: options.reviseContext,
@@ -347,6 +352,10 @@ export async function runPageQualityLoop(options: {
       pageBrief = repair.beat;
       chapterBrief = repair.chapterBrief;
       deferredBriefRepair = { fromRevision: nextRevision, chapterBrief: repair.chapterBrief, persist: repair.persist };
+    }
+    const retrieved = await retrievedResearchForRevise(options, draft, report);
+    if (retrieved.retrievedResearch?.length) {
+      researchNotes = [...new Set([...(researchNotes ?? []), ...retrieved.retrievedResearch])];
     }
     draft = await revisePageDraftWithRestart({
       strategy: options.strategy,
@@ -376,10 +385,10 @@ export async function runPageQualityLoop(options: {
         previousPages: options.previousPages,
         ...(options.nextPages && options.nextPages.length > 0 ? { nextPages: options.nextPages } : {}),
         continuityNotes: options.continuityNotes,
-        researchNotes: options.researchNotes,
+        researchNotes,
         textModel: options.textModel,
         ...(styleExcerpts.length > 0 ? { styleExcerpts } : {}),
-        ...(await retrievedResearchForRevise(options, draft, report))
+        ...retrieved
       }
     });
     revision = nextRevision;
@@ -402,7 +411,7 @@ export async function runPageQualityLoop(options: {
         previousPages: options.previousPages,
         ...(options.nextPages && options.nextPages.length > 0 ? { nextPages: options.nextPages } : {}),
         continuityNotes: options.continuityNotes,
-        researchNotes: options.researchNotes,
+        researchNotes,
         textModel: options.textModel,
         ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
       }
@@ -410,46 +419,14 @@ export async function runPageQualityLoop(options: {
     if (resolvesSmartUnslop || smartUnslopResolved(report)) {
       smartUnslopSpent = true;
     }
-    report = await auditApproved(draft, report);
+    report = await auditApproved(draft, await checkGrounding(draft, report, researchNotes ?? []));
     best = bestDraftCandidate(best, { draft, revision, report });
   }
 
-  // ---- The repaired brief, taken only if the page kept a draft it briefed. ----
-  //
-  // `repairPageBriefForRecovery` re-plans the beat and hands the write back
-  // rather than making it, because the rewrite that beat briefs has not been
-  // judged yet and the write outlives this whole loop:
-  // `Chapter.productionBrief` is what every later drafting job — a
-  // continuation, a page regeneration, a replan — reads back as
-  // `previousChapterPageBriefs`. Committed at the repair, a rejected rewrite
-  // left the chapter permanently claiming a beat the shipped page never
-  // delivers, and later pages then steered away from material the book still
-  // contains. The last attempt is where that is ordinary rather than rare:
-  // `finalQaRevisionsFor` is 3 on both fast and balanced and
-  // `pageQaRecoveryRevision(3, 3)` is 3, so recovery lands on the final rewrite
-  // and exactly one candidate is ever briefed against the repair. Nor could the
-  // page save take it back — the chapter row committed under its own earlier
-  // assertion, so a stand-down between the two leaves the brief changed and the
-  // page unchanged.
-  //
-  // The same take decides the **merged brief** this loop hands back, for a
-  // caller that briefs the chapter's other pages from one copy of it: the book
-  // passes reuse one `ChapterSetup.brief` per chapter, and the final-QA repair
-  // parses one per chapter. That copy and the row have to agree about whether
-  // the repair was earned — agreeing by construction is what one condition
-  // buys, and it is the whole reason `repairPageBriefForRecovery` writes into
-  // nobody's object on the way past.
-  //
-  // *Kept*, not *approved*: a page that fails QA still ships its best draft,
-  // and a chapter describing the assignment that draft was written to is right
-  // for the same reason an approved one is. The test is the keeper's candidate
-  // number against the rewrite the repair briefed — every candidate from that
-  // one on was written against the fresh beat — and a keeper below it means the
-  // page is shipping prose from before the repair, so the beat goes no further
-  // than this loop's own memory. The latch above is spent either way: the call
-  // was paid for, and a page whose reviewer keeps blaming its brief is exactly
-  // the page that would buy a second planner call on the strength of the first
-  // one's answer having been thrown away.
+  // Every candidate was grounded before entering selection, including failures.
+  // A fallback therefore carries its own cached verdict. Failed pages still keep
+  // their strongest draft and honest report under the existing publication policy.
+  // A repaired brief is taken only when that keeper was written against it.
   const keptRevision = report.approved ? revision : best.revision;
   const keptBriefRepair =
     deferredBriefRepair && keptRevision >= deferredBriefRepair.fromRevision ? deferredBriefRepair : null;
@@ -890,6 +867,7 @@ async function retrievedResearchForRevise(
     const notes = await options.retrieveResearch(draft, report);
     return notes.length > 0 ? { retrievedResearch: notes } : {};
   } catch (error) {
+    if (isCancellationError(error)) throw error;
     console.warn("Failed-claim research retrieve skipped", error);
     return {};
   }

@@ -214,6 +214,33 @@ describe("final-QA repair and a page's figure", () => {
     expect(publishedMarkdown()).not.toContain("[Figure:");
   });
 
+  it("grounds the export repair's first rewrite against the original before publication", async () => {
+    const { FakeTextModelAdapter, JEV_SELECTION } = await import("@book-maker/core");
+    const base: Parameters<typeof repairPagesFromFinalQa>[0] = repairOptions();
+    const choose = vi.fn(async (_request: import("@book-maker/core").DecisionRequest) => ({
+      ...JEV_SELECTION, selectedOption: "defect", probabilities: { supported: 0.02, defect: 0.96, insufficient_context: 0.02 }
+    }));
+    const text = new FakeTextModelAdapter();
+    const generate = vi.spyOn(text, "generateJson").mockResolvedValue({ data: {
+      groundedOk: false, unsupportedClaims: ["The carts were counted twice: remove twice; the ledger records one count."]
+    }, text: "", provider: "fake", model: "fake" });
+    await repairPagesFromFinalQa({
+      ...base, input: { ...base.input, category: "HISTORY" },
+      researchNotes: ["North gate ledger passage: The clerks counted the carts once."],
+      providers: { ...base.providers, text, decisions: { resolve: async () => ({ choose }) } },
+      quality: { enabled: (id) => id === "changedCandidateGrounding" || (id !== "pageQaRewrite" && isDefaultCompileQualityFeature(id)) }
+    });
+    const request = choose.mock.calls[0]![0];
+    const context = JSON.parse(JSON.parse(request.context).reviewerContext[0].content);
+    expect(context.original.markdown).toContain(before);
+    expect(context.candidate.markdown).toContain("counted the carts twice");
+    expect(context.researchNotes[0]).toContain("counted the carts once");
+    expect(generate).toHaveBeenCalledOnce();
+    expect(mocks.prisma.page.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
+      status: "FAILED_QA", qualityReport: expect.objectContaining({ groundingStatus: "failed", approved: false })
+    }) }));
+  });
+
   it("keeps one figure when the loop's rewrite invents another", async () => {
     const invented = "```figure\n" + JSON.stringify({ kind: "pie", title: "Invented", categories: ["a"], series: [{ name: "S", values: [1] }], source: "nowhere" }) + "\n```";
     strategy.reviewPageDraft.mockResolvedValueOnce(report(false)).mockResolvedValue(report(true));

@@ -77,6 +77,7 @@ const PROSE_LANE_PURPOSES: ReadonlySet<string> = new Set([
 
 // Finite-choice screens bypass text routing and escalate to their own diagnostic purpose.
 const DECISION_ONLY_PURPOSES: ReadonlySet<string> = new Set([
+  "screen-changed-page-grounding",
   "screen-page-style", "screen-page-review", "accept-chapter-edit-meaning", "accept-chapter-edit-intent"
 ]);
 

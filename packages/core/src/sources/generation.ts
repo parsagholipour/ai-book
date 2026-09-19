@@ -14,7 +14,7 @@ export class SourceAwareTextModel implements TextModelAdapter {
   async prepareReviewContext(options: GenerateTextOptions) {
     const sources = await this.sources.forReview(options);
     const prepared = await sources.prepare(options);
-    return { messages: prepared.messages, textModel: new SourceAwareTextModel(this.delegate, this.service, this.evidence, sources) };
+    return { messages: prepared.messages, textModel: new SourceAwareTextModel(this.delegate, this.service, this.evidence, sources), hasSourcePassages: sources.hasPreparedPassages() };
   }
   setPurposeOverridesEnabled(enabled: boolean) {
     const delegate = this.delegate as TextModelAdapter & { setPurposeOverridesEnabled?: (enabled: boolean) => void };
@@ -80,11 +80,13 @@ export class SourceEvidenceContext {
   }
   async prepareDecision(request: DecisionRequest): Promise<DecisionRequest> {
     request.signal?.throwIfAborted();
+    if (request.sourceContextPrepared) return request;
     const query = JSON.stringify({ context: request.context, options: request.options });
     const { overview, selected } = await this.loadEvidence(query);
     request.signal?.throwIfAborted();
     return { ...request, context: request.context + "\n" + this.evidenceMessages(overview, selected).map((message) => message.content).join("\n") };
   }
+  hasPreparedPassages(): boolean { return Boolean(this.prepared?.selected.length); }
   private async loadEvidence(query: string) {
     const service = await this.service();
     const search = query.slice(-8000);

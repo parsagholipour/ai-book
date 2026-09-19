@@ -1,5 +1,6 @@
 import {
   applyExactReplacement,
+  hasResearchIntent,
   composedPageQualityReport,
   pageQualityReportSchema,
   retainedProseFraction,
@@ -17,7 +18,7 @@ import { prisma } from "@book-maker/db";
 
 import { parseChapterBrief, styleExcerptsForPage, toPriorPageContext } from "./bookHelpers.js";
 import { pageFigureRewrite } from "./composedFigures.js";
-import { loadContinuityNotes } from "./generationContext.js";
+import { loadContinuityNotes, loadResearchNotesForGeneration } from "./generationContext.js";
 import {
   reviewPageWithQualityGates,
   revisePageDraftWithRestart,
@@ -147,6 +148,10 @@ export async function rewritePageForUserRequest(options: {
     input: options.input,
     quality
   });
+  const groundingEnabled = quality.enabled("changedCandidateGrounding") && hasResearchIntent(options.input);
+  const researchNotes = groundingEnabled
+    ? await loadResearchNotesForGeneration(options.projectId, options.strategy, chapterPlan)
+    : undefined;
   const editInstruction = options.editInstruction?.trim() || options.request;
   const pageEditGuidance = options.pageEditGuidance?.trim();
   // A figure block is kept out of a rewrite that is not about it: the model
@@ -212,6 +217,7 @@ export async function rewritePageForUserRequest(options: {
       ...(rewrite.figures ? { figures: rewrite.figures } : {}),
       previousPages: priorPageContext,
       continuityNotes,
+      researchNotes,
       textModel: options.providers.text,
       ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
     }
@@ -221,14 +227,15 @@ export async function rewritePageForUserRequest(options: {
   // the edit never touched against a verdict that is not deterministic between
   // sittings, and on 2026-09-06 that rejected three pages a code conversion
   // had kept at 0.97-1.00 and rewrote each from scratch in the repair round.
-  // Only the two integrity checks that can fail any page still run; a page
-  // they refuse takes the full review below like any other.
+  // Integrity checks still run. Changed factual claims also owe the dedicated
+  // grounding gate even when most of the prose inherits approval.
   const inherited = inheritedApproval(options, draft);
-  if (inherited) {
+  const changed = draft.title !== options.page.title || draft.markdown !== rewrite.prose;
+  if (inherited && (!groundingEnabled || !changed)) {
     return { ...rewrite.restore(draft), qualityReport: inherited };
   }
   await options.onPhase?.("review");
-  const initialReport = await reviewPageWithQualityGates({
+  const initialReport = inherited ?? await reviewPageWithQualityGates({
     decisions: options.providers.decisions, userRequest: editInstruction,
     strategy: options.strategy,
     quality,
@@ -242,6 +249,7 @@ export async function rewritePageForUserRequest(options: {
       draft,
       previousPages: priorPageContext,
       continuityNotes,
+      researchNotes,
       textModel: options.providers.text,
       ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
     }
@@ -254,6 +262,8 @@ export async function rewritePageForUserRequest(options: {
   // the loop is what audits an approved report, this one included, and it
   // returns it untouched when the audit is clean.
   const outcome = await runPageQualityLoop({
+    originalDraft: { title: options.page.title, markdown: rewrite.prose },
+    researchNotes,
     decisions: options.providers.decisions,
     projectId: options.projectId,
     strategy: options.strategy,

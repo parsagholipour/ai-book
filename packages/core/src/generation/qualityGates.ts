@@ -54,6 +54,7 @@ export const QUALITY_FEATURE_IDS = [
   "storyExtractAudit",
   "planCritic",
   "claimVerifier",
+  "changedCandidateGrounding",
   "compactPageDraftContext",
   "styleExcerpts",
   "styleAuditor",
@@ -146,6 +147,7 @@ export const QUALITY_FEATURE_DEFAULTS: QualityFeatureSettings = {
   storyExtractAudit: ["ultra", "premium", "balanced", "fast"],
   planCritic: ["ultra", "premium", "balanced", "fast"],
   claimVerifier: ["ultra", "premium", "balanced", "fast"],
+  changedCandidateGrounding: ["ultra", "premium", "balanced", "fast"],
   compactPageDraftContext: ["balanced", "fast"],
   styleExcerpts: ["ultra", "premium", "balanced", "fast"],
   styleAuditor: ["ultra", "premium", "balanced"],
@@ -251,6 +253,13 @@ export const QUALITY_FEATURES: QualityFeatureDescription[] = [
     id: "claimVerifier",
     label: "Claim verifier (factual books)",
     summary: "Checks page claims against loaded research notes. Kids and fiction skip the call even when this is on.",
+    pipelines: ["per-page"],
+    stage: "Page review"
+  },
+  {
+    id: "changedCandidateGrounding",
+    label: "Changed candidate grounding",
+    summary: "Checks changed factual page candidates against supplied research and source passages. Jev flags and uncertainty go to the claim verifier; repairs stay within the page rewrite budget. Off skips this recheck only.",
     pipelines: ["per-page"],
     stage: "Page review"
   },
