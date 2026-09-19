@@ -1,0 +1,896 @@
+{
+  "mode": "live shadow",
+  "note": "Agreement is not ground truth. Missing briefs are not reconstructed from the draft. Offline latency measures orchestration only. No net cost or production latency claim. Private-source fixtures require an authorized SourceAwareTextModel replay, not this standalone harness.",
+  "summary": {
+    "examples": 4,
+    "screenOpportunities": 4,
+    "diagnosticCalls": 4,
+    "fallbackFrequency": 0.75,
+    "avoidedDiagnosticCalls": 0,
+    "potentialAvoidedDiagnosticCalls": 1,
+    "comparable": 4,
+    "disagreements": [
+      "opening-en:b",
+      "opening-fa:a"
+    ],
+    "disagreementRate": 0.5,
+    "adjudicated": 0,
+    "independentlyConfirmedMisses": [],
+    "totalLatencyMs": {
+      "p50": 3415.772443,
+      "p95": 4048.4782379999997
+    },
+    "screenLatencyMs": {
+      "p50": 644,
+      "p95": 1491
+    },
+    "decisionPhysicalCalls": 4,
+    "knownCostUsd": 0.002814,
+    "unpricedCalls": 0
+  },
+  "records": [
+    {
+      "id": "opening-en:a",
+      "provenance": "scripts/fixtures/fast-decisions.ts; saved synthetic prose with an explicitly constructed two-page review assignment; no human label; configurable length/style local gates disabled for excerpt smoke only, mandatory opening and screen integrity retained",
+      "outcome": {
+        "purpose": "screen-page-review",
+        "version": "page-review-screen-v1",
+        "pageIndex": 1,
+        "mode": "shadow",
+        "rewriteAvoided": false,
+        "reviewAvoided": false,
+        "wouldAvoidReview": false,
+        "answers": {
+          "fulfillment": {
+            "type": "choice",
+            "choice": "defect",
+            "probabilities": {
+              "defect": 1,
+              "insufficient_context": 0,
+              "clean": 0
+            },
+            "selectedOption": "defect"
+          },
+          "progression": {
+            "type": "choice",
+            "choice": "defect",
+            "probabilities": {
+              "defect": 0.99,
+              "insufficient_context": 0,
+              "clean": 0.01
+            },
+            "selectedOption": "defect"
+          },
+          "repetition": {
+            "type": "choice",
+            "choice": "clean",
+            "probabilities": {
+              "defect": 0.05,
+              "insufficient_context": 0.18,
+              "clean": 0.77
+            },
+            "selectedOption": "clean"
+          },
+          "continuity": {
+            "type": "choice",
+            "choice": "clean",
+            "probabilities": {
+              "defect": 0.24,
+              "insufficient_context": 0.03,
+              "clean": 0.73
+            },
+            "selectedOption": "clean"
+          },
+          "reserved_beats": {
+            "type": "choice",
+            "choice": "clean",
+            "probabilities": {
+              "defect": 0.04,
+              "insufficient_context": 0.01,
+              "clean": 0.95
+            },
+            "selectedOption": "clean"
+          },
+          "style": {
+            "type": "choice",
+            "choice": "defect",
+            "probabilities": {
+              "defect": 1,
+              "insufficient_context": 0,
+              "clean": 0
+            },
+            "selectedOption": "defect"
+          },
+          "grounding": {
+            "type": "choice",
+            "choice": "clean",
+            "probabilities": {
+              "defect": 0.1,
+              "insufficient_context": 0.02,
+              "clean": 0.88
+            },
+            "selectedOption": "clean"
+          }
+        },
+        "escalationReason": "fulfillment:defect",
+        "screenDurationMs": 1491,
+        "diagnosticApproved": false,
+        "disagreement": false,
+        "totalDurationMs": 4044
+      },
+      "elapsedMs": 4048.4782379999997,
+      "diagnosticCalls": 1,
+      "diagnosticReport": {
+        "approved": false,
+        "score": 12,
+        "issues": [
+          "Opening is generic throat-clearing ('In a world full of secrets...') that delays the subject and gives no concrete reason to keep reading.",
+          "The page does not perform the assigned beat: no missing payment is found in the ledger, and no decision to visit the lighthouse appears.",
+          "Inflated abstraction ('a journey that would change everything', 'a testament to the power of truth') replaces concrete scene, character, and evidence.",
+          "Binary-reversal scaffold: 'The ledger was more than a book. It was a testament...'",
+          "No progression; the page states a vague thesis instead of advancing the mystery.",
+          "EndingPressure ('She leaves for the lighthouse') is not delivered or set up."
+        ],
+        "requiredRevisions": [
+          "Replace the meta, generic opening with a concrete scene: the bookkeeper at work on the ledger.",
+          "Show the specific missing payment: amount, date, payee, or line that does not reconcile.",
+          "Render the bookkeeper's decision to visit the lighthouse as a concrete action or choice, ending with her departure.",
+          "Remove inflated abstractions and the 'more than a book / testament to truth' reversal.",
+          "Do not resolve or develop the lighthouse evidence beat reserved for page 2."
+        ],
+        "notes": "The draft is a placeholder-level opening that neither executes the assigned beat nor earns its claims. It must be rewritten as a specific scene of discovery and decision, ending with the departure for the lighthouse, without consuming the reserved page-2 beat.",
+        "groundedOk": true,
+        "groundingStatus": "not_applicable",
+        "unsupportedClaims": [],
+        "checks": {
+          "placeholderFree": false,
+          "promptLeakFree": true,
+          "titleClean": true,
+          "repetitionOk": true,
+          "progressionOk": false,
+          "styleNatural": false
+        },
+        "scoreBasis": "reviewer"
+      },
+      "diagnosticAttempts": [
+        {
+          "durationMs": 2545.4183089999997,
+          "usage": {
+            "promptTokens": 2211,
+            "outputTokens": 348,
+            "cacheHitTokens": 0
+          },
+          "costUsd": 0.000716
+        }
+      ],
+      "attempts": [
+        {
+          "role": "primary",
+          "durationMs": 1486,
+          "answers": {
+            "fulfillment": {
+              "type": "choice",
+              "choice": "defect",
+              "probabilities": {
+                "defect": 1,
+                "insufficient_context": 0,
+                "clean": 0
+              },
+              "selectedOption": "defect"
+            },
+            "progression": {
+              "type": "choice",
+              "choice": "defect",
+              "probabilities": {
+                "defect": 0.99,
+                "insufficient_context": 0,
+                "clean": 0.01
+              },
+              "selectedOption": "defect"
+            },
+            "repetition": {
+              "type": "choice",
+              "choice": "clean",
+              "probabilities": {
+                "defect": 0.05,
+                "insufficient_context": 0.18,
+                "clean": 0.77
+              },
+              "selectedOption": "clean"
+            },
+            "continuity": {
+              "type": "choice",
+              "choice": "clean",
+              "probabilities": {
+                "defect": 0.24,
+                "insufficient_context": 0.03,
+                "clean": 0.73
+              },
+              "selectedOption": "clean"
+            },
+            "reserved_beats": {
+              "type": "choice",
+              "choice": "clean",
+              "probabilities": {
+                "defect": 0.04,
+                "insufficient_context": 0.01,
+                "clean": 0.95
+              },
+              "selectedOption": "clean"
+            },
+            "style": {
+              "type": "choice",
+              "choice": "defect",
+              "probabilities": {
+                "defect": 1,
+                "insufficient_context": 0,
+                "clean": 0
+              },
+              "selectedOption": "defect"
+            },
+            "grounding": {
+              "type": "choice",
+              "choice": "clean",
+              "probabilities": {
+                "defect": 0.1,
+                "insufficient_context": 0.02,
+                "clean": 0.88
+              },
+              "selectedOption": "clean"
+            }
+          },
+          "usage": {
+            "promptTokens": 3977,
+            "outputTokens": 300
+          },
+          "costUsd": 0.000167
+        }
+      ]
+    },
+    {
+      "id": "opening-en:b",
+      "provenance": "scripts/fixtures/fast-decisions.ts; saved synthetic prose with an explicitly constructed two-page review assignment; no human label; configurable length/style local gates disabled for excerpt smoke only, mandatory opening and screen integrity retained",
+      "outcome": {
+        "purpose": "screen-page-review",
+        "version": "page-review-screen-v1",
+        "pageIndex": 1,
+        "mode": "shadow",
+        "rewriteAvoided": false,
+        "reviewAvoided": false,
+        "wouldAvoidReview": false,
+        "escalationReason": "low_probability",
+        "answers": {
+          "fulfillment": {
+            "type": "choice",
+            "choice": "clean",
+            "probabilities": {
+              "insufficient_context": 0.01,
+              "defect": 0.47,
+              "clean": 0.52
+            },
+            "selectedOption": "clean"
+          },
+          "progression": {
+            "type": "choice",
+            "choice": "clean",
+            "probabilities": {
+              "insufficient_context": 0,
+              "defect": 0.12,
+              "clean": 0.88
+            },
+            "selectedOption": "clean"
+          },
+          "repetition": {
+            "type": "choice",
+            "choice": "clean",
+            "probabilities": {
+              "insufficient_context": 0.06,
+              "defect": 0.07,
+              "clean": 0.87
+            },
+            "selectedOption": "clean"
+          },
+          "continuity": {
+            "type": "choice",
+            "choice": "clean",
+            "probabilities": {
+              "insufficient_context": 0.01,
+              "defect": 0.28,
+              "clean": 0.71
+            },
+            "selectedOption": "clean"
+          },
+          "reserved_beats": {
+            "type": "choice",
+            "choice": "clean",
+            "probabilities": {
+              "insufficient_context": 0,
+              "defect": 0.08,
+              "clean": 0.92
+            },
+            "selectedOption": "clean"
+          },
+          "style": {
+            "type": "choice",
+            "choice": "clean",
+            "probabilities": {
+              "insufficient_context": 0.01,
+              "defect": 0.23,
+              "clean": 0.76
+            },
+            "selectedOption": "clean"
+          },
+          "grounding": {
+            "type": "choice",
+            "choice": "clean",
+            "probabilities": {
+              "insufficient_context": 0.01,
+              "defect": 0.03,
+              "clean": 0.96
+            },
+            "selectedOption": "clean"
+          }
+        },
+        "screenDurationMs": 592,
+        "diagnosticApproved": true,
+        "disagreement": true,
+        "totalDurationMs": 2372
+      },
+      "elapsedMs": 2373.0172860000002,
+      "diagnosticCalls": 1,
+      "diagnosticReport": {
+        "approved": true,
+        "score": 88,
+        "issues": [],
+        "requiredRevisions": [],
+        "notes": "The page delivers the assigned beat: the bookkeeper (Mara) finds a duplicate payment in the ledger and decides to travel to the lighthouse. It is concrete, specific, and progresses. The first sentence gives a strong hook (paid twice on the day he drowned). No prompt leakage, no filler, no repetition, no AI-styled rhetoric. The reserved beat for page 2 (identifying who authorized the payment at the lighthouse) is not performed here; the page only sets up the trip. The ending pressure ('She leaves for the lighthouse') is satisfied by the bus to the headland. Minor note: the page is very short, but it is a complete, reader-facing opening with a clear reason to continue.",
+        "groundedOk": true,
+        "groundingStatus": "not_applicable",
+        "unsupportedClaims": [],
+        "checks": {
+          "placeholderFree": true,
+          "promptLeakFree": true,
+          "titleClean": true,
+          "repetitionOk": true,
+          "progressionOk": true,
+          "styleNatural": true
+        },
+        "scoreBasis": "reviewer"
+      },
+      "diagnosticAttempts": [
+        {
+          "durationMs": 1780.155057,
+          "usage": {
+            "promptTokens": 2215,
+            "outputTokens": 206,
+            "cacheHitTokens": 1664
+          },
+          "costUsd": 0.000269
+        }
+      ],
+      "attempts": [
+        {
+          "role": "primary",
+          "durationMs": 588,
+          "escalationReason": "low_probability",
+          "answers": {
+            "fulfillment": {
+              "type": "choice",
+              "choice": "clean",
+              "probabilities": {
+                "insufficient_context": 0.01,
+                "defect": 0.47,
+                "clean": 0.52
+              },
+              "selectedOption": "clean"
+            },
+            "progression": {
+              "type": "choice",
+              "choice": "clean",
+              "probabilities": {
+                "insufficient_context": 0,
+                "defect": 0.12,
+                "clean": 0.88
+              },
+              "selectedOption": "clean"
+            },
+            "repetition": {
+              "type": "choice",
+              "choice": "clean",
+              "probabilities": {
+                "insufficient_context": 0.06,
+                "defect": 0.07,
+                "clean": 0.87
+              },
+              "selectedOption": "clean"
+            },
+            "continuity": {
+              "type": "choice",
+              "choice": "clean",
+              "probabilities": {
+                "insufficient_context": 0.01,
+                "defect": 0.28,
+                "clean": 0.71
+              },
+              "selectedOption": "clean"
+            },
+            "reserved_beats": {
+              "type": "choice",
+              "choice": "clean",
+              "probabilities": {
+                "insufficient_context": 0,
+                "defect": 0.08,
+                "clean": 0.92
+              },
+              "selectedOption": "clean"
+            },
+            "style": {
+              "type": "choice",
+              "choice": "clean",
+              "probabilities": {
+                "insufficient_context": 0.01,
+                "defect": 0.23,
+                "clean": 0.76
+              },
+              "selectedOption": "clean"
+            },
+            "grounding": {
+              "type": "choice",
+              "choice": "clean",
+              "probabilities": {
+                "insufficient_context": 0.01,
+                "defect": 0.03,
+                "clean": 0.96
+              },
+              "selectedOption": "clean"
+            }
+          },
+          "usage": {
+            "promptTokens": 3984,
+            "outputTokens": 297
+          },
+          "costUsd": 0.000167
+        }
+      ]
+    },
+    {
+      "id": "opening-fa:a",
+      "provenance": "scripts/fixtures/fast-decisions.ts; saved synthetic prose with an explicitly constructed two-page review assignment; no human label; configurable length/style local gates disabled for excerpt smoke only, mandatory opening and screen integrity retained",
+      "outcome": {
+        "purpose": "screen-page-review",
+        "version": "page-review-screen-v1",
+        "pageIndex": 1,
+        "mode": "shadow",
+        "rewriteAvoided": false,
+        "reviewAvoided": false,
+        "wouldAvoidReview": true,
+        "answers": {
+          "fulfillment": {
+            "type": "choice",
+            "choice": "clean",
+            "probabilities": {
+              "insufficient_context": 0.01,
+              "clean": 0.91,
+              "defect": 0.08
+            },
+            "selectedOption": "clean"
+          },
+          "progression": {
+            "type": "choice",
+            "choice": "clean",
+            "probabilities": {
+              "insufficient_context": 0,
+              "clean": 0.99,
+              "defect": 0.01
+            },
+            "selectedOption": "clean"
+          },
+          "repetition": {
+            "type": "choice",
+            "choice": "clean",
+            "probabilities": {
+              "insufficient_context": 0.07,
+              "clean": 0.92,
+              "defect": 0.01
+            },
+            "selectedOption": "clean"
+          },
+          "continuity": {
+            "type": "choice",
+            "choice": "clean",
+            "probabilities": {
+              "insufficient_context": 0.01,
+              "clean": 0.97,
+              "defect": 0.02
+            },
+            "selectedOption": "clean"
+          },
+          "reserved_beats": {
+            "type": "choice",
+            "choice": "clean",
+            "probabilities": {
+              "insufficient_context": 0,
+              "clean": 1,
+              "defect": 0
+            },
+            "selectedOption": "clean"
+          },
+          "style": {
+            "type": "choice",
+            "choice": "clean",
+            "probabilities": {
+              "insufficient_context": 0.01,
+              "clean": 0.94,
+              "defect": 0.05
+            },
+            "selectedOption": "clean"
+          },
+          "grounding": {
+            "type": "choice",
+            "choice": "clean",
+            "probabilities": {
+              "insufficient_context": 0.01,
+              "defect": 0.01,
+              "clean": 0.98
+            },
+            "selectedOption": "clean"
+          }
+        },
+        "screenDurationMs": 687,
+        "diagnosticApproved": false,
+        "disagreement": true,
+        "totalDurationMs": 3753
+      },
+      "elapsedMs": 3764.5223689999993,
+      "diagnosticCalls": 1,
+      "diagnosticReport": {
+        "approved": false,
+        "score": 38,
+        "issues": [
+          "The page is only three short sentences and reads as a bare summary rather than a finished, reader-facing scene.",
+          "The first page gives almost no concrete sensory or situational reason to keep reading; it states the suspicious payment and the departure without dramatizing either.",
+          "The suspicious payment is asserted but not grounded in any concrete detail of the ledger, the guard, or why Nahid notices it now.",
+          "The decision to go to the lighthouse is compressed into a single clause, so the page's core turn lacks weight or consequence.",
+          "The prose is so minimal that it functions as a synopsis of the beat rather than a developed page."
+        ],
+        "requiredRevisions": [
+          "Expand the page into a real scene: show Nahid at the ledger, the specific entry that catches her eye, and her physical reaction or hesitation.",
+          "Ground the anomaly in concrete detail (the guard's name or role, the date, the amount, the handwriting) so the reader understands why it is suspicious.",
+          "Dramatize the decision to leave for the lighthouse with at least one concrete action or obstacle, rather than a single summarizing clause.",
+          "Ensure the page ends on the authorized handoff toward the lighthouse without resolving the later identification of who authorized the payment."
+        ],
+        "notes": "The draft is in Persian and contains no prompt leakage or placeholder text, and it does not restage the reserved page-2 beat. However, as the book's first page it is too thin to satisfy the opening-page requirement: it summarizes the beat instead of rendering it, giving the reader little concrete reason to continue. It needs to be developed into a finished scene while preserving the assigned scope.",
+        "groundedOk": true,
+        "groundingStatus": "not_applicable",
+        "unsupportedClaims": [],
+        "checks": {
+          "placeholderFree": true,
+          "promptLeakFree": true,
+          "titleClean": true,
+          "repetitionOk": true,
+          "progressionOk": false,
+          "styleNatural": false
+        },
+        "scoreBasis": "reviewer"
+      },
+      "diagnosticAttempts": [
+        {
+          "durationMs": 3065.1002369999987,
+          "usage": {
+            "promptTokens": 2405,
+            "outputTokens": 393,
+            "cacheHitTokens": 384
+          },
+          "costUsd": 0.000707
+        }
+      ],
+      "attempts": [
+        {
+          "role": "primary",
+          "durationMs": 680,
+          "answers": {
+            "fulfillment": {
+              "type": "choice",
+              "choice": "clean",
+              "probabilities": {
+                "insufficient_context": 0.01,
+                "clean": 0.91,
+                "defect": 0.08
+              },
+              "selectedOption": "clean"
+            },
+            "progression": {
+              "type": "choice",
+              "choice": "clean",
+              "probabilities": {
+                "insufficient_context": 0,
+                "clean": 0.99,
+                "defect": 0.01
+              },
+              "selectedOption": "clean"
+            },
+            "repetition": {
+              "type": "choice",
+              "choice": "clean",
+              "probabilities": {
+                "insufficient_context": 0.07,
+                "clean": 0.92,
+                "defect": 0.01
+              },
+              "selectedOption": "clean"
+            },
+            "continuity": {
+              "type": "choice",
+              "choice": "clean",
+              "probabilities": {
+                "insufficient_context": 0.01,
+                "clean": 0.97,
+                "defect": 0.02
+              },
+              "selectedOption": "clean"
+            },
+            "reserved_beats": {
+              "type": "choice",
+              "choice": "clean",
+              "probabilities": {
+                "insufficient_context": 0,
+                "clean": 1,
+                "defect": 0
+              },
+              "selectedOption": "clean"
+            },
+            "style": {
+              "type": "choice",
+              "choice": "clean",
+              "probabilities": {
+                "insufficient_context": 0.01,
+                "clean": 0.94,
+                "defect": 0.05
+              },
+              "selectedOption": "clean"
+            },
+            "grounding": {
+              "type": "choice",
+              "choice": "clean",
+              "probabilities": {
+                "insufficient_context": 0.01,
+                "defect": 0.01,
+                "clean": 0.98
+              },
+              "selectedOption": "clean"
+            }
+          },
+          "usage": {
+            "promptTokens": 4317,
+            "outputTokens": 297
+          },
+          "costUsd": 0.000181
+        }
+      ]
+    },
+    {
+      "id": "opening-fa:b",
+      "provenance": "scripts/fixtures/fast-decisions.ts; saved synthetic prose with an explicitly constructed two-page review assignment; no human label; configurable length/style local gates disabled for excerpt smoke only, mandatory opening and screen integrity retained",
+      "outcome": {
+        "purpose": "screen-page-review",
+        "version": "page-review-screen-v1",
+        "pageIndex": 1,
+        "mode": "shadow",
+        "rewriteAvoided": false,
+        "reviewAvoided": false,
+        "wouldAvoidReview": false,
+        "escalationReason": "low_probability",
+        "answers": {
+          "fulfillment": {
+            "type": "choice",
+            "choice": "defect",
+            "probabilities": {
+              "clean": 0,
+              "insufficient_context": 0,
+              "defect": 1
+            },
+            "selectedOption": "defect"
+          },
+          "progression": {
+            "type": "choice",
+            "choice": "defect",
+            "probabilities": {
+              "clean": 0.02,
+              "insufficient_context": 0,
+              "defect": 0.98
+            },
+            "selectedOption": "defect"
+          },
+          "repetition": {
+            "type": "choice",
+            "choice": "clean",
+            "probabilities": {
+              "insufficient_context": 0.13,
+              "clean": 0.83,
+              "defect": 0.04
+            },
+            "selectedOption": "clean"
+          },
+          "continuity": {
+            "type": "choice",
+            "choice": "clean",
+            "probabilities": {
+              "clean": 0.66,
+              "insufficient_context": 0.03,
+              "defect": 0.31
+            },
+            "selectedOption": "clean"
+          },
+          "reserved_beats": {
+            "type": "choice",
+            "choice": "clean",
+            "probabilities": {
+              "clean": 0.94,
+              "insufficient_context": 0.01,
+              "defect": 0.05
+            },
+            "selectedOption": "clean"
+          },
+          "style": {
+            "type": "choice",
+            "choice": "defect",
+            "probabilities": {
+              "insufficient_context": 0,
+              "clean": 0,
+              "defect": 1
+            },
+            "selectedOption": "defect"
+          },
+          "grounding": {
+            "type": "choice",
+            "choice": "clean",
+            "probabilities": {
+              "clean": 0.91,
+              "insufficient_context": 0.02,
+              "defect": 0.07
+            },
+            "selectedOption": "clean"
+          }
+        },
+        "screenDurationMs": 644,
+        "diagnosticApproved": false,
+        "disagreement": false,
+        "totalDurationMs": 3414
+      },
+      "elapsedMs": 3415.772443,
+      "diagnosticCalls": 1,
+      "diagnosticReport": {
+        "approved": false,
+        "score": 12,
+        "issues": [
+          "The draft does not perform the assigned beat: it never shows Nahid finding a suspicious payment in the ledger, and never shows her deciding to go to the lighthouse.",
+          "The prose is generic filler ('دنیای پر از راز', 'سفری شگفت‌انگیز', 'زندگی پر از چالش و فرصت') with no concrete detail, character action, or scene.",
+          "As the book's first page, it is throat-clearing abstraction that gives the reader no concrete reason to keep reading.",
+          "It contains a proof-leap/aphoristic closure ('حقیقت روزی آشکار خواهد شد') unsupported by any evidence on the page.",
+          "No progression: no ledger, no suspicious entry, no decision, no movement toward the lighthouse.",
+          "The endingPressure ('به سوی فانوس دریایی راه می‌افتد') is not delivered."
+        ],
+        "requiredRevisions": [
+          "Open in a concrete scene with Nahid at the ledger, showing a specific suspicious payment (amount, date, name, or pattern) rather than abstract reflection.",
+          "Show her reaction and the reasoning that leads her to decide to go to the lighthouse.",
+          "End with her actually setting out toward the lighthouse, per the endingPressure.",
+          "Remove generic aphorisms and filler sentences; replace with specific, human-scale detail.",
+          "Do not resolve or develop the page-2 beat (who authorized the payment, evidence at the lighthouse); only set out toward it."
+        ],
+        "notes": "The draft is a placeholder-like opening that fails the assigned beat entirely and reads as generic scaffold prose. It must be rewritten as a concrete first scene in Persian that performs the ledger discovery and the decision to go to the lighthouse, without pre-empting the reserved page-2 resolution.",
+        "groundedOk": true,
+        "groundingStatus": "not_applicable",
+        "unsupportedClaims": [],
+        "checks": {
+          "placeholderFree": false,
+          "promptLeakFree": true,
+          "titleClean": true,
+          "repetitionOk": true,
+          "progressionOk": false,
+          "styleNatural": false
+        },
+        "scoreBasis": "reviewer"
+      },
+      "diagnosticAttempts": [
+        {
+          "durationMs": 2763.5051109999986,
+          "usage": {
+            "promptTokens": 2397,
+            "outputTokens": 425,
+            "cacheHitTokens": 1792
+          },
+          "costUsd": 0.000426
+        }
+      ],
+      "attempts": [
+        {
+          "role": "primary",
+          "durationMs": 643,
+          "escalationReason": "low_probability",
+          "answers": {
+            "fulfillment": {
+              "type": "choice",
+              "choice": "defect",
+              "probabilities": {
+                "clean": 0,
+                "insufficient_context": 0,
+                "defect": 1
+              },
+              "selectedOption": "defect"
+            },
+            "progression": {
+              "type": "choice",
+              "choice": "defect",
+              "probabilities": {
+                "clean": 0.02,
+                "insufficient_context": 0,
+                "defect": 0.98
+              },
+              "selectedOption": "defect"
+            },
+            "repetition": {
+              "type": "choice",
+              "choice": "clean",
+              "probabilities": {
+                "insufficient_context": 0.13,
+                "clean": 0.83,
+                "defect": 0.04
+              },
+              "selectedOption": "clean"
+            },
+            "continuity": {
+              "type": "choice",
+              "choice": "clean",
+              "probabilities": {
+                "clean": 0.66,
+                "insufficient_context": 0.03,
+                "defect": 0.31
+              },
+              "selectedOption": "clean"
+            },
+            "reserved_beats": {
+              "type": "choice",
+              "choice": "clean",
+              "probabilities": {
+                "clean": 0.94,
+                "insufficient_context": 0.01,
+                "defect": 0.05
+              },
+              "selectedOption": "clean"
+            },
+            "style": {
+              "type": "choice",
+              "choice": "defect",
+              "probabilities": {
+                "insufficient_context": 0,
+                "clean": 0,
+                "defect": 1
+              },
+              "selectedOption": "defect"
+            },
+            "grounding": {
+              "type": "choice",
+              "choice": "clean",
+              "probabilities": {
+                "clean": 0.91,
+                "insufficient_context": 0.02,
+                "defect": 0.07
+              },
+              "selectedOption": "clean"
+            }
+          },
+          "usage": {
+            "promptTokens": 4314,
+            "outputTokens": 300
+          },
+          "costUsd": 0.000181
+        }
+      ]
+    }
+  ],
+  "baselineSelection": {
+    "provider": "deepseek",
+    "model": "deepseek-v4-flash",
+    "thinkingEnabled": false
+  }
+}

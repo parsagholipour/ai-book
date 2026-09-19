@@ -132,3 +132,37 @@ describe("decision accounting and source context", () => {
     expect(mocks.search).toHaveBeenCalledTimes(1);
   });
 });
+
+it("accounts for a typed batch once and retains every answer in cost metadata", async () => {
+  const batch = { context: "The shared page", purpose: "screen-page-review", questions: [{ id: "brief", type: "boolean" as const, instructions: "Is the brief fulfilled?" }] };
+  await recordDecisionAttempt({ selection: JEV_SELECTION, request: batch, role: "primary", durationMs: 12,
+    result: { ...JEV_SELECTION, answers: { brief: { type: "boolean", probability: 0.9 } }, usage: { promptTokens: 2000, outputTokens: 0 } }
+  }, { callId: "batch", projectId: "p", generationJobId: "j" });
+  expect(mocks.prisma.providerCallLog.create).toHaveBeenCalledTimes(1);
+  expect(mocks.prisma.providerCallLog.update).toHaveBeenCalledTimes(1);
+  expect(mocks.prisma.providerCallLog.update.mock.calls[0]![0].data).toMatchObject({ costHint: 0.000084, metadata: { decision: { answers: { brief: { type: "boolean", probability: 0.9 } } } } });
+});
+
+it("keeps a prepared authorized source context intact across typed routing without another retrieval", async () => {
+  const evaluate = vi.fn(async () => ({ ...JEV_SELECTION, answers: { brief: { type: "boolean" as const, probability: 0.9 } } }));
+  const input = createProjectSchema.parse({ prompt: "Source-grounded book", mediaSettings: { mobile: { sourceRefs: [{ sourceId: "s1", version: 1 }] } } });
+  const route = withProjectDecisionSources({ resolve: async () => ({ choose: vi.fn(), evaluate }) }, input, "p");
+  const batch = { context: "Authorized evidence prepared by SourceAwareTextModel [source:s1:1:2]", sourceContextPrepared: true, purpose: "screen-page-review", questions: [{ id: "brief", type: "boolean" as const, instructions: "Is the brief fulfilled?" }] };
+  await (await route.resolve())!.evaluate!(batch);
+  expect(evaluate).toHaveBeenCalledExactlyOnceWith(batch);
+  expect(mocks.search).not.toHaveBeenCalled(); expect(mocks.read).not.toHaveBeenCalled();
+});
+
+it("logged batch wrappers preserve evaluation and stop signals", async () => {
+  mocks.loadRouting.mockResolvedValue({ fastDecisions: JEV_SELECTION, fastDecisionsFallback: fallback, fastJudgments: fallback });
+  const previous = config.MOCK_AI;
+  try {
+    config.MOCK_AI = true;
+    const route = createLoggedDecisions({ id: "1", name: "generate-book", data: { projectId: "p", generationJobId: "j" } } as WorkerRuntimeJob);
+    const adapter = await route.resolve();
+    const batch = { context: "Shared page", purpose: "screen-page-review", questions: [{ id: "brief", type: "boolean" as const, instructions: "Is the brief fulfilled?" }] };
+    expect((await adapter!.evaluate!(batch)).answers.brief).toEqual({ type: "boolean", probability: 1 });
+    await expect(adapter!.evaluate!({ ...batch, signal: AbortSignal.abort() })).rejects.toMatchObject({ name: "AbortError" });
+    expect(mocks.prisma.providerCallLog.create).toHaveBeenCalledTimes(1);
+  } finally { config.MOCK_AI = previous; }
+});

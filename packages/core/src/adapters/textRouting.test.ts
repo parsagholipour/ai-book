@@ -76,7 +76,9 @@ const PROSE_LANE_PURPOSES: ReadonlySet<string> = new Set([
 ]);
 
 // Finite-choice screens bypass text routing and escalate to their own diagnostic purpose.
-const DECISION_ONLY_PURPOSES: ReadonlySet<string> = new Set(["screen-page-style", "accept-chapter-edit-meaning", "accept-chapter-edit-intent"]);
+const DECISION_ONLY_PURPOSES: ReadonlySet<string> = new Set([
+  "screen-page-style", "screen-page-review", "accept-chapter-edit-meaning", "accept-chapter-edit-intent"
+]);
 
 /** Model-call purposes are identifier-shaped; `purpose` is also a page brief's own field, whose values are sentences. */
 const PURPOSE_IDENTIFIER = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/;

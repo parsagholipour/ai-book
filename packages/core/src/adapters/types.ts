@@ -180,6 +180,9 @@ export type BoundTextModelCall = {
 };
 
 export interface TextModelAdapter {
+  /** Prepare authorized evidence once for a decision screen and any diagnostic retries. */
+  prepareReviewContext?(options: GenerateTextOptions): Promise<{ messages: ChatMessage[]; textModel: TextModelAdapter }>;
+
   generateText(options: GenerateTextOptions): Promise<TextResult>;
   generateJson<T>(options: GenerateJsonOptions<T>): Promise<JsonResult<T>>;
   streamText(options: GenerateTextOptions): AsyncGenerator<string>;

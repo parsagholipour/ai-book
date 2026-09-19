@@ -5,7 +5,7 @@ chapter drafts, and catalog covers, screens style audits, and confirms Smart Uns
 `DecisionModelAdapter.choose`.
 Leave it on **Use existing judgment routes** to retain the original calls.
 Chapter candidate count remains one; this route does not enable more drafting.
-Other text judgments, writing, creation chat, summaries, and critiques are unchanged.
+Model page review additionally supports a batched shadow/pass route; see [Jev model page review](page-review-jev.md). Other writing, creation chat, summaries, and critiques are unchanged.
 
 Set `VERCEL_AI_GATEWAY_API_KEY` in the API and worker environments, restart them,
 then select **Jev · TypeSafe** and an available **Fast decisions fallback** LLM.
@@ -54,10 +54,16 @@ reading or changing production settings. Review the fixture texts and outcomes;
 agreement with one LLM alone does not establish quality. Activation remains a
 manual Quality-settings change after review.
 
-Live smoke check on 2026-09-17: all six fixtures completed through the LLM
-fallback. Gateway returned Jev provider errors followed by a free-tier 429.
-No usable Jev answers were obtained, so Jev/LLM agreement remains unmeasured.
-The mock harness and automated tests do not establish real-model quality.
+Historical live smoke on 2026-09-17: all six fixtures completed through the LLM
+fallback. The captured errors reported Jev provider errors followed by a free-tier 429.
+No usable Jev answers were obtained in that run. Inspection of the
+[Gateway logs](https://vercel.com/parsagholipours-projects/~/ai-gateway/logs) on
+2026-09-19 confirmed five HTTP 403 responses followed by four HTTP 429 responses;
+the dashboard did not expose the upstream error bodies needed to explain the 403s.
+The later batched page-review smoke on 2026-09-19 returned HTTP 200 for all four
+Jev calls. Its diagnostic escalations describe review policy, not provider failures;
+see [measured results](page-review-jev.md#measured-results-and-remaining-evaluation-gaps).
+Neither smoke nor automated tests establish production model quality.
 
 ## Style audit screening
 
@@ -126,3 +132,9 @@ setting is enabled by this implementation.
 References: [Vercel announcement](https://vercel.com/changelog/typesafe-ai-jev-now-available-on-ai-gateway),
 [evaluation result interface](https://github.com/vercel/ai/blob/main/packages/ai/src/evaluate/evaluation-result.ts),
 [TypeSafe model pricing](https://docs.typesafe.ai/models).
+
+## Batched model page review
+
+`BOOK_MAKER_PAGE_REVIEW_DECISIONS` defaults to `shadow` when Fast decisions resolves Jev.
+`pass` can skip diagnostic page review only on a supported clean result in every dimension.
+See [integration, unscored keeper policy, measurements and evaluation gaps](page-review-jev.md).

@@ -208,6 +208,7 @@ function normalizePageQualityReport(value: unknown): unknown {
   return {
     approved,
     score,
+    ...(unwrapped.scoreBasis !== undefined ? { scoreBasis: unwrapped.scoreBasis } : {}),
     issues,
     requiredRevisions,
     notes,
@@ -313,6 +314,7 @@ export const pageQualityReportSchema = z.preprocess(
   z.object({
     approved: z.boolean(),
     score: z.number().int().min(0).max(100),
+    scoreBasis: z.enum(["reviewer", "screened_unscored"]).optional(),
     issues: z.array(z.string()).default([]),
     requiredRevisions: z.array(z.string()).default([]),
     notes: z.string().default(""),

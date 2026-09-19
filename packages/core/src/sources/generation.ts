@@ -1,3 +1,4 @@
+import type { DecisionEvaluationRequest } from "../adapters/decisionEvaluation.js";
 import type { DecisionRequest } from "../adapters/decisions.js";
 import { bindTextModelCall, type GenerateJsonOptions, type GenerateTextOptions, type GenerateWithToolsOptions, type TextModelAdapter } from "../adapters/types.js";
 import { SOURCE_INSTRUCTIONS, sourceCitation, type SourcePassage, type SourceService } from "./types.js";
@@ -5,10 +6,15 @@ import { SOURCE_INSTRUCTIONS, sourceCitation, type SourcePassage, type SourceSer
 /** Shared by every generation stage, including composed chapters and review calls. */
 export class SourceAwareTextModel implements TextModelAdapter {
   private readonly sources: SourceEvidenceContext;
-  constructor(private readonly delegate: TextModelAdapter, private readonly service: () => Promise<SourceService>, private readonly evidence = new Map<string, SourcePassage[]>()) { this.sources = new SourceEvidenceContext(service, evidence); }
+  constructor(private readonly delegate: TextModelAdapter, private readonly service: () => Promise<SourceService>, private readonly evidence = new Map<string, SourcePassage[]>(), preparedSources?: SourceEvidenceContext) { this.sources = preparedSources ?? new SourceEvidenceContext(service, evidence); }
   async bindForCall(purpose: string | undefined) {
     const bound = await bindTextModelCall(this.delegate, purpose);
-    return { ...bound, adapter: new SourceAwareTextModel(bound.adapter, this.service, this.evidence) };
+    return { ...bound, adapter: new SourceAwareTextModel(bound.adapter, this.service, this.evidence, this.sources) };
+  }
+  async prepareReviewContext(options: GenerateTextOptions) {
+    const sources = await this.sources.forReview(options);
+    const prepared = await sources.prepare(options);
+    return { messages: prepared.messages, textModel: new SourceAwareTextModel(this.delegate, this.service, this.evidence, sources) };
   }
   setPurposeOverridesEnabled(enabled: boolean) {
     const delegate = this.delegate as TextModelAdapter & { setPurposeOverridesEnabled?: (enabled: boolean) => void };
@@ -42,22 +48,41 @@ export class SourceAwareTextModel implements TextModelAdapter {
 }
 
 /** Shared evidence preparation for text generation and finite decisions. */
+type EvidencePack = { overview: unknown; selected: SourcePassage[]; citations: string[] };
 export class SourceEvidenceContext {
   private readonly returned = new WeakMap<GenerateTextOptions, Set<string>>();
-  constructor(private readonly service: () => Promise<SourceService>, private readonly evidence = new Map<string, SourcePassage[]>()) {}
+  constructor(private readonly service: () => Promise<SourceService>, private readonly evidence = new Map<string, SourcePassage[]>(), private readonly prepared?: EvidencePack) {}
   validate(text: string, options: GenerateTextOptions): string {
     return text.replace(/\[source:[^\]\n]+\]/g, (reference) => this.returned.get(options)?.has(reference) ? reference : "[unverified source]");
   }
   async prepare<T extends GenerateTextOptions>(options: T): Promise<T> {
     const user = options.messages.filter((message) => message.role !== "system").map((message) => message.content).join("\n");
-    const { overview, selected, citations } = await this.loadEvidence(user);
+    options.signal?.throwIfAborted();
+    const { overview, selected, citations } = this.prepared ?? await this.loadEvidence(user);
+    options.signal?.throwIfAborted();
     const prepared = { ...options, messages: [...options.messages, ...this.evidenceMessages(overview, selected)] } as T;
     this.returned.set(prepared, new Set(citations));
     return prepared;
   }
+  async forReview(options: GenerateTextOptions): Promise<SourceEvidenceContext> {
+    options.signal?.throwIfAborted();
+    const query = options.messages.filter((message) => message.role !== "system").map((message) => message.content).join("\n");
+    const pack = this.prepared ?? await this.loadEvidence(query);
+    options.signal?.throwIfAborted();
+    return new SourceEvidenceContext(this.service, this.evidence, pack);
+  }
+  async prepareEvaluation(request: DecisionEvaluationRequest): Promise<DecisionEvaluationRequest> {
+    request.signal?.throwIfAborted();
+    if (request.sourceContextPrepared) return request;
+    const { overview, selected } = await this.loadEvidence(request.context);
+    request.signal?.throwIfAborted();
+    return { ...request, context: request.context + "\n" + this.evidenceMessages(overview, selected).map((message) => message.content).join("\n") };
+  }
   async prepareDecision(request: DecisionRequest): Promise<DecisionRequest> {
+    request.signal?.throwIfAborted();
     const query = JSON.stringify({ context: request.context, options: request.options });
     const { overview, selected } = await this.loadEvidence(query);
+    request.signal?.throwIfAborted();
     return { ...request, context: request.context + "\n" + this.evidenceMessages(overview, selected).map((message) => message.content).join("\n") };
   }
   private async loadEvidence(query: string) {
@@ -71,7 +96,7 @@ export class SourceEvidenceContext {
     }
     // A reviewer sees the exact sources cited by the candidate, even when a
     // different query would rank another passage first.
-    const cited = await Promise.all([...query.matchAll(/\[source:([^:\]\s]+):(\d+):(\d+)\]/g)].slice(0, 30).map((match) => service.read(match[1]!, Number(match[2]), Number(match[3]))));
+    const cited = await Promise.all([...new Map([...query.matchAll(/\[source:([^:\]\s]+):(\d+):(\d+)\]/g)].map((match) => [match[0], match])).values()].slice(0, 30).map((match) => service.read(match[1]!, Number(match[2]), Number(match[3]))));
     const selected = [...new Map([...passages, ...cited.filter((p): p is SourcePassage => p !== null)].map((p) => [sourceCitation(p), p])).values()];
     const fullOverview = await service.overview();
     const overview = fullOverview.map(({ sections, ...document }) => ({

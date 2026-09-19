@@ -36,7 +36,7 @@ const baseOptions = (revisePageDraft: ReturnType<typeof vi.fn>) =>
     textModel: {},
     pages: [page],
     generationJobId: "job-1"
-  }) as never;
+  }) as unknown as Parameters<typeof reviewWholeBookDraftPages>[0];
 
 describe("reviewWholeBookDraftPages", () => {
   beforeEach(() => {

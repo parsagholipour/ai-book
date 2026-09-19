@@ -1,3 +1,5 @@
+import { evaluateWithFallback, type DecisionEvaluationAttempt } from "./decisionEvaluationRouting.js";
+import type { DecisionEvaluationRequest } from "./decisionEvaluation.js";
 import type { AppConfig } from "../config.js";
 import { createTextModelAdapter } from "./factory.js";
 import { FakeDecisionAdapter, InvalidDecisionError, assertDecisionRequest, validateDecisionChoice, type DecisionModelAdapter, type DecisionModelRoute, type DecisionRequest, type DecisionResult } from "./decisions.js";
@@ -45,6 +47,7 @@ export type DecisionRoutingOptions = {
   loadRouting: () => Promise<GenerationTextModelRouting>;
   createAdapter?: (selection: DecisionModelSelection) => DecisionModelAdapter;
   onAttempt?: (attempt: DecisionAttempt) => Promise<void>;
+  onEvaluationAttempt?: (attempt: DecisionEvaluationAttempt) => Promise<void>;
   retry?: RecoverableRetryOptions;
 };
 
@@ -65,6 +68,7 @@ export function createDecisionModelRoute(config: AppConfig, options: DecisionRou
         primary: { ...routing.fastDecisions },
         fallback: { ...(routing.fastDecisionsFallback ?? routing.fastJudgments) },
         createAdapter: options.createAdapter ?? ((selection) => createDecisionModelAdapter(config, selection)),
+        ...(options.onEvaluationAttempt ? { onEvaluationAttempt: options.onEvaluationAttempt } : {}),
         ...(options.onAttempt ? { onAttempt: options.onAttempt } : {}),
         ...(options.retry ? { retry: options.retry } : {}),
         gateWinningProbability: !config.MOCK_AI && isJevSelection(routing.fastDecisions)
@@ -80,8 +84,13 @@ export class FallbackDecisionAdapter implements DecisionModelAdapter {
     gateWinningProbability: boolean;
     createAdapter: (selection: DecisionModelSelection) => DecisionModelAdapter;
     onAttempt?: (attempt: DecisionAttempt) => Promise<void>;
+    onEvaluationAttempt?: (attempt: DecisionEvaluationAttempt) => Promise<void>;
     retry?: RecoverableRetryOptions;
   }) {}
+
+  async evaluate(request: DecisionEvaluationRequest) {
+    return evaluateWithFallback(this.options, request);
+  }
 
   async choose(request: DecisionRequest): Promise<DecisionResult> {
     assertDecisionRequest(request);

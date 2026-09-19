@@ -60,6 +60,16 @@ describe("bestDraftCandidate", () => {
   });
 });
 
+it("never ranks an unscored screened failure using its compatibility score", () => {
+  const screened = { draft: draftNamed("Screened"), revision: 1, report: report(75, { scoreBasis: "screened_unscored", issues: ["Style audit rejected this candidate"], requiredRevisions: ["Repair drift"] }) };
+  const scored = { draft: draftNamed("Scored"), revision: 2, report: report(99) };
+  expect(bestDraftCandidate(screened, scored)).toBe(screened);
+  expect(bestDraftCandidate(scored, screened)).toBe(scored);
+  const repaired = { ...scored, report: report(80, { approved: true }) };
+  expect(bestDraftCandidate(screened, repaired)).toBe(repaired);
+  expect(screened.report.requiredRevisions).toEqual(["Repair drift"]);
+});
+
 describe("pageRevisionMessage", () => {
   it("announces plain revising before the recovery candidate and recovery after", () => {
     // The index is spelled out at every call, here included: these three take

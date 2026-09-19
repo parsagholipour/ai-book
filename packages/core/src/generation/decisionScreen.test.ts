@@ -30,7 +30,7 @@ function verdict(selectedOption: string, probabilities = {
 
 function fixture(result = verdict(PASS)) {
   const choose = vi.fn(async (_request: DecisionRequest) => result);
-  const decisions = { resolve: vi.fn(async () => ({ choose })), recordOutcome: vi.fn(async () => {}) };
+  const decisions = { resolve: vi.fn(async () => ({ choose })), recordOutcome: vi.fn(async (_outcome: import("../adapters/decisions.js").DecisionOutcome) => {}) };
   return {
     choose,
     decisions,

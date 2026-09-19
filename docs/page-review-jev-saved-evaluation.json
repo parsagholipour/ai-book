@@ -1,0 +1,383 @@
+{
+  "mode": "offline saved-context coverage; decisions and uncaptured diagnostics are mocked",
+  "baselineSelection": {
+    "provider": "deepseek",
+    "model": "deepseek-v4-flash",
+    "thinkingEnabled": false
+  },
+  "note": "Agreement is not ground truth. Missing briefs are not reconstructed from the draft. Offline latency measures orchestration only. No net cost or production latency claim. Private-source fixtures require an authorized SourceAwareTextModel replay, not this standalone harness.",
+  "summary": {
+    "examples": 12,
+    "screenOpportunities": 12,
+    "diagnosticCalls": 12,
+    "fallbackFrequency": 1,
+    "avoidedDiagnosticCalls": 0,
+    "potentialAvoidedDiagnosticCalls": 0,
+    "comparable": 0,
+    "disagreements": [],
+    "disagreementRate": null,
+    "adjudicated": 0,
+    "independentlyConfirmedMisses": [],
+    "totalLatencyMs": {
+      "p50": 1.9775690000000168,
+      "p95": 11.099267999999938
+    },
+    "screenLatencyMs": {
+      "p50": 0,
+      "p95": 0
+    },
+    "decisionPhysicalCalls": 0,
+    "knownCostUsd": 0,
+    "unpricedCalls": 0
+  },
+  "records": [
+    {
+      "id": "composed-13-fast:1",
+      "provenance": "docs/composed-chapters/runs/composed-13-fast/pages.json; saved composed manuscript, production brief and model-page verdict unavailable",
+      "outcome": {
+        "purpose": "screen-page-review",
+        "version": "page-review-screen-v1",
+        "pageIndex": 1,
+        "mode": "shadow",
+        "rewriteAvoided": false,
+        "reviewAvoided": false,
+        "wouldAvoidReview": false,
+        "escalationReason": "insufficient_context",
+        "screenDurationMs": 0,
+        "totalDurationMs": 1
+      },
+      "elapsedMs": 11.099267999999938,
+      "diagnosticCalls": 1,
+      "diagnosticAttempts": [
+        {
+          "durationMs": 0.9407130000000734,
+          "usage": {
+            "promptTokens": 1,
+            "outputTokens": 1
+          },
+          "costUsd": 0
+        }
+      ],
+      "attempts": []
+    },
+    {
+      "id": "composed-13-fast:2",
+      "provenance": "docs/composed-chapters/runs/composed-13-fast/pages.json; saved composed manuscript, production brief and model-page verdict unavailable",
+      "outcome": {
+        "purpose": "screen-page-review",
+        "version": "page-review-screen-v1",
+        "pageIndex": 2,
+        "mode": "shadow",
+        "rewriteAvoided": false,
+        "reviewAvoided": false,
+        "wouldAvoidReview": false,
+        "escalationReason": "insufficient_context",
+        "screenDurationMs": 0,
+        "totalDurationMs": 0
+      },
+      "elapsedMs": 1.819729000000052,
+      "diagnosticCalls": 1,
+      "diagnosticAttempts": [
+        {
+          "durationMs": 0.07181200000002264,
+          "usage": {
+            "promptTokens": 1,
+            "outputTokens": 1
+          },
+          "costUsd": 0
+        }
+      ],
+      "attempts": []
+    },
+    {
+      "id": "composed-13-fast:60",
+      "provenance": "docs/composed-chapters/runs/composed-13-fast/pages.json; saved composed manuscript, production brief and model-page verdict unavailable",
+      "outcome": {
+        "purpose": "screen-page-review",
+        "version": "page-review-screen-v1",
+        "pageIndex": 60,
+        "mode": "shadow",
+        "rewriteAvoided": false,
+        "reviewAvoided": false,
+        "wouldAvoidReview": false,
+        "escalationReason": "insufficient_context",
+        "screenDurationMs": 0,
+        "totalDurationMs": 0
+      },
+      "elapsedMs": 3.9504949999999326,
+      "diagnosticCalls": 1,
+      "diagnosticAttempts": [
+        {
+          "durationMs": 0.06386600000007547,
+          "usage": {
+            "promptTokens": 1,
+            "outputTokens": 1
+          },
+          "costUsd": 0
+        }
+      ],
+      "attempts": []
+    },
+    {
+      "id": "composed-13-fast:120",
+      "provenance": "docs/composed-chapters/runs/composed-13-fast/pages.json; saved composed manuscript, production brief and model-page verdict unavailable",
+      "outcome": {
+        "purpose": "screen-page-review",
+        "version": "page-review-screen-v1",
+        "pageIndex": 120,
+        "mode": "shadow",
+        "rewriteAvoided": false,
+        "reviewAvoided": false,
+        "wouldAvoidReview": false,
+        "escalationReason": "insufficient_context",
+        "screenDurationMs": 0,
+        "totalDurationMs": 0
+      },
+      "elapsedMs": 2.4837099999999737,
+      "diagnosticCalls": 1,
+      "diagnosticAttempts": [
+        {
+          "durationMs": 0.06468000000006668,
+          "usage": {
+            "promptTokens": 1,
+            "outputTokens": 1
+          },
+          "costUsd": 0
+        }
+      ],
+      "attempts": []
+    },
+    {
+      "id": "composed-12-balanced:1",
+      "provenance": "docs/composed-chapters/runs/composed-12-balanced/pages.json; saved composed manuscript, production brief and model-page verdict unavailable",
+      "outcome": {
+        "purpose": "screen-page-review",
+        "version": "page-review-screen-v1",
+        "pageIndex": 1,
+        "mode": "shadow",
+        "rewriteAvoided": false,
+        "reviewAvoided": false,
+        "wouldAvoidReview": false,
+        "escalationReason": "insufficient_context",
+        "screenDurationMs": 0,
+        "totalDurationMs": 0
+      },
+      "elapsedMs": 0.986440000000016,
+      "diagnosticCalls": 1,
+      "diagnosticAttempts": [
+        {
+          "durationMs": 0.07539799999995012,
+          "usage": {
+            "promptTokens": 1,
+            "outputTokens": 1
+          },
+          "costUsd": 0
+        }
+      ],
+      "attempts": []
+    },
+    {
+      "id": "composed-12-balanced:2",
+      "provenance": "docs/composed-chapters/runs/composed-12-balanced/pages.json; saved composed manuscript, production brief and model-page verdict unavailable",
+      "outcome": {
+        "purpose": "screen-page-review",
+        "version": "page-review-screen-v1",
+        "pageIndex": 2,
+        "mode": "shadow",
+        "rewriteAvoided": false,
+        "reviewAvoided": false,
+        "wouldAvoidReview": false,
+        "escalationReason": "insufficient_context",
+        "screenDurationMs": 0,
+        "totalDurationMs": 0
+      },
+      "elapsedMs": 0.9924889999999778,
+      "diagnosticCalls": 1,
+      "diagnosticAttempts": [
+        {
+          "durationMs": 0.04498000000000957,
+          "usage": {
+            "promptTokens": 1,
+            "outputTokens": 1
+          },
+          "costUsd": 0
+        }
+      ],
+      "attempts": []
+    },
+    {
+      "id": "composed-12-balanced:60",
+      "provenance": "docs/composed-chapters/runs/composed-12-balanced/pages.json; saved composed manuscript, production brief and model-page verdict unavailable",
+      "outcome": {
+        "purpose": "screen-page-review",
+        "version": "page-review-screen-v1",
+        "pageIndex": 60,
+        "mode": "shadow",
+        "rewriteAvoided": false,
+        "reviewAvoided": false,
+        "wouldAvoidReview": false,
+        "escalationReason": "insufficient_context",
+        "screenDurationMs": 0,
+        "totalDurationMs": 0
+      },
+      "elapsedMs": 2.4164550000000418,
+      "diagnosticCalls": 1,
+      "diagnosticAttempts": [
+        {
+          "durationMs": 0.04801099999997405,
+          "usage": {
+            "promptTokens": 1,
+            "outputTokens": 1
+          },
+          "costUsd": 0
+        }
+      ],
+      "attempts": []
+    },
+    {
+      "id": "composed-12-balanced:120",
+      "provenance": "docs/composed-chapters/runs/composed-12-balanced/pages.json; saved composed manuscript, production brief and model-page verdict unavailable",
+      "outcome": {
+        "purpose": "screen-page-review",
+        "version": "page-review-screen-v1",
+        "pageIndex": 120,
+        "mode": "shadow",
+        "rewriteAvoided": false,
+        "reviewAvoided": false,
+        "wouldAvoidReview": false,
+        "escalationReason": "insufficient_context",
+        "screenDurationMs": 0,
+        "totalDurationMs": 0
+      },
+      "elapsedMs": 2.6960019999999076,
+      "diagnosticCalls": 1,
+      "diagnosticAttempts": [
+        {
+          "durationMs": 0.036295999999993,
+          "usage": {
+            "promptTokens": 1,
+            "outputTokens": 1
+          },
+          "costUsd": 0
+        }
+      ],
+      "attempts": []
+    },
+    {
+      "id": "legacy-cuts-7b:1",
+      "provenance": "docs/composed-chapters/runs/legacy-cuts-7b/pages.json; saved composed manuscript, production brief and model-page verdict unavailable",
+      "outcome": {
+        "purpose": "screen-page-review",
+        "version": "page-review-screen-v1",
+        "pageIndex": 1,
+        "mode": "shadow",
+        "rewriteAvoided": false,
+        "reviewAvoided": false,
+        "wouldAvoidReview": false,
+        "escalationReason": "insufficient_context",
+        "screenDurationMs": 0,
+        "totalDurationMs": 0
+      },
+      "elapsedMs": 1.3067439999999806,
+      "diagnosticCalls": 1,
+      "diagnosticAttempts": [
+        {
+          "durationMs": 0.04374700000005305,
+          "usage": {
+            "promptTokens": 1,
+            "outputTokens": 1
+          },
+          "costUsd": 0
+        }
+      ],
+      "attempts": []
+    },
+    {
+      "id": "legacy-cuts-7b:2",
+      "provenance": "docs/composed-chapters/runs/legacy-cuts-7b/pages.json; saved composed manuscript, production brief and model-page verdict unavailable",
+      "outcome": {
+        "purpose": "screen-page-review",
+        "version": "page-review-screen-v1",
+        "pageIndex": 2,
+        "mode": "shadow",
+        "rewriteAvoided": false,
+        "reviewAvoided": false,
+        "wouldAvoidReview": false,
+        "escalationReason": "insufficient_context",
+        "screenDurationMs": 0,
+        "totalDurationMs": 0
+      },
+      "elapsedMs": 1.3244560000000547,
+      "diagnosticCalls": 1,
+      "diagnosticAttempts": [
+        {
+          "durationMs": 0.045253999999999905,
+          "usage": {
+            "promptTokens": 1,
+            "outputTokens": 1
+          },
+          "costUsd": 0
+        }
+      ],
+      "attempts": []
+    },
+    {
+      "id": "legacy-cuts-7b:60",
+      "provenance": "docs/composed-chapters/runs/legacy-cuts-7b/pages.json; saved composed manuscript, production brief and model-page verdict unavailable",
+      "outcome": {
+        "purpose": "screen-page-review",
+        "version": "page-review-screen-v1",
+        "pageIndex": 60,
+        "mode": "shadow",
+        "rewriteAvoided": false,
+        "reviewAvoided": false,
+        "wouldAvoidReview": false,
+        "escalationReason": "insufficient_context",
+        "screenDurationMs": 0,
+        "totalDurationMs": 0
+      },
+      "elapsedMs": 1.9775690000000168,
+      "diagnosticCalls": 1,
+      "diagnosticAttempts": [
+        {
+          "durationMs": 0.044297000000028675,
+          "usage": {
+            "promptTokens": 1,
+            "outputTokens": 1
+          },
+          "costUsd": 0
+        }
+      ],
+      "attempts": []
+    },
+    {
+      "id": "legacy-cuts-7b:120",
+      "provenance": "docs/composed-chapters/runs/legacy-cuts-7b/pages.json; saved composed manuscript, production brief and model-page verdict unavailable",
+      "outcome": {
+        "purpose": "screen-page-review",
+        "version": "page-review-screen-v1",
+        "pageIndex": 120,
+        "mode": "shadow",
+        "rewriteAvoided": false,
+        "reviewAvoided": false,
+        "wouldAvoidReview": false,
+        "escalationReason": "insufficient_context",
+        "screenDurationMs": 0,
+        "totalDurationMs": 0
+      },
+      "elapsedMs": 2.1469979999999396,
+      "diagnosticCalls": 1,
+      "diagnosticAttempts": [
+        {
+          "durationMs": 0.03581399999995938,
+          "usage": {
+            "promptTokens": 1,
+            "outputTokens": 1
+          },
+          "costUsd": 0
+        }
+      ],
+      "attempts": []
+    }
+  ]
+}

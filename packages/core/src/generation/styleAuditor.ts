@@ -23,6 +23,9 @@ const STYLE_ISSUE_SCORE_PENALTY = 15;
 
 /** The score fields `styleAuditedScoreBeats` compares candidates on. */
 export type StyleAuditedScore = {
+  scoreBasis?: "reviewer" | "screened_unscored" | undefined;
+  approved?: boolean | undefined;
+  checks?: { placeholderFree?: boolean; promptLeakFree?: boolean; styleNatural?: boolean } | undefined;
   score: number;
   /** Present only on a report the style auditor has seen; 0 means it passed. */
   stylePenalty?: number | undefined;
@@ -39,6 +42,13 @@ export type StyleAuditedScore = {
  * seat to a candidate the auditor was not allowed to see.
  */
 export function styleAuditedScoreBeats(candidate: StyleAuditedScore, incumbent: StyleAuditedScore): boolean {
+  if (candidate.scoreBasis === "screened_unscored" || incumbent.scoreBasis === "screened_unscored") {
+    if (candidate.approved !== incumbent.approved) return candidate.approved === true;
+    const intact = (report: StyleAuditedScore) => report.checks?.placeholderFree !== false && report.checks?.promptLeakFree !== false;
+    if (intact(candidate) !== intact(incumbent)) return intact(candidate);
+    // An unscored failure cannot be ranked against a model score. Stable tie.
+    return false;
+  }
   const bothAudited = candidate.stylePenalty !== undefined && incumbent.stylePenalty !== undefined;
   const effective = (report: StyleAuditedScore): number =>
     bothAudited ? report.score - (report.stylePenalty ?? 0) : report.score;

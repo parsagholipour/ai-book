@@ -13,7 +13,7 @@ export function withProjectDecisionSources(route: DecisionModelRoute, input: Cre
   return { async resolve() {
     const adapter = await route.resolve();
     if (!adapter) return undefined;
-    return { async choose(request) {
+    return { ...(adapter.evaluate ? { evaluate: async (request: import("@book-maker/core").DecisionEvaluationRequest) => adapter.evaluate!(await sources.prepareEvaluation(request)) } : {}), async choose(request) {
       return adapter.choose(await sources.prepareDecision(request));
     } };
   } };
