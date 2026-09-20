@@ -7,6 +7,7 @@ import type { ChapterEpisode, DossierExcerpt } from "../schemas/episodes.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import { fetchPrimaryText, searchPrimarySources, textLooksLikeLanguage, type PrimarySourceCandidate, type PrimarySourceFetch, type PrimarySourceSearch } from "./primarySources.js";
 import { foldQuoteText } from "./quoteProvenance.js";
+import { reviewDossierProvenance } from "./dossierProvenance.js";
 
 /**
  * Material-first, step two: the dossier. For each episode the chapter's
@@ -329,7 +330,10 @@ export async function buildChapterDossier(options: {
     const candidates: PrimarySourceCandidate[] = [];
     for (const query of queries) {
       try {
-        candidates.push(...(await searchPrimarySources(query, { fetch: options.fetch, language: options.input.language, limit: 2, search: options.evidence ? options.searchSources : undefined })));
+        candidates.push(...(await searchPrimarySources(query, {
+          fetch: options.fetch, language: options.input.language, limit: 2, search: options.evidence ? options.searchSources : undefined,
+          log: (event, detail) => log(`dossier.${event}`, { chapterIndex: options.chapter.index, ...detail })
+        })));
       } catch (error) {
         if (isStopOrAbortError(error)) throw error;
         log("dossier.search_failed", { query, error: error instanceof Error ? error.message : String(error) });
@@ -387,6 +391,7 @@ export async function buildChapterDossier(options: {
   if (kept.length > 0) {
     try {
       excerpts = await extractExcerpts({ input: options.input, chapter: options.chapter, episodes: options.episodes, windows: kept, documents, textModel: options.textModel, evidence: options.evidence, log });
+      excerpts = await reviewDossierProvenance({ excerpts, documents, windows: kept, textModel: options.textModel, log });
     } catch (error) {
       if (error instanceof Error && /stop|abort/i.test(error.name + error.message)) throw error;
       log("dossier.extract_failed", { chapterIndex: options.chapter.index, error: error instanceof Error ? error.message : String(error) });

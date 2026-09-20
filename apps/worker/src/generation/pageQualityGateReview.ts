@@ -80,7 +80,6 @@ export async function reviewPageWithQualityGates(options: {
         ? reviewPageDraftLocally(options.reviewOptions)
         : await options.strategy.reviewPageDraft({
             ...options.reviewOptions,
-            ...(options.decisions ? { decisions: options.decisions } : {}),
             ...(options.userRequest !== undefined ? { userRequest: options.userRequest } : {}),
             ...(options.signal ? { signal: options.signal } : {}),
             pageReviewPromptMode:

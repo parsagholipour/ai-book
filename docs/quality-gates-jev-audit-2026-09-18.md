@@ -1,5 +1,13 @@
 # Jev opportunities in generation quality gates
 
+> **Outcome (2026-09-19).** The screens this audit proposed were built and then measured over
+> four Balanced books. The style-audit screen, the Smart Unslop confirmation and the changed-page
+> grounding screen each skipped a paid call on a confident pass and stay. The semantic chapter-edit
+> acceptance questions, the dossier provenance screen, cover selection and the per-page reviewer
+> substitution were removed: none of them let the pipeline skip the call it stood in front of.
+> See [jev-balanced-100-evaluation-2026-09-19.md](jev-balanced-100-evaluation-2026-09-19.md) and
+> the `Jev is a screen that skips a paid call` invariant in `packages/core/src/adapters/CLAUDE.md`.
+
 Date: 2026-09-18. Scope: current source, quality-gate catalog, worker call sites, and Jev adapter. This is a design audit, not a measured comparison of model accuracy or runtime. Live operator revisions and production usage were not queried. No generation settings or implementation were changed.
 
 The strongest immediate opportunities are a Jev screen before style audits and Smart Unslop rewrites, and a semantic acceptance check after chapter edits. The largest broader substitution is the per-page model reviewer, but its repair instructions and candidate scores require more integration work. Cheap judgment also makes checks on the final rewritten candidate practical.

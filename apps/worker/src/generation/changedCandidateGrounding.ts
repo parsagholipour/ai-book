@@ -51,6 +51,8 @@ export function changedCandidateGrounding(options: {
       return withClaimVerification(report, result);
     }
     // An outage/missing source is not an approval and must not erase a reviewer's failure.
-    return { ...report, groundingStatus: result.groundingStatus };
+    return report.groundedOk === false || report.groundingStatus === "failed"
+      ? { ...report, groundedOk: false, groundingStatus: "failed", groundingAvailability: result.groundingStatus }
+      : { ...report, groundingStatus: result.groundingStatus };
   };
 }

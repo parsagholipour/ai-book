@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { createDecisionModelRoute, type DecisionAttempt, type DecisionEvaluationAttempt, type DecisionEvaluationRequest, type DecisionRequest, type DecisionModelRoute, type CreateProjectInput, type EmbeddingAdapter } from "@book-maker/core";
+import { createDecisionModelRoute, type DecisionAttempt, type DecisionRequest, type DecisionModelRoute, type CreateProjectInput, type EmbeddingAdapter } from "@book-maker/core";
 import { config } from "../runtime/config.js";
 import { assertJobNotStopped, hasStoppedGenerationJob } from "../runtime/jobLifecycle.js";
 import { serializeError } from "../runtime/serialization.js";
@@ -13,7 +13,7 @@ import { createRunLogger } from "./runLogging.js";
 export function createLoggedDecisions(job: WorkerRuntimeJob, input?: CreateProjectInput, embedding?: EmbeddingAdapter): DecisionModelRoute {
   const logger = createRunLogger(job);
   const { projectId, generationJobId } = job.data;
-  const onAttempt = async (attempt: DecisionAttempt | DecisionEvaluationAttempt) => {
+  const onAttempt = async (attempt: DecisionAttempt) => {
       const callId = randomUUID();
       try {
         const { signal: _signal, ...request } = attempt.request;
@@ -34,7 +34,7 @@ export function createLoggedDecisions(job: WorkerRuntimeJob, input?: CreateProje
     };
   const route = withProjectDecisionSources(createDecisionModelRoute(config, {
     loadRouting: loadLiveGenerationTextRouting(logger),
-    onAttempt, onEvaluationAttempt: onAttempt
+    onAttempt
   }), input, projectId, embedding);
   return {
     async recordOutcome(outcome) {
@@ -45,7 +45,7 @@ export function createLoggedDecisions(job: WorkerRuntimeJob, input?: CreateProje
       await assertJobNotStopped(generationJobId);
       const adapter = await route.resolve();
       if (!adapter) return undefined;
-      const invoke = async <T extends DecisionRequest | DecisionEvaluationRequest, R>(request: T, call: (request: T) => Promise<R>): Promise<R> => {
+      const invoke = async <R>(request: DecisionRequest, call: (request: DecisionRequest) => Promise<R>): Promise<R> => {
         await assertJobNotStopped(generationJobId);
         const controller = new AbortController();
         const abort = () => controller.abort(request.signal?.reason);
@@ -62,15 +62,12 @@ export function createLoggedDecisions(job: WorkerRuntimeJob, input?: CreateProje
           await assertJobNotStopped(generationJobId);
         }
       };
-      return {
-        choose: (request) => invoke(request, (value) => adapter.choose(value)),
-        ...(adapter.evaluate ? { evaluate: (request: DecisionEvaluationRequest) => invoke(request, (value) => adapter.evaluate!(value)) } : {})
-      };
+      return { choose: (request) => invoke(request, (value) => adapter.choose(value)) };
     }
   };
 }
 
-export async function recordDecisionAttempt(attempt: DecisionAttempt | DecisionEvaluationAttempt, ids: { callId: string; projectId: string | undefined; generationJobId: string | undefined }) {
+export async function recordDecisionAttempt(attempt: DecisionAttempt, ids: { callId: string; projectId: string | undefined; generationJobId: string | undefined }) {
   const result = attempt.result ?? providerUsageFromError(attempt.error);
   const identity = result ?? attempt.selection;
   // Open then settle one row even when an unsuccessful provider reports no usage.
@@ -86,9 +83,8 @@ export async function recordDecisionAttempt(attempt: DecisionAttempt | DecisionE
     ...(attempt.error ? { providerCallError: attempt.error } : {}),
     decisionMetadata: {
       role: attempt.role,
-      ...(attempt.result && "selectedOption" in attempt.result ? { selectedOption: attempt.result.selectedOption } : {}),
-      ...(attempt.result && "answers" in attempt.result ? { answers: attempt.result.answers } : {}),
-      ...(attempt.result && "probabilities" in attempt.result && attempt.result.probabilities ? { probabilities: attempt.result.probabilities } : {}),
+      ...(attempt.result ? { selectedOption: attempt.result.selectedOption } : {}),
+      ...(attempt.result?.probabilities ? { probabilities: attempt.result.probabilities } : {}),
       ...(attempt.escalationReason ? { escalationReason: attempt.escalationReason } : {})
     }
   });

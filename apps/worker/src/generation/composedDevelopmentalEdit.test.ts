@@ -20,7 +20,8 @@ const chapter = { index: 1, title: "Appeal", targetPages: 1, summary: "What an a
 const plan = { ...makeFallbackPlan(input), chapters: [chapter] };
 const setup = { chapter, startPage: 1, endPage: 1 };
 const composition = { index: 1, throughLine: "The judgment", landing: "The appeal reopened the claim", sections: [{ subject: "Verdict", form: "explanation", share: 1 }] } as unknown as ChapterComposition;
-const prose = Array.from({ length: 44 }, (_, i) => `Record ${i} supplies another detail about the disputed original judgment.`).join("\n\n");
+// Sixty ten-word paragraphs: inside the one-page budget (570–640 words; an EDUCATION page is budgeted like any other), so only the shortfall test cuts under the floor.
+const prose = Array.from({ length: 60 }, (_, i) => `Record ${i} supplies another detail about the disputed original judgment.`).join("\n\n");
 const page = { index: 1, status: "PENDING", title: "Verdict", markdown: prose, summary: "Initial finding", imagePrompt: null };
 const marker = { version: 1, sourceDigest: "before", resultDigest: "after", beforeWords: 440, afterWords: 440, appliedGroups: ["move"], rejectedGroups: [] };
 

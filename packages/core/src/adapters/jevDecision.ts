@@ -6,9 +6,22 @@ import { JEV_SELECTION } from "./generationTextModelRouting.js";
 import { isCancellationError, ProviderHttpError } from "./retry.js";
 import { throwWithProviderUsage } from "./json.js";
 
+/**
+ * How long one Jev attempt may take before it is given up as a provider failure. Jev answers in
+ * 0.5–1.5 s (the slowest success across three live evaluations was 6.6 s), and its retries and
+ * fallback are the recovery for an attempt that does not; without a deadline of its own, one
+ * attempt in the second 100-page book sat on a gateway "Request timed out" for 240 s, and the
+ * chapter's acceptance gate — a call whose whole point is to be fast — waited four minutes for it.
+ */
+export const JEV_ATTEMPT_TIMEOUT_MS = 20_000;
+
 /** All dependencies on the experimental evaluation API stay in this module. */
 export class JevDecisionAdapter implements DecisionModelAdapter {
-  constructor(private readonly apiKey: string | undefined, private readonly fetch?: typeof globalThis.fetch) {}
+  constructor(
+    private readonly apiKey: string | undefined,
+    private readonly fetch?: typeof globalThis.fetch,
+    private readonly attemptTimeoutMs: number = JEV_ATTEMPT_TIMEOUT_MS
+  ) {}
 
   async choose(request: DecisionRequest): Promise<DecisionResult> {
     assertDecisionRequest(request);
@@ -44,6 +57,11 @@ export class JevDecisionAdapter implements DecisionModelAdapter {
       return response;
     } });
     const model = gateway.evaluationModel(JEV_SELECTION.model);
+    // The attempt's own deadline rides beside the caller's signal. When it fires, the attempt
+    // failed like a 504 — recoverable, retried, then handed to the fallback — and is never
+    // mistaken for the caller cancelling, which is checked first below.
+    const deadline = new AbortController();
+    const timer = setTimeout(() => deadline.abort(), this.attemptTimeoutMs);
     try {
       const result = await evaluate({
         model,
@@ -54,7 +72,7 @@ export class JevDecisionAdapter implements DecisionModelAdapter {
             : { type: "boolean", instructions: question.instructions }
         ])),
         maxRetries: 0,
-        ...(request.signal ? { abortSignal: request.signal } : {})
+        abortSignal: request.signal ? AbortSignal.any([request.signal, deadline.signal]) : deadline.signal
       });
       return validateDecisionEvaluation(request, {
         ...JEV_SELECTION,
@@ -64,9 +82,12 @@ export class JevDecisionAdapter implements DecisionModelAdapter {
     } catch (error) {
       // Cancellation keeps its identity and never becomes a fallback verdict.
       const failure = request.signal?.aborted ? request.signal.reason : error;
-      if (request.signal?.aborted || isCancellationError(failure)) {
+      if (request.signal?.aborted || (isCancellationError(failure) && !deadline.signal.aborted)) {
         if (received) throwWithProviderUsage(failure, received);
         throw failure;
+      }
+      if (deadline.signal.aborted) {
+        throw new ProviderHttpError(`Jev did not answer within ${this.attemptTimeoutMs} ms.`, { status: 504 });
       }
       if (received && !(error instanceof InvalidDecisionEvaluationError)) {
         throw new InvalidDecisionEvaluationError("Jev returned an invalid evaluation response.", received);
@@ -80,6 +101,8 @@ export class JevDecisionAdapter implements DecisionModelAdapter {
         });
       }
       throw error;
+    } finally {
+      clearTimeout(timer);
     }
   }
 }

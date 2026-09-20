@@ -43,6 +43,8 @@ const DIRECT_COST_PURPOSES: Partial<Record<QualityFeatureId, ReadonlySet<string>
   writerTools: new Set(["write-page-with-tools"]),
   bestOfPolish: new Set(["polish-page", "judge-page-drafts"]),
   chapterEditorPass: new Set(["edit-chapter"]),
+  // The two `accept-chapter-edit-*` purposes were the decision-model screen ahead of the review,
+  // removed 2026-09-19; they stay here so books generated before that keep their rows attributed.
   chapterEditAcceptance: new Set(["accept-chapter-edit-meaning", "accept-chapter-edit-intent", "review-chapter-edit-acceptance"]),
   manuscriptReadPass: new Set(["read-manuscript", "cut-chapter", "rewrite-seams"])
 };

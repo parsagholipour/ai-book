@@ -79,8 +79,8 @@ describe("figure blocks in the local checks", () => {
     expect(withFigure.issues).not.toContain("Final page ending is too vague to resolve the book's central promise.");
     expect(withFigure).toEqual(review(`${prose}\n\n${prose}`));
     // The rule itself still reads the prose.
-    expect(review(`${prose}\n\nAnd so they walked into the unknown.`).issues).toContain(
-      "Final page ending is too vague to resolve the book's central promise."
+    expect(review(`${prose}\n\nAnd so they walked into the unknown.`).notes).toContain(
+      "contextual ending review"
     );
   });
 

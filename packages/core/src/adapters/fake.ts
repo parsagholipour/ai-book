@@ -141,7 +141,11 @@ export class FakeTextModelAdapter implements TextModelAdapter {
 
   private fakeForSchema(schema: z.ZodTypeAny, options: GenerateJsonOptions<unknown>): unknown {
     if (options.purpose === "review-chapter-edit-acceptance") {
-      return { meaning: "pass", intent: "pass", meaningReason: "Mock preservation judgment.", intentReason: "Mock edit compliance judgment." };
+      const context = JSON.parse(options.messages.find((message) => message.role === "user")?.content ?? "{}");
+      return { meaning: "pass", intent: "pass", meaningReason: "Mock preservation judgment.", intentReason: "Mock edit compliance judgment.",
+        ...(Array.isArray(context.removedSpans) ? { removedSpanReviews: context.removedSpans.map((span: { index: number }) => ({
+          index: span.index, meaning: "pass", join: "pass", retainedEvidence: "Mock retained evidence.", joinReason: "Mock coherent join."
+        })) } : {}) };
     }
     if (options.purpose === "extract-story-state") {
       return {
@@ -175,6 +179,10 @@ export class FakeTextModelAdapter implements TextModelAdapter {
         reorderNotes: [],
         repeatedBeatWarnings: []
       };
+    }
+
+    if (options.purpose === "review-dossier-provenance") {
+      return { verdict: "supported", reason: "Mock source attribution verified." };
     }
 
     if (options.purpose === "verify-page-claims") {

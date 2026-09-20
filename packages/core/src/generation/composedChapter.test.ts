@@ -9,6 +9,7 @@ import { bookArcSchema } from "./bookArc.js";
 import { paginateChapterMarkdown } from "./chapterPagination.js";
 import { proseWordCount } from "./figures/figureBlocks.js";
 import {
+  COMPOSE_CALL_WORDS,
   COMPOSE_PROMPT_MODE,  chapterDigest,
   chapterWordBudget,
   composeChapter,
@@ -16,6 +17,7 @@ import {
   editChapter,
   fallbackPageDescription,
   manuscriptReadEditCap,
+  maxComposedChapterPages,
   readManuscript
 } from "./composedChapter.js";
 
@@ -48,6 +50,16 @@ describe("chapterWordBudget", () => {
   it("sizes the chapter so the printed book is as long as the pages paid for", () => {
     expect(chapterWordBudget(input, 8)).toEqual({ perPage: 570, min: 3440, target: 4560, max: 5120 });
     expect(chapterWordBudget(input, 1)).toEqual({ perPage: 570, min: 570, target: 570, max: 640 });
+  });
+
+  it("caps a planned chapter at the pages one compose call can fill", () => {
+    // 570 a page: eight pages ask 4,560 words, nine would ask 5,130 — past what a call returns.
+    expect(maxComposedChapterPages(input)).toBe(8);
+    expect(chapterWordBudget(input, maxComposedChapterPages(input)).target).toBeLessThanOrEqual(COMPOSE_CALL_WORDS);
+    expect(chapterWordBudget(input, maxComposedChapterPages(input) + 1).target).toBeGreaterThan(COMPOSE_CALL_WORDS);
+    expect(maxComposedChapterPages({ ...input, category: "SCIENCE" })).toBe(8);
+    // A picture book's pages hold a few dozen words; the planner's own ceiling of fourteen stands.
+    expect(maxComposedChapterPages({ ...input, category: "KIDS" })).toBe(14);
   });
 });
 
@@ -383,8 +395,11 @@ describe("figures in the compose and edit prompts", () => {
     expect(chapterWordBudget(input, 8, { figureWords: 140 })).toEqual({ perPage: 570, min: 3300, target: 4420, max: 4980 });
     expect(chapterWordBudget(input, 1, { figureWords: 140 })).toEqual({ perPage: 570, min: 430, target: 430, max: 500 });
     expect(chapterWordBudget(input, 1, { figureWords: 10_000 })).toEqual({ perPage: 570, min: 0, target: 0, max: 0 });
+    // A science page prints the same ~496 words as any other; the old 380-a-page
+    // discount printed 77 sheets of 100 paid. The figure alone displaces prose.
     const science = { ...input, category: "SCIENCE" as const };
-    expect(chapterWordBudget(science, 1, { figureWords: 140 })).toEqual({ perPage: 380, min: 240, target: 240, max: 340 });
+    expect(chapterWordBudget(science, 1, { figureWords: 140 })).toEqual({ perPage: 570, min: 430, target: 430, max: 500 });
+    expect(chapterWordBudget(science, 8)).toEqual(chapterWordBudget(input, 8));
   });
 
   it("shows the writer the syntax only in a chapter the plan gave a figure, and the editor one line about the stand-in", async () => {

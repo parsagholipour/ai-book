@@ -2,7 +2,12 @@ import type { Usage } from "./types.js";
 import { assertDecisionRequest } from "./decisions.js";
 import { DECISION_MIN_WINNING_PROBABILITY, decisionEscalationReason, type DecisionEscalationReason } from "./decisionRouting.js";
 
-/** Stable question IDs share one evidence context and one physical evaluation. */
+/**
+ * The Jev wire shape: typed questions over one shared context, answered in one physical call.
+ * `JevDecisionAdapter.choose` is one choice question of it. A multi-question `evaluate` on every
+ * decision adapter — routed with fallback, source-prepared, logged — existed for the page-review
+ * screen alone and went with it (2026-09-19).
+ */
 export type DecisionQuestion = { id: string; instructions: string } & (
   | { type: "choice"; options: readonly { id: string; description: string }[] }
   | { type: "boolean" }
@@ -16,10 +21,7 @@ export type DecisionEvaluationRequest = {
   context: string;
   questions: readonly DecisionQuestion[];
   purpose: string;
-  escalationPolicy?: "caller" | undefined;
   signal?: AbortSignal | undefined;
-  /** Evidence was prepared by the authorized text source wrapper for this review. */
-  sourceContextPrepared?: boolean | undefined;
 };
 export type DecisionEvaluationResult = {
   answers: Record<string, DecisionAnswer>;
@@ -31,12 +33,6 @@ export class InvalidDecisionEvaluationError extends Error {
   constructor(message: string, readonly result: DecisionEvaluationResult) {
     super(message);
     this.name = "InvalidDecisionEvaluationError";
-  }
-}
-export class DecisionEvaluationEscalationError extends Error {
-  constructor(readonly reason: DecisionEscalationReason, readonly result?: DecisionEvaluationResult) {
-    super(`Evaluation requires caller review: ${reason}`);
-    this.name = "DecisionEvaluationEscalationError";
   }
 }
 export function assertDecisionEvaluationRequest(request: DecisionEvaluationRequest): void {

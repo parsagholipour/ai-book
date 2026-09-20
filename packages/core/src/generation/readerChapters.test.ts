@@ -11,7 +11,7 @@ import type {
   ToolCallsResult
 } from "../adapters/types.js";
 import type { MarkdownPage } from "./markdown.js";
-import { createReaderChaptersForExport, readerChapterFingerprint } from "./readerChapters.js";
+import { createReaderChaptersForExport, readerChapterFingerprint, readerChaptersFromComposedChapters } from "./readerChapters.js";
 
 describe("createReaderChaptersForExport", () => {
   it("groups a long 10-page manuscript instead of accepting page-level chapters", async () => {
@@ -197,6 +197,34 @@ describe("createReaderChaptersForExport", () => {
     for (let index = 1; index < chapters.length; index += 1) {
       expect(chapters[index]?.startPageIndex).toBe((chapters[index - 1]?.endPageIndex ?? 0) + 1);
     }
+  });
+});
+
+describe("readerChaptersFromComposedChapters", () => {
+  const rows = [
+    { index: 1, title: "The Key That Had to Travel", summary: "Sharing a secret before speaking." },
+    { index: 2, title: "Chapter 2: Puzzles Before the Breakthrough", summary: "" },
+    { index: 3, title: "The Public Door", summary: "Diffie–Hellman and RSA." }
+  ];
+  const chapterFor = (pageIndex: number) => rows[pageIndex <= 4 ? 0 : pageIndex <= 6 ? 1 : 2]!;
+
+  it("prints the chapters a composed book was cut from, in page order, with their planned titles", () => {
+    const pages = longPages(10).map((page) => ({ ...page, chapter: chapterFor(page.index) }));
+    const chapters = readerChaptersFromComposedChapters([...pages].reverse());
+    expect(chapters).toEqual([
+      { index: 1, title: "The Key That Had to Travel", summary: "Sharing a secret before speaking.", startPageIndex: 1, endPageIndex: 4 },
+      // A stored "Chapter N" prefix is not doubled, and an empty summary is drawn from the pages.
+      { index: 2, title: "Puzzles Before the Breakthrough", summary: expect.stringContaining("Page 5 develops movement 5"), startPageIndex: 5, endPageIndex: 6 },
+      { index: 3, title: "The Public Door", summary: "Diffie–Hellman and RSA.", startPageIndex: 7, endPageIndex: 10 }
+    ]);
+  });
+
+  it("declines when the pages do not carry one contiguous structure", () => {
+    const pages = longPages(10).map((page) => ({ ...page, chapter: chapterFor(page.index) }));
+    expect(readerChaptersFromComposedChapters(pages.map((page) => (page.index === 8 ? { ...page, chapter: null } : page)))).toBeUndefined();
+    expect(readerChaptersFromComposedChapters(pages.map((page) => (page.index === 9 ? { ...page, chapter: rows[0]! } : page)))).toBeUndefined();
+    expect(readerChaptersFromComposedChapters(pages.map((page) => ({ ...page, chapter: rows[0]! })))).toBeUndefined();
+    expect(readerChaptersFromComposedChapters([])).toBeUndefined();
   });
 });
 

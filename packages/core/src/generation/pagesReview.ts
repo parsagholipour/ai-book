@@ -1,6 +1,4 @@
 import { buildPageReviewPrompt } from "./pageReviewPrompt.js";
-import { screenPageReview, type PageReviewDecisionMode } from "./pageReviewScreen.js";
-import type { DecisionModelRoute } from "../adapters/decisions.js";
 import type { GenerateJsonOptions, TextModelAdapter } from "../adapters/types.js";
 import type { PageReviewPromptMode } from "./qualityGates.js";
 import {
@@ -79,8 +77,6 @@ export type ReviewPageOptions = {
   nextPages?: PriorPageContext[] | undefined;
   continuityNotes: string[];
   textModel: TextModelAdapter;
-  decisions?: DecisionModelRoute | undefined;
-  pageReviewDecisionMode?: PageReviewDecisionMode | undefined;
   userRequest?: string | undefined;
   signal?: AbortSignal | undefined;
   styleExcerpts?: string[] | undefined;
@@ -143,8 +139,7 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
     return localReport;
   }
 
-  const prompt = buildPageReviewPrompt(options);
-  return screenPageReview(options, localReport, prompt, (textModel, preparedPrompt) => diagnosePageReview(options, localReport, preparedPrompt, textModel));
+  return diagnosePageReview(options, localReport, buildPageReviewPrompt(options), options.textModel);
 }
 
 async function diagnosePageReview(options: ReviewPageOptions, localReport: PageQualityReport, prompt: GenerateJsonOptions<PageQualityReport>, textModel: TextModelAdapter): Promise<PageQualityReport> {

@@ -46,14 +46,11 @@ docs/english-regeneration-chat-router-incident.md
 .claude/settings.local.json
 .claude/worktrees/
 
-# Frozen review-page replay pack (real book drafts + reviewer payloads).
-.scratch/review-page-sensitivity/
+# Local issue notes, evaluation runs, and generated books. Keep the dir, ignore contents.
+.scratch/
+
 # Blinded manuscript copies for the reader panels are generated books; they live only on the machine that ran them
 docs/composed-chapters/**/blind/
-
-# Generated source acceptance-test artifacts.
-.scratch/source-book-live/
-.scratch/source-book-pdf80/
 
 rootkey.csv
 

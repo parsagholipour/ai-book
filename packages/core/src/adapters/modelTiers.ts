@@ -45,6 +45,7 @@ export function modelTierForInput(input: CreateProjectInput): ModelTier {
 export const MECHANICAL_TEXT_PURPOSES: ReadonlySet<string> = new Set([
   "source-summary",
   "review-page",
+  "review-chapter-edit-acceptance",
   "review-edit-adherence",
   "judge-page-drafts",
   "final-book-qa",
@@ -76,6 +77,7 @@ export const MECHANICAL_TEXT_PURPOSES: ReadonlySet<string> = new Set([
   "judge-chapter-drafts",
   // Anchors into a primary-source window (`dossier.ts`): a lookup, not prose.
   "extract-excerpts",
+  "review-dossier-provenance",
   // The copyright-safe image-prompt rewrite
   // (`generation/copyrightSafeImagePrompt.ts`): a strict-schema find-and-replace
   // that swaps protected names for generic descriptions and is forbidden from

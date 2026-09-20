@@ -1549,7 +1549,7 @@ describe("page quality review", () => {
     expect(report.checks.repetitionOk).toBe(false);
   });
 
-  it("rejects vague final-page endings", async () => {
+  it("leaves final-page phrase matches to contextual review", async () => {
     const report = await review(
       {
         title: "The Last Candle",
@@ -1561,9 +1561,9 @@ describe("page quality review", () => {
       input.targetPages
     );
 
-    expect(report.approved).toBe(false);
-    expect(report.checks.progressionOk).toBe(false);
-    expect(report.issues.join(" ")).toMatch(/Final page ending/i);
+    expect(report.approved).toBe(true);
+    expect(report.checks.progressionOk).toBe(true);
+    expect(report.issues.join(" ")).not.toMatch(/Final page ending/i);
   });
 
   it("accepts a specific page with progression", async () => {

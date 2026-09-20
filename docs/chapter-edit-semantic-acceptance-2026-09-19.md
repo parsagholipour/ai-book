@@ -1,5 +1,16 @@
 # Chapter edit semantic acceptance
 
+> **Partly superseded (2026-09-19).** The gate still exists and is still `chapterEditAcceptance`
+> in the Quality settings, but the decision-model (Jev) questions this document describes were
+> removed after four Balanced evaluations: 168 attempts on 69 comparisons, 87 failed (81 gateway 503s),
+> one review saved, every reviewer-confirmed regression passed, both vetoes wrong. Every changed
+> candidate now goes straight to the one contextual JSON review (`review-chapter-edit-acceptance`),
+> which reads the whole comparison, judges a cut span by span, and is handed a factual
+> correction's evidence. Cut reviews carry only the chapters the cut's notes cite. The evidence
+> is in [jev-balanced-100-evaluation-2026-09-19.md](jev-balanced-100-evaluation-2026-09-19.md);
+> the current invariant is in `packages/core/src/generation/CLAUDE.md`. The paragraphs about
+> "clear Jev passes" and the two decision purposes below are historical.
+
 The `chapterEditAcceptance` quality gate covers `editChapter` and `cutChapter`,
 including evidence repairs and manuscript-read cuts in the composed worker.
 It is enabled by default on all effort tiers. Operators can disable it, or select

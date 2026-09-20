@@ -188,16 +188,7 @@ const LOCAL_PAGE_QUALITY_RULES = [
     ["progressionOk"],
     "Page describes its intended function instead of becoming finished book prose."
   ),
-  FIRST_PAGE_OPENING_QUALITY_RULE,
-  pageRule(
-    // The figure-free body and summary, not the draft: a chart's caption or
-    // source on the last page ("into the unknown", "the beginning") is not how
-    // the page ends, even when those phrases leaked into `draft.summary`.
-    ({ options, currentBody, currentSummary }) =>
-      options.pageIndex === options.input.targetPages && hasVagueEnding({ markdown: currentBody, summary: currentSummary }),
-    ["progressionOk"],
-    "Final page ending is too vague to resolve the book's central promise."
-  )
+  FIRST_PAGE_OPENING_QUALITY_RULE
 ] as const satisfies readonly LocalPageQualityRule[];
 
 /**
@@ -273,7 +264,9 @@ function pageQualityReportForRules(
     score: Math.max(0, 100 - issues.length * 25),
     issues,
     requiredRevisions: issues.map((issue) => `Fix: ${issue}`),
-    notes: issues.length === 0 ? "Local quality checks passed." : "Local quality checks rejected the page.",
+    notes: [issues.length === 0 ? "Local quality checks passed." : "Local quality checks rejected the page.",
+      ...(rules === LOCAL_PAGE_QUALITY_RULES && options.pageIndex === options.input.targetPages && hasVagueEnding({ markdown: context.currentBody, summary: context.currentSummary })
+        ? ["Final-page wording warrants contextual ending review; a phrase match alone is not a defect."] : [])].join(" "),
     groundedOk: true,
     unsupportedClaims: [],
     checks

@@ -465,11 +465,11 @@ export class GeminiResearchAdapter implements ResearchAdapter {
       .map(({ web, index }: { web: any; index: number }) => {
         const excerpts = excerptsByChunk.get(index);
         const summary =
-          excerpts && excerpts.length > 0 ? sanitizeResearchText(excerpts.join(" ")).slice(0, 600) : text.slice(0, 600);
+          excerpts && excerpts.length > 0 ? sanitizeResearchText(excerpts.join(" ")).slice(0, 600) : "";
         return {
           title: String(web.title ?? "Source"),
           url: web.uri ? String(web.uri) : undefined,
-          summary: summary || text.slice(0, 600)
+          summary
         };
       });
     // Grounding cites every page through an expiring Google redirect. Unwrap it

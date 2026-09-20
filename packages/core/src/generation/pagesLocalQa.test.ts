@@ -471,17 +471,14 @@ describe("phrase matching across a hard wrap and across the breaks that are not 
   }
 
   it("does not read a vague ending across a paragraph break", () => {
-    // Two sentences a blank line apart. Flattened into one line they sit 15
-    // characters apart inside `/\bnothing\b.{0,80}\beverything\b/`, with no
-    // resolution word anywhere in the page to excuse them — so a finished
-    // final page lost 25 points, auto-rejected, and spent a revision call.
+    // Separate paragraphs must not create even an advisory phrase match.
     const report = reviewFinalPage(`She had nothing left to give.\n\nEverything about the morning felt heavier${ENDING_TAIL}`);
 
     expect(report.issues).toEqual([]);
     expect(report.approved).toBe(true);
   });
 
-  it("still reads a vague ending across a hard wrap inside one paragraph", () => {
+  it("keeps a hard-wrap ending match advisory for contextual review", () => {
     // The same two clauses in one paragraph, broken by the hard wrap the
     // collapse exists for: this is the half of the bound that must survive
     // narrowing the collapse, and it fails outright without any collapse.
@@ -489,8 +486,9 @@ describe("phrase matching across a hard wrap and across the breaks that are not 
       `She had nothing left to give, and\neverything about the morning felt heavier${ENDING_TAIL}`
     );
 
-    expect(report.issues).toEqual([vagueEndingIssue]);
-    expect(report.checks.progressionOk).toBe(false);
+    expect(report.issues).toEqual([]);
+    expect(report.checks.progressionOk).toBe(true);
+    expect(report.notes).toContain("contextual ending review");
   });
 
   it("bounds the research window at the paragraph break and not before it", () => {
@@ -553,7 +551,8 @@ describe("phrase matching across a hard wrap and across the breaks that are not 
     // Same page, same words, one break fewer: 53 characters then separate
     // "nothing" from "everything" inside `/\bnothing\b.{0,80}\beverything\b/`.
     const asOneLine = reviewFinalPage(`${spoken.join(" ")}${tail}`);
-    expect(asOneLine.issues).toContain(vagueEndingIssue);
+    expect(asOneLine.issues).not.toContain(vagueEndingIssue);
+    expect(asOneLine.notes).toContain("contextual ending review");
   });
 });
 

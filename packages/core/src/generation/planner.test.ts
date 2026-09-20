@@ -4,6 +4,7 @@ import type { GenerateJsonOptions, GenerateTextOptions, JsonResult, TextModelAda
 import { makeFallbackPlan } from "../prompting/templates.js";
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
 import { REQUIRED_LOCAL_RULE_IDS } from "./styleContract.js";
+import { maxComposedChapterPages } from "./composedChapter.js";
 import { createPlanningPackage, ensurePlanStyleContract, normalizePlanPageTargets, revisePlanningPackage } from "./planner.js";
 
 describe("createPlanningPackage", () => {
@@ -230,6 +231,50 @@ describe("createPlanningPackage", () => {
     expect(systemPrompt).toContain("never list the options inside the prompt text");
     // The plan commits to how page 1 opens; the drafting side reads it back.
     expect(systemPrompt).toContain("Set openingHook to one or two sentences");
+  });
+
+  // A chapter is one compose call and the call returns at most ~4,600 words,
+  // so the planner's ceiling is the budget's, not fourteen: a twelve-page
+  // chapter asked for 4,420 words came in at 55% beside six-page neighbours
+  // that reached the floor.
+  it("caps chapter length at what one compose call can fill, and says nothing about it for a short book", async () => {
+    const prompts = new Map<number, string>();
+    // The third 100-page Balanced book's plan: told "five to eight pages", the planner still wrote three nines.
+    const runThree = [7, 6, 9, 5, 7, 6, 9, 5, 7, 6, 9, 5, 7, 6, 6];
+    const textModel = (targetPages: number): TextModelAdapter => ({
+      async generateJson<T>(options: GenerateJsonOptions<T>): Promise<JsonResult<T>> {
+        prompts.set(targetPages, options.messages.find((message) => message.role === "system")?.content ?? "");
+        const fallback = makeFallbackPlan(testInput({ category: "SCIENCE", targetPages }));
+        const candidate = targetPages === 100
+          ? { ...fallback, chapters: runThree.map((pages, i) => ({ ...fallback.chapters[0]!, index: i + 1, title: `Chapter ${i + 1}`, targetPages: pages })) }
+          : fallback;
+        return { data: candidate as T, text: JSON.stringify(candidate), model: "test-model", provider: "test" };
+      },
+      async generateText(_options: GenerateTextOptions): Promise<TextResult> {
+        throw new Error("Not used");
+      },
+      async *streamText(_options: GenerateTextOptions): AsyncGenerator<string> {
+        throw new Error("Not used");
+      },
+      generateWithTools: unsupportedGenerateWithTools
+    });
+    const plans = new Map<number, BookPlan>();
+    for (const targetPages of [100, 24]) {
+      plans.set(targetPages, await createPlanningPackage({
+        input: testInput({ category: "SCIENCE", targetPages, prompt: "Public-key cryptography from the key-distribution problem to the post-quantum standards", mediaSettings: { ...testInput().mediaSettings, fullIllustrations: false } }),
+        textModel: textModel(targetPages),
+        research: silentResearch()
+      }));
+    }
+    expect(maxComposedChapterPages(testInput({ category: "SCIENCE", targetPages: 100 }))).toBe(8);
+    expect(prompts.get(100)).toContain("from five to eight pages");
+    expect(prompts.get(100)).toContain("what needs more pages is two chapters");
+    expect(prompts.get(100)).not.toContain("fourteen pages");
+    expect(prompts.get(24)).not.toContain("Give chapters different lengths");
+    // The rule is also the guarantee: the nines' extra pages go to the longest chapters with room, the fives stay short.
+    const pages = plans.get(100)!.chapters.map((chapter) => chapter.targetPages);
+    expect(pages).toEqual([8, 6, 8, 5, 8, 6, 8, 5, 8, 6, 8, 5, 7, 6, 6]);
+    expect(pages.reduce((sum, count) => sum + count, 0)).toBe(100);
   });
 
   it("keeps at most one subject clarification for an incomplete prompt", async () => {
@@ -534,6 +579,29 @@ describe("normalizePlanPageTargets", () => {
 
     expect(normalized.chapters).toHaveLength(3);
     expect(normalized.chapters.every((chapter) => chapter.targetPages === 1)).toBe(true);
+  });
+
+  it("holds every chapter under the compose ceiling at the same total, splitting only when the chapters cannot hold the book", () => {
+    const base = makeFallbackPlan(testInput({ targetPages: 40 }));
+    const pagesOf = (plan: BookPlan) => plan.chapters.map((chapter) => chapter.targetPages);
+    // Over the ceiling by one: the page moves to the longest chapter with room.
+    const nines = { ...base, chapters: [9, 5, 7, 6, 9, 4].map((pages, i) => chapterAt(i + 1, pages)) } as BookPlan;
+    expect(pagesOf(normalizePlanPageTargets(nines, 40, { maxChapterPages: 8 }))).toEqual([8, 5, 8, 7, 8, 4]);
+    // Without the ceiling the same plan stands, as every per-page book's does.
+    expect(pagesOf(normalizePlanPageTargets(nines, 40))).toEqual([9, 5, 7, 6, 9, 4]);
+    // Two twenty-page chapters cannot hold forty pages under eight: the longest splits until they can.
+    const twoChapters = { ...base, chapters: [chapterAt(1, 20), chapterAt(2, 20)] } as BookPlan;
+    for (const chapter of twoChapters.chapters) chapter.keyBeats = ["First beat.", "Second beat.", "Third beat."];
+    const split = normalizePlanPageTargets(twoChapters, 40, { maxChapterPages: 8 });
+    expect(pagesOf(split).reduce((sum, count) => sum + count, 0)).toBe(40);
+    expect(Math.max(...pagesOf(split))).toBeLessThanOrEqual(8);
+    expect(split.chapters).toHaveLength(5);
+    expect(split.chapters.map((chapter) => chapter.index)).toEqual([1, 2, 3, 4, 5]);
+    expect(split.chapters.map((chapter) => chapter.title)).toEqual(["Beat 1 (I) (I)", "Beat 1 (I) (II)", "Beat 1 (II)", "Beat 2 (I)", "Beat 2 (II)"]);
+    expect(split.chapters[0]!.keyBeats).toEqual(["First beat."]);
+    expect(split.chapters[1]!.keyBeats).toEqual(["Second beat."]);
+    expect(split.chapters[2]!.keyBeats).toEqual(["Third beat."]);
+    expect(split.chapters[2]!.summary).toBe('Second part of "Beat 1". What happens in beat 1.');
   });
 });
 

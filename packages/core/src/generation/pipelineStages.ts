@@ -107,9 +107,9 @@ export const COMPOSED_STAGES: readonly PipelineStage[] = [
     id: "edit",
     label: "Line edit",
     summary: "A chapter line edit after developmental changes when enabled, with no automatic padding. Legacy runs retain their original chapter edit order.",
-    purposes: ["edit-chapter", "accept-chapter-edit-meaning", "accept-chapter-edit-intent", "review-chapter-edit-acceptance"],
+    purposes: ["edit-chapter", "review-chapter-edit-acceptance"],
     lane: "prose",
-    calls: "1 edit per chapter; changed candidates get 2 semantic judgments and at most 1 contextual review when enabled",
+    calls: "1 edit per chapter; each changed candidate gets 1 contextual acceptance review when enabled",
     gates: ["chapterEditorPass", "chapterEditAcceptance"]
   },
   {
@@ -125,9 +125,9 @@ export const COMPOSED_STAGES: readonly PipelineStage[] = [
     id: "read",
     label: "Manuscript read",
     summary: "For nonfiction, bounded section deletions, moves and rewrites across chapters within a whole-book word budget. When developmental editing is off, the legacy read returns notes.",
-    purposes: ["read-manuscript", "cut-chapter", "rewrite-seams", "plan-developmental-edit", "rewrite-developmental-sections", "accept-chapter-edit-meaning", "accept-chapter-edit-intent", "review-chapter-edit-acceptance"],
+    purposes: ["read-manuscript", "cut-chapter", "rewrite-seams", "plan-developmental-edit", "rewrite-developmental-sections", "review-chapter-edit-acceptance"],
     lane: "prose",
-    calls: "1 full-text proposal plus up to 6 linked section rewrites; changed cuts get 2 semantic judgments and at most 1 contextual review when enabled; final line edits and descriptions run per chapter",
+    calls: "1 full-text proposal plus up to 6 linked section rewrites; each changed cut gets 1 contextual acceptance review when enabled; final line edits and descriptions run per chapter",
     gates: ["manuscriptReadPass", "manuscriptReadCuts", "developmentalEdit", "chapterEditAcceptance"]
   },
   {

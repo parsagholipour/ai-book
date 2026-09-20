@@ -1,4 +1,3 @@
-import type { DecisionEvaluationRequest } from "../adapters/decisionEvaluation.js";
 import type { DecisionRequest } from "../adapters/decisions.js";
 import { bindTextModelCall, type GenerateJsonOptions, type GenerateTextOptions, type GenerateWithToolsOptions, type TextModelAdapter } from "../adapters/types.js";
 import { SOURCE_INSTRUCTIONS, sourceCitation, type SourcePassage, type SourceService } from "./types.js";
@@ -70,13 +69,6 @@ export class SourceEvidenceContext {
     const pack = this.prepared ?? await this.loadEvidence(query);
     options.signal?.throwIfAborted();
     return new SourceEvidenceContext(this.service, this.evidence, pack);
-  }
-  async prepareEvaluation(request: DecisionEvaluationRequest): Promise<DecisionEvaluationRequest> {
-    request.signal?.throwIfAborted();
-    if (request.sourceContextPrepared) return request;
-    const { overview, selected } = await this.loadEvidence(request.context);
-    request.signal?.throwIfAborted();
-    return { ...request, context: request.context + "\n" + this.evidenceMessages(overview, selected).map((message) => message.content).join("\n") };
   }
   async prepareDecision(request: DecisionRequest): Promise<DecisionRequest> {
     request.signal?.throwIfAborted();

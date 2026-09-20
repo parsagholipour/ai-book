@@ -45,7 +45,7 @@ describe("changed page grounding", () => {
     expect(request.instructions).toContain("Removing an unsupported claim");
     const diagnostic = test.generate.mock.calls[0]![0];
     expect(diagnostic.purpose).toBe("verify-page-claims");
-    expect(JSON.parse(diagnostic.messages[1]!.content)).toMatchObject({ original, markdown, researchNotes: notes });
+    expect(JSON.parse(diagnostic.messages[1]!.content)).toMatchObject({ original, candidate, researchNotes: notes });
     expect(diagnostic.messages[0]!.content).toContain("concrete correction");
   });
 

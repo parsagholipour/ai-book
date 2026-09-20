@@ -34,9 +34,12 @@ describe("primarySources", () => {
     });
     const wiki = await searchWikisource("secret history", { fetch: fakeFetch, language: "en", limit: 3 });
     expect(wiki.map((c) => c.title)).toEqual(["The Secret History of the Mongols"]);
-    const gutenberg = await searchGutenberg("gibbon", { fetch: fakeFetch, language: "en", limit: 3 });
+    const requested: string[] = [];
+    const gutenberg = await searchGutenberg("gibbon", { fetch: async (url) => { requested.push(url); return fakeFetch(url); }, language: "en", limit: 3 });
     expect(gutenberg).toHaveLength(1);
     expect(gutenberg[0]!.author).toBe("Gibbon, Edward");
+    // The slashed address answers directly; the unslashed one is a 301 that cost a second 10–19 s request.
+    expect(requested).toEqual(["https://gutendex.com/books/?search=gibbon&languages=en"]);
     const archive = await searchArchive("chronicle", { fetch: fakeFetch, limit: 3 });
     expect(archive.map((c) => c.title)).toEqual(["Old chronicle", "Licensed chronicle"]);
     const all = await searchPrimarySources("chronicle", { fetch: fakeFetch, language: "en" });
@@ -78,6 +81,39 @@ describe("primarySources", () => {
   it("joins OCR line-break hyphens and drops carets", () => {
     expect(cleanOcrText("a literal transla- tion of the ^text")).toBe("a literal translation of the text");
     expect(cleanOcrText("well-known")).toBe("well-known");
+  });
+
+  it("waits a bounded time for each catalogue and skips one that keeps timing out", async () => {
+    configurePrimarySourceThrottle({ intervalMs: 0, searchTimeoutMs: 40, outageAfterTimeouts: 2, outageSkipMs: 150 });
+    let gutendexRequests = 0;
+    const events: Array<Record<string, unknown>> = [];
+    const slowGutendex = async (url: string) => {
+      if (!url.includes("gutendex.com")) return fakeFetch(url);
+      gutendexRequests += 1;
+      // Gutendex answers in 20–30 s live; here well past the bound, with a book the dossier must never see.
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      return { status: 200, text: JSON.stringify({ results: [{ id: 9, title: "Late book", authors: [], formats: { "text/plain": "https://www.gutenberg.org/ebooks/9.txt" } }] }) };
+    };
+    const search = () => searchPrimarySources("chronicle", { fetch: slowGutendex, language: "en", log: (event, detail) => events.push({ event, ...detail }) });
+    const started = Date.now();
+    const first = await search();
+    expect(Date.now() - started).toBeLessThan(300);
+    expect(first.map((c) => c.host)).toEqual(["wikisource", "archive", "archive"]);
+    expect(events[0]).toMatchObject({ event: "search", query: "chronicle", hosts: {
+      wikisource: { outcome: "answered", candidates: 1 }, gutenberg: { outcome: "timed_out", candidates: 0 }, archive: { outcome: "answered", candidates: 2 }
+    } });
+    // The second timeout opens the outage; the third search does not ask at all.
+    await search();
+    await search();
+    expect(gutendexRequests).toBe(2);
+    expect(events[2]).toMatchObject({ hosts: { gutenberg: { outcome: "skipped", ms: 0 } } });
+    // Once the outage has lapsed the catalogue is asked again, and an answer within the bound closes it.
+    await new Promise((resolve) => setTimeout(resolve, 160));
+    const fastGutendex = async (url: string) => url.includes("gutendex.com") ? fakeFetch(url) : slowGutendex(url);
+    const recovered = await searchPrimarySources("chronicle", { fetch: fastGutendex, language: "en", log: (event, detail) => events.push({ event, ...detail }) });
+    expect(recovered.map((c) => c.host)).toEqual(["wikisource", "gutenberg", "archive", "archive"]);
+    expect(events.at(-1)).toMatchObject({ hosts: { gutenberg: { outcome: "answered", candidates: 1 } } });
+    configurePrimarySourceThrottle({ intervalMs: 0, backoffMs: 50, retries: 1, searchTimeoutMs: 10_000, outageAfterTimeouts: 2, outageSkipMs: 5 * 60_000 });
   });
 
   it("serialises requests per host and retries after a 429", async () => {

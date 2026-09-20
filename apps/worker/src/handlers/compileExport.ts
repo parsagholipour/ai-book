@@ -44,7 +44,7 @@ import { advanceJobStep, editOperationIdFromJob, updateJobProgress } from "../ru
 import { type ExportPageForRepair, type JobCompletion } from "../runtime/jobTypes.js";
 import { effectiveSavedWholeBookExportContext } from "../generation/wholeBookTolerance.js";
 import { runCompileManuscriptChecks } from "../generation/compileManuscriptChecks.js";
-import { unsupportedCaseClaimIssues } from "../generation/composedEvidenceResiduals.js";
+import { arithmeticErrorIssues, unsupportedCaseClaimIssues } from "../generation/composedEvidenceResiduals.js";
 import { maybeEnqueueCharacterCandidatePreparation } from "./characters.js";
 import { runBoundedChapterQualityReview } from "./compileExportChapterReview.js";
 import { companionFormatsToRender, renderCompanionExports } from "./compileExportCompanions.js";
@@ -64,6 +64,7 @@ import {
   publicAssetUrl,
   strategyComposesChapters,
   readerChapterFingerprint,
+  readerChaptersFromComposedChapters,
   resolvePublicImageUrl,
   normalizedCompilePublicationPolicy,
   type PersistableBookPdfPageMap,
@@ -477,7 +478,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     }),
     // A case assertion the composed chapter's repair could not narrow: recorded on the chapter's
     // report, matched against the pages that still carry it, and a blocking issue on the card.
-    ...(strategyComposesChapters(strategy) ? unsupportedCaseClaimIssues(pages) : []),
+    ...(strategyComposesChapters(strategy) ? [...unsupportedCaseClaimIssues(pages), ...arithmeticErrorIssues(pages)] : []),
     ...(repairVerificationIncomplete
       ? [{
           code: "FINAL_QA_REPAIR_INCOMPLETE",
@@ -577,8 +578,15 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     // the prior model-authored grouping without making an uncharged model call.
     preservedReaderChapters = await readCompatibleCachedReaderChapters(projectId, markdownPages);
   }
+  // A book composed by chapters prints the chapters it was composed in: the
+  // rows every page carries, no model call, whatever the compile's lane. The
+  // model grouping below is for the per-page strategies, whose plan chapters
+  // are a writing scaffold rather than a structure.
+  const composedReaderChapters = strategyComposesChapters(strategy)
+    ? readerChaptersFromComposedChapters(pages.map((page, position) => ({ ...markdownPages[position]!, chapter: page.chapter })))
+    : undefined;
   const compileCurrentMarkdown = async (): Promise<CompiledBookMarkdown> => {
-    const readerChapters = await readerChaptersWithCache({
+    const readerChapters = composedReaderChapters ?? await readerChaptersWithCache({
       projectId,
       fingerprint: readerChapterFingerprint({ input, plan, pages: markdownPages }),
       // Presentation recompiles and repairs are free. A cache miss must not

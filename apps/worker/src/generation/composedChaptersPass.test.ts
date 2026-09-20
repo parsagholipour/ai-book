@@ -170,7 +170,7 @@ vi.mock("./wholeBookPageReview.js", () => ({
     }))
 }));
 
-import { FakeTextModelAdapter, caseEvidencePacketSchema, figureCapFor, figureSpecSchema, makeFallbackPlan, type CreateProjectInput, type ProviderSet } from "@book-maker/core";
+import { FakeTextModelAdapter, assignedSectionCount, caseEvidencePacketSchema, chapterWordBudget, figureCapFor, figureSpecSchema, makeFallbackPlan, sustainedSectionShare, type CreateProjectInput, type ProviderSet } from "@book-maker/core";
 import { composedChaptersStrategy } from "@book-maker/core";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import { composedResumeState, derivedChapterBrief, generateBookComposedChapters } from "./composedChaptersPass.js";
@@ -466,6 +466,36 @@ describe("generateBookComposedChapters", () => {
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledTimes(1);
   });
 
+  it("hands the form planner each chapter's word target so sections are counted from words", async () => {
+    const plan = makeFallbackPlan(input);
+    const { fake } = recordingFake();
+    const originalJson = fake.generateJson;
+    let formsPayload: { chapters: Array<{ chapterIndex: number; pages: number; words?: number; sectionCount: { min: number; max: number }; sustainedShare: number }> } | undefined;
+    fake.generateJson = async (options) => {
+      if (options.purpose === "plan-chapter-forms") {
+        formsPayload = JSON.parse(options.messages.find((message) => message.role === "user")!.content);
+      }
+      return originalJson(options);
+    };
+    await generateBookComposedChapters({
+      projectId: "project-1",
+      planId: "plan-1",
+      input,
+      plan,
+      providers: providersWith(fake),
+      strategy: composedChaptersStrategy,
+      generationJobId: "job-1"
+    });
+    expect(formsPayload).toBeDefined();
+    for (const chapter of formsPayload!.chapters) {
+      const planned = plan.chapters.find((entry) => entry.index === chapter.chapterIndex)!;
+      expect(chapter.pages).toBe(planned.targetPages);
+      expect(chapter.words).toBe(chapterWordBudget(input, planned.targetPages).target);
+      expect(chapter.sectionCount).toEqual(assignedSectionCount(chapter.chapterIndex, planned.targetPages, chapter.words));
+      expect(chapter.sustainedShare).toBe(sustainedSectionShare(chapter.words));
+    }
+  });
+
   it("skips the editor and the read when their gates are off", async () => {
     const plan = makeFallbackPlan(input);
     mocks.qualityEnabled.mockImplementation((feature: string) => feature !== "chapterEditorPass" && feature !== "manuscriptReadPass");
@@ -599,7 +629,7 @@ describe("manuscript read cuts", () => {
       if (callOptions.purpose !== "read-manuscript") return json(callOptions);
       purposes.push(callOptions.purpose);
       const data = {
-        chapters: [{ chapterIndex: 1, edit: true, notes: ["Paragraph beginning 'Ledger 0': cut the closing paragraph."] }],
+        chapters: [{ chapterIndex: 1, edit: true, notes: ["Paragraph beginning 'Ledger 0': cut the closing paragraph. Chapter 2 already records the same fee."] }],
         bookNotes: ["The book restates its argument at every close."]
       };
       return { data: callOptions.schema.parse(data), text: JSON.stringify(data), provider: "fixture", model: "fixture" };
@@ -626,8 +656,7 @@ describe("manuscript read cuts", () => {
     mocks.qualityEnabled.mockImplementation((feature: string) => !["chapterEditorPass", "coupletRewrite", ...extra].includes(feature));
   };
 
-  const run = async (fake: FakeTextModelAdapter, decisions?: ProviderSet["decisions"]) => {
-    const plan = makeFallbackPlan(input);
+  const run = async (fake: FakeTextModelAdapter, decisions?: ProviderSet["decisions"], plan = makeFallbackPlan(input)) => {
     await generateBookComposedChapters({
       projectId: "project-1",
       planId: "plan-1",
@@ -642,20 +671,39 @@ describe("manuscript read cuts", () => {
   const reports = () =>
     store.chapters.map((chapter) => (chapter.productionBrief as { report: { readNotes: string[]; secondEditApplied: boolean } }).report);
 
+  /** The decision route stays out of the chapter gate; it is present so a regression that consulted it would show. */
   const rejectingDecisions = () => {
     const choose = vi.fn(async () => ({ provider: "vercel-ai-gateway", model: "typesafe-ai/jev",
       selectedOption: "regression", probabilities: { pass: 0.05, regression: 0.9, needs_review: 0.05 } }));
     return { choose, resolve: vi.fn(async () => ({ choose })) };
   };
+  const rejectingReviewer = (fake: FakeTextModelAdapter) => {
+    const generateJson = fake.generateJson.bind(fake);
+    return vi.spyOn(fake, "generateJson").mockImplementation(async (request) => request.purpose === "review-chapter-edit-acceptance"
+      ? { data: request.schema.parse({ meaning: "regression", intent: "regression", meaningReason: "Essential qualification lost", intentReason: "Not a justified change" }), text: "", provider: "fixture", model: "fixture" }
+      : generateJson(request));
+  };
 
   it.each([true, false])("honors the semantic gate (%s) on worker cuts and preserves read findings", async (enabled) => {
     gatesOffFor(enabled ? [] : ["chapterEditAcceptance"]);
     const { fake } = readingFake({});
+    const review = rejectingReviewer(fake);
     const decisions = rejectingDecisions();
-    await run(fake, decisions);
+    const fallback = makeFallbackPlan(input);
+    const threeChapters = { ...fallback, chapters: [1, 2, 3].map((index) => ({ ...fallback.chapters[0]!, index, title: `Ledger ${index}`, targetPages: 8 })) };
+    await run(fake, decisions, threeChapters);
     expect(reports()[0]!.secondEditApplied).toBe(!enabled);
     expect(reports()[0]!.readNotes).toHaveLength(1);
-    expect(decisions.choose).toHaveBeenCalledTimes(enabled ? 2 : 0);
+    // The contextual reviewer is the whole gate; no decision model is consulted.
+    expect(decisions.choose).not.toHaveBeenCalled();
+    const reviews = review.mock.calls.filter(([request]) => request.purpose === "review-chapter-edit-acceptance");
+    expect(reviews).toHaveLength(enabled ? 1 : 0);
+    if (enabled) {
+      // The note named chapter 2, so the reviewer reads chapter 2 beside the comparison and not chapter 3.
+      const payload = JSON.parse(reviews[0]![0].messages.find((message) => message.role === "user")!.content) as { chapterIndex: number; surroundingChapters: Array<{ index: number }> };
+      expect(payload.chapterIndex).toBe(1);
+      expect(payload.surroundingChapters.map((chapter) => chapter.index)).toEqual([2]);
+    }
   });
 
   it.each([true, false])("honors the semantic gate (%s) on the worker line editor", async (enabled) => {
@@ -667,10 +715,13 @@ describe("manuscript read cuts", () => {
       const payload = JSON.parse(request.messages.find((message) => message.role === "user")!.content) as { draft: string };
       return { text: payload.draft.replace("charged", "did not charge"), provider: "fixture", model: "fixture" };
     };
+    const review = rejectingReviewer(fake);
     const decisions = rejectingDecisions();
     const plan = await run(fake, decisions);
     expect(store.pages.some((page) => page.markdown.includes("did not charge"))).toBe(!enabled);
-    expect(decisions.choose).toHaveBeenCalledTimes(enabled ? plan.chapters.length * 2 : 0);
+    // One contextual review per changed chapter retains the polarity reversal; no decision model is consulted.
+    expect(decisions.choose).not.toHaveBeenCalled();
+    expect(review.mock.calls.filter(([request]) => request.purpose === "review-chapter-edit-acceptance")).toHaveLength(enabled ? plan.chapters.length : 0);
   });
 
   it("discards a degenerate line edit inside editChapter and publishes the draft", async () => {

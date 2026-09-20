@@ -17,9 +17,9 @@ describe("dossier", () => {
     vi.spyOn(primarySources, "searchPrimarySources").mockResolvedValue([{ host: "web", title: "A witness's recollections", url: "https://example.org/record", textUrl: "https://example.org/record", author: "", year: "" }]);
     vi.spyOn(primarySources, "fetchPrimaryText").mockResolvedValue(`${text} ${filler(100)}`);
     const chapter = originalDevelopmentPlan().chapters[0]!;
-    const { model, calls } = scriptedDevelopmentModel([{ excerpts: [{ windowId: `ch${chapter.index}-d1-w1`, firstWords: "We watched him take the crown from", lastWords: "guests departed through the western door.", episodeTitle: episode.title }] }]);
+    const { model, calls } = scriptedDevelopmentModel([{ excerpts: [{ windowId: `ch${chapter.index}-d1-w1`, firstWords: "We watched him take the crown from", lastWords: "guests departed through the western door.", episodeTitle: episode.title }] }, { verdict: "supported", reason: "Passage and attribution match source context." }]);
     const result = await buildChapterDossier({ input: developmentInput, chapter, episodes: [episode], textModel: model, fetch: async () => ({ status: 200, text: "" }) });
-    expect(calls).toHaveLength(1);
+    expect(calls).toHaveLength(2);
     expect(result.excerpts[0]?.text).toBe(text);
   });
   it("shows every fetched document to the extractor before spending slots on second windows", async () => {
@@ -43,12 +43,12 @@ describe("dossier", () => {
     const { model, calls } = scriptedDevelopmentModel([{ excerpts: [{
       windowId: `ch${chapter.index}-d5-w1`, firstWords: "We watched him take the crown from",
       lastWords: "guests departed through the western door.", episodeTitle: episodes[2]!.title
-    }] }]);
+    }] }, { verdict: "supported", reason: "Passage and attribution match source context." }]);
 
     const result = await buildChapterDossier({ input: developmentInput, chapter, episodes, textModel: model, fetch: async () => ({ status: 200, text: "" }) });
 
     expect(result.documents).toHaveLength(5);
-    expect(calls).toHaveLength(1);
+    expect(calls).toHaveLength(2);
     const payload: { windows: Array<{ id: string; document: string; text: string }> } = JSON.parse(calls[0]!.messages[1]!.content);
     expect(payload.windows).toHaveLength(8);
     expect(new Set(payload.windows.map((window) => window.document))).toEqual(new Set(sources.map((source) => source.title)));

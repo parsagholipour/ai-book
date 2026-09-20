@@ -198,11 +198,11 @@ function normalizePageQualityReport(value: unknown): unknown {
 
   const groundingStatusFromInput = stringField(unwrapped, ["groundingStatus", "grounding_status"]);
   const groundedOk =
-    groundingStatusFromInput !== undefined
+    booleanField(unwrapped, ["groundedOk", "grounded_ok"]) === false ? false : groundingStatusFromInput !== undefined
       ? groundingStatusFromInput !== "failed"
       : booleanField(unwrapped, ["groundedOk", "grounded_ok"]) ?? true;
   const groundingStatus =
-    groundingStatusFromInput ?? (groundedOk ? "not_applicable" : "failed");
+    groundedOk ? groundingStatusFromInput ?? "not_applicable" : "failed";
   const unsupportedClaims = stringArrayField(unwrapped, ["unsupportedClaims", "unsupported_claims"]) ?? [];
 
   return {
@@ -214,6 +214,7 @@ function normalizePageQualityReport(value: unknown): unknown {
     notes,
     groundedOk,
     groundingStatus,
+    ...(unwrapped.groundingAvailability !== undefined ? { groundingAvailability: unwrapped.groundingAvailability } : {}),
     unsupportedClaims,
     ...(checks ? { checks } : {})
   };
@@ -320,6 +321,7 @@ export const pageQualityReportSchema = z.preprocess(
     notes: z.string().default(""),
     groundedOk: z.boolean().default(true),
     groundingStatus: z.enum(GROUNDING_STATUSES).optional(),
+    groundingAvailability: z.enum(GROUNDING_STATUSES).optional(),
     unsupportedClaims: z.array(z.string()).default([]),
     checks: z
       .object({

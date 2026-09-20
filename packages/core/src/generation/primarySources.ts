@@ -74,14 +74,61 @@ function str(value: unknown): string {
 // Two seconds between Wikimedia requests (about 30 a minute) and a twenty-
 // second pause after a 429, twice: 300 ms and one 3 s retry drew 194
 // refusals in five minutes from three books' dossiers.
-const throttle = { intervalMs: 2000, backoffMs: 20_000, retries: 2 };
-
-/** Tests set the cadence to nothing; production never calls this. */
-export function configurePrimarySourceThrottle(options: Partial<typeof throttle>): void {
-  Object.assign(throttle, options);
-}
+//
+// A catalogue search is waited for `searchTimeoutMs` and no longer, and a
+// catalogue that times out `outageAfterTimeouts` searches running is skipped
+// for `outageSkipMs`. The third 100-page Balanced book (2026-09-19) spent 249
+// of its 1,633 seconds fetching four documents for two excerpts, because every
+// episode search waited on the slowest host: Gutendex answered a 301 in
+// 10–19 s and the redirected request in 21–30 s while Wikisource took 0.5 s
+// and archive.org 1 s, so each search ran to the worker's 15 s request
+// timeout, twice. Ten seconds is twenty times the healthy hosts' latency,
+// and the third search onward pays nothing for a host that is down.
+const throttle = { intervalMs: 2000, backoffMs: 20_000, retries: 2, searchTimeoutMs: 10_000, outageAfterTimeouts: 2, outageSkipMs: 5 * 60_000 };
 const hostQueues = new Map<string, Promise<unknown>>();
 const hostLastAt = new Map<string, number>();
+/** Consecutive search timeouts per catalogue, and until when the catalogue is skipped. */
+const hostOutages = new Map<PrimarySourceHost, { timeouts: number; skipUntil: number }>();
+
+/** Tests set the cadence to nothing and forget any outage; production never calls this. */
+export function configurePrimarySourceThrottle(options: Partial<typeof throttle>): void {
+  Object.assign(throttle, options);
+  hostOutages.clear();
+}
+
+type HostSearchOutcome = "answered" | "timed_out" | "skipped" | "failed";
+
+/**
+ * One catalogue's search, bounded: `timed_out` after `searchTimeoutMs` (the
+ * request itself runs on to the fetcher's own timeout and its answer is
+ * dropped), `skipped` while the catalogue is in an outage, `failed` on a
+ * thrown error. The bound covers a throttled host's queue wait too, which is
+ * at most two other chapters' requests ahead of it: three chapter dossiers
+ * build at once, two seconds apart.
+ */
+async function boundedHostSearch(
+  host: PrimarySourceHost, run: () => Promise<PrimarySourceCandidate[]>
+): Promise<{ host: PrimarySourceHost; outcome: HostSearchOutcome; candidates: PrimarySourceCandidate[]; ms: number; error?: unknown }> {
+  const started = Date.now();
+  const outage = hostOutages.get(host);
+  if (outage && outage.skipUntil > started) return { host, outcome: "skipped", candidates: [], ms: 0 };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<"timed_out">((resolve) => { timer = setTimeout(() => resolve("timed_out"), throttle.searchTimeoutMs); });
+  try {
+    const result = await Promise.race([run(), timeout]);
+    if (result === "timed_out") {
+      const timeouts = (outage?.timeouts ?? 0) + 1;
+      hostOutages.set(host, { timeouts, skipUntil: timeouts >= throttle.outageAfterTimeouts ? Date.now() + throttle.outageSkipMs : 0 });
+      return { host, outcome: "timed_out", candidates: [], ms: Date.now() - started };
+    }
+    hostOutages.delete(host);
+    return { host, outcome: "answered", candidates: result, ms: Date.now() - started };
+  } catch (error) {
+    return { host, outcome: "failed", candidates: [], ms: Date.now() - started, error };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function hostOf(url: string): string {
   try {
@@ -155,7 +202,9 @@ export async function searchWikisource(query: string, options: { fetch: PrimaryS
 }
 
 export async function searchGutenberg(query: string, options: { fetch: PrimarySourceFetch; language: string; limit: number }): Promise<PrimarySourceCandidate[]> {
-  const url = `https://gutendex.com/books?search=${encodeURIComponent(query)}&languages=${gutendexLanguage(options.language)}`;
+  // `/books/` with the slash: without it Gutendex answers a 301 to the slashed
+  // address, which cost a second request — and a second 10–19 s — per search.
+  const url = `https://gutendex.com/books/?search=${encodeURIComponent(query)}&languages=${gutendexLanguage(options.language)}`;
   const json = record(await fetchJson(options.fetch, url));
   const results = (json?.results as unknown[] | undefined) ?? [];
   return results.slice(0, options.limit).flatMap((entry) => {
@@ -217,31 +266,49 @@ export async function searchArchive(query: string, options: { fetch: PrimarySour
   return candidates;
 }
 
-/** All three hosts for one query, deduplicated by text URL, Wikisource first (it holds documents, the others hold books). */
+/**
+ * All three hosts for one query, deduplicated by text URL, Wikisource first (it holds documents,
+ * the others hold books). Each catalogue is waited for `searchTimeoutMs` at most; web discovery
+ * is a model call with its own budget and is waited for whole. `log` receives one `search`
+ * event per query with every host's outcome and latency.
+ */
 export async function searchPrimarySources(
   query: string,
-  options: { fetch: PrimarySourceFetch; language: string; limit?: number | undefined; search?: PrimarySourceSearch | undefined }
+  options: {
+    fetch: PrimarySourceFetch; language: string; limit?: number | undefined; search?: PrimarySourceSearch | undefined;
+    log?: ((event: string, detail: Record<string, unknown>) => void) | undefined;
+  }
 ): Promise<PrimarySourceCandidate[]> {
   const limit = options.limit ?? 3;
-  const settled = await Promise.allSettled([
-    ...(options.search ? [discoverSourceDocuments(query, options.search, limit)] : []),
-    searchWikisource(query, { fetch: options.fetch, language: options.language, limit }),
-    searchGutenberg(query, { fetch: options.fetch, language: options.language, limit }),
-    searchArchive(query, { fetch: options.fetch, limit })
-  ]);
+  const { fetch, language } = options;
+  const searches: Array<() => ReturnType<typeof boundedHostSearch>> = [
+    ...(options.search ? [async () => {
+      const started = Date.now();
+      try { return { host: "web" as const, outcome: "answered" as const, candidates: await discoverSourceDocuments(query, options.search!, limit), ms: Date.now() - started }; }
+      catch (error) { return { host: "web" as const, outcome: "failed" as const, candidates: [], ms: Date.now() - started, error }; }
+    }] : []),
+    () => boundedHostSearch("wikisource", () => searchWikisource(query, { fetch, language, limit })),
+    () => boundedHostSearch("gutenberg", () => searchGutenberg(query, { fetch, language, limit })),
+    () => boundedHostSearch("archive", () => searchArchive(query, { fetch, limit }))
+  ];
+  const results = await Promise.all(searches.map((search) => search()));
   const seen = new Set<string>();
   const merged: PrimarySourceCandidate[] = [];
-  for (const result of settled) {
-    if (result.status !== "fulfilled") {
-      if (isStopOrAbortError(result.reason)) throw result.reason;
-      continue;
-    }
-    for (const candidate of result.value) {
+  for (const result of results) {
+    if (result.outcome === "failed" && isStopOrAbortError(result.error)) throw result.error;
+    for (const candidate of result.candidates) {
       if (seen.has(candidate.textUrl)) continue;
       seen.add(candidate.textUrl);
       merged.push(candidate);
     }
   }
+  options.log?.("search", {
+    query,
+    hosts: Object.fromEntries(results.map((result) => [result.host, {
+      outcome: result.outcome, ms: result.ms, candidates: result.candidates.length,
+      ...(result.error ? { error: result.error instanceof Error ? result.error.message : String(result.error) } : {})
+    }]))
+  });
   return merged;
 }
 

@@ -42,6 +42,7 @@ import {
   architectBook,
   chapterSeams,
   cutChapter,
+  citedChapters,
   planBookArc,
   rewriteSeams,
   type BookArc,
@@ -64,6 +65,7 @@ import { finalizePendingPages } from "./composedChaptersFinalize.js";
 import { runComposedDevelopmentalEdit } from "./composedDevelopmentalEdit.js";
 import { validateComposedChapterFigures } from "./composedFigures.js";
 import { repairChapterEvidence } from "./composedEvidenceRepair.js";
+import { repairChapterArithmetic } from "./composedArithmeticRepair.js";
 import type { RunLogger } from "../providers/runLogging.js";
 import { prisma } from "@book-maker/db";
 import { maybeEnqueueCompile, maybeEnqueueCover } from "../runtime/dispatch.js";
@@ -307,6 +309,9 @@ export async function generateBookComposedChapters(options: {
         chapter: setup.chapter,
         startPage: setup.startPage,
         endPage: setup.endPage,
+        // The words the writer will be asked for, so the planner counts
+        // sections the writer can fill rather than essays it delivers half of.
+        words: chapterWordBudget(input, setup.endPage - setup.startPage + 1).target,
         ...(arcChapter ? { kind: arcChapter.kind } : {}),
         ...(arcChapter?.job.does ? { job: arcChapter.job.does } : {})
       };
@@ -410,7 +415,6 @@ export async function generateBookComposedChapters(options: {
       researchNotes,
       storyStateLines: formatStoryStateLines(storyState),
       textModel,
-      decisions: providers.decisions,
       semanticAcceptance: quality.enabled("chapterEditAcceptance"),
       contract,
       ...(materialFor(setup.chapter.index) ? { material: materialFor(setup.chapter.index) } : {})
@@ -488,6 +492,19 @@ export async function generateBookComposedChapters(options: {
         await runLog?.append("generation.composed_chapters.evidence_unresolved", { projectId, chapterIndex: setup.chapter.index, ...evidence });
       }
     }
+    // The arithmetic check: every fully numeric statement in the chapter's math is redone, and a
+    // wrong one goes back to the editor as a factual correction whose evidence is the computation.
+    const arithmeticMaxWords = Math.ceil(proseWordCount(markdown) * 1.1);
+    const arithmetic = await repairChapterArithmetic({
+      markdown,
+      edit: async (text, correction) => (await editChapter({ ...(await composeOptionsFor(setup, drafts)), markdown: text, allowExtension: false, degeneracyMaxWords: arithmeticMaxWords, readerNotes: correction.instructions, factualCorrection: { ...correction, evidence: [] } })).markdown,
+      degenerate: (text) => chapterDegeneracy(text, { maxWords: arithmeticMaxWords, language: input.language }).degenerate
+    });
+    if (arithmetic) {
+      markdown = arithmetic.markdown;
+      await runLog?.append("generation.composed_chapters.arithmetic", { projectId, chapterIndex: setup.chapter.index, findings: arithmetic.findings, repairs: arithmetic.repairs, unresolved: arithmetic.unresolved });
+      if (arithmetic.unresolved.length) console.warn("Chapter arithmetic findings remain after repair", { event: "generation.composed_chapters.arithmetic_unresolved", projectId, chapterIndex: setup.chapter.index, unresolved: arithmetic.unresolved });
+    }
     // The quote guard: every quoted span of eight words or more is checked
     // against the chapter's dossier; a miss hung on a dossier document loses
     // its marks, every other miss is counted and left (quoteProvenance.ts).
@@ -537,7 +554,8 @@ export async function generateBookComposedChapters(options: {
         : {}),
       ...(quotes ? { quotes } : {}),
       ...(epigraph ? { epigraph } : {}),
-      ...(evidence ? { evidence } : {})
+      ...(evidence ? { evidence } : {}),
+      ...(arithmetic ? { arithmetic: { findings: arithmetic.findings, repairs: arithmetic.repairs, unresolved: arithmetic.unresolved } } : {})
     };
     reports.set(setup.chapter.index, report);
     await stageComposedChapter({ projectId, chapterId, setup, composition: compositionFor(setup), pages, report, replace: false });
@@ -750,6 +768,23 @@ export async function generateBookComposedChapters(options: {
         measurements: notesForDraft(markdown)
       };
     });
+    const cutSurroundingChapters = (setup: ChapterSetup, notes: readonly string[]) => {
+      const chapters = setups.flatMap((other) => {
+        const text = finalText.get(other.chapter.index);
+        return text ? [{ index: other.chapter.index, title: other.chapter.title, markdown: figureStandInMarkdown(text) }] : [];
+      });
+      const cited = citedChapters(notes, chapters, { language: input.language, except: setup.chapter.index });
+      const surrounding = chapters.filter((other) => other.index !== setup.chapter.index && (cited === undefined || cited.includes(other.index)));
+      console.warn("Cut acceptance context", {
+        event: "generation.composed_chapters.cut_context",
+        projectId,
+        chapterIndex: setup.chapter.index,
+        cited: cited ?? "unrecognised",
+        surroundingChapters: surrounding.map((other) => other.index),
+        surroundingBytes: surrounding.reduce((sum, other) => sum + Buffer.byteLength(other.markdown, "utf8"), 0)
+      });
+      return surrounding;
+    };
     const read = await readManuscript({ input, plan, stance, ...(arc ? { arc } : {}), chapters: chaptersForRead, textModel });
     if (read.skipped) {
       console.warn("Manuscript read skipped", { event: "generation.composed_chapters.read_skipped", projectId, reason: read.skipped });
@@ -791,15 +826,18 @@ export async function generateBookComposedChapters(options: {
       const { prose: currentProse, fences: currentFences } = stripFigureFences(current);
       // The cut may spend only the room the chapter has over its page floor.
       const cutBudget = chapterWordBudget(input, setup.endPage - setup.startPage + 1);
+      // The acceptance reviewer judges a cut against the retained passage the note names, so it
+      // is shown the chapters the notes cite and not the rest of the book: run 3 of the 100-page
+      // Balanced evaluation sent all fourteen other chapters (270–288 KB) to each of eight cut
+      // reviews, and every retained passage the reviewer cited lay in the chapter being cut or in
+      // the one the note named. Notes that cite nothing recognisable keep the whole book in view.
+      const surroundingChapters = readCuts ? cutSurroundingChapters(setup, entry.notes) : [];
       const edited: EditedChapterText = readCuts
         ? await cutChapter({
             ...(await composeOptionsFor(setup, new Map())),
             markdown: currentProse,
             notes: entry.notes,
-            surroundingChapters: setups.filter((other) => other.chapter.index !== setup.chapter.index).flatMap((other) => {
-              const text = finalText.get(other.chapter.index);
-              return text ? [{ index: other.chapter.index, title: other.chapter.title, markdown: figureStandInMarkdown(text) }] : [];
-            }),
+            surroundingChapters,
             bookNotes: read.bookNotes,
             maxRemovableWords: Math.max(0, countReadableWords(currentProse) - cutBudget.min)
           })

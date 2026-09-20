@@ -90,10 +90,11 @@ export function createLoggedProviders(
   const { generationJobId, projectId } = job.data;
   const textModel = loggedTextModel(input);
   const liveTextModel = liveGenerationTextModel(providers.text, input, logger);
-  const text = withProjectSources(new LoggingTextModelAdapter(liveTextModel, logger, generationJobId, projectId, textModel), input, projectId, providers.embedding);
+  const embedding = new LoggingEmbeddingAdapter(providers.embedding, logger, generationJobId);
+  const text = withProjectSources(new LoggingTextModelAdapter(liveTextModel, logger, generationJobId, projectId, textModel), input, projectId, embedding);
   return {
     text,
-    decisions: createLoggedDecisions(job, input, providers.embedding),
+    decisions: createLoggedDecisions(job, input, embedding),
     research: new LoggingResearchAdapter(providers.research, logger, generationJobId),
     // Outside the provider fallback, so only a request both providers refused
     // reaches the rewrite.
@@ -102,7 +103,7 @@ export function createLoggedProviders(
       text,
       logger
     }),
-    embedding: new LoggingEmbeddingAdapter(providers.embedding, logger, generationJobId),
+    embedding,
     speech: new LoggingSpeechAdapter(providers.speech, logger, generationJobId, projectId)
   };
 }

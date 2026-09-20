@@ -1,4 +1,3 @@
-import type { DecisionEvaluationRequest, DecisionEvaluationResult } from "./decisionEvaluation.js";
 import type { Usage } from "./types.js";
 
 /** A finite choice is a separate capability from producing prose. */
@@ -25,7 +24,6 @@ export type DecisionResult = {
 
 export interface DecisionModelAdapter {
   choose(request: DecisionRequest): Promise<DecisionResult>;
-  evaluate?(request: DecisionEvaluationRequest): Promise<DecisionEvaluationResult>;
 }
 
 /** Resolve before a caller's terminal fallback; a settings outage is not a verdict. */
@@ -36,6 +34,10 @@ export interface DecisionModelRoute {
 }
 
 export type DecisionOutcome = {
+  comparisonId?: string | undefined;
+  chapterIndex?: number | undefined;
+  operation?: string | undefined;
+  contextBytes?: number | undefined;
   purpose: string;
   version: string;
   pageIndex?: number | undefined;
@@ -43,14 +45,6 @@ export type DecisionOutcome = {
   probabilities?: Record<string, number> | undefined;
   escalationReason?: string | undefined;
   rewriteAvoided: boolean;
-  reviewAvoided?: boolean | undefined;
-  wouldAvoidReview?: boolean | undefined;
-  mode?: "off" | "shadow" | "pass" | undefined;
-  answers?: DecisionEvaluationResult["answers"] | undefined;
-  screenDurationMs?: number | undefined;
-  totalDurationMs?: number | undefined;
-  diagnosticApproved?: boolean | undefined;
-  disagreement?: boolean | undefined;
   /** A style screen skipped the diagnostic audit, not the ordinary page review. */
   auditAvoided?: boolean | undefined;
   verificationAvoided?: boolean | undefined;
@@ -87,16 +81,6 @@ export function validateDecisionChoice(request: DecisionRequest, result: Decisio
 }
 
 export class FakeDecisionAdapter implements DecisionModelAdapter {
-  async evaluate(request: DecisionEvaluationRequest): Promise<DecisionEvaluationResult> {
-    const { assertDecisionEvaluationRequest } = await import("./decisionEvaluation.js");
-    assertDecisionEvaluationRequest(request);
-    return { provider: "fake", model: "fake-decision", usage: { promptTokens: 0, outputTokens: 0 }, answers: Object.fromEntries(request.questions.map((question) => [question.id,
-      question.type === "choice" ? { type: "choice" as const, selectedOption: question.options[0]!.id, probabilities: Object.fromEntries(question.options.map((option, index) => [option.id, index === 0 ? 1 : 0])) }
-        : question.type === "boolean" ? { type: "boolean" as const, probability: 1 }
-        : { type: "score" as const, score: 0, probabilities: Object.fromEntries(question.levels.map((_, index) => [String(index), index === 0 ? 1 : 0])) }
-    ])) };
-  }
-
   async choose(request: DecisionRequest): Promise<DecisionResult> {
     assertDecisionRequest(request);
     return { selectedOption: request.options[0]!.id, provider: "fake", model: "fake-decision", usage: { promptTokens: 0, outputTokens: 0 } };

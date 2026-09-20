@@ -232,6 +232,7 @@ code in that area, however obvious the rule looks.
 - **A fence that cannot be read has a third answer, and it settles nothing.** → apps/worker/src/handlers/CLAUDE.md
 - **The hole set is a query, and the `LIMIT` is what the backoff protects.** → apps/worker/src/generation/CLAUDE.md + packages/db/CLAUDE.md
 - **A cancellation raised inside a tool escapes the tool loop; only a tool *failure* becomes a tool result.** → packages/core/src/adapters/CLAUDE.md
+- **A Jev attempt carries its own deadline, and the deadline firing is a 504, never a cancellation.** → packages/core/src/adapters/CLAUDE.md
 - **A page's independent loads fan out, and which failure comes back is decided rather than raced.** → apps/worker/src/handlers/CLAUDE.md
 - **Whether the writer tools run at all is decided by what this handler loaded, not by what the book is.** → apps/worker/src/handlers/CLAUDE.md
 - **An embedding write may degrade, never fail the page that produced it.** → apps/worker/src/generation/CLAUDE.md + packages/db/CLAUDE.md
@@ -279,6 +280,7 @@ code in that area, however obvious the rule looks.
 
 - **For every long book but a picture book the chapter is the unit of composition, and a page is where the typesetter cut.** → packages/core/src/generation/CLAUDE.md + apps/worker/src/generation/CLAUDE.md
 - **A composed chapter has one landing, and variety is a property of the form plan, checked before any prose exists.** → packages/core/src/generation/CLAUDE.md
+- **A chapter's length is a property of its plan — its budget, its sections and its page count — never of the number the writer is asked for.** → packages/core/src/generation/CLAUDE.md
 - **Nothing states page 1's opening contract in its own words: a prompt names an audience and gets the ban, the import exemption that silences it, and the hook fused to its payload key — or gets nothing.** → packages/core/src/generation/CLAUDE.md
 - **No best-of candidate samples hotter than the pass would have run at without candidates, and a band too narrow for the ladder compresses the step rather than widening the band.** → packages/core/src/generation/CLAUDE.md
 - **Page prompts take local style rules; distribution rules reach manuscript review only.** → packages/core/src/generation/CLAUDE.md
@@ -292,6 +294,7 @@ code in that area, however obvious the rule looks.
 - **Every rule about shape the writer or editor is shown is performed on schedule, and the blind panel names the performance; content assignments are the only lever that moved.** → packages/core/src/generation/CLAUDE.md
 - **The earlier plan contract is historical.** → packages/core/src/generation/CLAUDE.md
 - **A nonfiction scene needs a passage of the record, and a fresh plan rarely has one; telling it anyway was measured and reverted.** → packages/core/src/generation/CLAUDE.md
+- **A catalogue search is waited for ten seconds and no longer, and a catalogue that keeps timing out is skipped, because a dossier's clock is its slowest host's.** → packages/core/src/generation/CLAUDE.md
 - **Names and numbers do not prove that an edit preserves meaning.** → packages/core/src/generation/CLAUDE.md
 - **A composed draft that is not prose is recomposed once and then fails the job; it is never edited, paginated and published.** → packages/core/src/generation/CLAUDE.md
 - **The manuscript read returns notes, so a read that fails is a skipped read, never a failed book; and a provider's input filter refusing a chapter is a fallback, never a failed book.** → packages/core/src/generation/CLAUDE.md
@@ -300,6 +303,10 @@ code in that area, however obvious the rule looks.
 - **A developed plan's thesis is its answer by construction, never a string the model is asked to copy.** → packages/core/src/generation/CLAUDE.md
 - **The deterministic contract gates a developed plan; the model review's objections are recorded, and a synthesis chapter inherits its prerequisites' cases.** → packages/core/src/generation/CLAUDE.md
 - **A composed chapter's unsupported case claims are repaired twice, then recorded and flagged for review; a prose-review quote that resolves to nothing is re-asked once, then dropped.** → apps/worker/src/generation/CLAUDE.md + packages/core/src/generation/CLAUDE.md
+- **The chapter-edit gate is the contextual reviewer alone; the decision model that ran ahead of it was measured across four books and removed.** → packages/core/src/generation/CLAUDE.md
+- **Jev is a screen that skips a paid call on a confident pass, kept only where a measured pass has skipped one; a screen whose pass never accepts, or that runs beside the call it should replace, is removed rather than tuned.** → packages/core/src/adapters/CLAUDE.md
+- **A chapter's arithmetic is redone before it is judged, and a wrong number is a factual correction whose evidence is the computation.** → packages/core/src/generation/CLAUDE.md
+- **A composed chapter's wrong arithmetic is repaired through the evidence loop, then recorded and flagged for review like an unsupported claim.** → apps/worker/src/generation/CLAUDE.md
 
 ### Characters, covers and illustrations
 
@@ -372,6 +379,7 @@ code in that area, however obvious the rule looks.
 - **A compile publishes by claiming the revision it compiled, and it renders somewhere else until it has.** → apps/worker/src/generation/CLAUDE.md + packages/core/src/generation/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
 - **The export barrier blocks the revision it names, not every revision, and only an expired publication lease lets recovery retire it.** → apps/worker/src/generation/CLAUDE.md + apps/api/src/routes/CLAUDE.md
 - **A book only earns the word "Chapter" by being long enough to need it.** → packages/core/src/generation/CLAUDE.md
+- **A book composed by chapters is exported in the chapters it was composed in; the model chapterization is for the per-page strategies.** → packages/core/src/generation/CLAUDE.md
 - **The page map is measured from the published PDF's own bytes, and measuring must move nothing.** → packages/core/src/generation/CLAUDE.md
 - **A publication may replace the page map; it may never refuse to publish over it.** → apps/worker/src/generation/CLAUDE.md
 - **A compile that stands down leaves no verdict about prose it no longer speaks for.** → apps/worker/src/handlers/CLAUDE.md

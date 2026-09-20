@@ -294,6 +294,59 @@ export function createDeterministicReaderChapters(pagesInput: MarkdownPage[]): R
   return chapters;
 }
 
+/**
+ * A page as the compile loads it, with the chapter row it was cut from. A row always has a title
+ * and a summary; a caller that carries only the index gets both derived from the pages.
+ */
+export type ComposedChapterPage = MarkdownPage & {
+  chapter?: { index: number; title?: string | undefined; summary?: string | undefined } | null | undefined;
+};
+
+/**
+ * The reader chapters of a book composed by chapters: its own.
+ *
+ * For every long book but a picture book the chapter is the unit of
+ * composition — planned with a title, written as one piece to that title, its
+ * landing on its last page — and every page carries the row it was cut from.
+ * The export used to ask a model for a second structure anyway: at most twelve
+ * reader chapters, guessed from 700-character page excerpts. On the 100-page
+ * Balanced books of 2026-09-19 that printed twelve invented titles over
+ * fifteen composed chapters, a "Chapter 3" heading two pages into the composed
+ * chapter 3, and chapters 5–6 and 14–15 merged so a landing sat mid-chapter,
+ * for a charged call on every content recompile. The rows are the structure.
+ *
+ * `undefined` when the pages do not carry one — a page without a chapter, a
+ * chapter whose pages are not one contiguous run, fewer than two chapters — so
+ * the caller falls back to the model grouping.
+ */
+export function readerChaptersFromComposedChapters(pagesInput: ComposedChapterPage[]): ReaderChapter[] | undefined {
+  const pages = [...pagesInput]
+    .filter((page) => Number.isInteger(page.index) && page.index > 0)
+    .sort((a, b) => a.index - b.index);
+  if (pages.length === 0 || pages.some((page) => !page.chapter)) {
+    return undefined;
+  }
+  const runs: Array<{ chapter: NonNullable<ComposedChapterPage["chapter"]>; pages: MarkdownPage[] }> = [];
+  for (const page of pages) {
+    const last = runs[runs.length - 1];
+    if (last && last.chapter.index === page.chapter!.index) {
+      last.pages.push(page);
+    } else {
+      runs.push({ chapter: page.chapter!, pages: [page] });
+    }
+  }
+  if (runs.length < 2 || new Set(runs.map((run) => run.chapter.index)).size !== runs.length) {
+    return undefined;
+  }
+  return runs.map((run, position) => ({
+    index: position + 1,
+    title: sanitizeReaderChapterTitle(run.chapter.title ?? "", position + 1, run.pages),
+    summary: sanitizeReaderChapterSummary(run.chapter.summary ?? "", run.pages),
+    startPageIndex: run.pages[0]!.index,
+    endPageIndex: run.pages[run.pages.length - 1]!.index
+  }));
+}
+
 function shouldAttemptReaderChapterization(pages: MarkdownPage[]): boolean {
   if (pages.length < MIN_READER_CHAPTER_PAGES) {
     return false;

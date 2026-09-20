@@ -83,6 +83,47 @@ including streamed JSON and tool calls; adapters with no HTTP client ignore it.
   still written to the run log first, because a stop is not a reason to lose the record that a
   fallback was reached at all.
 
+- **A Jev attempt carries its own deadline, and the deadline firing is a 504, never a
+  cancellation.** `JevDecisionAdapter.evaluate` passes the SDK `AbortSignal.any([caller, deadline])`
+  with the deadline at `JEV_ATTEMPT_TIMEOUT_MS` (20 s). Jev answers in 0.5–1.5 s and the slowest
+  success across three live evaluations took 6.6 s; the retry and the fallback stage in
+  `FallbackDecisionAdapter.choose` are the recovery for an attempt that does not answer, and they
+  can only recover an attempt that ends. Without the deadline one intent question in the second
+  100-page book (2026-09-19) sat on the gateway's own "Request timed out" for 240 s, and chapter
+  12's acceptance gate (since removed, see below) — a call whose whole point is to be fast — waited
+  four minutes for a verdict the contextual reviewer then gave in three seconds. The order of the `catch` is the invariant: the
+  caller's `signal.aborted` is read first and keeps its identity (the rule above), *then* the
+  deadline's, which becomes `ProviderHttpError { status: 504 }` — recoverable by status, so
+  `withRecoverableNetworkRetry` retries it and the router falls back — and only then the rest.
+  Reading the deadline through `isCancellationError` would have promoted a stalled gateway to a
+  cancelled gate, and the router rethrows a cancellation rather than falling back.
+
+- **Jev is a screen that skips a paid call on a confident pass, kept only where a measured pass has
+  skipped one; a screen whose pass never accepts, or that runs beside the call it should replace,
+  is removed rather than tuned.** Every Jev path is `passesDecisionScreen` or `decideFromCandidates`
+  ahead of a text-model call, and its whole value is the calls it makes unnecessary: a confident
+  `clean`/`supported`/`legitimate_use` skips the audit, the verification, the rewrite. Four Balanced
+  evaluations (2026-09-19, `docs/jev-balanced-*.md`) measured each path by that yardstick and four
+  were removed. The chapter-edit acceptance screen: 168 attempts on 69 comparisons, 87 failed (81 of
+  them gateway 503s), one review saved, five reviewer-confirmed regressions passed, two wrong
+  vetoes (see `generation/CLAUDE.md`). The dossier provenance screen: five answers (three live,
+  two controls), never a confident `supported` — 0.56 twice on exact quotations, `defect` at 0.73
+  on a verbatim passage the review then accepted — so every excerpt was reviewed anyway. Cover
+  design selection: a fifty-way choice spreads the mass (0.39–0.48 on the three that escalated),
+  the 0.70 gate cleared once in four books, and the fallback pick chose the same design every
+  time. The page-review screen: seven questions per page in a `shadow` mode that ran the review
+  regardless, five attempts, two provider failures, a run-log outcome nobody read — a cost on every per-page book by construction, and the `pass` mode that could have paid
+  was exactly the accept-alone pattern the chapter gate had just shown to miss regressions. With
+  it went the multi-question `evaluate` on `DecisionModelAdapter`, its fallback routing, its
+  source-context preparation and its logging; `JevDecisionAdapter.evaluate` remains as the wire
+  primitive `choose` is built on. What stays is measured: the style screen cleared three of four
+  pages and skipped three audits, the smart-unslop confirm separated injected slop (1.00) from
+  requested parallelism (0.97) and skipped a rewrite, and the changed-page grounding screen flagged
+  every injected defect at 0.97–1.00 and skipped the verification on both clean changes it was shown. The best-of
+  judges (`chapterJudge.ts`, `bestOf.ts`) take a decision route too and were not exercised by these
+  runs; they replace a text call rather than adding to one, so they are unmeasured, not unuseful.
+  The test for any new screen is the same: show the paid call it skipped.
+
 - **A picture that never arrived is not a picture that was refused, and only the second is
   permanent.** `ImageContentRefusedError` is the one failure nothing retries: it skips
   `withRecoverableNetworkRetry`, `isRecoverableNetworkError` calls it unrecoverable, and

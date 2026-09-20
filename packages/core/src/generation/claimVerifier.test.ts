@@ -48,4 +48,27 @@ describe("verifyPageClaims system prompt", () => {
     expect(system).toContain("When original text is supplied");
     expect(system).toContain("concrete correction");
   });
+
+  it("identifies the changed page as the sole candidate, separate from before-edit context", async () => {
+    const { textModel, generate } = captureSystemPrompt();
+    const original = { title: "The universal day", markdown: "The conference preserved local time." };
+    const candidate = {
+      title: original.title,
+      markdown: `${original.markdown}\n\nThe Greenwich meridian was chosen unanimously, by 25 votes in favor and none against or abstaining.`
+    };
+    await verifyPageClaims({
+      textModel, pageIndex: 3, original, ...candidate,
+      researchNotes: ["Resolution II: 22 votes in favor, 1 against, 2 abstentions."],
+      userRequest: "Make the ending clearer."
+    });
+    const messages = generate.mock.calls[0]![0].messages;
+    const payload = JSON.parse(messages[1]!.content);
+    expect(payload.candidate).toEqual(candidate);
+    expect(payload.original).toEqual(original);
+    expect(payload).not.toHaveProperty("markdown");
+    expect(Object.keys(payload).at(-1)).toBe("candidate");
+    expect(messages[0]!.content).toContain("Only candidate.title and candidate.markdown");
+    expect(messages[0]!.content).toContain("final sentence");
+    expect(messages[0]!.content).toContain("Each unsupportedClaims entry must be one string");
+  });
 });

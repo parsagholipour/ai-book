@@ -179,6 +179,8 @@ export type ComposedChapterReport = {
   disclaimers?: { found: number; removed: number; words: number } | undefined;
   /** Whether an epigraph from the dossier was set at the chapter's head. */
   epigraph?: boolean | undefined;
+  /** The arithmetic check: wrong numeric statements found, repair edits spent, and the statements still wrong. */
+  arithmetic?: { findings: number; repairs: number; unresolved: Array<{ quote: string; reason: string }> } | undefined;
   /** The prose-evidence review: findings on the composed chapter, targeted repairs spent, what still stands, and findings dropped as unlocatable. */
   evidence?: { findings: number; repairs: number; unresolved: Array<{ quote: string; reason: string }>; dropped: number } | undefined;
 };

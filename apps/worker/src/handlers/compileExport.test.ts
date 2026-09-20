@@ -442,6 +442,31 @@ describe("compileExport reader chapters", () => {
     expect(mocks.generateJsonWithRetry).not.toHaveBeenCalled();
   });
 
+  it("prints a composed book in the chapters it was composed in, with no chapterization call", async () => {
+    // The third 100-page Balanced book: fifteen composed chapters, and the export asked a model
+    // for twelve of its own, cutting composed chapter 3 two pages in and merging 5–6 and 14–15.
+    const composed = [
+      { index: 1, title: "The Key That Had to Travel", summary: "Sharing a secret before speaking." },
+      { index: 2, title: "Puzzles Before the Breakthrough", summary: "Merkle's puzzles." },
+      { index: 3, title: "The Public Door", summary: "Diffie–Hellman and RSA." }
+    ];
+    const composedPages = pages.map((page) => ({ ...page, chapter: composed[page.index <= 5 ? 0 : page.index <= 7 ? 1 : 2] }));
+    mocks.prisma.project.findUnique.mockResolvedValue({ ...projectRecord(), pages: composedPages });
+    mocks.strategy.executionMode = "composed-chapters";
+    try {
+      await compileExport(job({ contentRevision: 4 }));
+    } finally {
+      mocks.strategy.executionMode = "whole-book";
+    }
+
+    expect(mocks.createReaderChaptersForExport).not.toHaveBeenCalled();
+    expect(compiledChapters()).toEqual([
+      { index: 1, title: "The Key That Had to Travel", summary: "Sharing a secret before speaking.", startPageIndex: 1, endPageIndex: 5 },
+      { index: 2, title: "Puzzles Before the Breakthrough", summary: "Merkle's puzzles.", startPageIndex: 6, endPageIndex: 7 },
+      { index: 3, title: "The Public Door", summary: "Diffie–Hellman and RSA.", startPageIndex: 8, endPageIndex: 12 }
+    ]);
+  });
+
   it("still calls the model for a charged compile that misses the cache", async () => {
     await compileExport(job({ contentRevision: 4 }));
 

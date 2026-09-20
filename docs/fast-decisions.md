@@ -1,11 +1,14 @@
 # Fast decisions
 
-Quality → Model routing → **Fast decisions** optionally selects page drafts,
-chapter drafts, and catalog covers, screens style audits, and confirms Smart Unslop candidates through
-`DecisionModelAdapter.choose`.
+Quality → Model routing → **Fast decisions** optionally selects page drafts and
+chapter drafts, screens style audits and changed-page grounding, and confirms Smart Unslop
+candidates through `DecisionModelAdapter.choose`.
 Leave it on **Use existing judgment routes** to retain the original calls.
 Chapter candidate count remains one; this route does not enable more drafting.
-Model page review additionally supports a batched shadow/pass route; see [Jev model page review](page-review-jev.md). Other writing, creation chat, summaries, and critiques are unchanged.
+Other writing, creation chat, summaries, and critiques are unchanged. Four further
+screens — cover selection, chapter-edit acceptance, dossier provenance and the batched
+page review — were measured over four Balanced books and removed; see
+[Removed screens](#removed-screens-2026-09-19).
 
 Set `VERCEL_AI_GATEWAY_API_KEY` in the API and worker environments, restart them,
 then select **Jev · TypeSafe** and an available **Fast decisions fallback** LLM.
@@ -22,7 +25,7 @@ not a written rationale. LLM choices use the same instructions, candidates, and
 source evidence. Large inputs are sent intact; context-limit errors escalate.
 
 A valid winning-option probability of at least **0.70** accepts Jev's answer.
-On page, chapter, and cover selection — screens that do not set
+On page and chapter selection — screens that do not set
 `escalationPolicy: caller` — lower probabilities, invalid distributions or
 choices, missing credentials, and provider errors use the configured LLM
 fallback stage. Confirm-smart-unslop uses caller escalation instead; see
@@ -34,7 +37,7 @@ fallback. Settings read failures are visible and cannot switch to compiled defau
 
 The route is resolved once per logical selection, including both chapter orders.
 Each attempt gets a run-log `decision.choose.attempt` event and one provider-cost
-row, including — on page, chapter, and cover selection — an uncertain Jev call
+row, including — on page and chapter selection — an uncertain Jev call
 followed by an LLM call. Events retain usage,
 latency, probabilities, choice, and escalation reason. Failed calls with no usage
 remain unpriced. Jev costs $0.042 per million input tokens and zero for output;
@@ -61,8 +64,7 @@ No usable Jev answers were obtained in that run. Inspection of the
 2026-09-19 confirmed five HTTP 403 responses followed by four HTTP 429 responses;
 the dashboard did not expose the upstream error bodies needed to explain the 403s.
 The later batched page-review smoke on 2026-09-19 returned HTTP 200 for all four
-Jev calls. Its diagnostic escalations describe review policy, not provider failures;
-see [measured results](page-review-jev.md#measured-results-and-remaining-evaluation-gaps).
+Jev calls (that screen has since been removed; see below).
 Neither smoke nor automated tests establish production model quality.
 
 ## Style audit screening
@@ -133,8 +135,30 @@ References: [Vercel announcement](https://vercel.com/changelog/typesafe-ai-jev-n
 [evaluation result interface](https://github.com/vercel/ai/blob/main/packages/ai/src/evaluate/evaluation-result.ts),
 [TypeSafe model pricing](https://docs.typesafe.ai/models).
 
-## Batched model page review
+## Removed screens (2026-09-19)
 
-`BOOK_MAKER_PAGE_REVIEW_DECISIONS` defaults to `shadow` when Fast decisions resolves Jev.
-`pass` can skip diagnostic page review only on a supported clean result in every dimension.
-See [integration, unscored keeper policy, measurements and evaluation gaps](page-review-jev.md).
+A Jev screen earns its place by the paid call a confident pass lets the pipeline skip.
+Four Balanced evaluations — a 50-page book and three 100-page books, reported in
+[jev-balanced-50-evaluation-2026-09-19.md](jev-balanced-50-evaluation-2026-09-19.md) and
+[jev-balanced-100-evaluation-2026-09-19.md](jev-balanced-100-evaluation-2026-09-19.md) —
+measured every screen by that yardstick, and these four were removed rather than tuned:
+
+- **Chapter-edit acceptance** (`accept-chapter-edit-meaning`, `accept-chapter-edit-intent`):
+  168 attempts on 69 comparisons, 87 failed (81 gateway 503s), one review saved; the meaning
+  screen passed every edit the reviewer went on to retain, and its only two vetoes were
+  on a correct arithmetic repair. `acceptsChapterEdit` is now the contextual reviewer alone.
+- **Dossier provenance** (`screen-dossier-provenance`): five excerpts, never a confident
+  `supported`, so every excerpt paid the text review anyway. `reviewDossierProvenance`
+  now sends every excerpt to `review-dossier-provenance`.
+- **Cover design selection**: a fifty-way choice spreads the probability mass; the 0.70 gate
+  cleared once in four books, and the fallback chose the same design. `selectCoverDesign`
+  is a single `select-cover-design` text call.
+- **Batched model page review** (`screen-page-review`, `BOOK_MAKER_PAGE_REVIEW_DECISIONS`):
+  seven questions per page in a `shadow` mode that ran the full review regardless, so it was
+  cost on every per-page book with no consumer of its answers. The screen, the multi-question
+  `evaluate` capability on `DecisionModelAdapter`, its fallback routing and its logging are gone;
+  `JevDecisionAdapter.evaluate` remains as the wire primitive `choose` is built on.
+  [page-review-jev.md](page-review-jev.md) describes the removed design.
+
+The purposes of the removed screens survive only in run logs and in the admin cost
+attribution for books generated before the change.

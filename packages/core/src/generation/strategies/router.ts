@@ -1,5 +1,6 @@
 import { BOOK_CATEGORIES, type BookCategory } from "../../categories.js";
 import type { CreateProjectInput } from "../../schemas/book.js";
+import { composesByChapter } from "../compositionUnit.js";
 import {
   CHAPTERED_SEQUENTIAL_STRATEGY_ID,
   COMPOSED_CHAPTERS_RESEARCH_STRATEGY_ID,
@@ -53,7 +54,7 @@ export function autoStrategyIdForInput(input: CreateProjectInput): BookGeneratio
   // The chapter is the unit of composition for every long book but a picture
   // book, whose pages are real units with a picture each. See
   // `.scratch/composed-chapters/spec.md` for the measurements behind this.
-  if (input.category !== "KIDS") {
+  if (composesByChapter(input)) {
     return factual ? COMPOSED_CHAPTERS_RESEARCH_STRATEGY_ID : COMPOSED_CHAPTERS_STRATEGY_ID;
   }
   if (pages <= 40) {

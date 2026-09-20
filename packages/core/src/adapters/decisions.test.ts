@@ -14,8 +14,8 @@ describe("Jev Gateway adapter", () => {
 
   it("sends an evaluation with the explicit key, context, named options and cancellation", async () => {
     const fetch = gatewayFetch(response());
-    const signal = new AbortController().signal;
-    const result = await new JevDecisionAdapter("test-gateway-key", fetch).choose({ ...request, signal });
+    const controller = new AbortController();
+    const result = await new JevDecisionAdapter("test-gateway-key", fetch).choose({ ...request, signal: controller.signal });
     expect(result).toEqual({ ...answer(), probabilities: { a: 0.8, b: 0.2 } });
     expect(result).not.toHaveProperty("explanation");
     expect(fetch).toHaveBeenCalledTimes(1);
@@ -23,7 +23,10 @@ describe("Jev Gateway adapter", () => {
     expect(String(url)).toContain("/evaluation-model");
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer test-gateway-key");
     expect(JSON.parse(String(init?.body))).toMatchObject({ state: request.context, questions: { choice: { type: "choice", instructions: request.instructions, criteria: { a: "A", b: "B" } } } });
-    expect(init?.signal).toBe(signal);
+    // The request's signal follows the caller's (beside the attempt's own deadline).
+    expect(init?.signal?.aborted).toBe(false);
+    controller.abort();
+    expect(init?.signal?.aborted).toBe(true);
   });
   it.each([["unknown", { a: 0.8, b: 0.2 }], ["a", { a: 0.7, b: 0.7 }], ["a", { a: "bad", b: 0.2 }]])("retains paid usage for invalid output %s", async (choice, probabilities) => {
     await expect(new JevDecisionAdapter("key", gatewayFetch(response(String(choice), probabilities))).choose(request)).rejects.toMatchObject({ result: { usage: { promptTokens: 1000, outputTokens: 0 } } });

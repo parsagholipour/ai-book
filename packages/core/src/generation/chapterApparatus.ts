@@ -75,6 +75,7 @@ export function chapterEpigraph(
   });
   const body = options.body ? options.body.replace(/\s+/g, " ") : undefined;
   for (const excerpt of ranked) {
+    if (!excerpt.provenanceVerified) continue;
     const text = epigraphText(excerpt.text);
     if (!text) continue;
     if (body && body.includes(text.replace(/\s+/g, " "))) continue;

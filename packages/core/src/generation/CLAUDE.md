@@ -82,10 +82,16 @@ holds the event loop open and vitest will never exit.
   pages paid for: the per-page prompts' 160–420 guidance produced ~490 words a page in practice.
 - **A composed chapter has one landing, and variety is a property of the form plan, checked
   before any prose exists.** `planChapterForms` (`chapterForms.ts`) is one call for the whole
-  book — so variety can be global — assigning each chapter 3–8 sections with a *form* from a
+  book — so variety can be global — assigning each chapter its sections, each with a *form* from a
   writing-mode palette (a scene narrated in time, a close reading of one source, a catalogue that
   is allowed to read as a list, an open question left open, a quiet transition with no thesis…),
   a subject, the cases it alone owns, and one `landing` for the chapter's final paragraph.
+  Sections are counted from the chapter's *words* (`chapterSectionCount.ts`:
+  `sectionCountForPages(pages, words)`, the worker passing `chapterWordBudget(...).target` on
+  each `ChapterFormRange`; the palettes live in `chapterFormPalette.ts`): no section averages
+  more than `SECTION_ASK_WORDS` (600), the sustained stretch is 40% of a short chapter and at
+  most `SUSTAINED_SECTION_WORDS` of a long one (`sustainedSectionShare`), and a chapter has at
+  most `MAX_CHAPTER_SECTIONS` (12). See the delivery entry below for why.
   `compositionVarietyIssues` is the contract: no form over half a chapter or 40% of the book, no
   form following itself, no two chapters with the same sequence, no two consecutive chapters
   opening alike. It gets one repair call, then `rotateFormsForVariety`, and never blocks; a provider
@@ -94,6 +100,35 @@ holds the event loop open and vitest will never exit.
   shape belongs — on the plan, where it is cheap and exact — not on the prose, where the 2026-09-02
   replay showed such rules fire on approved pages. `share` accepts any positive number and is
   renormalised, because models answer in percentages.
+- **A chapter's length is a property of its plan — its budget, its sections and its page count —
+  never of the number the writer is asked for.** The 2026-09-19 evaluation
+  (`docs/jev-balanced-100-evaluation-2026-09-19.md`): the Balanced writer's first drafts came in at
+  55–104% of the aim, mean 74%, on both a 50-page and a 100-page book, and the 100-page science
+  book printed 77 sheets. Three causes, each measured against the saved prompts with the live
+  writer before the fix. (1) Asking for more moves nothing: with the aim alone raised (+15%) or the
+  aim and every section's words scaled to the budget's max (×1.26), six chapters returned 53–86% of
+  the *true* target, exactly as before — and 42–67% of what was asked. The writer's output is a
+  property of the section: 430–650 words each whether asked for 440 or 1,235. So the form planner
+  counts sections from the chapter's words (`SECTION_ASK_WORDS`) and caps the sustained stretch in
+  words; five chapters re-planned that way gained ten points (77% against 67%). (2) The
+  diagram-friendly budget (300/380/480 for SCIENCE, EDUCATION, HEALTH) had never been measured: the
+  same typesetter prints ~496 words on a full science sheet, the same as any other prose, so 380 a
+  page could print 88 of 100 even at full delivery. The budget is now the measured 430/570/640 for
+  every adult category; a figure's room is `figureWords`. Scaling every signal of the budget
+  together (sentence, sections and payload, ×1.26) did move the same five chapters to 82%, which is
+  why the budget matters and a lone number does not. (3) One compose call has never returned more
+  than ~4,700 words (7,410 asked came back at 4,667), so a chapter asking more is short by
+  construction: the planner's chapter ceiling is `maxComposedChapterPages` — eight pages at 570 a
+  page — instead of fourteen, and "what needs more pages is two chapters". Told so in words, the
+  third 100-page book's planner still wrote three nine-page chapters, so the ceiling is also a
+  guarantee: `normalizePlanPageTargets` takes `maxChapterPages` and `capChapterPages` moves the
+  excess a page at a time to the longest chapter with room (the fives stay short), splitting the
+  longest chapter in two only when the chapters cannot hold the book under the ceiling. The
+  planner passes it for every book whose chapter is the unit of composition (`composesByChapter`,
+  the same predicate the strategy router chooses by, in `compositionUnit.ts` so the router stays
+  light); per-page books' chapters are storage and keep their plan. The retry floor (0.7 ×
+  min, `min` on the developed path) and the editor's extension are unchanged; they are the
+  recovery, not the lever.
 - **Every rule about shape the writer or editor is shown is performed on schedule, and the blind
   panel names the performance; content assignments are the only lever that moved.** Twenty-one
   composed runs on 2026-09-02 (`.scratch/composed-chapters/spec.md`) hold the evidence. Three
@@ -128,7 +163,79 @@ holds the event loop open and vitest will never exit.
   → cases → coda shape became the chapter template again (rung 3's finding) and two chapters re-trod cases the
   collision rule cannot see (Ur-Nammu then Hammurabi share no proper noun). The excerpt gate stays; the lever on
   engagement for a fresh plan is retrieval that reaches its episodes, not a licence to reconstruct.
+- **A catalogue search is waited for ten seconds and no longer, and a catalogue that keeps timing
+  out is skipped, because a dossier's clock is its slowest host's.** `searchPrimarySources`
+  (`primarySources.ts`) asks Wikisource, Gutendex and archive.org together and used to wait for
+  all three. The third 100-page Balanced book (2026-09-19) spent 249 of its 1,633 seconds
+  fetching four documents for two excerpts: Gutendex answered the unslashed `/books?` address with
+  a 301 in 10–19 s and the slashed one in 21–30 s, while Wikisource took 0.5 s and archive.org
+  1 s, so each episode search ran to the worker's 15 s request timeout — twice, once per hop. Now the
+  address carries the slash, `boundedHostSearch` gives each catalogue `searchTimeoutMs` (10 s,
+  twenty times the healthy hosts' latency; the request runs on and its answer is dropped),
+  `outageAfterTimeouts` consecutive timeouts skip the catalogue for `outageSkipMs` (five minutes,
+  the rest of the book), and one `dossier.search` log line per query records every host's outcome
+  and latency. Web discovery is a model call with its own budget and is waited for whole. The
+  bound covers a throttled host's queue wait, which is at most two other chapters' requests: three
+  dossiers build at once, two seconds apart.
 - **Names and numbers do not prove that an edit preserves meaning.** Candidate 9's coupled rewrite garbled a clean sentence while preserving its anchors. The later audit also demonstrated polarity reversal. The rewrite and acceptance rules were removed; historical results remain in the experiment reports.
+
+- **The chapter-edit gate is the contextual reviewer alone; the decision model that ran ahead of
+  it was measured across four books and removed.** `acceptsChapterEdit`
+  (`chapterEditAcceptance.ts`) sends the reviewer every byte — the whole original and candidate,
+  the removed spans of a cut with their neighbours, the chapters a cut's notes cite — and its one
+  JSON verdict (meaning, intent, and for a cut one `removedSpanReviews` entry per span) accepts or
+  retains. Jev used to be asked first: a meaning question and an intent question, two confident
+  passes accepting without the review, a confident regression vetoing. Across the four Balanced
+  evaluations of 2026-09-19 (a 50-page and three 100-page books; `docs/jev-balanced-*.md`) that
+  was 168 attempts on 69 comparisons, 87 of them failed (81 gateway 503s, three
+  `max_tokens_exceeded`, two 240 s timeouts, one malformed answer), 66 reviews ran anyway, and it
+  saved exactly one review. Its meaning screen passed every
+  edit the reviewer went on to retain as a regression (five, three of them in a live replay, at
+  0.76–0.96) and confirmed none the reviewer disputed; its only two vetoes were on a correct
+  arithmetic repair (`2^{14} ≡ 5 (mod 19)` → 6, both repair rounds, 0.76–0.85), so the known-wrong
+  statement shipped and `ARITHMETIC_ERRORS` blocked the book. The fitted view (the payload without
+  the fields that grow with a chapter's position), the 80 KB whole-comparison budget, the
+  meaning-before-intent ordering, the cut exclusion and the factual-correction referral were each
+  a narrower cut of the same finding, and each was measured before the next; the gate is what was
+  left when nothing Jev said could be acted on. What the reviewer reads beside a cut is the
+  chapters the cut's notes cite (`citedChapters` in `chapterCutContext.ts`: a chapter number after
+  the book language's word for chapter, or quoted opening words found in a chapter), not the whole
+  book — eight cut reviews of the third book carried 270–288 KB of other chapters in 390–405 KB
+  payloads, $0.21 of a $0.73 book, and every retained passage the reviewer cited lay in the chapter
+  being cut or in the one the note named; scoped, the same eight payloads total 61% less. Notes
+  that cite nothing recognisable keep every chapter in view. A factual correction reaches the
+  reviewer with its evidence — a source passage, or an exact computation it is told it may redo —
+  and only a repair caller may supply one; a deletion-only cut carries none.
+
+- **A chapter's arithmetic is redone before it is judged, and a wrong number is a factual correction
+  whose evidence is the computation.** `arithmeticFindings` (`arithmeticCheck.ts`) parses every
+  `\(…\)`, `\[…\]`, `$$…$$` and `$…$` span for fully numeric statements — integer literals, `+ - ·
+  ×`, implicit products, powers, `\gcd`, `\varphi`, `\bmod`, `\pmod` — and evaluates each relation
+  in BigInt: `=` exactly, `\equiv` under the trailing `\pmod{n}`. Anything with a variable, a
+  decimal, an inequality, an ellipsis or an unknown command is symbolic and skipped, because only a
+  fully numeric statement can be wrong here. The 100-page Balanced cryptography book printed a
+  worked RSA decryption with all four intermediate residues wrong (`128^2 ≡ 169 (mod 187)`; it is
+  115) under a correct final answer, and no gate could see it: the editor preserves quantities, the
+  acceptance judge compares meaning, local QA is lexical and the claim verifier reads research notes.
+  Measured before shipping on 12,093 stored pages (88 numeric statements): five findings, all on
+  that page, zero false positives. The worker puts each finding to the editor as
+  `factualCorrection` with the exact computation in `computations`, which `acceptsChapterEdit`
+  accepts as the evidence behind the correction (the judge may redo the arithmetic itself); the
+  live replay of that chapter corrected all five lines in one edit, and the reviewer accepted it.
+  **An equality is read under the moduli its section names before it is called wrong.** The
+  second 100-page book wrote "with arithmetic modulo 23, one can calculate `5^2=2`, `5^3=10`,
+  `5^4=4`" — the modulus stated once in prose, then left out of every statement it governs, as
+  mathematical writing does — and the checker flagged all three and paid a repair round for
+  correct prose; the last-round instruction ("replace every wrong number with the value given")
+  would have had the editor print `5^2=25, 5^3=125, 5^4=625`, destroying the discrete-log
+  example. So `arithmeticScope` collects every modulus a section names (`modulo 23`, `mod 23`,
+  `\pmod{23}`, `\bmod 23`, `the modulus n = 187`; a section is the run under one heading, a
+  headingless chapter is one section), a failing `=` is excused when it holds under a named
+  modulus its right-hand side is a residue of (so `2^{10}=1000` is not excused by "addition
+  modulo 2"), a bare `\equiv` is read under the same moduli, and a section that speaks of a
+  modulus it never names has its failing equalities skipped: the checker may miss an error,
+  never invent one. Re-measured on 12,193 stored pages (230 statements) and on both books'
+  chapter drafts: the five real findings remain, the Shor sentence produces none.
 
 - **A composed draft that is not prose is recomposed once and then fails the job; it is never
   edited, paginated and published.** The fast tier's writer returned 12,005 words of a rotating
@@ -1045,6 +1152,24 @@ again before deleting. Cleanup is single-flight; shutdown stops it before closin
   (`apps/worker/src/handlers/generateAudiobookSupport.ts`) and drops the spoken label — but it must
   never re-partition, because `chapter-<n>.mp3` and the READY-skip that resumes a failed narration
   are keyed on chapter index.
+
+- **A book composed by chapters is exported in the chapters it was composed in; the model
+  chapterization is for the per-page strategies.** `createReaderChaptersForExport`
+  (`readerChapters.ts`) asks a model to regroup the finished pages into at most twelve reader
+  chapters from 700-character excerpts. That is right for a per-page book, whose plan chapters are
+  a writing scaffold. For every long book but a picture book the chapter is the unit of
+  composition — planned with a title, composed as one piece to it, its landing on its last page —
+  and every page carries the `Chapter` row it was cut from, yet the compile asked the model anyway,
+  and nobody compared the Contents page with the plan until the third 100-page Balanced book
+  (2026-09-19): twelve invented titles over fifteen composed chapters, a "Chapter 3" heading two
+  pages into the composed chapter 3, chapters 5–6 and 14–15 merged so a landing sat mid-chapter,
+  and a `chapterize-export` call on every content recompile. The second run's export had done the
+  same with nine. `readerChaptersFromComposedChapters` now derives the reader chapters from the
+  rows — contiguous runs of `page.chapter`, in page order, planned titles and summaries through the
+  same sanitizers — and `compileExport` uses it whenever `strategyComposesChapters(strategy)`, in
+  every lane, before the cache and the model; it declines (`undefined`) when any page lacks a
+  chapter or a chapter's pages are not one run, and the model grouping stands in. The apparatus is
+  still sized by `chapterPresentationFor` from the partition about to be printed.
 
 ## Library characters
 

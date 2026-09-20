@@ -29,8 +29,7 @@
     "db:seed": "pnpm --filter @book-maker/db seed",
     "docker:up": "docker compose up --build --watch",
     "docker:up:detached": "docker compose up --build --watch -d",
-    "decisions:compare": "tsx scripts/compare-fast-decisions.ts",
-    "page-reviews:compare": "tsx scripts/compare-page-reviews.ts"
+    "decisions:compare": "tsx scripts/compare-fast-decisions.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",

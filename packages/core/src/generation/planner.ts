@@ -26,6 +26,13 @@ import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import { libraryCharactersFromMediaSettings } from "./libraryCharacters.js";
 import { planLibraryCharacterGuidance, reconcilePlanLibraryCharacters } from "./planLibraryCharacters.js";
 import { BYLINE_IS_TYPESET_RULE } from "./markdown.js";
+import { maxComposedChapterPages } from "./composedChapter.js";
+import { composesByChapter } from "./compositionUnit.js";
+
+/** Small counts in the planner's prose, so "from five to eight pages" reads like the rest of the rule. */
+const NUMBER_WORDS: Record<number, string> = {
+  5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten", 11: "eleven", 12: "twelve", 13: "thirteen", 14: "fourteen"
+};
 
 export type CreatePlanPhase = "understand" | "shape" | "finalize";
 
@@ -78,7 +85,8 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
         ),
         librarySnapshots
       ),
-      options.input.targetPages
+      options.input.targetPages,
+      chapterCeilingFor(options.input, options.input.targetPages)
     );
   }
 
@@ -105,9 +113,14 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
             "Plan real book chapters, not one titled chapter or section per generated page.",
             `The sum of chapter targetPages must equal exactly ${options.input.targetPages}.`,
             // Five, not three: a three-page chapter of 1,350 words read as a stub
-            // beside its neighbours to every reader of the 6 September books.
+            // beside its neighbours to every reader of the 6 September books. The
+            // ceiling was fourteen; a chapter is one compose call, and the call
+            // returns at most ~4,600 words, so a twelve-page chapter (4,420 asked)
+            // came in at 55% while its six-page neighbours reached the floor.
             ...(options.input.targetPages >= 40
-              ? ["Give chapters different lengths, from five to fourteen pages: at least one long chapter that narrates a single case, one short chapter that reads a single document, and no run of chapters of the same length. A chapter is written as one piece."]
+              ? [
+                  `Give chapters different lengths, from five to ${NUMBER_WORDS[maxComposedChapterPages(options.input)] ?? String(maxComposedChapterPages(options.input))} pages: at least one long chapter that narrates a single case, one short chapter that reads a single document, and no run of chapters of the same length. A chapter is written as one piece, and no chapter is longer than that: what needs more pages is two chapters.`
+                ]
               : []),
             // Three blind readers of the same book found chapters 13-14 re-narrating
             // the cases of chapters 1-2, because the outline asked them to.
@@ -182,7 +195,8 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
         ),
         librarySnapshots
       ),
-      options.input.targetPages
+      options.input.targetPages,
+      chapterCeilingFor(options.input, options.input.targetPages)
     );
   } catch (error) {
     throw new Error(`AI planner returned an invalid plan. No fallback plan was created. ${formatErrorMessage(error)}`);
@@ -316,7 +330,8 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
         ),
         librarySnapshots
       ),
-      targetPages
+      targetPages,
+      chapterCeilingFor(options.input, targetPages)
     );
   } catch (error) {
     throw new Error(`AI plan revision failed. No revised plan was created. ${formatErrorMessage(error)}`);
@@ -360,7 +375,21 @@ function compactPlanForRevisionPrompt(plan: BookPlan): Omit<BookPlan, "researchN
   };
 }
 
-export function normalizePlanPageTargets(plan: BookPlan, targetPages: number): BookPlan {
+/**
+ * The compose ceiling as the planner's hard limit, for the books whose chapter is the unit of
+ * composition; nothing for the rest, whose chapters are storage. The prompt names the ceiling in
+ * words from forty pages; the limit holds from the first composed book, because a twelve-page
+ * book planned as one chapter asks one call for 6,800 words and gets 4,600.
+ */
+function chapterCeilingFor(input: CreateProjectInput | undefined, targetPages: number): { maxChapterPages?: number } {
+  return input && composesByChapter({ category: input.category, targetPages }) ? { maxChapterPages: maxComposedChapterPages(input) } : {};
+}
+
+export function normalizePlanPageTargets(
+  plan: BookPlan, targetPages: number,
+  /** `maxChapterPages`: the compose ceiling, enforced after distribution (`capChapterPages`); the planner passes it for every book that composes by chapter. */
+  options: { maxChapterPages?: number | undefined } = {}
+): BookPlan {
   const pageTarget = Math.max(1, Math.floor(targetPages));
   // Above the size where chapter apparatus actually prints (~8 pages), a
   // chapter that averages under two pages is a heading over a paragraph. The
@@ -374,8 +403,10 @@ export function normalizePlanPageTargets(plan: BookPlan, targetPages: number): B
   const sourceChapters =
     plan.chapters.length > chapterLimit ? mergeAdjacentChapters(plan.chapters, chapterLimit) : plan.chapters;
   const chapterCount = Math.max(1, Math.min(sourceChapters.length, pageTarget));
-  const chapters = sourceChapters.slice(0, chapterCount);
-  const targetPageCounts = distributeTargetPages(chapters, pageTarget);
+  const distributed = sourceChapters.slice(0, chapterCount);
+  const { chapters, targetPageCounts } = options.maxChapterPages === undefined
+    ? { chapters: distributed, targetPageCounts: distributeTargetPages(distributed, pageTarget) }
+    : capChapterPages(distributed, distributeTargetPages(distributed, pageTarget), pageTarget, options.maxChapterPages);
 
   return {
     ...plan,
@@ -385,6 +416,61 @@ export function normalizePlanPageTargets(plan: BookPlan, targetPages: number): B
       targetPages: targetPageCounts[index] ?? 1
     }))
   };
+}
+
+/**
+ * No chapter above `maxPages`, at the same total. A chapter is one compose call and the call
+ * returns at most ~4,600 words (`COMPOSE_CALL_WORDS`), so a chapter planned above the ceiling is
+ * short by construction — the planner is told the ceiling in words, and the third 100-page
+ * Balanced book (2026-09-19) still planned three nine-page chapters against eight, each a page
+ * short before a word was written. Excess pages move one at a time from the longest chapter to
+ * the longest chapter with room, which leaves the short chapters short (the plan's variety is a
+ * property of its form plan); a plan with too few chapters to hold the book under the ceiling
+ * has its longest chapter split in two first, which is what the prompt asks for in words.
+ */
+function capChapterPages(
+  chapters: ChapterPlan[], targetPageCounts: number[], total: number, maxPages: number
+): { chapters: ChapterPlan[]; targetPageCounts: number[] } {
+  const cap = Math.max(1, Math.floor(maxPages));
+  const entries = chapters.map((chapter, index) => ({ chapter, pages: targetPageCounts[index] ?? 1 }));
+  const longest = (eligible: (pages: number) => boolean) => {
+    let found = -1;
+    for (const [index, entry] of entries.entries()) {
+      if (eligible(entry.pages) && (found < 0 || entry.pages > entries[found]!.pages)) found = index;
+    }
+    return found;
+  };
+  while (entries.length * cap < total) {
+    const at = longest(() => true);
+    const { chapter, pages } = entries[at]!;
+    const [first, second] = splitChapterPair(chapter);
+    const firstPages = Math.ceil(pages / 2);
+    entries.splice(at, 1, { chapter: first, pages: firstPages }, { chapter: second, pages: pages - firstPages });
+  }
+  for (;;) {
+    const over = longest((pages) => pages > cap);
+    const under = longest((pages) => pages < cap);
+    // Room always exists once the split loop has left `entries.length * cap >= total`.
+    if (over < 0 || under < 0) break;
+    entries[over]!.pages -= 1;
+    entries[under]!.pages += 1;
+  }
+  return { chapters: entries.map((entry) => entry.chapter), targetPageCounts: entries.map((entry) => entry.pages) };
+}
+
+/** `mergeChapterPair`'s inverse: the beats and illustration prompts divided, the second half saying it is one. */
+function splitChapterPair(chapter: ChapterPlan): [ChapterPlan, ChapterPlan] {
+  const halves = <T>(items: readonly T[]): [T[], T[]] =>
+    items.length >= 2 ? [items.slice(0, Math.ceil(items.length / 2)), items.slice(Math.ceil(items.length / 2))] : [[...items], [...items]];
+  const [firstBeats, secondBeats] = halves(chapter.keyBeats);
+  const [firstPrompts, secondPrompts] = halves(chapter.illustrationPrompts ?? []);
+  return [
+    { ...chapter, title: `${chapter.title} (I)`, keyBeats: firstBeats, ...(chapter.illustrationPrompts ? { illustrationPrompts: firstPrompts } : {}) },
+    {
+      ...chapter, title: `${chapter.title} (II)`, summary: `Second part of "${chapter.title}". ${chapter.summary}`.trim(), keyBeats: secondBeats,
+      ...(chapter.illustrationPrompts ? { illustrationPrompts: secondPrompts } : {})
+    }
+  ];
 }
 
 /**

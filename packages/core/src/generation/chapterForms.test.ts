@@ -4,18 +4,23 @@ import { makeFallbackPlan } from "../prompting/templates.js";
 import type { CreateProjectInput } from "../schemas/book.js";
 import type { GenerateJsonOptions } from "../adapters/types.js";
 import {
+  assignedSectionCount,
   capFigures,
   capOpenQuestionEndings,
   figureCapFor,
   compositionVarietyIssues,
   fallbackChapterComposition,
   formPaletteFor,
+  MAX_CHAPTER_SECTIONS,
   normalizeChapterCompositions,
   planChapterForms,
   positionalIssues,
   rotatePositionsForVariety,
+  SECTION_ASK_WORDS,
   settleFormVariety,
   sectionCountForPages,
+  SUSTAINED_SECTION_WORDS,
+  sustainedSectionShare,
   type ChapterComposition,
   type ChapterFormRange
 } from "./chapterForms.js";
@@ -70,6 +75,40 @@ describe("sectionCountForPages", () => {
     expect(sectionCountForPages(2)).toEqual({ min: 2, max: 3 });
     expect(sectionCountForPages(8)).toEqual({ min: 4, max: 7 });
     expect(sectionCountForPages(30)).toEqual({ min: 4, max: 8 });
+  });
+
+  // The writer returns 430–650 words a section whatever the section is asked
+  // for, so a long chapter's floor is its words over SECTION_ASK_WORDS: the
+  // 13-page, 4,940-word chapter that came in at 55–82% in four sections is
+  // planned in nine or ten.
+  it("raises a long chapter's floor from its words and leaves a short chapter's alone", () => {
+    expect(sectionCountForPages(13, 4940)).toEqual({ min: 9, max: 10 });
+    expect(sectionCountForPages(12, 4420)).toEqual({ min: 8, max: 9 });
+    expect(sectionCountForPages(6, 2280)).toEqual({ min: 4, max: 5 });
+    // Words never lower the page-based floor or ceiling.
+    expect(sectionCountForPages(8, 100)).toEqual(sectionCountForPages(8));
+    expect(sectionCountForPages(8, 0)).toEqual(sectionCountForPages(8));
+    // A 14-page chapter at 570 words a page is capped at MAX_CHAPTER_SECTIONS.
+    expect(sectionCountForPages(14, 7980)).toEqual({ min: MAX_CHAPTER_SECTIONS, max: MAX_CHAPTER_SECTIONS });
+    expect(Math.ceil(4940 / SECTION_ASK_WORDS)).toBe(9);
+  });
+
+  it("assigns the walked count from the words-based range", () => {
+    // Chapter 9's offset is 0, so it used to get the four-section floor of a 13-page chapter.
+    expect(assignedSectionCount(9, 13)).toEqual({ min: 4, max: 4 });
+    expect(assignedSectionCount(9, 13, 4940)).toEqual({ min: 9, max: 9 });
+    expect(assignedSectionCount(3, 13, 4940)).toEqual({ min: 10, max: 10 });
+  });
+});
+
+describe("sustainedSectionShare", () => {
+  it("is 40% of a short chapter and SUSTAINED_SECTION_WORDS of a long one, never under 15%", () => {
+    expect(sustainedSectionShare()).toBe(0.4);
+    expect(sustainedSectionShare(2000)).toBe(0.4);
+    expect(sustainedSectionShare(3040)).toBe(0.33);
+    expect(sustainedSectionShare(4940)).toBe(0.2);
+    expect(Math.round(sustainedSectionShare(4940) * 4940)).toBeLessThanOrEqual(SUSTAINED_SECTION_WORDS);
+    expect(sustainedSectionShare(7980)).toBe(0.15);
   });
 });
 
@@ -244,6 +283,39 @@ describe("planChapterForms", () => {
       }
     } as unknown as FakeTextModelAdapter;
     await expect(planChapterForms({ input, plan, ranges: ranges(), textModel: stopping })).rejects.toBe(stop);
+  });
+});
+
+describe("section counts from the chapter's words", () => {
+  it("tells the planner each chapter's words, its walked count and its sustained share, and fills a thin answer to the words-based floor", async () => {
+    const seen: GenerateJsonOptions<unknown>[] = [];
+    const fake = new FakeTextModelAdapter(input);
+    const recording = {
+      ...fake,
+      generateJson: (options: GenerateJsonOptions<unknown>) => {
+        seen.push(options);
+        return fake.generateJson(options);
+      }
+    } as unknown as FakeTextModelAdapter;
+    const [first, ...rest] = ranges();
+    const long: ChapterFormRange = { ...first!, endPage: first!.startPage + 12, words: 4940 };
+    const result = await planChapterForms({ input, plan: makeFallbackPlan(input), ranges: [long, ...rest], textModel: recording });
+    const payload = JSON.parse(seen[0]!.messages[1]!.content) as { chapters: Array<Record<string, unknown>> };
+    const chapter = payload.chapters.find((entry) => entry.chapterIndex === long.chapter.index)!;
+    expect(chapter.pages).toBe(13);
+    expect(chapter.words).toBe(4940);
+    expect(chapter.sectionCount).toEqual(assignedSectionCount(long.chapter.index, 13, 4940));
+    expect(chapter.sustainedShare).toBe(0.2);
+    // A range without words keeps the page-based assignment and the 40% stretch.
+    const plain = payload.chapters.find((entry) => entry.chapterIndex === rest[0]!.chapter.index)!;
+    expect(plain.words).toBeUndefined();
+    expect(plain.sustainedShare).toBe(0.4);
+    expect(seen[0]!.messages[0]!.content).toContain("at least its sustainedShare of its length");
+    // The fake answers four sections; the words-based floor fills the rest deterministically.
+    const planned = result.compositions.find((entry) => entry.chapterIndex === long.chapter.index)!;
+    expect(planned.sections.length).toBeGreaterThanOrEqual(sectionCountForPages(13, 4940).min);
+    expect(planned.sections.reduce((sum, section) => sum + (section.share ?? 0), 0)).toBeCloseTo(1, 6);
+    expect(compositionVarietyIssues(result.compositions, palette)).toEqual([]);
   });
 });
 

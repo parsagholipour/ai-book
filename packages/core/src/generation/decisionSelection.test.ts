@@ -97,21 +97,17 @@ describe("finite selection integration", () => {
   it("retains chapter failure handling", async () => {
     await expect(judgeChapterDrafts({ input, plan, chapter, drafts: ["one", "two"], judge: text, decisions: route(async () => { throw new Error("failed chapter judgment"); }) })).rejects.toThrow("failed chapter judgment");
   });
-  it("uses real cover IDs and descriptions and never invents Jev rationale", async () => {
-    const choose = vi.fn(async (_request: DecisionRequest) => result("fog-street"));
-    const chosen = await selectCoverDesign({ input, plan, textModel: text, seed: "book", decisions: route(choose) });
-    expect(chosen).toMatchObject({ design: { id: "fog-street" }, selectedBy: "model" });
-    expect(chosen).not.toHaveProperty("reason");
-    expect(choose.mock.calls[0]![0].options.map((option) => option.id)).toEqual(COVER_DESIGNS.map((design) => design.id));
-    expect(choose.mock.calls[0]![0].options[0]?.description).toContain(COVER_DESIGNS[0]!.description);
-  });
-  it("uses a deterministic cover on provider failure or unknown ID, but propagates cancellation and settings failure", async () => {
-    const fallback = await selectCoverDesign({ input, plan, textModel: text, seed: "book", decisions: route(async () => { throw new Error("provider failed"); }) });
-    expect(await selectCoverDesign({ input, plan, textModel: text, seed: "book", decisions: route(async () => result("invented")) })).toEqual(fallback);
-    expect(fallback.selectedBy).toBe("fallback");
-    const failed = route(async () => result("fog-street"));
-    failed.resolve.mockRejectedValue(new Error("settings failed"));
-    await expect(selectCoverDesign({ input, plan, textModel: text, seed: "book", decisions: failed })).rejects.toThrow("settings failed");
-    await expect(selectCoverDesign({ input, plan, textModel: text, seed: "book", decisions: route(async () => { throw new DOMException("Stop", "AbortError"); }) })).rejects.toMatchObject({ name: "AbortError" });
+  it("picks the cover with the text model alone and never consults a decision route", async () => {
+    // A decision model was asked first for four Balanced books (2026-09-19) and cleared its 0.70
+    // gate once across fifty options; three covers paid for the call and then the pick anyway.
+    const generateJson = vi.spyOn(text, "generateJson").mockImplementation(async (options) => ({ data: options.schema.parse({ designId: "fog-street" }), text: "", provider: "test", model: "test" }));
+    try {
+      const chosen = await selectCoverDesign({ input, plan, textModel: text, seed: "book" });
+      expect(chosen).toMatchObject({ design: { id: "fog-street" }, selectedBy: "model" });
+      expect(generateJson).toHaveBeenCalledOnce();
+      expect(generateJson.mock.calls[0]![0].messages[0]!.content).toContain(COVER_DESIGNS[0]!.id);
+    } finally {
+      generateJson.mockRestore();
+    }
   });
 });

@@ -8,7 +8,7 @@ import { evidenceLedgerRules } from "./evidenceLedger.js";
 import { localStyleInstructions } from "./styleContract.js";
 import type { ReviewPageOptions } from "./pagesReview.js";
 
-export function buildPageReviewPrompt(options: ReviewPageOptions, includeFullContext = false): GenerateJsonOptions<PageQualityReport> {
+export function buildPageReviewPrompt(options: ReviewPageOptions): GenerateJsonOptions<PageQualityReport> {
   // Everything this reviewer says about the book's opening, from the same call
   // that decides what its writer was told (`openingContractFields`,
   // pagesShared.ts): the ban when this is page 1 of a book the pipeline wrote,
@@ -59,6 +59,7 @@ export function buildPageReviewPrompt(options: ReviewPageOptions, includeFullCon
             ...evidenceLedgerRules(options.input, options.plan, "reviewer"),
             ...targetLanguageReviewGuidance(options.input.language),
             ...reviewerStyleRules(options.input),
+            "Judge the final book page against its actual ending and the book promise. Technical references to the beginning of a day, quotations, and intentional open endings are not automatically vague; phrase matches alone cannot reject a page.",
             "Return one JSON object with approved (boolean), score (integer 0-100), issues (string array), requiredRevisions (string array), notes (string), and checks with placeholderFree, promptLeakFree, titleClean, repetitionOk, progressionOk, styleNatural booleans.",
             "Do not use feedback as the only root field."
           ].join(" ")
@@ -96,13 +97,6 @@ export function buildPageReviewPrompt(options: ReviewPageOptions, includeFullCon
               ...(options.userRequest ? { userRequest: options.userRequest } : {}),
               ...(options.retrievedResearch ? { retrievedResearch: options.retrievedResearch } : {}),
               draft: options.draft,
-              ...(includeFullContext ? {
-                comparisonProse: {
-                  previousPages: compactPriorPages(options.previousPages, options.previousPages.length, Number.MAX_SAFE_INTEGER),
-                  followingPages: compactFollowingPages(options.nextPages ?? [], options.nextPages?.length ?? 0, Number.MAX_SAFE_INTEGER)
-                },
-                reservationScope: pageScopePayload(options)
-              } : {}),
               previousPages: compactPriorPages(
                 options.previousPages,
                 compactPrompt ? 1 : 5,

@@ -1,7 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 import { InvalidDecisionError, type DecisionRequest } from "./decisions.js";
-import { JevDecisionAdapter } from "./jevDecision.js";
-import { isRecoverableNetworkError, ProviderHttpError } from "./retry.js";
+import { JEV_ATTEMPT_TIMEOUT_MS, JevDecisionAdapter } from "./jevDecision.js";
+import { isCancellationError, isRecoverableNetworkError, ProviderHttpError } from "./retry.js";
+
+/** A fetch that answers only when the request is aborted, the way a stalled gateway does. */
+function hangingFetch(): typeof globalThis.fetch {
+  return (_url, init) => new Promise<Response>((_resolve, reject) => {
+    const signal = init?.signal;
+    if (!signal) return;
+    if (signal.aborted) reject(signal.reason);
+    else signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+  });
+}
 
 const request: DecisionRequest = {
   purpose: "test-choice",
@@ -53,6 +63,28 @@ describe("JevDecisionAdapter HTTP errors", () => {
     });
     await expect(new JevDecisionAdapter("key", fetch).choose({ ...request, signal: controller.signal }))
       .rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("gives up an attempt that outlives its deadline as a recoverable 504, not a cancellation", async () => {
+    const fetch = vi.fn(hangingFetch());
+    const started = Date.now();
+    const error = await new JevDecisionAdapter("key", fetch, 25).choose(request).catch((thrown: unknown) => thrown);
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(error).toBeInstanceOf(ProviderHttpError);
+    expect(error).toMatchObject({ status: 504, message: "Jev did not answer within 25 ms." });
+    expect(isRecoverableNetworkError(error)).toBe(true);
+    expect(isCancellationError(error)).toBe(false);
+    // The attempt's own deadline is short enough for a model that answers in about a second.
+    expect(JEV_ATTEMPT_TIMEOUT_MS).toBeLessThanOrEqual(30_000);
+  });
+
+  it("keeps the caller's cancellation identity while the deadline is armed", async () => {
+    const controller = new AbortController();
+    const fetch = vi.fn<typeof globalThis.fetch>((url, init) => { setTimeout(() => controller.abort(), 5); return hangingFetch()(url, init); });
+    const error = await new JevDecisionAdapter("key", fetch, 10_000).choose({ ...request, signal: controller.signal }).catch((thrown: unknown) => thrown);
+    expect(error).toMatchObject({ name: "AbortError" });
+    expect(isCancellationError(error)).toBe(true);
+    expect(error).not.toBeInstanceOf(ProviderHttpError);
   });
 
   it("does not wrap an invalid evaluation as ProviderHttpError", async () => {

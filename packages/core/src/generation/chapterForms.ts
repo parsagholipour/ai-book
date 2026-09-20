@@ -7,7 +7,18 @@ import { isRecord } from "../schemas/jsonCoercion.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import { FIGURE_FORM_PLAN_CONTRACT, FIGURE_FORM_PLAN_RULE } from "./figures/figurePrompt.js";
 import { figurePlanSchema } from "./figures/figureSpec.js";
-import { inferWritingMode, type WritingMode } from "./styleContract.js";
+import { assignedSectionCount, sectionCountForPages, sustainedSectionShare } from "./chapterSectionCount.js";
+import { ANALYTICAL_FORMS, formPaletteFor, type SectionForm } from "./chapterFormPalette.js";
+import { inferWritingMode } from "./styleContract.js";
+export { formPaletteFor, type SectionForm } from "./chapterFormPalette.js";
+export {
+  assignedSectionCount,
+  MAX_CHAPTER_SECTIONS,
+  SECTION_ASK_WORDS,
+  sectionCountForPages,
+  SUSTAINED_SECTION_WORDS,
+  sustainedSectionShare
+} from "./chapterSectionCount.js";
 
 /**
  * The chapter form plan: what replaces the per-page production map for the
@@ -25,85 +36,6 @@ import { inferWritingMode, type WritingMode } from "./styleContract.js";
  */
 
 export const PLAN_CHAPTER_FORMS_PURPOSE = "plan-chapter-forms";
-
-export type SectionForm = { id: string; rule: string };
-
-const DOCUMENTED_SCENE =
-  "a documented episode from a named source or site, narrated in time through people acting; when the source records little, say what it records in a paragraph and move on, and never present an unnamed or composite person as witnessed";
-
-const ANALYTICAL_FORMS: readonly SectionForm[] = [
-  { id: "scene", rule: DOCUMENTED_SCENE },
-  { id: "close-reading", rule: "one source, object, document or site examined at length, quoted or described in detail, and what the author makes of it" },
-  { id: "portrait", rule: "one named person or one named institution followed through time, from a named source" },
-  { id: "argument", rule: "the author's own claim about this chapter's cases, argued through them, naming the historian, school or source it answers when the notes supply one" },
-  { id: "counterargument", rule: "a rival explanation stated at its strongest and then answered on the evidence, in the author's own words rather than a formula" },
-  { id: "mechanism", rule: "how one thing actually worked, step by step, with the concrete parts named" },
-  { id: "catalogue", rule: "a deliberate inventory or list, allowed to read as one" },
-  { id: "open-question", rule: "a question the chapter has made sharp, left open in a sentence or two; not an inventory of the records that would settle it" },
-  { id: "comparison", rule: "two cases set side by side and a verdict on what differs and why" },
-  { id: "aftermath", rule: "consequences traced forward through named people and places" },
-  { id: "quiet-transition", rule: "a short connective passage with no thesis" }
-];
-
-const INSTRUCTIONAL_FORMS: readonly SectionForm[] = [
-  { id: "worked-example", rule: "one example carried from start to finish with every step shown" },
-  { id: "principle", rule: "one idea stated and grounded in one case, without a list of applications" },
-  { id: "procedure", rule: "steps in order, allowed to read as steps" },
-  { id: "failure-case", rule: "something done wrong, what it cost, and what would have caught it" },
-  { id: "diagnosis", rule: "how to tell which situation you are in, by observable signs" },
-  { id: "story-from-practice", rule: "a real or realistic episode told in time and framed as such, before any lesson is drawn; the lesson, if any, is one sentence" },
-  { id: "objection", rule: "the reader's strongest doubt, taken seriously, then answered or conceded in the author's own words" },
-  { id: "exercise", rule: "something the reader does now, with the expected result" },
-  { id: "open-question", rule: "what the field does not know, left open in a sentence or two" },
-  { id: "quiet-transition", rule: "a short connective passage with no thesis" }
-];
-
-const NARRATIVE_FORMS: readonly SectionForm[] = [
-  { id: "scene", rule: "continuous action in one place and time, dramatised, with dialogue where people would speak" },
-  { id: "sequel", rule: "the reaction after a scene: feeling, dilemma, decision, in that order, kept short" },
-  { id: "dialogue", rule: "a conversation carrying the beat, with little narration between lines" },
-  { id: "interior", rule: "inside one character's perception, close and specific, without summary" },
-  { id: "setpiece", rule: "a long sustained scene with rising pressure and a turn" },
-  { id: "montage", rule: "time compressed through a handful of concrete moments" },
-  { id: "reveal", rule: "information the reader did not have, delivered through action, not explanation" },
-  { id: "confrontation", rule: "two wants collide and one gives way" },
-  { id: "document", rule: "a letter, record, message or artefact reproduced within the story" },
-  { id: "quiet", rule: "a still passage with no plot movement, observed rather than reflected upon" }
-];
-
-const REFERENCE_FORMS: readonly SectionForm[] = [
-  { id: "overview", rule: "what the reader needs to place the entries that follow, without previewing their conclusions" },
-  { id: "entry-cluster", rule: "several entries in canonical form, allowed to repeat their structure" },
-  { id: "worked-example", rule: "one entry applied in a concrete case" },
-  { id: "comparison", rule: "entries set side by side to show where they differ" },
-  { id: "history", rule: "how a term, practice or object came to be, told in time" },
-  { id: "caveat", rule: "where the reference is unreliable or contested, stated plainly" },
-  { id: "quiet-transition", rule: "a short connective passage with no thesis and no landing" }
-];
-
-const CHILDREN_FORMS: readonly SectionForm[] = [
-  { id: "scene", rule: "one thing happening, in one place, that a child can picture" },
-  { id: "dialogue", rule: "characters talking, short lines" },
-  { id: "refrain", rule: "a repeated phrase or pattern, changed a little each time" },
-  { id: "discovery", rule: "the character finds or notices something new" },
-  { id: "problem", rule: "something goes wrong or gets harder" },
-  { id: "quiet", rule: "a calm moment, seen rather than explained" }
-];
-
-export function formPaletteFor(mode: WritingMode): readonly SectionForm[] {
-  switch (mode) {
-    case "analytical-history":
-      return ANALYTICAL_FORMS;
-    case "instructional":
-      return INSTRUCTIONAL_FORMS;
-    case "reference":
-      return REFERENCE_FORMS;
-    case "children-narrative":
-      return CHILDREN_FORMS;
-    case "narrative":
-      return NARRATIVE_FORMS;
-  }
-}
 
 export const chapterSectionSchema = z.object({
   form: z.string().min(1),
@@ -152,28 +84,14 @@ export type ChapterFormRange = { chapter: ChapterPlan; startPage: number; endPag
   kind?: string | undefined;
   /** The arc's job for this chapter (`job.does`), which stands in for the plan's summary. */
   job?: string | undefined;
+  /**
+   * The chapter's word target (`chapterWordBudget(...).target`, before figures).
+   * With it the section count is sized so no section is asked for more prose
+   * than the writer returns for one; without it, by pages alone.
+   */
+  words?: number | undefined;
 };
 
-/** One count per chapter, walking the range so consecutive chapters differ and the book uses the whole range. */
-export function assignedSectionCount(chapterIndex: number, pageCount: number): { min: number; max: number } {
-  const { min, max } = sectionCountForPages(pageCount);
-  const span = max - min + 1;
-  const offsets = [0, 2, 1, 3, 0, 2, 1, 3];
-  const count = min + (offsets[(Math.max(1, chapterIndex) - 1) % offsets.length]! % span);
-  return { min: count, max: count };
-}
-
-export function sectionCountForPages(pageCount: number): { min: number; max: number } {
-  const pages = Math.max(1, pageCount);
-  const ideal = Math.round(pages / 1.75);
-  // Three sections of 1,600 words each read as three self-contained essays;
-  // the blind panel called those chapters anthologies. Four is the floor once
-  // a chapter has the room.
-  return {
-    min: Math.max(2, Math.min(pages >= 8 ? 4 : 3, ideal)),
-    max: Math.max(3, Math.min(8, ideal + 2))
-  };
-}
 
 const MAX_BOOK_FORM_SHARE = 0.4;
 
@@ -249,7 +167,7 @@ export function compositionShapeIssues(compositions: readonly ChapterComposition
   for (const composition of compositions) {
     const shares = composition.sections.map((section) => section.share ?? 1 / composition.sections.length);
     if (shares.length >= 3 && Math.max(...shares) - Math.min(...shares) < 0.08) {
-      issues.push(`Chapter ${composition.chapterIndex} splits its length evenly across sections; give it one section of at least 40% and one under 15%.`);
+      issues.push(`Chapter ${composition.chapterIndex} splits its length evenly across sections; give it one section of at least its sustainedShare and one under 15%.`);
     }
   }
   if (compositions.length >= 6) {
@@ -436,8 +354,8 @@ export function fallbackChapterComposition(
   palette: readonly SectionForm[],
   offset: number
 ): ChapterComposition {
-  const pages = range.endPage - range.startPage + 1;
-  const count = Math.min(sectionCountForPages(pages).max, Math.max(sectionCountForPages(pages).min, range.chapter.keyBeats.length || 3));
+  const bounds = sectionCountForPages(range.endPage - range.startPage + 1, range.words);
+  const count = Math.min(bounds.max, Math.max(bounds.min, range.chapter.keyBeats.length || 3));
   const subjects = range.chapter.keyBeats.length > 0 ? range.chapter.keyBeats : [range.chapter.summary];
   const usable = palette.filter((form) => form.id !== "quiet-transition");
   return {
@@ -502,8 +420,7 @@ export function normalizeChapterCompositions(
   }
   const bookCounts = new Map<string, number>();
   return ranges.map((range, offset) => {
-    const pages = range.endPage - range.startPage + 1;
-    const bounds = sectionCountForPages(pages);
+    const bounds = sectionCountForPages(range.endPage - range.startPage + 1, range.words);
     const found = byChapter.get(range.chapter.index);
     const fallback = fallbackChapterComposition(range, palette, offset);
     const source = found ?? fallback;
@@ -731,7 +648,10 @@ export async function planChapterForms(options: PlanChapterFormsOptions): Promis
             ...(options.figures ? [FIGURE_FORM_PLAN_RULE] : []),
             "The final chapter is not a summary chapter whatever its title says: its sections are new material, and its landing is the author's own conclusion to the book, argued through the chapter's case rather than by re-listing the earlier chapters.",
             "Variety rules, enforced after you answer: within a chapter no form takes more than half the sections and no form follows itself; no two chapters share the same form sequence; consecutive chapters do not open with the same form; across the book no form exceeds 40% of all sections; no form sits in the same position (first, second, third, last) in more than a third of the chapters, so a comparison or an argument comes first in some chapters and last in others; every chapter uses at least three distinct forms when it has three or more sections.",
-            "Section counts per chapter are given as sectionCount; shares are fractions of the chapter's length and sum to 1. Vary the count from chapter to chapter across that range, and give every chapter one section that takes at least 40% of its length and one that takes under 15%, so no two chapters have the same silhouette.",
+            // The sustained stretch is a share of a short chapter and a word count of a
+            // long one: a 40% section of a 4,940-word chapter asked the writer for 1,976
+            // words and got half, and the chapter came in at 55% (see SECTION_ASK_WORDS).
+            "Section counts per chapter are given as sectionCount; shares are fractions of the chapter's length and sum to 1. Vary the count from chapter to chapter across that range, and give every chapter one section that takes at least its sustainedShare of its length and one that takes under 15%, so no two chapters have the same silhouette. Where a chapter has many sections, the sections are short passages of a few paragraphs each, not essays; every one still has its own subject and owns its own material.",
             "avoid names what earlier chapters already established that this chapter must not re-explain or re-argue.",
             "Where a chapter carries kind, its forms serve it: a case chapter is mostly scenes and close readings of one episode, a document chapter is close readings of one text, a complication chapter ends on an open question, a portrait follows one person, an argument chapter carries an argument and a counterargument, a method chapter shows a procedure, a resolution closes with a verdict.",
             ...(repair
@@ -763,9 +683,11 @@ export async function planChapterForms(options: PlanChapterFormsOptions): Promis
                 summary: range.job ?? range.chapter.summary,
                 keyBeats: range.chapter.keyBeats,
                 pages: range.endPage - range.startPage + 1,
+                ...(range.words !== undefined ? { words: range.words } : {}),
                 // Assigned, not requested: told to vary the count the planner returned
                 // 4 or 5 everywhere (composed-22); a count is a content assignment.
-                sectionCount: assignedSectionCount(range.chapter.index, range.endPage - range.startPage + 1),
+                sectionCount: assignedSectionCount(range.chapter.index, range.endPage - range.startPage + 1, range.words),
+                sustainedShare: sustainedSectionShare(range.words),
                 ...(range.kind ? { kind: range.kind } : {}),
                 ...(range.job ? { job: range.job } : {})
               })),

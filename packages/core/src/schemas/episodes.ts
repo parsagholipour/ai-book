@@ -73,6 +73,8 @@ export const dossierExcerptSchema = z.object({
   speaker: z.string().default(""),
   /** Verbatim: sliced by the code from the fetched document. */
   text: z.string().min(1),
+  /** A separate contextual check established usable attribution/edition and transcription. */
+  provenanceVerified: z.boolean().optional(),
   words: z.number().int().nonnegative().default(0)
 });
 export type DossierExcerpt = z.infer<typeof dossierExcerptSchema>;

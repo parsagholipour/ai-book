@@ -1,5 +1,14 @@
 # Jev model page review
 
+> **Superseded (2026-09-19).** The batched page-review screen this document describes was
+> removed after four Balanced evaluations: in its only live mode (`shadow`) it ran seven Jev
+> questions per page and then the full model review regardless, and nothing consumed its
+> answers. `BOOK_MAKER_PAGE_REVIEW_DECISIONS`, `ReviewPageOptions.pageReviewDecisionMode`,
+> `screenPageReview` and the `evaluate` capability on `DecisionModelAdapter` no longer exist.
+> The evidence is in [jev-balanced-100-evaluation-2026-09-19.md](jev-balanced-100-evaluation-2026-09-19.md);
+> the rule is in `packages/core/src/adapters/CLAUDE.md`. The text below is kept as the record
+> of the design and its measurements.
+
 The integration is implemented behind `BOOK_MAKER_PAGE_REVIEW_DECISIONS=off|shadow|pass`.
 The default is `shadow`; it also requires the existing Fast decisions route to resolve
 Jev. No operator routing or production setting was changed. Callers can override the

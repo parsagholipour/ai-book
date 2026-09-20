@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  createProjectSchema, FakeTextModelAdapter, makeFallbackPlan, JEV_SELECTION,
+  createProjectSchema, FakeTextModelAdapter, makeFallbackPlan, JEV_SELECTION, pageQualityReportSchema,
   type BookGenerationStrategy, type DecisionRequest, type PageDraft, type PageQualityReport
 } from "@book-maker/core";
 import { report, qualityGates, mocks } from "./testing/pageReviewHarness.js";
@@ -31,6 +31,16 @@ function fixture(rewrites: string[], approved = true) {
 }
 
 describe("page candidate grounding gate", () => {
+  it.each(["unavailable", "unverified_no_sources"])("preserves a known grounding failure through %s and persistence", async (status) => {
+    const test = fixture([]);
+    test.generate.mockRejectedValue(new Error("Verifier offline"));
+    const check = changedCandidateGrounding(test.options);
+    const failed = report(40, { approved: false, groundedOk: false, groundingStatus: "failed", unsupportedClaims: ["False statistic"] });
+    const updated = await check(page("Changed."), failed, status === "unavailable" ? notes : []);
+    expect(pageQualityReportSchema.parse(JSON.parse(JSON.stringify(updated)))).toMatchObject({
+      approved: false, groundedOk: false, groundingStatus: "failed", groundingAvailability: status, unsupportedClaims: ["False statistic"]
+    });
+  });
   it.each([
     "The treatment helped 94% of participants recover.",
     "The East team reported that the treatment may help.",
@@ -97,7 +107,7 @@ describe("page candidate grounding gate", () => {
     expect(outcome).toMatchObject({ report: { groundingStatus: "unverified_no_sources" }, approved: true });
     expect(test.choose).not.toHaveBeenCalled();
     const check = changedCandidateGrounding({ ...test.options, researchNotes: [] });
-    expect(await check(page("Changed."), report(80, { groundedOk: false, issues: ["Another failure"] }), [])).toMatchObject({ approved: false, groundedOk: false, issues: ["Another failure"], groundingStatus: "unverified_no_sources" });
+    expect(await check(page("Changed."), report(80, { groundedOk: false, issues: ["Another failure"] }), [])).toMatchObject({ approved: false, groundedOk: false, issues: ["Another failure"], groundingStatus: "failed", groundingAvailability: "unverified_no_sources" });
   });
 
   it("checks an externally rewritten seed even when further QA rewriting is disabled", async () => {

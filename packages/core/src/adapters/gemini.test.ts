@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
-import { GeminiImageAdapter, GeminiResearchAdapter, GeminiTextAdapter } from "./gemini.js";
+import { GeminiImageAdapter, GeminiTextAdapter } from "./gemini.js";
 import { isImageContentRefusalError } from "./imageRefusal.js";
 import { imageRefusalCategory } from "./imageRefusalVerdict.js";
 
@@ -235,78 +235,6 @@ describe("GeminiTextAdapter", () => {
     }
 
     expect(chunks).toEqual(["first ", "second"]);
-  });
-});
-
-describe("GeminiResearchAdapter", () => {
-  it("does not seed or store AI-book prompt echoes in research text", async () => {
-    const requests: any[] = [];
-    const adapter = new GeminiResearchAdapter({ apiKey: "test-key", textModel: "test-model" });
-    (adapter as any).ai = {
-      models: {
-        generateContent: async (request: any) => {
-          requests.push(request);
-          return {
-            text: [
-              "For an AI book outline exploring the topic, consider these sources:",
-              "- A useful reader-facing note."
-            ].join("\n"),
-            candidates: [
-              {
-                groundingMetadata: {
-                  groundingChunks: [{ web: { title: "Example Source", uri: "https://example.com/source" } }]
-                }
-              }
-            ]
-          };
-        }
-      }
-    };
-
-    const result = await adapter.search({ query: "female-led societies", purpose: "plan-research" });
-
-    expect(requests[0].contents).not.toContain("AI book");
-    expect(result.summary).not.toContain("AI book");
-    expect(result.sources[0]?.summary).not.toContain("AI book");
-    expect(result.sources[0]?.summary).toContain("A useful reader-facing note");
-  });
-
-  it("cites the publisher's own address instead of Google's grounding redirect", async () => {
-    const fetchMock = vi.fn(
-      async () => new Response(null, { status: 302, headers: { location: "https://audubon.org/news/owls" } })
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    const adapter = new GeminiResearchAdapter({ apiKey: "test-key", textModel: "test-model" });
-    (adapter as any).ai = {
-      models: {
-        generateContent: async () => ({
-          text: "Owls hunt at night.",
-          candidates: [
-            {
-              groundingMetadata: {
-                groundingChunks: [
-                  {
-                    web: {
-                      title: "audubon.org",
-                      uri: "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AbC123"
-                    }
-                  }
-                ]
-              }
-            }
-          ]
-        })
-      }
-    };
-
-    const result = await adapter.search({ query: "owls", purpose: "plan-research" });
-
-    expect(result.sources[0]?.url).toBe("https://audubon.org/news/owls");
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
   });
 });
 

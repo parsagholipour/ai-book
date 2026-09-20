@@ -1,10 +1,10 @@
 import { z } from "zod";
 import { acceptsChapterEdit, type ChapterEditAcceptanceOptions } from "./chapterEditAcceptance.js";
 import { chapterDegeneracy } from "./chapterIntegrity.js";
+import { chapterCutConstraints } from "./chapterCutContext.js";
 import { deletionOnlyResult } from "./composedChapterCuts.js";
 export { cutChapterTail, CUT_TAIL_WORDS, deletionOnlyResult } from "./composedChapterCuts.js";
 import type { TextModelAdapter } from "../adapters/types.js";
-import { isDiagramFriendlyBookCategory } from "../categories.js";
 import { CONTINUITY_NOTE_PROMPT_LIMITS, continuityNotesForPrompt } from "../context/contextPack.js";
 import { targetLanguageGenerationGuidance, targetLanguagePayload } from "../prompting/language.js";
 import { kidsReadingGuidanceForInput, kidsReadingGuidanceLines } from "../prompting/readingLevel.js";
@@ -93,13 +93,17 @@ export function chapterWordBudget(
         target: Math.round((kids.targetWordsPerPage.min + kids.targetWordsPerPage.max) / 2),
         max: kids.targetWordsPerPage.max
       }
-    : isDiagramFriendlyBookCategory(input.category)
-      ? { min: 300, target: 380, max: 480 }
-      : // A printed page holds ~490 words of this prose: 480 a page printed 107–112 of 120
-        // paid, 540 printed 124, 520 printed 120, and length made no difference to the blind
-        // panel (480: 7.32, 520: 7.31, ×3 each). But at ~87% delivery 520 sat the book on its
-        // floor and the read's cuts could not apply; 570 lands ~10% above it for them to spend.
-        { min: 430, target: 570, max: 640 };
+    : // A printed page holds ~490 words of this prose: 480 a page printed 107–112 of 120
+      // paid, 540 printed 124, 520 printed 120, and length made no difference to the blind
+      // panel (480: 7.32, 520: 7.31, ×3 each). But at ~87% delivery 520 sat the book on its
+      // floor and the read's cuts could not apply; 570 lands ~10% above it for them to spend.
+      // The diagram-friendly categories (SCIENCE, EDUCATION, HEALTH) used to ask 300/380/480,
+      // a discount nothing had measured: the same typesetter prints the same ~496 words on a
+      // full sheet of a science book (the 2026-09-19 cryptography book, inline maths and all),
+      // so 380 a page could print at most 88 of 100 paid even at full delivery, and printed
+      // 77. A figure's room on the page is `figureWords` below, so the discount stood for
+      // nothing else.
+      { min: 430, target: 570, max: 640 };
   const displaced = Math.max(0, options.figureWords ?? 0);
   // Floor the no-figure chapter first (a one-page chapter still asks for a
   // full page of prose), then subtract figure words. Flooring at `per.target`
@@ -115,6 +119,21 @@ export function chapterWordBudget(
     target: Math.max(0, baseTarget - displaced),
     max: Math.max(0, baseMax - displaced)
   };
+}
+
+/**
+ * The most prose one compose call has returned. Across two live Balanced books
+ * and their replays (2026-09-19, forty first drafts) no draft passed 4,700
+ * words whatever it was asked for — 7,410 came back at 4,667, 6,224 at 4,508 —
+ * while chapters asked for 2,000–3,500 came back at 60–105%. A chapter whose
+ * target sits above this is short by construction, so the planner is told the
+ * longest chapter the budget allows (`maxComposedChapterPages`).
+ */
+export const COMPOSE_CALL_WORDS = 4600;
+
+/** The longest chapter, in pages, whose word target one compose call can reach: eight at 570 words a page, never under the planner's five-page floor. */
+export function maxComposedChapterPages(input: CreateProjectInput): number {
+  return Math.max(5, Math.min(14, Math.floor(COMPOSE_CALL_WORDS / chapterWordBudget(input, 1).perPage)));
 }
 
 export type EarlierChapterDigest = {
@@ -490,7 +509,8 @@ export async function cutChapter(
   const draftWords = countReadableWords(options.markdown);
   const pages = options.chapterPageEnd - options.chapterPageStart + 1;
   const budget = chapterWordBudget(options.input, pages);
-  const removableWords = Math.max(0, Math.min(draftWords - budget.min, options.maxRemovableWords ?? Infinity));
+  const cutConstraints = chapterCutConstraints(options.markdown, budget.min, options.maxRemovableWords);
+  const removableWords = cutConstraints.maxRemovableWords;
   if (removableWords === 0) {
     return { markdown: options.markdown, words: draftWords, attempts: 0, changed: false };
   }
@@ -516,6 +536,7 @@ export async function cutChapter(
           {
             draft: options.markdown,
             notes: options.notes,
+            cutConstraints,
             ...(options.bookNotes && options.bookNotes.length > 0 ? { bookNotes: options.bookNotes } : {})
           },
           null,

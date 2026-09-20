@@ -1,4 +1,4 @@
-import { rankSourcePassages, type EmbeddingAdapter, type SourceRef, type SourceService } from "@book-maker/core";
+import { isCancellationError, rankSourcePassages, type EmbeddingAdapter, type SourceRef, type SourceService } from "@book-maker/core";
 import { prisma } from "./client.ts";
 
 /** Scope is server-owned: never construct refs from model arguments or client JSON. */
@@ -18,7 +18,10 @@ export function createSourceService(userId: string, refs: SourceRef[], embedding
     },
     async search(query, sourceId) {
       if (!refs.length) return [];
-      const [rows, vector] = await Promise.all([chunks(), embedding?.embed(query).catch(() => undefined)]);
+      const [rows, vector] = await Promise.all([chunks(), embedding?.embed(query).catch((error) => {
+        if (isCancellationError(error)) throw error;
+        return undefined;
+      })]);
       return rankSourcePassages(rows.filter((row) => !sourceId || row.sourceId === sourceId).map((row) => ({
         sourceId: row.sourceId, version: row.version, ordinal: row.ordinal, name: row.extraction.source.name, locator: row.locator, content: row.content,
         embedding: Array.isArray(row.embedding) && row.embedding.every((v) => typeof v === "number") ? row.embedding as number[] : undefined

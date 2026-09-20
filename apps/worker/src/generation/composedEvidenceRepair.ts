@@ -41,7 +41,10 @@ export async function repairChapterEvidence(options: {
   review: (markdown: string) => Promise<ChapterCaseEvidenceReview>;
   edit: (markdown: string, notes: string[]) => Promise<string>;
   degenerate: (markdown: string) => boolean;
+  /** How the findings are put to the editor; the case-evidence wording unless the caller has its own. */
+  notes?: ((issues: readonly string[], last: boolean) => string[]) | undefined;
 }): Promise<ChapterEvidenceRepair> {
+  const notesFor = options.notes ?? evidenceRepairNotes;
   let markdown = options.markdown;
   let review = await options.review(markdown);
   const findings = review.issues.length;
@@ -49,7 +52,7 @@ export async function repairChapterEvidence(options: {
   let repairs = 0;
   while (review.issues.length && repairs < EVIDENCE_REPAIR_ROUNDS) {
     repairs += 1;
-    const repaired = await options.edit(markdown, evidenceRepairNotes(review.issues, repairs === EVIDENCE_REPAIR_ROUNDS));
+    const repaired = await options.edit(markdown, notesFor(review.issues, repairs === EVIDENCE_REPAIR_ROUNDS));
     // A rejected/unchanged edit has no new evidence: re-reviewing it could erase the findings.
     if (repaired === markdown) continue;
     if (options.degenerate(repaired)) break;

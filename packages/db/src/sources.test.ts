@@ -4,6 +4,12 @@ vi.mock("./client.ts", () => ({ prisma: db }));
 import { createSourceService } from "./sources.ts";
 
 describe("source service", () => {
+  it.each(["StopRequestedError", "AbortError"])("propagates %s instead of proceeding after cancelled retrieval", async (name) => {
+    db.sourceChunk.findMany.mockResolvedValue([]);
+    const stop = Object.assign(new Error("Stopped"), { name });
+    const service = createSourceService("user1", [{ sourceId: "s1", version: 1 }], { embed: async () => { throw stop; } });
+    await expect(service.search("evidence")).rejects.toBe(stop);
+  });
   it("uses lexical evidence during an embedding outage and scopes every candidate to the owner and version", async () => {
     const ref = { sourceId: "old", version: 2 };
     db.sourceChunk.findMany.mockResolvedValue([{ ...ref, ordinal: 90, locator: "Ending", content: "The access code is ORCHID-913", embedding: null, extraction: { source: { name: "Archive" } } }]);

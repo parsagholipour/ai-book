@@ -13,10 +13,16 @@ const excerpt = (text: string, extra: Partial<{ speaker: string; author: string;
   year: extra.year ?? "",
   speaker: extra.speaker ?? "",
   text,
-  words: text.split(/\s+/).length
+  words: text.split(/\s+/).length,
+  provenanceVerified: true
 });
 
 describe("chapterApparatus", () => {
+  it("does not publish an epigraph from unreviewed or rejected edition metadata", () => {
+    const suspect = excerpt("The Contents of the Nautical Almanac for the year 1842 are the Baine generally as those of the preceding year.", { author: "Airy", year: "1767" });
+    expect(chapterEpigraph([{ ...suspect, provenanceVerified: false }])).toBeUndefined();
+    expect(chapterEpigraph([{ ...suspect, provenanceVerified: undefined }])).toBeUndefined();
+  });
   it("keeps whole opening sentences under the cap and refuses a fragment", () => {
     const long = "First sentence of twelve words that runs on a little further than needed. " + "Second sentence here. " + "word ".repeat(70);
     expect(epigraphText(long)).toBe("First sentence of twelve words that runs on a little further than needed. Second sentence here.");

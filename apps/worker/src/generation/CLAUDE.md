@@ -74,6 +74,20 @@ may have been edited in the meantime.
   `recordChapterEvidenceResiduals` instead of failing the book. Before this, the first two books to
   reach composition (development-fixes-1c and 2a-retry, 2026-09-05) failed on chapters 1 and 2
   after a complete evidence stage and a passed developmental replan each.
+- **A composed chapter's wrong arithmetic is repaired through the evidence loop, then recorded and
+  flagged for review like an unsupported claim.** `repairChapterArithmetic`
+  (`composedArithmeticRepair.ts`) runs after the case-evidence repair in `finishChapter`: it is
+  `repairChapterEvidence` with a model-free review (`arithmeticFindings`) and its own notes — the
+  first round told to correct the wrong numbers and recompute the steps that follow, the last told
+  to delete the intermediate steps and keep the correct result — and each edit carries the
+  findings as `factualCorrection.computations`, the evidence the acceptance judge reads. What still
+  fails goes on the chapter report as `arithmetic.unresolved` (`{ quote, reason }`), into the run
+  log as `generation.composed_chapters.arithmetic`, and `arithmeticErrorIssues`
+  (`composedEvidenceResiduals.ts`) matches the quotes against the compile's pages and appends one
+  error-severity `ARITHMETIC_ERRORS` issue, so the book publishes as REVIEW_REQUIRED with the
+  statements on the card and a page edited past the statement clears itself. A chapter whose
+  arithmetic holds spends no edit at all.
+
 - **Every per-page path reads a stored figure as its stand-in and stores no figure of its own.**
   `toPriorPageContext` (`bookHelpers.ts`) is where a stored page becomes a prompt's prior-page
   context, so the block becomes `[Figure: title]` there and the summary is run through
@@ -698,7 +712,9 @@ heartbeat-protected scratch directories. S3 copies and uploads preserve the publ
   and nothing downstream would have stopped a repair starting it — `enqueueWorkerJob` suffixes a
   dedupe key with the generation attempt's id, and a repair carries no attempt, so the bare
   `prepare-characters:{project}:{plan}` key it computes is free even for a book whose generation
-  already ran that detection.
+  already ran that detection. None of this applies to a book composed by chapters: its reader
+  chapters are its `Chapter` rows (`readerChaptersFromComposedChapters`, taken before the cache in
+  every lane), so a composed book makes no chapterization call and has no miss to be free on.
 - **A compile publishes by claiming the revision it compiled, and it renders somewhere else until
   it has.** `staleGenerationJobReason` refuses to *start* a compile whose `contentRevision` has
   moved, but that is one instant and the work behind it is minutes of QA, reader chapters and a
