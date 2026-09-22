@@ -7,6 +7,16 @@ const wrong = "Squaring and reducing: \\[\n128^2=16384\\equiv169\\pmod{187}.\n\\
 const right = wrong.replace("169\\pmod", "115\\pmod").replace("169^2\\equiv81", "115^2\\equiv135");
 
 describe("repairChapterArithmetic", () => {
+  it("repairs incorrect labeled calculations before they reach pagination", async () => {
+    const markdown = "The public value is \\(A=5^6\\bmod23=9\\).";
+    const fixed = markdown.replace("=9", "=8");
+    const edit = vi.fn<Edit>(async () => fixed);
+    expect(await repairChapterArithmetic({ markdown, edit, degenerate: () => false })).toMatchObject({
+      markdown: fixed, findings: 1, repairs: 1, unresolved: []
+    });
+    expect(edit.mock.calls[0]![1].computations).toEqual(["5^6 mod 23 = 8, which is ≡ 8 (mod 23), but the statement gives 9."]);
+  });
+
   it("does nothing, and spends no edit, on a chapter whose arithmetic holds", async () => {
     const edit = vi.fn<Edit>();
     expect(await repairChapterArithmetic({ markdown: right, edit, degenerate: () => false })).toBeUndefined();

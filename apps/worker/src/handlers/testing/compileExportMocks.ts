@@ -54,6 +54,7 @@ export const mocks = {
     chapter: { findUnique: vi.fn(), updateMany: vi.fn() },
     continuityNote: { findMany: vi.fn(), createMany: vi.fn() },
     generationJob: {
+      findFirst: vi.fn(async (_args: unknown): Promise<{ qualityReport: unknown } | null> => null),
       count: vi.fn(async () => 0),
       findUnique: vi.fn(async ({ where }: { where: { id: string } }): Promise<MockGenerationJobSelection> => {
         if (where.id !== "image-job-1") {
@@ -316,6 +317,11 @@ export const pageReviewModuleMock = (actual: typeof import("../../generation/pag
 export const coreModuleMock = (actual: typeof import("@book-maker/core")) => ({
   ...actual,
   generateJsonWithRetry: mocks.generateJsonWithRetry,
+  reviewManuscriptCoverage: vi.fn(async (options: { promises: readonly string[] }) => ({
+    status: "reviewed", requirements: [],
+    issues: options.promises.map((text) => ({ code: "UNPAID_PROMISE", severity: "warning", source: "model",
+      message: text, guidance: "Review the missing payoff.", affectedPageIndexes: [] }))
+  })),
   // The style audit's one model call, mocked at the barrel because
   // `qualityEnrichment.ts` imports it from there. `withStyleAudit` stays real,
   // so a suite opting into the auditor measures the real penalty arithmetic.

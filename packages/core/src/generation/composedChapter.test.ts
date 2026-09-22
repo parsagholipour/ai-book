@@ -3,6 +3,7 @@ import { FakeTextModelAdapter } from "../adapters/fake.js";
 import type { GenerateJsonOptions, GenerateTextOptions } from "../adapters/types.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
 import type { CreateProjectInput } from "../schemas/book.js";
+import { dossierExcerptSchema } from "../schemas/episodes.js";
 import { RHYTHM_EXEMPLAR, generateAuthorStance } from "./authorStance.js";
 import { formPaletteFor, fallbackChapterComposition } from "./chapterForms.js";
 import { bookArcSchema } from "./bookArc.js";
@@ -144,6 +145,8 @@ describe("composeChapter", () => {
       stance,
       chapter,
       composition: silentPlan,
+      material: { episodes: [], excerpts: [dossierExcerptSchema.parse({ id: "record", chapterIndex: chapter.index,
+        documentTitle: "Test original record", documentUrl: "https://example.org/record", text: "The record documents the meeting and the order issued afterward.", provenanceVerified: true })] },
       chapterPageStart: 1,
       chapterPageEnd: chapter.targetPages,
       earlierChapters: [],

@@ -73,6 +73,8 @@ export const dossierExcerptSchema = z.object({
   speaker: z.string().default(""),
   /** Verbatim: sliced by the code from the fetched document. */
   text: z.string().min(1),
+  /** Offsets into downloaded text after whitespace normalization, never into a generated summary. */
+  location: z.object({ start: z.number().int().nonnegative(), length: z.number().int().positive(), unit: z.literal("normalized-text-character") }).optional(),
   /** A separate contextual check established usable attribution/edition and transcription. */
   provenanceVerified: z.boolean().optional(),
   words: z.number().int().nonnegative().default(0)
@@ -103,6 +105,8 @@ export const caseEvidencePacketSchema = z.object({
 export type CaseEvidencePacket = z.infer<typeof caseEvidencePacketSchema>;
 
 export const bookDossierSchema = z.object({
+  /** Chapters attempted by the web-enabled retrieval pipeline; empty results are recorded as gaps. */
+  researchedChapters: z.array(z.number().int().positive()).optional(),
   excerpts: z.array(dossierExcerptSchema).default([]),
   evidencePackets: z.array(caseEvidencePacketSchema).optional(),
   excludedCases: z.array(z.object({ chapterIndex: z.number().int().positive(), title: z.string(), reason: z.string() })).optional(),

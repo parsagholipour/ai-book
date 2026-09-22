@@ -6,6 +6,7 @@ import { defaultConfig } from "md-to-pdf/dist/lib/config.js";
 import { getHtml } from "md-to-pdf/dist/lib/get-html.js";
 import type { ScriptProfile } from "../prompting/script.js";
 import { retagColorlessCodeFences } from "./retagColorlessCodeFences.js";
+import { prepareMarkdownMath } from "./markdownMath.js";
 import {
   appendBookPageAnchorLinkNav,
   neutralizeRenderedReservedIds,
@@ -125,17 +126,18 @@ export type BookPdfDocumentOptions = {
  */
 export async function buildBookPdfDocument(options: BookPdfDocumentOptions): Promise<string> {
   const { markdownCss, highlightCss } = await loadBaseStylesheets();
+  const math = prepareMarkdownMath(retagColorlessCodeFences(options.markdown));
   let html = liftChapterAnchorsOntoHeadings(
     // Unconditional, and before the lift: a page whose text merely *reads* like
     // `## Chapter 2` is handed that heading's slug by marked, and the lift would
     // then plant the real chapter's id behind a copy Chrome resolves first.
     neutralizeRenderedReservedIds(
       stripEmbeddedDocuments(
-        getHtml(retagColorlessCodeFences(options.markdown), {
+        math.restore(getHtml(math.markdown, {
           ...defaultConfig,
           document_title: "",
           body_class: []
-        })
+        }))
       )
     )
   );

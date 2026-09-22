@@ -4,6 +4,8 @@ import {
   type ChapterEpisode, type ChapterPlan, type CreateProjectInput, type TextModelAdapter, type PrimarySourceSearch
 } from "@book-maker/core";
 import { primarySourceFetch } from "./composedChaptersMaterial.js";
+import type { RunLogger } from "../providers/runLogging.js";
+import { createDossierRunTrace } from "./dossierRunTrace.js";
 
 /** At most one new retrieval and one replacement-case search per missing chapter. */
 export async function prepareVerifiedCases(options: {
@@ -14,6 +16,7 @@ export async function prepareVerifiedCases(options: {
   dossier: BookDossier | undefined;
   textModel: TextModelAdapter;
   searchSources?: PrimarySourceSearch | undefined;
+  runLog?: Pick<RunLogger, "append"> | undefined;
   /** Fixed chapters need their own cases; a developing book can merge coverage and reuse evidence in synthesis. */
   coverage?: "chapter" | "book";
 }): Promise<{ episodes: BookEpisodes; dossier: BookDossier }> {
@@ -33,10 +36,7 @@ export async function prepareVerifiedCases(options: {
       await attempt(episode, index + 1, dossier.excerpts.filter((excerpt) => excerpt.chapterIndex === chapter.index));
     }
     if (packets.length === 0 && Date.now() < deadline) {
-      const retrieved = await buildChapterDossier({
-        input: options.input, chapter, episodes, textModel: options.textModel, fetch: primarySourceFetch,
-        evidence: true, queryOffset: 1, deadline, searchSources: options.searchSources
-      });
+      const retrieved = await retrieve(chapter, episodes, 1);
       for (const [index, episode] of episodes.entries()) await attempt(episode, index + 1, retrieved.excerpts);
     }
     if (packets.length === 0 && Date.now() < deadline) {
@@ -70,7 +70,14 @@ export async function prepareVerifiedCases(options: {
     }
   };
 
-  function retrieve(chapter: ChapterPlan, episodes: ChapterEpisode[]) {
-    return buildChapterDossier({ input: options.input, chapter, episodes, textModel: options.textModel, fetch: primarySourceFetch, evidence: true, deadline, searchSources: options.searchSources });
+  async function retrieve(chapter: ChapterPlan, episodes: ChapterEpisode[], queryOffset = 0) {
+    const trace = createDossierRunTrace(options.runLog, {
+      chapterIndex: chapter.index, retrievalStage: "case_recovery", queryOffset
+    });
+    try {
+      return await buildChapterDossier({ input: options.input, chapter, episodes, textModel: options.textModel,
+        fetch: primarySourceFetch, evidence: true, deadline, queryOffset, searchSources: options.searchSources,
+        log: trace.log });
+    } finally { await trace.flush(); }
   }
 }

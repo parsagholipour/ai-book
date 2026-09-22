@@ -108,7 +108,7 @@ export type ExportPageForRepair = {
   qualityReport?: unknown;
   revision: number;
   status: string;
-  chapter?: { id: string; index: number; title?: string; summary?: string; productionBrief: unknown } | null;
+  chapter?: { id: string; index: number; title?: string; targetPages?: number; summary?: string; productionBrief: unknown } | null;
   images: Array<{ path: string }>;
 };
 

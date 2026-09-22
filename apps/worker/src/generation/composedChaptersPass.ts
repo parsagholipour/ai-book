@@ -57,15 +57,17 @@ import {
   stripMisattributedQuotes,
   type ChapterMaterial,
   type ComposedScene,
-  chapterCaseEvidence, shouldGenerateCharacterReferences, supportsBookDevelopment, reviewChapterCaseEvidence
+  chapterCaseEvidence, shouldGenerateCharacterReferences, supportsBookDevelopment
 } from "@book-maker/core";
 import { persistBookArc, persistGeneratedAuthorStance, prepareComposedDevelopment } from "./composedPreparation.js";
-import { prepareBookMaterial } from "./composedChaptersMaterial.js";
+import { prepareBookMaterial, persistDossierSupplement, recordDossierSources } from "./composedChaptersMaterial.js";
 import { finalizePendingPages } from "./composedChaptersFinalize.js";
 import { runComposedDevelopmentalEdit } from "./composedDevelopmentalEdit.js";
 import { validateComposedChapterFigures } from "./composedFigures.js";
-import { repairChapterEvidence } from "./composedEvidenceRepair.js";
+import { repairComposedClaims } from "./composedClaimReview.js";
+import { mergeSourceDossiers } from "./sourceDossier.js";
 import { repairChapterArithmetic } from "./composedArithmeticRepair.js";
+import { measureComposedChapterLength } from "./composedChapterLength.js";
 import type { RunLogger } from "../providers/runLogging.js";
 import { prisma } from "@book-maker/db";
 import { maybeEnqueueCompile, maybeEnqueueCover } from "../runtime/dispatch.js";
@@ -128,6 +130,7 @@ export async function generateBookComposedChapters(options: {
   const { projectId, planId, input, providers, strategy, generationJobId, judgeTextModel, runLog } = options;
   let plan = options.plan;
   const textModel = providers.text;
+  const searchSources = async (query: string) => (await providers.research.search({ query, projectId, purpose: "case-source-search" })).sources.flatMap((source) => source.url ? [{ title: source.title, url: source.url }] : []);
   const quality = await loadQualityContext(input);
   await advanceJobStep(generationJobId, "briefs", 12, "Deciding the author's stance", { phase: "stance" });
   const originalState = await loadComposedBookState(projectId);
@@ -138,9 +141,7 @@ export async function generateBookComposedChapters(options: {
     stance = await generateAuthorStance({ input, plan, textModel });
     await persistGeneratedAuthorStance(planId, stance);
   }
-  plan = await prepareComposedDevelopment({ projectId, planId, input, plan, stance, textModel, quality, hasPages: originalState.pages.length > 0, generationJobId,
-    searchSources: async (query) => (await providers.research.search({ query, projectId, purpose: "case-source-search" })).sources.flatMap((source) => source.url ? [{ title: source.title, url: source.url }] : [])
-  });
+  plan = await prepareComposedDevelopment({ projectId, planId, input, plan, stance, textModel, quality, hasPages: originalState.pages.length > 0, generationJobId, searchSources, ...(runLog ? { runLog } : {}) });
   stance = planAuthorStance(plan) ?? stance;
   if (plan.bookDevelopment || plan.dossier?.evidencePackets?.length) await runLog?.append("generation.composed_chapters.development_prepared", { projectId, chapters: plan.chapters.length, casePackets: plan.dossier?.evidencePackets?.length ?? 0, excludedCases: plan.dossier?.excludedCases?.length ?? 0, replanned: Boolean(plan.bookDevelopment), reviewNotes: plan.bookDevelopment?.reviewNotes ?? [] });
   // The book's arc: planned once per book and stored on the plan together
@@ -184,9 +185,8 @@ export async function generateBookComposedChapters(options: {
   // The writer's contract and, material-first, the book's episodes and
   // dossier: planned once per book and stored on the plan like the arc
   // (`composedChaptersMaterial.ts`).
-  const { contract, episodes, dossier } = plan.dossier?.evidencePackets
-    ? { contract: "grounded" as const, episodes: plan.episodes, dossier: plan.dossier }
-    : await prepareBookMaterial({ projectId, planId, input, plan, stance, textModel, quality, generationJobId });
+  const { contract, episodes, dossier } = await prepareBookMaterial({ projectId, planId, input, plan, stance, textModel, quality, generationJobId, searchSources, ...(runLog ? { runLog } : {}) });
+  plan = { ...plan, ...(episodes ? { episodes } : {}), ...(dossier ? { dossier } : {}) };
   const scenes = new Map<number, ComposedScene>();
   // Under the apparatus flag no two consecutive chapters open on a scene:
   // rung 3 of the 2026-09-03 ladder told an opening episode in 13–15
@@ -426,8 +426,8 @@ export async function generateBookComposedChapters(options: {
   const drafts = new Map<number, string>();
   const bestOfVerdicts = new Map<number, { pick: number; agreed: boolean; reasons: string[] }>();
   const reports = new Map<number, ComposedChapterReport>();
-  const reportFor = (setup: ChapterSetup, draftWords: number, editedWords: number, editorChanged: boolean): ComposedChapterReport => {
-    const budget = chapterWordBudget(input, setup.endPage - setup.startPage + 1);
+  const reportFor = (setup: ChapterSetup, draftWords: number, editedWords: number, editorChanged: boolean, markdown: string): ComposedChapterReport => {
+    const { wordBudget: budget } = measureComposedChapterLength(input, setup.endPage - setup.startPage + 1, markdown);
     return {
       formPlanSource: forms.source,
       formPlanIssues: forms.issues,
@@ -475,23 +475,19 @@ export async function generateBookComposedChapters(options: {
     // not authorize rewriting claims, deleting qualifications or joining paragraphs.
     // The prose-evidence review: two targeted repairs, then whatever stands is recorded on the
     // chapter and flagged at compile time (composedEvidenceResiduals.ts), never a failed book.
-    const evidencePackets = chapterCaseEvidence(plan, setup.chapter.index);
-    let evidence: ComposedChapterReport["evidence"];
-    if (evidencePackets.length) {
-      const maxWords = Math.ceil(proseWordCount(markdown) * 1.1);
-      const repair = await repairChapterEvidence({
-        markdown,
-        review: (text) => reviewChapterCaseEvidence({ markdown: text, packets: evidencePackets, textModel }),
-        edit: async (text, notes) => (await editChapter({ ...(await composeOptionsFor(setup, drafts)), markdown: text, allowExtension: false, degeneracyMaxWords: maxWords, readerNotes: notes, factualCorrection: { instructions: notes, evidence: evidencePackets } })).markdown,
-        degenerate: (text) => chapterDegeneracy(text, { maxWords, language: input.language }).degenerate
-      });
-      markdown = repair.markdown;
-      evidence = { findings: repair.findings, repairs: repair.repairs, unresolved: repair.unresolved, dropped: repair.dropped };
-      if (repair.unresolved.length || repair.dropped) {
-        console.warn("Chapter evidence findings remain after repair", { event: "generation.composed_chapters.evidence_unresolved", projectId, chapterIndex: setup.chapter.index, ...evidence });
-        await runLog?.append("generation.composed_chapters.evidence_unresolved", { projectId, chapterIndex: setup.chapter.index, ...evidence });
+    const maxWords = Math.ceil(proseWordCount(markdown) * 1.1);
+    const verified = await repairComposedClaims({ projectId, input, plan, chapter: setup.chapter, markdown, textModel, searchSources, runLog,
+      edit: async (text, correction) => (await editChapter({ ...(await composeOptionsFor(setup, drafts)), markdown: text, allowExtension: false, degeneracyMaxWords: maxWords, readerNotes: [...correction.instructions], factualCorrection: correction })).markdown,
+      degenerate: (text) => chapterDegeneracy(text, { maxWords, language: input.language }).degenerate,
+      persistSources: async (supplement) => {
+        await persistDossierSupplement(planId, supplement);
+        await recordDossierSources(projectId, supplement);
+        if (dossier) Object.assign(dossier, mergeSourceDossiers(dossier, supplement));
       }
-    }
+    });
+    const repair = verified.repair;
+    const evidence = repair ? { findings: repair.findings, repairs: repair.repairs, unresolved: repair.unresolved, dropped: repair.dropped } : undefined;
+    if (repair) markdown = repair.markdown;
     // The arithmetic check: every fully numeric statement in the chapter's math is redone, and a
     // wrong one goes back to the editor as a factual correction whose evidence is the computation.
     const arithmeticMaxWords = Math.ceil(proseWordCount(markdown) * 1.1);
@@ -538,7 +534,7 @@ export async function generateBookComposedChapters(options: {
     const bestOf = bestOfVerdicts.get(setup.chapter.index);
     const scene = scenes.get(setup.chapter.index);
     const report: ComposedChapterReport = {
-      ...reportFor(setup, proseWordCount(draftMarkdown), proseWordCount(markdown), editorChanged),
+      ...reportFor(setup, proseWordCount(draftMarkdown), proseWordCount(markdown), editorChanged, markdown),
       paragraphCv: paragraphShapeReport(markdown).cv,
       shapePassApplied,
       ...(bestOf ? { bestOf } : {}),
@@ -555,6 +551,7 @@ export async function generateBookComposedChapters(options: {
       ...(quotes ? { quotes } : {}),
       ...(epigraph ? { epigraph } : {}),
       ...(evidence ? { evidence } : {}),
+      ...(verified.sourceClaims ? { sourceClaims: verified.sourceClaims } : {}),
       ...(arithmetic ? { arithmetic: { findings: arithmetic.findings, repairs: arithmetic.repairs, unresolved: arithmetic.unresolved } } : {})
     };
     reports.set(setup.chapter.index, report);
@@ -749,7 +746,7 @@ export async function generateBookComposedChapters(options: {
       for (const entry of described) {
         if (!entry) continue;
         const { setup, chapterId, current, seamed, pages } = entry;
-        const previous = reports.get(setup.chapter.index) ?? reportFor(setup, proseWordCount(current), proseWordCount(seamed), false);
+        const previous = reports.get(setup.chapter.index) ?? reportFor(setup, proseWordCount(current), proseWordCount(seamed), false, seamed);
         const report: ComposedChapterReport = { ...previous, seamsApplied: true };
         reports.set(setup.chapter.index, report);
         await stageComposedChapter({ projectId, chapterId, setup, composition: compositionFor(setup), pages, report, replace: true });
@@ -843,7 +840,7 @@ export async function generateBookComposedChapters(options: {
           })
         : { markdown: current, words: proseWordCount(current), attempts: 0, changed: false };
       const previous = reports.get(setup.chapter.index) ??
-        reportFor(setup, proseWordCount(current), proseWordCount(current), false);
+        reportFor(setup, proseWordCount(current), proseWordCount(current), false, current);
       const report: ComposedChapterReport = {
         ...previous,
         readNotes: entry.notes,

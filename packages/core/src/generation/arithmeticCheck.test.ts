@@ -13,6 +13,31 @@ const printedRsa = [
 ].join("\n\n");
 
 describe("arithmeticFindings", () => {
+  it("rejects the audited bit-length description of an explicit numeric modulus", () => {
+    const findings = arithmeticFindings("An attacker did not need to factor the 2048-bit modulus $n = 187$.");
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.reason).toContain("8 bits");
+    expect(arithmeticFindings("The 8-bit modulus $n = 187$ is a toy example.")).toEqual([]);
+    expect(arithmeticFindings("A 2048-bit modulus is usual. Our toy modulus is $n = 187$.")).toEqual([]);
+    expect(arithmeticFindings("Store 187 in a 2048-bit integer buffer.")).toEqual([]);
+  });
+  it("checks numeric calculations after an assignment label", () => {
+    for (const label of ["A", "B", "A_i", "A_{i}"]) {
+      const statement = `${label}=5^6\\bmod23=9`;
+      expect(arithmeticFindings(`\\(${statement}\\)`)).toEqual([
+        { quote: statement, reason: "5^6 mod 23 = 8, which is ≡ 8 (mod 23), but the statement gives 9." }
+      ]);
+    }
+    expect(checkStatement("n=187=11\\cdot18")).toBe("187 = 187, but the statement gives 11·18 = 198.");
+  });
+
+  it("checks the rest of a chain after a valid implicit congruence", () => {
+    expect(arithmeticFindings("Modulo 23: \\(5^2\\equiv2=3\\).")).toEqual([
+      { quote: "5^2\\equiv2=3", reason: "2 = 2, which is ≡ 2 (mod 23), but the statement gives 3." }
+    ]);
+    expect(arithmeticFindings("Modulo 23: \\(5^2\\equiv2\\equiv3\\).")).toHaveLength(1);
+  });
+
   it("finds every wrong intermediate residue of the printed RSA chain and names the right one", () => {
     const findings = arithmeticFindings(printedRsa);
     expect(findings.map((finding) => finding.quote)).toEqual([

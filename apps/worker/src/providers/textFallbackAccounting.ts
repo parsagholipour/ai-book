@@ -1,8 +1,11 @@
 import {
   withTextFallbackEventObserver,
   type GenerateTextOptions,
+  type TextProviderRequest,
+  type Usage,
   type TextFallbackEvent
 } from "@book-maker/core";
+import type { RunLogger } from "./runLogging.js";
 import {
   beginLiveTextUsage,
   durationBetweenTimestamps,
@@ -23,6 +26,7 @@ type TextFallbackCallContext = {
   primary: { provider: string; model: string };
   requestOptions: GenerateTextOptions;
   startedAt: string;
+  logger: RunLogger;
 };
 
 /** Keeps each provider attempt on its own live/cost row during one fallback-capable call. */
@@ -30,6 +34,9 @@ export class TextFallbackCallAccounting {
   private fallbackFailureFinalized = false;
   private attemptStartedAt: string;
   private readonly estimatedPromptTokens: number | undefined;
+  private requestIndex = 0;
+  providerRequest: (TextProviderRequest & { requestIndex: number }) | undefined;
+  providerUsage: Usage | undefined;
 
   constructor(
     private liveUsage: LiveTextUsage,
@@ -40,7 +47,32 @@ export class TextFallbackCallAccounting {
   }
 
   observe<T extends GenerateTextOptions>(options: T): T {
-    return withTextFallbackEventObserver(options, (event) => this.handleEvent(event));
+    return withTextFallbackEventObserver({
+      ...options,
+      onProviderRequest: async (request: TextProviderRequest) => {
+        this.providerRequest = { ...request, requestIndex: ++this.requestIndex };
+        this.providerUsage = undefined;
+        try {
+          await this.context.logger.append(`${this.context.operation}.provider_request`, {
+            callId: this.context.callId,
+            purpose: this.context.purpose,
+            ...this.providerRequest
+          });
+        } catch { /* Diagnostic I/O cannot fail generation. */ }
+        try { await options.onProviderRequest?.(request); }
+        catch { /* Preserve the same best-effort contract for an upstream observer. */ }
+      },
+      onProviderUsage: async (usage: Usage) => {
+        this.providerUsage = usage;
+        try {
+          await this.context.logger.append(`${this.context.operation}.provider_usage`, {
+            callId: this.context.callId, providerRequest: this.providerRequest, usage
+          });
+        } catch { /* Diagnostic I/O cannot fail generation. */ }
+        try { await options.onProviderUsage?.(usage); }
+        catch { /* An upstream diagnostic callback is also best-effort. */ }
+      }
+    }, (event) => this.handleEvent(event));
   }
 
   get liveUsageId(): string | undefined {

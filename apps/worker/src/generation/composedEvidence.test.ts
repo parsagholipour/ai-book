@@ -43,6 +43,23 @@ describe("bounded evidence recovery", () => {
     expect(mocks.episodes).not.toHaveBeenCalled();
   });
 
+  it("drains case-recovery search decisions with their chapter and query context", async () => {
+    mocks.build.mockResolvedValueOnce({ failure: "missing passage" }).mockResolvedValueOnce({ packet });
+    let written = false;
+    const append = vi.fn(async () => { await Promise.resolve(); written = true; return "logged"; });
+    mocks.retrieve.mockImplementationOnce(async ({ log }) => {
+      log("dossier.search", { query: "next original source" });
+      log("dossier.document_dropped", { reason: "not the book's language" });
+      expect(append).toHaveBeenCalledTimes(2);
+      return { excerpts: packet.excerpts, documents: [] };
+    });
+    await prepareVerifiedCases({ ...options, runLog: { append } });
+    expect(written).toBe(true);
+    expect(append).toHaveBeenCalledWith("generation.composed_chapters.dossier.search", {
+      query: "next original source", chapterIndex: 1, retrievalStage: "case_recovery", queryOffset: 1
+    });
+  });
+
   it("passes failure reasons to a bounded replacement search and fails closed if it also lacks support", async () => {
     await expect(prepareVerifiedCases(options)).rejects.toThrow("insufficient for chapters 1");
     expect(mocks.retrieve).toHaveBeenCalledTimes(2);

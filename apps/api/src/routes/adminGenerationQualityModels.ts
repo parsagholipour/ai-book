@@ -3,6 +3,9 @@ import {
   isJevSelection,
   GENERATION_TEXT_MODEL_ROUTE_FIELDS,
   GENERATION_TEXT_MODEL_TIERS,
+  GENERATION_MODEL_STAGES,
+  generationStageRoute,
+  stageSupportsFiniteDecisions,
   generationTextModelOptionKey,
   resolveGenerationTextModelRouting,
   selectionFromGenerationOption,
@@ -22,16 +25,23 @@ const partialSelectionSchema = textModelSelectionSchema
   .partial()
   .strict()
   .refine((value) => Object.keys(value).length > 0, { message: "Name at least one model selection field." });
+const stageRoutePatchSchema = z.object({
+  primary: z.union([jevSelectionSchema, partialSelectionSchema]).optional(),
+  fallback: partialSelectionSchema.optional()
+}).strict().refine((value) => value.primary !== undefined || value.fallback !== undefined, { message: "Name a primary or fallback route." });
+const stagesPatchSchema = z.partialRecord(z.enum(GENERATION_MODEL_STAGES.map((stage) => stage.id)), stageRoutePatchSchema)
+  .refine((value) => Object.keys(value).length > 0, { message: "Name at least one stage." });
 const tierModelsPatchSchema = z
   .object({
     writer: partialSelectionSchema.optional(),
     writerFallback: partialSelectionSchema.optional(),
     judgment: partialSelectionSchema.optional(),
-    judgmentFallback: partialSelectionSchema.optional()
+    judgmentFallback: partialSelectionSchema.optional(),
+    stages: stagesPatchSchema.optional()
   })
   .strict()
-  .refine((value) => GENERATION_TEXT_MODEL_ROUTE_FIELDS.some((field) => value[field] !== undefined), {
-    message: "Name a Writer or Judgment primary/fallback route."
+  .refine((value) => value.stages !== undefined || GENERATION_TEXT_MODEL_ROUTE_FIELDS.some((field) => value[field] !== undefined), {
+    message: "Name a stage or default primary/fallback route."
   });
 
 export const generationModelsPatchSchema = z
@@ -85,7 +95,17 @@ const tierModelsPatchOpenApi = {
     writer: partialSelectionOpenApi,
     writerFallback: partialSelectionOpenApi,
     judgment: partialSelectionOpenApi,
-    judgmentFallback: partialSelectionOpenApi
+    judgmentFallback: partialSelectionOpenApi,
+    stages: {
+      type: "object", additionalProperties: false, minProperties: 1,
+      properties: Object.fromEntries(GENERATION_MODEL_STAGES.map(({ id }) => [id, {
+        type: "object", additionalProperties: false, minProperties: 1,
+        properties: { primary: { anyOf: [partialSelectionOpenApi, {
+          type: "object", additionalProperties: false, required: ["provider", "model"],
+          properties: { provider: { const: JEV_SELECTION.provider }, model: { const: JEV_SELECTION.model } }
+        }] }, fallback: partialSelectionOpenApi }
+      }]))
+    }
   }
 } as const;
 
@@ -139,12 +159,20 @@ export function unknownGenerationModelPaths(body: unknown): string[] {
       continue;
     }
     for (const role of Object.keys(tierValue)) {
-      if (!(GENERATION_TEXT_MODEL_ROUTE_FIELDS as readonly string[]).includes(role)) {
+      if (role !== "stages" && !(GENERATION_TEXT_MODEL_ROUTE_FIELDS as readonly string[]).includes(role)) {
         unknown.push(`models.${tier}.${role}`);
       }
     }
     for (const field of GENERATION_TEXT_MODEL_ROUTE_FIELDS) {
       inspectSelection(tierValue[field], `models.${tier}.${field}`, unknown);
+    }
+    for (const [id, value] of Object.entries(record(tierValue.stages) ?? {})) {
+      const path = `models.${tier}.stages.${id}`;
+      if (!GENERATION_MODEL_STAGES.some((stage) => stage.id === id)) unknown.push(path);
+      for (const field of Object.keys(record(value) ?? {})) {
+        if (field !== "primary" && field !== "fallback") unknown.push(`${path}.${field}`);
+        else inspectSelection(record(value)?.[field], `${path}.${field}`, unknown);
+      }
     }
   }
   return unknown;
@@ -182,12 +210,34 @@ export function mergeGenerationModelPatch(
   }
   for (const tier of GENERATION_TEXT_MODEL_TIERS) {
     const tierPatch = patch[tier];
-    if (!tierPatch) {
-      continue;
-    }
     const rawTier = cloneJsonObject(record(rawModels[tier]));
+    // Snapshot legacy stages before changing defaults so unrelated stages cannot drift.
+    const stages = cloneJsonObject(record(rawTier.stages));
+    for (const { id } of GENERATION_MODEL_STAGES) {
+      const currentRoute = generationStageRoute(current, tier, id);
+      const stagePatch = tierPatch?.stages?.[id];
+      let primary = currentRoute.primary;
+      if (stagePatch?.primary) {
+        if (isJevSelection(stagePatch.primary)) {
+          if (!stageSupportsFiniteDecisions(id) || !jevAvailable) throw new GenerationModelSelectionError(`${tier}.${id}: Jev is unavailable or unsupported for this stage.`);
+          primary = { ...JEV_SELECTION };
+        } else {
+          primary = validatedSelection(isJevSelection(primary) ? currentRoute.fallback : primary, stagePatch.primary, options, `${tier}.${id}.primary`);
+        }
+      }
+      const fallback = stagePatch?.fallback
+        ? validatedSelection(currentRoute.fallback, stagePatch.fallback, options, `${tier}.${id}.fallback`)
+        : currentRoute.fallback;
+      const rawStage = cloneJsonObject(record(stages[id]));
+      stages[id] = {
+        ...rawStage,
+        primary: stagePatch?.primary ? { ...primary } : rawStage.primary ?? { ...primary },
+        fallback: stagePatch?.fallback ? { ...fallback } : rawStage.fallback ?? { ...fallback }
+      } as Prisma.InputJsonObject;
+    }
+    rawTier.stages = stages;
     for (const field of GENERATION_TEXT_MODEL_ROUTE_FIELDS) {
-      const leaf = tierPatch[field];
+      const leaf = tierPatch?.[field];
       if (leaf) {
         rawTier[field] = validatedSelection(current[tier][field], leaf, options, `${tier}.${field}`) as Prisma.InputJsonObject;
       }
@@ -241,6 +291,12 @@ export function resetGenerationModels(
     for (const field of GENERATION_TEXT_MODEL_ROUTE_FIELDS) {
       rawTier[field] = { ...compiled[tier][field] } as Prisma.InputJsonObject;
     }
+    const stages = cloneJsonObject(record(rawTier.stages));
+    for (const { id } of GENERATION_MODEL_STAGES) {
+      const route = generationStageRoute(compiled, tier, id);
+      stages[id] = { primary: { ...route.primary }, fallback: { ...route.fallback } } as Prisma.InputJsonObject;
+    }
+    rawTier.stages = stages;
     rawModels[tier] = rawTier;
   }
   return rawModels;

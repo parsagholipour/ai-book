@@ -5,6 +5,7 @@ import {
   ExternalHyperlink,
   HeadingLevel,
   ImageRun,
+  ImportedXmlComponent,
   Paragraph,
   Table,
   TableCell,
@@ -15,9 +16,10 @@ import {
   type IParagraphOptions,
   type ParagraphChild
 } from "docx";
-import { marked, type Token, type Tokens } from "marked";
+import type { Token, Tokens } from "marked";
 import type { ScriptProfile } from "../prompting/script.js";
 import { externalLinkTarget, type DocxImage } from "./docxAssets.js";
+import { lexDocxMarkdown, wordEquation, type DocxMathToken } from "./docxMath.js";
 
 /**
  * The marked token walk behind the Word export: one block token in, the Word
@@ -42,7 +44,7 @@ export type DocxFonts = {
   eastAsia: string | undefined;
 };
 
-export type DocxChapter = { anchor: string; title: string };
+export type DocxChapter = { anchor: string; title: Token[] };
 
 export type DocxRenderContext = {
   profile: ScriptProfile;
@@ -78,7 +80,7 @@ type BlockStyle = {
 };
 
 export function lexMarkdown(text: string): Token[] {
-  return marked.lexer(text, { gfm: true });
+  return lexDocxMarkdown(text);
 }
 
 /** The chapter list a document's Contents is built from: every `##` heading, in order. */
@@ -89,7 +91,7 @@ export function collectChapters(tokenLists: readonly Token[][]): DocxChapter[] {
       if (token.type === "heading" && (token as Tokens.Heading).depth === 2) {
         chapters.push({
           anchor: `chapter-${chapters.length + 1}`,
-          title: plainText((token as Tokens.Heading).tokens)
+          title: contentsTitle((token as Tokens.Heading).tokens)
         });
       }
     }
@@ -97,31 +99,34 @@ export function collectChapters(tokenLists: readonly Token[][]): DocxChapter[] {
   return chapters;
 }
 
-export function plainText(tokens: readonly Token[] | undefined): string {
+/** Plain TOC labels retain equations, without nested hyperlinks or pictures. */
+function contentsTitle(tokens: readonly Token[] | undefined): Token[] {
   if (!tokens) {
-    return "";
+    return [];
   }
   return tokens
-    .map((token) => {
+    .flatMap((token): Token[] => {
+      const text = (value: string): Token[] => [{ type: "text", raw: value, text: value }];
       switch (token.type) {
+        case "bookMath":
+          return [token];
         case "text":
         case "escape":
         case "codespan":
-          return (token as Tokens.Text).tokens ? plainText((token as Tokens.Text).tokens) : (token as Tokens.Text).text;
+          return (token as Tokens.Text).tokens ? contentsTitle((token as Tokens.Text).tokens) : text((token as Tokens.Text).text);
         case "strong":
         case "em":
         case "del":
         case "link":
-          return plainText((token as Tokens.Strong).tokens);
+          return contentsTitle((token as Tokens.Strong).tokens);
         case "image":
-          return (token as Tokens.Image).text;
+          return text((token as Tokens.Image).text);
         case "br":
-          return " ";
+          return text(" ");
         default:
-          return "";
+          return [];
       }
-    })
-    .join("");
+    });
 }
 
 function isRtl(ctx: DocxRenderContext): boolean {
@@ -189,6 +194,11 @@ export function inlineRuns(tokens: readonly Token[] | undefined, ctx: DocxRender
   const runs: ParagraphChild[] = [];
   for (const token of tokens) {
     switch (token.type) {
+      case "bookMath": {
+        const { expression } = token as DocxMathToken;
+        runs.push(wordEquation(expression) ?? textRun(expression.raw, ctx, style));
+        break;
+      }
       case "text": {
         const text = token as Tokens.Text;
         if (text.tokens && text.tokens.length > 0) {
@@ -376,6 +386,16 @@ function tableBlocks(token: Tokens.Table, ctx: DocxRenderContext): FileChild[] {
 
 export function blocksFromToken(token: Token, ctx: DocxRenderContext, block: BlockStyle = {}): FileChild[] {
   switch (token.type) {
+    case "bookMathBlock": {
+      const { expression } = token as DocxMathToken;
+      const equation = wordEquation(expression);
+      const display = new ImportedXmlComponent("m:oMathPara");
+      if (equation) display.push(equation);
+      return [new Paragraph(paragraphOptions(ctx, block, {
+        alignment: AlignmentType.CENTER,
+        children: [equation ? display : textRun(expression.raw, ctx)]
+      }))];
+    }
     case "heading":
       return headingBlocks(token as Tokens.Heading, ctx, block);
     case "paragraph":

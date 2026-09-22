@@ -29,6 +29,7 @@ export const adminProjectExportRoutes: FastifyPluginAsync = async (fastify) => {
       where: { id },
       select: {
         title: true,
+        targetPages: true,
         language: true,
         status: true,
         currentPlanId: true,

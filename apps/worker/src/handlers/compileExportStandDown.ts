@@ -15,7 +15,6 @@ import {
   parseStoryDelta,
   rebuildStoryState,
   seedStoryStateFromPromises,
-  unpaidPromiseIssues,
   type BookPlan,
   type ManuscriptQualityIssue,
   type ManuscriptQualityReport,
@@ -400,57 +399,15 @@ export async function writeStandDownRecordBestEffort(
   });
 }
 
-/**
- * The one finding this file *produces*, spelled once.
- *
- * Both halves of it live here — `unpaidPromiseQualityIssues` builds it and
- * `scoredAgainstTheWholeBook` has to recognise it — so the string is a constant
- * rather than a literal in each. A filter that knows a producer by its code is
- * only as good as the two spellings agreeing, and nothing else in the codebase
- * emits this one.
- */
+/** Historical reports used a last-page signpost for this book-wide finding. */
 const UNPAID_PROMISE_CODE = "UNPAID_PROMISE";
 
 /**
- * The unpaid-promise warnings a report carries, off a story state the caller is
- * entitled to have computed.
- *
- * The state is a parameter rather than a read because the two callers may not
- * take the same one. The publishing compile rebuilds it through
- * `rebuildProjectStoryState`, which *writes* the fold back onto the project —
- * and does so whether or not this audit is enabled, which is why the gate is
- * here and not around the rebuild. The compile standing down inside its own
- * repair may not write anything about a book it has just disclaimed, so it
- * folds the same extracts out of the snapshot it reviewed, through
- * `reviewedStoryState`, and keeps the answer to itself. Which one a call site
- * is entitled to is that function's docstring.
- *
- * **And it arrives unevaluated, because the gate is the first line.** Folding
- * one of those states is a `parseStoryDelta` — a zod parse — per page plus a
- * `rebuildStoryState` over the result, run synchronously on the worker's event
- * loop, and with `storyExtractAudit` off nothing here reads a single entry of
- * it. The publishing caller pays that fold whatever this answers, so deferring
- * it costs that path nothing; the caller it is for is the stand-down inside the
- * repair, which folds a state of its own for this question alone and runs on
- * the one path documented as needing to be cheap — the compile that superseded
- * this one is rendering and publishing against the same database. Evaluated as
- * an argument, a 300-page book on a tier with the audit off folded the whole
- * manuscript there and handed it to a function that returns `[]` before
- * looking at it. Same shape, and the same reason, as the `unflagged` thunk
- * `withoutCollidingRewrites` takes in
- * `packages/core/src/generation/pageBeatDedup.ts`: the guard sits in front of
- * the thunk, and a call that does read the state pays exactly what it paid
- * before.
- *
- * **The page it names is a signpost, not its subject.** `affectedPageIndexes`
- * carries the book's last page because that is where an open promise has to be
- * paid off or retired; the complaint is about a promise opened on some other
- * page and answered on none of them, which is a claim about the manuscript.
- * Every reader wants the signpost — the reader's quality card links it, and the
- * publishing path ships this finding exactly as it is built here — so the shape
- * stays. The one reader that may not take it for a location is the withdrawal
- * filter, and that is `scoredAgainstTheWholeBook`'s job rather than this
- * function's.
+ * A compile that cannot run the manuscript coverage review can only report
+ * that continuity tracking left payoffs unverified. An open delta is never
+ * proof of absence: the explanation may use different words or span pages.
+ * The state stays lazy so disabled extraction does not pay for a page fold.
+ * Empty page indexes scope this uncertainty to the entire reviewed book.
  */
 export function unpaidPromiseQualityIssues(options: {
   quality: QualityGateContext;
@@ -461,13 +418,13 @@ export function unpaidPromiseQualityIssues(options: {
   if (!options.quality.enabled("storyExtractAudit")) {
     return [];
   }
-  return unpaidPromiseIssues(options.storyState(), options.targetPages, options.targetPages).map((message) => ({
-    code: UNPAID_PROMISE_CODE,
+  return options.storyState().promises.filter((promise) => promise.status === "open").map((promise) => ({
+    code: "BRIEF_COVERAGE_UNVERIFIED",
     severity: "warning",
     source: "deterministic",
-    message,
-    guidance: "Pay off or explicitly retire the promise on the last page.",
-    affectedPageIndexes: [options.targetPages]
+    message: `Continuity tracking could not verify this promise: ${promise.text}`,
+    guidance: "Check the whole manuscript for the promised explanation before requesting a rewrite.",
+    affectedPageIndexes: []
   }));
 }
 
@@ -546,13 +503,9 @@ export function pagesTheCompileNoLongerSpeaksFor(
  * the property the whole withdrawal rests on: this compile asserts only what it
  * measured, about a book it still recognises.
  *
- * The code is the test because the code is the producer. `UNPAID_PROMISE` is
- * built in this file and nowhere else, off the constant both halves spell, and
- * "the page I name is a signpost" is a property of that producer rather than of
- * the shape of an array. Every other deterministic finding names the pages it
- * is genuinely about — `PAGE_COUNT_MISMATCH` names all of them, which reaches
- * the same answer by the located route — and the model half either names its
- * pages or names none.
+ * Keep recognizing the legacy UNPAID_PROMISE last-page signpost when withdrawing
+ * persisted reports. New coverage findings and unverified continuity candidates
+ * name no page and therefore take the first branch below.
  */
 function scoredAgainstTheWholeBook(issue: ManuscriptQualityIssue): boolean {
   return issue.affectedPageIndexes.length === 0 || issue.code === UNPAID_PROMISE_CODE;

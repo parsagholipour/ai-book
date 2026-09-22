@@ -99,8 +99,9 @@ export function remainingBudget(budget: ChapterWordBudget, sceneWords: number): 
  * case reservations and the chapter's focus, but not the compose-time
  * opening-scene instructions that materialLines() adds.
  */
-export function materialEditLines(options: { material?: ChapterMaterial | undefined }): string[] {
+export function materialEditLines(options: { material?: ChapterMaterial | undefined; nonfiction?: boolean }): string[] {
   return [
+    ...sourceSupportLines(options),
     ...chapterFocusLines(options),
     ...(options.material?.focus ? [FOCUSED_RECONSTRUCTION_RULE] : []),
     ...(options.material?.evidencePackets?.length ? CASE_EVIDENCE_WRITER_RULES : []),
@@ -114,7 +115,7 @@ export function materialEditLines(options: { material?: ChapterMaterial | undefi
  * never a shape rule, and named in the payload keys (`episodes`, `dossier`,
  * `openingScene`) so the writer does not have to spell them from prose.
  */
-export function materialLines(options: { material?: ChapterMaterial | undefined }): string[] {
+export function materialLines(options: { material?: ChapterMaterial | undefined; nonfiction?: boolean }): string[] {
   const material = options.material;
   if (!material) return [];
   const lines = [
@@ -123,6 +124,7 @@ export function materialLines(options: { material?: ChapterMaterial | undefined 
       : "This chapter is built from the episodes in `episodes`: each is a person, a place, a date and a document from the record, and the chapter's sections are made from them — an episode told in time, a document read closely, a figure worked through — with the argument arising from the material rather than the material illustrating the argument. Give each episode a real stretch of the chapter, not a mention."
   ];
   if (material.episodes.length === 0) lines.length = 0;
+  lines.push(...sourceSupportLines(options));
   lines.push(...chapterFocusLines(options));
   lines.push(...caseReservationLines(options));
   if (material.evidencePackets?.length) lines.push(...CASE_EVIDENCE_WRITER_RULES);
@@ -167,6 +169,7 @@ export function materialPayload(options: { material?: ChapterMaterial | undefine
           dossier: material.excerpts.map((excerpt) => ({
             id: excerpt.id,
             document: excerpt.documentTitle,
+            url: excerpt.documentUrl,
             ...(excerpt.author ? { author: excerpt.author } : {}),
             ...(excerpt.year ? { year: excerpt.year } : {}),
             ...(excerpt.speaker ? { speaker: excerpt.speaker } : {}),
@@ -176,4 +179,9 @@ export function materialPayload(options: { material?: ChapterMaterial | undefine
       : {}),
     ...(material.scene ? { openingScene: material.scene.text } : {})
   };
+}
+
+function sourceSupportLines(options: { material?: ChapterMaterial | undefined; nonfiction?: boolean }): string[] {
+  if (!options.material || !options.nonfiction) return [];
+  return ["For factual assertions, dossier passages and reviewed caseEvidence are the supplied evidence. Episodes, search summaries, the plan and the author's stance are research leads or assignments, not proof. Preserve the passages' scope, attribution and time period; an old standard does not establish a current recommendation. Support material technical explanations, historical specifics, dates, quantities and quotations from these passages. When support is missing, omit the unsupported specific and develop the explanation through explicit assumptions or worked toy examples. Never fill evidence gaps with invented facts. Do not print internal passage IDs or research-process commentary."];
 }

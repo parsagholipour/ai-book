@@ -147,7 +147,11 @@ export function qualityGateCostsForProject(options: {
     : [options.fallbackAt];
 
   const polish = QUALITY_FEATURES.filter((feature) =>
-    runTimes.some((runAt) => qualityFeatureEnabled(settingsAt(revisions, runAt), feature.id, tier))
+    runTimes.some((runAt) => {
+      const settings = settingsAt(revisions, runAt);
+      // Retirement changes future execution, not the historical settings this cost report describes.
+      return feature.retired ? settings[feature.id].includes(tier) : qualityFeatureEnabled(settings, feature.id, tier);
+    })
   ).map((feature) => gateCost(feature.id, feature.label, options.costRows));
 
   const integrity = INTEGRITY_COST_GATES.map((gate) => integrityCost(gate, options.costRows));

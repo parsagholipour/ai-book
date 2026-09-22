@@ -75,6 +75,7 @@ describe("GET /api/admin/projects/:id/export/pdf", () => {
       where: { id: "book-1" },
       select: {
         title: true,
+        targetPages: true,
         language: true,
         status: true,
         currentPlanId: true,

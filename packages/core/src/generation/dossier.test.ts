@@ -11,6 +11,15 @@ const passage =
   "Then Temüjin said to Jamukha: “Let us make the Merkit our prey, and take back what they took from us; let no man of them escape across the Selenge.” And they rode that night.";
 
 describe("dossier", () => {
+  it("uses the supplied web discovery provider even without the case-evidence experiment", async () => {
+    const searchSources = vi.fn(async () => [{ title: "Original RSA paper", url: "https://example.org/rsa.pdf" }]);
+    const search = vi.spyOn(primarySources, "searchPrimarySources").mockResolvedValue([]);
+    const { model } = scriptedDevelopmentModel([]);
+    await buildChapterDossier({ input: developmentInput, chapter: originalDevelopmentPlan().chapters[0]!,
+      episodes: [chapterEpisodeSchema.parse({ title: "RSA", searchQueries: ["RSA original paper"] })],
+      textModel: model, fetch: async () => ({ status: 200, text: "" }), searchSources });
+    expect(search).toHaveBeenCalledWith("RSA original paper", expect.objectContaining({ search: searchSources }));
+  });
   it("lets the extractor assess a passage without shared names instead of dropping its source", async () => {
     const episode = chapterEpisodeSchema.parse({ title: "The coronation", person: "Napoleon Bonaparte", place: "Paris", document: "Coronation memoir", searchQueries: ["coronation witness"] });
     const text = "We watched him take the crown from the cushion and raise it above his head. The company stood as the music began, and the clerk recorded the ceremony before the guests departed through the western door.";

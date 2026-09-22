@@ -10,6 +10,23 @@ const lookupTool = {
 };
 
 describe("OpenAITextAdapter", () => {
+  it("leaves room for elevated chapter reasoning before its prose or JSON output", async () => {
+    const adapter = new OpenAITextAdapter({ apiKey: "test-key", model: "gpt-5.6-sol", thinkingEffort: "max" });
+    const mock = installMockResponses(adapter, [textResponse("A complete chapter."), textResponse('{"value":"ok"}')]);
+    await adapter.generateText({ purpose: "compose-chapter", maxTokens: 10_608, messages: [{ role: "user", content: "Write." }] });
+    await adapter.generateJson({ purpose: "plan-chapter-forms", maxTokens: 5000, messages: [{ role: "user", content: "Plan." }], schema: z.object({ value: z.string() }) });
+    expect(mock.calls.map((call) => call.request.max_output_tokens)).toEqual([48_000, 48_000]);
+  });
+
+  it("preserves uncapped and explicitly larger chapter budgets", async () => {
+    const adapter = new OpenAITextAdapter({ apiKey: "test-key", model: "gpt-5.6-sol", thinkingEffort: "max" });
+    const mock = installMockResponses(adapter, [textResponse("A chapter."), textResponse("A chapter.")]);
+    await adapter.generateText({ purpose: "compose-chapter", messages: [{ role: "user", content: "Write." }] });
+    await adapter.generateText({ purpose: "compose-chapter", maxTokens: 60_000, messages: [{ role: "user", content: "Write." }] });
+    expect(mock.calls[0]!.request).not.toHaveProperty("max_output_tokens");
+    expect(mock.calls[1]!.request.max_output_tokens).toBe(60_000);
+  });
+
   it("uses Responses with explicit GPT-5.6 reasoning, cancellation, and usage metadata", async () => {
     const adapter = new OpenAITextAdapter({
       apiKey: "test-key",

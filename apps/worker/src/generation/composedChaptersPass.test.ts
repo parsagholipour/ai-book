@@ -22,6 +22,7 @@ const store = vi.hoisted(() => ({
 const mocks = vi.hoisted(() => {
   const prisma = {
     chapter: {
+      findFirst: vi.fn(async (args: { where: { index: number } }) => store.chapters.find((chapter) => chapter.index === args.where.index)),
       findMany: vi.fn(async () => store.chapters.map((chapter) => ({ ...chapter }))),
       update: vi.fn(async (args: { where: { id: string }; data: { productionBrief: unknown } }) => {
         const chapter = store.chapters.find((candidate) => candidate.id === args.where.id);
@@ -126,6 +127,7 @@ vi.mock("../runtime/dispatch.js", () => ({
 vi.mock("../runtime/jobLifecycle.js", () => ({ advanceJobStep: vi.fn(), updateJobProgress: vi.fn() }));
 vi.mock("./bookState.js", () => ({ resetBookForDirectGeneration: mocks.resetBookForDirectGeneration }));
 vi.mock("./characterReferences.js", () => ({ ensureCharacterReferenceAssets: mocks.ensureCharacterReferenceAssets }));
+vi.mock("./sourceDossier.js", async (original) => ({ ...await original<object>(), retrieveChapterSources: vi.fn(async () => ({ documents: [], excerpts: [] })) }));
 vi.mock("./bookHelpers.js", async () => {
   const core = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
   return {
@@ -170,10 +172,12 @@ vi.mock("./wholeBookPageReview.js", () => ({
     }))
 }));
 
-import { FakeTextModelAdapter, assignedSectionCount, caseEvidencePacketSchema, chapterWordBudget, figureCapFor, figureSpecSchema, makeFallbackPlan, sustainedSectionShare, type CreateProjectInput, type ProviderSet } from "@book-maker/core";
+import { FakeTextModelAdapter, assignedSectionCount, caseEvidencePacketSchema, chapterWordBudget, figureCapFor, figureSpecSchema, makeFallbackPlan, proseWordCount, sustainedSectionShare, type CreateProjectInput, type ProviderSet } from "@book-maker/core";
 import { composedChaptersStrategy } from "@book-maker/core";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import { composedResumeState, derivedChapterBrief, generateBookComposedChapters } from "./composedChaptersPass.js";
+import { finalizePendingPages } from "./composedChaptersFinalize.js";
+import { sourceClaimDigest } from "./composedClaimReview.js";
 
 const input: CreateProjectInput = {
   prompt: "A global history of aggression and its causes.",
@@ -207,6 +211,10 @@ function recordingFake(): { fake: FakeTextModelAdapter; purposes: string[] } {
   };
   fake.generateJson = async (options) => {
     purposes.push(options.purpose ?? "json");
+    if (options.purpose === "review-chapter-evidence" && JSON.parse(String(options.messages[1]?.content)).phase === "claim_inventory") {
+      const data = options.schema.parse({ complete: true, claims: [] });
+      return { data, text: JSON.stringify(data), provider: "fixture", model: "fixture" };
+    }
     return originalJson(options);
   };
   return { fake, purposes };
@@ -311,6 +319,35 @@ describe("derivedChapterBrief", () => {
 });
 
 describe("generateBookComposedChapters", () => {
+  it("rechecks changed final pages and persists the verdict for the text that will publish", async () => {
+    mocks.qualityEnabled.mockImplementation((feature) => feature !== "figures");
+    const plan = makeFallbackPlan(input);
+    const { fake } = recordingFake();
+    const args = { projectId: "project-1", planId: "plan-1", input, plan, providers: providersWith(fake), strategy: composedChaptersStrategy };
+    await generateBookComposedChapters(args);
+    const page = store.pages[0]!;
+    const claim = "The three authors were listed alphabetically.";
+    page.markdown += `\n\n${claim}`;
+    page.status = "PENDING";
+    const review = vi.spyOn(fake, "generateJson").mockImplementation(async (request) => {
+      expect(request.purpose).toBe("review-chapter-evidence");
+      const data = request.schema.parse({ complete: true, claims: [{ quote: claim, searchQuery: "RSA paper author order" }] });
+      return { data, text: JSON.stringify(data), provider: "fixture", model: "fixture" };
+    });
+    await finalizePendingPages(args);
+    expect(review).toHaveBeenCalledOnce();
+    const chapter = store.chapters.find((entry) => entry.id === page.chapterId)!;
+    const manuscript = store.pages.filter((entry) => entry.chapterId === chapter.id).map((entry) => entry.markdown).join("\n\n");
+    expect(chapter.productionBrief).toMatchObject({ report: { sourceClaims: {
+      textDigest: sourceClaimDigest(manuscript), coverage: { status: "reviewed", unsupported: 1 },
+      claims: [expect.objectContaining({ quote: claim, status: "insufficient_evidence" })]
+    } } });
+    expect(page.status).toBe("COMPLETED");
+    // Replaying the publication step reuses only a review of identical final text.
+    page.status = "PENDING";
+    await finalizePendingPages(args);
+    expect(review).toHaveBeenCalledOnce();
+  });
   it("writes every chapter whole, checkpoints its pages, reads the book once, and finalizes", async () => {
     const plan = makeFallbackPlan(input);
     const { fake, purposes } = recordingFake();
@@ -547,6 +584,13 @@ describe("figures in the composed pass", () => {
     expect(store.pages.some((page) => /\[figure:/i.test(page.markdown))).toBe(false);
     expect(briefs().filter((brief) => brief.composition.sections.some((section) => section.figure))).toHaveLength(expected);
     expect(briefs().flatMap((brief) => brief.pages).filter((page) => page.purpose.includes("Carries the chapter's figure"))).toHaveLength(expected);
+    for (const chapter of store.chapters) {
+      const pages = store.pages.filter((page) => page.chapterId === chapter.id);
+      const report = (chapter.productionBrief as { report: { wordBudget: { min: number }; editedWords: number } }).report;
+      const figureCount = pages.filter((page) => /```figure/.test(page.markdown)).length;
+      expect(report.wordBudget.min).toBe(chapterWordBudget(input, chapter.targetPages).min - figureCount * 140);
+      expect(report.editedWords).toBe(proseWordCount(pages.map((page) => page.markdown).join("\n\n")));
+    }
   });
 
   it("plans and stores no figure when the gate is off", async () => {
@@ -582,7 +626,7 @@ describe("developed nonfiction manuscript integration", () => {
     const json = fake.generateJson.bind(fake);
     const text = fake.generateText.bind(fake);
     fake.generateJson = async (options) => {
-      const data = options.purpose === "plan-developmental-edit" ? { groups: [] } : options.purpose === "review-chapter-evidence" ? { issues: [] } : undefined;
+      const data = options.purpose === "plan-developmental-edit" ? { groups: [] } : options.purpose === "review-chapter-evidence" && !JSON.parse(String(options.messages[1]?.content)).phase ? { issues: [] } : undefined;
       if (!data) return json(options);
       purposes.push(options.purpose!);
       return { data: options.schema.parse(data), text: JSON.stringify(data), provider: "fixture", model: "fixture" };

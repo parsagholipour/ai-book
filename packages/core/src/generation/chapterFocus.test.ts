@@ -228,7 +228,7 @@ describe("focused chapters follow their investigation, not the form quotas", () 
       expect(payload.episodes).toHaveLength(1);
       expect(payload.focus).toEqual(focus);
       expect(payload.wordBudget).toEqual(chapterWordBudget(input, 10));
-      expect(payload.dossier).toEqual([{ id: excerpt.id, document: excerpt.documentTitle, year: excerpt.year, text: excerpt.text }]);
+      expect(payload.dossier).toEqual([{ id: excerpt.id, document: excerpt.documentTitle, url: excerpt.documentUrl, year: excerpt.year, text: excerpt.text }]);
       expect(Object.keys(payload)).not.toContain("measurementNotes");
     }
     const composeSystem = model.textCalls[0]!.messages[0]!.content;
@@ -247,8 +247,8 @@ describe("focused chapters follow their investigation, not the form quotas", () 
 
   it("keeps the composition and treats editor measurements as advisory without a focus", async () => {
     const model = new CapturingModel();
-    await composeChapter(composeOptions(model, false));
-    await editChapter({ ...composeOptions(model, false), markdown: longProse, measurementNotes: [measurementNote], readerNotes: [readerNote] });
+    await composeChapter(composeOptions(model, false, [excerpt]));
+    await editChapter({ ...composeOptions(model, false, [excerpt]), markdown: longProse, measurementNotes: [measurementNote], readerNotes: [readerNote] });
     expect(model.textCalls).toHaveLength(2);
     for (const call of model.textCalls) {
       const system = call.messages[0]!.content;

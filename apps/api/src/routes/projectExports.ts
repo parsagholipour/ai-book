@@ -6,6 +6,7 @@ import {
   removeExportProvenance,
   writeExportProvenance,
   markdownOpensOnCoverSheet,
+  isImportedManuscript,
   persistablePdfPageMapAfterRender,
   publishedExportFilename,
   type AppConfig,
@@ -35,6 +36,7 @@ import { requireOperatorActor, type ProjectActor } from "../requestAuth.js";
 
 export type ProjectPdfExportSource = {
   title: string;
+  targetPages: number;
   /**
    * Load-bearing on the lazy rebuild path below: a PDF regenerated without it
    * has no fonts for the book's script and comes back as tofu.
@@ -395,6 +397,7 @@ export function rebuildProjectPdfExport(
           publicApiUrl: appConfig.PUBLIC_API_URL,
           outputPath,
           language: project.language,
+          targetPageCount: isImportedManuscript(project.mediaSettings) ? undefined : project.targetPages,
           // Scopes the renderer's file access to this book's own illustrations,
           // exactly as the worker's compile does.
           projectId,
@@ -721,6 +724,7 @@ export function registerProjectExportRoutes(fastify: FastifyInstance, appConfig:
       where: ownedProjectWhere(id, actor),
       select: {
         title: true,
+        targetPages: true,
         language: true,
         status: true,
         currentPlanId: true,

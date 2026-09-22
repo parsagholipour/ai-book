@@ -1,5 +1,4 @@
 import {
-  applyStoryDelta,
   auditPageStyle,
   extractStoryState,
   figureFreeProse,
@@ -7,7 +6,6 @@ import {
   isCancellationError,
   localStyleInstructions,
   pageDraftSummary,
-  unpaidPromiseIssues,
   verifyPageClaims,
   withClaimVerification,
   withStoryContradictions,
@@ -23,7 +21,7 @@ import {
   type StoryState,
   type TextModelAdapter
 } from "@book-maker/core";
-import { loadProjectStoryState, persistPageStoryDelta, rebuildStoryStateFromPages } from "./storyStateStore.js";
+import { loadProjectStoryState, persistPageStoryDelta } from "./storyStateStore.js";
 import { loadQualityContext } from "./qualitySettings.js";
 import { isStopRequestedError } from "../runtime/jobTypes.js";
 import type { Prisma } from "@book-maker/db";
@@ -95,18 +93,9 @@ export async function enrichPageQualityReport(options: {
       }
       console.warn(`Story extract skipped for project ${options.projectId} page ${options.pageIndex}`, error);
     }
-    const isLastPage = options.pageIndex === options.input.targetPages;
-    const baseState = isLastPage
-      ? await rebuildStoryStateFromPages(options.projectId, options.plan.promises ?? [])
-      : storyState;
-    const stateForUnpaid = extract
-      ? applyStoryDelta(baseState, extract.storyDelta, options.pageIndex)
-      : baseState;
-    report = withStoryContradictions(
-      report,
-      [],
-      unpaidPromiseIssues(stateForUnpaid, options.pageIndex, options.input.targetPages)
-    );
+    // Open continuity entries are candidates for the final manuscript coverage
+    // review, not evidence that this page needs a rewrite. Payoff may be spread
+    // across earlier pages that this single-page extractor has never read.
   }
 
   const claimVerificationApplies = quality.enabled("claimVerifier") && hasResearchIntent(options.input);

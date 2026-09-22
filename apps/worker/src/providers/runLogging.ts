@@ -172,6 +172,7 @@ export function logTextRequest(options: GenerateTextOptions, providerCallMetadat
     projectId: options.projectId,
     temperature: options.temperature,
     maxTokens: options.maxTokens,
+    requestedMaxTokens: options.maxTokens ?? null,
     messages: options.messages,
     ...(Object.keys(providerCallMetadata).length > 0 ? { providerCallMetadata } : {})
   };

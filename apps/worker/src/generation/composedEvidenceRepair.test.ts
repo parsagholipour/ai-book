@@ -11,6 +11,14 @@ function scripted(reviews: Array<{ issues: string[]; dropped?: string[] }>, edit
 }
 
 describe("bounded chapter evidence repair", () => {
+  it("cannot clear existing findings through an unavailable review of the replacement", async () => {
+    const result = await repairChapterEvidence({ markdown: "original claim", edit: async () => "replacement claim", degenerate: () => false,
+      review: async (markdown) => markdown === "original claim" ? { issues: [finding("original claim")], dropped: [] } : {
+        issues: [], dropped: ["outage"], coverage: { status: "unavailable", checked: 0, supported: 0, unsupported: 0, contradicted: 0 }
+      } });
+    expect(result.markdown).toBe("original claim");
+    expect(result.unresolved).toHaveLength(1);
+  });
   it("leaves a clean chapter alone", async () => {
     const { review, edit, seen } = scripted([{ issues: [] }], []);
     const result = await repairChapterEvidence({ markdown: "Clean.", review, edit, degenerate: () => false });

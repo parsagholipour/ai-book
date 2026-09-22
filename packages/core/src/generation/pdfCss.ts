@@ -1,4 +1,5 @@
 import type { ScriptProfile } from "../prompting/script.js";
+import { DEFAULT_BOOK_PAGE_MARGIN_RULE } from "./pdfPagination.js";
 
 /**
  * The `@page` top margin below, in points. The PDF page map's top-of-page band
@@ -15,7 +16,7 @@ export const BOOK_PAGE_TOP_MARGIN_PT = (20 / 25.4) * 72;
 export const BOOK_PDF_CSS = `
   @page {
     size: A4;
-    margin: 20mm 18mm 22mm;
+    ${DEFAULT_BOOK_PAGE_MARGIN_RULE}
     @bottom-center {
       content: "Page " counter(page);
       font-family: sans-serif;
@@ -44,6 +45,21 @@ export const BOOK_PDF_CSS = `
   body {
     margin: 0;
     padding: 0;
+  }
+  /* The bundled Markdown table scrolls horizontally on screen; a PDF clips
+     those columns. Fit wide comparisons into the printable page instead. */
+  table:has(tr > :nth-child(5)) {
+    display: table;
+    table-layout: fixed;
+    width: 100%;
+    max-width: 100%;
+    overflow: visible;
+    font-size: 0.85em;
+  }
+  table:has(tr > :nth-child(5)) th,
+  table:has(tr > :nth-child(5)) td {
+    padding: 0.4em;
+    overflow-wrap: anywhere;
   }
   body {
     font-family: "SourceSerifBook", Georgia, "Times New Roman", serif;

@@ -8,6 +8,7 @@ import { prepareBookMaterial, recordDossierSources } from "./composedChaptersMat
 import { prepareVerifiedCases } from "./composedEvidence.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import type { loadQualityContext } from "./qualitySettings.js";
+import type { RunLogger } from "../providers/runLogging.js";
 
 /** Freeze the research and new structure together before any page can use either. */
 export async function prepareComposedDevelopment(options: {
@@ -21,6 +22,7 @@ export async function prepareComposedDevelopment(options: {
   quality: Awaited<ReturnType<typeof loadQualityContext>>;
   hasPages: boolean;
   generationJobId?: string | undefined;
+  runLog?: Pick<RunLogger, "append"> | undefined;
 }): Promise<BookPlan> {
   if (!supportsBookDevelopment(options.input, options.plan)) return options.plan;
   const stored = options.plan.bookDevelopment;

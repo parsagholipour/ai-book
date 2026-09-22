@@ -28,9 +28,7 @@ import type {
 import {
   MECHANICAL_TEXT_PURPOSES,
   modelTierImageSelection,
-  modelTierForInput,
-  planThinkingBudgetForTier,
-  ULTRA_PAGE_MAP_THINKING_BUDGET
+  modelTierForInput
 } from "./modelTiers.js";
 import { RoutingTextModelAdapter } from "./textRouting.js";
 import { FallbackTextModelAdapter, type TextFallbackEvent } from "./textFallback.js";
@@ -41,6 +39,9 @@ import {
   generationTextModelOptionKey,
   routingFallbackSelection,
   routingSelection,
+  generationModelStage,
+  generationStageRoute,
+  isJevSelection,
   sameTextModelSelection,
   textModelSelectionKey,
   type GenerationTextModelOption,
@@ -400,8 +401,7 @@ export function createRoutedTextModel(config: AppConfig, selections: ResolvedTex
   const mechanical = sameTextSelection(selections.prose, selections.mechanical)
     ? prose
     : createTextModelAdapter(config, selections.mechanical);
-  const purposeOverrides = purposeOverrideAdapters(config, selections);
-  if (purposeOverrides.size === 0 && mechanical === prose) {
+  if (mechanical === prose) {
     return prose;
   }
   return new RoutingTextModelAdapter(
@@ -409,116 +409,8 @@ export function createRoutedTextModel(config: AppConfig, selections: ResolvedTex
     {
       selection: selections.mechanical,
       adapter: mechanical === prose ? prose : mechanical
-    },
-    purposeOverrides
-  );
-}
-
-function purposeOverrideAdapters(
-  config: AppConfig,
-  selections: ResolvedTextModelSelections
-): Map<string, { selection: TextModelSelection; adapter: TextModelAdapter }> {
-  const overrides = new Map<string, { selection: TextModelSelection; adapter: TextModelAdapter }>();
-  const tier = selections.tier;
-  if (!tier) {
-    return overrides;
-  }
-  const catalog = generationTextModelOptions(config);
-  const planSelection = elevatedThinkingSelection(selections.prose, tier, "plan-book", catalog);
-  if (!sameTextSelection(selections.prose, planSelection)) {
-    overrides.set("plan-book", {
-      selection: planSelection,
-      adapter: createTextModelAdapter(config, planSelection)
-    });
-  }
-  const mapSelection = elevatedThinkingSelection(selections.mechanical, tier, "generate-page-map", catalog);
-  if (!sameTextSelection(selections.mechanical, mapSelection)) {
-    overrides.set("generate-page-map", {
-      selection: mapSelection,
-      adapter: createTextModelAdapter(config, mapSelection)
-    });
-  }
-  return overrides;
-}
-
-const COMPOSED_CHAPTER_THINKING_PURPOSES: ReadonlySet<string> = new Set([
-  "compose-chapter",
-  "edit-chapter",
-  "read-manuscript",
-  "plan-chapter-forms"
-]);
-
-export function elevatedThinkingSelection(
-  base: TextModelSelection,
-  tier: ModelTier,
-  purpose: string | undefined,
-  options: readonly GenerationTextModelOption[]
-): TextModelSelection {
-  // Composing and editing a whole chapter is the one prose call per chapter
-  // rather than one of six per page, so it earns the planner's thinking
-  // elevation on the tiers that pay for reasoning.
-  const isComposed = COMPOSED_CHAPTER_THINKING_PURPOSES.has(purpose ?? "");
-  const isPlan = purpose === "plan-book" || isComposed;
-  const isUltraMap = tier === "ultra" && purpose === "generate-page-map";
-  // Balanced is left at its configured effort: "low" produced ~100 reasoning
-  // tokens a call and "medium" cost a third more time with no gain on the
-  // blind panel (composed-3 7.47 without, composed-4 6.90 with).
-  if ((tier !== "premium" && tier !== "ultra") || (!isPlan && !isUltraMap)) {
-    return base;
-  }
-
-  // Gemini 2.5 uses numeric budgets. Preserve the established boosts only for
-  // a selection already using that capability; adding a budget to a discrete-
-  // effort model makes the SDK send a parameter that model does not support.
-  if (base.provider === "gemini" && typeof base.thinkingBudget === "number") {
-    const thinkingBudget = isUltraMap
-      ? ULTRA_PAGE_MAP_THINKING_BUDGET
-      : planThinkingBudgetForTier(tier);
-    return thinkingBudget === undefined || thinkingBudget === base.thinkingBudget
-      ? base
-      : { ...base, thinkingBudget };
-  }
-
-  const option = generationOptionForSelection(options, base);
-  const efforts = option?.thinkingEfforts;
-  if (!efforts?.length) {
-    return base;
-  }
-  const baseEffort = base.thinkingEffort ?? efforts.find((effort) => effort.default)?.value;
-  const target = tier === "ultra" ? "max" : "high";
-  const elevated = elevatedSupportedEffort(efforts.map((effort) => effort.value), baseEffort, target);
-  return elevated && elevated !== base.thinkingEffort ? { ...base, thinkingEffort: elevated } : base;
-}
-
-function generationOptionForSelection(
-  options: readonly GenerationTextModelOption[],
-  selection: TextModelSelection
-): GenerationTextModelOption | undefined {
-  const exactKey = generationTextModelOptionKey(selection);
-  return options.find((option) => generationTextModelOptionKey(option) === exactKey) ??
-    options.find((option) => option.provider === selection.provider && option.model === selection.model);
-}
-
-function elevatedSupportedEffort(
-  supported: readonly TextModelThinkingEffort[],
-  base: TextModelThinkingEffort | undefined,
-  target: TextModelThinkingEffort
-): TextModelThinkingEffort | undefined {
-  const order: readonly TextModelThinkingEffort[] = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
-  const baseRank = base ? order.indexOf(base) : 0;
-  const targetRank = order.indexOf(target);
-  const desiredRank = Math.max(baseRank, targetRank);
-  let selected: TextModelThinkingEffort | undefined;
-  for (const effort of supported) {
-    const rank = order.indexOf(effort);
-    if (rank <= desiredRank && (!selected || rank > order.indexOf(selected))) {
-      selected = effort;
     }
-  }
-  if (selected && order.indexOf(selected) >= baseRank) {
-    return selected;
-  }
-  return base;
+  );
 }
 
 function sameTextSelection(a: TextModelSelection, b: TextModelSelection): boolean {
@@ -623,21 +515,14 @@ export function createLiveGenerationTextModel(
  */
 export class LiveGenerationTextModelAdapter implements TextModelAdapter {
   private readonly adapters = new Map<string, TextModelAdapter>();
-  private readonly catalog: GenerationTextModelOption[];
-  private purposeOverridesEnabled = true;
 
   constructor(
     private readonly config: AppConfig,
     private readonly options: LiveGenerationTextModelOptions
   ) {
-    this.catalog = generationTextModelOptions(config);
-    if (!config.MOCK_AI && this.catalog.length === 0) {
+    if (!config.MOCK_AI && generationTextModelOptions(config).length === 0) {
       throw new Error("A text model API key is required when MOCK_AI=false.");
     }
-  }
-
-  setPurposeOverridesEnabled(enabled: boolean): void {
-    this.purposeOverridesEnabled = enabled;
   }
 
   async bindForCall(purpose: string | undefined) {
@@ -654,12 +539,13 @@ export class LiveGenerationTextModelAdapter implements TextModelAdapter {
     const fallbackBase = this.options.fastJudgments
       ? routing.fastJudgmentsFallback
       : routingFallbackSelection(routing, tier, role);
-    const selection = this.purposeOverridesEnabled
-      ? elevatedThinkingSelection(primaryBase, tier, purpose, this.catalog)
-      : primaryBase;
-    const fallbackSelection = this.purposeOverridesEnabled
-      ? elevatedThinkingSelection(fallbackBase, tier, purpose, this.catalog)
-      : fallbackBase;
+    // A stage setting is authoritative, including calls made through the book's judge wrapper.
+    // API-only inline judgments have no book tier and retain their dedicated route.
+    const stage = this.options.tier ? generationModelStage(purpose) : undefined;
+    const stageRoute = stage ? generationStageRoute(routing, tier, stage.id) : undefined;
+    // A finite-choice stage's text path is its explicitly selected LLM fallback.
+    const selection = stageRoute ? (isJevSelection(stageRoute.primary) ? stageRoute.fallback : stageRoute.primary) : primaryBase;
+    const fallbackSelection = stageRoute?.fallback ?? fallbackBase;
     const key = `${tier}:${role}:${textModelSelectionKey(selection)}:${textModelSelectionKey(fallbackSelection)}`;
     let adapter = this.adapters.get(key);
     if (!adapter) {

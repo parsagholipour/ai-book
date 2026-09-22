@@ -10,8 +10,8 @@ export function withProjectDecisionSources(route: DecisionModelRoute, input: Cre
   const service = projectSourceLoader(input, projectId, embedding);
   if (!service) return route;
   const sources = new SourceEvidenceContext(service);
-  return { async resolve() {
-    const adapter = await route.resolve();
+  return { async resolve(purpose) {
+    const adapter = await route.resolve(purpose);
     if (!adapter) return undefined;
     return { async choose(request) {
       return adapter.choose(await sources.prepareDecision(request));

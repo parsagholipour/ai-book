@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { isCancellationError } from "../adapters/retry.js";
-import type { CaseEvidencePacket } from "../schemas/episodes.js";
+import type { CaseEvidencePacket, DossierExcerpt } from "../schemas/episodes.js";
 import { chapterWordBudget, EDITOR_EXTEND_BELOW_SHARE, type EditChapterOptions } from "./composedChapter.js";
 import { materialPayload } from "./composedChapterMaterial.js";
 import { proseWordCount, FIGURE_WORD_EQUIVALENT } from "./figures/figureBlocks.js";
@@ -16,7 +16,10 @@ export type ChapterEditAcceptanceOptions = {
    * Only a repair caller authorizes changes to erroneous claims: the evidence repair with source
    * passages, the arithmetic repair with the exact computations the judge can redo itself.
    */
-  factualCorrection?: { instructions: readonly string[]; evidence: readonly CaseEvidencePacket[]; computations?: readonly string[] | undefined } | undefined;
+  factualCorrection?: { instructions: readonly string[]; evidence: readonly CaseEvidencePacket[]; computations?: readonly string[] | undefined;
+    sourcePassages?: readonly DossierExcerpt[] | undefined;
+    unsupportedClaims?: ReadonlyArray<{ quote: string; reason: string }> | undefined;
+  } | undefined;
   /** Verbatim context, especially the retained passages cited by manuscript cut notes. */
   surroundingChapters?: ReadonlyArray<{ index: number; title: string; markdown: string }> | undefined;
   /** A tail-only cut still needs the unchanged chapter head for acceptance. */
@@ -45,6 +48,7 @@ const COMMON = [
   "Preserve substantive claims, negation and polarity, causal relationships and their direction, scope, uncertainty, attribution, exact quotations, essential qualifications, code and figure meaning.",
   "Names and numbers surviving, grammatical fluency, fewer words, or a preferred sentence shape do not establish preservation or improvement.",
   "For factualCorrection ONLY, judge the named correction against its supplied evidence — source passages in evidence, or exact arithmetic in computations, which you may redo yourself: permit correcting, narrowing or deleting the original unsupported claim. Do not require an incorrect claim to survive. Preserve unrelated meaning. Notes alone do not authorize a factual change; missing usable evidence or missing instructions is unauthorized and retains the original, not needs_review. Inconclusive supplied evidence requires needs_review.",
+  "factualCorrection.sourcePassages are also original evidence. unsupportedClaims identifies exact assertions a source review could not establish: their absence of support permits removing those details, not asserting an opposite or replacement fact. Accept that targeted removal while preserving unrelated meaning. Any replacement factual assertion must itself follow from supplied passages or an explicit computation. Do not retain an unsupported assertion merely because deleting it changes the original claim.",
   "Choose needs_review for ambiguity, insufficient context, inconclusive supplied evidence, or mixed results. This evaluates a change, never approves the original chapter or clears existing findings.",
   "For cuts, binding cutConstraints outrank advisory readerNotes. Accept a useful feasible subset of the notes when meaning and continuity survive; an infeasible request or an unperformed optional cut is not itself a regression. Report outstanding notes in intentReason without making their completion a condition of acceptance. Inspect every removed span and both surviving neighbors: each new join must keep its referents and causal/temporal transitions clear."
 ].join(" ");
@@ -74,6 +78,8 @@ export async function acceptsChapterEdit(options: EditChapterOptions, candidate:
   if (candidate === options.markdown) return true;
   if (!cut && options.factualCorrection && (!options.factualCorrection.instructions.some((note) => note.trim()) ||
     !(options.factualCorrection.evidence.some((packet) => packet.excerpts.some((excerpt) => excerpt.text.trim())) ||
+      options.factualCorrection.sourcePassages?.some((excerpt) => excerpt.provenanceVerified && excerpt.text.trim() && /^https?:\/\//i.test(excerpt.documentUrl)) ||
+      options.factualCorrection.unsupportedClaims?.some((claim) => claim.quote.trim() && claim.reason.trim() && options.markdown.includes(claim.quote)) ||
       options.factualCorrection.computations?.some((line) => line.trim())))) return false;
   const prefix = options.unchangedPrefix ? `${options.unchangedPrefix}\n\n` : "";
   const wordBudget = chapterWordBudget(options.input, options.chapterPageEnd - options.chapterPageStart + 1,

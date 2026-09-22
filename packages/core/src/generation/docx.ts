@@ -304,7 +304,7 @@ function contentsBlocks(chapters: readonly DocxChapter[], heading: string, ctx: 
           children: [
             new InternalHyperlink({
               anchor: chapter.anchor,
-              children: [textRun(chapter.title, ctx, { link: true })]
+              children: inlineRuns(chapter.title, ctx, { link: true })
             })
           ]
         })

@@ -1,5 +1,6 @@
 import { z, type ZodType } from "zod";
 import { AdapterJsonValidationError } from "../adapters/json.js";
+import { widenedOutputBudget } from "../adapters/outputBudget.js";
 import {
   bindTextModelCall,
   type ChatMessage,
@@ -63,21 +64,26 @@ export async function generateJsonWithRetry<T>(
       ));
     } catch (error) {
       if (!widened && nextOptions.maxTokens !== undefined && isOutputBudgetExhausted(error)) {
+        const maxTokens = widenedOutputBudget(error, nextOptions.maxTokens);
+        if (maxTokens === undefined) throw error;
         widened = true;
         attempt -= 1;
-        nextOptions = { ...nextOptions, maxTokens: Math.ceil(nextOptions.maxTokens * OUTPUT_BUDGET_WIDENING) };
+        nextOptions = { ...nextOptions, maxTokens };
         continue;
       }
       if (attempt >= repairAttempts || !isRepairableJsonError(error)) {
         throw error;
       }
       schemaRepair = isSchemaValidationError(error);
-      nextOptions = repairOptions(generateOptions, error);
+      // Rebuild repair instructions without stacking them, but keep any budget
+      // increase earned by an earlier truncated attempt.
+      nextOptions = repairOptions({
+        ...generateOptions,
+        ...(nextOptions.maxTokens === undefined ? {} : { maxTokens: nextOptions.maxTokens })
+      }, error);
     }
   }
 }
-
-const OUTPUT_BUDGET_WIDENING = 1.5;
 
 /** The provider said the reply stopped at `max_output_tokens` (the Responses API counts reasoning against it), rather than returning a broken one. */
 export function isOutputBudgetExhausted(error: unknown): boolean {

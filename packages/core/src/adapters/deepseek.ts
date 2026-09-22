@@ -92,12 +92,15 @@ function usageFromDeepSeek(usage: unknown): Usage | undefined {
   const record = usage as {
     prompt_tokens?: number;
     completion_tokens?: number;
+    completion_tokens_details?: { reasoning_tokens?: number };
     prompt_cache_hit_tokens?: number;
   };
   return {
     promptTokens: record.prompt_tokens,
     outputTokens: record.completion_tokens,
-    cacheHitTokens: record.prompt_cache_hit_tokens
+    cacheHitTokens: record.prompt_cache_hit_tokens,
+    ...(record.completion_tokens_details?.reasoning_tokens !== undefined
+      ? { reasoningTokens: record.completion_tokens_details.reasoning_tokens } : {})
   };
 }
 

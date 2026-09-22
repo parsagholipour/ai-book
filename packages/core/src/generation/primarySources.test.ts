@@ -12,6 +12,19 @@ const fakeFetch = async (url: string) => {
 };
 
 describe("primarySources", () => {
+  it("keeps a direct original paper returned after summaries within the fetch budget", async () => {
+    const results = await searchPrimarySources("RSA original paper", { language: "en", limit: 3,
+      fetch: async () => ({ status: 404, text: "" }),
+      search: async () => [
+        { title: "Student summary", url: "https://example.edu/student/summary.html" },
+        { title: "Catalogue", url: "https://example.org/catalogue" },
+        { title: "Reference", url: "https://example.org/reference" },
+        { title: "Original paper", url: "https://example.edu/pubs/RSA78.pdf" },
+        { title: "Duplicate", url: "https://example.edu/pubs/RSA78.pdf" }
+      ] });
+    expect(results).toHaveLength(3);
+    expect(results[0]?.url).toBe("https://example.edu/pubs/RSA78.pdf");
+  });
   it("searches the three hosts and keeps only public-domain archive items", async () => {
     responses.set("wikisource.org/w/api.php?action=query&list=search", {
       query: { search: [{ title: "The Secret History of the Mongols" }, { title: "Page:Something.djvu/12" }] }

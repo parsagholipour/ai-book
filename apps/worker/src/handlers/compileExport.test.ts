@@ -223,6 +223,16 @@ describe("compileExport reader chapters", () => {
     dirs.length = 0;
   });
 
+  it("keeps imported manuscripts outside the generated physical page target", async () => {
+    mocks.inputForPlanVersion.mockReturnValue({
+      ...input, mediaSettings: { ...input.mediaSettings, mobile: { import: { filename: "author.docx" } } }
+    });
+    await compileExport(repairJob());
+    expect(mocks.strategy.generatePdf).toHaveBeenCalledWith(
+      expect.any(String), expect.objectContaining({ targetPageCount: undefined })
+    );
+  });
+
   it("reconstructs and republishes book.md when a manual edit queue failure left every export missing", async () => {
     await objectStore().delete("books/project-1/book.md");
 
@@ -232,7 +242,7 @@ describe("compileExport reader chapters", () => {
     expect(mocks.strategy.compileMarkdown).toHaveBeenCalledTimes(1);
     expect(mocks.strategy.generatePdf).toHaveBeenCalledWith(
       "# The Long Walk\n\nProse.\n",
-      expect.objectContaining({ outputPath: expect.stringContaining(".book-test.pdf") })
+      expect.objectContaining({ outputPath: expect.stringContaining(".book-test.pdf"), targetPageCount: 12 })
     );
     expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -630,28 +640,6 @@ describe("compileExport reader chapters", () => {
     });
   }
 
-  it("records unpaid plan promises as warnings so compile is not blocked", async () => {
-    withUnpaidPromise();
-
-    await compileExport(job({ contentRevision: 4 }));
-
-    const report = persistedQualityReport();
-    // A deterministic warning recommends review but never blocks: the project
-    // still publishes COMPLETE, not REVIEW_REQUIRED. arrayContaining because
-    // the fixture's identical filler pages also earn a REPEATED_PHRASE warning.
-    expect(report.state).toBe("review_recommended");
-    expect(report.issues).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: "UNPAID_PROMISE",
-          severity: "warning",
-          source: "deterministic"
-        })
-      ])
-    );
-    expect(report.issues.every((issue) => issue.severity === "warning")).toBe(true);
-    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(expect.objectContaining({ status: "COMPLETE" }));
-  });
 
   it("lets initial deterministic warnings recommend review when model QA is disabled", async () => {
     withUnpaidPromise();
@@ -746,7 +734,7 @@ describe("compileExport reader chapters", () => {
     expect(report.state).toBe("passed");
     // Recorded all the same — the row is where an operator reads what this
     // compile saw. Only the state is the claim the app's quality card acts on.
-    expect(report.issues.map((issue) => issue.code)).toContain("UNPAID_PROMISE");
+    expect(report.issues.map((issue) => issue.code)).toContain("BRIEF_COVERAGE_UNVERIFIED");
     expect(mocks.publishCompiledExports).toHaveBeenCalledWith(expect.objectContaining({ status: "COMPLETE" }));
   });
 

@@ -32,7 +32,7 @@ function pageGeometryProjection(css: string): string {
  * the `verify-pdf-typography` skill. A digest bumped without that render is the
  * silent re-typeset this assertion exists to catch.
  */
-const PAGE_GEOMETRY_SHA256 = "d00492477ab6888a4090f47418bb2e9c6d1327365f2bdf168d7d5fdc4b31a68d";
+const PAGE_GEOMETRY_SHA256 = "ca9c1feb52ae6a53603232eca5c9e7dcf4b8885322dcabdcf8424495795231ce";
 
 describe("bookPdfCss", () => {
   it("still lays every book out on the same page boxes", () => {

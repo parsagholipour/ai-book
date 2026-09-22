@@ -82,6 +82,7 @@ function projectRow(contentRevision: number) {
 function exportSource(contentRevision: number, status: "COMPLETE" | "GENERATING" | "EDITING" | "FAILED" = "COMPLETE") {
   return {
     title: "A Book",
+    targetPages: 20,
     language: "en",
     currentPlanId: "plan-1",
     mediaSettings: {},
@@ -186,6 +187,7 @@ describe("lazy export rebuilds", () => {
     const pdf = await rebuildProjectPdfExport(appConfig, "project-1", exportSource(7));
 
     expect(pdf?.toString()).toBe("rendered-pdf");
+    expect(mockGeneratePdf).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ targetPageCount: 20 }));
     expect(readObjectText(join("books", "project-1", "book.pdf"))).toBe("rendered-pdf");
     expect(mockPrisma.project.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -211,6 +213,15 @@ describe("lazy export rebuilds", () => {
         pdfPageMap: expect.objectContaining({ version: 2, hasCoverPage: false, pages: [] })
       })
     });
+  });
+
+  it("does not impose a generated page target on an imported manuscript", async () => {
+    mockGeneratePdf.mockImplementation(renderWriting("imported-pdf"));
+    const { rebuildProjectPdfExport } = await import("./projectExports.js");
+    await rebuildProjectPdfExport(appConfig, "project-1", {
+      ...exportSource(7), mediaSettings: { mobile: { import: { filename: "author.docx" } } }
+    });
+    expect(mockGeneratePdf).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ targetPageCount: undefined }));
   });
 
   it("records what it published, so a download can name the compile it got", async () => {

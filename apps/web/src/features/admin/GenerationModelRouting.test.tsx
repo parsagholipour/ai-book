@@ -7,10 +7,11 @@ import {
   cloneGenerationModelRouting,
   GenerationModelRoutingSection,
   generationModelRoutingClaim,
+  setAllGenerationStageModels,
   readGenerationModelOptions,
   rebaseGenerationModelRouting
 } from "./GenerationModelRouting.js";
-import type { GenerationTextModelOption, GenerationTextModelRouting } from "@book-maker/core/generationTextModelRouting";
+import { GENERATION_MODEL_STAGES, generationStageRoute, JEV_SELECTION, type GenerationTextModelOption, type GenerationTextModelRouting } from "@book-maker/core/generationTextModelRouting";
 
 describe("GenerationModelRoutingSection", () => {
   it("renders a primary and fallback for all nine routes with capability-backed effort selectors", () => {
@@ -53,7 +54,12 @@ describe("GenerationModelRoutingSection", () => {
     expect(markup).not.toContain('aria-label="Premium Writer Effort"');
     expect(markup).not.toContain("Saved provider credentials are unavailable.");
     expect(markup).toContain("Input $0.66–$1.32 · output $1.98–$3.96 / 1M tokens");
-    expect(markup.match(/<select/g)).toHaveLength(26);
+    expect(markup).toContain('aria-label="Ultra Book plan"');
+    expect(markup).toContain('aria-label="Ultra Chapter drafting"');
+    expect(markup).toContain('aria-label="Ultra Chapter drafting fallback"');
+    expect(markup).toContain('aria-label="Ultra Chapter editing"');
+    expect(markup).toContain('aria-label="Ultra Manuscript review"');
+    expect(markup).toContain('aria-label="Stage settings tier"');
     expect(markup.match(/disabled=""/g)?.length).toBeGreaterThanOrEqual(23);
   });
 
@@ -82,6 +88,59 @@ describe("GenerationModelRoutingSection", () => {
 });
 
 describe("model routing claims and rebasing", () => {
+  it.each(["primary", "fallback", "both"] as const)("sets all %s stage models only in the selected tier", (target) => {
+    const loaded = routing();
+    loaded.ultra.stages = { "judge-chapter-drafts": { primary: JEV_SELECTION, fallback: loaded.ultra.writerFallback } };
+    const original = cloneGenerationModelRouting(loaded);
+    const selected = { provider: "deepseek", model: "deepseek-pro", thinkingEffort: "high" } as const;
+    const changed = setAllGenerationStageModels(loaded, "ultra", target, selected);
+    for (const { id } of GENERATION_MODEL_STAGES) {
+      const before = generationStageRoute(loaded, "ultra", id);
+      expect(changed.ultra.stages![id]).toEqual({
+        primary: target === "fallback" ? before.primary : selected,
+        fallback: target === "primary" ? before.fallback : selected
+      });
+    }
+    expect(loaded).toEqual(original);
+    expect(changed.balanced).toBe(loaded.balanced);
+    expect(changed.premium).toBe(loaded.premium);
+    expect(changed.fast).toBe(loaded.fast);
+    expect(changed.ultra.writer).toBe(loaded.ultra.writer);
+    const claim = generationModelRoutingClaim(loaded, changed)!;
+    expect(Object.keys(claim)).toEqual(["ultra"]);
+    expect(Object.keys(claim.ultra!)).toEqual(["stages"]);
+  });
+
+  it("claims only the changed stage fields and rebases another admin's stage fallback", () => {
+    const loaded = routing();
+    const original = generationStageRoute(loaded, "balanced", "compose-chapter");
+    loaded.balanced.stages = { "compose-chapter": original };
+    const draft = cloneGenerationModelRouting(loaded);
+    draft.balanced.stages!["compose-chapter"]!.primary = { provider: "deepseek", model: "deepseek-pro", thinkingEffort: "high" };
+    const head = cloneGenerationModelRouting(loaded);
+    head.balanced.stages!["compose-chapter"]!.fallback = { provider: "alibaba", model: "new-fallback" };
+    head.balanced.stages!["edit-chapter"] = { primary: { provider: "alibaba", model: "editor" }, fallback: original.fallback };
+    const rebased = rebaseGenerationModelRouting(head, loaded, draft);
+    expect(rebased.balanced.stages!["compose-chapter"]!.fallback.model).toBe("new-fallback");
+    expect(rebased.balanced.stages!["edit-chapter"]!.primary.model).toBe("editor");
+    expect(generationModelRoutingClaim(head, rebased)).toEqual({ balanced: { stages: {
+      "compose-chapter": { primary: { thinkingEffort: "high" } }
+    } } });
+    expect(loaded.balanced.stages!["compose-chapter"]!.primary).toEqual(original.primary);
+  });
+
+  it("reads stage selections without losing effort or finite-choice settings", () => {
+    const models = routing();
+    const fallback = { provider: "deepseek", model: "deepseek-pro", thinkingEffort: "low" } as const;
+    models.ultra.stages = { "judge-chapter-drafts": { primary: JEV_SELECTION, fallback } };
+    expect(readGenerationModelRouting(models)).toEqual(models);
+    const draft = cloneGenerationModelRouting(models);
+    draft.ultra.stages!["judge-chapter-drafts"]!.primary = fallback;
+    expect(generationModelRoutingClaim(models, draft)).toEqual({ ultra: { stages: {
+      "judge-chapter-drafts": { primary: fallback }
+    } } });
+    expect(readGenerationModelRouting({ ...models, ultra: { ...models.ultra, stages: { "compose-chapter": { primary: fallback } } } })).toBeNull();
+  });
   it("submits only changed role leaves", () => {
     const stored = routing();
     const draft = routing();
@@ -224,7 +283,8 @@ it("round-trips, rebases, and disables a Jev choice without changing text routes
   const markup = renderToStaticMarkup(createElement(GenerationModelRoutingSection, { models: changed, options: catalog(), jevAvailable: false, disabled: false, onChange: () => undefined }));
   expect(markup).toContain("Jev · TypeSafe (unavailable)");
   expect(markup).toContain("Use existing judgment routes");
-  expect(markup.match(/Jev · TypeSafe/g)).toHaveLength(1);
+  expect(selectMarkup(markup, "Fast decisions")).toContain("Jev · TypeSafe (unavailable)");
+  expect(selectMarkup(markup, "Ultra Chapter draft comparison Model type")).toContain("Jev · TypeSafe (unavailable)");
   expect(selectMarkup(markup, "Fast decisions")).not.toContain("DeepSeek");
   expect(markup).not.toContain('aria-label="Fast decisions Effort"');
 });

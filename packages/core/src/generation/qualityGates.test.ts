@@ -24,6 +24,12 @@ describe("qualityFeatureEnabled", () => {
       expect(qualityFeatureEnabled(settings, "coupletRewrite", tier)).toBe(false);
     }
   });
+  it("cannot reactivate tier reasoning boosts from an older revision", () => {
+    const settings = parseQualityFeatureSettings({ planThinkingBoost: ["ultra", "premium", "balanced", "fast"] });
+    for (const tier of ["ultra", "premium", "balanced", "fast"] as const) {
+      expect(qualityFeatureEnabled(settings, "planThinkingBoost", tier)).toBe(false);
+    }
+  });
   it("uses compiled defaults when there are no rows", () => {
     for (const feature of ["pageLocalQa", "smartUnslop", "pageModelReview", "pageQaRewrite", "finalBookQa"] as const) {
       for (const tier of ["ultra", "premium", "balanced", "fast"] as const) {
@@ -39,7 +45,7 @@ describe("qualityFeatureEnabled", () => {
     expect(qualityFeatureEnabled(undefined, "bestOfPolish", "balanced")).toBe(false);
     expect(qualityFeatureEnabled(undefined, "pageMapCritic", "balanced")).toBe(false);
     expect(qualityFeatureEnabled(undefined, "pageMapCritic", "premium")).toBe(true);
-    expect(qualityFeatureEnabled(undefined, "planThinkingBoost", "premium")).toBe(true);
+    expect(qualityFeatureEnabled(undefined, "planThinkingBoost", "premium")).toBe(false);
     expect(qualityFeatureEnabled(undefined, "claimRetrieve", "ultra")).toBe(true);
     expect(qualityFeatureEnabled(undefined, "compactPageDraftContext", "fast")).toBe(true);
     expect(qualityFeatureEnabled(undefined, "compactPageDraftContext", "balanced")).toBe(true);

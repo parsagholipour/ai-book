@@ -11,6 +11,7 @@ import { markdownLabels } from "./markdown.js";
 import { retagColorlessCodeFences } from "./retagColorlessCodeFences.js";
 import { bookPdfBaseStylesheetPaths, stripEmbeddedDocuments } from "./pdfDocument.js";
 import { expandFigureFences } from "./figures/figureHtml.js";
+import { prepareMarkdownMath } from "./markdownMath.js";
 
 const MIME_BY_EXT: Record<string, string> = {
   ".png": "image/png",
@@ -329,7 +330,8 @@ function takeTrailingChapterOpener(lines: string[]): string[] {
 }
 
 async function renderMarkdownToXhtml(markdown: string, language: string | undefined): Promise<string> {
-  const html = await marked.parse(expandFigureFences(retagColorlessCodeFences(markdown), { language }), {
+  const math = prepareMarkdownMath(expandFigureFences(retagColorlessCodeFences(markdown), { language }));
+  const html = await marked.parse(math.markdown, {
     async: true,
     gfm: true
   });
@@ -337,15 +339,16 @@ async function renderMarkdownToXhtml(markdown: string, language: string | undefi
   // so there is no server file to disclose — it is the reader's device that
   // would resolve an iframe or execute an event/URL attribute shipped inside a
   // book they opened.
-  return toXhtml(stripEmbeddedDocuments(highlightHtmlCodeBlocks(html)));
+  return toXhtml(stripEmbeddedDocuments(math.restore(highlightHtmlCodeBlocks(html))));
 }
 
-/** Self-closes void elements so the output parses as XHTML. */
+/** Self-close void elements and escape HTML ampersands for XHTML. */
 function toXhtml(html: string): string {
   return html
     .replace(/<(pre|code)\b(?![^>]*\bdir\s*=)([^>]*)>/gi, '<$1 dir="ltr"$2>')
     .replace(/<(img|br|hr|input|meta|link)((?:[^>"']|"[^"]*"|'[^']*')*?)\s*\/?>/gi, "<$1$2 />")
-    .replace(/&nbsp;/g, "&#160;");
+    .replace(/&nbsp;/g, "&#160;")
+    .replace(/&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[\da-fA-F]+);)/g, "&amp;");
 }
 
 function fragmentFileMap(chapters: Array<{ fileName: string; xhtml: string }>): Map<string, string> {
@@ -485,7 +488,7 @@ function contentOpf(options: {
     `    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>`,
     `    <item id="css" href="styles.css" media-type="text/css"/>`,
     ...options.chapters.map(
-      (chapter) => `    <item id="${chapter.id}" href="${chapter.fileName}" media-type="application/xhtml+xml"/>`
+      (chapter) => `    <item id="${chapter.id}" href="${chapter.fileName}" media-type="application/xhtml+xml"${/<math\b/.test(chapter.xhtml) ? ' properties="mathml"' : ""}/>`
     ),
     ...options.images.map(
       (image) =>

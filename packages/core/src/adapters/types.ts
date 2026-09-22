@@ -110,6 +110,15 @@ export function stampChapterBriefPhysicalAttempt(
   };
 }
 
+/** Token allowances on one dispatched provider request, after adapter policy. */
+export type TextProviderRequest = {
+  provider: string;
+  model: string;
+  /** null means no explicit limit; the provider selects its default. */
+  requestedMaxTokens: number | null;
+  effectiveMaxTokens: number | null;
+};
+
 export type GenerateTextOptions = {
   messages: ChatMessage[];
   temperature?: number;
@@ -118,6 +127,10 @@ export type GenerateTextOptions = {
   projectId?: string;
   providerCallMetadata?: ProviderCallMetadata;
   onOutputTextChunk?: (chunk: string) => void | Promise<void>;
+  /** Best-effort telemetry emitted before dispatch, including retries and fallbacks. */
+  onProviderRequest?: (request: TextProviderRequest) => void | Promise<void>;
+  /** Provider-reported usage, including streamed and incomplete responses. */
+  onProviderUsage?: (usage: Usage) => void | Promise<void>;
   /**
    * Best-effort cancellation of the in-flight provider request. Adapters that
    * can pass it to their HTTP client do; the rest ignore it. Without this a

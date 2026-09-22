@@ -1,7 +1,8 @@
 import {
   bookDossierSchema,
   bookEpisodesSchema,
-  buildChapterDossier,
+  supportsBookDevelopment,
+  chapterEpisodeSchema,
   episodesForChapter,
   mapWithConcurrency,
   planDossierFromPlan,
@@ -21,6 +22,9 @@ import { Prisma, prisma } from "@book-maker/db";
 import { fetchSourceDocument as primarySourceFetch } from "./sourceDocumentFetch.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import type { loadQualityContext } from "./qualitySettings.js";
+import { config } from "../runtime/config.js";
+import type { RunLogger } from "../providers/runLogging.js";
+import { mergeSourceDossiers, retrieveChapterSources } from "./sourceDossier.js";
 
 /**
  * Material-first, the worker's half: the writer's contract and the book's
@@ -48,18 +52,20 @@ export async function prepareBookMaterial(options: {
   /** A new development run gathers material even when the legacy experiment flag is off. */
   evidenceRequired?: boolean | undefined;
   persist?: boolean | undefined;
+  runLog?: Pick<RunLogger, "append"> | undefined;
 }): Promise<BookMaterial> {
   const { projectId, planId, input, plan, stance, textModel, quality, generationJobId } = options;
-  const contract: ComposeContract = quality.enabled("creativeContract") ? "creative" : "grounded";
+  const sourceResearch = !config.MOCK_AI && supportsBookDevelopment(input, plan);
+  const contract: ComposeContract = sourceResearch ? "grounded" : quality.enabled("creativeContract") ? "creative" : "grounded";
   let episodes: BookEpisodes | undefined;
   let dossier: BookDossier | undefined;
-  if (quality.enabled("materialFirst") || options.evidenceRequired) {
+  if (quality.enabled("materialFirst") || options.evidenceRequired || sourceResearch) {
     episodes = planEpisodesFromPlan(plan);
     if (!episodes) {
       await advanceJobStep(generationJobId, "briefs", 14, "Planning the book's episodes", { phase: "episodes" });
       // The chapter focus is the `chapterFocus` gate's: off, the episodes
       // carry no question and the chapter composes from the stance.
-      const planned = await planEpisodes({ input, plan, stance, textModel, evidenceRequired: options.evidenceRequired, focus: quality.enabled("chapterFocus") });
+      const planned = await planEpisodes({ input, plan, stance, textModel, evidenceRequired: options.evidenceRequired || sourceResearch, focus: quality.enabled("chapterFocus") });
       if (planned.contract) {
         console.warn("Episode plan contract", {
           event: "generation.composed_chapters.focus_contract",
@@ -78,9 +84,22 @@ export async function prepareBookMaterial(options: {
         });
       }
     }
+    if (sourceResearch) {
+      // A missing episode proposal must not silently disable factual retrieval for a chapter.
+      episodes = { chapters: plan.chapters.map((chapter) => {
+        const stored = episodes?.chapters.find((entry) => entry.index === chapter.index);
+        return stored?.episodes.length ? stored : { ...stored, index: chapter.index, episodes: [chapterEpisodeSchema.parse({
+          title: chapter.title, kind: "document", why: chapter.summary,
+          searchQueries: [chapter.title + " " + chapter.keyBeats.join(" "), `${plan.title} ${chapter.title} original source documentation`]
+        })] };
+      }) };
+    }
     if (episodes) {
       dossier = planDossierFromPlan(plan);
-      if (!dossier) {
+      const missing = plan.chapters.filter((chapter) => !dossier || (sourceResearch &&
+        !dossier.excerpts.some((excerpt) => excerpt.chapterIndex === chapter.index && excerpt.provenanceVerified) &&
+        !dossier.researchedChapters?.includes(chapter.index)));
+      if (missing.length) {
         await advanceJobStep(generationJobId, "briefs", 15, "Gathering primary sources for every chapter", {
           phase: "sources",
           total: plan.chapters.length
@@ -89,13 +108,14 @@ export async function prepareBookMaterial(options: {
         // The whole book's dossier gets a fixed budget; a slow repository
         // shortens the dossier, never the book's schedule.
         const dossierDeadline = Date.now() + DOSSIER_TIME_BUDGET_MS;
-        const chapterDossiers = await mapWithConcurrency(plan.chapters, 3, async (chapter) => {
+        const chapterDossiers = await mapWithConcurrency(missing, 3, async (chapter) => {
           await advanceJobStep(generationJobId, "briefs", 15, "Gathering primary sources for every chapter", {
             phase: "sources",
             chapterIndex: chapter.index,
             total: plan.chapters.length
           });
-          return buildChapterDossier({
+          return retrieveChapterSources({
+            projectId,
             input,
             chapter,
             episodes: episodesForChapter(plannedEpisodes, chapter.index),
@@ -103,15 +123,20 @@ export async function prepareBookMaterial(options: {
             fetch: primarySourceFetch,
             searchSources: options.searchSources,
             deadline: dossierDeadline,
-            evidence: options.evidenceRequired,
-            log: (event, detail) => console.warn("Dossier step", { event: `generation.composed_chapters.${event}`, projectId, ...detail })
+            evidence: options.evidenceRequired || sourceResearch,
+            runLog: options.runLog
           });
         });
-        dossier = {
-          excerpts: chapterDossiers.flatMap((entry) => entry.excerpts),
-          documents: chapterDossiers.flatMap((entry) => entry.documents)
+        const merged = mergeSourceDossiers(...(dossier ? [dossier] : []), ...chapterDossiers);
+        dossier = { ...dossier, ...merged,
+          researchedChapters: [...new Set([...(dossier?.researchedChapters ?? []), ...missing.map((chapter) => chapter.index)])],
+          researchGaps: plan.chapters.filter((chapter) => !merged.excerpts.some((excerpt) => excerpt.chapterIndex === chapter.index))
+            .map((chapter) => ({ chapterIndex: chapter.index, reason: "No supporting source passages after bounded retrieval." }))
         };
-        if (options.persist !== false) await persistPlanField(planId, "dossier", dossier, (value) => bookDossierSchema.safeParse(value).success);
+        if (options.persist !== false) await persistPlanField(planId, "dossier", dossier, (value) => {
+          const saved = bookDossierSchema.safeParse(value);
+          return saved.success && missing.every((chapter) => saved.data.researchedChapters?.includes(chapter.index));
+        });
         if (options.persist !== false) await recordDossierSources(projectId, dossier);
       }
     }
@@ -126,14 +151,16 @@ export async function prepareBookMaterial(options: {
  */
 async function persistPlanField(planId: string, field: "episodes" | "dossier", value: unknown, parses: (stored: unknown) => boolean): Promise<void> {
   try {
-    const row = await prisma.planVersion.findUnique({ where: { id: planId }, select: { planningPackage: true } });
-    if (!row || !isRecord(row.planningPackage) || parses(row.planningPackage[field])) {
-      return;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const row = await prisma.planVersion.findUnique({ where: { id: planId }, select: { planningPackage: true } });
+      if (!row || !isRecord(row.planningPackage) || parses(row.planningPackage[field])) return;
+      const written = await prisma.planVersion.updateMany({
+        where: { id: planId, planningPackage: { equals: row.planningPackage as Prisma.InputJsonValue } },
+        data: { planningPackage: { ...row.planningPackage, [field]: value } as unknown as Prisma.InputJsonValue }
+      });
+      if (written.count === 1) return;
     }
-    await prisma.planVersion.update({
-      where: { id: planId },
-      data: { planningPackage: { ...row.planningPackage, [field]: value } as unknown as Prisma.InputJsonValue }
-    });
+    throw new Error(`Plan ${field} changed repeatedly during persistence.`);
   } catch (error) {
     if (error instanceof Error && /stop/i.test(error.name)) {
       throw error;
@@ -162,8 +189,24 @@ export async function recordDossierSources(projectId: string, dossier: BookDossi
   }
 }
 
-/** Eight minutes for a whole book's dossier: past it, chapters still waiting get what was found and no more. */
+/** Ten minutes for a whole book's dossier: past it, chapters still waiting get what was found and no more. */
 const DOSSIER_TIME_BUDGET_MS = 10 * 60 * 1000;
+
+/** Append newly retrieved support without replacing plan edits or existing case packets. */
+export async function persistDossierSupplement(planId: string, supplement: BookDossier): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const row = await prisma.planVersion.findUnique({ where: { id: planId }, select: { planningPackage: true } });
+    if (!row || !isRecord(row.planningPackage)) return;
+    const saved = bookDossierSchema.safeParse(row.planningPackage.dossier);
+    const dossier = saved.success ? saved.data : { excerpts: [], documents: [] };
+    const merged = mergeSourceDossiers(dossier, supplement);
+    const next = { ...dossier, ...merged, researchGaps: dossier.researchGaps?.filter((gap) => !merged.excerpts.some((excerpt) => excerpt.chapterIndex === gap.chapterIndex)) };
+    const written = await prisma.planVersion.updateMany({ where: { id: planId, planningPackage: { equals: row.planningPackage as Prisma.InputJsonValue } },
+      data: { planningPackage: { ...row.planningPackage, dossier: next } as unknown as Prisma.InputJsonValue } });
+    if (written.count) return;
+  }
+  throw new Error("The source dossier changed repeatedly while adding retrieved passages.");
+}
 
 /** The same bounded reader handles repository APIs, public HTML records, and source PDFs. */
 export { fetchSourceDocument as primarySourceFetch } from "./sourceDocumentFetch.js";

@@ -1,4 +1,4 @@
-import type { ChapterCaseEvidenceReview } from "@book-maker/core";
+import type { ChapterCaseEvidenceReview, SourceClaimCoverage } from "@book-maker/core";
 
 /** A prose-review finding: the exact chapter span and why its evidence does not carry it. */
 export type EvidenceResidual = { quote: string; reason: string };
@@ -38,7 +38,7 @@ export function evidenceRepairNotes(issues: readonly string[], last: boolean): s
  */
 export async function repairChapterEvidence(options: {
   markdown: string;
-  review: (markdown: string) => Promise<ChapterCaseEvidenceReview>;
+  review: (markdown: string) => Promise<ChapterCaseEvidenceReview & { coverage?: SourceClaimCoverage }>;
   edit: (markdown: string, notes: string[]) => Promise<string>;
   degenerate: (markdown: string) => boolean;
   /** How the findings are put to the editor; the case-evidence wording unless the caller has its own. */
@@ -58,6 +58,8 @@ export async function repairChapterEvidence(options: {
     if (options.degenerate(repaired)) break;
     const next = await options.review(repaired);
     dropped += next.dropped.length;
+    // An outage or incomplete audit is not evidence that a rewrite fixed the claims.
+    if (next.coverage && next.coverage.status !== "reviewed") continue;
     if (next.issues.length && next.issues.length >= review.issues.length) continue;
     markdown = repaired;
     review = next;

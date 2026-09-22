@@ -2,6 +2,7 @@ import {
   chapterCompositionSchema,
   hasFigureFence,
   isRecord,
+  proseWordCount,
   type ChapterBrief,
   type ChapterComposition,
   type DescribedPage,
@@ -68,6 +69,8 @@ export function composedResumeState(options: {
 }
 
 export type StoredComposedChapter = {
+  sourceClaimsDigest?: string | undefined;
+  sourceClaimsStatus?: string | undefined;
   id: string;
   index: number;
   title: string;
@@ -105,6 +108,7 @@ export async function loadComposedBookState(projectId: string): Promise<{
   return {
     chapters: chapters.map((chapter) => {
       const brief = isRecord(chapter.productionBrief) ? chapter.productionBrief : undefined;
+      const sourceClaims = isRecord(brief?.report) && isRecord(brief.report.sourceClaims) ? brief.report.sourceClaims : undefined;
       const composition = brief ? chapterCompositionSchema.safeParse(brief.composition) : undefined;
       const pageNotes = new Map<number, string[]>();
       if (brief && Array.isArray(brief.pages)) {
@@ -119,6 +123,8 @@ export async function loadComposedBookState(projectId: string): Promise<{
       }
       return {
         id: chapter.id,
+        sourceClaimsDigest: typeof sourceClaims?.textDigest === "string" ? sourceClaims.textDigest : undefined,
+        sourceClaimsStatus: isRecord(sourceClaims?.coverage) && typeof sourceClaims.coverage.status === "string" ? sourceClaims.coverage.status : undefined,
         index: chapter.index,
         title: chapter.title,
         targetPages: chapter.targetPages,
@@ -139,6 +145,7 @@ export type ComposedPageRow = DescribedPage & { markdown: string };
  * the brief like it.
  */
 export type ComposedChapterReport = {
+  sourceClaims?: import("./composedClaimReview.js").StoredSourceClaimReview | undefined;
   developmentalEdit?: {
     appliedGroups: string[];
     rejectedGroups: Array<{ id: string; reason: string }>;
@@ -198,6 +205,16 @@ export async function recordChapterEvidenceResiduals(projectId: string, chapterI
     where: { id: chapter.id },
     data: { productionBrief: { ...brief, report: { ...report, evidence: { ...evidence, unresolved: [...existing, ...unresolved] } } } as unknown as Prisma.InputJsonValue }
   });
+}
+
+/** Persist the final claim ledger on the chapter the export reads, including unavailable reviews. */
+export async function recordChapterSourceClaims(projectId: string, chapterIndex: number, sourceClaims: NonNullable<ComposedChapterReport["sourceClaims"]>): Promise<void> {
+  const chapter = await prisma.chapter.findFirst({ where: { projectId, index: chapterIndex }, select: { id: true, productionBrief: true } });
+  if (!chapter || !isRecord(chapter.productionBrief)) throw new Error("Cannot store claim verification without its staged chapter.");
+  const brief = chapter.productionBrief;
+  const report = isRecord(brief.report) ? brief.report : {};
+  await prisma.chapter.update({ where: { id: chapter.id },
+    data: { productionBrief: { ...brief, report: { ...report, sourceClaims } } as unknown as Prisma.InputJsonValue } });
 }
 
 /**
@@ -268,7 +285,7 @@ export function derivedChapterBrief(
       };
     }),
     composition,
-    ...(report ? { report } : {})
+    ...(report ? { report: { ...report, editedWords: proseWordCount(pages.map((page) => page.markdown).join("\n\n")) } } : {})
   };
 }
 

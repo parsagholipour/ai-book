@@ -240,7 +240,7 @@ export async function generateBestOfPageDrafts<T extends BestOfDraftBase>(
     return drafts[0]!;
   }
 
-  const decisionModel = await options.decisions?.resolve();
+  const decisionModel = await options.decisions?.resolve("judge-page-drafts");
   try {
     const chosenIndex = await judgePageDrafts({
       input: options.baseOptions.input,

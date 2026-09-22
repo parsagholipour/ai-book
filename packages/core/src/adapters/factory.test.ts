@@ -337,11 +337,11 @@ describe("text model provider selection", () => {
     expect(createProviders(config, tierProjectInput("premium")).text).toBeInstanceOf(RoutingTextModelAdapter);
     expect(createProviders(config, tierProjectInput("ultra")).text).toBeInstanceOf(RoutingTextModelAdapter);
     const ultra = createProviders(config, tierProjectInput("ultra")).text as RoutingTextModelAdapter;
-    expect(ultra.selectionForPurpose("plan-book").thinkingBudget).toBe(8192);
+    expect(ultra.selectionForPurpose("plan-book").thinkingBudget).toBe(2048);
     expect(ultra.selectionForPurpose("generate-page").thinkingBudget).toBe(2048);
-    expect(ultra.selectionForPurpose("generate-page-map").thinkingBudget).toBe(1024);
+    expect(ultra.selectionForPurpose("generate-page-map").thinkingBudget).toBe(0);
     const premium = createProviders(config, tierProjectInput("premium")).text as RoutingTextModelAdapter;
-    expect(premium.selectionForPurpose("plan-book").thinkingBudget).toBe(4096);
+    expect(premium.selectionForPurpose("plan-book").thinkingBudget).toBe(2048);
     expect(premium.selectionForPurpose("generate-page").thinkingBudget).toBe(2048);
     expect(createProviders(config, tierProjectInput("balanced")).text).toBeInstanceOf(RoutingTextModelAdapter);
     expect(createProviders(config, tierProjectInput("fast")).text).toBeInstanceOf(DeepSeekAdapter);

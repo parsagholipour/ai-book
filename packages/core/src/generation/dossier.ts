@@ -225,7 +225,7 @@ export async function extractExcerpts(options: {
         content: [
           `You are choosing passages from primary sources for chapter ${options.chapter.index}, "${options.chapter.title}". Each window in windows is a stretch of a document's own text.`,
           options.evidence
-            ? "Choose up to six passages of 30 to 300 words that establish the episode's actors, consequential events, chronology, quantities, decisions, outcome, or disagreement. Include ordinary factual prose, not only quotable lines. Preserve the context needed to distinguish an allegation from a finding. A passage is one continuous stretch of a window. Skip irrelevant windows."
+            ? "Choose up to six passages of 30 to 300 words that establish the chapter's required historical or technical claims: actors, consequential events, chronology, quantities, definitions, mechanisms, limitations, decisions, outcome, or disagreement. Include ordinary explanatory prose, not only quotable lines. Preserve attribution, qualifications and the context needed to distinguish an allegation from a finding. A passage is one continuous stretch of a window. Skip irrelevant windows."
             : "Choose up to six passages of 30 to 300 words that bear on one of the chapter's episodes and would be worth quoting: a voice, an order, an oath, a figure, a description of something seen. A passage is one continuous stretch of a window. Skip a window that has nothing quotable.",
           "Report each passage as its first six to eight words and its last six to eight words, copied exactly from the window — never paraphrased, never the whole passage. speaker: who wrote or said it, if the window says. episodeTitle: which episode it serves.",
           "Judge relevance from the passage and document context. A shared name does not prove relevance and a passage using pronouns or alternate names can still concern the episode. Keep qualifications and return no excerpt where relevance is uncertain. Copy episodeTitle exactly from an episode in episodes.",
@@ -238,7 +238,8 @@ export async function extractExcerpts(options: {
         content: JSON.stringify(
           {
             language: targetLanguagePayload(options.input.language),
-            episodes: options.episodes.map((episode) => ({ title: episode.title, person: episode.person, place: episode.place, date: episode.date, document: episode.document })),
+            chapter: { title: options.chapter.title, summary: options.chapter.summary, keyBeats: options.chapter.keyBeats },
+            episodes: options.episodes.map((episode) => ({ title: episode.title, person: episode.person, place: episode.place, date: episode.date, document: episode.document, why: episode.why })),
             windows: options.windows.map((window) => ({
               id: window.id,
               document: documents.get(window.documentId)?.title ?? "",
@@ -282,6 +283,7 @@ export async function extractExcerpts(options: {
       year: document.year,
       speaker: entry.speaker.trim(),
       text,
+      location: { start: document.text.replace(/\s+/g, " ").trim().indexOf(text), length: text.length, unit: "normalized-text-character" },
       words: text.split(/\s+/).filter(Boolean).length
     });
     if (excerpts.length >= DOSSIER_MAX_EXCERPTS_PER_CHAPTER) break;
@@ -331,7 +333,7 @@ export async function buildChapterDossier(options: {
     for (const query of queries) {
       try {
         candidates.push(...(await searchPrimarySources(query, {
-          fetch: options.fetch, language: options.input.language, limit: 2, search: options.evidence ? options.searchSources : undefined,
+          fetch: options.fetch, language: options.input.language, limit: 3, search: options.searchSources,
           log: (event, detail) => log(`dossier.${event}`, { chapterIndex: options.chapter.index, ...detail })
         })));
       } catch (error) {
@@ -350,7 +352,7 @@ export async function buildChapterDossier(options: {
       try {
         const text = await fetchPrimaryText(candidate, options.fetch);
         if (text.split(/\s+/).length < 80) continue;
-        if (!textLooksLikeLanguage(text, options.input.language)) {
+        if (!options.evidence && !textLooksLikeLanguage(text, options.input.language)) {
           log("dossier.document_dropped", { chapterIndex: options.chapter.index, title: candidate.title, reason: "not the book's language" });
           continue;
         }

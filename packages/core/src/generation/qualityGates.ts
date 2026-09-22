@@ -158,7 +158,7 @@ export const QUALITY_FEATURE_DEFAULTS: QualityFeatureSettings = {
   beatDedup: ["ultra", "premium", "balanced", "fast"],
   writerTools: ["ultra"],
   bestOfPolish: ["ultra"],
-  planThinkingBoost: ["ultra", "premium"],
+  planThinkingBoost: [],
   claimRetrieve: ["ultra"],
   // Composed-chapters strategy only. One prose call per chapter each; the
   // read is one call per book. Both replace the per-page review loop.
@@ -314,9 +314,10 @@ export const QUALITY_FEATURES: QualityFeatureDescription[] = [
   },
   {
     id: "planThinkingBoost",
-    label: "Deeper plan thinking",
-    summary: "Raises thinking budget on the existing plan-book call (and Ultra page-map). Not a second prose round.",
-    pipelines: ["planning"],
+    retired: true,
+    label: "Deeper plan thinking (retired)",
+    summary: "Reasoning is controlled by the saved model settings for each stage. Tier-based boosts are no longer applied.",
+    pipelines: [],
     stage: "Plan"
   },
   {

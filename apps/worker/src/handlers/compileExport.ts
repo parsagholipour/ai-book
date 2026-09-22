@@ -12,6 +12,7 @@ import {
   readerChaptersFromPublishedMarkdown,
   readerChaptersWithCache
 } from "../generation/readerChapterCache.js";
+import { manuscriptCoverageForCompile } from "../generation/manuscriptCoverageReview.js";
 import { loadQualityContext } from "../generation/qualitySettings.js";
 import { rebuildProjectStoryState, rebuildStoryStateFromPages } from "../generation/storyStateStore.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
@@ -45,6 +46,7 @@ import { type ExportPageForRepair, type JobCompletion } from "../runtime/jobType
 import { effectiveSavedWholeBookExportContext } from "../generation/wholeBookTolerance.js";
 import { runCompileManuscriptChecks } from "../generation/compileManuscriptChecks.js";
 import { arithmeticErrorIssues, unsupportedCaseClaimIssues } from "../generation/composedEvidenceResiduals.js";
+import { composedChapterLengthIssues } from "../generation/composedChapterLength.js";
 import { maybeEnqueueCharacterCandidatePreparation } from "./characters.js";
 import { runBoundedChapterQualityReview } from "./compileExportChapterReview.js";
 import { companionFormatsToRender, renderCompanionExports } from "./compileExportCompanions.js";
@@ -59,6 +61,7 @@ import {
   chapterHeadingLabelPreference,
   chapterHeadingStylePreference,
   includeSourcesPreference,
+  isImportedManuscript,
   markdownOpensOnCoverSheet,
   persistablePdfPageMapAfterRender,
   publicAssetUrl,
@@ -176,6 +179,9 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     : null);
   let plan = bookPlanSchema.parse(planVersion.planningPackage);
   let input = inputForPlanVersion(project, planVersion.inputSnapshot);
+  // Keep the requested physical target before whole-book tolerance substitutes
+  // the saved manuscript-record count for its content checks.
+  const pdfTargetPageCount = isImportedManuscript(input.mediaSettings) ? undefined : input.targetPages;
   let pages: ExportPageForRepair[] = project.pages;
   const initialStrategy = strategyForInput(input);
   const exportContext = effectiveSavedWholeBookExportContext(input, plan, initialStrategy, pages);
@@ -470,7 +476,13 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   const storyState =
     (await rebuildProjectStoryState(projectId, plan.promises ?? [])) ??
     (await rebuildStoryStateFromPages(projectId, plan.promises ?? []));
+  const coverage = isImportedManuscript(input.mediaSettings) ? null : await manuscriptCoverageForCompile({
+    projectId, brief: input.prompt, promises: [...(plan.promises ?? []), ...storyState.promises.map((promise) => promise.text)],
+    pages, textModel: providers.text, allowModelReview: ownsOutcome && !skipFinalReview
+  });
+  if (coverage && ownsOutcome && !skipFinalReview) modelQualityIssues.push(...coverage.issues);
   const deterministicIssues = [
+    ...(coverage && (!ownsOutcome || skipFinalReview) ? coverage.issues : []),
     ...runCompileManuscriptChecks({
       pages,
       expectedPageCount: input.targetPages,
@@ -478,7 +490,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     }),
     // A case assertion the composed chapter's repair could not narrow: recorded on the chapter's
     // report, matched against the pages that still carry it, and a blocking issue on the card.
-    ...(strategyComposesChapters(strategy) ? [...unsupportedCaseClaimIssues(pages), ...arithmeticErrorIssues(pages)] : []),
+    ...(strategyComposesChapters(strategy) ? [...unsupportedCaseClaimIssues(pages), ...arithmeticErrorIssues(pages), ...composedChapterLengthIssues(pages, input)] : []),
     ...(repairVerificationIncomplete
       ? [{
           code: "FINAL_QA_REPAIR_INCOMPLETE",
@@ -489,11 +501,9 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
           affectedPageIndexes: pages.filter((page) => page.status === "FAILED_QA").map((page) => page.index)
         }]
       : []),
-    // Shared with the superseded stand-down, which used to drop this whole
-    // check and report on the same book with one fewer question asked.
-    // Already folded — `rebuildProjectStoryState` writes it back whatever the
-    // gate answers — so the thunk is only the shape the other caller needs.
-    ...unpaidPromiseQualityIssues({ quality, targetPages: input.targetPages, storyState: () => storyState })
+    // Imports have no generation brief to enforce. Any remaining continuity
+    // entries are unverified candidates, never proof that a passage is absent.
+    ...(coverage ? [] : unpaidPromiseQualityIssues({ quality, targetPages: input.targetPages, storyState: () => storyState }))
   ];
   // Integrity is not optional polish: an outcome compile that still owns the
   // book adjudicates deterministic structural clusters even when final-book QA
@@ -528,7 +538,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     finalReviewRan: runFinalReview,
     deterministicWarningsAffectVerdict: ownsOutcome && !skipFinalReview
   };
-  const qualityReport = qualityReportFromFindings(findings);
+  const qualityReport = { ...qualityReportFromFindings(findings), ...(coverage ? { briefCoverage: coverage.stored } : {}) };
   await recordCompileQualityReport(generationJobId, qualityReport);
   // A blocked report used to stop here with no artifacts at all, which held a
   // paid book hostage to its own QA: nothing to read in-app, downloads refused.
@@ -676,6 +686,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
           publicApiUrl: config.PUBLIC_API_URL,
           outputPath: pending.pdf,
           language: input.language,
+          targetPageCount: pdfTargetPageCount,
           // Scopes the renderer's file access to this book's own illustrations.
           projectId,
           ...(compiled ? { pageMapPlan: compiled } : {})

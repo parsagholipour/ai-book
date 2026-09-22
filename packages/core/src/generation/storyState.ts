@@ -57,10 +57,18 @@ export const storyDeltaSchema = z.object({
   unansweredResolved: z.array(z.string().min(1)).default([])
 });
 
-export const storyExtractResultSchema = z.object({
-  storyDelta: storyDeltaSchema,
+// Keep stored deltas tolerant, but never silently discard a model's invented
+// keys: real extraction replies used `facts`/`payPromises` and parsed as no-ops.
+export const storyExtractResultSchema = z.strictObject({
+  storyDelta: storyDeltaSchema.extend({
+    entities: z.record(z.string(), storyDeltaEntityUpdateSchema.strict()).default({})
+  }).strict(),
   contradictions: z.array(z.string()).default([])
 });
+
+// The dialect marker describes a schema, not a response field. Including it
+// made live replies echo `$schema` and need an otherwise unnecessary repair.
+const { $schema: _schemaDialect, ...storyExtractOutputSchema } = z.toJSONSchema(storyExtractResultSchema);
 
 export type StoryPromise = z.infer<typeof storyPromiseSchema>;
 export type StoryFact = z.infer<typeof storyFactSchema>;
@@ -327,10 +335,14 @@ export async function extractStoryState(options: {
         role: "system",
         content: [
           "You extract structured story state from one book page.",
-          "Return JSON with storyDelta and contradictions.",
+          "Return a JSON data object with only storyDelta and contradictions as top-level keys.",
           "storyDelta may open, pay, or break promises; add facts; update entities; add or resolve unanswered questions.",
           "contradictions lists ways this page disagrees with currentState. Empty when consistent.",
-          "Do not rewrite the page. Do not invent promises the page does not make or pay."
+          "Do not rewrite the page. Do not invent promises the page does not make or pay.",
+          "Return only changes introduced by this page, not a copy of currentState. Keep entries concise.",
+          "factsAdded contains strings, not fact objects. promisesPaid and promisesBroken contain existing promise IDs or exact promise texts.",
+          "entities maps names to updates using only goal, knows, location, and status. Put technical properties in factsAdded; omit page timestamps.",
+          `Required JSON schema: ${JSON.stringify(storyExtractOutputSchema)}`
         ].join(" ")
       },
       {

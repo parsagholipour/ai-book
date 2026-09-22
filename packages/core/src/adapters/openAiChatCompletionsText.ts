@@ -1,4 +1,5 @@
 import type OpenAI from "openai";
+import { reportTextProviderRequest, reportTextProviderUsage } from "./textProviderRequest.js";
 import type {
   ChatMessage,
   GenerateJsonOptions,
@@ -124,6 +125,7 @@ export abstract class OpenAIChatCompletionsTextAdapter implements TextModelAdapt
       this.includeUsageInTextStream
     );
     for await (const chunk of stream) {
+      await reportTextProviderUsage(options, this.usageFromResponse(chunk.usage));
       const content = chunk.choices[0]?.delta?.content;
       if (content) {
         yield content;
@@ -159,6 +161,7 @@ export abstract class OpenAIChatCompletionsTextAdapter implements TextModelAdapt
         await options.onOutputTextChunk?.(content);
       }
       usage = this.usageFromResponse(chunk.usage) ?? usage;
+      await reportTextProviderUsage(options, this.usageFromResponse(chunk.usage));
     }
     return { text, usage };
   }
@@ -169,10 +172,13 @@ export abstract class OpenAIChatCompletionsTextAdapter implements TextModelAdapt
     messages: ChatMessage[],
     extraParameters: Record<string, unknown> = {}
   ): Promise<OpenAiCompletion> {
+    const request = this.request(options, requestKind, messages, extraParameters);
+    await reportTextProviderRequest(options, this.provider, this.model, request.max_completion_tokens ?? request.max_tokens);
     const response = await this.client.chat.completions.create(
-      this.request(options, requestKind, messages, extraParameters) as never,
+      request as never,
       openAiRequestOptions(options)
     );
+    await reportTextProviderUsage(options, this.usageFromResponse((response as OpenAiCompletion).usage));
     return response as OpenAiCompletion;
   }
 
@@ -183,12 +189,14 @@ export abstract class OpenAIChatCompletionsTextAdapter implements TextModelAdapt
     extraParameters: Record<string, unknown>,
     includeUsage: boolean
   ): Promise<AsyncIterable<OpenAiCompletionChunk>> {
+    const request = this.request(options, requestKind, messages, {
+      ...extraParameters,
+      stream: true,
+      ...(includeUsage ? { stream_options: { include_usage: true } } : {})
+    });
+    await reportTextProviderRequest(options, this.provider, this.model, request.max_completion_tokens ?? request.max_tokens);
     const stream = await this.client.chat.completions.create(
-      this.request(options, requestKind, messages, {
-        ...extraParameters,
-        stream: true,
-        ...(includeUsage ? { stream_options: { include_usage: true } } : {})
-      }) as never,
+      request as never,
       openAiRequestOptions(options)
     );
     return stream as unknown as AsyncIterable<OpenAiCompletionChunk>;
@@ -258,11 +266,17 @@ export function usageFromOpenAiChatCompletions(usage: unknown): Usage | undefine
   if (!usage || typeof usage !== "object") {
     return undefined;
   }
-  const record = usage as { prompt_tokens?: number; completion_tokens?: number };
+  const record = usage as {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    completion_tokens_details?: { reasoning_tokens?: number };
+  };
   const cacheHitTokens = openAiChatCompletionsCacheHitTokens(usage);
   return {
     promptTokens: record.prompt_tokens,
     outputTokens: record.completion_tokens,
+    ...(record.completion_tokens_details?.reasoning_tokens !== undefined
+      ? { reasoningTokens: record.completion_tokens_details.reasoning_tokens } : {}),
     ...(cacheHitTokens !== undefined ? { cacheHitTokens } : {})
   };
 }

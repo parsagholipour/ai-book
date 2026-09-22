@@ -1,4 +1,7 @@
 import { AlertTriangle, Cpu } from "lucide-react";
+import { useState } from "react";
+import { Button } from "../shared/Button.js";
+import { GENERATION_STAGE_EFFORT } from "./generationStageEffort.js";
 import {
   JEV_SELECTION,
   isJevSelection,
@@ -6,6 +9,11 @@ import {
   type DecisionModelSelection,
   GENERATION_TEXT_MODEL_ROUTE_FIELDS,
   GENERATION_TEXT_MODEL_TIERS,
+  GENERATION_MODEL_STAGES,
+  generationStageRoute,
+  stageSupportsFiniteDecisions,
+  type GenerationModelStageId,
+  type GenerationStageRoutes,
   generationTextModelOptionKey,
   parseTextModelSelection,
   selectionFromGenerationOption,
@@ -17,15 +25,18 @@ import {
   type TextModelThinkingEffort
 } from "@book-maker/core/generationTextModelRouting";
 
+type TierModelPatch = Partial<Record<GenerationTextModelRouteField, Partial<TextModelSelection>>> & {
+  stages?: Partial<Record<GenerationModelStageId, { primary?: Partial<TextModelSelection> | typeof JEV_SELECTION; fallback?: Partial<TextModelSelection> }>>;
+};
 export type GenerationModelRoutingPatch = {
   fastDecisions?: DecisionModelSelection | null;
   fastDecisionsFallback?: Partial<TextModelSelection>;
   fastJudgments?: Partial<TextModelSelection> | undefined;
   fastJudgmentsFallback?: Partial<TextModelSelection> | undefined;
-  fast?: Partial<Record<GenerationTextModelRouteField, Partial<TextModelSelection>>> | undefined;
-  balanced?: Partial<Record<GenerationTextModelRouteField, Partial<TextModelSelection>>> | undefined;
-  premium?: Partial<Record<GenerationTextModelRouteField, Partial<TextModelSelection>>> | undefined;
-  ultra?: Partial<Record<GenerationTextModelRouteField, Partial<TextModelSelection>>> | undefined;
+  fast?: TierModelPatch | undefined;
+  balanced?: TierModelPatch | undefined;
+  premium?: TierModelPatch | undefined;
+  ultra?: TierModelPatch | undefined;
 };
 
 const TIER_LABELS: Record<ModelTier, string> = {
@@ -50,6 +61,14 @@ export function GenerationModelRoutingSection({
   disabled: boolean;
   onChange: (next: GenerationTextModelRouting) => void;
 }) {
+  const [stageTier, setStageTier] = useState<ModelTier>("ultra");
+  const updateStage = (id: GenerationModelStageId, field: "primary" | "fallback", selection: DecisionModelSelection) => {
+    if (field === "fallback" && isJevSelection(selection)) return;
+    const route = generationStageRoute(models, stageTier, id);
+    onChange({ ...models, [stageTier]: { ...models[stageTier], stages: {
+      ...models[stageTier].stages, [id]: { ...route, [field]: selection }
+    } } });
+  };
   const update = (tier: ModelTier, field: GenerationTextModelRouteField, selection: TextModelSelection) => {
     onChange({ ...models, [tier]: { ...models[tier], [field]: selection } });
   };
@@ -57,14 +76,59 @@ export function GenerationModelRoutingSection({
     <section className="work-section safety-settings-card quality-model-routing">
       <div className="section-title">
         <Cpu size={18} aria-hidden />
-        <h3>Model routing</h3>
+        <h3>Models and reasoning by stage</h3>
       </div>
       <p className="muted">
-        These provider/model choices control all writer, judgment, and inline decision calls, including calls for
-        existing projects. Each successful save affects calls started afterward. An availability failure switches
-        once to that route&apos;s fallback; in-flight calls keep the primary/fallback pair they started with. Costs are
-        provider USD per 1M tokens; ranges cover long-context or peak/off-peak rate bands.
+        Choose the model and reasoning for each stage. Saved choices apply exactly, including to existing projects.
+        Changes apply to calls started after saving; calls already running keep their settings.
+        Availability failures use the selected fallback. Prices are USD per million tokens.
       </p>
+      <div className="quality-stage-tier-picker" role="group" aria-label="Stage settings tier">
+        {GENERATION_TEXT_MODEL_TIERS.map((tier) => <button key={tier} type="button" disabled={disabled} aria-pressed={tier === stageTier}
+          onClick={() => setStageTier(tier)}>{TIER_LABELS[tier]}</button>)}
+      </div>
+      <p className="muted">{TIER_LABELS[stageTier]} stage settings. Stages run when their pipeline and quality gates are enabled.</p>
+      <SetAllStages key={stageTier} models={models} tier={stageTier} options={options} disabled={disabled} onChange={onChange} />
+      <p className="muted">
+        Recommended effort is a starting point for text models: 1 = lightest reasoning, 10 = deepest reasoning.
+        Scores reflect the stage's task across all tiers. Choose from your model's supported effort options;
+        recommendations never change your settings.
+      </p>
+      {[...new Set(GENERATION_MODEL_STAGES.map((stage) => stage.group))].map((group) => <details key={group}
+        className="quality-stage-group" open={group === "Planning" || group === "Chapters"}>
+        <summary>{group}</summary>
+        {GENERATION_MODEL_STAGES.filter((stage) => stage.group === group).map((stage) => {
+          const route = generationStageRoute(models, stageTier, stage.id);
+          const effort = GENERATION_STAGE_EFFORT[stage.id];
+          return <div key={stage.id} className="quality-stage-row">
+            <div className="quality-stage-heading">
+              <h4>{stage.label}</h4>
+              <span className="quality-stage-effort">Recommended effort: <strong>{effort.score}/10</strong></span>
+            </div>
+            <p className="quality-stage-effort-reason muted">{effort.reason}</p>
+            <div className="quality-model-pair">
+              <div><small>Primary</small>
+                {stageSupportsFiniteDecisions(stage.id) && <label className="quality-model-field">Model type
+                  <select aria-label={`${TIER_LABELS[stageTier]} ${stage.label} Model type`} disabled={disabled}
+                    value={isJevSelection(route.primary) ? "jev" : "text"}
+                    onChange={(event) => updateStage(stage.id, "primary", event.target.value === "jev" ? JEV_SELECTION : route.fallback)}>
+                    <option value="text">Text model</option>
+                    <option value="jev" disabled={!jevAvailable}>Jev · TypeSafe{!jevAvailable ? " (unavailable)" : modelCostSuffix(jevCosts)}</option>
+                  </select>
+                </label>}
+                {isJevSelection(route.primary) ? <small>Finite choices; low confidence or failure uses this stage&apos;s fallback.</small> :
+                  <ModelSelectionField label={`${TIER_LABELS[stageTier]} ${stage.label}`} hideLabel selection={route.primary}
+                    options={options} disabled={disabled} onChange={(selection) => updateStage(stage.id, "primary", selection)} />}
+              </div>
+              <div><small>Fallback</small><ModelSelectionField label={`${TIER_LABELS[stageTier]} ${stage.label} fallback`} hideLabel
+                selection={route.fallback} options={options} disabled={disabled} onChange={(selection) => updateStage(stage.id, "fallback", selection)} /></div>
+            </div>
+          </div>;
+        })}
+      </details>)}
+      <details className="quality-stage-group">
+      <summary>Inline calls and defaults for new stages</summary>
+      <p className="muted">These defaults seed stages in older settings and handle unlisted operations. Changing a default does not change saved stage settings.</p>
       <div className="quality-model-fast">
         <ModelSelectionField
           label="Fast judgments"
@@ -118,8 +182,71 @@ export function GenerationModelRoutingSection({
           );
         })}
       </div>
+      </details>
     </section>
   );
+}
+
+type StageModelTarget = "primary" | "fallback" | "both";
+
+function SetAllStages({ models, tier, options, disabled, onChange }: {
+  models: GenerationTextModelRouting;
+  tier: ModelTier;
+  options: GenerationTextModelOption[];
+  disabled: boolean;
+  onChange: (next: GenerationTextModelRouting) => void;
+}) {
+  const initial = generationStageRoute(models, tier, "plan-book");
+  const [selection, setSelection] = useState<TextModelSelection>(() => {
+    const selected = isJevSelection(initial.primary) ? initial.fallback : initial.primary;
+    const option = optionForSelection(options, selected);
+    if (!option) return selected;
+    const effort = selected.thinkingEffort ?? (selected.thinkingEnabled === false && option.thinkingEfforts?.some((entry) => entry.value === "none") ? "none" : undefined);
+    // Applying to mixed stages needs an explicit catalog setting, not an omitted effort that a PATCH cannot clear.
+    return { ...selectionFromGenerationOption(option), ...(effort ? { thinkingEffort: effort } : {}) };
+  });
+  const [target, setTarget] = useState<StageModelTarget>("primary");
+  const [applied, setApplied] = useState<string | null>(null);
+  return <div className="quality-stage-bulk" role="group" aria-label="Set all stages">
+    <h4>Set all stages</h4>
+    <p className="muted">Apply one model and reasoning setting to all {GENERATION_MODEL_STAGES.length} {TIER_LABELS[tier]} stages. You can adjust individual stages afterward, then save.</p>
+    <div className="quality-stage-bulk-controls">
+      <label className="quality-model-field">Apply to
+        <select aria-label="Set all stages target" disabled={disabled} value={target} onChange={(event) => {
+          setTarget(event.target.value as StageModelTarget);
+          setApplied(null);
+        }}>
+          <option value="primary">Primary models</option>
+          <option value="fallback">Fallback models</option>
+          <option value="both">Primary and fallback models</option>
+        </select>
+      </label>
+      <ModelSelectionField label="Set all stages model" selection={selection} options={options} disabled={disabled}
+        onChange={(next) => { setSelection(next); setApplied(null); }} />
+      <Button variant="secondary" disabled={disabled || !optionForSelection(options, selection)} onClick={() => {
+        onChange(setAllGenerationStageModels(models, tier, target, selection));
+        setApplied(`Updated ${GENERATION_MODEL_STAGES.length} ${TIER_LABELS[tier]} stages in your draft.`);
+      }}>Set all {TIER_LABELS[tier]} stages</Button>
+    </div>
+    {applied && <p role="status">{applied}</p>}
+  </div>;
+}
+
+export function setAllGenerationStageModels(
+  models: GenerationTextModelRouting,
+  tier: ModelTier,
+  target: StageModelTarget,
+  selection: TextModelSelection
+): GenerationTextModelRouting {
+  const stages = { ...models[tier].stages };
+  for (const { id } of GENERATION_MODEL_STAGES) {
+    const current = generationStageRoute(models, tier, id);
+    stages[id] = {
+      primary: { ...(target === "fallback" ? current.primary : selection) },
+      fallback: { ...(target === "primary" ? current.fallback : selection) }
+    };
+  }
+  return { ...models, [tier]: { ...models[tier], stages } };
 }
 
 function FastDecisionFields({ models, options, jevAvailable, jevCosts, disabled, onChange }: {
@@ -149,7 +276,7 @@ function FastDecisionFields({ models, options, jevAvailable, jevCosts, disabled,
       {selected && isJev && !jevAvailable && <span className="quality-model-warning" role="status">Saved provider credentials are unavailable.</span>}
     </div>
     <ModelSelectionField label="Fast decisions fallback" selection={models.fastDecisionsFallback ?? models.fastJudgments} options={options} disabled={disabled || !isJev} onChange={(selection) => onChange({ ...models, fastDecisionsFallback: selection })} />
-    <small className="quality-model-fast-summary">Page drafts, chapter drafts, and catalog covers. Jev returns a choice without a written rationale; a winning probability below 70% or a provider failure uses the LLM fallback. Other judgments keep their existing routes.</small>
+    <small className="quality-model-fast-summary">Defaults for new draft-comparison stages and optional preliminary decision screens. Existing stage choices are independent; change a stage directly to choose Jev or a text model for it.</small>
   </div>;
 }
 
@@ -258,18 +385,21 @@ export function ModelSelectionField({
           Effort
           <select
             aria-label={`${label} Effort`}
-            value={selection.thinkingEffort ?? defaultEffort(option!)}
+            value={selection.thinkingEffort ?? (selection.thinkingEnabled === false ? "none" : "")}
             disabled={disabled}
             onChange={(event) =>
               onChange({ ...selectionFromGenerationOption(option!), thinkingEffort: event.target.value as TextModelThinkingEffort })
             }
           >
+            <option value="" disabled>Provider default</option>
             {efforts.map((effort) => (
               <option key={effort.value} value={effort.value}>{effort.label}</option>
             ))}
           </select>
         </label>
       ) : null}
+      {selection.thinkingBudget !== undefined ? <small>Reasoning token budget: {selection.thinkingBudget === -1 ? "Automatic" : selection.thinkingBudget}</small> : null}
+      {efforts.length === 0 && selection.thinkingEnabled !== undefined ? <small>Reasoning {selection.thinkingEnabled ? "enabled" : "disabled"}</small> : null}
     </div>
   );
 }
@@ -304,10 +434,21 @@ export function generationModelRoutingClaim(
   const fastFallback = selectionDiff(stored.fastJudgmentsFallback, draft.fastJudgmentsFallback);
   if (fastFallback) patch.fastJudgmentsFallback = fastFallback;
   for (const tier of GENERATION_TEXT_MODEL_TIERS) {
-    const tierPatch: Partial<Record<GenerationTextModelRouteField, Partial<TextModelSelection>>> = {};
+    const tierPatch: TierModelPatch = {};
     for (const field of GENERATION_TEXT_MODEL_ROUTE_FIELDS) {
       const leaf = selectionDiff(stored[tier][field], draft[tier][field]);
       if (leaf) tierPatch[field] = leaf;
+    }
+    for (const { id } of GENERATION_MODEL_STAGES) {
+      const next = draft[tier].stages?.[id];
+      if (!next) continue;
+      const previous = generationStageRoute(stored, tier, id);
+      const primary = stagePrimaryDiff(previous.primary, next.primary);
+      const fallback = selectionDiff(previous.fallback, next.fallback);
+      if (primary || fallback) {
+        tierPatch.stages ??= {};
+        tierPatch.stages[id] = { ...(primary ? { primary } : {}), ...(fallback ? { fallback } : {}) };
+      }
     }
     if (Object.keys(tierPatch).length > 0) patch[tier] = tierPatch;
   }
@@ -331,6 +472,18 @@ export function rebaseGenerationModelRouting(
     for (const field of GENERATION_TEXT_MODEL_ROUTE_FIELDS) {
       if (selectionDiff(loaded[tier][field], draft[tier][field])) {
         rebased[tier][field] = { ...draft[tier][field] };
+      }
+    }
+    for (const { id } of GENERATION_MODEL_STAGES) {
+      const next = draft[tier].stages?.[id];
+      if (!next) continue;
+      const previous = generationStageRoute(loaded, tier, id);
+      const route = generationStageRoute(head, tier, id);
+      const primary = stagePrimaryDiff(previous.primary, next.primary);
+      const fallback = selectionDiff(previous.fallback, next.fallback);
+      if (primary || fallback) {
+        rebased[tier].stages ??= {};
+        rebased[tier].stages[id] = { primary: { ...(primary ? next.primary : route.primary) }, fallback: { ...(fallback ? next.fallback : route.fallback) } };
       }
     }
   }
@@ -423,8 +576,21 @@ function readTierModels(value: unknown): GenerationTextModelRouting["fast"] | nu
   const writerFallback = readTextModelSelection(candidate.writerFallback);
   const judgment = readTextModelSelection(candidate.judgment);
   const judgmentFallback = readTextModelSelection(candidate.judgmentFallback);
+  const stages: GenerationStageRoutes = {};
+  if (candidate.stages !== undefined) {
+    const rawStages = record(candidate.stages);
+    if (!rawStages) return null;
+    for (const { id } of GENERATION_MODEL_STAGES) {
+      if (rawStages[id] === undefined) continue;
+      const raw = record(rawStages[id]);
+      const primary = parseDecisionModelSelection(raw?.primary);
+      const fallback = readTextModelSelection(raw?.fallback);
+      if (!primary || !fallback || (isJevSelection(primary) && !stageSupportsFiniteDecisions(id))) return null;
+      stages[id] = { primary, fallback };
+    }
+  }
   return writer && writerFallback && judgment && judgmentFallback
-    ? { writer, writerFallback, judgment, judgmentFallback }
+    ? { writer, writerFallback, judgment, judgmentFallback, ...(candidate.stages !== undefined ? { stages } : {}) }
     : null;
 }
 
@@ -462,7 +628,8 @@ function cloneTier(tier: GenerationTextModelRouting[ModelTier]) {
     writer: { ...tier.writer },
     writerFallback: { ...tier.writerFallback },
     judgment: { ...tier.judgment },
-    judgmentFallback: { ...tier.judgmentFallback }
+    judgmentFallback: { ...tier.judgmentFallback },
+    ...(tier.stages ? { stages: Object.fromEntries(Object.entries(tier.stages).map(([id, route]) => [id, { primary: { ...route.primary }, fallback: { ...route.fallback } }])) } : {})
   };
 }
 
@@ -480,6 +647,11 @@ function selectionDiff(stored: TextModelSelection, draft: TextModelSelection): P
     moved.model = draft.model;
   }
   return Object.keys(moved).length > 0 ? (moved as Partial<TextModelSelection>) : null;
+}
+
+function stagePrimaryDiff(stored: DecisionModelSelection, draft: DecisionModelSelection): Partial<TextModelSelection> | typeof JEV_SELECTION | null {
+  if (isJevSelection(stored) || isJevSelection(draft)) return JSON.stringify(stored) === JSON.stringify(draft) ? null : { ...draft };
+  return selectionDiff(stored, draft);
 }
 
 function optionForSelection(options: GenerationTextModelOption[], selection: TextModelSelection) {
@@ -505,10 +677,6 @@ function optionForSelection(options: GenerationTextModelOption[], selection: Tex
     );
   }
   return undefined;
-}
-
-function defaultEffort(option: GenerationTextModelOption): TextModelThinkingEffort {
-  return option.thinkingEfforts?.find((effort) => effort.default)?.value ?? option.thinkingEfforts?.[0]?.value ?? "none";
 }
 
 function modelCostSuffix(costs: GenerationTextModelOption["costs"]): string {

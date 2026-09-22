@@ -84,6 +84,8 @@ export * from "./generation/seams.js";
 export * from "./generation/episodes.js";
 export * from "./generation/dossier.js";
 export * from "./generation/caseEvidence.js";
+export * from "./generation/sourceClaimReview.js";
+export type { ChapterEditAcceptanceOptions } from "./generation/chapterEditAcceptance.js";
 export * from "./generation/arithmeticCheck.js";
 export * from "./generation/bookDevelopment.js";
 export * from "./generation/developmentalEdit.js";
@@ -193,3 +195,4 @@ export * from "./generation/smartUnslopDecision.js";
 export { scanSmartUnslopCandidates } from "./generation/smartUnslop.js";
 
 export * from "./adapters/decisionEvaluation.js";
+export { reviewManuscriptCoverage, manuscriptCoverageIssues, manuscriptCoverageSchema, type ManuscriptCoverage, type ManuscriptCoverageResult, type CoveragePage } from "./generation/manuscriptCoverage.js";

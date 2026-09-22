@@ -94,7 +94,7 @@ export async function judgeChapterDrafts(options: {
     book: { title: options.plan.title, audience: options.plan.audience },
     chapter: { index: options.chapter.index, title: options.chapter.title }
   };
-  const decisionModel = await options.decisions?.resolve();
+  const decisionModel = await options.decisions?.resolve(JUDGE_CHAPTER_DRAFTS_PURPOSE);
   const rawFirst = options.drafts[0]!;
   const rawSecond = options.drafts[1]!;
   const [first, second] = decisionModel

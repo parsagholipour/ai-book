@@ -6,7 +6,6 @@ import { OPENROUTER_GLM_53_FLASH_MODEL } from "./openrouterModels.js";
 import { unsupportedGenerateWithTools } from "./fake.js";
 import {
   LiveGenerationTextModelAdapter,
-  elevatedThinkingSelection,
   generationTextModelOptions
 } from "./factory.js";
 import { ProviderHttpError } from "./retry.js";
@@ -16,6 +15,7 @@ import {
   isJevSelection,
   JEV_SELECTION,
   resolveGenerationTextModelRouting,
+  materializeGenerationStages,
   type GenerationTextModelRouting
 } from "./generationTextModelRouting.js";
 import type {
@@ -27,6 +27,22 @@ import type {
 } from "./types.js";
 
 describe("generation text model routing", () => {
+  it("sends the admin-selected Ultra effort to the chapter adapter unchanged", async () => {
+    const routing = routingWithBalancedWriter("unused");
+    routing.ultra.writer = { provider: "openai", model: "gpt-5.6-sol", thinkingEffort: "medium" };
+    let actual: unknown;
+    const live = new LiveGenerationTextModelAdapter(testConfig({ OPENAI_API_KEY: "test-key" }), {
+      tier: "ultra",
+      loadRouting: async () => routing,
+      createAdapter: (selection) => {
+        actual = selection;
+        return new RevisionAdapter(selection.model, []);
+      }
+    });
+    await live.generateText({ purpose: "compose-chapter", messages: [] });
+    expect(actual).toEqual(routing.ultra.writer);
+  });
+
   it("identifies Jev by provider and model together", () => {
     expect(isJevSelection(JEV_SELECTION)).toBe(true);
     expect(isJevSelection({ provider: JEV_SELECTION.provider, model: "other" })).toBe(false);
@@ -67,7 +83,7 @@ describe("generation text model routing", () => {
         judgmentFallback: { provider: "deepseek", model: "deepseek-v4-flash", thinkingEnabled: false }
       }
     });
-    expect(resolveGenerationTextModelRouting({ planCritic: ["premium"] }, defaults)).toEqual(defaults);
+    expect(resolveGenerationTextModelRouting({ planCritic: ["premium"] }, defaults)).toEqual(materializeGenerationStages(defaults));
   });
 
   it("uses the next configured catalog option when a default provider is unavailable", () => {
@@ -133,34 +149,6 @@ describe("generation text model routing", () => {
     expect(generationTextModelOptionKey(catalogFlashLite)).toBe(
       generationTextModelOptionKey(defaults.fastJudgments)
     );
-  });
-
-  it("preserves numeric budgets, elevates supported efforts, and adds no unsupported reasoning", () => {
-    const options = generationTextModelOptions(testConfig({}));
-    expect(
-      elevatedThinkingSelection(
-        { provider: "gemini", model: "gemini-2.5-pro", thinkingBudget: 2048 },
-        "ultra",
-        "plan-book",
-        options
-      ).thinkingBudget
-    ).toBe(8192);
-    expect(
-      elevatedThinkingSelection(
-        { provider: "deepinfra", model: "deepseek-ai/DeepSeek-V4-Pro", thinkingEffort: "low" },
-        "premium",
-        "plan-book",
-        options
-      ).thinkingEffort
-    ).toBe("high");
-    expect(
-      elevatedThinkingSelection(
-        { provider: "alibaba", model: "qwen-plus" },
-        "ultra",
-        "plan-book",
-        options
-      )
-    ).toEqual({ provider: "alibaba", model: "qwen-plus" });
   });
 
   it("keeps the saved primary selection authoritative when a fallback is paired with it", async () => {

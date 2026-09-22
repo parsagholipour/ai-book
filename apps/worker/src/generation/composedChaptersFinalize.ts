@@ -3,13 +3,14 @@ import {
   type BookPlan,
   type CreateProjectInput,
   type ProviderSet,
-  chapterCaseEvidence, reviewChapterCaseEvidence
+  chapterCaseEvidence, reviewChapterCaseEvidence, reviewSourceClaims, stripFigureFences
 } from "@book-maker/core";
 import { prisma, pageScope } from "@book-maker/db";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
 import type { IndexedPageDraft } from "../runtime/jobTypes.js";
 import { restoreFigures, stripDraftFigures } from "./composedFigures.js";
-import { loadComposedBookState, recordChapterEvidenceResiduals } from "./composedChaptersState.js";
+import { loadComposedBookState, recordChapterEvidenceResiduals, recordChapterSourceClaims } from "./composedChaptersState.js";
+import { sourceClaimDigest, sourceClaimReviewApplies } from "./composedClaimReview.js";
 import { parseEvidenceFinding } from "./composedEvidenceRepair.js";
 import type { RunLogger } from "../providers/runLogging.js";
 import {
@@ -83,7 +84,18 @@ export async function finalizePendingPages(options: {
     const end = start + chapter.targetPages;
     const pages = state.pages.filter((page) => page.index >= start && page.index < end);
     const changed = pages.some((page) => reviewedByIndex.has(page.index) && reviewedByIndex.get(page.index) !== drafts.find((draft) => draft.index === page.index)?.markdown);
-    if (changed) {
+    if (sourceClaimReviewApplies(input, plan) && pages.some((page) => page.status === "PENDING")) {
+      const markdown = pages.map((page) => reviewedByIndex.get(page.index) ?? stripFigureFences(page.markdown).prose).join("\n\n");
+      const stored = state.chapters.find((entry) => entry.index === chapter.index);
+      const textDigest = sourceClaimDigest(markdown);
+      // Includes manuscript cuts, developmental edits, arithmetic repairs, and resumed old chapters.
+      if (stored?.sourceClaimsDigest !== textDigest || stored.sourceClaimsStatus !== "reviewed") {
+        const excerpts = [...new Map([...(plan.dossier?.excerpts ?? []), ...(plan.dossier?.evidencePackets ?? []).flatMap((packet) => packet.excerpts)].map((excerpt) => [excerpt.id, excerpt])).values()];
+        const review = await reviewSourceClaims({ markdown, excerpts, textModel: providers.text });
+        await recordChapterSourceClaims(projectId, chapter.index, { ...review, textDigest });
+        await runLog?.append("generation.composed_chapters.claim_coverage", { projectId, chapterIndex: chapter.index, stage: "finalize", textDigest, ...review });
+      }
+    } else if (changed) {
       const markdown = pages.map((page) => reviewedByIndex.get(page.index) ?? page.markdown).join("\n\n");
       const review = await reviewChapterCaseEvidence({ markdown, packets: plan.dossier?.evidencePackets ?? chapterCaseEvidence(plan, chapter.index), textModel: providers.text });
       if (review.issues.length || review.dropped.length) {

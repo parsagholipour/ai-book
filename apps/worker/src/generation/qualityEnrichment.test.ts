@@ -453,7 +453,7 @@ describe("enrichPageQualityReport unpaid promises", () => {
     expect(mocks.extractStoryState).toHaveBeenCalledOnce();
   });
 
-  it("still flags an unpaid promise on the last page when the extract does not pay it", async () => {
+  it("does not rewrite the last page solely because continuity extraction missed a payoff", async () => {
     mocks.extractStoryState.mockResolvedValue({
       storyDelta: emptyDelta(),
       contradictions: []
@@ -472,11 +472,11 @@ describe("enrichPageQualityReport unpaid promises", () => {
       styleExcerpts: []
     });
 
-    expect(result.report.approved).toBe(false);
-    expect(result.report.issues).toContain("Unpaid promise on the final page: Find the seal");
+    expect(result.report.approved).toBe(true);
+    expect(result.report.issues).not.toContain("Unpaid promise on the final page: Find the seal");
   });
 
-  it("does not flag unpaid after rebuild-from-pages when a sibling page already paid it", async () => {
+  it("leaves cross-page payoff verification to the manuscript review", async () => {
     mocks.extractStoryState.mockResolvedValue({
       storyDelta: emptyDelta(),
       contradictions: []
@@ -513,7 +513,7 @@ describe("enrichPageQualityReport unpaid promises", () => {
 
     expect(mocks.loadQualityContext).not.toHaveBeenCalled();
     expect(mocks.loadProjectStoryState).not.toHaveBeenCalled();
-    expect(mocks.rebuildStoryStateFromPages).toHaveBeenCalledWith("project-1", ["Find the seal"]);
+    expect(mocks.rebuildStoryStateFromPages).not.toHaveBeenCalled();
     expect(result.report.approved).toBe(true);
     expect(result.report.issues.join(" ")).not.toMatch(/Unpaid promise/);
   });

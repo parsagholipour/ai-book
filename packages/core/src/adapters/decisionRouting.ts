@@ -1,7 +1,7 @@
 import type { AppConfig } from "../config.js";
 import { createTextModelAdapter } from "./factory.js";
 import { FakeDecisionAdapter, InvalidDecisionError, assertDecisionRequest, validateDecisionChoice, type DecisionModelAdapter, type DecisionModelRoute, type DecisionRequest, type DecisionResult } from "./decisions.js";
-import { isJevSelection, JEV_SELECTION, type DecisionModelSelection, type GenerationTextModelRouting } from "./generationTextModelRouting.js";
+import { generationModelStage, generationStageRoute, isJevSelection, JEV_SELECTION, type ModelTier, type DecisionModelSelection, type GenerationTextModelRouting } from "./generationTextModelRouting.js";
 import { JevDecisionAdapter } from "./jevDecision.js";
 import { LlmDecisionAdapter } from "./llmDecision.js";
 import { isCancellationError, isRecoverableNetworkError, withRecoverableNetworkRetry, type RecoverableRetryOptions } from "./retry.js";
@@ -42,6 +42,7 @@ export type DecisionAttempt = {
 };
 
 export type DecisionRoutingOptions = {
+  tier?: ModelTier | undefined;
   loadRouting: () => Promise<GenerationTextModelRouting>;
   createAdapter?: (selection: DecisionModelSelection) => DecisionModelAdapter;
   onAttempt?: (attempt: DecisionAttempt) => Promise<void>;
@@ -58,16 +59,20 @@ export function createDecisionModelAdapter(config: AppConfig, selection: Decisio
 /** Each resolve pins both selections; no reread in retries, fallback, or reversed chapter comparisons. */
 export function createDecisionModelRoute(config: AppConfig, options: DecisionRoutingOptions): DecisionModelRoute {
   return {
-    async resolve() {
+    async resolve(purpose) {
       const routing = await options.loadRouting();
-      if (!isJevSelection(routing.fastDecisions)) return undefined;
+      const stage = generationModelStage(purpose);
+      const route = options.tier && stage ? generationStageRoute(routing, options.tier, stage.id) : undefined;
+      const primary = route?.primary ?? routing.fastDecisions;
+      const fallback = route?.fallback ?? routing.fastDecisionsFallback ?? routing.fastJudgments;
+      if (!isJevSelection(primary)) return undefined;
       return new FallbackDecisionAdapter({
-        primary: { ...routing.fastDecisions },
-        fallback: { ...(routing.fastDecisionsFallback ?? routing.fastJudgments) },
+        primary: { ...primary },
+        fallback: { ...fallback },
         createAdapter: options.createAdapter ?? ((selection) => createDecisionModelAdapter(config, selection)),
         ...(options.onAttempt ? { onAttempt: options.onAttempt } : {}),
         ...(options.retry ? { retry: options.retry } : {}),
-        gateWinningProbability: !config.MOCK_AI && isJevSelection(routing.fastDecisions)
+        gateWinningProbability: !config.MOCK_AI && isJevSelection(primary)
       });
     }
   };

@@ -32,7 +32,7 @@ export const PLANNING_STAGES: readonly PipelineStage[] = [
     purposes: ["plan-book", "revise-plan", "critique-plan", "plan-research", "chapter-research"],
     lane: "prose",
     calls: "1 plan, plus 1 critic when enabled, plus research queries",
-    gates: ["planThinkingBoost", "planCritic"]
+    gates: ["planCritic"]
   }
 ];
 
@@ -67,10 +67,10 @@ export const PER_PAGE_STAGES: readonly PipelineStage[] = [
   {
     id: "compile",
     label: "Compile and final QA",
-    summary: "Whole-book QA, chapter-transition review, page repair loop, deterministic manuscript audit, then render.",
-    purposes: ["final-book-qa", "book.final_qa.chapter_transitions", "review-manuscript-structure", "chapterize-export"],
+    summary: "Whole-book QA, chapter-transition review, page repair loop, deterministic manuscript audit and evidence-backed brief coverage, then render.",
+    purposes: ["final-book-qa", "book.final_qa.chapter_transitions", "review-manuscript-structure", "read-manuscript", "chapterize-export"],
     lane: "mechanical",
-    calls: "1 to 3 reviews, plus rewrites for flagged pages",
+    calls: "1 to 3 reviews, plus rewrites for flagged pages and 2 brief-coverage calls on initial publication",
     gates: ["finalBookQa"]
   }
 ];
@@ -142,10 +142,10 @@ export const COMPOSED_STAGES: readonly PipelineStage[] = [
   {
     id: "compile",
     label: "Compile",
-    summary: "Deterministic manuscript audit and targeted structural review, then render. The per-page final-QA repair loop is skipped.",
-    purposes: ["review-manuscript-structure", "chapterize-export"],
+    summary: "Deterministic manuscript audit, targeted structural review and evidence-backed brief coverage, then render. The per-page final-QA repair loop is skipped.",
+    purposes: ["review-manuscript-structure", "read-manuscript", "chapterize-export"],
     lane: "mechanical",
-    calls: "0 or 1 structural review",
+    calls: "0 or 1 structural review, plus 2 brief-coverage calls on initial publication; unchanged recompiles reuse coverage",
     gates: []
   }
 ];

@@ -86,9 +86,6 @@ export const MECHANICAL_TEXT_PURPOSES: ReadonlySet<string> = new Set([
   "rewrite-image-prompt-copyright-safe"
 ]);
 
-export const PREMIUM_PLAN_THINKING_BUDGET = 4096;
-export const ULTRA_PLAN_THINKING_BUDGET = 8192;
-export const ULTRA_PAGE_MAP_THINKING_BUDGET = 1024;
 const PREMIUM_IMAGE_MODEL = "gemini-3.1-flash-image";
 export const PREMIUM_COVER_IMAGE_MODEL = "gemini-3-pro-image";
 export const PREMIUM_FALLBACK_IMAGE_MODEL = "qwen-image-2.0-pro";
@@ -96,16 +93,6 @@ export const PREMIUM_FALLBACK_IMAGE_MODEL = "qwen-image-2.0-pro";
 export function modelTierImageSelection(tier: ModelTier): ImageModelSelection | undefined {
   if (tier === "premium" || tier === "ultra") {
     return { provider: "gemini", model: PREMIUM_IMAGE_MODEL };
-  }
-  return undefined;
-}
-
-export function planThinkingBudgetForTier(tier: ModelTier): number | undefined {
-  if (tier === "ultra") {
-    return ULTRA_PLAN_THINKING_BUDGET;
-  }
-  if (tier === "premium") {
-    return PREMIUM_PLAN_THINKING_BUDGET;
   }
   return undefined;
 }

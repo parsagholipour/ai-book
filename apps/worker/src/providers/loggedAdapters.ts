@@ -288,6 +288,7 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
       callId,
       primary,
       requestOptions: options,
+      logger: this.logger,
       startedAt
     });
   }
@@ -391,7 +392,9 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
     error: unknown,
     captureProviderUsage: boolean
   ): Promise<never> {
-    const errorAt = await this.logger.append(`${operation}.error`, { callId, error: serializeError(error) });
+    const errorAt = await this.logger.append(`${operation}.error`, {
+      callId, providerRequest: accounting.providerRequest, error: serializeError(error)
+    });
     await accounting.finalizeUnhandledFailure(error, errorAt, captureProviderUsage);
     await assertJobNotStopped(this.generationJobId);
     throw error;
@@ -438,7 +441,7 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
       }),
       run: (callOptions) => bound.adapter.generateText(callOptions),
       onSuccess: async (result, accounting) => {
-        const responseAt = await this.logger.append("text.generateText.response", { callId, result });
+        const responseAt = await this.logger.append("text.generateText.response", { callId, providerRequest: accounting.providerRequest, result });
         await recordProviderUsage({
           projectId: options.projectId ?? this.projectId,
           generationJobId: this.generationJobId,
@@ -503,7 +506,7 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
       }),
       run: (callOptions) => bound.adapter.generateJson<T>(callOptions),
       onSuccess: async (result, accounting) => {
-        const responseAt = await this.logger.append("text.generateJson.response", { callId, result });
+        const responseAt = await this.logger.append("text.generateJson.response", { callId, providerRequest: accounting.providerRequest, result });
         await recordProviderUsage({
           projectId: options.projectId ?? this.projectId,
           generationJobId: this.generationJobId,
@@ -560,7 +563,7 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
       captureProviderUsageOnFailure: true,
       run: (callOptions) => bound.adapter.generateWithTools(callOptions),
       onSuccess: async (result, accounting) => {
-        const responseAt = await this.logger.append("text.generateWithTools.response", { callId, result });
+        const responseAt = await this.logger.append("text.generateWithTools.response", { callId, providerRequest: accounting.providerRequest, result });
         await recordProviderUsage({
           projectId: options.projectId ?? this.projectId,
           generationJobId: this.generationJobId,
@@ -626,7 +629,10 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
         });
         yield chunk;
       }
-      const responseAt = await this.logger.append("text.streamText.response", { callId, chunkCount, characterCount });
+      const responseAt = await this.logger.append("text.streamText.response", {
+        callId, providerRequest: fallbackAccounting.providerRequest,
+        usage: fallbackAccounting.providerUsage, chunkCount, characterCount
+      });
       await settleLiveTextUsageEstimate(fallbackAccounting.liveUsageId, {
         durationMs: durationBetweenTimestamps(fallbackAccounting.startedAt, responseAt),
         outputTokens: estimateTokenCountFromTextLength(characterCount)

@@ -148,6 +148,31 @@ describe("chapter semantic acceptance", () => {
     expect(test.generateText.mock.calls[0]![0].messages[1]!.content).toContain("16384 ≡ 115 (mod 187)");
   });
 
+  it("accepts verified source passages without requiring a historical case packet", async () => {
+    const test = fixture(original);
+    const before = original.replace("did not establish", "established");
+    const factualCorrection = { instructions: ["Correct the unsupported causal assertion."], evidence: [],
+      sourcePassages: [dossierExcerptSchema.parse({ id: "survey", chapterIndex: 1, documentTitle: "Survey", documentUrl: "https://example.org/survey", text: original, provenanceVerified: true })] };
+    expect(await editChapter({ ...test.options, markdown: before, factualCorrection })).toMatchObject({ markdown: original, changed: true });
+    expect(test.reviewed().factualCorrection).toEqual(factualCorrection);
+    const request = test.generateText.mock.calls[0]![0];
+    expect(JSON.parse(request.messages[1]!.content).wordBudget.target).toBeLessThan(100);
+    expect(request.messages[0]!.content).not.toContain("Section 1, form");
+  });
+
+  it("permits targeted removal of an exact unsupported claim, while retaining semantic review", async () => {
+    const claim = "The engineers recorded water levels after the rain.";
+    const candidate = original.replace(claim + " ", "");
+    const test = fixture(candidate);
+    const factualCorrection = { instructions: ["Remove the unsupported measurement detail."], evidence: [], unsupportedClaims: [{ quote: claim, reason: "No supporting source passage was retrieved." }] };
+    expect(await editChapter({ ...test.options, factualCorrection })).toMatchObject({ markdown: candidate, changed: true });
+    expect(test.reviewed().factualCorrection).toEqual(factualCorrection);
+    expect(test.reviewSystem()).toContain("not asserting an opposite or replacement fact");
+    const unlocated = fixture(candidate);
+    expect(await editChapter({ ...unlocated.options, factualCorrection: { ...factualCorrection, unsupportedClaims: [{ quote: "Not in this chapter", reason: "Unverified" }] } })).toMatchObject({ changed: false });
+    expect(unlocated.generateJson).not.toHaveBeenCalled();
+  });
+
   it("disables only semantic acceptance when the gate is off", async () => {
     const test = fixture();
     expect(await editChapter({ ...test.options, semanticAcceptance: false })).toMatchObject({ changed: true });

@@ -39,10 +39,21 @@ export function publicSourceUrl(value: string): string | undefined {
 
 async function discoverSourceDocuments(query: string, search: PrimarySourceSearch, limit: number): Promise<PrimarySourceCandidate[]> {
   const found = await search(query);
-  return found.flatMap((source): PrimarySourceCandidate[] => {
+  const candidates = found.flatMap((source): PrimarySourceCandidate[] => {
     const url = publicSourceUrl(source.url);
     return url ? [{ host: "web", title: source.title, url, textUrl: url, author: "", year: "" }] : [];
-  }).slice(0, limit);
+  });
+  // Search grounding is citation order, not document priority. A direct paper at
+  // position four used to disappear behind three summaries before it was fetched.
+  // These are fetch priorities only; the passage reviewer must establish provenance.
+  const priority = (candidate: PrimarySourceCandidate) => {
+    const url = new URL(candidate.url);
+    return (/\.pdf$/i.test(url.pathname) ? 4 : 0) +
+      (/(?:^|\.)(?:gov|edu)(?:\.[a-z]{2})?$|\.ac\.[a-z]{2}$/i.test(url.hostname) ? 2 : 0) +
+      (/\/(?:docs|documentation|standards|publications|papers|pubs)\//i.test(url.pathname) ? 1 : 0);
+  };
+  return [...new Map(candidates.map((candidate) => [candidate.url, candidate])).values()]
+    .sort((a, b) => priority(b) - priority(a)).slice(0, limit);
 }
 
 export const PRIMARY_TEXT_MAX_CHARS = 600_000;

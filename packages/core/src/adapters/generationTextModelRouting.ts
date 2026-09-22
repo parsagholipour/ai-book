@@ -19,11 +19,106 @@ export const GENERATION_TEXT_MODEL_ROUTE_FIELDS = [
 
 export type GenerationTextModelRole = (typeof GENERATION_TEXT_MODEL_ROLES)[number];
 export type GenerationTextModelRouteField = (typeof GENERATION_TEXT_MODEL_ROUTE_FIELDS)[number];
+/** Provider-call purposes are the stage IDs: the UI and the router use the same registry. */
+export const GENERATION_MODEL_STAGES = [
+  { id: "plan-book", label: "Book plan", group: "Planning", role: "writer" },
+  { id: "revise-plan", label: "Plan revision", group: "Planning", role: "writer" },
+  { id: "critique-plan", label: "Plan review", group: "Planning", role: "judgment" },
+  { id: "author-stance", label: "Author stance", group: "Planning", role: "writer" },
+  { id: "architect-book", label: "Book architecture", group: "Planning", role: "writer" },
+  { id: "plan-chapter-forms", label: "Chapter forms", group: "Planning", role: "writer" },
+  { id: "plan-episodes", label: "Episode planning", group: "Planning", role: "writer" },
+  { id: "develop-book-plan", label: "Book development", group: "Development", role: "writer" },
+  { id: "review-book-development", label: "Development review", group: "Development", role: "writer" },
+  { id: "plan-developmental-edit", label: "Developmental edit plan", group: "Development", role: "writer" },
+  { id: "rewrite-developmental-sections", label: "Developmental rewrite", group: "Development", role: "writer" },
+  { id: "extract-excerpts", label: "Source excerpts", group: "Evidence", role: "judgment" },
+  { id: "review-dossier-provenance", label: "Source provenance review", group: "Evidence", role: "judgment" },
+  { id: "build-case-evidence", label: "Case evidence", group: "Evidence", role: "writer" },
+  { id: "verify-case-evidence", label: "Case evidence verification", group: "Evidence", role: "writer" },
+  { id: "review-chapter-evidence", label: "Chapter evidence review", group: "Evidence", role: "writer" },
+  { id: "compose-chapter", label: "Chapter drafting", group: "Chapters", role: "writer" },
+  { id: "compose-scene", label: "Scene drafting", group: "Chapters", role: "writer" },
+  { id: "judge-chapter-drafts", label: "Chapter draft comparison", group: "Chapters", role: "fast" },
+  { id: "edit-chapter", label: "Chapter editing", group: "Chapters", role: "writer" },
+  { id: "review-chapter-edit-acceptance", label: "Chapter edit acceptance", group: "Chapters", role: "judgment" },
+  { id: "detemplate-chapter", label: "Chapter form rewrite", group: "Chapters", role: "writer" },
+  { id: "cut-chapter", label: "Chapter cuts", group: "Chapters", role: "writer" },
+  { id: "describe-pages", label: "Page titles and summaries", group: "Chapters", role: "judgment" },
+  { id: "read-manuscript", label: "Manuscript review", group: "Manuscript", role: "writer" },
+  { id: "rewrite-seams", label: "Chapter transitions rewrite", group: "Manuscript", role: "writer" },
+  { id: "review-manuscript-structure", label: "Manuscript structure review", group: "Manuscript", role: "judgment" },
+  { id: "final-book-qa", label: "Final book review", group: "Manuscript", role: "judgment" },
+  { id: "book.final_qa.chapter_transitions", label: "Chapter transitions review", group: "Manuscript", role: "judgment" },
+  { id: "chapterize-export", label: "Export chapter structure", group: "Manuscript", role: "judgment" },
+  { id: "generate-page-map", label: "Page map", group: "Page mapping", role: "judgment" },
+  { id: "generate-chapter-brief", label: "Chapter briefs", group: "Page mapping", role: "judgment" },
+  { id: "repair-page-brief", label: "Page brief repair", group: "Page mapping", role: "judgment" },
+  { id: "critique-page-map", label: "Page map review", group: "Page mapping", role: "judgment" },
+  { id: "dedupe-page-beats", label: "Page beat rewrite", group: "Page mapping", role: "judgment" },
+  { id: "generate-page", label: "Page drafting", group: "Pages", role: "writer" },
+  { id: "generate-chapter-draft", label: "Chapter page draft", group: "Pages", role: "writer" },
+  { id: "generate-page-batch", label: "Batch page draft", group: "Pages", role: "writer" },
+  { id: "generate-whole-book", label: "Whole book draft", group: "Pages", role: "writer" },
+  { id: "write-page-with-tools", label: "Page drafting with tools", group: "Pages", role: "writer" },
+  { id: "polish-page", label: "Page polish", group: "Pages", role: "writer" },
+  { id: "judge-page-drafts", label: "Page draft comparison", group: "Pages", role: "judgment" },
+  { id: "review-page", label: "Page review", group: "Page review", role: "judgment" },
+  { id: "revise-page", label: "Page revision", group: "Page review", role: "writer" },
+  { id: "patch-page", label: "Page patch", group: "Page review", role: "writer" },
+  { id: "verify-page-claims", label: "Page claim verification", group: "Page review", role: "judgment" },
+  { id: "audit-page-style", label: "Page style review", group: "Page review", role: "judgment" },
+  { id: "review-edit-adherence", label: "Edit instruction review", group: "Page review", role: "judgment" },
+  { id: "extract-story-state", label: "Story continuity", group: "Supporting steps", role: "judgment" },
+  { id: "select-cover-design", label: "Cover design selection", group: "Supporting steps", role: "judgment" },
+  { id: "rewrite-image-prompt-copyright-safe", label: "Image prompt rewrite", group: "Supporting steps", role: "judgment" },
+  { id: "extract-voice-character-candidates", label: "Voice character extraction", group: "Supporting steps", role: "writer" },
+  { id: "build-voice-character-persona", label: "Voice character persona", group: "Supporting steps", role: "writer" },
+  { id: "import-chapterize", label: "Import chapter structure", group: "Supporting steps", role: "judgment" },
+  { id: "import-style-profile", label: "Import style profile", group: "Supporting steps", role: "judgment" }
+] as const;
+export type GenerationModelStageId = (typeof GENERATION_MODEL_STAGES)[number]["id"];
+export type GenerationStageRoute = { primary: DecisionModelSelection; fallback: TextModelSelection };
+export type GenerationStageRoutes = Partial<Record<GenerationModelStageId, GenerationStageRoute>>;
+
+export function stageSupportsFiniteDecisions(id: string): boolean {
+  return id === "judge-chapter-drafts" || id === "judge-page-drafts";
+}
+
+export function generationModelStage(purpose: string | undefined) {
+  return GENERATION_MODEL_STAGES.find((stage) => stage.id === purpose);
+}
+
+/** Legacy revisions seed stages from the operator's saved routes, never from tier effort boosts. */
+export function generationStageRoute(routing: GenerationTextModelRouting, tier: ModelTier, id: GenerationModelStageId): GenerationStageRoute {
+  const saved = routing[tier].stages?.[id];
+  if (saved) return saved;
+  if (stageSupportsFiniteDecisions(id) && isJevSelection(routing.fastDecisions)) {
+    return { primary: { ...routing.fastDecisions }, fallback: routing.fastDecisionsFallback ?? routing.fastJudgments };
+  }
+  const stage = generationModelStage(id)!;
+  return stage.role === "fast"
+    ? { primary: routing.fastJudgments, fallback: routing.fastJudgmentsFallback }
+    : { primary: routing[tier][stage.role], fallback: routing[tier][fallbackField(stage.role)] };
+}
+
+export function materializeGenerationStages(routing: GenerationTextModelRouting): GenerationTextModelRouting {
+  const result = { ...routing };
+  for (const tier of GENERATION_TEXT_MODEL_TIERS) {
+    result[tier] = { ...routing[tier], stages: Object.fromEntries(GENERATION_MODEL_STAGES.map(({ id }) => {
+      const route = generationStageRoute(routing, tier, id);
+      return [id, { primary: { ...route.primary }, fallback: { ...route.fallback } }];
+    })) };
+  }
+  return result;
+}
+
 export type GenerationTextModelTierRouting = {
   writer: TextModelSelection;
   writerFallback: TextModelSelection;
   judgment: TextModelSelection;
   judgmentFallback: TextModelSelection;
+  stages?: GenerationStageRoutes;
 };
 
 /** Per-tier writer and judgment routes, Fast judgments, and optional Fast decisions, each with an operator-controlled fallback. */
@@ -159,7 +254,7 @@ export function resolveGenerationTextModelRouting(
   const settings = record(storedSettings);
   const stored = record(settings?.models);
   const fastJudgments = parseTextModelSelection(stored?.fastJudgments) ?? cloneSelection(compiled.fastJudgments);
-  return {
+  return materializeGenerationStages({
     fastDecisions: parseDecisionModelSelection(stored?.fastDecisions) ?? null,
     fastDecisionsFallback: parseTextModelSelection(stored?.fastDecisionsFallback) ?? cloneSelection(fastJudgments),
     fastJudgments,
@@ -170,7 +265,7 @@ export function resolveGenerationTextModelRouting(
     balanced: tierRouting(stored?.balanced, compiled.balanced),
     premium: tierRouting(stored?.premium, compiled.premium),
     ultra: tierRouting(stored?.ultra, compiled.ultra)
-  };
+  });
 }
 
 export function routingSelection(
@@ -334,8 +429,22 @@ function tierRouting(value: unknown, fallback: GenerationTextModelTierRouting): 
   const stored = record(value);
   const writer = parseTextModelSelection(stored?.writer) ?? cloneSelection(fallback.writer);
   const judgment = parseTextModelSelection(stored?.judgment) ?? cloneSelection(fallback.judgment);
+  const stages: GenerationStageRoutes = {};
+  const rawStages = record(stored?.stages);
+  if (stored?.stages !== undefined && !rawStages) throw new Error("Invalid saved stage model settings.");
+  for (const { id } of GENERATION_MODEL_STAGES) {
+    if (rawStages?.[id] === undefined) continue;
+    const raw = record(rawStages?.[id]);
+    if (!raw) throw new Error(`Invalid saved model route for stage ${id}.`);
+    const primary = parseDecisionModelSelection(raw.primary);
+    const stageFallback = parseTextModelSelection(raw.fallback);
+    // A present broken setting must not silently route an expensive call elsewhere.
+    if (!primary || !stageFallback || (isJevSelection(primary) && !stageSupportsFiniteDecisions(id))) throw new Error(`Invalid saved model route for stage ${id}.`);
+    stages[id] = { primary, fallback: stageFallback };
+  }
   return {
     writer,
+    stages,
     writerFallback:
       parseTextModelSelection(stored?.writerFallback) ??
       legacyFallback(writer, fallback.writer, fallback.writerFallback),

@@ -36,6 +36,81 @@ describe("admin generation model routing", () => {
     mockRequireOperatorActor.mockResolvedValue({ kind: "operator", userId: "local-admin" });
   });
 
+  it("round-trips independent stage efforts and snapshots legacy choices before defaults change", async () => {
+    const medium = { provider: "openai", model: "gpt-5.6-sol", thinkingEffort: "medium" };
+    mockStoredRevision({ version: 1, settings: { models: { ultra: { writer: medium } } } });
+    const app = Fastify({ logger: false });
+    await app.register(adminGenerationQualityRoutes);
+    const read = await app.inject({ method: "GET", url: "/api/admin/generation-quality" });
+    expect(read.json().models.ultra.stages["compose-chapter"].primary).toEqual(medium);
+    const saved = await app.inject({ method: "PATCH", url: "/api/admin/generation-quality", payload: {
+      models: { ultra: { writer: { thinkingEffort: "max" }, stages: {
+        "plan-book": { primary: { thinkingEffort: "high" } },
+        "edit-chapter": { primary: { thinkingEffort: "low" }, fallback: { ...medium, thinkingEffort: "none" } }
+      } } }
+    } });
+    expect(saved.statusCode).toBe(200);
+    const stages = saved.json().models.ultra.stages;
+    expect(stages["plan-book"].primary.thinkingEffort).toBe("high");
+    expect(stages["edit-chapter"].primary.thinkingEffort).toBe("low");
+    expect(stages["edit-chapter"].fallback.thinkingEffort).toBe("none");
+    expect(stages["compose-chapter"].primary).toEqual(medium);
+    mockStoredRevision({ version: 2, settings: createdSettings(0) });
+    const reloaded = await app.inject({ method: "GET", url: "/api/admin/generation-quality" });
+    expect(reloaded.json().models.ultra.stages).toEqual(stages);
+    await app.close();
+  });
+
+  it("rejects stage typos, unsupported effort and finite models on prose stages without writing", async () => {
+    mockStoredRevision({ version: 1, settings: {} });
+    const app = Fastify({ logger: false });
+    await app.register(adminGenerationQualityRoutes);
+    for (const stages of [
+      { "compose-chaptr": { primary: { thinkingEffort: "medium" } } },
+      { "compose-chapter": { primry: { thinkingEffort: "medium" } } },
+      { "compose-chapter": { primary: { thinkingEffrot: "medium" } } },
+      { "compose-chapter": { primary: { provider: "alibaba", model: "qwen-plus", thinkingEffort: "max" } } },
+      { "compose-chapter": { primary: JEV_SELECTION } },
+      { "compose-chapter": {} },
+      { "compose-chapter": { fallback: null } }
+    ]) {
+      const response = await app.inject({ method: "PATCH", url: "/api/admin/generation-quality", payload: { models: { ultra: { stages } } } });
+      expect(response.statusCode, response.body).toBe(400);
+    }
+    expect(mockPrisma.generationQualityRevision.create).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("saves stage-specific finite decisions and resets known stages while preserving future stages", async () => {
+    vi.stubEnv("VERCEL_AI_GATEWAY_API_KEY", "test-key");
+    mockStoredRevision({ version: 1, settings: { models: { ultra: { stages: {
+      "future-stage": { primary: { provider: "future", model: "future" } }
+    } } } } });
+    const app = Fastify({ logger: false });
+    await app.register(adminGenerationQualityRoutes);
+    const response = await app.inject({ method: "PATCH", url: "/api/admin/generation-quality", payload: { models: { ultra: { stages: {
+      "judge-chapter-drafts": { primary: JEV_SELECTION, fallback: { provider: "openai", model: "gpt-5.6-sol", thinkingEffort: "low" } }
+    } } } } });
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json().models.ultra.stages["judge-chapter-drafts"].primary).toEqual(JEV_SELECTION);
+    mockStoredRevision({ version: 2, settings: createdSettings(0) });
+    const reset = await app.inject({ method: "POST", url: "/api/admin/generation-quality/models/reset", payload: {} });
+    expect(reset.statusCode).toBe(200);
+    expect(reset.json().models.ultra.stages["judge-chapter-drafts"].primary).not.toEqual(JEV_SELECTION);
+    expect(createdSettings(1)).toHaveProperty("models.ultra.stages.future-stage");
+    await app.close();
+    vi.unstubAllEnvs();
+  });
+
+  it("preserves unclaimed stage fields owned by a newer console", () => {
+    const text = { provider: "deepseek", model: "deepseek-v4-pro" } as const;
+    const saved = { primary: { ...text, futureOption: "keep" }, fallback: text, futurePolicy: true };
+    const merged = mergeGenerationModelPatch({ models: { ultra: { stages: { "compose-chapter": saved } } } },
+      { ultra: { stages: { "edit-chapter": { primary: { thinkingEffort: "high" } } } } },
+      routingFixture(text), [{ ...text, label: "DeepSeek", thinkingEfforts: [{ value: "high", label: "High" }] }]);
+    expect(merged).toHaveProperty("ultra.stages.compose-chapter", saved);
+  });
+
   it("saves and disables finite decisions independently from text judgments", async () => {
     vi.stubEnv("VERCEL_AI_GATEWAY_API_KEY", "test-key");
     mockStoredRevision({ version: 1, settings: {} });

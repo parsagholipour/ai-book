@@ -1,9 +1,42 @@
 import { describe, expect, it } from "vitest";
 import { arithmeticErrorIssues, storedEvidenceResiduals, unsupportedCaseClaimIssues } from "./composedEvidenceResiduals.js";
+import { sourceClaimDigest } from "./sourceClaimState.js";
 
 const brief = { composition: {}, report: { evidence: { findings: 2, repairs: 2, dropped: 0, unresolved: [{ quote: "in 1085–1086", reason: "The passage dates only the order." }, { quote: "eldest sons", reason: "Not in the passage." }] } } };
 
 describe("residual case findings at compile time", () => {
+  it("cannot reuse a clean review after a later compile repair introduces a new assertion", () => {
+    const original = "A hypothetical example follows.";
+    const chapter = { productionBrief: { chapterIndex: 1, report: { sourceClaims: { textDigest: sourceClaimDigest(original),
+      coverage: { status: "reviewed" }, claims: [] } } } };
+    expect(unsupportedCaseClaimIssues([{ index: 1, markdown: original, chapter }])).toEqual([]);
+    expect(unsupportedCaseClaimIssues([{ index: 1, markdown: original + " The three authors are listed alphabetically.", chapter }]))
+      .toEqual([expect.objectContaining({ code: "SOURCE_VERIFICATION_INCOMPLETE", affectedPageIndexes: [1] })]);
+    expect(unsupportedCaseClaimIssues([{ index: 1, markdown: "A hypothetical\n\nexample follows.", chapter }])).toEqual([]);
+  });
+  it("flags repeated assertions without joining different chapters into a fabricated claim", () => {
+    const sourceClaims = { coverage: { status: "reviewed" }, claims: [{ quote: "Listed alphabetically.", status: "contradicted" }] };
+    const chapter = (chapterIndex: number) => ({ productionBrief: { chapterIndex, report: { sourceClaims } } });
+    const issues = unsupportedCaseClaimIssues([
+      { index: 1, markdown: "Listed alphabetically.", chapter: chapter(1) },
+      { index: 2, markdown: "Listed alphabetically.", chapter: chapter(1) },
+      { index: 3, markdown: "Listed", chapter: chapter(2) },
+      { index: 4, markdown: "alphabetically.", chapter: chapter(3) }
+    ]);
+    expect(issues).toEqual([expect.objectContaining({ affectedPageIndexes: [1, 2] })]);
+  });
+  it("flags a source claim that crosses a page cut and an incomplete verification", () => {
+    const productionBrief = { report: { sourceClaims: { coverage: { status: "incomplete" },
+      claims: [{ quote: "The three authors were listed alphabetically.", status: "contradicted", reason: "The order is R, S, A." }] } } };
+    const issues = unsupportedCaseClaimIssues([
+      { index: 1, markdown: "The three authors", chapter: { productionBrief } },
+      { index: 2, markdown: "were listed alphabetically.", chapter: { productionBrief } }
+    ]);
+    expect(issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "UNSUPPORTED_FACTUAL_CLAIMS", severity: "error", affectedPageIndexes: [1, 2] }),
+      expect.objectContaining({ code: "SOURCE_VERIFICATION_INCOMPLETE", severity: "error", affectedPageIndexes: [1, 2] })
+    ]));
+  });
   it("flags the pages that still carry an unsupported span as an error, and only those", () => {
     const issues = unsupportedCaseClaimIssues([
       { index: 1, markdown: "The survey ran in 1085–1086.", chapter: { productionBrief: brief } },

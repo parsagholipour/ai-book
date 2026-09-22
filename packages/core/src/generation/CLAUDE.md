@@ -76,9 +76,9 @@ holds the event loop open and vitest will never exit.
   prompt; `readManuscript` reads the finished book once and returns notes, never prose, for at most
   ⌈chapters/3⌉ (≤6) chapters to re-edit. The compose and edit prompts carry no `antiAiRules`, no
   page brief, no evidence ledger and no reserved-beat rule, on purpose: the user's own prompt and
-  the plan's `voiceGuide` ride along, the prohibition list does not. Both purposes take the
-  planner's thinking elevation on premium and ultra (`elevatedThinkingSelection`); `describe-pages`
-  is mechanical. Word budgets (`chapterWordBudget`) are sized so the printed book is as long as the
+  the plan's `voiceGuide` ride along, the prohibition list does not. Each purpose uses its saved
+  admin stage model and reasoning selection (`generationTextModelRouting.ts`); tier names never
+  elevate effort. `describe-pages` has its own stage setting. Word budgets (`chapterWordBudget`) are sized so the printed book is as long as the
   pages paid for: the per-page prompts' 160–420 guidance produced ~490 words a page in practice.
 - **A composed chapter has one landing, and variety is a property of the form plan, checked
   before any prose exists.** `planChapterForms` (`chapterForms.ts`) is one call for the whole

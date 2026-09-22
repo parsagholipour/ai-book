@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { createDecisionModelRoute, type DecisionAttempt, type DecisionRequest, type DecisionModelRoute, type CreateProjectInput, type EmbeddingAdapter } from "@book-maker/core";
+import { modelTierForInput, createDecisionModelRoute, type DecisionAttempt, type DecisionRequest, type DecisionModelRoute, type CreateProjectInput, type EmbeddingAdapter } from "@book-maker/core";
 import { config } from "../runtime/config.js";
 import { assertJobNotStopped, hasStoppedGenerationJob } from "../runtime/jobLifecycle.js";
 import { serializeError } from "../runtime/serialization.js";
@@ -33,6 +33,7 @@ export function createLoggedDecisions(job: WorkerRuntimeJob, input?: CreateProje
       } catch { /* Costing must not retry or discard a completed choice. */ }
     };
   const route = withProjectDecisionSources(createDecisionModelRoute(config, {
+    ...(input ? { tier: modelTierForInput(input) } : {}),
     loadRouting: loadLiveGenerationTextRouting(logger),
     onAttempt
   }), input, projectId, embedding);
@@ -41,9 +42,9 @@ export function createLoggedDecisions(job: WorkerRuntimeJob, input?: CreateProje
       try { await logger.append("decision.gate.outcome", { ...outcome }); }
       catch { /* A diagnostic write cannot change generation. */ }
     },
-    async resolve() {
+    async resolve(purpose) {
       await assertJobNotStopped(generationJobId);
-      const adapter = await route.resolve();
+      const adapter = await route.resolve(purpose);
       if (!adapter) return undefined;
       const invoke = async <R>(request: DecisionRequest, call: (request: DecisionRequest) => Promise<R>): Promise<R> => {
         await assertJobNotStopped(generationJobId);

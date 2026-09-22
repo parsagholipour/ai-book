@@ -70,6 +70,14 @@ export function arithmeticFindings(markdown: string): ArithmeticFinding[] {
   const findings: ArithmeticFinding[] = [];
   const reported = new Set<string>();
   for (const section of sectionsOf(markdown)) {
+    // A literal modulus's bit length is exact arithmetic, independent of source retrieval.
+    // Keep the grammar narrow: storage widths and comparisons with a separate toy example are not bit-length assertions.
+    for (const match of section.matchAll(/\b(\d{1,5})[-‑– ]bit\s+modulus\s+(?:\$|\\\()?\s*[a-z]\s*=\s*(\d{1,40})(?=\s*(?:\$|\\\)|[,.;]|$))/gi)) {
+      const value = BigInt(match[2]!);
+      if (value <= 0n) continue;
+      const bits = value.toString(2).length;
+      if (bits !== Number(match[1])) findings.push({ quote: match[0], reason: `${value} requires ${bits} bits in binary, not ${match[1]} bits (2^${bits - 1} ≤ ${value} < 2^${bits}).` });
+    }
     const scope = arithmeticScope(section);
     for (const match of section.matchAll(DELIMITED)) {
       const raw = (match[1] ?? match[2] ?? match[3] ?? match[4] ?? "").trim();
@@ -145,7 +153,8 @@ export function checkStatement(statement: string, scope: ArithmeticScope = NO_SC
         continue;
       }
       // No modulus of its own: a congruence is read under the section's, and unreadable without one.
-      if (scope.moduli.length === 0 || congruentUnderSome(left, right, scope.moduli)) return undefined;
+      if (scope.moduli.length === 0) return undefined;
+      if (congruentUnderSome(left, right, scope.moduli)) continue;
       return `${residuesOf(lhs, left, scope.moduli)}, but the statement gives ${rhs}.`;
     }
     if (left === right) continue;
@@ -228,7 +237,7 @@ function tokenize(statement: string): Token[] {
     if (char === "×" || char === "·") { tokens.push({ kind: "op", value: "*" }); index += 1; continue; }
     // A single-letter name leading the chain (`A = 5^6 \bmod 23 = 8`) is a definition of the rest.
     if (/[A-Za-z]/.test(char) && tokens.length === 0 && /^[A-Za-z](_\{?\w\}?)?\s*=/.test(source.slice(index))) {
-      index += /^[A-Za-z](_\{?\w\}?)?\s*/.exec(source.slice(index))![0].length;
+      index += /^[A-Za-z](_\{?\w\}?)?\s*=/.exec(source.slice(index))![0].length;
       continue;
     }
     throw new Unsupported(char);

@@ -649,7 +649,7 @@ describe("compileExport final-QA repair stand-down", () => {
     ).toBe(true);
   });
 
-  it("reports the unpaid promises the publishing path reports", async () => {
+  it("reports unverified continuity payoffs without asserting that they are missing", async () => {
     // The stand-down composed its deterministic half out of the integrity sweep
     // alone, so a whole check the shipping report always carries was missing
     // from the one report a superseded compile leaves — the same book, graded
@@ -685,7 +685,7 @@ describe("compileExport final-QA repair stand-down", () => {
     // snapshot's deltas.
     expect(mocks.rebuildProjectStoryState).not.toHaveBeenCalled();
     expect(await mocks.rebuildStoryStateFromPages()).toMatchObject({ promises: [] });
-    expect(recordedReport().issues.map((issue) => issue.code)).toContain("UNPAID_PROMISE");
+    expect(recordedReport().issues.map((issue) => issue.code)).toContain("BRIEF_COVERAGE_UNVERIFIED");
     // The gate is open here, so the fold really is paid for — which is what
     // makes the test below a statement about the gate rather than about a check
     // somebody quietly deleted.
@@ -802,7 +802,7 @@ describe("compileExport final-QA repair stand-down", () => {
       logged.mockRestore();
     }
 
-    expect(recordedReport().issues.map((issue) => issue.code)).not.toContain("UNPAID_PROMISE");
+    expect(recordedReport().issues.map((issue) => issue.code)).not.toContain("BRIEF_COVERAGE_UNVERIFIED");
   });
 
   it("withholds an unpaid promise once its own repair has rewritten a page under it", async () => {
@@ -854,7 +854,7 @@ describe("compileExport final-QA repair stand-down", () => {
     }
 
     const report = recordedReport();
-    expect(report.issues.map((issue) => issue.code)).not.toContain("UNPAID_PROMISE");
+    expect(report.issues.map((issue) => issue.code)).not.toContain("BRIEF_COVERAGE_UNVERIFIED");
     // And no further than that: a complaint about a page this compile really
     // did review and nothing has touched still speaks, which is what keeps
     // this a withdrawal rather than a rule that drops the check on this path.

@@ -21,7 +21,7 @@ export async function passesDecisionScreen(options: {
   };
   let routeResolved = false;
   try {
-    const model = await decisions?.resolve();
+    const model = await decisions?.resolve(request.purpose);
     routeResolved = true;
     signal?.throwIfAborted();
     if (!model) {

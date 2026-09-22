@@ -79,10 +79,12 @@ function usageFromOpenAiCompatible(usage: unknown): Usage | undefined {
   if (!usage || typeof usage !== "object") {
     return undefined;
   }
-  const record = usage as { prompt_tokens?: number; completion_tokens?: number };
+  const record = usage as { prompt_tokens?: number; completion_tokens?: number; completion_tokens_details?: { reasoning_tokens?: number } };
   return {
     promptTokens: record.prompt_tokens,
-    outputTokens: record.completion_tokens
+    outputTokens: record.completion_tokens,
+    ...(record.completion_tokens_details?.reasoning_tokens !== undefined
+      ? { reasoningTokens: record.completion_tokens_details.reasoning_tokens } : {})
   };
 }
 

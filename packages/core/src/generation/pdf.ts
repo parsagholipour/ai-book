@@ -10,7 +10,8 @@ import { renderDocumentTempPath } from "./exportTempSweep.js";
 import { bookFontSetForLanguage, type BookFontSet } from "./bookFonts.js";
 import { codePointsOf, embedFontFaceCss } from "./fontEmbedding.js";
 import type { CompiledBookMarkdown } from "./markdown.js";
-import { BOOK_PAGE_TOP_MARGIN_PT, bookPdfCss } from "./pdfCss.js";
+import { bookPdfCss } from "./pdfCss.js";
+import { bookPdfLayout, bookPdfPaginationCss, fitBookPdfPageCount, type BookPdfPagination } from "./pdfPagination.js";
 import { expandFigureFences } from "./figures/figureHtml.js";
 import { BOOK_PDF_MEDIA_TYPE, BOOK_PDF_OPTIONS, buildBookPdfDocument } from "./pdfDocument.js";
 import {
@@ -29,6 +30,8 @@ import { applyRenderResourcePolicy } from "./renderResourcePolicy.js";
 export type GenerateBookPdfOptions = BookImageOptions & {
   publicApiUrl: string;
   outputPath?: string | undefined;
+  /** Desired physical PDF length, including cover, Contents and back matter. */
+  targetPageCount?: number | undefined;
   /**
    * The book's language, in any of the shapes `Project.language` holds ("fa",
    * "Farsi", "Persian"). It picks the embedded fonts and the text direction —
@@ -173,6 +176,8 @@ export type BookPageMapPlan = Pick<
 
 export type GenerateBookPdfResult = {
   pdf: Buffer;
+  /** Internal typesetting diagnostic; content is preserved when the target is unreachable. */
+  pagination?: BookPdfPagination;
   /**
    * Where each model page landed in `pdf` — absent when no plan was given, or
    * when measurement failed. A book without a map is a whole book; nothing may
@@ -209,24 +214,38 @@ export async function generateBookPdfWithPageMap(
         hasSources: plan.sourcesOffset !== undefined
       })
     : undefined;
-  const html = await buildBookPdfDocument({
-    markdown: expanded,
-    css: `${fontCss}\n${bookPdfCss(profile)}`,
-    profile,
-    ...(nav !== undefined ? { pageAnchorNav: nav } : {})
-  });
-
   const renderOptions = {
     imageStorageDir: options.imageStorageDir,
     assetRoot: options.projectId
       ? join(options.imageStorageDir, options.projectId)
       : options.imageStorageDir
   };
+  const fitted = await fitBookPdfPageCount(options.targetPageCount, async (adjustment) => {
+    const html = await buildBookPdfDocument({
+      markdown: expanded,
+      css: `${fontCss}\n${bookPdfPaginationCss(bookPdfCss(profile), profile, adjustment)}`,
+      profile,
+      ...(nav !== undefined ? { pageAnchorNav: nav } : {})
+    });
+    // Contents correction belongs inside the fit: a changed digit can move a
+    // break, and the chosen sheet count must describe the final reprint.
+    return renderMappedPdfDocument(html, renderOptions, plan, bookPdfLayout(profile, adjustment).topMarginPt);
+  });
+  if (options.outputPath) await writeFile(options.outputPath, fitted.rendered.pdf);
+  return { ...fitted.rendered, ...(fitted.pagination ? { pagination: fitted.pagination } : {}) };
+}
+
+async function renderMappedPdfDocument(
+  html: string,
+  renderOptions: { imageStorageDir: string; assetRoot: string },
+  plan: BookPageMapPlan | undefined,
+  topMarginPt: number
+): Promise<GenerateBookPdfResult> {
   let pdf = await renderPdfDocument(html, renderOptions);
   let pageMap: BookPdfPageMap | undefined;
 
   if (plan && plan.pageAnchors.length > 0) {
-    const measured = measureBookPageMap(pdf, plan);
+    const measured = measureBookPageMap(pdf, plan, topMarginPt);
     pageMap = measured?.map;
     // The Contents rows were compiled with model page indexes — the only
     // numbers that exist before a render does. Now that the chapters'
@@ -246,7 +265,7 @@ export async function generateBookPdfWithPageMap(
           break;
         }
         const reprinted = await renderPdfDocument(rewritten, renderOptions);
-        const remeasured = measureBookPageMap(reprinted, plan);
+        const remeasured = measureBookPageMap(reprinted, plan, topMarginPt);
         if (!remeasured) {
           // Distrust the reprint entirely: publish the whole book from the
           // pass that measured, with the numbers it was compiled with.
@@ -268,9 +287,6 @@ export async function generateBookPdfWithPageMap(
     }
   }
 
-  if (options.outputPath) {
-    await writeFile(options.outputPath, pdf);
-  }
   return { pdf, ...(pageMap ? { pageMap } : {}) };
 }
 
@@ -283,7 +299,8 @@ export async function generateBookPdfWithPageMap(
  */
 function measureBookPageMap(
   pdf: Buffer,
-  plan: BookPageMapPlan
+  plan: BookPageMapPlan,
+  topMarginPt: number
 ): { map: BookPdfPageMap; chapterPrintedPages: number[] | undefined } | undefined {
   const extracted = extractPdfNamedDestinations(pdf);
   if (!extracted) {
@@ -293,7 +310,7 @@ function measureBookPageMap(
     anchors: plan.pageAnchors,
     hasCoverPage: plan.hasCoverPage,
     extracted,
-    topMarginPt: BOOK_PAGE_TOP_MARGIN_PT
+    topMarginPt
   });
   if (!map) {
     return undefined;

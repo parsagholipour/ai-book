@@ -15,7 +15,6 @@ import type { BookArc } from "./bookArc.js";
 import { chapterDevelopmentLines } from "./bookDevelopment.js";
 import {
   CREATIVE_CONTRACT_RULES,
-  CREATIVE_RECONSTRUCTION_RULE,
   FOCUSED_RECONSTRUCTION_RULE,
   focusedProgressionLines,
   materialEditLines,
@@ -342,6 +341,20 @@ function composeMaxTokens(budget: ChapterWordBudget): number {
 export async function composeChapter(options: ComposeChapterOptions): Promise<ComposedChapterText> {
   const mode = inferWritingMode(options.input, options.plan);
   const narrative = isNarrativeWritingMode(mode);
+  const noSourcePassages = !narrative &&
+    !options.material?.excerpts.length && !options.material?.evidencePackets?.length;
+  if (noSourcePassages) {
+    // Episode plans are research proposals. Without passages, assigning a
+    // portrait made the writer invent an RSA discovery scene in the tier audit.
+    options = {
+      ...options,
+      composition: { ...options.composition, sections: options.composition.sections.map((section) =>
+        ["scene", "portrait", "close-reading", "document-reading"].includes(section.form)
+          ? { ...section, form: "argument", note: "Explain the subject from supported facts and worked examples." }
+          : section) },
+      ...(options.material ? { material: { ...options.material, episodes: [], scene: undefined } } : {})
+    };
+  }
   const focused = !narrative && Boolean(options.material?.focus);
   const palette = formPaletteFor(mode);
   const pages = options.chapterPageEnd - options.chapterPageStart + 1;
@@ -370,9 +383,9 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
             (rule) => !(options.arc && arcKindFor(options) !== "method" && rule.startsWith("State what a source shows"))
           )),
     ...(minimal ? [] : ["Do not open the chapter with a general claim about a common noun (\"A cannon was never only a cannon\")."]),
-    ...(minimal || options.material?.evidencePackets?.length ? [] : options.contract === "creative" ? (narrative ? [] : [options.material?.focus ? FOCUSED_RECONSTRUCTION_RULE : CREATIVE_RECONSTRUCTION_RULE]) : reconstructionRule(narrative)),
+    ...(minimal || options.material?.evidencePackets?.length ? [] : options.contract === "creative" ? (narrative ? [] : [FOCUSED_RECONSTRUCTION_RULE]) : reconstructionRule(narrative)),
     `Now chapter ${options.chapter.index}, "${options.chapter.title}".`,
-    ...materialLines(options),
+    ...materialLines({ ...options, nonfiction: !narrative }),
     ...chapterDevelopmentLines(options.plan, options.chapter.index),
     ...(focused ? [] : compositionWriterLines(options.composition, palette, budget.target)),
     ...figureComposeRules(options.composition),
@@ -387,7 +400,7 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
     // and the cut then removed chapter 7's own closing, so three blind readers
     // found the previous chapter's conclusion stranded under the next heading.
     "previousChapterTail is where the previous chapter stopped, already printed: this chapter opens on its own first section's material and neither resumes, summarises nor answers that paragraph. earlierChapters are digests of what the reader already knows, each with told: the cases, sources, scenes and people that chapter carried; anything in told may be named in passing and is never re-told, and its dates and figures are not repeated.",
-    ...(options.contract === "creative" ? CREATIVE_CONTRACT_RULES : [GROUNDED_FACTUALITY_RULE, ...citation.rules]),
+    ...(options.contract === "creative" && narrative ? CREATIVE_CONTRACT_RULES : [GROUNDED_FACTUALITY_RULE, ...citation.rules]),
     // Research notes arrive as "title: summary" and a search hit's title is
     // often its bare domain, so a writer told to name only sources in the
     // notes wrote "the explanatory pages at psychstory.co.uk" (composed-17).
@@ -397,6 +410,7 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
     ...targetLanguageGenerationGuidance(options.input.language),
     ...kidsReadingGuidanceLines(options.input),
     `Write between ${remaining.min} and ${remaining.max} words and aim for ${options.plan.bookDevelopment ? Math.min(remaining.max, Math.ceil(remaining.target / 0.87)) : remaining.target}. The typesetter will divide the chapter into ${pages} pages of about ${budget.perPage} words; pages are not units of argument, so do not shape the prose around them.`,
+    ...(noSourcePassages ? ["No actual source passages have been supplied for this chapter. Historical scene, portrait and close-reading assignments are replaced by explanation of the subject. Open directly with that explanation; develop supported facts, worked examples and comparisons, without a discovery anecdote. Source fidelity takes precedence over form assignments, rhythm exemplars and length targets."] : []),
     "Return only the chapter's prose."
   ];
   const userPayload = {
@@ -454,15 +468,15 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
     if (!best || words > best.words) {
       best = candidate;
     }
-    if (words >= remaining.min * (options.plan.bookDevelopment ? 1 : 0.7)) {
+    if (words >= remaining.min) {
       break;
     }
-    shortfall = `Your previous answer was ${words} words; the chapter needs at least ${remaining.min}. Write the complete chapter.`;
+    shortfall = `Your previous answer was ${words} words; the chapter needs at least ${remaining.min}. Write the complete chapter. Develop the assigned sections that were only sketched: carry through a worked example, explain its intermediate steps and consequences, or examine the supplied source passage more closely. Preserve the chapter's scope and source constraints. Do not add recap, repeated caveats, invented evidence or filler to reach the budget. If the available material cannot support the minimum, return the strongest supported chapter.`;
   }
   if (!best || !best.markdown) {
     throw new Error(`Chapter ${options.chapter.index} came back empty.`);
   }
-  return best;
+  return { ...best, attempts };
 }
 
 export type EditChapterOptions = ComposeChapterOptions & ChapterEditAcceptanceOptions & {
@@ -566,6 +580,9 @@ export async function editChapter(options: EditChapterOptions): Promise<EditedCh
   const pages = options.chapterPageEnd - options.chapterPageStart + 1;
   const budget = chapterWordBudget(options.input, pages, { figureWords: plannedFigures(options.composition).length * FIGURE_WORD_EQUIVALENT });
   const draftWords = proseWordCount(options.markdown);
+  // A targeted correction edits the current text. The old composition budget
+  // made a 200-word source repair regenerate a 2,000-word discovery narrative.
+  const editBudget = options.factualCorrection ? { ...budget, min: Math.floor(draftWords * 0.62), target: draftWords, max: Math.ceil(draftWords * 1.1) } : budget;
   const citation = citationContractFields(options.researchNotes.slice(0, 18));
   const systemLines = [
     `You are the line editor for "${options.plan.title}", revising each chapter into its finished form in the author's own voice.`,
@@ -578,7 +595,7 @@ export async function editChapter(options: EditChapterOptions): Promise<EditedCh
     "Use the book's spelling convention. Add no new claim, episode or source during this edit.",
     ...(focused ? focusedProgressionLines() : []),
     `Now chapter ${options.chapter.index}, "${options.chapter.title}".`,
-    ...(focused ? [] : compositionWriterLines(options.composition, palette, budget.target)),
+    ...(focused || options.factualCorrection ? [] : compositionWriterLines(options.composition, palette, budget.target)),
     ...figureEditRules(options.composition),
     ...(/```/.test(options.markdown) ? ["Every fenced code block in the draft is returned byte for byte, its language tag included."] : []),
     ...(!focused && options.measurementNotes && options.measurementNotes.length > 0
@@ -592,8 +609,8 @@ export async function editChapter(options: EditChapterOptions): Promise<EditedCh
       : draftWords < budget.target * EDITOR_EXTEND_BELOW_SHARE
       ? `The draft is ${draftWords} words and the chapter needs about ${budget.target} (never under ${budget.min}, never over ${budget.max}): develop the existing sections with more particular detail — the named person, the document, the place, the next thing that happened — rather than adding sections, generalising, or restating.`
       : `Return between ${budget.min} and ${budget.max} words; the draft is ${draftWords} words. Over ${budget.max}, cut.`,
-    ...(options.contract === "creative" ? [CREATIVE_CONTRACT_RULES[1]!] : [GROUNDED_FACTUALITY_RULE, ...citation.rules]),
-    ...materialEditLines(options),
+    ...(options.contract === "creative" && narrative ? [CREATIVE_CONTRACT_RULES[1]!] : [GROUNDED_FACTUALITY_RULE, ...citation.rules, FOCUSED_RECONSTRUCTION_RULE]),
+    ...materialEditLines({ ...options, nonfiction: !narrative }),
     ...(options.factualCorrection ? ["factualCorrection authorizes a targeted factual repair: correct, narrow or delete only the named unsupported claims against its evidence. The preservation rule applies to unrelated meaning; do not preserve the erroneous claim. Follow the correction instructions and evidence over the original claim."] : []),
     ...(options.material?.scene
       ? [`The chapter opens with a scene of about ${options.material.scene.words} words that was written on purpose in a narrating register; keep it a scene — tighten it if you must, never turn it into summary or argument.`]
@@ -612,7 +629,7 @@ export async function editChapter(options: EditChapterOptions): Promise<EditedCh
     purpose: EDIT_CHAPTER_PURPOSE,
     ...(options.signal ? { signal: options.signal } : {}),
     temperature: Math.min(0.7, options.input.temperature),
-    maxTokens: composeMaxTokens(budget),
+    maxTokens: composeMaxTokens(editBudget),
     messages: [
       { role: "system", content: systemLines.join(" ") },
       {
@@ -629,7 +646,7 @@ export async function editChapter(options: EditChapterOptions): Promise<EditedCh
             ...(options.readerNotes && options.readerNotes.length > 0 ? { readerNotes: options.readerNotes } : {}),
             ...citation.payload,
             ...materialPayload(options),
-            wordBudget: budget
+            wordBudget: editBudget
           },
           null,
           2
@@ -638,12 +655,16 @@ export async function editChapter(options: EditChapterOptions): Promise<EditedCh
     ]
   });
   const markdown = normalizeChapterMarkdown(unfence(result.text), { chapterTitle: options.chapter.title });
-  const words = countReadableWords(markdown);
+  const words = proseWordCount(markdown);
   // An edit that lost more than a third of the chapter is a refusal or a
   // truncation, not an edit; the draft stands.
   options.signal?.throwIfAborted();
-  if (!markdown || words < draftWords * 0.62 || chapterDegeneracy(markdown, {
-    maxWords: options.degeneracyMaxWords ?? chapterWordBudget(options.input, pages).max, language: options.input.language
+  // Composition's editor cannot create or deepen a page-budget shortfall.
+  // Explicit final edits after structural reallocation and factual repairs
+  // may shorten the text; final manuscript QA reports any remaining deficit.
+  const lengthRegressed = !options.factualCorrection && options.allowExtension !== false && words < Math.min(draftWords, budget.min);
+  if (!markdown || lengthRegressed || words < draftWords * 0.62 || chapterDegeneracy(markdown, {
+    maxWords: options.degeneracyMaxWords ?? (options.factualCorrection ? editBudget.max : chapterWordBudget(options.input, pages).max), language: options.input.language
   }).degenerate) {
     return { markdown: options.markdown, words: draftWords, attempts: 1, changed: false };
   }

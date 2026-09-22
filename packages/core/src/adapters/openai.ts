@@ -1,3 +1,6 @@
+import { chapterOutputBudget } from "./chapterOutputBudget.js";
+import { withOutputBudget } from "./outputBudget.js";
+import { reportTextProviderRequest, reportTextProviderUsage } from "./textProviderRequest.js";
 import { createHash } from "node:crypto";
 import OpenAI from "openai";
 import type { TextModelThinkingEffort } from "../schemas/book.js";
@@ -130,11 +133,14 @@ export class OpenAITextAdapter implements TextModelAdapter {
     extra: Record<string, unknown> = {}
   ): Promise<ResponseRecord> {
     try {
+      const request = this.request(options, input, extra);
+      await reportTextProviderRequest(options, PROVIDER_ID, this.model, request.max_output_tokens);
       const response = await (this.client.responses.create(
-        this.request(options, input, extra) as never,
+        request as never,
         openAiRequestOptions(options)
       ) as unknown as Promise<ResponseRecord>);
-      assertResponseSucceeded(response, this.model);
+      await reportTextProviderUsage(options, usageFromOpenAIResponse(response.usage));
+      assertResponseSucceeded(response, this.model, undefined, numberValue(request.max_output_tokens));
       return response;
     } catch (error) {
       rethrowOpenAiHttpError(error);
@@ -172,8 +178,10 @@ export class OpenAITextAdapter implements TextModelAdapter {
     extra: Record<string, unknown> = {}
   ): AsyncGenerator<string, ResponseRecord> {
     try {
+      const request = this.request(options, input, { stream: true, ...extra });
+      await reportTextProviderRequest(options, PROVIDER_ID, this.model, request.max_output_tokens);
       const stream = await this.client.responses.create(
-        this.request(options, input, { stream: true, ...extra }) as never,
+        request as never,
         openAiRequestOptions(options)
       );
       let completed: ResponseRecord | undefined;
@@ -181,7 +189,10 @@ export class OpenAITextAdapter implements TextModelAdapter {
         if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
           yield event.delta;
         }
-        const terminal = completedResponseFromEvent(event, this.model);
+        if (isRecord(event.response)) {
+          await reportTextProviderUsage(options, usageFromOpenAIResponse(event.response.usage));
+        }
+        const terminal = completedResponseFromEvent(event, this.model, numberValue(request.max_output_tokens));
         if (terminal) {
           completed = terminal;
         }
@@ -219,7 +230,7 @@ export class OpenAITextAdapter implements TextModelAdapter {
       ...(options.temperature !== undefined && this.thinkingEffort === "none"
         ? { temperature: options.temperature }
         : {}),
-      ...(options.maxTokens !== undefined ? { max_output_tokens: options.maxTokens } : {}),
+      ...(options.maxTokens !== undefined ? { max_output_tokens: chapterOutputBudget(options, this.thinkingEffort) } : {}),
       ...extra
     };
   }
@@ -392,7 +403,8 @@ function jsonTextFormat(): Record<string, unknown> {
 
 function completedResponseFromEvent(
   event: Record<string, unknown>,
-  fallbackModel: string
+  fallbackModel: string,
+  maxTokens: number | undefined
 ): ResponseRecord | undefined {
   if (event.type === "error") {
     throwOpenAIResponseError(
@@ -423,14 +435,15 @@ function completedResponseFromEvent(
       : event.type === "response.failed"
         ? "failed"
         : "incomplete";
-  assertResponseSucceeded(response, fallbackModel, eventStatus);
+  assertResponseSucceeded(response, fallbackModel, eventStatus, maxTokens);
   return response;
 }
 
 function assertResponseSucceeded(
   response: ResponseRecord,
   fallbackModel: string,
-  eventStatus?: string
+  eventStatus?: string,
+  maxTokens?: number
 ): void {
   const status = eventStatus ?? response.status;
   const responseError = isRecord(response.error) ? response.error : undefined;
@@ -449,7 +462,8 @@ function assertResponseSucceeded(
     const reason = stringValue(details?.reason);
     throwOpenAIResponseError(`OpenAI response was incomplete${reason ? `: ${reason}` : ""}.`, {
       model,
-      usage
+      usage,
+      ...(reason === "max_output_tokens" && maxTokens !== undefined ? { maxTokens, requestedModel: fallbackModel } : {})
     });
   }
   if (status && status !== "completed") {
@@ -464,6 +478,8 @@ function throwOpenAIResponseError(
     usage?: Usage | undefined;
     code?: string | undefined;
     param?: string | undefined;
+    maxTokens?: number | undefined;
+    requestedModel?: string | undefined;
   }
 ): never {
   const error = new Error(message) as Error & {
@@ -478,7 +494,10 @@ function throwOpenAIResponseError(
     if (status !== undefined) error.status = status;
   }
   if (details.param) error.param = details.param;
-  throwWithProviderUsage(error, {
+  throwWithProviderUsage(withOutputBudget(error, {
+    maxTokens: details.maxTokens, provider: PROVIDER_ID, model: details.model,
+    requestedModel: details.requestedModel, promptTokens: details.usage?.promptTokens
+  }), {
     provider: PROVIDER_ID,
     model: details.model,
     usage: details.usage

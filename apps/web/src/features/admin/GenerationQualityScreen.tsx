@@ -69,6 +69,7 @@ type QualitySavePatch = {
 };
 
 export type QualityFeature = {
+  retired?: boolean;
   id: ServerFeatureId;
   label: string;
   summary: string;
@@ -707,6 +708,7 @@ function readFeatureCopy(value: unknown): QualityFeature[] | null {
       ? pipelines.filter((pipeline): pipeline is string => typeof pipeline === "string")
       : undefined;
     features.push({
+      ...(entry.retired === true ? { retired: true } : {}),
       id,
       label,
       summary,
@@ -861,7 +863,7 @@ export function qualityResetFailure(error: unknown, action = "Reset quality gate
  */
 export function featureRows(state: GenerationQuality): QualityFeature[] {
   const described = new Map(state.features.map((feature) => [feature.id, feature]));
-  return Object.keys(state.settings).map((id) => described.get(id) ?? undescribedFeature(id));
+  return Object.keys(state.settings).map((id) => described.get(id) ?? undescribedFeature(id)).filter((feature) => !feature.retired);
 }
 
 function undescribedFeature(id: ServerFeatureId): QualityFeature {

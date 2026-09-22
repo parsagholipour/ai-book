@@ -28,7 +28,7 @@ export interface DecisionModelAdapter {
 
 /** Resolve before a caller's terminal fallback; a settings outage is not a verdict. */
 export interface DecisionModelRoute {
-  resolve(): Promise<DecisionModelAdapter | undefined>;
+  resolve(purpose?: string): Promise<DecisionModelAdapter | undefined>;
   /** Best-effort logical outcome, separate from billed physical attempts. */
   recordOutcome?(outcome: DecisionOutcome): Promise<void>;
 }

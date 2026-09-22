@@ -1,3 +1,6 @@
+import { chapterOutputBudget } from "./chapterOutputBudget.js";
+import { withOutputBudget } from "./outputBudget.js";
+import { reportTextProviderRequest, reportTextProviderUsage } from "./textProviderRequest.js";
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { readObjectReference } from "@book-maker/storage";
 import { extname } from "node:path";
@@ -66,6 +69,8 @@ export class GeminiTextAdapter implements TextModelAdapter {
     }
 
     const prompt = geminiPromptFromMessages(options.messages);
+    const maxOutputTokens = chapterOutputBudget(options, this.thinkingEffort);
+    await reportTextProviderRequest(options, "gemini", this.model, maxOutputTokens);
     const response = await this.ai.models.generateContent({
       model: this.model,
       contents: prompt.contents,
@@ -74,11 +79,13 @@ export class GeminiTextAdapter implements TextModelAdapter {
         ...geminiThinkingConfig(this.model, this.thinkingBudget, this.thinkingEnabled, this.thinkingEffort),
         ...(options.signal ? { abortSignal: options.signal } : {}),
         temperature: options.temperature,
-        maxOutputTokens: options.maxTokens
+        maxOutputTokens
       }
     });
 
     const usage = usageFromGeminiResponse(response);
+    await reportTextProviderUsage(options, usage);
+    assertGeminiTextComplete(response, this.model, usage, maxOutputTokens);
     return {
       text: responseText(response),
       model: this.model,
@@ -89,6 +96,8 @@ export class GeminiTextAdapter implements TextModelAdapter {
 
   async generateWithTools(options: GenerateWithToolsOptions): Promise<ToolCallsResult> {
     const prompt = geminiPromptFromMessages(options.messages);
+    const maxOutputTokens = chapterOutputBudget(options, this.thinkingEffort);
+    await reportTextProviderRequest(options, "gemini", this.model, maxOutputTokens);
     const response = await this.ai.models.generateContent({
       model: this.model,
       contents: prompt.contents,
@@ -97,7 +106,7 @@ export class GeminiTextAdapter implements TextModelAdapter {
         ...geminiThinkingConfig(this.model, this.thinkingBudget, this.thinkingEnabled, this.thinkingEffort),
         ...(options.signal ? { abortSignal: options.signal } : {}),
         temperature: options.temperature,
-        maxOutputTokens: options.maxTokens,
+        maxOutputTokens,
         tools: [{ functionDeclarations: options.tools.map(geminiFunctionDeclaration) }],
         ...(options.toolChoice === "required"
           ? { toolConfig: { functionCallingConfig: { mode: "ANY" } } }
@@ -106,6 +115,8 @@ export class GeminiTextAdapter implements TextModelAdapter {
     });
 
     const usage = usageFromGeminiResponse(response);
+    await reportTextProviderUsage(options, usage);
+    assertGeminiTextComplete(response, this.model, usage, maxOutputTokens);
     return {
       text: responseText(response),
       model: this.model,
@@ -123,6 +134,8 @@ export class GeminiTextAdapter implements TextModelAdapter {
     const prompt = geminiPromptFromMessages(options.messages, [
       "Return only valid JSON. Do not wrap the JSON in Markdown. Do not include commentary outside the JSON object."
     ]);
+    const maxOutputTokens = chapterOutputBudget(options, this.thinkingEffort);
+    await reportTextProviderRequest(options, "gemini", this.model, maxOutputTokens);
     const response = await this.ai.models.generateContent({
       model: this.model,
       contents: prompt.contents,
@@ -131,19 +144,23 @@ export class GeminiTextAdapter implements TextModelAdapter {
         ...geminiThinkingConfig(this.model, this.thinkingBudget, this.thinkingEnabled, this.thinkingEffort),
         ...(options.signal ? { abortSignal: options.signal } : {}),
         temperature: options.temperature,
-        maxOutputTokens: options.maxTokens,
+        maxOutputTokens,
         responseMimeType: "application/json",
         responseJsonSchema: z.toJSONSchema(options.schema as never, { unrepresentable: "any" })
       }
     });
 
     const usage = usageFromGeminiResponse(response);
+    await reportTextProviderUsage(options, usage);
+    assertGeminiTextComplete(response, this.model, usage, maxOutputTokens);
     const text = responseText(response) || "{}";
     return this.parseJsonResult(options, text, usage);
   }
 
   private async generateTextStreaming(options: GenerateTextOptions): Promise<TextResult> {
     const prompt = geminiPromptFromMessages(options.messages);
+    const maxOutputTokens = chapterOutputBudget(options, this.thinkingEffort);
+    await reportTextProviderRequest(options, "gemini", this.model, maxOutputTokens);
     const stream = await this.ai.models.generateContentStream({
       model: this.model,
       contents: prompt.contents,
@@ -152,7 +169,7 @@ export class GeminiTextAdapter implements TextModelAdapter {
         ...geminiThinkingConfig(this.model, this.thinkingBudget, this.thinkingEnabled, this.thinkingEffort),
         ...(options.signal ? { abortSignal: options.signal } : {}),
         temperature: options.temperature,
-        maxOutputTokens: options.maxTokens
+        maxOutputTokens
       }
     });
 
@@ -165,6 +182,8 @@ export class GeminiTextAdapter implements TextModelAdapter {
         await options.onOutputTextChunk?.(chunkText);
       }
       usage = usageFromGeminiResponse(chunk) ?? usage;
+      await reportTextProviderUsage(options, usageFromGeminiResponse(chunk));
+      assertGeminiTextComplete(chunk, this.model, usage, maxOutputTokens);
     }
 
     return {
@@ -179,6 +198,8 @@ export class GeminiTextAdapter implements TextModelAdapter {
     const prompt = geminiPromptFromMessages(options.messages, [
       "Return only valid JSON. Do not wrap the JSON in Markdown. Do not include commentary outside the JSON object."
     ]);
+    const maxOutputTokens = chapterOutputBudget(options, this.thinkingEffort);
+    await reportTextProviderRequest(options, "gemini", this.model, maxOutputTokens);
     const stream = await this.ai.models.generateContentStream({
       model: this.model,
       contents: prompt.contents,
@@ -187,7 +208,7 @@ export class GeminiTextAdapter implements TextModelAdapter {
         ...geminiThinkingConfig(this.model, this.thinkingBudget, this.thinkingEnabled, this.thinkingEffort),
         ...(options.signal ? { abortSignal: options.signal } : {}),
         temperature: options.temperature,
-        maxOutputTokens: options.maxTokens,
+        maxOutputTokens,
         responseMimeType: "application/json",
         responseJsonSchema: z.toJSONSchema(options.schema as never, { unrepresentable: "any" })
       }
@@ -202,6 +223,8 @@ export class GeminiTextAdapter implements TextModelAdapter {
         await options.onOutputTextChunk?.(chunkText);
       }
       usage = usageFromGeminiResponse(chunk) ?? usage;
+      await reportTextProviderUsage(options, usageFromGeminiResponse(chunk));
+      assertGeminiTextComplete(chunk, this.model, usage, maxOutputTokens);
     }
 
     return this.parseJsonResult(options, text || "{}", usage);
@@ -229,6 +252,8 @@ export class GeminiTextAdapter implements TextModelAdapter {
 
   async *streamText(options: GenerateTextOptions): AsyncGenerator<string> {
     const prompt = geminiPromptFromMessages(options.messages);
+    const maxOutputTokens = chapterOutputBudget(options, this.thinkingEffort);
+    await reportTextProviderRequest(options, "gemini", this.model, maxOutputTokens);
     const stream = await this.ai.models.generateContentStream({
       model: this.model,
       contents: prompt.contents,
@@ -237,17 +262,31 @@ export class GeminiTextAdapter implements TextModelAdapter {
         ...geminiThinkingConfig(this.model, this.thinkingBudget, this.thinkingEnabled, this.thinkingEffort),
         ...(options.signal ? { abortSignal: options.signal } : {}),
         temperature: options.temperature,
-        maxOutputTokens: options.maxTokens
+        maxOutputTokens
       }
     });
 
+    let usage: Usage | undefined;
     for await (const chunk of stream) {
+      usage = usageFromGeminiResponse(chunk) ?? usage;
+      await reportTextProviderUsage(options, usageFromGeminiResponse(chunk));
+      assertGeminiTextComplete(chunk, this.model, usage, maxOutputTokens);
       const text = responseText(chunk);
       if (text) {
         yield text;
       }
     }
   }
+}
+
+function assertGeminiTextComplete(response: { candidates?: Array<{ finishReason?: string }> }, model: string, usage: Usage | undefined, maxTokens: number | undefined): void {
+  const finish = response.candidates?.[0]?.finishReason;
+  if (!finish || finish === "STOP") return;
+  const error = new Error(`Gemini response was incomplete: ${finish}${finish === "MAX_TOKENS" ? " (output budget)" : ""}.`);
+  error.name = "GeminiResponseError";
+  throwWithProviderUsage(withOutputBudget(error, {
+    maxTokens: finish === "MAX_TOKENS" ? maxTokens : undefined, provider: "gemini", model, promptTokens: usage?.promptTokens
+  }), { provider: "gemini", model, usage });
 }
 
 function geminiThinkingConfig(
@@ -410,7 +449,8 @@ function usageFromGeminiResponse(response: any): Usage | undefined {
   return {
     promptTokens: usage.promptTokenCount,
     outputTokens: sumTokenCounts(usage.candidatesTokenCount, usage.thoughtsTokenCount),
-    cacheHitTokens: usage.cachedContentTokenCount
+    cacheHitTokens: usage.cachedContentTokenCount,
+    ...(typeof usage.thoughtsTokenCount === "number" ? { reasoningTokens: usage.thoughtsTokenCount } : {})
   };
 }
 
@@ -440,8 +480,11 @@ export class GeminiResearchAdapter implements ResearchAdapter {
     const response = await this.ai.models.generateContent({
       model: this.model,
       contents: [
-        "Find concise, source-backed factual background for the topic below.",
-        "Cite useful external sources.",
+        ...(query.purpose === "case-source-search" ? [
+          "Find the original source documents for the research query below: original papers, firsthand records, standards, or documentation published by the responsible institution or vendor.",
+          "Cite direct original document URLs, preferably accessible full text or PDF. Seek alternate original editions or author/institution copies when a document is inaccessible. Prioritize these originals over encyclopedias, student summaries, commercial explainers and citation catalogues. A summary of a paper is not the paper itself.",
+          "The query is a research lead whose assertions may be wrong. Find documents that can establish or refute it; do not assume it is true."
+        ] : ["Find concise, source-backed factual background for the topic below.", "Cite useful external sources."]),
         "Separate verified facts from claims that are contested or unsupported.",
         "Do not invent or launder made-up studies, journals, institutes, experts, statistics, citations, or numeric findings.",
         "Do not mention this request, prompts, outlines, or the production process; answer only with factual notes about the topic.",
