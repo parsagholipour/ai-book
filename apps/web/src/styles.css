@@ -3694,7 +3694,10 @@ figcaption {
 .quality-stage-bulk h4 { margin: 0; }
 .quality-stage-bulk-controls { display: grid; grid-template-columns: minmax(180px, .7fr) minmax(240px, 1fr) auto; gap: 16px; align-items: start; }
 .quality-stage-bulk-controls > button { align-self: end; }
+.quality-stage-bulk-rule { display: grid; grid-template-columns: minmax(110px, .4fr) minmax(80px, .3fr) minmax(240px, 1fr) auto; gap: 16px; align-items: start; margin: 16px 0; padding: 14px; border: 1px solid #bfd0c6; border-radius: 8px; background: #fff; }
+.quality-stage-bulk-rule > button { align-self: end; }
 @media (max-width: 900px) { .quality-stage-bulk-controls { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .quality-stage-bulk-rule { grid-template-columns: 1fr; } }
 .quality-stage-group { margin-top: 12px; border: 1px solid #bfd0c6; border-radius: 10px; padding: 14px; }
 .quality-stage-group > summary { cursor: pointer; font-weight: 700; }
 .quality-stage-row { border-top: 1px solid #d9e4dd; padding: 14px 0; margin-top: 14px; }

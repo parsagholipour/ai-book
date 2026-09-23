@@ -211,7 +211,7 @@ function recordingFake(): { fake: FakeTextModelAdapter; purposes: string[] } {
   };
   fake.generateJson = async (options) => {
     purposes.push(options.purpose ?? "json");
-    if (options.purpose === "review-chapter-evidence" && JSON.parse(String(options.messages[1]?.content)).phase === "claim_inventory") {
+    if (options.purpose === "inventory-chapter-claims") {
       const data = options.schema.parse({ complete: true, claims: [] });
       return { data, text: JSON.stringify(data), provider: "fixture", model: "fixture" };
     }
@@ -330,7 +330,7 @@ describe("generateBookComposedChapters", () => {
     page.markdown += `\n\n${claim}`;
     page.status = "PENDING";
     const review = vi.spyOn(fake, "generateJson").mockImplementation(async (request) => {
-      expect(request.purpose).toBe("review-chapter-evidence");
+      expect(request.purpose).toBe("inventory-chapter-claims");
       const data = request.schema.parse({ complete: true, claims: [{ quote: claim, searchQuery: "RSA paper author order" }] });
       return { data, text: JSON.stringify(data), provider: "fixture", model: "fixture" };
     });

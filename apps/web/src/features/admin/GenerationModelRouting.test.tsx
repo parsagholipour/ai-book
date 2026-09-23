@@ -8,10 +8,12 @@ import {
   GenerationModelRoutingSection,
   generationModelRoutingClaim,
   setAllGenerationStageModels,
+  setGenerationStageModelsByEffortRules,
   readGenerationModelOptions,
   rebaseGenerationModelRouting
 } from "./GenerationModelRouting.js";
 import { GENERATION_MODEL_STAGES, generationStageRoute, JEV_SELECTION, type GenerationTextModelOption, type GenerationTextModelRouting } from "@book-maker/core/generationTextModelRouting";
+import { GENERATION_STAGE_EFFORT } from "./generationStageEffort.js";
 
 describe("GenerationModelRoutingSection", () => {
   it("renders a primary and fallback for all nine routes with capability-backed effort selectors", () => {
@@ -109,6 +111,31 @@ describe("model routing claims and rebasing", () => {
     const claim = generationModelRoutingClaim(loaded, changed)!;
     expect(Object.keys(claim)).toEqual(["ultra"]);
     expect(Object.keys(claim.ultra!)).toEqual(["stages"]);
+  });
+
+  it.each(["primary", "fallback", "both"] as const)("applies score-range choices to matching stages on the %s side", (target) => {
+    const loaded = routing();
+    loaded.ultra.stages = { "judge-chapter-drafts": { primary: JEV_SELECTION, fallback: loaded.ultra.writerFallback } };
+    const original = cloneGenerationModelRouting(loaded);
+    const low = { provider: "deepseek", model: "deepseek-pro", thinkingEffort: "none" } as const;
+    const high = { provider: "deepseek", model: "deepseek-pro", thinkingEffort: "high" } as const;
+    const changed = setGenerationStageModelsByEffortRules(loaded, "ultra", target, [
+      { minScore: 1, maxScore: 4, selection: low },
+      { minScore: 8, maxScore: 10, selection: high }
+    ]);
+    for (const { id } of GENERATION_MODEL_STAGES) {
+      const before = generationStageRoute(loaded, "ultra", id);
+      const score = GENERATION_STAGE_EFFORT[id].score;
+      const actual = generationStageRoute(changed, "ultra", id);
+      const chosen = score <= 4 ? low : score >= 8 ? high : null;
+      expect(actual).toEqual(chosen ? {
+        primary: target === "fallback" ? before.primary : chosen,
+        fallback: target === "primary" ? before.fallback : chosen
+      } : before);
+    }
+    expect(changed.ultra.stages!["judge-chapter-drafts"]!.primary).toEqual(JEV_SELECTION);
+    expect(changed.balanced).toBe(loaded.balanced);
+    expect(loaded).toEqual(original);
   });
 
   it("claims only the changed stage fields and rebases another admin's stage fallback", () => {

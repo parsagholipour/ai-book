@@ -1,5 +1,7 @@
 import type { TextModelSelection, TextModelThinkingEffort } from "../schemas/book.js";
 
+export const OPENAI_GPT_6_SOL_MODEL = "gpt-6-sol";
+export const OPENAI_GPT_6_LUNA_MODEL = "gpt-6-luna";
 export const OPENAI_GPT_5_6_SOL_MODEL = "gpt-5.6-sol";
 export const OPENAI_GPT_5_6_TERRA_MODEL = "gpt-5.6-terra";
 export const OPENAI_GPT_5_6_LUNA_MODEL = "gpt-5.6-luna";
@@ -34,6 +36,20 @@ const GPT_5_NANO_THINKING_EFFORTS: OpenAIThinkingEffortOption[] = [
 ];
 
 const OPENAI_TEXT_MODEL_OPTIONS: OpenAITextModelOption[] = [
+  {
+    provider: "openai",
+    model: OPENAI_GPT_6_SOL_MODEL,
+    label: "GPT-6 Sol",
+    thinking: true,
+    thinkingEfforts: GPT_5_6_THINKING_EFFORTS
+  },
+  {
+    provider: "openai",
+    model: OPENAI_GPT_6_LUNA_MODEL,
+    label: "GPT-6 Luna",
+    thinking: true,
+    thinkingEfforts: GPT_5_6_THINKING_EFFORTS
+  },
   {
     provider: "openai",
     model: OPENAI_GPT_5_6_SOL_MODEL,

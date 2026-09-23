@@ -408,6 +408,8 @@ describe("admin generation model routing", () => {
       }>;
     }).modelOptions;
     expect(catalog.filter((option) => option.provider === "openai").map((option) => option.model)).toEqual([
+      "gpt-6-sol",
+      "gpt-6-luna",
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",

@@ -100,3 +100,14 @@ describe("authoritative stage routing", () => {
     } } } }, compiledGenerationTextModelRouting(config, []))).toThrow("Invalid saved model route");
   });
 });
+
+it("seeds claim extraction from the saved mechanical extraction route and keeps verification independent", () => {
+  const routing = fixture();
+  routing.ultra.stages!["extract-excerpts"] = { primary: fallback, fallback: primary };
+  routing.ultra.stages!["review-chapter-evidence"] = { primary, fallback };
+  delete routing.ultra.stages!["inventory-chapter-claims"];
+  expect(generationStageRoute(routing, "ultra", "inventory-chapter-claims").primary).toEqual(fallback);
+  expect(generationStageRoute(routing, "ultra", "review-chapter-evidence").primary).toEqual(primary);
+  routing.ultra.stages!["inventory-chapter-claims"] = { primary: { ...primary, thinkingEffort: "none" }, fallback };
+  expect(generationStageRoute(routing, "ultra", "inventory-chapter-claims").primary).toMatchObject({ thinkingEffort: "none" });
+});

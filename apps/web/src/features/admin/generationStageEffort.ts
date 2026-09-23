@@ -3,7 +3,7 @@ import type { GenerationModelStageId } from "@book-maker/core/generationTextMode
 type EffortScore = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 type EffortRecommendation = { score: EffortScore; reason: string };
 
-/** Editorial starting points, shared across tiers. Display only; never feed these into model routing. */
+/** Editorial starting points, shared across tiers. Used by the console's optional bulk rules, never by runtime routing. */
 export const GENERATION_STAGE_EFFORT: Record<GenerationModelStageId, EffortRecommendation> = {
   "plan-book": { score: 8, reason: "Balance the brief, scope, and progression across the whole book." },
   "revise-plan": { score: 7, reason: "Apply requested changes while keeping the rest of the plan coherent." },
@@ -20,6 +20,7 @@ export const GENERATION_STAGE_EFFORT: Record<GenerationModelStageId, EffortRecom
   "review-dossier-provenance": { score: 7, reason: "Check that each passage supports its proposed source attribution." },
   "build-case-evidence": { score: 7, reason: "Organize source material into usable evidence with clear limits." },
   "verify-case-evidence": { score: 8, reason: "Compare claims with source passages and catch unsupported inferences." },
+  "inventory-chapter-claims": { score: 4, reason: "Extract exact factual assertions and group their source searches before verification." },
   "review-chapter-evidence": { score: 9, reason: "Trace chapter claims to evidence and distinguish support from contradiction." },
   "compose-chapter": { score: 6, reason: "Integrate the prepared plan and evidence into sustained, coherent prose." },
   "compose-scene": { score: 5, reason: "Maintain local action, character intent, and continuity within a scene." },

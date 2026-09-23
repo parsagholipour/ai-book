@@ -1,25 +1,26 @@
 import { createHash } from "node:crypto";
 import {
   manuscriptCoverageIssues, manuscriptCoverageSchema, reviewManuscriptCoverage,
-  type CoveragePage, type ManuscriptCoverage, type ManuscriptQualityIssue, type TextModelAdapter
+  type CoveragePage, type CoverageChapter, type ManuscriptCoverage, type ManuscriptQualityIssue, type TextModelAdapter
 } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { isStopRequestedError } from "../runtime/jobTypes.js";
 
 export type StoredManuscriptCoverage = { fingerprint: string; review: ManuscriptCoverage };
 
-export function manuscriptCoverageFingerprint(brief: string, promises: readonly string[], pages: readonly CoveragePage[]): string {
-  return createHash("sha256").update(JSON.stringify({ version: 1, brief, promises, pages: [...pages]
+export function manuscriptCoverageFingerprint(brief: string, promises: readonly string[], pages: readonly CoveragePage[], chapters?: readonly CoverageChapter[]): string {
+  return createHash("sha256").update(JSON.stringify({ version: 2, brief, promises, chapters: chapters === undefined ? null : [...chapters]
+    .sort((a, b) => a.index - b.index).map(({ index, title, startPageIndex, endPageIndex }) => ({ index, title, startPageIndex, endPageIndex })), pages: [...pages]
     .sort((a, b) => a.index - b.index).map(({ index, markdown }) => ({ index, markdown })) })).digest("hex");
 }
 
-/** Recompiles reuse only evidence for exactly the same brief, promises and final page text. */
+/** Recompiles reuse only evidence for exactly the same brief, promises, final page text and current chapter structure. */
 export async function manuscriptCoverageForCompile(options: {
   projectId: string; brief: string; promises: readonly string[]; pages: readonly CoveragePage[];
-  textModel: TextModelAdapter; allowModelReview: boolean;
+  textModel: TextModelAdapter; allowModelReview: boolean; chapters?: readonly CoverageChapter[] | undefined;
 }): Promise<{ issues: ManuscriptQualityIssue[]; stored: StoredManuscriptCoverage }> {
   const promises = [...new Set(options.promises)].sort();
-  const fingerprint = manuscriptCoverageFingerprint(options.brief, promises, options.pages);
+  const fingerprint = manuscriptCoverageFingerprint(options.brief, promises, options.pages, options.chapters);
   try {
     const cached = await prisma.generationJob.findFirst({
       where: { projectId: options.projectId, type: "COMPILE_EXPORT", qualityReport: { path: ["briefCoverage", "fingerprint"], equals: fingerprint } },
@@ -36,7 +37,7 @@ export async function manuscriptCoverageForCompile(options: {
     // A cache miss never prevents the review or grants an unverified pass.
   }
   const result = options.allowModelReview
-    ? await reviewManuscriptCoverage({ brief: options.brief, promises, pages: options.pages, textModel: options.textModel })
+    ? await reviewManuscriptCoverage({ brief: options.brief, promises, pages: options.pages, chapters: options.chapters, textModel: options.textModel })
     : { status: "unavailable" as const, requirements: [] };
   const review: ManuscriptCoverage = { status: result.status, requirements: result.requirements };
   return { stored: { fingerprint, review }, issues: "issues" in result ? result.issues : manuscriptCoverageIssues(review) };

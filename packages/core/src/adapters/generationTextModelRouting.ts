@@ -36,6 +36,7 @@ export const GENERATION_MODEL_STAGES = [
   { id: "review-dossier-provenance", label: "Source provenance review", group: "Evidence", role: "judgment" },
   { id: "build-case-evidence", label: "Case evidence", group: "Evidence", role: "writer" },
   { id: "verify-case-evidence", label: "Case evidence verification", group: "Evidence", role: "writer" },
+  { id: "inventory-chapter-claims", label: "Chapter claim inventory", group: "Evidence", role: "judgment" },
   { id: "review-chapter-evidence", label: "Chapter evidence review", group: "Evidence", role: "writer" },
   { id: "compose-chapter", label: "Chapter drafting", group: "Chapters", role: "writer" },
   { id: "compose-scene", label: "Scene drafting", group: "Chapters", role: "writer" },
@@ -93,6 +94,11 @@ export function generationModelStage(purpose: string | undefined) {
 export function generationStageRoute(routing: GenerationTextModelRouting, tier: ModelTier, id: GenerationModelStageId): GenerationStageRoute {
   const saved = routing[tier].stages?.[id];
   if (saved) return saved;
+  // New mechanical extraction inherits the operator's existing extraction route until
+  // it receives its own saved setting; evidence adjudication retains its route.
+  if (id === "inventory-chapter-claims" && routing[tier].stages?.["extract-excerpts"]) {
+    return routing[tier].stages["extract-excerpts"];
+  }
   if (stageSupportsFiniteDecisions(id) && isJevSelection(routing.fastDecisions)) {
     return { primary: { ...routing.fastDecisions }, fallback: routing.fastDecisionsFallback ?? routing.fastJudgments };
   }

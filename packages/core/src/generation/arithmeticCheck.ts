@@ -118,6 +118,34 @@ function sectionsOf(markdown: string): string[] {
  * otherwise why it fails.
  */
 export function checkStatement(statement: string, scope: ArithmeticScope = NO_SCOPE): string | undefined {
+  const result = statementResult(statement, scope);
+  return typeof result === "string" ? result : undefined;
+}
+
+/** Positive proof, unlike checkStatement's deliberately indistinguishable true/unknown result.
+ * The proof grammar is narrower: no assignment labels, unstated modulus, prose commands,
+ * ambiguous digit spacing, unary powers, or mixed arithmetic after a remainder operator.
+ */
+export function numericStatementHolds(statement: string): boolean {
+  if (statement.length > 1000) return false;
+  const lexical = statement.replace(/\\(?:cdot|times|equiv|bmod|pmod)(?![A-Za-z])/g, "").replace(/\\,/g, "");
+  if (/[^\d\s+\-*^(){}=≡×·.,;]/.test(lexical) || /\d\s+\d/.test(statement) || /[+-]\s*\d+\s*\^/.test(statement)) return false;
+  // The legacy parser's unary-power and remainder precedence is unsuitable for positive
+  // proof of these spellings. Retain them rather than choose a mathematical convention.
+  if (/[+-]\s*[({]/.test(statement) || (/\\bmod(?![A-Za-z])/.test(statement) && /[+-]/.test(statement))) return false;
+  // Bare punctuation between digits is not a thousands separator in the proof grammar.
+  if (/\d[.,]\d/.test(statement)) return false;
+  for (const match of statement.matchAll(/\\bmod(?![A-Za-z])/g)) {
+    if (!/^\\bmod\s*(?:\{\s*\d+\s*\}|\d+)(?=\s*(?:=|≡|\\equiv|[)}]|[.,;]?\s*$))/.test(statement.slice(match.index))) return false;
+  }
+  // A terminal congruence modulus is unambiguous; mid-chain pmod syntax stays with review.
+  const pmods = [...statement.matchAll(/\\pmod(?![A-Za-z])/g)];
+  if (pmods.length && (pmods.length !== 1 || !/^\\pmod\s*(?:\{\s*\d+\s*\}|\d+)\s*[.,;]?$/.test(statement.slice(pmods[0]!.index)))) return false;
+  try { return statementResult(statement, NO_SCOPE, true) === true; }
+  catch (error) { if (error instanceof RangeError) return false; throw error; }
+}
+
+function statementResult(statement: string, scope: ArithmeticScope, proof = false): string | true | undefined {
   let tokens: Token[];
   try { tokens = tokenize(statement); } catch (error) { if (error instanceof Unsupported) return undefined; throw error; }
   if (!tokens.some((token) => token.kind === "rel")) return undefined;
@@ -125,7 +153,7 @@ export function checkStatement(statement: string, scope: ArithmeticScope = NO_SC
   let modulus: bigint | undefined;
   const lastPmod = tokens.reduce((last, token, index) => (token.kind === "pmod" ? index : last), -1);
   if (lastPmod >= 0 && !tokens.slice(lastPmod + 1).some((token) => token.kind === "rel")) {
-    try { modulus = new Parser(tokens.slice(lastPmod + 1)).parseAll(); } catch (error) { if (error instanceof Unsupported) return undefined; throw error; }
+    try { modulus = new Parser(tokens.slice(lastPmod + 1), proof).parseAll(); } catch (error) { if (error instanceof Unsupported) return undefined; throw error; }
     tokens = tokens.slice(0, lastPmod);
     if (modulus <= 0n) return undefined;
   }
@@ -140,7 +168,7 @@ export function checkStatement(statement: string, scope: ArithmeticScope = NO_SC
   segments.push({ tokens: current, relation });
   if (segments.some((segment) => segment.tokens.length === 0)) return undefined;
   let values: bigint[];
-  try { values = segments.map((segment) => new Parser(segment.tokens).parseAll()); } catch (error) { if (error instanceof Unsupported) return undefined; throw error; }
+  try { values = segments.map((segment) => new Parser(segment.tokens, proof).parseAll()); } catch (error) { if (error instanceof Unsupported) return undefined; throw error; }
   for (let index = 1; index < segments.length; index += 1) {
     const left = values[index - 1]!, right = values[index]!;
     const rel = segments[index]!.relation!;
@@ -166,7 +194,7 @@ export function checkStatement(statement: string, scope: ArithmeticScope = NO_SC
     const value = `${lhs} = ${left}`;
     return `${residueModuli.length ? `${value}, ${residuesOf(undefined, left, residueModuli)}` : value}, but the statement gives ${rhs}${isLiteral(segments[index]!.tokens) ? "" : ` = ${right}`}.`;
   }
-  return undefined;
+  return true;
 }
 
 function congruentUnderSome(left: bigint, right: bigint, moduli: bigint[]): boolean {
@@ -201,7 +229,12 @@ function render(tokens: Token[]): string {
 }
 
 function tokenize(statement: string): Token[] {
-  const source = statement
+  // A LaTeX thin space can group an integer: 16\,384 is 16384, not 16 × 384.
+  // Normalize complete three-digit groups before spacing commands disappear.
+  const grouped = statement.replace(/\b\d{1,3}(?:\\,\s*\d{3})+(?!\d)/g,
+    (number) => number.replace(/\\,\s*/g, ""));
+  if (/\d\\,\s*\d/.test(grouped)) throw new Unsupported("ambiguous digit spacing");
+  const source = grouped
     .replace(/\\(left|right|,|;|!|quad|qquad|displaystyle|mathrm|text|operatorname)\b/g, " ")
     .replace(/\\ /g, " ").replace(/~/g, " ").replace(/[.,;]\s*$/, "");
   const tokens: Token[] = [];
@@ -247,7 +280,7 @@ function tokenize(statement: string): Token[] {
 
 class Parser {
   private index = 0;
-  constructor(private readonly tokens: Token[]) {}
+  constructor(private readonly tokens: Token[], private readonly proof = false) {}
 
   parseAll(): bigint {
     const value = this.parseModded();
@@ -298,6 +331,9 @@ class Parser {
     this.take();
     const exponent = this.isOp("{") ? this.parseGroup("{", "}") : this.parseAtom();
     if (exponent < 0n) throw new Unsupported("negative exponent");
+    // Positive proof cannot silently choose a 0^0 convention or bypass the work bound for
+    // trivial bases. Keep the legacy negative-only findings behavior unchanged.
+    if (this.proof && ((base === 0n && exponent === 0n) || exponent > BigInt(MAX_EXACT_POWER_BITS))) throw new Unsupported("ambiguous or excessive power");
     const bits = base === 0n || base === 1n || base === -1n ? 1 : Number(exponent) * Math.log2(Math.abs(Number(base)));
     if (!Number.isFinite(bits) || bits > MAX_EXACT_POWER_BITS) throw new Unsupported("power too large");
     return base ** exponent;

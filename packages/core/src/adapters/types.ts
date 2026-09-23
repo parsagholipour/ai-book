@@ -218,6 +218,19 @@ export type ResearchQuery = {
 };
 
 export type ResearchResult = {
+  /** Optional for unmetered/custom providers; absent usage must never be priced as zero. */
+  provider?: string | undefined;
+  model?: string | undefined;
+  usage?: Usage | undefined;
+  /** Monotonic elapsed milliseconds for this successful adapter attempt, excluding caller retries/backoff. */
+  timings?: {
+    /** Provider SDK request, including provider-managed search and any SDK retries. */
+    providerRequestMs: number;
+    /** Wall time for the full redirect batch, including unsuccessful resolutions. */
+    groundingRedirectsMs: number;
+    /** Full adapter time, including local response processing. */
+    totalMs: number;
+  } | undefined;
   query: string;
   summary: string;
   sources: Array<{

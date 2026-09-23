@@ -210,6 +210,8 @@ describe("text model provider selection", () => {
       expect.objectContaining({ provider: "alibaba", model: "qwen3.8-max", thinking: true })
     );
     expect(options.filter((option) => option.provider === "openai")).toEqual([
+      expect.objectContaining({ provider: "openai", model: "gpt-6-sol", label: "GPT-6 Sol" }),
+      expect.objectContaining({ provider: "openai", model: "gpt-6-luna", label: "GPT-6 Luna" }),
       expect.objectContaining({ provider: "openai", model: "gpt-5.6-sol", label: "GPT-5.6 Sol" }),
       expect.objectContaining({ provider: "openai", model: "gpt-5.6-terra", label: "GPT-5.6 Terra" }),
       expect.objectContaining({ provider: "openai", model: "gpt-5.6-luna", label: "GPT-5.6 Luna" }),

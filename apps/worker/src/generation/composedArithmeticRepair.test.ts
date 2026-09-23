@@ -37,12 +37,12 @@ describe("repairChapterArithmetic", () => {
     expect(correction.computations).toEqual(["16384 ≡ 115 (mod 187), but the statement gives 169.", "128^4 ≡ 135 (mod 187), but the statement gives 169^2 ≡ 137."]);
   });
 
-  it("stops after two rounds, the last told to delete the steps, and reports what still fails", async () => {
+  it("stops after a repair makes no progress and reports what still fails", async () => {
     const edit = vi.fn<Edit>(async (markdown) => `${markdown} `);
     const repair = await repairChapterArithmetic({ markdown: wrong, edit, degenerate: () => false });
-    expect(repair).toMatchObject({ markdown: wrong, findings: 2, repairs: 2 });
+    expect(repair).toMatchObject({ markdown: wrong, findings: 2, repairs: 1 });
     expect(repair!.unresolved.map((residual) => residual.quote)).toEqual(["128^2=16384\\equiv169\\pmod{187}.", "128^4\\equiv169^2\\equiv81\\pmod{187}."]);
-    expect(edit.mock.calls[1]![1].instructions[0]).toContain("delete the intermediate steps");
+    expect(edit).toHaveBeenCalledOnce();
     expect(arithmeticRepairNotes(["x"], true)[0]).toContain("keep only the correct final result");
   });
 
@@ -53,4 +53,12 @@ describe("repairChapterArithmetic", () => {
     const degenerate = vi.fn<Edit>(async () => right);
     expect(await repairChapterArithmetic({ markdown: wrong, edit: degenerate, degenerate: () => true })).toMatchObject({ markdown: wrong, repairs: 1, unresolved: [expect.anything(), expect.anything()] });
   });
+});
+
+
+it("does not spend a repair on grouped integers from the Balanced RSA chapter", async () => {
+  const markdown = String.raw`\[128^2=16\,384.\] \[187\cdot70=13\,090.\]`;
+  const edit = vi.fn<Edit>(async () => markdown);
+  expect(await repairChapterArithmetic({ markdown, edit, degenerate: () => false })).toBeUndefined();
+  expect(edit).not.toHaveBeenCalled();
 });

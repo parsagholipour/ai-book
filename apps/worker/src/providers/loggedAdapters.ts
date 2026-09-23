@@ -59,7 +59,6 @@ import {
   recordProviderAudioCost,
   recordProviderImageCost,
   recordProviderUsage,
-  settleLiveTextUsageEstimate,
   withLiveOutputTracking
 } from "./usageAccounting.js";
 import type { WorkerRuntimeJob } from "../runtime/jobPayloads.js";
@@ -95,7 +94,7 @@ export function createLoggedProviders(
   return {
     text,
     decisions: createLoggedDecisions(job, input, embedding),
-    research: new LoggingResearchAdapter(providers.research, logger, generationJobId),
+    research: new LoggingResearchAdapter(providers.research, logger, generationJobId, projectId),
     // Outside the provider fallback, so only a request both providers refused
     // reaches the rewrite.
     image: new CopyrightSafeRetryImageAdapter({
@@ -342,7 +341,6 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
     operation: string;
     callId: string;
     startedAt: string;
-    captureProviderUsageOnFailure: boolean;
     prepareOptions?: ((accounting: TextFallbackCallAccounting) => TOptions) | undefined;
     run: (options: TOptions) => Promise<TResult>;
     onSuccess: (result: TResult, accounting: TextFallbackCallAccounting) => Promise<TResult>;
@@ -379,8 +377,7 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
         accounting,
         parameters.operation,
         parameters.callId,
-        error,
-        parameters.captureProviderUsageOnFailure
+        error
       );
     }
   }
@@ -389,13 +386,12 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
     accounting: TextFallbackCallAccounting,
     operation: string,
     callId: string,
-    error: unknown,
-    captureProviderUsage: boolean
+    error: unknown
   ): Promise<never> {
     const errorAt = await this.logger.append(`${operation}.error`, {
       callId, providerRequest: accounting.providerRequest, error: serializeError(error)
     });
-    await accounting.finalizeUnhandledFailure(error, errorAt, captureProviderUsage);
+    await accounting.finalizeUnhandledFailure(error, errorAt);
     await assertJobNotStopped(this.generationJobId);
     throw error;
   }
@@ -429,7 +425,6 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
       operation: "text.generateText",
       callId,
       startedAt: requestAt,
-      captureProviderUsageOnFailure: false,
       prepareOptions: (accounting) =>
         withLiveOutputTracking(options, async (chunk) => {
           responseCharacterCount += chunk.length;
@@ -494,7 +489,6 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
       operation: "text.generateJson",
       callId,
       startedAt: requestAt,
-      captureProviderUsageOnFailure: true,
       prepareOptions: (accounting) =>
         withLiveOutputTracking(options, async (chunk) => {
           responseCharacterCount += chunk.length;
@@ -560,7 +554,6 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
       operation: "text.generateWithTools",
       callId,
       startedAt: requestAt,
-      captureProviderUsageOnFailure: true,
       run: (callOptions) => bound.adapter.generateWithTools(callOptions),
       onSuccess: async (result, accounting) => {
         const responseAt = await this.logger.append("text.generateWithTools.response", { callId, providerRequest: accounting.providerRequest, result });
@@ -633,34 +626,59 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
         callId, providerRequest: fallbackAccounting.providerRequest,
         usage: fallbackAccounting.providerUsage, chunkCount, characterCount
       });
-      await settleLiveTextUsageEstimate(fallbackAccounting.liveUsageId, {
+      await recordProviderUsage({
+        projectId: options.projectId ?? this.projectId,
+        generationJobId: this.generationJobId,
+        provider: fallbackAccounting.providerRequest?.provider ?? textModel.provider,
+        model: fallbackAccounting.providerRequest?.model ?? textModel.model,
+        purpose: options.purpose ?? "text.streamText",
+        operation: "text.streamText",
+        callId,
         durationMs: durationBetweenTimestamps(fallbackAccounting.startedAt, responseAt),
-        outputTokens: estimateTokenCountFromTextLength(characterCount)
+        usage: fallbackAccounting.providerUsage,
+        liveUsageId: fallbackAccounting.liveUsageId,
+        fallbackPromptTokens: fallbackAccounting.promptTokens,
+        fallbackOutputTokens: estimateTokenCountFromTextLength(characterCount),
+        ...optionalProviderCallMetadata(options.providerCallMetadata)
       });
       await assertJobNotStopped(this.generationJobId);
     } catch (error) {
-      await this.failFallbackCall(fallbackAccounting, "text.streamText", callId, error, false);
+      await this.failFallbackCall(fallbackAccounting, "text.streamText", callId, error);
     }
   }
 }
 
-class LoggingResearchAdapter implements ResearchAdapter {
+export class LoggingResearchAdapter implements ResearchAdapter {
   constructor(
     private readonly delegate: ResearchAdapter,
     private readonly logger: RunLogger,
-    private readonly generationJobId: string | undefined
+    private readonly generationJobId: string | undefined,
+    private readonly projectId?: string
   ) {}
 
   async search(query: ResearchQuery) {
     const callId = randomUUID();
-    await this.logger.append("research.search.request", { callId, query });
+    const requestAt = await this.logger.append("research.search.request", { callId, query });
     try {
       await assertJobNotStopped(this.generationJobId);
       const result = await withRecoverableNetworkRetry(
         () => this.delegate.search(query),
         providerRetryOptions(this.logger, this.generationJobId, "research.search", query.purpose)
       );
-      await this.logger.append("research.search.response", { callId, result });
+      const responseAt = await this.logger.append("research.search.response", { callId, result });
+      if (result.provider && result.model && result.usage) {
+        await recordProviderUsage({
+          projectId: query.projectId ?? this.projectId,
+          generationJobId: this.generationJobId,
+          provider: result.provider,
+          model: result.model,
+          purpose: query.purpose ?? "research.search",
+          operation: "research.search",
+          callId,
+          durationMs: durationBetweenTimestamps(requestAt, responseAt),
+          usage: result.usage
+        });
+      }
       await assertJobNotStopped(this.generationJobId);
       return result;
     } catch (error) {

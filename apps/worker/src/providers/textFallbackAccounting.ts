@@ -31,7 +31,7 @@ type TextFallbackCallContext = {
 
 /** Keeps each provider attempt on its own live/cost row during one fallback-capable call. */
 export class TextFallbackCallAccounting {
-  private fallbackFailureFinalized = false;
+  private attemptFailureFinalized = false;
   private attemptStartedAt: string;
   private readonly estimatedPromptTokens: number | undefined;
   private requestIndex = 0;
@@ -88,9 +88,11 @@ export class TextFallbackCallAccounting {
   }
 
   async run<T>(operation: () => Promise<T>): Promise<T> {
-    if (this.fallbackFailureFinalized) {
+    if (this.attemptFailureFinalized) {
       const startedAt = new Date().toISOString();
       this.attemptStartedAt = startedAt;
+      this.providerRequest = undefined;
+      this.providerUsage = undefined;
       this.liveUsage = await beginLiveTextUsage({
         projectId: this.context.projectId,
         generationJobId: this.context.generationJobId,
@@ -102,35 +104,36 @@ export class TextFallbackCallAccounting {
         startedAt,
         options: this.context.requestOptions
       });
-      this.fallbackFailureFinalized = false;
+      this.attemptFailureFinalized = false;
     }
-    return operation();
+    try {
+      return await operation();
+    } catch (error) {
+      // Network retries re-enter this method under the same call ID. Settle
+      // this attempt now, before the next dispatch replaces its usage.
+      await this.finalizeUnhandledFailure(error, new Date().toISOString());
+      this.attemptFailureFinalized = true;
+      throw error;
+    }
   }
 
   /** Settles the active attempt unless the fallback event already settled it. */
   async finalizeUnhandledFailure(
     error: unknown,
-    finishedAt: string,
-    captureProviderUsage: boolean
+    finishedAt: string
   ): Promise<void> {
-    if (this.fallbackFailureFinalized) {
+    if (this.attemptFailureFinalized) {
       return;
     }
-    if (captureProviderUsage) {
-      await this.finalizeFailure(error, finishedAt);
-      return;
-    }
-    await markLiveTextUsageFailed(this.liveUsageId, {
-      durationMs: durationBetweenTimestamps(this.attemptStartedAt, finishedAt),
-      error,
-      ...optionalProviderCallMetadata(this.context.requestOptions.providerCallMetadata)
-    });
+    await this.finalizeFailure(error, finishedAt);
   }
 
   private async handleEvent(event: TextFallbackEvent): Promise<void> {
     const eventAt = new Date().toISOString();
     if (event.event === "fallback.start") {
       await this.finalizeFailure(event.primary.error, eventAt);
+      this.providerRequest = undefined;
+      this.providerUsage = undefined;
       this.attemptStartedAt = eventAt;
       this.liveUsage = await beginLiveTextUsage({
         projectId: this.context.projectId,
@@ -147,12 +150,16 @@ export class TextFallbackCallAccounting {
     }
     if (event.event === "fallback.error") {
       await this.finalizeFailure(event.fallback.error, eventAt);
-      this.fallbackFailureFinalized = true;
+      this.attemptFailureFinalized = true;
     }
   }
 
   private async finalizeFailure(error: unknown, finishedAt: string): Promise<void> {
-    const providerUsage = providerUsageFromError(error);
+    const providerUsage = providerUsageFromError(error) ?? (
+      this.providerRequest && this.providerUsage
+        ? { ...this.providerRequest, usage: this.providerUsage }
+        : undefined
+    );
     const durationMs = durationBetweenTimestamps(this.attemptStartedAt, finishedAt);
     if (providerUsage) {
       await recordProviderUsage({

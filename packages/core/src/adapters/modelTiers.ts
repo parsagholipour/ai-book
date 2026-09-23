@@ -77,6 +77,7 @@ export const MECHANICAL_TEXT_PURPOSES: ReadonlySet<string> = new Set([
   "judge-chapter-drafts",
   // Anchors into a primary-source window (`dossier.ts`): a lookup, not prose.
   "extract-excerpts",
+  "inventory-chapter-claims",
   "review-dossier-provenance",
   // The copyright-safe image-prompt rewrite
   // (`generation/copyrightSafeImagePrompt.ts`): a strict-schema find-and-replace

@@ -69,10 +69,10 @@ describe("bounded chapter evidence repair", () => {
       ["original", "original"]
     );
     const result = await repairChapterEvidence({ markdown: "original", review, edit, degenerate: () => false });
-    expect(result).toEqual({ markdown: "original", findings: 1, repairs: 2,
+    expect(result).toEqual({ markdown: "original", findings: 1, repairs: 1,
       unresolved: [{ quote: "unsupported claim", reason: "The passage does not say so." }], dropped: 1 });
     expect(seen.reviewed).toEqual(["original"]);
-    expect(seen.notes[1]![0]).toContain("Delete the unsupported detail outright");
+    expect(seen.notes).toHaveLength(1);
   });
 
   it("parses the reviewer's format and tolerates a bare string", () => {

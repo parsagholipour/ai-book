@@ -79,13 +79,16 @@ export async function finalizePendingPages(options: {
 
   // A local leak repair is another writer. Check its changed case assertions before publishing any page.
   const reviewedByIndex = new Map(reviewed.map((page) => [page.draft.index, page.draft.markdown]));
+  // Restore once before the final source review: local QA saw figure-free drafts,
+  // but the published pages (and compile's digest) carry each figure's stand-in.
+  const publicationDrafts = new Map(reviewed.map((page) => [page.draft.index, restoreFigures(page.draft, fencesByIndex)]));
   let start = 1;
   for (const chapter of plan.chapters) {
     const end = start + chapter.targetPages;
     const pages = state.pages.filter((page) => page.index >= start && page.index < end);
     const changed = pages.some((page) => reviewedByIndex.has(page.index) && reviewedByIndex.get(page.index) !== drafts.find((draft) => draft.index === page.index)?.markdown);
     if (sourceClaimReviewApplies(input, plan) && pages.some((page) => page.status === "PENDING")) {
-      const markdown = pages.map((page) => reviewedByIndex.get(page.index) ?? stripFigureFences(page.markdown).prose).join("\n\n");
+      const markdown = pages.map((page) => stripFigureFences(publicationDrafts.get(page.index)?.markdown ?? page.markdown).prose).join("\n\n");
       const stored = state.chapters.find((entry) => entry.index === chapter.index);
       const textDigest = sourceClaimDigest(markdown);
       // Includes manuscript cuts, developmental edits, arithmetic repairs, and resumed old chapters.
@@ -119,7 +122,7 @@ export async function finalizePendingPages(options: {
     const approved = page.qualityReport.approved;
     const willIllustrate =
       approved && Boolean(page.draft.imagePrompt) && strategy.shouldIllustratePage(input, plan, pageIndex);
-    const draft = restoreFigures(page.draft, fencesByIndex);
+    const draft = publicationDrafts.get(pageIndex)!;
     const staged = await stageGeneratedPageAndBrief({
       projectId,
       chapterId: chapterIdByIndex.get(pageIndex) ?? null,

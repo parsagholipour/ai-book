@@ -1,5 +1,5 @@
 import { AlertTriangle, Cpu } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "../shared/Button.js";
 import { GENERATION_STAGE_EFFORT } from "./generationStageEffort.js";
 import {
@@ -92,7 +92,7 @@ export function GenerationModelRoutingSection({
       <p className="muted">
         Recommended effort is a starting point for text models: 1 = lightest reasoning, 10 = deepest reasoning.
         Scores reflect the stage's task across all tiers. Choose from your model's supported effort options;
-        recommendations never change your settings.
+        recommendations only affect your draft when you apply a rule above.
       </p>
       {[...new Set(GENERATION_MODEL_STAGES.map((stage) => stage.group))].map((group) => <details key={group}
         className="quality-stage-group" open={group === "Planning" || group === "Chapters"}>
@@ -188,6 +188,8 @@ export function GenerationModelRoutingSection({
 }
 
 type StageModelTarget = "primary" | "fallback" | "both";
+export type GenerationStageEffortRule = { minScore: number; maxScore: number; selection: TextModelSelection };
+type DraftEffortRule = GenerationStageEffortRule & { id: number };
 
 function SetAllStages({ models, tier, options, disabled, onChange }: {
   models: GenerationTextModelRouting;
@@ -206,10 +208,21 @@ function SetAllStages({ models, tier, options, disabled, onChange }: {
     return { ...selectionFromGenerationOption(option), ...(effort ? { thinkingEffort: effort } : {}) };
   });
   const [target, setTarget] = useState<StageModelTarget>("primary");
+  const [rules, setRules] = useState<DraftEffortRule[]>([]);
+  const nextRuleId = useRef(0);
   const [applied, setApplied] = useState<string | null>(null);
+  const invalidRules = rules.some((rule) => rule.minScore > rule.maxScore) || rules.some((rule, index) =>
+    rules.slice(index + 1).some((other) => rule.minScore <= other.maxScore && other.minScore <= rule.maxScore));
+  const matchingStages = rules.length === 0 ? GENERATION_MODEL_STAGES.length : GENERATION_MODEL_STAGES.filter(({ id }) =>
+    rules.some((rule) => rule.minScore <= GENERATION_STAGE_EFFORT[id].score && GENERATION_STAGE_EFFORT[id].score <= rule.maxScore)).length;
+  const availableRange = nextEffortRuleRange(rules);
+  const updateRule = (id: number, change: Partial<GenerationStageEffortRule>) => {
+    setRules((current) => current.map((rule) => rule.id === id ? { ...rule, ...change } : rule));
+    setApplied(null);
+  };
   return <div className="quality-stage-bulk" role="group" aria-label="Set all stages">
     <h4>Set all stages</h4>
-    <p className="muted">Apply one model and reasoning setting to all {GENERATION_MODEL_STAGES.length} {TIER_LABELS[tier]} stages. You can adjust individual stages afterward, then save.</p>
+    <p className="muted">Apply one model and reasoning setting to all {GENERATION_MODEL_STAGES.length} {TIER_LABELS[tier]} stages, or add optional rules for recommended effort ranges. You can adjust individual stages afterward, then save.</p>
     <div className="quality-stage-bulk-controls">
       <label className="quality-model-field">Apply to
         <select aria-label="Set all stages target" disabled={disabled} value={target} onChange={(event) => {
@@ -221,15 +234,57 @@ function SetAllStages({ models, tier, options, disabled, onChange }: {
           <option value="both">Primary and fallback models</option>
         </select>
       </label>
-      <ModelSelectionField label="Set all stages model" selection={selection} options={options} disabled={disabled}
-        onChange={(next) => { setSelection(next); setApplied(null); }} />
-      <Button variant="secondary" disabled={disabled || !optionForSelection(options, selection)} onClick={() => {
-        onChange(setAllGenerationStageModels(models, tier, target, selection));
-        setApplied(`Updated ${GENERATION_MODEL_STAGES.length} ${TIER_LABELS[tier]} stages in your draft.`);
-      }}>Set all {TIER_LABELS[tier]} stages</Button>
+      {rules.length === 0 && <ModelSelectionField label="Set all stages model" selection={selection} options={options} disabled={disabled}
+        onChange={(next) => { setSelection(next); setApplied(null); }} />}
+      <Button variant="secondary" disabled={disabled || invalidRules || matchingStages === 0 ||
+        (rules.length === 0 ? !optionForSelection(options, selection) : rules.some((rule) => !optionForSelection(options, rule.selection)))} onClick={() => {
+        onChange(rules.length === 0
+          ? setAllGenerationStageModels(models, tier, target, selection)
+          : setGenerationStageModelsByEffortRules(models, tier, target, rules));
+        setApplied(`Updated ${matchingStages} ${TIER_LABELS[tier]} stages in your draft.`);
+      }}>{rules.length === 0 ? `Set all ${TIER_LABELS[tier]} stages` : `Apply rules to ${TIER_LABELS[tier]} stages`}</Button>
     </div>
+    {rules.map((rule, index) => <div className="quality-stage-bulk-rule" role="group" aria-label={`Recommended effort rule ${index + 1}`} key={rule.id}>
+      <label className="quality-model-field">Recommended effort from
+        <select aria-label={`Rule ${index + 1} minimum recommended effort`} disabled={disabled} value={rule.minScore}
+          onChange={(event) => updateRule(rule.id, { minScore: Number(event.target.value) })}>
+          {Array.from({ length: 10 }, (_, score) => <option key={score + 1} value={score + 1}>{score + 1}</option>)}
+        </select>
+      </label>
+      <label className="quality-model-field">To
+        <select aria-label={`Rule ${index + 1} maximum recommended effort`} disabled={disabled} value={rule.maxScore}
+          onChange={(event) => updateRule(rule.id, { maxScore: Number(event.target.value) })}>
+          {Array.from({ length: 10 }, (_, score) => <option key={score + 1} value={score + 1}>{score + 1}</option>)}
+        </select>
+      </label>
+      <ModelSelectionField label={`Rule ${index + 1} model`} selection={rule.selection} options={options} disabled={disabled}
+        onChange={(next) => updateRule(rule.id, { selection: next })} />
+      <Button variant="secondary" disabled={disabled} onClick={() => {
+        setRules((current) => current.filter((entry) => entry.id !== rule.id));
+        setApplied(null);
+      }}>Remove rule {index + 1}</Button>
+    </div>)}
+    <Button variant="secondary" disabled={disabled || !availableRange} onClick={() => {
+      if (!availableRange) return;
+      setRules((current) => [...current, { id: ++nextRuleId.current, ...availableRange,
+        selection: { ...(current.at(-1)?.selection ?? selection) } }]);
+      setApplied(null);
+    }}>Add recommended effort rule</Button>
+    {rules.length > 0 && <p className="muted">Rules apply to {matchingStages} {TIER_LABELS[tier]} stages. Stages outside the ranges keep their draft settings.</p>}
+    {invalidRules && <p role="alert">Rule ranges must start at or below their end and must not overlap.</p>}
     {applied && <p role="status">{applied}</p>}
   </div>;
+}
+
+function nextEffortRuleRange(rules: readonly GenerationStageEffortRule[]): { minScore: number; maxScore: number } | null {
+  if (rules.length === 0) return { minScore: 1, maxScore: 5 };
+  const covered = (score: number) => rules.some((rule) => rule.minScore <= score && score <= rule.maxScore);
+  let minScore = 1;
+  while (minScore <= 10 && covered(minScore)) minScore++;
+  if (minScore > 10) return null;
+  let maxScore = minScore;
+  while (maxScore < 10 && !covered(maxScore + 1)) maxScore++;
+  return { minScore, maxScore };
 }
 
 export function setAllGenerationStageModels(
@@ -238,8 +293,31 @@ export function setAllGenerationStageModels(
   target: StageModelTarget,
   selection: TextModelSelection
 ): GenerationTextModelRouting {
+  return updateStageModels(models, tier, target, () => selection);
+}
+
+export function setGenerationStageModelsByEffortRules(
+  models: GenerationTextModelRouting,
+  tier: ModelTier,
+  target: StageModelTarget,
+  rules: readonly GenerationStageEffortRule[]
+): GenerationTextModelRouting {
+  return updateStageModels(models, tier, target, (id) => {
+    const score = GENERATION_STAGE_EFFORT[id].score;
+    return rules.find((rule) => rule.minScore <= score && score <= rule.maxScore)?.selection;
+  });
+}
+
+function updateStageModels(
+  models: GenerationTextModelRouting,
+  tier: ModelTier,
+  target: StageModelTarget,
+  selectionForStage: (id: GenerationModelStageId) => TextModelSelection | undefined
+): GenerationTextModelRouting {
   const stages = { ...models[tier].stages };
   for (const { id } of GENERATION_MODEL_STAGES) {
+    const selection = selectionForStage(id);
+    if (!selection) continue;
     const current = generationStageRoute(models, tier, id);
     stages[id] = {
       primary: { ...(target === "fallback" ? current.primary : selection) },

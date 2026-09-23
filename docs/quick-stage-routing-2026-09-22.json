@@ -1,0 +1,49 @@
+{
+  "models": {
+    "fast": {
+      "stages": {
+        "extract-story-state": {
+          "primary": {
+            "thinkingEffort": "low"
+          }
+        },
+        "describe-pages": {
+          "primary": {
+            "thinkingEffort": "low"
+          }
+        },
+        "critique-plan": {
+          "primary": {
+            "thinkingEffort": "low"
+          }
+        },
+        "select-cover-design": {
+          "primary": {
+            "thinkingEffort": "low"
+          }
+        },
+        "review-dossier-provenance": {
+          "primary": {
+            "thinkingEffort": "low"
+          }
+        },
+        "review-chapter-edit-acceptance": {
+          "primary": {
+            "thinkingEffort": "low"
+          }
+        },
+        "plan-chapter-forms": {
+          "primary": {
+            "thinkingEffort": "low"
+          }
+        },
+        "plan-episodes": {
+          "primary": {
+            "thinkingEffort": "low"
+          }
+        }
+      }
+    }
+  },
+  "note": "Quick structured-stage calibration: medium exhausted 1,200/1,800 story limits on 35/36 calls. All 18 captured pages passed first try at low (15,004 output vs 52,876); retain model, prose effort, fallbacks and quality gates. See token-audit-20-pages-2026-09-22.md."
+}

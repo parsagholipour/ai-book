@@ -83,6 +83,20 @@ it("edits independent stage efforts, saves only those fields, and keeps them on 
     await setAll.getByRole("button", { name: "Set all Ultra stages", exact: true }).click();
     expect(await page.getByLabel("Ultra Book plan fallback Effort", { exact: true }).inputValue()).toBe("none");
     expect(await draft.inputValue()).toBe("max");
+    await setAll.getByLabel("Set all stages target", { exact: true }).selectOption("primary");
+    await setAll.getByRole("button", { name: "Add recommended effort rule" }).click();
+    await setAll.getByLabel("Rule 1 model Effort", { exact: true }).selectOption("low");
+    await setAll.getByRole("button", { name: "Add recommended effort rule" }).click();
+    await setAll.getByLabel("Rule 2 minimum recommended effort", { exact: true }).selectOption("5");
+    expect(await setAll.getByRole("button", { name: "Apply rules to Ultra stages", exact: true }).isDisabled()).toBe(true);
+    await setAll.getByLabel("Rule 2 minimum recommended effort", { exact: true }).selectOption("8");
+    await setAll.getByLabel("Rule 2 model Effort", { exact: true }).selectOption("high");
+    await setAll.getByRole("button", { name: "Apply rules to Ultra stages", exact: true }).click();
+    expect(await plan.inputValue()).toBe("high");
+    expect(await edit.inputValue()).toBe("max");
+    expect(await draft.inputValue()).toBe("max");
+    expect(await page.getByLabel("Ultra Page titles and summaries Effort", { exact: true }).inputValue()).toBe("low");
+    expect(await page.getByLabel("Ultra Book plan fallback Effort", { exact: true }).inputValue()).toBe("none");
     await edit.selectOption("low");
     expect(await edit.inputValue()).toBe("low");
     // The shortcut updates the draft without issuing a save of its own.

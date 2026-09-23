@@ -361,9 +361,9 @@ describe("compileExport when its repair fence cannot be read", () => {
     }
 
     // Three asks at the barrier — one attempt and two retries — and then it
-    // gives up rather than guessing. The fourth is the compile's own supersede
-    // read, which is where the question gets answered instead.
-    expect(mocks.exportPublicationSuperseded).toHaveBeenCalledTimes(4);
+    // gives up rather than guessing. The compile checks again before chapter
+    // resolution and after coverage, before rendering the final manuscript.
+    expect(mocks.exportPublicationSuperseded).toHaveBeenCalledTimes(5);
     // Nothing of the book was rewritten past the barrier it could not clear,
     // and the manuscript the render is built from is re-read rather than
     // carried over — a published PDF that disagrees with the page rows has no

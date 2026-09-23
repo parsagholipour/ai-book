@@ -98,7 +98,7 @@ export const COMPOSED_STAGES: readonly PipelineStage[] = [
     id: "compose",
     label: "Compose chapter",
     summary: "A continuous chapter from the stance, form plan, prior chapters and researched cases. Evidence-required runs extract and review case claims from source passages before drafting, then check the written claims.",
-    purposes: ["compose-chapter", "judge-chapter-drafts", "plan-episodes", "case-source-search", "extract-excerpts", "compose-scene", "build-case-evidence", "verify-case-evidence", "review-chapter-evidence"],
+    purposes: ["compose-chapter", "judge-chapter-drafts", "plan-episodes", "case-source-search", "extract-excerpts", "compose-scene", "build-case-evidence", "verify-case-evidence", "inventory-chapter-claims", "review-chapter-evidence"],
     lane: "prose",
     calls: "1 draft per chapter, up to 1 length retry; evidence adds extraction, packet reviews and prose checks, with bounded research retries",
     gates: ["creativeContract", "materialFirst", "caseEvidence", "chapterFocus"]

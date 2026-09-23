@@ -1014,8 +1014,11 @@ holds the event loop open and vitest will never exit.
   and `pdfPageForPrintedPage` convert — but only version-2 maps (what `buildBookPdfPageMap` writes)
   apply that offset. Version-1 maps were measured against PDFs that counted the cover and stay
   on physical numbering, matching the files they describe. Nothing about a model page says where
-  it lands: pages join
-  on a single newline, so adjacent pages routinely share one paragraph. `compileBookMarkdownWithPageAnchors`
+  it lands: pages normally join on a single newline, so adjacent pages routinely share one
+  paragraph. `joinMarkdownPageBlocks` restores a blank line when a page-ending table is followed
+  by prose without a cell separator; otherwise GFM consumes that prose as an extra table row.
+  Continued table rows keep their single newline, and offsets come from the assembled markdown
+  so the extra separator cannot shift a page anchor. `compileBookMarkdownWithPageAnchors`
   therefore returns, beside the byte-identical `book.md`, one destination name per model page — the
   existing `chapter-N` for a chapter opener, `bp-N` plus a markdown offset otherwise — and the PDF
   render injects markers into **its own copy only** (`pdfPageAnchors.ts`): an empty inline

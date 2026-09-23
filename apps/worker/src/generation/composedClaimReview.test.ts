@@ -27,15 +27,18 @@ function fixture(responses: unknown[]) {
     edit: vi.fn(async () => corrected), degenerate: () => false, runLog: { append: vi.fn(async () => "logged") } };
   return { options, generate };
 }
-beforeEach(() => { vi.clearAllMocks(); mocks.config.MOCK_AI = false; mocks.retrieve.mockResolvedValue({ documents: [], excerpts: [] }); });
+beforeEach(() => { vi.clearAllMocks(); mocks.config.MOCK_AI = false; mocks.retrieve.mockImplementation(async (options) => {
+  for (const episode of options.episodes) await options.searchSources?.(episode.searchQueries[0]);
+  return { documents: [], excerpts: [] };
+}); });
 
 it("retrieves missing claim support, repairs the factual error and stores the accepted text's ledger", async () => {
-  const test = fixture([inventory(wrong), inventory(wrong), verdict("contradicted"), inventory(corrected), verdict("supported")]);
+  const test = fixture([inventory(wrong), verdict("contradicted"), inventory(corrected), verdict("supported")]);
   const supplement = { documents: [], excerpts: [excerpt] };
   mocks.retrieve.mockResolvedValue(supplement);
   const result = await repairComposedClaims(test.options);
   expect(mocks.retrieve).toHaveBeenCalledOnce();
-  expect(mocks.retrieve).toHaveBeenCalledWith(expect.objectContaining({ searchSources: test.options.searchSources, evidence: true,
+  expect(mocks.retrieve).toHaveBeenCalledWith(expect.objectContaining({ searchSources: expect.any(Function), evidence: true,
     episodes: [expect.objectContaining({ searchQueries: ["RSA paper author order"] })] }));
   expect(test.options.persistSources).toHaveBeenCalledWith(supplement);
   expect(test.options.edit).toHaveBeenCalledWith(wrong, expect.objectContaining({ sourcePassages: [excerpt], evidence: [], unsupportedClaims: [expect.objectContaining({ quote: wrong })] }));
@@ -50,7 +53,7 @@ it("bounds unsuccessful repairs and sends unsupported claims to publication QA",
   // Losing trace storage must not lose the QA verdict.
   test.options.runLog.append.mockRejectedValue(new Error("trace unavailable"));
   const result = await repairComposedClaims(test.options);
-  expect(test.options.edit).toHaveBeenCalledTimes(2);
+  expect(test.options.edit).toHaveBeenCalledTimes(1);
   expect(test.generate).toHaveBeenCalledOnce();
   expect(result.repair?.unresolved).toEqual([expect.objectContaining({ quote: wrong })]);
   const issues = unsupportedCaseClaimIssues([{ index: 1, markdown: wrong, chapter: { productionBrief: { report: { sourceClaims: result.sourceClaims } } } }]);
@@ -72,4 +75,12 @@ it("keeps mock generation offline", async () => {
   expect(await repairComposedClaims(test.options)).toEqual({});
   expect(test.generate).not.toHaveBeenCalled();
   expect(mocks.retrieve).not.toHaveBeenCalled();
+});
+
+it("keeps unsearched claims for review rather than deleting them after a retrieval stand-down", async () => {
+  const test = fixture([inventory(wrong)]);
+  mocks.retrieve.mockResolvedValue({ documents: [], excerpts: [] });
+  const result = await repairComposedClaims(test.options);
+  expect(test.options.edit).not.toHaveBeenCalled();
+  expect(result.repair).toMatchObject({ repairs: 0, markdown: wrong, unresolved: [expect.objectContaining({ quote: wrong })] });
 });

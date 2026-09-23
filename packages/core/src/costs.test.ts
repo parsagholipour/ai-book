@@ -158,6 +158,34 @@ describe("provider cost calculation", () => {
     ).toBe(0.194);
   });
 
+  it("calculates GPT-6 Sol and Luna text cost across short and long context", () => {
+    const sol = calculateTextGenerationCost({
+      provider: "openai",
+      model: "gpt-6-sol",
+      promptTokens: 200_000,
+      cacheHitTokens: 20_000,
+      cacheWriteTokens: 40_000,
+      outputTokens: 10_000
+    });
+    const solLong = calculateTextGenerationCost({
+      provider: "openai",
+      model: "gpt-6-sol",
+      promptTokens: 272_001,
+      outputTokens: 10_000
+    });
+    const luna = calculateTextGenerationCost({
+      provider: "openai",
+      model: "gpt-6-luna",
+      promptTokens: 100_000,
+      cacheHitTokens: 10_000,
+      outputTokens: 10_000
+    });
+
+    expect(sol).toBe(0.484);
+    expect(solLong).toBe(1.238004);
+    expect(luna).toBe(0.0141);
+  });
+
   it("calculates GPT-5.6 family text cost across short and long context", () => {
     const sol = calculateTextGenerationCost({
       provider: "openai",

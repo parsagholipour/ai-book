@@ -195,4 +195,4 @@ export * from "./generation/smartUnslopDecision.js";
 export { scanSmartUnslopCandidates } from "./generation/smartUnslop.js";
 
 export * from "./adapters/decisionEvaluation.js";
-export { reviewManuscriptCoverage, manuscriptCoverageIssues, manuscriptCoverageSchema, type ManuscriptCoverage, type ManuscriptCoverageResult, type CoveragePage } from "./generation/manuscriptCoverage.js";
+export { reviewManuscriptCoverage, manuscriptCoverageIssues, manuscriptCoverageSchema, type ManuscriptCoverage, type ManuscriptCoverageResult, type CoveragePage, type CoverageChapter } from "./generation/manuscriptCoverage.js";

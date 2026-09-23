@@ -55,3 +55,15 @@ it("reconstructs a cached missing-deliverable warning from the evidence record",
   expect(result.issues[0]?.code).toBe("MISSING_BRIEF_REQUIREMENT");
   expect(mocks.review).not.toHaveBeenCalled();
 });
+
+it("invalidates coverage after a split, merge, rename or boundary move with identical prose", async () => {
+  const chapters = [{ index: 1, title: "Problems", startPageIndex: 1, endPageIndex: 1 }];
+  const original = manuscriptCoverageFingerprint(options.brief, options.promises, pages, chapters);
+  for (const changed of [[], [{ ...chapters[0]!, title: "Solutions" }], [{ ...chapters[0]!, endPageIndex: 2 }],
+    [...chapters, { index: 2, title: "Practice", startPageIndex: 2, endPageIndex: 2 }]]) {
+    vi.clearAllMocks();
+    mocks.findFirst.mockResolvedValue({ qualityReport: { briefCoverage: { fingerprint: original, review } } });
+    await manuscriptCoverageForCompile({ ...options, chapters: changed });
+    expect(mocks.review).toHaveBeenCalledWith(expect.objectContaining({ chapters: changed }));
+  }
+});

@@ -99,6 +99,32 @@ const GPT_5_NANO_RATE: TextRate = { inputPerMillion: 0.05, outputPerMillion: 0.4
 
 export const OPENAI_TEXT_RATES = new Map<string, TextRate | TieredTextRate>([
   [
+    "gpt-6-sol",
+    {
+      thresholdPromptTokens: 272_000,
+      belowOrEqual: {
+        inputPerMillion: 2,
+        outputPerMillion: 10,
+        cacheHitPerMillion: 0.2,
+        cacheWritePerMillion: 2.5
+      },
+      above: { inputPerMillion: 4, outputPerMillion: 15, cacheHitPerMillion: 0.4, cacheWritePerMillion: 5 }
+    }
+  ],
+  [
+    "gpt-6-luna",
+    {
+      thresholdPromptTokens: 272_000,
+      belowOrEqual: {
+        inputPerMillion: 0.1,
+        outputPerMillion: 0.5,
+        cacheHitPerMillion: 0.01,
+        cacheWritePerMillion: 0.125
+      },
+      above: { inputPerMillion: 0.2, outputPerMillion: 0.75, cacheHitPerMillion: 0.02, cacheWritePerMillion: 0.25 }
+    }
+  ],
+  [
     "gpt-5.6-sol",
     {
       thresholdPromptTokens: 272_000,

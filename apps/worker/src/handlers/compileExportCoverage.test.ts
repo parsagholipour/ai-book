@@ -151,4 +151,35 @@ describe("brief coverage at publication", () => {
     expect(mocks.publishCompiledExports).toHaveBeenCalledWith(expect.objectContaining({ status: "COMPLETE" }));
   });
 
+  it.each([2, 6])("reviews and exports the current %i chapters even when the plan proposed four", async (count) => {
+    const currentPages = pages.map((page, position) => ({ ...page, markdown: `Final prose on page ${page.index}.`,
+      chapter: { index: Math.floor(position / (12 / count)) + 1,
+        title: `Revised division ${Math.floor(position / (12 / count)) + 1}`, summary: "Current grouping." } }));
+    mocks.prisma.planVersion.findUnique.mockResolvedValue({ id: "plan-1", planningPackage: { ...plan,
+      chapters: Array.from({ length: 4 }, (_, index) => ({ index: index + 1, title: `Initial ${index + 1}`,
+        summary: "Provisional grouping.", targetPages: 3, keyBeats: [] })) }, inputSnapshot: null });
+    mocks.prisma.project.findUnique.mockResolvedValue({ ...projectRecord(), pages: currentPages });
+    await compileExport(job({ contentRevision: 4 }));
+    const exported = mocks.strategy.compileMarkdown.mock.calls[0]![0].readerChapters;
+    const reviewed = coverageReview.mock.calls[0]![0].chapters;
+    expect(reviewed).toHaveLength(count);
+    expect(reviewed).toEqual(exported.map(({ summary: _summary, ...chapter }: { summary: string }) => chapter));
+    expect(reviewed[0]).toMatchObject({ title: "Revised division 1", startPageIndex: 1, endPageIndex: 12 / count });
+    expect(mocks.createReaderChaptersForExport).not.toHaveBeenCalled();
+  });
+
+  it("resolves a per-page book's final grouping once and shares it with review and export", async () => {
+    mocks.strategy.executionMode = "whole-book";
+    const chapters = [
+      { index: 1, title: "Current opening", summary: "Opening.", startPageIndex: 1, endPageIndex: 6 },
+      { index: 2, title: "Current ending", summary: "Ending.", startPageIndex: 7, endPageIndex: 12 }
+    ];
+    mocks.createReaderChaptersForExport.mockResolvedValue({ source: "model", chapters });
+    mocks.prisma.project.findUnique.mockResolvedValue({ ...projectRecord(), pages: pages.map((page) => ({ ...page, markdown: `Final prose on page ${page.index}.` })) });
+    await compileExport(job({ contentRevision: 4 }));
+    expect(mocks.createReaderChaptersForExport).toHaveBeenCalledOnce();
+    expect(coverageReview.mock.calls[0]![0].chapters).toEqual(chapters.map(({ summary: _summary, ...chapter }) => chapter));
+    expect(mocks.strategy.compileMarkdown.mock.calls[0]![0].readerChapters).toEqual(chapters);
+  });
+
 });

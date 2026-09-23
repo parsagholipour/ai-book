@@ -54,3 +54,66 @@ it("propagates cancellation", async () => {
   const { model } = scriptedDevelopmentModel([error]);
   await expect(reviewSourceClaims({ markdown: quote, excerpts: [], textModel: model })).rejects.toBe(error);
 });
+
+it("accepts omitted support only for an explicit insufficient-evidence verdict without retrying", async () => {
+  const { model, calls } = scriptedDevelopmentModel([inventory, { claims: [{ id: "c1", status: "insufficient_evidence", reason: "No passage establishes the order." }] }]);
+  const result = await reviewSourceClaims({ markdown: quote, excerpts: [excerpt], textModel: model });
+  expect(result.coverage).toMatchObject({ status: "reviewed", checked: 1, unsupported: 1 });
+  expect(result.claims[0]?.support).toEqual([]);
+  expect(calls).toHaveLength(2);
+});
+
+it("isolates a failed verification batch without losing successful claims", async () => {
+  const claims = Array.from({ length: 31 }, (_, index) => ({ quote: `External assertion number ${index}.`, searchQuery: `original record ${index}` }));
+  const { model, calls } = scriptedDevelopmentModel([]);
+  model.generateJson = async (request) => {
+    calls.push(request);
+    const payload = JSON.parse(request.messages.at(-1)!.content);
+    if (payload.phase === "claim_inventory") return { data: request.schema.parse({ complete: true, claims }), text: "", model: "fixture", provider: "fixture" };
+    if (payload.claims.some((claim: { id: string }) => claim.id === "c16")) throw new Error("verifier offline for this batch");
+    const response = { claims: payload.claims.map((claim: { id: string }) => ({ id: claim.id, status: "supported", reason: "Established in the record.", support: [{ excerptId: excerpt.id, quote: excerpt.text }] })) };
+    return { data: request.schema.parse(response), text: "", model: "fixture", provider: "fixture" };
+  };
+  const result = await reviewSourceClaims({ markdown: claims.map((claim) => claim.quote).join("\n"), excerpts: [excerpt], textModel: model });
+  expect(result.coverage).toMatchObject({ status: "incomplete", checked: 31, supported: 16, unsupported: 15 });
+  expect(calls.filter((call) => JSON.parse(call.messages.at(-1)!.content).phase === "claim_verification")).toHaveLength(3);
+});
+
+it.each(["supported", "contradicted"])("never accepts missing quotations for %s", async (status) => {
+  const bad = { claims: [{ id: "c1", status, reason: "Trust me." }] };
+  const { model } = scriptedDevelopmentModel([inventory, bad, bad]);
+  const result = await reviewSourceClaims({ markdown: quote, excerpts: [excerpt], textModel: model });
+  expect(result.coverage).toMatchObject({ status: "incomplete", supported: 0, contradicted: 0, unsupported: 1 });
+});
+
+it("repairs only unlocatable inventory quotes once and rechecks them against the manuscript", async () => {
+  const invented = "The original paper lists the authors alphabetically.";
+  const { model, calls } = scriptedDevelopmentModel([
+    { complete: true, claims: [{ quote: invented, searchQuery: "author order" }] },
+    { repairs: [{ index: 0, quote }] }, verdict("contradicted")
+  ]);
+  const result = await reviewSourceClaims({ markdown: quote, excerpts: [excerpt], textModel: model });
+  expect(result.coverage).toMatchObject({ status: "reviewed", contradicted: 1 });
+  expect(JSON.parse(calls[1]!.messages.at(-1)!.content).phase).toBe("claim_inventory_quote_repair");
+  expect(result.dropped).toEqual([]);
+});
+
+it("never calls an incomplete inventory complete just because its bad quotations were repaired", async () => {
+  const { model } = scriptedDevelopmentModel([
+    { complete: false, claims: [{ quote: "An invented span.", searchQuery: "paper" }] },
+    { repairs: [{ index: 0, quote }] }, verdict("contradicted")
+  ]);
+  expect((await reviewSourceClaims({ markdown: quote, excerpts: [excerpt], textModel: model })).coverage.status).toBe("incomplete");
+});
+
+it("re-asks only omitted verdicts while retaining the paid results already returned", async () => {
+  const other = "The paper describes a second external assertion.";
+  const second = { ...verdict("insufficient_evidence").claims[0], id: "c2" };
+  const { model, calls } = scriptedDevelopmentModel([
+    { complete: true, claims: [{ quote, searchQuery: "paper" }, { quote: other, searchQuery: "paper" }] },
+    verdict("contradicted"), { claims: [second] }
+  ]);
+  const result = await reviewSourceClaims({ markdown: `${quote}\n${other}`, excerpts: [excerpt], textModel: model });
+  expect(result.coverage).toMatchObject({ status: "reviewed", checked: 2, contradicted: 1, unsupported: 1 });
+  expect(JSON.parse(calls[2]!.messages.at(-1)!.content).claims.map((claim: { id: string }) => claim.id)).toEqual(["c2"]);
+});

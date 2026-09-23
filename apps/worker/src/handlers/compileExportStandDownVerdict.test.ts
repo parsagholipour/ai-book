@@ -526,7 +526,7 @@ describe("what a superseded compile leaves on its row", () => {
     // live row is not the historical snapshot the stored finding was measured
     // against, even though both deliveries carry revision 4.
     await rendersAndTriesToPublish();
-    mocks.exportPublicationSuperseded.mockRejectedValueOnce(
+    mocks.exportPublicationSuperseded.mockResolvedValueOnce(false).mockRejectedValueOnce(
       new Error("simulated worker exit after the quality report write")
     );
 

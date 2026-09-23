@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
-  AlibabaTextAdapter, DeepInfraAdapter, DeepSeekAdapter, FallbackTextModelAdapter, GeminiTextAdapter,
+  AlibabaTextAdapter, DeepInfraAdapter, DeepSeekAdapter, FallbackTextModelAdapter, GeminiResearchAdapter, GeminiTextAdapter,
   OpenAITextAdapter, OpenRouterAdapter, ProviderHttpError, generateJsonWithRetry,
   type GenerateTextOptions, type TextModelAdapter
 } from "@book-maker/core";
+import { prisma } from "@book-maker/db";
 import { MemoryObjectStore, readRunLog, setObjectStoreForTests } from "@book-maker/storage";
 
 vi.mock("@book-maker/db", () => ({ Prisma: {}, prisma: { providerCallLog: {
@@ -13,7 +14,7 @@ vi.mock("@book-maker/db", () => ({ Prisma: {}, prisma: { providerCallLog: {
 vi.mock("../runtime/config.js", () => ({ config: {} }));
 vi.mock("../runtime/jobLifecycle.js", () => ({ assertJobNotStopped: vi.fn(), updateJobProgress: vi.fn() }));
 
-import { LoggingTextModelAdapter } from "./loggedAdapters.js";
+import { LoggingResearchAdapter, LoggingTextModelAdapter } from "./loggedAdapters.js";
 import { createRunLogger } from "./runLogging.js";
 
 const options = { messages: [{ role: "user" as const, content: "Write the chapter." }], purpose: "compose-chapter", maxTokens: 10_608 };
@@ -191,4 +192,101 @@ it("does not fail or repeat a paid call when observers throw", async () => {
   await expect(run.adapter.generateText({ ...options, onProviderRequest: fail, onProviderUsage: fail })).resolves.toMatchObject({ provider: "openai" });
   expect(inner.requests).toHaveLength(1);
   expect((await run.entries()).some((entry) => entry.event.endsWith("provider_usage"))).toBe(true);
+});
+
+function expectSettledTextUsage() {
+  expect(prisma.providerCallLog.update).toHaveBeenCalledWith(expect.objectContaining({
+    data: expect.objectContaining({
+      promptTokens: 20,
+      outputTokens: 112,
+      metadata: expect.objectContaining({ provisional: false, reasoningTokens: 100, liveStatus: "settled" })
+    })
+  }));
+}
+
+it.each<Provider>(["openai", "gemini"])("ledger settles paid %s text truncation", async (provider) => {
+  vi.clearAllMocks();
+  const run = logged(fixture(provider, ["incomplete"]).adapter);
+  await expect(run.adapter.generateText(options)).rejects.toThrow(/incomplete/);
+  expectSettledTextUsage();
+});
+
+it.each<Provider>(["openai", "gemini"])("ledger settles reported %s raw stream usage", async (provider) => {
+  vi.clearAllMocks();
+  await invoke(logged(fixture(provider).adapter).adapter, "streamText");
+  expectSettledTextUsage();
+});
+
+function researchFixture(reportedUsage = true) {
+  const adapter = new GeminiResearchAdapter({ apiKey: "test", textModel: "gemini-2.5-flash" });
+  Object.assign(adapter, { ai: { models: { generateContent: async () => ({
+    text: "Source-backed notes.",
+    modelVersion: "gemini-2.5-flash",
+    ...(reportedUsage ? { usageMetadata: {
+      promptTokenCount: 200, candidatesTokenCount: 50, thoughtsTokenCount: 100, cachedContentTokenCount: 20
+    } } : {}),
+    candidates: []
+  }) } } });
+  return adapter;
+}
+
+it("research preserves provider-reported billed tokens", async () => {
+  await expect(researchFixture().search({ query: "cryptography", purpose: "chapter-research" })).resolves.toMatchObject({
+    provider: "gemini", model: "gemini-2.5-flash",
+    usage: { promptTokens: 200, outputTokens: 150, reasoningTokens: 100, cacheHitTokens: 20 }
+  });
+});
+
+it("research SDK usage reaches the project ledger and durable trace once", async () => {
+  vi.clearAllMocks();
+  const logger = createRunLogger({ id: "research", name: "generate-book", data: { projectId: "p", generationJobId: "job" } } as Parameters<typeof createRunLogger>[0]);
+  await new LoggingResearchAdapter(researchFixture(), logger, "job", "p").search({ query: "cryptography", purpose: "chapter-research" });
+  expect(prisma.providerCallLog.create).toHaveBeenCalledExactlyOnceWith({ data: expect.objectContaining({
+    projectId: "p", generationJobId: "job", provider: "gemini", model: "gemini-2.5-flash",
+    promptTokens: 200, outputTokens: 150, costHint: expect.any(Number),
+    metadata: expect.objectContaining({ operation: "research.search", provisional: false, reasoningTokens: 100 })
+  }) });
+  const entry = (await readRunLog(logger.filePath)).trim().split("\n")
+    .map((line) => JSON.parse(line)).find((event) => event.event === "research.search.response");
+  expect(entry.result.usage).toMatchObject({ outputTokens: 150, reasoningTokens: 100 });
+});
+
+it.each<Provider>(["openai", "gemini"])("ledger settles paid %s tool and raw stream failures", async (provider) => {
+  for (const operation of ["generateWithTools", "streamText"] as const) {
+    vi.clearAllMocks();
+    const run = logged(fixture(provider, ["incomplete"]).adapter);
+    await expect(invoke(run.adapter, operation)).rejects.toThrow(/incomplete/);
+    expectSettledTextUsage();
+  }
+});
+
+it("stream without reported usage stays provisional and unpriced", async () => {
+  vi.clearAllMocks();
+  const inner = fixture("openai").adapter;
+  inner.streamText = async function* () { yield "An unmetered answer."; };
+  await invoke(logged(inner).adapter, "streamText");
+  expect(prisma.providerCallLog.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
+    costHint: null,
+    metadata: expect.objectContaining({ provisional: true, liveStatus: "settled", outputTokensEstimated: true })
+  }) }));
+});
+
+it("unknown research usage stays unknown instead of an invented zero-dollar call", async () => {
+  vi.clearAllMocks();
+  const logger = createRunLogger({ id: "unmetered-research", name: "generate-book", data: { projectId: "p" } } as Parameters<typeof createRunLogger>[0]);
+  const result = await new LoggingResearchAdapter(researchFixture(false), logger, undefined, "p").search({ query: "test" });
+  expect(result.usage).toBeUndefined();
+  expect(prisma.providerCallLog.create).not.toHaveBeenCalled();
+});
+
+it("keeps usage already observed when a stream later throws an unstructured error", async () => {
+  vi.clearAllMocks();
+  const inner = fixture("openai").adapter;
+  const stream = inner.streamText.bind(inner);
+  inner.streamText = async function* (request) {
+    yield* stream(request);
+    throw new Error("stream disconnected after usage");
+  };
+  await expect(invoke(logged(inner).adapter, "streamText")).rejects.toThrow("stream disconnected after usage");
+  expectSettledTextUsage();
 });

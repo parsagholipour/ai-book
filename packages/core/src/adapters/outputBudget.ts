@@ -33,6 +33,7 @@ function isOutputBudget(value: unknown): value is OutputBudget {
 
 // Verified 2026-09-21 against each model's official model page. Unknown/custom
 // models keep the existing bounded retry behavior; do not guess their limits.
+// https://developers.openai.com/api/docs/models/gpt-6-sol (also luna)
 // https://developers.openai.com/api/docs/models/gpt-5.6-sol (also terra/luna)
 // https://developers.openai.com/api/docs/models/gpt-5-nano
 // https://ai.google.dev/gemini-api/docs/models/<model ID below>
@@ -47,6 +48,7 @@ function outputRetryCeiling(provider: "openai" | "gemini", model: string, prompt
 }
 
 const OPENAI_CONTEXT_WINDOWS = new Map([
+  ["gpt-6-sol", 1_050_000], ["gpt-6-luna", 1_050_000],
   ["gpt-5.6", 1_050_000], ["gpt-5.6-sol", 1_050_000], ["gpt-5.6-terra", 1_050_000], ["gpt-5.6-luna", 1_050_000],
   ["gpt-5-nano", 400_000], ["gpt-5-nano-2025-08-07", 400_000]
 ]);

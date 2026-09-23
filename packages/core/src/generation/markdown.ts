@@ -2,6 +2,7 @@ import type { BookPlan, ChapterPlan, CreateProjectInput } from "../schemas/book.
 import { isSourceForwardBookCategory } from "../categories.js";
 import { jsonRecord } from "../schemas/jsonCoercion.js";
 import { DEFAULT_MARKDOWN_LABELS, markdownLabels, type MarkdownLabels } from "./markdownLabels.js";
+import { joinMarkdownPageBlocks } from "./markdownPageBoundaries.js";
 
 // Re-exported because `markdownLabels` was always part of this module's surface
 // — `epub.ts` and the exporters import it from here.
@@ -193,12 +194,8 @@ export type PageAnchorPlan = {
 };
 
 export function compileBookMarkdownWithPageAnchors(input: CompileMarkdownInput): CompiledBookMarkdown {
-  const pages = [...input.pages].sort((a, b) => a.index - b.index);
+  const { pages, presentation, chapterStarts } = chapterLayoutForExport(input);
   const labels = markdownLabels(input.language);
-  const readerChapterStarts = readerChapterStartsForPages(input.readerChapters, pages);
-  const starts = readerChapterStarts.length > 0 ? readerChapterStarts : chapterStartsForPages(input.plan, pages);
-  const presentation = chapterPresentationFor(starts, pages);
-  const chapterStarts = presentation === "none" ? [] : starts;
   const chapterByStartPage = new Map(chapterStarts.map((start) => [start.pageIndex, start.chapter]));
   const heading = chapterHeadingFormat(input, labels, presentation);
   const contents =
@@ -238,12 +235,12 @@ export function compileBookMarkdownWithPageAnchors(input: CompileMarkdownInput):
   ];
 
   const kept = elements.filter((element) => element.text);
-  const markdown = kept.map((element) => element.text).join("\n");
+  const { markdown, offsets } = joinMarkdownPageBlocks(kept.map((element) => element.text));
 
   const pageAnchors: PageAnchorPlan[] = [];
   let sourcesOffset: number | undefined;
-  let offset = 0;
-  for (const element of kept) {
+  for (const [position, element] of kept.entries()) {
+    const offset = offsets[position]!;
     if (element.page) {
       if (element.page.chapterDest) {
         // The anchor is the first thing a chapter-opening page's block holds,
@@ -266,7 +263,6 @@ export function compileBookMarkdownWithPageAnchors(input: CompileMarkdownInput):
     } else if (element.sources) {
       sourcesOffset = offset;
     }
-    offset += element.text.length + 1;
   }
 
   assertBookLikeMarkdown(markdown);
@@ -320,6 +316,26 @@ export function sanitizePageTitle(index: number, title: string): string {
   }
   clean = clean.replace(/^page\s+\d+\s*[:-]\s*/i, "").trim();
   return clean || `Page ${index}`;
+}
+
+/** The divisions actually rendered, shared with coverage review rather than inferred from the plan. */
+export function chapterStructureForExport(input: Pick<CompileMarkdownInput, "plan" | "pages" | "readerChapters">) {
+  const { pages, chapterStarts } = chapterLayoutForExport(input);
+  return chapterStarts.map(({ pageIndex, chapter }, position) => ({
+    index: chapter.index,
+    title: chapter.title,
+    startPageIndex: pageIndex,
+    endPageIndex: pages.filter((page) => page.index >= pageIndex &&
+      page.index < (chapterStarts[position + 1]?.pageIndex ?? Infinity)).at(-1)!.index
+  }));
+}
+
+function chapterLayoutForExport(input: Pick<CompileMarkdownInput, "plan" | "pages" | "readerChapters">) {
+  const pages = [...input.pages].sort((a, b) => a.index - b.index);
+  const readerStarts = readerChapterStartsForPages(input.readerChapters, pages);
+  const starts = readerStarts.length > 0 ? readerStarts : chapterStartsForPages(input.plan, pages);
+  const presentation = chapterPresentationFor(starts, pages);
+  return { pages, presentation, chapterStarts: presentation === "none" ? [] : starts };
 }
 
 function chapterStartsForPages(

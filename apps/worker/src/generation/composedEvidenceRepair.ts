@@ -41,6 +41,8 @@ export async function repairChapterEvidence(options: {
   review: (markdown: string) => Promise<ChapterCaseEvidenceReview & { coverage?: SourceClaimCoverage }>;
   edit: (markdown: string, notes: string[]) => Promise<string>;
   degenerate: (markdown: string) => boolean;
+  /** A failed verifier or unsearched claim cannot authorize an edit. */
+  canRepair?: ((markdown: string) => boolean) | undefined;
   /** How the findings are put to the editor; the case-evidence wording unless the caller has its own. */
   notes?: ((issues: readonly string[], last: boolean) => string[]) | undefined;
 }): Promise<ChapterEvidenceRepair> {
@@ -50,17 +52,17 @@ export async function repairChapterEvidence(options: {
   const findings = review.issues.length;
   let dropped = review.dropped.length;
   let repairs = 0;
-  while (review.issues.length && repairs < EVIDENCE_REPAIR_ROUNDS) {
+  while (review.issues.length && repairs < EVIDENCE_REPAIR_ROUNDS && (options.canRepair?.(markdown) ?? true)) {
     repairs += 1;
     const repaired = await options.edit(markdown, notesFor(review.issues, repairs === EVIDENCE_REPAIR_ROUNDS));
     // A rejected/unchanged edit has no new evidence: re-reviewing it could erase the findings.
-    if (repaired === markdown) continue;
+    if (repaired === markdown) break;
     if (options.degenerate(repaired)) break;
     const next = await options.review(repaired);
     dropped += next.dropped.length;
     // An outage or incomplete audit is not evidence that a rewrite fixed the claims.
-    if (next.coverage && next.coverage.status !== "reviewed") continue;
-    if (next.issues.length && next.issues.length >= review.issues.length) continue;
+    if (next.coverage && next.coverage.status !== "reviewed") break;
+    if (next.issues.length && next.issues.length >= review.issues.length) break;
     markdown = repaired;
     review = next;
   }

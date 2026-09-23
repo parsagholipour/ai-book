@@ -59,6 +59,7 @@ import {
   createProviders,
   createReaderChaptersForExport,
   chapterHeadingLabelPreference,
+  chapterStructureForExport,
   chapterHeadingStylePreference,
   includeSourcesPreference,
   isImportedManuscript,
@@ -471,6 +472,54 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     await advanceJobStep(generationJobId, "qa", 25, "Running deterministic integrity checks");
   }
 
+  // Resolve one partition for coverage and export after all prose repairs. An obsolete
+  // compile still records/withdraws its findings below, but must not spend on chapterization.
+  const supersededBeforeCoverage = await exportPublicationSuperseded(projectId, queuedContentRevision);
+  const cover = project.images.find((image) => image.type === "COVER");
+  const markdownPages = pages.map((page) => ({
+    index: page.index,
+    title: page.title,
+    markdown: page.markdown,
+    summary: page.summary,
+    imagePath: resolvePublicImageUrl(page.images[0]?.path, config.PUBLIC_API_URL),
+    imageAlt: "Illustration"
+  }));
+  const publishedMarkdownPath = objectKey("books", projectId, "book.md");
+  const publishedMarkdown = detachedRepair || presentationOnly
+    ? await readOptionalPublishedMarkdown(publishedMarkdownPath)
+    : undefined;
+  let preservedReaderChapters = (presentationOnly || detachedRepair) && publishedMarkdown !== undefined
+    ? readerChaptersFromPublishedMarkdown(publishedMarkdown, markdownPages)
+    : undefined;
+  if (preservedReaderChapters === undefined && detachedRepair && publishedMarkdown === undefined) {
+    // An edit changes the fingerprint but not its page partition. The cache is
+    // deliberately retained when exports are invalidated, so a repair can keep
+    // the prior model-authored grouping without making an uncharged model call.
+    preservedReaderChapters = await readCompatibleCachedReaderChapters(projectId, markdownPages);
+  }
+  // A book composed by chapters prints the chapters it was composed in: the
+  // rows every page carries, no model call, whatever the compile's lane. The
+  // model grouping below is for the per-page strategies, whose plan chapters
+  // are a writing scaffold rather than a structure.
+  const composedReaderChapters = strategyComposesChapters(strategy)
+    ? readerChaptersFromComposedChapters(pages.map((page, position) => ({ ...markdownPages[position]!, chapter: page.chapter })))
+    : undefined;
+  const readerChapters = composedReaderChapters ?? (supersededBeforeCoverage ? [] : await readerChaptersWithCache({
+    projectId,
+    fingerprint: readerChapterFingerprint({ input, plan, pages: markdownPages }),
+    // Presentation recompiles and repairs are free. A cache miss must not
+    // turn either into an uncharged model request.
+    allowModelCall: !detachedRepair && !presentationOnly,
+    compute: () =>
+      createReaderChaptersForExport({
+        input,
+        plan,
+        pages: markdownPages,
+        textModel: providers.text
+      }),
+    deterministic: () => preservedReaderChapters ?? createDeterministicReaderChapters(markdownPages)
+  }));
+
   // Always rerun integrity checks after repair attempts. Manual edits may
   // skip model rewriting, but they can never bypass publication integrity.
   const storyState =
@@ -478,7 +527,8 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     (await rebuildStoryStateFromPages(projectId, plan.promises ?? []));
   const coverage = isImportedManuscript(input.mediaSettings) ? null : await manuscriptCoverageForCompile({
     projectId, brief: input.prompt, promises: [...(plan.promises ?? []), ...storyState.promises.map((promise) => promise.text)],
-    pages, textModel: providers.text, allowModelReview: ownsOutcome && !skipFinalReview
+    pages, chapters: chapterStructureForExport({ plan, pages: markdownPages, readerChapters }),
+    textModel: providers.text, allowModelReview: ownsOutcome && !skipFinalReview
   });
   if (coverage && ownsOutcome && !skipFinalReview) modelQualityIssues.push(...coverage.issues);
   const deterministicIssues = [
@@ -554,63 +604,19 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   }
 
   await advanceJobStep(generationJobId, "compile", 55);
-  const cover = project.images.find((image) => image.type === "COVER");
-  const markdownPages = pages.map((page) => ({
-    index: page.index,
-    title: page.title,
-    markdown: page.markdown,
-    summary: page.summary,
-    imagePath: resolvePublicImageUrl(page.images[0]?.path, config.PUBLIC_API_URL),
-    imageAlt: "Illustration"
-  }));
   await updateJobProgress(generationJobId, {
     progress: 62,
     message: "Placing reader chapters"
   });
-  // Cheap early exit before the reader-chapter call and the render: an edit
+  // Exit before rendering if an edit landed during coverage or structural review: an edit
   // applied while this compile was in QA has already queued the recompile that
   // will publish instead. The binding decision is the claim in
   // `publishCompiledExports`, since an edit can still land after this read.
-  if (await exportPublicationSuperseded(projectId, queuedContentRevision)) {
+  if (supersededBeforeCoverage || await exportPublicationSuperseded(projectId, queuedContentRevision)) {
     await standDownForNewerExport({ projectId, generationJobId, findings });
     return {};
   }
-  const publishedMarkdownPath = objectKey("books", projectId, "book.md");
-  const publishedMarkdown = detachedRepair || presentationOnly
-    ? await readOptionalPublishedMarkdown(publishedMarkdownPath)
-    : undefined;
-  let preservedReaderChapters = (presentationOnly || detachedRepair) && publishedMarkdown !== undefined
-    ? readerChaptersFromPublishedMarkdown(publishedMarkdown, markdownPages)
-    : undefined;
-  if (preservedReaderChapters === undefined && detachedRepair && publishedMarkdown === undefined) {
-    // An edit changes the fingerprint but not its page partition. The cache is
-    // deliberately retained when exports are invalidated, so a repair can keep
-    // the prior model-authored grouping without making an uncharged model call.
-    preservedReaderChapters = await readCompatibleCachedReaderChapters(projectId, markdownPages);
-  }
-  // A book composed by chapters prints the chapters it was composed in: the
-  // rows every page carries, no model call, whatever the compile's lane. The
-  // model grouping below is for the per-page strategies, whose plan chapters
-  // are a writing scaffold rather than a structure.
-  const composedReaderChapters = strategyComposesChapters(strategy)
-    ? readerChaptersFromComposedChapters(pages.map((page, position) => ({ ...markdownPages[position]!, chapter: page.chapter })))
-    : undefined;
   const compileCurrentMarkdown = async (): Promise<CompiledBookMarkdown> => {
-    const readerChapters = composedReaderChapters ?? await readerChaptersWithCache({
-      projectId,
-      fingerprint: readerChapterFingerprint({ input, plan, pages: markdownPages }),
-      // Presentation recompiles and repairs are free. A cache miss must not
-      // turn either into an uncharged model request.
-      allowModelCall: !detachedRepair && !presentationOnly,
-      compute: () =>
-        createReaderChaptersForExport({
-          input,
-          plan,
-          pages: markdownPages,
-          textModel: providers.text
-        }),
-      deterministic: () => preservedReaderChapters ?? createDeterministicReaderChapters(markdownPages)
-    });
     const researchSources = await researchCitationsForExport(project.research);
     return strategy.compileMarkdownWithPageAnchors({
       plan,

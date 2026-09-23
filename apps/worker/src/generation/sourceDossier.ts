@@ -23,13 +23,15 @@ export async function retrieveChapterSources(options: Omit<Parameters<typeof bui
   projectId: string;
   runLog?: Pick<RunLogger, "append"> | undefined;
   fetch?: Parameters<typeof buildChapterDossier>[0]["fetch"] | undefined;
+  /** Claim recovery owns coverage-driven rounds; ordinary dossiers retain their fallback round. */
+  maxRounds?: 1 | 2 | undefined;
 }): Promise<BookDossier> {
   const trace = createDossierRunTrace(options.runLog, {
     projectId: options.projectId, chapterIndex: options.chapter.index, retrievalStage: "chapter_sources"
   });
   const found: BookDossier[] = [];
   try {
-    for (let round = 0; round < 2; round += 1) {
+    for (let round = 0; round < (options.maxRounds ?? 2); round += 1) {
       if (options.deadline !== undefined && Date.now() >= options.deadline) break;
       const episodes: ChapterEpisode[] = options.episodes.map((episode) => ({ ...episode,
         searchQueries: [episode.searchQueries[round] || `${episode.title} ${options.chapter.title} original source documentation`]

@@ -81,3 +81,70 @@ it("propagates cancellation", async () => {
   const { model } = scriptedDevelopmentModel([error]);
   await expect(reviewManuscriptCoverage({ brief, promises: [], pages: [], textModel: model })).rejects.toBe(error);
 });
+
+it("uses current chapter structure as evidence without requiring headings inside page prose", async () => {
+  const request = "Organize the book into two chapters.";
+  const chapters = [
+    { index: 1, title: "The problem", startPageIndex: 1, endPageIndex: 1 },
+    { index: 2, title: "The solution", startPageIndex: 2, endPageIndex: 2 }
+  ];
+  const { model, calls } = scriptedDevelopmentModel([
+    { complete: true, requirements: [{ text: request, quote: request, kind: "structure" }] },
+    { complete: true, requirements: [{ id: "brief-1", status: "fulfilled", reason: "The current manuscript has two chapters.", evidence: [], chapterEvidence: [1, 2] }] }
+  ]);
+  const result = await reviewManuscriptCoverage({ brief: request, promises: [], chapters,
+    pages: [{ index: 1, markdown: prose }, { index: 2, markdown: prose }], textModel: model });
+  expect(result.status).toBe("reviewed");
+  expect(result.issues).toEqual([]);
+  expect(JSON.parse(calls[1]!.messages[1]!.content).chapters).toEqual(chapters);
+  expect(calls[0]!.messages[1]!.content).not.toContain("The solution");
+});
+
+it("does not accept invented chapters or use chapter titles to prove content coverage", async () => {
+  for (const kind of ["structure", "content"]) {
+    const request = "Explain the two problems.";
+    const { model } = scriptedDevelopmentModel([
+      { complete: true, requirements: [{ text: request, quote: request, kind }] },
+      { complete: true, requirements: [{ id: "brief-1", status: "fulfilled", reason: "The titles name them.", evidence: [], chapterEvidence: kind === "structure" ? [99] : [1] }] }
+    ]);
+    const result = await reviewManuscriptCoverage({ brief: request, promises: [],
+      chapters: [{ index: 1, title: request, startPageIndex: 1, endPageIndex: 1 }],
+      pages: [{ index: 1, markdown: prose }], textModel: model });
+    expect(result.status).toBe("incomplete");
+    expect(result.requirements[0]?.status).toBe("unverified");
+  }
+});
+
+it("does not infer missing chapters from an unavailable structure", async () => {
+  const request = "Use two chapters.";
+  const { model } = scriptedDevelopmentModel([
+    { complete: true, requirements: [{ text: request, quote: request, kind: "structure" }] },
+    { complete: true, requirements: [{ id: "brief-1", status: "missing", reason: "No headings in prose.", evidence: [] }] }
+  ]);
+  const result = await reviewManuscriptCoverage({ brief: request, promises: [], pages: [{ index: 1, markdown: prose }], textModel: model });
+  expect(result.requirements[0]?.status).toBe("unverified");
+  expect(result.issues.map((issue) => issue.code)).toEqual(["BRIEF_COVERAGE_UNVERIFIED"]);
+});
+
+it("allows a manuscript with no divisions when that is the requested structure", async () => {
+  const request = "Use no chapter divisions.";
+  const { model } = scriptedDevelopmentModel([
+    { complete: true, requirements: [{ text: request, quote: request, kind: "structure" }] },
+    { complete: true, requirements: [{ id: "brief-1", status: "fulfilled", reason: "The current manuscript has no divisions.", evidence: [], chapterEvidence: [] }] }
+  ]);
+  const result = await reviewManuscriptCoverage({ brief: request, promises: [], chapters: [], pages: [{ index: 1, markdown: prose }], textModel: model });
+  expect(result.status).toBe("reviewed");
+  expect(result.issues).toEqual([]);
+});
+
+it("surfaces departure from an explicit user structure without replacing the current divisions", async () => {
+  const request = "Use exactly two chapters.";
+  const chapters = [{ index: 1, title: "A continuous argument", startPageIndex: 1, endPageIndex: 1 }];
+  const { model } = scriptedDevelopmentModel([
+    { complete: true, requirements: [{ text: request, quote: request, kind: "structure" }] },
+    { complete: true, requirements: [{ id: "brief-1", status: "missing", reason: "The current manuscript has one chapter; the user explicitly requested two.", evidence: [], chapterEvidence: [1] }] }
+  ]);
+  const result = await reviewManuscriptCoverage({ brief: request, promises: [], chapters, pages: [{ index: 1, markdown: prose }], textModel: model });
+  expect(result.issues).toContainEqual(expect.objectContaining({ code: "MISSING_BRIEF_REQUIREMENT", severity: "warning" }));
+  expect(chapters).toEqual([{ index: 1, title: "A continuous argument", startPageIndex: 1, endPageIndex: 1 }]);
+});

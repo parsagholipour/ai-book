@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { acceptsChapterEdit, type ChapterEditAcceptanceOptions } from "./chapterEditAcceptance.js";
+import { chapterResearchNotesForPrompt, CHAPTER_RESEARCH_CONTEXT_RULE } from "./chapterResearchContext.js";
 import { chapterDegeneracy } from "./chapterIntegrity.js";
 import { chapterCutConstraints } from "./chapterCutContext.js";
 import { deletionOnlyResult } from "./composedChapterCuts.js";
@@ -359,7 +360,7 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
   const palette = formPaletteFor(mode);
   const pages = options.chapterPageEnd - options.chapterPageStart + 1;
   const budget = chapterWordBudget(options.input, pages, { figureWords: plannedFigures(options.composition).length * FIGURE_WORD_EQUIVALENT });
-  const citation = citationContractFields(options.researchNotes.slice(0, 18));
+  const citation = citationContractFields(chapterResearchNotesForPrompt(options.researchNotes));
   // The opening scene, when one was composed first, is printed ahead of what
   // this call writes, so the ask shrinks by its length.
   const remaining = remainingBudget(budget, options.material?.scene?.words ?? 0);
@@ -400,7 +401,7 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
     // and the cut then removed chapter 7's own closing, so three blind readers
     // found the previous chapter's conclusion stranded under the next heading.
     "previousChapterTail is where the previous chapter stopped, already printed: this chapter opens on its own first section's material and neither resumes, summarises nor answers that paragraph. earlierChapters are digests of what the reader already knows, each with told: the cases, sources, scenes and people that chapter carried; anything in told may be named in passing and is never re-told, and its dates and figures are not repeated.",
-    ...(options.contract === "creative" && narrative ? CREATIVE_CONTRACT_RULES : [GROUNDED_FACTUALITY_RULE, ...citation.rules]),
+    ...(options.contract === "creative" && narrative ? CREATIVE_CONTRACT_RULES : [GROUNDED_FACTUALITY_RULE, ...citation.rules, CHAPTER_RESEARCH_CONTEXT_RULE]),
     // Research notes arrive as "title: summary" and a search hit's title is
     // often its bare domain, so a writer told to name only sources in the
     // notes wrote "the explanatory pages at psychstory.co.uk" (composed-17).
@@ -583,12 +584,12 @@ export async function editChapter(options: EditChapterOptions): Promise<EditedCh
   // A targeted correction edits the current text. The old composition budget
   // made a 200-word source repair regenerate a 2,000-word discovery narrative.
   const editBudget = options.factualCorrection ? { ...budget, min: Math.floor(draftWords * 0.62), target: draftWords, max: Math.ceil(draftWords * 1.1) } : budget;
-  const citation = citationContractFields(options.researchNotes.slice(0, 18));
+  const citation = citationContractFields(chapterResearchNotesForPrompt(options.researchNotes));
   const systemLines = [
     `You are the line editor for "${options.plan.title}", revising each chapter into its finished form in the author's own voice.`,
     ...stanceLinesFor(options),
     "Preserve the chapter's claims, causal relationships, negation, scope, uncertainty, names, dates, quantities and exact quotations. Keep the section order and the material of the opening. A qualification may be essential even when its names and numbers occur elsewhere.",
-    "Edit where the surrounding passage gives a concrete reason: clarify a confusing sentence or remove a repetition that adds no fact, distinction, context or narrative purpose. Sentence shape alone is not a defect. Intentional repetition, dialogue and quotations may recur. Keep a passage unchanged when an improvement would lose meaning or require guessing.",
+    "Edit where the surrounding passage gives a concrete reason: clarify a confusing sentence or remove a repetition that adds no fact, distinction, context or narrative purpose. Sentence shape alone is not a defect. Intentional repetition, dialogue and quotations may recur. Make the smallest change that resolves the issue. Preserve unaffected paragraphs verbatim, and keep a passage unchanged when an improvement would lose meaning or require guessing.",
     narrative
       ? "Judge pacing through the scene's actions and consequences; keep reflection when it changes what the reader understands."
       : "Judge pacing through the chapter's evidence and explanation. Keep a caveat when it limits an inference; cut it only when the same limitation is already stated with the same scope and context.",
@@ -609,7 +610,7 @@ export async function editChapter(options: EditChapterOptions): Promise<EditedCh
       : draftWords < budget.target * EDITOR_EXTEND_BELOW_SHARE
       ? `The draft is ${draftWords} words and the chapter needs about ${budget.target} (never under ${budget.min}, never over ${budget.max}): develop the existing sections with more particular detail — the named person, the document, the place, the next thing that happened — rather than adding sections, generalising, or restating.`
       : `Return between ${budget.min} and ${budget.max} words; the draft is ${draftWords} words. Over ${budget.max}, cut.`,
-    ...(options.contract === "creative" && narrative ? [CREATIVE_CONTRACT_RULES[1]!] : [GROUNDED_FACTUALITY_RULE, ...citation.rules, FOCUSED_RECONSTRUCTION_RULE]),
+    ...(options.contract === "creative" && narrative ? [CREATIVE_CONTRACT_RULES[1]!] : [GROUNDED_FACTUALITY_RULE, ...citation.rules, CHAPTER_RESEARCH_CONTEXT_RULE, FOCUSED_RECONSTRUCTION_RULE]),
     ...materialEditLines({ ...options, nonfiction: !narrative }),
     ...(options.factualCorrection ? ["factualCorrection authorizes a targeted factual repair: correct, narrow or delete only the named unsupported claims against its evidence. The preservation rule applies to unrelated meaning; do not preserve the erroneous claim. Follow the correction instructions and evidence over the original claim."] : []),
     ...(options.material?.scene

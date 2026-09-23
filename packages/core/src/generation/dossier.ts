@@ -314,6 +314,8 @@ export async function buildChapterDossier(options: {
   evidence?: boolean | undefined;
   /** A bounded second retrieval uses the next planned query instead of repeating the failed search. */
   queryOffset?: number | undefined;
+  /** Reserve document slots for later claim groups during targeted recovery. */
+  maxDocumentsPerEpisode?: number | undefined;
 }): Promise<ChapterDossier> {
   const documents: DossierDocument[] = [];
   const seenUrls = new Set<string>();
@@ -341,7 +343,9 @@ export async function buildChapterDossier(options: {
         log("dossier.search_failed", { query, error: error instanceof Error ? error.message : String(error) });
       }
     }
+    let episodeDocuments = 0;
     for (const candidate of candidates) {
+      if (episodeDocuments >= (options.maxDocumentsPerEpisode ?? DOSSIER_MAX_DOCUMENTS_PER_CHAPTER)) break;
       if (documents.length >= DOSSIER_MAX_DOCUMENTS_PER_CHAPTER) break;
       if (pastDeadline()) {
         log("dossier.deadline", { chapterIndex: options.chapter.index, stage: "fetch", documents: documents.length });
@@ -356,6 +360,7 @@ export async function buildChapterDossier(options: {
           log("dossier.document_dropped", { chapterIndex: options.chapter.index, title: candidate.title, reason: "not the book's language" });
           continue;
         }
+        episodeDocuments += 1;
         documents.push({
           id: `ch${options.chapter.index}-d${documents.length + 1}`,
           title: candidate.title,
@@ -367,6 +372,7 @@ export async function buildChapterDossier(options: {
           episodeTitle: episode.title
         });
       } catch (error) {
+        if (isStopOrAbortError(error)) throw error;
         log("dossier.fetch_failed", { url: candidate.textUrl, error: error instanceof Error ? error.message : String(error) });
       }
     }
@@ -376,7 +382,7 @@ export async function buildChapterDossier(options: {
   const maxWindowsPerDocument = 2;
   const windowsByDocument = documents.map((document) => {
     const episode = options.episodes.find((entry) => entry.title === document.episodeTitle);
-    const terms = episode ? episodeTerms(episode) : [];
+    const terms = episode ? episodeTerms(options.evidence ? { ...episode, title: `${episode.title} ${episode.why}` } : episode) : [];
     return candidateWindows(document, terms, { maxWindows: maxWindowsPerDocument });
   });
   // Give every document a window before allocating seconds, so early sources

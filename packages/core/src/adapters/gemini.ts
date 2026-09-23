@@ -477,6 +477,7 @@ export class GeminiResearchAdapter implements ResearchAdapter {
   }
 
   async search(query: ResearchQuery): Promise<ResearchResult> {
+    const startedAt = performance.now();
     const response = await this.ai.models.generateContent({
       model: this.model,
       contents: [
@@ -496,6 +497,7 @@ export class GeminiResearchAdapter implements ResearchAdapter {
         temperature: 0.1
       }
     });
+    const providerFinishedAt = performance.now();
 
     const rawText = response.text ?? "";
     const text = sanitizeResearchText(rawText);
@@ -517,11 +519,21 @@ export class GeminiResearchAdapter implements ResearchAdapter {
       });
     // Grounding cites every page through an expiring Google redirect. Unwrap it
     // here, while it still resolves, so nothing downstream stores or shows one.
+    const redirectsStartedAt = performance.now();
     const sources = await resolveGroundingRedirects(grounded);
+    const finishedAt = performance.now();
 
     return {
       query: query.query,
       summary: text,
+      provider: "gemini",
+      model: response.modelVersion ?? this.model,
+      usage: usageFromGeminiResponse(response),
+      timings: {
+        providerRequestMs: providerFinishedAt - startedAt,
+        groundingRedirectsMs: finishedAt - redirectsStartedAt,
+        totalMs: finishedAt - startedAt
+      },
       sources: sources.length > 0 ? sources : [{ title: "Gemini grounded summary", summary: text }]
     };
   }
