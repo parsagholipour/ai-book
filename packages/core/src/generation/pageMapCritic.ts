@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
 import type { ChapterBrief, PageProductionBeat } from "../schemas/book.js";
-import { evidenceLedgerFields, evidenceLedgerRules } from "./evidenceLedger.js";
+import { evidenceLedgerFields, evidenceLedgerRules, usesEvidenceLedger } from "./evidenceLedger.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import {
   FIRST_PAGE_ENDING_PRESSURE,
@@ -60,6 +60,11 @@ export const pageMapCriticPatchSchema = z.object({
   duplicatePurposeWarnings: z.array(z.string().min(1)).default([]),
   missingEndingPressure: z.array(z.number().int().positive()).default([]),
   unscheduledPromises: z.array(z.string().min(1)).default([])
+});
+
+/** A scene has no evidence ledger, including in the provider's JSON contract. */
+const narrativePageMapCriticPatchSchema = pageMapCriticPatchSchema.extend({
+  beatPatches: z.array(pageMapCriticBeatPatchSchema.omit({ claim: true, evidenceAnchors: true })).default([])
 });
 
 /**
@@ -265,11 +270,12 @@ export async function critiquePageMap(
   // one-page book is written under the same ending contract the substitution
   // below would have supplied.
   const firstPage = firstPageBriefFieldsForRange(options, 1, options.input.targetPages);
+  const withEvidenceLedger = usesEvidenceLedger(options.input, options.plan);
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "critique-page-map",
     temperature: 0,
     maxTokens: 1400,
-    schema: pageMapCriticPatchSchema,
+    schema: withEvidenceLedger ? pageMapCriticPatchSchema : narrativePageMapCriticPatchSchema,
     messages: [
       {
         role: "system",
@@ -295,7 +301,7 @@ export async function critiquePageMap(
                 purpose: page.purpose,
                 beat: page.beat,
                 endingPressure: page.endingPressure,
-                ...evidenceLedgerFields(page)
+                ...(withEvidenceLedger ? evidenceLedgerFields(page) : {})
               }))
             )
           },

@@ -1,3 +1,4 @@
+import { PICTURE_BOOK_STORY_OBLIGATIONS, usesCompactPictureBookPlanning } from "./compactPictureBookPlanning.js";
 import { z } from "zod";
 import type { ImageAdapter, ImageCopyrightRewrite, ImageFallbackMetadata, TextModelAdapter } from "../adapters/types.js";
 import { isDiagramFriendlyBookCategory } from "../categories.js";
@@ -272,6 +273,10 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
         role: "system",
         content: [
           "Write the complete Markdown book in one pass as a human author would.",
+          ...(usesCompactPictureBookPlanning(options.input) ? [
+            ...PICTURE_BOOK_STORY_OBLIGATIONS,
+            "For every imagePrompt, spell out the exact visible characters and their positions, current visible prop count and ownership, and time of day from that page's prose. Ground spatial relationships in the prose, including whether each character is on a bank, in water, inside, or outside. Exclude items recovered only on later pages; do not invent a transfer, arrival, departure or time change in the illustration prompt."
+          ] : []),
           "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages.",
           INTERNAL_PAGE_TITLE_RULE,
           GROUNDED_FACTUALITY_RULE,

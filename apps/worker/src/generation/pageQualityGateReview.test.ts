@@ -86,6 +86,24 @@ function reviewOptions(markdown: string) {
 }
 
 describe("reviewPageWithQualityGates Smart unslop", () => {
+  it("keeps manuscript repair findings when the local style scan also requests a rewrite", async () => {
+    const strategy = { reviewPageDraft: vi.fn() };
+    const result = await reviewPageWithQualityGates({ strategy: strategy as never,
+      quality: { enabled: (feature) => feature === "smartUnslop" || feature === "pageModelReview" },
+      reviewOptions: reviewOptions("Here's the thing: the sample changed. At its core, the test is mechanical. The outcome serves as a testament to calibration."),
+      precomputedReport: { ...approvedModelReport, approved: false, issues: ["Turtle's change of approach is missing."], requiredRevisions: ["Show Turtle accepting help before the ending."] } });
+    expect(result.issues).toContain("Turtle's change of approach is missing.");
+    expect(result.issues.some((issue) => issue.includes("formulaic"))).toBe(true);
+    expect(result.requiredRevisions).toContain("Show Turtle accepting help before the ending.");
+    expect(strategy.reviewPageDraft).not.toHaveBeenCalled();
+  });
+  it("retains review provenance and unverified findings while combining deterministic checks", async () => {
+    const precomputedReport = { ...approvedModelReport, scoreBasis: "screened_unscored" as const, stylePenalty: 0,
+      qualityAdvisories: [{ check: "style" as const, status: "unverified" as const, message: "No supporting quote." }] };
+    const result = await reviewPageWithQualityGates({ strategy: {} as never, quality: { enabled: () => false },
+      reviewOptions: reviewOptions("Operators measure turbidity before the water leaves the plant."), precomputedReport });
+    expect(result).toMatchObject({ scoreBasis: "screened_unscored", stylePenalty: 0, qualityAdvisories: precomputedReport.qualityAdvisories });
+  });
   it("applies the tier-resolved page-review prompt mode to the model review", async () => {
     const strategy = { reviewPageDraft: vi.fn().mockResolvedValue(approvedModelReport) };
 

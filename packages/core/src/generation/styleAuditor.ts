@@ -7,10 +7,27 @@ import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 
 export const pageStyleAuditSchema = z.object({
   styleOk: z.boolean().default(true),
-  styleIssues: z.array(z.string()).default([])
+  styleIssues: z.array(z.string()).default([]),
+  evidence: z.array(z.object({
+    issue: z.string().min(1),
+    quote: z.string().min(1),
+    category: z.enum(["voice", "scaffold", "repetition", "continuity", "plot", "next_action"])
+  })).optional()
 });
 
-export type PageStyleAudit = z.infer<typeof pageStyleAuditSchema>;
+export type PageStyleAudit = z.infer<typeof pageStyleAuditSchema> & { unverifiedStyleIssues?: string[] };
+
+/** A voice critic cannot establish chronology from opening excerpts or invent a quoted defect. */
+export function validateStyleAuditEvidence(audit: PageStyleAudit, markdown: string): PageStyleAudit {
+  const anchored = new Set((audit.evidence ?? []).filter((evidence) =>
+    ["voice", "scaffold", "repetition"].includes(evidence.category) &&
+    evidence.quote.trim().length >= 12 && markdown.includes(evidence.quote)
+  ).map((evidence) => evidence.issue));
+  const styleIssues = uniqueStrings(audit.styleIssues).filter((issue) => anchored.has(issue));
+  return { ...audit, styleOk: styleIssues.length === 0, styleIssues,
+    unverifiedStyleIssues: uniqueStrings([...(audit.unverifiedStyleIssues ?? []), ...audit.styleIssues.filter((issue) => !anchored.has(issue)),
+      ...(!audit.styleOk && audit.styleIssues.length === 0 ? ["Style audit rejected the page without an evidenced finding."] : [])]) };
+}
 
 /**
  * The score cost per style finding, carried beside `score` rather than
@@ -60,7 +77,15 @@ export function withStyleAudit<T extends {
   issues: string[];
   requiredRevisions: string[];
   checks: { styleNatural: boolean };
+  notes?: string | undefined;
+  qualityAdvisories?: Array<{ check: "story_continuity" | "style"; status: "unverified"; message: string }> | undefined;
 }>(report: T, audit: PageStyleAudit): T & { stylePenalty: number } {
+  if (audit.unverifiedStyleIssues?.length) {
+    report = { ...report,
+      notes: `${report.notes ?? ""}\nUnverified style hypotheses (not rewrite instructions): ${audit.unverifiedStyleIssues.join("; ")}`,
+      qualityAdvisories: [...(report.qualityAdvisories ?? []), ...audit.unverifiedStyleIssues.map((message) => ({ check: "style" as const, status: "unverified" as const, message }))]
+    };
+  }
   const styleIssues = uniqueStrings(audit.styleIssues);
   if (audit.styleOk && styleIssues.length === 0) {
     // Penalty zero, not absent: it marks the report as audited, which is what
@@ -100,6 +125,7 @@ export async function auditPageStyle(options: {
   textModel: TextModelAdapter;
   decisions?: DecisionModelRoute | undefined;
   pageIndex?: number | undefined;
+  finalPage?: boolean | undefined;
   signal?: AbortSignal | undefined;
   markdown: string;
   voiceGuide: string[];
@@ -113,6 +139,9 @@ export async function auditPageStyle(options: {
   const userRequest = options.userRequest?.trim();
   const system = [
     "You compare one page to pinned style excerpts and the book's voiceGuide.",
+    "Judge style only. Opening excerpts are voice references, never current timeline, object-state or plot authority. A later event may legitimately differ from the opening.",
+    "Do not demand a new action, future hook or scene progression as a style requirement. Final pages may close and resolve the story.",
+    "Each blocking style issue needs an exact current-page quote (at least 12 characters) in evidence and a voice, scaffold or repetition category. Do not claim a character does nothing when the prose shows an action. Missing or out-of-scope evidence cannot justify a rewrite.",
     userRequest
       ? "Reject generic scaffold prose, pages that ignore the excerpts' rhythm, and prose that violates the book's antiAiRules."
       : "Reject generic scaffold prose, sudden register shifts, pages that ignore the excerpts' rhythm, and prose that violates the book's antiAiRules."
@@ -128,6 +157,7 @@ export async function auditPageStyle(options: {
   // Both paths judge exactly the same complete prose and pinned style context.
   const context = JSON.stringify({
     ...(options.pageIndex !== undefined ? { pageIndex: options.pageIndex } : {}),
+    pageRole: options.finalPage ? "ending" : "body",
     markdown: options.markdown,
     voiceGuide: options.voiceGuide,
     ...(options.antiAiRules?.length ? { antiAiRules: options.antiAiRules } : {}),
@@ -170,7 +200,7 @@ export async function auditPageStyle(options: {
     messages: [
       {
         role: "system",
-        content: [...system, "Return styleOk and styleIssues."].join(" ")
+        content: [...system, "Return styleOk, styleIssues and evidence."].join(" ")
       },
       {
         role: "user",
@@ -180,8 +210,5 @@ export async function auditPageStyle(options: {
   });
   options.signal?.throwIfAborted();
   const parsed = pageStyleAuditSchema.parse(result.data);
-  return {
-    styleOk: parsed.styleOk && parsed.styleIssues.length === 0,
-    styleIssues: parsed.styleIssues
-  };
+  return validateStyleAuditEvidence(parsed, options.markdown);
 }

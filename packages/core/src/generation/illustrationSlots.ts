@@ -24,6 +24,9 @@ export function pageGetsInteriorIllustration(input: CreateProjectInput, pageInde
   if (cadence === "every-page") {
     return true;
   }
+  if (cadence === "every-third-page") {
+    return pageIndex % 3 === 0;
+  }
   if (input.category === "KIDS") {
     return true;
   }

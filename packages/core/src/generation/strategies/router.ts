@@ -1,3 +1,4 @@
+import { hasResearchIntent } from "../researchIntent.js";
 import { BOOK_CATEGORIES, type BookCategory } from "../../categories.js";
 import type { CreateProjectInput } from "../../schemas/book.js";
 import { composesByChapter } from "../compositionUnit.js";
@@ -28,13 +29,7 @@ export type ResolvedBookGenerationStrategy = {
   warnings: string[];
 };
 
-const RESEARCH_INTENT_CATEGORIES = new Set(["SCIENCE", "HEALTH", "HISTORY", "BIOGRAPHY"]);
-const RESEARCH_INTENT_PATTERN =
-  /\b(current|recent|latest|today|real|scientific|historical|research|evidence|medicine|law|finance|fact)\b/i;
-
-export function hasResearchIntent(input: CreateProjectInput): boolean {
-  return RESEARCH_INTENT_CATEGORIES.has(input.category) || RESEARCH_INTENT_PATTERN.test(input.prompt);
-}
+export { hasResearchIntent } from "../researchIntent.js";
 
 /**
  * Deterministically picks the best strategy for the given input.

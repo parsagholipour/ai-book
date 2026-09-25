@@ -19,6 +19,8 @@ import {
   resolveImageModelSelection,
   resolveTextModelSelection,
   withRecoverableNetworkRetry,
+  withTextAttemptBudget,
+  isRecoverableNetworkError,
   type CreateProjectInput,
   type EmbeddingAdapter,
   type GenerateJsonOptions,
@@ -353,22 +355,20 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
       parameters.callId,
       parameters.startedAt
     );
-    const callOptions = parameters.prepareOptions?.(accounting) ?? parameters.options;
+    const callOptions = withTextAttemptBudget(parameters.prepareOptions?.(accounting) ?? parameters.options);
     const observedOptions = accounting.observe(callOptions);
     try {
       await assertJobNotStopped(this.generationJobId);
-      const result = await this.withStopAbort(observedOptions, (abortableOptions) =>
-        withRecoverableNetworkRetry(
+      const result = await this.withStopAbort(observedOptions, (abortableOptions) => {
+        const retryOptions = providerRetryOptions(this.logger, this.generationJobId, parameters.operation,
+          parameters.options.purpose, abortableOptions.signal);
+        return withRecoverableNetworkRetry(
           () => accounting.run(() => parameters.run(abortableOptions)),
-          providerRetryOptions(
-            this.logger,
-            this.generationJobId,
-            parameters.operation,
-            parameters.options.purpose,
-            abortableOptions.signal
-          )
-        )
-      );
+          { ...retryOptions, shouldRetry: (error) =>
+            abortableOptions.textAttemptBudget!.used < abortableOptions.textAttemptBudget!.limit &&
+            (retryOptions.shouldRetry ?? isRecoverableNetworkError)(error) }
+        );
+      });
       const settled = await parameters.onSuccess(result, accounting);
       await assertJobNotStopped(this.generationJobId);
       return settled;
@@ -605,7 +605,7 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
       callId,
       requestAt
     );
-    const observedOptions = fallbackAccounting.observe(options);
+    const observedOptions = fallbackAccounting.observe(withTextAttemptBudget(options));
     let chunkCount = 0;
     let characterCount = 0;
     let lastLiveOutputUpdateAt = 0;

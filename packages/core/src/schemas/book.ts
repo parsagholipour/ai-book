@@ -208,6 +208,8 @@ function normalizePageQualityReport(value: unknown): unknown {
   return {
     approved,
     score,
+    ...(unwrapped.qualityAdvisories !== undefined ? { qualityAdvisories: unwrapped.qualityAdvisories } : {}),
+    ...(unwrapped.deferredMedia !== undefined ? { deferredMedia: unwrapped.deferredMedia } : {}),
     ...(unwrapped.scoreBasis !== undefined ? { scoreBasis: unwrapped.scoreBasis } : {}),
     issues,
     requiredRevisions,
@@ -323,6 +325,21 @@ export const pageQualityReportSchema = z.preprocess(
     groundingStatus: z.enum(GROUNDING_STATUSES).optional(),
     groundingAvailability: z.enum(GROUNDING_STATUSES).optional(),
     unsupportedClaims: z.array(z.string()).default([]),
+    qualityAdvisories: z.array(z.object({
+      check: z.enum(["story_continuity", "style"]),
+      status: z.literal("unverified"),
+      message: z.string()
+    })).optional(),
+    deferredMedia: z.object({
+      stage: z.literal("before_illustrations"),
+      brief: z.string().min(1),
+      pageIndex: z.number().int().positive(),
+      draftMarkdown: z.string(),
+      requirements: z.array(z.object({
+        kind: z.literal("interior_illustration"), pageIndex: z.number().int().positive(),
+        requirementQuote: z.string().min(1), quote: z.string().min(12)
+      })).min(1)
+    }).optional(),
     checks: z
       .object({
         placeholderFree: z.boolean(),

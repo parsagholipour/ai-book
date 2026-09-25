@@ -20,7 +20,7 @@ function captureSystemPrompt() {
 }
 
 describe("verifyPageClaims system prompt", () => {
-  it("sends only the three HEAD sentences when original is absent", async () => {
+  it("sends the base review instructions and JSON contract when original is absent", async () => {
     const { textModel, generate } = captureSystemPrompt();
     await verifyPageClaims({
       textModel,
@@ -28,7 +28,10 @@ describe("verifyPageClaims system prompt", () => {
       markdown: "A 2019 study proved that 94% of cases resolved overnight.",
       researchNotes: ["No such 2019 study is in the notes."]
     });
-    expect(generate.mock.calls[0]![0].messages[0]!.content).toBe(INITIAL_SYSTEM_PROMPT);
+    const system = generate.mock.calls[0]![0].messages[0]!.content;
+    expect(system).toContain(INITIAL_SYSTEM_PROMPT);
+    expect(system).toContain('Required JSON schema:');
+    expect(system).not.toContain('Only candidate.title and candidate.markdown');
   });
 
   it("appends the diagnostic sentences when original is supplied", async () => {

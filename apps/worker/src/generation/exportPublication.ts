@@ -299,6 +299,8 @@ export async function publishCompiledExports(options: {
   projectId: string;
   /** Durable row claimed ACTIVE by this Bull delivery. */
   generationJobId: string;
+  /** Optional finalization lease checked under the same project lock as publication. */
+  assertFinalizationOwnership?: (tx: Prisma.TransactionClient) => Promise<void>;
   pending: PendingExportPaths;
   /** The companions are best-effort; a compile publishes without any of them. */
   companionsProduced: CompanionsProduced;
@@ -414,6 +416,7 @@ export async function publishCompiledExports(options: {
         if (projectClaim.count !== 1) {
           return false;
         }
+        await options.assertFinalizationOwnership?.(tx);
 
         // Stop takes every open GenerationJob lock before it touches a linked
         // BookEditOperation. Claim this compile row in the same order before

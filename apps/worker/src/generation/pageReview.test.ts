@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { PageQualityReport, createProjectSchema, makeFallbackPlan, JEV_SELECTION } from "@book-maker/core";
+import { PageQualityReport, pageQualityReportSchema, createProjectSchema, makeFallbackPlan, JEV_SELECTION } from "@book-maker/core";
 import { stubbedEnrichment, mocks, BALANCED_CANDIDATES, report, draftNamed, qualityGates, anchorPage } from "./testing/pageReviewHarness.js";
 import { reviewAndSaveGeneratedPage, runPageQualityLoop, reviewPageWithQualityGates } from "./pageReview.js";
 
@@ -45,6 +45,48 @@ describe("runPageQualityLoop style audit", () => {
     mocks.auditPageStyle.mock.calls.map((call) => call[0] as { markdown: string; styleExcerpts: string[] });
 
   beforeEach(() => vi.clearAllMocks());
+
+  it("stops a final repair after two candidates fail to improve and keeps its strongest draft", async () => {
+    const strategy = {
+      revisePageDraft: vi.fn(async () => draftNamed("No improvement")),
+      reviewPageDraft: vi.fn(async () => report(40))
+    };
+    const outcome = await loopWith({ strategy, maxCandidates: 5, stopAfterNoImprovement: 2, quality: qualityGates() });
+    expect(strategy.revisePageDraft).toHaveBeenCalledTimes(2);
+    expect(outcome.attempts).toBe(3);
+    expect(outcome.draft.title).toBe("Initial");
+    expect(outcome.report.score).toBe(50);
+  });
+
+  it("retains the saved manuscript when every automatic repair scores worse", async () => {
+    const strategy = { revisePageDraft: vi.fn(async () => draftNamed("Worse")), reviewPageDraft: vi.fn(async () => report(30)) };
+    const outcome = await loopWith({ strategy, quality: qualityGates(), maxCandidates: 3,
+      initialKeeper: { draft: draftNamed("Saved"), report: report(60) } });
+    expect(outcome.draft.title).toBe("Saved");
+    expect(outcome.revision).toBe(0);
+    expect(outcome.attempts).toBe(3);
+    expect(outcome.approved).toBe(false);
+    expect(outcome.pendingBriefRepair).toBeUndefined();
+  });
+
+  it("preserves the manuscript bridge goal during later rewrites and reviews", async () => {
+    const repairInstruction = "Keep the neighbors waiting and bridge the walk into the clearing.";
+    const strategy = strategyRejectingOnce();
+    await loopWith({ strategy, quality: qualityGates(), repairInstruction });
+    for (const [request] of strategy.revisePageDraft.mock.calls) expect(request).toMatchObject({ pageEditGuidance: repairInstruction });
+    for (const [request] of strategy.reviewPageDraft.mock.calls) expect(request).toMatchObject({ repairInstruction });
+  });
+
+  it.each([false, true])("keeps the original naming baseline across repair candidates (caller original: %s)", async (callerOriginal) => {
+    const originalMarkdown = "Wise Turtle set the fourth lantern on its proper post.";
+    const initial = { ...draftNamed("Initial"), markdown: originalMarkdown };
+    const strategy = strategyRejectingOnce();
+    await loopWith({ strategy, quality: qualityGates(), draft: callerOriginal ? draftNamed("Already revised") : initial,
+      ...(callerOriginal ? { originalDraft: initial } : {}) });
+    expect(strategy.reviewPageDraft).toHaveBeenCalledTimes(2);
+    for (const [request] of strategy.reviewPageDraft.mock.calls)
+      expect(request).toMatchObject({ repairOriginalMarkdown: originalMarkdown });
+  });
 
   it("builds its auditor out of the very array it revises and reviews with", async () => {
     // The finding this closes: every caller used to hand-assemble the excerpts
@@ -386,6 +428,43 @@ describe("reviewAndSaveGeneratedPage", () => {
     // the page and needs the state the keeper actually left behind.
     expect(mocks.persistStoryExtract).toHaveBeenCalledTimes(1);
     expect(context.page).toMatchObject({ index: 3, title: "Rewrite 2" });
+  });
+
+  it("bounds non-improving initial generation and publishes its strongest failed candidate", async () => {
+    strategy.reviewPageDraft.mockResolvedValueOnce(report(70)).mockResolvedValue(report(40));
+    strategy.revisePageDraft.mockResolvedValue(draftNamed("Worse"));
+    const result = await reviewAndSaveGeneratedPage({ ...(baseOptions() as object), maxCandidates: 7 } as never);
+    expect(strategy.revisePageDraft).toHaveBeenCalledTimes(2);
+    expect(result.page.title).toBe("First");
+    expect(mocks.prisma.page.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
+      status: "FAILED_QA", qualityReport: expect.objectContaining({ score: 70 })
+    }) }));
+  });
+
+  it("publishes simultaneous batch and local findings without losing the repair goal", async () => {
+    const markdown = "Here's the thing: the sample changed. At its core, the test is mechanical. The outcome serves as a testament to calibration.";
+    const indexedDraft = { ...draftNamed("Batch"), index: 3, markdown };
+    const batchReport = pageQualityReportSchema.parse({ approved: false, score: 65, issues: ["Turtle's arc is missing."], requiredRevisions: ["Show Turtle accept help."] });
+    const parsedInput = createProjectSchema.parse({ prompt: "A story about cooperation.", category: "KIDS", targetPages: 8 });
+    const precomputedReview = { draftMarkdown: markdown, report: batchReport, storyExtract: null, styleAudit: null,
+      completedChecks: { pageModelReview: true, storyExtractAudit: false, styleAuditor: false }, manuscriptPages: [indexedDraft] };
+    await reviewAndSaveGeneratedPage({ ...(baseOptions() as object), input: parsedInput,
+      plan: makeFallbackPlan(parsedInput), draft: indexedDraft, precomputedReview, deferRepairsUntilFinalization: true } as never);
+    expect(strategy.reviewPageDraft).not.toHaveBeenCalled();
+    expect(strategy.revisePageDraft).not.toHaveBeenCalled();
+    expect(mocks.prisma.page.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "FAILED_QA",
+      qualityReport: expect.objectContaining({ issues: expect.arrayContaining(["Turtle's arc is missing."]), requiredRevisions: expect.arrayContaining(["Show Turtle accept help."]) }) }) }));
+  });
+
+  it("falls back to normal review and repairs when a deferred batch verdict is stale", async () => {
+    const indexedDraft = { ...draftNamed("Current"), index: 3 };
+    strategy.reviewPageDraft.mockResolvedValueOnce(report(50)).mockResolvedValue(report(95, { approved: true }));
+    strategy.revisePageDraft.mockResolvedValue(draftNamed("Fixed"));
+    await reviewAndSaveGeneratedPage({ ...(baseOptions() as object), draft: indexedDraft, deferRepairsUntilFinalization: true,
+      precomputedReview: { draftMarkdown: "Older manuscript.", report: report(95, { approved: true }), storyExtract: null, styleAudit: null,
+        completedChecks: { pageModelReview: true, storyExtractAudit: false, styleAuditor: false }, manuscriptPages: [indexedDraft] } } as never);
+    expect(strategy.reviewPageDraft).toHaveBeenCalledTimes(2);
+    expect(strategy.revisePageDraft).toHaveBeenCalledOnce();
   });
 
   it("keeps URL-less semantic hits out of the shared page-review revision prompt", async () => {

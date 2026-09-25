@@ -47,6 +47,7 @@ import {
   persistKeeperStoryDelta,
   revisedDraftStyleAuditor
 } from "./qualityEnrichment.js";
+import { pageQualityAdvisoryIssues } from "./pageQualityAdvisories.js";
 
 const TARGET_PAGES = 8;
 
@@ -639,6 +640,63 @@ describe("revisedDraftStyleAuditor", () => {
     expect(audited.markdown).not.toContain("```figure");
     expect(storedDraft.markdown).toContain("```figure");
     expect(storedDraft.markdown).toContain('"kind":"bar"');
+  });
+});
+
+describe("precomputed manuscript enrichment", () => {
+  it("reuses completed story and style checks without another provider call", async () => {
+    vi.clearAllMocks();
+    mocks.extractStoryState.mockResolvedValue(extractPayingP1);
+    mocks.auditPageStyle.mockResolvedValue({ styleOk: true, styleIssues: [] });
+    const result = await enrichPageQualityReport({ input, plan, pageIndex: 3, draft, report: approvedReport,
+      previousPages: [], researchNotes: [], textModel: {} as TextModelAdapter, projectId: "project-1",
+      quality: { enabled: (feature) => feature === "storyExtractAudit" || feature === "styleAuditor" },
+      storyState: openPromiseState, styleExcerpts: ["Opening voice."],
+      precomputed: { storyExtract: extractPayingP1, styleAudit: { styleOk: true, styleIssues: [] }, manuscriptPages: [] } });
+    expect(mocks.extractStoryState).not.toHaveBeenCalled();
+    expect(mocks.auditPageStyle).not.toHaveBeenCalled();
+    expect(result.extract?.storyDelta.promisesPaid).toEqual(["p1"]);
+    expect(result.report).toMatchObject({ approved: true, stylePenalty: 0 });
+  });
+});
+
+describe("unavailable page quality checks", () => {
+  const options = { input, plan, pageIndex: 3, draft, report: approvedReport, previousPages: [], researchNotes: [],
+    textModel: {} as TextModelAdapter, projectId: "project-1", storyState: openPromiseState, styleExcerpts: ["Opening voice."] };
+  it.each(["story_continuity", "style"] as const)("publishes an unverified %s warning without inventing a prose defect", async (check) => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const provider = check === "style" ? mocks.auditPageStyle : mocks.extractStoryState;
+      provider.mockRejectedValueOnce(new Error("Provider unavailable"));
+      const result = await enrichPageQualityReport({ ...options, quality: check === "style" ? styleAuditorEnabled() : storyExtractEnabled() });
+      expect(result.report.approved).toBe(true);
+      expect(result.report.requiredRevisions).toEqual([]);
+      expect(result.report).not.toHaveProperty("stylePenalty");
+      expect(pageQualityAdvisoryIssues([{ index: 3, qualityReport: result.report }])).toEqual([
+        expect.objectContaining({ code: check === "style" ? "STYLE_REVIEW_UNVERIFIED" : "STORY_CONTINUITY_UNVERIFIED", severity: "warning", affectedPageIndexes: [3], message: expect.stringContaining("unavailable") })
+      ]);
+    } finally { warning.mockRestore(); }
+  });
+  it("publishes a revised style check failure as a warning without forcing another rewrite", async () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      mocks.auditPageStyle.mockRejectedValueOnce(new Error("Provider unavailable"));
+      const audit = revisedDraftStyleAuditor({ ...options, quality: styleAuditorEnabled() })!;
+      const result = await audit(3, draft, approvedReport);
+      expect(result.approved).toBe(true);
+      expect(result.requiredRevisions).toEqual([]);
+      expect(pageQualityAdvisoryIssues([{ index: 3, qualityReport: result }])).toEqual([
+        expect.objectContaining({ code: "STYLE_REVIEW_UNVERIFIED", severity: "warning", affectedPageIndexes: [3] })
+      ]);
+    } finally { warning.mockRestore(); }
+  });
+  it.each(["story", "style", "revisedStyle"])("propagates AbortError through %s checks", async (check) => {
+    const aborted = new DOMException("Cancelled", "AbortError");
+    (check === "story" ? mocks.extractStoryState : mocks.auditPageStyle).mockRejectedValueOnce(aborted);
+    const result = check === "revisedStyle"
+      ? revisedDraftStyleAuditor({ ...options, quality: styleAuditorEnabled() })!(3, draft, approvedReport)
+      : enrichPageQualityReport({ ...options, quality: check === "story" ? storyExtractEnabled() : styleAuditorEnabled() });
+    await expect(result).rejects.toBe(aborted);
   });
 });
 

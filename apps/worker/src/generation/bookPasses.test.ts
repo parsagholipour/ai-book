@@ -99,7 +99,6 @@ vi.mock("./entityState.js", () => ({ updateEntityStateFromPage: mocks.updateEnti
 import {
   generateBookBatchWindow,
   generateBookChapterWholePass,
-  generateBookDraftThenPolish,
   generateBookWholePass,
   isRecoverableBatchDraftRangeError
 } from "./bookPasses.js";
@@ -457,90 +456,6 @@ describe("generateBookBatchWindow", () => {
   });
 });
 
-describe("generateBookDraftThenPolish", () => {
-  function draftThenPolishStrategy() {
-    const strategy = baseStrategy();
-    strategy.createChapterBriefs = undefined;
-    strategy.generateWholeBookDraft.mockResolvedValue({
-      pages: [pageDraft(1), pageDraft(2), pageDraft(3), pageDraft(4)]
-    });
-    strategy.polishPageDraft.mockImplementation(
-      async ({ draft }: { draft: { index: number } }) => ({ ...pageDraft(draft.index), title: `Polished ${draft.index}` })
-    );
-    return strategy;
-  }
-
-  beforeEach(() => {
-    mocks.effectiveWholeBookDraftContext.mockImplementation(
-      (input: unknown, plan: unknown) => ({ input, plan, chapterSetups: twoChapterSetups() })
-    );
-  });
-
-  it("drafts once, checkpoints before polishing, then polishes every page", async () => {
-    const strategy = draftThenPolishStrategy();
-    const order: string[] = [];
-    mocks.checkpointWholeBookDraftPages.mockImplementation(async () => {
-      order.push("checkpoint");
-    });
-    mocks.persistAcceptedWholeBookTarget.mockImplementation(async () => {
-      order.push("persist-target");
-    });
-    strategy.polishPageDraft.mockImplementation(async ({ draft }: { draft: { index: number } }) => {
-      order.push(`polish-${draft.index}`);
-      return pageDraft(draft.index);
-    });
-
-    await generateBookDraftThenPolish(baseOptions(strategy));
-
-    expect(strategy.generateWholeBookDraft).toHaveBeenCalledTimes(1);
-    // The checkpoint and the accepted-target write both land before the first
-    // polish, so a failure mid-polish resumes instead of redrafting the book.
-    expect(order.slice(0, 2)).toEqual(["checkpoint", "persist-target"]);
-    expect(order.filter((step) => step.startsWith("polish-"))).toEqual([
-      // Page 1 polishes twice: this harness leaves the tier unset (balanced),
-      // and the first page best-ofs by tier (`firstPageCandidateCount`).
-      "polish-1",
-      "polish-1",
-      "polish-2",
-      "polish-3",
-      "polish-4"
-    ]);
-    expect(mocks.reviewAndSaveGeneratedPage).toHaveBeenCalledTimes(4);
-  });
-
-  it("resumes polishing only the PENDING pages without repeating the draft call", async () => {
-    mocks.directResumeStateForContext.mockReturnValue({ kind: "resume", firstMissingPageIndex: 3 });
-    mocks.loadDirectResumeContext.mockResolvedValue({
-      chapters: [],
-      pages: [
-        { index: 1, status: "COMPLETED", title: "Page 1", markdown: "One.", summary: "S1", imagePrompt: null },
-        { index: 2, status: "COMPLETED", title: "Page 2", markdown: "Two.", summary: "S2", imagePrompt: null },
-        { index: 3, status: "PENDING", title: "Page 3", markdown: "Three.", summary: "S3", imagePrompt: null },
-        { index: 4, status: "PENDING", title: "Page 4", markdown: "Four.", summary: "S4", imagePrompt: null }
-      ]
-    });
-    const strategy = draftThenPolishStrategy();
-
-    await generateBookDraftThenPolish(baseOptions(strategy));
-
-    expect(strategy.generateWholeBookDraft).not.toHaveBeenCalled();
-    expect(mocks.resetBookForDirectGeneration).not.toHaveBeenCalled();
-    expect(strategy.polishPageDraft).toHaveBeenCalledTimes(2);
-    expect(strategy.polishPageDraft.mock.calls.map((call) => (call[0] as { pageIndex: number }).pageIndex)).toEqual([3, 4]);
-  });
-
-  it("skips everything when the book is already polished", async () => {
-    mocks.directResumeStateForContext.mockReturnValue({ kind: "already-complete" });
-    const strategy = draftThenPolishStrategy();
-
-    await generateBookDraftThenPolish(baseOptions(strategy));
-
-    expect(strategy.generateWholeBookDraft).not.toHaveBeenCalled();
-    expect(strategy.polishPageDraft).not.toHaveBeenCalled();
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
-  });
-});
-
 describe("generateBookWholePass", () => {
   const installPublicationState = (
     reviewed: Array<{ draft: ReturnType<typeof pageDraft> & { imagePrompt?: string }; revision: number; qualityReport: { approved: boolean; score: number } }>
@@ -666,6 +581,20 @@ describe("generateBookWholePass", () => {
         .find((options) => options.type === "GENERATE_IMAGE")?.dedupeKey)
     ).toMatch(/^generate-image:row-1:plan-1:1:v2-[0-9a-f]{24}$/);
     expect(mocks.persistAcceptedWholeBookTarget).toHaveBeenCalled();
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
+  });
+
+  it("makes whole-pass pages terminal without buying images before requested final QA", async () => {
+    const { durablePages, strategy } = installPublicationState([
+      { draft: { ...pageDraft(1), imagePrompt: "Rabbit with a lantern" }, revision: 1, qualityReport: { approved: true, score: 90 } }
+    ]);
+    const options: Parameters<typeof generateBookWholePass>[0] = baseOptions(strategy);
+    options.input.mediaSettings.finalReview = true;
+
+    await generateBookWholePass(options);
+
+    expect(durablePages.get("row-1")).toMatchObject({ status: "COMPLETED", imagePrompt: "Rabbit with a lantern" });
+    expect(mocks.enqueueWorkerJob.mock.calls.filter(([job]) => job.type === "GENERATE_IMAGE")).toHaveLength(0);
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
   });
 

@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Job } from "bullmq";
 
+vi.mock("./compileFinalization.js", async () => (await import("./testing/compileExportMocks.js")).compileFinalizationModuleMock());
+vi.mock("../generation/finalizationIllustrations.js", async () => (await import("./testing/compileExportMocks.js")).finalizationIllustrationsModuleMock());
 vi.mock("@book-maker/db", async () => (await import("./testing/compileExportMocks.js")).dbModuleMock());
 vi.mock("../runtime/config.js", async () => (await import("./testing/compileExportMocks.js")).configModuleMock());
 vi.mock(
@@ -196,7 +198,8 @@ describe("compile final-QA repair fence replacement handoff", () => {
     storageDirs.length = 0;
   });
 
-  it("stands down and defers settlement when page 1 queued an image before page 2's fence failed", async () => {
+  it("defers final illustrations after a partial repair fence outage without republishing the old snapshot", async () => {
+    mocks.enqueueFinalizationIllustrations.mockResolvedValueOnce({ kind: "ready", pendingJobIds: ["image-job-1"], missingPageIndexes: [] });
     const warnings: unknown[][] = [];
     const logged = vi.spyOn(console, "warn").mockImplementation((...args) => warnings.push(args));
     const job = {
@@ -221,14 +224,16 @@ describe("compile final-QA repair fence replacement handoff", () => {
       logged.mockRestore();
     }
 
-    expect(mocks.prisma.generationJob.upsert).toHaveBeenCalledTimes(1);
-    expect(mocks.dispatchWorkerGenerationJob).toHaveBeenCalledWith("image-job-1");
+    expect(mocks.prisma.generationJob.upsert).not.toHaveBeenCalled();
+    expect(mocks.dispatchWorkerGenerationJob).not.toHaveBeenCalled();
+    expect(mocks.enqueueFinalizationIllustrations).toHaveBeenCalledWith(expect.objectContaining({
+      projectId: "project-1", planId: "plan-1", contentRevision: 4
+    }));
     expect(mocks.loadPagesForExport).toHaveBeenCalledWith("project-1");
     expect(mocks.publishCompiledExports).not.toHaveBeenCalled();
     expect(mocks.strategy.compileMarkdown).not.toHaveBeenCalled();
     expect(warnings.map(([message]) => message)).toEqual(expect.arrayContaining([
-      "Export compile stopped repairing: its ownership fence could not be read",
-      "Export compile superseded before publication"
+      "Export compile stopped repairing: its ownership fence could not be read"
     ]));
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith(
       "project-1",

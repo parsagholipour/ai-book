@@ -13,6 +13,7 @@ import { figureStandInMarkdown } from "./figures/figureBlocks.js";
 import { pageDraftSummary } from "./figures/figureDraftSummary.js";
 import { BYLINE_IS_TYPESET_RULE } from "./markdown.js";
 import { rewriteReviewedEmptyNotesPageBrief } from "./pageBriefCitationRewrites.js";
+import { READER_NAMING_RULE } from "./readerNaming.js";
 
 /**
  * Prompt rules and payload helpers shared by the page-map production layer
@@ -39,6 +40,7 @@ export function reviewerStyleRules(input: CreateProjectInput): string[] {
 
 export const READER_FACING_PAGE_BRIEF_RULES = [
   "Treat pageBrief purpose, beat, requiredContinuity, and endingPressure as internal assignment notes; transform them into prose instead of echoing their wording.",
+  READER_NAMING_RULE,
   'Do not write procedural phrases such as "concluding the survey", "this chapter transitions", "the next section", or "the scope of this survey" in the page.',
   "If requiredContinuity points to an earlier page, preserve consistency without re-explaining that page's concrete examples; add a new implication or consequence.",
   "When pageScope.isLastPageOfChapter is true, close with a concrete implication for the chapter's argument and let any handoff to the next chapter arise from substance, not from announcing a transition.",

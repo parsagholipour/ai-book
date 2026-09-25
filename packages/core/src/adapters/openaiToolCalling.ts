@@ -122,6 +122,7 @@ export function serializeOpenAiToolArguments(args: unknown): string {
  * user stop can tear down the in-flight HTTP request instead of waiting out
  * the full generation. Undefined when no signal was given.
  */
-export function openAiRequestOptions(options: { signal?: AbortSignal }): { signal: AbortSignal } | undefined {
-  return options.signal ? { signal: options.signal } : undefined;
+export function openAiRequestOptions(options: { signal?: AbortSignal; textAttemptBudget?: unknown }): { signal?: AbortSignal; maxRetries?: number } | undefined {
+  if (!options.signal && !options.textAttemptBudget) return undefined;
+  return { ...(options.signal ? { signal: options.signal } : {}), ...(options.textAttemptBudget ? { maxRetries: 0 } : {}) };
 }

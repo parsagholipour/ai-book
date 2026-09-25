@@ -33,7 +33,7 @@ it("fits the observed medium-effort story extraction without a paid truncated re
   expect(requests[0]?.reasoning.effort).toBe("medium");
 });
 
-const stages = ["extract-story-state", "describe-pages", "critique-plan", "select-cover-design", "review-dossier-provenance", "review-chapter-edit-acceptance"];
+const stages = ["extract-story-state", "describe-pages", "critique-plan", "select-cover-design", "review-dossier-provenance", "review-chapter-edit-acceptance", "review-page", "critique-page-map", "generate-chapter-brief", "book.final_qa.chapter_transitions", "final-book-qa", "audit-page-style", "generate-page", "polish-page", "revise-page", "repair-page-brief", "judge-page-drafts"];
 describe.each(["openai", "gemini"] as const)("%s structured allowance", (provider) => {
   it.each(stages)("reserves reasoning room for %s and widens from the effective limit", async (purpose) => {
     const requests: number[] = [];

@@ -1,0 +1,75 @@
+{
+  "source": "Balanced 30-page Lantern Path audit, 2026-09-25, first page-30 sentence repair",
+  "pageIndex": 30,
+  "originalDraft": {
+    "title": "Food Passed Around",
+    "markdown": "The neighbors pass the last pieces of bread and berry tart around the blanket. Rabbit sits beside Wise Turtle, listening to the soft clink of cups. Beyond the gate, the six lanterns shine along the safe path. The moon hangs over Moonberry Meadow, and everyone stays close beneath its gentle light, sharing the picnic together.",
+    "summary": "The story closes with Rabbit, Wise Turtle, and their neighbors sharing food beneath the moon.",
+    "continuityNotes": []
+  },
+  "patch": {
+    "patches": [
+      {
+        "find": "The moon hangs over Moonberry Meadow, and everyone stays close beneath its gentle light, sharing the picnic together.",
+        "replace": "The moon hangs over Moonberry Meadow. Everyone stays close beneath its gentle light, sharing the picnic together."
+      }
+    ]
+  },
+  "rejectedReview": {
+    "approved": false,
+    "score": 68,
+    "scoreBasis": "reviewer",
+    "issues": [
+      "The page repeats the food-passing beat from page 28. Page 28 says, “They pass the tart and other treats around the blanket”; this page says, “The neighbors pass the last pieces of bread and berry tart around the blanket.” The “last pieces” detail suggests a later moment, but the central action and setting are the same."
+    ],
+    "requiredRevisions": [
+      "Revise the close so it does not restage page 28’s food-passing beat. Keep the gathered picnic, the restored path, and the lanterns glowing as the final image."
+    ],
+    "notes": "The sentence-length repair succeeds: the candidate preserves the original events and order, and its sentences meet the stated length targets. The repetition is also present in the original prose, so it is an existing defect rather than one introduced by the repair.",
+    "groundedOk": true,
+    "groundingStatus": "not_applicable",
+    "groundingAvailability": "not_applicable",
+    "unsupportedClaims": [],
+    "qualityAdvisories": [],
+    "checks": {
+      "placeholderFree": true,
+      "promptLeakFree": true,
+      "titleClean": true,
+      "repetitionOk": false,
+      "progressionOk": false,
+      "styleNatural": true
+    }
+  },
+  "previousPages": [
+    {
+      "index": 25,
+      "title": "A Swaying Basket",
+      "summary": "Turtle guides the group past lantern five, while Rabbit steadies a neighbor’s basket.",
+      "markdown": "The hill path rises beneath lantern five. Wise Turtle guides the group past the glowing post. A neighbor’s basket sways on the climb. Rabbit steadies its bottom while the neighbor keeps hold of the handle. Together they reach level ground near the top. Ahead, the meadow gate shines beyond the last stretch of trail."
+    },
+    {
+      "index": 26,
+      "title": "Sixth Light Ahead",
+      "summary": "The whole group reaches the gate before moonrise, still carrying the picnic.",
+      "markdown": "The meadow gate comes into view, with lantern six glowing beside it. The neighbors follow its steady light, carrying every basket and blanket. Rabbit stays beside the group on the last stretch. The sky has turned deep blue, though the moon has not risen. Wise Turtle reaches the gate first and holds the path clear."
+    },
+    {
+      "index": 27,
+      "title": "Under the Gate Lantern",
+      "summary": "The neighbors reach Moonberry Meadow and begin the picnic before moonrise.",
+      "markdown": "Everyone steps through the gate into Moonberry Meadow before moonrise. They spread the blankets beneath lantern six and set down the food baskets. Rabbit takes a deep breath. He can smell berries, warm bread, and damp grass. Wise Turtle settles beside the group. The moon is still below the trees, but the picnic has begun."
+    },
+    {
+      "index": 28,
+      "title": "The First Berry Tart",
+      "summary": "Rabbit lets the neighbors choose treats before he takes one for himself.",
+      "markdown": "A berry tart peeks from one basket. Rabbit reaches toward it, then pulls his paw back. “You choose first,” he tells the neighbors. They pass the tart and other treats around the blanket. Rabbit waits until a piece reaches him. He takes it with a grin, while Wise Turtle pours a cup of cool water nearby."
+    },
+    {
+      "index": 29,
+      "title": "A Moonlit Thanks",
+      "summary": "Turtle thanks Rabbit for finding the last lantern as moonlight joins the path lights.",
+      "markdown": "The moon rises above the trees. Wise Turtle turns to Rabbit. “Your eyes found the last lantern,” he says. Rabbit smiles and looks toward the gate. Its light shines clearly; other lanterns wink between the fern and hill. Each one holds its place along the trail. Warm berry sweetness fills the air as the neighbors share another bite."
+    }
+  ]
+}

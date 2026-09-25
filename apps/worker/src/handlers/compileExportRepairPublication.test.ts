@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Job } from "bullmq";
-import type { FinalBookQa, ManuscriptQualityReport, PageQualityReport } from "@book-maker/core";
+import { createProjectSchema, makeFallbackPlan, type FinalBookQa, type ManuscriptQualityReport, type PageQualityReport } from "@book-maker/core";
 import type { ExportPageForRepair } from "../runtime/jobTypes.js";
 
 /**
@@ -12,6 +12,8 @@ import type { ExportPageForRepair } from "../runtime/jobTypes.js";
  * behind the same revision claim.
  */
 
+vi.mock("./compileFinalization.js", async () => (await import("./testing/compileExportMocks.js")).compileFinalizationModuleMock());
+vi.mock("../generation/finalizationIllustrations.js", async () => (await import("./testing/compileExportMocks.js")).finalizationIllustrationsModuleMock());
 vi.mock("@book-maker/db", async () => (await import("./testing/compileExportMocks.js")).dbModuleMock());
 vi.mock("../runtime/config.js", async () => (await import("./testing/compileExportMocks.js")).configModuleMock());
 vi.mock(
@@ -76,6 +78,7 @@ import { compileExport } from "./compileExport.js";
 import { qualityReportWithProvenance } from "./compileExportQualityProvenance.js";
 import { exportRepairOwnershipFence, ExportRepairSupersededError } from "./compileExportFence.js";
 import { repairPagesFromFinalQa } from "./compileExportRepair.js";
+import { pageIllustrationVisualContract } from "../generation/pageIllustrationVisualContract.js";
 import { pageIllustrationKeeperToken } from "../generation/pageIllustrationOwnership.js";
 import { isDefaultCompileQualityFeature, mocks } from "./testing/compileExportMocks.js";
 
@@ -179,6 +182,52 @@ describe("compile final-QA repair atomic publication fence", () => {
       revision: 2,
       updatedAt: new Date("2026-01-01T00:00:00.001Z")
     }));
+  });
+
+  it("passes actual following prose to the first rewrite and review", async () => {
+    const following = { ...page(), id: "page-2", index: 2, markdown: "The lantern was already in Turtle's hands." };
+    await repairPagesFromFinalQa(repairOptions(page(), { pages: [page(), following], finalQa: { ...finalQa, issues: ["Page 1 has a broken handoff."] } }));
+    expect(mocks.revisePageDraftWithRestart).toHaveBeenCalledWith(expect.objectContaining({ reviseOptions: expect.objectContaining({ nextPages: [expect.objectContaining({ index: 2, markdown: following.markdown })] }) }));
+    expect(strategy.reviewPageDraft).toHaveBeenCalledWith(expect.objectContaining({ nextPages: [expect.objectContaining({ index: 2, markdown: following.markdown })] }));
+  });
+
+  it("does not spend provider calls for a durably consumed repair claim", async () => {
+    const started = vi.fn(async () => false);
+    const completed = vi.fn();
+    await repairPagesFromFinalQa(repairOptions(page(), { onRepairPageStarted: started, onRepairPageCompleted: completed, finalQa: { ...finalQa, issues: ["Page 1 needs repair."] } }));
+    expect(started).toHaveBeenCalledWith("page-1", 1);
+    expect(mocks.revisePageDraftWithRestart).not.toHaveBeenCalled();
+    expect(completed).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("only reuses final-repair artwork with unchanged prose (changed scene: %s)", async (changedScene) => {
+    const realInput = createProjectSchema.parse({ prompt: "Rabbit learns to cooperate.", category: "KIDS", targetPages: 30 });
+    const realPlan = makeFallbackPlan(realInput);
+    const original = { ...page(), imagePrompt: "Rabbit and Turtle with a lantern." };
+    const priorKeeper = { ...original, projectId: "project-1", pageId: original.id };
+    const visualContract = pageIllustrationVisualContract({ prompt: original.imagePrompt, input: realInput, plan: realPlan, referenceAssets: [] });
+    const image = { id: "image-1", path: "/image-1.webp", metadata: { visualContract,
+      keeperProjectId: "project-1", keeperPageId: original.id, keeperToken: pageIllustrationKeeperToken(priorKeeper) } };
+    original.images = [image];
+    mocks.prisma.imageAsset.findMany.mockResolvedValueOnce([]).mockResolvedValue([image]);
+    mocks.revisePageDraftWithRestart.mockResolvedValue({ ...illustratedDraft, imagePrompt: original.imagePrompt,
+      markdown: changedScene ? "Rabbit waits alone in a different forest." : original.markdown, continuityNotes: [] });
+    strategy.shouldIllustratePage.mockReturnValue(true);
+    const completed = vi.fn();
+    await repairPagesFromFinalQa(repairOptions(original, { input: realInput, plan: realPlan, planId: "plan-1", deferIllustrations: true, onRepairPageCompleted: completed }));
+    if (changedScene) {
+      expect(mocks.prisma.imageAsset.updateMany).not.toHaveBeenCalled();
+      expect(mocks.prisma.imageAsset.deleteMany).toHaveBeenCalled();
+    } else {
+      expect(mocks.prisma.imageAsset.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ id: image.id, pageId: original.id }),
+        data: { metadata: expect.objectContaining({ visualContract, reusedFromKeeperToken: pageIllustrationKeeperToken(priorKeeper) }) }
+      }));
+      expect(mocks.prisma.imageAsset.deleteMany).not.toHaveBeenCalled();
+    }
+    expect(mocks.prisma.generationJob.upsert).not.toHaveBeenCalled();
+    expect(mocks.dispatchWorkerGenerationJob).not.toHaveBeenCalled();
+    expect(completed).toHaveBeenCalledWith(original.id);
   });
 
   it("retires only the prior generated keeper, queues its replacement, and stands export down", async () => {
@@ -414,6 +463,7 @@ describe("compile final-QA repair atomic publication fence", () => {
   });
 
   it("does not publish exports while a repaired illustration job is outstanding", async () => {
+    mocks.enqueueFinalizationIllustrations.mockResolvedValueOnce({ kind: "ready", pendingJobIds: ["image-job-1"], missingPageIndexes: [] });
     const original = {
       ...page(),
       imagePrompt: "The old scene.",
@@ -470,8 +520,11 @@ describe("compile final-QA repair atomic publication fence", () => {
       warning.mockRestore();
     }
 
-    expect(mocks.prisma.generationJob.upsert).toHaveBeenCalled();
-    expect(mocks.prisma.page.updateMany).toHaveBeenCalledWith(
+    expect(mocks.enqueueFinalizationIllustrations).toHaveBeenCalledWith(expect.objectContaining({
+      projectId: "project-1", planId: "plan-1", contentRevision: 4
+    }));
+    expect(mocks.prisma.generationJob.upsert).not.toHaveBeenCalled();
+    expect(mocks.prisma.page.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: "COMPLETED" }) })
     );
     expect(mocks.publishCompiledExports).not.toHaveBeenCalled();

@@ -7,6 +7,7 @@ import { isStopRequestedError } from "../runtime/jobTypes.js";
 import { jsonPayloadToRecord } from "../runtime/serialization.js";
 import { characterReferencePromptInstruction, selectReferenceImagePaths } from "../generation/characterReferences.js";
 import { characterReferenceAssetsOrNone } from "../generation/characterReferenceTolerance.js";
+import { pageIllustrationVisualContract } from "../generation/pageIllustrationVisualContract.js";
 import { generateCover } from "./generateCover.js";
 import {
   ownsPageIllustration,
@@ -279,6 +280,7 @@ async function renderAndStorePageIllustration(options: {
           revisedPrompt: image.revisedPrompt,
           ...imageGenerationMetadata(image),
           characterReferenceCount: referenceImagePaths.length,
+          visualContract: pageIllustrationVisualContract({ prompt, input, plan, referenceAssets: characterReferences }),
           keeperProjectId: projectId,
           keeperPageId: pageId,
           ...(ownership.kind === "token"

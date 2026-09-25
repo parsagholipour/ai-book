@@ -8,6 +8,7 @@ vi.mock("../runtime/jobLifecycle.js", () => ({
   updateJobProgress: mocks.updateJobProgress
 }));
 
+import { ProviderHttpError, TextAttemptBudgetExhaustedError } from "@book-maker/core";
 import { revisePageDraftWithRestart } from "./pageRevision.js";
 
 const draftNamed = (name: string) => ({
@@ -22,6 +23,34 @@ const strategyWith = (revise: ReturnType<typeof vi.fn>) => ({ revisePageDraft: r
 beforeEach(() => vi.clearAllMocks());
 
 describe("revisePageDraftWithRestart", () => {
+  it("does not reset the provider allowance after a default revision exhausts it", async () => {
+    const error = new TextAttemptBudgetExhaustedError(5);
+    const revise = vi.fn().mockRejectedValue(error);
+    await expect(revisePageDraftWithRestart({ strategy: strategyWith(revise), reviseOptions: {} as never, context: "Page 1" })).rejects.toBe(error);
+    expect(revise).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not replenish an exhausted provider allowance even with explicit restarts", async () => {
+    const error = new TextAttemptBudgetExhaustedError(5);
+    const revise = vi.fn().mockRejectedValue(error);
+    await expect(revisePageDraftWithRestart({ strategy: strategyWith(revise), reviseOptions: {} as never, context: "Page 1", maxRestarts: 2 })).rejects.toBe(error);
+    expect(revise).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not restart a permanent provider failure even with explicit restarts", async () => {
+    const error = new ProviderHttpError("invalid credentials", { status: 401 });
+    const revise = vi.fn().mockRejectedValue(error);
+    await expect(revisePageDraftWithRestart({ strategy: strategyWith(revise), reviseOptions: {} as never, context: "Page 1", maxRestarts: 2 })).rejects.toBe(error);
+    expect(revise).toHaveBeenCalledTimes(1);
+  });
+
+  it("propagates cancellation before even an explicit restart", async () => {
+    const error = Object.assign(new Error("stopped"), { name: "StopRequestedError" });
+    const revise = vi.fn().mockRejectedValue(error);
+    await expect(revisePageDraftWithRestart({ strategy: strategyWith(revise), reviseOptions: {} as never, context: "Page 1", maxRestarts: 2 })).rejects.toBe(error);
+    expect(revise).toHaveBeenCalledTimes(1);
+    expect(mocks.updateJobProgress).not.toHaveBeenCalled();
+  });
   it("returns the first successful revision", async () => {
     const revise = vi.fn().mockResolvedValue(draftNamed("Fixed"));
 

@@ -24,7 +24,8 @@ function fixture(choice = "clean") {
   const textModel = new FakeTextModelAdapter();
   const generateJson = vi.spyOn(textModel, "generateJson").mockResolvedValue({
     text: "", provider: "fake", model: "fake",
-    data: { styleOk: false, styleIssues: ["Restore the plain rhythm in the final paragraph."] }
+    data: { styleOk: false, styleIssues: ["Restore the plain rhythm in the final paragraph."],
+      evidence: [{ issue: "Restore the plain rhythm in the final paragraph.", quote: "The mast fell.", category: "voice" }] }
   });
   const choose = vi.fn(async (_request: DecisionRequest) => ({
     ...JEV_SELECTION, selectedOption: choice,
@@ -56,7 +57,7 @@ describe("worker style screens", () => {
     const initialContext = JSON.parse(test.choose.mock.calls[0]![0].context);
     expect(JSON.parse(test.choose.mock.calls[1]![0].context)).toEqual(initialContext);
     expect(initialContext).toEqual({
-      pageIndex: 12, markdown: "A wave struck.\n\nThe mast fell.",
+      pageIndex: 12, pageRole: "body", markdown: "A wave struck.\n\nThe mast fell.",
       voiceGuide: plan.voiceGuide, antiAiRules: localStyleInstructions(plan),
       styleExcerpts: test.options.styleExcerpts, userRequest: test.options.userRequest
     });
@@ -75,7 +76,11 @@ describe("worker style screens", () => {
       expect(test.choose).toHaveBeenCalledTimes(2);
       expect(test.generateJson).toHaveBeenCalledTimes(choice === "clean" ? 0 : 2);
       if (choice === "clean") expect(first).toHaveProperty("stylePenalty", 0);
-      else if (choice === "diagnostic_failure") expect(first).toBe(report);
+      else if (choice === "diagnostic_failure") {
+        expect(first).toMatchObject({ approved: true, score: 90, requiredRevisions: [],
+          qualityAdvisories: [{ check: "style", status: "unverified", message: expect.stringContaining("unavailable") }] });
+        expect(first).not.toHaveProperty("stylePenalty");
+      }
       else expect(first).toMatchObject({ approved: false, score: 90, stylePenalty: 15, requiredRevisions: ["Revise style: Restore the plain rhythm in the final paragraph."] });
       // A separate page still gets its own two attempts.
       await revisedDraftStyleAuditor(test.options)!(13, draft, report);

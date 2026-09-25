@@ -1,4 +1,5 @@
 import type { ZodType } from "zod";
+import type { TextAttemptBudget } from "./textAttemptBudget.js";
 import type { ModelTier, TextModelSelection } from "../schemas/book.js";
 
 /** A tool invocation requested by the model during a generateWithTools call. */
@@ -117,9 +118,13 @@ export type TextProviderRequest = {
   /** null means no explicit limit; the provider selects its default. */
   requestedMaxTokens: number | null;
   effectiveMaxTokens: number | null;
+  attempt?: number;
+  maxAttempts?: number;
 };
 
 export type GenerateTextOptions = {
+  /** Call-scoped mutable allowance; never reset by a retry or fallback. */
+  textAttemptBudget?: TextAttemptBudget;
   messages: ChatMessage[];
   temperature?: number;
   maxTokens?: number;

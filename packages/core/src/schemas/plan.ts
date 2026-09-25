@@ -672,10 +672,11 @@ export function bookPlanSchemaWithFallback(fallback: BookPlan) {
  * reproducing the source package in their response; the planner attaches the
  * original notes after this schema has parsed the creative plan fields.
  */
-export function bookPlanModelOutputSchemaWithFallback(fallback: BookPlan) {
+export function bookPlanModelOutputSchemaWithFallback(fallback: BookPlan, compactStory = false): z.ZodType<Omit<BookPlan, "researchNotes">> {
   return z.preprocess(
     normalizeBookPlanWithFallback(fallback, true),
-    bookPlanObjectSchema.omit({ researchNotes: true, bookDevelopment: true, episodes: true, dossier: true })
+    bookPlanObjectSchema.omit({ researchNotes: true, bookDevelopment: true, episodes: true, dossier: true,
+      ...(compactStory ? { authorStance: true as const, styleContract: true as const } : {}) })
   );
 }
 

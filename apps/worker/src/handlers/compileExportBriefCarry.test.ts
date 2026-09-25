@@ -146,6 +146,7 @@ function exportPage(index: number, chapterId: string | null): ExportPageForRepai
     summary: `Page ${index} summary.`,
     imagePrompt: null,
     status: "COMPLETED",
+    images: [],
     chapter: chapterId ? { id: chapterId, index: 1, productionBrief: { chapter: chapterId } } : null
   } as unknown as ExportPageForRepair;
 }

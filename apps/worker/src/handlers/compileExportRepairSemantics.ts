@@ -6,7 +6,7 @@ import { ExportRepairFenceUnreadableError, ExportRepairSupersededError } from ".
 import type { BookPlan, StoryExtractResult, StoryState } from "@book-maker/core";
 import { pageScope, Prisma, prisma } from "@book-maker/db";
 
-export type FinalQaOwnershipClient = Pick<Prisma.TransactionClient, "project">;
+export type FinalQaOwnershipClient = Pick<Prisma.TransactionClient, "project"> & Partial<Pick<Prisma.TransactionClient, "generationJob">>;
 export type FinalQaOwnershipClaim = (client?: FinalQaOwnershipClient) => Promise<void>;
 
 type FinalQaSemanticClient = Pick<

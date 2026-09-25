@@ -98,6 +98,7 @@ function exportPage(index: number, overrides: Partial<ExportPageForRepair> = {})
     summary: `Page ${index} summary.`,
     imagePrompt: null,
     status: "COMPLETED",
+    images: [],
     chapter: null,
     ...overrides
   } as unknown as ExportPageForRepair;
@@ -166,6 +167,45 @@ describe("repairPagesFromFinalQa", () => {
       ...exportPage(2),
       ...data
     }));
+  });
+
+  it("preserves saved manuscript when the first repair exhausts its output allowance", async () => {
+    const error = Object.assign(new Error("OpenAI response was incomplete: max_output_tokens."), { name: "OpenAIResponseError" });
+    mocks.revisePageDraftWithRestart.mockRejectedValueOnce(error);
+    const unavailable = vi.fn();
+    await expect(repairPagesFromFinalQa(baseOptions({ onRepairPageUnavailable: unavailable }))).resolves.toHaveLength(2);
+    expect(mocks.prisma.page.update).not.toHaveBeenCalled();
+    expect(unavailable).toHaveBeenCalledWith("page-2", 2, error);
+  });
+
+  it("keeps an earlier successful repair when a later page's review fails", async () => {
+    const error = Object.assign(new Error("OpenAI response was incomplete: max_output_tokens."), { name: "OpenAIResponseError" });
+    mocks.revisePageDraftWithRestart.mockResolvedValue(draftNamed("Repaired"));
+    strategy.reviewPageDraft.mockResolvedValueOnce(report(90, true)).mockRejectedValueOnce(error);
+    const unavailable = vi.fn();
+    await expect(repairPagesFromFinalQa(baseOptions({ finalQa: finalQa([1, 2]), onRepairPageUnavailable: unavailable,
+      quality: { enabled: (feature: string) => feature === "pageModelReview" } }))).resolves.toHaveLength(2);
+    expect(mocks.prisma.page.update).toHaveBeenCalledTimes(1);
+    expect(unavailable).toHaveBeenCalledWith("page-2", 2, error);
+  });
+
+  it.each(["StopRequestedError", "AbortError"])("never contains %s as an unavailable repair", async (name) => {
+    const error = Object.assign(new Error("stopped"), { name });
+    mocks.revisePageDraftWithRestart.mockRejectedValueOnce(error);
+    const unavailable = vi.fn();
+    await expect(repairPagesFromFinalQa(baseOptions({ onRepairPageUnavailable: unavailable }))).rejects.toBe(error);
+    expect(unavailable).not.toHaveBeenCalled();
+  });
+
+  it("does not downgrade a failed page publication to a provider warning", async () => {
+    const error = new Error("database connection closed");
+    mocks.revisePageDraftWithRestart.mockResolvedValue(draftNamed("Repaired"));
+    strategy.reviewPageDraft.mockResolvedValue(report(90, true));
+    mocks.prisma.page.update.mockRejectedValueOnce(error);
+    const unavailable = vi.fn();
+    await expect(repairPagesFromFinalQa(baseOptions({ onRepairPageUnavailable: unavailable,
+      quality: { enabled: (feature: string) => feature === "pageModelReview" } }))).rejects.toBe(error);
+    expect(unavailable).not.toHaveBeenCalled();
   });
 
   it("returns undefined when final QA flagged nothing", async () => {

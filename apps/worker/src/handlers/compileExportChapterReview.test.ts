@@ -46,6 +46,43 @@ describe("runBoundedChapterQualityReview", () => {
     expect(generateJsonWithRetry).not.toHaveBeenCalled();
   });
 
+  it("does not mistake the twelfth sampled chapter for the ending of a fifteen-chapter story", async () => {
+    // Exact retained sparse Quick counterexample: pages 29–30 paid off the
+    // deadline, but the old first-12-chapters payload ended at page 24.
+    const prose = new Map([
+      [2, "“We should reach it before moonrise,” said Rabbit. Wise Turtle nodded. “First, we must find our lights.”"],
+      [24, "All six lanterns now stood where they belonged, glowing toward the meadow."],
+      [29, "The group stepped from the woodland path into the meadow before moonrise. No one had been left behind."],
+      [30, "Warm lanterns shone along the path behind them. The picnic was underway, right on time."]
+    ]);
+    const pages = Array.from({ length: 30 }, (_, i) => exportPage(i + 1, {
+      markdown: prose.get(i + 1) ?? `The friends follow the woodland path on page ${i + 1}.`,
+      chapter: { id: `chapter-${Math.floor(i / 2) + 1}`, productionBrief: null,
+        index: Math.floor(i / 2) + 1, title: `Chapter ${Math.floor(i / 2) + 1}` }
+    }));
+    const unsupported = { code: "CHAPTER_COHERENCE", affectedPageIndexes: [2, 24],
+      message: "The story establishes that the friends should reach the meadow before moonrise, but the final excerpt only restores the lanterns and leaves their arrival and the picnic unresolved.",
+      guidance: "Add a brief ending showing whether they reach the meadow before moonrise and what happens to the picnic, or clarify that restoring the lights—not reaching the meadow—is the goal." };
+    const local = { code: "CHAPTER_COHERENCE", affectedPageIndexes: [23, 24], message: "A local contradiction.", guidance: "Clarify these two excerpts." };
+    const adjacent = { code: "CHAPTER_TRANSITION", affectedPageIndexes: [22, 23], message: "An abrupt handoff.", guidance: "Bridge these adjacent excerpts." };
+    generateJsonWithRetry.mockResolvedValue({ data: { issues: [unsupported, local, adjacent,
+      { ...adjacent, affectedPageIndexes: [2, 24] }, { ...local, affectedPageIndexes: [29, 30] }] } });
+    const issues = await runBoundedChapterQualityReview(baseOptions([...pages].reverse()));
+    const request = generateJsonWithRetry.mock.calls[0]![1];
+    const payload = JSON.parse(request.messages[1].content);
+    expect(payload.reviewScope).toMatchObject({ kind: "sampled_chapter_boundaries", totalStoryPages: 30,
+      finalStoryPageIndex: 30, totalChapters: 15, omittedChapterIndexes: [13, 14, 15], allowsWholeBookAbsenceClaims: false });
+    expect(payload.chapters).toHaveLength(12);
+    expect(payload.chapters.at(-1).closingProse.pageIndex).toBe(24);
+    expect(payload.bookEndingContext.map((page: { pageIndex: number }) => page.pageIndex)).toEqual([29, 30]);
+    expect(payload.bookEndingContext[0].excerpt).toContain("into the meadow before moonrise");
+    expect(payload.bookEndingContext[1].excerpt).toContain("picnic was underway");
+    expect(request.messages[0].content).toMatch(/last sampled chapter is not necessarily the book ending/);
+    expect(issues.map(({ code, affectedPageIndexes }) => ({ code, affectedPageIndexes }))).toEqual([
+      { code: local.code, affectedPageIndexes: [23, 24] }, { code: adjacent.code, affectedPageIndexes: [22, 23] }
+    ]);
+  });
+
   it("sends labeled actual prose excerpts and summaries that cannot be mistaken for prose", async () => {
     generateJsonWithRetry.mockResolvedValue({
       data: {
@@ -182,9 +219,9 @@ describe("runBoundedChapterQualityReview", () => {
     expect(pageSummary).not.toContain("Into the unknown");
   });
 
-  it("treats a model failure as no issues, but still propagates a user stop", async () => {
+  it("marks a model check unavailable while still propagating a user stop", async () => {
     generateJsonWithRetry.mockRejectedValue(new Error("model outage"));
-    await expect(runBoundedChapterQualityReview(baseOptions([exportPage(1)]))).resolves.toEqual([]);
+    await expect(runBoundedChapterQualityReview(baseOptions([exportPage(1)]))).resolves.toEqual([expect.objectContaining({ code: "CHAPTER_REVIEW_UNAVAILABLE", severity: "warning" })]);
 
     generateJsonWithRetry.mockRejectedValue(new StopRequestedError());
     await expect(runBoundedChapterQualityReview(baseOptions([exportPage(1)]))).rejects.toBeInstanceOf(

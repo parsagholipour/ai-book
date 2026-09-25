@@ -14,6 +14,7 @@ import {
   AUDIENCE_AGE_RANGE_OPTIONS,
   CATEGORY_OPTIONS,
   CUSTOM_SUBCATEGORY_VALUE,
+  ILLUSTRATION_CADENCE_OPTIONS,
   SUBCATEGORY_OPTIONS,
   TONE_PROFILE_OPTIONS,
   audienceAgeRangeFromValue,
@@ -21,6 +22,7 @@ import {
   imageModelKey,
   imageModelLabel,
   imageModelSelectionFromKey,
+  illustrationCadenceFromValue,
   toneProfileFromValue,
   type DraftProject,
   type GenerationStrategyOption,
@@ -283,6 +285,22 @@ export function ProjectSidebar(props: {
             Images
           </label>
         </div>
+        {props.draft.fullIllustrations ? (
+          <label>
+            Illustration frequency
+            <select
+              value={props.draft.illustrationCadence}
+              onChange={(event) => props.setDraft({
+                ...props.draft,
+                illustrationCadence: illustrationCadenceFromValue(event.target.value)
+              })}
+            >
+              {ILLUSTRATION_CADENCE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         {props.showImageModelControls ? (
           <>
             <label>

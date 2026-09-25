@@ -226,10 +226,10 @@ export function messageTargetsPage(message: string, pageIndex: number, lastPage:
   );
 }
 
-/** The complaints a page has to answer, or the verdict's issues when none is its own. */
+/** Keep page-scoped advice on its page; only genuinely unscoped advice is shared. */
 export function finalQaMessagesForPage(finalQa: FinalBookQa, pageIndex: number, lastPage: number): string[] {
-  const scoped = finalQaComplaints(finalQa).filter((message) => messageTargetsPage(message, pageIndex, lastPage));
-  return scoped.length > 0 ? scoped : finalQa.issues;
+  return finalQaComplaints(finalQa).filter((message) => messageTargetsPage(message, pageIndex, lastPage) ||
+    (!/\bpages?\s+\d/i.test(message) && !messageTargetsPage(message, 1, lastPage) && !messageTargetsPage(message, lastPage, lastPage)));
 }
 
 /**

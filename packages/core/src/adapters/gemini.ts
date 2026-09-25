@@ -75,6 +75,7 @@ export class GeminiTextAdapter implements TextModelAdapter {
       model: this.model,
       contents: prompt.contents,
       config: {
+        ...(options.textAttemptBudget ? { httpOptions: { retryOptions: { attempts: 1 } } } : {}),
         ...prompt.config,
         ...geminiThinkingConfig(this.model, this.thinkingBudget, this.thinkingEnabled, this.thinkingEffort),
         ...(options.signal ? { abortSignal: options.signal } : {}),
@@ -102,6 +103,7 @@ export class GeminiTextAdapter implements TextModelAdapter {
       model: this.model,
       contents: prompt.contents,
       config: {
+        ...(options.textAttemptBudget ? { httpOptions: { retryOptions: { attempts: 1 } } } : {}),
         ...prompt.config,
         ...geminiThinkingConfig(this.model, this.thinkingBudget, this.thinkingEnabled, this.thinkingEffort),
         ...(options.signal ? { abortSignal: options.signal } : {}),
@@ -140,6 +142,7 @@ export class GeminiTextAdapter implements TextModelAdapter {
       model: this.model,
       contents: prompt.contents,
       config: {
+        ...(options.textAttemptBudget ? { httpOptions: { retryOptions: { attempts: 1 } } } : {}),
         ...prompt.config,
         ...geminiThinkingConfig(this.model, this.thinkingBudget, this.thinkingEnabled, this.thinkingEffort),
         ...(options.signal ? { abortSignal: options.signal } : {}),
@@ -165,6 +168,7 @@ export class GeminiTextAdapter implements TextModelAdapter {
       model: this.model,
       contents: prompt.contents,
       config: {
+        ...(options.textAttemptBudget ? { httpOptions: { retryOptions: { attempts: 1 } } } : {}),
         ...prompt.config,
         ...geminiThinkingConfig(this.model, this.thinkingBudget, this.thinkingEnabled, this.thinkingEffort),
         ...(options.signal ? { abortSignal: options.signal } : {}),
@@ -204,6 +208,7 @@ export class GeminiTextAdapter implements TextModelAdapter {
       model: this.model,
       contents: prompt.contents,
       config: {
+        ...(options.textAttemptBudget ? { httpOptions: { retryOptions: { attempts: 1 } } } : {}),
         ...prompt.config,
         ...geminiThinkingConfig(this.model, this.thinkingBudget, this.thinkingEnabled, this.thinkingEffort),
         ...(options.signal ? { abortSignal: options.signal } : {}),
@@ -258,6 +263,7 @@ export class GeminiTextAdapter implements TextModelAdapter {
       model: this.model,
       contents: prompt.contents,
       config: {
+        ...(options.textAttemptBudget ? { httpOptions: { retryOptions: { attempts: 1 } } } : {}),
         ...prompt.config,
         ...geminiThinkingConfig(this.model, this.thinkingBudget, this.thinkingEnabled, this.thinkingEffort),
         ...(options.signal ? { abortSignal: options.signal } : {}),

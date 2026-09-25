@@ -5,7 +5,33 @@ import { join } from "node:path";
 import type { Job } from "bullmq";
 
 const coverageReview = vi.hoisted(() => vi.fn());
+const inventoryReview = vi.hoisted(() => vi.fn());
+const finalizationPhase = vi.hoisted(() => vi.fn(async () => {}));
+const operationChecks = vi.hoisted(() => new Map<string, unknown>());
+const operationReviews = vi.hoisted(() => new Map<string, unknown>());
 
+vi.mock("./compileFinalization.js", async () => {
+  const actual = await vi.importActual<typeof import("./compileFinalization.js")>("./compileFinalization.js");
+  const base = (await import("./testing/compileExportMocks.js")).compileFinalizationModuleMock();
+  return { ...actual, ...base, openCompileFinalization: async (options: Parameters<typeof actual.openCompileFinalization>[0]) => {
+    const operation = await base.openCompileFinalization(options);
+    return { ...operation, state: { ...operation.state, key: "operation1", inputFingerprint: "configuration1" },
+      phase: finalizationPhase,
+      review: async (stage: string, pages: unknown[], compute: () => Promise<unknown>) => {
+        const key = `${stage}:${JSON.stringify(pages.map((page) => {
+          const { images: _images, ...prose } = page as { images?: unknown }; return prose;
+        }))}`;
+        if (!operationReviews.has(key)) operationReviews.set(key, await compute());
+        return operationReviews.get(key);
+      },
+      exportCheck: async <T>(request: { slot: string; fingerprint: string; compute: () => Promise<T> }) => {
+        const key = `${request.slot}:${request.fingerprint}`;
+        if (!operationChecks.has(key)) operationChecks.set(key, await request.compute());
+        return operationChecks.get(key) as T;
+      } };
+  } };
+});
+vi.mock("../generation/finalizationIllustrations.js", async () => (await import("./testing/compileExportMocks.js")).finalizationIllustrationsModuleMock());
 vi.mock("@book-maker/db", async () => (await import("./testing/compileExportMocks.js")).dbModuleMock());
 vi.mock("../runtime/config.js", async () => (await import("./testing/compileExportMocks.js")).configModuleMock());
 vi.mock(
@@ -36,7 +62,12 @@ vi.mock(
 vi.mock("./characters.js", async () => (await import("./testing/compileExportMocks.js")).charactersModuleMock());
 vi.mock(
   "../generation/bookHelpers.js",
-  async () => (await import("./testing/compileExportMocks.js")).bookHelpersModuleMock()
+  async () => {
+    const shared = await import("./testing/compileExportMocks.js");
+    const base = shared.bookHelpersModuleMock();
+    return { ...base, strategyForInput: () => ({ ...base.strategyForInput(),
+      shouldIllustratePage: () => shared.mocks.inputForPlanVersion().category === "KIDS" }) };
+  }
 );
 // One export of one module, over the real rest of it: which pages the final-QA
 // repair redrafts is a test hook, while the per-message extractor behind the
@@ -67,7 +98,8 @@ vi.mock("../generation/pageReview.js", async () => {
 });
 vi.mock("@book-maker/core", async () => {
   const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
-  return { ...(await import("./testing/compileExportMocks.js")).coreModuleMock(actual), reviewManuscriptCoverage: coverageReview };
+  return { ...(await import("./testing/compileExportMocks.js")).coreModuleMock(actual),
+    reviewManuscriptCoverage: coverageReview, inventoryManuscriptRequirements: inventoryReview };
 });
 
 import { compileExport } from "./compileExport.js";
@@ -93,9 +125,12 @@ describe("brief coverage at publication", () => {
   };
   beforeEach(async () => {
     vi.clearAllMocks();
+    operationChecks.clear(); operationReviews.clear();
     mocks.strategy.executionMode = "composed-chapters";
     mocks.createReaderChaptersForExport.mockResolvedValue({ source: "deterministic", chapters: [] });
     coverageReview.mockResolvedValue({ status: "reviewed", requirements: [], issues: [] });
+    inventoryReview.mockImplementation(async ({ brief }: { brief: string }) => ({ status: "available", brief, complete: true, requirements: [] }));
+    mocks.enqueueFinalizationIllustrations.mockResolvedValue({ kind: "ready", pendingJobIds: [], missingPageIndexes: [] });
     storage = await mkdtemp(join(tmpdir(), "compile-chapter-length-"));
     mocks.config.BOOK_STORAGE_DIR = storage;
     mocks.config.IMAGE_STORAGE_DIR = join(storage, "images");
@@ -112,7 +147,65 @@ describe("brief coverage at publication", () => {
     mocks.rebuildProjectStoryState.mockResolvedValue({ promises: [], facts: [], entities: {}, unanswered: [] });
     mocks.loadQualityContext.mockResolvedValue({ settings: {}, tier: "balanced", enabled: isDefaultCompileQualityFeature });
   });
-  afterEach(async () => { mocks.strategy.executionMode = "whole-book"; await rm(storage, { recursive: true, force: true }); });
+  afterEach(async () => { mocks.strategy.executionMode = "whole-book";
+    mocks.enqueueFinalizationIllustrations.mockResolvedValue({ kind: "ready", pendingJobIds: [], missingPageIndexes: [] });
+    await rm(storage, { recursive: true, force: true }); });
+
+  it.each(["ordinary", "superseded", "deferred_media"])("verifies final prose during image fan-out with %s state", async (mode) => {
+    mocks.strategy.executionMode = "whole-book";
+    const requirement = "Exactly 10 interior illustrations, on story pages 3, 6, 9, 12, 15, 18, 21, 24, 27, 30.";
+    const brief = `Rabbit and Turtle find lanterns. ${requirement}`;
+    mocks.inputForPlanVersion.mockReturnValue({ ...input, category: "KIDS", prompt: brief, targetPages: 30,
+      mediaSettings: { finalReview: true, fullIllustrations: true, generationStrategy: "auto" } });
+    const finalPages = Array.from({ length: 30 }, (_, position) => ({ ...pages[0], id: `p${position + 1}`, index: position + 1,
+      title: `Scene ${position + 1}`, markdown: "Rabbit and Turtle carry a lantern together.",
+      chapter: { index: Math.floor(position / 5) + 1, title: `Current section ${Math.floor(position / 5) + 1}`, summary: "The next part." } }));
+    const savedPages = finalPages.map((page) => mode === "deferred_media" && page.index % 3 === 0 ? { ...page,
+      status: "FAILED_QA", qualityReport: { approved: true, score: 86, groundedOk: true, groundingStatus: "not_applicable",
+        unsupportedClaims: [], issues: [], requiredRevisions: [],
+        checks: { placeholderFree: true, promptLeakFree: true, titleClean: true, repetitionOk: true, progressionOk: true, styleNatural: true },
+        deferredMedia: { stage: "before_illustrations", brief, pageIndex: page.index, draftMarkdown: page.markdown,
+          requirements: [{ kind: "interior_illustration", pageIndex: page.index, requirementQuote: requirement, quote: page.markdown }] }
+      } } : page);
+    mocks.prisma.project.findUnique.mockResolvedValue({ ...projectRecord(), pages: savedPages });
+    const imageJobs = Array.from({ length: 30 }, (_, index) => `image${index + 1}`);
+    mocks.enqueueFinalizationIllustrations.mockResolvedValue({ kind: "ready", pendingJobIds: imageJobs, missingPageIndexes: [] });
+    coverageReview.mockImplementation(async ({ pages: reviewed, chapters, evidenceContext }) => {
+      expect(mocks.enqueueFinalizationIllustrations).toHaveBeenCalledOnce();
+      expect(reviewed.map((page: { markdown: string }) => page.markdown)).toEqual(finalPages.map((page) => page.markdown));
+      expect(chapters).toHaveLength(6);
+      expect(evidenceContext.illustratedPageIndexes).toEqual([]);
+      return { status: "reviewed", assessmentComplete: true, requirements: [], issues: [] };
+    });
+    if (mode === "superseded") {
+      mocks.exportPublicationSuperseded.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+      expect(await compileExport(job({ contentRevision: 4 }))).toEqual({});
+      expect(coverageReview).not.toHaveBeenCalled();
+      expect(mocks.loadPageTextSnapshot).toHaveBeenCalledWith("project-1");
+      expect(persistedQualityReport()).toMatchObject({ state: "passed" });
+      expect(mocks.publishCompiledExports).not.toHaveBeenCalled();
+      expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
+      return;
+    }
+    expect(await compileExport(job({ contentRevision: 4 }))).toMatchObject({ lifecycleSettlement: "defer-to-successor" });
+    expect(inventoryReview).toHaveBeenCalledOnce();
+    expect(inventoryReview.mock.invocationCallOrder[0]).toBeLessThan(mocks.strategy.runFinalBookQa.mock.invocationCallOrder[0]!);
+    expect(coverageReview).toHaveBeenCalledOnce();
+    expect(finalizationPhase).toHaveBeenCalledWith("coverage", imageJobs);
+    expect(mocks.strategy.runFinalBookQa).toHaveBeenCalledOnce();
+    expect(mocks.revisePageDraftWithRestart).not.toHaveBeenCalled();
+    expect(mocks.createReaderChaptersForExport).not.toHaveBeenCalled();
+    expect(mocks.publishCompiledExports).not.toHaveBeenCalled();
+    mocks.enqueueFinalizationIllustrations.mockResolvedValue({ kind: "ready", pendingJobIds: [], missingPageIndexes: [] });
+    mocks.prisma.project.findUnique.mockResolvedValue({ ...projectRecord(), pages: savedPages.map((page) => ({ ...page,
+      images: [{ type: "SCENE_ILLUSTRATION", path: `scene-${page.index}.png` }] })) });
+    await compileExport(job({ contentRevision: 4, generationJobId: "gj-successor" }));
+    expect(inventoryReview).toHaveBeenCalledOnce();
+    expect(coverageReview).toHaveBeenCalledOnce();
+    expect(mocks.strategy.runFinalBookQa).toHaveBeenCalledOnce();
+    expect(mocks.createReaderChaptersForExport).not.toHaveBeenCalled();
+    expect(mocks.publishCompiledExports).toHaveBeenCalledOnce();
+  });
 
   it("flags Balanced's explicitly requested comparison table when extraction is disabled", async () => {
     mocks.inputForPlanVersion.mockReturnValue({ ...input, prompt: "Explain public keys. Include at least one useful comparison table." });

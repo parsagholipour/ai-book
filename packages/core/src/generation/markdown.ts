@@ -16,7 +16,6 @@ export type MarkdownPage = {
   imagePath?: string | undefined;
   imageAlt?: string | undefined;
 };
-
 export type ReaderChapter = {
   index: number;
   title: string;
@@ -24,9 +23,9 @@ export type ReaderChapter = {
   startPageIndex: number;
   endPageIndex: number;
 };
-
 export type CompileMarkdownInput = {
   plan: BookPlan;
+  storyPageLayout?: "separate" | undefined;
   category?: CreateProjectInput["category"] | undefined;
   language?: string | undefined;
   pages: MarkdownPage[];
@@ -172,6 +171,7 @@ export function compileBookMarkdown(input: CompileMarkdownInput): string {
  */
 export type CompiledBookMarkdown = {
   markdown: string;
+  storyPageLayout?: "separate" | undefined;
   pageAnchors: PageAnchorPlan[];
   /** Offset of the Sources heading, when the back matter is printed. */
   sourcesOffset?: number;
@@ -268,6 +268,7 @@ export function compileBookMarkdownWithPageAnchors(input: CompileMarkdownInput):
   assertBookLikeMarkdown(markdown);
   return {
     markdown,
+    ...(input.storyPageLayout ? { storyPageLayout: input.storyPageLayout } : {}),
     pageAnchors,
     ...(sourcesOffset !== undefined ? { sourcesOffset } : {}),
     hasCoverPage: Boolean(coverImagePath || titlePage),

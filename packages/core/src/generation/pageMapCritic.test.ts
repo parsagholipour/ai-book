@@ -593,8 +593,11 @@ describe("critiquePageMap evidence ledger", () => {
     expect(capture.payload?.pages?.[1]).toMatchObject({ claim: "Claim 2.", evidenceAnchors: ["Case 2"] });
 
     const story = book({ targetPages: 5 });
-    const storyCapture = capturingJsonModel(emptyPatch);
-    await critiquePageMap({ ...story, textModel: storyCapture.model, briefs: ledgered, promises: [] });
+    const storyCapture = capturingJsonModel({ ...emptyPatch, beatPatches: [{ pageIndex: 1,
+      beat: "Rabbit asks Turtle for help.", claim: "An unsolicited analytical claim", evidenceAnchors: ["An unsolicited ledger anchor"] }] });
+    const storyResult = await critiquePageMap({ ...story, textModel: storyCapture.model, briefs: ledgered, promises: [] });
     expect(storyCapture.system).not.toMatch(/evidenceAnchors/);
+    expect(storyCapture.payload?.pages?.[1]).not.toHaveProperty("evidenceAnchors");
+    expect(storyResult.beatPatches).toEqual([{ pageIndex: 1, beat: "Rabbit asks Turtle for help." }]);
   });
 });

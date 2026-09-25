@@ -1,3 +1,4 @@
+import { generateCompactPictureBookMap, usesCompactPictureBookPlanning } from "./compactPictureBookPlanning.js";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { modelTierForInput } from "../adapters/modelTiers.js";
@@ -54,6 +55,7 @@ import {
   chapterBriefPayloadForPageScope,
   citationContractFields,
   compactPriorPages,
+  compactFollowingPages,
   isRecord,
   numberField,
   objectKeys,
@@ -127,6 +129,7 @@ const wholeBookPageMapSchema = z.object({
 });
 
 export async function generateWholeBookPageMap(options: GeneratePageMapOptions): Promise<ChapterBrief[]> {
+  if (options.input.targetPages > CHUNKED_PAGE_MAP_THRESHOLD && usesCompactPictureBookPlanning(options.input)) return generateCompactPictureBookMap({ ...options, chapterRanges: chapterRangesForPlan(options.plan, options.input.targetPages) });
   if (options.input.targetPages > CHUNKED_PAGE_MAP_THRESHOLD) {
     return generateChunkedPageMap(options);
   }
@@ -376,6 +379,7 @@ export async function repairPageBrief(options: RepairPageBriefOptions): Promise<
           "Return a replacement page brief, not reader-facing prose.",
           "Keep the same pageIndex and chapterIndex.",
           "Preserve the book premise, audience, and chapter purpose, but you may discard original required examples, sources, metaphors, or ending pressure when QA says they cause repetition.",
+          "If followingPages is supplied, it is already-written prose. The repaired assignment must connect to its opening and preserve its established facts without consuming its beats.",
           "The repaired beat must create a distinct new contribution beyond previousPages: a new textual analysis, concrete case, irreversible decision, practical consequence, or specific evidence path.",
           ...evidenceLedgerRules(options.input, options.plan, "repair"),
           GROUNDED_FACTUALITY_RULE,
@@ -429,6 +433,7 @@ export async function repairPageBrief(options: RepairPageBriefOptions): Promise<
             },
             qualityReport: options.report,
             previousPages: compactPriorPages(options.previousPages, 6, 900),
+            ...(options.nextPages?.length ? { followingPages: compactFollowingPages(options.nextPages, 2, 900) } : {}),
             continuityNotes: continuityNotesForPrompt(options.continuityNotes, CONTINUITY_NOTE_PROMPT_LIMITS.review),
             instruction:
               "Repair the assignment itself. If the original brief requires material already covered or flagged by QA, replace that material with a fresh page beat that still belongs in this chapter."

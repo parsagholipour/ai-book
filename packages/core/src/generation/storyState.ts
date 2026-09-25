@@ -63,7 +63,13 @@ export const storyExtractResultSchema = z.strictObject({
   storyDelta: storyDeltaSchema.extend({
     entities: z.record(z.string(), storyDeltaEntityUpdateSchema.strict()).default({})
   }).strict(),
-  contradictions: z.array(z.string()).default([])
+  contradictions: z.array(z.string()).default([]),
+  contradictionEvidence: z.array(z.object({
+    issue: z.string().min(1),
+    priorPageIndex: z.number().int().positive(),
+    priorQuote: z.string().min(1),
+    currentQuote: z.string().min(1)
+  })).optional()
 });
 
 // The dialect marker describes a schema, not a response field. Including it
@@ -75,7 +81,26 @@ export type StoryFact = z.infer<typeof storyFactSchema>;
 export type StoryEntity = z.infer<typeof storyEntitySchema>;
 export type StoryState = z.infer<typeof storyStateSchema>;
 export type StoryDelta = z.infer<typeof storyDeltaSchema>;
-export type StoryExtractResult = z.infer<typeof storyExtractResultSchema>;
+export type StoryExtractResult = z.infer<typeof storyExtractResultSchema> & {
+  /** Diagnostic hypotheses, never instructions to rewrite prose to match derived metadata. */
+  unverifiedContradictions?: string[];
+};
+
+export function validateStoryExtractEvidence(
+  extract: StoryExtractResult,
+  page: { index: number; markdown: string },
+  sourcePages: readonly { index: number; markdown: string }[]
+): StoryExtractResult {
+  const anchored = new Set((extract.contradictionEvidence ?? []).filter((evidence) =>
+    evidence.priorPageIndex < page.index && evidence.priorQuote.trim().length >= 12 &&
+    evidence.currentQuote.trim().length >= 12 && page.markdown.includes(evidence.currentQuote) &&
+    sourcePages.some((source) => source.index === evidence.priorPageIndex && source.markdown.includes(evidence.priorQuote))
+  ).map((evidence) => evidence.issue));
+  return { ...extract,
+    contradictions: extract.contradictions.filter((issue) => anchored.has(issue)),
+    unverifiedContradictions: [...new Set([...(extract.unverifiedContradictions ?? []), ...extract.contradictions.filter((issue) => !anchored.has(issue))])]
+  };
+}
 
 const STORY_STATE_LINE_CAP = 12;
 
@@ -324,21 +349,36 @@ export async function extractStoryState(options: {
   markdown: string;
   summary: string;
   currentState: StoryState;
+  previousPages?: readonly { index: number; markdown: string }[];
 }): Promise<StoryExtractResult> {
+  const priorPages = (options.previousPages ?? []).filter((page) => page.index < options.pageIndex);
+  const marker = "\n[Middle prose omitted; unknown context.]\n";
+  const edgeChars = Math.floor((1800 - marker.length) / 2);
+  const sourcePages = priorPages.slice(-8).map((page) => ({ ...page,
+    markdown: page.markdown.length <= 1800 ? page.markdown : `${page.markdown.slice(0, edgeChars)}${marker}${page.markdown.slice(-edgeChars)}`,
+    complete: page.markdown.length <= 1800
+  }));
+  const sourceContext = { complete: sourcePages.length === options.pageIndex - 1 && sourcePages.every((page, index) => page.index === index + 1 && page.complete),
+    omittedPageCount: Math.max(0, options.pageIndex - 1 - sourcePages.length),
+    shortenedPageIndexes: sourcePages.filter((page) => !page.complete).map((page) => page.index) };
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "extract-story-state",
     temperature: 0,
     maxTokens: 1200,
     schema: storyExtractResultSchema,
+    jsonContractInMessages: true,
     messages: [
       {
         role: "system",
         content: [
           "You extract structured story state from one book page.",
-          "Return a JSON data object with only storyDelta and contradictions as top-level keys.",
+          "Return storyDelta, contradictions and contradictionEvidence.",
           "storyDelta may open, pay, or break promises; add facts; update entities; add or resolve unanswered questions.",
-          "contradictions lists ways this page disagrees with currentState. Empty when consistent.",
+          "currentState is fallible derived bookkeeping, not authoritative prose. A paid promise flag alone never proves that every object was found or that a later discovery is wrong.",
+          "For each contradiction cite priorPageIndex and exact priorQuote from sourcePages, plus exact currentQuote from this page in contradictionEvidence. Compare actual statements, allowing normal changes over time. Without both prose anchors leave contradictions empty; do not invent evidence or rewrite valid prose to satisfy a state marker.",
+          "sourceContext marks missing pages and shortened excerpts. Omitted prose is unknown, never proof that an event did not happen. The omission marker is not story text and cannot be quoted as evidence.",
           "Do not rewrite the page. Do not invent promises the page does not make or pay.",
+          "Do not turn a character intention, boast or mistaken belief into a guarantee of literal success. Store it as an entity goal. A change of goal, cooperation or learned lesson can pay the dramatic commitment. All unansweredAdded and unansweredResolved fields belong inside storyDelta, never at the root.",
           "Return only changes introduced by this page, not a copy of currentState. Keep entries concise.",
           "factsAdded contains strings, not fact objects. promisesPaid and promisesBroken contain existing promise IDs or exact promise texts.",
           "entities maps names to updates using only goal, knows, location, and status. Put technical properties in factsAdded; omit page timestamps.",
@@ -353,7 +393,9 @@ export async function extractStoryState(options: {
             title: options.title,
             markdown: options.markdown,
             summary: options.summary,
-            currentState: compactStoryStateForExtract(options.currentState)
+            currentState: compactStoryStateForExtract(options.currentState),
+            sourcePages,
+            sourceContext
           },
           null,
           2
@@ -361,7 +403,13 @@ export async function extractStoryState(options: {
       }
     ]
   });
-  return storyExtractResultSchema.parse(result.data);
+  const extracted = storyExtractResultSchema.parse(result.data);
+  // A quote must be both visible in this request and present in the original
+  // source: an omission marker can never fabricate a continuous passage.
+  const visible = { ...extracted, contradictionEvidence: extracted.contradictionEvidence?.filter((evidence) =>
+    sourcePages.some((page) => page.index === evidence.priorPageIndex && page.markdown.includes(evidence.priorQuote))) };
+  return validateStoryExtractEvidence(visible,
+    { index: options.pageIndex, markdown: options.markdown }, priorPages);
 }
 
 function capPersistedStoryState(state: StoryState): StoryState {

@@ -25,8 +25,13 @@ export async function loadQualityContext(input: CreateProjectInput) {
     orderBy: { version: "desc" },
     select: { settings: true }
   });
-  const settings = parseQualityFeatureSettings(row?.settings);
-  const pageReviewPromptModes = parsePageReviewPromptModes(row?.settings);
+  return qualityContextFromSnapshot(input, row?.settings);
+}
+
+/** Finalization successors keep the gate settings their repair operation began with. */
+export function qualityContextFromSnapshot(input: CreateProjectInput, snapshot: unknown) {
+  const settings = parseQualityFeatureSettings(snapshot);
+  const pageReviewPromptModes = parsePageReviewPromptModes(snapshot);
   const tier = modelTierForInput(input);
   return {
     settings,

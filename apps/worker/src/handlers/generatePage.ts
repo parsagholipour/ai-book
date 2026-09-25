@@ -42,7 +42,7 @@ import {
 } from "../generation/pagePublication.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
-import { enqueueNextPageIfReady } from "../runtime/dispatch.js";
+import { enqueueNextPageIfReady, parallelPageWaveSize } from "../runtime/dispatch.js";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
 import { nextPageVersion } from "../generation/pageIllustrationOwnership.js";
 import {
@@ -467,6 +467,9 @@ export async function generatePage(job: GeneratePageJob) {
     draft,
     stagedPage,
     willIllustrate,
+    ...(project.status === "GENERATING" && (input.mediaSettings.finalReview ||
+      (quality.enabled("finalBookQa") && parallelPageWaveSize(input) > 1))
+      ? { deferIllustrations: true } : {}),
     continuityTags: ["page", String(page.index)]
   });
   if (publication === "enqueue-declined") {

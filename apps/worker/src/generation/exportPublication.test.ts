@@ -73,6 +73,16 @@ describe("exportPublicationSuperseded", () => {
 });
 
 describe("publishCompiledExports", () => {
+  it("checks the finalization lease under the publication transaction before moving artifacts", async () => {
+    const assertFinalizationOwnership = vi.fn(async (tx) => {
+      expect(tx).toBe(mocks.prisma);
+      expect(mocks.prisma.project.updateMany).toHaveBeenCalled();
+      throw new Error("Lease lost");
+    });
+    await expect(publish({ assertFinalizationOwnership })).rejects.toThrow("Lease lost");
+    expect(assertFinalizationOwnership).toHaveBeenCalledTimes(1);
+    expect(publishedMoves()).toHaveLength(0);
+  });
   it("degrades a legacy or rangeless map to cover numbering rather than failing the book", async () => {
     // `compile-export` owns the project's outcome and has no retry budget, so
     // refusing to publish here sends a book whose pages are already written to

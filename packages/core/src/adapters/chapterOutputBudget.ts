@@ -3,7 +3,10 @@ import type { GenerateTextOptions } from "./types.js";
 
 const SHORT_STRUCTURED_PURPOSES = new Set([
   "extract-story-state", "describe-pages", "critique-plan", "select-cover-design",
-  "review-dossier-provenance", "review-chapter-edit-acceptance"
+  "review-dossier-provenance", "review-chapter-edit-acceptance", "review-page",
+  "critique-page-map", "generate-chapter-brief", "book.final_qa.chapter_transitions",
+  "final-book-qa", "audit-page-style", "review-manuscript-structure",
+  "generate-page", "polish-page", "revise-page", "repair-page-brief", "judge-page-drafts"
 ]);
 
 const CHAPTER_PURPOSES = new Set([
@@ -18,7 +21,9 @@ const CHAPTER_PURPOSES = new Set([
  * reasoning plus the chapter. Short structured stages need headroom too: the
  * Quick audit spent 35 story-extraction attempts entirely on reasoning under
  * 1,200 / 1,800 limits. These floors preserve the selected effort and the
- * visible-answer allowance; they are ceilings, not target token consumption.
+ * visible-answer allowance. Premium page rewrites also exhausted their 3,200
+ * cap with 3,083–3,200 reasoning tokens, so structured page drafts and repairs
+ * use the same allowance as their critics. These are ceilings, not target token consumption.
  * Unrecognized purposes and non-reasoning calls retain their explicit fuse.
  */
 export function chapterOutputBudget(options: GenerateTextOptions, effort: TextModelThinkingEffort | undefined): number | undefined {

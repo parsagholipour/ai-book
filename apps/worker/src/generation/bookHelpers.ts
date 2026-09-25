@@ -232,8 +232,8 @@ export function pageReportFromFinalQa(finalQa: FinalBookQa, pageIndex: number, l
   return {
     approved: false,
     score: Math.min(finalQa.score, 60),
-    issues: scopedMessages.length > 0 ? scopedMessages : finalQa.issues,
-    requiredRevisions: scopedMessages.length > 0 ? scopedMessages : finalQa.requiredFixes,
+    issues: [...scopedMessages],
+    requiredRevisions: [...scopedMessages],
     notes: finalQa.notes || "Final QA requested a targeted page repair.",
     groundedOk: true,
     unsupportedClaims: [],

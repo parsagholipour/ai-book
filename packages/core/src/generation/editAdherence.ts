@@ -9,7 +9,7 @@ import {
 } from "./exactReplacement.js";
 import { figureStandInMarkdown, pageFigureSpecs } from "./figures/figureBlocks.js";
 import { mentionsFigure } from "./figures/figureMentions.js";
-import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
+import { generateJsonWithRetry, jsonSchemaMessages } from "./generateJsonWithRetry.js";
 import { WHOLE_SET_VERDICT_CONTRACT, wholeSetSystemMessage } from "./editAdherencePrompts.js";
 import { adherenceMessagesFit, reviewHierarchically, WHOLE_SET_REVIEW_MAX_TOKENS } from "./editAdherenceHierarchy.js";
 import {
@@ -123,7 +123,7 @@ function figureBlindPages(options: ReviewAppliedBookEditOptions): ReviewAppliedB
 }
 
 function wholeSetReviewMessages(options: ReviewAppliedBookEditOptions): ChatMessage[] {
-  return [
+  return jsonSchemaMessages([
     { role: "system", content: wholeSetSystemMessage(MAX_VERDICT_PROSE_LENGTH) },
     {
       role: "user",
@@ -135,7 +135,7 @@ function wholeSetReviewMessages(options: ReviewAppliedBookEditOptions): ChatMess
         outputContract: WHOLE_SET_VERDICT_CONTRACT
       })
     }
-  ];
+  ], editAdherenceVerdictSchema);
 }
 
 async function reviewWholeSet(
@@ -155,6 +155,7 @@ async function reviewWholeSet(
     maxTokens: WHOLE_SET_REVIEW_MAX_TOKENS,
     repairAttempts: 1,
     schema: editAdherenceVerdictSchema,
+    jsonContractInMessages: true,
     messages
   });
   return editAdherenceVerdictSchema.parse(result.data);

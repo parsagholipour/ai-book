@@ -1,19 +1,25 @@
+import { chapterTransitionRepairIssues } from "../generation/chapterTransitionRepairs.js";
 import { qualityIssuesFromFinalQa } from "../generation/exportQualityReview.js";
-import { loadPagesForExport, strategyForInput, toFinalQaPage } from "../generation/bookHelpers.js";
-import { lastPageIndex } from "../generation/finalQaPageTargets.js";
+import { pageQualityAdvisoryIssues } from "../generation/pageQualityAdvisories.js";
+import { unresolvedPageQualityIssues } from "../generation/unresolvedPageQuality.js";
+import { loadPagesForExport, strategyForInput } from "../generation/bookHelpers.js";
+import { extractRepairPageIndexes, lastPageIndex } from "../generation/finalQaPageTargets.js";
 import {
   discardPendingExports,
   exportPublicationSuperseded,
   pendingExportPaths,
   publishCompiledExports
 } from "../generation/exportPublication.js";
-import {
-  readCompatibleCachedReaderChapters,
-  readerChaptersFromPublishedMarkdown,
-  readerChaptersWithCache
-} from "../generation/readerChapterCache.js";
-import { manuscriptCoverageForCompile } from "../generation/manuscriptCoverageReview.js";
-import { loadQualityContext } from "../generation/qualitySettings.js";
+import { resolveCompileReaderLayout } from "./compileExportLayout.js";
+import { shortKidsStoryPageLayout } from "@book-maker/core";
+import { shortPictureBookReaderChapters } from "../generation/shortPictureBookExport.js";
+import { prepareFinalizationCoverageInventory, finalizationCoverageForCompile } from "./compileExportCoverageCheckpoint.js";
+import { buildManuscriptCoverageContext, manuscriptCoverageForCompile } from "../generation/manuscriptCoverageReview.js";
+import { enqueueFinalizationIllustrations } from "../generation/finalizationIllustrations.js";
+import { FinalizationLeaseLostError, hasCompileFinalization, openCompileFinalization } from "./compileFinalization.js";
+import { reviewFinalizationManuscript } from "./compileFinalizationReview.js";
+import type { FinalQaOwnershipClient } from "./compileExportRepairSemantics.js";
+import { loadQualityContext, qualityContextFromSnapshot } from "../generation/qualitySettings.js";
 import { rebuildProjectStoryState, rebuildStoryStateFromPages } from "../generation/storyStateStore.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { appliedEditPublicationOwnerId } from "../generation/editProjectStatus.js";
@@ -48,16 +54,13 @@ import { runCompileManuscriptChecks } from "../generation/compileManuscriptCheck
 import { arithmeticErrorIssues, unsupportedCaseClaimIssues } from "../generation/composedEvidenceResiduals.js";
 import { composedChapterLengthIssues } from "../generation/composedChapterLength.js";
 import { maybeEnqueueCharacterCandidatePreparation } from "./characters.js";
-import { runBoundedChapterQualityReview } from "./compileExportChapterReview.js";
 import { companionFormatsToRender, renderCompanionExports } from "./compileExportCompanions.js";
 import { reviewManuscriptStructure } from "./compileExportStructuralReview.js";
 import {
   assertBookLikeMarkdown,
   bookPlanSchema,
   compilePublicationPolicyFromPayload,
-  createDeterministicReaderChapters,
   createProviders,
-  createReaderChaptersForExport,
   chapterHeadingLabelPreference,
   chapterStructureForExport,
   chapterHeadingStylePreference,
@@ -67,8 +70,6 @@ import {
   persistablePdfPageMapAfterRender,
   publicAssetUrl,
   strategyComposesChapters,
-  readerChapterFingerprint,
-  readerChaptersFromComposedChapters,
   resolvePublicImageUrl,
   normalizedCompilePublicationPolicy,
   type PersistableBookPdfPageMap,
@@ -80,7 +81,7 @@ import {
 import { prisma, researchCitationsForExport } from "@book-maker/db";
 import type { CompileExportJob } from "../runtime/jobPayloads.js";
 import { writeFile } from "node:fs/promises";
-import { objectKey, objectStore, withTemporaryDirectory } from "@book-maker/storage";
+import { withTemporaryDirectory } from "@book-maker/storage";
 import { failedQaPageIndexesForCompile } from "./compileExportCitationRepair.js";
 import { urlBackedResearchNotes } from "../generation/researchSources.js";
 /**
@@ -188,16 +189,16 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   const exportContext = effectiveSavedWholeBookExportContext(input, plan, initialStrategy, pages);
   input = exportContext.input;
   plan = exportContext.plan;
-  const strategy = strategyForInput(input);
-  const providers = createLoggedProviders(job, createProviders(config, input), input);
+  let strategy = strategyForInput(input);
+  let providers = createLoggedProviders(job, createProviders(config, input), input);
   // One compile, one quality context. The repair pass below and the integrity
   // pass after it both gate on these operator settings, and loading them twice
   // let an edit saved on the Quality tab in between run a single compile under
   // two different revisions — the repaired pages written against one gate set,
   // the report that ships them against another.
-  const quality = await loadQualityContext(input);
+  let quality = await loadQualityContext(input);
   const citeableResearchNotes = urlBackedResearchNotes(project.research);
-  const failedQaPageIndexes = failedQaPageIndexesForCompile(pages, citeableResearchNotes);
+  let failedQaPageIndexes = failedQaPageIndexesForCompile(pages, citeableResearchNotes, { input, plan, strategy });
   // Lazily cache the pre-repair sweep used for repair targeting and stand-down.
   // The shipped report deliberately runs its own sweep over the durable pages.
   let initialIntegrityIssuesSnapshot: ManuscriptQualityIssue[] | undefined;
@@ -223,37 +224,59 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   // reached this compile; the per-page repair loop would re-template pages the
   // editor deliberately left ending mid-argument. The deterministic manuscript
   // audit and the targeted structural review below still run for it.
+  const finalizationIdentity = { projectId, planId, contentRevision: queuedContentRevision,
+    operationIdentity: { attemptId: generationAttemptId, editOperationId, policy } };
   const runFinalReview =
     !skipFinalReview &&
     !detachedRepair &&
     !presentationOnly &&
     !strategyComposesChapters(strategy) &&
-    (input.mediaSettings.finalReview || automaticFinalReview);
+    (input.mediaSettings.finalReview || automaticFinalReview || await hasCompileFinalization(finalizationIdentity));
+  const finalization = runFinalReview ? await openCompileFinalization({
+    ...finalizationIdentity, generationJobId,
+    input: { input, plan, settings: quality.settings, promptMode: quality.pageReviewPromptMode },
+    pages, payload: job.data
+  }) : null;
+  let durablePublicationCommitted = false;
+  let inventoryWork: Promise<PromiseSettledResult<unknown>> | undefined;
+  try {
+  // Another delivery may have finished while this one waited for its lease.
+  if (finalization?.state.phase === "published") return { durableCompletionCommitted: true };
+  if (finalization) {
+    pages = await loadPagesForExport(projectId);
+    const saved = finalization.state.configuration as { input: typeof input; plan: typeof plan; settings: unknown; promptMode: typeof quality.pageReviewPromptMode };
+    input = saved.input; plan = saved.plan;
+    quality = { ...qualityContextFromSnapshot(input, saved.settings), pageReviewPromptMode: saved.promptMode };
+    strategy = strategyForInput(input);
+    providers = createLoggedProviders(job, createProviders(config, input), input);
+    failedQaPageIndexes = failedQaPageIndexesForCompile(pages, citeableResearchNotes, { input, plan, strategy });
+    if (await exportPublicationSuperseded(projectId, queuedContentRevision)) return {};
+  }
+  const overlapCoverage = finalization && ownsOutcome && !skipFinalReview && shortPictureBookReaderChapters({ input, plan, strategy, pages });
+  if (overlapCoverage) inventoryWork = prepareFinalizationCoverageInventory(finalization!, input.prompt, providers.text)
+    .then((value) => ({ status: "fulfilled" as const, value }), (reason: unknown) => ({ status: "rejected" as const, reason }));
   if (runFinalReview) {
     await advanceJobStep(generationJobId, "qa", 25);
-    // Independent reads of the same unmodified pages — their results only
-    // meet in the merged issue list below — so they run concurrently instead
-    // of paying two model latencies in series.
+    const reviewManuscript = () => reviewFinalizationManuscript({ input, plan, pages, strategy,
+      textModel: providers.text, projectId, researchNotes: citeableResearchNotes, skipLocalChecks: !quality.enabled("pageLocalQa") });
     let finalQa: FinalBookQa;
-    [modelQualityIssues, finalQa] = await Promise.all([
-      runBoundedChapterQualityReview({
-        input,
-        plan,
-        pages,
-        textModel: providers.text,
-        projectId
-      }),
-      strategy.runFinalBookQa({
-        input,
-        plan,
-        pages: pages.map(toFinalQaPage),
-        researchNotes: strategy.researchDepth ? citeableResearchNotes : undefined,
-        textModel: providers.text,
-        skipLocalChecks: !quality.enabled("pageLocalQa")
-      })
-    ]);
-    if (!finalQa.approved || failedQaPageIndexes.length > 0) {
-      const repairOwnershipFence = exportRepairOwnershipFence(projectId, queuedContentRevision);
+    const review = await finalization!.review("initial", pages, reviewManuscript);
+    modelQualityIssues = review.issues;
+    finalQa = review.finalQa;
+    const chapterRepairs = chapterTransitionRepairIssues(modelQualityIssues, pages);
+    const chapterRepairIndexes = chapterRepairs.flatMap((issue) => issue.affectedPageIndexes);
+    if ((!finalQa.approved || failedQaPageIndexes.length > 0 || chapterRepairs.length > 0) && !finalization!.state.repairPassCompleted) {
+      const targets = new Set([
+        ...failedQaPageIndexes, ...chapterRepairIndexes, ...extractRepairPageIndexes(finalQa, lastPageIndex(pages)),
+        ...initialIntegrityIssues().filter((issue) => issue.severity === "error" && issue.code !== "STRUCTURAL_SLOP_SATURATION")
+          .flatMap((issue) => issue.affectedPageIndexes)
+      ]);
+      await finalization!.beginRepair(pages.filter((page) => targets.has(page.index)).map((page) => page.id));
+      const revisionFence = exportRepairOwnershipFence(projectId, queuedContentRevision);
+      const repairOwnershipFence = revisionFence ? async (client?: FinalQaOwnershipClient) => {
+        await revisionFence(client);
+        await finalization!.assertLease(client);
+      } : undefined;
       let repairedPages: ExportPageForRepair[] | undefined;
       try {
         repairedPages = await repairPagesFromFinalQa({
@@ -266,9 +289,17 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
           quality,
           pages,
           finalQa,
+          additionalRepairIssues: chapterRepairs,
+          shouldRepairPage: (id) => !finalization!.state.startedPageIds.includes(id),
+          onRepairPageStarted: (id, index) => finalization!.claimPage(id, index),
+          onRepairGroupStarted: (targets) => finalization!.claimPages(targets),
+          onRepairGroupPublished: (client, snapshot) => finalization!.finishRepairInTransaction(client, snapshot),
+          onRepairPageCompleted: (id) => finalization!.completePage(id),
+          onRepairPageUnavailable: (id) => finalization!.unavailablePage(id),
+          deferIllustrations: queuedContentRevision !== null,
           researchNotes: citeableResearchNotes,
           extraPageIndexes: [
-            ...failedQaPageIndexes,
+            ...failedQaPageIndexes, ...chapterRepairIndexes,
             // Errors only: warning-severity issues and the corroborated
             // structural barrier are review findings, not licences to
             // model-rewrite every page they touch.
@@ -288,8 +319,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
         });
         if (repairedPages) {
           pages = repairedPages;
-          const repairedFinalQaPages = pages.map(toFinalQaPage);
-          const repairedResearchNotes = strategy.researchDepth ? citeableResearchNotes : undefined;
+          await finalization!.finishRepair(pages);
           // The repair's last page claim does not protect the model call that
           // follows it. An edit can commit in that gap, making this expensive
           // second opinion both obsolete and capable of recording a verdict
@@ -299,15 +329,11 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
           if (repairOwnershipFence) {
             await repairOwnershipFence();
           }
-          finalQa = await strategy.runFinalBookQa({
-            input,
-            plan,
-            pages: repairedFinalQaPages,
-            researchNotes: repairedResearchNotes,
-            textModel: providers.text,
-            skipLocalChecks: !quality.enabled("pageLocalQa")
-          });
+          const reviewed = await finalization!.review("final", pages, reviewManuscript);
+          finalQa = reviewed.finalQa;
+          modelQualityIssues.push(...reviewed.issues);
         }
+        await finalization!.finishRepair(pages);
       } catch (error) {
         const deferToReplacementSuccessor = error instanceof ExportRepairFenceUnreadableError &&
           error.replacementIllustrationCreated;
@@ -431,19 +457,27 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
               ],
               modelIssues: dedupeQualityIssues([
                 ...modelQualityIssues,
+                ...unresolvedPageQualityIssues(project.pages),
                 ...(recoveredFinalQaIssues ?? qualityIssuesFromFinalQa(finalQa, lastPageIndex(pages)))
               ]),
               finalReviewRan: true,
               deterministicWarningsAffectVerdict: true
             }
           });
-          return error instanceof ExportRepairIllustrationDeferredError || deferToReplacementSuccessor
+          return error instanceof ExportRepairIllustrationDeferredError || error instanceof FinalizationLeaseLostError || deferToReplacementSuccessor
             ? { lifecycleSettlement: "defer-to-successor", afterJobCompleted: requeueCompile }
             : {};
         } else if (!(error instanceof ExportRepairFenceUnreadableError)) {
           throw error;
         }
       }
+    }
+    if (finalization!.state.repairPassCompleted) {
+      const reviewed = await finalization!.review("final", pages, reviewManuscript);
+      finalQa = reviewed.finalQa;
+      // Initial chapter findings describe the pre-repair prose. Retain only
+      // the current whole-book verdict after a repair, never stale warnings.
+      modelQualityIssues = reviewed.issues;
     }
     if (!finalQa.approved) {
       // Export the best available book instead of failing the whole project;
@@ -472,6 +506,27 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     await advanceJobStep(generationJobId, "qa", 25, "Running deterministic integrity checks");
   }
 
+  let pendingFinalizationImages: string[] = [];
+  if (finalization && queuedContentRevision !== null) {
+    const illustrations = await enqueueFinalizationIllustrations({
+      projectId, planId, contentRevision: queuedContentRevision, input, plan, strategy
+    });
+    if (illustrations.kind === "superseded") {
+      await standDownForNewerExport({ projectId, generationJobId });
+      return {};
+    }
+    await finalization.phase("illustrations", illustrations.pendingJobIds);
+    if (illustrations.pendingJobIds.length > 0) {
+      if (!overlapCoverage) return { lifecycleSettlement: "defer-to-successor", afterJobCompleted: requeueCompile };
+      pendingFinalizationImages = illustrations.pendingJobIds;
+    }
+    if (illustrations.missingPageIndexes.length > 0) modelQualityIssues.push({
+      code: "ILLUSTRATIONS_UNAVAILABLE", source: "deterministic", severity: "warning",
+      message: "Some requested illustrations could not be generated.", guidance: "Review these pages and retry their illustrations if needed.",
+      affectedPageIndexes: illustrations.missingPageIndexes
+    });
+  }
+
   // Resolve one partition for coverage and export after all prose repairs. An obsolete
   // compile still records/withdraws its findings below, but must not spend on chapterization.
   const supersededBeforeCoverage = await exportPublicationSuperseded(projectId, queuedContentRevision);
@@ -484,52 +539,50 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     imagePath: resolvePublicImageUrl(page.images[0]?.path, config.PUBLIC_API_URL),
     imageAlt: "Illustration"
   }));
-  const publishedMarkdownPath = objectKey("books", projectId, "book.md");
-  const publishedMarkdown = detachedRepair || presentationOnly
-    ? await readOptionalPublishedMarkdown(publishedMarkdownPath)
-    : undefined;
-  let preservedReaderChapters = (presentationOnly || detachedRepair) && publishedMarkdown !== undefined
-    ? readerChaptersFromPublishedMarkdown(publishedMarkdown, markdownPages)
-    : undefined;
-  if (preservedReaderChapters === undefined && detachedRepair && publishedMarkdown === undefined) {
-    // An edit changes the fingerprint but not its page partition. The cache is
-    // deliberately retained when exports are invalidated, so a repair can keep
-    // the prior model-authored grouping without making an uncharged model call.
-    preservedReaderChapters = await readCompatibleCachedReaderChapters(projectId, markdownPages);
-  }
-  // A book composed by chapters prints the chapters it was composed in: the
-  // rows every page carries, no model call, whatever the compile's lane. The
-  // model grouping below is for the per-page strategies, whose plan chapters
-  // are a writing scaffold rather than a structure.
-  const composedReaderChapters = strategyComposesChapters(strategy)
-    ? readerChaptersFromComposedChapters(pages.map((page, position) => ({ ...markdownPages[position]!, chapter: page.chapter })))
-    : undefined;
-  const readerChapters = composedReaderChapters ?? (supersededBeforeCoverage ? [] : await readerChaptersWithCache({
-    projectId,
-    fingerprint: readerChapterFingerprint({ input, plan, pages: markdownPages }),
-    // Presentation recompiles and repairs are free. A cache miss must not
-    // turn either into an uncharged model request.
-    allowModelCall: !detachedRepair && !presentationOnly,
-    compute: () =>
-      createReaderChaptersForExport({
-        input,
-        plan,
-        pages: markdownPages,
-        textModel: providers.text
-      }),
-    deterministic: () => preservedReaderChapters ?? createDeterministicReaderChapters(markdownPages)
-  }));
+  const { publishedMarkdown, readerChapters } = await resolveCompileReaderLayout({
+    projectId, input, plan, strategy, pages, textModel: providers.text,
+    superseded: supersededBeforeCoverage, detachedRepair, presentationOnly
+  });
 
   // Always rerun integrity checks after repair attempts. Manual edits may
   // skip model rewriting, but they can never bypass publication integrity.
   const storyState =
     (await rebuildProjectStoryState(projectId, plan.promises ?? [])) ??
     (await rebuildStoryStateFromPages(projectId, plan.promises ?? []));
-  const coverage = isImportedManuscript(input.mediaSettings) ? null : await manuscriptCoverageForCompile({
-    projectId, brief: input.prompt, promises: [...(plan.promises ?? []), ...storyState.promises.map((promise) => promise.text)],
-    pages, chapters: chapterStructureForExport({ plan, pages: markdownPages, readerChapters }),
-    textModel: providers.text, allowModelReview: ownsOutcome && !skipFinalReview
+  const unavailableRepairIds = finalization?.state.unavailableRepairPageIds ?? [];
+  if (unavailableRepairIds.length > 0) modelQualityIssues.push({
+    code: "FINAL_QA_REPAIR_UNAVAILABLE", source: "deterministic", severity: "warning",
+    message: "Automatic repair could not complete after its bounded provider attempts; the saved pages were retained.",
+    guidance: "Review these pages or request another repair.",
+    affectedPageIndexes: pages.filter((page) => unavailableRepairIds.includes(page.id)).map((page) => page.index)
   });
+  const interruptedRepairIds = finalization?.state.startedPageIds.filter((id) => !finalization.state.completedPageIds.includes(id)) ?? [];
+  if (interruptedRepairIds.length > 0) modelQualityIssues.push({
+    code: "FINAL_QA_REPAIR_INTERRUPTED", source: "deterministic", severity: "warning",
+    message: "Automatic repair was interrupted on these pages; their saved versions were retained.",
+    guidance: "Review these pages or request another repair.",
+    affectedPageIndexes: pages.filter((page) => interruptedRepairIds.includes(page.id)).map((page) => page.index)
+  });
+  await finalization?.phase("coverage", pendingFinalizationImages);
+  await updateJobProgress(generationJobId, { message: "Checking the finished book against your request" });
+  const inventory = await inventoryWork;
+  if (inventory?.status === "rejected") throw inventory.reason;
+  const coverageOptions = { brief: input.prompt, promises: [...(plan.promises ?? []), ...storyState.promises.map((promise) => promise.text)],
+    pages, chapters: chapterStructureForExport({ plan, pages: markdownPages, readerChapters }), textModel: providers.text,
+    evidenceContext: buildManuscriptCoverageContext({ input, plan, pages, images: project.images,
+      expectedIllustratedPageIndexes: pages.filter((page) => strategy.shouldIllustratePage(input, plan, page.index)).map((page) => page.index) }) };
+  // Only the overlapping path needs a new fence after awaiting its early inventory.
+  // A superseded delivery still reaches the findings-aware withdrawal below: an
+  // early empty stand-down would discard findings about pages the edit left alone.
+  const supersededForCoverage = supersededBeforeCoverage || Boolean(overlapCoverage &&
+    await exportPublicationSuperseded(projectId, queuedContentRevision));
+  const coverage = isImportedManuscript(input.mediaSettings) ? null : overlapCoverage
+    ? supersededForCoverage ? null : await finalizationCoverageForCompile({ ...coverageOptions, operation: finalization! })
+    : await manuscriptCoverageForCompile({ ...coverageOptions, projectId, allowModelReview: ownsOutcome && !skipFinalReview });
+  if (pendingFinalizationImages.length > 0 && !supersededForCoverage) {
+    await finalization!.phase("illustrations", pendingFinalizationImages);
+    return { lifecycleSettlement: "defer-to-successor", afterJobCompleted: requeueCompile };
+  }
   if (coverage && ownsOutcome && !skipFinalReview) modelQualityIssues.push(...coverage.issues);
   const deterministicIssues = [
     ...(coverage && (!ownsOutcome || skipFinalReview) ? coverage.issues : []),
@@ -584,7 +637,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   const findings: StandDownFindings = {
     reviewedPages: pages,
     deterministicIssues,
-    modelIssues: dedupeQualityIssues(modelQualityIssues),
+    modelIssues: dedupeQualityIssues([...modelQualityIssues, ...pageQualityAdvisoryIssues(pages), ...unresolvedPageQualityIssues(pages)]),
     finalReviewRan: runFinalReview,
     deterministicWarningsAffectVerdict: ownsOutcome && !skipFinalReview
   };
@@ -604,6 +657,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   }
 
   await advanceJobStep(generationJobId, "compile", 55);
+  await finalization?.phase("render");
   await updateJobProgress(generationJobId, {
     progress: 62,
     message: "Placing reader chapters"
@@ -612,7 +666,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   // applied while this compile was in QA has already queued the recompile that
   // will publish instead. The binding decision is the claim in
   // `publishCompiledExports`, since an edit can still land after this read.
-  if (supersededBeforeCoverage || await exportPublicationSuperseded(projectId, queuedContentRevision)) {
+  if (supersededForCoverage || await exportPublicationSuperseded(projectId, queuedContentRevision)) {
     await standDownForNewerExport({ projectId, generationJobId, findings });
     return {};
   }
@@ -620,6 +674,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     const researchSources = await researchCitationsForExport(project.research);
     return strategy.compileMarkdownWithPageAnchors({
       plan,
+      storyPageLayout: shortKidsStoryPageLayout(input, markdownPages),
       category: input.category,
       language: input.language,
       readerChapters,
@@ -677,7 +732,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   await advanceJobStep(generationJobId, "write", 80);
   // Render in scoped local scratch. Only the final revision claim permits
   // publishing these bytes to the project’s durable object keys.
-  return withTemporaryDirectory("book-compile-", async (scratchDir) => {
+  return await withTemporaryDirectory("book-compile-", async (scratchDir) => {
     const pending = pendingExportPaths(scratchDir);
     let characterPreparationJobId: string | null = null;
     let pdfPageMapUpdate: PersistableBookPdfPageMap | undefined;
@@ -708,6 +763,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
       const companions = await renderCompanionExports({
         formats: companionFormatsToRender(repairFormat),
         markdown,
+        ...(compiled ? { pageMapPlan: compiled } : {}),
         pending,
         projectId,
         generationJobId,
@@ -716,9 +772,11 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
         language: input.language,
         qualityReport
       });
+      await finalization?.assertLease();
       const publication = await publishCompiledExports({
         projectId,
         generationJobId,
+        ...(finalization ? { assertFinalizationOwnership: (tx) => finalization.assertLease(tx) } : {}),
         pending,
         companionsProduced: companions.produced,
         repairFormat,
@@ -750,6 +808,10 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
           : {};
       }
       characterPreparationJobId = publication.characterPreparationJobId;
+      durablePublicationCommitted = true;
+      // Publication already committed lifecycle settlement. Checkpoint telemetry
+      // cannot turn that delivered result back into a failed/refunded job.
+      await finalization?.phase("published").catch(() => undefined);
     } finally {
       await discardPendingExports(pending);
     }
@@ -770,10 +832,16 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
         : {})
     };
   });
-}
-
-async function readOptionalPublishedMarkdown(path: string): Promise<string | undefined> {
-  return (await objectStore().get(path))?.toString("utf8");
+  } catch (error) {
+    if (error instanceof FinalizationLeaseLostError) {
+      return { lifecycleSettlement: "defer-to-successor", afterJobCompleted: requeueCompile };
+    }
+    throw error;
+  } finally {
+    await inventoryWork; // Drain owned work before releasing the finalization lease.
+    if (durablePublicationCommitted) await finalization?.close().catch(() => undefined);
+    else await finalization?.close();
+  }
 }
 
 export {

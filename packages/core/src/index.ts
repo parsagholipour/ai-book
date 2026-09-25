@@ -33,6 +33,7 @@ export * from "./adapters/openaiCompatible.js";
 export * from "./adapters/openaiModels.js";
 export * from "./adapters/openai.js";
 export * from "./adapters/retry.js";
+export * from "./adapters/textAttemptBudget.js";
 export * from "./adapters/imageFallback.js";
 export * from "./adapters/imageRefusal.js";
 export * from "./adapters/imageRefusalVerdict.js";
@@ -146,6 +147,7 @@ export * from "./generation/docx.js";
 export * from "./generation/exportProvenance.js";
 export * from "./generation/exportTempSweep.js";
 export * from "./generation/pdf.js";
+export { shortKidsStoryPageLayout, splitStoryPageMarkdown, type StoryPagePlan } from "./generation/pdfStoryPages.js";
 export * from "./generation/pdfCss.js";
 export * from "./generation/pdfDocument.js";
 export * from "./generation/pdfPageAnchors.js";
@@ -195,4 +197,10 @@ export * from "./generation/smartUnslopDecision.js";
 export { scanSmartUnslopCandidates } from "./generation/smartUnslop.js";
 
 export * from "./adapters/decisionEvaluation.js";
-export { reviewManuscriptCoverage, manuscriptCoverageIssues, manuscriptCoverageSchema, type ManuscriptCoverage, type ManuscriptCoverageResult, type CoveragePage, type CoverageChapter } from "./generation/manuscriptCoverage.js";
+export { inventoryManuscriptRequirements, manuscriptRequirementInventorySchema, refreshManuscriptCoverageFacts, type ManuscriptRequirementInventory, reviewManuscriptCoverage, manuscriptCoverageIssues, manuscriptCoverageSchema, type ManuscriptCoverage, type ManuscriptCoverageResult, type CoveragePage, type CoverageChapter, type CoverageEvidenceContext } from "./generation/manuscriptCoverage.js";
+export { buildCoverageMediaInventory } from "./generation/manuscriptCoverageMedia.js";
+
+export * from "./generation/pictureBookReview.js";
+export * from "./generation/pictureBookRepair.js";
+
+export { sentenceLengthRepairFor, type SentenceLengthRepair } from "./generation/pageSentenceRepair.js";

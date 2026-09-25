@@ -6,6 +6,8 @@ import { join } from "node:path";
 import type { Job } from "bullmq";
 import { bookPdfCoverNumbering, type ReaderChapter } from "@book-maker/core";
 
+vi.mock("./compileFinalization.js", async () => (await import("./testing/compileExportMocks.js")).compileFinalizationModuleMock());
+vi.mock("../generation/finalizationIllustrations.js", async () => (await import("./testing/compileExportMocks.js")).finalizationIllustrationsModuleMock());
 vi.mock("@book-maker/db", async () => (await import("./testing/compileExportMocks.js")).dbModuleMock());
 vi.mock("../runtime/config.js", async () => (await import("./testing/compileExportMocks.js")).configModuleMock());
 vi.mock(
@@ -233,13 +235,14 @@ describe("compileExport reader chapters", () => {
     );
   });
 
-  it("reconstructs and republishes book.md when a manual edit queue failure left every export missing", async () => {
+  it.each(["fiction", "KIDS"])("reconstructs and republishes missing %s exports after a manual edit queue failure", async (category) => {
+    mocks.inputForPlanVersion.mockReturnValue({ ...input, category });
     await objectStore().delete("books/project-1/book.md");
-
     await expect(compileExport(repairJob())).resolves.toEqual({ durableCompletionCommitted: true });
 
     expect(mocks.createReaderChaptersForExport).not.toHaveBeenCalled();
     expect(mocks.strategy.compileMarkdown).toHaveBeenCalledTimes(1);
+    expect(mocks.strategy.compileMarkdown).toHaveBeenCalledWith(expect.objectContaining({ storyPageLayout: category === "KIDS" ? "separate" : undefined }));
     expect(mocks.strategy.generatePdf).toHaveBeenCalledWith(
       "# The Long Walk\n\nProse.\n",
       expect.objectContaining({ outputPath: expect.stringContaining(".book-test.pdf"), targetPageCount: 12 })
@@ -755,6 +758,21 @@ describe("compileExport reader chapters", () => {
     expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
       expect.objectContaining({ status: "REVIEW_REQUIRED" })
     );
+  });
+
+  it("publishes saved prose with a durable warning when final repair exhausts its provider budget", async () => {
+    mocks.strategy.runFinalBookQa.mockResolvedValueOnce({ approved: false, score: 60,
+      issues: ["Page 2 needs repair."], requiredFixes: [], repairPageIndexes: [2] });
+    mocks.revisePageDraftWithRestart.mockRejectedValueOnce(Object.assign(
+      new Error("OpenAI response was incomplete: max_output_tokens."), { name: "OpenAIResponseError" }));
+    mocks.prisma.continuityNote.findMany.mockResolvedValue([]);
+    mocks.loadPagesForExport.mockResolvedValue(pages);
+    await expect(compileExport(job({ contentRevision: 4 }))).resolves.toMatchObject({ durableCompletionCommitted: true });
+    expect(mocks.prisma.page.update).not.toHaveBeenCalled();
+    expect(persistedQualityReport()).toMatchObject({ state: "review_recommended", issues: expect.arrayContaining([
+      expect.objectContaining({ code: "FINAL_QA_REPAIR_UNAVAILABLE", affectedPageIndexes: [2] })
+    ]) });
+    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(expect.objectContaining({ status: "COMPLETE" }));
   });
 
   it("runs the final-QA repair and the integrity pass under one quality context", async () => {

@@ -1,3 +1,4 @@
+import type { CreateProjectInput } from "@book-maker/core";
 import type {
   AudienceAgeRange,
   ImageModelSelection,
@@ -13,6 +14,7 @@ import { firstString, formatUsd } from "../shared/formatters.js";
  * cover-less state, and this console is the only surface that can set it.
  */
 export type CoverArtSource = "ai" | "design" | "none";
+export type IllustrationCadence = CreateProjectInput["mediaSettings"]["illustrationCadence"];
 
 export type ProjectCategory =
   | "KIDS"
@@ -47,6 +49,7 @@ export type DraftProject = {
   complexity: number;
   temperature: number;
   fullIllustrations: boolean;
+  illustrationCadence: IllustrationCadence;
   /** "ai" draws the cover, "design" picks a bundled one, "none" has no cover. */
   coverArtSource: CoverArtSource;
   finalReview: boolean;
@@ -296,6 +299,12 @@ export const AUDIENCE_AGE_RANGE_OPTIONS: Array<{ value: AudienceAgeRange; label:
   { value: "4-6", label: "Ages 4-6" },
   { value: "6-8", label: "Ages 6-8" }
 ];
+export const ILLUSTRATION_CADENCE_OPTIONS: Array<{ value: IllustrationCadence; label: string }> = [
+  { value: "template-driven", label: "Category default" },
+  { value: "every-page", label: "Every page" },
+  { value: "every-third-page", label: "Every third page (3, 6, 9, …)" },
+  { value: "manual", label: "Manual only" }
+];
 
 export const initialDraft: DraftProject = {
   title: "",
@@ -314,6 +323,7 @@ export const initialDraft: DraftProject = {
   complexity: 3,
   temperature: 0.8,
   fullIllustrations: true,
+  illustrationCadence: "template-driven",
   coverArtSource: "ai",
   finalReview: true,
   toneProfile: DEFAULT_TONE_PROFILE,
@@ -337,7 +347,7 @@ export function projectInputFromDraft(draft: DraftProject) {
     temperature: draft.temperature,
     mediaSettings: {
       fullIllustrations: draft.fullIllustrations,
-      illustrationCadence: "template-driven",
+      illustrationCadence: draft.illustrationCadence,
       includeCover: draft.coverArtSource === "ai",
       coverArtSource: draft.coverArtSource,
       coverTemplate: draft.coverTemplate,
@@ -388,6 +398,7 @@ export function draftFromSavedInputs(project: Project): DraftProject {
       2
     ),
     fullIllustrations: firstBoolean(mediaSettings.fullIllustrations, initialDraft.fullIllustrations),
+    illustrationCadence: illustrationCadenceFromValue(mediaSettings.illustrationCadence),
     coverArtSource: resolveCoverArtSource(mediaSettings),
     finalReview: firstBoolean(mediaSettings.finalReview, initialDraft.finalReview),
     audienceAgeRange:
@@ -399,6 +410,10 @@ export function draftFromSavedInputs(project: Project): DraftProject {
 
 export function audienceAgeRangeFromValue(value: unknown): AudienceAgeRange {
   return value === "2-4" || value === "4-6" || value === "6-8" ? value : initialDraft.audienceAgeRange;
+}
+
+export function illustrationCadenceFromValue(value: unknown): IllustrationCadence {
+  return ILLUSTRATION_CADENCE_OPTIONS.find((option) => option.value === value)?.value ?? initialDraft.illustrationCadence;
 }
 
 export function projectCategoryFromValue(value: string): ProjectCategory {

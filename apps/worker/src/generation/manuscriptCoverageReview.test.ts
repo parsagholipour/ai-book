@@ -49,6 +49,12 @@ it("does not cache provider failure as a successful review", async () => {
   expect(mocks.review).toHaveBeenCalledOnce();
 });
 
+it("preserves complete semantic assessment while artwork inventory is pending", async () => {
+  mocks.review.mockResolvedValue({ ...review, status: "incomplete", assessmentComplete: true, issues: [] });
+  const result = await manuscriptCoverageForCompile(options);
+  expect(result.stored.review.assessmentComplete).toBe(true);
+});
+
 it("reconstructs a cached missing-deliverable warning from the evidence record", async () => {
   mocks.findFirst.mockResolvedValue({ qualityReport: { briefCoverage: { fingerprint, review: { ...review, requirements: review.requirements.map((item) => ({ ...item, source: "brief", status: "missing", evidence: [] })) } } } });
   const result = await manuscriptCoverageForCompile({ ...options, allowModelReview: false });
@@ -66,4 +72,24 @@ it("invalidates coverage after a split, merge, rename or boundary move with iden
     await manuscriptCoverageForCompile({ ...options, chapters: changed });
     expect(mocks.review).toHaveBeenCalledWith(expect.objectContaining({ chapters: changed }));
   }
+});
+
+it("invalidates reviewed coverage when export metadata or reference provenance changes", async () => {
+  const context = { title: "The Lantern Path", targetStoryPages: 1, storyPageIndexes: [1], illustratedPageIndexes: [1], expectedIllustratedPageIndexes: [1], characters: [], referenceProvenance: [{ id: "portrait-1", path: "/portrait-1.webp" }] };
+  const original = manuscriptCoverageFingerprint(options.brief, options.promises, pages, undefined, context);
+  for (const changed of [{ ...context, title: "Another title" }, { ...context, illustratedPageIndexes: [] }, { ...context, referenceProvenance: [{ id: "portrait-2", path: "/portrait-2.webp" }] }]) {
+    mocks.findFirst.mockResolvedValue({ qualityReport: { briefCoverage: { fingerprint: original, review } } });
+    mocks.review.mockClear();
+    await manuscriptCoverageForCompile({ ...options, evidenceContext: changed });
+    expect(mocks.review).toHaveBeenCalledWith(expect.objectContaining({ evidenceContext: changed }));
+  }
+});
+
+it("reuses partial evidence for an unchanged manuscript without claiming unavailable visual checks passed", async () => {
+  const partial = { ...review, status: "incomplete", requirements: [...review.requirements, { ...review.requirements[0]!, id: "brief-2", kind: "visual", status: "unverified", reason: "Images were not inspected", evidence: [] }] };
+  mocks.findFirst.mockResolvedValue({ qualityReport: { briefCoverage: { fingerprint, review: partial } } });
+  const result = await manuscriptCoverageForCompile(options);
+  expect(mocks.review).not.toHaveBeenCalled();
+  expect(result.stored.review.requirements[0]?.status).toBe("fulfilled");
+  expect(result.issues.map((i) => i.code)).toEqual(["BRIEF_COVERAGE_UNVERIFIED"]);
 });

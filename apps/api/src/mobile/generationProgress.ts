@@ -1,6 +1,7 @@
 import type { MobileProjectStatusDto, ProjectStatusResult } from "./dto.js";
 import { findCurrentOwningFailure } from "./generationRecovery.js";
 import { jsonRecord, stringField } from "./support.js";
+import { serializeFinalizationProgress } from "./finalizationProgress.js";
 
 /**
  * Live progress for the book itself, the way planning already reports itself.
@@ -82,10 +83,15 @@ export function serializeGenerationProgress(
     ? ["prepare", "write", "illustrate", "finish"]
     : ["prepare", "write", "finish"];
   const settled = projectStatus === "COMPLETE" || projectStatus === "REVIEW_REQUIRED";
+  const finalization = status.progress.finalization !== undefined ? status.progress.finalization : serializeFinalizationProgress(
+    status.project.jobs.find((job) => job.type === "COMPILE_EXPORT")?.payload,
+    status.progress.pages.target
+  );
   if (settled) {
     return {
       percent: 100,
       detail: null,
+      finalization: finalization?.phase === "published" ? finalization : null,
       steps: keys.map((key) => ({
         key,
         label: stepLabel(key, imageMode),
@@ -95,7 +101,7 @@ export function serializeGenerationProgress(
     };
   }
 
-  const phase = readPhase(status);
+  const phase = readPhase(status, finalization);
   const writingChapters = phase.chapterWrite !== null && !phase.pagesDone;
   const steps = keys.map((key) => ({
     key,
@@ -106,7 +112,8 @@ export function serializeGenerationProgress(
 
   return {
     percent: generationProgressPercent(status, phase, imageMode !== null),
-    detail: liveDetail(status, phase),
+    detail: finalization?.label ?? liveDetail(status, phase),
+    finalization,
     steps
   };
 }
@@ -126,6 +133,7 @@ type PrepareProgress = {
 };
 
 type GenerationPhase = {
+  finalization: GenerationProgressDto["finalization"];
   bookJob: StatusJob | undefined;
   activeBookStep: string | undefined;
   /** The lowest-numbered page still being written, when we can name one. */
@@ -143,7 +151,7 @@ type GenerationPhase = {
   failedStep: GenerationStepKey | null;
 };
 
-function readPhase(status: ProjectStatusResult): GenerationPhase {
+function readPhase(status: ProjectStatusResult, finalization: GenerationProgressDto["finalization"]): GenerationPhase {
   const jobs = status.project.jobs;
   const pages = status.progress.pages;
   const bookJob = jobs.find((job) => job.type === "GENERATE_BOOK");
@@ -153,7 +161,7 @@ function readPhase(status: ProjectStatusResult): GenerationPhase {
     .slice()
     .sort((left, right) => (left.pageIndex ?? Number.MAX_SAFE_INTEGER) - (right.pageIndex ?? Number.MAX_SAFE_INTEGER))[0];
   const activeImageJob = jobs.find((job) => job.type === "GENERATE_IMAGE" && isOpen(job));
-  const compileJob = jobs.find((job) => job.type === "COMPILE_EXPORT");
+  const compileJob = !finalization && bookJob && isOpen(bookJob) ? undefined : jobs.find((job) => job.type === "COMPILE_EXPORT");
   const pipelineStatus = (key: string) => status.progress.pipeline.find((step) => step.key === key)?.status;
 
   // Preparing owns the window before any page work exists. Once a page has
@@ -172,6 +180,7 @@ function readPhase(status: ProjectStatusResult): GenerationPhase {
     chapterWrite !== null;
 
   return {
+    finalization,
     bookJob,
     activeBookStep,
     activePageJob,
@@ -196,11 +205,15 @@ function stepStatus(key: GenerationStepKey, phase: GenerationPhase): StepStatus 
       return phase.writingStarted ? "done" : "active";
     case "write":
       if (!phase.writingStarted) return "pending";
+      if (phase.finalization && ["review", "repair", "final_review"].includes(phase.finalization.phase)) return "active";
       return phase.pagesDone ? "done" : "active";
     case "illustrate":
+      if (phase.finalization && ["review", "repair", "final_review"].includes(phase.finalization.phase)) return "pending";
       if (phase.imagesDone) return "done";
+      if (phase.finalization && ["illustrations", "coverage"].includes(phase.finalization.phase)) return "active";
       return phase.activeImageJob || (phase.pagesDone && !phase.compileJob) ? "active" : "pending";
     case "finish":
+      if (phase.finalization) return ["coverage", "render", "published"].includes(phase.finalization.phase) ? "active" : "pending";
       if (!phase.compileJob) return "pending";
       return phase.compileJob.status === "COMPLETED" ? "done" : "active";
   }
@@ -519,6 +532,7 @@ export function generationProgressPercent(
   phase: GenerationPhase,
   imagesEnabled: boolean
 ): number {
+  if (phase.finalization) return finalizationPercent(status, phase, imagesEnabled);
   const pages = status.progress.pages;
   const writeEnd = imagesEnabled ? 80 : 86;
   const finishStart = imagesEnabled ? ILLUSTRATE_BAND.end : writeEnd;
@@ -561,6 +575,30 @@ export function generationProgressPercent(
     : 0;
 
   return Math.min(99, Math.round(Math.max(PREPARE_BAND.start, prepare, write, illustrate, finish)));
+}
+
+function finalizationPercent(status: ProjectStatusResult, phase: GenerationPhase, imagesEnabled: boolean): number {
+  const finalization = phase.finalization!;
+  const reviewStart = imagesEnabled ? 80 : 86;
+  const reviewEnd = reviewStart + 5;
+  switch (finalization.phase) {
+    case "review": return reviewStart;
+    case "repair": {
+      const total = finalization.repairPagesAttempted + finalization.remainingRepairPages;
+      return reviewStart + 1 + Math.floor(4 * clamp01(finalization.repairPagesAttempted / Math.max(1, total)));
+    }
+    case "final_review": return reviewEnd;
+    case "coverage":
+    case "illustrations": {
+      const remaining = openImageJobCount(status);
+      const total = finalization.illustrationJobsTotal;
+      // Before the fan-out commits, zero queued images does not mean done.
+      const ratio = total ? clamp01((total - remaining) / total) : 0;
+      return reviewEnd + Math.floor((92 - reviewEnd) * ratio);
+    }
+    case "render": return 92 + Math.floor(7 * clamp01((phase.compileJob?.progress ?? 0) / FINISH_PROGRESS_CEILING));
+    case "published": return 99;
+  }
 }
 
 function activeWriteTokens(phase: GenerationPhase): number {

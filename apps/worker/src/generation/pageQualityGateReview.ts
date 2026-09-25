@@ -51,6 +51,8 @@ export async function reviewPageWithQualityGates(options: {
   allowModelReview?: boolean | undefined;
   /** A candidate-triggered rewrite has already spent this one-shot scan. */
   allowSmartUnslop?: boolean | undefined;
+  /** Caller has bound this completed manuscript verdict to the current prose. */
+  precomputedReport?: PageQualityReport | undefined;
 }): Promise<PageQualityReport> {
   const { localEnabled, smartUnslopEnabled, modelEnabled } = pageReviewPassesFor(options);
   options.signal?.throwIfAborted();
@@ -68,13 +70,18 @@ export async function reviewPageWithQualityGates(options: {
     const requiredReport = localEnabled
       ? reviewPageDraftLocally(options.reviewOptions)
       : reviewRequiredPageQualityChecks(options.reviewOptions);
-    return requiredReport.approved
+    const localReport = requiredReport.approved
       ? unslopReport
       : mergePageQualityReports(requiredReport, unslopReport);
+    return options.precomputedReport ? mergePageQualityReports(options.precomputedReport, localReport) : localReport;
   }
 
   const baseReport =
-    !localEnabled && !modelEnabled
+    options.precomputedReport
+      ? mergePageQualityReports(options.precomputedReport, localEnabled
+          ? reviewPageDraftLocally(options.reviewOptions)
+          : reviewRequiredPageQualityChecks(options.reviewOptions))
+      : !localEnabled && !modelEnabled
       ? reviewRequiredPageQualityChecks(options.reviewOptions)
       : !modelEnabled
         ? reviewPageDraftLocally(options.reviewOptions)
@@ -98,6 +105,7 @@ function mergePageQualityReports(
   additional: PageQualityReport
 ): PageQualityReport {
   return {
+    ...primary,
     approved: primary.approved && additional.approved,
     score: Math.min(primary.score, additional.score),
     issues: unique([...primary.issues, ...additional.issues]),
@@ -105,6 +113,7 @@ function mergePageQualityReports(
     notes: unique([primary.notes, additional.notes].filter(Boolean)).join(" "),
     groundedOk: primary.groundedOk && additional.groundedOk,
     unsupportedClaims: unique([...primary.unsupportedClaims, ...additional.unsupportedClaims]),
+    ...(primary.qualityAdvisories || additional.qualityAdvisories ? { qualityAdvisories: [...(primary.qualityAdvisories ?? []), ...(additional.qualityAdvisories ?? [])] } : {}),
     checks: {
       placeholderFree: primary.checks.placeholderFree && additional.checks.placeholderFree,
       promptLeakFree: primary.checks.promptLeakFree && additional.checks.promptLeakFree,

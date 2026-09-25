@@ -1,6 +1,7 @@
 import { updateJobProgress } from "../runtime/jobLifecycle.js";
+import { isTextProviderFailure } from "./textProviderFailure.js";
 import { MAX_PAGE_REVISE_RESTARTS } from "./tuning.js";
-import type { BookGenerationStrategy, PageDraft, RevisePageOptions } from "@book-maker/core";
+import { isCancellationError, isRecoverableNetworkError, type BookGenerationStrategy, type PageDraft, type RevisePageOptions } from "@book-maker/core";
 
 /** Run a page revision again when a provider fails before returning a draft. */
 export async function revisePageDraftWithRestart(options: {
@@ -18,6 +19,7 @@ export async function revisePageDraftWithRestart(options: {
     try {
       return await options.strategy.revisePageDraft(options.reviseOptions);
     } catch (error) {
+      if (isCancellationError(error) || isTextProviderFailure(error) || isRecoverableNetworkError(error)) throw error;
       lastError = error;
       if (attempt > maxRestarts) {
         throw error;

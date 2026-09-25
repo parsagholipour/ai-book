@@ -216,6 +216,7 @@ export async function repairPageBriefForRecovery(options: {
   draft: PageDraft;
   qualityReport: PageQualityReport;
   previousPages: PriorPageContext[];
+  nextPages?: PriorPageContext[] | undefined;
   continuityNotes: string[];
   researchNotes?: string[] | undefined;
   textModel: TextModelAdapter;
@@ -248,6 +249,7 @@ export async function repairPageBriefForRecovery(options: {
     draft: options.draft,
     report: options.qualityReport,
     previousPages: options.previousPages,
+    ...(options.nextPages ? { nextPages: options.nextPages } : {}),
     continuityNotes: options.continuityNotes,
     researchNotes: options.researchNotes,
     textModel: options.textModel

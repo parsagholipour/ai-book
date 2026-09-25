@@ -111,8 +111,8 @@ function stripFurniture(markdown: string): { text: string; titlePage: DocxTitleP
 }
 
 /** The manuscript cut around its figures, with the front matter read off. */
-export function prepareDocxSource(markdown: string): DocxSource {
-  const cover = leadingCoverIllustration(markdown);
+export function prepareDocxSource(markdown: string, options: { extractCover?: boolean } = {}): DocxSource {
+  const cover = options.extractCover === false ? undefined : leadingCoverIllustration(markdown);
   const body = cover ? cover.rest : markdown;
   const { text, titlePage } = stripFurniture(body);
   const segments: DocxSegment[] = [];

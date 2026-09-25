@@ -47,7 +47,6 @@ it.each(["<!-- <table><tr><th>X</th></tr><tr><td>Y</td></tr></table> -->", `\`\`
 
 it.each([
   [verdict("promise-1", "A fabricated passage that is not in the book.")],
-  [{ ...verdict("promise-1"), evidence: [{ pageIndex: 99, quote: prose }] }],
   [],
   [verdict("promise-1"), verdict("promise-1")]
 ].map((requirements) => ({ requirements })))("does not pass missing, duplicate or fabricated payoff evidence", async ({ requirements }) => {

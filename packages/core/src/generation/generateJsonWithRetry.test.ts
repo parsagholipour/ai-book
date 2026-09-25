@@ -46,7 +46,8 @@ describe("generateJsonWithRetry", () => {
     expect(requests[1]?.temperature).toBe(0.2);
     expect(requests[1]?.messages[0]?.content).toContain("count: expected number");
     expect(requests[1]?.messages[0]?.content).toContain('"count"');
-    expect(requests[0]?.messages).toEqual([{ role: "user", content: "Make a plan" }]);
+    expect(requests[0]?.messages[0]?.content).toContain('Required JSON schema:');
+    expect(requests[0]?.messages.at(-1)).toEqual({ role: "user", content: "Make a plan" });
   });
 
   it("does not retry a direct schema.parse ZodError from a non-chapter-brief caller", async () => {
@@ -69,7 +70,8 @@ describe("generateJsonWithRetry", () => {
     ).rejects.toBeInstanceOf(z.ZodError);
     expect(call).toBe(1);
     expect(requests).toHaveLength(1);
-    expect(requests[0]?.messages).toEqual([{ role: "user", content: "Make a plan" }]);
+    expect(requests[0]?.messages[0]?.content).toContain('Required JSON schema:');
+    expect(requests[0]?.messages.at(-1)).toEqual({ role: "user", content: "Make a plan" });
     expect(requests[0]?.messages[0]?.content).not.toContain("Your previous JSON did not match the required schema.");
   });
 

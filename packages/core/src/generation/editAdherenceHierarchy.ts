@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import type { ChatMessage, TextModelAdapter } from "../adapters/types.js";
 import { mapWithConcurrency } from "../concurrency.js";
-import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
+import { generateJsonWithRetry, jsonSchemaMessages } from "./generateJsonWithRetry.js";
 import {
   EDIT_ADHERENCE_EVIDENCE_CAPACITY,
   EVIDENCE_OVERFLOW_CEILING,
@@ -378,6 +378,7 @@ async function decideGlobalVerdict(
     // schema: a first reply one key short used to be the whole review.
     repairAttempts: 1,
     schema: finalResponseSchema,
+    jsonContractInMessages: true,
     messages
   });
   const parsed = finalResponseSchema.parse(result.data);
@@ -440,6 +441,7 @@ async function generateLeafEvidence(
     // schema: a first reply one key short used to be the whole review.
     repairAttempts: 1,
     schema: leafEvidenceResponseSchema,
+    jsonContractInMessages: true,
     messages
   });
   return leafEvidenceResponseSchema.parse(result.data);
@@ -459,6 +461,7 @@ async function generateReducerEvidence(
     // schema: a first reply one key short used to be the whole review.
     repairAttempts: 1,
     schema: reducerEvidenceResponseSchema,
+    jsonContractInMessages: true,
     messages
   });
   const evidence = reducerEvidenceResponseSchema.parse(result.data);
@@ -472,7 +475,7 @@ async function generateReducerEvidence(
 }
 
 function leafMessages(instruction: string, segments: ManuscriptSegment[], totalSegments: number): ChatMessage[] {
-  return [
+  return jsonSchemaMessages([
     { role: "system", content: EVIDENCE_SYSTEM_MESSAGE },
     {
       role: "user",
@@ -484,11 +487,11 @@ function leafMessages(instruction: string, segments: ManuscriptSegment[], totalS
         outputContract: LEAF_EVIDENCE_CONTRACT
       })
     }
-  ];
+  ], leafEvidenceResponseSchema);
 }
 
 function reducerMessages(instruction: string, nodes: EvidenceNode[]): ChatMessage[] {
-  return [
+  return jsonSchemaMessages([
     { role: "system", content: REDUCER_SYSTEM_MESSAGE },
     {
       role: "user",
@@ -499,11 +502,11 @@ function reducerMessages(instruction: string, nodes: EvidenceNode[]): ChatMessag
         outputContract: REDUCED_EVIDENCE_CONTRACT
       })
     }
-  ];
+  ], reducerEvidenceResponseSchema);
 }
 
 function finalMessages(instruction: string, root: EvidenceNode): ChatMessage[] {
-  return [
+  return jsonSchemaMessages([
     { role: "system", content: FINAL_SYSTEM_MESSAGE },
     {
       role: "user",
@@ -528,7 +531,7 @@ function finalMessages(instruction: string, root: EvidenceNode): ChatMessage[] {
         outputContract: FINAL_VERDICT_CONTRACT
       })
     }
-  ];
+  ], finalResponseSchema);
 }
 
 function packContiguous<T>(

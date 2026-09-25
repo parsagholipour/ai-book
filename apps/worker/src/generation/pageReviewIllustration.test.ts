@@ -163,6 +163,23 @@ describe("reviewAndSaveGeneratedPage illustration publication", () => {
     expect(mocks.prisma.continuityNote.createMany).toHaveBeenCalledTimes(1);
   });
 
+  it("saves approved prose and continuity while postponing illustrations until finalization", async () => {
+    strategy.shouldIllustratePage.mockReturnValue(true);
+    await reviewAndSaveGeneratedPage({
+      ...baseOptions("A robin on a branch", ["The robin is named Pip."]),
+      deferIllustrations: true
+    });
+
+    expect(mocks.enqueueWorkerJob).not.toHaveBeenCalled();
+    expect(mocks.prisma.page.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ imagePrompt: "A robin on a branch" })
+    });
+    expect(mocks.prisma.page.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "COMPLETED" }) })
+    );
+    expect(mocks.prisma.continuityNote.createMany).toHaveBeenCalledTimes(1);
+  });
+
   it("leaves the staged keeper non-terminal when durable enqueue is declined", async () => {
     strategy.shouldIllustratePage.mockReturnValue(true);
     mocks.enqueueWorkerJob.mockResolvedValueOnce(undefined);

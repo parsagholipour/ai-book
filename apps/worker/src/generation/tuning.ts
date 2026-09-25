@@ -78,8 +78,8 @@ export function finalQaRevisionsFor(input: CreateProjectInput): number {
   return Math.max(PAGE_QA_MIN_RECOVERY_REVISION, pageQaRewriteAttemptsFor(input));
 }
 
-/** Times a page revision loop may restart from a fresh draft. */
-export const MAX_PAGE_REVISE_RESTARTS = 2;
+/** Provider adapters own retries; restarting a revision would reset their paid-call budget. */
+export const MAX_PAGE_REVISE_RESTARTS = 0;
 
 /**
  * Where recovery actually starts for one loop, given its budget.

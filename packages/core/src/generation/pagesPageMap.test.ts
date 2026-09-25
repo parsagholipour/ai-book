@@ -633,6 +633,15 @@ describe("page brief repair first-page contract", () => {
     expect(capture.system).toMatch(/substantive landing claim/);
   });
 
+  it("grounds a repaired assignment in the actual following prose", async () => {
+    const capture = capturingJsonModel(modelPageBeat(1, 1));
+    const plan: BookPlan = { ...makeFallbackPlan(input), openingHook };
+    await repairPageBrief({ ...repairOptions(1, plan), textModel: capture.model,
+      nextPages: [{ index: 2, title: "The crossing", markdown: "Turtle held the lantern while Rabbit tied the boat.", summary: "They prepare to cross." }] });
+    expect(capture.system).toContain("followingPages is supplied, it is already-written prose");
+    expect(JSON.stringify(capture.payload?.followingPages)).toContain("Turtle held the lantern");
+  });
+
   it("repairs a one-page book's page 1 under the ending contract", async () => {
     const capture = capturingJsonModel(modelPageBeat(1, 1));
     const plan: BookPlan = { ...makeFallbackPlan(onePageInput), openingHook };
@@ -803,7 +812,7 @@ describe("evidence ledger on the page map", () => {
 
     await generateWholeBookPageMap({ input, plan: makeFallbackPlan(input), textModel: capture.model });
 
-    expect(capture.system).not.toMatch(/evidenceAnchors/);
+    expect(capture.system).not.toMatch(/Each page[^.]*must[^.]*evidenceAnchors/);
     expect(capture.payload?.outputContract?.pages?.[0]).not.toHaveProperty("evidenceAnchors");
   });
 });

@@ -1,3 +1,4 @@
+import { sentenceLengthRepairFor, type SentenceLengthRepair } from "@book-maker/core";
 import { changedCandidateGrounding } from "./changedCandidateGrounding.js";
 import { formatQualityFailure, styleExcerptsForPage } from "./bookHelpers.js";
 import { updateJobProgress } from "../runtime/jobLifecycle.js";
@@ -37,7 +38,6 @@ import {
 import {
   hasSmartUnslopCandidates, smartUnslopResolved, isCancellationError,
   type DecisionModelRoute,
-  styleAuditedScoreBeats,
   type BookGenerationStrategy,
   type BookPlan,
   type ChapterBrief,
@@ -52,6 +52,10 @@ import {
   type TextModelAdapter
 } from "@book-maker/core";
 import { pageScope } from "@book-maker/db";
+import { bestDraftCandidate, type DraftCandidate, type PageQualityLoopOutcome } from "./pageReviewCandidates.js";
+export { bestDraftCandidate, type DraftCandidate, type PageQualityLoopOutcome } from "./pageReviewCandidates.js";
+import { matchingPrecomputedReview, type PrecomputedPageReview } from "./precomputedPageReview.js";
+export type { PrecomputedPageReview } from "./precomputedPageReview.js";
 
 export { revisePageDraftWithRestart } from "./pageRevision.js";
 export { pageReviewPassesFor, reviewPageWithQualityGates } from "./pageQualityGateReview.js";
@@ -59,54 +63,6 @@ export { pageReviewPassesFor, reviewPageWithQualityGates } from "./pageQualityGa
 /**
  * Page quality review loop: score a draft, revise it, and save the best candidate.
  */
-
-export type DraftCandidate = { draft: PageDraft; revision: number; report: PageQualityReport };
-
-/**
- * A rewrite is not guaranteed to improve: the sixth attempt can score below the
- * second. Every review loop keeps its keeper through this one comparison so a
- * failed page is saved at its strongest draft, not its latest. Only some
- * candidates are ever style-audited — the initial draft and reviewer-approved
- * revisions — so the comparison is `styleAuditedScoreBeats`, which counts the
- * audit's penalty only against another audited candidate: subtracted from
- * `score` itself, the penalty handed the keeper's seat to a rejected rewrite
- * the auditor never saw.
- */
-export function bestDraftCandidate(best: DraftCandidate, candidate: DraftCandidate): DraftCandidate {
-  return styleAuditedScoreBeats(candidate.report, best.report) ? candidate : best;
-}
-
-export type PageQualityLoopOutcome = {
-  approved: boolean;
-  /** The draft to keep: the approved one, or the best-scoring failure. */
-  draft: PageDraft;
-  report: PageQualityReport;
-  /** The kept draft's candidate number (the best candidate's when not approved). */
-  revision: number;
-  /** Total candidates/attempts consumed, whichever draft was kept. */
-  attempts: number;
-  /**
-   * This chapter's brief with the page's brief repair merged in, present only
-   * when the page kept a draft that repair briefed — the same condition the
-   * durable `Chapter.productionBrief` write is taken on, decided once below.
-   *
-   * A caller that briefs the chapter's *other* pages from one copy of the brief
-   * (the book passes, whose `ChapterSetup.brief` is one object per chapter; the
-   * compile's repair pass, which parses one per chapter) rebinds its copy to
-   * this and so hands the chapter's later pages the assignment this page
-   * actually delivered. A caller drafting one page per job has nobody to tell
-   * and ignores it. Absent is the safe answer either way: the caller keeps the
-   * brief it had, which is what the row keeps too.
-   */
-  repairedChapterBrief?: ChapterBrief | undefined;
-  /**
-   * The durable half of a kept brief repair, present only when the caller asked
-   * to publish it with its own page write. The function accepts that caller's
-   * transaction client, keeping the CAS implementation behind this narrow
-   * seam rather than exposing chapter-row details here.
-   */
-  pendingBriefRepair?: NonNullable<RepairedPageBrief["persist"]> | undefined;
-};
 
 /**
  * The one score → revise → re-score loop behind every page review: the
@@ -154,6 +110,8 @@ export async function runPageQualityLoop(options: {
   draft: PageDraft;
   /** Before the first rewrite, when the caller has already changed the seed. */
   originalDraft?: Pick<PageDraft, "title" | "markdown"> | undefined;
+  /** A previously saved candidate, judged against the current repair findings. */
+  initialKeeper?: { draft: PageDraft; report: PageQualityReport };
   /** The initial draft's review, produced by the caller. */
   report: PageQualityReport;
   previousPages: PriorPageContext[];
@@ -166,6 +124,8 @@ export async function runPageQualityLoop(options: {
   decisions?: DecisionModelRoute | undefined;
   generationJobId?: string | undefined;
   maxCandidates: number;
+  /** Stop a final repair after repeated candidates fail to improve its keeper. */
+  stopAfterNoImprovement?: number;
   recoveryRevision?: number | undefined;
   /**
    * Repair a conflicting page brief at the recovery candidate. Both the page
@@ -210,6 +170,8 @@ export async function runPageQualityLoop(options: {
   characterContext?: string | undefined;
   /** Supplemental page-local guidance kept beside the authoritative userRequest. */
   pageEditGuidance?: string | undefined;
+  repairInstruction?: string | undefined;
+  sentenceRepair?: SentenceLengthRepair | undefined;
   /** Forwarded to every revise this loop spends; see `RevisePageOptions.figures`. */
   figures?: "keep" | "hold";
   retrieveResearch?: ((draft: PageDraft, report: PageQualityReport) => Promise<string[]>) | undefined;
@@ -232,6 +194,7 @@ export async function runPageQualityLoop(options: {
    */
   assertOwnership?: () => Promise<void>;
 }): Promise<PageQualityLoopOutcome> {
+  const sentenceRepair = options.userRequest ? undefined : options.sentenceRepair;
   const styleExcerpts = options.styleExcerpts ?? [];
   const auditApprovedRevision = revisedDraftStyleAuditor({
     ...(options.decisions ? { decisions: options.decisions } : {}),
@@ -240,6 +203,7 @@ export async function runPageQualityLoop(options: {
     textModel: options.textModel,
     styleExcerpts,
     quality: options.quality,
+    targetPages: options.input.targetPages,
     ...(options.userRequest ? { userRequest: options.userRequest } : {})
   });
   const auditApproved = async (candidate: PageDraft, candidateReport: PageQualityReport) =>
@@ -276,7 +240,11 @@ export async function runPageQualityLoop(options: {
     persist: RepairedPageBrief["persist"];
   } | null = null;
   let revision = 1;
-  let best: DraftCandidate = { draft, revision, report };
+  let best: DraftCandidate = options.initialKeeper
+    ? sentenceRepair ? { ...options.initialKeeper, revision: 0 }
+      : bestDraftCandidate({ ...options.initialKeeper, revision: 0 }, { draft, revision, report })
+    : { draft, revision, report };
+  let noImprovement = 0;
   // A deterministic candidate cluster buys one contextual rewrite. If the
   // writer returns the page unchanged because every match is protected, the
   // same scanner result must not burn the rest of this page's rewrite budget.
@@ -291,14 +259,20 @@ export async function runPageQualityLoop(options: {
     ...(options.recoveryRevision !== undefined ? { requested: options.recoveryRevision } : {}),
     ...(options.userRequest ? { userRequest: options.userRequest } : {})
   });
+  let lastSentenceAttemptMarkdown = sentenceRepair?.originalMarkdown;
 
   while (!report.approved && revision < maxCandidates) {
+    // A syntax-only request cannot authorize a story rewrite. Stop on semantic
+    // rejection or an unapplied patch; a high-scoring rejection is no keeper.
+    if (sentenceRepair && (draft.markdown === lastSentenceAttemptMarkdown ||
+      !sentenceLengthRepairFor(options.input, draft, report))) break;
+    lastSentenceAttemptMarkdown = draft.markdown;
     const resolvesSmartUnslop =
       !smartUnslopSpent && hasSmartUnslopCandidates(report);
     const nextRevision = revision + 1;
     await options.onRewrite?.(nextRevision, recoveryRevision);
     if (
-      options.repairBrief &&
+      !sentenceRepair && options.repairBrief &&
       !briefRepairSpent &&
       shouldRepairPageBriefForRecovery(nextRevision, report, pageBrief, recoveryRevision)
     ) {
@@ -339,8 +313,9 @@ export async function runPageQualityLoop(options: {
         pageBrief,
         pageIndex: options.pageIndex, qaCandidateNumber: nextRevision,
         draft,
-        qualityReport: report,
+        qualityReport: options.repairInstruction ? { ...report, requiredRevisions: [...report.requiredRevisions, options.repairInstruction] } : report,
         previousPages: options.previousPages,
+        ...(options.nextPages ? { nextPages: options.nextPages } : {}),
         continuityNotes: options.continuityNotes,
         researchNotes,
         textModel: options.textModel,
@@ -373,14 +348,15 @@ export async function runPageQualityLoop(options: {
         pageIndex: options.pageIndex, qaCandidateNumber: nextRevision,
         ...(deferredBriefRepair ? { qaBriefRepaired: true } : {}),
         draft,
-        report: pageRewriteReport(
+        report: sentenceRepair ? report : pageRewriteReport(
           keepUserRequestApplied(report, options.userRequest),
           nextRevision,
           recoveryRevision
         ),
         ...(options.userRequest ? { editInstruction: options.userRequest } : {}),
         ...(options.characterContext ? { characterContext: options.characterContext } : {}),
-        ...(options.pageEditGuidance ? { pageEditGuidance: options.pageEditGuidance } : {}),
+        ...(sentenceRepair ? { sentenceRepair } : {}),
+        ...(options.pageEditGuidance || options.repairInstruction ? { pageEditGuidance: [options.pageEditGuidance, options.repairInstruction].filter(Boolean).join("\n") } : {}),
         ...(options.figures ? { figures: options.figures } : {}),
         previousPages: options.previousPages,
         ...(options.nextPages && options.nextPages.length > 0 ? { nextPages: options.nextPages } : {}),
@@ -399,6 +375,9 @@ export async function runPageQualityLoop(options: {
       ...(options.userRequest ? { userRequest: options.userRequest } : {}),
       allowSmartUnslop: !smartUnslopSpent && !resolvesSmartUnslop,
       reviewOptions: {
+        ...(options.repairInstruction ? { repairInstruction: options.repairInstruction } : {}),
+        repairOriginalMarkdown: (options.originalDraft ?? options.draft).markdown,
+        ...(sentenceRepair ? { sentenceRepair } : {}),
         input: options.input,
         plan: options.plan,
         chapter: options.chapter,
@@ -420,7 +399,16 @@ export async function runPageQualityLoop(options: {
       smartUnslopSpent = true;
     }
     report = await auditApproved(draft, await checkGrounding(draft, report, researchNotes ?? []));
-    best = bestDraftCandidate(best, { draft, revision, report });
+    const nextBest = sentenceRepair && !report.approved ? best : bestDraftCandidate(best, { draft, revision, report });
+    noImprovement = nextBest === best ? noImprovement + 1 : 0;
+    best = nextBest;
+    if (options.stopAfterNoImprovement && noImprovement >= options.stopAfterNoImprovement) {
+      // One changed brief can resolve a real constraint conflict. Give its first
+      // candidate a chance; repeating the same assignment buys no such exception.
+      const canRecoverBrief = !sentenceRepair && options.repairBrief && !briefRepairSpent && revision < maxCandidates &&
+        shouldRepairPageBriefForRecovery(revision + 1, report, pageBrief, recoveryRevision);
+      if (!canRecoverBrief) break;
+    }
   }
 
   // Every candidate was grounded before entering selection, including failures.
@@ -535,6 +523,8 @@ export async function reviewAndSaveGeneratedPage(options: {
    * page is still reviewed and saved identically.
    */
   illustrate?: boolean | undefined;
+  /** New-book finalization queues images after its bounded manuscript repair. */
+  deferIllustrations?: boolean | undefined;
   /**
    * Chapter/batch resume regenerates the whole unit containing the first
    * missing page. Its already-settled prefix must therefore accept the new
@@ -560,6 +550,9 @@ export async function reviewAndSaveGeneratedPage(options: {
   /** Let an operation-level retry loop own the candidate budget. */
   maxCandidates?: number | undefined;
   figures?: "keep" | "hold";
+  precomputedReview?: PrecomputedPageReview | undefined;
+  /** Only a validated complete-manuscript review may defer its targeted repairs. */
+  deferRepairsUntilFinalization?: boolean | undefined;
 }): Promise<SavedGeneratedPage> {
   // Pin optimistic ownership before any review/rewrite provider call. A retry
   // of an already-settled page replays nothing, while a row that changes under
@@ -588,6 +581,8 @@ export async function reviewAndSaveGeneratedPage(options: {
   const continuityNotes = await loadContinuityNotes(options.projectId, { beforePageIndex: null });
   const researchNotes = await loadResearchNotesForGeneration(options.projectId, options.strategy, options.chapter);
   const quality = await loadQualityContext(options.input);
+  const precomputed = matchingPrecomputedReview({ precomputed: options.precomputedReview, draft: options.draft,
+    previousPages: options.previousPages, nextPages: options.nextPages, quality });
   // The book's own opening voice, not whatever the caller's window happens to
   // start at. This path had no lock at all, so `enrichPageQualityReport` fell
   // back to pinning from `previousPages` — and `continueBook` passes the last
@@ -603,6 +598,7 @@ export async function reviewAndSaveGeneratedPage(options: {
     quality
   });
   const initialReport = await reviewPageWithQualityGates({
+    ...(precomputed ? { precomputedReport: precomputed.report } : {}),
     ...(options.providers.decisions ? { decisions: options.providers.decisions } : {}),
     ...(options.editInstruction ? { userRequest: options.editInstruction } : {}),
     strategy: options.strategy,
@@ -626,6 +622,7 @@ export async function reviewAndSaveGeneratedPage(options: {
     }
   });
   const enriched = await enrichPageQualityReport({
+    ...(precomputed ? { precomputed } : {}),
     ...(options.providers.decisions ? { decisions: options.providers.decisions } : {}),
     ...(options.editInstruction ? { userRequest: options.editInstruction } : {}),
     input: options.input,
@@ -662,7 +659,8 @@ export async function reviewAndSaveGeneratedPage(options: {
     researchNotes,
     textModel: options.providers.text,
     generationJobId: options.generationJobId,
-    maxCandidates: options.maxCandidates ?? pageQaCandidatesFor(options.input),
+    maxCandidates: precomputed && options.deferRepairsUntilFinalization ? 1 : options.maxCandidates ?? pageQaCandidatesFor(options.input),
+    ...(options.editInstruction ? {} : { stopAfterNoImprovement: 2 }),
     repairBrief: true,
     // This function owns the page write, so it also owns when the accepted
     // chapter repair becomes durable. The loop returns the CAS for the
@@ -737,6 +735,7 @@ export async function reviewAndSaveGeneratedPage(options: {
     status: pageStatus,
     pendingBriefRepair: outcome.pendingBriefRepair,
     existingPage,
+    illustrationContext: { input: options.input, plan: options.plan, planId: options.planId },
     ...(assertOwnership ? { assertOwnership } : {})
   });
 
@@ -811,6 +810,7 @@ export async function reviewAndSaveGeneratedPage(options: {
     draft,
     stagedPage: page,
     willIllustrate,
+    ...(options.deferIllustrations ? { deferIllustrations: true } : {}),
     continuityTags: ["page", String(options.draft.index), options.strategy.id]
   });
   // A declined enqueue leaves this staged keeper authoritative and retryable,

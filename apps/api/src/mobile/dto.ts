@@ -539,6 +539,15 @@ export type MobileProjectStatusDto = {
   generationProgress: {
     percent: number;
     detail: string | null;
+    finalization: {
+      phase: "review" | "repair" | "final_review" | "illustrations" | "coverage" | "render" | "published";
+      label: string;
+      pageIndex: number | null;
+      repairPagesAttempted: number;
+      remainingRepairPages: number;
+      illustrationJobsTotal?: number;
+      lastProgressAt: string;
+    } | null;
     steps: Array<{
       key: "prepare" | "write" | "illustrate" | "finish";
       label: string;

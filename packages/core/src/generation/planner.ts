@@ -1,3 +1,4 @@
+import { compactPictureBookPlanMessages, usesCompactPictureBookPlanning } from "./compactPictureBookPlanning.js";
 import type { JsonResult, ResearchAdapter, TextModelAdapter } from "../adapters/types.js";
 import { uniqueStrings } from "../collections.js";
 import { targetLanguageGenerationGuidance, targetLanguagePayload } from "../prompting/language.js";
@@ -90,7 +91,8 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
     );
   }
 
-  const planningSchema = bookPlanModelOutputSchemaWithFallback({ ...fallback, researchNotes });
+  const compactStory = usesCompactPictureBookPlanning(options.input);
+  const planningSchema = bookPlanModelOutputSchemaWithFallback({ ...fallback, researchNotes }, compactStory);
   let result: JsonResult<Omit<BookPlan, "researchNotes">>;
   try {
     result = await generateJsonWithRetry(options.textModel, {
@@ -102,7 +104,7 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
       // while DeepSeek finished the same shape in ~3400 visible tokens. The
       // model's own output ceiling is the bound.
       schema: planningSchema,
-      messages: [
+      messages: compactStory ? compactPictureBookPlanMessages(options.input) : [
         {
           role: "system",
           content: [
@@ -137,7 +139,8 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
             "For the single necessary question, include 2-4 concise premade answers only when a few complete answers really cover it, and make every option a full answer usable as-is. When the answer is a value only the reader can supply - a name, a title, a place, a number, a date - set options to [] and let them type it. Never write an option that only describes how the reader will answer. Allow a custom answer unless the question is informational only.",
             'Declare how many answers you accept in answerKind: "choice" when exactly one option can be true, "multi" (up to 6 options) when the reader can honestly combine several and you can honour every pick, "open" with no options otherwise. The app draws the picker from answerKind, so never say "choose one or more" in the prompt and never list the options inside the prompt text.',
             "For every recurring character, include concrete visualRules with stable silhouette, face, outfit, color palette, and distinctive details suitable for a reusable character reference sheet.",
-            "Seed promises with the book's open dramatic or explanatory commitments the later pages must pay off. Use [] when the book has none.",
+            "When the request asks for both/all protagonists to grow, give each named protagonist a distinct initial limitation, consequential choice and observable changed action in chapter keyBeats, even if one is a wise mentor. Preserve their saved character canon; growth need not change appearance or personality.",
+            "Seed promises with the book's open dramatic or explanatory commitments the later pages must pay off. Use [] when the book has none. A character intention, boast or mistaken belief is not a literal guarantee of success: promise resolution of its dramatic question, allowing growth or a changed goal.",
             "Set openingHook to one or two sentences committing to how page 1 opens: the concrete scene, claim, image, or question the book starts with - specific to this book, never meta framing like 'This book will...'.",
             "Illustration prompts must use exact recurring character names whenever those characters appear.",
             ...targetLanguageGenerationGuidance(options.input.language),

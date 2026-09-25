@@ -11,7 +11,7 @@ import { jsonRecord, jsonValueSchema, mediaSettingsMobileRecord } from "./jsonCo
  * importers of "schemas/book.js" are unaffected.
  */
 
-const ILLUSTRATION_CADENCES = ["template-driven", "every-page", "manual"] as const;
+const ILLUSTRATION_CADENCES = ["template-driven", "every-page", "every-third-page", "manual"] as const;
 type IllustrationCadence = (typeof ILLUSTRATION_CADENCES)[number];
 export const TONE_PROFILES = ["neutral", "confident", "skeptical", "scholarly", "conversational", "narrative"] as const;
 

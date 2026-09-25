@@ -1,6 +1,7 @@
 import { z, type ZodType } from "zod";
 import { AdapterJsonValidationError } from "../adapters/json.js";
 import { widenedOutputBudget } from "../adapters/outputBudget.js";
+import { assertTextAttemptAvailable, withTextAttemptBudget } from "../adapters/textAttemptBudget.js";
 import {
   bindTextModelCall,
   type ChatMessage,
@@ -11,6 +12,8 @@ import {
 } from "../adapters/types.js";
 
 export type GenerateJsonWithRetryOptions<T> = GenerateJsonOptions<T> & {
+  /** Caller already included the exact schema (and measured it against its input budget). */
+  jsonContractInMessages?: boolean;
   /** Additional model calls after a repairable parse/schema failure. Bounded to two. */
   repairAttempts?: number | undefined;
   annotatePhysicalAttempt?: (
@@ -38,8 +41,13 @@ export async function generateJsonWithRetry<T>(
   const {
     repairAttempts: requestedRepairAttempts,
     annotatePhysicalAttempt,
-    ...generateOptions
+    jsonContractInMessages,
+    ...originalOptions
   } = options;
+  const generateOptions = withTextAttemptBudget({
+    ...originalOptions,
+    messages: jsonContractInMessages ? originalOptions.messages : jsonSchemaMessages(originalOptions.messages, originalOptions.schema)
+  });
   const repairAttempts = Math.max(0, Math.min(2, Math.floor(requestedRepairAttempts ?? 1)));
   let nextOptions: GenerateJsonOptions<T> = generateOptions;
   // A schema-repair attempt belongs to the call that produced the invalid
@@ -52,8 +60,9 @@ export async function generateJsonWithRetry<T>(
   // it is asked for once more at a wider budget, outside the repair count. A
   // develop-book-plan schema repair ran out of 16k tokens and failed a paid
   // book (development-fixes-3a-retry, 2026-09-05).
-  let widened = false;
+  const budget = generateOptions.textAttemptBudget!;
   for (let attempt = 0; ; attempt += 1) {
+    assertTextAttemptAvailable(nextOptions);
     try {
       return await bound.adapter.generateJson(withPhysicalAttemptMetadata(
         nextOptions,
@@ -63,10 +72,10 @@ export async function generateJsonWithRetry<T>(
         schemaRepair
       ));
     } catch (error) {
-      if (!widened && nextOptions.maxTokens !== undefined && isOutputBudgetExhausted(error)) {
+      if (!budget.outputWidened && nextOptions.maxTokens !== undefined && isOutputBudgetExhausted(error)) {
         const maxTokens = widenedOutputBudget(error, nextOptions.maxTokens);
         if (maxTokens === undefined) throw error;
-        widened = true;
+        budget.outputWidened = true;
         attempt -= 1;
         nextOptions = { ...nextOptions, maxTokens };
         continue;
@@ -83,6 +92,12 @@ export async function generateJsonWithRetry<T>(
       }, error);
     }
   }
+}
+
+/** Prompt packers call this before measuring bytes; generation must not grow their packed request afterward. */
+export function jsonSchemaMessages<T>(messages: ChatMessage[], schema: ZodType<T>): ChatMessage[] {
+  return prependSystemRules(messages, [...STRICT_JSON_RETRY_RULES,
+    `Required JSON schema: ${JSON.stringify(schemaToJson(schema))}`]);
 }
 
 /** The provider said the reply stopped at `max_output_tokens` (the Responses API counts reasoning against it), rather than returning a broken one. */
@@ -115,7 +130,7 @@ function repairOptions<T>(options: GenerateJsonOptions<T>, error: unknown): Gene
   if (isSchemaValidationError(error)) {
     return {
       ...options,
-      messages: withSchemaRepairRules(options.messages, options.schema, error),
+      messages: withSchemaRepairRules(options.messages, error),
       temperature: Math.min(options.temperature ?? 0.7, 0.2)
     };
   }
@@ -126,11 +141,10 @@ function repairOptions<T>(options: GenerateJsonOptions<T>, error: unknown): Gene
   };
 }
 
-function withSchemaRepairRules<T>(messages: ChatMessage[], schema: ZodType<T>, error: unknown): ChatMessage[] {
+function withSchemaRepairRules(messages: ChatMessage[], error: unknown): ChatMessage[] {
   return prependSystemRules(messages, [
     ...SCHEMA_REPAIR_RULES,
-    `Validation issues: ${validationDetails(error)}`,
-    `Required JSON schema: ${JSON.stringify(schemaToJson(schema))}`
+    `Validation issues: ${validationDetails(error)}`
   ]);
 }
 
@@ -171,7 +185,8 @@ function validationDetails(error: unknown): string {
 
 function schemaToJson<T>(schema: ZodType<T>): unknown {
   try {
-    return z.toJSONSchema(schema as never, { unrepresentable: "any" });
+    const { $schema: _dialect, ...contract } = z.toJSONSchema(schema as never, { unrepresentable: "any" });
+    return contract;
   } catch {
     return { description: "Conform to the requested response schema." };
   }

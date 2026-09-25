@@ -7,8 +7,11 @@ import { chapterBriefPayloadForPageScope, citationContractFields, sanitizePageBr
 import { evidenceLedgerRules } from "./evidenceLedger.js";
 import { localStyleInstructions } from "./styleContract.js";
 import type { ReviewPageOptions } from "./pagesReview.js";
+import { READER_NAMING_REVIEW_RULE } from "./readerNaming.js";
+import { buildSentenceRepairReviewPrompt } from "./pageSentenceRepair.js";
 
 export function buildPageReviewPrompt(options: ReviewPageOptions): GenerateJsonOptions<PageQualityReport> {
+  if (options.sentenceRepair && !options.userRequest) return buildSentenceRepairReviewPrompt(options);
   // Everything this reviewer says about the book's opening, from the same call
   // that decides what its writer was told (`openingContractFields`,
   // pagesShared.ts): the ban when this is page 1 of a book the pipeline wrote,
@@ -41,12 +44,15 @@ export function buildPageReviewPrompt(options: ReviewPageOptions): GenerateJsonO
             "You are a strict book editor.",
             "Review one generated page for reader-facing quality.",
             "Reject filler, repetition, prompt leakage, generic scaffold prose, continuity contradictions, and pages that do not progress.",
+            READER_NAMING_REVIEW_RULE,
+            "For confirmed planning-label leakage, reject the page and set checks.promptLeakFree=false.",
             ...citationReviewRules,
             "Treat semantic repetition as a failure even when wording differs: the same encounter, same decision, same exposition, or same emotional turn cannot appear twice.",
             "Do not reject merely because the same character performs a necessary recurring action type assigned by the current pageBrief; reject it only when it restages the same beat, reuses distinctive wording, or fails to add a new consequence.",
             "For a final page, reject vague closure unless it resolves the core promise with a concrete consequence or completed choice.",
             ...opening.rules,
             ...(options.userRequest ? ["userRequest is the approved reader edit intent and overrides stale pageBrief and voice expectations. Requested changes in tone, register, pacing, mood or content are intentional; judge only unintended defects and preserve the requested change."] : []),
+            ...(options.repairInstruction ? ["repairInstruction identifies concrete manuscript defects this candidate must fix. Evaluate those goals against the actual preceding and following prose. A necessary short bridge may override a conflicting old pageBrief; do not demand its removal merely for recalling where the characters just were. Still reject unnecessary repetition, invented facts or substantial performance of a reserved future scene. State whether the repair goals were achieved, and keep unresolved goals actionable."] : []),
             "Use pageScope to distinguish global page position from chapter-local position.",
             ...(citation.payload.researchNotes.length === 0
               ? [
@@ -69,10 +75,12 @@ export function buildPageReviewPrompt(options: ReviewPageOptions): GenerateJsonO
           content: JSON.stringify(
             {
               language: targetLanguagePayload(options.input.language),
+              brief: options.input.prompt,
               book: {
                 title: options.plan.title,
                 premise: options.plan.premise,
                 audience: options.plan.audience,
+                characterNames: options.plan.characters.map((character) => character.name),
                 category: options.input.category,
                 subcategory: options.input.subcategory,
                 // voiceGuide is a writer assignment. A history plan that said
@@ -95,6 +103,11 @@ export function buildPageReviewPrompt(options: ReviewPageOptions): GenerateJsonO
               pageScope: reviewPageScope,
               pageIndex: options.pageIndex,
               ...(options.userRequest ? { userRequest: options.userRequest } : {}),
+              ...(options.repairInstruction ? { repairInstruction: options.repairInstruction } : {}),
+              ...(options.sentenceRepair ? { sentenceRepair: options.sentenceRepair } : {}),
+              ...(options.repairOriginalMarkdown && options.repairOriginalMarkdown !== options.draft.markdown &&
+                options.repairOriginalMarkdown !== options.sentenceRepair?.originalMarkdown
+                ? { repairOriginalMarkdown: options.repairOriginalMarkdown } : {}),
               ...(options.retrievedResearch ? { retrievedResearch: options.retrievedResearch } : {}),
               draft: options.draft,
               previousPages: compactPriorPages(
@@ -180,4 +193,3 @@ function reviewerCitationRules(hasResearchNotes: boolean): string[] {
     "For this review, never reject a person, event, scene, quotation, record, publication, institution, or other detail merely because it may be fake, invented, fabricated, fictional, reconstructed, or absent from researchNotes. An earlier page outside the supplied context may have established it. Reject only an independently identifiable defect such as a factual or chronological error, an unsupported claim, repetition, contradiction, prompt leakage, stalled progression, or a reserved-beat restage."
   ];
 }
-

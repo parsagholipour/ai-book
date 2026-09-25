@@ -8,6 +8,14 @@ import {
 } from "./draft.js";
 
 describe("project draft helpers", () => {
+  it("retains an explicit sparse cadence when creating and reopening a project", () => {
+    const input = projectInputFromDraft({ ...initialDraft, illustrationCadence: "every-third-page" });
+    expect(input.mediaSettings.illustrationCadence).toBe("every-third-page");
+    const reopened = draftFromSavedInputs({ ...input, id: "sparse", status: "PLAN_READY" } as Project);
+    expect(reopened.illustrationCadence).toBe("every-third-page");
+    expect(projectInputFromDraft(reopened).mediaSettings.illustrationCadence).toBe("every-third-page");
+  });
+
   it("builds project input with custom subcategories and kid-specific settings", () => {
     const input = projectInputFromDraft({
       ...initialDraft,
@@ -48,6 +56,7 @@ describe("project draft helpers", () => {
           temperature: 5,
           mediaSettings: {
             audienceAgeRange: "6-8",
+            illustrationCadence: "every-page",
             toneProfile: "scholarly"
           }
         }
@@ -62,6 +71,7 @@ describe("project draft helpers", () => {
     expect(draft.complexity).toBe(10);
     expect(draft.temperature).toBe(2);
     expect(draft.audienceAgeRange).toBe("6-8");
+    expect(draft.illustrationCadence).toBe("every-page");
     expect(draft.toneProfile).toBe("scholarly");
   });
 });

@@ -596,7 +596,9 @@ export class LiveGenerationTextModelAdapter implements TextModelAdapter {
     if (this.config.MOCK_AI) {
       return new FakeTextModelAdapter();
     }
-    return createTextModelAdapter(this.config, selection);
+    // The worker owns physical retries and accounting. SDK retries are hidden
+    // from both the shared logical budget and the per-attempt usage ledger.
+    return createTextModelAdapter(this.config, selection, { maxRetries: 0 });
   }
 }
 

@@ -3,7 +3,7 @@ import { FakeTextModelAdapter } from "../adapters/fake.js";
 import type { DecisionRequest, DecisionResult } from "../adapters/decisions.js";
 import { FallbackDecisionAdapter } from "../adapters/decisionRouting.js";
 import { JEV_SELECTION } from "../adapters/generationTextModelRouting.js";
-import { auditPageStyle, styleAuditedScoreBeats, withStyleAudit } from "./styleAuditor.js";
+import { auditPageStyle, styleAuditedScoreBeats, withStyleAudit, type PageStyleAudit } from "./styleAuditor.js";
 
 const context = {
   pageIndex: 12,
@@ -12,7 +12,8 @@ const context = {
   antiAiRules: ["Avoid generic chapter summaries."],
   styleExcerpts: ["Opening voice.", "Second page voice."]
 };
-const diagnostic = { styleOk: false, styleIssues: ["Replace the lecture-style conclusion with a concrete action."] };
+const diagnostic: PageStyleAudit = { styleOk: false, styleIssues: ["Replace the lecture-style conclusion with a concrete action."],
+  evidence: [{ issue: "Replace the lecture-style conclusion with a concrete action.", quote: context.markdown, category: "voice" }], unverifiedStyleIssues: [] };
 function verdict(selectedOption = "clean", probabilities = {
   clean: selectedOption === "clean" ? 0.9 : 0.05,
   defect: selectedOption === "defect" ? 0.9 : 0.05,

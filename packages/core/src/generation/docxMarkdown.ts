@@ -77,6 +77,7 @@ type RunStyle = {
 
 type BlockStyle = {
   quote?: boolean;
+  pageBreakBefore?: boolean;
 };
 
 export function lexMarkdown(text: string): Token[] {
@@ -152,6 +153,7 @@ export function textRun(text: string, ctx: DocxRenderContext, style: RunStyle = 
 
 function paragraphOptions(ctx: DocxRenderContext, block: BlockStyle, extra: IParagraphOptions = {}): IParagraphOptions {
   return {
+    ...(block.pageBreakBefore ? { pageBreakBefore: true } : {}),
     ...(isRtl(ctx) ? { bidirectional: true } : {}),
     ...(block.quote
       ? {
@@ -163,11 +165,11 @@ function paragraphOptions(ctx: DocxRenderContext, block: BlockStyle, extra: IPar
   };
 }
 
-export function imageParagraph(image: DocxImage, alt: string, ctx: DocxRenderContext): Paragraph {
+export function imageParagraph(image: DocxImage, alt: string, ctx: DocxRenderContext, block: BlockStyle = {}): Paragraph {
   return new Paragraph(
     paragraphOptions(
       ctx,
-      {},
+      block,
       {
         alignment: AlignmentType.CENTER,
         children: [imageRun(image, alt)]
@@ -292,7 +294,7 @@ function paragraphBlocks(tokens: readonly Token[], ctx: DocxRenderContext, block
   const soleImage = tokens.length === 1 && tokens[0]?.type === "image" ? (tokens[0] as Tokens.Image) : undefined;
   if (soleImage) {
     const asset = ctx.images.get(soleImage.href);
-    return asset ? [imageParagraph(asset, soleImage.text, ctx)] : [];
+    return asset ? [imageParagraph(asset, soleImage.text, ctx, block)] : [];
   }
   const runs = inlineRuns(tokens, ctx);
   if (runs.length === 0) {
@@ -316,16 +318,16 @@ function listBlocks(token: Tokens.List, ctx: DocxRenderContext, block: BlockStyl
     }
     for (const child of item.tokens) {
       if (child.type === "list") {
-        nested.push(...listBlocks(child as Tokens.List, ctx, block, Math.min(level + 1, 2)));
+        nested.push(...listBlocks(child as Tokens.List, ctx, { ...block, pageBreakBefore: false }, Math.min(level + 1, 2)));
       } else if (child.type === "text" || child.type === "paragraph") {
         inline.push(...inlineRuns((child as Tokens.Text).tokens ?? [], ctx));
       } else {
-        nested.push(...blocksFromToken(child, ctx, block));
+        nested.push(...blocksFromToken(child, ctx, { ...block, pageBreakBefore: false }));
       }
     }
     blocks.push(
       new Paragraph(
-        paragraphOptions(ctx, block, {
+        paragraphOptions(ctx, { ...block, pageBreakBefore: block.pageBreakBefore === true && blocks.length === 0 }, {
           numbering: { reference, level, ...(token.ordered ? { instance } : {}) },
           children: inline
         })
@@ -336,11 +338,12 @@ function listBlocks(token: Tokens.List, ctx: DocxRenderContext, block: BlockStyl
   return blocks;
 }
 
-function codeBlocks(token: Tokens.Code, ctx: DocxRenderContext): FileChild[] {
+function codeBlocks(token: Tokens.Code, ctx: DocxRenderContext, block: BlockStyle): FileChild[] {
   const lines = token.text.replace(/\r\n?/g, "\n").split("\n");
   return lines.map(
-    (line) =>
+    (line, index) =>
       new Paragraph({
+        ...(block.pageBreakBefore && index === 0 ? { pageBreakBefore: true } : {}),
         style: CODE_STYLE,
         alignment: AlignmentType.LEFT,
         children: [new TextRun({ text: line, font: ctx.fonts.mono, rightToLeft: false })]
@@ -407,11 +410,14 @@ export function blocksFromToken(token: Token, ctx: DocxRenderContext, block: Blo
     case "blockquote":
       return blocksFromTokens((token as Tokens.Blockquote).tokens, ctx, { ...block, quote: true });
     case "code":
-      return codeBlocks(token as Tokens.Code, ctx);
+      return codeBlocks(token as Tokens.Code, ctx, block);
     case "table":
-      return tableBlocks(token as Tokens.Table, ctx);
+      // OOXML tables cannot carry pageBreakBefore. A zero-spacing carrier
+      // keeps an unusual table-first story scene with the following table.
+      return [...(block.pageBreakBefore ? [new Paragraph({ pageBreakBefore: true, keepNext: true,
+        spacing: { before: 0, after: 0, line: 1 }, children: [] })] : []), ...tableBlocks(token as Tokens.Table, ctx)];
     case "hr":
-      return [new Paragraph({ thematicBreak: true })];
+      return [new Paragraph({ thematicBreak: true, ...(block.pageBreakBefore ? { pageBreakBefore: true } : {}) })];
     case "space":
     case "html":
     case "def":
@@ -424,7 +430,7 @@ export function blocksFromToken(token: Token, ctx: DocxRenderContext, block: Blo
 export function blocksFromTokens(tokens: readonly Token[], ctx: DocxRenderContext, block: BlockStyle = {}): FileChild[] {
   const blocks: FileChild[] = [];
   for (const token of tokens) {
-    blocks.push(...blocksFromToken(token, ctx, block));
+    blocks.push(...blocksFromToken(token, ctx, { ...block, pageBreakBefore: block.pageBreakBefore === true && blocks.length === 0 }));
   }
   return blocks;
 }

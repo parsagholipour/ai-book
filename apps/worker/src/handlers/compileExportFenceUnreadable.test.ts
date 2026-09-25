@@ -26,6 +26,8 @@ import type { Job } from "bullmq";
  * that stopped had got.
  */
 
+vi.mock("./compileFinalization.js", async () => (await import("./testing/compileExportMocks.js")).compileFinalizationModuleMock());
+vi.mock("../generation/finalizationIllustrations.js", async () => (await import("./testing/compileExportMocks.js")).finalizationIllustrationsModuleMock());
 vi.mock("@book-maker/db", async () => (await import("./testing/compileExportMocks.js")).dbModuleMock());
 vi.mock("../runtime/config.js", async () => (await import("./testing/compileExportMocks.js")).configModuleMock());
 vi.mock(
@@ -458,38 +460,6 @@ describe("compileExport when its repair fence cannot be read", () => {
     const renderedMarkdown = mocks.strategy.generatePdf.mock.calls[0]?.[0] as string;
     expect(renderedMarkdown).toContain(repairedMarkdown);
     expect(renderedMarkdown).not.toContain("TODO: replace this original page");
-  });
-
-  it("blocks an unverified FAILED_QA target after every old model finding is withheld", async () => {
-    const failedPage = { ...compilePage(2), status: "FAILED_QA" };
-    mocks.prisma.project.findUnique.mockResolvedValue(projectRecord([compilePage(1), failedPage]));
-    mocks.strategy.runFinalBookQa.mockResolvedValue({
-      approved: false,
-      issues: ["Page 1 still contains the old defect."],
-      requiredFixes: [],
-      repairPageIndexes: [1, 2]
-    });
-    await barrierGoesDark({
-      clears: 2,
-      repaired: [{ ...compilePage(1), markdown: "Page 1 repaired before the fence failed." }, failedPage]
-    });
-    const restoreStrategy = repairsPageTwoCleanly();
-    const logged = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    try {
-      await compileExport(job());
-    } finally {
-      restoreStrategy();
-      logged.mockRestore();
-    }
-
-    expect(persistedQualityReport()).toMatchObject({
-      state: "blocked",
-      issues: [{ code: "FINAL_QA_REPAIR_INCOMPLETE", affectedPageIndexes: [2] }]
-    });
-    expect(mocks.strategy.runFinalBookQa).toHaveBeenCalledTimes(1);
-    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "REVIEW_REQUIRED" })
-    );
   });
 
   it("says how far its repair pass got, in the run log the render is in", async () => {

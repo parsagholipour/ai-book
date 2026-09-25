@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
 import { targetLanguageGenerationGuidance, targetLanguagePayload } from "../prompting/language.js";
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
@@ -39,6 +40,12 @@ export {
  * questions instead of reenacting one thesis through different cases. A
  * narrative book plans no focus.
  */
+// Prompt, parser and first-call JSON contract share the feature gate. Keeping
+// focus optional still advertises it to a provider when the gate is disabled.
+const unfocusedBookEpisodesSchema = bookEpisodesSchema.extend({
+  chapters: z.array(bookEpisodesSchema.shape.chapters.element.omit({ focus: true })).min(1)
+});
+
 const CHAPTER_FOCUS_RULES = [
   "focus is the chapter's explanatory assignment, answered from its assigned episodes. question asks one distinct explanatory question and names the assigned material. investigation lists two to five concrete things the chapter works out in full: a sequence of decisions, resources and logistics, incentives, the alternatives open at the time, costs, aftermath, how an inference is made from the record. contribution states, as one claim about the chapter's material, what the reader will know happened and why — never a distinction between two ways of reading evidence, and never a sentence built on 'rather than', 'distinguish', 'separate … from' or 'what X can and cannot establish'. alreadyEstablished names the answers earlier chapters have settled, which this chapter need not argue again.",
   "Across the book the focuses cover different causal questions drawn from the user's request; do not turn every chapter into proof of the same thesis or a reminder that a source is limited. A later chapter changes, refines or tests an earlier chapter's explanation with its new material. A focus is a subject assignment, never a compulsory order of scene, comparison or recap. Where the stance's positions would have a chapter repeat a claim, the focus decides what the chapter investigates, within the scope the user asked for.",
@@ -108,7 +115,7 @@ export async function planEpisodes(options: {
       purpose: PLAN_EPISODES_PURPOSE,
       temperature: Math.min(0.6, options.input.temperature),
       maxTokens: 12_000,
-      schema: bookEpisodesSchema,
+      schema: focused ? bookEpisodesSchema : unfocusedBookEpisodesSchema,
       messages: [
         {
           role: "system",

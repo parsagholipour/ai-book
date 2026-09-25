@@ -12,6 +12,7 @@ import { retagColorlessCodeFences } from "./retagColorlessCodeFences.js";
 import { bookPdfBaseStylesheetPaths, stripEmbeddedDocuments } from "./pdfDocument.js";
 import { expandFigureFences } from "./figures/figureHtml.js";
 import { prepareMarkdownMath } from "./markdownMath.js";
+import { splitStoryPageMarkdown, type StoryPagePlan } from "./pdfStoryPages.js";
 
 const MIME_BY_EXT: Record<string, string> = {
   ".png": "image/png",
@@ -55,6 +56,8 @@ export type GenerateBookEpubOptions = BookImageOptions & {
   language?: string | undefined;
   publicApiUrl: string;
   outputPath?: string | undefined;
+  /** Scene divisions in reflowable reading order, never fixed physical pages. */
+  pageMapPlan?: StoryPagePlan | undefined;
   /**
    * The project being compiled. It narrows the illustrations this book may
    * package to that project's own, the way `sendOwnedProjectAsset` narrows the
@@ -96,9 +99,18 @@ export async function generateBookEpub(markdown: string, options: GenerateBookEp
     return withStoredBookImages(markdown, options, (imageStorageDir) =>
       generateBookEpub(markdown, { ...options, imageStorageDir, imageSource: "local" }));
   }
+  const story = options.pageMapPlan ? splitStoryPageMarkdown(markdown, options.pageMapPlan) : undefined;
   const images = new Map<string, EpubImage>();
   const localizedMarkdown = await packageLocalImages(markdown, options, images);
-  const chapters = splitIntoChapters(localizedMarkdown, options.title);
+  // Image URL replacement changes source offsets. Slice the original first,
+  // then rewrite each exact part from the same already-loaded image inventory.
+  const chapters: EpubSourceChapter[] = story ? [
+    ...(story.frontmatter.trim() ? [{ title: options.title, markdown: rewriteLocalImages(story.frontmatter, options, images), kind: "frontmatter" as const }] : []),
+    ...story.scenes.map((scene) => ({ title: scene.markdown.match(/^##\s+(.+)$/m)?.[1]?.trim() ?? `${options.title} (${scene.index})`,
+      markdown: rewriteLocalImages(scene.markdown, options, images), kind: "section" as const })),
+    ...(story.backmatter?.trim() ? [{ title: markdownLabels(options.language).sources,
+      markdown: rewriteLocalImages(story.backmatter, options, images), kind: "section" as const }] : [])
+  ] : splitIntoChapters(localizedMarkdown, options.title);
   const profile = scriptProfileForLanguage(options.language);
   const chapterBodies = await Promise.all(chapters.map((chapter) => renderMarkdownToXhtml(chapter.markdown, options.language)));
   const fragmentFiles = fragmentFileMap(
@@ -268,8 +280,13 @@ async function packageLocalImages(
     });
   }
 
+  return rewriteLocalImages(markdown, options, images);
+}
+
+function rewriteLocalImages(markdown: string, options: GenerateBookEpubOptions & { imageStorageDir: string }, images: ReadonlyMap<string, EpubImage>): string {
   return markdown.replace(imageMarkdownRe(), (_full, alt: string, src: string) => {
-    const localPath = localPathFor(src);
+    const localPath = resolveBookImageAsset(src, { imageStorageDir: options.imageStorageDir,
+      publicApiBase: options.publicApiUrl.replace(/\/+$/, ""), projectId: options.projectId })?.localPath;
     const image = localPath ? images.get(localPath) : undefined;
     // Remote, unresolvable and unreadable images are all stripped, so the EPUB
     // never ships a broken reference.

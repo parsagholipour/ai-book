@@ -1,3 +1,4 @@
+import { reviseSentenceLength, sentenceLengthRepairFor, type SentenceLengthRepair } from "./pageSentenceRepair.js";
 import { buildPageReviewPrompt } from "./pageReviewPrompt.js";
 import type { GenerateJsonOptions, TextModelAdapter } from "../adapters/types.js";
 import type { PageReviewPromptMode } from "./qualityGates.js";
@@ -78,6 +79,11 @@ export type ReviewPageOptions = {
   continuityNotes: string[];
   textModel: TextModelAdapter;
   userRequest?: string | undefined;
+  /** Concrete manuscript repair goals that must survive review against older page briefs. */
+  repairInstruction?: string | undefined;
+  /** Original reader prose, fixed across repair attempts so planning aliases cannot become canon. */
+  repairOriginalMarkdown?: string | undefined;
+  sentenceRepair?: SentenceLengthRepair | undefined;
   signal?: AbortSignal | undefined;
   styleExcerpts?: string[] | undefined;
   /** Citeable generation notes loaded by the worker. */
@@ -150,7 +156,7 @@ async function diagnosePageReview(options: ReviewPageOptions, localReport: PageQ
     options.signal?.throwIfAborted();
   } catch (error) {
     options.signal?.throwIfAborted();
-    if (!shouldUseLocalReviewFallback(error)) {
+    if ((options.sentenceRepair && !options.userRequest) || !shouldUseLocalReviewFallback(error)) {
       throw error;
     }
     return {
@@ -164,6 +170,14 @@ async function diagnosePageReview(options: ReviewPageOptions, localReport: PageQ
   // with the next page's brief; measured over 1,200 shipped pages it fired on
   // 76 the reviewer had approved at 88-94, so it was removed (2026-09-02).
   const modelReport = pageQualityReportSchema.parse(result.data);
+  // A syntax repair needs affirmative semantic verification. Generic feedback
+  // normalization must not turn an explicit preservation failure into approval.
+  if (options.sentenceRepair && !options.userRequest) {
+    const approved = modelReport.approved && modelReport.score >= 75 && modelReport.groundedOk &&
+      modelReport.unsupportedClaims.length === 0 && Object.values(modelReport.checks).every(Boolean);
+    const report = { ...modelReport, approved, scoreBasis: "reviewer" as const };
+    return approved ? report : withPageQaTriggerReasons(report, ["model_review"]);
+  }
   const filteredReport = filterIgnoredReviewerComplaints(modelReport);
   const remainingFeedback = [...filteredReport.issues, ...filteredReport.requiredRevisions];
   const notesEndorseApproval =
@@ -173,10 +187,11 @@ async function diagnosePageReview(options: ReviewPageOptions, localReport: PageQ
     filteredReport.issues.length > 0 &&
     !remainingFeedback.some(isExplicitlyBlockingFeedback) &&
     (remainingFeedback.every(isExplicitlyNonBlockingFeedback) || notesEndorseApproval);
-  const approved =
+  // A contextual leak verdict must survive permissive feedback normalization.
+  const approved = modelReport.checks.promptLeakFree && (
     filteredReport.onlyIgnoredRejection ||
     explicitlyNonBlockingReport ||
-    (!filteredReport.hasRemainingDefectAfterStripping && modelReport.approved && modelReport.score >= 75);
+    (!filteredReport.hasRemainingDefectAfterStripping && modelReport.approved && modelReport.score >= 75));
   const reviewedReport = {
     ...modelReport,
     scoreBasis: "reviewer" as const,
@@ -286,6 +301,10 @@ function shouldUseLocalReviewFallback(error: unknown): boolean {
 }
 
 export async function revisePageDraft(options: RevisePageOptions): Promise<PageDraft> {
+  if (options.sentenceRepair && !options.editInstruction) {
+    return sentenceLengthRepairFor(options.input, options.draft, options.report)
+      ? reviseSentenceLength(options) : options.draft;
+  }
   const pageInstruction = buildPageInstruction(options, "rewrite");
   const conditionalUnslop = hasSmartUnslopCandidates(options.report);
   const citation = citationContractFields(
@@ -332,6 +351,7 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
               ]
             : []),
           "Return a complete replacement page, not notes.",
+          "Preserve rejectedDraft.imagePrompt byte-for-byte when the depicted scene, characters, action and setting stay the same. Prose, grammar, pacing or summary edits alone do not change an illustration. When the depicted scene does change, update imagePrompt to match the accepted scene and its exact named characters.",
           ...(options.editInstruction
             ? [
                 // A reader's edit lands in finished, approved prose. The two
@@ -531,6 +551,8 @@ export async function runFinalBookQa(options: FinalBookQaOptions): Promise<Final
           "Reject the book if factual or research-grounded passages contain invented studies, journals, institutes, statistics, experts, citations, or claims described as fictional/fabricated/invented.",
           ...citation.rules,
           "pageMap is abbreviated planning and progression context, not the book and not complete manuscript prose.",
+          "This is a text review that may run before illustrations are generated. The supplied book.title is export metadata; do not report missing title, cover or illustrations because they do not appear in page prose or summaries.",
+          "Character intentions, boasts and mistaken beliefs are not guarantees of literal success. A character learning to cooperate may resolve an earlier boast about working alone. Flag missing character growth only when supported by the supplied actual prose; abbreviated summaries alone cannot prove its absence.",
           "Do not decide full-book repeated-page quality from pageMap summaries; those rows are not the compiled manuscript.",
           ...(judgesOpening
             ? [

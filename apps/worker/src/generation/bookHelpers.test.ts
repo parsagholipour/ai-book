@@ -18,9 +18,24 @@ vi.mock("../runtime/jobLifecycle.js", () => ({ updateJobProgress: vi.fn() }));
 // The final-QA verdict rules this file used to cover moved out with the code:
 // they are pure text and live in `finalQaPageTargets.test.ts`, which needs no
 // module mocks at all.
-import { loadPageTextSnapshot, styleExcerptsForPage, toPriorPageContext } from "./bookHelpers.js";
+import { loadPageTextSnapshot, pageReportFromFinalQa, styleExcerptsForPage, toPriorPageContext } from "./bookHelpers.js";
 
 const input = { mediaSettings: {} } as CreateProjectInput;
+
+it("does not broadcast unrelated page instructions into a stored continuity repair", () => {
+  const qa = { approved: false, score: 60, issues: ["Page 23 repeats a beat from page 21."],
+    requiredFixes: ["Page 24 needs a distinct action."], notes: "" };
+  const report = pageReportFromFinalQa(qa, 8, 30);
+  expect(report.issues).toEqual([]);
+  expect(report.requiredRevisions).toEqual([]);
+  expect(pageReportFromFinalQa(qa, 23, 30).issues).toEqual([qa.issues[0]]);
+});
+
+it("retains a genuinely book-wide complaint without borrowing a scoped page's defect", () => {
+  const report = pageReportFromFinalQa({ approved: false, score: 60,
+    issues: ["Keep Rabbit's name consistent throughout.", "Page 23 repeats a beat from page 21."], requiredFixes: [], notes: "" }, 8, 30);
+  expect(report.issues).toEqual(["Keep Rabbit's name consistent throughout."]);
+});
 
 function page(index: number, voice: string): PriorPageContext {
   return {

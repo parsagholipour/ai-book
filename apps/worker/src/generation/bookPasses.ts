@@ -11,9 +11,10 @@ import {
   resetBookForDirectGeneration,
   type StoredResumePage
 } from "./bookState.js";
+import { prepareShortPictureBookReview, usesShortPictureBookReview } from "./shortPictureBook.js";
 import { ensureCharacterReferenceAssets } from "./characterReferences.js";
 import { maybeEnqueueCompile, maybeEnqueueCover } from "../runtime/dispatch.js";
-import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
+import { advanceJobStep, assertJobNotStopped, updateJobProgress } from "../runtime/jobLifecycle.js";
 import { type ChapterSetup, type IndexedPageDraft } from "../runtime/jobTypes.js";
 import { chapterSetupsForPlan, styleExcerptsForPage } from "./bookHelpers.js";
 import { chapterSetupForPage, loadContinuityNotes, loadResearchNotesForGeneration } from "./generationContext.js";
@@ -205,6 +206,7 @@ export async function generateBookChapterWholePass(options: {
         providers: options.providers,
         strategy: options.strategy,
         draft: pageDraft,
+        deferIllustrations: options.input.mediaSettings.finalReview === true,
         chapterId: chapterIds.get(setup.chapter.index) ?? null,
         chapter: setup.chapter,
         chapterBrief: setup.brief,
@@ -369,6 +371,7 @@ export async function generateBookBatchWindow(options: {
         providers: options.providers,
         strategy: options.strategy,
         draft: pageDraft,
+        deferIllustrations: options.input.mediaSettings.finalReview === true,
         chapterId: setup ? chapterIds.get(setup.chapter.index) ?? null : null,
         chapter: setup?.chapter,
         chapterBrief: setup?.brief,
@@ -559,28 +562,37 @@ export async function generateBookDraftThenPolish(options: {
     }));
     pagesToPolish = draft.pages;
   }
-  await ensureCharacterReferenceAssets({
-    projectId: options.projectId,
-    planId: options.planId,
-    input: effectiveInput,
-    plan: effectivePlan,
-    providers: options.providers,
-    strategy: options.strategy,
-    generationJobId: options.generationJobId
-  });
+  const pictureBook = usesShortPictureBookReview({ input: effectiveInput, plan: effectivePlan, strategy: options.strategy, pages: rawPages });
+  // Both read the checkpointed manuscript; references only write their own assets.
+  // Drain both preparations before propagating failure, so no work outlives this delivery.
+  const [references, review] = await Promise.allSettled([
+    ensureCharacterReferenceAssets({ projectId: options.projectId, planId: options.planId, input: effectiveInput,
+      plan: effectivePlan, providers: options.providers, strategy: options.strategy, generationJobId: options.generationJobId }),
+    (async () => pictureBook ? prepareShortPictureBookReview({
+      projectId: options.projectId, ...(options.generationJobId ? { generationJobId: options.generationJobId } : {}),
+      input: effectiveInput, plan: effectivePlan, pages: rawPages,
+      chapterBriefs: chapterSetups.flatMap((setup) => setup.brief ? [setup.brief] : []),
+      quality: await loadQualityContext(effectiveInput), textModel: options.providers.text
+    }) : null)()
+  ]);
+  await assertJobNotStopped(options.generationJobId);
+  if (review.status === "rejected") throw review.reason;
+  if (references.status === "rejected") throw references.reason;
+  const groupedReviews = review.value;
   await maybeEnqueueCover(options.projectId, options.planId, effectiveInput);
 
   for (const [pageOffset, pageDraft] of pagesToPolish.entries()) {
     await updateJobProgress(options.generationJobId, {
       progress: 35 + Math.round((pageOffset / Math.max(pagesToPolish.length, 1)) * 45),
-      message: `Polishing page ${pageDraft.index}`
+      message: pictureBook ? `Checking and saving page ${pageDraft.index}` : `Polishing page ${pageDraft.index}`
     });
     const continuityNotes = await loadContinuityNotes(options.projectId, { beforePageIndex: null });
     const setup = chapterSetupForPage(chapterSetups, pageDraft.index);
     const chapterBrief = setup?.brief;
     const pageBrief = chapterBrief?.pages.find((brief) => brief.pageIndex === pageDraft.index);
     const researchNotes = await loadResearchNotesForGeneration(options.projectId, options.strategy, setup?.chapter);
-    const polished = await polishPageWithQualityGates({
+    const nextPages = rawPages.filter((page) => page.index > pageDraft.index);
+    const polished = pictureBook ? pageDraft : await polishPageWithQualityGates({
       polishPageDraft,
       polishOptions: {
         input: effectiveInput,
@@ -591,7 +603,7 @@ export async function generateBookDraftThenPolish(options: {
         pageIndex: pageDraft.index,
         draft: pageDraft,
         previousPages,
-        nextPages: rawPages.filter((page) => page.index > pageDraft.index).slice(0, 3),
+        nextPages: nextPages.slice(0, 3),
         continuityNotes,
         researchNotes,
         textModel: options.providers.text
@@ -607,12 +619,19 @@ export async function generateBookDraftThenPolish(options: {
       providers: options.providers,
       strategy: options.strategy,
       draft: { ...polished, index: pageDraft.index },
+      deferIllustrations: effectiveInput.mediaSettings.finalReview === true,
       chapterId: setup ? chapterIds.get(setup.chapter.index) ?? null : null,
       chapter: setup?.chapter,
       chapterBrief,
       chapterPageStart: setup?.startPage,
       chapterPageEnd: setup?.endPage,
       previousPages,
+      nextPages,
+      // Keep the reviewed snapshot intact; finalization repairs concrete failed pages
+      // after every page has been saved and then reviews the complete revised book.
+      ...(groupedReviews?.get(pageDraft.index) ? { deferRepairsUntilFinalization: true, precomputedReview: {
+        ...groupedReviews.get(pageDraft.index)!, manuscriptPages: rawPages
+      } } : {}),
       generationJobId: options.generationJobId
     });
     previousPages.push(saved.page);
@@ -744,6 +763,7 @@ export async function generateBookWholePass(options: {
       const approved = reviewedPage.qualityReport.approved;
       const willIllustrate =
         approved &&
+        effective.input.mediaSettings.finalReview !== true &&
         Boolean(pageDraft.imagePrompt) &&
         options.strategy.shouldIllustratePage(effective.input, effective.plan, pageDraft.index);
       const stagedPage = await stageGeneratedPageWithClient(tx, {

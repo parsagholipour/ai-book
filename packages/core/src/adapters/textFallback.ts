@@ -1,4 +1,6 @@
 import { serializeFallbackError } from "./imageFallback.js";
+import { isCancellationError } from "./retry.js";
+import { assertTextAttemptAvailable, TextAttemptBudgetExhaustedError } from "./textAttemptBudget.js";
 import type { TextModelSelection } from "../schemas/book.js";
 import type {
   GenerateJsonOptions,
@@ -151,6 +153,7 @@ export class FallbackTextModelAdapter implements TextModelAdapter {
     if (this.options.shouldFallback && !this.options.shouldFallback(error)) {
       throw error;
     }
+    assertTextAttemptAvailable(options);
     const primary = {
       provider: this.options.primary.selection.provider,
       model: this.options.primary.selection.model,
@@ -210,6 +213,7 @@ export class FallbackTextModelAdapter implements TextModelAdapter {
       attempt: 1,
       maxAttempts: 1
     });
+    if (isCancellationError(error) || error instanceof TextAttemptBudgetExhaustedError) throw error;
     throw new TextGenerationFallbackError({ operation, primary: context.primary, fallback });
   }
 

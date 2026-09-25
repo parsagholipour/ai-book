@@ -428,8 +428,8 @@ export function rebuildProjectEpubExport(
     if (!project.currentPlanId) {
       return null;
     }
-    const markdown = await compileProjectMarkdown(projectId, appConfig.PUBLIC_API_URL, appConfig.BOOK_STORAGE_DIR);
-    if (!markdown) {
+    const manuscript = await compileProjectManuscript(projectId, appConfig.PUBLIC_API_URL, appConfig.BOOK_STORAGE_DIR);
+    if (!manuscript) {
       return null;
     }
     return renderAndPublishExport({
@@ -439,7 +439,8 @@ export function rebuildProjectEpubExport(
       publishable: isPublishableExportStatus(project.status),
       format: "epub",
       render: async (outputPath) => ({
-        rendered: await generateBookEpub(markdown, {
+        rendered: await generateBookEpub(manuscript.markdown, {
+          ...(manuscript.pageMapPlan ? { pageMapPlan: manuscript.pageMapPlan } : {}),
           title: project.title,
           ...(project.authorName ? { author: project.authorName } : {}),
           language: project.language,

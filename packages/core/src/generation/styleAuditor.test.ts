@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { auditPageStyle, styleAuditedScoreBeats, withStyleAudit } from "./styleAuditor.js";
+import { auditPageStyle, styleAuditedScoreBeats, withStyleAudit, type PageStyleAudit } from "./styleAuditor.js";
 import type { PageQualityReport } from "../schemas/book.js";
 import type { TextModelAdapter } from "../adapters/types.js";
 
@@ -67,7 +67,7 @@ describe("withStyleAudit", () => {
 });
 
 describe("auditPageStyle", () => {
-  const modelAnswering = (data: { styleOk: boolean; styleIssues: string[] }) => {
+  const modelAnswering = (data: PageStyleAudit) => {
     const generateJson = vi.fn(async () => ({ data }));
     return { model: { generateJson } as unknown as TextModelAdapter, generateJson };
   };
@@ -126,10 +126,10 @@ describe("auditPageStyle", () => {
     expect(system).toContain("sudden register shifts");
   });
 
-  it("reports styleOk false whenever the model listed an issue", async () => {
-    const { model } = modelAnswering({ styleOk: true, styleIssues: ["Rhythm ignores the opening."] });
+  it("reports styleOk false whenever the model substantiates an issue", async () => {
+    const { model } = modelAnswering({ styleOk: true, styleIssues: ["Rhythm ignores the opening."], evidence: [{ issue: "Rhythm ignores the opening.", quote: auditOptions.markdown, category: "voice" }] });
 
-    await expect(auditPageStyle({ textModel: model, ...auditOptions })).resolves.toEqual({
+    await expect(auditPageStyle({ textModel: model, ...auditOptions })).resolves.toMatchObject({
       styleOk: false,
       styleIssues: ["Rhythm ignores the opening."]
     });

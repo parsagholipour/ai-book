@@ -44,6 +44,7 @@ export type Project = {
     textModel?: TextModelSelection;
     imageModel?: ImageModelSelection | string;
     fullIllustrations?: boolean;
+    illustrationCadence?: string;
     includeCover?: boolean;
     coverArtSource?: string;
     coverTemplate?: string;
@@ -110,6 +111,7 @@ export type ProjectInputSnapshot = {
     textModel?: TextModelSelection;
     imageModel?: ImageModelSelection | string;
     fullIllustrations?: boolean;
+    illustrationCadence?: string;
     includeCover?: boolean;
     coverArtSource?: string;
     coverTemplate?: string;

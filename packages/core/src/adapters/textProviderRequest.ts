@@ -1,4 +1,5 @@
 import type { GenerateTextOptions, Usage } from "./types.js";
+import { consumeTextAttempt } from "./textAttemptBudget.js";
 
 /** Read the effective limit from the final wire request, never from routing guesses. */
 export async function reportTextProviderRequest(
@@ -7,10 +8,12 @@ export async function reportTextProviderRequest(
   model: string,
   effectiveMaxTokens: unknown
 ): Promise<void> {
+  const attempt = consumeTextAttempt(options);
   try {
     await options.onProviderRequest?.({
       provider,
       model,
+      ...attempt,
       requestedMaxTokens: options.maxTokens ?? null,
       effectiveMaxTokens: typeof effectiveMaxTokens === "number" ? effectiveMaxTokens : null
     });

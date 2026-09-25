@@ -1,0 +1,409 @@
+{
+  "brief": "Write an original 30-page illustrated storybook for children ages 6\u20138, called The Lantern Path. Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their profiles and portrait references. Rabbit is playful and hasty; Wise Turtle is slow and steady. Keep both active across the story, with meaningful choices and growth for each. A storm scatters the lanterns marking the woodland path to a night picnic. Rabbit rushes to fix everything alone and makes the path more confusing. Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise. Give this a fresh plot rather than a race or a retelling of The Tortoise and the Hare. Build a clear beginning, escalating middle, turning point and satisfying ending. Let Rabbit's energy and Wise Turtle's patience both solve part of the problem. Keep stakes gentle and child appropriate. Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page. Avoid repeated summaries, generic moralizing and extra named main characters. English. Exactly 30 story pages. Exactly 10 interior illustrations, on story pages 3, 6, 9, 12, 15, 18, 21, 24, 27, 30. The other 20 story pages contain text without illustrations. Covers and saved character portraits are separate.",
+  "pages": [
+    {
+      "index": 1,
+      "title": "A Tug at Dusk",
+      "markdown": "Rabbit counted the five glowing lanterns along the woodland path. One, two, three, four, five! Neighbors gathered behind him in Burrow Clearing. A breeze tickled the grass. Then a stronger gust tugged L1 sideways on its post. Rabbit grabbed the post and held on. The little flame wobbled.",
+      "summary": "Rabbit counts the five lanterns as a gust rocks L1 at Burrow Clearing."
+    },
+    {
+      "index": 2,
+      "title": "Turtle Holds Steady",
+      "markdown": "Wise Turtle planted his feet beside the first post and braced L1. Rabbit hurried down the line, checking each warm glow. All five lanterns still shone. The neighbors watched from the clearing as branches swayed above them. Wise Turtle listened to the rising wind. \u201cThat gust is growing,\u201d he said.",
+      "summary": "Wise Turtle steadies L1 while Rabbit checks the five lights before the storm hits."
+    },
+    {
+      "index": 3,
+      "title": "Lights on the Loose",
+      "markdown": "The next gust roared through the trees. L1 tumbled to the fern fork. L2 and L3 rolled near the stump spur. L4 stopped at the streambank, and L5 nestled in the moss hollow. Rabbit and Wise Turtle hurried back to Burrow Clearing, where the neighbors huddled beneath the sturdy trees. Rain pattered on leaves.",
+      "summary": "A storm scatters all five lanterns while everyone shelters in the clearing."
+    },
+    {
+      "index": 4,
+      "title": "A Dash into the Woods",
+      "markdown": "\u201cI can gather them quickly!\u201d Rabbit cried. He bounded out of Burrow Clearing and onto the lantern trail. Wise Turtle followed at his steady pace. The neighbors stayed in the clearing beneath the trees. Rabbit\u2019s ears flicked as he searched the dim path. Ahead, the fern fork waited in the wind.",
+      "summary": "Rabbit rushes onto the trail while Wise Turtle follows and the neighbors remain sheltered."
+    },
+    {
+      "index": 5,
+      "title": "Two in Rabbit\u2019s Paws",
+      "markdown": "At the fern fork, Rabbit spotted L1 in the ferns. Farther on, he found L2 near the stump spur. \u201cThere you are!\u201d he cheered. He scooped up both lanterns and balanced them against his chest. L3 still lay near the old stump. L4 and L5 waited farther along the trail.",
+      "summary": "Rabbit finds and picks up L1 and L2, leaving three lanterns scattered."
+    },
+    {
+      "index": 6,
+      "title": "The Wrong Turn Glows",
+      "markdown": "Rabbit spotted the side spur and hurried onto it. He set L1 beside one bend and L2 beside another. \u201cNow they\u2019re together,\u201d he said, pleased. Their lights made the side trail look clear, while the main path grew harder to read. Rabbit turned toward the old stump to search for another lantern.",
+      "summary": "Rabbit places L1 and L2 on the side spur, making the route more confusing."
+    },
+    {
+      "index": 7,
+      "title": "A Third Glow",
+      "markdown": "Near the old stump, Rabbit found L3 among wet leaves. He set L3 down for a moment and looked back. The two lights on the side spur twinkled through the trees. They seemed to make a neat little trail. Rabbit lifted L3 again. \u201cThree lights will be even better,\u201d he said.",
+      "summary": "Rabbit finds L3 near the old stump and decides to carry it to the side spur."
+    },
+    {
+      "index": 8,
+      "title": "Three Lights Off Course",
+      "markdown": "Rabbit carried L3 to the side spur and set it beside the other two. Now three glowing spots led away from the main trail. Rabbit\u2019s quick fix looked tidy from where he stood. He did not see Wise Turtle coming around the fern fork. The storm-blown leaves pointed in another direction.",
+      "summary": "Rabbit adds L3 to the side spur, making its lanterns look like a false route."
+    },
+    {
+      "index": 9,
+      "title": "Leaves Point One Way",
+      "markdown": "Wise Turtle reached the side spur. Rabbit stood beside the three misplaced lights. Wise Turtle looked down at the leaves scattered across the trail. They all leaned the same way, their wet tips pointing past the fork. He studied them quietly. Rabbit bounced on his toes, ready to hurry onward.",
+      "summary": "Wise Turtle catches up and notices the storm-bent leaves beside the misplaced lanterns."
+    },
+    {
+      "index": 10,
+      "title": "The Bent-Leaf Clue",
+      "markdown": "Wise Turtle pointed to the leaves. \u201cSee? They all bend toward the stump and stream.\u201d Rabbit looked closer. The leaves did lean that way, even beside the fork. \u201cThe storm may have pushed the lanterns along that line,\u201d Wise Turtle said. He checked the ground again before saying more.",
+      "summary": "Wise Turtle shows Rabbit that the leaves share a direction along the storm\u2019s path."
+    },
+    {
+      "index": 11,
+      "title": "A Hunch, Not a Map",
+      "markdown": "Wise Turtle paused. He liked to be sure before he spoke. \u201cI have a hunch,\u201d he said at last. \u201cThe wind may have pushed the lanterns in order. I could be wrong.\u201d Rabbit looked from the leaves to the dark main trail. For once, he did not dash away. \u201cLet\u2019s test it,\u201d he said.",
+      "summary": "Wise Turtle risks sharing an uncertain idea, and Rabbit agrees to test it."
+    },
+    {
+      "index": 12,
+      "title": "Back to the First Post",
+      "markdown": "Rabbit stopped and studied the fork. The leaves pointed along the main trail, not the side spur. He lifted L1 from the spur and carried it to the first post at the fern fork. He set it down, checked that it stood straight, then looked to Wise Turtle. The first light shone in the right place.",
+      "summary": "Rabbit pauses, tests Wise Turtle\u2019s clue, and restores L1 to post one."
+    },
+    {
+      "index": 13,
+      "title": "Carrying the Middle Lights",
+      "markdown": "They turned back to the side spur. Rabbit lifted L2, and Wise Turtle lifted L3. Together they carried both lanterns onto the main trail toward the stump bend. Their steps were slower now. Rabbit watched where the path curved, while Wise Turtle kept L3 level. The bent leaves rustled beside them.",
+      "summary": "Rabbit and Wise Turtle carry L2 and L3 from the side spur toward the main trail."
+    },
+    {
+      "index": 14,
+      "title": "The Stump-Bend Post",
+      "markdown": "At the stump bend, Rabbit checked the curve before setting down L2. Its glow fell along the main trail. Wise Turtle passed L3 to Rabbit, who held it steady. \u201cThat one belongs by the stream,\u201d Turtle said. Rabbit nodded and carried L3 onward. The next post stood beside the water.",
+      "summary": "Rabbit places L2 at the stump-bend post and takes L3 toward the stream."
+    },
+    {
+      "index": 15,
+      "title": "Ripples at the Bank",
+      "markdown": "At the stream, Rabbit waited on the dry bank with L3 in his arms. Wise Turtle leaned over the bank and watched the small ripples. L4 lay nearby, just above the wet edge. Turtle did not reach for it. He watched the water move and listened to its soft, shushing sound.",
+      "summary": "Rabbit waits with L3 as Wise Turtle studies the stream; L4 remains on the bank."
+    },
+    {
+      "index": 16,
+      "title": "Where the Ripples Lead",
+      "markdown": "Wise Turtle watched the ripples travel toward the bank. \u201cThey move this way,\u201d he said. \u201cThat fits the wind\u2019s path through the woods.\u201d He looked at the leaves caught near the water, then at Rabbit. \u201cIt may explain how the lanterns came here. I\u2019m still not fully sure.\u201d Rabbit listened.",
+      "summary": "Wise Turtle uses the stream\u2019s ripples to support his careful hunch about the storm."
+    },
+    {
+      "index": 17,
+      "title": "Light Beside the Stream",
+      "markdown": "Rabbit carried L3 to the third post beside the stream. He paused, found a flat place, and set it upright. Its glow reached across the main path. Rabbit checked that it would not wobble. Behind him, L1 and L2 shone at their posts. L4 still waited on the bank.",
+      "summary": "Rabbit carefully restores L3 to post three beside the stream."
+    },
+    {
+      "index": 18,
+      "title": "Lifting from the Bank",
+      "markdown": "Rabbit and Wise Turtle reached for L4 together. They lifted it from the streambank, keeping their feet on dry ground. Then they carried it along the path to post four. They paused beside the post with L4 still in their hands. The first three lights shone behind them.",
+      "summary": "The pair lift L4 safely and carry it to post four without placing it yet."
+    },
+    {
+      "index": 19,
+      "title": "The Moss Hollow",
+      "markdown": "The pair reached the moss hollow beside post four. Wise Turtle and Rabbit still held L4 between them. L5 rested in the moss, close to the meadow gate. The ground there looked dark and slick. Rabbit felt his feet itching to leap forward, but he kept them still.",
+      "summary": "Rabbit and Wise Turtle reach L5 while holding L4 beside post four."
+    },
+    {
+      "index": 20,
+      "title": "A Careful Step",
+      "markdown": "Rabbit looked over the moss before reaching for L5. One patch shone with water. Another held firm beneath a root. \u201cI\u2019ll use that spot,\u201d he said, placing his foot on the firm ground. Wise Turtle took the weight of L4. Rabbit leaned safely forward and lifted L5 from the hollow.",
+      "summary": "Rabbit checks his footing, then retrieves L5 while Wise Turtle supports L4."
+    },
+    {
+      "index": 21,
+      "title": "Five Lights in Line",
+      "markdown": "Wise Turtle set L4 on post four at the hollow\u2019s edge. Rabbit carried L5 to post five at the meadow gate and checked that it stood firm. One, two, three, four, five. Every lantern now marked the main trail. Their lights made a bright line toward the meadow.",
+      "summary": "The pair place L4 and L5, completing the five-lantern route."
+    },
+    {
+      "index": 22,
+      "title": "The Meadow at Last",
+      "markdown": "Rabbit and Wise Turtle stepped into the Night Picnic Meadow. Behind them, all five lanterns shone along the trail. Rabbit looked back at the glowing line, then across the open grass. The meadow smelled of clover and rain. They stayed by the gate, ready to guide the neighbors when they came.",
+      "summary": "Rabbit and Wise Turtle reach the meadow and see the restored lantern path behind them."
+    },
+    {
+      "index": 23,
+      "title": "A Check from the Gate",
+      "markdown": "Rabbit began to count again from the meadow gate. \u201cOne, two, three, four, five.\u201d Each light stood beside the main trail. None pointed down the side spur now. He looked toward the clearing and listened. No footsteps came yet, but the whole route glowed clearly through the trees.",
+      "summary": "Rabbit verifies that every lantern marks the main route before the neighbors set out."
+    },
+    {
+      "index": 24,
+      "title": "A Call Through the Trees",
+      "markdown": "Wise Turtle cupped his hands and called toward Burrow Clearing. His voice crossed the meadow and slipped between the trees. Rabbit stood beside him at the gate. He did not race back to fetch anyone. They waited together, listening as the lanterns glowed along the path.",
+      "summary": "Wise Turtle calls toward the clearing, and Rabbit chooses to wait at the meadow."
+    },
+    {
+      "index": 25,
+      "title": "The Neighbors Set Out",
+      "markdown": "From Burrow Clearing, the neighbors saw all five lights shining in a clear line. They left the shelter of the trees and stepped onto the main trail. No one turned toward the side spur. The first lantern glowed at the fern fork, showing them where to go.",
+      "summary": "After the route is restored, the neighbors leave the clearing and follow the first light."
+    },
+    {
+      "index": 26,
+      "title": "Past the Stream",
+      "markdown": "The neighbors followed the lights past the fern fork and stump bend. At the stream, they stayed on the dry trail beside the bank. L3 and L4 glowed ahead, one after the other. The path curved past the moss hollow. Soon, the meadow gate opened before them.",
+      "summary": "The neighbors follow the main trail past the fork, stump bend, and stream without straying."
+    },
+    {
+      "index": 27,
+      "title": "Together Before Moonrise",
+      "markdown": "The neighbors reached the meadow while the sky still held a strip of orange. Rabbit and Wise Turtle waited beside the gate. Everyone was safe, and the picnic could begin before moonrise. The neighbors looked back at the five lights. Their warm glow reached all the way to the clearing.",
+      "summary": "The neighbors join Rabbit and Wise Turtle in the meadow before moonrise."
+    },
+    {
+      "index": 28,
+      "title": "Blanket on the Grass",
+      "markdown": "Before moonrise, the neighbors spread one blanket on the meadow grass. They placed one basket of food beside it. Rabbit helped make room, then sat down with Wise Turtle. The first bites were crisp apples and soft bread. Above the trees, the sky still glimmered with the last light of day.",
+      "summary": "The picnic begins before moonrise with one blanket and one basket of food."
+    },
+    {
+      "index": 29,
+      "title": "Rabbit Makes Room",
+      "markdown": "Wise Turtle began to tell how the leaves bent and the ripples moved. Rabbit listened without jumping in. He kept his paws still and let Turtle finish. \u201cI saw a clue, but I needed to share it before I felt sure,\u201d Turtle said. Rabbit nodded, holding his apple until the story was done.",
+      "summary": "Rabbit patiently listens while Wise Turtle explains the clues and his uncertain hunch."
+    },
+    {
+      "index": 30,
+      "title": "Moon over the Path",
+      "markdown": "Wise Turtle finished just as the moon rose above the trees. Rabbit welcomed the neighbors to the picnic, then smiled at Turtle. The blanket was spread, the basket was open, and everyone had arrived in time. Behind them, five steady lights led through the woods. The friends shared their supper beneath the moon.",
+      "summary": "The picnic is underway as moonrise shines over the completed lantern path."
+    }
+  ],
+  "response": {
+    "pages": [
+      {
+        "pageIndex": 1,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 2,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 3,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 4,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 5,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 6,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 7,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 8,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 9,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 10,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 11,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 12,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 13,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 14,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 15,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 16,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 17,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 18,
+        "score": 85,
+        "findings": [
+          {
+            "basis": "missing_requirement",
+            "requirementQuote": "Rabbit and Wise Turtle reach for L4 together. They lift it carefully from the bank, keeping their feet clear of the wet edge. They carry it onward and set it at post four, where its glow joins the first three.",
+            "category": "continuity",
+            "message": "L4 reaches post four but is not set there on this page, delaying the required restoration.",
+            "guidance": "Have them set L4 on post four here, so its glow joins the first three before they continue.",
+            "quote": "They paused beside the post with L4 still in their hands.",
+            "relatedEvidence": []
+          }
+        ],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 19,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 20,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 21,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 22,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 23,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 24,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 25,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 26,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 27,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 28,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 29,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      },
+      {
+        "pageIndex": 30,
+        "score": 100,
+        "findings": [],
+        "storyExtract": null,
+        "styleAudit": null
+      }
+    ]
+  }
+}

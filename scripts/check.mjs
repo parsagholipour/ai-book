@@ -71,9 +71,9 @@ const GATES = [
   },
   {
     name: "subpath-tests",
-    description: "node:test coverage for the packages/core subpath checker",
+    description: "node:test coverage for the subpath checker and generation acceptance harness",
     command: "node",
-    args: ["--test", "scripts/check-core-subpaths.test.mjs"]
+    args: ["--test", "scripts/check-core-subpaths.test.mjs", "scripts/generation-acceptance.test.mjs"]
   },
   {
     name: "test",

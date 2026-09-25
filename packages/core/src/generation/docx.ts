@@ -52,6 +52,7 @@ import {
 import { figureStandIn } from "./figures/figureBlocks.js";
 import { figureCaptionText, figureRenderContext } from "./figures/figureHtml.js";
 import { markdownLabels } from "./markdownLabels.js";
+import { splitStoryPageMarkdown, type StoryPagePlan } from "./pdfStoryPages.js";
 
 /**
  * The Word (.docx) export, built from the same compiled markdown the PDF and
@@ -78,6 +79,8 @@ export type GenerateBookDocxOptions = BookImageOptions & {
   language?: string | undefined;
   publicApiUrl: string;
   outputPath?: string | undefined;
+  /** Authoritative scene boundaries, used only for an explicit story layout. */
+  pageMapPlan?: StoryPagePlan | undefined;
   /**
    * The project being compiled. It narrows the illustrations this book may
    * embed to that project's own, the way `sendOwnedProjectAsset` narrows the
@@ -312,12 +315,12 @@ function contentsBlocks(chapters: readonly DocxChapter[], heading: string, ctx: 
   ];
 }
 
-async function figureBlocks(segment: Extract<DocxSegment, { kind: "figure" }>, ctx: DocxRenderContext, language: string | undefined): Promise<FileChild[]> {
+async function figureBlocks(segment: Extract<DocxSegment, { kind: "figure" }>, ctx: DocxRenderContext, language: string | undefined, pageBreakBefore = false): Promise<FileChild[]> {
   const { fence } = segment;
   const figureContext = figureRenderContext(language);
   const raster = fence.spec ? await rasterizeFigure(fence.spec, figureContext) : null;
   if (!fence.spec || !raster) {
-    return [styledParagraph(figureStandIn(fence.title), CAPTION_STYLE, ctx)];
+    return [styledParagraph(figureStandIn(fence.title), CAPTION_STYLE, ctx, { pageBreakBefore })];
   }
   const caption = figureCaptionText(fence.spec, figureContext);
   const captionRuns = [
@@ -326,7 +329,7 @@ async function figureBlocks(segment: Extract<DocxSegment, { kind: "figure" }>, c
     textRun(` ${caption.sourceLine}`, ctx)
   ];
   return [
-    imageParagraph(raster, fence.spec.title, ctx),
+    imageParagraph(raster, fence.spec.title, ctx, { pageBreakBefore }),
     new Paragraph({
       style: CAPTION_STYLE,
       ...(ctx.profile.direction === "rtl" ? { bidirectional: true } : {}),
@@ -348,10 +351,17 @@ export async function generateBookDocx(markdown: string, options: GenerateBookDo
   const profile = scriptProfileForLanguage(options.language);
   const labels = markdownLabels(options.language);
   const fontSet = docxFontsFor(profile);
-  const source = prepareDocxSource(markdown);
+  // Slice original compiler offsets before stripping frontmatter or localizing
+  // images. A scene's leading illustration is content, never another cover.
+  const story = options.pageMapPlan ? splitStoryPageMarkdown(markdown, options.pageMapPlan) : undefined;
+  const source = prepareDocxSource(story?.frontmatter ?? markdown);
+  const segments: Array<DocxSegment & { storyStart?: boolean }> = [...source.segments];
+  if (story) for (const part of [...story.scenes.map((scene) => scene.markdown), ...(story.backmatter ? [story.backmatter] : [])]) {
+    segments.push(...prepareDocxSource(part, { extractCover: false }).segments.map((segment, index) => ({ ...segment, storyStart: index === 0 })));
+  }
   const images = await loadDocxImageAssets(markdown, options);
 
-  const lexed = source.segments.map((segment) => (segment.kind === "markdown" ? lexMarkdown(segment.text) : []));
+  const lexed = segments.map((segment) => (segment.kind === "markdown" ? lexMarkdown(segment.text) : []));
   const chapters = collectChapters(lexed);
   const ctx: DocxRenderContext = {
     profile,
@@ -380,9 +390,12 @@ export async function generateBookDocx(markdown: string, options: GenerateBookDo
   let contentsPlaced = false;
   let sawTitleHeading = false;
   let bodyStarted = false;
-  for (const [index, segment] of source.segments.entries()) {
+  let pendingStoryBreak = false;
+  for (const [index, segment] of segments.entries()) {
+    if (segment.storyStart) pendingStoryBreak = true;
     if (segment.kind === "figure") {
-      children.push(...(await figureBlocks(segment, ctx, options.language)));
+      children.push(...(await figureBlocks(segment, ctx, options.language, pendingStoryBreak)));
+      pendingStoryBreak = false;
       bodyStarted = true;
       continue;
     }
@@ -396,7 +409,7 @@ export async function generateBookDocx(markdown: string, options: GenerateBookDo
       if (printsContents && !contentsPlaced && token.type === "heading" && (token as { depth: number }).depth === 2) {
         children.push(...contentsBlocks(chapters, labels.contentsHeading, ctx));
         contentsPlaced = true;
-      } else if (frontMatter && !bodyStarted && !isPageBreakingHeading(token)) {
+      } else if (frontMatter && !bodyStarted && !isPageBreakingHeading(token) && !pendingStoryBreak) {
         // The cover or title page has to end somewhere: a chapter heading breaks
         // the page itself, anything else needs the break put in front of it.
         children.push(new Paragraph({ children: [new PageBreak()] }));
@@ -429,7 +442,9 @@ export async function generateBookDocx(markdown: string, options: GenerateBookDo
         continue;
       }
       bodyStarted = true;
-      children.push(...blocksFromToken(token, ctx));
+      const blocks = blocksFromToken(token, ctx, { pageBreakBefore: pendingStoryBreak });
+      if (blocks.length) pendingStoryBreak = false;
+      children.push(...blocks);
     }
   }
   if (children.length === 0) {

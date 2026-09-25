@@ -4,9 +4,10 @@ import {
   retireGeneratedPageIllustrations,
   type PageIllustrationKeeper
 } from "./pageIllustrationOwnership.js";
+import { pageIllustrationVisualContract, reusablePageIllustration, rebindPageIllustration } from "./pageIllustrationVisualContract.js";
 import { enqueueWorkerJob } from "../runtime/dispatch.js";
 import type { PageQualityLoopOutcome } from "./pageReview.js";
-import { type PageDraft, type PageQualityReport, type PriorPageContext } from "@book-maker/core";
+import { type BookPlan, type CreateProjectInput, type PageDraft, type PageQualityReport, type PriorPageContext } from "@book-maker/core";
 import {
   pageScope,
   Prisma,
@@ -27,6 +28,7 @@ export type StagedGeneratedPage = {
   id: string;
   revision: number;
   updatedAt: Date;
+  reusedIllustration?: boolean;
 };
 
 export type GeneratedPagePublicationSnapshot = {
@@ -57,6 +59,7 @@ type StageGeneratedPageOptions = {
   status: "GENERATING" | "FAILED_QA" | "COMPLETED";
   assertOwnership?: () => Promise<void>;
   existingPage: GeneratedPagePublicationSnapshot | null;
+  illustrationContext?: { input: CreateProjectInput; plan: BookPlan; planId: string };
 };
 
 export async function loadGeneratedPagePublicationSnapshot(
@@ -167,10 +170,26 @@ export async function stageGeneratedPageWithClient(
   }
 
   if (existing && replacementKeeper) {
-    await retireGeneratedPageIllustrations(client, {
-      pageIndex: options.pageIndex,
-      priorKeeper: illustrationKeeper(options.projectId, existing.id, existing)
-    });
+    const priorKeeper = illustrationKeeper(options.projectId, existing.id, existing);
+    const context = options.illustrationContext;
+    const prompt = options.draft.imagePrompt;
+    // A writer may change the depicted action without updating imagePrompt.
+    // Without a separate scene verdict, unchanged prose is the safe reuse proof.
+    const assets = context && prompt && options.draft.markdown === existing.markdown && prompt.trim() === existing.imagePrompt?.trim()
+      ? await client.imageAsset.findMany({ where: { projectId: options.projectId, pageId: existing.id,
+          type: { in: ["SCENE_ILLUSTRATION", "DIAGRAM"] } }, select: { id: true, path: true, metadata: true } }) : [];
+    const referenceAssets = assets.length && context
+      ? await client.imageAsset.findMany({ where: { projectId: options.projectId, type: "CHARACTER_REFERENCE",
+          metadata: { path: ["planId"], equals: context.planId } }, select: { id: true, path: true } }) : [];
+    const reusable = context && prompt ? reusablePageIllustration(assets, priorKeeper,
+      pageIllustrationVisualContract({ ...context, prompt, referenceAssets })) : undefined;
+    if (reusable) {
+      await rebindPageIllustration(client, { asset: reusable, priorKeeper,
+        nextKeeper: illustrationKeeper(options.projectId, existing.id, { ...options.draft, revision: options.revision }) });
+      staged.reusedIllustration = true;
+    } else {
+      await retireGeneratedPageIllustrations(client, { pageIndex: options.pageIndex, priorKeeper });
+    }
   }
   return staged;
 }
@@ -200,9 +219,10 @@ export async function publishStagedGeneratedPage(options: {
   draft: PageDraft;
   stagedPage: StagedGeneratedPage;
   willIllustrate: boolean;
+  deferIllustrations?: boolean | undefined;
   continuityTags: string[];
 }): Promise<GeneratedPagePublicationResult> {
-  if (options.willIllustrate) {
+  if (options.willIllustrate && !options.deferIllustrations && !options.stagedPage.reusedIllustration) {
     const prompt = options.draft.imagePrompt;
     if (!prompt) {
       throw new Error("Illustrated page publication requires an image prompt");

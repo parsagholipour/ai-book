@@ -9,6 +9,8 @@ import {
   verifyPageClaims,
   withClaimVerification,
   withStoryContradictions,
+  validateStoryExtractEvidence,
+  validateStyleAuditEvidence,
   withStyleAudit,
   type BookPlan,
   type CreateProjectInput,
@@ -23,8 +25,8 @@ import {
 } from "@book-maker/core";
 import { loadProjectStoryState, persistPageStoryDelta } from "./storyStateStore.js";
 import { loadQualityContext } from "./qualitySettings.js";
-import { isStopRequestedError } from "../runtime/jobTypes.js";
 import type { Prisma } from "@book-maker/db";
+import type { PrecomputedPageReview } from "./precomputedPageReview.js";
 
 /** Drops figure fences via `figureFreeProse` (no stand-in) and runs the summary through `pageDraftSummary`; this is not `figureFreeDraft`. */
 function figureFreeProseFields(draft: Pick<PageDraft, "markdown" | "summary">) {
@@ -43,6 +45,16 @@ export type EnrichedPageReview = {
 export type QualityGateContext = {
   enabled: (feature: QualityFeatureId) => boolean;
 };
+
+function withUnavailableQualityCheck(report: PageQualityReport, check: "story_continuity" | "style"): PageQualityReport {
+  const message = `${check === "style" ? "Style audit" : "Story continuity audit"} was unavailable; this check did not produce a verdict.`;
+  const advisories = report.qualityAdvisories ?? [];
+  return { ...report,
+    notes: `${report.notes}\n${message}`,
+    qualityAdvisories: advisories.some((item) => item.check === check && item.message === message)
+      ? advisories : [...advisories, { check, status: "unverified", message }]
+  };
+}
 
 export async function enrichPageQualityReport(options: {
   input: CreateProjectInput;
@@ -69,6 +81,8 @@ export async function enrichPageQualityReport(options: {
   styleExcerpts: string[];
   quality?: QualityGateContext | undefined;
   storyState?: StoryState | undefined;
+  /** Already snapshot-validated by the publication caller. */
+  precomputed?: Pick<PrecomputedPageReview, "storyExtract" | "styleAudit" | "manuscriptPages"> | undefined;
 }): Promise<EnrichedPageReview> {
   const quality = options.quality ?? (await loadQualityContext(options.input));
   const storyState =
@@ -79,18 +93,24 @@ export async function enrichPageQualityReport(options: {
 
   if (quality.enabled("storyExtractAudit")) {
     try {
-      extract = await extractStoryState({
+      extract = options.precomputed?.storyExtract ?? await extractStoryState({
         textModel: options.textModel,
         pageIndex: options.pageIndex,
         title: options.draft.title,
         ...figureFreeProseFields(options.draft),
-        currentState: storyState
+        currentState: storyState,
+        previousPages: options.previousPages.map((page) => ({ index: page.index, markdown: figureFreeProse(page.markdown) }))
       });
+      extract = validateStoryExtractEvidence(extract, { index: options.pageIndex, markdown: figureFreeProse(options.draft.markdown) }, options.precomputed?.manuscriptPages ?? options.previousPages);
       report = withStoryContradictions(report, extract.contradictions);
+      if (extract.unverifiedContradictions?.length) report = { ...report,
+        notes: `${report.notes}\nUnverified continuity hypotheses (not rewrite instructions): ${extract.unverifiedContradictions.join("; ")}`,
+        qualityAdvisories: [...(report.qualityAdvisories ?? []), ...extract.unverifiedContradictions.map((message) => ({ check: "story_continuity" as const, status: "unverified" as const, message }))] };
     } catch (error) {
-      if (isStopRequestedError(error)) {
+      if (isCancellationError(error)) {
         throw error;
       }
+      report = withUnavailableQualityCheck(report, "story_continuity");
       console.warn(`Story extract skipped for project ${options.projectId} page ${options.pageIndex}`, error);
     }
     // Open continuity entries are candidates for the final manuscript coverage
@@ -118,7 +138,7 @@ export async function enrichPageQualityReport(options: {
       });
       report = withClaimVerification(report, verification);
     } catch (error) {
-      if (isStopRequestedError(error)) {
+      if (isCancellationError(error)) {
         throw error;
       }
       report = {
@@ -136,12 +156,15 @@ export async function enrichPageQualityReport(options: {
     };
   }
 
-  if (quality.enabled("styleAuditor") && styleExcerpts.length > 0) {
+  if (quality.enabled("styleAuditor") && (styleExcerpts.length > 0 || options.precomputed?.styleAudit)) {
     try {
-      const audit = await auditPageStyle({
+      const audit = options.precomputed?.styleAudit
+        ? validateStyleAuditEvidence(options.precomputed.styleAudit, figureFreeProse(options.draft.markdown))
+        : await auditPageStyle({
         textModel: options.textModel,
         ...(options.decisions ? { decisions: options.decisions } : {}),
         pageIndex: options.pageIndex,
+        finalPage: options.pageIndex === options.input.targetPages,
         markdown: figureFreeProse(options.draft.markdown),
         voiceGuide: options.plan.voiceGuide,
         antiAiRules: localStyleInstructions(options.plan),
@@ -153,6 +176,7 @@ export async function enrichPageQualityReport(options: {
       if (isCancellationError(error)) {
         throw error;
       }
+      report = withUnavailableQualityCheck(report, "style");
       console.warn(`Style auditor skipped for project ${options.projectId} page ${options.pageIndex}`, error);
     }
   }
@@ -202,6 +226,7 @@ export function revisedDraftStyleAuditor(options: {
   decisions?: DecisionModelRoute | undefined;
   styleExcerpts: string[];
   quality: QualityGateContext;
+  targetPages?: number | undefined;
   /**
    * Set only on a page the reader asked to change, and it changes what the
    * audit is *for*: a requested tone or register shift is the edit landing, not
@@ -226,6 +251,7 @@ export function revisedDraftStyleAuditor(options: {
         textModel: options.textModel,
         ...(options.decisions ? { decisions: options.decisions } : {}),
         pageIndex,
+        finalPage: pageIndex === options.targetPages,
         markdown: figureFreeProse(draft.markdown),
         voiceGuide: options.plan.voiceGuide,
         antiAiRules: localStyleInstructions(options.plan),
@@ -238,7 +264,7 @@ export function revisedDraftStyleAuditor(options: {
         throw error;
       }
       console.warn(`Style auditor skipped for project ${options.projectId} page ${pageIndex}`, error);
-      return report;
+      return withUnavailableQualityCheck(report, "style");
     }
   };
 }
@@ -302,7 +328,7 @@ export async function keeperStoryExtractForSave(
         currentState: options.currentState
       });
     } catch (error) {
-      if (isStopRequestedError(error)) {
+      if (isCancellationError(error)) {
         throw error;
       }
       console.warn(`Keeper story extract skipped for project ${options.projectId} page ${options.pageIndex}`, error);

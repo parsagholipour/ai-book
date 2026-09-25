@@ -13,7 +13,7 @@ import {
   toolParametersJsonSchema
 } from "./openaiToolCalling.js";
 import { optionalMaxRetries } from "./optionalMaxRetries.js";
-import { isCancellationError, ProviderHttpError } from "./retry.js";
+import { isCancellationError, ProviderHttpError, ProviderStreamInterruptedError } from "./retry.js";
 import type {
   ChatMessage,
   GenerateJsonOptions,
@@ -198,9 +198,7 @@ export class OpenAITextAdapter implements TextModelAdapter {
         }
       }
       if (!completed) {
-        throwOpenAIResponseError("OpenAI response stream ended without a completion event.", {
-          model: this.model
-        });
+        throw new ProviderStreamInterruptedError("OpenAI response stream ended without a completion event.");
       }
       return completed;
     } catch (error) {

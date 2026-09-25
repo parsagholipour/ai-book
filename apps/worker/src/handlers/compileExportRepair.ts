@@ -1,3 +1,5 @@
+import { sentenceLengthRepairFor } from "@book-maker/core";
+import { repairShortBookFromFinalQa, usesCoordinatedShortBookRepair } from "./compileExportShortBookRepair.js";
 import {
   formatQualityFailure,
   loadPagesForExport,
@@ -6,6 +8,7 @@ import {
   parseChapterBrief,
   toPriorPageContext
 } from "../generation/bookHelpers.js";
+import { isBoundedTextProviderFailure } from "../generation/textProviderFailure.js";
 import { holdFiguresAside } from "../generation/composedFigures.js";
 import { extractRepairPageIndexes, lastPageIndex } from "../generation/finalQaPageTargets.js";
 import { loadContinuityNotes } from "../generation/generationContext.js";
@@ -40,6 +43,7 @@ import {
   retireGeneratedPageIllustrations,
   type PageIllustrationKeeper
 } from "../generation/pageIllustrationOwnership.js";
+import { pageIllustrationVisualContract, reusablePageIllustration, rebindPageIllustration } from "../generation/pageIllustrationVisualContract.js";
 import { finalQaRevisionsFor, PAGE_QA_RECOVERY_CANDIDATE } from "../generation/tuning.js";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
 import { dispatchWorkerGenerationJob } from "../runtime/dispatch.js";
@@ -47,24 +51,26 @@ import { currentGenerationAttemptId } from "../runtime/generationAttemptContext.
 import type { ExportPageForRepair } from "../runtime/jobTypes.js";
 import {
   hasFigureFence,
+  jsonRecord,
+  parseStoryDelta,
   pagesForStyleExcerpts,
   pinStyleExcerpts,
   sampleExcerptsFromInput,
+  pageQualityReportSchema,
+  uniqueStrings,
   type BookGenerationStrategy,
   type BookPlan,
   type ChapterBrief,
   type CreateProjectInput,
   type FinalBookQa,
+  type ManuscriptQualityIssue,
   type PriorPageContext,
+  type PageDraft,
   type ProviderSet
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 
-/**
- * The compile-time final-QA repair pass: the global editor sweep that rewrites
- * every page final QA flagged before a book ships. Split out of
- * compileExport.ts along the seam its size budget named.
- */
+/** Compile-time final-QA repairs before a book ships. */
 
 /** Current compile must finish before the replacement image can fan back in. */
 export class ExportRepairIllustrationDeferredError extends ExportRepairSupersededError {
@@ -91,6 +97,7 @@ export async function repairPagesFromFinalQa(options: {
   quality: QualityGateContext;
   pages: ExportPageForRepair[];
   finalQa: FinalBookQa;
+  additionalRepairIssues?: readonly ManuscriptQualityIssue[];
   /** Citeable notes available to reviewer, reviser, and brief recovery. */
   researchNotes?: string[] | undefined;
   /** Additional page indexes to repair (e.g. pages that failed page-level QA). */
@@ -137,6 +144,13 @@ export async function repairPagesFromFinalQa(options: {
    */
   assertOwnership?: FinalQaOwnershipClaim | undefined;
   generationJobId?: string | undefined;
+  shouldRepairPage?: (pageId: string) => boolean;
+  onRepairPageStarted?: (pageId: string, pageIndex: number) => Promise<boolean>;
+  onRepairGroupStarted?: (pages: { id: string; index: number }[]) => Promise<boolean>;
+  onRepairGroupPublished?: (client: Prisma.TransactionClient, pages: ExportPageForRepair[]) => Promise<void>;
+  onRepairPageCompleted?: (pageId: string) => Promise<void>;
+  onRepairPageUnavailable?: (pageId: string, pageIndex: number, error: unknown) => Promise<void>;
+  deferIllustrations?: boolean;
 }): Promise<ExportPageForRepair[] | undefined> {
   // Global editor pass: every flagged page is eligible for repair, not just
   // the first few — large books get the same treatment as short ones.
@@ -152,6 +166,10 @@ export async function repairPagesFromFinalQa(options: {
   const repairPageIndexes = [
     ...new Set([...(options.extraPageIndexes ?? []), ...extractRepairPageIndexes(options.finalQa, lastPage)])
   ].sort((first, second) => first - second);
+  if (usesCoordinatedShortBookRepair(options)) {
+    const targets = options.pages.filter((page) => repairPageIndexes.includes(page.index));
+    return targets.length ? repairShortBookFromFinalQa(options, targets) : undefined;
+  }
   // Resolved to rows once, and the loop below walks the rows rather than the
   // indexes, because "the pages this pass set out to repair" is a claim the
   // manuscript has to be able to answer for. Not every named index is a page:
@@ -172,7 +190,7 @@ export async function repairPagesFromFinalQa(options: {
   // has just repaired: the row for index *i* is untouched until *i* comes up.
   const targetPages = repairPageIndexes.flatMap((pageIndex) => {
     const page = options.pages.find((candidate) => candidate.index === pageIndex);
-    return page ? [page] : [];
+    return page && options.shouldRepairPage?.(page.id) !== false ? [page] : [];
   });
   // A pass with nothing real to repair is not a truncated pass or an empty one,
   // it is not a pass: returning `undefined` is what keeps the caller from
@@ -226,6 +244,10 @@ export async function repairPagesFromFinalQa(options: {
     return pinStyleExcerpts(candidates, sampleExcerpts);
   };
   let pages = [...options.pages];
+  const referenceAssets = options.pages.some((page) => page.images.some((image) =>
+    image.metadata && typeof image.metadata === "object" && !Array.isArray(image.metadata) && "visualContract" in image.metadata))
+    ? await prisma.imageAsset.findMany({ where: { projectId: options.projectId, type: "CHARACTER_REFERENCE", metadata: { path: ["planId"], equals: options.planId } }, select: { id: true, path: true } })
+    : [];
   // Pages whose repair ran all the way to its writes, which is the only measure
   // of this pass anybody downstream can act on.
   //
@@ -316,6 +338,7 @@ export async function repairPagesFromFinalQa(options: {
     // the book. The pages already rewritten stay written; see the handler's own
     // catch in `compileExport.ts`.
     await assertOwnership?.();
+    if (await options.onRepairPageStarted?.(page.id, pageIndex) === false) continue;
 
     const chapterPlan = page.chapter
       ? options.plan.chapters.find((chapter) => chapter.index === page.chapter?.index)
@@ -323,6 +346,7 @@ export async function repairPagesFromFinalQa(options: {
     const chapterBrief = chapterBriefFor(page);
     const pageBrief = chapterBrief?.pages.find((brief) => brief.pageIndex === page.index);
     const previousPages = pages.filter((candidate) => candidate.index < page.index).map(toPriorPageContext);
+    const nextPages = pages.filter((candidate) => candidate.index > page.index).map(toPriorPageContext);
     // Every earlier page is prior *context* — a flagged page is still in the
     // book the repair must not contradict — but only the accepted ones may
     // anchor the style lock. This is the last writer before a book ships, and
@@ -332,6 +356,22 @@ export async function repairPagesFromFinalQa(options: {
       .map(toPriorPageContext);
     const styleExcerpts = pinsStyleLock ? await styleLockFor(acceptedPreviousPages, page.index) : [];
     const finalQaReport = pageReportFromFinalQa(options.finalQa, pageIndex, lastPage);
+    const storedReport = page.status === "FAILED_QA" ? pageQualityReportSchema.safeParse(page.qualityReport) : undefined;
+    if (storedReport?.success && !storedReport.data.approved) {
+      finalQaReport.approved = false;
+      finalQaReport.score = Math.min(finalQaReport.score, storedReport.data.score);
+      finalQaReport.issues.push(...storedReport.data.issues);
+      finalQaReport.requiredRevisions.push(...storedReport.data.requiredRevisions);
+    }
+    for (const issue of options.additionalRepairIssues ?? []) {
+      if (!issue.affectedPageIndexes.includes(pageIndex)) continue;
+      finalQaReport.approved = false;
+      finalQaReport.issues.push(issue.message);
+      finalQaReport.requiredRevisions.push(issue.guidance);
+    }
+    finalQaReport.issues = uniqueStrings(finalQaReport.issues);
+    finalQaReport.requiredRevisions = uniqueStrings(finalQaReport.requiredRevisions);
+    const repairInstruction = uniqueStrings([...finalQaReport.issues, ...finalQaReport.requiredRevisions]).join("\n");
     // A composed page's figure is held aside so this rewrite, the loop's
     // rewrites and reviews, and the story extract never see the JSON: the
     // first revise is handed stand-in prose, `figures: "hold"` keeps those
@@ -341,8 +381,12 @@ export async function repairPagesFromFinalQa(options: {
     // the reply is still stripped. Every per-page rewrite would otherwise come
     // back from core figure-free, so a page revised from its raw markdown lost
     // its chart and shipped without it.
+    const sentenceRepair = sentenceLengthRepairFor(options.input, page, finalQaReport);
     const heldFigures = hasFigureFence(page.markdown) ? holdFiguresAside(page.markdown) : undefined;
-    let draft = await revisePageDraftWithRestart({
+    let draft: PageDraft;
+    let outcome: PageQualityLoopOutcome;
+    try {
+    draft = await revisePageDraftWithRestart({
       strategy: options.strategy,
       generationJobId: options.generationJobId,
       context: `Final QA repair for page ${pageIndex}`,
@@ -358,10 +402,14 @@ export async function repairPagesFromFinalQa(options: {
           title: page.title,
           markdown: heldFigures ? heldFigures.prose : page.markdown,
           summary: page.summary,
+          ...(page.imagePrompt ? { imagePrompt: page.imagePrompt } : {}),
           continuityNotes: []
         },
         report: finalQaReport,
+        ...(repairInstruction ? { pageEditGuidance: repairInstruction } : {}),
+        ...(sentenceRepair ? { sentenceRepair } : {}),
         previousPages,
+        nextPages,
         continuityNotes,
         researchNotes: options.researchNotes,
         textModel: options.providers.text,
@@ -379,6 +427,9 @@ export async function repairPagesFromFinalQa(options: {
       strategy: options.strategy,
       quality: options.quality,
       reviewOptions: {
+        ...(repairInstruction ? { repairInstruction } : {}),
+        repairOriginalMarkdown: heldFigures?.prose ?? page.markdown,
+        ...(sentenceRepair ? { sentenceRepair } : {}),
         input: options.input,
         plan: options.plan,
         chapter: chapterPlan,
@@ -387,14 +438,17 @@ export async function repairPagesFromFinalQa(options: {
         pageIndex,
         draft,
         previousPages,
+        nextPages,
         continuityNotes,
         researchNotes: options.researchNotes,
         textModel: options.providers.text,
         ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
       }
     });
-    const outcome = await runPageQualityLoop({
+    outcome = await runPageQualityLoop({
       originalDraft: { title: page.title, markdown: heldFigures ? heldFigures.prose : page.markdown },
+      ...(finalQaReport ? { initialKeeper: { draft: { title: page.title, markdown: heldFigures?.prose ?? page.markdown,
+        summary: page.summary, continuityNotes: [], ...(page.imagePrompt ? { imagePrompt: page.imagePrompt } : {}) }, report: finalQaReport } } : {}),
       decisions: options.providers.decisions,
       projectId: options.projectId,
       strategy: options.strategy,
@@ -417,7 +471,11 @@ export async function repairPagesFromFinalQa(options: {
       pageIndex,
       draft,
       report: initialReport,
+      ...(repairInstruction ? { repairInstruction } : {}),
+      ...(sentenceRepair ? { sentenceRepair } : {}),
       previousPages,
+      nextPages,
+      stopAfterNoImprovement: 2,
       continuityNotes,
       researchNotes: options.researchNotes,
       textModel: options.providers.text,
@@ -445,6 +503,14 @@ export async function repairPagesFromFinalQa(options: {
       ...(heldFigures ? { figures: "hold" as const } : {}),
       ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
     });
+    } catch (error) {
+      if (!isBoundedTextProviderFailure(error)) throw error;
+      await assertOwnership?.();
+      await options.onRepairPageUnavailable?.(page.id, pageIndex, error);
+      // No page or brief has been published. Retain its saved keeper, consume
+      // the durable claim, and keep the rest of this one repair pass bounded.
+      continue;
+    }
     draft = outcome.draft;
     const qualityReport = outcome.report;
     const revisionAttempts = outcome.attempts;
@@ -469,6 +535,8 @@ export async function repairPagesFromFinalQa(options: {
     // below and the writes, so the window in which the manuscript can change
     // hands under a half-published page is a few statements rather than two
     // provider round trips.
+    const proseUnchanged = draft.title === page.title && draft.markdown === (heldFigures?.prose ?? page.markdown) && draft.summary === page.summary;
+    const priorDelta = proseUnchanged ? parseStoryDelta(page.storyDelta) : null;
     const keeperExtract = await keeperStoryExtractForSave({
       projectId: options.projectId,
       pageIndex,
@@ -476,8 +544,8 @@ export async function repairPagesFromFinalQa(options: {
       textModel: options.providers.text,
       plan: options.plan,
       input: options.input,
-      previousExtract: null,
-      keeperWasRevised: true,
+      previousExtract: priorDelta ? { storyDelta: priorDelta, contradictions: [] } : null,
+      keeperWasRevised: !proseUnchanged,
       currentState,
       quality: options.quality
     });
@@ -496,7 +564,9 @@ export async function repairPagesFromFinalQa(options: {
     if (heldFigures) draft = heldFigures.restore(draft);
 
     const imagePrompt = draft.imagePrompt ?? page.imagePrompt;
-    const revision = (Number.isInteger(page.revision) ? page.revision : 0) + revisionAttempts;
+    const contentChanged = !proseUnchanged || imagePrompt !== page.imagePrompt;
+    const revisionIncrement = contentChanged ? revisionAttempts : 0;
+    const revision = (Number.isInteger(page.revision) ? page.revision : 0) + revisionIncrement;
     const priorVersion = pageVersion(page);
     const stagedVersion = nextPageVersion(priorVersion);
     const priorKeeper = illustrationKeeper(options.projectId, page, {
@@ -514,9 +584,16 @@ export async function repairPagesFromFinalQa(options: {
       revision
     });
     const replacementKeeper = pageIllustrationKeeperToken(priorKeeper) !== pageIllustrationKeeperToken(nextKeeper);
+    // An unchanged prompt alone cannot prove a rewrite kept the same scene.
+    const reusableImage = imagePrompt && draft.markdown === page.markdown && page.imagePrompt?.trim() === imagePrompt.trim()
+      ? reusablePageIllustration(page.images, priorKeeper, pageIllustrationVisualContract({
+          prompt: imagePrompt, input: options.input, plan: options.plan, referenceAssets }))
+      : undefined;
     const willIllustrate =
+      !options.deferIllustrations &&
       qualityReport.approved &&
       replacementKeeper &&
+      !reusableImage &&
       Boolean(imagePrompt) &&
       options.strategy.shouldIllustratePage(options.input, options.plan, page.index);
 
@@ -558,7 +635,7 @@ export async function repairPagesFromFinalQa(options: {
               summary: draft.summary,
               imagePrompt,
               status: publicationStatus,
-              revision: { increment: revisionAttempts },
+              revision: { increment: revisionIncrement },
               qualityReport: qualityReport as Prisma.InputJsonValue,
               updatedAt: stagedVersion
             },
@@ -573,7 +650,9 @@ export async function repairPagesFromFinalQa(options: {
           }
           throw error;
         }
-        if (replacementKeeper) {
+        if (replacementKeeper && reusableImage) {
+          await rebindPageIllustration(client, { asset: reusableImage, priorKeeper, nextKeeper });
+        } else if (replacementKeeper) {
           await retireGeneratedPageIllustrations(client, {
             pageIndex: page.index,
             priorKeeper
@@ -669,6 +748,7 @@ export async function repairPagesFromFinalQa(options: {
       });
     }
     pagesRepaired += 1;
+    await options.onRepairPageCompleted?.(page.id);
   }
 
   // A page can become terminal once its tokened job is durable, but this
@@ -812,10 +892,4 @@ async function completeFinalQaIllustratedKeeper(
   if (completed.count !== 1) {
     throw new ExportRepairSupersededError();
   }
-}
-
-function jsonRecord(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
 }

@@ -28,6 +28,15 @@ export class ProviderHttpError extends Error {
   }
 }
 
+/** The transport closed before a terminal response, so no answer was received. */
+export class ProviderStreamInterruptedError extends Error {
+  readonly code = "PROVIDER_STREAM_INTERRUPTED";
+  constructor(message: string) {
+    super(message);
+    this.name = "ProviderStreamInterruptedError";
+  }
+}
+
 export type RecoverableRetryOptions = {
   attempts?: number | undefined;
   delayMs?: number | undefined;
@@ -46,6 +55,7 @@ const DEFAULT_RECOVERABLE_MAX_DELAY_MS = 12_000;
 export const PROVIDER_RETRY_AFTER_CEILING_MS = 90_000;
 
 const RECOVERABLE_NETWORK_CODES = new Set([
+  "PROVIDER_STREAM_INTERRUPTED",
   "ABORT_ERR",
   "ECONNABORTED",
   "ECONNREFUSED",
@@ -103,6 +113,7 @@ export async function withRecoverableNetworkRetry<T>(
 }
 
 export function isRecoverableNetworkError(error: unknown): boolean {
+  if (isStopOrAbortError(error)) return false;
   if (isImageContentRefusalError(error)) {
     // A provider that read the prompt and declined has answered, and it will
     // answer the same way on every attempt. The refusal's `detail` is the

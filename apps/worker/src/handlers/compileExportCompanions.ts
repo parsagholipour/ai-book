@@ -7,7 +7,8 @@ import {
   isCompanionExportFormat,
   type CompanionExportFormat,
   type ExportRepairFormat,
-  type ManuscriptQualityReport
+  type ManuscriptQualityReport,
+  type StoryPagePlan
 } from "@book-maker/core";
 import { config } from "../runtime/config.js";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
@@ -40,6 +41,7 @@ type CompanionRenderer = {
 
 type CompanionRenderInput = {
   markdown: string;
+  pageMapPlan?: StoryPagePlan | undefined;
   outputPath: string;
   title: string;
   author: string | undefined;
@@ -53,6 +55,7 @@ const COMPANION_RENDERERS: Record<CompanionExportFormat, CompanionRenderer> = {
     progress: 95,
     render: (input) =>
       generateBookEpub(input.markdown, {
+        ...(input.pageMapPlan ? { pageMapPlan: input.pageMapPlan } : {}),
         title: input.title,
         ...(input.author ? { author: input.author } : {}),
         language: input.language,
@@ -72,6 +75,7 @@ const COMPANION_RENDERERS: Record<CompanionExportFormat, CompanionRenderer> = {
     progress: 98,
     render: (input) =>
       generateBookDocx(input.markdown, {
+        ...(input.pageMapPlan ? { pageMapPlan: input.pageMapPlan } : {}),
         title: input.title,
         ...(input.author ? { author: input.author } : {}),
         language: input.language,
@@ -97,6 +101,7 @@ export function companionFormatsToRender(repairFormat: ExportRepairFormat | null
 export async function renderCompanionExports(options: {
   formats: readonly CompanionExportFormat[];
   markdown: string;
+  pageMapPlan?: StoryPagePlan | undefined;
   pending: PendingExportPaths;
   projectId: string;
   generationJobId: string;
@@ -112,6 +117,7 @@ export async function renderCompanionExports(options: {
     await advanceJobStep(options.generationJobId, renderer.step, renderer.progress);
     const input: CompanionRenderInput = {
       markdown: options.markdown,
+      ...(options.pageMapPlan ? { pageMapPlan: options.pageMapPlan } : {}),
       outputPath: options.pending[format],
       title: options.title,
       author: options.author ?? undefined,

@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 import type { Job } from "bullmq";
-import type { StoryState } from "@book-maker/core";
+import type { StoryState, PageQualityReport } from "@book-maker/core";
 import { dbScopeMocks } from "../../testing/dbScopeMocks.js";
 import { isPagePipelineQaFeature } from "../../testing/qualityGateFixtures.js";
 
@@ -15,6 +15,12 @@ type MockGenerationJobSelection =
   | null;
 
 export const isDefaultCompileQualityFeature = isPagePipelineQaFeature;
+
+// The durable coordinator and illustration fan-out have dedicated real-module
+// suites. Legacy publication tests hold those boundaries steady so their staged
+// repair-fence failures still address the repair, not the new lease acquisition.
+let leasedPages: unknown[] | null = null;
+let leaseOwnershipReadPending = false;
 
 /**
  * Module mocks shared by the `compileExport*.test.ts` suites.
@@ -39,6 +45,7 @@ export const mocks = {
     project: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn(async () => ({ count: 1 })) },
     page: { update: vi.fn(), updateMany: vi.fn(async () => ({ count: 1 })) },
     imageAsset: {
+      updateMany: vi.fn(async () => ({ count: 1 })),
       findMany: vi.fn(
         async (): Promise<Array<{ id: string; path: string; metadata: unknown }>> => []
       ),
@@ -52,7 +59,7 @@ export const mocks = {
     // assert that bargain in both directions — the write happens with a fence
     // and does not happen without one.
     chapter: { findUnique: vi.fn(), updateMany: vi.fn() },
-    continuityNote: { findMany: vi.fn(), createMany: vi.fn() },
+    continuityNote: { findMany: vi.fn(), createMany: vi.fn(), deleteMany: vi.fn() },
     generationJob: {
       findFirst: vi.fn(async (_args: unknown): Promise<{ qualityReport: unknown } | null> => null),
       count: vi.fn(async () => 0),
@@ -86,12 +93,21 @@ export const mocks = {
   extractRepairPageIndexes: vi.fn((finalQa: { repairPageIndexes?: number[] }, _lastPage: number) =>
     finalQa.repairPageIndexes ?? []
   ),
-  pageReportFromFinalQa: vi.fn(),
+  pageReportFromFinalQa: vi.fn((qa: { score: number; issues: string[]; requiredFixes: string[]; notes?: string }): PageQualityReport => ({
+    approved: false, score: Math.min(qa.score, 60), issues: [...qa.issues], requiredRevisions: [...qa.requiredFixes],
+    notes: qa.notes ?? "Final QA requested a targeted page repair.", groundedOk: true, unsupportedClaims: [],
+    checks: { placeholderFree: true, promptLeakFree: true, titleClean: true, repetitionOk: true, progressionOk: true, styleNatural: true }
+  })),
   // Stubbed to "this chapter has no brief" by default. A suite that cares
   // *how often* it is asked — the repair pass parses one brief per chapter for
   // the whole pass, not one per page — controls it here.
   parseChapterBrief: vi.fn((_productionBrief?: unknown): unknown => undefined),
   loadPagesForExport: vi.fn(),
+  loadLeasedPagesForExport: vi.fn(async (_projectId: string, pages: unknown[]) => pages),
+  checkLeasedExportOwnership: vi.fn(async () => false),
+  enqueueFinalizationIllustrations: vi.fn(async (_options: unknown) => ({
+    kind: "ready" as const, pendingJobIds: [] as string[], missingPageIndexes: [] as number[]
+  })),
   // The stand-down's own re-read, which is a different query from the one
   // above: four scalar columns and no joins, because all it decides is which
   // page indexes moved. Separate here for the same reason it is separate in
@@ -219,7 +235,13 @@ export const projectInputModuleMock = () => ({ inputForPlanVersion: mocks.inputF
 
 export const exportPublicationModuleMock = () => ({
   discardPendingExports: mocks.discardPendingExports,
-  exportPublicationSuperseded: mocks.exportPublicationSuperseded,
+  exportPublicationSuperseded: (...args: unknown[]) => {
+    if (leaseOwnershipReadPending) {
+      leaseOwnershipReadPending = false;
+      return mocks.checkLeasedExportOwnership();
+    }
+    return mocks.exportPublicationSuperseded(...args);
+  },
   pendingExportPaths: mocks.pendingExportPaths,
   publishCompiledExports: mocks.publishCompiledExports
 });
@@ -231,6 +253,7 @@ export const dispatchModuleMock = () => ({
 });
 
 export const jobLifecycleModuleMock = () => ({
+  assertJobNotStopped: vi.fn(),
   advanceJobStep: vi.fn(),
   editOperationIdFromJob: (job: Job) => (typeof job.data.operationId === "string" ? job.data.operationId : null),
   updateJobProgress: vi.fn()
@@ -269,12 +292,20 @@ export const finalQaPageTargetsModuleMock = (actual: typeof import("../../genera
 });
 
 export const bookHelpersModuleMock = () => ({
-  loadPagesForExport: mocks.loadPagesForExport,
+  loadPagesForExport: (projectId: string) => {
+    if (leasedPages) {
+      const pages = leasedPages;
+      leasedPages = null;
+      leaseOwnershipReadPending = true;
+      return mocks.loadLeasedPagesForExport(projectId, pages);
+    }
+    return mocks.loadPagesForExport(projectId);
+  },
   loadPageTextSnapshot: mocks.loadPageTextSnapshot,
   loadStyleLockPages: mocks.loadStyleLockPages,
   pageReportFromFinalQa: mocks.pageReportFromFinalQa,
   parseChapterBrief: (productionBrief: unknown) => mocks.parseChapterBrief(productionBrief),
-  strategyForInput: () => mocks.strategy,
+  strategyForInput: () => ({ shouldIllustratePage: () => false, ...mocks.strategy }),
   toFinalQaPage: (page: unknown) => page,
   toPriorPageContext: (page: unknown) => page,
   formatQualityFailure: () => "quality failure detail"
@@ -301,9 +332,56 @@ export const qualityEnrichmentModuleMock = (actual?: typeof import("../../genera
   revisedDraftStyleAuditor: actual ? actual.revisedDraftStyleAuditor : vi.fn(() => undefined)
 });
 
-export const qualitySettingsModuleMock = () => ({
-  loadQualityContext: mocks.loadQualityContext,
-  applyPlanThinkingBoost: vi.fn()
+export const qualitySettingsModuleMock = () => {
+  let snapshot: Awaited<ReturnType<typeof mocks.loadQualityContext>>;
+  return {
+    loadQualityContext: async () => { snapshot = await mocks.loadQualityContext(); return snapshot; },
+    qualityContextFromSnapshot: () => snapshot,
+    applyPlanThinkingBoost: vi.fn()
+  };
+};
+
+export const finalizationIllustrationsModuleMock = () => ({
+  enqueueFinalizationIllustrations: mocks.enqueueFinalizationIllustrations
+});
+
+export const compileFinalizationModuleMock = () => ({
+  FinalizationLeaseLostError: class extends Error {},
+  hasCompileFinalization: async () => false,
+  openCompileFinalization: async (options: Parameters<typeof import("../compileFinalization.js").openCompileFinalization>[0]) => {
+    leasedPages = [...options.pages];
+    leaseOwnershipReadPending = false;
+    const state = {
+      phase: "review", configuration: options.input, repairPassStarted: false, repairPassCompleted: false,
+      unavailableRepairPageIds: [] as string[],
+      startedPageIds: [] as string[], completedPageIds: [] as string[], targetPageIds: [] as string[], activePageIndex: null as number | null
+    };
+    const reviews = new Map<string, unknown>();
+    return {
+      state,
+      assertLease: async () => {},
+      close: async () => { leasedPages = null; leaseOwnershipReadPending = false; },
+      review: async (stage: string, pages: unknown[], compute: () => Promise<unknown>) => {
+        const key = `${stage}:${JSON.stringify(pages)}`;
+        if (!reviews.has(key)) reviews.set(key, await compute());
+        return reviews.get(key);
+      },
+      beginRepair: async (ids: string[]) => { state.repairPassStarted = true; state.targetPageIds = ids; },
+      claimPage: async (id: string, index: number) => {
+        if (state.startedPageIds.includes(id) || state.repairPassCompleted) return false;
+        state.startedPageIds.push(id); state.activePageIndex = index; return true;
+      },
+      claimPages: async (pages: { id: string; index: number }[]) => {
+        if (state.startedPageIds.length || state.repairPassCompleted) return false;
+        state.startedPageIds.push(...pages.map((page) => page.id)); state.activePageIndex = pages[0]?.index ?? null; return true;
+      },
+      unavailablePage: async (id: string) => { state.unavailableRepairPageIds.push(id); state.completedPageIds.push(id); state.activePageIndex = null; },
+      completePage: async (id: string) => { state.completedPageIds.push(id); state.activePageIndex = null; },
+      finishRepair: async () => { state.repairPassCompleted = true; state.activePageIndex = null; },
+      finishRepairInTransaction: async () => { state.repairPassCompleted = true; state.activePageIndex = null; },
+      phase: async (phase: string) => { state.phase = phase; }
+    };
+  }
 });
 
 /** The loop is the real one — only the initial rewrite helper is mocked, so loop

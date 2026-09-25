@@ -70,6 +70,23 @@ Anything that launches Chromium must go through the shared browser pool and must
   anti-slop corpus (`replayAntiSlopCalibration`). No `storage/`, no live books. Exit 1 if a
   fixture fails. Full manuscripts stay a local caller of `replayDeterministicManuscriptChecks`.
 
+## Live storybook acceptance
+
+- `storybook-acceptance.ts` — prepares matched Quick/Balanced/Premium rounds from a
+  saved 30-page operator input, with explicit experimental performance ceilings.
+  Start optimization validation with one round. `prepare` only writes local fixtures;
+  `launch` requires a drained local queue, one worker and real providers. See
+  [storybook-acceptance.md](storybook-acceptance.md) for the runbook.
+- `generation-acceptance.mjs` — terminal outcome and download integrity checks,
+  shared with `dev-rerun-book.ts`. A manuscript capture is diagnostic evidence,
+  never proof of publication. Failed or canceled compiles return nonzero even
+  when manuscript files exist. Download capture verifies all three formats and
+  their exact content revision; it does not enqueue an export repair.
+- `generation-performance.mjs` — reports elapsed stages and provider attempts from
+  saved jobs/logs. A functional export pass alone does not pass the benchmark.
+- `generation-acceptance.test.mjs` runs in the existing `subpath-tests` gate of
+  `pnpm check`, alongside the subpath checker tests.
+
 
 ## Ops (all `--apply`-gated; they default to a dry run)
 

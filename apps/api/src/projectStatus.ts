@@ -26,6 +26,7 @@ import { loadProjectQualityReport } from "./mobile/qualityVerdict.js";
 // whole: the poll reports the number, `projectPageCounts.ts` decides it.
 import { countBookPages, pageRewriteScope, readProjectPageRows } from "./projectPageCounts.js";
 import { loadProjectCostSummary } from "./projectCosts.js";
+import { loadProjectFinalizationProgress } from "./projectFinalizationProgress.js";
 import type { GenerationJobType } from "./queue.js";
 
 export type PipelineStepKey = "plan" | "pages" | "images" | "export";
@@ -196,7 +197,7 @@ export async function buildProjectStatus(projectId: string) {
       })
     : [];
 
-  const [openImageJobs, compileJobs, rewriteScope] = await Promise.all([
+  const [openImageJobs, compileJobs, rewriteScope, finalization] = await Promise.all([
     prisma.generationJob.count({
       where: { projectId, type: "GENERATE_IMAGE", status: { in: ["QUEUED", "ACTIVE"] } }
     }),
@@ -210,7 +211,8 @@ export async function buildProjectStatus(projectId: string) {
     // page's, and it is asked here, in the fan-out, because a book still being
     // written answers it from its status alone: the poll that runs every few
     // seconds through a generation sends no read for it.
-    pageRewriteScope(projectId, project.status)
+    pageRewriteScope(projectId, project.status),
+    loadProjectFinalizationProgress(project)
   ]);
   const completePages = countBookPages(pages, rewriteScope);
   const visibleImageCount = await prisma.imageAsset.count({
@@ -290,6 +292,7 @@ export async function buildProjectStatus(projectId: string) {
       // progress needs them to size its illustration and finish bands.
       openImageJobs,
       hasCompileJob: compileJobs > 0,
+      finalization,
       pipeline,
       tokens: projectTokens,
       cost,

@@ -1,0 +1,6 @@
+/** Contextual editorial instructions, never a token blacklist or prose substitution. */
+export const READER_NAMING_RULE =
+  'Preserve established reader-facing names from the user request, character canon and existing prose. Planning shorthand in briefs, summaries, continuity notes or issue reports is bookkeeping, not a new story name: if the plan says L4 and the prose says "the fourth lantern", keep the prose name. Use those same names in new summaries and continuity notes. Preserve legitimate alphanumeric names, technical terms, codes and quoted labels when supported by context; never expand an identifier by guessing.';
+
+export const READER_NAMING_REVIEW_RULE =
+  'Check for planning shorthand copied into reader prose: a plan calling a lantern L4 does not establish L4 as its story name. Compare names with the user request, character canon and actual prose; supplied original prose is a naming baseline, not authority to undo requested edits or restore old continuity defects. Preserve legitimate alphanumeric names, technical terms, codes and quoted labels. A suspicious spelling alone is not a defect. For a confirmed leak, quote the current prose, explain its planning origin and request the established reader name without changing the repaired events.';

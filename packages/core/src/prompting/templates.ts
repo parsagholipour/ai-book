@@ -13,7 +13,7 @@ export type TemplateDefinition = {
     complexity: number;
     temperature: number;
     targetPages: number;
-    illustrationCadence: "template-driven" | "every-page" | "manual";
+    illustrationCadence: CreateProjectInput["mediaSettings"]["illustrationCadence"];
     researchPolicy: "always" | "when-needed" | "rare";
   };
   styleRules: {

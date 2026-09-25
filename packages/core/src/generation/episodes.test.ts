@@ -117,6 +117,16 @@ describe("the chapterFocus option", () => {
     expect(result.episodes?.chapters.every((chapter) => chapter.focus === undefined)).toBe(true);
   });
 
+  it("discards an unsolicited focus from a provider when chapterFocus is disabled", async () => {
+    const answer = { chapters: noFocusAnswer.chapters.map((chapter) => ({ ...chapter,
+      focus: { question: "What changed?", investigation: ["the first judgment", "the appeal"], contribution: "A changed judgment" } })) };
+    const { model, calls } = scriptedDevelopmentModel([answer]);
+    const result = await planEpisodes({ input: developmentInput, plan, stance, textModel: model, focus: false });
+    expect(calls).toHaveLength(1);
+    expect(result.episodes?.chapters).toHaveLength(3);
+    expect(result.episodes?.chapters.every((chapter) => chapter.focus === undefined)).toBe(true);
+  });
+
   it("assigns scenes by material on the unfocused path only", async () => {
     // One told scene in twelve chapters, engagement 6.0 against 7.0: the legacy
     // scene call runs on a `scene` or `portrait` episode, and the planner

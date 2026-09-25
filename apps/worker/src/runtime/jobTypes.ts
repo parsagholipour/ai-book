@@ -106,10 +106,11 @@ export type ExportPageForRepair = {
   summary: string;
   imagePrompt: string | null;
   qualityReport?: unknown;
+  storyDelta?: unknown;
   revision: number;
   status: string;
   chapter?: { id: string; index: number; title?: string; targetPages?: number; summary?: string; productionBrief: unknown } | null;
-  images: Array<{ path: string }>;
+  images: Array<{ path: string; id?: string; type?: string; metadata?: unknown }>;
 };
 
 export type ChapterSetup = {

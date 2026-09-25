@@ -63,6 +63,99 @@ describe("mobile generation progress", () => {
   beforeEach(resetMobileHarness);
   afterEach(teardownMobileHarness);
 
+  it("keeps finalization visible outside the recent-job window and does not finish at image handoff", async () => {
+    const checkpoint = { phase: "illustrations", label: "Creating your illustrations", pageIndex: null,
+      repairPagesAttempted: 2, remainingRepairPages: 0, illustrationJobsTotal: 30, lastProgressAt: "2026-09-23T11:15:00.000Z" };
+    const images = Array.from({ length: 30 }, (_, index) => job({ id: `image-${index}`, type: "GENERATE_IMAGE", status: "QUEUED" }));
+    const stages = [];
+    for (const jobs of [images.slice(0, 25), [job({ type: "COMPILE_EXPORT", status: "COMPLETED", progress: 100 }), ...images],
+      [job({ type: "COMPILE_EXPORT", status: "QUEUED", progress: 0 }), ...images]]) {
+      const status = await readStatus(generatingStatus({ project: { jobs }, progress: {
+        pages: { complete: 30, target: 30 }, images: 1, openImageJobs: 30, finalization: checkpoint
+      } }));
+      stages.push(status.generationProgress.percent);
+      expect(status.currentAction).toBe("Creating your illustrations");
+      expect(status.generationProgress.finalization.illustrationJobsTotal).toBe(30);
+      expect(status.generationProgress.steps.find((step: any) => step.key === "finish").status).toBe("pending");
+    }
+    expect(stages).toEqual([85, 85, 85]);
+  });
+
+  it("does not count an empty illustration queue as a finished fan-out", async () => {
+    const status = await readStatus(generatingStatus({ project: { jobs: [job({ type: "COMPILE_EXPORT", status: "ACTIVE", progress: 35 })] }, progress: {
+      pages: { complete: 30, target: 30 }, images: 1, openImageJobs: 0,
+      finalization: { phase: "illustrations", label: "Creating your illustrations", pageIndex: null,
+        repairPagesAttempted: 2, remainingRepairPages: 0, illustrationJobsTotal: 0, lastProgressAt: "2026-09-23T11:15:00.000Z" }
+    } }));
+    expect(status.generationProgress.percent).toBe(85);
+  });
+
+  it.each([30, 0])("reports full-book coverage truthfully with %i image jobs pending", async (remaining) => {
+    const status = await readStatus(generatingStatus({ project: { jobs: [job({ type: "COMPILE_EXPORT", status: "ACTIVE", progress: 100 })] }, progress: {
+      pages: { complete: 30, target: 30 }, images: 31 - remaining, openImageJobs: remaining,
+      pipeline: [{ key: "images", label: "Images", status: remaining ? "active" : "done" }],
+      finalization: { phase: "coverage", label: "Checking your book requirements", pageIndex: null,
+        repairPagesAttempted: 2, remainingRepairPages: 0, illustrationJobsTotal: 30, lastProgressAt: "2026-09-23T11:15:00.000Z" }
+    } }));
+    expect(status.currentAction).toBe("Checking your book requirements");
+    expect(status.generationProgress.percent).toBe(remaining ? 85 : 92);
+    expect(status.generationProgress.steps.find((step: any) => step.key === "finish").status).toBe("active");
+    expect(status.generationProgress.steps.find((step: any) => step.key === "illustrate").status).toBe(remaining ? "active" : "done");
+  });
+
+  it("keeps progress monotonic through image completion and the render successor", async () => {
+    const percentages = [];
+    for (const stage of [
+      { phase: "repair", total: 0, remaining: 0, progress: 35 },
+      { phase: "final_review", total: 0, remaining: 0, progress: 35 },
+      { phase: "illustrations", total: 0, remaining: 0, progress: 35 },
+      { phase: "illustrations", total: 30, remaining: 30, progress: 100 },
+      { phase: "illustrations", total: 30, remaining: 1, progress: 100 },
+      { phase: "illustrations", total: 30, remaining: 0, progress: 0 },
+      { phase: "render", total: 30, remaining: 0, progress: 25 },
+      { phase: "render", total: 30, remaining: 0, progress: 95 }
+    ]) {
+      const status = await readStatus(generatingStatus({ project: { jobs: [job({ type: "COMPILE_EXPORT", progress: stage.progress })] }, progress: {
+        pages: { complete: 30, target: 30 }, images: 31 - stage.remaining, openImageJobs: stage.remaining,
+        finalization: { phase: stage.phase, label: "Working", pageIndex: null,
+          repairPagesAttempted: 2, remainingRepairPages: 0, illustrationJobsTotal: stage.total, lastProgressAt: "2026-09-23T11:15:00.000Z" }
+      } }));
+      percentages.push(status.generationProgress.percent);
+      expect(status.generationProgress.steps.find((step: any) => step.key === "finish").status).not.toBe("done");
+    }
+    expect(percentages).toEqual([...percentages].sort((a, b) => a - b));
+    expect(percentages.at(-1)).toBe(99);
+  });
+
+  it("does not revive a rejected old checkpoint while a retry writes a new book", async () => {
+    const status = await readStatus(generatingStatus({ project: { jobs: [job(), job({ type: "COMPILE_EXPORT", status: "COMPLETED", progress: 100,
+      payload: { finalizationProgress: { phase: "published", attempts: 2, remainingRepairPages: 0, updatedAt: "2026-09-23T11:15:00Z" } } })] },
+      progress: { finalization: null } }));
+    expect(status.generationProgress.finalization).toBeNull();
+    expect(status.generationProgress.percent).toBeLessThan(80);
+    expect(status.generationProgress.steps.find((step: any) => step.key === "finish").status).toBe("pending");
+  });
+
+  it("uses durable finalization progress after a compile handoff", async () => {
+    const status = await readStatus(generatingStatus({
+      project: { jobs: [job({
+        type: "COMPILE_EXPORT", progress: 35,
+        payload: { finalizationOperationId: "private-root", finalizationProgress: {
+          operationId: "private-root", phase: "repair", pageIndex: 8,
+          attempts: 2, remainingRepairPages: 1, updatedAt: "2026-09-23T11:15:00.000Z"
+        } },
+        steps: [{ key: "qa", status: "active" }]
+      })] },
+      progress: { pages: { complete: 30, target: 30 } }
+    }));
+    expect(status.currentAction).toBe("Polishing page 8 of 30");
+    expect(status.generationProgress.finalization).toMatchObject({
+      phase: "repair", repairPagesAttempted: 2, remainingRepairPages: 1
+    });
+    expect(status.generationProgress.percent).toBeLessThan(100);
+    expect(JSON.stringify(status)).not.toMatch(/private-root|operationId|provider|model/);
+  });
+
   it("names the page being written without leaking worker internals", async () => {
     const status = await readStatus(
       generatingStatus({

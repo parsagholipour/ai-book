@@ -6,6 +6,7 @@ import {
   chapterHeadingStylePreference,
   includeSourcesPreference,
   mediaSettingsSchema,
+  shortKidsStoryPageLayout,
   resolvePublicImageUrl,
   type BookPageMapPlan
 } from "@book-maker/core";
@@ -67,6 +68,7 @@ export async function compileProjectManuscript(
   const cover = project.images.find((image) => image.type === "COVER");
   const compiled = strategy.compileMarkdownWithPageAnchors({
     plan: project.currentPlan.planningPackage as never,
+    storyPageLayout: shortKidsStoryPageLayout(project, generatedPages),
     category: project.category,
     language: project.language,
     ...(project.authorName ? { authorName: project.authorName } : {}),

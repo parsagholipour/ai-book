@@ -279,6 +279,19 @@ describe("runPageQualityLoop recovery point", () => {
       repairPageBrief: vi.fn(async () => repairedBeat)
     });
 
+    it("allows one useful brief recovery after two non-improving candidates", async () => {
+      const strategy = brieflyBlaming();
+      strategy.reviewPageDraft.mockResolvedValueOnce({ ...report(40), checks: { repetitionOk: false, progressionOk: true } })
+        .mockResolvedValueOnce({ ...report(40), checks: { repetitionOk: false, progressionOk: true } })
+        .mockResolvedValueOnce({ ...report(95, { approved: true }), checks: { repetitionOk: true, progressionOk: true } });
+      const result = await recoveringLoop({ strategy, maxCandidates: 7, stopAfterNoImprovement: 2,
+        repairBrief: true, pageBrief: originalBeat });
+      expect(strategy.repairPageBrief).toHaveBeenCalledTimes(1);
+      expect(strategy.revisePageDraft).toHaveBeenCalledTimes(3);
+      expect(result.approved).toBe(true);
+      expect(result.report.score).toBe(95);
+    });
+
     it("repairs the brief once across a budget that keeps asking for it", async () => {
       // Ultra final QA: ten attempts, recovery fitted onto the third. Every one
       // of rewrites 3..10 satisfies the predicate, and unlatched every one of

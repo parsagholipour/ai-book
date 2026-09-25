@@ -26,6 +26,7 @@ import {
   type BookPdfPageMap
 } from "./pdfPageMap.js";
 import { applyRenderResourcePolicy } from "./renderResourcePolicy.js";
+import { separateStoryPagesForPdf, STORY_PAGE_PDF_CSS } from "./pdfStoryPages.js";
 
 export type GenerateBookPdfOptions = BookImageOptions & {
   publicApiUrl: string;
@@ -171,7 +172,7 @@ export async function generateBookPdf(
  */
 export type BookPageMapPlan = Pick<
   CompiledBookMarkdown,
-  "pageAnchors" | "sourcesOffset" | "hasCoverPage" | "hasContents"
+  "pageAnchors" | "sourcesOffset" | "hasCoverPage" | "hasContents" | "storyPageLayout"
 >;
 
 export type GenerateBookPdfResult = {
@@ -194,10 +195,12 @@ export async function generateBookPdfWithPageMap(
     return withStoredBookImages(markdown, options, (imageStorageDir) =>
       generateBookPdfWithPageMap(markdown, { ...options, imageStorageDir, imageSource: "local" }));
   }
-  const plan = options.pageMapPlan;
+  const story = options.pageMapPlan ? separateStoryPagesForPdf(markdown, options.pageMapPlan) : undefined;
+  const plan = story?.plan;
+  const separate = plan?.storyPageLayout === "separate";
   // Markers first: the anchor offsets name positions in the *compiled*
   // markdown, which the image rewrite below would shift.
-  const marked = plan ? injectBookPageAnchorMarkers(markdown, plan) : markdown;
+  const marked = plan ? injectBookPageAnchorMarkers(story!.markdown, plan) : markdown;
   const prepared = await prepareMarkdownForPdfDocument(marked, {
     imageStorageDir: options.imageStorageDir,
     publicApiUrl: options.publicApiUrl,
@@ -220,10 +223,12 @@ export async function generateBookPdfWithPageMap(
       ? join(options.imageStorageDir, options.projectId)
       : options.imageStorageDir
   };
-  const fitted = await fitBookPdfPageCount(options.targetPageCount, async (adjustment) => {
+  // A picture book's target counts story sheets. Frontmatter is additional;
+  // compressing the complete PDF toward that number cannot remove scene breaks.
+  const fitted = await fitBookPdfPageCount(separate ? undefined : options.targetPageCount, async (adjustment) => {
     const html = await buildBookPdfDocument({
       markdown: expanded,
-      css: `${fontCss}\n${bookPdfPaginationCss(bookPdfCss(profile), profile, adjustment)}`,
+      css: `${fontCss}\n${bookPdfPaginationCss(bookPdfCss(profile), profile, adjustment)}${separate ? STORY_PAGE_PDF_CSS : ""}`,
       profile,
       ...(nav !== undefined ? { pageAnchorNav: nav } : {})
     });

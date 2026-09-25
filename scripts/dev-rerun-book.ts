@@ -32,6 +32,8 @@ import { join } from "node:path";
 import { Prisma, prisma } from "../packages/db/src/index.ts";
 import { bookQueue, dispatchGenerationJob, enqueueGenerationJob, redisConnection } from "../apps/api/src/queue.ts";
 import { scorecardFor } from "./structural-scorecard.ts";
+import { capturePublishedArtifacts, classifyGenerationCompletion } from "./generation-acceptance.mjs";
+import { objectStore } from "../packages/storage/src/index.ts";
 
 type Args = {
   command: "run" | "resume" | "retry" | "export";
@@ -157,7 +159,11 @@ async function waitForJobs(projectId: string, types: string[], timeoutMs: number
       lastLine = line;
     }
     const terminal = jobs.length > 0 && jobs.every((job) => ["COMPLETED", "FAILED", "CANCELED"].includes(job.status));
-    if (terminal) return;
+    if (terminal) {
+      const failed = jobs.find((job) => job.status === "FAILED" || job.status === "CANCELED");
+      if (failed) throw new Error(`${failed.type} ${failed.status}`);
+      return;
+    }
     await sleep(15_000);
   }
   throw new Error(`Timed out waiting for ${types.join(",")} on ${projectId}`);
@@ -226,13 +232,9 @@ async function waitForBook(projectId: string, timeoutMs: number): Promise<void> 
       log(line);
       lastLine = line;
     }
-    // The newest row of each type: a retried book leaves its FAILED row behind.
-    const compile = jobs.findLast((job) => job.type === "COMPILE_EXPORT");
-    const book = jobs.findLast((job) => job.type === "GENERATE_BOOK");
-    if (book?.status === "FAILED" || book?.status === "CANCELED") throw new Error(`GENERATE_BOOK ${book.status}`);
-    if (compile && ["COMPLETED", "FAILED", "CANCELED"].includes(compile.status) && project && ["COMPLETE", "REVIEW_REQUIRED", "FAILED"].includes(project.status)) {
-      return;
-    }
+    const completion = classifyGenerationCompletion(project, jobs);
+    if (completion.state === "failed") throw new Error(completion.reason);
+    if (completion.state === "published") return;
     await sleep(20_000);
   }
   throw new Error(`Timed out waiting for the book on ${projectId}`);
@@ -240,7 +242,7 @@ async function waitForBook(projectId: string, timeoutMs: number): Promise<void> 
 
 type RunLogEvent = { event?: string; callId?: string; request?: { purpose?: string; messages?: Array<{ role: string; content: string }> }; result?: { text?: string; data?: unknown; usage?: Record<string, number> }; error?: unknown; timestamp?: string };
 
-async function readRunLog(projectId: string, suffix: string): Promise<RunLogEvent[]> {
+async function readRunLog(projectId: string, suffix: string, warnings: string[]): Promise<RunLogEvent[]> {
   try {
     const logs = (await listRunLogs(projectId)).filter(({ key }) => key.endsWith(`-${suffix}.jsonl`));
     const text = (await Promise.all(logs.map(({ key }) => readStoredRunLog(key)))).join("\n");
@@ -255,7 +257,8 @@ async function readRunLog(projectId: string, suffix: string): Promise<RunLogEven
         }
       })
       .filter((event): event is RunLogEvent => event !== null);
-  } catch {
+  } catch (error) {
+    warnings.push(`Run-log capture failed: ${error instanceof Error ? error.message : String(error)}`);
     return [];
   }
 }
@@ -295,7 +298,8 @@ async function exportRun(projectId: string, label: string, outDir: string, basel
   // The trace.
   const planning = (plan?.planningPackage ?? {}) as Record<string, unknown>;
   const stance = planning.authorStance as { thesis?: string; positions?: string[]; refusals?: string[]; voiceSample?: string } | undefined;
-  const bookLog = await readRunLog(projectId, "generate-book");
+  const captureWarnings: string[] = [];
+  const bookLog = await readRunLog(projectId, "generate-book", captureWarnings);
   const requests = new Map<string, RunLogEvent["request"]>();
   const traceCalls: Array<Record<string, unknown>> = [];
   let readVerdict: unknown;
@@ -352,6 +356,7 @@ async function exportRun(projectId: string, label: string, outDir: string, basel
   const trace = {
     projectId,
     label,
+    captureWarnings,
     status: project.status,
     targetPages: project.targetPages,
     pages: pages.length,
@@ -421,12 +426,31 @@ async function exportRun(projectId: string, label: string, outDir: string, basel
   ].join("\n");
   writeFileSync(join(dir, "scorecard.txt"), table);
   console.log(table);
-  log(`exported to ${dir}`);
+  log(`diagnostics captured in ${dir}`);
+  const jobs = await prisma.generationJob.findMany({ where: { projectId }, orderBy: { createdAt: "asc" } });
+  const completion = classifyGenerationCompletion(project, jobs);
+  const outcome: Record<string, unknown> = { capturedAt: new Date().toISOString(), projectId, completion, captureWarnings };
+  try {
+    if (completion.state !== "published") throw new Error(completion.reason ?? "Book publication has not finished");
+    outcome.artifacts = await capturePublishedArtifacts({
+      project, pages, qualityReport: compile?.qualityReport, outputDir: dir, getObject: (key: string) => objectStore().get(key)
+    });
+    outcome.state = completion.reviewRecommended ? "published_for_review" : "published";
+  } catch (error) {
+    outcome.state = "failed";
+    outcome.error = error instanceof Error ? error.message : String(error);
+    throw error;
+  } finally {
+    writeFileSync(join(dir, "outcome.json"), JSON.stringify(outcome, null, 2));
+  }
+  log(`verified PDF, EPUB and DOCX publication in ${dir}`);
 }
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   let projectId = args.project;
+  let generationError: unknown;
+  try {
   if (args.command === "run") {
     if (!args.source) throw new Error("--source is required for run");
     const overrides: MediaOverrides = { tier: args.tier, cover: args.cover };
@@ -472,8 +496,19 @@ async function main(): Promise<void> {
     if (!approved) await approveLatestPlan(projectId);
     await waitForBook(projectId, 120 * 60_000);
   }
+  } catch (error) {
+    // Capturing diagnostics is independent of generation success. A failed
+    // compile must remain a nonzero command even when its manuscript exists.
+    generationError = error;
+  }
   if (!projectId) throw new Error("--project is required for export");
-  await exportRun(projectId, args.label, args.outDir, args.baselines);
+  try {
+    await exportRun(projectId, args.label, args.outDir, args.baselines);
+  } catch (error) {
+    if (!generationError) throw error;
+    log(`capture: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (generationError) throw generationError;
 }
 
 main()
