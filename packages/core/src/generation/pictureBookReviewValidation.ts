@@ -4,6 +4,12 @@ import type { PriorPageContext } from "./pagesShared.js";
 import { storyExtractResultSchema, type StoryExtractResult } from "./storyState.js";
 import { pageStyleAuditSchema, type PageStyleAudit } from "./styleAuditor.js";
 import { pageGetsInteriorIllustration } from "./illustrationSlots.js";
+import type { PictureBookRepairContext } from "./pictureBookRepair.js";
+
+export const pictureBookRepairAssessmentSchema = z.strictObject({
+  targetResolved: z.boolean(), meaningPreserved: z.boolean(), noNewRegressions: z.boolean(),
+  reason: z.string().trim().min(1).max(700)
+});
 
 export type PictureBookReviewChecks = { pageModelReview: boolean; storyExtractAudit: boolean; styleAuditor: boolean };
 export type PictureBookPageReview = {
@@ -13,6 +19,9 @@ export type PictureBookPageReview = {
   storyExtract: StoryExtractResult | null;
   styleAudit: PageStyleAudit | null;
   completedChecks: PictureBookReviewChecks;
+  /** Optional only for old checkpoints and reviews outside sentence repair. */
+  findings?: z.infer<typeof findingSchema>[];
+  repairAssessment?: z.infer<typeof pictureBookRepairAssessmentSchema>;
 };
 const findingSchema = z.strictObject({
   domain: z.enum(["prose", "deferred_media"]),
@@ -49,19 +58,27 @@ function canonicalExtract(extract: z.infer<typeof compactExtractSchema>): StoryE
 export const pictureBookReviewRowSchema = z.strictObject({
   pageIndex: z.number().int().positive(), score: z.number().int().min(0).max(100),
   findings: z.array(findingSchema).max(8),
-  storyExtract: z.union([z.literal("no_changes"), compactExtractSchema]).nullable(),
+  repairAssessment: pictureBookRepairAssessmentSchema.optional(),
+  storyExtract: z.union([z.literal("no_changes"), z.literal("reuse"), compactExtractSchema]).nullable(),
   styleAudit: z.union([z.literal("clean"), pageStyleAuditSchema.extend({ styleOk: z.boolean(), styleIssues: z.array(z.string()) })]).nullable()
 });
-export const pictureBookReviewResponseSchema = z.strictObject({ pages: z.array(pictureBookReviewRowSchema).min(1).max(40) });
+export const pictureBookReviewResponseSchema = z.strictObject({ pages: z.array(pictureBookReviewRowSchema.omit({ repairAssessment: true })).min(1).max(40) });
+export const pictureBookSentenceRepairReviewResponseSchema = z.strictObject({ pages: z.array(pictureBookReviewRowSchema).min(1).max(40) });
 
 
 export function validatedPictureBookReviewRow(options: {
   input: CreateProjectInput; checks: PictureBookReviewChecks; pages: ReadonlyMap<number, PriorPageContext>;
+  repairContext?: PictureBookRepairContext;
+  reusableStoryExtracts?: ReadonlyMap<number, StoryExtractResult>;
 }) {
   return pictureBookReviewRowSchema.superRefine((review, context) => {
     const fail = (message: string) => context.addIssue({ code: "custom", message });
     const page = options.pages.get(review.pageIndex);
     if (!page) { fail("Invented page index."); return; }
+    if (review.storyExtract === "reuse" && !options.reusableStoryExtracts?.has(review.pageIndex))
+      fail("storyExtract=reuse requires a verified unchanged chronological prefix for this page.");
+    if (options.repairContext?.sentenceOnly && options.repairContext.changes.some((change) => change.pageIndex === review.pageIndex) && !review.repairAssessment)
+      fail("Every changed sentence-repair page needs an explicit repairAssessment against its original prose and all downstream dependencies.");
     if (options.checks.storyExtractAudit !== (review.storyExtract !== null) || options.checks.styleAuditor !== (review.styleAudit !== null))
       fail("Enabled checks require results; disabled checks must be null.");
     if (!options.checks.pageModelReview && review.findings.length) fail("Page model review is disabled; return no page findings.");
@@ -77,12 +94,14 @@ export function validatedPictureBookReviewRow(options: {
   });
 }
 
-export function pictureBookPageReview(review: z.infer<typeof pictureBookReviewRowSchema>, page: PriorPageContext, checks: PictureBookReviewChecks, brief: string): PictureBookPageReview {
+export function pictureBookPageReview(review: z.infer<typeof pictureBookReviewRowSchema>, page: PriorPageContext, checks: PictureBookReviewChecks, brief: string, reusedExtract?: StoryExtractResult): PictureBookPageReview {
     const proseFindings = review.findings.filter((finding) => finding.domain === "prose");
     const deferred = review.findings.filter((finding) => finding.domain === "deferred_media");
     const categories = new Set(proseFindings.map((finding) => finding.category));
     return {
       pageIndex: review.pageIndex, draftMarkdown: page.markdown,
+      findings: review.findings,
+      ...(review.repairAssessment ? { repairAssessment: review.repairAssessment } : {}),
       report: {
         approved: proseFindings.length === 0, score: review.score, issues: proseFindings.map((finding) => [finding.message,
           `Evidence on page ${review.pageIndex}: “${finding.quote}”`,
@@ -96,7 +115,8 @@ export function pictureBookPageReview(review: z.infer<typeof pictureBookReviewRo
           repetitionOk: !categories.has("repetition"), progressionOk: !["progression", "continuity", "brief", "arc", "plot"].some((category) => categories.has(category as z.infer<typeof findingSchema>["category"])),
           styleNatural: !categories.has("style") }
       },
-      storyExtract: review.storyExtract === null ? null : review.storyExtract === "no_changes" ? storyExtractResultSchema.parse({ storyDelta: {} }) : canonicalExtract(review.storyExtract),
+      storyExtract: review.storyExtract === null ? null : review.storyExtract === "reuse" ? storyExtractResultSchema.parse(reusedExtract)
+        : review.storyExtract === "no_changes" ? storyExtractResultSchema.parse({ storyDelta: {} }) : canonicalExtract(review.storyExtract),
       styleAudit: review.styleAudit === null ? null : pageStyleAuditSchema.parse(review.styleAudit === "clean" ? { styleOk: true, styleIssues: [] } : review.styleAudit), completedChecks: { ...checks }
     };
 }

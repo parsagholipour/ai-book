@@ -204,3 +204,5 @@ export * from "./generation/pictureBookReview.js";
 export * from "./generation/pictureBookRepair.js";
 
 export { sentenceLengthRepairFor, type SentenceLengthRepair } from "./generation/pageSentenceRepair.js";
+
+export { runLocalFinalQa, runRequiredFinalQa } from "./generation/pagesFinalLocalQa.js";

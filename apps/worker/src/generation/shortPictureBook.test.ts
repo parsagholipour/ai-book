@@ -137,7 +137,7 @@ it("resumes one targeted request from a settled partial checkpoint and reuses it
   expect(generateJson).toHaveBeenCalledTimes(2);
   const target = JSON.parse(generateJson.mock.calls[1]![0].messages.find((message) => message.role === "user")!.content);
   expect(target.reviewPageIndexes).toEqual([18]);
-  expect(target.pages).toEqual(captured.pages);
+  expect(target.pages).toEqual(request.pages.map(({ index, title, markdown }: { index: number; title: string; markdown: string }) => ({ index, title, markdown })));
 });
 
 it("does not reuse an allowance after a crash during a reserved provider call", async () => {

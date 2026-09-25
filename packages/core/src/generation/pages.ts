@@ -1,3 +1,4 @@
+import { writerArtworkContext } from "./writerArtworkContext.js";
 import { PICTURE_BOOK_STORY_OBLIGATIONS, usesCompactPictureBookPlanning } from "./compactPictureBookPlanning.js";
 import { z } from "zod";
 import type { ImageAdapter, ImageCopyrightRewrite, ImageFallbackMetadata, TextModelAdapter } from "../adapters/types.js";
@@ -275,6 +276,7 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
           "Write the complete Markdown book in one pass as a human author would.",
           ...(usesCompactPictureBookPlanning(options.input) ? [
             ...PICTURE_BOOK_STORY_OBLIGATIONS,
+            "Enact the arc and prop-state contracts in continuityRules through scenes. The page map's endingPressure is an author note, not text to copy or paraphrase into a narrator question. Let the scene's action, discovery or consequence carry the turn; avoid a recurring narrator question used only to announce the next page. Preserve intentional dialogue, refrains and quiet closure.",
             "For every imagePrompt, spell out the exact visible characters and their positions, current visible prop count and ownership, and time of day from that page's prose. Ground spatial relationships in the prose, including whether each character is on a bank, in water, inside, or outside. Exclude items recovered only on later pages; do not invent a transfer, arrival, departure or time change in the illustration prompt."
           ] : []),
           "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages.",
@@ -321,7 +323,7 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
               : undefined,
             ...opening.payload,
             ...citation.payload,
-            illustrationPlan: options.plan.illustrationPlan,
+            ...writerArtworkContext(options.input, options.plan),
             pageGuidance: {
               targetWordsPerPage: targetWordsPerPage(options.input),
               instruction: options.chapterBriefs
@@ -394,7 +396,7 @@ export async function generateChapterDraft(options: GenerateChapterDraftOptions)
             chapterBrief: sanitizedChapterBriefForCitation(options.chapterBrief, options.researchNotes.slice(0, 18)),
             ...opening.payload,
             characters: options.plan.characters,
-            illustrationPlan: options.plan.illustrationPlan,
+            ...writerArtworkContext(options.input, options.plan),
             pageRange: {
               start: options.chapterPageStart,
               end: options.chapterPageEnd
@@ -473,7 +475,7 @@ export async function generateBatchDraft(options: GenerateBatchDraftOptions): Pr
               globalPageIndexes: expectedPages
             },
             characters: options.plan.characters,
-            illustrationPlan: options.plan.illustrationPlan,
+            ...writerArtworkContext(options.input, options.plan),
             pageMap: pageMapForRange(options.chapterBriefs, options.pageStart, options.pageEnd).map((page) =>
               sanitizePageBriefForCitationContract(page, options.researchNotes.slice(0, 18))
             ),
@@ -578,7 +580,7 @@ export async function polishPageDraft(options: PolishPageOptions): Promise<PageD
               : options.pageBrief,
             ...pageInstruction.payload,
             characters: options.plan.characters,
-            illustrationPlan: options.plan.illustrationPlan,
+            ...writerArtworkContext(options.input, options.plan),
             draft: options.draft,
             previousPages: compactPriorPages(options.previousPages, 4, 800),
             nextPages: compactPriorPages(options.nextPages, 3, 800),

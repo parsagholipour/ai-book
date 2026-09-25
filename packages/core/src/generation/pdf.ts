@@ -315,7 +315,8 @@ function measureBookPageMap(
     anchors: plan.pageAnchors,
     hasCoverPage: plan.hasCoverPage,
     extracted,
-    topMarginPt
+    topMarginPt,
+    separateStoryPages: plan.storyPageLayout === "separate"
   });
   if (!map) {
     return undefined;

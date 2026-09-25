@@ -28,7 +28,7 @@ it("preserves Balanced's 29 valid captured verdicts and rechecks only page 18 wi
   expect(generateJson).toHaveBeenCalledTimes(2);
   const request = JSON.parse(generateJson.mock.calls[1]![0].messages.find((message) => message.role === "user")!.content);
   expect(request.reviewPageIndexes).toEqual([18]);
-  expect(request.pages).toEqual(fixture.pages);
+  expect(request.pages).toEqual(options.pages.map(({ index, title, markdown }) => ({ index, title, markdown })));
   expect(result[17]!.report.approved).toBe(true);
   expect(result[0]!.report.score).toBe(fixture.response.pages[0].score);
 });

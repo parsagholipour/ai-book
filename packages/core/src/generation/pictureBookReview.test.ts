@@ -21,6 +21,7 @@ const setup = (answer: unknown = response()) => {
 describe("complete picture-book review", () => {
   it("uses one configured reviewer call for thirty pages and every enabled check", async () => {
     const { options, generateJson } = setup();
+    options.plan.continuityRules = ["Turtle initially refuses the short route; tests Rabbit's idea at the fork; later trusts Rabbit to lead."];
     const result = await reviewPictureBookManuscript(options);
     expect(generateJson).toHaveBeenCalledTimes(1);
     expect(generateJson.mock.calls[0]![0]).toMatchObject({ purpose: "review-page", maxTokens: 24_000 });
@@ -32,6 +33,10 @@ describe("complete picture-book review", () => {
     expect(prompt).toContain(pages[29]!.markdown);
     expect(prompt).toContain("not facts about later chronology");
     expect(prompt).toContain("each named protagonist's distinct requested growth");
+    expect(prompt).toContain("Before assigning page verdicts");
+    expect(prompt).toContain("already helpful mentor");
+    expect(prompt).toContain("removing a repeated scene");
+    expect(JSON.parse(generateJson.mock.calls[0]![0].messages.find((message) => message.role === "user")!.content).book.continuityRules).toEqual(options.plan.continuityRules);
   });
 
   it("accepts explicit compact clean checks without permitting omitted checks", async () => {
@@ -42,6 +47,52 @@ describe("complete picture-book review", () => {
     expect(result.every((page) => page.storyExtract?.contradictions.length === 0 && page.styleAudit?.styleOk)).toBe(true);
     expect(JSON.stringify(answer).length).toBeLessThan(3_500);
     expect(generateJson.mock.calls[0]![0].messages[0]!.content).toContain("never retell or quote clean prose");
+  });
+
+  it("leaves editorial judgment with the contextual reviewer when questions recur", async () => {
+    const { options, generateJson } = setup();
+    options.pages = pages.map((page) => ({ ...page, markdown: `${page.markdown} “Which way now?”` }));
+    const result = await reviewPictureBookManuscript(options);
+    expect(result.every((page) => page.report.approved)).toBe(true);
+    expect(generateJson).toHaveBeenCalledTimes(1);
+    expect(generateJson.mock.calls[0]![0].messages[0]!.content).toContain("not defects by frequency alone");
+    const payload = JSON.parse(generateJson.mock.calls[0]![0].messages.find((message) => message.role === "user")!.content);
+    expect(payload.pageTurnSignals.questionEndingPageIndexes).toEqual(pages.map((page) => page.index));
+  });
+
+  it("points to question endings across writing systems without treating interior questions as endings", async () => {
+    const { options, generateJson } = setup();
+    const endings = ["Where next?", "«کجا؟»", "「どこ？」", "**Which way?**", "Where now? Rabbit chose the bridge."];
+    options.pages = pages.map((page, i) => ({ ...page, markdown: endings[i] ?? page.markdown }));
+    await reviewPictureBookManuscript(options);
+    const payload = JSON.parse(generateJson.mock.calls[0]![0].messages.find((message) => message.role === "user")!.content);
+    expect(payload.pageTurnSignals.questionEndingPageIndexes).toEqual([1, 2, 3, 4]);
+  });
+
+  it("does not add the development review or plan contracts when only story extraction is enabled", async () => {
+    const answer = response();
+    for (const page of answer.pages) Object.assign(page, { styleAudit: null });
+    const { options, generateJson } = setup(answer);
+    options.checks = { pageModelReview: false, storyExtractAudit: true, styleAuditor: false };
+    options.plan.continuityRules = ["A proposed character arc."];
+    await reviewPictureBookManuscript(options);
+    const request = generateJson.mock.calls[0]![0];
+    expect(request.purpose).toBe("extract-story-state");
+    expect(request.messages[0]!.content).not.toContain("Before assigning page verdicts");
+    expect(JSON.parse(request.messages.find((message) => message.role === "user")!.content).book).not.toHaveProperty("continuityRules");
+    expect(JSON.parse(request.messages.find((message) => message.role === "user")!.content)).not.toHaveProperty("pageTurnSignals");
+  });
+
+  it("rejects a cached generic approval as proof of sentence-repair meaning preservation", async () => {
+    const { options, generateJson } = setup();
+    const reviews = await reviewPictureBookManuscript(options);
+    generateJson.mockClear();
+    await expect(reviewPictureBookManuscript({ ...options,
+      repairContext: { sentenceOnly: true, issues: [], changes: [{ pageIndex: 1, originalMarkdown: "An earlier sentence.", reason: "Split a sentence." }] },
+      resume: { version: 2, reviews, unresolvedPageIndexes: [], validationIssues: [], protocolIssues: [],
+        roundsStarted: 1, attemptsUsed: 1, outputWidened: false }
+    })).rejects.toThrow("does not match");
+    expect(generateJson).not.toHaveBeenCalled();
   });
 
   it("normalizes Premium's misplaced unansweredResolved without retrying thirty reviews", async () => {

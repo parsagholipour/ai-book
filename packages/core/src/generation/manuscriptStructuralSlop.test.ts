@@ -26,6 +26,43 @@ describe("whole-book structural slop warnings", () => {
     expect(codes(pages)).not.toContain("REPEATED_ANALYTICAL_GRID");
   });
 
+  it("does not classify the captured Lantern Path route as an analytical grid", () => {
+    // Premium's 30-page text-only run, 2026-09-25: these three route lists
+    // were labelled as analytical fields (arch, bend, bridge, gate, meadow, rise).
+    const routePages = new Map([
+      [2, "Rabbit caught the lantern just before the brambles. He hung it back on Stump Gate’s hook. “I can fix any trouble fast!” he said. Wise Turtle smiled. “Let’s check each light with care: Stump Gate, Fern Bend, Brook Bridge, Pine Rise, Root Arch, and Meadow Gate.” A low rumble rolled through the trees."],
+      [17, "Together they traced the route: Stump Gate, Fern Bend, Brook Bridge, Pine Rise, Root Arch, Meadow Gate. The names helped them see the trouble. Fern Bend had a light, but Brook Bridge had none. Pine Rise held two. Wise Turtle pointed to the doubled glow, then to the dark place beyond it."],
+      [22, "From Meadow Gate, they checked the route in order. Stump Gate, Fern Bend, Brook Bridge, Pine Rise, Root Arch, Meadow Gate. Each station held one lantern. No spot held two, and none was dark. Willow Roots, Brook Bank, and Fern Hollow had been places to find lanterns, not stations. The six lights made one repaired route."]
+    ]);
+    const pages = manuscript(30, (index) => routePages.get(index) ?? `A separate scene advances the journey on page ${index}.`);
+
+    const findings = codes(pages);
+    expect(findings).not.toContain("REPEATED_ANALYTICAL_GRID");
+    expect(findings).not.toContain("FRAMEWORK_SATURATION");
+  });
+
+  it.each([
+    "The basket held bread, berries, apples, cheese, carrots, and honey.",
+    "They evaluated the plan. The path passed the oak, stream, meadow, bridge, orchard, and gate.",
+    "Bread, berries, apples, cheese, carrots, and honey filled the basket they would compare later."
+  ])("does not infer analytical fields from an ordinary inventory: %s", (inventory) => {
+    const pages = manuscript(20, (index) => [2, 7, 12, 17].includes(index) ? inventory : `A separate event on page ${index}.`);
+
+    expect(codes(pages)).not.toContain("REPEATED_ANALYTICAL_GRID");
+  });
+
+  it.each([
+    "Compare latency, throughput, cost, reliability, memory, and complexity.",
+    "The evaluation dimensions are latency, throughput, cost, reliability, memory, and complexity.",
+    "The fields are latency, throughput, cost, reliability, memory, and complexity."
+  ])("retains recurring analytical lists with explicit context: %s", (grid) => {
+    const pages = manuscript(20, (index) => [2, 7, 12, 17].includes(index) ? grid : `A separate event on page ${index}.`);
+    const finding = runDeterministicManuscriptChecks({ pages, expectedPageCount: pages.length })
+      .find((issue) => issue.code === "REPEATED_ANALYTICAL_GRID");
+
+    expect(finding?.affectedPageIndexes).toEqual([2, 7, 12, 17]);
+  });
+
   it("flags checklist saturation across the manuscript", () => {
     const pages = manuscript(20, (index) =>
       [2, 4, 7, 9, 12, 14, 17, 19].includes(index)

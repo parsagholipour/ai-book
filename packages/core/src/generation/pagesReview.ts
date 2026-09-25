@@ -1,3 +1,4 @@
+import { writerArtworkContext } from "./writerArtworkContext.js";
 import { reviseSentenceLength, sentenceLengthRepairFor, type SentenceLengthRepair } from "./pageSentenceRepair.js";
 import { buildPageReviewPrompt } from "./pageReviewPrompt.js";
 import type { GenerateJsonOptions, TextModelAdapter } from "../adapters/types.js";
@@ -416,7 +417,7 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
             pageScope: pageScopePayload(options),
             pageIndex: options.pageIndex,
             characters: options.plan.characters,
-            illustrationPlan: options.plan.illustrationPlan,
+            ...writerArtworkContext(options.input, options.plan),
             rejectedDraft: options.draft,
             qualityReport: options.report,
             previousPages: compactPriorPages(options.previousPages, 4, 700),

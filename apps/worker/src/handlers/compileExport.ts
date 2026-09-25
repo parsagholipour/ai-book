@@ -2,6 +2,7 @@ import { chapterTransitionRepairIssues } from "../generation/chapterTransitionRe
 import { qualityIssuesFromFinalQa } from "../generation/exportQualityReview.js";
 import { pageQualityAdvisoryIssues } from "../generation/pageQualityAdvisories.js";
 import { unresolvedPageQualityIssues } from "../generation/unresolvedPageQuality.js";
+import { finalRepairQualityIssues } from "./compileRepairOutcome.js";
 import { loadPagesForExport, strategyForInput } from "../generation/bookHelpers.js";
 import { extractRepairPageIndexes, lastPageIndex } from "../generation/finalQaPageTargets.js";
 import {
@@ -258,7 +259,8 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   if (runFinalReview) {
     await advanceJobStep(generationJobId, "qa", 25);
     const reviewManuscript = () => reviewFinalizationManuscript({ input, plan, pages, strategy,
-      textModel: providers.text, projectId, researchNotes: citeableResearchNotes, skipLocalChecks: !quality.enabled("pageLocalQa") });
+      textModel: providers.text, projectId, researchNotes: citeableResearchNotes, skipLocalChecks: !quality.enabled("pageLocalQa"),
+      shortBookReview: { generationJobId, planId, quality } });
     let finalQa: FinalBookQa;
     const review = await finalization!.review("initial", pages, reviewManuscript);
     modelQualityIssues = review.issues;
@@ -295,7 +297,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
           onRepairGroupStarted: (targets) => finalization!.claimPages(targets),
           onRepairGroupPublished: (client, snapshot) => finalization!.finishRepairInTransaction(client, snapshot),
           onRepairPageCompleted: (id) => finalization!.completePage(id),
-          onRepairPageUnavailable: (id) => finalization!.unavailablePage(id),
+          onRepairPageUnavailable: (id, pageIndex, error) => finalization!.unavailablePage(id, pageIndex, error),
           deferIllustrations: queuedContentRevision !== null,
           researchNotes: citeableResearchNotes,
           extraPageIndexes: [
@@ -549,13 +551,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   const storyState =
     (await rebuildProjectStoryState(projectId, plan.promises ?? [])) ??
     (await rebuildStoryStateFromPages(projectId, plan.promises ?? []));
-  const unavailableRepairIds = finalization?.state.unavailableRepairPageIds ?? [];
-  if (unavailableRepairIds.length > 0) modelQualityIssues.push({
-    code: "FINAL_QA_REPAIR_UNAVAILABLE", source: "deterministic", severity: "warning",
-    message: "Automatic repair could not complete after its bounded provider attempts; the saved pages were retained.",
-    guidance: "Review these pages or request another repair.",
-    affectedPageIndexes: pages.filter((page) => unavailableRepairIds.includes(page.id)).map((page) => page.index)
-  });
+  modelQualityIssues.push(...finalRepairQualityIssues(finalization?.state, pages));
   const interruptedRepairIds = finalization?.state.startedPageIds.filter((id) => !finalization.state.completedPageIds.includes(id)) ?? [];
   if (interruptedRepairIds.length > 0) modelQualityIssues.push({
     code: "FINAL_QA_REPAIR_INTERRUPTED", source: "deterministic", severity: "warning",

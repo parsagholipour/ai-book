@@ -2,13 +2,20 @@ import { isStopOrAbortError, type BookGenerationStrategy, type BookPlan, type Cr
 import { toFinalQaPage } from "../generation/bookHelpers.js";
 import type { ExportPageForRepair } from "../runtime/jobTypes.js";
 import { runBoundedChapterQualityReview } from "./compileExportChapterReview.js";
+import { reuseShortPictureBookFinalReview } from "../generation/shortPictureBookFinalReview.js";
+import type { QualityGateContext } from "../generation/qualityEnrichment.js";
 
 /** Both verdicts read exactly the same manuscript, before or after its one repair pass. */
 export async function reviewFinalizationManuscript(options: {
   input: CreateProjectInput; plan: BookPlan; pages: ExportPageForRepair[];
   strategy: BookGenerationStrategy; textModel: TextModelAdapter; projectId: string;
   researchNotes: string[]; skipLocalChecks: boolean;
+  shortBookReview?: { generationJobId?: string | undefined; planId?: string | undefined; quality: QualityGateContext };
 }) {
+  if (options.shortBookReview) {
+    const finalQa = await reuseShortPictureBookFinalReview(options, options.shortBookReview);
+    if (finalQa) return { issues: [] as ManuscriptQualityIssue[], finalQa };
+  }
   const results = await Promise.allSettled([
     runBoundedChapterQualityReview(options),
     options.strategy.runFinalBookQa({

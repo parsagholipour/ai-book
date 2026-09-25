@@ -9,7 +9,7 @@ import { isStopRequestedError } from "../runtime/jobTypes.js";
 export type StoredManuscriptCoverage = { fingerprint: string; review: ManuscriptCoverage };
 
 export function manuscriptCoverageFingerprint(brief: string, promises: readonly string[], pages: readonly CoveragePage[], chapters?: readonly CoverageChapter[], evidenceContext?: CoverageEvidenceContext): string {
-  return createHash("sha256").update(JSON.stringify({ version: 5, brief, promises, evidenceContext: evidenceContext ?? null, chapters: chapters === undefined ? null : [...chapters]
+  return createHash("sha256").update(JSON.stringify({ version: 6, brief, promises, evidenceContext: evidenceContext ?? null, chapters: chapters === undefined ? null : [...chapters]
     .sort((a, b) => a.index - b.index).map(({ index, title, startPageIndex, endPageIndex }) => ({ index, title, startPageIndex, endPageIndex })), pages: [...pages]
     .sort((a, b) => a.index - b.index).map(({ index, markdown }) => ({ index, markdown })) })).digest("hex");
 }

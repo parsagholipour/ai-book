@@ -4,13 +4,14 @@ import { scriptedDevelopmentModel } from "./testing/bookDevelopmentFixtures.js";
 
 const brief = "Keep the path problem gentle and understandable.";
 const quote = "A shallow dip cuts across the slope ahead.";
-async function review(pages: { index: number; markdown: string }[], evidence = [{ pageIndex: 14, quote }]) {
+async function review(pages: { index: number; markdown: string }[], evidence = [{ pageIndex: 14, quote }], correctionAttempt = false) {
   const { model, calls } = scriptedDevelopmentModel([
     { complete: true, requirements: [{ text: brief, quote: brief, kind: "content" }] },
-    { complete: true, requirements: [{ id: "brief-1", status: "fulfilled", reason: "The path obstacle is gentle.", evidence }] }
+    { complete: true, requirements: [{ id: "brief-1", status: "fulfilled", reason: "The path obstacle is gentle.", evidence }] },
+    ...(correctionAttempt ? [{ corrections: [{ id: "citation-1", supportsSameClaim: false, quote: null }] }] : [])
   ]);
   const result = await reviewManuscriptCoverage({ brief, promises: [], pages, textModel: model });
-  expect(calls).toHaveLength(2);
+  expect(calls).toHaveLength(correctionAttempt ? 3 : 2);
   return result;
 }
 
@@ -43,13 +44,13 @@ it.each([
 });
 
 it("does not discard a fabricated citation just because another one is valid", async () => {
-  const result = await review([{ index: 14, markdown: quote }], [{ pageIndex: 14, quote }, { pageIndex: 14, quote: "A fabricated sentence about solving the problem." }]);
+  const result = await review([{ index: 14, markdown: quote }], [{ pageIndex: 14, quote }, { pageIndex: 14, quote: "A fabricated sentence about solving the problem." }], true);
   expect(result.status).toBe("incomplete");
 });
 
-it("does not repair altered words, interior punctuation or a quote reduced below the evidence minimum", async () => {
+it("does not accept altered words or punctuation without an approved exact correction, or tiny quotes", async () => {
   for (const invented of [quote.replace("shallow", "tiny"), `“${quote.replace(".", "!")}”`, "“A dip.”"]) {
-    const result = await review([{ index: 14, markdown: `${quote} A dip.` }], [{ pageIndex: 14, quote: invented }]);
+    const result = await review([{ index: 14, markdown: `${quote} A dip.` }], [{ pageIndex: 14, quote: invented }], invented.length >= 12);
     expect(result.status).toBe("incomplete");
   }
 });

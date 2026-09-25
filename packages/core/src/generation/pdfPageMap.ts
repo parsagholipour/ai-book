@@ -222,12 +222,15 @@ export type BuildBookPdfPageMapInput = {
    * value, so the renderer passes it rather than this module guessing it.
    */
   topMarginPt?: number | undefined;
+  /** The renderer forces each story scene and back matter onto a new sheet. */
+  separateStoryPages?: boolean | undefined;
 };
 
 /**
  * Derives per-model-page PDF ranges from the measured destinations.
  *
- * Whether the page that a model page *ends on* also belongs to the next one is
+ * Explicit separate story sheets are exclusive even when their prose starts
+ * lower down. Otherwise, whether a model page's ending sheet also belongs to the next one is
  * decided by the next anchor's y coordinate: a destination sitting in the
  * top-of-page band (the /MediaBox height minus the caller's top margin, with a
  * couple of lines' tolerance for a heading's own margin) means the previous
@@ -268,7 +271,7 @@ export function buildBookPdfPageMap(input: BuildBookPdfPageMapInput): BookPdfPag
   const lastContentPage =
     backMatter === undefined
       ? extracted.pageCount
-      : startsAtTopOfPage(backMatter.y, topOfPageY)
+      : input.separateStoryPages || startsAtTopOfPage(backMatter.y, topOfPageY)
         ? backMatter.pdfPage - 1
         : backMatter.pdfPage;
 
@@ -279,7 +282,7 @@ export function buildBookPdfPageMap(input: BuildBookPdfPageMapInput): BookPdfPag
       endPdfPage = Math.max(start.pdfPage, lastContentPage);
     } else if (next.pdfPage === start.pdfPage) {
       endPdfPage = start.pdfPage;
-    } else if (startsAtTopOfPage(next.y, topOfPageY)) {
+    } else if (input.separateStoryPages || startsAtTopOfPage(next.y, topOfPageY)) {
       endPdfPage = next.pdfPage - 1;
     } else {
       endPdfPage = next.pdfPage;

@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createProjectSchema, makeFallbackPlan, FakeTextModelAdapter, pageQualityReportSchema, type GenerateJsonOptions } from "@book-maker/core";
+import { bookPlanSchema, createProjectSchema, makeFallbackPlan, FakeTextModelAdapter, pageQualityReportSchema, pictureBookReviewFingerprint, type GenerateJsonOptions } from "@book-maker/core";
 import type { ExportPageForRepair } from "../runtime/jobTypes.js";
 import captured from "./testing/quickLanternDraft.json" with { type: "json" };
 import { repairPagesFromFinalQa } from "./compileExportRepair.js";
 import { mocks } from "./testing/compileExportMocks.js";
 import { ExportRepairSupersededError } from "./compileExportFence.js";
 import { StopRequestedError } from "../runtime/jobTypes.js";
+import premium from "./testing/premiumSentenceRepair.json" with { type: "json" };
+import { unresolvedPageQualityIssues } from "../generation/unresolvedPageQuality.js";
 
 const input = createProjectSchema.parse({ prompt: "Rabbit and Wise Turtle recover four lanterns before moonrise. Turtle starts with four matches.", category: "KIDS", targetPages: 30,
   mediaSettings: { audienceAgeRange: "6-8", modelTier: "fast", finalReview: true, fullIllustrations: false, illustrationCadence: "manual" } });
@@ -44,6 +46,7 @@ describe("coordinated final repair of the captured Quick book", () => {
       expect(mocks.prisma.page.update).not.toHaveBeenCalled();
       if (mode === "stop") throw new StopRequestedError();
       const manuscript = JSON.parse(options.messages[1]!.content).pages as Array<{ index: number; markdown: string }>;
+      const reusable = JSON.parse(options.messages[1]!.content).reusableStoryExtractPageIndexes ?? [];
       const raw = options.purpose === "revise-page" ? { pages: targets.map((pageIndex) => ({ pageIndex,
         reason: "Keep recovered lanterns unlit until the later match scene.", summary: "Rabbit carries the unlit lantern.",
         patches: [{ find: mode === "invalid" ? "A nonexistent exact span." : pages[pageIndex - 1]!.markdown,
@@ -52,7 +55,7 @@ describe("coordinated final repair of the captured Quick book", () => {
           findings: mode === "regression" && page.index === 21 ? [{ domain: "prose", basis: "cross_page", category: "continuity", requirementQuote: null,
             message: "The later match count contradicts the repaired earlier scene.", guidance: "Preserve the original lighting sequence.",
             quote: page.markdown, relatedEvidence: [{ pageIndex: 8, quote: manuscript[7]!.markdown }] }] : [],
-          storyExtract: mode === "checks" ? { storyDelta: { factsAdded: [`Scene ${page.index} occurred.`] }, contradictions: [] } : null,
+          storyExtract: mode === "checks" ? reusable.includes(page.index) ? "reuse" : { storyDelta: { factsAdded: [`Scene ${page.index} occurred.`] }, contradictions: [] } : null,
           styleAudit: mode === "checks" ? "clean" : null })) };
       return { data: options.schema.parse(raw), text: JSON.stringify(raw), provider: "test", model: "test" };
     };
@@ -149,6 +152,109 @@ describe("coordinated final repair of the captured Quick book", () => {
     expect(mocks.prisma.project.update).toHaveBeenCalledWith(expect.objectContaining({ data: {
       storyState: expect.objectContaining({ facts: expect.arrayContaining([{ pageIndex: 8, text: "Scene 8 occurred." }]) })
     } }));
+  });
+
+  it("reuses only original prefix deltas and saves the accepted complete review with publication", async () => {
+    const test = setup("checks");
+    test.options.generationJobId = "compile-g";
+    const checks = { pageModelReview: true, storyExtractAudit: true, styleAuditor: true };
+    const initial = { fingerprint: pictureBookReviewFingerprint({ input, plan, pages, checks }),
+      reviews: pages.map((page) => ({ pageIndex: page.index, draftMarkdown: page.markdown,
+        report: pageQualityReportSchema.parse({ approved: true, score: 95, issues: [], requiredRevisions: [], notes: "" }),
+        completedChecks: checks, storyExtract: { storyDelta: { factsAdded: [`Original scene ${page.index}.`] }, contradictions: [] },
+        styleAudit: { styleOk: true, styleIssues: [] } })) };
+    const job = { projectId: "project", type: "COMPILE_EXPORT", status: "ACTIVE", payload: { unrelated: true, pictureBookReview: initial } };
+    mocks.prisma.generationJob.findUnique.mockResolvedValueOnce(job).mockResolvedValueOnce(job);
+    await test.run();
+    expect(JSON.parse(test.calls[1]!.messages[1]!.content).reusableStoryExtractPageIndexes).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(saved[0]!.storyDelta).toMatchObject({ factsAdded: ["Original scene 1."] });
+    expect(saved[7]!.storyDelta).toMatchObject({ factsAdded: ["Scene 8 occurred."] });
+    expect(saved[20]!.storyDelta).toMatchObject({ factsAdded: ["Scene 21 occurred."] });
+    expect(mocks.prisma.generationJob.update).toHaveBeenCalledWith({ where: { id: "compile-g" }, data: { payload: {
+      ...job.payload, pictureBookFinalReview: expect.objectContaining({
+        fingerprint: pictureBookReviewFingerprint({ input, plan, pages: saved, checks }), reviews: expect.any(Array)
+      })
+    } } });
+  });
+
+  function setupPremium(mode: "safe" | "meaning" | "unresolved" | "missing" | "downstream" | "linked" | "metadata" | "extra-page" | "mixed" | "local" = "safe") {
+    const test = setup("checks");
+    const premiumInput = createProjectSchema.parse(premium.input);
+    saved = premium.pages.map((page) => ({ ...page, id: `p${page.index}`, imagePrompt: null,
+      status: [13, 30].includes(page.index) ? "FAILED_QA" : "COMPLETED", revision: 1, images: [], chapter: null,
+      qualityReport: pageQualityReportSchema.parse({ ...pageQualityReportSchema.parse(pages[0]!.qualityReport),
+        issues: premium.issues.find((issue) => issue.pageIndexes.length === 1 && issue.pageIndexes[0] === page.index)?.messages ?? [] }) }));
+    const original = structuredClone(saved);
+    Object.assign(test.options, { input: premiumInput, plan: bookPlanSchema.parse(premium.plan), pages: original,
+      extraPageIndexes: [13, 30], finalQa: { approved: false, score: 88, issues: [...premium.issues[0]!.messages], requiredFixes: [], notes: "" },
+      quality: { enabled: (feature: string) => ["pageModelReview", "pageLocalQa", "storyExtractAudit", "styleAuditor", "styleExcerpts"].includes(feature) } });
+    if (mode === "mixed") test.options.finalQa.issues.push("Page 13: Correct the lantern chronology.");
+    test.options.providers.text.generateJson = async <T,>(request: GenerateJsonOptions<T>) => {
+      test.calls.push(request);
+      expect(mocks.prisma.page.update).not.toHaveBeenCalled();
+      const payload = JSON.parse(request.messages[1]!.content);
+      const patch = structuredClone(premium.patch);
+      if (mode === "metadata") Object.assign(patch.pages[0]!, { summary: "Changed summary" });
+      if (mode === "extra-page") patch.pages.push({ ...patch.pages[0]!, pageIndex: 11,
+        patches: [{ find: original[10]!.markdown, replace: `${original[10]!.markdown} Turtle waited.` }] });
+      if (mode === "local") patch.pages[0]!.patches[0]!.replace = "TODO: finish the scene.";
+      if (mode === "meaning") patch.pages[1]!.patches[1]!.replace = patch.pages[1]!.patches[1]!.replace.replace("six lanterns", "seven lanterns");
+      // Captured patches/findings; the new explicit semantic comparison is a
+      // scripted response, not a claim that the historic model supplied it.
+      const data = request.purpose === "revise-page" ? patch : { pages: premium.review.pages
+        .filter((row) => payload.reviewPageIndexes.includes(row.pageIndex)).map((row) => ({ ...row,
+          findings: (mode === "linked" || mode === "downstream") && row.pageIndex === 23 ? [{ ...row.findings[0]!,
+            category: mode === "downstream" ? "continuity" : "repetition",
+            relatedEvidence: [{ pageIndex: 13, quote: payload.pages[12].markdown.slice(0, 100) }] }] : row.findings,
+          ...([13, 30].includes(row.pageIndex) && mode !== "missing" && request.messages[0]!.content.includes("repairAssessment")
+            ? { repairAssessment: { targetResolved: mode !== "unresolved", meaningPreserved: mode !== "meaning",
+              noNewRegressions: mode !== "downstream", reason: mode === "meaning" ? "The edit changes six lanterns to seven."
+                : "Compared sentence boundaries, meaning and later dependencies against the original." } } : {}) })) };
+      return { data: request.schema.parse(data), text: JSON.stringify(data), provider: "fixture", model: "fixture" };
+    };
+    return { ...test, original };
+  }
+
+  it("keeps the captured Premium sentence improvements and surfaces inherited repetition separately", async () => {
+    const test = setupPremium();
+    const { original } = test;
+    await test.run();
+    expect(saved.filter((page) => page.revision === 2).map((page) => page.index)).toEqual([13, 30]);
+    expect(saved.filter((page) => page.status === "FAILED_QA").map((page) => page.index)).toEqual([11, 23]);
+    expect(unresolvedPageQualityIssues(saved).map((issue) => issue.affectedPageIndexes)).toEqual([[11], [23]]);
+    expect(saved[10]!.markdown).toBe(original[10]!.markdown);
+    expect(saved[22]!.markdown).toBe(original[22]!.markdown);
+    expect(test.calls.map((call) => call.purpose)).toEqual(["revise-page", "review-page"]);
+    expect(test.unavailable).not.toHaveBeenCalled();
+    expect(test.options.onRepairGroupPublished).toHaveBeenCalledWith(mocks.prisma,
+      expect.arrayContaining([expect.objectContaining({ index: 11, status: "FAILED_QA" })]));
+    expect(JSON.parse(test.calls[1]!.messages[1]!.content).repairContext.sentenceOnly).toBe(true);
+  });
+
+  it.each(["meaning", "unresolved", "missing", "downstream", "linked", "metadata", "extra-page", "mixed", "local"] as const)("retains the original Premium book for %s repairs", async (mode) => {
+    const test = setupPremium(mode);
+    await test.run();
+    expect(saved).toEqual(test.original);
+    expect(mocks.prisma.page.update).not.toHaveBeenCalled();
+    expect(test.unavailable).toHaveBeenCalledTimes(2);
+    expect(test.calls.length).toBeLessThanOrEqual(3);
+    expect(mocks.revisePageDraftWithRestart).not.toHaveBeenCalled();
+    if (mode === "linked") expect(test.unavailable).toHaveBeenCalledWith("p13", 13,
+      expect.objectContaining({ failureClass: "verification_failed", affectedPageIndexes: [23] }));
+    if (mode === "meaning") expect(test.unavailable).toHaveBeenCalledWith("p13", 13,
+      expect.objectContaining({ failureClass: "semantic_regression", message: expect.stringContaining("six lanterns to seven") }));
+    if (mode === "missing") {
+      expect(test.calls).toHaveLength(3);
+      expect(JSON.parse(test.calls[2]!.messages[1]!.content).reviewPageIndexes).toEqual([13, 30]);
+    }
+    if (["metadata", "extra-page", "local"].includes(mode)) expect(test.calls).toHaveLength(1);
+  });
+
+  it("rolls back inherited findings together with the Premium edits if the checkpoint fails", async () => {
+    const test = setupPremium();
+    test.options.onRepairGroupPublished = async () => { throw new Error("Checkpoint write failed"); };
+    await expect(test.run()).rejects.toThrow("Checkpoint write failed");
+    expect(saved).toEqual(test.original);
   });
 });
 vi.mock("./compileFinalization.js", async () => (await import("./testing/compileExportMocks.js")).compileFinalizationModuleMock());

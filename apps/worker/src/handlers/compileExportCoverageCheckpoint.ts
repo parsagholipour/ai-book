@@ -13,7 +13,7 @@ const unavailableInventory = (brief: string): ManuscriptRequirementInventory => 
   requirements: [], unavailableReason: "Brief inventory was interrupted before its evidence could be saved." });
 
 export function prepareFinalizationCoverageInventory(operation: Operation, brief: string, textModel: TextModelAdapter) {
-  return operation.exportCheck({ slot: "inventory", fingerprint: finalizationFingerprint({ version: 1, brief }),
+  return operation.exportCheck({ slot: "inventory", fingerprint: finalizationFingerprint({ version: 2, brief }),
     parse: (value) => { const parsed = manuscriptRequirementInventorySchema.safeParse(value); return parsed.success && parsed.data.brief === brief ? parsed.data : undefined; },
     compute: () => inventoryManuscriptRequirements({ brief, textModel }), interrupted: () => unavailableInventory(brief)
   });
@@ -28,7 +28,7 @@ export async function finalizationCoverageForCompile(options: {
   const promises = [...new Set(options.promises)].sort();
   // Model review does not assess image likeness. Presence is finalized from actual assets below.
   const semanticContext = { ...options.evidenceContext, illustratedPageIndexes: [], mediaInventory: {} };
-  const fingerprint = finalizationFingerprint({ version: 2, operation: operation.state.key,
+  const fingerprint = finalizationFingerprint({ version: 3, operation: operation.state.key,
     configuration: operation.state.inputFingerprint, manuscript: manuscriptFinalizationFingerprint(pages),
     brief, promises, chapters, evidenceContext: semanticContext });
   const inventory = await prepareFinalizationCoverageInventory(operation, brief, textModel);

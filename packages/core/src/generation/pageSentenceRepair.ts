@@ -14,10 +14,13 @@ export type SentenceLengthRepair = { originalMarkdown: string; issues: string[] 
 
 const sentenceIssue = /^(?:Page \d+: )?(?:Fix: )?Sentences are too long for ages [246]-[468] \(average [\d.]+ words, longest \d+; target average <= \d+, longest <= \d+\)\.$/;
 
+export function onlySentenceLengthIssues(input: CreateProjectInput, issues: readonly string[]): boolean {
+  return Boolean(kidsReadingGuidanceForInput(input)) && issues.length > 0 && issues.every((issue) => sentenceIssue.test(issue.trim()));
+}
+
 export function sentenceLengthRepairFor(input: CreateProjectInput, draft: Pick<PageDraft, "markdown">, report: PageQualityReport): SentenceLengthRepair | undefined {
   const issues = [...report.issues, ...report.requiredRevisions];
-  if (!kidsReadingGuidanceForInput(input) || report.approved || issues.length === 0 ||
-    report.unsupportedClaims.length > 0 || issues.some((issue) => !sentenceIssue.test(issue.trim()))) return undefined;
+  if (!onlySentenceLengthIssues(input, issues) || report.approved || report.unsupportedClaims.length > 0) return undefined;
   return { originalMarkdown: draft.markdown, issues: [...new Set(report.issues)] };
 }
 

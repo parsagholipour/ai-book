@@ -1,11 +1,13 @@
 import {
   applyStoryDelta, hasFigureFence, isCancellationError, pageQualityReportSchema, parseStoryDelta, repairPictureBookManuscript,
   reviewPictureBookManuscript, seedStoryStateFromPromises, validateStoryExtractEvidence, validateStyleAuditEvidence,
-  withStoryContradictions, withStyleAudit, type PictureBookRepairIssue, type PictureBookPageReview
+  withStoryContradictions, withStyleAudit, pictureBookReviewFingerprint, unchangedPrefixStoryExtracts,
+  type PictureBookRepairIssue, type PictureBookPageReview
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { loadPagesForExport } from "../generation/bookHelpers.js";
 import { usesShortPictureBookReview } from "../generation/shortPictureBook.js";
+import { loadPictureBookReviewSnapshot, shortPictureBookChecks } from "../generation/shortPictureBookReviewCache.js";
 import { reviewPageWithQualityGates } from "../generation/pageQualityGateReview.js";
 import { assertJobNotStopped, advanceJobStep } from "../runtime/jobLifecycle.js";
 import type { ExportPageForRepair } from "../runtime/jobTypes.js";
@@ -13,6 +15,7 @@ import { isStopRequestedError } from "../runtime/jobTypes.js";
 import { ExportRepairFenceUnreadableError, ExportRepairSupersededError, fenceUnreadableAfter } from "./compileExportFence.js";
 import { FinalizationLeaseLostError } from "./compileFinalization.js";
 import type { repairPagesFromFinalQa } from "./compileExportRepair.js";
+import { hasOnlyInheritedEditorialFindings, RepairRejectedError } from "./compileRepairOutcome.js";
 
 type Options = Parameters<typeof repairPagesFromFinalQa>[0];
 
@@ -60,10 +63,11 @@ export async function repairShortBookFromFinalQa(options: Options, targets: Expo
   const originals = options.pages.map(({ index, title, markdown, summary }) => ({ index, title, markdown, summary }));
   let candidate: Awaited<ReturnType<typeof repairPictureBookManuscript>>;
   let reviews: PictureBookPageReview[];
+  const checks = shortPictureBookChecks(options.quality);
   try {
     candidate = await repairPictureBookManuscript({ input: options.input, plan: options.plan, pages: originals,
       issues, textModel: options.providers.text, projectId: options.projectId });
-    if (!candidate.context.changes.length) return unavailable(new Error("No safe coordinated repair was proposed."));
+    if (!candidate.context.changes.length) return unavailable(new RepairRejectedError("no_candidate", targets.map((page) => page.index), "No safe coordinated repair was proposed."));
     if (!usesShortPictureBookReview({ ...options, pages: candidate.pages }))
       return unavailable(new Error("Coordinated repair exceeded the short manuscript budget."));
     await active();
@@ -76,13 +80,16 @@ export async function repairShortBookFromFinalQa(options: Options, targets: Expo
         reviewOptions: { input: options.input, plan: options.plan, pageIndex: page.index,
           draft: { ...page, continuityNotes: [] }, previousPages: candidate.pages.filter((item) => item.index < page.index),
           nextPages: candidate.pages.filter((item) => item.index > page.index), continuityNotes: [], textModel: options.providers.text } });
-      if (!local.approved) return unavailable(new Error(`Coordinated repair failed local checks on page ${page.index}; original prose retained.`));
+      if (!local.approved) return unavailable(new RepairRejectedError("local_checks", [page.index],
+        `Coordinated repair failed local checks: ${local.issues.join(" ")}`));
     }
     await active();
+    const previousReviews = checks.storyExtractAudit ? await loadPictureBookReviewSnapshot({
+      ...options, pages: originals, checks
+    }) : undefined;
     reviews = await reviewPictureBookManuscript({ input: options.input, plan: options.plan, pages: candidate.pages,
       chapterBriefs: [], repairContext: candidate.context, textModel: options.providers.text, projectId: options.projectId,
-      checks: { pageModelReview: true, storyExtractAudit: options.quality.enabled("storyExtractAudit"),
-        styleAuditor: options.quality.enabled("styleAuditor") && options.quality.enabled("styleExcerpts") } });
+      ...(previousReviews ? { reusableStoryExtracts: unchangedPrefixStoryExtracts(originals, candidate.pages, previousReviews) } : {}), checks });
     // Reuse grouped model assessments for the normal required/local/unslop
     // gates. Never fall back to one paid review or repair loop per page.
     for (const review of reviews) {
@@ -106,10 +113,19 @@ export async function repairShortBookFromFinalQa(options: Options, targets: Expo
     console.warn("Coordinated short-book repair unavailable; keeping the saved manuscript", { projectId: options.projectId, error });
     return unavailable(error);
   }
-  if (reviews.some((review) => !review.report.approved))
-    return unavailable(new Error("Coordinated repair failed whole-manuscript verification; original prose retained."));
-  await active();
   const changed = new Set(candidate.context.changes.map((change) => change.pageIndex));
+  if (candidate.context.sentenceOnly) {
+    const unsafe = reviews.filter((review) => changed.has(review.pageIndex) &&
+      (!review.repairAssessment?.targetResolved || !review.repairAssessment.meaningPreserved || !review.repairAssessment.noNewRegressions));
+    if (unsafe.length) return unavailable(new RepairRejectedError(unsafe.some((review) =>
+      !review.repairAssessment?.meaningPreserved || !review.repairAssessment.noNewRegressions) ? "semantic_regression" : "target_unresolved", unsafe.map((review) => review.pageIndex),
+      unsafe.map((review) => `Page ${review.pageIndex}: ${review.repairAssessment?.reason ?? "Missing semantic comparison."}`).join(" ")));
+  }
+  const rejected = reviews.filter((review) => !review.report.approved &&
+    !(candidate.context.sentenceOnly && hasOnlyInheritedEditorialFindings(review, changed)));
+  if (rejected.length) return unavailable(new RepairRejectedError("verification_failed", rejected.map((review) => review.pageIndex),
+    rejected.map((review) => `Page ${review.pageIndex}: ${review.report.issues.join(" ")}`).join(" ")));
+  await active();
   let state = seedStoryStateFromPromises(options.plan.promises ?? []);
   for (const page of options.pages) {
     const review = reviews.find((item) => item.pageIndex === page.index)!;
@@ -131,7 +147,7 @@ export async function repairShortBookFromFinalQa(options: Options, targets: Expo
         const next = candidate.pages.find((item) => item.index === page.index)!;
         const review = reviews.find((item) => item.pageIndex === page.index)!;
         await tx.page.update({ where: { id: page.id }, data: { markdown: next.markdown, summary: next.summary,
-          status: "COMPLETED", revision: { increment: changed.has(page.index) ? 1 : 0 },
+          status: review.report.approved ? "COMPLETED" : "FAILED_QA", revision: { increment: changed.has(page.index) ? 1 : 0 },
           qualityReport: review.report as Prisma.InputJsonValue,
           ...(review.storyExtract ? { storyDelta: review.storyExtract.storyDelta as Prisma.InputJsonValue }
             : changed.has(page.index) ? { storyDelta: Prisma.DbNull } : {}) } });
@@ -142,8 +158,17 @@ export async function repairShortBookFromFinalQa(options: Options, targets: Expo
       await tx.continuityNote.deleteMany({ where: { projectId: options.projectId,
         pageId: { in: options.pages.filter((page) => changed.has(page.index)).map((page) => page.id) } } });
       await tx.project.update({ where: { id: options.projectId }, data: { storyState: state as Prisma.InputJsonValue } });
+      if (options.generationJobId) {
+        const job = await tx.generationJob.findUnique({ where: { id: options.generationJobId }, select: { payload: true } });
+        const payload = job?.payload && typeof job.payload === "object" && !Array.isArray(job.payload) ? job.payload : {};
+        await tx.generationJob.update({ where: { id: options.generationJobId }, data: { payload: {
+          ...payload, pictureBookFinalReview: { fingerprint: pictureBookReviewFingerprint({ ...options, pages: candidate.pages, checks }), reviews }
+        } as Prisma.InputJsonValue } });
+      }
       await options.onRepairGroupPublished!(tx, options.pages.map((page) => ({ ...page,
-        ...candidate.pages.find((item) => item.index === page.index)!, status: "COMPLETED",
+        ...candidate.pages.find((item) => item.index === page.index)!,
+        status: reviews.find((item) => item.pageIndex === page.index)!.report.approved ? "COMPLETED" : "FAILED_QA",
+        qualityReport: reviews.find((item) => item.pageIndex === page.index)!.report,
         revision: page.revision + (changed.has(page.index) ? 1 : 0) })));
     });
   } catch (error) {

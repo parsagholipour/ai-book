@@ -5,6 +5,7 @@ import { isStopOrAbortError } from "@book-maker/core";
 import { assertJobNotStopped } from "../runtime/jobLifecycle.js";
 import { ExportRepairSupersededError } from "./compileExportFence.js";
 import { runExportCheckpoint, type ExportChecks } from "./compileExportCheckpoint.js";
+import { repairFailure, repairFailureSchema, type RepairFailure } from "./compileRepairOutcome.js";
 
 type Page = { id: string; index: number; title: string; markdown: string; revision: number };
 type Review = { fingerprint: string; finalQa: FinalBookQa; issues: ManuscriptQualityIssue[] };
@@ -24,6 +25,7 @@ export type FinalizationState = {
   startedPageIds: string[];
   completedPageIds: string[];
   unavailableRepairPageIds?: string[];
+  repairFailures?: RepairFailure[];
   targetPageIds: string[];
   activePageIndex: number | null;
   pendingImageJobIds: string[];
@@ -84,6 +86,7 @@ function parseState(value: unknown, key: string): FinalizationState | null {
       !["review", "repair", "final_review", "illustrations", "coverage", "render", "published"].includes(String(state.phase)) ||
       (state.unavailableRepairPageIds !== undefined && (!Array.isArray(state.unavailableRepairPageIds) ||
       !state.unavailableRepairPageIds.every((id) => typeof id === "string"))) ||
+      (state.repairFailures !== undefined && !repairFailureSchema.array().safeParse(state.repairFailures).success) ||
       (state.illustrationJobsTotal !== undefined && (!Number.isSafeInteger(state.illustrationJobsTotal) || Number(state.illustrationJobsTotal) < 0)) ||
       typeof state.repairPassStarted !== "boolean" || typeof state.repairPassCompleted !== "boolean" ||
       ![state.startedPageIds, state.completedPageIds, state.targetPageIds, state.pendingImageJobIds]
@@ -295,10 +298,14 @@ export async function openCompileFinalization(options: {
       await client.generationJob.update({ where: { id: root.id }, data: { payload: { ...payload, finalization: next } as Prisma.InputJsonValue } });
       state = next;
     },
-    async unavailablePage(pageId: string) {
+    async unavailablePage(pageId: string, pageIndex?: number, error?: unknown) {
       await mutate((next) => {
         next.unavailableRepairPageIds ??= [];
         if (!next.unavailableRepairPageIds.includes(pageId)) next.unavailableRepairPageIds.push(pageId);
+        next.repairFailures ??= [];
+        // A restart must not overwrite a concrete rejection with "already attempted".
+        if (!next.repairFailures.some((failure) => failure.pageId === pageId))
+          next.repairFailures.push(repairFailure(pageId, pageIndex, error));
         if (!next.completedPageIds.includes(pageId)) next.completedPageIds.push(pageId);
         next.activePageIndex = null;
       });

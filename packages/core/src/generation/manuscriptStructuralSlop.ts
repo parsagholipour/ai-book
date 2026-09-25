@@ -99,6 +99,12 @@ function analyticalGridLabels(text: string): string[][] {
     if (commaParts.length < 5 || commaParts.length > 12) {
       continue;
     }
+    // Recurring places or objects are not analytical fields. Require the
+    // list itself to introduce a comparison or an explicit set of dimensions;
+    // an analytical cue elsewhere on the page must not qualify this list.
+    if (!ANALYTICAL_GRID_INTRODUCTIONS.some((pattern) => pattern.test(commaParts[0]!))) {
+      continue;
+    }
     const labels = commaParts
       .flatMap((part, index) => gridLabelsFromPart(part, index, commaParts.length))
       .map(normalizeGridLabel)
@@ -110,6 +116,12 @@ function analyticalGridLabels(text: string): string[][] {
   }
   return grids;
 }
+
+const ANALYTICAL_GRID_INTRODUCTIONS = [
+  /\b(?:compar(?:e|es|ed|ing)|analy[sz](?:e|es|ed|ing)|evaluat(?:e|es|ed|ing)|assess(?:es|ed|ing)?)\b/iu,
+  /\b(?:analytical|comparison|evaluation|diagnostic)\s+(?:grid|framework|matrix)\b/iu,
+  /\b(?:fields|dimensions|criteria|variables|factors)\s*(?::|(?:are|include|cover)\b)/iu
+] as const;
 
 function gridLabelsFromPart(part: string, index: number, partCount: number): string[] {
   const cleaned = part

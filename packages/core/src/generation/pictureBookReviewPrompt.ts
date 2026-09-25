@@ -1,21 +1,36 @@
+import { pictureBookReviewChapters } from "./pictureBookReviewContext.js";
 import type { ChatMessage } from "../adapters/types.js";
 import type { PictureBookReviewOptions } from "./pictureBookReview.js";
 import { targetLanguageReviewGuidance } from "../prompting/language.js";
 import { localStyleInstructions } from "./styleContract.js";
 import { pageGetsInteriorIllustration } from "./illustrationSlots.js";
+import { openingContractFields, reviewerStyleRules } from "./pagesShared.js";
 import { READER_NAMING_REVIEW_RULE } from "./readerNaming.js";
 
 export function pictureBookReviewMessages(options: PictureBookReviewOptions, reviewPageIndexes: number[], priorValidationIssues: { pageIndex: number; message: string }[]): ChatMessage[] {
+  const opening = openingContractFields(options, "reviewer", 1, options.input.targetPages);
   const selectedIllustrationPageIndexes = options.pages.filter((page) => pageGetsInteriorIllustration(options.input, page.index)).map((page) => page.index);
   return [{ role: "system", content: [
       "Review this complete short children's manuscript in one pass. Every page's actual prose is supplied; all pages form one frozen draft.",
       "Evaluate only enabled checks. Return exactly one item for each reviewPageIndexes entry, including clean pages; findings=[] for a clean page. Do not rewrite pages.",
-      "Every finding must explicitly choose domain=prose or domain=deferred_media. Scores evaluate prose only. Keep genuine missing scenes, plot events, visual descriptions or character actions in domain=prose. Do not use chapterBriefs as exact user requirements: a page may advance a beat over its actual neighboring scenes.",
+      "Every finding must explicitly choose domain=prose or domain=deferred_media. Scores evaluate prose only. Keep genuine missing scenes, plot events, visual descriptions or character actions in domain=prose. The plan is context, not an extra user requirement: judge events across their actual neighboring scenes.",
       ...(options.repairContext ? ["This is a coordinated repair candidate. Check that the reported defects are resolved and that the changes introduce no regressions anywhere, including untouched later pages. Track object counts, first occurrences, character arrivals and reserved beats across the entire candidate. Original excerpts explain the edits; they are not current facts. Do not repeat advice made obsolete by a coherent fix. All finding evidence must quote the candidate pages, never the original excerpts."] : []),
+      ...(options.repairContext?.sentenceOnly ? ["For each changed page, return repairAssessment with explicit targetResolved, meaningPreserved, noNewRegressions and a concise reason. Compare the original prose to the candidate: the sentence-length fix must read naturally and preserve every event, name, object, quantity, location, causal order, negation, uncertainty and dialogue meaning. Check the complete manuscript for downstream regressions caused by this edit, even on untouched pages. Existing defects are not introduced regressions. Continue reporting ALL current defects in findings, including inherited ones; a safe edit does not approve the whole manuscript. Omit repairAssessment on unchanged pages."] : []),
       selectedIllustrationPageIndexes.length
         ? "This stage runs BEFORE illustration generation. A requested interior illustration on a selected slot is a deferred_media delivery requirement, never a prose defect. Deferred findings may request the scheduled illustration, never rewrite prose to add an asset."
         : "This manuscript has no scheduled interior illustrations. Return every finding in domain=prose; never report missing artwork or deferred_media.",
-      "For pageModelReview, check age-appropriate finished prose, distinct page progression, semantic repetition, current page-brief intent, requested plot constraints, exact chronology, object counts, and each named protagonist's distinct requested growth.",
+      "For pageModelReview, check age-appropriate finished prose, distinct page progression, semantic repetition, requested plot constraints, exact chronology, object counts, and each named protagonist's distinct requested growth.",
+      ...(options.checks.pageModelReview ? [
+        "Before assigning page verdicts, trace the whole story's development in the actual prose. For each protagonist whose growth the brief requests, locate an initial limitation affecting events, a difficult choice that challenges it, and a later changed action. An already helpful mentor helping again or delegating at the end is not growth unless the story establishes what changed. Do not demand an arc the user did not request or a moral speech when actions show change.",
+        "Trace clue -> new knowledge -> consequential action. If a search reveals its answers before the clues, judge whether later scenes still offer a real retrieval obstacle or choice. Test whether removing a repeated scene would lose a discovery, consequence or relationship change; repeated locating/counting/checking with no such change is a progression defect even when every page is grammatical. Necessary steps and purposeful refrains can be valid.",
+        "Read page endings together: pageTurnSignals lists question-shaped endings, including dialogue, as advisory navigation only. Compare their actual prose. Flag a repeated narrator-question scaffold when it mechanically announces the next page even if the preceding action progresses. Explain the shared construction with exact evidence from representative pages. Questions, dialogue, suspense, refrains and quiet endings are not defects by frequency alone. Never impose a quota or rotate stock ending types.",
+        "The plan's continuityRules are intended arc/prop-state contracts, not evidence of execution or extra user requirements. Judge the prose against the exact brief. Report each confirmed story-level defect at the smallest useful repair location(s), with exact supporting passages and a concrete scene change; do not duplicate one diagnosis across all thirty pages. Keep this whole-story analysis internal and return the existing compact page results."
+      ] : []),
+      ...(options.checks.pageModelReview ? [
+        ...opening.rules,
+        ...reviewerStyleRules(options.input),
+        "Own the final prose checks: reject placeholders, prompt leakage, invented factual citations, broken continuity and missing progression. Judge every chapter's internal coherence and every adjacent chapter handoff using the actual prose and supplied chapter ranges. Report an actionable transition defect on the affected page with exact neighboring evidence. Do not infer missing prose from chapter titles. The supplied title is export metadata; cover and illustrations are separate delivery checks."
+      ] : []),
       READER_NAMING_REVIEW_RULE,
       "For pageModelReview, report confirmed planning-label leakage with category=prompt_leak, domain=prose and an exact quote from the candidate page. When supplied, repairContext.changes contains original prose for comparison.",
       "Read the user's exact brief: deadlines such as before moonrise, specified events and character arcs are obligations; do not replace them with a generic theme. Use the complete story to judge arc/payoff, and locate each concrete omission at the scene that must supply it.",
@@ -24,6 +39,7 @@ export function pictureBookReviewMessages(options: PictureBookReviewOptions, rev
       "Use basis=missing_requirement for an omitted requested event/arc: quote the exact requirement in requirementQuote and quote a relevant current scene on the page that needs the repair. Absence is not a prose contradiction; identify where the missing development belongs. Use basis=cross_page with relatedEvidence for an actual inter-page contradiction, and basis=page_prose for local defects. Otherwise requirementQuote=null.",
       "Every blocking finding must quote exact current page prose (at least 12 characters), explain a specific defect, and give an achievable local repair. Cross-page contradictions/repetition additionally need exact related page evidence. Do not invent a defect from summaries or truncated excerpts.",
       "storyExtractAudit: supply a per-page storyExtract containing only changes established BY THAT PAGE in chronological order. Do not import future knowledge into earlier deltas. Put unansweredAdded and unansweredResolved inside storyDelta, never at the storyExtract root. Mark a promise paid only where its full condition actually happens, not at partial progress. Derived promise flags are bookkeeping, never authority over prose.",
+      ...(options.reusableStoryExtracts?.size ? ["For reusableStoryExtractPageIndexes only, return storyExtract=reuse to retain the previous chronological delta without re-emitting it. Their entire preceding prose and review context are unchanged. Still review ALL candidate prose for regressions, findings and enabled style checks. Extract fresh state on every other page, including untouched pages after the first edit; never use reuse there. If a prior-prefix extraction needs correction, return a fresh delta instead."] : ["No cached story extractions are available; never return storyExtract=reuse."]),
       "A blocking story contradiction requires contradictionEvidence with issue, priorPageIndex, exact priorQuote and currentQuote (each at least 12 characters). No proof means no blocking contradiction.",
       "styleAuditor: evaluate voice, scaffold language and stylistic repetition only. The opening pages are voice samples, not facts about later chronology. Do not enforce their object states or require a final page to open another scene. A blocking style finding needs exact current-prose evidence with issue, quote and category voice|scaffold|repetition.",
       "Keep results compact: findings=[] for a clean page, styleAudit=clean only after completing the enabled style check, and storyExtract=no_changes only when that page establishes no state change or contradiction. Otherwise include only changed delta keys with terse facts, never retell or quote clean prose. Do not repeat unchanged character knowledge, location, goals, or promises across pages.",
@@ -33,11 +49,18 @@ export function pictureBookReviewMessages(options: PictureBookReviewOptions, rev
       enabledChecks: options.checks, brief: options.input.prompt, audienceAgeRange: options.input.mediaSettings.audienceAgeRange,
       language: options.input.language, book: { title: options.plan.title, premise: options.plan.premise, audience: options.plan.audience,
         characters: options.plan.characters, promises: options.plan.promises, voiceGuide: options.plan.voiceGuide,
+        ...(options.checks.pageModelReview ? { continuityRules: options.plan.continuityRules } : {}),
         antiAiRules: localStyleInstructions(options.plan) },
-      chapterBriefs: options.chapterBriefs, pages: options.pages,
+      chapters: pictureBookReviewChapters(options.plan),
+      pages: options.pages.map(({ index, title, markdown }) => ({ index, title, markdown })),
+      ...(options.checks.pageModelReview ? opening.payload : {}),
+      ...(options.checks.pageModelReview ? { pageTurnSignals: {
+        questionEndingPageIndexes: options.pages.filter((page) => /[?؟？][\s"'’”»」』*_~)]*$/u.test(page.markdown)).map((page) => page.index)
+      } } : {}),
       ...(options.repairContext ? { repairContext: options.repairContext } : {}),
-      voiceSamples: options.checks.styleAuditor ? options.pages.slice(0, 2).map((page) => ({ pageIndex: page.index, role: "voice-only", excerpt: page.markdown })) : [],
+      voiceSamplePageIndexes: options.checks.styleAuditor ? options.pages.slice(0, 2).map((page) => page.index) : [],
       reviewPageIndexes, priorValidationIssues,
+      ...(options.reusableStoryExtracts?.size ? { reusableStoryExtractPageIndexes: [...options.reusableStoryExtracts.keys()] } : {}),
       reviewStage: selectedIllustrationPageIndexes.length ? "before_illustrations" : "manuscript_only", selectedIllustrationPageIndexes,
     }) }];
 }

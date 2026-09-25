@@ -22,7 +22,8 @@ export function usesCompactPictureBookPlanning(input: CreateProjectInput): boole
 
 export const PICTURE_BOOK_STORY_OBLIGATIONS = [
   "Preserve every concrete requirement in the exact brief, especially deadlines (for example before moonrise), object counts, and each named protagonist's distinct growth.",
-  "For both/all protagonist growth, assign each an initial limitation, consequential choice and observable changed action, including a wise mentor. Keep saved character canon intact.",
+  "When the brief requests growth, give each specified protagonist an initial limitation that affects the action, a consequential choice that challenges it, and an observable changed action, including a wise mentor. Being helpful throughout is not a change. Keep saved character canon intact; a strength can be applied too rigidly without becoming a new personality.",
+  "Make clues change what the characters know and do. When several objects must be recovered, vary the obstacle or cooperative choice; discovering, counting and confirming the same fact are not three developments. A known location can still lead to a difficult retrieval.",
   "Keep a stable prop inventory and each character/group’s entrance and exit locations; show any necessary transfer, return or loss before the state changes. Track where characters, neighbors and objects move; never recover a counted object twice or reset the group to an earlier location. Carry the causal state across chapter boundaries.",
   "Schedule the requested ending event before its deadline, then close the story; the last page must not demand a new scene. A boast or mistaken belief can resolve through changed action."
 ];
@@ -50,6 +51,7 @@ export function compactPictureBookPlanMessages(input: CreateProjectInput) {
     illustrationCadenceGuidance(input),
     "Set questions=[] for coherent requests; make ordinary creative choices yourself. Ask only if a missing subject or contradictory requirement prevents understanding. Keep researchQueries=[] for this fictional story.",
     "Seed promises with requested outcomes and distinct character changes. Set openingHook to one concrete opening moment. Do not add extra named main characters unless requested.",
+    "In continuityRules, record one compact arc contract per protagonist whose growth is requested: initial limitation -> difficult choice -> changed action, naming concrete story moments. Add one compact prop-state contract when counts or transfers matter: initial inventory -> losses/recoveries/transfers -> final state. Use these instead of generic growth/inventory reminders; stay within the existing plan budget.",
     ...PICTURE_BOOK_STORY_OBLIGATIONS, ...targetLanguageGenerationGuidance(input.language), ...kidsReadingGuidanceLines(input),
     ...planLibraryCharacterGuidance(libraryCharactersFromMediaSettings(input.mediaSettings))
   ].join(" ") }, { role: "user" as const, content: JSON.stringify({ userInput: input }) }];
@@ -87,6 +89,8 @@ export async function generateCompactPictureBookMap(options: {
         ? "imageMoment is optional when the beat already gives the visual scene."
         : "This story has no interior illustrations; omit imageMoment on every page.",
       "Every page advances the action; bridges preserve where the last page left the characters and objects, without replaying its beat. Do not write reader-facing prose.",
+      "Place the continuityRules arc and prop-state contracts into concrete beats. Establish a limitation before its turning choice; preserve discoveries until the clue that enables them. A repeated task must change the obstacle, knowledge or relationship.",
+      "endingPressure describes the unresolved change that carries into the next scene, in declarative author notes. It is not a question to print or a required closing sentence. Let scene action carry page turns; allow a quiet final resolution.",
       illustrationCadenceGuidance(options.input),
       ...PICTURE_BOOK_STORY_OBLIGATIONS, ...firstPage.rules, ...targetLanguageGenerationGuidance(options.input.language)
     ].join(" ") }, { role: "user", content: JSON.stringify({

@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
+import { savedPictureBookReviewSchema, shortPictureBookChecks } from "./shortPictureBookReviewCache.js";
 import { prisma, type Prisma } from "@book-maker/db";
 import { z } from "zod";
 import {
-  hasResearchIntent, isImportedManuscript, pageQualityReportSchema, pageStyleAuditSchema, storyExtractResultSchema,
+  hasResearchIntent, isImportedManuscript, pictureBookReviewFingerprint,
   reviewPictureBookManuscript, PictureBookReviewIncompleteError,
   type PictureBookReviewCheckpoint,
   type BookGenerationStrategy, type BookPlan, type ChapterBrief, type CreateProjectInput,
@@ -23,11 +23,6 @@ export function usesShortPictureBookReview(options: {
     pages.reduce((sum, page) => sum + page.markdown.length, 0) <= 48_000 &&
     pages.reduce((sum, page) => sum + page.markdown.trim().split(/\s+/u).length, 0) <= 6_000;
 }
-const checksSchema = z.object({ pageModelReview: z.boolean(), storyExtractAudit: z.boolean(), styleAuditor: z.boolean() });
-const savedReviewSchema = z.object({
-  pageIndex: z.number().int().positive(), draftMarkdown: z.string(), report: pageQualityReportSchema,
-  storyExtract: storyExtractResultSchema.nullable(), styleAudit: pageStyleAuditSchema.extend({ styleOk: z.boolean(), styleIssues: z.array(z.string()) }).nullable(), completedChecks: checksSchema
-});
 const progressSchema = z.object({
   version: z.literal(2), roundsStarted: z.number().int().min(0).max(2), attemptsUsed: z.number().int().min(0).max(5), outputWidened: z.boolean(),
   validationIssues: z.array(z.object({ pageIndex: z.number().int().positive(), message: z.string() })), protocolIssues: z.array(z.string())
@@ -35,26 +30,16 @@ const progressSchema = z.object({
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
-function stable(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stable);
-  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, stable(item)]));
-  return value;
-}
-
 /** Checkpoint the group once; no page is published or mutated until its normal ownership claim. */
 export async function prepareShortPictureBookReview(options: {
   projectId: string; generationJobId?: string; input: CreateProjectInput; plan: BookPlan;
   pages: readonly PriorPageContext[]; chapterBriefs: readonly ChapterBrief[];
   quality: QualityGateContext; textModel: TextModelAdapter;
 }): Promise<Map<number, PictureBookPageReview>> {
-  const checks: PictureBookReviewChecks = {
-    pageModelReview: options.quality.enabled("pageModelReview"), storyExtractAudit: options.quality.enabled("storyExtractAudit"),
-    styleAuditor: options.quality.enabled("styleAuditor") && options.quality.enabled("styleExcerpts")
-  };
+  const checks = shortPictureBookChecks(options.quality);
   if (!Object.values(checks).some(Boolean)) return new Map();
   await assertJobNotStopped(options.generationJobId);
-  const fingerprint = createHash("sha256").update(JSON.stringify(stable({ version: 2, input: options.input, plan: options.plan,
-    pages: options.pages, chapterBriefs: options.chapterBriefs, checks }))).digest("hex");
+  const fingerprint = pictureBookReviewFingerprint({ ...options, checks });
   const row = options.generationJobId ? await prisma.generationJob.findUnique({
     where: { id: options.generationJobId }, select: { payload: true }
   }) : null;
@@ -67,7 +52,7 @@ export async function prepareShortPictureBookReview(options: {
     // Preserve valid rows when one cached row is incomplete, without resetting
     // durable spend or allowing duplicate verdicts to choose their own winner.
     const rawReviews = Array.isArray(cached.reviews) ? cached.reviews : [];
-    const parsed = rawReviews.map((review) => savedReviewSchema.safeParse(review));
+    const parsed = rawReviews.map((review) => savedPictureBookReviewSchema.safeParse(review));
     const counts = new Map<number, number>();
     for (const raw of rawReviews) {
       const index = record(raw).pageIndex;

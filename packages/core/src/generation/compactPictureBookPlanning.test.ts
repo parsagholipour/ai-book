@@ -65,6 +65,7 @@ describe("compact picture-book planning", () => {
     const prompt = request.messages.map((m) => m.content).join("\n");
     expect(prompt).toContain(input.prompt);
     expect(prompt).toContain("initial limitation");
+    expect(prompt).toContain("In continuityRules, record one compact arc contract");
     expect(prompt).toContain("before moonrise");
     expect(prompt).not.toContain("180 to 260 words");
     expect(prompt).not.toContain('"fallbackOutline"');
@@ -73,7 +74,9 @@ describe("compact picture-book planning", () => {
 
   it("generates thirty ordered assignments in one call using the existing chapter-brief route", async () => {
     const { textModel, calls } = model({ pages: beats() });
-    const result = await generateWholeBookPageMap({ input, plan: plan(), textModel });
+    const planned = plan();
+    planned.continuityRules = ["Turtle initially refuses the short route; tests Rabbit's idea at the fork; later trusts Rabbit to lead."];
+    const result = await generateWholeBookPageMap({ input, plan: planned, textModel });
     expect(calls).toHaveBeenCalledTimes(1);
     expect(calls.mock.calls[0]![0].purpose).toBe("generate-chapter-brief");
     expect(result).toHaveLength(6);
@@ -81,8 +84,10 @@ describe("compact picture-book planning", () => {
     const prompt = calls.mock.calls[0]![0].messages.map((m) => m.content).join("\n");
     expect(prompt).toContain(input.prompt);
     expect(prompt).toContain("chapter boundaries");
+    expect(prompt).toContain("endingPressure describes the unresolved change");
     expect(prompt).toContain("initial limitation");
     expect(prompt).toContain("moonrise");
+    expect(JSON.parse(calls.mock.calls[0]![0].messages[1]!.content).book.continuityRules).toEqual(planned.continuityRules);
   });
 
   it.each(["missing", "duplicate", "chapter"])("rejects %s page assignments without invented fallback beats", async (kind) => {
@@ -103,9 +108,13 @@ describe("compact picture-book planning", () => {
   });
 
   it("carries the inventory, locations, deadline and each character arc into the complete draft", async () => {
+    const planned = plan();
+    planned.continuityRules = ["Turtle initially refuses the short route; tests Rabbit's idea at the fork; later trusts Rabbit to lead."];
     const { textModel, calls } = model({ pages: Array.from({ length: 30 }, (_, i) => ({ index: i + 1, title: `Scene ${i + 1}`, markdown: `Rabbit follows clue ${i + 1}.`, summary: `Clue ${i + 1}`, continuityNotes: [] })) });
-    await generateWholeBookDraft({ input, plan: plan(), textModel, chapterBriefs: [], researchNotes: [] });
+    await generateWholeBookDraft({ input, plan: planned, textModel, chapterBriefs: [], researchNotes: [] });
     const system = calls.mock.calls[0]![0].messages[0]!.content;
+    expect(system).toContain("endingPressure is an author note");
+    expect(JSON.parse(calls.mock.calls[0]![0].messages[1]!.content).book.continuityRules).toEqual(planned.continuityRules);
     for (const phrase of ["stable prop inventory", "entrance and exit locations", "before its deadline", "initial limitation",
       "exact visible characters and their positions", "current visible prop count and ownership", "time of day", "Exclude items recovered only on later pages"]) expect(system).toContain(phrase);
   });

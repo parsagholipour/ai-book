@@ -24,6 +24,7 @@ vi.mock("../runtime/jobLifecycle.js", () => ({ assertJobNotStopped: db.stop }));
 import { openCompileFinalization } from "./compileFinalization.js";
 import { prisma } from "@book-maker/db";
 import { finalizationCoverageForCompile, prepareFinalizationCoverageInventory } from "./compileExportCoverageCheckpoint.js";
+import { finalRepairQualityIssues, RepairRejectedError } from "./compileRepairOutcome.js";
 
 const page = { id: "page1", index: 1, title: "Lantern", markdown: "Rabbit waits.", revision: 1 };
 const options = { projectId: "project", planId: "plan", generationJobId: "compile1", contentRevision: 1,
@@ -208,6 +209,23 @@ it("persists unavailable repair findings and consumed allowance across successor
   const resumed = await openCompileFinalization({ ...options, generationJobId: "compile2" });
   expect(resumed.state.unavailableRepairPageIds).toEqual([page.id]);
   expect(resumed.state.completedPageIds).toEqual([page.id]);
+  expect(await resumed.claimPage(page.id, 1)).toBe(false);
+  await resumed.close();
+});
+
+it("preserves the rejection class, actual failed pages and reason across a successor", async () => {
+  const first = await openCompileFinalization(options);
+  await first.beginRepair([page.id]); await first.claimPage(page.id, 1);
+  await first.unavailablePage(page.id, 1, new RepairRejectedError("verification_failed", [11, 23], "Unchanged pages repeat earlier discoveries."));
+  await first.finishRepair([page]); await first.close();
+  const resumed = await openCompileFinalization({ ...options, generationJobId: "compile2" });
+  // A retry cannot replace the useful evidence with an already-attempted error.
+  await resumed.unavailablePage(page.id, 1, new Error("Already attempted"));
+  expect(resumed.state.repairFailures).toEqual([{ pageId: page.id, targetPageIndex: 1,
+    failureClass: "verification_failed", affectedPageIndexes: [11, 23], reason: "Unchanged pages repeat earlier discoveries." }]);
+  expect(finalRepairQualityIssues(resumed.state, [page])).toEqual([expect.objectContaining({
+    code: "FINAL_QA_REPAIR_REJECTED", affectedPageIndexes: [11, 23], message: expect.stringContaining("Unchanged pages repeat earlier discoveries.")
+  })]);
   expect(await resumed.claimPage(page.id, 1)).toBe(false);
   await resumed.close();
 });

@@ -8,7 +8,9 @@ import { generateJsonWithRetry, jsonSchemaMessages } from "./generateJsonWithRet
 import type { PriorPageContext } from "./pagesShared.js";
 import { pictureBookReviewMessages } from "./pictureBookReviewPrompt.js";
 import type { PictureBookRepairContext } from "./pictureBookRepair.js";
+import type { StoryExtractResult } from "./storyState.js";
 import { pictureBookPageReview, pictureBookReviewResponseSchema, validatedPictureBookReviewRow,
+  pictureBookRepairAssessmentSchema, pictureBookSentenceRepairReviewResponseSchema,
   type PictureBookPageReview, type PictureBookReviewChecks } from "./pictureBookReviewValidation.js";
 export type { PictureBookPageReview, PictureBookReviewChecks } from "./pictureBookReviewValidation.js";
 
@@ -32,6 +34,8 @@ export type PictureBookReviewOptions = {
   onCheckpoint?: (checkpoint: PictureBookReviewCheckpoint) => Promise<void>;
   /** A repair is judged against the complete candidate, including untouched dependencies. */
   repairContext?: PictureBookRepairContext;
+  /** Only deltas whose complete chronological prefix and frozen review context are unchanged. */
+  reusableStoryExtracts?: ReadonlyMap<number, StoryExtractResult>;
 };
 const envelopeSchema = z.strictObject({ pages: z.array(z.unknown()).max(80) });
 function indexOf(value: unknown): number | undefined {
@@ -47,7 +51,9 @@ export async function reviewPictureBookManuscript(options: PictureBookReviewOpti
   for (const review of options.resume?.reviews ?? []) {
     if (pages.get(review.pageIndex)?.markdown !== review.draftMarkdown || reviews.has(review.pageIndex) ||
       Object.entries(options.checks).some(([key, enabled]) => review.completedChecks[key as keyof PictureBookReviewChecks] !== enabled) ||
-      (options.checks.storyExtractAudit && !review.storyExtract) || (options.checks.styleAuditor && !review.styleAudit))
+      (options.checks.storyExtractAudit && !review.storyExtract) || (options.checks.styleAuditor && !review.styleAudit) ||
+      (options.repairContext?.sentenceOnly && options.repairContext.changes.some((change) => change.pageIndex === review.pageIndex) &&
+        !pictureBookRepairAssessmentSchema.safeParse(review.repairAssessment).success))
       throw new Error("Picture-book partial review does not match the frozen manuscript and enabled checks.");
     reviews.set(review.pageIndex, review);
   }
@@ -80,7 +86,8 @@ export async function reviewPictureBookManuscript(options: PictureBookReviewOpti
         purpose, schema: envelopeSchema, textAttemptBudget: budget, repairAttempts: 0, jsonContractInMessages: true,
         temperature: 0.1, maxTokens: options.checks.storyExtractAudit ? 24_000 : 8_000,
         ...(options.projectId ? { projectId: options.projectId } : {}), ...(options.signal ? { signal: options.signal } : {}),
-        messages: jsonSchemaMessages(pictureBookReviewMessages(options, requested, validationIssues), pictureBookReviewResponseSchema)
+        messages: jsonSchemaMessages(pictureBookReviewMessages(options, requested, validationIssues),
+          options.repairContext?.sentenceOnly ? pictureBookSentenceRepairReviewResponseSchema : pictureBookReviewResponseSchema)
       });
       raw = envelopeSchema.parse(result.data);
     } catch (error) {
@@ -108,9 +115,12 @@ export async function reviewPictureBookManuscript(options: PictureBookReviewOpti
       if (count !== 1) { validationIssues.push({ pageIndex: index, message: count ? "Duplicate verdicts; provide exactly one assessment." : "Missing verdict; complete every enabled assessment." }); continue; }
       const result = rowSchema.safeParse(raw.pages.find((row) => indexOf(row) === index));
       if (!result.success) { validationIssues.push({ pageIndex: index, message: result.error.issues.map((issue) => issue.message).join(" ").slice(0, 2_000) }); continue; }
-      reviews.set(index, pictureBookPageReview(result.data, pages.get(index)!, options.checks, options.input.prompt));
+      reviews.set(index, pictureBookPageReview(result.data, pages.get(index)!, options.checks, options.input.prompt, options.reusableStoryExtracts?.get(index)));
     }
     await persist();
   }
   return checkpoint().reviews;
 }
+
+export { pictureBookReviewFingerprint, pictureBookReviewChapters } from "./pictureBookReviewContext.js";
+export { unchangedPrefixStoryExtracts } from "./pictureBookStoryReuse.js";

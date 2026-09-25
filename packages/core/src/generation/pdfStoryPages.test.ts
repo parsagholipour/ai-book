@@ -13,6 +13,53 @@ import { extractPdfNamedDestinations } from "./pdfNamedDestinations.js";
 
 afterAll(closeSharedBrowser);
 
+function wordBounds(path: string, page: number, word: string): { x: number; y: number; height: number } {
+  const xml = execFileSync("pdftotext", ["-f", String(page), "-l", String(page), "-bbox", path, "-"], { encoding: "utf8" });
+  const match = [...xml.matchAll(/<word xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">([^<]+)<\/word>/g)]
+    .find((entry) => entry[5] === word);
+  expect(match, `Printed word ${word} on sheet ${page}`).toBeDefined();
+  return { x: Number(match![1]), y: Number(match![2]), height: Number(match![4]) - Number(match![2]) };
+}
+
+it("gives text-only story sheets readable type and measure, with fifteen chapters on one Contents sheet", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pdf-text-story-"));
+  try {
+    const input = createProjectSchema.parse({ prompt: "Rabbit and Turtle restore the lantern path.", category: "KIDS", targetPages: 30 });
+    const pages = Array.from({ length: 30 }, (_, position) => ({ index: position + 1, title: `Scene ${position + 1}`,
+      markdown: `OpeningScene${position + 1}Token. Rabbit stopped beside the lantern. ` +
+        "Turtle checked the path before they moved the light. The neighbors waited by the trees with their picnic baskets. " +
+        `Rabbit asked where to put the lantern and listened to Turtle. EndingScene${position + 1}Token.` }));
+    const compiled = compileBookMarkdownWithPageAnchors({ plan: makeFallbackPlan(input), category: input.category,
+      storyPageLayout: "separate", pages, authorName: "Story Author",
+      readerChapters: Array.from({ length: 15 }, (_, i) => ({ index: i + 1, title: `Lantern station ${i + 1}`,
+        summary: "The next scene.", startPageIndex: i * 2 + 1, endPageIndex: i * 2 + 2 })) });
+    const outputPath = join(directory, "book.pdf");
+    const result = await generateBookPdfWithPageMap(compiled.markdown, {
+      imageStorageDir: directory, publicApiUrl: "http://localhost:4001", pageMapPlan: compiled, outputPath, targetPageCount: 30
+    });
+    expect(result.pageMap?.totalPdfPages).toBe(32);
+    expect(result.pagination).toBeUndefined();
+    expect(result.pageMap?.pages).toEqual(pages.map((page) => ({ index: page.index, startPdfPage: page.index + 2, endPdfPage: page.index + 2 })));
+    const contents = execFileSync("pdftotext", ["-f", "2", "-l", "2", "-layout", outputPath, "-"], { encoding: "utf8" });
+    const measured = extractPdfNamedDestinations(result.pdf)!;
+    for (let chapter = 1; chapter <= 15; chapter += 1) {
+      const printedPage = measured.destinations.get(`chapter-${chapter}`)!.pdfPage - 1;
+      expect(contents).toMatch(new RegExp(`CHAPTER ${chapter}\\s+Lantern station ${chapter}\\s+${printedPage}\\b`));
+    }
+    for (const page of pages) {
+      const text = execFileSync("pdftotext", ["-f", String(page.index + 2), "-l", String(page.index + 2), outputPath, "-"], { encoding: "utf8" });
+      expect(text.match(/OpeningScene\d+Token/g)).toEqual([`OpeningScene${page.index}Token`]);
+      expect(text.match(/EndingScene\d+Token/g)).toEqual([`EndingScene${page.index}Token`]);
+      expect(text).toContain(`Page ${page.index + 1}`);
+      const bounds = wordBounds(outputPath, page.index + 2, `OpeningScene${page.index}Token.`);
+      expect(bounds.height).toBeGreaterThan(32); // Source Serif's glyph box at 20pt, versus ~18pt at 11pt.
+      expect(bounds.height).toBeLessThan(35);
+      expect(bounds.x).toBeGreaterThan(100); // Narrower measure, with symmetric gutters.
+      expect(bounds.y).toBeGreaterThan(185); // Prose sits lower than the normal top margin.
+    }
+  } finally { await rm(directory, { recursive: true, force: true }); }
+}, 30_000);
+
 it("prints thirty separate story sheets with ten matching scene images and truthful ranges", async () => {
   const directory = await mkdtemp(join(tmpdir(), "pdf-story-pages-"));
   try {
@@ -45,6 +92,9 @@ it("prints thirty separate story sheets with ten matching scene images and truth
     expect(result.pagination).toBeUndefined(); // No attempt to squeeze frontmatter into the thirty story sheets.
     expect(map.totalPdfPages).toBe(map.pages[0]!.startPdfPage - 1 + 30);
     expect(map.contentsStartPdfPage).toBe(2);
+    const bounds = wordBounds(outputPath, map.pages[0]!.startPdfPage, "OpeningScene1Token.");
+    expect(bounds.height).toBeLessThan(20); // Mixed books retain their existing typography on all scenes.
+    expect(bounds.y).toBeLessThan(120);
     const measured = extractPdfNamedDestinations(result.pdf)!;
     for (const [position, page] of map.pages.entries()) {
       expect(page.endPdfPage).toBe(page.startPdfPage);
@@ -91,7 +141,9 @@ it("retains overflowing prose and keeps its true end separate from the following
     expect(next!.startPdfPage).toBe(long!.endPdfPage + 1);
     expect(next!.endPdfPage).toBe(next!.startPdfPage);
     expect(result.pageMap!.backMatterStartPdfPage).toBe(next!.endPdfPage + 1);
-    const text = execFileSync("pdftotext", ["-f", String(long!.startPdfPage), "-l", String(long!.endPdfPage), outputPath, "-"], { encoding: "utf8" }).replace(/\s+/g, " ");
+    // A footer can split any phrase when a paragraph crosses a sheet boundary.
+    const text = execFileSync("pdftotext", ["-f", String(long!.startPdfPage), "-l", String(long!.endPdfPage), outputPath, "-"], { encoding: "utf8" })
+      .replace(/\bPage\s+\d+\b/g, "").replace(/\s+/g, " ");
     expect(text).toContain("OpeningLongToken");
     expect(text).toContain("EndingLongToken");
     expect(text.match(/Rabbit brought the basket/g)).toHaveLength(110);
