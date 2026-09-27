@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PageMapIntegrityUnresolvedError, PRODUCTION_MAP_REPAIR_CYCLE_LIMIT } from "@book-maker/core";
+import { PageMapIntegrityUnresolvedError, PRODUCTION_MAP_REPAIR_CYCLE_LIMIT, type TextModelAdapter } from "@book-maker/core";
 import { StopRequestedError } from "../runtime/jobTypes.js";
 import { PRODUCTION_MAP_INTEGRITY_ENV } from "./productionMapIntegrity.js";
 import { prepareChapterSetups } from "./bookState.js";
+import premiumMap from "./testing/premiumProductionMap.json" with { type: "json" };
 
 const mocks = vi.hoisted(() => ({
   prisma: {
@@ -206,6 +207,65 @@ describe("prepareChapterSetups production-map integrity", () => {
     expect(mocks.dedupePageBeats.mock.calls[0]?.[0].findings.length).toBeLessThanOrEqual(12);
   });
 
+  it("repairs only page 18 of the captured Premium map, preserving the revised crossing on pages 16–17", async () => {
+    const briefs = structuredClone(premiumMap.briefs);
+    const generateChapterBrief = vi.fn(async () => distinctChapterBrief(6, 16, 3));
+    const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
+    // Handwritten response to exercise the real patch validator and merger,
+    // preserving the retrieval while differentiating it from Blue's return.
+    const response = { beatPatches: [{
+      pageIndex: 18,
+      purpose: "Finish Green's recovery and expose the remaining misleading signal.",
+      beat: "Back at the Fork, Rabbit raises the recovered Green lantern onto its assigned post; Turtle braces the support. With Green secure, the pair notice Red still marking the north arm instead of Brook Bend.",
+      endingPressure: "The misplaced Red now demands Rabbit's attention.",
+      requiredContinuity: briefs[5]!.pages[2]!.requiredContinuity
+    }] };
+    let modelCalls = 0;
+    const textModel: TextModelAdapter = {
+      async generateJson(options) {
+        modelCalls += 1;
+        return { data: options.schema.parse(response), text: JSON.stringify(response), model: "fixture", provider: "fixture" };
+      },
+      async generateText() { throw new Error("Unexpected text call"); },
+      async *streamText() { yield ""; },
+      async generateWithTools() { throw new Error("Unexpected tool call"); }
+    };
+    mocks.dedupePageBeats.mockImplementation((options: Parameters<typeof actual.dedupePageBeats>[0]) =>
+      actual.dedupePageBeats({ ...options, textModel })
+    );
+
+    const setups = await run(briefs, { strategy: { generateChapterBrief } });
+
+    expect(generateChapterBrief).not.toHaveBeenCalled();
+    expect(mocks.dedupePageBeats).toHaveBeenCalledTimes(1);
+    expect(modelCalls).toBe(1);
+    expect(mocks.dedupePageBeats.mock.calls[0]?.[0].findings).toMatchObject([
+      { pageIndex: 18, duplicateOfPageIndex: 10 }
+    ]);
+    const pages = setups.flatMap((setup) => setup.brief?.pages ?? []);
+    for (const original of briefs.flatMap((brief) => brief.pages)) {
+      if (original.pageIndex !== 18) {
+        expect(pages.find((page) => page.pageIndex === original.pageIndex)).toEqual(original);
+      }
+    }
+    expect(pages.find((page) => page.pageIndex === 18)?.beat).not.toEqual(briefs[5]?.pages[2]?.beat);
+  });
+
+  it("still rebuilds a missing chapter using its available boundary and coverage diagnosis", async () => {
+    const first = distinctChapterBrief(1, 1, 3);
+    const missing = distinctChapterBrief(2, 4, 3);
+    const { plan, targetPages } = planForBriefs([first, missing]);
+    const generateChapterBrief = vi.fn(async () => missing);
+    const setups = await run([first], { plan, targetPages, strategy: { generateChapterBrief } });
+
+    expect(mocks.dedupePageBeats).not.toHaveBeenCalled();
+    expect(setups[1]?.brief).toEqual(missing);
+    expect(generateChapterBrief).toHaveBeenCalledWith(expect.objectContaining({
+      repairContext: expect.objectContaining({ currentBrief: null, adjacentPages: [first.pages[2]],
+        findings: expect.arrayContaining([expect.objectContaining({ code: "CHAPTER_COVERAGE_MISSING" })]) })
+    }));
+  });
+
   it("regenerates a densely generic chapter instead of patching page by page", async () => {
     const chapterOne = distinctChapterBrief(1, 1, 4);
     const chapterTwo = genericChapterBrief(2, 5, 4);
@@ -223,6 +283,13 @@ describe("prepareChapterSetups production-map integrity", () => {
     expect(mocks.dedupePageBeats).not.toHaveBeenCalled();
     expect(setups[0]?.brief).toEqual(chapterOne);
     expect(setups[1]?.brief).toEqual(regenerated);
+    expect(generateChapterBrief).toHaveBeenCalledWith(expect.objectContaining({
+      repairContext: expect.objectContaining({
+        currentBrief: chapterTwo,
+        adjacentPages: [chapterOne.pages[3]],
+        findings: expect.arrayContaining([expect.objectContaining({ code: "GENERIC_ASSIGNMENT" })])
+      })
+    }));
   });
 
   it("fails two unsuccessful repair cycles before returning a dirty map", async () => {
@@ -324,6 +391,26 @@ describe("prepareChapterSetups production-map integrity", () => {
     const setups = await run(sparseFivePageCollisionBriefs(), { strategy: { generateChapterBrief } });
     expect(generateChapterBrief).toHaveBeenCalledTimes(1);
     expect(setups[0]?.brief).toEqual(regenerated);
+  });
+
+  it("gives regeneration the revised map, both boundaries, and the collision source after a failed page repair", async () => {
+    mocks.dedupePageBeats.mockRejectedValue(new Error("provider down"));
+    const briefs = structuredClone(premiumMap.briefs);
+    const generateChapterBrief = vi.fn(async () => distinctChapterBrief(6, 16, 3));
+    await run(briefs, { strategy: { generateChapterBrief } });
+
+    expect(mocks.dedupePageBeats).toHaveBeenCalledTimes(1);
+    expect(generateChapterBrief).toHaveBeenCalledTimes(1);
+    expect(generateChapterBrief).toHaveBeenCalledWith(expect.objectContaining({
+      repairContext: {
+        currentBrief: briefs[5],
+        adjacentPages: [briefs[4]?.pages[2], briefs[6]?.pages[0]],
+        collisionPages: [briefs[3]?.pages[0]],
+        findings: [{
+          code: "NEAR_DUPLICATE_BEAT", pageIndexes: [18], evidence: "keywords overlap page 10's beat (79%)"
+        }]
+      }
+    }));
   });
 
   it("records would_block in shadow mode instead of throwing", async () => {

@@ -295,6 +295,8 @@ export type FindDuplicatePageBeatsOptions = {
    * a provider-call cap must not hide detection or classification.
    */
   rewriteSlotLimit?: number;
+  /** Grounded semantic judgments, validated against the current map by the caller. */
+  distinctPairKeys?: ReadonlySet<string>;
 };
 
 export async function findDuplicatePageBeats(
@@ -348,6 +350,7 @@ export async function findDuplicatePageBeats(
      */
     const refused: { position: number; score: number; match: DuplicateBeatFinding }[] = [];
     for (let earlier = 0; earlier < later; earlier += 1) {
+      if (options.distinctPairKeys?.has(`${pageIndexes[earlier]}:${pageIndexes[later]}`)) continue;
       const scored = scorePair(prints[later]!, prints[earlier]!);
       if (!scored) {
         continue;

@@ -305,7 +305,8 @@ export async function openCompileFinalization(options: {
         next.repairFailures ??= [];
         // A restart must not overwrite a concrete rejection with "already attempted".
         if (!next.repairFailures.some((failure) => failure.pageId === pageId))
-          next.repairFailures.push(repairFailure(pageId, pageIndex, error));
+          next.repairFailures.push(repairFailure(pageId, pageIndex, error,
+            finalizationFingerprint({ operation: next.key, repairPages: [...next.startedPageIds].sort() })));
         if (!next.completedPageIds.includes(pageId)) next.completedPageIds.push(pageId);
         next.activePageIndex = null;
       });

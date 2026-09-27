@@ -1,0 +1,56 @@
+[
+  {
+    "code": "WHOLE_BOOK_REVIEW",
+    "source": "model",
+    "message": "Page 10: Wise Turtle reads the bent grass as a clue to lantern 1\u2019s direction, but the scene does not establish the requested pattern across where the lanterns blew. Evidence on page 10: \u201cGrass near post one leaned toward the fern spur, all its blades pointing the same way.\u201d Requested requirement: \u201cWise Turtle notices a pattern in where the lanterns blew\u201d",
+    "guidance": "Review the affected prose in Edit Mode or request a targeted regeneration.",
+    "severity": "warning",
+    "affectedPageIndexes": [
+      10
+    ]
+  },
+  {
+    "code": "WHOLE_BOOK_REVIEW",
+    "source": "model",
+    "message": "Page 10: Add a concrete comparison to another displaced lantern or its wind-bent surroundings, so Wise Turtle identifies a shared wind pattern rather than only one lantern\u2019s direction.",
+    "guidance": "Review the affected prose in Edit Mode or request a targeted regeneration.",
+    "severity": "warning",
+    "affectedPageIndexes": [
+      10
+    ]
+  },
+  {
+    "code": "FINAL_QA_REPAIR_REJECTED",
+    "source": "deterministic",
+    "message": "Automatic repair was rejected: Page 10: The clue confirms the wind\u2019s direction at the fern spur, but does not establish a pattern across where the displaced lanterns blew. Evidence on page 10: \u201cGrass near post one leaned toward the fern spur, all its blades pointing the same way. Fern fronds bent that way, too.\u201d Requested requirement: \u201cWise Turtle notices a pattern in where the lanterns blew\u201d Saved prose was retained.",
+    "guidance": "Review the reported findings before requesting another repair.",
+    "severity": "warning",
+    "affectedPageIndexes": [
+      10
+    ]
+  },
+  {
+    "code": "MISSING_BRIEF_REQUIREMENT",
+    "source": "model",
+    "message": "Rabbit\u2019s established traits \u2014 Rabbit\u2019s haste and energy are clear, but the manuscript does not establish his playful trait.",
+    "evidence": [
+      {
+        "excerpt": "He darted toward it alone, his paws splashing through puddles.",
+        "pageIndex": 7
+      }
+    ],
+    "guidance": "Add the missing explanation or requested deliverable, or revise the requirement explicitly.",
+    "severity": "warning",
+    "affectedPageIndexes": []
+  },
+  {
+    "code": "PAGE_QA_UNRESOLVED",
+    "source": "model",
+    "message": "Page QA did not approve the saved draft: Wise Turtle reads the bent grass as a clue to lantern 1\u2019s direction, but the scene does not establish the requested pattern across where the lanterns blew. Evidence on page 10: \u201cGrass near post one leaned toward the fern spur, all its blades pointing the same way.\u201d Requested requirement: \u201cWise Turtle notices a pattern in where the lanterns blew\u201d",
+    "guidance": "Add a concrete comparison to another displaced lantern or its wind-bent surroundings, so Wise Turtle identifies a shared wind pattern rather than only one lantern\u2019s direction.",
+    "severity": "warning",
+    "affectedPageIndexes": [
+      10
+    ]
+  }
+]

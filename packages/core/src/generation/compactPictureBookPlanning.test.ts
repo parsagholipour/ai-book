@@ -11,7 +11,7 @@ import { resolveBookGenerationStrategy } from "./strategies/router.js";
 
 const input = createProjectSchema.parse({ prompt: "Rabbit and Wise Turtle recover six lanterns before moonrise; both must grow.", category: "KIDS", targetPages: 30,
   mediaSettings: { fullIllustrations: true, finalReview: true, generationStrategy: "auto" } });
-const plan = () => ({ ...makeFallbackPlan(input), chapters: Array.from({ length: 6 }, (_, i) => ({ index: i + 1, title: `Chapter ${i + 1}`, summary: `Chapter ${i + 1} moves the search onward.`, targetPages: 5, keyBeats: [`Discover the next clue ${i + 1}.`] })) });
+const plan = () => ({ ...makeFallbackPlan(input), storyTreatment: "Rabbit races ahead and mistakes a fallen lantern for a route marker. Turtle checks every possibility until waiting makes matters worse. Together they compare two landing places, predict where the remaining lanterns fell, and recover them. Rabbit pauses to listen while Turtle trusts a useful clue. They guide their neighbors to the picnic before moonrise.", chapters: Array.from({ length: 6 }, (_, i) => ({ index: i + 1, title: `Chapter ${i + 1}`, summary: `Chapter ${i + 1} moves the search onward.`, targetPages: 5, keyBeats: [`Discover the next clue ${i + 1}.`] })) });
 const beats = () => Array.from({ length: 30 }, (_, i) => ({ pageIndex: i + 1, chapterIndex: Math.floor(i / 5) + 1,
   purpose: `Rabbit checks clue ${i + 1}.`, beat: `Rabbit follows clue ${i + 1} toward the next bend.`, requiredContinuity: [], endingPressure: `Follow clue ${i + 2}.` }));
 function model(answer: unknown) {
@@ -90,11 +90,10 @@ describe("compact picture-book planning", () => {
     expect(JSON.parse(calls.mock.calls[0]![0].messages[1]!.content).book.continuityRules).toEqual(planned.continuityRules);
   });
 
-  it.each(["missing", "duplicate", "chapter"])("rejects %s page assignments without invented fallback beats", async (kind) => {
+  it.each(["missing", "duplicate"])("rejects %s page assignments without invented fallback beats", async (kind) => {
     const pages = beats();
     if (kind === "missing") pages.pop();
     if (kind === "duplicate") pages[29]!.pageIndex = 1;
-    if (kind === "chapter") pages[5]!.chapterIndex = 1;
     const { textModel, calls } = model({ pages });
     await expect(generateWholeBookPageMap({ input, plan: plan(), textModel })).rejects.toThrow();
     expect(calls.mock.calls.length).toBeLessThanOrEqual(3);

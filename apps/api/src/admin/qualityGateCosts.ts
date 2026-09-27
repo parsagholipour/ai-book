@@ -46,7 +46,7 @@ const DIRECT_COST_PURPOSES: Partial<Record<QualityFeatureId, ReadonlySet<string>
   // The two `accept-chapter-edit-*` purposes were the decision-model screen ahead of the review,
   // removed 2026-09-19; they stay here so books generated before that keep their rows attributed.
   chapterEditAcceptance: new Set(["accept-chapter-edit-meaning", "accept-chapter-edit-intent", "review-chapter-edit-acceptance"]),
-  manuscriptReadPass: new Set(["read-manuscript", "cut-chapter", "rewrite-seams"])
+  manuscriptReadPass: new Set(["read-manuscript", "inventory-brief-requirements", "cut-chapter", "rewrite-seams"])
 };
 
 const NON_SEPARATE_COST_NOTES: Partial<Record<QualityFeatureId, string>> = {

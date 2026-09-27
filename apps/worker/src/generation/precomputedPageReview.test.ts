@@ -15,4 +15,12 @@ describe("manuscript review snapshot binding", () => {
     previousPages: [{ ...prior, markdown: "Every lantern was recovered." }] })).toBeUndefined());
   it("refuses a missing configured check", () => expect(matchingPrecomputedReview({ ...options,
     quality: { enabled: () => true } })).toBeUndefined());
+  it("accepts exhausted unavailable checks only as unapproved and bound to unchanged prose", () => {
+    const unavailable: PrecomputedPageReview = { ...review, reviewUnavailable: true,
+      report: { ...review.report, approved: false }, completedChecks: { pageModelReview: false, storyExtractAudit: false, styleAuditor: false } };
+    const request = { ...options, quality: { enabled: () => true }, precomputed: unavailable };
+    expect(matchingPrecomputedReview(request)).toBe(unavailable);
+    expect(matchingPrecomputedReview({ ...request, precomputed: { ...unavailable, report: review.report } })).toBeUndefined();
+    expect(matchingPrecomputedReview({ ...request, previousPages: [{ ...prior, markdown: "Changed context." }] })).toBeUndefined();
+  });
 });

@@ -11,6 +11,7 @@ import {
   targetLanguagePayload
 } from "../prompting/language.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
+import { chapterBriefRepairFields, type ChapterBriefRepairContext } from "./chapterBriefRepairContext.js";
 import {
   PageMapResponseInvalidError,
   generatedChapterBriefResponseSchema,
@@ -90,6 +91,7 @@ export type GenerateChapterBriefOptions = {
   chapterPageEnd: number;
   /** Filtered generation notes; falls back to citeable plan notes when absent. */
   researchNotes?: string[] | undefined;
+  repairContext?: ChapterBriefRepairContext;
   textModel: TextModelAdapter;
 };
 
@@ -239,15 +241,11 @@ export async function generateChapterBrief(options: GenerateChapterBriefOptions)
     pageRange: { start: options.chapterPageStart, end: options.chapterPageEnd },
     allowCompleteLocalPageNumbering: true
   };
-  // This brief is chapter-scoped, so only the chapter whose absolute page range
-  // covers global page 1 opens the book; telling every chapter to hook a first
-  // impression would hook a reader who is already twenty pages in. The test is
-  // on the range this call was handed rather than on the chapter index, because
-  // a leading chapter that ended up with no pages hands page 1 to the next one —
-  // which is why `writesFirstPage` (`pagesShared.ts`), under the helper below,
-  // is a range predicate and not an index one.
+  // Only the absolute range containing page 1 opens the book, even when a
+  // zero-page leading chapter hands that page to the next chapter.
   const firstPage = firstPageBriefFieldsForRange(options, options.chapterPageStart, options.chapterPageEnd);
   const citation = citationContractFields(options.researchNotes ?? options.plan.researchNotes);
+  const repair = chapterBriefRepairFields(options);
   try {
     const result = await generateJsonWithRetry(options.textModel, {
       purpose: "generate-chapter-brief",
@@ -273,6 +271,7 @@ export async function generateChapterBrief(options: GenerateChapterBriefOptions)
             "Create a practical chapter brief for the writer.",
             "Every page in the requested range must receive a distinct page beat.",
             "The beats must prevent filler, repetition, and generic endings.",
+            ...repair.rules,
             ...evidenceLedgerRules(options.input, options.plan, "producer"),
             "Return exactly one root JSON object with chapterIndex, title, summary, pages, and continuityFocus.",
             "Use pages for the page beat array; do not return pageBeats as the root shape.",
@@ -307,6 +306,7 @@ export async function generateChapterBrief(options: GenerateChapterBriefOptions)
               ...firstPage.payload,
               ...citation.payload,
               chapter: options.chapter,
+              ...repair.payload,
               pageRange: {
                 start: options.chapterPageStart,
                 end: options.chapterPageEnd,

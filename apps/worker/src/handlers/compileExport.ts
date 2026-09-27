@@ -1,5 +1,5 @@
 import { chapterTransitionRepairIssues } from "../generation/chapterTransitionRepairs.js";
-import { qualityIssuesFromFinalQa } from "../generation/exportQualityReview.js";
+import { qualityIssuesFromFinalQa } from "../generation/exportQualityProvenance.js";
 import { pageQualityAdvisoryIssues } from "../generation/pageQualityAdvisories.js";
 import { unresolvedPageQualityIssues } from "../generation/unresolvedPageQuality.js";
 import { finalRepairQualityIssues } from "./compileRepairOutcome.js";
@@ -13,6 +13,8 @@ import {
 } from "../generation/exportPublication.js";
 import { resolveCompileReaderLayout } from "./compileExportLayout.js";
 import { shortKidsStoryPageLayout } from "@book-maker/core";
+import { usesShortPictureBookReview } from "../generation/shortPictureBook.js";
+import { loadPictureBookRequirementTargets, shortPictureBookChecks } from "../generation/shortPictureBookReviewCache.js";
 import { shortPictureBookReaderChapters } from "../generation/shortPictureBookExport.js";
 import { prepareFinalizationCoverageInventory, finalizationCoverageForCompile } from "./compileExportCoverageCheckpoint.js";
 import { buildManuscriptCoverageContext, manuscriptCoverageForCompile } from "../generation/manuscriptCoverageReview.js";
@@ -381,7 +383,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
               ? changedPageIndexes.size === 0
               : issue.affectedPageIndexes.every((index) => !changedPageIndexes.has(index));
           modelQualityIssues = modelQualityIssues.filter(stillDescribesReread);
-          recoveredFinalQaIssues = qualityIssuesFromFinalQa(finalQa, lastPageIndex(pages)).filter(
+          recoveredFinalQaIssues = qualityIssuesFromFinalQa(finalQa, lastPageIndex(pages), pages).filter(
             stillDescribesReread
           );
           repairVerificationIncomplete = true;
@@ -460,7 +462,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
               modelIssues: dedupeQualityIssues([
                 ...modelQualityIssues,
                 ...unresolvedPageQualityIssues(project.pages),
-                ...(recoveredFinalQaIssues ?? qualityIssuesFromFinalQa(finalQa, lastPageIndex(pages)))
+                ...(recoveredFinalQaIssues ?? qualityIssuesFromFinalQa(finalQa, lastPageIndex(pages), pages))
               ]),
               finalReviewRan: true,
               deterministicWarningsAffectVerdict: true
@@ -502,7 +504,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     // differ — `runLocalFinalQa` reports the difference as a mismatch of its
     // own. The card's promise is a page the reader can open.
     modelQualityIssues.push(
-      ...(recoveredFinalQaIssues ?? qualityIssuesFromFinalQa(finalQa, lastPageIndex(pages)))
+      ...(recoveredFinalQaIssues ?? qualityIssuesFromFinalQa(finalQa, lastPageIndex(pages), pages))
     );
   } else {
     await advanceJobStep(generationJobId, "qa", 25, "Running deterministic integrity checks");
@@ -563,7 +565,9 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   await updateJobProgress(generationJobId, { message: "Checking the finished book against your request" });
   const inventory = await inventoryWork;
   if (inventory?.status === "rejected") throw inventory.reason;
-  const coverageOptions = { brief: input.prompt, promises: [...(plan.promises ?? []), ...storyState.promises.map((promise) => promise.text)],
+  const requirementTargets = !isImportedManuscript(input.mediaSettings) && usesShortPictureBookReview({ input, plan, strategy, pages })
+    ? await loadPictureBookRequirementTargets({ projectId, planId, generationJobId, input, plan, pages, checks: shortPictureBookChecks(quality) }) : [];
+  const coverageOptions = { requirementTargets, brief: input.prompt, promises: [...(plan.promises ?? []), ...storyState.promises.map((promise) => promise.text)],
     pages, chapters: chapterStructureForExport({ plan, pages: markdownPages, readerChapters }), textModel: providers.text,
     evidenceContext: buildManuscriptCoverageContext({ input, plan, pages, images: project.images,
       expectedIllustratedPageIndexes: pages.filter((page) => strategy.shouldIllustratePage(input, plan, page.index)).map((page) => page.index) }) };
@@ -848,18 +852,21 @@ export {
 export function dedupeQualityIssues(issues: ManuscriptQualityIssue[]): ManuscriptQualityIssue[] {
   const seen = new Set<string>();
   return issues.filter((issue) => {
-    const key = `${issue.code}:${issue.message}:${issue.affectedPageIndexes.join(",")}`;
+    const key = JSON.stringify([issue.code, issue.message, issue.affectedPageIndexes, issue.severity,
+      issue.provenance?.findingId, issue.provenance?.primaryPageIndex,
+      issue.provenance?.kind === "repair" ? issue.provenance.repairOperationId : undefined]);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
 }
 export function qualitySummaryMessage(report: ManuscriptQualityReport): string {
+  const count = report.findings?.length ?? report.issues.length;
   if (report.state === "blocked") {
-    return `Review required: ${report.issues.length} integrity issue${report.issues.length === 1 ? "" : "s"} must be fixed before export.`;
+    return `Review required: ${count} integrity issue${count === 1 ? "" : "s"} must be fixed before export.`;
   }
   if (report.state === "review_recommended") {
-    return `Export complete with ${report.issues.length} review recommendation${report.issues.length === 1 ? "" : "s"}.`;
+    return `Export complete with ${count} review recommendation${count === 1 ? "" : "s"}.`;
   }
   return "Export complete. Quality checks passed.";
 }

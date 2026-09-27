@@ -1,0 +1,14 @@
+{
+  "beatPatches": [
+    {
+      "pageIndex": 23,
+      "purpose": "Restore the bridge marker and bring the next misplaced lantern within reach",
+      "beat": "Rabbit carries the recovered bridge lantern across without rushing ahead. Wise Turtle follows, and together they hang it on its original far-side post. From there, Rabbit spots the bramble lantern beside the path to the fork and picks it up.",
+      "endingPressure": "With both beyond the bridge and the bramble lantern in hand, they can take it to the true fork marker.",
+      "requiredContinuity": [
+        "Bridge lantern hangs at its original post",
+        "Both stand beyond the bridge"
+      ]
+    }
+  ]
+}

@@ -78,6 +78,24 @@ function countedPageReads(
 }
 
 describe("dedupePageBeats", () => {
+  it("includes both neighboring page states across chapter boundaries", async () => {
+    const briefs = collidingBriefs();
+    const last = briefs[1]!.pages.pop()!;
+    last.requiredContinuity = ["The carrier keeps the parcel throughout the handoff."];
+    briefs.push({ chapterIndex: 3, title: "Next", summary: "Continue.", continuityFocus: [],
+      pages: [{ ...last, chapterIndex: 3 }] });
+    const capture = capturingJsonModel({ beatPatches: [] });
+    await dedupePageBeats({ textModel: capture.model, briefs,
+      findings: [findingFor(3, 2, blockadeBeat)], promises: [], lastPageIndex: 4 });
+
+    const neighbors = capture.payload?.chapters?.[0]?.flaggedPages?.[0]?.adjacentBeats;
+    expect(neighbors).toEqual([2, 4].map((pageIndex) => {
+      const page = briefs.flatMap((brief) => brief.pages).find((entry) => entry.pageIndex === pageIndex)!;
+      return { pageIndex, beat: page.beat, requiredContinuity: page.requiredContinuity,
+        endingPressure: page.endingPressure };
+    }));
+  });
+
   it("hands the model both halves of each collision and merges only flagged rewrites", async () => {
     const briefs = collidingBriefs();
     const findings = await findDuplicatePageBeats(briefs);

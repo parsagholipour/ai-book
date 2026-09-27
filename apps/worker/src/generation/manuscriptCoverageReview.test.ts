@@ -1,4 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 import type { ManuscriptCoverage } from "@book-maker/core";
 const mocks = vi.hoisted(() => ({ findFirst: vi.fn(), review: vi.fn() }));
 vi.mock("@book-maker/db", () => ({ prisma: { generationJob: { findFirst: mocks.findFirst } } }));
@@ -22,6 +23,40 @@ it("reuses a completed review only for the identical brief and manuscript", asyn
   expect(result.issues).toEqual([]);
   expect(mocks.review).not.toHaveBeenCalled();
   expect(mocks.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ projectId: "project-1", qualityReport: { path: ["briefCoverage", "fingerprint"], equals: fingerprint } }) }));
+});
+
+it("does not reuse pre-fix coverage that could have discarded ungrounded brief entries", async () => {
+  const oldFingerprint = createHash("sha256").update(JSON.stringify({ version: 6, brief: options.brief,
+    promises: options.promises, evidenceContext: null, chapters: null, pages })).digest("hex");
+  mocks.findFirst.mockResolvedValue({ qualityReport: { briefCoverage: { fingerprint: oldFingerprint, review } } });
+  await manuscriptCoverageForCompile(options);
+  expect(mocks.review).toHaveBeenCalledOnce();
+});
+
+it("invalidates the quote-only prohibition contract in the preceding coverage cache version", async () => {
+  const oldFingerprint = createHash("sha256").update(JSON.stringify({ version: 9, brief: options.brief,
+    promises: options.promises, requirementTargets: [], evidenceContext: null, chapters: null, pages })).digest("hex");
+  mocks.findFirst.mockResolvedValue({ qualityReport: { briefCoverage: { fingerprint: oldFingerprint, review } } });
+  await manuscriptCoverageForCompile(options);
+  expect(mocks.review).toHaveBeenCalledOnce();
+});
+
+it("invalidates cast coverage from before separate name and role evidence", async () => {
+  const oldFingerprint = createHash("sha256").update(JSON.stringify({ version: 10, brief: options.brief,
+    promises: options.promises, requirementTargets: [], evidenceContext: null, chapters: null, pages })).digest("hex");
+  expect(oldFingerprint).not.toBe(fingerprint);
+  mocks.findFirst.mockResolvedValue({ qualityReport: { briefCoverage: { fingerprint: oldFingerprint, review } } });
+  await manuscriptCoverageForCompile(options);
+  expect(mocks.review).toHaveBeenCalledOnce();
+});
+
+it("invalidates coverage from before exact cast-coordinate and short-dialogue recovery", async () => {
+  const oldFingerprint = createHash("sha256").update(JSON.stringify({ version: 13, brief: options.brief,
+    promises: options.promises, requirementTargets: [], evidenceContext: null, chapters: null, pages })).digest("hex");
+  expect(oldFingerprint).not.toBe(fingerprint);
+  mocks.findFirst.mockResolvedValue({ qualityReport: { briefCoverage: { fingerprint: oldFingerprint, review } } });
+  await manuscriptCoverageForCompile(options);
+  expect(mocks.review).toHaveBeenCalledOnce();
 });
 
 it.each([
@@ -92,4 +127,15 @@ it("reuses partial evidence for an unchanged manuscript without claiming unavail
   expect(mocks.review).not.toHaveBeenCalled();
   expect(result.stored.review.requirements[0]?.status).toBe("fulfilled");
   expect(result.issues.map((i) => i.code)).toEqual(["BRIEF_COVERAGE_UNVERIFIED"]);
+});
+
+
+it("invalidates independent coverage when an outstanding requirement finding is supplied", async () => {
+  const requirementTargets = [{ id: "finding-1", requirementId: "requirement-1", requirementQuote: options.brief, pageIndex: 1,
+    problem: "Only one side of the requested comparison is explained.", acceptanceCriteria: "Compare both problems.",
+    evidence: [{ pageIndex: 1, quote: pages[0]!.markdown }] }];
+  mocks.findFirst.mockResolvedValue({ qualityReport: { briefCoverage: { fingerprint, review } } });
+  await manuscriptCoverageForCompile({ ...options, requirementTargets });
+  expect(mocks.review).toHaveBeenCalledWith(expect.objectContaining({ requirementTargets }));
+  expect(manuscriptCoverageFingerprint(options.brief, options.promises, pages, undefined, undefined, requirementTargets)).not.toBe(fingerprint);
 });

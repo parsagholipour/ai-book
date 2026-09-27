@@ -82,7 +82,7 @@ export async function enrichPageQualityReport(options: {
   quality?: QualityGateContext | undefined;
   storyState?: StoryState | undefined;
   /** Already snapshot-validated by the publication caller. */
-  precomputed?: Pick<PrecomputedPageReview, "storyExtract" | "styleAudit" | "manuscriptPages"> | undefined;
+  precomputed?: Pick<PrecomputedPageReview, "storyExtract" | "styleAudit" | "manuscriptPages" | "reviewUnavailable"> | undefined;
 }): Promise<EnrichedPageReview> {
   const quality = options.quality ?? (await loadQualityContext(options.input));
   const storyState =
@@ -91,7 +91,9 @@ export async function enrichPageQualityReport(options: {
   let report = options.report;
   let extract: StoryExtractResult | null = null;
 
-  if (quality.enabled("storyExtractAudit")) {
+  if (quality.enabled("storyExtractAudit") && options.precomputed?.reviewUnavailable && !options.precomputed.storyExtract) {
+    report = withUnavailableQualityCheck(report, "story_continuity");
+  } else if (quality.enabled("storyExtractAudit")) {
     try {
       extract = options.precomputed?.storyExtract ?? await extractStoryState({
         textModel: options.textModel,
@@ -105,7 +107,8 @@ export async function enrichPageQualityReport(options: {
       report = withStoryContradictions(report, extract.contradictions);
       if (extract.unverifiedContradictions?.length) report = { ...report,
         notes: `${report.notes}\nUnverified continuity hypotheses (not rewrite instructions): ${extract.unverifiedContradictions.join("; ")}`,
-        qualityAdvisories: [...(report.qualityAdvisories ?? []), ...extract.unverifiedContradictions.map((message) => ({ check: "story_continuity" as const, status: "unverified" as const, message }))] };
+        qualityAdvisories: [...(report.qualityAdvisories ?? []), ...extract.unverifiedContradictions.map((message) => ({ check: "story_continuity" as const, status: "unverified" as const, message,
+          ...(extract?.findingIdsByContradiction?.[message] ? { findingId: extract.findingIdsByContradiction[message] } : {}) }))] };
     } catch (error) {
       if (isCancellationError(error)) {
         throw error;
@@ -156,7 +159,9 @@ export async function enrichPageQualityReport(options: {
     };
   }
 
-  if (quality.enabled("styleAuditor") && (styleExcerpts.length > 0 || options.precomputed?.styleAudit)) {
+  if (quality.enabled("styleAuditor") && quality.enabled("styleExcerpts") && options.precomputed?.reviewUnavailable && !options.precomputed.styleAudit) {
+    report = withUnavailableQualityCheck(report, "style");
+  } else if (quality.enabled("styleAuditor") && (styleExcerpts.length > 0 || options.precomputed?.styleAudit)) {
     try {
       const audit = options.precomputed?.styleAudit
         ? validateStyleAuditEvidence(options.precomputed.styleAudit, figureFreeProse(options.draft.markdown))

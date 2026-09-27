@@ -84,6 +84,8 @@ export type StoryDelta = z.infer<typeof storyDeltaSchema>;
 export type StoryExtractResult = z.infer<typeof storyExtractResultSchema> & {
   /** Diagnostic hypotheses, never instructions to rewrite prose to match derived metadata. */
   unverifiedContradictions?: string[];
+  /** Local IDs bound to validated prose findings in the same grouped review. */
+  findingIdsByContradiction?: Record<string, string> | undefined;
 };
 
 export function validateStoryExtractEvidence(

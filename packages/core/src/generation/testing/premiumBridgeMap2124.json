@@ -1,0 +1,328 @@
+{
+  "pages": [
+    {
+      "pageIndex": 1,
+      "purpose": "Open on four lanterns and approaching weather",
+      "beat": "At the gate, Rabbit taps four unlit picnic lanterns; wind rattles their handles.",
+      "requiredContinuity": [
+        "Four lanterns mark the route",
+        "Neighbors need the path before moonrise"
+      ],
+      "endingPressure": "The weather threatens the marked route."
+    },
+    {
+      "pageIndex": 2,
+      "purpose": "Establish the bridge marker",
+      "beat": "Rabbit skips to the bridge while Wise Turtle checks its lantern on the far-side post.",
+      "requiredContinuity": [
+        "Bridge lantern starts on the far-side post"
+      ],
+      "endingPressure": "Three more markers need checking."
+    },
+    {
+      "pageIndex": 3,
+      "purpose": "Establish the bend and fork",
+      "beat": "Wise Turtle checks the bend lantern; Rabbit points out the fork lantern farther along.",
+      "requiredContinuity": [
+        "Bend and fork lanterns are at their intended markers"
+      ],
+      "endingPressure": "The clearing marker remains ahead."
+    },
+    {
+      "pageIndex": 4,
+      "purpose": "Complete the route before the storm",
+      "beat": "At the clearing, they check the fourth lantern; a gust snaps leaves against its handle.",
+      "requiredContinuity": [
+        "Clearing lantern starts at the clearing",
+        "All four lanterns remain unlit"
+      ],
+      "endingPressure": "The gust becomes a storm."
+    },
+    {
+      "pageIndex": 5,
+      "purpose": "Scatter every marker",
+      "beat": "Rain drums through the woods; when it stops, all four lanterns have vanished.",
+      "requiredContinuity": [
+        "All four lanterns are displaced",
+        "The route is dark"
+      ],
+      "endingPressure": "Rabbit rushes to restore the route."
+    },
+    {
+      "pageIndex": 6,
+      "purpose": "Let Rabbit's haste misplace a lantern",
+      "beat": "Rabbit finds the bend lantern by an eastward stump and hangs it at the fork.",
+      "requiredContinuity": [
+        "Bend lantern moves from stump to wrong fork",
+        "Bridge and bend remain unmarked"
+      ],
+      "endingPressure": "The quick fix points visitors onward."
+    },
+    {
+      "pageIndex": 7,
+      "purpose": "Expose the blocked old route",
+      "beat": "Wise Turtle follows the familiar path and finds a fallen branch across the bend.",
+      "requiredContinuity": [
+        "Branch blocks the bend",
+        "Wise Turtle favors clearing the old path"
+      ],
+      "endingPressure": "Searching and clearing now compete for time."
+    },
+    {
+      "pageIndex": 8,
+      "purpose": "Make the wrong marker consequential",
+      "beat": "As they disagree, a damp breeze swings Rabbit's lantern toward the wrong trail.",
+      "requiredContinuity": [
+        "Bend lantern still hangs at wrong fork",
+        "Its light would misdirect a neighbor"
+      ],
+      "endingPressure": "Rabbit must undo the misleading sign."
+    },
+    {
+      "pageIndex": 9,
+      "purpose": "Have Rabbit correct the mistake",
+      "beat": "Rabbit takes down the lantern, carries it back to the stump, and waits.",
+      "requiredContinuity": [
+        "Bend lantern is back at eastward stump",
+        "Fork has no lantern"
+      ],
+      "endingPressure": "Waiting gives them a chance to compare clues."
+    },
+    {
+      "pageIndex": 10,
+      "purpose": "Reveal the bridge lantern's landing place",
+      "beat": "Beyond the bridge, Wise Turtle spots a lantern caught in near-bank reeds.",
+      "requiredContinuity": [
+        "Bridge lantern is in near-bank reeds east of its post",
+        "Neither lantern has been retrieved"
+      ],
+      "endingPressure": "Two displaced lanterns can now be compared."
+    },
+    {
+      "pageIndex": 11,
+      "purpose": "Turn observed places into a prediction",
+      "beat": "Wise Turtle compares reeds east of bridge with stump east of bend and predicts an eastward drift.",
+      "requiredContinuity": [
+        "Both observed lanterns landed east of their markers",
+        "Prediction points east of fork and clearing"
+      ],
+      "endingPressure": "The untested pattern suggests the next search."
+    },
+    {
+      "pageIndex": 12,
+      "purpose": "Test the pattern at the fork",
+      "beat": "Rabbit follows Wise Turtle's suggestion to the bramble east of the fork and spots light beneath wet leaves.",
+      "requiredContinuity": [
+        "Fork lantern is beneath leaves at eastward bramble",
+        "Eastward prediction has its first test"
+      ],
+      "endingPressure": "A caught hook keeps the lantern there."
+    },
+    {
+      "pageIndex": 13,
+      "purpose": "Replace tugging with cooperation",
+      "beat": "Rabbit holds leaves aside instead of pulling; Wise Turtle frees the sound lantern's hook.",
+      "requiredContinuity": [
+        "Rabbit carries the freed fork lantern",
+        "Lantern and hook are sound"
+      ],
+      "endingPressure": "The clearing lantern remains missing."
+    },
+    {
+      "pageIndex": 14,
+      "purpose": "Apply the tested clue farther on",
+      "beat": "They head east of the clearing; Rabbit reaches the hollow log first and calls for Wise Turtle.",
+      "requiredContinuity": [
+        "Rabbit still carries fork lantern",
+        "Both search east of clearing"
+      ],
+      "endingPressure": "The log may hold the last lantern."
+    },
+    {
+      "pageIndex": 15,
+      "purpose": "Locate the fourth lantern safely",
+      "beat": "Wise Turtle hears glass clink deep inside the log and asks Rabbit not to reach blindly.",
+      "requiredContinuity": [
+        "Clearing lantern is deep inside eastward hollow log",
+        "Wise Turtle joins Rabbit at the log"
+      ],
+      "endingPressure": "They need a way to draw it out."
+    },
+    {
+      "pageIndex": 16,
+      "purpose": "Retrieve the last scattered lantern",
+      "beat": "Rabbit guides it forward with a fallen twig while Wise Turtle steadies the log; together they lift it out.",
+      "requiredContinuity": [
+        "All four landing places are known",
+        "Clearing lantern is retrieved"
+      ],
+      "endingPressure": "The blocked bend still prevents a clear route."
+    },
+    {
+      "pageIndex": 17,
+      "purpose": "Challenge both familiar approaches",
+      "beat": "Rabbit offers to carry the lanterns back quickly; Wise Turtle insists they try clearing the old path.",
+      "requiredContinuity": [
+        "Fork and clearing lanterns are with the pair",
+        "Bridge and bend lanterns remain where found"
+      ],
+      "endingPressure": "The branch must be assessed before they choose."
+    },
+    {
+      "pageIndex": 18,
+      "purpose": "Prove the branch cannot be moved",
+      "beat": "At the bend, both push the branch; it stays put as the moon nears the treetops.",
+      "requiredContinuity": [
+        "Branch remains across the old bend",
+        "Picnic arrival must precede moonrise"
+      ],
+      "endingPressure": "Wise Turtle's preferred route will not work."
+    },
+    {
+      "pageIndex": 19,
+      "purpose": "Offer a checked alternative",
+      "beat": "Rabbit spots a short way around over dry ground and invites Wise Turtle to test it.",
+      "requiredContinuity": [
+        "Dry detour goes around the branch",
+        "No one relies on it yet"
+      ],
+      "endingPressure": "Its footing still needs checking."
+    },
+    {
+      "pageIndex": 20,
+      "purpose": "Let Wise Turtle choose a new way",
+      "beat": "Wise Turtle tests each step, finds firm ground, and agrees to guide visitors around the branch.",
+      "requiredContinuity": [
+        "Dry detour is checked and approved",
+        "Branch remains in place"
+      ],
+      "endingPressure": "The lanterns must make that turn clear."
+    },
+    {
+      "pageIndex": 21,
+      "purpose": "Restore the bend marker accurately",
+      "beat": "Rabbit fetches the lantern from the stump and hangs it at the bend where visitors can see the detour.",
+      "requiredContinuity": [
+        "Bend lantern moves from stump to bend",
+        "Fork lantern remains with Rabbit"
+      ],
+      "endingPressure": "The bridge remains dark."
+    },
+    {
+      "pageIndex": 22,
+      "purpose": "Recover the bridge lantern",
+      "beat": "At the near-bank reeds, Wise Turtle stays on firm ground while Rabbit draws out the bridge lantern.",
+      "requiredContinuity": [
+        "Rabbit holds bridge lantern",
+        "Bend lantern hangs at bend"
+      ],
+      "endingPressure": "The recovered marker needs its proper post."
+    },
+    {
+      "pageIndex": 23,
+      "purpose": "Restore the bridge marker",
+      "beat": "Rabbit crosses first with the lantern; Wise Turtle follows, and they hang it on the far-side post.",
+      "requiredContinuity": [
+        "Bridge lantern hangs at its original post",
+        "Both stand beyond the bridge"
+      ],
+      "endingPressure": "Two markers still need hanging."
+    },
+    {
+      "pageIndex": 24,
+      "purpose": "Restore the fork without repeating the error",
+      "beat": "Rabbit hangs the bramble lantern at its true fork marker and checks the turn from a visitor's approach.",
+      "requiredContinuity": [
+        "Fork lantern hangs at intended fork marker",
+        "Rabbit checks its direction"
+      ],
+      "endingPressure": "The clearing still needs its marker."
+    },
+    {
+      "pageIndex": 25,
+      "purpose": "Complete and light the safe route",
+      "beat": "Wise Turtle hangs the hollow-log lantern at the clearing; together they light all four and check the detour.",
+      "requiredContinuity": [
+        "All four lanterns are lit at intended markers",
+        "Checked detour is visible at bend"
+      ],
+      "endingPressure": "Waiting neighbors still need an escort."
+    },
+    {
+      "pageIndex": 26,
+      "purpose": "Choose company over racing ahead",
+      "beat": "Back at the gate, Rabbit waits beside Wise Turtle as the neighbors gather beneath the darkening sky.",
+      "requiredContinuity": [
+        "Both helpers are at the gate",
+        "Four lit lanterns mark the checked route"
+      ],
+      "endingPressure": "The group must arrive before moonrise."
+    },
+    {
+      "pageIndex": 27,
+      "purpose": "Guide the group across the bridge",
+      "beat": "Rabbit calls the picnic tune at the bridge; Wise Turtle waits until the last neighbor crosses.",
+      "requiredContinuity": [
+        "Group passes the bridge together"
+      ],
+      "endingPressure": "The bend requires an unfamiliar turn."
+    },
+    {
+      "pageIndex": 28,
+      "purpose": "Use the detour without losing anyone",
+      "beat": "Rabbit calls from the lit bend while Wise Turtle guides the last neighbor over the tested dry ground.",
+      "requiredContinuity": [
+        "Group passes the branch by the checked detour",
+        "No neighbor is left behind"
+      ],
+      "endingPressure": "The final fork still needs a clear choice."
+    },
+    {
+      "pageIndex": 29,
+      "purpose": "Finish the escort before moonrise",
+      "beat": "Rabbit calls at the fork; Wise Turtle checks behind, and the neighbors reach the clearing before moonrise.",
+      "requiredContinuity": [
+        "All neighbors reach the picnic before moonrise",
+        "All four lanterns remain lit"
+      ],
+      "endingPressure": "The helpers can finally join the picnic."
+    },
+    {
+      "pageIndex": 30,
+      "purpose": "Close with shared, changed behavior",
+      "beat": "Rabbit sits for a quiet bite beside Wise Turtle while the four lanterns shine along the path home.",
+      "requiredContinuity": [
+        "Rabbit stays with the group",
+        "Wise Turtle trusts their checked new route"
+      ],
+      "endingPressure": "The safe path remains ready for home."
+    }
+  ],
+  "chapters": [
+    {
+      "title": "The Scattered Lights",
+      "summary": "A storm scatters four markers, and Rabbit's hurried repair makes the route misleading.",
+      "endPage": 9
+    },
+    {
+      "title": "Following the Wind",
+      "summary": "Wise Turtle compares two landing places, and the pair tests the pattern to recover the remaining lanterns.",
+      "endPage": 16
+    },
+    {
+      "title": "A New Way Around",
+      "summary": "The blocked bend prompts Rabbit to propose a detour and Wise Turtle to test it.",
+      "endPage": 20
+    },
+    {
+      "title": "Lighting the Route",
+      "summary": "They restore all four lanterns to their intended markers and make the checked route visible.",
+      "endPage": 25
+    },
+    {
+      "title": "Together to the Picnic",
+      "summary": "Rabbit and Wise Turtle escort every neighbor to the clearing before moonrise.",
+      "endPage": 30
+    }
+  ]
+}

@@ -2,13 +2,14 @@ import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
 import type { BookPlan, ChapterPlan } from "../schemas/book.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
+import { applyStoryRevision, pictureBookStoryRevisionSchema, storyRevisionIssues, PICTURE_BOOK_STORY_CRITIC_GUIDANCE } from "./pictureBookStoryCritic.js";
 import {
   applyPlanStyleContract,
   matchesUserParallelIntent,
   type StyleContractSource
 } from "./styleContract.js";
 
-export const planCriticPatchSchema = z.object({
+const mechanicalPlanCriticPatchSchema = z.object({
   promisesToAdd: z.array(z.string().min(1)).default([]),
   chapterMergeNotes: z
     .array(
@@ -31,6 +32,15 @@ export const planCriticPatchSchema = z.object({
     .default([])
 });
 
+export const planCriticPatchSchema = mechanicalPlanCriticPatchSchema.extend({
+  storyRevision: pictureBookStoryRevisionSchema.nullable().optional()
+});
+const storyPlanCriticPatchSchema = planCriticPatchSchema.extend({
+  chapterMergeNotes: mechanicalPlanCriticPatchSchema.shape.chapterMergeNotes.unwrap().max(0).default([]),
+  reorderNotes: mechanicalPlanCriticPatchSchema.shape.reorderNotes.unwrap().max(0).default([]),
+  repeatedBeatWarnings: mechanicalPlanCriticPatchSchema.shape.repeatedBeatWarnings.unwrap().max(0).default([])
+});
+
 export type PlanCriticPatch = z.infer<typeof planCriticPatchSchema>;
 export type PlanCriticPatchInput = z.input<typeof planCriticPatchSchema>;
 
@@ -44,6 +54,8 @@ export function mergePlanCriticPatch(
   patch: PlanCriticPatchInput,
   options: StyleContractSource = {}
 ): BookPlan {
+  if (plan.storyTreatment) patch = storyPlanCriticPatchSchema.parse(patch);
+  plan = applyStoryRevision(plan, patch.storyRevision);
   const promises = uniqueStrings([...(plan.promises ?? []), ...(patch.promisesToAdd ?? [])]);
   let chapters = [...plan.chapters];
   // Patch entries name original chapter.index values. Keep those identities
@@ -84,15 +96,20 @@ export async function critiquePlan(options: {
   plan: BookPlan;
   userPrompt?: string | undefined;
 }): Promise<PlanCriticPatch> {
+  const storyFirst = Boolean(options.plan.storyTreatment);
+  const schema = storyFirst ? storyPlanCriticPatchSchema.superRefine((patch, context) => {
+    if (patch.storyRevision) for (const message of storyRevisionIssues(options.plan, patch.storyRevision))
+      context.addIssue({ code: "custom", path: ["storyRevision"], message });
+  }) : mechanicalPlanCriticPatchSchema;
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "critique-plan",
     temperature: 0,
-    maxTokens: 1200,
-    schema: planCriticPatchSchema,
+    maxTokens: storyFirst ? 4000 : 1200,
+    schema,
     messages: [
       {
         role: "system",
-        content: planCriticSystemContent(options.userPrompt)
+        content: [planCriticSystemContent(options.userPrompt, storyFirst), ...(storyFirst ? [PICTURE_BOOK_STORY_CRITIC_GUIDANCE] : [])].join(" ")
       },
       {
         role: "user",
@@ -102,6 +119,9 @@ export async function critiquePlan(options: {
             premise: options.plan.premise,
             promises: options.plan.promises,
             antiAiRules: options.plan.antiAiRules,
+            ...(storyFirst ? { storyTreatment: options.plan.storyTreatment, characters: options.plan.characters,
+              locations: options.plan.locations, continuityRules: options.plan.continuityRules,
+              openingHook: options.plan.openingHook, audience: options.plan.audience, voiceGuide: options.plan.voiceGuide } : {}),
             ...(options.userPrompt ? { userPrompt: options.userPrompt } : {}),
             ...(options.plan.writingMode ? { writingMode: options.plan.writingMode } : {}),
             ...(options.plan.styleContract ? { styleContract: options.plan.styleContract } : {}),
@@ -122,15 +142,16 @@ export async function critiquePlan(options: {
   return planCriticPatchSchema.parse(result.data);
 }
 
-function planCriticSystemContent(userPrompt: string | undefined): string {
+function planCriticSystemContent(userPrompt: string | undefined, storyFirst = false): string {
   const styleRewriteGuidance = matchesUserParallelIntent(userPrompt)
     ? "The user asked for parallel structure. Do not emit styleGuidanceRewrites that replace instructions about asking the same questions throughout, using the same framework for every era or region, or other parallel-structure wording the user requested."
     : "If antiAiRules or styleContract instructions prescribe asking the same questions throughout, always distinguishing the same categories, reiterating interacting possibilities on every case, or using the same framework for every era or region, rewrite them in styleGuidanceRewrites into selective, chapter-scoped instructions.";
   return [
-    "You are a mechanical plan critic.",
-    "Return a JSON patch only: promisesToAdd, chapterMergeNotes, reorderNotes, repeatedBeatWarnings, styleGuidanceRewrites.",
+    storyFirst ? "You are a causal story editor reviewing a short book before page allocation." : "You are a mechanical plan critic.",
+    `Return a JSON patch only: promisesToAdd, chapterMergeNotes, reorderNotes, repeatedBeatWarnings, styleGuidanceRewrites${storyFirst ? ", storyRevision" : ""}.`,
     styleRewriteGuidance,
-    "Do not rewrite chapter prose. Prefer an empty patch when the plan is already specific."
+    storyFirst ? "Do not allocate chapters or pages. Prefer a null storyRevision when the complete story is coherent."
+      : "Do not rewrite chapter prose. Prefer an empty patch when the plan is already specific."
   ].join(" ");
 }
 

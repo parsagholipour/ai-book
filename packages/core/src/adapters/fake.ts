@@ -194,6 +194,11 @@ export class FakeTextModelAdapter implements TextModelAdapter {
     }
 
     if (options.purpose === "critique-page-map") {
+      const development = schema.safeParse({ sceneRevisions: [], flowAudit: {
+        stateDependencies: [], setupPayoffs: [], sceneProgression: []
+      } });
+      if (development.success && development.data && typeof development.data === "object" && "sceneRevisions" in development.data)
+        return development.data;
       return {
         beatPatches: [],
         duplicatePurposeWarnings: [],
@@ -275,6 +280,21 @@ export class FakeTextModelAdapter implements TextModelAdapter {
         ...plan,
         premise: `[MOCK_AI placeholder plan] ${plan.premise}`,
         questions: plan.questions
+      };
+    }
+
+    if (options.purpose === "plan-book" && this.input && options.messages.some(message => message.content.includes("Write storyTreatment first"))) {
+      return { ...makeFallbackPlan(this.input), storyTreatment: "[MOCK_AI placeholder story] A traveler loses the path while hurrying to meet a friend. The traveler stops to notice familiar tracks, tries the quieter route and asks for help at the crossing. Together the friends reach home and share what they found along the way." };
+    }
+
+    if (options.purpose === "generate-chapter-brief" && (Array.isArray(extractUserPayload(options).storyOutline) || typeof extractUserPayload(options).storyTreatment === "string")) {
+      const targetPages = extractTargetPages(options);
+      return {
+        pages: Array.from({ length: targetPages }, (_, index) => {
+          const { purpose, beat, requiredContinuity, endingPressure } = dryRunPageBeat(index + 1);
+          return { pageIndex: index + 1, purpose, beat, requiredContinuity, endingPressure };
+        }),
+        chapters: [{ title: "Dry Run Story", summary: "A deterministic scene map for local dry runs.", endPage: targetPages }]
       };
     }
 

@@ -1,4 +1,5 @@
 import { MANUSCRIPT_PROMPT_LEAK_PATTERNS, containsPromptLeak } from "./promptLeak.js";
+import { groupManuscriptQualityFindings, manuscriptQualityPenalty } from "./manuscriptQualityFindings.js";
 import { figureFreeProse } from "./figures/figureBlocks.js";
 import { sentenceOpeningCadenceIssues } from "./manuscriptCadence.js";
 import { englishPhraseDetectorsEnabled } from "./manuscriptLanguage.js";
@@ -293,18 +294,16 @@ export function buildManuscriptQualityReport(
     : advisoryModelIssues > 0 || (deterministicWarningsAffectVerdict && deterministicWarnings > 0)
       ? "review_recommended"
       : "passed";
-  const score = Math.max(
-    0,
-    100 -
-      issues.filter((entry) => entry.severity === "error").length * 18 -
-      (advisoryModelIssues + deterministicWarnings) * 5
-  );
+  const findings = groupManuscriptQualityFindings(issues);
+  const score = Math.max(0, 100 - manuscriptQualityPenalty(findings));
   const manuscriptPageCount =
     options.manuscriptPageCount ??
     Math.max(0, ...issues.flatMap((issue) => issue.affectedPageIndexes), 0);
   return {
     state,
     score,
+    scoreBasis: "unresolved_findings",
+    findings,
     issues,
     affectedPageIndexes: [...new Set(issues.flatMap((entry) => entry.affectedPageIndexes))].sort((a, b) => a - b),
     checkedAt: new Date().toISOString(),
@@ -324,10 +323,13 @@ export function appendQualityIssue(
 ): ManuscriptQualityReport {
   const blocked = report.state === "blocked" || issue.severity === "error";
   const issues = [...report.issues, issue];
+  const findings = groupManuscriptQualityFindings(issues);
   return {
     ...report,
     state: blocked ? "blocked" : "review_recommended",
-    score: Math.max(0, report.score - (issue.severity === "error" ? 18 : 5)),
+    score: Math.max(0, 100 - manuscriptQualityPenalty(findings)),
+    scoreBasis: "unresolved_findings",
+    findings,
     issues,
     affectedPageIndexes: [...new Set([...report.affectedPageIndexes, ...issue.affectedPageIndexes])].sort(
       (a, b) => a - b

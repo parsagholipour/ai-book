@@ -28,6 +28,13 @@ ceilings are provisional engineering targets, not product SLOs. Supply all three
 explicitly; there are no default performance ceilings. Preparation makes no provider
 calls and creates no generation jobs.
 
+For the 30-page text-only benchmark, use `--illustration-cadence none
+--benchmark-profile text-only-30` instead of `--max-minutes`. This freezes
+provisional 5/8/12-minute targets for Quick/Balanced/Premium. Custom targets remain
+explicit inputs. The separate four-hour observer watchdog is never a performance
+target: new targets must be shorter, and old 240-minute captures report performance
+as unassessed. Capturing an old run does not rewrite its saved manifest.
+
 `--illustration-cadence every-third-page` selects exactly ten interior illustrations
 on story pages 3, 6, 9, …, 30. All 30 story pages still contain prose; the other
 20 pages contain text without scene illustrations. Covers and the two saved
@@ -64,7 +71,7 @@ unrelated open jobs. It freezes source hashes, Git revision and patch, untracked
 source, Quality revision, resolved stage routes, concurrency and portrait hashes.
 It runs one matched tier round at a time. Let every sample in that round finish;
 exceeding a performance ceiling records a failure after completion and never cancels
-a healthy generation. A functional or performance failure prevents subsequent rounds.
+a healthy generation. A failed or unassessed automated acceptance result prevents subsequent rounds.
 Failures do not trigger generation retries or replacement samples.
 
 If the observer process is interrupted, `watch --out <same directory>` resumes
@@ -82,12 +89,26 @@ EPUB and DOCX, provenance sidecars and `summary.json`. The matrix stores its own
 summary and live `status.json`. Missing usage cost is counted separately from
 known cost hints; the latter is not an invoice.
 
-`functionalPassed` reports publication/integrity checks. `performance.passed` reports
-the selected tier's experimental elapsed-time ceiling; absent limits produce
-`not_configured`, never a performance pass. Overall `passed` requires both. Matrix
-completion uses the prepared run count, so one successful matched round is a complete
-three-sample experiment. Capturing an older manifest without limits preserves its
-functional result while leaving performance unassessed.
+`publicationPassed` reports delivery; `functionalPassed` adds unattended execution
+and artifact integrity. `qualityPassed` reports remaining automated findings and
+failed page QA. `semanticPassed` requires a complete assessed inventory with every
+requirement fulfilled. Missing review data is unknown, never a pass. The full
+`quality` and `semantic` objects retain residual issues, missing requirements and
+unverified requirements independently of delivery.
+
+`performance.passed` reports the selected tier's experimental elapsed-time target;
+absent limits and legacy watchdog-only limits produce `not_configured`, never a
+performance pass. `automatedPassed` requires functional, quality, semantic and
+performance checks all to pass. Round advancement and the command exit status use
+this automated result. Overall `passed` stays false while human review is pending;
+`acceptanceStatus` distinguishes `human_review_pending`, `failed`, `unassessed`, and
+an incomplete matrix. A completed capture is not an editorial approval. Matrix
+completion still uses the prepared run count, so one matched round is three samples.
+
+Quality scores indicate unresolved findings, not literary merit. New reports group
+exactly linked diagnoses, guidance, page status and repair history once, retaining
+all original messages in the saved report. Historical reports keep their original
+scores and interpretations.
 
 Performance evidence includes planning, manuscript, illustration, and finalization
 timings; non-image recorded calls; physical text attempts, retry ordinals, recorded
@@ -96,14 +117,24 @@ output limits. Stage spans overlap and are not additive. `activeMs` unions concu
 job intervals; `summedJobMs` counts their work separately. Wire-event telemetry is
 distinguished from recorded call rows and unknown SDK-internal image retries.
 
+`loggedErrors` counts raw error events; `ledgerKnownFailedTextCalls` also exposes
+failures absent from those events. `textAttemptsWithoutUsage` counts physical
+attempts without any usage snapshot, independently of missing reasoning fields.
+`tokenAccounting` separates provider-reported and estimated counts.
+`costAccounting` reports the known subtotal and unknown-price call count. Their
+`complete` flags require all text ledger rows to match physical attempts without
+ambiguity, with confirmed tokens or settled prices respectively. Missing traces,
+in-flight rows and unpriced calls cannot establish a complete run total.
+
 A functional pass requires:
 
 - Publication without failed/canceled jobs or a restarted plan/book.
 - Exactly 30 nonempty saved story pages. Pages retained after exhausted quality
   repair are allowed only with an explicit `review_recommended` report.
-- Both character references seeded from the selected saved portraits and an
-  exactly one scene asset on each configured illustration page, no scene assets
-  on text-only pages, and exactly two separate portrait-reference assets.
+- For illustrated books, both character references seeded from the selected saved
+  portraits, exactly one scene asset on each configured illustration page, no
+  scene assets on text-only pages, and exactly two portrait-reference assets.
+  Text-only books require zero image assets and zero image-provider calls.
 - One durable finalization operation and no text QA restart on an image handoff.
 - All three downloads with matching byte digests and current revision.
 - A readable PDF and page map covering every story page, plus CRC-valid archives
@@ -112,7 +143,7 @@ A functional pass requires:
   scenes sharing a physical page and scenes split across pages fail this contract.
 
 PDF physical pages are recorded separately: cover and contents do not count as
-story pages. Human review remains explicitly pending for character likeness,
+story pages. Human review remains explicitly pending for character likeness (when illustrated),
 chapter transitions, both character arcs and rendered layouts. A small pilot
 provides comparison evidence, not a production reliability estimate.
 For sparse books, PDF capture records the ten illustrated and twenty text-only

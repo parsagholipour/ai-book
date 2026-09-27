@@ -866,6 +866,24 @@ describe("quality report helpers", () => {
     expect(kept).toHaveLength(3);
   });
 
+  it("preserves distinct finding identities, repair operations and severity before scoring", () => {
+    const kept = dedupeQualityIssues([
+      issue({ provenance: { findingId: "first", primaryPageIndex: 1 } }),
+      issue({ provenance: { findingId: "second", primaryPageIndex: 1 } }),
+      issue({ provenance: { kind: "repair", repairOperationId: "operation-1" } }),
+      issue({ provenance: { kind: "repair", repairOperationId: "operation-2" } }),
+      issue({ severity: "error", provenance: { findingId: "first", primaryPageIndex: 1 } })
+    ]);
+    expect(kept).toHaveLength(5);
+  });
+
+  it("counts grouped findings in the export summary", () => {
+    expect(qualitySummaryMessage({ state: "review_recommended", issues: [issue(), issue(), issue()],
+      findings: [{ id: "one", severity: "warning", issueIndexes: [0, 1, 2] }] } as never)).toBe(
+      "Export complete with 1 review recommendation."
+    );
+  });
+
   it("summarizes each quality state", () => {
     expect(qualitySummaryMessage({ state: "blocked", issues: [issue()] } as never)).toBe(
       "Review required: 1 integrity issue must be fixed before export."

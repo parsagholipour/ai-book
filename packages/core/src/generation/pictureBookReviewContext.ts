@@ -3,8 +3,8 @@ import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
 import type { PriorPageContext } from "./pagesShared.js";
 import type { PictureBookReviewChecks } from "./pictureBookReviewValidation.js";
 
-/** v3 explicitly owns opening, final prose quality and all chapter transitions. */
-export const PICTURE_BOOK_REVIEW_CONTRACT = 3;
+/** v13 diagnoses scenes before page verdicts, with one evidence standard and repair history. */
+export const PICTURE_BOOK_REVIEW_CONTRACT = 13;
 
 export function pictureBookReviewChapters(plan: BookPlan) {
   let startPageIndex = 1;

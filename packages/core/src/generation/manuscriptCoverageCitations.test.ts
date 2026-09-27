@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { reviewManuscriptCoverage } from "./manuscriptCoverage.js";
 import { scriptedDevelopmentModel } from "./testing/bookDevelopmentFixtures.js";
+import { coverageCitationResolver } from "./manuscriptCoverageCitations.js";
 
 const brief = "Keep the path problem gentle and understandable.";
 const quote = "A shallow dip cuts across the slope ahead.";
@@ -33,6 +34,44 @@ it("keeps correctly cited repeated passages unchanged", async () => {
   const result = await review([{ index: 13, markdown: quote }, { index: 14, markdown: quote }]);
   expect(result.requirements[0]?.evidence).toEqual([{ pageIndex: 14, quote }]);
   expect(result.status).toBe("reviewed");
+});
+
+it("recovers Balanced's capitalized page-2 clause locally as exact source bytes", async () => {
+  const source = "the neighbors huddled beneath the old stones.";
+  const result = await review([{ index: 2, markdown: `At the stone arch, ${source} They had packed berry cakes and warm soup for the night picnic.` }],
+    [{ pageIndex: 2, quote: `T${source.slice(1)}` }]);
+  expect(result.status).toBe("reviewed");
+  expect(result.requirements[0]?.evidence).toEqual([{ pageIndex: 2, quote: source }]);
+});
+
+it("preserves original whitespace and Unicode offsets when recovering a unique same-page span", () => {
+  const source = "the neighbors  huddled\nbeneath the old stones.";
+  const resolve = coverageCitationResolver([{ index: 2, markdown: `🌙 At the stone arch, ${source}` }]);
+  expect(resolve({ pageIndex: 2, quote: "The neighbors huddled beneath the old stones." }))
+    .toEqual({ pageIndex: 2, quote: source });
+});
+
+it.each([
+  ["the neighbors huddled. And the neighbors huddled.", "The neighbors huddled."],
+  ["the the the the the", "The the the the"],
+  ["a dog.", "A           dog."],
+  ["the neighbors did not huddle.", "The neighbors did huddle."],
+  ["the neighbors huddled!", "The neighbors huddled."],
+  ["they visited US in spring.", "They visited us in spring."],
+  ["they visited Turtle in spring.", "They visited turtle in spring."],
+  ["another neighbors huddled.", "Other neighbors huddled."],
+  ["the neighbors huddled beneath the trees.", "The neighbors huddled beneath the tree"],
+  ["the neighbors huddled.", "“The neighbors huddled.”"],
+  ["İt was a gentle night.", "it was a gentle night."]
+])("refuses ambiguous spans or changes beyond whitespace and initial capitalization: %s", (markdown, quote) => {
+  expect(coverageCitationResolver([{ index: 2, markdown }])({ pageIndex: 2, quote })).toBeUndefined();
+});
+
+it("does not combine normalization with page relocation or duplicate page numbering", () => {
+  const quote = "The neighbors huddled beneath the old stones.";
+  const page = { index: 2, markdown: `At the stone arch, t${quote.slice(1)}` };
+  expect(coverageCitationResolver([page])({ pageIndex: 3, quote })).toBeUndefined();
+  expect(coverageCitationResolver([page, page])({ pageIndex: 2, quote })).toBeUndefined();
 });
 
 it.each([

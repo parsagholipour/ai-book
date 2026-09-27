@@ -272,6 +272,41 @@ describe("OpenAITextAdapter", () => {
     });
   });
 
+  it.each([false, true])("keeps bounded visible-text diagnostics on truncation (streaming: %s)", async streaming => {
+    const adapter = new OpenAITextAdapter({ apiKey: "test-key", model: "gpt-6-luna", thinkingEffort: "low" });
+    const partial = '{"assessments":[' + "repeated prose ".repeat(2_000) + "END";
+    const terminal = { id: "response-partial", model: "gpt-6-luna", status: "incomplete",
+      incomplete_details: { reason: "max_output_tokens" }, usage: { input_tokens: 500, output_tokens: 4_000, output_tokens_details: { reasoning_tokens: 100 } },
+      output: [{ type: "reasoning", encrypted_content: "PRIVATE_REASONING" },
+        { type: "function_call", name: "unused", arguments: "PRIVATE_ARGUMENTS" },
+        ...(!streaming ? [{ type: "message", content: [{ type: "output_text", text: partial }] }] : [])] };
+    installMockResponses(adapter, [streaming ? streamEvents([
+      { type: "response.reasoning_summary_text.delta", delta: "PRIVATE_REASONING" },
+      { type: "response.output_text.delta", delta: partial.slice(0, 17) },
+      { type: "response.output_text.delta", delta: partial.slice(17) },
+      { type: "response.incomplete", response: terminal }
+    ]) : terminal]);
+    const error = await adapter.generateJson({ messages: [{ role: "user", content: "Review." }], purpose: "review-page",
+      schema: z.object({ assessments: z.array(z.unknown()) }), maxTokens: 4_000,
+      ...(streaming ? { onOutputTextChunk: () => undefined } : {}) }).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ name: "OpenAIResponseError", provider: "openai", model: "gpt-6-luna",
+      usage: { promptTokens: 500, outputTokens: 4_000, reasoningTokens: 100 },
+      outputBudget: { maxTokens: 4_000 },
+      context: { responseId: "response-partial", status: "incomplete", reason: "max_output_tokens",
+        partialOutput: { characters: partial.length, head: partial.slice(0, 2_048), tail: partial.slice(-2_048), truncated: true } } });
+    expect(JSON.stringify(error)).not.toMatch(/PRIVATE_REASONING|PRIVATE_ARGUMENTS/);
+    expect(JSON.stringify(error).length).toBeLessThan(5_000);
+  });
+
+  it("records zero visible output when an incomplete response only contains reasoning", async () => {
+    const adapter = new OpenAITextAdapter({ apiKey: "test-key" });
+    installMockResponses(adapter, [{ status: "incomplete", incomplete_details: { reason: "max_output_tokens" },
+      output: [{ type: "reasoning", encrypted_content: "PRIVATE_REASONING" }] }]);
+    await expect(adapter.generateText({ messages: [] })).rejects.toMatchObject({ context: {
+      partialOutput: { characters: 0, head: "", tail: "", truncated: false }
+    } });
+  });
+
   it("wraps a Responses SDK TPM 429 as ProviderHttpError with retry-after-ms", async () => {
     const jsonSchema = z.object({ value: z.string() });
     const textAdapter = new OpenAITextAdapter({ apiKey: "test-key", model: "gpt-5.6-luna" });

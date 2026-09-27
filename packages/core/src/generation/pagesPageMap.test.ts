@@ -207,6 +207,27 @@ describe("chapter brief first-page contract", () => {
     };
   }
 
+  it("regenerates from current assignments and boundaries instead of only the older outline", async () => {
+    const chapter = chunkedPlan.chapters[1]!;
+    const currentBrief = briefResponse([4, 5, 6], chapter.index);
+    currentBrief.pages[0]!.beat = "Turtle tests the stones, crosses first, and Rabbit follows to the far bank.";
+    const repairContext = {
+      currentBrief,
+      adjacentPages: [modelPageBeat(3, 1), modelPageBeat(7, 3)],
+      collisionPages: [modelPageBeat(2, 1)],
+      findings: [{ code: "NEAR_DUPLICATE_BEAT" as const, pageIndexes: [6], evidence: "Duplicates page 2." }]
+    };
+    const capture = capturingJsonModel(currentBrief);
+    await generateChapterBrief({ input: chunkedInput, plan: chunkedPlan, chapter,
+      chapterPageStart: 4, chapterPageEnd: 6, textModel: capture.model, repairContext });
+
+    expect(capture.payload?.repairContext).toEqual(repairContext);
+    expect(capture.payload?.userRequest).toBe(chunkedInput.prompt);
+    expect(capture.system).toContain("currentBrief");
+    expect(capture.system).toContain("older outline");
+    expect(capture.system).toContain("crossings");
+  });
+
   it("gives the chapter that contains page 1 the first-page rule and the openingHook", async () => {
     const capture = capturingJsonModel(briefResponse([1, 2, 3], 1));
 
@@ -222,6 +243,7 @@ describe("chapter brief first-page contract", () => {
     expect(capture.system).toMatch(/Global page 1 is the book's first page/);
     expect(capture.system).toMatch(/openingHook is the plan's commitment/);
     expect(capture.payload?.openingHook).toBe(openingHook);
+    expect(capture.payload).not.toHaveProperty("repairContext");
   });
 
   it("forbids assigning a named archive when the plan has no citeable notes", async () => {

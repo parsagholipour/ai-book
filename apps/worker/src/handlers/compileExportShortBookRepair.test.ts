@@ -38,7 +38,7 @@ describe("coordinated final repair of the captured Quick book", () => {
     mocks.revisePageDraftWithRestart.mockImplementation(() => { throw new Error("Independent page repair attempted against a mixed manuscript"); });
   });
 
-  function setup(mode: "clean" | "regression" | "incomplete" | "invalid" | "local" | "stop" | "checks" = "clean") {
+  function setup(mode: "clean" | "regression" | "incomplete" | "invalid" | "local" | "stop" | "checks" | "scene" = "clean") {
     const calls: Array<GenerateJsonOptions<unknown>> = [];
     const text = new FakeTextModelAdapter();
     text.generateJson = async <T,>(options: GenerateJsonOptions<T>) => {
@@ -47,7 +47,8 @@ describe("coordinated final repair of the captured Quick book", () => {
       if (mode === "stop") throw new StopRequestedError();
       const manuscript = JSON.parse(options.messages[1]!.content).pages as Array<{ index: number; markdown: string }>;
       const reusable = JSON.parse(options.messages[1]!.content).reusableStoryExtractPageIndexes ?? [];
-      const raw = options.purpose === "revise-page" ? { pages: targets.map((pageIndex) => ({ pageIndex,
+      const raw = options.purpose === "revise-page" ? mode === "scene" ? { pages: [], sceneRevisions: [[8, 9], [12, 13]].map(indexes => ({ reason: "Resolve the connected lantern sequence.",
+        pages: indexes.map(pageIndex => ({ pageIndex, title: `Dark Lantern ${pageIndex}`, markdown: `Rabbit carried the dark lantern past marker ${pageIndex}. Wise Turtle followed the path.`, summary: "Rabbit carries the unlit lantern." })) })) } : { pages: targets.map((pageIndex) => ({ pageIndex,
         reason: "Keep recovered lanterns unlit until the later match scene.", summary: "Rabbit carries the unlit lantern.",
         patches: [{ find: mode === "invalid" ? "A nonexistent exact span." : pages[pageIndex - 1]!.markdown,
           replace: mode === "local" ? "TODO: finish this scene." : `Rabbit carried the dark lantern past marker ${pageIndex}. Wise Turtle followed the path.` }] })) }
@@ -55,6 +56,8 @@ describe("coordinated final repair of the captured Quick book", () => {
           findings: mode === "regression" && page.index === 21 ? [{ domain: "prose", basis: "cross_page", category: "continuity", requirementQuote: null,
             message: "The later match count contradicts the repaired earlier scene.", guidance: "Preserve the original lighting sequence.",
             quote: page.markdown, relatedEvidence: [{ pageIndex: 8, quote: manuscript[7]!.markdown }] }] : [],
+          ...(targets.includes(page.index) ? { repairAssessment: { targetResolved: true, meaningPreserved: true,
+            noNewRegressions: mode !== "regression", reason: "Compared the target correction and downstream dependencies against the original." } } : {}),
           storyExtract: mode === "checks" ? reusable.includes(page.index) ? "reuse" : { storyDelta: { factsAdded: [`Scene ${page.index} occurred.`] }, contradictions: [] } : null,
           styleAudit: mode === "checks" ? "clean" : null })) };
       return { data: options.schema.parse(raw), text: JSON.stringify(raw), provider: "test", model: "test" };
@@ -70,6 +73,21 @@ describe("coordinated final repair of the captured Quick book", () => {
     } as unknown as Parameters<typeof repairPagesFromFinalQa>[0];
     return { calls, options, unavailable, claim, fence, run: () => repairPagesFromFinalQa(options) };
   }
+
+  it("publishes scene titles and summaries atomically with the exact reviewed prose", async () => {
+    const test = setup("scene");
+    await test.run();
+    expect(test.calls.map(call => call.purpose)).toEqual(["revise-page", "review-page"]);
+    const reviewed = JSON.parse(test.calls[1]!.messages[1]!.content);
+    expect(reviewed.repairContext.sceneRevisions.map((scene: { pageIndexes: number[] }) => scene.pageIndexes)).toEqual([[8, 9], [12, 13]]);
+    for (const index of targets) {
+      expect(saved[index - 1]!.title).toBe(`Dark Lantern ${index}`);
+      expect(saved[index - 1]!.markdown).toBe(reviewed.pages[index - 1].markdown);
+      expect(saved[index - 1]!.summary).toBe("Rabbit carries the unlit lantern.");
+      expect(saved[index - 1]!.revision).toBe(2);
+    }
+    expect(saved[0]!.title).toBe(pages[0]!.title);
+  });
 
   it("spends one repair and one complete review, and publishes no page before the whole candidate passes", async () => {
     const { calls, run, claim } = setup();
@@ -99,6 +117,7 @@ describe("coordinated final repair of the captured Quick book", () => {
     expect(saved).toEqual(pages);
     expect(test.unavailable).toHaveBeenCalledTimes(4);
     expect(mocks.revisePageDraftWithRestart).not.toHaveBeenCalled();
+    // Untouched pages also fail local checks here; correcting only the patch cannot fix the manuscript.
     if (mode === "invalid" || mode === "local") expect(test.calls).toHaveLength(1);
   });
 
@@ -207,7 +226,7 @@ describe("coordinated final repair of the captured Quick book", () => {
             category: mode === "downstream" ? "continuity" : "repetition",
             relatedEvidence: [{ pageIndex: 13, quote: payload.pages[12].markdown.slice(0, 100) }] }] : row.findings,
           ...([13, 30].includes(row.pageIndex) && mode !== "missing" && request.messages[0]!.content.includes("repairAssessment")
-            ? { repairAssessment: { targetResolved: mode !== "unresolved", meaningPreserved: mode !== "meaning",
+            ? { repairAssessment: { targetResolved: mode !== "unresolved" && mode !== "mixed", meaningPreserved: mode !== "meaning",
               noNewRegressions: mode !== "downstream", reason: mode === "meaning" ? "The edit changes six lanterns to seven."
                 : "Compared sentence boundaries, meaning and later dependencies against the original." } } : {}) })) };
       return { data: request.schema.parse(data), text: JSON.stringify(data), provider: "fixture", model: "fixture" };
@@ -247,7 +266,7 @@ describe("coordinated final repair of the captured Quick book", () => {
       expect(test.calls).toHaveLength(3);
       expect(JSON.parse(test.calls[2]!.messages[1]!.content).reviewPageIndexes).toEqual([13, 30]);
     }
-    if (["metadata", "extra-page", "local"].includes(mode)) expect(test.calls).toHaveLength(1);
+    if (["metadata", "extra-page", "local"].includes(mode)) expect(test.calls).toHaveLength(mode === "local" ? 2 : 1);
   });
 
   it("rolls back inherited findings together with the Premium edits if the checkpoint fails", async () => {

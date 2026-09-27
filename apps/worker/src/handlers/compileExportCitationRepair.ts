@@ -1,5 +1,6 @@
 import { shouldSkipUnsatisfiableCitationRepair } from "@book-maker/core";
 import { onlyDeferredMediaRemains, type DeferredMediaRepairContext } from "./deferredMediaRepair.js";
+import { isUnavailablePageReview } from "../generation/shortPictureBookReviewDelivery.js";
 
 /** Selects legacy FAILED_QA pages that still have a satisfiable repair. */
 export function failedQaPageIndexesForCompile(
@@ -11,6 +12,7 @@ export function failedQaPageIndexesForCompile(
     .filter(
       (page) =>
         page.status === "FAILED_QA" &&
+        !isUnavailablePageReview(page.qualityReport) &&
         !onlyDeferredMediaRemains(page, context) &&
         !shouldSkipUnsatisfiableCitationRepair(page.qualityReport, citeableResearchNotes)
     )

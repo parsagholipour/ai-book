@@ -66,6 +66,7 @@ export * from "./generation/changedPageGrounding.js";
 export * from "./generation/styleAuditor.js";
 export * from "./generation/pageMapCritic.js";
 export * from "./generation/pageBeatDedup.js";
+export type { BeatPair, ReviewedDistinctBeatPair } from "./generation/pageBeatDistinctReview.js";
 export * from "./generation/productionMapAudit.js";
 export * from "./generation/productionMapAnchors.js";
 export * from "./generation/evidenceLedger.js";
@@ -199,10 +200,18 @@ export { scanSmartUnslopCandidates } from "./generation/smartUnslop.js";
 export * from "./adapters/decisionEvaluation.js";
 export { inventoryManuscriptRequirements, manuscriptRequirementInventorySchema, refreshManuscriptCoverageFacts, type ManuscriptRequirementInventory, reviewManuscriptCoverage, manuscriptCoverageIssues, manuscriptCoverageSchema, type ManuscriptCoverage, type ManuscriptCoverageResult, type CoveragePage, type CoverageChapter, type CoverageEvidenceContext } from "./generation/manuscriptCoverage.js";
 export { buildCoverageMediaInventory } from "./generation/manuscriptCoverageMedia.js";
+export { coverageStoryPageWordCounts } from "./generation/manuscriptCoverageDelivery.js";
 
 export * from "./generation/pictureBookReview.js";
+export * from "./generation/pictureBookSentenceReview.js";
+export { compactPictureBookPlanForBriefs, usesCompactPictureBookPlanning } from "./generation/compactPictureBookPlanning.js";
 export * from "./generation/pictureBookRepair.js";
+export * from "./generation/pictureBookRepairResiduals.js";
+export * from "./generation/pictureBookRequirementTargets.js";
+export { pictureBookFindingSchema, pictureBookRepairAssessmentSchema, pictureBookPageReview, validatedPictureBookReviewRow } from "./generation/pictureBookReviewValidation.js";
 
 export { sentenceLengthRepairFor, type SentenceLengthRepair } from "./generation/pageSentenceRepair.js";
 
 export { runLocalFinalQa, runRequiredFinalQa } from "./generation/pagesFinalLocalQa.js";
+export { groupManuscriptQualityFindings, manuscriptQualityCards } from "./generation/manuscriptQualityFindings.js";
+export { optionalQualityProvenance, pageFindingProvenance, type ManuscriptQualityProvenance } from "./generation/manuscriptQualityProvenance.js";

@@ -10,7 +10,7 @@ const SHORT_STRUCTURED_PURPOSES = new Set([
 ]);
 
 const CHAPTER_PURPOSES = new Set([
-  "plan-book", "generate-page-map", "compose-chapter", "edit-chapter", "read-manuscript", "plan-chapter-forms"
+  "plan-book", "generate-page-map", "compose-chapter", "edit-chapter", "read-manuscript", "inventory-brief-requirements", "plan-chapter-forms"
 ]);
 
 /**

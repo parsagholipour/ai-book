@@ -763,7 +763,7 @@ export async function reviewAndSaveGeneratedPage(options: {
   // embedding are appended, and the story state is merged. So the calls that
   // take time happen here, holding their results in memory, and the writes all
   // happen after one fresh assertion with nothing slow between them.
-  const keeperExtract = await keeperStoryExtractForSave({
+  const keeperExtract = precomputed?.reviewUnavailable && !enriched.extract && revision === 1 ? null : await keeperStoryExtractForSave({
     projectId: options.projectId,
     pageIndex: options.draft.index,
     draft,

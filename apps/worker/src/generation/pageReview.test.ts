@@ -456,6 +456,21 @@ describe("reviewAndSaveGeneratedPage", () => {
       qualityReport: expect.objectContaining({ issues: expect.arrayContaining(["Turtle's arc is missing."]), requiredRevisions: expect.arrayContaining(["Show Turtle accept help."]) }) }) }));
   });
 
+  it("saves an unverified draft without restarting its exhausted review or keeper extraction", async () => {
+    const indexedDraft = { ...draftNamed("Unavailable"), index: 3 };
+    const unavailable = pageQualityReportSchema.parse({ approved: false, score: 100, scoreBasis: "screened_unscored", notes: "Review unavailable." });
+    mocks.qualityEnabled.mockImplementation(feature => feature === "storyExtractAudit");
+    await reviewAndSaveGeneratedPage({ ...(baseOptions() as object), draft: indexedDraft, deferRepairsUntilFinalization: true,
+      precomputedReview: { draftMarkdown: indexedDraft.markdown, report: unavailable, reviewUnavailable: true, storyExtract: null, styleAudit: null,
+        completedChecks: { pageModelReview: false, storyExtractAudit: false, styleAuditor: false }, manuscriptPages: [indexedDraft] } } as never);
+    expect(strategy.reviewPageDraft).not.toHaveBeenCalled();
+    expect(strategy.revisePageDraft).not.toHaveBeenCalled();
+    expect(mocks.keeperStoryExtractForSave).not.toHaveBeenCalled();
+    expect(mocks.prisma.page.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
+      status: "FAILED_QA", markdown: indexedDraft.markdown, qualityReport: expect.objectContaining({ approved: false, scoreBasis: "screened_unscored" })
+    }) }));
+  });
+
   it("falls back to normal review and repairs when a deferred batch verdict is stale", async () => {
     const indexedDraft = { ...draftNamed("Current"), index: 3 };
     strategy.reviewPageDraft.mockResolvedValueOnce(report(50)).mockResolvedValue(report(95, { approved: true }));

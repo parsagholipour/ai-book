@@ -45,6 +45,7 @@ it("revalidates cached brief quotes instead of accepting fabricated requirements
       { text: "Invented request.", quote: "This text is absent from the brief.", kind: "content" }
     ] } });
   expect(review.status).toBe("incomplete");
-  expect(review.requirements).toEqual([]);
+  expect(review.requirements).toEqual([expect.objectContaining({ text: "Invented request.",
+    quote: "This text is absent from the brief.", status: "unverified", sourceQuoteIssue: "not_in_brief", evidence: [] })]);
   expect(calls).toHaveLength(0);
 });

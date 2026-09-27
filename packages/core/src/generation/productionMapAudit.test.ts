@@ -39,24 +39,30 @@ function contractFor(briefs: ChapterBrief[], targetPages?: number) {
 }
 
 describe("classifyChapterCorruption", () => {
-  it("treats 25% as the dense threshold and 20% as sparse", () => {
+  it("uses the 25% dense threshold only when multiple pages are affected", () => {
     expect(PRODUCTION_MAP_DENSE_CORRUPTION_THRESHOLD).toBe(0.25);
     expect(
       classifyChapterCorruption({
         chapterIndex: 1,
-        pageCount: 4,
-        affectedPageIndexes: [2],
+        pageCount: 8,
+        affectedPageIndexes: [2, 3],
         coverageValid: true
       }).classification
     ).toBe("dense");
     expect(
       classifyChapterCorruption({
         chapterIndex: 1,
-        pageCount: 5,
-        affectedPageIndexes: [2],
+        pageCount: 10,
+        affectedPageIndexes: [2, 3],
         coverageValid: true
       }).classification
     ).toBe("sparse");
+  });
+
+  it.each([1, 2, 3, 4, 5])("patches a single later page in a %i-page chapter", (pageCount) => {
+    expect(classifyChapterCorruption({
+      chapterIndex: 6, pageCount, affectedPageIndexes: [18, 18], coverageValid: true
+    }).classification).toBe("sparse");
   });
 
   it("regenerates when the unrewritable opening page is affected", () => {

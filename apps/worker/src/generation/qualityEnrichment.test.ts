@@ -48,6 +48,7 @@ import {
   revisedDraftStyleAuditor
 } from "./qualityEnrichment.js";
 import { pageQualityAdvisoryIssues } from "./pageQualityAdvisories.js";
+import { savedPictureBookReviewSchema } from "./shortPictureBookReviewCache.js";
 
 const TARGET_PAGES = 8;
 
@@ -644,6 +645,21 @@ describe("revisedDraftStyleAuditor", () => {
 });
 
 describe("precomputed manuscript enrichment", () => {
+  it("keeps a continuity finding identity through a saved review, enrichment and export", async () => {
+    vi.clearAllMocks();
+    const message = "Jack's location changes without a transition.";
+    const cached = savedPictureBookReviewSchema.parse(JSON.parse(JSON.stringify({ pageIndex: 3, draftMarkdown: draft.markdown,
+      report: approvedReport, completedChecks: { pageModelReview: true, storyExtractAudit: true, styleAuditor: false }, styleAudit: null,
+      storyExtract: { ...extractPayingP1, contradictions: [message], findingIdsByContradiction: { [message]: "finding-location" } } })));
+    const result = await enrichPageQualityReport({ input, plan, pageIndex: 3, draft, report: cached.report,
+      previousPages: [], researchNotes: [], textModel: {} as TextModelAdapter, projectId: "project-1",
+      quality: { enabled: feature => feature === "storyExtractAudit" }, storyState: openPromiseState, styleExcerpts: [],
+      precomputed: { storyExtract: cached.storyExtract, styleAudit: null, manuscriptPages: [] } });
+    expect(pageQualityAdvisoryIssues([{ index: 3, qualityReport: result.report }])).toEqual([
+      expect.objectContaining({ provenance: expect.objectContaining({ findingId: "finding-location", verification: "unverified" }) })
+    ]);
+    expect(mocks.extractStoryState).not.toHaveBeenCalled();
+  });
   it("reuses completed story and style checks without another provider call", async () => {
     vi.clearAllMocks();
     mocks.extractStoryState.mockResolvedValue(extractPayingP1);

@@ -277,6 +277,7 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
           ...(usesCompactPictureBookPlanning(options.input) ? [
             ...PICTURE_BOOK_STORY_OBLIGATIONS,
             "Enact the arc and prop-state contracts in continuityRules through scenes. The page map's endingPressure is an author note, not text to copy or paraphrase into a narrator question. Let the scene's action, discovery or consequence carry the turn; avoid a recurring narrator question used only to announce the next page. Preserve intentional dialogue, refrains and quiet closure.",
+            "Track current location/holder separately from remembered origin; never describe a moved object as still visible at its old location. A damaged prop stays damaged until an action repairs, replaces or bypasses it. Show agreements before relying on them, and distinguish intention/permission from completed action. Do not turn metadata into narrator summaries or print state keys. Let a necessary choice and its execution share a scene; add consequences or changed behavior rather than stretching readiness over several pages.",
             "For every imagePrompt, spell out the exact visible characters and their positions, current visible prop count and ownership, and time of day from that page's prose. Ground spatial relationships in the prose, including whether each character is on a bank, in water, inside, or outside. Exclude items recovered only on later pages; do not invent a transfer, arrival, departure or time change in the illustration prompt."
           ] : []),
           "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages.",
@@ -312,7 +313,9 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
               continuityRules: options.plan.continuityRules,
               styleGuidance: styleGuidancePayload(options.input)
             },
-            chapters: options.plan.chapters,
+            chapters: options.chapterBriefs?.length && usesCompactPictureBookPlanning(options.input)
+              ? options.plan.chapters.map(({ index, title, targetPages }) => ({ index, title, targetPages }))
+              : options.plan.chapters,
             characters: options.plan.characters,
             locations: options.plan.locations,
             pageMap: options.chapterBriefs

@@ -4,12 +4,14 @@ import { z } from "zod";
 import {
   hasResearchIntent, isImportedManuscript, pictureBookReviewFingerprint,
   reviewPictureBookManuscript, PictureBookReviewIncompleteError,
+  pictureBookCitationRowsSchema, pictureBookEditorialRowsSchema,
   type PictureBookReviewCheckpoint,
   type BookGenerationStrategy, type BookPlan, type ChapterBrief, type CreateProjectInput,
   type PictureBookPageReview, type PictureBookReviewChecks, type PriorPageContext, type TextModelAdapter
 } from "@book-maker/core";
 import { assertJobNotStopped } from "../runtime/jobLifecycle.js";
 import type { QualityGateContext } from "./qualityEnrichment.js";
+import { pictureBookDeliveryReviews, type PictureBookDeliveryReview } from "./shortPictureBookReviewDelivery.js";
 
 /** Artwork is optional; explicit polish/research strategies keep their requested workflow. */
 export function usesShortPictureBookReview(options: {
@@ -25,7 +27,8 @@ export function usesShortPictureBookReview(options: {
 }
 const progressSchema = z.object({
   version: z.literal(2), roundsStarted: z.number().int().min(0).max(2), attemptsUsed: z.number().int().min(0).max(5), outputWidened: z.boolean(),
-  validationIssues: z.array(z.object({ pageIndex: z.number().int().positive(), message: z.string() })), protocolIssues: z.array(z.string())
+  validationIssues: z.array(z.object({ pageIndex: z.number().int().positive(), message: z.string() })), protocolIssues: z.array(z.string()),
+  citationRows: pictureBookCitationRowsSchema.default([]), editorialRows: pictureBookEditorialRowsSchema.default([])
 });
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -35,7 +38,7 @@ export async function prepareShortPictureBookReview(options: {
   projectId: string; generationJobId?: string; input: CreateProjectInput; plan: BookPlan;
   pages: readonly PriorPageContext[]; chapterBriefs: readonly ChapterBrief[];
   quality: QualityGateContext; textModel: TextModelAdapter;
-}): Promise<Map<number, PictureBookPageReview>> {
+}): Promise<Map<number, PictureBookDeliveryReview>> {
   const checks = shortPictureBookChecks(options.quality);
   if (!Object.values(checks).some(Boolean)) return new Map();
   await assertJobNotStopped(options.generationJobId);
@@ -64,10 +67,10 @@ export async function prepareShortPictureBookReview(options: {
     resume = { ...(progress.success ? progress.data : { version: 2 as const, roundsStarted: 2, attemptsUsed: 5, outputWidened: true,
       validationIssues: [], protocolIssues: ["Stored picture-book review progress is invalid."] }), reviews: valid,
       unresolvedPageIndexes: options.pages.filter((page) => !valid.some((review) => review.pageIndex === page.index)).map((page) => page.index) };
-    if (!resume.unresolvedPageIndexes.length && !resume.protocolIssues.length) return new Map(valid.map((review) => [review.pageIndex, review]));
+    if (!resume.unresolvedPageIndexes.length && !resume.protocolIssues.length && !resume.citationRows?.length && !resume.editorialRows?.length) return new Map(valid.map((review) => [review.pageIndex, review]));
   }
   let latest = resume;
-  const save = async (checkpoint: PictureBookReviewCheckpoint) => {
+  const save = async (checkpoint: PictureBookReviewCheckpoint, deliveryFallback = false) => {
     await assertJobNotStopped(options.generationJobId);
     latest = checkpoint;
     if (!options.generationJobId) return;
@@ -75,19 +78,31 @@ export async function prepareShortPictureBookReview(options: {
     await prisma.$transaction(async (tx) => {
       const current = await tx.generationJob.findUnique({ where: { id: jobId }, select: { payload: true } });
       await tx.generationJob.update({ where: { id: jobId }, data: { payload: {
-        ...record(current?.payload), pictureBookReview: { fingerprint, ...checkpoint }
+        ...record(current?.payload), pictureBookReview: { fingerprint, ...checkpoint, ...(deliveryFallback ? { deliveryFallback: true } : {}) }
       } as Prisma.InputJsonValue } });
     });
   };
-  const reviews = await reviewPictureBookManuscript({ ...options, checks, ...(resume ? { resume } : {}), onCheckpoint: save });
+  const deliverIncomplete = async (checkpoint: PictureBookReviewCheckpoint) => {
+    // Persist the exhausted review, not synthesized approvals. Stop/storage errors still escape.
+    await save(checkpoint, true);
+    return new Map(pictureBookDeliveryReviews({ ...options, checks, checkpoint }).map(review => [review.pageIndex, review]));
+  };
+  let reviews: PictureBookPageReview[];
+  try {
+    reviews = await reviewPictureBookManuscript({ ...options, checks, ...(resume ? { resume } : {}), onCheckpoint: save });
+  } catch (error) {
+    if (!(error instanceof PictureBookReviewIncompleteError)) throw error;
+    return deliverIncomplete(error.checkpoint);
+  }
   await assertJobNotStopped(options.generationJobId);
-  // A complete verdict set is required before the first publication. A partial
-  // map must never fall through to thirty independent review/rewrite chains.
+  // Every page needs a delivery entry, including explicit unavailable assessments,
+  // so a partial group never cascades into thirty individual review/rewrite chains.
   const complete = reviews.length === options.pages.length && new Set(reviews.map((review) => review.pageIndex)).size === options.pages.length && reviews.every(matches);
   const checkpoint: PictureBookReviewCheckpoint = { version: 2, reviews, unresolvedPageIndexes: options.pages.filter((page) => !reviews.some((review) => review.pageIndex === page.index && matches(review))).map((page) => page.index),
     validationIssues: latest?.validationIssues ?? [], protocolIssues: latest?.protocolIssues ?? [],
-    roundsStarted: latest?.roundsStarted ?? 1, attemptsUsed: latest?.attemptsUsed ?? 1, outputWidened: latest?.outputWidened ?? false };
-  if (!complete || checkpoint.protocolIssues.length) throw new PictureBookReviewIncompleteError(checkpoint);
+    roundsStarted: latest?.roundsStarted ?? 1, attemptsUsed: latest?.attemptsUsed ?? 1, outputWidened: latest?.outputWidened ?? false,
+    citationRows: latest?.citationRows ?? [], editorialRows: latest?.editorialRows ?? [] };
+  if (!complete || checkpoint.protocolIssues.length) return deliverIncomplete(checkpoint);
   await save(checkpoint);
   return new Map(reviews.map((review) => [review.pageIndex, review]));
 }

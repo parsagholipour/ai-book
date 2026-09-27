@@ -68,7 +68,7 @@ export const PER_PAGE_STAGES: readonly PipelineStage[] = [
     id: "compile",
     label: "Compile and final QA",
     summary: "Whole-book QA, chapter-transition review, page repair loop, deterministic manuscript audit and evidence-backed brief coverage, then render.",
-    purposes: ["final-book-qa", "book.final_qa.chapter_transitions", "review-manuscript-structure", "read-manuscript", "chapterize-export"],
+    purposes: ["final-book-qa", "book.final_qa.chapter_transitions", "review-manuscript-structure", "inventory-brief-requirements", "read-manuscript", "chapterize-export"],
     lane: "mechanical",
     calls: "1 to 3 reviews, plus rewrites for flagged pages and 2 brief-coverage calls on initial publication",
     gates: ["finalBookQa"]
@@ -143,7 +143,7 @@ export const COMPOSED_STAGES: readonly PipelineStage[] = [
     id: "compile",
     label: "Compile",
     summary: "Deterministic manuscript audit, targeted structural review and evidence-backed brief coverage, then render. The per-page final-QA repair loop is skipped.",
-    purposes: ["review-manuscript-structure", "read-manuscript", "chapterize-export"],
+    purposes: ["review-manuscript-structure", "inventory-brief-requirements", "read-manuscript", "chapterize-export"],
     lane: "mechanical",
     calls: "0 or 1 structural review, plus 2 brief-coverage calls on initial publication; unchanged recompiles reuse coverage",
     gates: []

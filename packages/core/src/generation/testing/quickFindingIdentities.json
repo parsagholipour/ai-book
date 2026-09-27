@@ -1,0 +1,141 @@
+{
+  "source": "Quick captured run 2026-09-26 22:14; identity links below are regression annotations, not historical model output.",
+  "brief": "Write an original 30-page storybook for children ages 6–8, called The Lantern Path. Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles. Rabbit is playful and hasty; Wise Turtle is slow and steady. Keep both active across the story, with meaningful choices and growth for each. A storm scatters the lanterns marking the woodland path to a night picnic. Rabbit rushes to fix everything alone and makes the path more confusing. Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise. Give this a fresh plot rather than a race or a retelling of The Tortoise and the Hare. Build a clear beginning, escalating middle, turning point and satisfying ending. Let Rabbit's energy and Wise Turtle's patience both solve part of the problem. Keep stakes gentle and child appropriate. Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page. Avoid repeated summaries, generic moralizing and extra named main characters. English. Exactly 30 story pages. Write exactly 30 text-only story pages. Do not create interior illustrations, a cover image, or character reference images.",
+  "targets": [
+    {
+      "id": "finding-3231c3ab87a9c1a3a128f47d",
+      "requirementId": "requirement-94f079cdd61fc1184a775a7f",
+      "requirementQuote": "Keep both active across the story, with meaningful choices and growth for each.",
+      "pageIndex": 2,
+      "problem": "Wise Turtle’s requested growth needs an earlier limitation with a consequence. Here, he merely arrives and explains the deadline; later he is already asking Rabbit to help, so his change has no established starting point.",
+      "acceptanceCriteria": "Establish here that Turtle insists on checking alone or delays asking for help, and show a practical cost before his later decision to delegate.",
+      "evidence": [
+        {
+          "pageIndex": 2,
+          "quote": "Wise Turtle reached the gate at a steady pace. “The neighbors need these path lights before moonrise,” he said."
+        }
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "brief-16",
+      "kind": "content",
+      "text": "Rabbit grows across the story",
+      "quote": "with meaningful choices and growth for each",
+      "reason": "Rabbit recognizes the cost of acting alone and later pauses, checks, and asks for help.",
+      "source": "brief",
+      "status": "fulfilled",
+      "evidence": [
+        {
+          "quote": "“I thought I could fix everything fast. I made the wrong trail look right.”",
+          "pageIndex": 16
+        },
+        {
+          "quote": "Then he stopped. “Wise Turtle, will you check the first light with me?”",
+          "pageIndex": 22
+        }
+      ]
+    },
+    {
+      "id": "brief-17",
+      "kind": "content",
+      "text": "Wise Turtle grows across the story",
+      "quote": "with meaningful choices and growth for each",
+      "reason": "Wise Turtle makes useful choices, but the story does not establish an earlier limitation or show a distinct changed consequential choice; this leaves his requested growth unpayoffed.",
+      "source": "brief",
+      "status": "missing",
+      "evidence": [
+        {
+          "quote": "“Will you search with me?” Rabbit nodded.",
+          "pageIndex": 6
+        },
+        {
+          "quote": "“Lead across the way you checked. I’ll wait here.”",
+          "pageIndex": 12
+        }
+      ]
+    },
+    {
+      "id": "promise-2",
+      "kind": "content",
+      "text": "Give Rabbit and Wise Turtle distinct, observable changes while letting Rabbit’s energy and Wise Turtle’s patience both solve part of the problem.",
+      "quote": "Give Rabbit and Wise Turtle distinct, observable changes while letting Rabbit’s energy and Wise Turtle’s patience both solve part of the problem.",
+      "reason": "Rabbit’s changed choices are observable, but Wise Turtle’s growth lacks the established starting limitation and consequential change needed to make his arc distinct.",
+      "source": "promise",
+      "status": "missing",
+      "evidence": [
+        {
+          "quote": "“Will you search with me?” Rabbit nodded.",
+          "pageIndex": 6
+        },
+        {
+          "quote": "“Lead across the way you checked. I’ll wait here.”",
+          "pageIndex": 12
+        }
+      ]
+    }
+  ],
+  "proseIssues": [
+    {
+      "code": "WHOLE_BOOK_REVIEW",
+      "source": "model",
+      "message": "Page 2: Wise Turtle’s requested growth needs an earlier limitation with a consequence. Here, he merely arrives and explains the deadline; later he is already asking Rabbit to help, so his change has no established starting point. Evidence on page 2: “Wise Turtle reached the gate at a steady pace. “The neighbors need these path lights before moonrise,” he said.” Requested requirement: “Keep both active across the story, with meaningful choices and growth for each.”",
+      "guidance": "Review the affected prose in Edit Mode or request a targeted regeneration.",
+      "severity": "warning",
+      "provenance": {
+        "kind": "manuscript",
+        "findingId": "finding-b43f6e7121c68488ad40274f",
+        "primaryPageIndex": 2,
+        "relatedPageIndexes": []
+      },
+      "affectedPageIndexes": [
+        2
+      ]
+    },
+    {
+      "code": "WHOLE_BOOK_REVIEW",
+      "source": "model",
+      "message": "Page 2: Establish here that Turtle insists on checking alone or delays asking for help, and show a practical cost before his later decision to delegate.",
+      "guidance": "Review the affected prose in Edit Mode or request a targeted regeneration.",
+      "severity": "warning",
+      "provenance": {
+        "kind": "manuscript",
+        "findingId": "finding-b43f6e7121c68488ad40274f",
+        "primaryPageIndex": 2,
+        "relatedPageIndexes": []
+      },
+      "affectedPageIndexes": [
+        2
+      ]
+    },
+    {
+      "code": "PAGE_QA_UNRESOLVED",
+      "source": "model",
+      "message": "Page QA did not approve the saved draft: Wise Turtle’s requested growth needs an earlier limitation with a consequence. Here, he merely arrives and explains the deadline; later he is already asking Rabbit to help, so his change has no established starting point. Evidence on page 2: “Wise Turtle reached the gate at a steady pace. “The neighbors need these path lights before moonrise,” he said.” Requested requirement: “Keep both active across the story, with meaningful choices and growth for each.”",
+      "guidance": "Establish here that Turtle insists on checking alone or delays asking for help, and show a practical cost before his later decision to delegate.",
+      "severity": "warning",
+      "provenance": {
+        "kind": "manuscript",
+        "findingId": "finding-b43f6e7121c68488ad40274f",
+        "primaryPageIndex": 2,
+        "relatedPageIndexes": []
+      },
+      "affectedPageIndexes": [
+        2
+      ]
+    }
+  ],
+  "identityAnswers": [
+    {
+      "id": "brief-17",
+      "findingIds": [
+        "finding-3231c3ab87a9c1a3a128f47d"
+      ]
+    },
+    {
+      "id": "promise-2",
+      "sameFailureAs": "brief-17"
+    }
+  ]
+}

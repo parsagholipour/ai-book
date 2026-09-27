@@ -1,0 +1,177 @@
+{
+  "balanced": [
+    {
+      "code": "WHOLE_BOOK_REVIEW",
+      "source": "model",
+      "message": "Page 3: Sentences are too long for ages 6-8 (average 12.8 words, longest 21; target average <= 12, longest <= 22).",
+      "guidance": "Review the affected prose in Edit Mode or request a targeted regeneration.",
+      "severity": "warning",
+      "affectedPageIndexes": [
+        3
+      ]
+    },
+    {
+      "code": "WHOLE_BOOK_REVIEW",
+      "source": "model",
+      "message": "Page 18: Sentences are too long for ages 6-8 (average 12.8 words, longest 16; target average <= 12, longest <= 22).",
+      "guidance": "Review the affected prose in Edit Mode or request a targeted regeneration.",
+      "severity": "warning",
+      "affectedPageIndexes": [
+        18
+      ]
+    },
+    {
+      "code": "WHOLE_BOOK_REVIEW",
+      "source": "model",
+      "message": "Page 9: Rabbit is asked to show where Amber landed, but points to the creek post where he moved it. The prior pages establish that Amber landed in the fern hollow. The unacknowledged mismatch makes the clue exchange confusing, especially because Rabbit points to the hollow on the next page. Evidence on page 9: “Rabbit pointed toward Amber’s new post, then toward Blue’s hiding place.” Related page 6: “East of the gate post, Rabbit spotted a warm glimmer in a fern hollow. Amber lay there, its small flame still shining.” Related page 7: ““A lantern belongs on a post!” he said, hanging Amber where Red should shine.” Related page 10: “Rabbit pointed toward the fern hollow and stump. “Could we compare where Amber and Blue landed?””",
+      "guidance": "Review the affected prose in Edit Mode or request a targeted regeneration.",
+      "severity": "warning",
+      "affectedPageIndexes": [
+        9,
+        6,
+        7,
+        10
+      ]
+    },
+    {
+      "code": "WHOLE_BOOK_REVIEW",
+      "source": "model",
+      "message": "Page 24: The group has already reached Blue and followed Rabbit’s pauses at Amber and Blue on page 23. This page revisits the same lantern order and bend before moving on, so the escort briefly repeats a completed beat. Evidence on page 24: “At the bend, Rabbit looked back at Turtle. “Amber, then Blue,” Turtle called. Rabbit checked the lights and turned onto the path toward the creek.” Related page 23: “At Amber, he paused until the group caught up. He did the same at Blue, glowing on the bend post.”",
+      "guidance": "Review the affected prose in Edit Mode or request a targeted regeneration.",
+      "severity": "warning",
+      "affectedPageIndexes": [
+        24,
+        23
+      ]
+    },
+    {
+      "code": "WHOLE_BOOK_REVIEW",
+      "source": "model",
+      "message": "Page 9: Have Rabbit point to the fern hollow here, or clarify that he is showing Turtle where Amber is now and then explain where it first landed.",
+      "guidance": "Review the affected prose in Edit Mode or request a targeted regeneration.",
+      "severity": "warning",
+      "affectedPageIndexes": [
+        9
+      ]
+    },
+    {
+      "code": "WHOLE_BOOK_REVIEW",
+      "source": "model",
+      "message": "Page 24: Let the group continue from Blue toward the creek, keeping any new choice or guidance that advances Rabbit’s role.",
+      "guidance": "Review the affected prose in Edit Mode or request a targeted regeneration.",
+      "severity": "warning",
+      "affectedPageIndexes": [
+        24
+      ]
+    },
+    {
+      "code": "FINAL_QA_REPAIR_REJECTED",
+      "source": "deterministic",
+      "message": "Automatic repair was rejected: Coordinated repair failed local checks: Page is too short to show meaningful progression (33 words). Saved prose was retained.",
+      "guidance": "Review the reported findings before requesting another repair.",
+      "severity": "warning",
+      "affectedPageIndexes": [
+        24
+      ]
+    },
+    {
+      "code": "BRIEF_COVERAGE_UNVERIFIED",
+      "source": "model",
+      "message": "The manuscript's coverage of the brief and promises could not be fully verified.\nUnverified concerns:\nAvoid extra named main characters — Unverified assessment: Rabbit and Wise Turtle are the only named characters; the other woodland characters remain unnamed neighbors. The cited evidence could not be validated.",
+      "guidance": "Review the requested deliverables and promise payoffs against the manuscript.",
+      "severity": "warning",
+      "affectedPageIndexes": []
+    },
+    {
+      "code": "PAGE_QA_UNRESOLVED",
+      "source": "model",
+      "message": "Page QA did not approve the saved draft: Sentences are too long for ages 6-8 (average 12.8 words, longest 21; target average <= 12, longest <= 22).",
+      "guidance": "Fix: Sentences are too long for ages 6-8 (average 12.8 words, longest 21; target average <= 12, longest <= 22).",
+      "severity": "warning",
+      "affectedPageIndexes": [
+        3
+      ]
+    },
+    {
+      "code": "PAGE_QA_UNRESOLVED",
+      "source": "model",
+      "message": "Page QA did not approve the saved draft: Rabbit is asked to show where Amber landed, but points to the creek post where he moved it. The prior pages establish that Amber landed in the fern hollow. The unacknowledged mismatch makes the clue exchange confusing, especially because Rabbit points to the hollow on the next page. Evidence on page 9: “Rabbit pointed toward Amber’s new post, then toward Blue’s hiding place.” Related page 6: “East of the gate post, Rabbit spotted a warm glimmer in a fern hollow. Amber lay there, its small flame still shining.” Related page 7: ““A lantern belongs on a post!” he said, hanging Amber where Red should shine.” Related page 10: “Rabbit pointed toward the fern hollow and stump. “Could we compare where Amber and Blue landed?””",
+      "guidance": "Have Rabbit point to the fern hollow here, or clarify that he is showing Turtle where Amber is now and then explain where it first landed.",
+      "severity": "warning",
+      "affectedPageIndexes": [
+        9
+      ]
+    },
+    {
+      "code": "PAGE_QA_UNRESOLVED",
+      "source": "model",
+      "message": "Page QA did not approve the saved draft: Sentences are too long for ages 6-8 (average 12.8 words, longest 16; target average <= 12, longest <= 22).",
+      "guidance": "Fix: Sentences are too long for ages 6-8 (average 12.8 words, longest 16; target average <= 12, longest <= 22).",
+      "severity": "warning",
+      "affectedPageIndexes": [
+        18
+      ]
+    },
+    {
+      "code": "PAGE_QA_UNRESOLVED",
+      "source": "model",
+      "message": "Page QA did not approve the saved draft: The group has already reached Blue and followed Rabbit’s pauses at Amber and Blue on page 23. This page revisits the same lantern order and bend before moving on, so the escort briefly repeats a completed beat. Evidence on page 24: “At the bend, Rabbit looked back at Turtle. “Amber, then Blue,” Turtle called. Rabbit checked the lights and turned onto the path toward the creek.” Related page 23: “At Amber, he paused until the group caught up. He did the same at Blue, glowing on the bend post.”",
+      "guidance": "Let the group continue from Blue toward the creek, keeping any new choice or guidance that advances Rabbit’s role.",
+      "severity": "warning",
+      "affectedPageIndexes": [
+        24
+      ]
+    }
+  ],
+  "premium": [
+    {
+      "code": "WHOLE_BOOK_REVIEW",
+      "source": "model",
+      "message": "Page 29: This repeats the complete lantern-restoration status already stated on page 27, adding no new development to the arrival scene. Evidence on page 29: “Each light marked its proper stop, from gate to stump, bridge to clearing.” Related page 27: “All four lanterns now shone at their proper stops.”",
+      "guidance": "Review the affected prose in Edit Mode or request a targeted regeneration.",
+      "severity": "warning",
+      "affectedPageIndexes": [
+        29,
+        27
+      ]
+    },
+    {
+      "code": "WHOLE_BOOK_REVIEW",
+      "source": "model",
+      "message": "Page 29: Trim this recap and use the space for a fresh picnic detail or action.",
+      "guidance": "Review the affected prose in Edit Mode or request a targeted regeneration.",
+      "severity": "warning",
+      "affectedPageIndexes": [
+        29
+      ]
+    },
+    {
+      "code": "FINAL_QA_REPAIR_REJECTED",
+      "source": "deterministic",
+      "message": "Automatic repair was rejected: Page 20: Page 20 repeats the search roles already proposed and accepted on page 19, so this scene largely reannounces the same plan instead of advancing the cooperation. Evidence on page 20: “Rabbit would scan east and call before touching any glint. Wise Turtle would follow and steady anything snagged.” Related page 19: ““Let’s search together. I’ll scan ahead and call if I see a glint. You can help free anything caught.” Wise Turtle agreed as they walked on.” Saved prose was retained.",
+      "guidance": "Review the reported findings before requesting another repair.",
+      "severity": "warning",
+      "affectedPageIndexes": [
+        20
+      ]
+    },
+    {
+      "code": "BRIEF_COVERAGE_UNVERIFIED",
+      "source": "model",
+      "message": "The manuscript's coverage of the brief and promises could not be fully verified.\nUnverified concerns:\nPlan exactly 30 text-only story pages, with 35–100 words per page and no interior illustrations or generated cover. — The export has exactly 30 text story pages and no listed interior illustrations; cover-art availability is not supplied, so the no-generated-cover condition cannot be confirmed.",
+      "guidance": "Review the requested deliverables and promise payoffs against the manuscript.",
+      "severity": "warning",
+      "affectedPageIndexes": []
+    },
+    {
+      "code": "PAGE_QA_UNRESOLVED",
+      "source": "model",
+      "message": "Page QA did not approve the saved draft: This repeats the complete lantern-restoration status already stated on page 27, adding no new development to the arrival scene. Evidence on page 29: “Each light marked its proper stop, from gate to stump, bridge to clearing.” Related page 27: “All four lanterns now shone at their proper stops.”",
+      "guidance": "Trim this recap and use the space for a fresh picnic detail or action.",
+      "severity": "warning",
+      "affectedPageIndexes": [
+        29
+      ]
+    }
+  ]
+}

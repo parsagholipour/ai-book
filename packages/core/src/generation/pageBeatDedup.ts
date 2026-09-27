@@ -1,4 +1,7 @@
-import { z } from "zod";
+import {
+  beatPairKey, beatReviewStoryContext, beatRewritePatchSchema, DISTINCT_BEAT_REVIEW_GUIDANCE,
+  groundedDistinctBeatPairs, type BeatPair, type BeatRewritePatch, type ReviewedDistinctBeatPair
+} from "./pageBeatDistinctReview.js";
 import type { ProductionMapRepairProviderCallMetadata, TextModelAdapter } from "../adapters/types.js";
 import type { ChapterBrief, PageProductionBeat } from "../schemas/book.js";
 import { evidenceLedgerFields } from "./evidenceLedger.js";
@@ -19,6 +22,11 @@ import type { PageMapCriticPatch } from "./pageMapCritic.js";
  * beats across the whole page map, and one bounded model call that rewrites
  * the later page of each colliding pair to a fresh angle — before a single
  * page is drafted.
+ * Compact narratives can instead retain a candidate pair after a grounded
+ * contextual review (`pageBeatDistinctReview.ts`). That caller always reaudits
+ * the resulting map: its rewrites keep exact-copy guards but defer lexical
+ * overlap to that audit, rather than being silently dropped here. Other
+ * callers keep the original collision filtering described below.
  *
  * Why it exists: a page whose brief collides with a beat an earlier page
  * already covers fails the page reviewer the same way on every rewrite, so
@@ -172,25 +180,6 @@ export {
  * none is dropped, and a moment volunteered for a page that carries none is
  * dropped from the rewrite rather than costing the page its fresh beat.
  */
-const beatRewritePatchSchema = z.object({
-  beatPatches: z
-    .array(
-      z.object({
-        pageIndex: z.number().int().positive(),
-        purpose: z.string().min(1),
-        beat: z.string().min(1),
-        endingPressure: z.string().min(1),
-        requiredContinuity: z.array(z.string().min(1)).optional(),
-        imageMoment: z.string().min(1).optional(),
-        claim: z.string().min(1).optional(),
-        evidenceAnchors: z.array(z.string().min(1)).optional()
-      })
-    )
-    .default([])
-});
-
-type BeatRewritePatch = z.infer<typeof beatRewritePatchSchema>["beatPatches"][number];
-
 function truncateBeat(text: string): string {
   const trimmed = text.replace(/\s+/g, " ").trim();
   return trimmed.length <= 140 ? trimmed : `${trimmed.slice(0, 139)}…`;
@@ -409,7 +398,9 @@ export async function dedupePageBeats(options: {
   promises: string[];
   lastPageIndex: number;
   providerCallMetadata?: ProductionMapRepairProviderCallMetadata;
-}): Promise<PageMapCriticPatch> {
+  /** Compact narrative integrity reaudits every accepted rewrite before drafting. */
+  reviewablePairs?: readonly BeatPair[];
+}): Promise<PageMapCriticPatch & { distinctPairs?: ReviewedDistinctBeatPair[] }> {
   const rewriting = selectFindingsForRewriteCall(options.findings);
   if (rewriting.length === 0) {
     throw new Error("dedupePageBeats needs at least one finding; a clean sweep must not reach the rewrite call.");
@@ -419,6 +410,9 @@ export async function dedupePageBeats(options: {
     findings: rewriting,
     lastPageIndex: options.lastPageIndex
   });
+  const reviewablePairs = (options.reviewablePairs ?? []).filter(pair =>
+    rewriting.some(finding => beatPairKey(finding) === beatPairKey(pair))
+  ).map(({ pageIndex, duplicateOfPageIndex }) => ({ pageIndex, duplicateOfPageIndex }));
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "dedupe-page-beats",
     ...(options.providerCallMetadata ? { providerCallMetadata: options.providerCallMetadata } : {}),
@@ -437,7 +431,7 @@ export async function dedupePageBeats(options: {
           "You repair a book's page map.",
           "Deterministic checks found pages whose assigned beats near-duplicate an earlier page's beat.",
           "The flagged pages are grouped under the chapter they belong to; every page in a group is written against that group's chapterTitle and chapterSummary.",
-          "For each flagged page, rewrite its purpose and beat to a fresh, specific angle that advances its chapter and does not restate the earlier page's beat.",
+          reviewablePairs.length ? DISTINCT_BEAT_REVIEW_GUIDANCE : "For each flagged page, rewrite its purpose and beat to a fresh, specific angle that advances its chapter and does not restate the earlier page's beat.",
           // `promises` has ridden in the payload beside the chapters since this
           // call borrowed the key from `critiquePageMap`, whose own prompt
           // names them — and this one said nothing about it, so a book with a
@@ -451,15 +445,17 @@ export async function dedupePageBeats(options: {
           "The payload's promises are the payoffs the plan committed this book to: prefer a fresh angle that advances one of them where it fits the page's chapter, and never write one that contradicts them.",
           "The rewrites must also be distinct from one another, not only from the earlier beats they were flagged against: several flagged pages often name the same earlier page, and two rewrites landing on one fresh angle is the same collision again.",
           "Write in the same language as the beats you are given, keep each page's role in its chapter's sequence, and do not contradict the adjacent beats.",
+          "Shared wording does not prove the same completed action repeats: different objects may each require retrieval or return. Preserve necessary crossings, movements, transfers, discoveries, and the adjacent pages' entry and exit states; differentiate the flagged page's specific purpose and consequence without removing a required action.",
           `A page marked isLastPageOfBook ends the book, so its endingPressure must close it: ${LAST_PAGE_ENDING_PRESSURE}`,
           "Every other page's endingPressure hands a concrete consequence to the page after it.",
-          "Return purpose, beat and endingPressure together for every flagged page: a new beat left under the old handoff promises the next page the consequence of something that no longer happens.",
+          "Return purpose, beat and endingPressure together for every page you rewrite: a new beat left under the old handoff promises the next page the consequence of something that no longer happens.",
           "Each flagged page arrives with its current requiredContinuity: return the entries that still hold for the assignment you are writing and leave out the ones that only mattered to the beat you replaced — a character, a prop, a date or a fact the rest of the chapter depends on stays true however the page is reassigned.",
           "Return requiredContinuity for every flagged page whose payload carries entries, empty if none of them survive, and invent nothing for it: the note telling the page to stay distinct from its duplicate is added for you.",
           "A flagged page arriving with an imageMoment is illustrated from that one visual moment, which was written for the beat you are replacing: return a fresh imageMoment drawn from the assignment you are writing, a single readable scene and not a summary of the page.",
           "Return no imageMoment for a flagged page whose payload carries none — that page is not illustrated and must not become illustrated here.",
           "A flagged page arriving with a claim or evidenceAnchors argues from them: return a fresh claim and two to four fresh evidenceAnchors for the assignment you are writing, and never reuse an anchor that duplicateOf or an adjacent page carries. Return neither for a page whose payload carries none.",
-          "Return a patch for every flagged page and for no other page."
+          reviewablePairs.length ? "Answer every flagged page with a rewrite or an eligible distinctPairs decision, and no other page."
+            : "Return a patch for every flagged page and for no other page."
         ].join(" ")
       },
       {
@@ -477,7 +473,9 @@ export async function dedupePageBeats(options: {
         // illustrated page is refused, and the pass silently degrades to notes.
         // They move together.
         role: "user",
-        content: JSON.stringify({ promises: options.promises, chapters }, null, 2)
+        content: JSON.stringify({ promises: options.promises, chapters,
+          ...(reviewablePairs.length ? { reviewablePairs, storyContext: beatReviewStoryContext(options.briefs, reviewablePairs) } : {})
+        })
       }
     ]
   });
@@ -485,6 +483,9 @@ export async function dedupePageBeats(options: {
   // adapter the schema, which is what parses — and what its retry loop
   // re-prompts on when the parse fails.
   const parsed = result.data;
+  const distinctPairs = groundedDistinctBeatPairs({ briefs: options.briefs, candidates: reviewablePairs,
+    decisions: parsed.distinctPairs, patchedPageIndexes: parsed.beatPatches.map(patch => patch.pageIndex) });
+  const distinctKeys = new Set(distinctPairs.map(beatPairKey));
   const flaggedIndexes = new Set(rewriting.map((finding) => finding.pageIndex));
   const pages = options.briefs.flatMap((brief) => brief.pages);
   // Every page no rewrite was asked for, fingerprinted here rather than carried
@@ -516,12 +517,13 @@ export async function dedupePageBeats(options: {
       );
     })
     .map((patch) => withoutUnmappedImageMoment(patch, flaggedPages.get(patch.pageIndex)));
-  return beatDedupPatch(
-    options.findings,
-    withoutCollidingRewrites(rewrites, unflagged, flaggedPages).map((patch) =>
+  const patch = beatDedupPatch(
+    options.findings.filter(finding => !distinctKeys.has(beatPairKey(finding))),
+    withoutCollidingRewrites(rewrites, unflagged, flaggedPages, new Set(reviewablePairs.map(pair => pair.pageIndex))).map((patch) =>
       withContractedEnding(patch, options.lastPageIndex)
     )
   );
+  return options.reviewablePairs ? { ...patch, distinctPairs } : patch;
 }
 
 /**
@@ -616,7 +618,9 @@ type FlaggedPagePayload = {
   evidenceAnchors?: string[];
   isLastPageOfBook: boolean;
   duplicateOf: { pageIndex: number; purpose: string; beat: string; claim?: string; evidenceAnchors?: string[] };
-  adjacentBeats: { pageIndex: number; beat: string; evidenceAnchors?: string[] }[];
+  adjacentBeats: {
+    pageIndex: number; beat: string; requiredContinuity: string[]; endingPressure: string; evidenceAnchors?: string[];
+  }[];
 };
 
 /**
@@ -665,9 +669,8 @@ function groupFlaggedPagesByChapter(options: {
       };
       groups.set(chapterIndex, group);
     }
-    const neighbors = (chapter?.pages ?? []).filter(
-      (candidate) => Math.abs(candidate.pageIndex - finding.pageIndex) === 1
-    );
+    const neighbors = [finding.pageIndex - 1, finding.pageIndex + 1]
+      .flatMap((pageIndex) => pagesByIndex.has(pageIndex) ? [pagesByIndex.get(pageIndex)!] : []);
     const imageMoment = mappedImageMoment(page);
     group.flaggedPages.push({
       pageIndex: finding.pageIndex,
@@ -687,6 +690,8 @@ function groupFlaggedPagesByChapter(options: {
       adjacentBeats: neighbors.map((candidate) => ({
         pageIndex: candidate.pageIndex,
         beat: candidate.beat,
+        requiredContinuity: candidate.requiredContinuity,
+        endingPressure: candidate.endingPressure,
         ...(candidate.evidenceAnchors?.length ? { evidenceAnchors: candidate.evidenceAnchors } : {})
       }))
     });
@@ -782,7 +787,8 @@ function groupFlaggedPagesByChapter(options: {
 function withoutCollidingRewrites(
   rewrites: BeatRewritePatch[],
   unflagged: () => BeatFingerprint[],
-  flaggedPages: Map<number, BeatAssignment>
+  flaggedPages: Map<number, BeatAssignment>,
+  semanticallyReviewed = new Set<number>()
 ): BeatRewritePatch[] {
   if (rewrites.length === 0) {
     return [];
@@ -816,7 +822,7 @@ function withoutCollidingRewrites(
   let kept: { patch: BeatRewritePatch; print: BeatFingerprint }[] = [];
   for (const patch of [...rewrites].sort((first, second) => first.pageIndex - second.pageIndex)) {
     const print = fingerprint(patch);
-    if (standing.some((other) => rewritesCollide(print, other))) {
+    if (standing.some((other) => rewritesCollide(print, other, semanticallyReviewed.has(patch.pageIndex)))) {
       retain(patch.pageIndex);
       continue;
     }
@@ -830,7 +836,7 @@ function withoutCollidingRewrites(
     const original = retained[settling]!;
     const survivors: typeof kept = [];
     for (const entry of kept) {
-      if (rewritesCollide(entry.print, original)) {
+      if (rewritesCollide(entry.print, original, semanticallyReviewed.has(entry.patch.pageIndex))) {
         retain(entry.patch.pageIndex);
         continue;
       }
@@ -852,8 +858,9 @@ function withoutCollidingRewrites(
  * angle they plainly are. This is the rewrites' rule only: detection over the
  * original map is where the floors buy the thresholds their meaning.
  */
-function rewritesCollide(candidate: BeatFingerprint, other: BeatFingerprint): boolean {
-  return scorePair(candidate, other) !== undefined || candidate.normalized === other.normalized;
+function rewritesCollide(candidate: BeatFingerprint, other: BeatFingerprint, semanticReview = false): boolean {
+  // Narrative repairs get a full reaudit; lexical overlap must not silently discard them first.
+  return candidate.normalized === other.normalized || (!semanticReview && scorePair(candidate, other) !== undefined);
 }
 
 /**

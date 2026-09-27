@@ -1,0 +1,415 @@
+{
+  "source": "30-page Premium run 2026-09-26-2214, accepted map immediately before integrity regeneration",
+  "briefs": [
+    {
+      "chapterIndex": 1,
+      "title": "Four Lights on the Path",
+      "summary": "Rabbit and Wise Turtle prepare the woodland path for a picnic, then a gust scatters its four lanterns.",
+      "continuityFocus": [],
+      "pages": [
+        {
+          "pageIndex": 1,
+          "chapterIndex": 1,
+          "purpose": "Stage the storm’s sudden theft of all four path lights.",
+          "beat": "Stage the openingHook: a gust snatches all four lanterns from their hooks just as Rabbit reaches for the picnic basket; their glass stays whole, but the path goes dark.",
+          "endingPressure": "With the basket in reach and the path dark, which light can Rabbit find first?",
+          "requiredContinuity": [
+            "All four lanterns are torn from their assigned hooks, with their glass intact.",
+            "Rabbit is at the picnic basket; the path is dark."
+          ]
+        },
+        {
+          "pageIndex": 2,
+          "chapterIndex": 1,
+          "purpose": "Empty hooks reveal the scattered route",
+          "beat": "Turtle checks Brook Bend, Fern Gate, Stump Turn, and Fork; Rabbit urges a quick search.",
+          "endingPressure": "Rabbit's impatience pulls against Turtle's checks.",
+          "requiredContinuity": [
+            "Original order: Red–Brook Bend, Blue–Fern Gate, Gold–Stump Turn, Green–Fork.",
+            "Turtle finds all four hooks empty."
+          ]
+        },
+        {
+          "pageIndex": 3,
+          "chapterIndex": 1,
+          "purpose": "Rabbit separates from Turtle to search",
+          "beat": "Rabbit bolts east alone to find Red, while Turtle stays at Brook Bend to check the storm-tossed path.",
+          "endingPressure": "Rabbit's solo search risks a rushed mistake.",
+          "requiredContinuity": [
+            "Turtle stays at Brook Bend.",
+            "Rabbit searches east alone; no lantern is found yet."
+          ]
+        }
+      ]
+    },
+    {
+      "chapterIndex": 2,
+      "title": "Rabbit’s Quick Fix",
+      "summary": "Rabbit finds Red beyond Stump Turn and rushes it to the wrong arm of the Fork.",
+      "continuityFocus": [],
+      "pages": [
+        {
+          "pageIndex": 4,
+          "chapterIndex": 2,
+          "purpose": "Rabbit’s unplanned loop costs precious search time.",
+          "beat": "Darting without an order, Rabbit overshoots Stump Turn, loops back through the same leaf-whirled bend, and loses time before searching east.",
+          "endingPressure": "The moon is still below the treetops, but Rabbit has lost time and found no lantern.",
+          "requiredContinuity": [
+            "Rabbit searches alone east of Stump Turn after looping back.",
+            "No lantern has been found or moved."
+          ]
+        },
+        {
+          "pageIndex": 5,
+          "chapterIndex": 2,
+          "purpose": "Rabbit finds the first displaced lantern intact.",
+          "beat": "Past Stump Turn, Rabbit spots Red lying on the east side, its glass still intact.",
+          "endingPressure": "Red’s wrong location tempts Rabbit to move it before checking with Turtle.",
+          "requiredContinuity": [
+            "Red lies east of Stump Turn, intact and unmoved.",
+            "Rabbit is alone; Turtle does not yet know Red’s landing place."
+          ]
+        },
+        {
+          "pageIndex": 6,
+          "chapterIndex": 2,
+          "purpose": "Red’s wrong glow sends Rabbit down the wrong arm.",
+          "beat": "Rabbit carries intact Red to the Fork’s north arm and hangs it there; its glow sends him down the wrong branch, and he loops back alone to the Fork, realizing his quick fix has confused even his own route.",
+          "endingPressure": "Red still points north, and Turtle does not yet know where it landed or where Rabbit moved it.",
+          "requiredContinuity": [
+            "Red is intact on the Fork’s north arm, not east of Stump Turn.",
+            "Rabbit has returned to the Fork alone; Turtle remains at Brook Bend."
+          ]
+        }
+      ]
+    },
+    {
+      "chapterIndex": 3,
+      "title": "Two Landing Places",
+      "summary": "Rabbit tells Turtle where Red landed, and together they find Blue east of Fern Gate.",
+      "continuityFocus": [],
+      "pages": [
+        {
+          "pageIndex": 7,
+          "chapterIndex": 3,
+          "purpose": "Rabbit’s confession gives Turtle the true Red state.",
+          "beat": "Turtle follows the path from Brook Bend to the Fork; there Rabbit tells him Red landed east of Stump Turn and that he hung it on the north arm.",
+          "endingPressure": "The false glow still misdirects from the Fork, and they need another landing to compare.",
+          "requiredContinuity": [
+            "Turtle travels from Brook Bend and meets Rabbit at the Fork.",
+            "Red remains intact on the north arm; Turtle now knows its landing and wrong placement."
+          ]
+        },
+        {
+          "pageIndex": 8,
+          "chapterIndex": 3,
+          "purpose": "Blue supplies the second intact landing observation.",
+          "beat": "Together they search east of Fern Gate and find Blue grounded there, its glass whole; they leave it in place so they can compare its landing with Red’s.",
+          "endingPressure": "Two distinct eastward landings now await comparison.",
+          "requiredContinuity": [
+            "Blue lies intact east of Fern Gate and remains unmoved.",
+            "Rabbit and Turtle know both Red’s and Blue’s observed landing places."
+          ]
+        },
+        {
+          "pageIndex": 9,
+          "chapterIndex": 3,
+          "purpose": "Matching landings predict Gold's hiding place",
+          "beat": "Red east of Stump; Blue east of Fern: wind drift past barriers predicts Gold beyond Fork's east-pointing root.",
+          "endingPressure": "The prediction directs them beyond the Fork.",
+          "requiredContinuity": [
+            "Rabbit and Turtle compare both landing places.",
+            "They predict Gold lies beyond the Fork's east-pointing root."
+          ]
+        }
+      ]
+    },
+    {
+      "chapterIndex": 4,
+      "title": "Beyond the Root",
+      "summary": "The pair return Blue to Fern Gate, follow their prediction, and retrieve Gold from beyond the root.",
+      "continuityFocus": [],
+      "pages": [
+        {
+          "pageIndex": 10,
+          "chapterIndex": 4,
+          "purpose": "Blue returns intact to its assigned gate.",
+          "beat": "Rabbit lifts intact Blue from east of Fern Gate, carries it to its assigned hook, and hangs it there while Turtle steadies the post.",
+          "endingPressure": "Gold’s predicted hiding place beyond the root remains unsearched.",
+          "requiredContinuity": [
+            "Blue is intact and hangs at Fern Gate.",
+            "Rabbit carried Blue; Red remains on the Fork’s north arm."
+          ]
+        },
+        {
+          "pageIndex": 11,
+          "chapterIndex": 4,
+          "purpose": "Rabbit turns the prediction into a route",
+          "beat": "Rabbit leads straight toward the east-pointing root instead of retracing every station; Turtle follows his evidence.",
+          "endingPressure": "The predicted hiding place lies just ahead.",
+          "requiredContinuity": [
+            "Rabbit leads Turtle toward the predicted search place.",
+            "Blue is restored at Fern Gate."
+          ]
+        },
+        {
+          "pageIndex": 12,
+          "chapterIndex": 4,
+          "purpose": "Gold is freed and returned from the predicted hiding place.",
+          "beat": "Beyond the Fork’s east-pointing root, Turtle frees intact Gold from a snag and hands it to Rabbit; Rabbit carries it back past the Fork to Stump Turn and hangs it on its hook.",
+          "endingPressure": "Green remains missing, and moonrise draws nearer.",
+          "requiredContinuity": [
+            "Gold is intact on its assigned hook at Stump Turn.",
+            "Rabbit carries Gold from beyond the root; Red remains on the Fork’s north arm."
+          ]
+        }
+      ]
+    },
+    {
+      "chapterIndex": 5,
+      "title": "A Different Route",
+      "summary": "Turtle’s wish to recheck every old station clashes with Rabbit’s clue-based plan before moonrise.",
+      "continuityFocus": [],
+      "pages": [
+        {
+          "pageIndex": 13,
+          "chapterIndex": 5,
+          "purpose": "Turtle’s retracing habit costs real search time.",
+          "beat": "From Stump Turn, Turtle turns west and retraces to Fern Gate, rechecking Blue’s known hook while Rabbit follows; the repeat costs them time without locating Green.",
+          "endingPressure": "Green is still missing, and Rabbit must persuade Turtle to leave the completed checks behind.",
+          "requiredContinuity": [
+            "Rabbit and Turtle move from Stump Turn to Fern Gate.",
+            "Blue is already restored there; Green remains missing and Red misplaced."
+          ]
+        },
+        {
+          "pageIndex": 14,
+          "chapterIndex": 5,
+          "purpose": "Rabbit’s evidence changes Turtle’s search route.",
+          "beat": "At Fern Gate, Rabbit names Red east of Stump and Blue east of Fern; Turtle stops the repeat, trusts the evidence, and turns with Rabbit west toward the downstream rail without rechecking Brook Bend.",
+          "endingPressure": "The unsearched rail beyond Brook Bend lies ahead, with Green still missing.",
+          "requiredContinuity": [
+            "Rabbit and Turtle leave Fern Gate westward toward the downstream rail.",
+            "Turtle has chosen evidence over another check of a restored station; Red remains on the Fork’s north arm."
+          ]
+        },
+        {
+          "pageIndex": 15,
+          "chapterIndex": 5,
+          "purpose": "Green’s intact landing reveals the final retrieval challenge.",
+          "beat": "At the downstream rail beyond Brook Bend, Rabbit spots Green caught on a low branch across the shallow stream, on the far downstream bank; its glass is intact.",
+          "endingPressure": "The narrow stream separates them from the lantern.",
+          "requiredContinuity": [
+            "Rabbit and Turtle reach the near bank at the downstream rail.",
+            "Green is intact, caught on a branch on the far downstream bank."
+          ]
+        }
+      ]
+    },
+    {
+      "chapterIndex": 6,
+      "title": "Green by the Rail",
+      "summary": "Rabbit and Turtle retrieve Green from beyond the stream rail and carry it back to the Fork.",
+      "continuityFocus": [],
+      "pages": [
+        {
+          "pageIndex": 16,
+          "chapterIndex": 6,
+          "purpose": "The pair cross safely to Green’s bank.",
+          "beat": "At the rail, Turtle finds flat stepping-stones upstream, tests them, and crosses first; Rabbit follows, and both reach the downstream bank beside Green.",
+          "endingPressure": "Green remains caught and must be freed without cracking its glass.",
+          "requiredContinuity": [
+            "Turtle crosses first over the stepping-stones; Rabbit follows.",
+            "Both finish on the downstream bank; Green remains caught and intact."
+          ]
+        },
+        {
+          "pageIndex": 17,
+          "chapterIndex": 6,
+          "purpose": "Rabbit’s energy and Turtle’s care free Green together.",
+          "beat": "On the downstream bank, Rabbit braces the springing branch while Turtle frees intact Green and hands it to Rabbit; Turtle crosses back first, and Rabbit follows carrying the lantern.",
+          "endingPressure": "Rabbit carries Green toward its proper Fork post.",
+          "requiredContinuity": [
+            "Turtle frees Green and transfers it to Rabbit on the downstream bank.",
+            "Turtle crosses to the near bank first; Rabbit follows carrying intact Green."
+          ]
+        },
+        {
+          "pageIndex": 18,
+          "chapterIndex": 6,
+          "purpose": "Green returns to its proper Fork post",
+          "beat": "Rabbit carries Green to the Fork and hangs it on the proper post while Turtle steadies the hook.",
+          "endingPressure": "Red still misdirects from the Fork.",
+          "requiredContinuity": [
+            "Green hangs at its proper post on the Fork.",
+            "Red remains on the Fork's north arm."
+          ]
+        }
+      ]
+    },
+    {
+      "chapterIndex": 7,
+      "title": "Putting Red Right",
+      "summary": "Rabbit removes the misleading Red lantern and restores it to Brook Bend with Turtle beside him.",
+      "continuityFocus": [],
+      "pages": [
+        {
+          "pageIndex": 19,
+          "chapterIndex": 7,
+          "purpose": "Rabbit owns and begins correcting the mistake",
+          "beat": "Rabbit admits Red confused the Fork, lifts it, and carries it toward Brook Bend.",
+          "endingPressure": "The final misplaced lantern still needs its home.",
+          "requiredContinuity": [
+            "Rabbit carries Red from the Fork toward Brook Bend.",
+            "Blue, Gold, and Green are correctly placed."
+          ]
+        },
+        {
+          "pageIndex": 20,
+          "chapterIndex": 7,
+          "purpose": "Red is restored at Brook Bend",
+          "beat": "Rabbit hangs Red at Brook Bend; Turtle watches as Rabbit checks the hook instead of hurrying away.",
+          "endingPressure": "One complete station-by-station check remains.",
+          "requiredContinuity": [
+            "Red hangs at Brook Bend.",
+            "All four lanterns are now restored."
+          ]
+        },
+        {
+          "pageIndex": 21,
+          "chapterIndex": 7,
+          "purpose": "The restored path brings the pair to the entrance ready to guide.",
+          "beat": "With Red, Blue, Gold, and Green restored, Rabbit and Turtle walk from Brook Bend back to the path entrance; Turtle asks Rabbit to lead the neighbors at their pace, and Rabbit accepts by matching Turtle’s steady walk.",
+          "endingPressure": "The neighbors have not entered yet, but the pair are ready to meet them.",
+          "requiredContinuity": [
+            "All four intact lanterns are correctly placed.",
+            "Rabbit and Turtle reach the entrance; the neighbors have not entered the path."
+          ]
+        }
+      ]
+    },
+    {
+      "chapterIndex": 8,
+      "title": "Neighbors at the Entrance",
+      "summary": "When the neighbors arrive at the path entrance, Rabbit resists rushing ahead and explains how to follow the lights.",
+      "continuityFocus": [],
+      "pages": [
+        {
+          "pageIndex": 22,
+          "chapterIndex": 8,
+          "purpose": "Rabbit begins a shared, steady escort.",
+          "beat": "The neighbors arrive at the entrance after the four lights are restored; Rabbit starts to bound ahead, remembers the north-arm mistake, asks Turtle to confirm Red, listens as the group says it is ready, and leads everyone to Brook Bend at their walking pace.",
+          "endingPressure": "Fern Gate is next, and Rabbit must keep watching the group as well as the markers.",
+          "requiredContinuity": [
+            "All four lanterns are restored before the neighbors enter.",
+            "The group moves from the entrance to Brook Bend; Red is correctly placed."
+          ]
+        },
+        {
+          "pageIndex": 23,
+          "chapterIndex": 8,
+          "purpose": "Rabbit guides the neighbors to Blue without leaving anyone behind.",
+          "beat": "At Brook Bend, Rabbit waits until the last neighbor sees Red, then leads everyone at their pace to Fern Gate and points out Blue; Turtle falls to the rear and matches the walkers’ steps.",
+          "endingPressure": "Stump Turn and Gold lie ahead, with the group still together.",
+          "requiredContinuity": [
+            "The group leaves Brook Bend and reaches Fern Gate together.",
+            "Red and Blue remain correctly placed; Turtle walks at the rear."
+          ]
+        },
+        {
+          "pageIndex": 24,
+          "chapterIndex": 8,
+          "purpose": "Turtle’s steady observation helps the group read Gold’s marker.",
+          "beat": "Rabbit leads the group from Fern Gate to Stump Turn and points out Gold; Turtle notes how its steady glow falls across the dry trail, and Rabbit waits long enough for everyone to see before leading on.",
+          "endingPressure": "The Fork and Green are the next markers on the route.",
+          "requiredContinuity": [
+            "The group moves from Fern Gate to Stump Turn together.",
+            "Gold remains correctly placed and visible."
+          ]
+        }
+      ]
+    },
+    {
+      "chapterIndex": 9,
+      "title": "The Lantern Path",
+      "summary": "Rabbit leads the neighbors past the restored markers while Turtle adapts his pace to the group.",
+      "continuityFocus": [],
+      "pages": [
+        {
+          "pageIndex": 25,
+          "chapterIndex": 9,
+          "purpose": "Green confirms that the Fork is safe to follow.",
+          "beat": "At the Fork, Rabbit checks intact Green on its assigned post and names the clearing trail; Turtle gestures for Rabbit to choose the way, and Rabbit leads the neighbors onto it at their shared pace.",
+          "endingPressure": "The clearing is close, but the whole group must stay together on the final stretch.",
+          "requiredContinuity": [
+            "The group reaches the Fork and Green is correctly placed.",
+            "Rabbit leads the group onto the clearing trail; Turtle follows with everyone."
+          ]
+        },
+        {
+          "pageIndex": 26,
+          "chapterIndex": 9,
+          "purpose": "Rabbit keeps the escort together beyond the Fork.",
+          "beat": "Along the final winding stretch, Rabbit checks over his shoulder at each bend and slows whenever the line lengthens; Turtle stays behind instead of passing him.",
+          "endingPressure": "Only the last bend separates the group from the clearing.",
+          "requiredContinuity": [
+            "The group has left the Fork together and remains on the clearing trail.",
+            "Rabbit leads; Turtle follows behind without overtaking."
+          ]
+        },
+        {
+          "pageIndex": 27,
+          "chapterIndex": 9,
+          "purpose": "The neighbors reach the clearing before moonrise.",
+          "beat": "At the last bend, Rabbit waits until Turtle and every neighbor draw alongside, then leads them into the clearing while the moon remains below the treetops.",
+          "endingPressure": "The search and escort are over; the picnic can begin beneath the restored lights.",
+          "requiredContinuity": [
+            "The neighbors, Rabbit, and Turtle arrive together at the clearing before moonrise.",
+            "All four lanterns remain correctly placed."
+          ]
+        }
+      ]
+    },
+    {
+      "chapterIndex": 10,
+      "title": "Before Moonrise",
+      "summary": "The neighbors reach the picnic clearing before moonrise, and Rabbit and Turtle share the lantern-lit celebration.",
+      "continuityFocus": [],
+      "pages": [
+        {
+          "pageIndex": 28,
+          "chapterIndex": 10,
+          "purpose": "The neighbors begin the picnic together.",
+          "beat": "In the clearing, Turtle spreads the blanket while Rabbit sets the basket within everyone’s reach, passing the first cups around instead of darting off to choose a treat.",
+          "endingPressure": "Everyone is settled beneath the lantern glow, and Rabbit has a playful idea.",
+          "requiredContinuity": [
+            "The group remains at the clearing before moonrise.",
+            "The picnic begins; all four lanterns remain correctly placed."
+          ]
+        },
+        {
+          "pageIndex": 29,
+          "chapterIndex": 10,
+          "purpose": "Their different rhythms become a picnic game.",
+          "beat": "In the lantern glow, Rabbit makes a quick rabbit-shaped shadow with his paws, then slows its wiggle so Turtle can add a steady turtle shadow; the neighbors laugh as the two shapes meet.",
+          "endingPressure": "The shadows settle, and the playful moment gives way to the warm picnic.",
+          "requiredContinuity": [
+            "Rabbit, Turtle, and the neighbors share the picnic at the clearing.",
+            "The four lanterns remain correctly placed along the path."
+          ]
+        },
+        {
+          "pageIndex": 30,
+          "chapterIndex": 10,
+          "purpose": "Rabbit and Turtle settle into a quiet picnic",
+          "beat": "Rabbit listens as Turtle offers the first treat; together they enjoy the lantern-lit picnic in quiet ease.",
+          "endingPressure": "The route is restored, and the picnic is safely underway.",
+          "requiredContinuity": [
+            "The neighbors remain at the clearing before moonrise.",
+            "All four lanterns remain restored; the picnic is underway."
+          ]
+        }
+      ]
+    }
+  ]
+}

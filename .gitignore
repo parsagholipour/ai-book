@@ -16,10 +16,8 @@ storage/images/**
 storage/voice/**
 storage/audio/**
 storage/attachments/**
-output/imagegen/
-output/cover-designs/
-# The skill's own recipe writes -before/-after beside the default directory.
-output/book-fixtures*/
+# Generated reports and assets. Already tracked files remain tracked.
+/output/
 apps/worker/storage/books/**
 apps/worker/storage/images/**
 !storage/books/.gitkeep
@@ -48,6 +46,18 @@ docs/english-regeneration-chat-router-incident.md
 
 # Local issue notes, evaluation runs, and generated books. Keep the dir, ignore contents.
 .scratch/
+
+# Temporary files and interpreter caches.
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+__pycache__/
+*.py[cod]
+/tmp/
+/temp/
 
 # Blinded manuscript copies for the reader panels are generated books; they live only on the machine that ran them
 docs/composed-chapters/**/blind/

@@ -37,6 +37,12 @@ function row(
 }
 
 describe("qualityGateCostsForProject", () => {
+  it("keeps independently routed brief extraction in manuscript review costs", () => {
+    const gates = qualityGateCostsForProject({ mediaSettings: { modelTier: "balanced" }, fallbackAt: at(10), runs: [],
+      revisions: [{ version: 1, settings: settingsWith("manuscriptReadPass"), createdAt: at(5) }],
+      costRows: [row("inventory-brief-requirements", 0.003, "COMPILE_EXPORT"), row("read-manuscript", 0.01, "COMPILE_EXPORT")] });
+    expect(gates.find(gate => gate.id === "manuscriptReadPass")).toMatchObject({ calls: 2, providerCostUsd: 0.013 });
+  });
   it("attributes both semantic judgments and contextual review to chapter acceptance", () => {
     const gates = qualityGateCostsForProject({ mediaSettings: { modelTier: "balanced" }, fallbackAt: at(10), runs: [],
       revisions: [{ version: 1, settings: settingsWith("chapterEditAcceptance"), createdAt: at(5) }],

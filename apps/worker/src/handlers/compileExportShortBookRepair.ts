@@ -1,8 +1,9 @@
 import {
   applyStoryDelta, hasFigureFence, isCancellationError, pageQualityReportSchema, parseStoryDelta, repairPictureBookManuscript,
-  reviewPictureBookManuscript, seedStoryStateFromPromises, validateStoryExtractEvidence, validateStyleAuditEvidence,
-  withStoryContradictions, withStyleAudit, pictureBookReviewFingerprint, unchangedPrefixStoryExtracts,
-  type PictureBookRepairIssue, type PictureBookPageReview
+  seedStoryStateFromPromises,
+  pictureBookReviewFingerprint, bindTextModelCall,
+  pictureBookRequirementTargets, pictureBookSceneRepairTargets,
+  type PictureBookRepairIssue, type PictureBookPageReview, type TextModelAdapter
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { loadPagesForExport } from "../generation/bookHelpers.js";
@@ -15,7 +16,9 @@ import { isStopRequestedError } from "../runtime/jobTypes.js";
 import { ExportRepairFenceUnreadableError, ExportRepairSupersededError, fenceUnreadableAfter } from "./compileExportFence.js";
 import { FinalizationLeaseLostError } from "./compileFinalization.js";
 import type { repairPagesFromFinalQa } from "./compileExportRepair.js";
-import { hasOnlyInheritedEditorialFindings, RepairRejectedError } from "./compileRepairOutcome.js";
+import { RepairRejectedError } from "./compileRepairOutcome.js";
+import { checkedShortBookRepairCandidate } from "./compileShortBookRepairCandidate.js";
+import { reviewShortBookRepairCandidate, shortBookRepairRejection, shortBookRepairFeedback } from "./compileShortBookRepairReview.js";
 
 type Options = Parameters<typeof repairPagesFromFinalQa>[0];
 
@@ -62,69 +65,51 @@ export async function repairShortBookFromFinalQa(options: Options, targets: Expo
     return unavailable(new Error("No actionable repair instructions were recorded."));
   const originals = options.pages.map(({ index, title, markdown, summary }) => ({ index, title, markdown, summary }));
   let candidate: Awaited<ReturnType<typeof repairPictureBookManuscript>>;
-  let reviews: PictureBookPageReview[];
+  let reviews: PictureBookPageReview[] = [];
+  let reviewModel: TextModelAdapter | undefined;
   const checks = shortPictureBookChecks(options.quality);
   try {
-    candidate = await repairPictureBookManuscript({ input: options.input, plan: options.plan, pages: originals,
-      issues, textModel: options.providers.text, projectId: options.projectId });
+    const previousReviews = await loadPictureBookReviewSnapshot({ ...options, pages: originals, checks });
+    const requirementTargets = pictureBookRequirementTargets(options.input.prompt, originals, previousReviews ?? [])
+      .filter(target => targets.some(page => page.index === target.pageIndex));
+    const sceneRepairTargets = pictureBookSceneRepairTargets(originals, previousReviews ?? [])
+      .filter(target => targets.some(page => page.index === target.pageIndex));
+    // Same frozen input/plan/checks throughout this operation. A rejected
+    // candidate's verified chronological prefix can still supply state deltas.
+    const baseline = previousReviews ? { pages: originals, reviews: previousReviews } : undefined;
+    let previous = baseline;
+    candidate = await checkedShortBookRepairCandidate({ input: options.input, plan: options.plan, pages: originals,
+      ...(previousReviews ? { originalReviews: previousReviews } : {}),
+      issues, requirementTargets, sceneRepairTargets, textModel: options.providers.text, projectId: options.projectId, assertActive: active,
+      check: async (proposed) => {
+        if (!usesShortPictureBookReview({ ...options, pages: proposed.pages }))
+          throw new Error("Coordinated repair exceeded the short manuscript budget.");
+        const failures = [];
+        for (const page of proposed.pages) {
+          const local = await reviewPageWithQualityGates({ strategy: options.strategy, quality: options.quality,
+            allowModelReview: false, allowSmartUnslop: false,
+            reviewOptions: { input: options.input, plan: options.plan, pageIndex: page.index,
+              draft: { ...page, continuityNotes: [] }, previousPages: proposed.pages.filter(item => item.index < page.index),
+              nextPages: proposed.pages.filter(item => item.index > page.index), continuityNotes: [], textModel: options.providers.text } });
+          if (!local.approved) failures.push({ pageIndex: page.index, issues: local.issues });
+        }
+        return failures;
+      },
+      verify: async (proposed, budget) => {
+        reviewModel ??= (await bindTextModelCall(options.providers.text, "review-page")).adapter;
+        reviews = await reviewShortBookRepairCandidate(options, proposed, previous, reviewModel, budget, active, baseline);
+        previous = { pages: proposed.pages, reviews };
+        const rejection = shortBookRepairRejection(proposed.context, reviews);
+        return rejection ? { rejection, failures: shortBookRepairFeedback(reviews, rejection) } : undefined;
+      } });
     if (!candidate.context.changes.length) return unavailable(new RepairRejectedError("no_candidate", targets.map((page) => page.index), "No safe coordinated repair was proposed."));
-    if (!usesShortPictureBookReview({ ...options, pages: candidate.pages }))
-      return unavailable(new Error("Coordinated repair exceeded the short manuscript budget."));
-    await active();
-    const changed = new Set(candidate.context.changes.map((change) => change.pageIndex));
-    // Cheap required/local checks reject a doomed candidate before buying a
-    // second full-manuscript model call. Unslop runs once on changed prose.
-    for (const page of candidate.pages) {
-      const local = await reviewPageWithQualityGates({ strategy: options.strategy, quality: options.quality,
-        decisions: options.providers.decisions, allowModelReview: false, allowSmartUnslop: changed.has(page.index),
-        reviewOptions: { input: options.input, plan: options.plan, pageIndex: page.index,
-          draft: { ...page, continuityNotes: [] }, previousPages: candidate.pages.filter((item) => item.index < page.index),
-          nextPages: candidate.pages.filter((item) => item.index > page.index), continuityNotes: [], textModel: options.providers.text } });
-      if (!local.approved) return unavailable(new RepairRejectedError("local_checks", [page.index],
-        `Coordinated repair failed local checks: ${local.issues.join(" ")}`));
-    }
-    await active();
-    const previousReviews = checks.storyExtractAudit ? await loadPictureBookReviewSnapshot({
-      ...options, pages: originals, checks
-    }) : undefined;
-    reviews = await reviewPictureBookManuscript({ input: options.input, plan: options.plan, pages: candidate.pages,
-      chapterBriefs: [], repairContext: candidate.context, textModel: options.providers.text, projectId: options.projectId,
-      ...(previousReviews ? { reusableStoryExtracts: unchangedPrefixStoryExtracts(originals, candidate.pages, previousReviews) } : {}), checks });
-    // Reuse grouped model assessments for the normal required/local/unslop
-    // gates. Never fall back to one paid review or repair loop per page.
-    for (const review of reviews) {
-      const page = candidate.pages.find((item) => item.index === review.pageIndex)!;
-      const previousPages = candidate.pages.filter((item) => item.index < page.index);
-      const nextPages = candidate.pages.filter((item) => item.index > page.index);
-      let report = await reviewPageWithQualityGates({ strategy: options.strategy, quality: options.quality,
-        precomputedReport: review.report, allowSmartUnslop: false,
-        reviewOptions: { input: options.input, plan: options.plan, pageIndex: page.index,
-          draft: { ...page, continuityNotes: [] }, previousPages, nextPages, continuityNotes: [], textModel: options.providers.text } });
-      if (review.storyExtract) {
-        review.storyExtract = validateStoryExtractEvidence(review.storyExtract, page, candidate.pages);
-        report = withStoryContradictions(report, review.storyExtract.contradictions);
-      }
-      if (review.styleAudit) report = withStyleAudit(report, validateStyleAuditEvidence(review.styleAudit, page.markdown));
-      review.report = report;
-    }
   } catch (error) {
     if (isCancellationError(error) || isStopRequestedError(error) || error instanceof FinalizationLeaseLostError ||
       error instanceof ExportRepairSupersededError || error instanceof ExportRepairFenceUnreadableError) throw error;
     console.warn("Coordinated short-book repair unavailable; keeping the saved manuscript", { projectId: options.projectId, error });
     return unavailable(error);
   }
-  const changed = new Set(candidate.context.changes.map((change) => change.pageIndex));
-  if (candidate.context.sentenceOnly) {
-    const unsafe = reviews.filter((review) => changed.has(review.pageIndex) &&
-      (!review.repairAssessment?.targetResolved || !review.repairAssessment.meaningPreserved || !review.repairAssessment.noNewRegressions));
-    if (unsafe.length) return unavailable(new RepairRejectedError(unsafe.some((review) =>
-      !review.repairAssessment?.meaningPreserved || !review.repairAssessment.noNewRegressions) ? "semantic_regression" : "target_unresolved", unsafe.map((review) => review.pageIndex),
-      unsafe.map((review) => `Page ${review.pageIndex}: ${review.repairAssessment?.reason ?? "Missing semantic comparison."}`).join(" ")));
-  }
-  const rejected = reviews.filter((review) => !review.report.approved &&
-    !(candidate.context.sentenceOnly && hasOnlyInheritedEditorialFindings(review, changed)));
-  if (rejected.length) return unavailable(new RepairRejectedError("verification_failed", rejected.map((review) => review.pageIndex),
-    rejected.map((review) => `Page ${review.pageIndex}: ${review.report.issues.join(" ")}`).join(" ")));
+  const changed = new Set(candidate.context.changes.map(change => change.pageIndex));
   await active();
   let state = seedStoryStateFromPromises(options.plan.promises ?? []);
   for (const page of options.pages) {
@@ -146,7 +131,7 @@ export async function repairShortBookFromFinalQa(options: Options, targets: Expo
       for (const page of options.pages) {
         const next = candidate.pages.find((item) => item.index === page.index)!;
         const review = reviews.find((item) => item.pageIndex === page.index)!;
-        await tx.page.update({ where: { id: page.id }, data: { markdown: next.markdown, summary: next.summary,
+        await tx.page.update({ where: { id: page.id }, data: { title: next.title, markdown: next.markdown, summary: next.summary,
           status: review.report.approved ? "COMPLETED" : "FAILED_QA", revision: { increment: changed.has(page.index) ? 1 : 0 },
           qualityReport: review.report as Prisma.InputJsonValue,
           ...(review.storyExtract ? { storyDelta: review.storyExtract.storyDelta as Prisma.InputJsonValue }

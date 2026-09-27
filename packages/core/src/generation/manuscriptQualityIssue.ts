@@ -30,6 +30,7 @@ export type ManuscriptQualityIssue = {
   message: string;
   guidance: string;
   affectedPageIndexes: number[];
+  provenance?: import("./manuscriptQualityProvenance.js").ManuscriptQualityProvenance;
   metrics?: ManuscriptQualityIssueMetrics;
   evidence?: ManuscriptQualityIssueEvidence[];
   cluster?: ManuscriptQualityIssueCluster;
@@ -60,6 +61,9 @@ export type ManuscriptQualityReport = {
   affectedPageIndexes: number[];
   checkedAt: string;
   diagnostics?: ManuscriptQualityDiagnostics;
+  /** A count of unresolved findings, not an editorial rating. */
+  scoreBasis?: "unresolved_findings";
+  findings?: import("./manuscriptQualityFindings.js").ManuscriptQualityFinding[];
 };
 
 export type ManuscriptIntegrityPage = {

@@ -78,8 +78,7 @@ export function buildSentenceRepairReviewPrompt(options: ReviewPageOptions): Gen
  */
 export async function reviseSentenceLength(options: RevisePageOptions): Promise<PageDraft> {
   const guidance = kidsReadingGuidanceForInput(options.input)!;
-  const eligibleSentences = rawSentences(options.draft.markdown)
-    .filter((sentence) => countReadableWords(sentence) > guidance.maxAverageSentenceWords);
+  const eligibleSentences = sentenceLengthRepairSentences(options.input, options.draft.markdown);
   if (eligibleSentences.length === 0) return options.draft;
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "revise-page",
@@ -117,6 +116,12 @@ export async function reviseSentenceLength(options: RevisePageOptions): Promise<
   }
   const applied = applyPagePatches(options.draft.markdown, patches);
   return applied.failures.length ? options.draft : { ...options.draft, markdown: applied.markdown };
+}
+
+/** Exact source sentences whose length can contribute to a failed age-band limit. */
+export function sentenceLengthRepairSentences(input: CreateProjectInput, markdown: string): string[] {
+  const guidance = kidsReadingGuidanceForInput(input);
+  return guidance ? rawSentences(markdown).filter(sentence => countReadableWords(sentence) >= guidance.maxAverageSentenceWords) : [];
 }
 
 /** Reuse the QA boundaries while retaining exact source bytes for a patch find. */

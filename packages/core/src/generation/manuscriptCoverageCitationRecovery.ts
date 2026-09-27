@@ -19,11 +19,16 @@ export async function recoverCoverageCitations<T extends Verdict>(options: {
   requirements: readonly Requirement[]; verdicts: readonly T[]; pages: readonly Page[]; textModel: TextModelAdapter;
 }): Promise<readonly T[]> {
   const resolve = coverageCitationResolver(options.pages);
+  const verdicts = options.verdicts.map(answer => {
+    if (answer.status !== "fulfilled" || options.verdicts.filter(v => v.id === answer.id).length !== 1 ||
+      !options.requirements.some(r => r.id === answer.id && ["content", "character", "table"].includes(r.kind))) return answer;
+    return { ...answer, evidence: answer.evidence.map(citation => resolve(citation) ?? citation) };
+  });
   const eligibleAnswers = new Set<T>();
   const candidates = new Map<string, { id: string; citation: Citation; claims: { requirement: string; reason: string }[] }>();
   for (const requirement of options.requirements) {
     if (!["content", "character", "table"].includes(requirement.kind)) continue;
-    const matches = options.verdicts.filter((item) => item.id === requirement.id);
+    const matches = verdicts.filter((item) => item.id === requirement.id);
     const answer = matches.length === 1 ? matches[0] : undefined;
     if (answer?.status !== "fulfilled") continue;
     eligibleAnswers.add(answer);
@@ -38,12 +43,13 @@ export async function recoverCoverageCitations<T extends Verdict>(options: {
       candidates.set(key, candidate);
     }
   }
-  if (!candidates.size || candidates.size > 8) return options.verdicts;
+  if (!candidates.size || candidates.size > 8) return verdicts;
   const pageIndexes = new Set([...candidates.values()].map((candidate) => candidate.citation.pageIndex));
-  const pages = options.pages.filter((page) => pageIndexes.has(page.index));
+  // Stored page objects can carry extra fields despite the narrow Page type.
+  const pages = options.pages.filter((page) => pageIndexes.has(page.index)).map(({ index, markdown }) => ({ index, markdown }));
   const payload = JSON.stringify({ phase: "coverage_citation_recovery", citations: [...candidates.values()], pages });
   // Do not truncate evidence or turn a small correction into another manuscript read.
-  if (payload.length > 20_000) return options.verdicts;
+  if (payload.length > 20_000) return verdicts;
   try {
     const result = await generateJsonWithRetry(options.textModel, {
       purpose: "read-manuscript", temperature: 0, maxTokens: 2500, schema: recoverySchema,
@@ -55,7 +61,7 @@ export async function recoverCoverageCitations<T extends Verdict>(options: {
       ].join(" ") }, { role: "user", content: payload }]
     });
     const known = new Set([...candidates.values()].map((candidate) => candidate.id));
-    if (result.data.corrections.some((correction) => !known.has(correction.id))) return options.verdicts;
+    if (result.data.corrections.some((correction) => !known.has(correction.id))) return verdicts;
     const replacements = new Map<string, Citation>();
     for (const [key, candidate] of candidates) {
       const matches = result.data.corrections.filter((item) => item.id === candidate.id);
@@ -65,11 +71,11 @@ export async function recoverCoverageCitations<T extends Verdict>(options: {
       if (!page.markdown.includes(correction.quote)) continue;
       replacements.set(key, { pageIndex: page.index, quote: correction.quote });
     }
-    return options.verdicts.map((answer) => eligibleAnswers.has(answer)
+    return verdicts.map((answer) => eligibleAnswers.has(answer)
       ? { ...answer, evidence: answer.evidence.map((citation) => replacements.get(keyFor(citation)) ?? citation) } : answer);
   } catch (error) {
     if (isStopOrAbortError(error)) throw error;
     // A failed correction leaves the original review available and its bad quotes unverified.
-    return options.verdicts;
+    return verdicts;
   }
 }

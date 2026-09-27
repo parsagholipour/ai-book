@@ -22,11 +22,11 @@ import { generationTextModelOptions } from "../packages/core/src/adapters/factor
 import { bookQueue, dispatchGenerationJob, enqueueGenerationJob, redisConnection } from "../apps/api/src/queue.ts";
 import { listRunLogs, objectStore, readRunLog } from "../packages/storage/src/index.ts";
 import { capturePublishedArtifacts, classifyGenerationCompletion, prepareStorybookIllustrations, sha256, summarizeAcceptance } from "./generation-acceptance.mjs";
-import { nextBenchmarkRound, parseBenchmarkOptions, summarizeBenchmarkMatrix } from "./generation-performance.mjs";
+import { GENERATION_WATCHDOG_MS, nextBenchmarkRound, parseBenchmarkOptions, summarizeBenchmarkMatrix } from "./generation-performance.mjs";
 
 type Input = ReturnType<typeof createProjectSchema.parse>;
 type Character = { id: string; name: string; portraitFile: string };
-type Benchmark = { rounds: number; maxElapsedMs: Record<Run["tier"], number>; targetKind: "experimental" };
+type Benchmark = { rounds: number; maxElapsedMs: Record<Run["tier"], number>; targetKind: "experimental"; profile?: "text-only-30" };
 type PdfLayoutPolicy = { mode: "one-physical-page-per-story"; expectedStoryPages: number };
 type Run = {
   round: number; tier: "fast" | "balanced" | "premium"; projectId: string; input: Input;
@@ -125,6 +125,7 @@ async function verifyPortraits(characters: Character[], userId: string) {
 async function prepare() {
   if (existsSync(manifestPath)) throw new Error("Manifest already exists; use launch, watch or capture");
   const benchmark = parseBenchmarkOptions({
+    profile: process.argv.includes("--benchmark-profile") ? value("--benchmark-profile") : undefined,
     rounds: process.argv.includes("--rounds") ? value("--rounds") : "1",
     maxMinutes: process.argv.includes("--max-minutes") ? value("--max-minutes") : undefined
   });
@@ -137,13 +138,14 @@ async function prepare() {
   if (baselineInput.category !== "KIDS" || baselineInput.targetPages !== 30 || !baselineInput.mediaSettings.fullIllustrations || !baselineInput.mediaSettings.finalReview) throw new Error("Baseline must be an illustrated 30-page KIDS book with final review");
   const variant = prepareStorybookIllustrations(baselineInput, process.argv.includes("--illustration-cadence") ? value("--illustration-cadence") : "baseline");
   const input = createProjectSchema.parse(variant.input);
+  if (benchmark.profile === "text-only-30" && variant.policy.cadence !== "none") throw new Error("The text-only-30 benchmark profile requires --illustration-cadence none");
   const characters = record(input.mediaSettings.mobile).characters as Character[] | undefined;
   if (!Array.isArray(characters) || characters.length !== 2 || !["Rabbit", "Wise Turtle"].every((name) => characters.some((entry) => entry.name === name && entry.portraitFile))) throw new Error("Baseline must contain Rabbit and Wise Turtle with saved portraits");
   const portraitChecks = await verifyPortraits(characters, owner.userId);
   const runs: Run[] = [];
   for (const round of Array.from({ length: benchmark.rounds }, (_, index) => index + 1)) for (const tier of ["fast", "balanced", "premium"] as const) {
     runs.push({ round, tier, projectId: `acceptance-${randomUUID()}`, state: "prepared", input: createProjectSchema.parse({
-      ...input, mediaSettings: { ...input.mediaSettings, modelTier: tier, coverArtSource: "design" }
+      ...input, mediaSettings: { ...input.mediaSettings, modelTier: tier, coverArtSource: variant.policy.cadence === "none" ? "none" : "design" }
     }) });
   }
   const illustrationPolicy = { ...variant.policy, inputFingerprint: sha256(JSON.stringify(runs.map((run) => run.input))) };
@@ -218,9 +220,10 @@ async function captureRun(manifest: Manifest, run: Run) {
     startedAt: run.startedAt ?? null, events, tier: run.tier, maxElapsedMs: manifest.benchmark?.maxElapsedMs[run.tier],
     expectedIllustrationPageIndexes: manifest.illustrationPolicy?.expectedPageIndexes, illustrationCadence: manifest.illustrationPolicy?.cadence,
     pdfLayoutPolicy: manifest.pdfLayoutPolicy });
-  if (captureErrors.length) { report.passed = false; report.functionalPassed = false; report.issues.push(...captureErrors); }
+  if (captureErrors.length) { report.automatedPassed = false; report.acceptanceStatus = "failed"; report.functionalPassed = false; report.issues.push(...captureErrors); }
   save(join(outputDir, "summary.json"), report);
-  log({ round: run.round, tier: run.tier, passed: report.passed, functionalPassed: report.functionalPassed,
+  log({ round: run.round, tier: run.tier, acceptanceStatus: report.acceptanceStatus, automatedPassed: report.automatedPassed, functionalPassed: report.functionalPassed,
+    semantic: report.semantic.status, quality: report.quality.state, humanReview: report.humanReview.state,
     performance: report.performance.status, elapsedMs: report.elapsedMs, providerCalls: calls.length,
     issues: [...report.issues, ...report.performance.issues] });
   return report;
@@ -243,6 +246,10 @@ function checkPreparedInputs(manifest: Manifest) {
   const policy = manifest.illustrationPolicy;
   if (!policy || policy.inputFingerprint !== sha256(JSON.stringify(manifest.runs.map((run) => run.input)))) throw new Error("Prepared storybook input changed; use a fresh manifest");
   for (const run of manifest.runs) {
+    if (policy.cadence === "none") {
+      if (run.input.mediaSettings.fullIllustrations || run.input.mediaSettings.illustrationCadence !== "manual" || run.input.mediaSettings.coverArtSource !== "none" || run.input.prompt !== policy.preparedPrompt || policy.expectedPageIndexes.length !== 0) throw new Error("Prepared text-only policy differs from run inputs");
+      continue;
+    }
     const actual = prepareStorybookIllustrations(run.input).policy;
     if (actual.cadence !== policy.cadence || JSON.stringify(actual.expectedPageIndexes) !== JSON.stringify(policy.expectedPageIndexes) || run.input.prompt !== policy.preparedPrompt) throw new Error("Prepared illustration policy differs from run inputs");
   }
@@ -276,11 +283,12 @@ async function watch(manifest: Manifest) {
         run.finishedAt = new Date().toISOString();
         if (completion.reason) run.failure = completion.reason;
         const report = await captureRun(manifest, run);
-        run.acceptancePassed = report.passed;
-        if (!report.passed) run.failure = [...report.issues, ...report.performance.issues].join("; ");
+        run.acceptancePassed = report.automatedPassed;
+        if (!report.automatedPassed) run.failure = [...report.issues, ...report.performance.issues,
+          `Quality: ${report.quality.state}; coverage: ${report.semantic.status}; acceptance: ${report.acceptanceStatus}`].join("; ");
         save(manifestPath, manifest);
       }
-      if (run.startedAt && Date.now() - Date.parse(run.startedAt) > 4 * 60 * 60_000) throw new Error(`Run ${run.round}/${run.tier} exceeded four hours; jobs remain available for inspection`);
+      if (run.startedAt && Date.now() - Date.parse(run.startedAt) > GENERATION_WATCHDOG_MS) throw new Error(`Run ${run.round}/${run.tier} exceeded four hours; jobs remain available for inspection`);
     }
     save(join(dir, "status.json"), { at: new Date().toISOString(), status });
     const line = JSON.stringify(status);
@@ -291,7 +299,7 @@ async function watch(manifest: Manifest) {
   for (const run of manifest.runs.filter((run) => run.state !== "prepared")) summaries.push(await captureRun(manifest, run));
   const summary = summarizeBenchmarkMatrix(summaries, manifest.runs.length);
   save(join(dir, "summary.json"), { ...summary, benchmark: manifest.benchmark ?? null, completedAt: new Date().toISOString() });
-  if (!summary.passed) throw new Error("Benchmark did not pass every configured unattended sample and performance ceiling; see summary.json");
+  if (!summary.automatedPassed) throw new Error("Automated acceptance did not pass delivery, quality, coverage and performance checks; see summary.json. Human review is separate.");
 }
 
 try {
@@ -307,7 +315,7 @@ try {
       for (const run of manifest.runs.filter((run) => run.state !== "prepared")) summaries.push(await captureRun(manifest, run));
       const summary = summarizeBenchmarkMatrix(summaries, manifest.runs.length);
       save(join(dir, "summary.json"), { ...summary, benchmark: manifest.benchmark ?? null });
-      if (!summary.passed) process.exitCode = 1;
+      if (!summary.automatedPassed) process.exitCode = 1;
     } else {
       if (command === "launch") {
         if (manifest.provenance || manifest.runs.some((run) => run.state !== "prepared")) throw new Error("Matrix was already launched; use watch");
@@ -322,7 +330,7 @@ try {
       }
       await watch(manifest);
     }
-  } else throw new Error("usage: storybook-acceptance.ts prepare|preflight|launch|watch|capture [--baseline path] [--out path] [--rounds 1|2|3 --max-minutes fast=5,balanced=8,premium=12] [--illustration-cadence baseline|every-page|every-third-page]");
+  } else throw new Error("usage: storybook-acceptance.ts prepare|preflight|launch|watch|capture [--baseline path] [--out path] [--rounds 1|2|3] [--benchmark-profile text-only-30 | --max-minutes fast=5,balanced=8,premium=12] [--illustration-cadence baseline|every-page|every-third-page|none]");
 } catch (error) {
   log({ error: errorText(error), output: dir });
   if (existsSync(dir)) save(join(dir, "harness-error.json"), { at: new Date().toISOString(), error: errorText(error) });

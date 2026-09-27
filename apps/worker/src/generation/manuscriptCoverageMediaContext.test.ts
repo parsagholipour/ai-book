@@ -11,14 +11,14 @@ const reference = { id: "reference", type: "CHARACTER_REFERENCE", path: "referen
 
 it("proves empty export inventory even when the project retains character references", () => {
   const context = buildManuscriptCoverageContext({ input, plan, pages: [page], images: [reference] });
-  expect(context.mediaInventory).toEqual({ storyPagesWithArtwork: [], coverArtworkCount: 0 });
+  expect(context.mediaInventory).toEqual({ storyPagesWithArtwork: [], coverArtworkCount: 0, characterReferenceCount: 1 });
   expect(context.referenceProvenance).toHaveLength(1);
 });
 
 it("counts existing interior and cover assets despite disabled generation settings", () => {
   const context = buildManuscriptCoverageContext({ input, plan,
     pages: [{ ...page, images: [{ type: "DIAGRAM" }] }], images: [{ ...reference, type: "COVER" }] });
-  expect(context.mediaInventory).toEqual({ storyPagesWithArtwork: [1], coverArtworkCount: 1 });
+  expect(context.mediaInventory).toEqual({ storyPagesWithArtwork: [1], coverArtworkCount: 1, characterReferenceCount: 0 });
 });
 
 it.each([

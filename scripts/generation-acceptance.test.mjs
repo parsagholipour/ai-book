@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
@@ -11,12 +11,22 @@ const requireCore = createRequire(new URL("../packages/core/package.json", impor
 const JSZip = requireCore("jszip");
 const pages = Array.from({ length: 30 }, (_, n) => ({ id: `page-${n + 1}`, index: n + 1, status: "COMPLETED", markdown: `Page ${n + 1}.` }));
 const job = (type, status, extra = {}) => ({ type, status, ...extra });
+const cleanQuality = () => ({ state: "passed", score: 100, issues: [], briefCoverage: { review: {
+  status: "reviewed", assessmentComplete: true, requirements: [{ id: "brief-1", text: "Character growth", status: "fulfilled" }]
+} } });
+
+test("publication inside a four-hour watchdog is not completed quality acceptance", () => {
+  const report = summarizeAcceptance(publishedSample({ maxElapsedMs: 240 * 60_000 }));
+  assert.equal(report.functionalPassed, true);
+  assert.equal(report.passed, false);
+  assert.equal(report.performance.passed, null);
+});
 
 function publishedSample(overrides = {}) {
   return {
     project: { id: "book", status: "COMPLETE" }, pages,
     jobs: [job("PLAN_BOOK", "COMPLETED"), job("GENERATE_BOOK", "COMPLETED"),
-      job("COMPILE_EXPORT", "COMPLETED", { payload: { finalization: {} }, finishedAt: "2026-09-23T00:14:00Z" })],
+      job("COMPILE_EXPORT", "COMPLETED", { payload: { finalization: {} }, qualityReport: cleanQuality(), finishedAt: "2026-09-23T00:14:00Z" })],
     images: pages.map((page) => ({ type: "SCENE_ILLUSTRATION", pageId: page.id })),
     calls: [], characters: [], artifacts: [1, 2, 3], startedAt: "2026-09-23T00:00:00Z",
     tier: "fast", maxElapsedMs: 5 * 60_000, ...overrides
@@ -41,6 +51,22 @@ test("sparse illustration input is explicit, recorded, and leaves the retained b
   assert.equal(prepareStorybookIllustrations(source).policy.changedFromBaseline, false);
   assert.equal(prepareStorybookIllustrations(source).policy.expectedPageIndexes.length, 30);
   assert.throws(() => prepareStorybookIllustrations(source, "sometimes"), /Unknown/);
+});
+
+test("text-only acceptance keeps the saved cast while rejecting every image asset and call", () => {
+  const source = { prompt: "Write an original 30-page illustrated storybook. Use portrait references. Make each page a distinct visual scene.", targetPages: 30,
+    mediaSettings: { fullIllustrations: true, illustrationCadence: "template-driven", coverArtSource: "design", mobile: { characters: ["Rabbit", "Wise Turtle"] } } };
+  const variant = prepareStorybookIllustrations(source, "none");
+  assert.equal(variant.input.mediaSettings.fullIllustrations, false);
+  assert.equal(variant.input.mediaSettings.illustrationCadence, "manual");
+  assert.equal(variant.input.mediaSettings.coverArtSource, "none");
+  assert.deepEqual(variant.policy.expectedPageIndexes, []);
+  assert.deepEqual(variant.input.mediaSettings.mobile.characters, source.mediaSettings.mobile.characters);
+  const sample = publishedSample({ images: [], characters: [{ id: "rabbit", name: "Rabbit" }], calls: [],
+    expectedIllustrationPageIndexes: [], illustrationCadence: "none", maxElapsedMs: 20 * 60_000 });
+  assert.equal(summarizeAcceptance(sample).functionalPassed, true);
+  assert.equal(summarizeAcceptance({ ...sample, images: [{ type: "COVER" }] }).functionalPassed, false);
+  assert.equal(summarizeAcceptance({ ...sample, calls: [{ purpose: "image.generate" }] }).functionalPassed, false);
 });
 
 test("sparse acceptance requires exactly the configured ten scene slots and two separate portraits", () => {
@@ -100,9 +126,13 @@ test("one explicit matched round can pass without buying a nine-run matrix", () 
   assert.equal(options.rounds, 1);
   assert.deepEqual(options.maxElapsedMs, { fast: 300_000, balanced: 480_000, premium: 720_000 });
   const good = summarizeAcceptance(publishedSample({ maxElapsedMs: 15 * 60_000 }));
-  assert.equal(good.passed, true);
+  assert.equal(good.automatedPassed, true);
+  assert.equal(good.passed, false);
+  assert.equal(good.acceptanceStatus, "human_review_pending");
   const summary = summarizeBenchmarkMatrix([good, good, good], options.rounds * 3);
-  assert.equal(summary.passed, true);
+  assert.equal(summary.automatedPassed, true);
+  assert.equal(summary.passed, false);
+  assert.equal(summary.acceptanceStatus, "human_review_pending");
   assert.equal(summary.functionalPassed, true);
   assert.equal(summary.performancePassed, true);
   assert.equal(summarizeBenchmarkMatrix([good, good], 3).passed, false);
@@ -121,6 +151,53 @@ test("experimental limits cannot be missing, duplicated or silently defaulted", 
   assert.throws(() => parseBenchmarkOptions({ rounds: "0", maxMinutes: "fast=5,balanced=8,premium=12" }), /rounds/);
 });
 
+test("the text-only profile freezes practical targets independently of the watchdog", () => {
+  assert.deepEqual(parseBenchmarkOptions({ profile: "text-only-30" }).maxElapsedMs,
+    { fast: 300_000, balanced: 480_000, premium: 720_000 });
+  assert.throws(() => parseBenchmarkOptions({ maxMinutes: "fast=240,balanced=240,premium=240" }), /watchdog/);
+  assert.throws(() => parseBenchmarkOptions({ profile: "typo" }), /Unknown/);
+  assert.throws(() => parseBenchmarkOptions({ profile: "text-only-30", maxMinutes: "fast=5,balanced=8,premium=12" }), /not both/);
+});
+
+test("quality and semantic acceptance remain independent of delivery and latency", () => {
+  const run = (qualityReport) => {
+    const sample = publishedSample({ maxElapsedMs: 15 * 60_000 });
+    sample.jobs.at(-1).qualityReport = qualityReport;
+    return summarizeAcceptance(sample);
+  };
+  const quick = cleanQuality();
+  quick.state = "review_recommended";
+  quick.briefCoverage.review.status = "incomplete";
+  quick.briefCoverage.review.assessmentComplete = false;
+  const incomplete = run(quick);
+  assert.equal(incomplete.publicationPassed, true);
+  assert.equal(incomplete.functionalPassed, true);
+  assert.equal(incomplete.performance.passed, true);
+  assert.equal(incomplete.semanticPassed, false);
+  assert.equal(incomplete.qualityPassed, false);
+  assert.equal(incomplete.automatedPassed, false);
+  assert.equal(incomplete.acceptanceStatus, "failed");
+  const missing = cleanQuality();
+  missing.briefCoverage.review.requirements[0].status = "missing";
+  assert.equal(run(missing).semantic.status, "complete");
+  assert.equal(run(missing).semanticPassed, false);
+  assert.equal(run(missing).automatedPassed, false);
+  const unknown = run(undefined);
+  assert.equal(unknown.semanticPassed, null);
+  assert.equal(unknown.qualityPassed, null);
+  assert.equal(unknown.acceptanceStatus, "unassessed");
+  const matrix = summarizeBenchmarkMatrix([run(cleanQuality()), incomplete, unknown], 3);
+  assert.equal(matrix.functionalPassed, true);
+  assert.equal(matrix.performancePassed, true);
+  assert.equal(matrix.semanticPassed, false);
+  assert.equal(matrix.qualityPassed, false);
+  assert.equal(matrix.automatedPassed, false);
+  const slow = summarizeAcceptance(publishedSample());
+  const noTarget = summarizeAcceptance(publishedSample({ maxElapsedMs: undefined }));
+  assert.equal(summarizeBenchmarkMatrix([slow, noTarget], 2).performancePassed, false);
+  assert.equal(summarizeBenchmarkMatrix([run(cleanQuality()), noTarget], 2).performancePassed, null);
+});
+
 test("performance telemetry counts physical truncation and retry without double-counting usage", () => {
   const first = { callId: "first", job: { generationJobId: "book-job" } };
   const second = { callId: "second", job: { generationJobId: "book-job" } };
@@ -132,6 +209,7 @@ test("performance telemetry counts physical truncation and retry without double-
     { ...second, event: "text.generateJson.request", request: { purpose: "revise-page" } },
     { ...second, event: "text.generateJson.provider_request", purpose: "revise-page", requestIndex: 1, attempt: 2, effectiveMaxTokens: 16_000 },
     { ...second, event: "text.generateJson.provider_usage", providerRequest: { requestIndex: 1 }, usage: { reasoningTokens: 4_300 } },
+    { ...second, event: "text.generateJson.provider_usage", providerRequest: { requestIndex: 1 }, usage: { cacheHitTokens: 0 } },
     { ...second, event: "text.generateJson.response", providerRequest: { requestIndex: 1 }, result: { usage: { reasoningTokens: 4_300 } } }
   ];
   const calls = [{ purpose: "revise-page", durationMs: 20_000, metadata: { reasoningTokens: 3_200 } },
@@ -171,6 +249,51 @@ test("fallback and schema repair attempts retain separate wire identities and cu
   ] });
   assert.equal(unreported.physicalReasoningTokens, null);
   assert.equal(unreported.textUsageWithoutReasoningCount, 1);
+});
+
+test("captured interrupted Balanced attempt remains failed with unknown usage and cost after fallback succeeds", () => {
+  const capture = JSON.parse(readFileSync(new URL("./testing/balanced-interrupted-fallback.json", import.meta.url), "utf8"));
+  const result = summarizeGenerationPerformance({ jobs: [], ...capture });
+  assert.equal(result.loggedErrors, 0);
+  assert.deepEqual(result.textAttemptOutcomes, { succeeded: 1, failed: 1, notIndividuallySettled: 0 });
+  assert.equal(result.ledgerKnownFailedTextCalls, 1);
+  assert.equal(result.textAttemptsWithoutUsage, 1);
+  assert.equal(result.textUsageWithoutReasoningCount, 0);
+  assert.equal(result.physicalReasoningTokens, 0);
+  assert.deepEqual(result.tokenAccounting, { providerReportedPromptTokens: 4939, providerReportedOutputTokens: 393,
+    estimatedPromptTokens: 5631, estimatedOutputTokens: 0, callsWithoutConfirmedUsage: 1, complete: false });
+  assert.deepEqual(result.costAccounting, { knownCostHint: 0.007442, callsWithoutCostHint: 1, complete: false });
+});
+
+test("ledger fallback matching does not guess between repeated physical attempts on the same provider", () => {
+  const capture = JSON.parse(readFileSync(new URL("./testing/balanced-interrupted-fallback.json", import.meta.url), "utf8"));
+  const first = capture.events.find(event => event.event.endsWith("provider_request"));
+  capture.events.push({ ...first, requestIndex: 3, attempt: 3 });
+  const result = summarizeGenerationPerformance({ jobs: [], ...capture });
+  assert.equal(result.ledgerKnownFailedTextCalls, 1);
+  assert.deepEqual(result.textAttemptOutcomes, { succeeded: 1, failed: 0, notIndividuallySettled: 2 });
+  assert.equal(result.textAttemptsWithoutUsage, 2);
+  assert.equal(result.tokenAccounting.complete, false);
+  const noLogs = summarizeGenerationPerformance({ jobs: [], calls: capture.calls });
+  assert.equal(noLogs.textAttemptsWithoutUsage, null);
+  assert.equal(noLogs.ledgerKnownFailedTextCalls, 1);
+  assert.equal(noLogs.costAccounting.complete, false);
+});
+
+test("reported token counts and known prices cannot make an in-flight ledger look complete", () => {
+  const call = { purpose: "review-page", promptTokens: 100, outputTokens: 10, costHint: null, generationJobId: "j", provider: "openai", model: "fixture",
+    metadata: { callId: "c", provisional: true, liveStatus: "running", promptTokensEstimated: false, outputTokensEstimated: false } };
+  const pending = summarizeGenerationPerformance({ jobs: [], calls: [call] });
+  assert.equal(pending.tokenAccounting.providerReportedPromptTokens, 100);
+  assert.equal(pending.tokenAccounting.complete, false);
+  assert.equal(pending.costAccounting.callsWithoutCostHint, 1);
+  const settled = summarizeGenerationPerformance({ jobs: [], calls: [{ ...call, costHint: 0, metadata: { ...call.metadata, provisional: false, liveStatus: "settled" } }] });
+  assert.equal(settled.tokenAccounting.complete, false); // No physical trace to reconcile.
+  assert.equal(settled.costAccounting.complete, false);
+  const traced = summarizeGenerationPerformance({ jobs: [], calls: [{ ...call, costHint: 0, metadata: { ...call.metadata, provisional: false, liveStatus: "settled" } }],
+    events: [{ event: "text.generateJson.provider_request", callId: "c", job: { generationJobId: "j" }, requestIndex: 1, provider: "openai", model: "fixture" }] });
+  assert.equal(traced.tokenAccounting.complete, true);
+  assert.equal(traced.costAccounting.complete, true);
 });
 
 test("critical stage timings separate wall-clock spans from parallel work and image handoff gaps", () => {

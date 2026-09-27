@@ -1,13 +1,13 @@
 import { pictureBookReviewChapters, runLocalFinalQa, runRequiredFinalQa, validateStoryExtractEvidence,
-  validateStyleAuditEvidence, withStoryContradictions, withStyleAudit, type FinalBookQa } from "@book-maker/core";
+  validateStyleAuditEvidence, withStoryContradictions, withStyleAudit, type FinalBookQa, type ManuscriptQualityIssue } from "@book-maker/core";
 import { toFinalQaPage } from "./bookHelpers.js";
 import { usesShortPictureBookReview } from "./shortPictureBook.js";
-import { loadPictureBookReviewSnapshot, shortPictureBookChecks } from "./shortPictureBookReviewCache.js";
+import { loadPictureBookDeliverySnapshot, shortPictureBookChecks } from "./shortPictureBookReviewCache.js";
 import type { QualityGateContext } from "./qualityEnrichment.js";
 import type { reviewFinalizationManuscript } from "../handlers/compileFinalizationReview.js";
 
 export async function reuseShortPictureBookFinalReview(options: Parameters<typeof reviewFinalizationManuscript>[0],
-  reuse: { generationJobId?: string | undefined; planId?: string | undefined; quality: QualityGateContext }): Promise<FinalBookQa | undefined> {
+  reuse: { generationJobId?: string | undefined; planId?: string | undefined; quality: QualityGateContext }): Promise<{ finalQa: FinalBookQa; issues: ManuscriptQualityIssue[] } | undefined> {
   const checks = shortPictureBookChecks(reuse.quality);
   if (!checks.pageModelReview || !usesShortPictureBookReview(options)) return undefined;
   const chapters = pictureBookReviewChapters(options.plan);
@@ -16,7 +16,7 @@ export async function reuseShortPictureBookFinalReview(options: Parameters<typeo
     const chapter = chapters.find((item) => page.index >= item.startPageIndex && page.index <= item.endPageIndex);
     return !chapter || page.chapter?.index !== chapter.index || page.chapter.title !== chapter.title;
   })) return undefined;
-  const reviews = await loadPictureBookReviewSnapshot({ ...options, checks, generationJobId: reuse.generationJobId, planId: reuse.planId });
+  const reviews = await loadPictureBookDeliverySnapshot({ ...options, checks, generationJobId: reuse.generationJobId, planId: reuse.planId });
   if (!reviews) return undefined;
   const localIssues = (options.skipLocalChecks ? runRequiredFinalQa : runLocalFinalQa)(options.input, options.pages.map(toFinalQaPage));
   const issues = [...localIssues];
@@ -32,9 +32,15 @@ export async function reuseShortPictureBookFinalReview(options: Parameters<typeo
     score = Math.min(score, report.score);
     issues.push(...report.issues.map((issue) => `Page ${review.pageIndex}: ${issue}`));
     requiredFixes.push(...report.requiredRevisions.map((fix) => `Page ${review.pageIndex}: ${fix}`));
-    if ((!report.approved || report.score < 80) && !report.issues.length)
+    if (!review.reviewUnavailable && (!report.approved || report.score < 80) && !report.issues.length)
       issues.push(`Page ${review.pageIndex}: The full-prose review did not approve this page (score ${report.score}).`);
   }
-  return { approved, score, issues: [...new Set(issues)], requiredFixes: [...new Set(requiredFixes)],
-    notes: "Reused the complete frozen manuscript review, including opening and all chapter transitions; local final checks reran." };
+  const unavailablePages = reviews.filter(review => review.reviewUnavailable).map(review => review.pageIndex);
+  return { finalQa: { approved, score, issues: [...new Set(issues)], requiredFixes: [...new Set(requiredFixes)],
+    notes: unavailablePages.length
+      ? "Reused available manuscript assessments; incomplete checks remain unverified and local final checks reran."
+      : "Reused the complete frozen manuscript review, including opening and all chapter transitions; local final checks reran." },
+    issues: unavailablePages.length ? [{ code: "FINAL_REVIEW_UNAVAILABLE", source: "model", severity: "warning", affectedPageIndexes: unavailablePages,
+      message: "The manuscript review could not verify all pages after its bounded attempts. The saved drafts remain included in the exports.",
+      guidance: "Review the saved manuscript or request another review." }] : [] };
 }

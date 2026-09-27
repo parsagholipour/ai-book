@@ -9,6 +9,8 @@ export type PrecomputedPageReview = {
   styleAudit: PageStyleAudit | null;
   completedChecks: { pageModelReview: boolean; storyExtractAudit: boolean; styleAuditor: boolean };
   manuscriptPages: PriorPageContext[];
+  /** The grouped review exhausted its allowance; preserve prose without claiming approval. */
+  reviewUnavailable?: true;
 };
 
 export function matchingPrecomputedReview(options: {
@@ -22,9 +24,10 @@ export function matchingPrecomputedReview(options: {
   if (!review || review.draftMarkdown !== options.draft.markdown) return undefined;
   const needsStory = options.quality.enabled("storyExtractAudit");
   const needsStyle = options.quality.enabled("styleAuditor") && options.quality.enabled("styleExcerpts");
-  if ((options.quality.enabled("pageModelReview") && !review.completedChecks.pageModelReview) ||
+  if (review.reviewUnavailable && review.report.approved) return undefined;
+  if (!review.reviewUnavailable && ((options.quality.enabled("pageModelReview") && !review.completedChecks.pageModelReview) ||
     (needsStory && (!review.completedChecks.storyExtractAudit || !review.storyExtract)) ||
-    (needsStyle && (!review.completedChecks.styleAuditor || !review.styleAudit))) return undefined;
+    (needsStyle && (!review.completedChecks.styleAuditor || !review.styleAudit)))) return undefined;
   const supplied = [options.draft, ...options.previousPages, ...(options.nextPages ?? [])];
   if (supplied.some((page) => !review.manuscriptPages.some((source) =>
     source.index === page.index && source.title === page.title && source.markdown === page.markdown))) return undefined;

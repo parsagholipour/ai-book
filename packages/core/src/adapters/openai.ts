@@ -13,6 +13,8 @@ import {
   toolParametersJsonSchema
 } from "./openaiToolCalling.js";
 import { optionalMaxRetries } from "./optionalMaxRetries.js";
+import { PartialOutputPreview } from "./partialOutputPreview.js";
+import { JsonOutputRepetitionError, JsonOutputRepetitionGuard } from "./jsonOutputRepetition.js";
 import { isCancellationError, ProviderHttpError, ProviderStreamInterruptedError } from "./retry.js";
 import type {
   ChatMessage,
@@ -45,6 +47,7 @@ export type OpenAITextAdapterOptions = {
 };
 
 type ResponseRecord = {
+  id?: string;
   model?: string;
   output_text?: string;
   output?: unknown[];
@@ -140,6 +143,11 @@ export class OpenAITextAdapter implements TextModelAdapter {
         openAiRequestOptions(options)
       ) as unknown as Promise<ResponseRecord>);
       await reportTextProviderUsage(options, usageFromOpenAIResponse(response.usage));
+      if (extra.text) {
+        try { new JsonOutputRepetitionGuard().append(response.output_text ?? responseText(response)); }
+        catch (error) { throwWithProviderUsage(error, { provider: PROVIDER_ID, model: response.model ?? this.model,
+          usage: usageFromOpenAIResponse(response.usage) }); }
+      }
       assertResponseSucceeded(response, this.model, undefined, numberValue(request.max_output_tokens));
       return response;
     } catch (error) {
@@ -153,7 +161,7 @@ export class OpenAITextAdapter implements TextModelAdapter {
     text?: Record<string, unknown>
   ): Promise<{ text: string; usage: Usage | undefined; model: string | undefined }> {
     let textOutput = "";
-    const stream = this.responseStream(options, input, text ? { text } : {});
+    const stream = this.responseStream(options, input, text ? { text } : {}, text ? new JsonOutputRepetitionGuard() : undefined);
     let completed: ResponseRecord;
     while (true) {
       const next = await stream.next();
@@ -175,8 +183,12 @@ export class OpenAITextAdapter implements TextModelAdapter {
   private async *responseStream(
     options: GenerateTextOptions,
     input: unknown[],
-    extra: Record<string, unknown> = {}
+    extra: Record<string, unknown> = {},
+    jsonGuard?: JsonOutputRepetitionGuard
   ): AsyncGenerator<string, ResponseRecord> {
+    const partialOutput = new PartialOutputPreview();
+    let usage: Usage | undefined;
+    let model = this.model;
     try {
       const request = this.request(options, input, { stream: true, ...extra });
       await reportTextProviderRequest(options, PROVIDER_ID, this.model, request.max_output_tokens);
@@ -187,12 +199,17 @@ export class OpenAITextAdapter implements TextModelAdapter {
       let completed: ResponseRecord | undefined;
       for await (const event of stream as unknown as AsyncIterable<Record<string, unknown>>) {
         if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
+          options.signal?.throwIfAborted();
+          partialOutput.append(event.delta);
+          jsonGuard?.append(event.delta);
           yield event.delta;
         }
         if (isRecord(event.response)) {
+          usage = usageFromOpenAIResponse(event.response.usage) ?? usage;
+          model = typeof event.response.model === "string" ? event.response.model : model;
           await reportTextProviderUsage(options, usageFromOpenAIResponse(event.response.usage));
         }
-        const terminal = completedResponseFromEvent(event, this.model, numberValue(request.max_output_tokens));
+        const terminal = completedResponseFromEvent(event, this.model, numberValue(request.max_output_tokens), partialOutput);
         if (terminal) {
           completed = terminal;
         }
@@ -202,6 +219,13 @@ export class OpenAITextAdapter implements TextModelAdapter {
       }
       return completed;
     } catch (error) {
+      // Throwing inside for-await closes the SDK iterator, which aborts its
+      // request. This is malformed output, not a user cancellation or a timeout.
+      // Early termination may have no provider usage; leave it unknown.
+      if (error instanceof JsonOutputRepetitionError) {
+        Object.assign(error, { context: { reason: "repeated_property_without_value", partialOutput: partialOutput.snapshot() } });
+        throwWithProviderUsage(error, { provider: PROVIDER_ID, model, usage });
+      }
       rethrowOpenAiHttpError(error);
     }
   }
@@ -402,7 +426,8 @@ function jsonTextFormat(): Record<string, unknown> {
 function completedResponseFromEvent(
   event: Record<string, unknown>,
   fallbackModel: string,
-  maxTokens: number | undefined
+  maxTokens: number | undefined,
+  partialOutput: PartialOutputPreview
 ): ResponseRecord | undefined {
   if (event.type === "error") {
     throwOpenAIResponseError(
@@ -433,7 +458,7 @@ function completedResponseFromEvent(
       : event.type === "response.failed"
         ? "failed"
         : "incomplete";
-  assertResponseSucceeded(response, fallbackModel, eventStatus, maxTokens);
+  assertResponseSucceeded(response, fallbackModel, eventStatus, maxTokens, partialOutput);
   return response;
 }
 
@@ -441,7 +466,8 @@ function assertResponseSucceeded(
   response: ResponseRecord,
   fallbackModel: string,
   eventStatus?: string,
-  maxTokens?: number
+  maxTokens?: number,
+  partialOutput?: PartialOutputPreview
 ): void {
   const status = eventStatus ?? response.status;
   const responseError = isRecord(response.error) ? response.error : undefined;
@@ -458,9 +484,14 @@ function assertResponseSucceeded(
   if (status === "incomplete") {
     const details = isRecord(response.incomplete_details) ? response.incomplete_details : undefined;
     const reason = stringValue(details?.reason);
+    const preview = partialOutput ?? new PartialOutputPreview();
+    // Terminals can omit visible output even after text deltas arrived. Never
+    // inspect reasoning, encrypted content or tool arguments for diagnostics.
+    if (preview.snapshot().characters === 0) preview.append(response.output_text ?? responseText(response));
     throwOpenAIResponseError(`OpenAI response was incomplete${reason ? `: ${reason}` : ""}.`, {
       model,
       usage,
+      context: { responseId: response.id ?? null, status, reason: reason ?? "unknown", partialOutput: preview.snapshot() },
       ...(reason === "max_output_tokens" && maxTokens !== undefined ? { maxTokens, requestedModel: fallbackModel } : {})
     });
   }
@@ -478,14 +509,17 @@ function throwOpenAIResponseError(
     param?: string | undefined;
     maxTokens?: number | undefined;
     requestedModel?: string | undefined;
+    context?: Record<string, unknown>;
   }
 ): never {
   const error = new Error(message) as Error & {
     code?: string | undefined;
     param?: string | undefined;
     status?: number | undefined;
+    context?: Record<string, unknown>;
   };
   error.name = "OpenAIResponseError";
+  if (details.context) error.context = details.context;
   if (details.code) {
     error.code = details.code;
     const status = httpStatusForOpenAIErrorCode(details.code);

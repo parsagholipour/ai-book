@@ -31,6 +31,7 @@ export const GENERATION_STAGE_EFFORT: Record<GenerationModelStageId, EffortRecom
   "cut-chapter": { score: 6, reason: "Meet the length target while preserving essential reasoning and evidence." },
   "describe-pages": { score: 2, reason: "Produce concise titles and summaries from prose that already exists." },
   "read-manuscript": { score: 9, reason: "Track repetition, argument, and continuity across the entire manuscript." },
+  "inventory-brief-requirements": { score: 4, reason: "Extract explicit obligations and exact source quotations from the brief without judging the manuscript." },
   "rewrite-seams": { score: 6, reason: "Connect neighboring chapters without duplicating or distorting their content." },
   "review-manuscript-structure": { score: 8, reason: "Check the overall sequence, coverage, and balance of chapters." },
   "final-book-qa": { score: 9, reason: "Reconcile the finished book with its brief and detect remaining inconsistencies." },

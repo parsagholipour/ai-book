@@ -1,0 +1,333 @@
+{
+  "pages": [
+    {
+      "pageIndex": 1,
+      "chapterIndex": 1,
+      "purpose": "Open on lanterns torn from trailposts",
+      "beat": "Stage the thunderclap tearing four lanterns from their posts and sending them downhill.",
+      "requiredContinuity": [
+        "Four lanterns are loose and downhill.",
+        "Rabbit and Wise Turtle remain at the trailhead."
+      ],
+      "endingPressure": "The neighbors still need a safe route before moonrise."
+    },
+    {
+      "pageIndex": 2,
+      "chapterIndex": 1,
+      "purpose": "Set the deadline and blocked picnic",
+      "beat": "Set neighbors waiting at the trailhead and moonrise as deadline; the dark route blocks their picnic.",
+      "requiredContinuity": [
+        "Neighbors wait at the trailhead.",
+        "The picnic must happen before moonrise."
+      ],
+      "endingPressure": "The unmarked trail is now the urgent problem."
+    },
+    {
+      "pageIndex": 3,
+      "chapterIndex": 1,
+      "purpose": "Send Rabbit ahead alone",
+      "beat": "Rabbit dashes down the path alone while Wise Turtle begins checking posts in order behind him.",
+      "requiredContinuity": [
+        "Rabbit searches ahead alone.",
+        "Wise Turtle follows, checking posts in order."
+      ],
+      "endingPressure": "Rabbit is already beyond Turtle's careful first check."
+    },
+    {
+      "pageIndex": 4,
+      "chapterIndex": 2,
+      "purpose": "Show Rabbit skipping the marker",
+      "beat": "Rabbit races past post one without reading its mark, searching for the nearest fallen light.",
+      "requiredContinuity": [
+        "Rabbit has not checked post one's symbol."
+      ],
+      "endingPressure": "A missing mark leaves Rabbit guessing where to search."
+    },
+    {
+      "pageIndex": 5,
+      "chapterIndex": 2,
+      "purpose": "Reveal Leaf beneath the fern",
+      "beat": "Rabbit finds Leaf beneath a fern east of post one and grabs it without checking its symbol.",
+      "requiredContinuity": [
+        "Leaf was observed beneath the fern east of post one.",
+        "Rabbit carries Leaf."
+      ],
+      "endingPressure": "Leaf's safe post remains empty while Rabbit carries it."
+    },
+    {
+      "pageIndex": 6,
+      "chapterIndex": 2,
+      "purpose": "Misplace Leaf and confuse the path",
+      "beat": "He fastens Leaf at post two, where its mismatched glow makes the route harder to read.",
+      "requiredContinuity": [
+        "Leaf is incorrectly fastened at post two.",
+        "Rabbit sees the trail is more confusing."
+      ],
+      "endingPressure": "The misplaced glow now points travelers the wrong way."
+    },
+    {
+      "pageIndex": 7,
+      "chapterIndex": 3,
+      "purpose": "Begin Turtle's careful post check",
+      "beat": "Wise Turtle checks all four posts in order, finding Leaf misplaced at post two.",
+      "requiredContinuity": [
+        "Turtle discovers Leaf at post two.",
+        "Turtle continues the search without guessing."
+      ],
+      "endingPressure": "The scattered lights still conceal where others landed."
+    },
+    {
+      "pageIndex": 8,
+      "chapterIndex": 3,
+      "purpose": "Observe Moon's willow landing",
+      "beat": "Continuing the checks, he spots Moon in a willow farther east and downhill than Leaf's fern landing.",
+      "requiredContinuity": [
+        "Moon is observed in a willow farther east and downhill.",
+        "Turtle has observed both landing places."
+      ],
+      "endingPressure": "The willow clue has no meaning until compared."
+    },
+    {
+      "pageIndex": 9,
+      "chapterIndex": 4,
+      "purpose": "Compare landings and predict the route",
+      "beat": "Rabbit rejoins; compare fern east of post one with farther/downhill willow; east/downhill gust predicts reeds, then stream bend.",
+      "requiredContinuity": [
+        "Rabbit rejoins Turtle.",
+        "They infer the gust carried lanterns east and downhill."
+      ],
+      "endingPressure": "Their prediction now commits them to a specific route."
+    },
+    {
+      "pageIndex": 10,
+      "chapterIndex": 4,
+      "purpose": "Correct Leaf's post",
+      "beat": "Rabbit returns Leaf from post two to its marked post one, clearing the mismatch.",
+      "requiredContinuity": [
+        "Leaf is back at matching post one.",
+        "Post two is clear."
+      ],
+      "endingPressure": "Moon remains missing farther along the inferred wind line."
+    },
+    {
+      "pageIndex": 11,
+      "chapterIndex": 4,
+      "purpose": "Retrieve and return Moon",
+      "beat": "At the willow, Turtle frees Moon and passes it to Rabbit, who carries it to post two.",
+      "requiredContinuity": [
+        "Moon is fastened at matching post two.",
+        "Leaf remains at post one."
+      ],
+      "endingPressure": "Two lanterns are restored; two landing places remain unknown."
+    },
+    {
+      "pageIndex": 12,
+      "chapterIndex": 4,
+      "purpose": "Commit to testing the prediction",
+      "beat": "Turtle chooses to test Rabbit's evidence and follows his predicted route east and downhill toward reeds.",
+      "requiredContinuity": [
+        "Rabbit and Turtle head toward the reeds.",
+        "They expect reeds before the stream bend."
+      ],
+      "endingPressure": "The reeds must test their forecast next."
+    },
+    {
+      "pageIndex": 13,
+      "chapterIndex": 5,
+      "purpose": "Ask for help at the reeds",
+      "beat": "At the reeds, Rabbit asks Turtle to hold stalks apart before reaching for Star.",
+      "requiredContinuity": [
+        "Rabbit asks Turtle for help.",
+        "Star remains tangled in the reeds."
+      ],
+      "endingPressure": "Star is trapped among reeds despite a sound plan."
+    },
+    {
+      "pageIndex": 14,
+      "chapterIndex": 5,
+      "purpose": "Free Star and restore its post",
+      "beat": "Turtle holds the reeds while Rabbit frees Star, then Rabbit carries it to matching post three.",
+      "requiredContinuity": [
+        "Star is fastened at matching post three.",
+        "Turtle and Rabbit remain together on the route."
+      ],
+      "endingPressure": "Acorn still waits at the stream bend."
+    },
+    {
+      "pageIndex": 15,
+      "chapterIndex": 5,
+      "purpose": "Choose a steady route to the bend",
+      "beat": "Instead of rushing over slick roots, Rabbit waits beside Turtle; together they reach the stream bend.",
+      "requiredContinuity": [
+        "Rabbit waits for Turtle over slick roots.",
+        "They arrive together at the stream bend."
+      ],
+      "endingPressure": "A slick approach tests Rabbit's new restraint."
+    },
+    {
+      "pageIndex": 16,
+      "chapterIndex": 6,
+      "purpose": "Discover Acorn stuck in mud",
+      "beat": "They discover Acorn lodged in soft mud beside the bank, still glowing but unreachable.",
+      "requiredContinuity": [
+        "Acorn is stuck in mud by the stream bend.",
+        "Acorn remains undamaged."
+      ],
+      "endingPressure": "Acorn cannot reach its post while mud holds fast."
+    },
+    {
+      "pageIndex": 17,
+      "chapterIndex": 6,
+      "purpose": "Free Acorn without yanking",
+      "beat": "Rabbit loosens the mud carefully and passes Acorn to Turtle, who steadies it safely.",
+      "requiredContinuity": [
+        "Rabbit passes Acorn to Turtle.",
+        "Turtle carries Acorn safely."
+      ],
+      "endingPressure": "Acorn is safe, but the matching post remains ahead."
+    },
+    {
+      "pageIndex": 18,
+      "chapterIndex": 6,
+      "purpose": "Restore Acorn to post four",
+      "beat": "Turtle carries Acorn to post four; Rabbit checks its symbol before they set it in place.",
+      "requiredContinuity": [
+        "Acorn is fastened at matching post four.",
+        "Rabbit verifies the symbol."
+      ],
+      "endingPressure": "With four lamps restored, the path can be tested."
+    },
+    {
+      "pageIndex": 19,
+      "chapterIndex": 7,
+      "purpose": "Complete the lantern arrangement",
+      "beat": "Acorn matches post four; all four lanterns now glow on their matching posts.",
+      "requiredContinuity": [
+        "All four lanterns are on matching posts.",
+        "All four lanterns glow."
+      ],
+      "endingPressure": "The neighbors still need guiding along the lit route."
+    },
+    {
+      "pageIndex": 20,
+      "chapterIndex": 7,
+      "purpose": "Trust Rabbit's quick route check",
+      "beat": "Rabbit leads one quick check, confirming every turn is visible; Wise Turtle follows without recounting.",
+      "requiredContinuity": [
+        "Rabbit completes one quick path check.",
+        "Turtle trusts Rabbit's check."
+      ],
+      "endingPressure": "A quick check must be enough to trust."
+    },
+    {
+      "pageIndex": 21,
+      "chapterIndex": 7,
+      "purpose": "Turn back for the neighbors",
+      "beat": "Trusting Rabbit's check, Wise Turtle turns back with him toward the trailhead to fetch neighbors.",
+      "requiredContinuity": [
+        "Rabbit and Turtle head back to the trailhead.",
+        "They do not recount the lanterns."
+      ],
+      "endingPressure": "Neighbors remain at the trailhead until the pair returns."
+    },
+    {
+      "pageIndex": 22,
+      "chapterIndex": 8,
+      "purpose": "Own the wrong-post mistake",
+      "beat": "They return to the trailhead, where Rabbit admits his wrong-post fix to waiting neighbors.",
+      "requiredContinuity": [
+        "Rabbit admits he misplaced Leaf.",
+        "Neighbors are still waiting at the trailhead."
+      ],
+      "endingPressure": "The waiting group needs Rabbit's honest explanation."
+    },
+    {
+      "pageIndex": 23,
+      "chapterIndex": 8,
+      "purpose": "Invite neighbors to follow",
+      "beat": "Rabbit explains the lit route and invites everyone to follow at a comfortable pace.",
+      "requiredContinuity": [
+        "Neighbors know the route is lit.",
+        "The neighbors agree to follow."
+      ],
+      "endingPressure": "The neighbors must choose whether to follow."
+    },
+    {
+      "pageIndex": 24,
+      "chapterIndex": 8,
+      "purpose": "Start the group along the path",
+      "beat": "The neighbors agree; Rabbit starts them along the path, and Turtle leaves without a second count.",
+      "requiredContinuity": [
+        "Rabbit leads the neighbors from the trailhead.",
+        "Turtle skips a second count."
+      ],
+      "endingPressure": "The group enters the path before moonrise."
+    },
+    {
+      "pageIndex": 25,
+      "chapterIndex": 9,
+      "purpose": "Keep the group together at the bend",
+      "beat": "At the first bend, Rabbit waits until the last neighbor catches up before leading onward.",
+      "requiredContinuity": [
+        "The group reaches the first bend together.",
+        "Rabbit waits for the last neighbor."
+      ],
+      "endingPressure": "The last neighbors must catch up at the bend."
+    },
+    {
+      "pageIndex": 26,
+      "chapterIndex": 9,
+      "purpose": "Guide neighbors around the next curve",
+      "beat": "At the next curve, Rabbit points out the lantern ahead and keeps the group together.",
+      "requiredContinuity": [
+        "Rabbit leads at the group's pace.",
+        "The neighbors remain together."
+      ],
+      "endingPressure": "The group rounds the next curve together."
+    },
+    {
+      "pageIndex": 27,
+      "chapterIndex": 9,
+      "purpose": "Trust Rabbit through the final stretch",
+      "beat": "Wise Turtle follows Rabbit's route without stopping to recount, and the clearing appears beyond the trees.",
+      "requiredContinuity": [
+        "Turtle follows Rabbit without recounting.",
+        "The clearing is now visible."
+      ],
+      "endingPressure": "The clearing is close, but moonrise approaches."
+    },
+    {
+      "pageIndex": 28,
+      "chapterIndex": 10,
+      "purpose": "Reach the clearing before moonrise",
+      "beat": "Everyone reaches the clearing before moonrise, guided by the four lanterns Rabbit restored.",
+      "requiredContinuity": [
+        "All neighbors reach the clearing before moonrise.",
+        "The four lanterns remain on their posts."
+      ],
+      "endingPressure": "The group reaches shelter before the deadline."
+    },
+    {
+      "pageIndex": 29,
+      "chapterIndex": 10,
+      "purpose": "Begin the picnic beneath steady lights",
+      "beat": "Beneath four steady lights, neighbors unpack the picnic while Rabbit and Turtle share the first quiet moment.",
+      "requiredContinuity": [
+        "The picnic has begun in the clearing.",
+        "Rabbit and Turtle stay together."
+      ],
+      "endingPressure": "The urgent search gives way to shared celebration."
+    },
+    {
+      "pageIndex": 30,
+      "chapterIndex": 10,
+      "purpose": "Close with unhurried trust",
+      "beat": "Rabbit settles beside Turtle, listening to crickets instead of racing ahead; Turtle enjoys the evening without checking.",
+      "requiredContinuity": [
+        "Rabbit chooses to stay and listen.",
+        "Turtle rests without checking the lanterns."
+      ],
+      "endingPressure": "The night ends in trust and unhurried company."
+    }
+  ]
+}

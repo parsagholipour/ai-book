@@ -1,0 +1,98 @@
+{
+  "premiumPage": {
+    "index": 29,
+    "title": "Two Wiggling Shadows",
+    "markdown": "In the lantern glow, Rabbit made a rabbit shadow with his paws. Its ears wiggled fast on the grass. He slowed them so Wise Turtle could join in. Turtle shaped a steady little shell beside Rabbit’s paws. The two shadows met. The neighbors laughed, and Rabbit kept the shadow game slow enough for everyone to watch.",
+    "summary": "Rabbit slows his playful shadow so Turtle can add a turtle shape, making the neighbors laugh.",
+    "qualityReport": {
+      "approved": true,
+      "score": 100,
+      "issues": [],
+      "requiredRevisions": [],
+      "notes": "Reviewed against the complete frozen picture-book manuscript.",
+      "groundedOk": true,
+      "groundingStatus": "not_applicable",
+      "unsupportedClaims": [],
+      "checks": {
+        "placeholderFree": true,
+        "promptLeakFree": true,
+        "titleClean": true,
+        "repetitionOk": true,
+        "progressionOk": true,
+        "styleNatural": true
+      }
+    },
+    "status": "COMPLETED"
+  },
+  "premiumReview": {
+    "pageIndex": 29,
+    "score": 94,
+    "findings": [
+      {
+        "domain": "prose",
+        "basis": "page_prose",
+        "requirementQuote": null,
+        "category": "repetition",
+        "message": "Rabbit's slowing is stated twice in the same shadow-game beat: first so Turtle can join, then so everyone can watch.",
+        "guidance": "Keep the first change so Turtle can join; use the final sentence to advance the shared game or show the group's response without restating the pace.",
+        "quote": "“He slowed them so Wise Turtle could join in.” Later, “Rabbit kept the shadow game slow enough for everyone to watch.”",
+        "relatedEvidence": []
+      }
+    ],
+    "continuityFindingLinks": {},
+    "storyExtract": {
+      "storyDelta": {
+        "factsAdded": [
+          "Rabbit and Turtle make joined animal shadows on the grass; Rabbit keeps the game accessible to the neighbors."
+        ],
+        "entities": {
+          "Rabbit": {
+            "status": "Slows the shadow game so Turtle and the neighbors can join."
+          },
+          "Wise Turtle": {
+            "status": "Joins Rabbit in making a shadow beside Rabbit's paws."
+          }
+        }
+      },
+      "contradictions": []
+    },
+    "styleAudit": {
+      "styleOk": false,
+      "styleIssues": [
+        "The shadow-game beat repeats that Rabbit slows the game, first for Turtle and then for everyone."
+      ],
+      "evidence": [
+        {
+          "issue": "The shadow-game beat repeats that Rabbit slows the game, first for Turtle and then for everyone.",
+          "quote": "“He slowed them so Wise Turtle could join in.” Later, “Rabbit kept the shadow game slow enough for everyone to watch.”",
+          "category": "repetition"
+        }
+      ]
+    }
+  },
+  "quickPage": {
+    "index": 17,
+    "title": "Back to Its Post",
+    "markdown": "From the near bank, Rabbit and Wise Turtle carried the bridge lantern to the bridge post and set it upright. Its warm light shone over the water. The friends stood beside the bridge, ready to fix the other markers.",
+    "summary": "Together, the friends carry the bridge lantern to its post and set it upright.",
+    "qualityReport": {
+      "approved": true,
+      "score": 95,
+      "issues": [],
+      "requiredRevisions": [],
+      "notes": "Reviewed against the complete frozen picture-book manuscript.",
+      "groundedOk": true,
+      "groundingStatus": "not_applicable",
+      "unsupportedClaims": [],
+      "checks": {
+        "placeholderFree": true,
+        "promptLeakFree": true,
+        "titleClean": true,
+        "repetitionOk": true,
+        "progressionOk": true,
+        "styleNatural": true
+      }
+    },
+    "status": "COMPLETED"
+  }
+}

@@ -1,0 +1,172 @@
+{
+  "input": {
+    "title": "The Lantern Path",
+    "prompt": "Write an original 30-page storybook for children ages 6–8, called The Lantern Path. Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles. Rabbit is playful and hasty; Wise Turtle is slow and steady. Keep both active across the story, with meaningful choices and growth for each. A storm scatters the lanterns marking the woodland path to a night picnic. Rabbit rushes to fix everything alone and makes the path more confusing. Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise. Give this a fresh plot rather than a race or a retelling of The Tortoise and the Hare. Build a clear beginning, escalating middle, turning point and satisfying ending. Let Rabbit's energy and Wise Turtle's patience both solve part of the problem. Keep stakes gentle and child appropriate. Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page. Avoid repeated summaries, generic moralizing and extra named main characters. English. Exactly 30 story pages. Write exactly 30 text-only story pages. Do not create interior illustrations, a cover image, or character reference images.",
+    "category": "KIDS",
+    "language": "en",
+    "subtitle": "An original Rabbit and Wise Turtle story",
+    "complexity": 3,
+    "targetPages": 30,
+    "temperature": 0.8,
+    "mediaSettings": {
+      "modelTier": "fast",
+      "imageStyle": "Warm watercolor storybook illustration; match the saved character portraits.",
+      "finalReview": true,
+      "toneProfile": "narrative",
+      "includeCover": false,
+      "coverTemplate": "kids",
+      "coverArtSource": "none",
+      "audienceAgeRange": "6-8",
+      "fullIllustrations": false,
+      "generationStrategy": "auto",
+      "illustrationCadence": "manual"
+    }
+  },
+  "plan": {
+    "title": "The Lantern Path",
+    "premise": "After a storm scatters four path lanterns, hasty Rabbit and steady Wise Turtle must learn to combine quick observation with careful choices to guide their neighbors to a night picnic before moonrise.",
+    "audience": "Children ages 6–8; early readers and read-aloud listeners.",
+    "chapters": [
+      {
+        "index": 1,
+        "title": "The Lantern Path",
+        "summary": "After a storm scatters four path lanterns, hasty Rabbit and steady Wise Turtle must learn to combine quick observation with careful choices to guide their neighbors to a night picnic before moonrise.",
+        "targetPages": 30,
+        "keyBeats": []
+      }
+    ],
+    "promises": [
+      "A gentle, satisfying woodland search with a clear beginning, escalating confusion, a clue-based turning point, and a closed ending.",
+      "Rabbit’s haste causes a real mix-up, then changes into careful action without losing Rabbit’s playful energy.",
+      "Wise Turtle’s steadiness becomes flexible trust, not simply continued helpfulness.",
+      "The neighbors reach the picnic before moonrise; all four lanterns finish at their proper posts."
+    ],
+    "subtitle": "An original Rabbit and Wise Turtle story",
+    "locations": [
+      {
+        "name": "Woodland path",
+        "description": "A route from the gate post, past the birch and brook posts, to the meadow post.",
+        "rules": [
+          "The four lanterns belong, in order, at the gate, birch, brook, and meadow posts.",
+          "The old bridge and reed gate are landmarks farther along the wind’s west-to-east line."
+        ]
+      },
+      {
+        "name": "Picnic meadow",
+        "description": "The neighbors’ gathering place at the end of the lantern path.",
+        "rules": [
+          "The neighbors wait here until the path is clear.",
+          "The story’s gathering is reached before moonrise."
+        ]
+      }
+    ],
+    "questions": [],
+    "characters": [
+      {
+        "name": "Rabbit",
+        "role": "Playful, hasty co-lead who brings energy and quick observation to the search.",
+        "description": "Rabbit initially rushes to solve the problem alone, then learns to check clues and lantern marks before acting.",
+        "traits": [
+          "Playful",
+          "Hasty",
+          "Observant",
+          "Able to change course"
+        ],
+        "visualRules": []
+      },
+      {
+        "name": "Wise Turtle",
+        "role": "Slow, steady co-lead who notices patterns and helps reason through the search.",
+        "description": "Wise Turtle initially wants a complete count before proceeding, then chooses to trust Rabbit’s observations and learn while moving.",
+        "traits": [
+          "Slow",
+          "Steady",
+          "Thoughtful",
+          "Willing to adapt"
+        ],
+        "visualRules": []
+      }
+    ],
+    "voiceGuide": [
+      "Use clear, mostly short sentences and familiar words.",
+      "Build read-aloud rhythm with occasional sensory details and gentle dialogue.",
+      "Show feelings through small actions and choices rather than explanations."
+    ],
+    "antiAiRules": [
+      "Avoid repeating the same discovery or summarizing events already shown.",
+      "Do not add danger, extra named main characters, or a race.",
+      "Avoid a stated moral; let changed actions carry the meaning.",
+      "Keep the ending conclusive, with no new problem introduced.",
+      "Avoid unsupported proof-leap transitions; do not jump from a local fact to a sweeping conclusion without evidence on this page.",
+      "Do not invent evidence, citations, studies, experts, or source identities.",
+      "Avoid generic conclusions and visible prompt scaffolding in reader-facing prose.",
+      "Use uncertainty only where the evidence on this page requires it.",
+      "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages."
+    ],
+    "openingHook": "At dusk, a gust lifts four lanterns from their posts as rain begins to tick on the picnic blankets.",
+    "writingMode": "children-narrative",
+    "researchNotes": [],
+    "styleContract": {
+      "localRules": [
+        {
+          "id": "avoid-repeating-the-same-discovery-or-summarizin",
+          "instruction": "Avoid repeating the same discovery or summarizing events already shown."
+        },
+        {
+          "id": "do-not-add-danger-extra-named-main-characters-or",
+          "instruction": "Do not add danger, extra named main characters, or a race."
+        },
+        {
+          "id": "avoid-a-stated-moral-let-changed-actions-carry-t",
+          "instruction": "Avoid a stated moral; let changed actions carry the meaning."
+        },
+        {
+          "id": "keep-the-ending-conclusive-with-no-new-problem-i",
+          "instruction": "Keep the ending conclusive, with no new problem introduced."
+        },
+        {
+          "id": "no-proof-leap",
+          "instruction": "Avoid unsupported proof-leap transitions; do not jump from a local fact to a sweeping conclusion without evidence on this page."
+        },
+        {
+          "id": "no-invented-evidence",
+          "instruction": "Do not invent evidence, citations, studies, experts, or source identities."
+        },
+        {
+          "id": "no-generic-conclusion",
+          "instruction": "Avoid generic conclusions and visible prompt scaffolding in reader-facing prose."
+        },
+        {
+          "id": "uncertainty-where-earned",
+          "instruction": "Use uncertainty only where the evidence on this page requires it."
+        },
+        {
+          "id": "prompt-leak-ban",
+          "instruction": "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages."
+        }
+      ],
+      "distributionRules": [
+        {
+          "id": "intentional-phrase-repeat",
+          "instruction": "A small repeated phrase is allowed when it is an intentional refrain, not a copied scene."
+        }
+      ]
+    },
+    "storyTreatment": "At dusk, rain ticked on the picnic blankets as a gust swept through the woods. Four lanterns lifted from their posts and vanished among the trees. Rabbit darted after them. “I’ll fix the path before anyone notices!” Wise Turtle followed at a steady pace, carrying no lanterns and watching the wind shake the branches. The neighbors waited at the picnic meadow, hoping to find the path before moonrise.\n\nRabbit found the amber lantern beside a stump, east of the gate post where it belonged. Without checking its painted mark, Rabbit set it on the next post. Farther along, a blue lantern lay in a fern hollow, east of the birch post. Rabbit hurried it to the brook post. Now two lights pointed travelers along the wrong turns. When neighbors called from the path, Rabbit’s mixed-up signals sent them toward a patch of brambles. They stopped there, safe but puzzled. Rabbit heard them and felt a hot pinch of worry.\n\nWise Turtle wanted to return to the gate and count every post before searching farther. “We should know the whole path first,” Wise Turtle said. Rabbit pointed out that the rain was washing leaf tracks away. Wise Turtle paused, then chose to trust Rabbit’s quick eyes. Together they studied the places where the first two lanterns had landed. Both were east of their home posts. Wet leaves and grass lay pressed in the same west-to-east line. “The wind carried them onward,” Wise Turtle reasoned. “The other two may be farther along that line, past the fern hollow.” Rabbit listened instead of racing ahead.\n\nThey followed the pressed leaves toward the old bridge. A green lantern rested at its west end, just beyond the brook post. Rabbit read its mark before lifting it, then returned it to the right post. Wise Turtle checked the path behind them. The light now joined the amber and blue lanterns in the correct order. A neighbor came through the trees, saw the clear trail, and found the picnic meadow without help. The neighbor’s relieved laugh made Rabbit slow down for a moment.\n\nThe pair continued toward the reed gate, where the line of flattened leaves ended. There they found the red lantern, its wick damp but its glass whole. Rabbit wanted to carry it straight to the meadow. Wise Turtle pointed to its mark: it belonged at the meadow post, not the reed gate. Rabbit took time to match the mark, then set the lantern in its proper place. Wise Turtle did not insist on another full count before moving on. Instead, Wise Turtle asked Rabbit to lead them back by the lights.\n\nAt the meadow, the last neighbors were waiting beneath the trees. Rabbit and Wise Turtle walked beside them along the relit path, pointing out each turn. No one was hurried, and no one had to guess. Before moonrise, the whole group reached the picnic blankets. The lanterns glowed in their proper places. Rabbit stayed to help arrange the cups, while Wise Turtle sat nearby and listened to the soft patter of rain. Rabbit smiled at the clear path. “Next time, I’ll look before I leap.” Wise Turtle nodded. “And I’ll remember that we can learn while we go.”",
+    "continuityRules": [
+      "Rabbit’s arc: acts before checking, misplaces amber and blue and confuses neighbors -> chooses to read the red lantern’s mark -> checks before setting it and later leads by the lights.",
+      "Wise Turtle’s arc: insists on a full count before searching -> trusts Rabbit’s time-sensitive observation -> proceeds with a partial clue and invites Rabbit to lead back.",
+      "Prop contract: four lanterns, amber/blue/green/red, start at gate/birch/brook/meadow posts; amber and blue are wrongly moved to birch and brook, then restored to their marked posts; green and red are found at the old bridge and reed gate, then returned to brook and meadow; all four finish lit in order.",
+      "Clue contract: amber beside the stump east of its post and blue in the fern hollow east of its post are observed first; their shared eastward displacement and pressed leaves support the prediction of green at the old bridge and red at the reed gate."
+    ],
+    "researchQueries": [],
+    "illustrationPlan": {
+      "cadence": "manual",
+      "globalStyle": "Text-only interior story; create no illustrations.",
+      "coverPrompt": "Cover illustration for The Lantern Path: Write an original 30-page storybook for children ages 6–8, called The Lantern Path. Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles. Rabbit is playful and hasty; Wise Turtle is slow and steady. Keep both active across the story, with meaningful choices and growth for each. A storm scatters the lanterns marking the woodland path to a night picnic. Rabbit rushes to fix everything alone and makes the path more confusing. Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise. Give this a fresh plot rather than a race or a retelling of The Tortoise and the Hare. Build a clear beginning, escalating middle, turning point and satisfying ending. Let Rabbit's energy and Wise Turtle's patience both solve part of the problem. Keep stakes gentle and child appropriate. Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page. Avoid repeated summaries, generic moralizing and extra named main characters. English. Exactly 30 story pages. Write exactly 30 text-only story pages. Do not create interior illustrations, a cover image, or character reference images.",
+      "characterReferencePrompts": [],
+      "pageRules": []
+    },
+    "writingComplexity": 3
+  }
+}

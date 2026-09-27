@@ -1,0 +1,2705 @@
+{
+  "fast": {
+    "input": {
+      "title": "The Lantern Path",
+      "prompt": "Write an original 30-page storybook for children ages 6–8, called The Lantern Path. Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles. Rabbit is playful and hasty; Wise Turtle is slow and steady. Keep both active across the story, with meaningful choices and growth for each. A storm scatters the lanterns marking the woodland path to a night picnic. Rabbit rushes to fix everything alone and makes the path more confusing. Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise. Give this a fresh plot rather than a race or a retelling of The Tortoise and the Hare. Build a clear beginning, escalating middle, turning point and satisfying ending. Let Rabbit's energy and Wise Turtle's patience both solve part of the problem. Keep stakes gentle and child appropriate. Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page. Avoid repeated summaries, generic moralizing and extra named main characters. English. Exactly 30 story pages. Write exactly 30 text-only story pages. Do not create interior illustrations, a cover image, or character reference images.",
+      "category": "KIDS",
+      "language": "en",
+      "complexity": 3,
+      "targetPages": 30,
+      "temperature": 0.8,
+      "mediaSettings": {
+        "modelTier": "fast",
+        "finalReview": true,
+        "toneProfile": "narrative",
+        "includeCover": false,
+        "coverTemplate": "kids",
+        "coverArtSource": "none",
+        "audienceAgeRange": "6-8",
+        "fullIllustrations": false,
+        "generationStrategy": "auto",
+        "illustrationCadence": "manual"
+      }
+    },
+    "plan": {
+      "title": "The Lantern Path",
+      "bookArc": {
+        "turn": {
+          "repair": "He tests Rabbit’s clear wind clue with him, chooses the safe route, and lets their combined observation move the search forward.",
+          "trouble": "Wise Turtle is unsure which reeds hide the final lantern and risks waiting too long for certainty.",
+          "chapterIndex": 15
+        },
+        "answer": "Yes: Rabbit learns to pause, share clues, and use speed with care, while Wise Turtle learns to act on a good clue and trust Rabbit; together they relight all six posts and bring everyone to the picnic before moonrise.",
+        "chapters": [
+          {
+            "job": {
+              "adds": "Sets the deadline: before moonrise.",
+              "does": "Finds the gate dark with neighbors waiting.",
+              "leavesOpen": "Where did the lanterns go?",
+              "believesSoFar": "The storm has scattered the path lights."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "case",
+            "index": 1,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "Rabbit makes the fork more confusing.",
+              "does": "Moves it to the wrong spur.",
+              "leavesOpen": "What does the wind reveal?",
+              "believesSoFar": "A lantern near the fork can fix the darkness."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "complication",
+            "index": 2,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "Wind pushed debris east.",
+              "does": "Studies bent grass and leaves.",
+              "leavesOpen": "Will Rabbit change course?",
+              "believesSoFar": "The scatter may have a pattern."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "method",
+            "index": 3,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "The fork is readable again.",
+              "does": "Rabbit returns it and admits his error.",
+              "leavesOpen": "Where is lantern two?",
+              "believesSoFar": "The first lantern belongs at its post."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "resolution",
+            "index": 4,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "Water blocks a careless crossing.",
+              "does": "Finds a lantern at the creek.",
+              "leavesOpen": "How can they retrieve it?",
+              "believesSoFar": "Eastward clues lead to the next post."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "case",
+            "index": 5,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "Lantern two returns safely.",
+              "does": "Rabbit tests stones as Turtle steadies the lantern.",
+              "leavesOpen": "What waits at the thorn bend?",
+              "believesSoFar": "Quickness can help if guided."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "case",
+            "index": 6,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "Pulling hard could damage it.",
+              "does": "Finds lantern three snagged in thorns.",
+              "leavesOpen": "Can they free it gently?",
+              "believesSoFar": "The trail clues continue outward."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "complication",
+            "index": 7,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "Lantern three returns intact.",
+              "does": "Rabbit holds it while Turtle frees the lantern.",
+              "leavesOpen": "Where did the next lantern roll?",
+              "believesSoFar": "A loose branch may release the handle."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "case",
+            "index": 8,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "The slope is slick.",
+              "does": "Finds lantern four in a hollow.",
+              "leavesOpen": "How will they lift it?",
+              "believesSoFar": "The eastward drift continues."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "case",
+            "index": 9,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "Lantern four returns to its post.",
+              "does": "The friends draw the lantern uphill together.",
+              "leavesOpen": "What clue remains near the oak?",
+              "believesSoFar": "A vine can provide a safe pull."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "case",
+            "index": 10,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "The sound comes from above.",
+              "does": "Wise Turtle listens for a metal tap.",
+              "leavesOpen": "Can Rabbit reach it safely?",
+              "believesSoFar": "The oak marks the fifth post."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "method",
+            "index": 11,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "Lantern five is secure but still aloft.",
+              "does": "He catches the swinging lantern.",
+              "leavesOpen": "Will he rush down?",
+              "believesSoFar": "Rabbit can reach the low branch."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "case",
+            "index": 12,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "Lantern five returns; Rabbit changes his method.",
+              "does": "Rabbit waits for Turtle’s signal and lowers the lantern.",
+              "leavesOpen": "Where is the last stretch?",
+              "believesSoFar": "A pause can make fast action safer."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "portrait",
+            "index": 13,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "Caution now costs time.",
+              "does": "Wise Turtle studies the reeds too long.",
+              "leavesOpen": "Will Rabbit offer a useful clue?",
+              "believesSoFar": "The final clue may be in several places."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "complication",
+            "index": 14,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "Turtle chooses action before total certainty.",
+              "does": "Rabbit shares the clue; Turtle tests it with him.",
+              "leavesOpen": "Will the clue hold?",
+              "believesSoFar": "Bent reeds may point toward the clearing."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "case",
+            "index": 15,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "It is not beyond the trail.",
+              "does": "Finds it tucked in reeds beside the path.",
+              "leavesOpen": "How can they lift it?",
+              "believesSoFar": "The final lantern is near the last post."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "case",
+            "index": 16,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "Lantern six returns to its post.",
+              "does": "Rabbit parts reeds as Turtle lifts the lantern.",
+              "leavesOpen": "Are all posts restored?",
+              "believesSoFar": "Their strengths can work together."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "case",
+            "index": 17,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "All six lanterns are in place.",
+              "does": "Checks the full line from gate to clearing.",
+              "leavesOpen": "Can neighbors see the way?",
+              "believesSoFar": "The six posts should form one route."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "resolution",
+            "index": 18,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "Wet trees hide the distant lights.",
+              "does": "Returns to find neighbors still unsure.",
+              "leavesOpen": "How can they make the route clear?",
+              "believesSoFar": "Relit posts should guide the group."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "complication",
+            "index": 19,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "The path shines in order.",
+              "does": "Turtle proposes a signal; Rabbit checks each post.",
+              "leavesOpen": "Will the neighbors follow?",
+              "believesSoFar": "A clear sequence will help."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "method",
+            "index": 20,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "Rabbit stays in sight; Turtle sets an easy pace.",
+              "does": "Leads neighbors from the gate.",
+              "leavesOpen": "How will they cross the creek?",
+              "believesSoFar": "The group can walk together."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "case",
+            "index": 21,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "Everyone crosses without leaving the path.",
+              "does": "Rabbit shows the route; Turtle helps the group.",
+              "leavesOpen": "Can they pass the thorns?",
+              "believesSoFar": "The stones are the safe crossing."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "case",
+            "index": 22,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "The group passes together.",
+              "does": "Turtle leads around it as Rabbit keeps space clear.",
+              "leavesOpen": "What lies at the hollow?",
+              "believesSoFar": "The wider track avoids the thorn snag."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "case",
+            "index": 23,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "Neighbors take the safe way around.",
+              "does": "Rabbit warns the group; Turtle shows firm ground.",
+              "leavesOpen": "Can they pass the oak?",
+              "believesSoFar": "Loose dirt makes the hollow edge unsafe."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "case",
+            "index": 24,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "They pass the fifth post safely.",
+              "does": "Rabbit checks while Turtle guides the group beneath.",
+              "leavesOpen": "Is the clearing near?",
+              "believesSoFar": "The branch is clear from below."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "case",
+            "index": 25,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "The group enters the clearing.",
+              "does": "Rabbit holds reeds aside as neighbors follow it.",
+              "leavesOpen": "Did they make it in time?",
+              "believesSoFar": "The final light marks the clearing route."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "case",
+            "index": 26,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "The central promise is fulfilled.",
+              "does": "Brings everyone to the picnic before moonrise.",
+              "leavesOpen": "How will the evening settle?",
+              "believesSoFar": "The deadline is close."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "resolution",
+            "index": 27,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "Their care continues in small actions.",
+              "does": "Rabbit sets cups; Turtle makes room for neighbors.",
+              "leavesOpen": "What will they do next time?",
+              "believesSoFar": "Careful help matters after the search too."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "portrait",
+            "index": 28,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "Rabbit proposes; Turtle accepts.",
+              "does": "They agree on a joint lantern check.",
+              "leavesOpen": "Can they enjoy the picnic now?",
+              "believesSoFar": "A shared check can prevent confusion."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "resolution",
+            "index": 29,
+            "pages": 1
+          },
+          {
+            "job": {
+              "adds": "All six lanterns remain in place; the story closes.",
+              "does": "Enjoys the picnic as moonlight reaches the clearing.",
+              "leavesOpen": "Nothing; the ending is complete.",
+              "believesSoFar": "The path is safe and the group has arrived."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "resolution",
+            "index": 30,
+            "pages": 1
+          }
+        ],
+        "opponent": {
+          "name": "The scattered lanterns and the friends’ mismatched habits",
+          "work": "The Lantern Path",
+          "claim": "Speed alone or caution alone can fix the storm’s muddled trail.",
+          "sourceUrl": "",
+          "whereRight": "Rabbit’s quick energy and Wise Turtle’s steady attention each solve practical parts of the search.",
+          "whereTheBookBreaks": "Rabbit’s solo rush misplaces a lantern, while Wise Turtle’s hesitation could leave too little time; shared choices work better."
+        },
+        "proposal": "Produce exactly 30 text-only story pages, one page per chapter, with no cover or interior illustrations. Keep each drafted page to 35–100 words, use early-reader clarity, and preserve the lantern count, route, character changes, and before-moonrise arrival.",
+        "question": "Can Rabbit and Wise Turtle restore the six-lantern path and guide their neighbors to the picnic before moonrise?"
+      },
+      "premise": "After a storm scatters six lanterns along the woodland path to a night picnic, Rabbit’s hurried fix makes the way harder to follow. Wise Turtle spots a pattern in the windblown clues, and the two friends must combine quick energy with careful choices to guide their neighbors to the picnic before moonrise.",
+      "audience": "Children ages 6–8; read-aloud story in English.",
+      "chapters": [
+        {
+          "index": 1,
+          "title": "After the Storm",
+          "summary": "At dusk, Rabbit and Wise Turtle find the woodland gate dim and the six path lanterns scattered after the storm. Also covers A Quick Fix: Rabbit spots a lantern near a fork and moves it to the wrong spur before checking the path.",
+          "keyBeats": [
+            "Rain stops; neighbors wait at the gate.",
+            "Six lanterns are missing from their posts.",
+            "The picnic is still ahead, before moonrise.",
+            "Fold in A Quick Fix.",
+            "Rabbit dashes past Wise Turtle.",
+            "He carries one lantern to the spur.",
+            "The fork now points the wrong way."
+          ],
+          "targetPages": 2,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 2,
+          "title": "Bent Grass",
+          "summary": "Wise Turtle studies bent grass and fallen leaves, noticing that the wind pushed things toward the east side of the trail. Also covers Back to the Post: Rabbit admits his mistake and returns the first lantern to its post at the fork.",
+          "keyBeats": [
+            "Wise Turtle pauses at the fork.",
+            "Grass leans east; leaves gather there.",
+            "He asks Rabbit to look before moving more.",
+            "Fold in Back to the Post.",
+            "Rabbit owns the mix-up.",
+            "He carries the lantern back.",
+            "The first post is lit again."
+          ],
+          "targetPages": 2,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 3,
+          "title": "A Glint by the Creek",
+          "summary": "The friends follow the eastward leaf trail and spot the second lantern lodged beside the creek bend. Also covers Steady Stones: Rabbit tests stepping stones while Wise Turtle steadies the lantern, and together they lift it from the muddy bank.",
+          "keyBeats": [
+            "They leave the fork toward the picnic.",
+            "A faint glint shows beside water.",
+            "The creek is too broad to rush across.",
+            "Fold in Steady Stones.",
+            "Rabbit finds a safe stone route.",
+            "Wise Turtle holds the lantern clear.",
+            "Lantern two returns to its creek post."
+          ],
+          "targetPages": 2,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 4,
+          "title": "The Thorny Snag",
+          "summary": "At the next post, the third lantern hangs in a thorn bush just off the path. Also covers A Gentle Release: Rabbit holds the branch aside while Wise Turtle eases the lantern free without tearing its handle.",
+          "keyBeats": [
+            "They reach the thorny bend.",
+            "Rabbit wants to pull hard.",
+            "Wise Turtle spots a loose lower branch.",
+            "Fold in A Gentle Release.",
+            "Rabbit uses his quick reach carefully.",
+            "Wise Turtle frees the handle.",
+            "Lantern three returns to its post."
+          ],
+          "targetPages": 2,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 5,
+          "title": "A Hollow Glow",
+          "summary": "A low glow reveals the fourth lantern rolled into a shallow hollow beyond the path’s edge. Also covers The Long Vine: Rabbit loops a fallen vine around the lantern, and the friends draw it uphill together.",
+          "keyBeats": [
+            "They follow the eastward clues.",
+            "The lantern rests below the trail.",
+            "Loose dirt makes the slope slippery.",
+            "Fold in The Long Vine.",
+            "Wise Turtle checks the vine’s grip.",
+            "Rabbit pulls only when signaled.",
+            "Lantern four returns to its post."
+          ],
+          "targetPages": 2,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 6,
+          "title": "Quiet Listening",
+          "summary": "At the old oak, Wise Turtle hears a soft metal tap from above the path. Also covers Rabbit’s Fast Climb: Rabbit quickly reaches the branch and catches the fifth lantern before it can swing into the brush.",
+          "keyBeats": [
+            "The oak marks the fifth station.",
+            "Wind stirs the leaves overhead.",
+            "A faint tap points toward a low branch.",
+            "Fold in Rabbit’s Fast Climb.",
+            "Rabbit climbs within easy reach.",
+            "Wise Turtle calls a safe handhold.",
+            "Rabbit catches the lantern securely."
+          ],
+          "targetPages": 2,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 7,
+          "title": "A Pause to Plan",
+          "summary": "Rabbit waits for Wise Turtle’s signal instead of rushing down, then lowers the lantern safely. Also covers The Last Stretch: With the picnic clearing close, Wise Turtle hesitates over a dark patch of reeds where the final lantern may have landed.",
+          "keyBeats": [
+            "The branch bends under Rabbit.",
+            "Rabbit stops and listens.",
+            "Together they return lantern five to its post.",
+            "Fold in The Last Stretch.",
+            "They continue toward the clearing.",
+            "Moonlight is not yet up.",
+            "Wise Turtle studies several possible hiding places."
+          ],
+          "targetPages": 2,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 8,
+          "title": "Rabbit’s Good Guess",
+          "summary": "Rabbit notices reeds bent toward the clearing and asks Wise Turtle to test the clue with him. Also covers Reeds by the Path: The friends find the sixth lantern tucked in reeds beside the final post, not beyond the trail.",
+          "keyBeats": [
+            "Rabbit shares the clue instead of darting off.",
+            "Wise Turtle checks the wind pattern.",
+            "They choose the nearest safe route.",
+            "Fold in Reeds by the Path.",
+            "They reach the last station together.",
+            "A familiar metal rim glints low.",
+            "The lantern is within safe reach."
+          ],
+          "targetPages": 2,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 9,
+          "title": "Lift Together",
+          "summary": "Rabbit parts the reeds while Wise Turtle lifts the lantern and checks that its handle is sound. Also covers A Lit Trail: All six lanterns now mark their proper posts from the woodland gate to the picnic clearing.",
+          "keyBeats": [
+            "Rabbit holds the reeds open.",
+            "Wise Turtle lifts the lantern.",
+            "Lantern six returns to its post.",
+            "Fold in A Lit Trail.",
+            "They look back along the route.",
+            "Each of six posts holds one lantern.",
+            "No lantern remains displaced."
+          ],
+          "targetPages": 2,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 10,
+          "title": "The Neighbors’ Worry",
+          "summary": "At the gate, the waiting neighbors still cannot see the picnic clearing through the wet trees. Also covers A Clear Signal: Wise Turtle suggests lighting the lanterns in order while Rabbit checks each post from the path.",
+          "keyBeats": [
+            "Rabbit and Wise Turtle return to the gate.",
+            "Neighbors have stayed together there.",
+            "The restored lights are faint through the rain.",
+            "Fold in A Clear Signal.",
+            "Wise Turtle chooses a simple signal.",
+            "Rabbit checks the six posts in sequence.",
+            "The path shines from gate to clearing."
+          ],
+          "targetPages": 2,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 11,
+          "title": "Follow the Glow",
+          "summary": "The neighbors begin along the marked path, guided by the steady row of lights. Also covers At the Creek: Rabbit points out the stepping stones while Wise Turtle helps the neighbors cross the damp creek bend.",
+          "keyBeats": [
+            "The group leaves the gate together.",
+            "Rabbit stays ahead only within sight.",
+            "Wise Turtle keeps the pace comfortable.",
+            "Fold in At the Creek.",
+            "The group reaches lantern two.",
+            "Rabbit shows the safe stones.",
+            "Everyone crosses without leaving the path."
+          ],
+          "targetPages": 2,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 12,
+          "title": "Past the Thorns",
+          "summary": "Wise Turtle leads the group around the thorny bend while Rabbit keeps a lantern-lit gap clear. Also covers The Slippery Hollow: Rabbit warns the group about the loose slope, and Wise Turtle shows them the firmer way around it.",
+          "keyBeats": [
+            "They reach the third post.",
+            "Wise Turtle chooses the wider track.",
+            "Rabbit waits until everyone has passed.",
+            "Fold in The Slippery Hollow.",
+            "They pass the fourth post.",
+            "Rabbit points out loose dirt.",
+            "The neighbors take the firm path."
+          ],
+          "targetPages": 2,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 13,
+          "title": "Under the Oak",
+          "summary": "At the oak, Rabbit checks the branch from below while Wise Turtle guides the group beneath it. Also covers The Last Lantern: The final lantern glows beside the reeds, and the neighbors follow the safe path into the clearing.",
+          "keyBeats": [
+            "The fifth lantern shines overhead.",
+            "Rabbit checks that the path is clear.",
+            "The group walks through without stopping.",
+            "Fold in The Last Lantern.",
+            "They reach the sixth post.",
+            "Rabbit keeps reeds from brushing the group.",
+            "Everyone enters the picnic clearing."
+          ],
+          "targetPages": 2,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 14,
+          "title": "Before Moonrise",
+          "summary": "The neighbors reach the picnic clearing while the sky is still dusky and the moon has not risen. Also covers Warm Cups: Rabbit helps set out the picnic while Wise Turtle makes room for everyone to sit and rest. Also covers A Better Plan: Rabbit and Wise Turtle agree to check the lantern posts together before the next stormy evening. Also covers The Lantern Path: As moonlight reaches the clearing, Rabbit and Wise Turtle enjoy the picnic beside the safe, shining path. Chapter 15 repeats the picnic arrival and settled ending already delivered in chapter 14. Fold the shared-check agreement and moonrise into chapter 14’s closing pages, preserving the 30-page total by rebalancing page allocations.",
+          "keyBeats": [
+            "The whole group arrives together.",
+            "The picnic is found before moonrise.",
+            "The lantern path stays lit behind them.",
+            "Fold in Warm Cups.",
+            "Rabbit carries cups at a careful pace.",
+            "Wise Turtle welcomes the tired neighbors.",
+            "The friends share warm food.",
+            "Fold in A Better Plan.",
+            "Rabbit suggests checking before a rush.",
+            "Wise Turtle accepts Rabbit’s quick lookout plan.",
+            "They choose a shared lantern check.",
+            "Fold in The Lantern Path.",
+            "The moon rises after everyone arrives.",
+            "All six lanterns remain at their posts.",
+            "Rabbit and Wise Turtle settle in with the neighbors."
+          ],
+          "targetPages": 4,
+          "illustrationPrompts": []
+        }
+      ],
+      "promises": [
+        "Rabbit’s haste will cause a real setback, and his changed choices will matter to the solution.",
+        "Wise Turtle’s observation will reveal the wind pattern, and he will grow by trusting a useful clue before every detail is certain.",
+        "The friends will recover and return exactly six lanterns, then guide the neighbors to the picnic before moonrise.",
+        "Both friends’ strengths will solve different parts of the problem; the ending will be gentle and satisfying."
+      ],
+      "subtitle": "An original Rabbit and Wise Turtle story",
+      "locations": [
+        {
+          "name": "Woodland gate and path",
+          "rules": [
+            "The neighbors wait together at the gate until the path is relit.",
+            "The friends move outward from the gate to the clearing, then return to guide the neighbors.",
+            "The lantern posts remain in this fixed order."
+          ],
+          "description": "A six-post lantern path runs from the woodland gate, past the creek, thorny bend, hollow, and old oak, to the picnic clearing."
+        },
+        {
+          "name": "Picnic clearing",
+          "rules": [
+            "The neighbors arrive before moonrise.",
+            "The final page stays in the clearing and closes the story."
+          ],
+          "description": "The destination at the end of the lantern path, reached before moonrise."
+        }
+      ],
+      "questions": [],
+      "characters": [
+        {
+          "name": "Rabbit",
+          "role": "Playful, hasty friend whose quick energy helps with the search and the group’s journey.",
+          "traits": [
+            "playful",
+            "quick to act",
+            "energetic",
+            "able to pause and listen"
+          ],
+          "description": "A very playful rabbit that appears to be very hasty.",
+          "visualRules": []
+        },
+        {
+          "name": "Wise Turtle",
+          "role": "Slow, steady friend who reads the windblown clues and guides careful choices.",
+          "traits": [
+            "slow",
+            "steady",
+            "observant",
+            "willing to trust Rabbit’s useful idea"
+          ],
+          "description": "Slow but steady",
+          "visualRules": []
+        }
+      ],
+      "voiceGuide": [
+        "Use clear, early-reader words and mostly short sentences; keep average sentence length at or below 12 words.",
+        "Let dialogue sound warm and natural, with playful turns and occasional medium-length sentences for rhythm.",
+        "Anchor each scene in a concrete action or sensory detail, such as wet leaves, creek sounds, or lantern glow.",
+        "Build gentle suspense through what the friends notice and try, not through frightening danger."
+      ],
+      "antiAiRules": [
+        "Do not repeat the same clue, discovery, or lantern count as a new development.",
+        "Avoid generic moral statements; show change through choices and actions.",
+        "Do not use race language, race structure, or a retelling of the tortoise-and-hare fable.",
+        "Do not add named main characters, extra lanterns, or untracked transfers.",
+        "Keep every page focused on its own scene; do not end the final page by starting another scene.",
+        "Avoid unsupported proof-leap transitions; do not jump from a local fact to a sweeping conclusion without evidence on this page.",
+        "Do not invent evidence, citations, studies, experts, or source identities.",
+        "Avoid generic conclusions and visible prompt scaffolding in reader-facing prose.",
+        "Use uncertainty only where the evidence on this page requires it.",
+        "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages."
+      ],
+      "openingHook": "The storm had just stopped when Rabbit reached the woodland gate and saw the lantern path gone dark.",
+      "writingMode": "children-narrative",
+      "continuityRules": [
+        "Rabbit’s arc: hasty solo fixing moves lantern one to the wrong spur -> he admits the mistake and later chooses to share clues and wait for a signal -> he uses quickness carefully to recover lanterns and guide neighbors.",
+        "Wise Turtle’s arc: steady caution makes him hesitate over the final search area -> he chooses to test Rabbit’s reed clue before certainty is complete -> he trusts Rabbit’s observation and guides the group forward at a steady pace.",
+        "Prop state: exactly six lanterns begin scattered from six path posts; Rabbit moves lantern one to the wrong spur and returns it; lanterns two through six are recovered once each and returned to their own posts; all six stay lit in order through the neighbors’ arrival and the ending.",
+        "The friends start at the woodland gate, search outward to the clearing, return to the gate, then lead the neighbors outward to the clearing; neighbors wait at the gate until the guided walk.",
+        "The picnic arrival happens before moonrise; page 30 ends the story without a new task or scene.",
+        "Avoid repeating this beat: Chapters 10–13 retrace the same creek, thorn bend, hollow, oak, and reeds already covered during the lantern recovery in chapters 3–9. Keep the escort’s purpose, but avoid replaying the earlier solutions; give the neighbors’ passage distinct actions or obstacles.",
+        "Avoid repeating this beat: The six-lantern completion is stated in chapter 9, then revisited through the post check in chapter 10 and again in chapter 15. Avoid presenting the count and restored-post status as fresh discoveries each time. Clarify what the chapter 10 signal changes, since the lanterns are already back at their posts."
+      ],
+      "illustrationPlan": {
+        "globalStyle": "Text-only story.",
+        "pageRules": []
+      },
+      "writingComplexity": 3
+    },
+    "briefs": [
+      {
+        "pages": [
+          {
+            "beat": "Stage the storm’s aftermath at the woodland gate: six lanterns are missing, and neighbors wait as dusk deepens.",
+            "purpose": "Open on the darkened path",
+            "pageIndex": 1,
+            "chapterIndex": 1,
+            "endingPressure": "Rabbit spots a lantern beside a confusing fork.",
+            "requiredContinuity": [
+              "Rabbit and Wise Turtle start at the gate.",
+              "The picnic must be reached before moonrise."
+            ]
+          },
+          {
+            "beat": "Rabbit dashes ahead and moves lantern one to the wrong spur, making the fork point away from the picnic.",
+            "purpose": "Show haste worsening the route",
+            "pageIndex": 2,
+            "chapterIndex": 1,
+            "endingPressure": "The misplaced light makes the path harder to read.",
+            "requiredContinuity": [
+              "Lantern one is on the wrong spur.",
+              "The other five lanterns remain scattered."
+            ]
+          }
+        ],
+        "title": "After the Storm",
+        "summary": "At dusk, Rabbit and Wise Turtle find the woodland gate dim and the six path lanterns scattered after the storm. Also covers A Quick Fix: Rabbit spots a lantern near a fork and moves it to the wrong spur before checking the path.",
+        "chapterIndex": 1
+      },
+      {
+        "pages": [
+          {
+            "beat": "Wise Turtle studies east-leaning grass and leaves gathered on that side, asking Rabbit to look before moving anything else.",
+            "purpose": "Reveal the wind’s direction",
+            "pageIndex": 3,
+            "chapterIndex": 2,
+            "endingPressure": "Rabbit must face the mistake before they search.",
+            "requiredContinuity": [
+              "Friends are together at the fork.",
+              "Lantern one remains on the wrong spur."
+            ]
+          },
+          {
+            "beat": "Rabbit admits the mix-up and carries lantern one back to its proper fork post.",
+            "purpose": "Repair the first mistake",
+            "pageIndex": 4,
+            "chapterIndex": 2,
+            "endingPressure": "A faint glint appears beside the creek.",
+            "requiredContinuity": [
+              "Lantern one is back at its post.",
+              "The eastward wind clues guide the search."
+            ]
+          }
+        ],
+        "title": "Bent Grass",
+        "summary": "Wise Turtle studies bent grass and fallen leaves, noticing that the wind pushed things toward the east side of the trail. Also covers Back to the Post: Rabbit admits his mistake and returns the first lantern to its post at the fork.",
+        "chapterIndex": 2
+      },
+      {
+        "pages": [
+          {
+            "beat": "Following east-blown leaves, the friends find lantern two across a muddy creek bend too broad to rush through.",
+            "purpose": "Approach the creek clue",
+            "pageIndex": 5,
+            "chapterIndex": 3,
+            "endingPressure": "They need a safe way across and back.",
+            "requiredContinuity": [
+              "Lantern one stays lit at the fork.",
+              "Lantern two is lodged beside the creek."
+            ]
+          },
+          {
+            "beat": "Rabbit tests stepping stones while Wise Turtle steadies lantern two; together they lift it and return it to its creek post.",
+            "purpose": "Recover the creek lantern",
+            "pageIndex": 6,
+            "chapterIndex": 3,
+            "endingPressure": "Thorns snag the next lantern ahead.",
+            "requiredContinuity": [
+              "Lantern two is back at its post.",
+              "The friends continue outward from the creek."
+            ]
+          }
+        ],
+        "title": "A Glint by the Creek",
+        "summary": "The friends follow the eastward leaf trail and spot the second lantern lodged beside the creek bend. Also covers Steady Stones: Rabbit tests stepping stones while Wise Turtle steadies the lantern, and together they lift it from the muddy bank.",
+        "chapterIndex": 3
+      },
+      {
+        "pages": [
+          {
+            "beat": "At the thorn bend, Rabbit resists pulling hard when Wise Turtle spots a loose lower branch holding lantern three.",
+            "purpose": "Meet the thorny obstacle",
+            "pageIndex": 7,
+            "chapterIndex": 4,
+            "endingPressure": "The handle could tear if they yank.",
+            "requiredContinuity": [
+              "Lanterns one and two remain at their posts.",
+              "Lantern three hangs in the thorn bush."
+            ]
+          },
+          {
+            "beat": "Rabbit holds the branch aside as Wise Turtle eases lantern three free and returns it to its proper post.",
+            "purpose": "Free the lantern gently",
+            "pageIndex": 8,
+            "chapterIndex": 4,
+            "endingPressure": "A low glow shines below the trail.",
+            "requiredContinuity": [
+              "Lantern three is back at its post.",
+              "The friends continue toward the clearing."
+            ]
+          }
+        ],
+        "title": "The Thorny Snag",
+        "summary": "At the next post, the third lantern hangs in a thorn bush just off the path. Also covers A Gentle Release: Rabbit holds the branch aside while Wise Turtle eases the lantern free without tearing its handle.",
+        "chapterIndex": 4
+      },
+      {
+        "pages": [
+          {
+            "beat": "The glow reveals lantern four in a shallow hollow where loose dirt makes the slope slippery.",
+            "purpose": "Find the hollow lantern",
+            "pageIndex": 9,
+            "chapterIndex": 5,
+            "endingPressure": "The friends need a controlled uphill pull.",
+            "requiredContinuity": [
+              "Lanterns one through three are at their posts.",
+              "Lantern four lies below the path."
+            ]
+          },
+          {
+            "beat": "Wise Turtle checks a fallen vine’s grip; Rabbit pulls only on his signal, bringing lantern four uphill to its post.",
+            "purpose": "Use the vine together",
+            "pageIndex": 10,
+            "chapterIndex": 5,
+            "endingPressure": "A faint metal tap sounds overhead.",
+            "requiredContinuity": [
+              "Lantern four is back at its post.",
+              "The friends continue outward toward the oak."
+            ]
+          }
+        ],
+        "title": "A Hollow Glow",
+        "summary": "A low glow reveals the fourth lantern rolled into a shallow hollow beyond the path’s edge. Also covers The Long Vine: Rabbit loops a fallen vine around the lantern, and the friends draw it uphill together.",
+        "chapterIndex": 5
+      },
+      {
+        "pages": [
+          {
+            "beat": "At the old oak, Wise Turtle listens through stirring leaves and traces the tap to a low branch.",
+            "purpose": "Locate the sound above",
+            "pageIndex": 11,
+            "chapterIndex": 6,
+            "endingPressure": "The branch swings the lantern toward brush.",
+            "requiredContinuity": [
+              "Lanterns one through four remain at their posts.",
+              "Lantern five hangs in the oak."
+            ]
+          },
+          {
+            "beat": "Rabbit climbs within easy reach as Wise Turtle calls a safe handhold; Rabbit catches lantern five before it swings away.",
+            "purpose": "Catch the swinging lantern",
+            "pageIndex": 12,
+            "chapterIndex": 6,
+            "endingPressure": "The bending branch makes lowering it risky.",
+            "requiredContinuity": [
+              "Lantern five is secure in Rabbit’s grasp.",
+              "The friends remain beside the oak."
+            ]
+          }
+        ],
+        "title": "Quiet Listening",
+        "summary": "At the old oak, Wise Turtle hears a soft metal tap from above the path. Also covers Rabbit’s Fast Climb: Rabbit quickly reaches the branch and catches the fifth lantern before it can swing into the brush.",
+        "chapterIndex": 6
+      },
+      {
+        "pages": [
+          {
+            "beat": "Rabbit stops to hear Wise Turtle’s signal, then lowers lantern five safely and returns it to its oak post.",
+            "purpose": "Choose listening over rushing",
+            "pageIndex": 13,
+            "chapterIndex": 7,
+            "endingPressure": "Wise Turtle hesitates at a dark patch of reeds.",
+            "requiredContinuity": [
+              "Lantern five is back at its post.",
+              "The friends continue toward the clearing."
+            ]
+          },
+          {
+            "beat": "Wise Turtle studies several possible hiding places near the clearing but cannot yet settle on where lantern six landed.",
+            "purpose": "Face uncertainty at the last stretch",
+            "pageIndex": 14,
+            "chapterIndex": 7,
+            "endingPressure": "The search stalls despite the approaching deadline.",
+            "requiredContinuity": [
+              "Five lanterns are restored.",
+              "Lantern six remains missing near the final stretch."
+            ]
+          }
+        ],
+        "title": "A Pause to Plan",
+        "summary": "Rabbit waits for Wise Turtle’s signal instead of rushing down, then lowers the lantern safely. Also covers The Last Stretch: With the picnic clearing close, Wise Turtle hesitates over a dark patch of reeds where the final lantern may have landed.",
+        "chapterIndex": 7
+      },
+      {
+        "pages": [
+          {
+            "beat": "Rabbit notices reeds bent toward the clearing and asks Wise Turtle to test that clue instead of darting off alone.",
+            "purpose": "Trust Rabbit’s useful clue",
+            "pageIndex": 15,
+            "chapterIndex": 8,
+            "endingPressure": "Wise Turtle must choose before certainty.",
+            "requiredContinuity": [
+              "Rabbit shares his observation with Wise Turtle.",
+              "Lantern six remains unrecovered."
+            ]
+          },
+          {
+            "beat": "Wise Turtle accepts Rabbit’s clue provisionally; together they follow the bent reeds and spot a metal rim beside the final post.",
+            "purpose": "Test the nearest safe route",
+            "pageIndex": 16,
+            "chapterIndex": 8,
+            "endingPressure": "The lantern is within reach but screened by reeds.",
+            "requiredContinuity": [
+              "Lantern six is tucked beside the final post.",
+              "Friends remain together near the clearing."
+            ]
+          }
+        ],
+        "title": "Rabbit’s Good Guess",
+        "summary": "Rabbit notices reeds bent toward the clearing and asks Wise Turtle to test the clue with him. Also covers Reeds by the Path: The friends find the sixth lantern tucked in reeds beside the final post, not beyond the trail.",
+        "chapterIndex": 8
+      },
+      {
+        "pages": [
+          {
+            "beat": "Rabbit parts the reeds while Wise Turtle lifts lantern six and checks its handle before returning it to its post.",
+            "purpose": "Recover the final lantern",
+            "pageIndex": 17,
+            "chapterIndex": 9,
+            "endingPressure": "The neighbors still wait at the distant gate.",
+            "requiredContinuity": [
+              "Lantern six is back at its proper post.",
+              "Each of the six lanterns has been recovered once."
+            ]
+          },
+          {
+            "beat": "The friends look back along the outward trail, seeing six lanterns marking their proper posts from gate to clearing.",
+            "purpose": "Confirm the route is ready",
+            "pageIndex": 18,
+            "chapterIndex": 9,
+            "endingPressure": "The lights may still be faint through wet trees.",
+            "requiredContinuity": [
+              "All six lanterns are lit at their posts.",
+              "Friends are at the clearing."
+            ]
+          }
+        ],
+        "title": "Lift Together",
+        "summary": "Rabbit parts the reeds while Wise Turtle lifts the lantern and checks that its handle is sound. Also covers A Lit Trail: All six lanterns now mark their proper posts from the woodland gate to the picnic clearing.",
+        "chapterIndex": 9
+      },
+      {
+        "pages": [
+          {
+            "beat": "Rabbit and Wise Turtle return to the gate, where the neighbors have stayed together but cannot see the clearing.",
+            "purpose": "Return to the waiting neighbors",
+            "pageIndex": 19,
+            "chapterIndex": 10,
+            "endingPressure": "The group needs a clear way to follow the route.",
+            "requiredContinuity": [
+              "Friends and neighbors are together at the gate.",
+              "All six lanterns remain at their posts."
+            ]
+          },
+          {
+            "beat": "Wise Turtle proposes lighting the path in sequence; Rabbit checks each post, and the ordered row of lights shines through the rain.",
+            "purpose": "Make the trail visible",
+            "pageIndex": 20,
+            "chapterIndex": 10,
+            "endingPressure": "The neighbors must now cross the damp creek.",
+            "requiredContinuity": [
+              "The signal clarifies the route; no lantern moves.",
+              "Neighbors prepare to follow the lights."
+            ]
+          }
+        ],
+        "title": "The Neighbors’ Worry",
+        "summary": "At the gate, the waiting neighbors still cannot see the picnic clearing through the wet trees. Also covers A Clear Signal: Wise Turtle suggests lighting the lanterns in order while Rabbit checks each post from the path.",
+        "chapterIndex": 10
+      },
+      {
+        "pages": [
+          {
+            "beat": "The group leaves the gate together, with Rabbit staying within sight and Wise Turtle keeping a comfortable pace.",
+            "purpose": "Begin the guided walk",
+            "pageIndex": 21,
+            "chapterIndex": 11,
+            "endingPressure": "Stepping stones make the creek crossing uncertain.",
+            "requiredContinuity": [
+              "Neighbors travel outward with both friends.",
+              "All six lights guide the group."
+            ]
+          },
+          {
+            "beat": "At lantern two, Rabbit points out the safe stones while Wise Turtle helps the neighbors cross without leaving the path.",
+            "purpose": "Guide everyone across the creek",
+            "pageIndex": 22,
+            "chapterIndex": 11,
+            "endingPressure": "The thorn bend narrows the way ahead.",
+            "requiredContinuity": [
+              "The group has crossed the creek bend.",
+              "Lantern two stays at its post."
+            ]
+          }
+        ],
+        "title": "Follow the Glow",
+        "summary": "The neighbors begin along the marked path, guided by the steady row of lights. Also covers At the Creek: Rabbit points out the stepping stones while Wise Turtle helps the neighbors cross the damp creek bend.",
+        "chapterIndex": 11
+      },
+      {
+        "pages": [
+          {
+            "beat": "Wise Turtle leads everyone around the wider track; Rabbit waits until the neighbors pass the third post.",
+            "purpose": "Keep the group clear of thorns",
+            "pageIndex": 23,
+            "chapterIndex": 12,
+            "endingPressure": "Loose dirt threatens the next stretch.",
+            "requiredContinuity": [
+              "The group has passed the thorn bend.",
+              "Lantern three remains in place."
+            ]
+          },
+          {
+            "beat": "At the fourth post, Rabbit warns of loose dirt and Wise Turtle guides the neighbors around the slippery hollow.",
+            "purpose": "Choose firm ground together",
+            "pageIndex": 24,
+            "chapterIndex": 12,
+            "endingPressure": "The oak branch hangs over the approaching path.",
+            "requiredContinuity": [
+              "The group takes the firm route past the hollow.",
+              "Lantern four remains at its post."
+            ]
+          }
+        ],
+        "title": "Past the Thorns",
+        "summary": "Wise Turtle leads the group around the thorny bend while Rabbit keeps a lantern-lit gap clear. Also covers The Slippery Hollow: Rabbit warns the group about the loose slope, and Wise Turtle shows them the firmer way around it.",
+        "chapterIndex": 12
+      },
+      {
+        "pages": [
+          {
+            "beat": "Rabbit checks the branch from below while Wise Turtle guides the group beneath it without stopping or straying.",
+            "purpose": "Pass safely beneath the oak",
+            "pageIndex": 25,
+            "chapterIndex": 13,
+            "endingPressure": "The final reeds brush close to the trail.",
+            "requiredContinuity": [
+              "The group has passed the fifth post.",
+              "Lantern five remains secure above the path."
+            ]
+          },
+          {
+            "beat": "Rabbit keeps reeds from brushing the neighbors as everyone follows lantern six into the clearing before moonrise.",
+            "purpose": "Reach the picnic clearing",
+            "pageIndex": 26,
+            "chapterIndex": 13,
+            "endingPressure": "Tired neighbors need a warm welcome.",
+            "requiredContinuity": [
+              "The whole group reaches the clearing before moonrise.",
+              "All six lanterns remain at their posts."
+            ]
+          }
+        ],
+        "title": "Under the Oak",
+        "summary": "At the oak, Rabbit checks the branch from below while Wise Turtle guides the group beneath it. Also covers The Last Lantern: The final lantern glows beside the reeds, and the neighbors follow the safe path into the clearing.",
+        "chapterIndex": 13
+      },
+      {
+        "pages": [
+          {
+            "beat": "Rabbit carries cups at a careful pace while Wise Turtle makes room for the tired neighbors to sit.",
+            "purpose": "Settle everyone at the picnic",
+            "pageIndex": 27,
+            "chapterIndex": 14,
+            "endingPressure": "The evening can finally slow down.",
+            "requiredContinuity": [
+              "The picnic group is together in the clearing.",
+              "The lantern path shines behind them."
+            ]
+          },
+          {
+            "beat": "The friends share warm food with the neighbors as the storm clouds thin and the path remains safely lit.",
+            "purpose": "Share the meal and relief",
+            "pageIndex": 28,
+            "chapterIndex": 14,
+            "endingPressure": "Rabbit wants their next storm plan to be wiser.",
+            "requiredContinuity": [
+              "All six lanterns stay at their posts.",
+              "The picnic began before moonrise."
+            ]
+          },
+          {
+            "beat": "Rabbit proposes checking the posts together before another stormy evening; Wise Turtle accepts Rabbit’s quick lookout plan.",
+            "purpose": "Agree on a shared check",
+            "pageIndex": 29,
+            "chapterIndex": 14,
+            "endingPressure": "Moonlight reaches the clearing.",
+            "requiredContinuity": [
+              "Both friends commit to checking together.",
+              "Rabbit now shares clues instead of rushing alone."
+            ]
+          },
+          {
+            "beat": "Under the rising moon, Rabbit and Wise Turtle settle beside the neighbors, content as the six lanterns shine along the safe path.",
+            "purpose": "End in calm companionship",
+            "pageIndex": 30,
+            "chapterIndex": 14,
+            "endingPressure": "The evening ends in shared quiet.",
+            "requiredContinuity": [
+              "The picnic is complete and the group is safe.",
+              "All six lanterns remain at their proper posts."
+            ]
+          }
+        ],
+        "title": "Before Moonrise",
+        "summary": "The neighbors reach the picnic clearing while the sky is still dusky and the moon has not risen. Also covers Warm Cups: Rabbit helps set out the picnic while Wise Turtle makes room for everyone to sit and rest. Also covers A Better Plan: Rabbit and Wise Turtle agree to check the lantern posts together before the next stormy evening. Also covers The Lantern Path: As moonlight reaches the clearing, Rabbit and Wise Turtle enjoy the picnic beside the safe, shining path. Chapter 15 repeats the picnic arrival and settled ending already delivered in chapter 14. Fold the shared-check agreement and moonrise into chapter 14’s closing pages, preserving the 30-page total by rebalancing page allocations.",
+        "chapterIndex": 14
+      }
+    ]
+  },
+  "balanced": {
+    "input": {
+      "title": "The Lantern Path",
+      "prompt": "Write an original 30-page storybook for children ages 6–8, called The Lantern Path. Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles. Rabbit is playful and hasty; Wise Turtle is slow and steady. Keep both active across the story, with meaningful choices and growth for each. A storm scatters the lanterns marking the woodland path to a night picnic. Rabbit rushes to fix everything alone and makes the path more confusing. Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise. Give this a fresh plot rather than a race or a retelling of The Tortoise and the Hare. Build a clear beginning, escalating middle, turning point and satisfying ending. Let Rabbit's energy and Wise Turtle's patience both solve part of the problem. Keep stakes gentle and child appropriate. Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page. Avoid repeated summaries, generic moralizing and extra named main characters. English. Exactly 30 story pages. Write exactly 30 text-only story pages. Do not create interior illustrations, a cover image, or character reference images.",
+      "category": "KIDS",
+      "language": "en",
+      "complexity": 3,
+      "targetPages": 30,
+      "temperature": 0.8,
+      "mediaSettings": {
+        "modelTier": "balanced",
+        "finalReview": true,
+        "toneProfile": "narrative",
+        "includeCover": false,
+        "coverTemplate": "kids",
+        "coverArtSource": "none",
+        "audienceAgeRange": "6-8",
+        "fullIllustrations": false,
+        "generationStrategy": "auto",
+        "illustrationCadence": "manual"
+      }
+    },
+    "plan": {
+      "title": "The Lantern Path",
+      "bookArc": {
+        "answer": "Yes: they follow the wind's clues, return all six lanterns to their posts, and lead the neighbors to the clearing before moonrise.",
+        "chapters": [
+          {
+            "job": {
+              "adds": "All six lanterns are scattered; Rabbit rushes while Wise Turtle delays.",
+              "does": "Shows the gate, neighbors, six posts, and storm.",
+              "leavesOpen": "Can either friend read the storm's pattern?",
+              "believesSoFar": "The lit path will be easy to follow."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle",
+              "Neighbors"
+            ],
+            "kind": "case",
+            "index": 1,
+            "pages": 5
+          },
+          {
+            "job": {
+              "adds": "The false glow confuses the route; Wise Turtle spots the wind's direction.",
+              "does": "Rabbit clusters lanterns one and two at post four.",
+              "leavesOpen": "Will the friends trust the incomplete clue?",
+              "believesSoFar": "Fast retrieval should fix the problem."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "complication",
+            "index": 2,
+            "pages": 5
+          },
+          {
+            "job": {
+              "adds": "Rabbit checks footing and works with Wise Turtle at the brook.",
+              "does": "The friends reset posts one and two and retrieve lantern three.",
+              "leavesOpen": "How will they free the lantern trapped at the fork?",
+              "believesSoFar": "The first two posts can be repaired."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "method",
+            "index": 3,
+            "pages": 5
+          },
+          {
+            "job": {
+              "adds": "Wise Turtle acts before every clue agrees; Rabbit finds the thorn-trapped lantern.",
+              "does": "They free lantern four and follow a likely trail toward five.",
+              "leavesOpen": "Can they reach it without entering the thorns?",
+              "believesSoFar": "The remaining route may require perfect certainty."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "complication",
+            "index": 4,
+            "pages": 5
+          },
+          {
+            "job": {
+              "adds": "All six lights mark the route, and the friends return to the gate.",
+              "does": "Rabbit scoops out lantern five; the pair retrieve and set lantern six.",
+              "leavesOpen": "Will the neighbors arrive before moonrise?",
+              "believesSoFar": "A careful tool can solve the thorn obstacle."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "method",
+            "index": 5,
+            "pages": 5
+          },
+          {
+            "job": {
+              "adds": "Everyone reaches the picnic before moonrise.",
+              "does": "Rabbit and Wise Turtle lead the group along the restored path.",
+              "leavesOpen": "Nothing; the picnic closes the story.",
+              "believesSoFar": "The neighbors need a clear, safe guide."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle",
+              "Neighbors"
+            ],
+            "kind": "resolution",
+            "index": 6,
+            "pages": 5
+          }
+        ],
+        "proposal": "Use six linked five-page chapters to preserve the full 30-page progression, with each chapter ending on a concrete next problem.",
+        "question": "Can Rabbit and Wise Turtle restore the woodland route and guide the neighbors to the picnic before moonrise?"
+      },
+      "premise": "A storm knocks six lanterns from the woodland path to a night picnic. Rabbit hurries to fix the route alone, but placing two lanterns together at the wrong post confuses the way. Wise Turtle spots how the wind carried them. Together, the friends track the clues, retrieve each lantern, and guide their neighbors to the picnic before moonrise. Rabbit learns to pause and check; Wise Turtle learns to act before every clue is certain.",
+      "audience": "Children ages 6–8; a 30-page, text-only read-aloud story with early-reader clarity.",
+      "chapters": [
+        {
+          "index": 1,
+          "title": "The Wind Takes the Lights",
+          "summary": "At the trail gate, Rabbit and Wise Turtle promise the waiting neighbors a clear route to the night picnic, but a storm scatters all six path lanterns.",
+          "keyBeats": [
+            "Neighbors gather at the gate, ready for the picnic.",
+            "Six numbered lanterns mark the woodland path.",
+            "A gust knocks every lantern from its post.",
+            "The neighbors wait safely while rain darkens the trail.",
+            "Rabbit rushes ahead; Wise Turtle waits for a sure clue, then follows."
+          ],
+          "targetPages": 5,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 2,
+          "title": "Two Lights at One Fork",
+          "summary": "Rabbit finds two lanterns and piles them at one fork, while Wise Turtle begins to notice the wind's pattern.",
+          "keyBeats": [
+            "Rabbit finds lantern one near the root-bridge fork.",
+            "Rabbit retrieves lantern two from the fern bend.",
+            "Rabbit carries both to post four and lights them there.",
+            "The clustered glow points toward a false turn.",
+            "Wise Turtle reads bent grass and leaf trails as signs of downwind drift."
+          ],
+          "targetPages": 5,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 3,
+          "title": "Back Along the Clues",
+          "summary": "The friends correct the first two posts and retrieve lantern three at the brook, where Rabbit chooses a careful rescue over a risky leap.",
+          "keyBeats": [
+            "They carry lantern one back to post one at the gate.",
+            "They return lantern two to its fern-bend post.",
+            "At the brook, lantern three is caught among reeds.",
+            "Rabbit checks the stepping stones and asks Wise Turtle to steady a branch.",
+            "They set lantern three at post three and reach the root-bridge fork."
+          ],
+          "targetPages": 5,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 4,
+          "title": "The Lantern Under the Branch",
+          "summary": "At the fork, the friends free lantern four, and Wise Turtle chooses a likely trail before every clue agrees.",
+          "keyBeats": [
+            "Lantern four is pinned beneath a fallen branch.",
+            "Wise Turtle wedges a sturdy stick beneath the branch.",
+            "Rabbit lifts as Wise Turtle steadies the lever; they reset post four.",
+            "Bent leaves split, and Wise Turtle chooses the likely sheltered trail.",
+            "Rabbit tests it and spots lantern five deep in a thorn patch."
+          ],
+          "targetPages": 5,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 5,
+          "title": "A Leaf Makes a Scoop",
+          "summary": "Rabbit invents a safe way to free lantern five, and the pair retrieve lantern six before retracing the lit route.",
+          "keyBeats": [
+            "Wise Turtle anchors a broad leaf as Rabbit slides it beneath lantern five.",
+            "They lift the lantern from the thorn patch and set post five.",
+            "Lantern six lies in a shallow gutter near the clearing turn.",
+            "Rabbit uses a reed hook; Wise Turtle checks the lantern before it is set at post six.",
+            "With all six posts lit, they walk back to the gate."
+          ],
+          "targetPages": 5,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 6,
+          "title": "The Way to the Picnic",
+          "summary": "Rabbit and Wise Turtle lead their neighbors along the restored lantern path and reach the picnic clearing before moonrise.",
+          "keyBeats": [
+            "Rabbit and Wise Turtle invite the waiting neighbors to follow.",
+            "The neighbors pass the gate and fern-bend lights in order.",
+            "Rabbit waits while everyone crosses the brook safely.",
+            "All reach the picnic clearing before moonrise.",
+            "The story closes as the neighbors share supper beneath the rising moon."
+          ],
+          "targetPages": 5,
+          "illustrationPrompts": []
+        }
+      ],
+      "promises": [
+        "The storm creates a gentle, solvable problem, and every lantern retrieval has a distinct obstacle.",
+        "Rabbit's hasty mistake has a visible cost, followed by a deliberate, observable change.",
+        "Wise Turtle's patience remains a strength while the guide learns to act on a likely clue.",
+        "The neighbors reach the picnic before moonrise, and the ending feels complete.",
+        "Give lanterns one and two separate, concrete retrieval obstacles before Rabbit carries them to post four; finding and carrying them alone should not fulfill their retrieval scenes."
+      ],
+      "subtitle": "An original Rabbit and Wise Turtle story",
+      "locations": [
+        {
+          "name": "Trail Gate",
+          "rules": [
+            "Rabbit and Wise Turtle begin here.",
+            "The neighbors stay here until the route is restored and the pair return to guide them."
+          ],
+          "description": "The woodland path entrance and the neighbors' safe waiting place; lantern post one stands here."
+        },
+        {
+          "name": "Lantern Path",
+          "rules": [
+            "Posts one through six stay in that order from gate to clearing.",
+            "The friends retrace the route to repair posts one and two, then continue outward.",
+            "Once set, each lantern remains at its post through the return to the gate."
+          ],
+          "description": "A single route from the gate through the fern bend, brook, root-bridge fork, thorn bend, and clearing turn, marked by six numbered posts."
+        },
+        {
+          "name": "Picnic Clearing",
+          "rules": [
+            "The neighbors arrive with Rabbit and Wise Turtle before moonrise.",
+            "The final page closes at the picnic; it does not begin another scene."
+          ],
+          "description": "The woodland destination beyond the clearing-turn post, where the night picnic waits."
+        }
+      ],
+      "questions": [],
+      "characters": [
+        {
+          "name": "Rabbit",
+          "role": "A playful, hasty friend whose quick ideas help restore the path.",
+          "traits": [
+            "Playful",
+            "Very hasty",
+            "Inventive",
+            "Able to pause and check"
+          ],
+          "description": "A very playful rabbit that appears to be very hasty.",
+          "visualRules": []
+        },
+        {
+          "name": "Wise Turtle",
+          "role": "A slow, steady guide who notices patterns and helps the group choose safely.",
+          "traits": [
+            "Slow",
+            "Steady",
+            "Observant",
+            "Careful"
+          ],
+          "description": "Slow but steady",
+          "visualRules": []
+        }
+      ],
+      "voiceGuide": [
+        "Use clear action verbs and familiar words; explain a richer word through its immediate context.",
+        "Let dialogue show worry, disagreement, or a plan rather than explain a lesson.",
+        "Use small sensory details that matter to the action, such as wind, wet leaves, and rushing water.",
+        "Keep the rhythm lively, with short sentences and occasional longer lines for warmth."
+      ],
+      "antiAiRules": [
+        "Do not restate the same clue, feeling, or decision without changing what happens next.",
+        "Avoid a stated moral; let Rabbit and Wise Turtle show their changes through choices.",
+        "Do not give every page the same sentence pattern or end every scene with a question.",
+        "Keep the neighbors unnamed and in the story as a group.",
+        "Avoid unsupported proof-leap transitions; do not jump from a local fact to a sweeping conclusion without evidence on this page.",
+        "Do not invent evidence, citations, studies, experts, or source identities.",
+        "Avoid generic conclusions and visible prompt scaffolding in reader-facing prose.",
+        "Use uncertainty only where the evidence on this page requires it.",
+        "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages."
+      ],
+      "openingHook": "A lantern swings at the trail gate as Rabbit darts after it just when a storm gust bends the grass toward the woods.",
+      "writingMode": "children-narrative",
+      "continuityRules": [
+        "Rabbit arc: hurries ahead and clusters lanterns one and two at post four (Chapter 2) -> chooses to check the brook stones before reaching for lantern three (Chapter 3) -> later invents the leaf scoop and checks the safe placement instead of rushing (Chapter 5).",
+        "Wise Turtle arc: waits for a complete wind pattern before advising Rabbit (Chapters 1–2) -> at the split clues, chooses the likely sheltered trail before certainty and asks Rabbit to test it (Chapter 4).",
+        "Lantern contract: six lanterns begin at posts one–six; the storm knocks all down. Rabbit carries one and two to post four; they return one to post one and two to post two, recover three from brook reeds to post three, free four from the fork to post four, lift five from thorns to post five, and hook six from the clearing-turn gutter to post six. No lantern is moved again; all six remain lit in order.",
+        "Movement contract: Rabbit and Wise Turtle go from the gate to post four, retrace to repair posts one and two, continue through posts three to six, then return to the gate. Neighbors remain at the gate until Chapter 6, then follow the restored path to the clearing.",
+        "Deadline contract: the group reaches the picnic clearing before moonrise; the last page is the completed picnic, not a new trip or task."
+      ],
+      "illustrationPlan": {
+        "globalStyle": "Text-only story.",
+        "pageRules": []
+      },
+      "writingComplexity": 3
+    },
+    "briefs": [
+      {
+        "pages": [
+          {
+            "beat": "Open with a lantern swinging at the gate as Rabbit darts after it while storm-bent grass points into the woods.",
+            "purpose": "Stage the gust at the gate",
+            "pageIndex": 1,
+            "chapterIndex": 1,
+            "endingPressure": "The gust pulls Rabbit toward the darkening woods.",
+            "requiredContinuity": [
+              "Neighbors wait at the gate for the picnic.",
+              "Rabbit chases the swinging lantern."
+            ]
+          },
+          {
+            "beat": "Rain sweeps all six lanterns from posts one through six, leaving the woodland path unmarked before moonrise.",
+            "purpose": "Show the storm scatter the route",
+            "pageIndex": 2,
+            "chapterIndex": 1,
+            "endingPressure": "The neighbors cannot safely follow an unlit path.",
+            "requiredContinuity": [
+              "All six lanterns are down.",
+              "Picnic must begin before moonrise."
+            ]
+          },
+          {
+            "beat": "Wise Turtle gathers the neighbors at the gate while rain dims the trail and Rabbit promises to fix the route.",
+            "purpose": "Keep the neighbors safely waiting",
+            "pageIndex": 3,
+            "chapterIndex": 1,
+            "endingPressure": "Rabbit intends to solve the problem alone.",
+            "requiredContinuity": [
+              "Neighbors remain at the gate.",
+              "Rabbit vows to fix the path."
+            ]
+          },
+          {
+            "beat": "Rabbit rushes ahead; Wise Turtle studies the wind-tipped grass but waits for a clear pattern before following.",
+            "purpose": "Contrast haste with patient observation",
+            "pageIndex": 4,
+            "chapterIndex": 1,
+            "endingPressure": "Rabbit gains distance without a reliable clue.",
+            "requiredContinuity": [
+              "Rabbit leaves the gate first.",
+              "Wise Turtle waits, then follows."
+            ]
+          },
+          {
+            "beat": "Rabbit reaches the path alone as Wise Turtle sets off steadily behind, and rain begins to soften the tracks.",
+            "purpose": "Carry both friends into the woods",
+            "pageIndex": 5,
+            "chapterIndex": 1,
+            "endingPressure": "The fading tracks may hide where lanterns landed.",
+            "requiredContinuity": [
+              "Rabbit is ahead on the path.",
+              "Wise Turtle follows from the gate."
+            ]
+          }
+        ],
+        "title": "The Wind Takes the Lights",
+        "summary": "At the trail gate, Rabbit and Wise Turtle promise the waiting neighbors a clear route to the night picnic, but a storm scatters all six path lanterns.",
+        "chapterIndex": 1
+      },
+      {
+        "pages": [
+          {
+            "beat": "At the root-bridge fork, Rabbit spots lantern one caught beneath a twisting root and tugs it free without checking its post.",
+            "purpose": "Make the first retrieval difficult",
+            "pageIndex": 6,
+            "chapterIndex": 2,
+            "endingPressure": "Rabbit still does not know where it belongs.",
+            "requiredContinuity": [
+              "Lantern one is recovered at the root-bridge fork.",
+              "Rabbit carries lantern one."
+            ]
+          },
+          {
+            "beat": "At the fern bend, Rabbit finds lantern two tangled in wet fronds, shakes it loose, and hurries after the first.",
+            "purpose": "Vary the second retrieval obstacle",
+            "pageIndex": 7,
+            "chapterIndex": 2,
+            "endingPressure": "Rabbit chooses speed over finding their posts.",
+            "requiredContinuity": [
+              "Lantern two is recovered at the fern bend.",
+              "Rabbit carries lanterns one and two."
+            ]
+          },
+          {
+            "beat": "Rabbit reaches post four and places both lanterns there, lighting one fork brightly while leaving the proper posts dark.",
+            "purpose": "Show the cost of hurrying",
+            "pageIndex": 8,
+            "chapterIndex": 2,
+            "endingPressure": "The misplaced glow points travelers the wrong way.",
+            "requiredContinuity": [
+              "Lanterns one and two are at post four.",
+              "Posts one and two remain unlit."
+            ]
+          },
+          {
+            "beat": "Rabbit follows the bright but misleading fork, notices the path dead-end, and sees Wise Turtle arrive behind him.",
+            "purpose": "Make the false direction visible",
+            "pageIndex": 9,
+            "chapterIndex": 2,
+            "endingPressure": "The bright fork has made the route more confusing.",
+            "requiredContinuity": [
+              "The lantern cluster misdirects Rabbit.",
+              "Wise Turtle reaches post four."
+            ]
+          },
+          {
+            "beat": "Wise Turtle compares bent grass and drifting leaves, recognizing that the storm carried lanterns downwind from their posts.",
+            "purpose": "Reveal the wind's useful pattern",
+            "pageIndex": 10,
+            "chapterIndex": 2,
+            "endingPressure": "The friends must undo the misplaced lights first.",
+            "requiredContinuity": [
+              "Wind and leaf trails suggest downwind drift.",
+              "Lanterns one and two remain at post four."
+            ]
+          }
+        ],
+        "title": "Two Lights at One Fork",
+        "summary": "Rabbit finds two lanterns and piles them at one fork, while Wise Turtle begins to notice the wind's pattern.",
+        "chapterIndex": 2
+      },
+      {
+        "pages": [
+          {
+            "beat": "Using the wind clues, the friends carry lantern one back from post four and return it to post one at the gate.",
+            "purpose": "Correct the first post together",
+            "pageIndex": 11,
+            "chapterIndex": 3,
+            "endingPressure": "One misplaced lantern still distorts the route.",
+            "requiredContinuity": [
+              "Lantern one is lit at post one.",
+              "Lantern two remains at post four."
+            ]
+          },
+          {
+            "beat": "They retrace the path to the fern bend, carry lantern two from post four, and set it back at post two.",
+            "purpose": "Finish correcting the second post",
+            "pageIndex": 12,
+            "chapterIndex": 3,
+            "endingPressure": "The path beyond the fern bend remains dark.",
+            "requiredContinuity": [
+              "Lantern two is lit at post two.",
+              "Lantern one stays at post one."
+            ]
+          },
+          {
+            "beat": "At the brook, they hear lantern three clinking among reeds, where quick water keeps it just beyond the bank.",
+            "purpose": "Find the next lantern at the brook",
+            "pageIndex": 13,
+            "chapterIndex": 3,
+            "endingPressure": "The current makes a rushed reach risky.",
+            "requiredContinuity": [
+              "Lantern three is caught in brook reeds.",
+              "Lanterns one and two stay in place."
+            ]
+          },
+          {
+            "beat": "Rabbit checks the stepping stones before moving and asks Wise Turtle to steady a branch for a safer reach.",
+            "purpose": "Show Rabbit choosing careful action",
+            "pageIndex": 14,
+            "chapterIndex": 3,
+            "endingPressure": "The lantern still needs a careful lift from the reeds.",
+            "requiredContinuity": [
+              "Rabbit checks the stones before reaching.",
+              "Wise Turtle steadies a branch."
+            ]
+          },
+          {
+            "beat": "Together they lift lantern three from the reeds, light post three, and continue until the root-bridge fork appears ahead.",
+            "purpose": "Complete the brook rescue",
+            "pageIndex": 15,
+            "chapterIndex": 3,
+            "endingPressure": "A fallen branch hides the next lantern's fate.",
+            "requiredContinuity": [
+              "Lantern three is lit at post three.",
+              "The friends reach the root-bridge fork."
+            ]
+          }
+        ],
+        "title": "Back Along the Clues",
+        "summary": "The friends correct the first two posts and retrieve lantern three at the brook, where Rabbit chooses a careful rescue over a risky leap.",
+        "chapterIndex": 3
+      },
+      {
+        "pages": [
+          {
+            "beat": "At the fork, they find lantern four pinned beneath a heavy fallen branch, its glow faint under wet bark.",
+            "purpose": "Expose the fourth lantern's obstacle",
+            "pageIndex": 16,
+            "chapterIndex": 4,
+            "endingPressure": "The branch is too heavy for a hurried pull.",
+            "requiredContinuity": [
+              "Lantern four is pinned at the fork.",
+              "Posts one through three remain lit."
+            ]
+          },
+          {
+            "beat": "Wise Turtle finds a sturdy stick and carefully wedges it beneath the branch to make a lever.",
+            "purpose": "Let Wise Turtle solve the leverage problem",
+            "pageIndex": 17,
+            "chapterIndex": 4,
+            "endingPressure": "The lever needs a partner to lift safely.",
+            "requiredContinuity": [
+              "Wise Turtle wedges a sturdy stick under the branch.",
+              "Lantern four remains trapped."
+            ]
+          },
+          {
+            "beat": "Rabbit lifts while Wise Turtle steadies the lever; they free lantern four and set it upright at post four.",
+            "purpose": "Make the rescue cooperative",
+            "pageIndex": 18,
+            "chapterIndex": 4,
+            "endingPressure": "The trail ahead divides beneath conflicting wind clues.",
+            "requiredContinuity": [
+              "Lantern four is lit at post four.",
+              "The friends remain at the fork."
+            ]
+          },
+          {
+            "beat": "Bent leaves point in two directions; Wise Turtle chooses the likely sheltered trail before certainty and asks Rabbit to test it.",
+            "purpose": "Challenge Turtle's need for certainty",
+            "pageIndex": 19,
+            "chapterIndex": 4,
+            "endingPressure": "The chosen trail may not contain the next lantern.",
+            "requiredContinuity": [
+              "Wise Turtle acts on the likely sheltered trail.",
+              "Rabbit is asked to test the route."
+            ]
+          },
+          {
+            "beat": "Rabbit checks the sheltered trail quickly but carefully, spotting lantern five deep inside a thorn patch.",
+            "purpose": "Turn Rabbit's energy into a useful test",
+            "pageIndex": 20,
+            "chapterIndex": 4,
+            "endingPressure": "The thorns block a direct reach.",
+            "requiredContinuity": [
+              "Lantern five is visible in the thorn patch.",
+              "Rabbit tests Turtle's chosen trail."
+            ]
+          }
+        ],
+        "title": "The Lantern Under the Branch",
+        "summary": "At the fork, the friends free lantern four, and Wise Turtle chooses a likely trail before every clue agrees.",
+        "chapterIndex": 4
+      },
+      {
+        "pages": [
+          {
+            "beat": "Rabbit shapes a broad leaf into a scoop while Wise Turtle anchors its edge beyond the sharpest thorns.",
+            "purpose": "Invent a safer way through thorns",
+            "pageIndex": 21,
+            "chapterIndex": 5,
+            "endingPressure": "The lantern must slide out without snagging.",
+            "requiredContinuity": [
+              "Rabbit invents a leaf scoop.",
+              "Wise Turtle anchors the leaf."
+            ]
+          },
+          {
+            "beat": "Rabbit pauses to check the scoop's angle, then slides lantern five clear and sets it lit at post five.",
+            "purpose": "Reward Rabbit's checked invention",
+            "pageIndex": 22,
+            "chapterIndex": 5,
+            "endingPressure": "One lantern remains missing near the clearing.",
+            "requiredContinuity": [
+              "Lantern five is lit at post five.",
+              "Rabbit checks the scoop before acting."
+            ]
+          },
+          {
+            "beat": "Near the clearing turn, they find lantern six resting in a shallow gutter, beyond an easy hand's reach.",
+            "purpose": "Locate the final lantern",
+            "pageIndex": 23,
+            "chapterIndex": 5,
+            "endingPressure": "The gutter's edge makes grabbing it awkward.",
+            "requiredContinuity": [
+              "Lantern six is in the clearing-turn gutter.",
+              "Posts one through five are lit."
+            ]
+          },
+          {
+            "beat": "Rabbit draws lantern six out with a reed hook, waits as Wise Turtle checks it, then lights post six.",
+            "purpose": "Retrieve and verify the final lantern",
+            "pageIndex": 24,
+            "chapterIndex": 5,
+            "endingPressure": "The neighbors still wait at the distant gate.",
+            "requiredContinuity": [
+              "Lantern six is lit at post six.",
+              "All six lanterns are lit in order."
+            ]
+          },
+          {
+            "beat": "With the route restored, Rabbit and Wise Turtle follow the lit path back from the clearing turn to the gate.",
+            "purpose": "Return the friends to the waiting group",
+            "pageIndex": 25,
+            "chapterIndex": 5,
+            "endingPressure": "The neighbors need guidance before moonrise.",
+            "requiredContinuity": [
+              "All six lanterns remain lit in order.",
+              "Rabbit and Wise Turtle return to the gate."
+            ]
+          }
+        ],
+        "title": "A Leaf Makes a Scoop",
+        "summary": "Rabbit invents a safe way to free lantern five, and the pair retrieve lantern six before retracing the lit route.",
+        "chapterIndex": 5
+      },
+      {
+        "pages": [
+          {
+            "beat": "Rabbit and Wise Turtle invite the waiting neighbors to follow the restored lantern path toward the picnic.",
+            "purpose": "Begin the neighbors' safe journey",
+            "pageIndex": 26,
+            "chapterIndex": 6,
+            "endingPressure": "The group must keep together in the dark.",
+            "requiredContinuity": [
+              "Neighbors leave the gate with both friends.",
+              "The six lanterns remain in place."
+            ]
+          },
+          {
+            "beat": "The neighbors pass posts one and two in order, while Rabbit resists racing ahead and stays where everyone can see him.",
+            "purpose": "Guide the group through the first lights",
+            "pageIndex": 27,
+            "chapterIndex": 6,
+            "endingPressure": "The brook crossing still needs everyone's patience.",
+            "requiredContinuity": [
+              "The group passes posts one and two.",
+              "Rabbit stays with the neighbors."
+            ]
+          },
+          {
+            "beat": "Rabbit waits while each neighbor crosses the brook safely; Wise Turtle leads them along the steady stones beside post three.",
+            "purpose": "Make the brook crossing a shared test",
+            "pageIndex": 28,
+            "chapterIndex": 6,
+            "endingPressure": "The clearing lies beyond the final lanterns.",
+            "requiredContinuity": [
+              "Everyone crosses the brook safely.",
+              "The group reaches the root-bridge fork."
+            ]
+          },
+          {
+            "beat": "Together they follow posts four, five, and six, reaching the clearing with the neighbors just before moonrise.",
+            "purpose": "Bring everyone to the picnic before moonrise",
+            "pageIndex": 29,
+            "chapterIndex": 6,
+            "endingPressure": "The waiting picnic can finally begin.",
+            "requiredContinuity": [
+              "The group reaches the picnic clearing before moonrise.",
+              "All six lanterns remain lit behind them."
+            ]
+          },
+          {
+            "beat": "Under the rising moon, the neighbors share supper as Rabbit and Wise Turtle settle beside them, glad the path brought everyone together.",
+            "purpose": "Close on shared relief and belonging",
+            "pageIndex": 30,
+            "chapterIndex": 6,
+            "endingPressure": "The completed journey rests in a peaceful evening.",
+            "requiredContinuity": [
+              "The neighbors are safely at the picnic.",
+              "Rabbit and Wise Turtle share supper with them."
+            ]
+          }
+        ],
+        "title": "The Way to the Picnic",
+        "summary": "Rabbit and Wise Turtle lead their neighbors along the restored lantern path and reach the picnic clearing before moonrise.",
+        "chapterIndex": 6
+      }
+    ]
+  },
+  "premium": {
+    "input": {
+      "title": "The Lantern Path",
+      "prompt": "Write an original 30-page storybook for children ages 6–8, called The Lantern Path. Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles. Rabbit is playful and hasty; Wise Turtle is slow and steady. Keep both active across the story, with meaningful choices and growth for each. A storm scatters the lanterns marking the woodland path to a night picnic. Rabbit rushes to fix everything alone and makes the path more confusing. Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise. Give this a fresh plot rather than a race or a retelling of The Tortoise and the Hare. Build a clear beginning, escalating middle, turning point and satisfying ending. Let Rabbit's energy and Wise Turtle's patience both solve part of the problem. Keep stakes gentle and child appropriate. Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page. Avoid repeated summaries, generic moralizing and extra named main characters. English. Exactly 30 story pages. Write exactly 30 text-only story pages. Do not create interior illustrations, a cover image, or character reference images.",
+      "category": "KIDS",
+      "language": "en",
+      "complexity": 3,
+      "targetPages": 30,
+      "temperature": 0.8,
+      "mediaSettings": {
+        "modelTier": "premium",
+        "finalReview": true,
+        "toneProfile": "narrative",
+        "includeCover": false,
+        "coverTemplate": "kids",
+        "coverArtSource": "none",
+        "audienceAgeRange": "6-8",
+        "fullIllustrations": false,
+        "generationStrategy": "auto",
+        "illustrationCadence": "manual"
+      }
+    },
+    "plan": {
+      "title": "The Lantern Path",
+      "bookArc": {
+        "turn": {
+          "repair": "Wise Turtle trusts the wind clue, directs Rabbit, and acts before every detail is known.",
+          "trouble": "Wise Turtle wants certainty, but the reeds hide L5 and moonrise is nearing.",
+          "chapterIndex": 8
+        },
+        "answer": "Yes: they use wind clues, varied teamwork, and all six restored lanterns to guide the neighbors safely to the clearing.",
+        "chapters": [
+          {
+            "job": {
+              "adds": "Sets the moonrise deadline.",
+              "does": "Prepares six lanterns.",
+              "leavesOpen": "Will the weather hold?",
+              "believesSoFar": "The path is ready."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle",
+              "neighbors"
+            ],
+            "kind": "case",
+            "index": 1,
+            "pages": 3
+          },
+          {
+            "job": {
+              "adds": "All six lights are scattered.",
+              "does": "Survives the storm.",
+              "leavesOpen": "Can the trail be read?",
+              "believesSoFar": "The lanterns mark an easy walk."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle",
+              "neighbors"
+            ],
+            "kind": "complication",
+            "index": 2,
+            "pages": 3
+          },
+          {
+            "job": {
+              "adds": "Rabbit worsens the confusion.",
+              "does": "Moves L1 to the false branch.",
+              "leavesOpen": "What did the wind do?",
+              "believesSoFar": "Speed will fix the path."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "complication",
+            "index": 3,
+            "pages": 3
+          },
+          {
+            "job": {
+              "adds": "Rabbit listens before acting.",
+              "does": "Reads bent grass; restores L1.",
+              "leavesOpen": "What blocks the next light?",
+              "believesSoFar": "The wind left a pattern."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "method",
+            "index": 4,
+            "pages": 3
+          },
+          {
+            "job": {
+              "adds": "They solve an obstacle together.",
+              "does": "Frees L2 from a log.",
+              "leavesOpen": "Where is L3?",
+              "believesSoFar": "The next lantern is nearby."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "case",
+            "index": 5,
+            "pages": 3
+          },
+          {
+            "job": {
+              "adds": "Careful teamwork works.",
+              "does": "Retrieves L3 from thorns.",
+              "leavesOpen": "How can they cross the stream?",
+              "believesSoFar": "The lights follow the wind."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "case",
+            "index": 6,
+            "pages": 3
+          },
+          {
+            "job": {
+              "adds": "Rabbit checks before crossing.",
+              "does": "Tests stones and retrieves L4.",
+              "leavesOpen": "Can they reach the reeds?",
+              "believesSoFar": "A dash could go wrong."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "case",
+            "index": 7,
+            "pages": 3
+          },
+          {
+            "job": {
+              "adds": "Rabbit retrieves L5.",
+              "does": "Wise Turtle acts on a partial clue.",
+              "leavesOpen": "Is one lantern still missing?",
+              "believesSoFar": "More checking would cost time."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "case",
+            "index": 8,
+            "pages": 3
+          },
+          {
+            "job": {
+              "adds": "The route is complete.",
+              "does": "Restores L6 to post six.",
+              "leavesOpen": "Will the neighbors hear?",
+              "believesSoFar": "The gate is the final search."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle"
+            ],
+            "kind": "resolution",
+            "index": 9,
+            "pages": 3
+          },
+          {
+            "job": {
+              "adds": "Everyone reaches the picnic in time.",
+              "does": "Calls them along the lit trail.",
+              "leavesOpen": "Nothing; close at the picnic.",
+              "believesSoFar": "The neighbors need a clear signal."
+            },
+            "cast": [
+              "Rabbit",
+              "Wise Turtle",
+              "neighbors"
+            ],
+            "kind": "resolution",
+            "index": 10,
+            "pages": 3
+          }
+        ],
+        "proposal": "A complete 30-page story about shared problem-solving: quick energy works best with attention, and steady care sometimes must act before certainty.",
+        "question": "Can Rabbit and Wise Turtle restore the lantern path and guide their neighbors to the picnic before moonrise?"
+      },
+      "premise": "A storm scatters six lanterns along the woodland path to a night picnic. Rabbit rushes to fix the trail alone and makes one marker more confusing, while Wise Turtle spots a pattern in the wind. Together, they recover each lantern and guide their neighbors to the picnic before moonrise.",
+      "audience": "Children ages 6–8; gentle, read-aloud narrative.",
+      "chapters": [
+        {
+          "index": 1,
+          "title": "Six Lights Ready",
+          "summary": "At the trailhead, Rabbit and Wise Turtle prepare six lanterns for neighbors bound for the moonlit picnic.",
+          "keyBeats": [
+            "Neighbors gather at the trailhead.",
+            "Six lanterns mark the woodland path.",
+            "Moonrise sets the picnic deadline."
+          ],
+          "targetPages": 3,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 2,
+          "title": "The Wind Turns",
+          "summary": "A sudden storm blows every lantern from its post and leaves the neighbors waiting at the trailhead.",
+          "keyBeats": [
+            "Rain rushes over the trail.",
+            "Wind scatters all six lanterns.",
+            "Neighbors shelter while Rabbit and Wise Turtle start ahead."
+          ],
+          "targetPages": 3,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 3,
+          "title": "A Wrong Turn",
+          "summary": "Rabbit hurries to the first fork and moves a lantern onto the false spur.",
+          "keyBeats": [
+            "L1 lies on the fern spur.",
+            "Rabbit moves L1 to the false branch.",
+            "Wise Turtle catches up at the fork."
+          ],
+          "targetPages": 3,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 4,
+          "title": "Bent Grass Clues",
+          "summary": "Wise Turtle reads the wind-bent grass, and Rabbit helps return the misplaced lantern to its post.",
+          "keyBeats": [
+            "Grass leans toward the lanterns’ drift.",
+            "Rabbit stops to listen and look.",
+            "L1 returns to post one."
+          ],
+          "targetPages": 3,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 5,
+          "title": "Under the Log",
+          "summary": "At the second post, they work together to free a lantern wedged beneath a fallen log.",
+          "keyBeats": [
+            "L2 is trapped beside post two.",
+            "Rabbit stops pulling when it sticks.",
+            "They shift the log and restore L2."
+          ],
+          "targetPages": 3,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 6,
+          "title": "Thorns at the Bend",
+          "summary": "Wise Turtle steadies the thorny stems while Rabbit carefully frees the third lantern.",
+          "keyBeats": [
+            "L3 glows inside the blackberry patch.",
+            "Wise Turtle holds the stems aside.",
+            "Rabbit frees L3 without rushing."
+          ],
+          "targetPages": 3,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 7,
+          "title": "The Stepping Stones",
+          "summary": "At the stream, Rabbit studies the ripples before crossing to retrieve the fourth lantern.",
+          "keyBeats": [
+            "L4 rests on a midstream stone.",
+            "Rabbit tests each stone first.",
+            "Wise Turtle guides L4 back to post four."
+          ],
+          "targetPages": 3,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 8,
+          "title": "A Clue in the Reeds",
+          "summary": "Wise Turtle acts on an uncertain wind clue and trusts Rabbit to reach the fifth lantern.",
+          "keyBeats": [
+            "L5 is tangled among the reeds.",
+            "Bent reeds suggest where it caught.",
+            "Wise Turtle sends Rabbit before every detail is certain."
+          ],
+          "targetPages": 3,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 9,
+          "title": "The Last Lantern",
+          "summary": "At the clearing gate, they recover the sixth lantern and complete the trail before moonrise.",
+          "keyBeats": [
+            "L6 rests beside the clearing gate.",
+            "They restore it to post six.",
+            "All six posts now mark the path."
+          ],
+          "targetPages": 3,
+          "illustrationPrompts": []
+        },
+        {
+          "index": 10,
+          "title": "The Picnic Path",
+          "summary": "Rabbit calls to the neighbors, who follow the restored trail and reach the picnic before moonrise.",
+          "keyBeats": [
+            "Rabbit calls from the clearing.",
+            "Neighbors follow the lit trail together.",
+            "The picnic begins; the story closes in the clearing."
+          ],
+          "targetPages": 3,
+          "illustrationPrompts": []
+        }
+      ],
+      "promises": [
+        "All six lanterns return to their original posts.",
+        "Rabbit’s energy helps the search, and Rabbit learns to pause before acting.",
+        "Wise Turtle uses steady observation, then learns to act on a useful partial clue.",
+        "The neighbors reach the picnic before moonrise."
+      ],
+      "subtitle": "An original Rabbit and Wise Turtle story",
+      "locations": [
+        {
+          "name": "Trailhead",
+          "rules": [
+            "Rabbit and Wise Turtle begin here.",
+            "The neighbors remain here until the completed path is signaled."
+          ],
+          "description": "The woodland entrance where the neighbors wait under shelter."
+        },
+        {
+          "name": "Lantern Path",
+          "rules": [
+            "The team travels forward from post one to post six.",
+            "Each restored lantern stays on its original post."
+          ],
+          "description": "A winding woodland route with six numbered posts and one confusing fork."
+        },
+        {
+          "name": "Moonberry Clearing",
+          "rules": [
+            "The lantern gate is beside the clearing.",
+            "The picnic begins here before moonrise."
+          ],
+          "description": "The picnic destination beyond the sixth post."
+        }
+      ],
+      "questions": [],
+      "characters": [
+        {
+          "name": "Rabbit",
+          "role": "Co-lead who brings playful energy and quick action to the search.",
+          "traits": [
+            "playful",
+            "hasty",
+            "energetic"
+          ],
+          "description": "A very playful rabbit that appears to be very hasty.",
+          "visualRules": []
+        },
+        {
+          "name": "Wise Turtle",
+          "role": "Co-lead whose steady observations reveal the lanterns’ pattern.",
+          "traits": [
+            "slow",
+            "steady",
+            "patient"
+          ],
+          "description": "Slow but steady",
+          "visualRules": []
+        }
+      ],
+      "voiceGuide": [
+        "Use clear, lively language with mostly short sentences.",
+        "Let dialogue and sensory details grow from each scene.",
+        "Build suspense through practical obstacles, not danger."
+      ],
+      "antiAiRules": [
+        "Avoid a race plot or a retelling of a familiar fable.",
+        "Do not repeat the same clue or recovery beat.",
+        "Avoid generic moral statements; show change through action.",
+        "Keep neighbors unnamed and do not add a main character.",
+        "Avoid unsupported proof-leap transitions; do not jump from a local fact to a sweeping conclusion without evidence on this page.",
+        "Do not invent evidence, citations, studies, experts, or source identities.",
+        "Avoid generic conclusions and visible prompt scaffolding in reader-facing prose.",
+        "Use uncertainty only where the evidence on this page requires it.",
+        "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages."
+      ],
+      "openingHook": "Rabbit reaches for the first lantern just as the storm wind sweeps it off its post.",
+      "writingMode": "children-narrative",
+      "continuityRules": [
+        "Rabbit: hasty solo fixing makes L1 misleading at the first fork -> chooses to pause, listen, and test the stream stones -> guides the neighbors at their pace instead of rushing ahead.",
+        "Wise Turtle: steadiness becomes over-checking, delaying action until every sign is certain -> at the reeds, trusts the partial wind clue and directs Rabbit -> shares useful clues sooner and guides the neighbors along the restored path.",
+        "Inventory and movement: six lanterns begin at posts 1–6; storm sends L1 to the fern spur, L2 under the log, L3 into the blackberry patch, L4 onto the stream stone, L5 into the reeds, and L6 to the clearing gate. Rabbit moves L1 from the fern spur to the false branch; the pair returns it to post 1, then restore L2–L6 to posts 2–6 once each. Rabbit and Wise Turtle go from trailhead through posts 1–6 to the clearing; neighbors wait at the trailhead, then follow the lit path to the clearing. All six remain in place, and the picnic starts before moonrise."
+      ],
+      "illustrationPlan": {
+        "globalStyle": "Text-only story.",
+        "pageRules": []
+      },
+      "writingComplexity": 3
+    },
+    "briefs": [
+      {
+        "pages": [
+          {
+            "beat": "Stage Rabbit reaching for L1 as a storm gust sweeps it from post one toward the fern spur.",
+            "purpose": "Stage the wind-snatch opening hook",
+            "pageIndex": 1,
+            "chapterIndex": 1,
+            "endingPressure": "L1 now glows beyond the trailhead.",
+            "requiredContinuity": [
+              "L1 is blown from post one to the fern spur."
+            ]
+          },
+          {
+            "beat": "Have Rabbit ready a dash after L1 while Wise Turtle steadies the five lanterns still on posts.",
+            "purpose": "Hold Rabbit at the trailhead",
+            "pageIndex": 2,
+            "chapterIndex": 1,
+            "endingPressure": "The other five remain exposed to weather.",
+            "requiredContinuity": [
+              "Five lanterns remain at their posts."
+            ]
+          },
+          {
+            "beat": "Gather neighbors at the trailhead; set a before-moonrise picnic deadline as Rabbit promises a quick fix.",
+            "purpose": "Gather neighbors and set the deadline",
+            "pageIndex": 3,
+            "chapterIndex": 1,
+            "endingPressure": "Moonrise leaves little time for any repair.",
+            "requiredContinuity": [
+              "Neighbors wait at the trailhead; picnic must begin before moonrise."
+            ]
+          }
+        ],
+        "title": "Six Lights Ready",
+        "summary": "At the trailhead, Rabbit and Wise Turtle prepare six lanterns for neighbors bound for the moonlit picnic.",
+        "chapterIndex": 1
+      },
+      {
+        "pages": [
+          {
+            "beat": "Let the storm knock L2 from post two beneath a fallen log beside the trail.",
+            "purpose": "Let the storm deepen",
+            "pageIndex": 4,
+            "chapterIndex": 2,
+            "endingPressure": "L2 is hidden beneath the fallen log.",
+            "requiredContinuity": [
+              "L2 is beneath the fallen log beside post two."
+            ]
+          },
+          {
+            "beat": "Send L3 into the blackberry patch and L4 onto a midstream stone in the same gust.",
+            "purpose": "Scatter two more lanterns",
+            "pageIndex": 5,
+            "chapterIndex": 2,
+            "endingPressure": "Two more lanterns lie beyond safe footing.",
+            "requiredContinuity": [
+              "L3 is in the blackberry patch; L4 rests on a stream stone."
+            ]
+          },
+          {
+            "beat": "Blow L5 into reeds and L6 to clearing gate; neighbors shelter at trailhead as pair starts ahead.",
+            "purpose": "Complete the storm's scattering",
+            "pageIndex": 6,
+            "chapterIndex": 2,
+            "endingPressure": "The neighbors cannot yet follow them.",
+            "requiredContinuity": [
+              "L5 is in reeds; L6 is beside the clearing gate.",
+              "Neighbors shelter at trailhead as Rabbit and Turtle head downtrail."
+            ]
+          }
+        ],
+        "title": "The Wind Turns",
+        "summary": "A sudden storm blows every lantern from its post and leaves the neighbors waiting at the trailhead.",
+        "chapterIndex": 2
+      },
+      {
+        "pages": [
+          {
+            "beat": "At the first fork, Rabbit spots L1 glowing on the fern spur and darts ahead alone.",
+            "purpose": "Show Rabbit's solo rush",
+            "pageIndex": 7,
+            "chapterIndex": 3,
+            "endingPressure": "Rabbit is reaching the first lantern alone.",
+            "requiredContinuity": [
+              "Rabbit reaches the first fork; L1 remains on the fern spur."
+            ]
+          },
+          {
+            "beat": "Have Rabbit carry L1 from the fern spur onto the false branch, trying to mark a shortcut.",
+            "purpose": "Make the wrong turn worse",
+            "pageIndex": 8,
+            "chapterIndex": 3,
+            "endingPressure": "L1 now points down the false branch.",
+            "requiredContinuity": [
+              "Rabbit moves L1 onto the false branch."
+            ]
+          },
+          {
+            "beat": "Bring Wise Turtle to the fork; let him see Rabbit's misplaced glow misleading both branches.",
+            "purpose": "Bring Turtle to the fork",
+            "pageIndex": 9,
+            "chapterIndex": 3,
+            "endingPressure": "The fork offers a misleading glow.",
+            "requiredContinuity": [
+              "Rabbit and Wise Turtle meet at the fork; L1 stays on the false branch."
+            ]
+          }
+        ],
+        "title": "A Wrong Turn",
+        "summary": "Rabbit hurries to the first fork and moves a lantern onto the false spur.",
+        "chapterIndex": 3
+      },
+      {
+        "pages": [
+          {
+            "beat": "Show Wise Turtle reading grass bent from post one toward the fern spur, revealing the gust's direction.",
+            "purpose": "Reveal the wind's direction",
+            "pageIndex": 10,
+            "chapterIndex": 4,
+            "endingPressure": "The grass suggests where wind carried L1.",
+            "requiredContinuity": [
+              "Grass bends from post one toward the fern spur."
+            ]
+          },
+          {
+            "beat": "Have Rabbit stop, listen to the wind, then carry L1 from the false branch toward post one.",
+            "purpose": "Turn Rabbit toward careful action",
+            "pageIndex": 11,
+            "chapterIndex": 4,
+            "endingPressure": "L1 is still away from its true post.",
+            "requiredContinuity": [
+              "Rabbit pauses to listen and moves L1 toward post one."
+            ]
+          },
+          {
+            "beat": "Return L1 to post one; let its steady glow expose the true trail beyond the fork.",
+            "purpose": "Restore the first lantern",
+            "pageIndex": 12,
+            "chapterIndex": 4,
+            "endingPressure": "The second post remains dark.",
+            "requiredContinuity": [
+              "L1 is restored to post one."
+            ]
+          }
+        ],
+        "title": "Bent Grass Clues",
+        "summary": "Wise Turtle reads the wind-bent grass, and Rabbit helps return the misplaced lantern to its post.",
+        "chapterIndex": 4
+      },
+      {
+        "pages": [
+          {
+            "beat": "Reach post two and locate L2 wedged under the fallen log beside it.",
+            "purpose": "Locate the log-trapped lantern",
+            "pageIndex": 13,
+            "chapterIndex": 5,
+            "endingPressure": "The log blocks the lantern's return.",
+            "requiredContinuity": [
+              "Rabbit and Wise Turtle reach post two; L2 is wedged beneath its log."
+            ]
+          },
+          {
+            "beat": "Show Rabbit's first tug fail; he stops, and Wise Turtle helps shift the jammed log.",
+            "purpose": "Change Rabbit's approach",
+            "pageIndex": 14,
+            "chapterIndex": 5,
+            "endingPressure": "The jammed log still pins L2.",
+            "requiredContinuity": [
+              "Rabbit stops pulling when L2 sticks; both work at the log."
+            ]
+          },
+          {
+            "beat": "Free L2 together and seat it at post two before continuing downtrail.",
+            "purpose": "Free and restore L2",
+            "pageIndex": 15,
+            "chapterIndex": 5,
+            "endingPressure": "Post two is lit; L3 remains missing.",
+            "requiredContinuity": [
+              "L2 is restored to post two."
+            ]
+          }
+        ],
+        "title": "Under the Log",
+        "summary": "At the second post, they work together to free a lantern wedged beneath a fallen log.",
+        "chapterIndex": 5
+      },
+      {
+        "pages": [
+          {
+            "beat": "Find L3 glowing inside the blackberry patch beyond post three.",
+            "purpose": "Find the thorn-hidden lantern",
+            "pageIndex": 16,
+            "chapterIndex": 6,
+            "endingPressure": "Thorns block Rabbit's reach.",
+            "requiredContinuity": [
+              "Rabbit and Wise Turtle reach the blackberry patch; L3 is among the thorns."
+            ]
+          },
+          {
+            "beat": "Have Wise Turtle hold thorny stems aside while Rabbit threads in and frees L3 carefully.",
+            "purpose": "Make careful teamwork matter",
+            "pageIndex": 17,
+            "chapterIndex": 6,
+            "endingPressure": "L3 is free but not yet restored.",
+            "requiredContinuity": [
+              "Wise Turtle holds the stems; Rabbit frees L3."
+            ]
+          },
+          {
+            "beat": "Carry L3 back to post three and restore its light before approaching the stream.",
+            "purpose": "Restore L3 and move onward",
+            "pageIndex": 18,
+            "chapterIndex": 6,
+            "endingPressure": "The stream separates them from L4.",
+            "requiredContinuity": [
+              "L3 is restored to post three."
+            ]
+          }
+        ],
+        "title": "Thorns at the Bend",
+        "summary": "Wise Turtle steadies the thorny stems while Rabbit carefully frees the third lantern.",
+        "chapterIndex": 6
+      },
+      {
+        "pages": [
+          {
+            "beat": "At post four, spot L4 resting on a midstream stone as water swirls around it.",
+            "purpose": "Introduce the stream obstacle",
+            "pageIndex": 19,
+            "chapterIndex": 7,
+            "endingPressure": "L4 lies beyond the first safe step.",
+            "requiredContinuity": [
+              "Rabbit and Wise Turtle reach the stream; L4 rests midstream."
+            ]
+          },
+          {
+            "beat": "Have Rabbit test each stepping stone with a paw; Wise Turtle guides from the bank.",
+            "purpose": "Let Rabbit test before crossing",
+            "pageIndex": 20,
+            "chapterIndex": 7,
+            "endingPressure": "L4 remains midstream beyond tested stones.",
+            "requiredContinuity": [
+              "Rabbit tests the stepping stones before crossing."
+            ]
+          },
+          {
+            "beat": "Rabbit crosses, retrieves L4, and returns it to post four under Turtle's steady direction.",
+            "purpose": "Return L4 to its post",
+            "pageIndex": 21,
+            "chapterIndex": 7,
+            "endingPressure": "Reeds hide the next lantern.",
+            "requiredContinuity": [
+              "L4 is restored to post four."
+            ]
+          }
+        ],
+        "title": "The Stepping Stones",
+        "summary": "At the stream, Rabbit studies the ripples before crossing to retrieve the fourth lantern.",
+        "chapterIndex": 7
+      },
+      {
+        "pages": [
+          {
+            "beat": "Show L5 tangled among reeds; one bent cluster hints at it, but Turtle waits for certainty.",
+            "purpose": "Show Turtle's overchecking delay",
+            "pageIndex": 22,
+            "chapterIndex": 8,
+            "endingPressure": "Turtle still lacks complete certainty.",
+            "requiredContinuity": [
+              "L5 is tangled among reeds; bent stalks provide a partial clue."
+            ]
+          },
+          {
+            "beat": "Wise Turtle trusts the partial wind clue and directs Rabbit to the reed clump it indicates.",
+            "purpose": "Act on the partial clue",
+            "pageIndex": 23,
+            "chapterIndex": 8,
+            "endingPressure": "Rabbit is headed into the reeds.",
+            "requiredContinuity": [
+              "Wise Turtle shares the clue and directs Rabbit into the reeds."
+            ]
+          },
+          {
+            "beat": "Rabbit frees L5 from the indicated tangle; together they restore it to post five.",
+            "purpose": "Restore the fifth lantern",
+            "pageIndex": 24,
+            "chapterIndex": 8,
+            "endingPressure": "The clearing gate still lacks L6.",
+            "requiredContinuity": [
+              "L5 is restored to post five."
+            ]
+          }
+        ],
+        "title": "A Clue in the Reeds",
+        "summary": "Wise Turtle acts on an uncertain wind clue and trusts Rabbit to reach the fifth lantern.",
+        "chapterIndex": 8
+      },
+      {
+        "pages": [
+          {
+            "beat": "At the clearing gate, find L6 beside post six as the sky darkens toward moonrise.",
+            "purpose": "Find the final lantern",
+            "pageIndex": 25,
+            "chapterIndex": 9,
+            "endingPressure": "L6 remains loose beside the gate.",
+            "requiredContinuity": [
+              "Rabbit and Wise Turtle reach the clearing gate; L6 is beside post six."
+            ]
+          },
+          {
+            "beat": "Place L6 on post six, completing the restored six-lantern route to the clearing.",
+            "purpose": "Complete the lantern path",
+            "pageIndex": 26,
+            "chapterIndex": 9,
+            "endingPressure": "All posts are lit; neighbors still wait.",
+            "requiredContinuity": [
+              "L6 is restored to post six; all six posts are lit."
+            ]
+          },
+          {
+            "beat": "Rabbit resists racing back and stays at clearing, ready to guide neighbors at their pace.",
+            "purpose": "Choose guidance over racing",
+            "pageIndex": 27,
+            "chapterIndex": 9,
+            "endingPressure": "The neighbors remain at the trailhead.",
+            "requiredContinuity": [
+              "Rabbit and Wise Turtle are at the clearing; neighbors remain at trailhead."
+            ]
+          }
+        ],
+        "title": "The Last Lantern",
+        "summary": "At the clearing gate, they recover the sixth lantern and complete the trail before moonrise.",
+        "chapterIndex": 9
+      },
+      {
+        "pages": [
+          {
+            "beat": "Call from the clearing; Rabbit summons neighbors waiting at trailhead, and they start along the lit path.",
+            "purpose": "Call the waiting neighbors",
+            "pageIndex": 28,
+            "chapterIndex": 10,
+            "endingPressure": "The neighbors have begun the woodland walk.",
+            "requiredContinuity": [
+              "Neighbors leave the trailhead and follow the restored lantern path."
+            ]
+          },
+          {
+            "beat": "Rabbit returns to post three, meets neighbors, then matches their pace to clearing; Turtle beckons ahead.",
+            "purpose": "Guide neighbors at their pace",
+            "pageIndex": 29,
+            "chapterIndex": 10,
+            "endingPressure": "The picnic still must begin before moonrise.",
+            "requiredContinuity": [
+              "Rabbit rejoins neighbors at post three; the group reaches the clearing before moonrise."
+            ]
+          },
+          {
+            "beat": "Bring everyone together before moonrise and begin the picnic beneath the six restored lanterns.",
+            "purpose": "Close with a quiet shared picnic",
+            "pageIndex": 30,
+            "chapterIndex": 10,
+            "endingPressure": "The picnic begins before moonrise, everyone safely together.",
+            "requiredContinuity": [
+              "Neighbors, Rabbit, and Wise Turtle share the clearing; all six lanterns remain on their posts."
+            ]
+          }
+        ],
+        "title": "The Picnic Path",
+        "summary": "Rabbit calls to the neighbors, who follow the restored trail and reach the picnic before moonrise.",
+        "chapterIndex": 10
+      }
+    ]
+  }
+}

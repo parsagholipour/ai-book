@@ -80,7 +80,53 @@ it("reruns local checks even when the cached model verdict is clean", async () =
 
 it("rejects protocol-incomplete checkpoints and accepts the atomic post-repair snapshot", async () => {
   expect(readPictureBookReviewSnapshot({ ...snapshot(), protocolIssues: ["Unknown row"] }, { input, plan, pages, checks })).toBeUndefined();
+  expect(readPictureBookReviewSnapshot({ ...snapshot(), citationRows: [{ pageIndex: 3 }] }, { input, plan, pages, checks })).toBeUndefined();
+  expect(readPictureBookReviewSnapshot({ ...snapshot(), editorialRows: [{ pageIndex: 3 }] }, { input, plan, pages, checks })).toBeUndefined();
   mocks.find.mockResolvedValue({ payload: { pictureBookReview: { ...snapshot(), fingerprint: "outdated" }, pictureBookFinalReview: snapshot() } });
   expect((await reviewFinalizationManuscript(options())).finalQa.approved).toBe(true);
   expect(mocks.final).not.toHaveBeenCalled();
+});
+
+const incompleteSnapshot = () => ({ ...snapshot(), reviews: snapshot().reviews.filter(review => review.pageIndex !== 3),
+  version: 2, roundsStarted: 2, attemptsUsed: 2, outputWidened: false, deliveryFallback: true,
+  unresolvedPageIndexes: [3], validationIssues: [{ pageIndex: 3, message: "Unverified requirement quote." }], protocolIssues: [], citationRows: [], editorialRows: [] });
+
+it("reuses an exhausted delivery snapshot across jobs without approving or rewriting its unverified page", async () => {
+  const request = options(); request.shortBookReview!.planId = "plan-1";
+  mocks.find.mockResolvedValue({ payload: { planId: "plan-1" } });
+  mocks.prior.mockResolvedValue({ payload: { pictureBookReview: incompleteSnapshot() } });
+  expect(readPictureBookReviewSnapshot(incompleteSnapshot(), { input, plan, pages, checks })).toBeUndefined();
+  const result = await reviewFinalizationManuscript(request);
+  expect(result.finalQa).toMatchObject({ approved: false, issues: [], requiredFixes: [] });
+  expect(result.issues).toEqual([expect.objectContaining({ code: "FINAL_REVIEW_UNAVAILABLE", affectedPageIndexes: [3] })]);
+  expect(mocks.chapter).not.toHaveBeenCalled(); expect(mocks.final).not.toHaveBeenCalled();
+});
+
+it("retains verified repair targets alongside unavailable assessments", async () => {
+  const cache = incompleteSnapshot();
+  cache.reviews[0]!.report = { ...report, approved: false, issues: ["Missing handoff"], requiredRevisions: ["Show the handoff"] };
+  mocks.find.mockResolvedValue({ payload: { pictureBookReview: cache } });
+  const result = await reviewFinalizationManuscript(options());
+  expect(result.finalQa).toMatchObject({ approved: false, issues: ["Page 1: Missing handoff"], requiredFixes: ["Page 1: Show the handoff"] });
+  expect(result.issues[0]?.affectedPageIndexes).toEqual([3]);
+  expect(mocks.final).not.toHaveBeenCalled();
+});
+
+it("does not turn a malformed response tail into an all-clean review", async () => {
+  const cache = { ...incompleteSnapshot(), reviews: snapshot().reviews, unresolvedPageIndexes: [], validationIssues: [], protocolIssues: ["Unknown extra row"] };
+  mocks.find.mockResolvedValue({ payload: { pictureBookReview: cache } });
+  const result = await reviewFinalizationManuscript(options());
+  expect(result.finalQa).toMatchObject({ approved: false, issues: [], requiredFixes: [] });
+  expect(result.issues[0]?.affectedPageIndexes).toEqual([1, 2, 3, 4, 5]);
+  expect(mocks.final).not.toHaveBeenCalled();
+});
+
+it.each(["prose", "unsettled"])("refuses an unavailable snapshot when %s changes its binding", async kind => {
+  const cache = incompleteSnapshot();
+  const request = options();
+  if (kind === "prose") request.pages = request.pages.map(page => ({ ...page, markdown: `${page.markdown} A new event.` }));
+  else cache.roundsStarted = 1;
+  mocks.find.mockResolvedValue({ payload: { pictureBookReview: cache } });
+  await reviewFinalizationManuscript(request);
+  expect(mocks.final).toHaveBeenCalledOnce();
 });

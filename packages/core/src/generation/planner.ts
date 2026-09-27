@@ -1,4 +1,5 @@
 import { compactPictureBookPlanMessages, usesCompactPictureBookPlanning } from "./compactPictureBookPlanning.js";
+import { generatePictureBookStoryPlan } from "./pictureBookStoryPlan.js";
 import type { JsonResult, ResearchAdapter, TextModelAdapter } from "../adapters/types.js";
 import { uniqueStrings } from "../collections.js";
 import { targetLanguageGenerationGuidance, targetLanguagePayload } from "../prompting/language.js";
@@ -95,7 +96,9 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
   const planningSchema = bookPlanModelOutputSchemaWithFallback({ ...fallback, researchNotes }, compactStory);
   let result: JsonResult<Omit<BookPlan, "researchNotes">>;
   try {
-    result = await generateJsonWithRetry(options.textModel, {
+    result = compactStory && options.input.targetPages > 24
+      ? await generatePictureBookStoryPlan({ ...options, fallback })
+      : await generateJsonWithRetry(options.textModel, {
       purpose: "plan-book",
       temperature: Math.min(0.8, options.input.temperature),
       // No maxTokens. OpenAI counts reasoning toward max_output_tokens, so any
@@ -282,6 +285,7 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
               BYLINE_IS_TYPESET_RULE,
               "For recurring characters, preserve or add concrete visualRules with stable silhouette, face, outfit, color palette, and distinctive details; illustration prompts must use exact recurring character names whenever those characters appear.",
               "Preserve or improve openingHook: one or two sentences committing to the concrete scene, claim, image, or question page 1 opens with - never meta framing like 'This book will...'.",
+              ...(options.currentPlan.storyTreatment ? ["storyTreatment is the complete causal story used by later page allocation. Revise it coherently whenever the request changes events, characters, setting, tone or ending; do not update only chapter summaries while leaving an obsolete treatment. Keep it unpaginated and preserve unchanged story decisions."] : []),
               "Preserve authorStance unless the requested changes alter what the book argues or how it sounds; then revise it as a whole.",
               ...PLANNER_AUTHOR_STANCE_GUIDANCE,
               ...targetLanguageGenerationGuidance(options.language),

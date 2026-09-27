@@ -4,6 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { summarizeGenerationPerformance } from "./generation-performance.mjs";
+import { acceptanceStatus, summarizeQualityAcceptance } from "./generation-quality-acceptance.mjs";
 
 const requireCore = createRequire(new URL("../packages/core/package.json", import.meta.url));
 export const EXPORT_FORMATS = ["pdf", "epub", "docx"];
@@ -12,23 +13,30 @@ const FAILURES = new Set(["FAILED", "CANCELED"]);
 export const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 export function expectedStoryIllustrationIndexes(cadence, targetPages) {
-  if (!["every-page", "every-third-page"].includes(cadence)) throw new Error(`Unsupported acceptance illustration cadence: ${cadence}`);
+  if (!["every-page", "every-third-page", "none"].includes(cadence)) throw new Error(`Unsupported acceptance illustration cadence: ${cadence}`);
   if (!Number.isSafeInteger(targetPages) || targetPages < 1) throw new Error("Expected a positive story-page target");
-  return Array.from({ length: targetPages }, (_, index) => index + 1).filter((index) => cadence === "every-page" || index % 3 === 0);
+  return Array.from({ length: targetPages }, (_, index) => index + 1).filter((index) => cadence === "every-page" || (cadence === "every-third-page" && index % 3 === 0));
 }
 
 /** A changed illustration requirement is an explicit new input, never a matched baseline. */
 export function prepareStorybookIllustrations(source, option = "baseline") {
-  if (!["baseline", "every-page", "every-third-page"].includes(option)) throw new Error(`Unknown --illustration-cadence ${option}`);
+  if (!["baseline", "every-page", "every-third-page", "none"].includes(option)) throw new Error(`Unknown --illustration-cadence ${option}`);
   const input = structuredClone(source);
   const originalCadence = input.mediaSettings?.illustrationCadence;
   if (option === "baseline" && !["template-driven", "every-page", "every-third-page", undefined].includes(originalCadence)) throw new Error("Baseline cadence is unsupported for automatic storybook acceptance");
   const cadence = option === "baseline" ? originalCadence === "every-third-page" ? "every-third-page" : "every-page" : option;
   const expectedPageIndexes = expectedStoryIllustrationIndexes(cadence, input.targetPages);
-  if (option !== "baseline") input.mediaSettings = { ...input.mediaSettings, fullIllustrations: true, illustrationCadence: cadence };
+  if (option === "none") input.mediaSettings = { ...input.mediaSettings, fullIllustrations: false, illustrationCadence: "manual", includeCover: false, coverArtSource: "none" };
+  else if (option !== "baseline") input.mediaSettings = { ...input.mediaSettings, fullIllustrations: true, illustrationCadence: cadence };
   if (option === "every-third-page") {
     input.prompt = input.prompt.replace("Make each page a distinct visual scene", "Make each page a distinct story scene") +
       ` Exactly ${expectedPageIndexes.length} interior illustrations, on story pages ${expectedPageIndexes.join(", ")}. The other ${input.targetPages - expectedPageIndexes.length} story pages contain text without illustrations. Covers and saved character portraits are separate.`;
+  }
+  if (option === "none") {
+    input.prompt = input.prompt.replace("30-page illustrated storybook", "30-page storybook")
+      .replace("respecting their profiles and portrait references", "respecting their saved character profiles")
+      .replace("Make each page a distinct visual scene", "Make each page a distinct story scene") +
+      " Write exactly 30 text-only story pages. Do not create interior illustrations, a cover image, or character reference images.";
   }
   return { input, policy: { option, cadence, expectedPageIndexes, baselinePrompt: source.prompt, preparedPrompt: input.prompt,
     baselineInputHash: sha256(JSON.stringify(source)), changedFromBaseline: JSON.stringify(source) !== JSON.stringify(input) } };
@@ -203,10 +211,15 @@ export function summarizeAcceptance({ project, pages, jobs, images, calls, chara
   const failed = jobs.filter((job) => FAILURES.has(job.status));
   if (failed.length) issues.push(`${failed.length} failed or canceled jobs; this run required recovery`);
   if (jobs.filter((job) => job.type === "PLAN_BOOK").length !== 1 || jobs.filter((job) => job.type === "GENERATE_BOOK").length !== 1) issues.push("Generation was restarted; run is not an unattended acceptance sample");
-  for (const character of characters) {
-    if (!images.some((image) => image.type === "CHARACTER_REFERENCE" && image.metadata?.libraryCharacterId === character.id && image.metadata.seededFromPortrait === true)) issues.push(`${character.name} was not seeded from the saved portrait`);
+  if (illustrationCadence === "none") {
+    if (images.length) issues.push(`Expected no image assets; found ${images.length}`);
+    if (calls.some((call) => call.purpose === "image.generate")) issues.push("Image provider was called for a text-only book");
+  } else {
+    for (const character of characters) {
+      if (!images.some((image) => image.type === "CHARACTER_REFERENCE" && image.metadata?.libraryCharacterId === character.id && image.metadata.seededFromPortrait === true)) issues.push(`${character.name} was not seeded from the saved portrait`);
+    }
+    if (images.filter((image) => image.type === "CHARACTER_REFERENCE").length !== characters.length) issues.push(`Expected exactly ${characters.length} saved character-reference assets`);
   }
-  if (images.filter((image) => image.type === "CHARACTER_REFERENCE").length !== characters.length) issues.push(`Expected exactly ${characters.length} saved character-reference assets`);
   let illustrationInventory = null;
   try { illustrationInventory = verifyStoryIllustrations(pages, images, expectedIllustrationPageIndexes); }
   catch (error) { issues.push(error.message); }
@@ -219,17 +232,22 @@ export function summarizeAcceptance({ project, pages, jobs, images, calls, chara
   const finishedAt = last?.finishedAt ?? null;
   const elapsedMs = finishedAt && startedAt ? new Date(finishedAt).getTime() - new Date(startedAt).getTime() : null;
   const performance = summarizeGenerationPerformance({ jobs, calls, events, elapsedMs, maxElapsedMs, tier });
+  const quality = summarizeQualityAcceptance(last?.qualityReport, pages);
+  const functionalPassed = issues.length === 0;
+  const automatedPassed = functionalPassed && performance.passed === true && quality.qualityPassed === true && quality.semanticPassed === true;
   return {
-    passed: issues.length === 0 && performance.passed === true, functionalPassed: issues.length === 0,
+    passed: false, automatedPassed, functionalPassed, publicationPassed: completion.state === "published",
+    acceptanceStatus: acceptanceStatus({ functionalPassed, performance, ...quality }), ...quality,
     issues, performance, completion, projectId: project?.id ?? null,
     startedAt, finishedAt, elapsedMs,
     storyPages: pages.length, illustrationCadence, expectedIllustrationPageIndexes, illustrationInventory, pdfLayoutPolicy: pdfLayoutPolicy ?? null,
     artifacts, review: last?.qualityReport ?? null,
     providerCalls: calls.length, imageCalls: calls.filter((call) => call.purpose === "image.generate").length,
-    knownCostHint: calls.reduce((sum, call) => sum + (call.costHint ?? 0), 0),
-    callsWithoutCostHint: calls.filter((call) => call.costHint == null).length,
+    knownCostHint: performance.costAccounting.knownCostHint,
+    callsWithoutCostHint: performance.costAccounting.callsWithoutCostHint,
+    costAccountingComplete: performance.costAccounting.complete,
     compilePasses: compileJobs.length, qaCompileJobs: [...qaJobs],
     manualRecoveryAllowed: false,
-    humanReview: { state: "pending", checks: ["character likeness", "chapter transitions", "both character arcs", "rendered layouts"] }
+    humanReview: { state: "pending", checks: [...(illustrationCadence === "none" ? [] : ["character likeness"]), "chapter transitions", "both character arcs", "rendered layouts"] }
   };
 }

@@ -1,5 +1,6 @@
 import { z, type ZodType } from "zod";
 import { AdapterJsonValidationError } from "../adapters/json.js";
+import { JsonOutputRepetitionError } from "../adapters/jsonOutputRepetition.js";
 import { widenedOutputBudget } from "../adapters/outputBudget.js";
 import { assertTextAttemptAvailable, withTextAttemptBudget } from "../adapters/textAttemptBudget.js";
 import {
@@ -127,6 +128,12 @@ function withPhysicalAttemptMetadata<T>(
 }
 
 function repairOptions<T>(options: GenerateJsonOptions<T>, error: unknown): GenerateJsonOptions<T> {
+  if (error instanceof JsonOutputRepetitionError) return {
+    ...options,
+    messages: prependSystemRules(options.messages, [...STRICT_JSON_RETRY_RULES,
+      "The previous output repeated property names without values and was stopped. Start a fresh compact JSON object matching the supplied schema. Emit each property once per object with its colon and value; omit fields absent from the contract. Do not continue the broken output."]),
+    temperature: Math.min(options.temperature ?? 0.7, 0.2)
+  };
   if (isSchemaValidationError(error)) {
     return {
       ...options,

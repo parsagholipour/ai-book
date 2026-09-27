@@ -2,6 +2,7 @@ import { range } from "../collections.js";
 import type { ChapterBrief, PageProductionBeat } from "../schemas/book.js";
 import type { WritingMode } from "../schemas/styleContract.js";
 import { isSubstantivePageAssignment } from "./generatedChapterBriefAcceptance.js";
+import { currentDistinctBeatPairKeys, type ReviewedDistinctBeatPair } from "./pageBeatDistinctReview.js";
 import { evidenceAnchorCollisionFindings, missingEvidenceAnchorFindings } from "./productionMapAnchors.js";
 import {
   MAX_BEAT_DEDUP_FINDINGS,
@@ -24,7 +25,7 @@ import {
 
 export const PRODUCTION_MAP_AUDIT_VERSION = "production-map-audit-v1";
 
-/** Affected-page ratio at which a chapter is regenerated rather than patched. */
+/** Affected-page ratio for regeneration, provided more than one page is affected. */
 export const PRODUCTION_MAP_DENSE_CORRUPTION_THRESHOLD = 0.25;
 
 /** Full audit-repair-reaudit loops `prepareChapterSetups` may spend. */
@@ -139,8 +140,9 @@ export function productionMapContractFromRanges(
 
 /**
  * Classify one chapter's corruption. Dense when coverage is invalid, when the
- * unrewritable opening page is affected, or when at least 25% of the chapter's
- * pages are affected. Sparse when some later pages are affected below that bar.
+ * unrewritable opening page is affected, or when multiple pages comprising at
+ * least 25% of the chapter are affected. One later page always gets a patch:
+ * in a three-page chapter, one collision is not grounds to replace all three.
  */
 export function classifyChapterCorruption(input: {
   chapterIndex: number;
@@ -157,7 +159,7 @@ export function classifyChapterCorruption(input: {
     classification = "dense";
   } else if (affectedPageCount === 0) {
     classification = "clean";
-  } else if (affectedRatio >= PRODUCTION_MAP_DENSE_CORRUPTION_THRESHOLD) {
+  } else if (affectedPageCount > 1 && affectedRatio >= PRODUCTION_MAP_DENSE_CORRUPTION_THRESHOLD) {
     classification = "dense";
   } else {
     classification = "sparse";
@@ -174,13 +176,16 @@ export function classifyChapterCorruption(input: {
 
 export async function auditProductionMap(
   briefs: ChapterBrief[],
-  contract: ProductionMapContract
+  contract: ProductionMapContract,
+  review: { reviewNearDuplicates?: boolean; distinctPairs?: readonly ReviewedDistinctBeatPair[] } = {}
 ): Promise<ProductionMapAudit> {
   const pageChapter = pageChapterIndex(briefs);
   const coverage = coverageFindings(briefs, contract);
   const generic = genericAssignmentFindings(briefs);
   const fingerprints = duplicateFingerprintFindings(briefs);
-  const nearDuplicates = (await findDuplicatePageBeats(briefs, { rewriteSlotLimit: 0 })).map((finding) =>
+  const nearDuplicates = (await findDuplicatePageBeats(briefs, {
+    rewriteSlotLimit: 0, distinctPairKeys: currentDistinctBeatPairKeys(briefs, review.distinctPairs ?? [])
+  })).map((finding) =>
     nearDuplicateFinding(finding, pageChapter)
   );
   const findings = [
@@ -195,12 +200,19 @@ export async function auditProductionMap(
   const chapterClassifications = contract.chapters.map((chapter) => {
     const chapterFindings = byChapter.get(chapter.chapterIndex) ?? [];
     const inChapter = (pageIndex: number) => pageIndex >= chapter.startPage && pageIndex <= chapter.endPage;
-    return classifyChapterCorruption({
+    const classify = (relevant: ProductionMapFinding[]) => classifyChapterCorruption({
       chapterIndex: chapter.chapterIndex,
       pageCount: chapter.endPage - chapter.startPage + 1,
-      affectedPageIndexes: assignmentPageIndexes(chapterFindings).filter(inChapter),
+      affectedPageIndexes: assignmentPageIndexes(relevant).filter(inChapter),
       coverageValid: chapterFindings.every((finding) => !COVERAGE_CODES.has(finding.code))
     });
+    const classified = classify(chapterFindings);
+    // Lexical density alone warrants bounded semantic review, not chapter replacement.
+    if (review.reviewNearDuplicates && classified.classification === "dense" &&
+      classify(chapterFindings.filter(finding => finding.code !== "NEAR_DUPLICATE_BEAT")).classification !== "dense") {
+      return { ...classified, classification: "sparse" as const };
+    }
+    return classified;
   });
   for (const brief of briefs) {
     if (contract.chapters.some((chapter) => chapter.chapterIndex === brief.chapterIndex)) {

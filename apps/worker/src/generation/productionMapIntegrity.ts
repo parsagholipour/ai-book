@@ -13,14 +13,18 @@ import {
   mergePageMapCriticPatch,
   productionMapContractFromRanges,
   sparseRewriteFindingsFromAudit,
+  usesCompactPictureBookPlanning,
   type BookGenerationStrategy,
   type BookPlan,
   type ChapterBrief,
   type ChapterPlan,
   type CreateProjectInput,
   type DuplicateBeatFinding,
+  type GenerateChapterBriefOptions,
   type ProductionMapAudit,
+  type ProductionMapFinding,
   type QualityFeatureId,
+  type ReviewedDistinctBeatPair,
   type TextModelAdapter
 } from "@book-maker/core";
 
@@ -62,7 +66,9 @@ export async function enforceProductionMapIntegrity(options: {
   await writeProgress(options.generationJobId, "Checking production map integrity");
 
   let current = options.briefs;
-  let lastAudit = await auditProductionMap(current, contract);
+  const review = { reviewNearDuplicates: usesCompactPictureBookPlanning(options.input),
+    distinctPairs: [] as ReviewedDistinctBeatPair[] };
+  let lastAudit = await auditProductionMap(current, contract, review);
   if (!needsRepair(lastAudit)) {
     logIntegrity(auditLog("clean", 0, lastAudit));
     return current;
@@ -71,9 +77,10 @@ export async function enforceProductionMapIntegrity(options: {
   for (let cycle = 1; cycle <= PRODUCTION_MAP_REPAIR_CYCLE_LIMIT; cycle += 1) {
     const regenerated = new Set<number>();
     for (const chapterIndex of lastAudit.denseChapterIndexes) {
+      if (!lastAudit.denseChapterIndexes.includes(chapterIndex)) continue;
       await writeProgress(options.generationJobId, `Regenerating chapter ${chapterIndex} production map`);
-      current = await regenerateChapterOrKeep(current, chapterIndex, options, regenerated);
-      lastAudit = await auditProductionMap(current, contract);
+      current = await regenerateChapterOrKeep(current, chapterIndex, options, regenerated, lastAudit.findings);
+      lastAudit = await auditProductionMap(current, contract, review);
       if (!needsRepair(lastAudit)) {
         logIntegrity(auditLog("clean", cycle, lastAudit));
         return current;
@@ -96,16 +103,18 @@ export async function enforceProductionMapIntegrity(options: {
         batchIndex: batchIndex + 1,
         cycle,
         regenerated,
+        findings: lastAudit.findings,
+        review,
         options
       });
-      lastAudit = await auditProductionMap(current, contract);
+      lastAudit = await auditProductionMap(current, contract, review);
       if (!needsRepair(lastAudit)) {
         logIntegrity(auditLog("clean", cycle, lastAudit, batchIndex + 1));
         return current;
       }
     }
 
-    lastAudit = await auditProductionMap(current, contract);
+    lastAudit = await auditProductionMap(current, contract, review);
     if (!needsRepair(lastAudit)) {
       logIntegrity(auditLog("clean", cycle, lastAudit));
       return current;
@@ -153,7 +162,8 @@ async function regenerateChapterOrKeep(
     chapterRanges: Array<{ chapter: ChapterPlan; startPage: number; endPage: number }>;
     quality: (feature: QualityFeatureId) => Promise<boolean>;
   },
-  regenerated: Set<number>
+  regenerated: Set<number>,
+  findings: ProductionMapFinding[]
 ): Promise<ChapterBrief[]> {
   if (regenerated.has(chapterIndex)) {
     return briefs;
@@ -170,6 +180,7 @@ async function regenerateChapterOrKeep(
       chapter: setup.chapter,
       chapterPageStart: setup.startPage,
       chapterPageEnd: setup.endPage,
+      repairContext: chapterRepairContext(briefs, setup, findings),
       textModel: options.textModel
     });
     regenerated.add(chapterIndex);
@@ -199,6 +210,8 @@ async function repairSparseBatchOrRegenerate(input: {
   batchIndex: number;
   cycle: number;
   regenerated: Set<number>;
+  findings: ProductionMapFinding[];
+  review: { reviewNearDuplicates: boolean; distinctPairs: ReviewedDistinctBeatPair[] };
   options: {
     input: CreateProjectInput;
     plan: BookPlan;
@@ -209,6 +222,11 @@ async function repairSparseBatchOrRegenerate(input: {
   };
 }): Promise<ChapterBrief[]> {
   applyPlanThinkingBoost(input.options.textModel, await input.options.quality("planThinkingBoost"));
+  const reviewablePairs = input.review.reviewNearDuplicates
+    ? input.findings.filter(finding => finding.code === "NEAR_DUPLICATE_BEAT" &&
+      !input.findings.some(other => other.code !== "NEAR_DUPLICATE_BEAT" &&
+        other.pageIndexes.some(index => finding.pageIndexes.includes(index))))
+      .flatMap(finding => finding.beatFinding ? [finding.beatFinding] : []) : [];
   try {
     const patch = await dedupePageBeats({
       textModel: input.options.textModel,
@@ -216,6 +234,7 @@ async function repairSparseBatchOrRegenerate(input: {
       findings: input.batch,
       promises: input.options.plan.promises ?? [],
       lastPageIndex: input.options.input.targetPages,
+      ...(input.review.reviewNearDuplicates ? { reviewablePairs } : {}),
       providerCallMetadata: {
         productionMapRepairCycle: input.cycle,
         productionMapRepairBatch: input.batchIndex,
@@ -223,6 +242,12 @@ async function repairSparseBatchOrRegenerate(input: {
         productionMapRepairKind: "sparse-page-patch"
       }
     });
+    if (patch.distinctPairs?.length) {
+      input.review.distinctPairs.push(...patch.distinctPairs);
+      logIntegrity({ outcome: "distinct_beats_confirmed", cycle: input.cycle, batch: input.batchIndex,
+        pairs: patch.distinctPairs.map(({ pageIndex, duplicateOfPageIndex, reason, evidence }) =>
+          ({ pageIndex, duplicateOfPageIndex, reason, evidence })) });
+    }
     return mergePageMapCriticPatch(input.briefs, patch, input.options.input.targetPages);
   } catch (error) {
     if (isStopRequestedError(error)) {
@@ -235,12 +260,36 @@ async function repairSparseBatchOrRegenerate(input: {
       findingCount: input.batch.length,
       error: error instanceof Error ? error.message : "unknown"
     });
+    // A failed semantic judgment is not evidence that the chapter needs replacing.
+    if (input.batch.every(finding => reviewablePairs.some(pair => pair.pageIndex === finding.pageIndex &&
+      pair.duplicateOfPageIndex === finding.duplicateOfPageIndex))) return input.briefs;
     let current = input.briefs;
     for (const chapterIndex of chaptersForFindings(input.briefs, input.batch)) {
-      current = await regenerateChapterOrKeep(current, chapterIndex, input.options, input.regenerated);
+      current = await regenerateChapterOrKeep(current, chapterIndex, input.options, input.regenerated, input.findings);
     }
     return current;
   }
+}
+
+function chapterRepairContext(
+  briefs: ChapterBrief[],
+  setup: { chapter: ChapterPlan; startPage: number; endPage: number },
+  findings: ProductionMapFinding[]
+): NonNullable<GenerateChapterBriefOptions["repairContext"]> {
+  const relevant = findings.filter((finding) => finding.chapterIndexes[0] === setup.chapter.index
+    || (finding.code.includes("_COVERAGE_") && finding.chapterIndexes.includes(setup.chapter.index)));
+  const pages = briefs.flatMap((brief) => brief.pages);
+  const boundaryIndexes = new Set([setup.startPage - 1, setup.endPage + 1]);
+  const collisionIndexes = new Set(relevant.flatMap((finding) =>
+    finding.beatFinding ? [finding.beatFinding.duplicateOfPageIndex] : []
+  ));
+  return {
+    currentBrief: briefs.find((brief) => brief.chapterIndex === setup.chapter.index) ?? null,
+    adjacentPages: pages.filter((page) => boundaryIndexes.has(page.pageIndex)),
+    collisionPages: pages.filter((page) => collisionIndexes.has(page.pageIndex)
+      && !boundaryIndexes.has(page.pageIndex) && page.chapterIndex !== setup.chapter.index),
+    findings: relevant.map(({ code, pageIndexes, evidence }) => ({ code, pageIndexes, evidence }))
+  };
 }
 
 function replaceChapterBrief(briefs: ChapterBrief[], next: ChapterBrief): ChapterBrief[] {

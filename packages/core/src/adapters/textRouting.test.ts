@@ -59,6 +59,8 @@ const PROSE_LANE_PURPOSES: ReadonlySet<string> = new Set([
   "edit-chapter",
   "detemplate-chapter",
   "read-manuscript",
+  // The independent inventory stage inherits its former read-manuscript lane.
+  "inventory-brief-requirements",
   "cut-chapter",
   // Material-first (opinion-fable-5): the episodes and the opening scene are
   // the author's own choices and prose; the couplet rewrite is a line edit
@@ -176,14 +178,14 @@ describe("RoutingTextModelAdapter", () => {
   it("routes prose and unknown purposes to the prose model", async () => {
     const { prose, routing } = routedAdapters();
 
-    for (const purpose of ["generate-page", "plan-book", "polish-page", "some-future-purpose"]) {
+    for (const purpose of ["generate-page", "plan-book", "polish-page", "inventory-brief-requirements", "some-future-purpose"]) {
       const result = await routing.generateJson({ messages: [], purpose, schema: undefined as never });
       expect(result.model).toBe("prose-model");
     }
     expect((await routing.generateJson({ messages: [], schema: undefined as never })).model).toBe("prose-model");
     expect(routing.selectionForPurpose("generate-page").model).toBe("prose-model");
     expect(routing.selectionForPurpose(undefined).model).toBe("prose-model");
-    expect(prose.purposes).toHaveLength(5);
+    expect(prose.purposes).toHaveLength(6);
   });
 
   it("routes plan-book to a purpose override when one is registered", async () => {

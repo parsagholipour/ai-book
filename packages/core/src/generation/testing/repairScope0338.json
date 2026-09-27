@@ -1,0 +1,790 @@
+{
+  "input": {
+    "title": "The Lantern Path",
+    "prompt": "Write an original 30-page storybook for children ages 6–8, called The Lantern Path. Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles. Rabbit is playful and hasty; Wise Turtle is slow and steady. Keep both active across the story, with meaningful choices and growth for each. A storm scatters the lanterns marking the woodland path to a night picnic. Rabbit rushes to fix everything alone and makes the path more confusing. Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise. Give this a fresh plot rather than a race or a retelling of The Tortoise and the Hare. Build a clear beginning, escalating middle, turning point and satisfying ending. Let Rabbit's energy and Wise Turtle's patience both solve part of the problem. Keep stakes gentle and child appropriate. Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page. Avoid repeated summaries, generic moralizing and extra named main characters. English. Exactly 30 story pages. Write exactly 30 text-only story pages. Do not create interior illustrations, a cover image, or character reference images.",
+    "category": "KIDS",
+    "language": "en",
+    "subtitle": "An original Rabbit and Wise Turtle story",
+    "complexity": 3,
+    "targetPages": 30,
+    "temperature": 0.8,
+    "mediaSettings": {
+      "mobile": {
+        "characters": [
+          {
+            "id": "cmtvyqhjn0018ark75508mxmt",
+            "name": "Rabbit",
+            "fields": [],
+            "description": "A very playful rabbit that appears to be very hasty.",
+            "portraitFile": "cmqejjndu000s1nqr1cla39or/cmtvyqhjn0018ark75508mxmt-portrait-10df3a57cc1e.jpg",
+            "portraitSource": "generated"
+          },
+          {
+            "id": "cmtvyr5pb001cark7zgkwug3g",
+            "name": "Wise Turtle",
+            "fields": [],
+            "description": "Slow but steady",
+            "portraitFile": "cmqejjndu000s1nqr1cla39or/cmtvyr5pb001cark7zgkwug3g-portrait-33d7c039c6b8.jpg",
+            "portraitSource": "generated"
+          }
+        ]
+      },
+      "modelTier": "balanced",
+      "imageStyle": "Warm watercolor storybook illustration; match the saved character portraits.",
+      "finalReview": true,
+      "toneProfile": "narrative",
+      "includeCover": false,
+      "coverTemplate": "kids",
+      "coverArtSource": "none",
+      "audienceAgeRange": "6-8",
+      "fullIllustrations": false,
+      "generationStrategy": "auto",
+      "illustrationCadence": "manual"
+    }
+  },
+  "plan": {
+    "title": "The Lantern Path",
+    "bookArc": {
+      "turn": {
+        "repair": "Wise Turtle trusts Rabbit to scout the predicted side as Wise Turtle returns the brook lantern.",
+        "trouble": "Wise Turtle’s careful checks have slowed the search, while Rabbit’s haste has already misled the neighbors.",
+        "chapterIndex": 4
+      },
+      "answer": "Yes. Wise Turtle reads the pattern in two landing places, Rabbit finds the predicted third, and their shared work restores the route in time.",
+      "chapters": [
+        {
+          "job": {
+            "adds": "Neighbors follow the false turn.",
+            "does": "Rabbit moves the log lantern.",
+            "leavesOpen": "Can they reset it?",
+            "believesSoFar": "A glow fixes a path."
+          },
+          "cast": [
+            "Rabbit",
+            "Wise Turtle"
+          ],
+          "kind": "case",
+          "index": 1,
+          "pages": 3
+        },
+        {
+          "job": {
+            "adds": "The wrong glow confused neighbors.",
+            "does": "They restore Log; find Brook.",
+            "leavesOpen": "Where did wind send Brook?",
+            "believesSoFar": "Check every post first."
+          },
+          "cast": [
+            "Rabbit",
+            "Wise Turtle"
+          ],
+          "kind": "complication",
+          "index": 2,
+          "pages": 3
+        },
+        {
+          "job": {
+            "adds": "Predict Ridge’s eastern lee.",
+            "does": "Compare both eastern landings.",
+            "leavesOpen": "Will the guess hold?",
+            "believesSoFar": "One landing may be chance."
+          },
+          "cast": [
+            "Rabbit",
+            "Wise Turtle"
+          ],
+          "kind": "method",
+          "index": 3,
+          "pages": 3
+        },
+        {
+          "job": {
+            "adds": "Rabbit finds the ridge lantern.",
+            "does": "Turtle trusts Rabbit to scout.",
+            "leavesOpen": "Can they free it?",
+            "believesSoFar": "Turtle must lead every search."
+          },
+          "cast": [
+            "Rabbit",
+            "Wise Turtle"
+          ],
+          "kind": "argument",
+          "index": 4,
+          "pages": 3
+        },
+        {
+          "job": {
+            "adds": "The notch needs teamwork.",
+            "does": "Rabbit reaches; Turtle receives.",
+            "leavesOpen": "Can they return it?",
+            "believesSoFar": "Finding it is enough."
+          },
+          "cast": [
+            "Rabbit",
+            "Wise Turtle"
+          ],
+          "kind": "case",
+          "index": 5,
+          "pages": 3
+        },
+        {
+          "job": {
+            "adds": "The full path is clear.",
+            "does": "They restore and check four posts.",
+            "leavesOpen": "Will neighbors trust it?",
+            "believesSoFar": "Fast repair will do."
+          },
+          "cast": [
+            "Rabbit",
+            "Wise Turtle"
+          ],
+          "kind": "method",
+          "index": 6,
+          "pages": 3
+        },
+        {
+          "job": {
+            "adds": "Neighbors hear the true route.",
+            "does": "Rabbit admits the false turn.",
+            "leavesOpen": "Can they guide the group?",
+            "believesSoFar": "Hide the mistake."
+          },
+          "cast": [
+            "Rabbit",
+            "Wise Turtle"
+          ],
+          "kind": "portrait",
+          "index": 7,
+          "pages": 3
+        },
+        {
+          "job": {
+            "adds": "Trust divides the work.",
+            "does": "Rabbit leads; Turtle takes rear.",
+            "leavesOpen": "Will everyone stay together?",
+            "believesSoFar": "Turtle must direct all."
+          },
+          "cast": [
+            "Rabbit",
+            "Wise Turtle"
+          ],
+          "kind": "case",
+          "index": 8,
+          "pages": 3
+        },
+        {
+          "job": {
+            "adds": "Neighbors follow the true path.",
+            "does": "Rabbit points; Turtle checks behind.",
+            "leavesOpen": "Will they arrive in time?",
+            "believesSoFar": "The fork may confuse them."
+          },
+          "cast": [
+            "Rabbit",
+            "Wise Turtle"
+          ],
+          "kind": "case",
+          "index": 9,
+          "pages": 3
+        },
+        {
+          "job": {
+            "adds": "Rabbit waits; Turtle shares the lead.",
+            "does": "Everyone arrives before moonrise.",
+            "leavesOpen": "The evening is theirs.",
+            "believesSoFar": "The picnic is the goal."
+          },
+          "cast": [
+            "Rabbit",
+            "Wise Turtle"
+          ],
+          "kind": "resolution",
+          "index": 10,
+          "pages": 3
+        }
+      ],
+      "proposal": "A ten-chapter, 30-page early-reader story; each chapter carries three pages of the complete plot.",
+      "question": "Can Rabbit and Wise Turtle restore the lantern path before moonrise?"
+    },
+    "premise": "A west-to-east storm scatters three of four lanterns along the woodland path to a night picnic. Rabbit tries to fix the route alone and sends neighbors toward a false fork. Wise Turtle studies where two lanterns landed, then trusts Rabbit to test a useful prediction. Together they restore the lights and guide everyone to the picnic before moonrise.",
+    "audience": "Children ages 6–8; an English-language read-aloud story.",
+    "chapters": [
+      {
+        "index": 1,
+        "title": "Wind in the Lanterns",
+        "summary": "A west-to-east storm scatters three lanterns, and Rabbit moves the first recovered light to the wrong fork.",
+        "keyBeats": [
+          "Neighbors wait at the woodland gate.",
+          "A gust knocks three lanterns from their posts.",
+          "Rabbit finds the log lantern, then carries it to the fork."
+        ],
+        "targetPages": 3,
+        "illustrationPrompts": []
+      },
+      {
+        "index": 2,
+        "title": "The Wrong Fork",
+        "summary": "The false glow confuses the neighbors as Wise Turtle’s careful checks slow the search for the scattered lanterns.",
+        "keyBeats": [
+          "Neighbors stop at the fork and hesitate.",
+          "Rabbit admits the lantern was moved and guides them back to the gate.",
+          "Rabbit restores the log lantern; the pair finds another east of Brook Bend."
+        ],
+        "targetPages": 3,
+        "illustrationPrompts": []
+      },
+      {
+        "index": 3,
+        "title": "Two Landings",
+        "summary": "After comparing the log and brook lanterns’ landing places, the pair predicts where the ridge lantern will be.",
+        "keyBeats": [
+          "Wise Turtle recalls the log lantern east of its post.",
+          "They compare it with the brook lantern in the east-bank fern hollow.",
+          "They predict the last lantern rests in the stone’s eastern lee."
+        ],
+        "targetPages": 3,
+        "illustrationPrompts": []
+      },
+      {
+        "index": 4,
+        "title": "A Useful Guess",
+        "summary": "Wise Turtle trusts Rabbit to scout the predicted side while returning the brook lantern to its post.",
+        "keyBeats": [
+          "Rabbit follows the east-side prediction, not a random route.",
+          "Wise Turtle carries the brook lantern back to its post.",
+          "Rabbit spots the ridge lantern behind the stone and waits."
+        ],
+        "targetPages": 3,
+        "illustrationPrompts": []
+      },
+      {
+        "index": 5,
+        "title": "The Stone Notch",
+        "summary": "Rabbit and Wise Turtle work together to free the ridge lantern from a narrow notch.",
+        "keyBeats": [
+          "Wise Turtle waits on the path side of the stone.",
+          "Rabbit circles to the east-side notch and lifts the lantern.",
+          "Rabbit passes it to Wise Turtle; they return together."
+        ],
+        "targetPages": 3,
+        "illustrationPrompts": []
+      },
+      {
+        "index": 6,
+        "title": "Four Lights Again",
+        "summary": "They place the ridge lantern and verify the full line of lights on their way back to the gate.",
+        "keyBeats": [
+          "They set the ridge lantern on its original post.",
+          "They check the brook, log, and gate lanterns in order.",
+          "The path is clear, and both return to the waiting neighbors."
+        ],
+        "targetPages": 3,
+        "illustrationPrompts": []
+      },
+      {
+        "index": 7,
+        "title": "Rabbit Tells the Truth",
+        "summary": "Rabbit owns the false-fork mistake and offers to guide the neighbors along the restored route.",
+        "keyBeats": [
+          "Rabbit explains why the wrong lantern appeared at the fork.",
+          "Wise Turtle lets Rabbit show the true turn.",
+          "The neighbors agree to follow the restored lights."
+        ],
+        "targetPages": 3,
+        "illustrationPrompts": []
+      },
+      {
+        "index": 8,
+        "title": "Follow the Glow",
+        "summary": "Wise Turtle takes the rear while Rabbit organizes the neighbors to follow the lanterns in pairs.",
+        "keyBeats": [
+          "Rabbit makes a playful call-and-answer for each turn.",
+          "Rabbit waits for each pair instead of racing ahead.",
+          "Wise Turtle keeps the last neighbors in view."
+        ],
+        "targetPages": 3,
+        "illustrationPrompts": []
+      },
+      {
+        "index": 9,
+        "title": "The True Turn",
+        "summary": "At the fork, Rabbit points out the correct trail while Wise Turtle checks that everyone follows.",
+        "keyBeats": [
+          "The group reaches the fork without a false lantern.",
+          "Rabbit points toward Log Bend and waits for the group.",
+          "Wise Turtle brings the last pair along the lit path."
+        ],
+        "targetPages": 3,
+        "illustrationPrompts": []
+      },
+      {
+        "index": 10,
+        "title": "Before Moonrise",
+        "summary": "The neighbors reach the picnic clearing before moonrise, with Rabbit and Wise Turtle sharing the lead.",
+        "keyBeats": [
+          "The last neighbors reach the clearing.",
+          "Rabbit waits until everyone is together.",
+          "Moonrise finds the group at the picnic."
+        ],
+        "targetPages": 3,
+        "illustrationPrompts": []
+      }
+    ],
+    "promises": [
+      "The neighbors reach the picnic before moonrise.",
+      "Rabbit turns haste into playful, cooperative leadership.",
+      "Wise Turtle keeps a steady approach while learning to trust Rabbit’s quick scouting.",
+      "Both characters’ different strengths matter to the solution."
+    ],
+    "subtitle": "A story of quick ideas and steady steps",
+    "locations": [
+      {
+        "name": "Woodland path",
+        "rules": [
+          "The false fork branches before Log Bend; no lantern belongs there.",
+          "The correct route follows the four original lantern posts."
+        ],
+        "description": "A marked route from the gate through a fork, Log Bend, Brook Bend, and Ridge Turn to the picnic clearing."
+      },
+      {
+        "name": "Brook Bend and Ridge Turn",
+        "rules": [
+          "The brook lantern is found in the east-bank fern hollow.",
+          "The ridge lantern is found in the eastern lee of the stone; Wise Turtle waits path-side while Rabbit reaches it."
+        ],
+        "description": "Two path markers where the storm’s pattern can be observed and tested."
+      },
+      {
+        "name": "Picnic clearing",
+        "rules": [
+          "The neighbors wait at the gate until Rabbit and Wise Turtle return.",
+          "Everyone arrives before moonrise; the story closes at the picnic."
+        ],
+        "description": "The destination beyond Ridge Turn, where neighbors gather before moonrise."
+      }
+    ],
+    "questions": [],
+    "characters": [
+      {
+        "name": "Rabbit",
+        "role": "A central problem-solver whose haste first muddles the route.",
+        "traits": [
+          "playful",
+          "hasty",
+          "inventive"
+        ],
+        "description": "A very playful rabbit that appears to be very hasty.",
+        "visualRules": []
+      },
+      {
+        "name": "Wise Turtle",
+        "role": "A steady guide who observes the clues and learns to share control.",
+        "traits": [
+          "slow",
+          "steady",
+          "observant"
+        ],
+        "description": "Slow but steady",
+        "visualRules": []
+      }
+    ],
+    "voiceGuide": [
+      "Keep the narration warm, clear, and close to the action.",
+      "Use short sentences, with occasional medium sentences for rhythm.",
+      "Let Rabbit’s playful energy and Wise Turtle’s steady care shape their dialogue."
+    ],
+    "antiAiRules": [
+      "Do not add named characters or give the neighbors individual backstories.",
+      "Avoid a race plot, a retelling, or a spoken moral at the end.",
+      "Do not let Rabbit solve the problem alone or Wise Turtle only give advice.",
+      "Do not repeat a solved search or move a restored lantern again.",
+      "Avoid unsupported proof-leap transitions; do not jump from a local fact to a sweeping conclusion without evidence on this page.",
+      "Do not invent evidence, citations, studies, experts, or source identities.",
+      "Avoid generic conclusions and visible prompt scaffolding in reader-facing prose.",
+      "Use uncertainty only where the evidence on this page requires it.",
+      "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages."
+    ],
+    "openingHook": "A west-to-east gust rolls the Log Bend lantern behind a fallen log, its flame still glowing under glass.",
+    "writingMode": "children-narrative",
+    "researchNotes": [],
+    "styleContract": {
+      "localRules": [
+        {
+          "id": "do-not-add-named-characters-or-give-the-neighbor",
+          "instruction": "Do not add named characters or give the neighbors individual backstories."
+        },
+        {
+          "id": "avoid-a-race-plot-a-retelling-or-a-spoken-moral-",
+          "instruction": "Avoid a race plot, a retelling, or a spoken moral at the end."
+        },
+        {
+          "id": "do-not-let-rabbit-solve-the-problem-alone-or-wis",
+          "instruction": "Do not let Rabbit solve the problem alone or Wise Turtle only give advice."
+        },
+        {
+          "id": "do-not-repeat-a-solved-search-or-move-a-restored",
+          "instruction": "Do not repeat a solved search or move a restored lantern again."
+        },
+        {
+          "id": "no-proof-leap",
+          "instruction": "Avoid unsupported proof-leap transitions; do not jump from a local fact to a sweeping conclusion without evidence on this page."
+        },
+        {
+          "id": "no-invented-evidence",
+          "instruction": "Do not invent evidence, citations, studies, experts, or source identities."
+        },
+        {
+          "id": "no-generic-conclusion",
+          "instruction": "Avoid generic conclusions and visible prompt scaffolding in reader-facing prose."
+        },
+        {
+          "id": "uncertainty-where-earned",
+          "instruction": "Use uncertainty only where the evidence on this page requires it."
+        },
+        {
+          "id": "prompt-leak-ban",
+          "instruction": "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages."
+        }
+      ],
+      "distributionRules": [
+        {
+          "id": "intentional-phrase-repeat",
+          "instruction": "A small repeated phrase is allowed when it is an intentional refrain, not a copied scene."
+        }
+      ]
+    },
+    "continuityRules": [
+      "Rabbit’s arc: haste moves the log lantern to the false fork in Chapter 1; after seeing the confusion, Rabbit checks with Wise Turtle, follows the predicted search side, and waits to guide the neighbors.",
+      "Wise Turtle’s arc: overchecking slows the search in Chapter 2; after the landing-place comparison, Wise Turtle trusts Rabbit to scout, then takes the rear on the escort.",
+      "Lantern ledger: four intact, lit lanterns; Gate lantern stays put; Log goes post → east of fallen log → false fork → Log post; Brook goes post → east-bank fern → Brook post; Ridge goes post → predicted eastern lee → Ridge post.",
+      "Clue contract: observe the log landing in Chapter 1 and brook landing in Chapter 2; compare both in Chapter 3; predict the ridge stone’s eastern lee, then search there in Chapter 4.",
+      "Introduce the moonrise deadline in Chapter 1. Neighbors return to and remain at the gate; the escort starts after all four lanterns are restored.",
+      "Avoid repeating this beat: Chapter 2 already has Rabbit admit the mistake and guide the neighbors back; in Chapter 7, avoid replaying the same confession. Let Rabbit briefly own the earlier choice, then focus on the new decision to guide the group.",
+      "Avoid repeating this beat: Chapters 8 and 9 both emphasize guiding neighbors at turns. Keep Chapter 8’s call-and-answer as a distinct way to keep the group together, and make Chapter 9’s fork beat about choosing the correct trail rather than repeating the same cue."
+    ],
+    "researchQueries": [],
+    "illustrationPlan": {
+      "cadence": "manual",
+      "pageRules": [
+        "When \"Rabbit\", \"Wise Turtle\" appear, the attached character reference images are the only authority on how they look: match their face, hair, skin tone, age, build, headwear and clothing exactly, and never follow a written description that contradicts them."
+      ],
+      "coverPrompt": "Cover illustration for The Lantern Path: Write an original 30-page storybook for children ages 6–8, called The Lantern Path. Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles. Rabbit is playful and hasty; Wise Turtle is slow and steady. Keep both active across the story, with meaningful choices and growth for each. A storm scatters the lanterns marking the woodland path to a night picnic. Rabbit rushes to fix everything alone and makes the path more confusing. Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise. Give this a fresh plot rather than a race or a retelling of The Tortoise and the Hare. Build a clear beginning, escalating middle, turning point and satisfying ending. Let Rabbit's energy and Wise Turtle's patience both solve part of the problem. Keep stakes gentle and child appropriate. Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page. Avoid repeated summaries, generic moralizing and extra named main characters. English. Exactly 30 story pages. Write exactly 30 text-only story pages. Do not create interior illustrations, a cover image, or character reference images.",
+      "globalStyle": "Text-only story pages; no illustrations or reference images.",
+      "characterReferencePrompts": []
+    },
+    "writingComplexity": 3
+  },
+  "pages": [
+    {
+      "index": 1,
+      "title": "Amber Behind Bark",
+      "markdown": "Rabbit bounced beside the Log Bend post, tapping a tune on its wooden leg. A west-to-east gust swept through the trees. It rolled the Log lantern east of its post, behind a fallen log. Its flame glowed under the glass. The Gate lantern stayed lit, while Brook and Ridge posts stood dark.",
+      "summary": "A gust scatters the Log lantern east of its post while the other two path posts go dark."
+    },
+    {
+      "index": 2,
+      "title": "Three Dark Posts",
+      "markdown": "At the Gate, Wise Turtle stood with the neighbors and looked down the path. He counted three dark posts. “The picnic must begin before moonrise,” a neighbor said. Rabbit spotted an amber glow near the fallen log. “I can fix that!” he cried, and hurried off before Wise Turtle could answer.",
+      "summary": "The neighbors set a before-moonrise deadline, and Rabbit rushes toward the fallen Log lantern."
+    },
+    {
+      "index": 3,
+      "title": "A Brisk Detour",
+      "markdown": "Rabbit reached the lantern behind the fallen log. Instead of carrying it to its dark post, he dashed to the woodland fork. He set the glowing lantern beside the wrong branch. “There!” he said, pleased with his quick fix. At the Gate, Wise Turtle and the neighbors still waited beneath their single light.",
+      "summary": "Rabbit moves the Log lantern from its landing place to the false fork, making the route misleading."
+    },
+    {
+      "index": 4,
+      "title": "Glow at the Fork",
+      "markdown": "The neighbors saw the glow and followed it to the fork. One path bent toward Log Bend. The other led nowhere helpful. They stopped, unsure which way to go. Wise Turtle caught up with them, moving carefully over the damp ground. Rabbit saw their puzzled faces and the lantern shining in the wrong place.",
+      "summary": "The misplaced glow draws the neighbors to the false fork, where they are confused."
+    },
+    {
+      "index": 5,
+      "title": "Back to the Gate",
+      "markdown": "“I moved the Log lantern here,” Rabbit said. “I’m sorry.” He led everyone back to the Gate. Wise Turtle counted the three dark posts, walked a few paces down the path to check the nearest one, then returned and counted again. The repeated checks took more minutes. The missing lights still needed finding.",
+      "summary": "Rabbit owns his mistake and guides everyone back; Wise Turtle’s repeated checking delays the search."
+    },
+    {
+      "index": 6,
+      "title": "Fern-Hollow Light",
+      "markdown": "Rabbit and Wise Turtle left the neighbors waiting at the Gate and went to the fork. Rabbit lifted the Log lantern and carried it back to its proper post. Its flame still burned. At Brook Bend, they spotted another glow in an east-bank fern hollow. The Brook lantern lay there, east of its dark post.",
+      "summary": "Rabbit restores the Log lantern, and the pair find the Brook lantern in the east-bank fern hollow."
+    },
+    {
+      "index": 7,
+      "title": "Two Remembered Places",
+      "markdown": "Rabbit stood beside the fern hollow, where the Brook lantern lay. “This is where this one landed,” he said. Wise Turtle nodded. “I saw the Log lantern land east of its post, behind the fallen log.” He glanced toward the path. The Log lantern was back on its post now, but he remembered its storm-tossed resting place.",
+      "summary": "At Brook Bend, the pair name the Brook lantern’s landing and recall where the Log lantern landed."
+    },
+    {
+      "index": 8,
+      "title": "East of Each Post",
+      "markdown": "Wise Turtle traced the two places with one slow finger. The Log lantern had landed east of its post, behind the fallen log. The Brook lantern had landed east of its post, in the fern hollow. Both resting places were on the east side. The storm gust had blown from west to east. Wise Turtle studied the path beyond them.",
+      "summary": "Comparing both observed landing places links them to the west-to-east gust and points toward an eastern search."
+    },
+    {
+      "index": 9,
+      "title": "The Stone’s Lee",
+      "markdown": "“Then the Ridge lantern may have blown east of its post, too,” Wise Turtle said. “The stone could shelter it on the eastern side.” Rabbit looked toward Ridge Turn. “I’ll search there, east of the stone. I won’t wander off.” Wise Turtle trusted him with the scout’s job. Together, they set out to test the guess.",
+      "summary": "Wise Turtle predicts the Ridge lantern’s eastern lee, and Rabbit agrees to search that specific side."
+    },
+    {
+      "index": 10,
+      "title": "A Split Search",
+      "markdown": "Wise Turtle lifted the Brook lantern from the fern hollow and carried it toward its post. Rabbit went ahead along the marked path to Ridge Turn. He kept to the eastern side of the stone, just as they had agreed. The fern fronds brushed Wise Turtle’s shell as he carried the steady glow back toward Brook Bend.",
+      "summary": "Wise Turtle carries the Brook lantern toward its post while Rabbit searches east of the Ridge stone."
+    },
+    {
+      "index": 11,
+      "title": "The Narrow Notch",
+      "markdown": "Wise Turtle set the Brook lantern on its post, then followed Rabbit to Ridge Turn. Rabbit pointed to a narrow notch east of the stone. The Ridge lantern was wedged inside, still glowing beneath its glass. “We found where it went,” Rabbit said. The lantern could be seen clearly, but the tight notch held it fast.",
+      "summary": "The Brook light is restored, and Rabbit finds the Ridge lantern wedged in an eastern notch."
+    },
+    {
+      "index": 12,
+      "title": "Hands Held Back",
+      "markdown": "Rabbit crouched beside the notch. His paws reached toward the lantern, then stopped. A hard tug might knock the glass against the stone. He waited instead. Wise Turtle came around to the path side of the rock. They met beside it, with the lantern still wedged and glowing between them.",
+      "summary": "Rabbit resists a risky yank and waits for Wise Turtle beside the stone."
+    },
+    {
+      "index": 13,
+      "title": "Around the Rock",
+      "markdown": "Wise Turtle planted his feet on the path side and waited beside the stone. Rabbit circled around the rock to its eastern side. The narrow notch was easier to reach from there. Wise Turtle watched from his steady place, ready to help when Rabbit brought the lantern back around.",
+      "summary": "The two take different positions to free the Ridge lantern safely."
+    },
+    {
+      "index": 14,
+      "title": "A Careful Pass",
+      "markdown": "Rabbit eased the lantern from the notch, lifting it slowly so the glass would not scrape. He carried it around the stone to the path side. Wise Turtle held out both hands. Rabbit passed the lantern into them. Its frame was whole, and its little flame still shone.",
+      "summary": "Rabbit frees the Ridge lantern and hands it safely to Wise Turtle on the path side."
+    },
+    {
+      "index": 15,
+      "title": "Toward Ridge Post",
+      "markdown": "Wise Turtle carried the Ridge lantern. Rabbit guided him around the stone and along the right-hand path. They reached the lantern’s original post at Ridge Turn. The empty hook waited above them. Rabbit checked the ground beside it, while Wise Turtle held the lantern close and ready to set it back.",
+      "summary": "The pair carry the freed Ridge lantern to its original post."
+    },
+    {
+      "index": 16,
+      "title": "Flame Check",
+      "markdown": "Wise Turtle set the Ridge lantern on its post. Rabbit leaned close and watched the flame glow clearly through the glass. Gate, Log, Brook, and Ridge each had a lantern again. All four stood on their proper posts, lit and whole. The path no longer had a dark gap between its markers.",
+      "summary": "The Ridge lantern is restored, and all four lanterns shine on their proper posts."
+    },
+    {
+      "index": 17,
+      "title": "Westward Check",
+      "markdown": "Rabbit and Wise Turtle walked west toward the Gate. At Brook Bend, they checked the lantern on its post. Then they reached Log Bend and saw its light shining where it belonged. They did not move either lantern. The two checked lights held steady behind them as they continued toward the waiting neighbors.",
+      "summary": "Walking west, the pair verify that the Brook and Log lanterns remain lit on their posts."
+    },
+    {
+      "index": 18,
+      "title": "Four Lights Joined",
+      "markdown": "At the Gate, Wise Turtle checked its lantern, still bright above the path. Rabbit and Wise Turtle rejoined the neighbors. From the Gate, the lights marked the woodland trail ahead, past Log Bend, Brook Bend, and Ridge Turn. Four lanterns shone on four posts. The neighbors gathered close, ready to set out together.",
+      "summary": "The pair reunite with the neighbors at the Gate and confirm the full path is lit."
+    },
+    {
+      "index": 19,
+      "title": "A Different Offer",
+      "markdown": "Rabbit glanced toward the fork. “I made that place confusing before,” he said. Then he faced the neighbors. “I can guide everyone by the lanterns we put back. I’ll stay with the group.” The neighbors looked to Wise Turtle. Rabbit’s paws twitched as if to dash, but he held his place and waited for an answer.",
+      "summary": "Rabbit briefly owns the confusion and offers to guide the neighbors without running ahead alone."
+    },
+    {
+      "index": 20,
+      "title": "The Proper Way",
+      "markdown": "Wise Turtle looked along the marked path. “You may lead,” he told Rabbit. Rabbit pointed toward the true trail to Log Bend, following the lantern posts. The route began at the Gate and continued through the woods. Wise Turtle nodded, trusting Rabbit’s choice. The neighbors turned toward the path together.",
+      "summary": "Wise Turtle trusts Rabbit to choose the marked route toward Log Bend."
+    },
+    {
+      "index": 21,
+      "title": "At the Head and Tail",
+      "markdown": "Rabbit set off at the head of the group, keeping his steps small enough for the neighbors to follow. Wise Turtle walked behind everyone, where he could see the last neighbor. The group left the Gate together. Ahead, the lanterns made a chain of warm dots between the trees.",
+      "summary": "The escort begins, with Rabbit leading and Wise Turtle taking the rear."
+    },
+    {
+      "index": 22,
+      "title": "A Turn Song",
+      "markdown": "At the first bend, Rabbit called, “Lantern turn!” The neighbors answered in pairs, “We’re here!” Their voices bounced softly between the trees. Rabbit grinned at the playful sound. He kept to the path instead of racing ahead. Wise Turtle followed behind, while each pair stayed close to the next.",
+      "summary": "Rabbit invents a call-and-answer that helps the neighbors travel in pairs."
+    },
+    {
+      "index": 23,
+      "title": "Every Answer",
+      "markdown": "At each turn, Rabbit paused after his call. He listened for every pair’s answer before taking another step. Once, the first pair answered quickly, but Rabbit waited for the last pair, too. Then the whole group moved on along the lit path. Rabbit’s eager feet stayed with his neighbors instead of darting ahead.",
+      "summary": "Rabbit waits for every pair’s answer at each turn, keeping the group together."
+    },
+    {
+      "index": 24,
+      "title": "Last Pair in Sight",
+      "markdown": "Wise Turtle stayed behind the final pair. At each bend, he paused to watch them pass the tree, then checked the path behind the group. No neighbor had fallen out of view. Rabbit kept leading at the front. The pairs followed the lanterns while Wise Turtle’s calm steps held the rear.",
+      "summary": "Wise Turtle keeps the last pair in sight as he escorts the group from behind."
+    },
+    {
+      "index": 25,
+      "title": "Bare Branch",
+      "markdown": "The group reached the fork together. No lantern shone there now. The false branch held wet leaves, while the correct trail curved toward Log Bend. Farther along it, the restored Log lantern glowed on its proper post. Rabbit stopped at the fork so the neighbors could see the two paths clearly.",
+      "summary": "At the fork, the group sees the bare false branch and the Log lantern marking the true route."
+    },
+    {
+      "index": 26,
+      "title": "Rabbit Points",
+      "markdown": "Rabbit pointed to the trail that curved toward the Log lantern. “That way,” he said. He waited while the neighbors looked down the path and recognized the light beyond the fork. Then he stepped onto the correct trail. The neighbors began following, choosing the marked route instead of the empty branch.",
+      "summary": "Rabbit selects the correct trail and waits for the neighbors to recognize its marker."
+    },
+    {
+      "index": 27,
+      "title": "All Across",
+      "markdown": "The first pairs passed the fork, then the next. Wise Turtle stayed behind the final pair as they stepped past the empty branch. He watched their feet reach the correct trail before moving on. Rabbit led ahead, and the neighbors stayed together. Soon the whole group was on the path to the picnic clearing.",
+      "summary": "Wise Turtle guides the last pair past the fork, bringing the whole group onto the correct trail."
+    },
+    {
+      "index": 28,
+      "title": "Clearing in Time",
+      "markdown": "The picnic clearing opened beneath the trees. Rabbit, Wise Turtle, and the neighbors arrived together. The last neighbor stepped into the clearing while the moon still sat below the ridge. Behind them, the four lanterns shone along the woodland path. No one had been left at the fork or behind a bend.",
+      "summary": "Everyone reaches the clearing before moonrise, with all four lanterns still shining behind them."
+    },
+    {
+      "index": 29,
+      "title": "Beside the Blanket",
+      "markdown": "The picnic blanket waited under a broad tree. Rabbit started to spring toward it, then turned back. He stayed beside the neighbors as they gathered, making room for the last pair. Wise Turtle settled nearby, calm and unhurried. Rabbit’s ears flicked toward the blanket, but his paws stayed with the group.",
+      "summary": "Rabbit resists dashing to the blanket and stays with the neighbors as they gather."
+    },
+    {
+      "index": 30,
+      "title": "Lantern Glow at Supper",
+      "markdown": "Before the moon rose, the neighbors began their picnic beneath the trees. Rabbit shared a berry beside them, and Wise Turtle rested close by. Then the moon lifted above the ridge. Behind the clearing, four lanterns still shone on their posts, marking the path home through the quiet woods.",
+      "summary": "The picnic begins before moonrise, and the four lanterns continue to shine along the path."
+    }
+  ],
+  "issues": [
+    {
+      "pageIndexes": [
+        5,
+        10,
+        13,
+        16,
+        17,
+        18,
+        21,
+        23,
+        24,
+        25,
+        30
+      ],
+      "messages": [
+        "Page 5: Sentences are too long for ages 6-8 (average 8.8 words, longest 24; target average <= 12, longest <= 22).",
+        "Page 10: Sentences are too long for ages 6-8 (average 14.3 words, longest 17; target average <= 12, longest <= 22).",
+        "Page 13: Sentences are too long for ages 6-8 (average 12.3 words, longest 17; target average <= 12, longest <= 22).",
+        "Page 21: Sentences are too long for ages 6-8 (average 12.3 words, longest 19; target average <= 12, longest <= 22).",
+        "Page 30: Sentences are too long for ages 6-8 (average 12.3 words, longest 18; target average <= 12, longest <= 22).",
+        "Page 17: The lanterns have just been confirmed restored, lit, and whole, but the return to the Gate adds another round of checking Brook and Log before checking Gate again on the next page. This repeats solved confirmation and delays the escort's start. Evidence on page 17: “At Brook Bend, they checked the lantern on its post. Then they reached Log Bend and saw its light shining where it belonged.” Related page 16: “Gate, Log, Brook, and Ridge each had a lantern again. All four stood on their proper posts, lit and whole.” Related page 18: “At the Gate, Wise Turtle checked its lantern, still bright above the path. Rabbit and Wise Turtle rejoined the neighbors.”",
+        "Page 24: This page repeats the escort's group-checking beat immediately after Rabbit has already waited for every pair's answer. Wise Turtle's rear check adds no new obstacle or change before the group reaches the fork. Evidence on page 24: “At each bend, he paused to watch them pass the tree, then checked the path behind the group. No neighbor had fallen out of view.” Related page 23: “Once, the first pair answered quickly, but Rabbit waited for the last pair, too. Then the whole group moved on along the lit path.” Related page 25: “The group reached the fork together. No lantern shone there now. The false branch held wet leaves, while the correct trail curved toward Log Bend.”",
+        "Page 17: Keep the necessary walk back to the Gate, but remove the repeated checks; have them rejoin the waiting neighbors there and begin the escort on page 18.",
+        "Page 24: Fold Turtle's rear check into page 23, then let the group reach the fork on page 25. This preserves the escort while giving the arrival and trail choice more momentum."
+      ]
+    }
+  ],
+  "patch": {
+    "pages": [
+      {
+        "pageIndex": 5,
+        "reason": "Remove Wise Turtle’s repeated count and check, which created an unnecessary delay, while keeping Rabbit’s return and the search clear.",
+        "patches": [
+          {
+            "find": "“I moved the Log lantern here,” Rabbit said. “I’m sorry.” He led everyone back to the Gate. Wise Turtle counted the three dark posts, walked a few paces down the path to check the nearest one, then returned and counted again. The repeated checks took more minutes. The missing lights still needed finding.",
+            "replace": "“I moved the Log lantern here,” Rabbit said. “I’m sorry.” He led everyone back to the Gate. Wise Turtle counted the three dark posts, then looked down the path. Rabbit’s ears drooped. The missing lights still needed finding."
+          }
+        ],
+        "summary": "Rabbit guides everyone back to the Gate, and Wise Turtle counts the dark posts before the search continues."
+      },
+      {
+        "pageIndex": 10,
+        "reason": "Split a long sentence to keep the prose within the age-appropriate sentence-length target without losing the sensory detail.",
+        "patches": [
+          {
+            "find": "Wise Turtle lifted the Brook lantern from the fern hollow and carried it toward its post. Rabbit went ahead along the marked path to Ridge Turn. He kept to the eastern side of the stone, just as they had agreed. The fern fronds brushed Wise Turtle’s shell as he carried the steady glow back toward Brook Bend.",
+            "replace": "Wise Turtle lifted the Brook lantern from the fern hollow and carried it toward its post. Rabbit went ahead along the marked path to Ridge Turn. He kept to the eastern side of the stone, just as they had agreed. Fern fronds brushed Wise Turtle’s shell. He carried the steady glow back toward Brook Bend."
+          }
+        ],
+        "summary": null
+      },
+      {
+        "pageIndex": 13,
+        "reason": "Split a sentence so the page’s average sentence length meets the early-reader target while preserving the characters’ positions and actions.",
+        "patches": [
+          {
+            "find": "Wise Turtle planted his feet on the path side and waited beside the stone. Rabbit circled around the rock to its eastern side. The narrow notch was easier to reach from there. Wise Turtle watched from his steady place, ready to help when Rabbit brought the lantern back around.",
+            "replace": "Wise Turtle planted his feet on the path side and waited beside the stone. Rabbit circled around the rock. He went to its eastern side. The narrow notch was easier to reach from there. Wise Turtle watched from his steady place, ready to help when Rabbit brought the lantern back around."
+          }
+        ],
+        "summary": null
+      },
+      {
+        "pageIndex": 17,
+        "reason": "Keep the necessary walk west to the Gate but remove the repeated lantern checks; page 18 already reunites them with the neighbors there.",
+        "patches": [
+          {
+            "find": "Rabbit and Wise Turtle walked west toward the Gate. At Brook Bend, they checked the lantern on its post. Then they reached Log Bend and saw its light shining where it belonged. They did not move either lantern. The two checked lights held steady behind them as they continued toward the waiting neighbors.",
+            "replace": "Rabbit and Wise Turtle walked west toward the Gate. The damp path glimmered under the lanterns. Rabbit wanted to hurry, but matched Wise Turtle’s steady pace. “The neighbors are waiting,” Rabbit said. “Then let’s bring them along,” said Wise Turtle."
+          }
+        ],
+        "summary": "Rabbit and Wise Turtle walk west toward the Gate and the waiting neighbors, without repeating the lantern checks."
+      },
+      {
+        "pageIndex": 18,
+        "reason": "The lanterns were already confirmed restored and lit on page 16, so remove the redundant Gate check as they rejoin the neighbors.",
+        "patches": [
+          {
+            "find": "At the Gate, Wise Turtle checked its lantern, still bright above the path. Rabbit and Wise Turtle rejoined the neighbors. From the Gate, the lights marked the woodland trail ahead, past Log Bend, Brook Bend, and Ridge Turn. Four lanterns shone on four posts. The neighbors gathered close, ready to set out together.",
+            "replace": "At the Gate, Rabbit and Wise Turtle rejoined the neighbors. From the Gate, the lights marked the woodland trail ahead, past Log Bend, Brook Bend, and Ridge Turn. Four lanterns shone on four posts. The neighbors gathered close, ready to set out together."
+          }
+        ],
+        "summary": null
+      },
+      {
+        "pageIndex": 21,
+        "reason": "Split Rabbit’s long opening sentence while preserving the reason he keeps his pace manageable for the neighbors.",
+        "patches": [
+          {
+            "find": "Rabbit set off at the head of the group, keeping his steps small enough for the neighbors to follow. Wise Turtle walked behind everyone, where he could see the last neighbor. The group left the Gate together. Ahead, the lanterns made a chain of warm dots between the trees.",
+            "replace": "Rabbit set off at the head of the group. He kept his steps small enough for the neighbors to follow. Wise Turtle walked behind everyone, where he could see the last neighbor. The group left the Gate together. Ahead, the lanterns made a chain of warm dots between the trees."
+          }
+        ],
+        "summary": null
+      },
+      {
+        "pageIndex": 23,
+        "reason": "Fold Wise Turtle’s rear watch into Rabbit’s call-and-answer scene so the escort stays together without repeating the check on page 24.",
+        "patches": [
+          {
+            "find": "At each turn, Rabbit paused after his call. He listened for every pair’s answer before taking another step. Once, the first pair answered quickly, but Rabbit waited for the last pair, too. Then the whole group moved on along the lit path. Rabbit’s eager feet stayed with his neighbors instead of darting ahead.",
+            "replace": "At each turn, Rabbit paused after his call. He listened for every pair’s answer before taking another step. Once, the first pair answered quickly, but Rabbit waited for the last pair, too. Wise Turtle followed at the rear, keeping the last pair in sight. Then the whole group moved on along the lit path. Rabbit’s eager feet stayed with his neighbors instead of darting ahead."
+          }
+        ],
+        "summary": null
+      },
+      {
+        "pageIndex": 24,
+        "reason": "Replace the repeated group-checking beat with the group’s sensory progress toward the fork; the rear watch is now included on page 23.",
+        "patches": [
+          {
+            "find": "Wise Turtle stayed behind the final pair. At each bend, he paused to watch them pass the tree, then checked the path behind the group. No neighbor had fallen out of view. Rabbit kept leading at the front. The pairs followed the lanterns while Wise Turtle’s calm steps held the rear.",
+            "replace": "The path dipped beneath dripping branches. Rabbit kept the neighbors moving at an easy pace. Water tapped the leaves and pattered onto the path. Ahead, the trees thinned, and the trail widened. A fork waited just beyond the next bend."
+          }
+        ],
+        "summary": "The group follows the damp, widening path toward the fork."
+      },
+      {
+        "pageIndex": 30,
+        "reason": "Tighten the opening sentence to meet the age-appropriate average sentence-length target while preserving the before-moonrise timing.",
+        "patches": [
+          {
+            "find": "Before the moon rose, the neighbors began their picnic beneath the trees.",
+            "replace": "The neighbors began their picnic beneath the trees before moonrise."
+          }
+        ],
+        "summary": null
+      }
+    ]
+  }
+}

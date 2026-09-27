@@ -35,6 +35,7 @@ import { updateEntityStateFromPage } from "./entityState.js";
 import type { DirectResumeState } from "./directGenerationResume.js";
 import {
   type BookGenerationStrategy,
+  compactPictureBookPlanForBriefs,
   type BookPlan,
   type CreateProjectInput,
   range,
@@ -517,17 +518,18 @@ export async function generateBookDraftThenPolish(options: {
       ? await prepareChapterSetups(options)
       : chapterSetupsForPlan(options.plan, options.input.targetPages);
     const chapterBriefs = draftChapterSetups.flatMap((setup) => (setup.brief ? [setup.brief] : []));
+    const draftPlan = compactPictureBookPlanForBriefs(options.input, options.plan, chapterBriefs);
     const researchNotes = await loadResearchNotesForGeneration(options.projectId, options.strategy);
     await advanceJobStep(options.generationJobId, "briefs", chapterBriefs.length > 0 ? 30 : 20, "Drafting whole book");
     const draft = await generateWholeBookDraft({
       input: options.input,
-      plan: options.plan,
+      plan: draftPlan,
       chapterBriefs: chapterBriefs.length > 0 ? chapterBriefs : undefined,
       researchNotes,
       textModel: options.providers.text
     });
     const acceptanceMessage = await reportAcceptedWholeBookDraft(options.generationJobId, draft);
-    const effective = effectiveWholeBookDraftContext(options.input, options.plan, draft, draftChapterSetups);
+    const effective = effectiveWholeBookDraftContext(options.input, draftPlan, draft, draftChapterSetups);
 
     await advanceJobStep(
       options.generationJobId,
@@ -552,6 +554,7 @@ export async function generateBookDraftThenPolish(options: {
       planId: options.planId,
       input: effective.input,
       plan: effective.plan,
+      ...(draftPlan !== options.plan ? { chapterAllocationChanged: true } : {}),
       draft
     });
     rawPages = draft.pages.map((page) => ({

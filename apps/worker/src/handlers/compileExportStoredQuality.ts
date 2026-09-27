@@ -1,4 +1,4 @@
-import { optionalIssueCluster, type ManuscriptQualityIssue } from "@book-maker/core";
+import { optionalIssueCluster, optionalQualityProvenance, type ManuscriptQualityIssue } from "@book-maker/core";
 
 export function parseStoredQualityIssue(value: unknown): ManuscriptQualityIssue | null {
   if (typeof value !== "object" || value === null) {
@@ -23,6 +23,7 @@ export function parseStoredQualityIssue(value: unknown): ManuscriptQualityIssue 
     message: record.message,
     guidance: record.guidance,
     affectedPageIndexes: record.affectedPageIndexes,
+    ...optionalQualityProvenance(record.provenance),
     ...optionalIssueMetrics(record.metrics),
     ...optionalIssueEvidence(record.evidence),
     ...optionalIssueCluster(record.cluster)

@@ -1,26 +1,48 @@
 import { marked } from "marked";
 import { findFigureFences } from "./figures/figureBlocks.js";
 
-type MediaScope = "story_pages" | "cover" | "all";
-export type CoverageMediaInventory = { storyPagesWithArtwork?: number[]; coverArtworkCount?: number };
+export type CoverageMediaScope = "story_pages" | "cover" | "all" | "character_references";
+type MediaScope = CoverageMediaScope;
+export type CoverageMediaInventory = { storyPagesWithArtwork?: number[]; coverArtworkCount?: number; characterReferenceCount?: number };
+
+/** Only complete, unconditional lists describe pure absence. An unknown term
+ * (for example, 'images of frightening scenes') preserves semantic review. */
+export function mediaAbsenceScopes(quote: string): Exclude<MediaScope, "all">[] | undefined {
+  const match = /^(?:(?:with )?no|without|do not (?:create|generate|include|use))\s+(.+)$/iu.exec(quote.trim().replace(/\.$/u, ""));
+  if (!match) return undefined;
+  const scopes: Exclude<MediaScope, "all">[] = [];
+  for (const raw of match[1]!.toLowerCase().split(/\s*,\s*(?:(?:or|and)\s+)?|\s+(?:or|and)\s+/u)) {
+    const term = raw.replace(/^(?:a |an )?(?:generated )?/u, "");
+    const scope = /^(?:interior )?(?:illustrations|images|artwork)$/u.test(term) ? "story_pages"
+      : /^cover(?: image| images| art| artwork)?$/u.test(term) ? "cover"
+      : /^character reference (?:images|sheets)$/u.test(term) ? "character_references" : undefined;
+    if (!scope) return undefined;
+    if (!scopes.includes(scope)) scopes.push(scope);
+  }
+  return scopes.length ? scopes : undefined;
+}
 
 /** Older inventories called simple prohibitions content. Only a whole media-only
  * quote can be normalized; mixed requirements and subject/style restrictions still need review. */
 export function normalizeMediaAbsence<T extends { kind: string; quote: string; mediaScope?: MediaScope | undefined }>(requirement: T):
   T | (Omit<T, "kind" | "mediaScope"> & { kind: "media_absence"; mediaScope: MediaScope }) {
   if (requirement.kind !== "content" && requirement.kind !== "illustration") return requirement;
-  const list = requirement.quote.trim().replace(/\.$/, "").match(/^(?:no|without)\s+(.+)$/i)?.[1];
-  if (!list) return requirement;
-  const terms = list.toLowerCase().split(/\s*,\s*(?:(?:or|and)\s+)?|\s+(?:or|and)\s+/);
-  if (!terms.length || terms.some((term) => !["illustrations", "images", "cover artwork"].includes(term))) return requirement;
-  const cover = terms.includes("cover artwork");
-  const story = terms.some((term) => term !== "cover artwork");
-  return { ...requirement, kind: "media_absence", mediaScope: cover ? (story ? "all" : "cover") : "story_pages" };
+  const scopes = mediaAbsenceScopes(requirement.quote);
+  if (!scopes) return requirement;
+  // The exact list is expanded into independent deliveryChecks before a verdict.
+  return { ...requirement, kind: "media_absence", mediaScope: scopes.length === 1 ? scopes[0]! : "all" };
 }
 
 export function mediaAbsenceVerdict(scope: MediaScope | undefined, inventory?: CoverageMediaInventory):
   { status: "fulfilled" | "missing" | "unverified"; reason: string } {
   if (!scope) return { status: "unverified", reason: "The requested artwork prohibition has no verified scope." };
+  if (scope === "character_references") {
+    const count = inventory?.characterReferenceCount;
+    return count === undefined || !Number.isSafeInteger(count) || count < 0
+      ? { status: "unverified", reason: "The actual project character-reference asset inventory was not supplied." }
+      : count > 0 ? { status: "missing", reason: "The project contains character-reference images prohibited by the request." }
+      : { status: "fulfilled", reason: "The project asset inventory contains no character-reference images; saved character profiles are separate." };
+  }
   const story = scope !== "cover";
   const cover = scope !== "story_pages";
   const pages = inventory?.storyPagesWithArtwork;
@@ -35,9 +57,10 @@ export function mediaAbsenceVerdict(scope: MediaScope | undefined, inventory?: C
 }
 
 /** Inventory the same page attachments and cover assets the exporters consume.
- * Project reference sheets are deliberately not inputs. Settings never prove absence. */
-export function buildCoverageMediaInventory(pages: readonly { index: number; markdown: string; images?: readonly unknown[] }[], coverArtworkCount: number): CoverageMediaInventory {
-  return { coverArtworkCount, ...(pages.every((page) => page.images !== undefined) ? {
+ * Optional project reference assets have their own count, never an artwork count.
+ * Saved character profiles/portrait provenance and settings never prove absence. */
+export function buildCoverageMediaInventory(pages: readonly { index: number; markdown: string; images?: readonly unknown[] }[], coverArtworkCount: number, characterReferenceCount?: number): CoverageMediaInventory {
+  return { coverArtworkCount, ...(characterReferenceCount !== undefined ? { characterReferenceCount } : {}), ...(pages.every((page) => page.images !== undefined) ? {
     storyPagesWithArtwork: pages.filter((page) => (page.images?.length ?? 0) > 0 || markdownHasArtwork(page.markdown)).map((page) => page.index).sort((a, b) => a - b)
   } : {}) };
 }

@@ -287,7 +287,7 @@ export const QUALITY_FEATURES: QualityFeatureDescription[] = [
   {
     id: "pageMapCritic",
     label: "Page-map critic",
-    summary: "One cheap mechanical call after the page map. Merges beat patches instead of regenerating the map.",
+    summary: "Reviews and patches the page map. Short auto storybooks skip this extra pass when prose review is enabled. Mandatory map integrity always runs.",
     pipelines: ["per-page"],
     stage: "Page map"
   },

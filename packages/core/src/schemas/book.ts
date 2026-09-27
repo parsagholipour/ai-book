@@ -328,6 +328,7 @@ export const pageQualityReportSchema = z.preprocess(
     qualityAdvisories: z.array(z.object({
       check: z.enum(["story_continuity", "style"]),
       status: z.literal("unverified"),
+      findingId: z.string().min(1).max(200).optional(),
       message: z.string()
     })).optional(),
     deferredMedia: z.object({

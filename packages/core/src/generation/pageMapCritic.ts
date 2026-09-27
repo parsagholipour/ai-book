@@ -1,8 +1,10 @@
 import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
-import type { ChapterBrief, PageProductionBeat } from "../schemas/book.js";
+import type { ChapterBrief, CreateProjectInput, PageProductionBeat } from "../schemas/book.js";
 import { evidenceLedgerFields, evidenceLedgerRules, usesEvidenceLedger } from "./evidenceLedger.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
+import { usesCompactPictureBookPlanning } from "./compactPictureBookPlanning.js";
+import { developPictureBookMap } from "./pictureBookMapDevelopment.js";
 import {
   FIRST_PAGE_ENDING_PRESSURE,
   LAST_PAGE_ENDING_PRESSURE,
@@ -117,6 +119,8 @@ const narrativePageMapCriticPatchSchema = pageMapCriticPatchSchema.extend({
 export type PageMapCriticBeatPatch = z.infer<typeof pageMapCriticBeatPatchSchema> & {
   replaceRequiredContinuity?: boolean;
   imageMoment?: string;
+  /** Only a complete scene composer may clear a picture belonging to the replaced beat. */
+  clearImageMoment?: boolean;
 };
 
 export type PageMapCriticPatch = Omit<z.infer<typeof pageMapCriticPatchSchema>, "beatPatches"> & {
@@ -143,13 +147,15 @@ export function mergePageMapCriticPatch(
     ...brief,
     pages: brief.pages.map((page) => {
       const beatPatch = patchByPage.get(page.pageIndex);
+      const assignment = assignmentWithoutLedger(page);
+      if (beatPatch?.replaceRequiredContinuity && beatPatch.clearImageMoment) delete assignment.imageMoment;
       const endingPressure =
         beatPatch?.endingPressure ??
         (missingEnding.has(page.pageIndex) && !page.endingPressure.trim()
           ? substitutedEndingPressure(page.pageIndex, lastPageIndex)
           : page.endingPressure);
       return {
-        ...assignmentWithoutLedger(page),
+        ...assignment,
         ...ledgerAfterPatch(page, beatPatch),
         ...(beatPatch?.purpose ? { purpose: beatPatch.purpose } : {}),
         ...(beatPatch?.beat ? { beat: beatPatch.beat } : {}),
@@ -254,6 +260,15 @@ function focusWithCriticNotes(existing: string[], patch: PageMapCriticPatch): st
   return uniqueStrings([...existing, ...notes]).slice(0, CHAPTER_CONTINUITY_FOCUS_LIMIT);
 }
 
+/** Short auto stories already have one complete map and a review of the finished
+ * prose. Automatically developing that map again adds a second authoring pass,
+ * not an independent quality verdict. Keep the critic for other workflows and
+ * when prose review is disabled; explicit calls remain available for evaluation.
+ * Mandatory production-map integrity is independent of this optional pass. */
+export function pageMapCriticApplies(input: CreateProjectInput, proseReviewEnabled: boolean): boolean {
+  return !proseReviewEnabled || !usesCompactPictureBookPlanning(input);
+}
+
 export async function critiquePageMap(
   options: PageBriefBookScope & {
     textModel: TextModelAdapter;
@@ -261,6 +276,7 @@ export async function critiquePageMap(
     promises: string[];
   }
 ): Promise<PageMapCriticPatch> {
+  if (usesCompactPictureBookPlanning(options.input)) return developPictureBookMap(options);
   // The critic is handed the whole book twice over — the map it critiques, and
   // the `input`/`plan` that map was written from — so it asks the contract the
   // same way the four producers in `pagesPageMap.ts` do, over the book's own

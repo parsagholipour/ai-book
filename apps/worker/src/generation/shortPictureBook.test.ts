@@ -86,7 +86,7 @@ it("invalidates a cached missing enabled assessment rather than filling in a pas
   expect(mocks.review).toHaveBeenCalledTimes(2);
 });
 
-it("fails closed after group failure and propagates cancellation or checkpoint failure", async () => {
+it("propagates unexpected implementation errors, cancellation and checkpoint failure", async () => {
   mocks.review.mockRejectedValueOnce(Object.assign(new Error("OpenAI response was incomplete: max_output_tokens."), { name: "OpenAIResponseError" }));
   await expect(prepareShortPictureBookReview(options())).rejects.toMatchObject({ name: "OpenAIResponseError" });
   expect(mocks.writes).not.toHaveBeenCalled();
@@ -108,17 +108,19 @@ async function realReviewOptions(answers: unknown[]) {
     return { data: request.schema.parse(response) };
   });
   return { generateJson, request: { ...options(), input: { ...options().input, prompt: captured.brief, language: "en" }, pages: captured.pages,
-    quality: { ...options().quality, enabled: (feature: string) => feature === "pageModelReview" }, textModel: { generateJson } as unknown as TextModelAdapter } };
+    quality: { ...options().quality, enabled: (feature: string): boolean => feature === "pageModelReview" }, textModel: { generateJson } as unknown as TextModelAdapter } };
 }
 
 it("persists 29 accepted captured rows and an exhausted page18 without enabling a wholesale fallback on resume", async () => {
   const { request, generateJson } = await realReviewOptions([captured.response, { pages: [captured.response.pages[17]] }]);
-  await expect(prepareShortPictureBookReview(request)).rejects.toMatchObject({ name: "PictureBookReviewIncompleteError", checkpoint: { unresolvedPageIndexes: [18] } });
+  const delivery = await prepareShortPictureBookReview(request);
+  expect(delivery.size).toBe(30);
+  expect(delivery.get(18)).toMatchObject({ reviewUnavailable: true, report: { approved: false } });
   const checkpoint = mocks.row.payload.pictureBookReview as PictureBookReviewCheckpoint;
   expect(checkpoint.reviews).toHaveLength(29);
   expect(checkpoint).toMatchObject({ roundsStarted: 2, attemptsUsed: 2, unresolvedPageIndexes: [18] });
   expect(mocks.row.payload.unrelated).toBe(true);
-  await expect(prepareShortPictureBookReview(request)).rejects.toMatchObject({ name: "PictureBookReviewIncompleteError" });
+  expect((await prepareShortPictureBookReview(request)).get(18)).toEqual(delivery.get(18));
   expect(generateJson).toHaveBeenCalledTimes(2);
 });
 
@@ -145,6 +147,90 @@ it("does not reuse an allowance after a crash during a reserved provider call", 
   generateJson.mockRejectedValueOnce(Object.assign(new Error("Stopped during provider request"), { name: "AbortError" }));
   await expect(prepareShortPictureBookReview(request)).rejects.toMatchObject({ name: "AbortError" });
   expect(mocks.row.payload.pictureBookReview).toMatchObject({ roundsStarted: 1, attemptsUsed: 5, reviews: [] });
-  await expect(prepareShortPictureBookReview(request)).rejects.toMatchObject({ name: "PictureBookReviewIncompleteError" });
+  const delivered = await prepareShortPictureBookReview(request);
+  expect(delivered.size).toBe(30);
+  expect([...delivered.values()].every(review => review.reviewUnavailable && !review.report.approved)).toBe(true);
   expect(generateJson).toHaveBeenCalledTimes(1);
+});
+
+const quick = JSON.parse(readFileSync(new URL("../../../../packages/core/src/generation/testing/quickGroupReview.json", import.meta.url), "utf8"));
+const quickCorrection = { pages: [], corrections: [{ id: "20:0:0", supportsSameClaim: true,
+  quote: "Six lanterns glowed in order, from the gate to the reeds." }] };
+async function quickReviewOptions(answers: unknown[]) {
+  const setup = await realReviewOptions(answers);
+  setup.request.input.prompt = quick.brief;
+  setup.request.pages = quick.pages;
+  setup.request.quality.enabled = feature => feature === "pageModelReview" || feature === "storyExtractAudit";
+  return setup;
+}
+
+it("resumes citation correction from the durable original finding instead of asking for a new page verdict", async () => {
+  const { request, generateJson } = await quickReviewOptions([quick.response, quickCorrection]);
+  const save = mocks.writes.getMockImplementation()!;
+  mocks.writes.mockImplementation(async value => {
+    await save(value);
+    const checkpoint = mocks.row.payload.pictureBookReview as PictureBookReviewCheckpoint;
+    if (checkpoint.attemptsUsed === 1 && checkpoint.roundsStarted === 1) throw new Error("Exit after citation checkpoint");
+  });
+  await expect(prepareShortPictureBookReview(request)).rejects.toThrow("Exit after citation checkpoint");
+  expect(mocks.row.payload.pictureBookReview).toMatchObject({ citationRows: [{ pageIndex: 20, findings: quick.response.pages[19].findings }],
+    unresolvedPageIndexes: [20], roundsStarted: 1, attemptsUsed: 1 });
+  mocks.writes.mockImplementation(save);
+  const reviews = await prepareShortPictureBookReview(request);
+  expect(reviews.get(20)?.report).toMatchObject({ approved: false, score: 78, requiredRevisions: [quick.response.pages[19].findings[0].guidance] });
+  expect((await prepareShortPictureBookReview(request)).get(20)?.report.approved).toBe(false);
+  expect(generateJson).toHaveBeenCalledTimes(2);
+  expect(mocks.row.payload.pictureBookReview).toMatchObject({ citationRows: [], unresolvedPageIndexes: [], roundsStarted: 2, attemptsUsed: 2 });
+  expect(mocks.row.payload.unrelated).toBe(true);
+});
+
+it("retains the unresolved finding after a refused citation correction and spends nothing on redelivery", async () => {
+  const { request, generateJson } = await quickReviewOptions([quick.response,
+    { pages: [], corrections: [{ id: "20:0:0", supportsSameClaim: false, quote: null }] }]);
+  const delivery = await prepareShortPictureBookReview(request);
+  expect(delivery.get(20)).toMatchObject({ reviewUnavailable: true, unverifiedFindings: quick.response.pages[19].findings,
+    report: { approved: false, issues: [], requiredRevisions: [] } });
+  expect(mocks.row.payload.pictureBookReview).toMatchObject({ citationRows: [{ pageIndex: 20, findings: quick.response.pages[19].findings }],
+    validationIssues: [{ pageIndex: 20, message: expect.stringContaining("remains unverified") }], unresolvedPageIndexes: [20], roundsStarted: 2, attemptsUsed: 2 });
+  expect((await prepareShortPictureBookReview(request)).get(20)).toEqual(delivery.get(20));
+  expect(generateJson).toHaveBeenCalledTimes(2);
+});
+
+it("keeps the original citation finding when a worker stops during its reserved recovery call", async () => {
+  const { request, generateJson } = await quickReviewOptions([quick.response]);
+  generateJson.mockImplementationOnce(async options => ({ data: options.schema.parse(quick.response) }))
+    .mockRejectedValueOnce(Object.assign(new Error("Stopped during correction"), { name: "AbortError" }));
+  await expect(prepareShortPictureBookReview(request)).rejects.toMatchObject({ name: "AbortError" });
+  expect(mocks.row.payload.pictureBookReview).toMatchObject({ citationRows: [{ pageIndex: 20 }], roundsStarted: 2, attemptsUsed: 5 });
+  expect((await prepareShortPictureBookReview(request)).get(20)).toMatchObject({ reviewUnavailable: true,
+    unverifiedFindings: quick.response.pages[19].findings, report: { approved: false } });
+  expect(generateJson).toHaveBeenCalledTimes(2);
+});
+
+it("resumes Premium's malformed response from the durable partial review without losing its grounded finding", async () => {
+  const premium = JSON.parse(readFileSync(new URL("../../../../packages/core/src/generation/testing/premiumMalformedGroupReview.json", import.meta.url), "utf8"));
+  const { request, generateJson } = await realReviewOptions([premium.response, { pages: [29, 30].map(pageIndex => ({
+    pageIndex, score: 100, findings: [], storyExtract: "no_changes", styleAudit: "clean"
+  })) }]);
+  request.input.prompt = premium.brief; request.pages = premium.pages; request.quality.enabled = () => true;
+  const save = mocks.writes.getMockImplementation()!;
+  mocks.writes.mockImplementation(async value => {
+    await save(value);
+    const checkpoint = mocks.row.payload.pictureBookReview as PictureBookReviewCheckpoint;
+    if (checkpoint.attemptsUsed === 1 && checkpoint.roundsStarted === 1) throw new Error("Exit after malformed review checkpoint");
+  });
+  await expect(prepareShortPictureBookReview(request)).rejects.toThrow("Exit after malformed review checkpoint");
+  const initial = structuredClone(mocks.row.payload.pictureBookReview) as PictureBookReviewCheckpoint;
+  expect(initial).toMatchObject({ editorialRows: [{ pageIndex: 29, score: 88, findings: premium.response.pages[28].findings }],
+    unresolvedPageIndexes: [29, 30], roundsStarted: 1, attemptsUsed: 1 });
+  expect(initial.reviews).toHaveLength(28);
+  mocks.writes.mockImplementation(save);
+  const reviews = await prepareShortPictureBookReview(request);
+  expect(reviews.size).toBe(30);
+  expect([...reviews.values()].slice(0, 28)).toEqual(initial.reviews);
+  expect(reviews.get(29)).toMatchObject({ report: { approved: false, score: 88 }, findings: premium.response.pages[28].findings });
+  expect((await prepareShortPictureBookReview(request)).get(29)?.report.approved).toBe(false);
+  expect(generateJson).toHaveBeenCalledTimes(2);
+  expect(mocks.row.payload.pictureBookReview).toMatchObject({ editorialRows: [], unresolvedPageIndexes: [], protocolIssues: [], roundsStarted: 2, attemptsUsed: 2 });
+  expect(mocks.row.payload.unrelated).toBe(true);
 });

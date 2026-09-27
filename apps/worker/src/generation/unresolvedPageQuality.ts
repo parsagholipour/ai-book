@@ -1,4 +1,5 @@
-import { pageQualityReportSchema, type ManuscriptQualityIssue } from "@book-maker/core";
+import { pageFindingProvenance, pageQualityReportSchema, type ManuscriptQualityIssue } from "@book-maker/core";
+import { isUnavailablePageReview } from "./shortPictureBookReviewDelivery.js";
 
 /** Carry rejected keepers into the final card without another review or repair. */
 export function unresolvedPageQualityIssues(
@@ -11,6 +12,10 @@ export function unresolvedPageQualityIssues(
     const parsed = pageQualityReportSchema.safeParse(page.qualityReport);
     // A prose-approved report can be waiting only for deferred illustrations.
     if (parsed.success && parsed.data.approved) return [];
+    if (isUnavailablePageReview(page.qualityReport)) return [{ code: "FINAL_REVIEW_UNAVAILABLE", severity: "warning" as const,
+      source: "model" as const, affectedPageIndexes: [page.index],
+      message: "The manuscript review could not verify this page after its bounded attempts. The saved draft remains included in the exports.",
+      guidance: "Review the saved page or request another review." }];
     const report = parsed.success ? parsed.data : undefined;
     const issues = cleanFeedback(report?.issues);
     const revisions = cleanFeedback(report?.requiredRevisions);
@@ -24,7 +29,8 @@ export function unresolvedPageQualityIssues(
       guidance: revisions.length > 0
         ? revisions.join("\n")
         : "Review this page before sharing the book. The best available draft remains included in the exports.",
-      affectedPageIndexes: [page.index]
+      affectedPageIndexes: [page.index],
+      ...(issues.length === 1 ? { provenance: pageFindingProvenance(page.index, issues[0]!) } : {})
     }];
   });
 }

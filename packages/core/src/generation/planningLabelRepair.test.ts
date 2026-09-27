@@ -64,7 +64,8 @@ describe("contextual planning-label repairs", () => {
   });
 
   it("carries an exact quoted manuscript leak into a failing quality check in one call", async () => {
-    const { model, calls } = scriptedDevelopmentModel([{ pages: [{ pageIndex: 25, score: 90, findings: [finding], storyExtract: null, styleAudit: null }] }]);
+    const { model, calls } = scriptedDevelopmentModel([{ pages: [{ pageIndex: 25, score: 90, findings: [finding], storyExtract: null, styleAudit: null,
+      repairAssessment: { targetResolved: true, meaningPreserved: false, noNewRegressions: false, reason: "The bridge correction introduced internal planning shorthand." } }] }]);
     const reviews = await reviewPictureBookManuscript({ input, plan, pages: [{ ...draft, index: 25 }], chapterBriefs: [],
       checks: { pageModelReview: true, storyExtractAudit: false, styleAuditor: false }, textModel: model,
       repairContext: { issues: [{ pageIndexes: [25], messages: ["Keep the neighbors on the near bank."] }],

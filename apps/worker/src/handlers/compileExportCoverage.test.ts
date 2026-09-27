@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Job } from "bullmq";
+import { bookPlanSchema, createProjectSchema, pageQualityReportSchema, pictureBookReviewFingerprint } from "@book-maker/core";
 
 const coverageReview = vi.hoisted(() => vi.fn());
 const inventoryReview = vi.hoisted(() => vi.fn());
@@ -205,6 +206,35 @@ describe("brief coverage at publication", () => {
     expect(mocks.strategy.runFinalBookQa).toHaveBeenCalledOnce();
     expect(mocks.createReaderChaptersForExport).not.toHaveBeenCalled();
     expect(mocks.publishCompiledExports).toHaveBeenCalledOnce();
+  });
+
+  it("passes current grouped requirement findings to coverage even without chronological extraction", async () => {
+    mocks.strategy.executionMode = "whole-book";
+    const brief = "Turtle compares the two lantern locations.";
+    const currentInput = createProjectSchema.parse({ ...input, category: "KIDS", prompt: brief, targetPages: 30,
+      mediaSettings: { finalReview: true, fullIllustrations: true, generationStrategy: "auto" } });
+    const currentPlan = bookPlanSchema.parse(plan);
+    const finalPages = Array.from({ length: 30 }, (_, position) => ({ ...pages[0]!, id: `p${position + 1}`, index: position + 1,
+      title: `Scene ${position + 1}`, markdown: `Rabbit and Turtle carry a lantern from post ${position + 1}.`,
+      chapter: { index: Math.floor(position / 5) + 1, title: `Section ${Math.floor(position / 5) + 1}`, summary: "The next part." } }));
+    const checks = { pageModelReview: true, storyExtractAudit: false, styleAuditor: false };
+    const finding = { domain: "prose", basis: "missing_requirement", requirementQuote: brief, category: "brief",
+      message: "The locations are never compared.", guidance: "Connect both locations in a comparison.",
+      quote: finalPages[9]!.markdown, relatedEvidence: [] };
+    mocks.inputForPlanVersion.mockReturnValue(currentInput);
+    mocks.loadQualityContext.mockResolvedValue({ settings: {}, tier: "balanced", enabled: (feature: string) => feature === "pageModelReview" });
+    mocks.prisma.planVersion.findUnique.mockResolvedValue({ id: "plan-1", planningPackage: currentPlan, inputSnapshot: null });
+    mocks.prisma.project.findUnique.mockResolvedValue({ ...projectRecord(), pages: finalPages });
+    mocks.prisma.generationJob.findUnique.mockResolvedValue({ projectId: "project-1", type: "COMPILE_EXPORT", status: "ACTIVE", payload: {
+      pictureBookReview: { fingerprint: pictureBookReviewFingerprint({ input: currentInput, plan: currentPlan, pages: finalPages, checks }),
+        reviews: finalPages.map(page => ({ pageIndex: page.index, draftMarkdown: page.markdown, completedChecks: checks,
+          storyExtract: null, styleAudit: null, findings: page.index === 10 ? [finding] : [],
+          report: pageQualityReportSchema.parse({ approved: page.index !== 10, score: 90, issues: page.index === 10 ? [finding.message] : [], requiredRevisions: [] }) })) }
+    } });
+    await compileExport(job({ contentRevision: 4 }));
+    expect(coverageReview).toHaveBeenCalledWith(expect.objectContaining({ requirementTargets: [expect.objectContaining({
+      pageIndex: 10, requirementQuote: brief, acceptanceCriteria: finding.guidance, evidence: [{ pageIndex: 10, quote: finding.quote }]
+    })] }));
   });
 
   it("flags Balanced's explicitly requested comparison table when extraction is disabled", async () => {

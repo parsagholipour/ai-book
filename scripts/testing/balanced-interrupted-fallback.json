@@ -1,0 +1,146 @@
+{
+  "calls": [
+    {
+      "id": "cmuipwsex006i19o38pjeian6",
+      "generationJobId": "cmuipwsbn006g19o3zwhqwmom",
+      "provider": "openai",
+      "model": "gpt-6-luna",
+      "purpose": "revise-page",
+      "promptTokens": 5631,
+      "outputTokens": 0,
+      "costHint": null,
+      "metadata": {
+        "error": {
+          "value": {
+            "code": "PROVIDER_STREAM_INTERRUPTED",
+            "name": "ProviderStreamInterruptedError",
+            "message": "OpenAI response stream ended without a completion event."
+          }
+        },
+        "callId": "ae36b8b3-43ee-4a7f-bb42-c7a9a86f1f2d",
+        "maxTokens": 12000,
+        "operation": "text.generateJson",
+        "startedAt": "2026-09-26T18:23:11.574Z",
+        "liveStatus": "failed",
+        "provisional": true,
+        "outputTokensEstimated": true,
+        "promptTokensEstimated": true
+      }
+    },
+    {
+      "id": "cmuipxqo3006j19o33xqym7ez",
+      "generationJobId": "cmuipwsbn006g19o3zwhqwmom",
+      "provider": "deepinfra",
+      "model": "deepseek-ai/DeepSeek-V4-Pro",
+      "purpose": "revise-page",
+      "promptTokens": 4939,
+      "outputTokens": 393,
+      "costHint": 0.007442,
+      "metadata": {
+        "callId": "ae36b8b3-43ee-4a7f-bb42-c7a9a86f1f2d",
+        "operation": "text.generateJson",
+        "liveStatus": "settled",
+        "provisional": false,
+        "reasoningTokens": 0,
+        "outputTokensEstimated": false,
+        "promptTokensEstimated": false
+      }
+    }
+  ],
+  "events": [
+    {
+      "event": "text.generateJson.request",
+      "callId": "ae36b8b3-43ee-4a7f-bb42-c7a9a86f1f2d",
+      "model": {
+        "provider": "openai",
+        "model": "gpt-6-luna"
+      },
+      "job": {
+        "generationJobId": "cmuipwsbn006g19o3zwhqwmom"
+      }
+    },
+    {
+      "event": "text.generateJson.provider_request",
+      "callId": "ae36b8b3-43ee-4a7f-bb42-c7a9a86f1f2d",
+      "requestIndex": 1,
+      "attempt": 1,
+      "provider": "openai",
+      "model": "gpt-6-luna",
+      "purpose": "revise-page",
+      "job": {
+        "generationJobId": "cmuipwsbn006g19o3zwhqwmom"
+      }
+    },
+    {
+      "event": "text.generateJson.provider_request",
+      "callId": "ae36b8b3-43ee-4a7f-bb42-c7a9a86f1f2d",
+      "requestIndex": 2,
+      "attempt": 2,
+      "provider": "deepinfra",
+      "model": "deepseek-ai/DeepSeek-V4-Pro",
+      "purpose": "revise-page",
+      "job": {
+        "generationJobId": "cmuipwsbn006g19o3zwhqwmom"
+      }
+    },
+    {
+      "event": "text.generateJson.provider_usage",
+      "callId": "ae36b8b3-43ee-4a7f-bb42-c7a9a86f1f2d",
+      "providerRequest": {
+        "provider": "deepinfra",
+        "model": "deepseek-ai/DeepSeek-V4-Pro",
+        "attempt": 2,
+        "maxAttempts": 5,
+        "requestedMaxTokens": 12000,
+        "effectiveMaxTokens": 12000,
+        "requestIndex": 2
+      },
+      "usage": {
+        "promptTokens": 4939,
+        "outputTokens": 393,
+        "reasoningTokens": 0
+      },
+      "job": {
+        "generationJobId": "cmuipwsbn006g19o3zwhqwmom"
+      }
+    },
+    {
+      "event": "text.generateJson.provider_usage",
+      "callId": "ae36b8b3-43ee-4a7f-bb42-c7a9a86f1f2d",
+      "providerRequest": {
+        "provider": "deepinfra",
+        "model": "deepseek-ai/DeepSeek-V4-Pro",
+        "attempt": 2,
+        "maxAttempts": 5,
+        "requestedMaxTokens": 12000,
+        "effectiveMaxTokens": 12000,
+        "requestIndex": 2
+      },
+      "usage": {
+        "promptTokens": 4939,
+        "outputTokens": 393,
+        "reasoningTokens": 0,
+        "cacheHitTokens": 0
+      },
+      "job": {
+        "generationJobId": "cmuipwsbn006g19o3zwhqwmom"
+      }
+    },
+    {
+      "event": "text.generateJson.response",
+      "callId": "ae36b8b3-43ee-4a7f-bb42-c7a9a86f1f2d",
+      "providerRequest": {
+        "provider": "deepinfra",
+        "model": "deepseek-ai/DeepSeek-V4-Pro",
+        "attempt": 2,
+        "maxAttempts": 5,
+        "requestedMaxTokens": 12000,
+        "effectiveMaxTokens": 12000,
+        "requestIndex": 2
+      },
+      "job": {
+        "generationJobId": "cmuipwsbn006g19o3zwhqwmom"
+      }
+    }
+  ]
+}

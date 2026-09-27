@@ -9,10 +9,12 @@ import { type ChapterSetup } from "../runtime/jobTypes.js";
 import { jsonInputValue } from "../runtime/serialization.js";
 import {
   chapterBriefSchema,
+  compactPictureBookPlanForBriefs,
   critiquePageMap,
   mapWithConcurrency,
   mergePageMapCriticPatch,
   normalizePlanPageTargets,
+  pageMapCriticApplies,
   range,
   type BookGenerationStrategy,
   type BookPlan,
@@ -75,7 +77,7 @@ export async function prepareChapterSetups(options: {
   strategy: BookGenerationStrategy;
   generationJobId?: string | undefined;
 }): Promise<ChapterSetup[]> {
-  const chapterRanges = chapterSetupsForPlan(options.plan, options.input.targetPages);
+  let chapterRanges = chapterSetupsForPlan(options.plan, options.input.targetPages);
   const quality = lazyQualityGate(options.input);
   const createChapterBriefs = options.strategy.createChapterBriefs;
   if (createChapterBriefs) {
@@ -86,9 +88,11 @@ export async function prepareChapterSetups(options: {
       plan: options.plan,
       textModel: options.providers.text
     });
+    const mappedPlan = compactPictureBookPlanForBriefs(options.input, options.plan, briefs);
+    chapterRanges = chapterSetupsForPlan(mappedPlan, options.input.targetPages);
     const integrity = {
       input: options.input,
-      plan: options.plan,
+      plan: mappedPlan,
       textModel: options.providers.text,
       strategy: options.strategy,
       chapterRanges,
@@ -96,7 +100,7 @@ export async function prepareChapterSetups(options: {
       quality
     };
     let mapped = await enforceProductionMapIntegrity({ ...integrity, briefs });
-    if (await quality("pageMapCritic")) {
+    if (await quality("pageMapCritic") && pageMapCriticApplies(options.input, await quality("pageModelReview"))) {
       mapped = await bestEffortPass({
         attempt: async () => {
           // Both halves of the critic rank page 1 against the book's last page,
@@ -121,7 +125,7 @@ export async function prepareChapterSetups(options: {
           const patch = await critiquePageMap({
             textModel: options.providers.text,
             input: options.input,
-            plan: options.plan,
+            plan: mappedPlan,
             briefs: mapped,
             promises: options.plan.promises ?? []
           });
@@ -429,17 +433,19 @@ export async function persistAcceptedWholeBookTarget(options: {
   input: CreateProjectInput;
   plan: BookPlan;
   draft: WholeBookDraft;
+  chapterAllocationChanged?: boolean;
 }): Promise<void> {
   const diagnostics = options.draft.pageSetDiagnostics;
-  if (!diagnostics || diagnostics.acceptedPages === diagnostics.requestedPages) {
+  const targetChanged = diagnostics && diagnostics.acceptedPages !== diagnostics.requestedPages;
+  if (!targetChanged && !options.chapterAllocationChanged) {
     return;
   }
 
   await prisma.$transaction([
-    prisma.project.update({
+    ...(targetChanged ? [prisma.project.update({
       where: { id: options.projectId },
       data: { targetPages: diagnostics.acceptedPages }
-    }),
+    })] : []),
     prisma.planVersion.update({
       where: { id: options.planId },
       data: {

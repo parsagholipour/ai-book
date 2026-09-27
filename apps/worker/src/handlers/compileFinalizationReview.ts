@@ -13,8 +13,8 @@ export async function reviewFinalizationManuscript(options: {
   shortBookReview?: { generationJobId?: string | undefined; planId?: string | undefined; quality: QualityGateContext };
 }) {
   if (options.shortBookReview) {
-    const finalQa = await reuseShortPictureBookFinalReview(options, options.shortBookReview);
-    if (finalQa) return { issues: [] as ManuscriptQualityIssue[], finalQa };
+    const reused = await reuseShortPictureBookFinalReview(options, options.shortBookReview);
+    if (reused) return reused;
   }
   const results = await Promise.allSettled([
     runBoundedChapterQualityReview(options),

@@ -1,8 +1,11 @@
 import {
+  manuscriptQualityCards,
+  optionalQualityProvenance,
   parseManuscriptQualityIssueCluster,
   safePathPart,
   structuralClusterFromIssue,
-  type JobStep
+  type JobStep,
+  type ManuscriptQualityProvenance
 } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { objectKey, readRunLog } from "@book-maker/storage";
@@ -87,6 +90,7 @@ export type JobImageFallbackDetails = {
 export type ProjectQualityStatus = {
   state: "pending" | "passed" | "review_recommended" | "blocked";
   score: number | null;
+  scoreBasis?: "unresolved_findings";
   issues: Array<{
     code: string;
     severity: "error" | "warning";
@@ -94,6 +98,7 @@ export type ProjectQualityStatus = {
     message: string;
     guidance: string;
     affectedPageIndexes: number[];
+    provenance?: ManuscriptQualityProvenance;
     metrics?: {
       occurrences?: number;
       affectedPageRatio?: number;
@@ -338,6 +343,7 @@ export function normalizeProjectQuality(value: unknown): ProjectQualityStatus {
       message: issue.message,
       guidance: typeof issue.guidance === "string" ? issue.guidance : "Review the affected pages.",
       affectedPageIndexes,
+      ...optionalQualityProvenance(issue.provenance),
       ...optionalQualityMetrics(issue.metrics),
       ...evidenceFields,
       ...optionalQualityCluster({
@@ -357,7 +363,8 @@ export function normalizeProjectQuality(value: unknown): ProjectQualityStatus {
   return {
     state,
     score: typeof record.score === "number" && Number.isFinite(record.score) ? record.score : null,
-    issues,
+    issues: record.scoreBasis === "unresolved_findings" ? manuscriptQualityCards(issues, record.findings) : issues,
+    ...(record.scoreBasis === "unresolved_findings" ? { scoreBasis: "unresolved_findings" as const } : {}),
     affectedPageIndexes,
     ...optionalQualityDiagnostics(record.diagnostics)
   };

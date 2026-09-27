@@ -649,6 +649,8 @@ const bookPlanObjectSchema = z.object({
   researchNotes: z.array(researchSourceSchema).default([]),
   promises: z.array(z.string()).default([]),
   openingHook: z.string().optional(),
+  /** Complete causal story, authored before page allocation. Persisted for resume. */
+  storyTreatment: z.string().trim().min(200).max(16_000).optional(),
   authorStance: authorStanceSchema.optional(),
   /** The book's arc (generation/bookArc.ts). A stored arc that no longer parses is dropped, never a reason to fail the plan. */
   bookArc: z.preprocess((value) => (bookArcSchema.safeParse(value).success ? value : undefined), bookArcSchema.optional()),
@@ -675,9 +677,17 @@ export function bookPlanSchemaWithFallback(fallback: BookPlan) {
 export function bookPlanModelOutputSchemaWithFallback(fallback: BookPlan, compactStory = false): z.ZodType<Omit<BookPlan, "researchNotes">> {
   return z.preprocess(
     normalizeBookPlanWithFallback(fallback, true),
-    bookPlanObjectSchema.omit({ researchNotes: true, bookDevelopment: true, episodes: true, dossier: true,
+    bookPlanObjectSchema.omit({ researchNotes: true, bookDevelopment: true, episodes: true, dossier: true, storyTreatment: true,
       ...(compactStory ? { authorStance: true as const, styleContract: true as const } : {}) })
   );
+}
+
+/** The initial compact story call authors narrative, not chapter/page quotas. */
+export function pictureBookStoryPlanSchema(fallback: BookPlan) {
+  return z.preprocess(normalizeBookPlanWithFallback(fallback), bookPlanObjectSchema.omit({
+    chapters: true, researchNotes: true, bookDevelopment: true, episodes: true, dossier: true,
+    authorStance: true, styleContract: true, bookArc: true
+  }).extend({ storyTreatment: z.string().trim().min(200).max(16_000) }));
 }
 
 export type BookPlan = z.infer<typeof bookPlanSchema>;

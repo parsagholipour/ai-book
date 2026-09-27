@@ -1,0 +1,136 @@
+{
+  "brief": "Write an original 30-page storybook for children ages 6–8, called The Lantern Path. Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles. Rabbit is playful and hasty; Wise Turtle is slow and steady. Keep both active across the story, with meaningful choices and growth for each. A storm scatters the lanterns marking the woodland path to a night picnic. Rabbit rushes to fix everything alone and makes the path more confusing. Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise. Give this a fresh plot rather than a race or a retelling of The Tortoise and the Hare. Build a clear beginning, escalating middle, turning point and satisfying ending. Let Rabbit's energy and Wise Turtle's patience both solve part of the problem. Keep stakes gentle and child appropriate. Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page. Avoid repeated summaries, generic moralizing and extra named main characters. English. Exactly 30 story pages. Write exactly 30 text-only story pages. Do not create interior illustrations, a cover image, or character reference images.",
+  "requirement": {
+    "text": "Avoid extra named main characters",
+    "quote": "extra named main characters.",
+    "kind": "content"
+  },
+  "pages": [
+    {
+      "index": 1,
+      "markdown": "Rabbit held the glowing Amber lantern beside its gate post. He was checking its little door when the wind gave a mighty shove. The lantern sprang from his paws and tumbled through the ferns. A neighbor hurried toward the Woodland Gate, still several hops away. Rabbit stared at the empty post."
+    },
+    {
+      "index": 2,
+      "markdown": "Blue marked the bend, Red marked the creek, and Green stood at the clearing. Amber belonged at the gate, though its post was empty now. The first neighbor arrived, and more neighbors gathered behind. Then the squall rushed down the path. Blue, Red, and Green blew from their posts. Their landing places vanished in the wind."
+    },
+    {
+      "index": 3,
+      "markdown": "The gust rushed from the west and pressed the grass eastward. Leaves skittered across the path, then piled in quiet pockets behind a stump, beside thick roots, and behind a fallen log. Rabbit watched the trees sway. At the gate, the neighbors held their baskets close while the wind hurried on."
+    },
+    {
+      "index": 4,
+      "markdown": "“I’ll fix it in a flash!” cried Rabbit. He dashed alone down the darkening path, peeking under leaves and around tree trunks. A fern brushed his nose. He spun to look, then hurried on without finding a lantern. At last, he raced back to the gate, paws empty and ears drooping."
+    },
+    {
+      "index": 5,
+      "markdown": "Wise Turtle stood with the neighbors beneath the gate’s wooden arch. “We will check each post, one by one, in order,” he said. His voice was calm, but dusk was slipping between the trees. Rabbit bounced at the trailhead, ready to search again. Turtle kept the neighbors close and began with the gate post."
+    },
+    {
+      "index": 6,
+      "markdown": "Rabbit started down the path again, scanning the ground as he went. Wise Turtle left the gate to join him, steady steps following quick ones. East of the gate post, Rabbit spotted a warm glimmer in a fern hollow. Amber lay there, its small flame still shining. “There you are!” Rabbit called."
+    },
+    {
+      "index": 7,
+      "markdown": "Rabbit lifted Amber from the fern hollow. The creek post stood ahead, and he hurried straight to it. “A lantern belongs on a post!” he said, hanging Amber where Red should shine. By the time Wise Turtle reached the creek, Amber glowed above the water. The gate post was still empty."
+    },
+    {
+      "index": 8,
+      "markdown": "Rabbit hurried back along the trail, looking everywhere at once. East of the bend post, a blue glow peeked from behind a stump. “Blue!” Rabbit cried. He did not lift it. Amber was already hanging on the wrong post, and Rabbit was not sure what to do next. Blue stayed behind the stump."
+    },
+    {
+      "index": 9,
+      "markdown": "Wise Turtle caught up beside the stump. Rabbit told him about Amber at the creek and Blue behind the stump. “Show me where each one landed,” Turtle said. “Then I can check our path.” Rabbit pointed toward Amber’s new post, then toward Blue’s hiding place. Turtle listened without rushing ahead."
+    },
+    {
+      "index": 10,
+      "markdown": "Turtle led the way back to the original posts, checking each one in order. The gate post was empty, and so was the bend post. At the creek, Amber shone where Red belonged. Nothing else had been found. Dusk deepened. Rabbit pointed toward the fern hollow and stump. “Could we compare where Amber and Blue landed?”"
+    },
+    {
+      "index": 11,
+      "markdown": "They stood by the fern hollow, then went to the stump. Amber’s hollow lay east of its gate post. Blue had landed east of the bend post, too. At both places, the grass leaned east. Leaves had gathered in sheltered pockets nearby. Turtle studied the two glimmers, then looked toward the roots and fallen log."
+    },
+    {
+      "index": 12,
+      "markdown": "“The wind pushed both lanterns east,” Turtle said. “It could have carried the others into sheltered spots, too.” The root shelf and fallen log lay in its path. “Red may be near the roots. Green may be behind the log.” Turtle turned to Rabbit. “You can search quickly. I’ll follow.” Rabbit sprang toward the root shelf."
+    },
+    {
+      "index": 13,
+      "markdown": "Rabbit reached the creek’s root shelf first. A red glow winked beneath a low root. Red was snagged there, its handle caught tight. Rabbit crouched and waited instead of yanking. Wise Turtle came up beside him and steadied the root with both hands. The lantern was found, but it would not lift free yet."
+    },
+    {
+      "index": 14,
+      "markdown": "Turtle held the root steady while Rabbit eased Red free. The lantern came loose with a soft scrape. Turtle set it safely on the ground, then reached down and took it by the handle. “Which place should we check next?” he asked. Rabbit chose the fallen log. “Green should be there!” he said, and hurried off."
+    },
+    {
+      "index": 15,
+      "markdown": "Rabbit peered behind the fallen log. Green glowed in a pocket of dry leaves. He lifted it carefully and waited beside the log until Wise Turtle arrived with Red. The clearing-side trail ran just ahead. Rabbit and Turtle stood together near the log, carrying Green and Red toward the path home."
+    },
+    {
+      "index": 16,
+      "markdown": "Rabbit carried Green from the log to the clearing post and hung it in its place. Its light spread over the open grass. Then he turned west and headed along the path. Wise Turtle followed behind, carrying Red toward the creek post. Amber still glowed at the creek, and Blue still waited near the bend."
+    },
+    {
+      "index": 17,
+      "markdown": "At the creek, Turtle set Red on its proper post. Rabbit lifted Amber down and placed it into Turtle’s waiting hands. Turtle held Amber securely and turned west toward the gate. Rabbit continued toward the bend, where Blue still waited behind the stump. The creek lantern shone red again."
+    },
+    {
+      "index": 18,
+      "markdown": "Rabbit reached the stump and lifted Blue from behind it. He carried the lantern to the bend post and hung it there. Its blue light rested between the gate’s empty post and the red glow at the creek. Farther west, Wise Turtle walked toward the gate with Amber in his hands."
+    },
+    {
+      "index": 19,
+      "markdown": "Wise Turtle reached the gate and hung Amber on its post. Its warm glow filled the little space beneath the arch. Rabbit came up the path from the bend. He looked back along the lights, now shining from gate to creek and clearing. Turtle waited beside him as the neighbors watched from the gate."
+    },
+    {
+      "index": 20,
+      "markdown": "Together, they walked from the gate toward the clearing. Amber shone first, then Blue at the bend, Red by the creek, and Green ahead. They checked each post without changing a thing. Then Rabbit and Wise Turtle returned to the gate. The neighbors gathered there, ready to follow the restored lights."
+    },
+    {
+      "index": 21,
+      "markdown": "The neighbors saw the lights shining in order. “We can follow those,” one said. Rabbit sprang forward. “I’ll lead!” A few neighbors were still tying bundles and lifting baskets. Wise Turtle watched Rabbit’s eager paws. The path was ready, but the whole group was not yet ready to leave."
+    },
+    {
+      "index": 22,
+      "markdown": "Rabbit took one eager hop toward the trail. Then he noticed the neighbors still gathering their baskets. He turned back. “I’ll help you get settled,” he said, making room beside him. He waited until everyone stood together beneath the gate arch. Then Rabbit led them onto the path, with Wise Turtle close behind."
+    },
+    {
+      "index": 23,
+      "markdown": "“Choose a pace the neighbors can keep,” Wise Turtle called from behind. Rabbit trotted ahead at a brisk, easy rhythm. At Amber, he paused until the group caught up. He did the same at Blue, glowing on the bend post. Turtle stayed at the rear, steadying the line with a calm word when needed."
+    },
+    {
+      "index": 24,
+      "markdown": "At the bend, Rabbit looked back at Turtle. “Amber, then Blue,” Turtle called. Rabbit checked the lights and turned onto the path toward the creek. The neighbors followed him around the bend together. Blue shone behind them, and Red’s glow waited farther ahead. Turtle kept to the back of the group."
+    },
+    {
+      "index": 25,
+      "markdown": "The neighbors reached the creek post together. Red’s light trembled softly on the water. Rabbit kept his steps even, and no basket bumped or tipped. Beyond the creek, the trail curved toward the clearing. Evening darkened the trees, but Green still glimmered ahead."
+    },
+    {
+      "index": 26,
+      "markdown": "One neighbor began to lag behind the others. Rabbit slowed and walked beside the last two, letting them choose their own steps. He did not call for them to hurry. Wise Turtle stayed behind the group, while the others kept together on the path toward the final turn. Rabbit matched the slower steps beside him."
+    },
+    {
+      "index": 27,
+      "markdown": "At the creek-side turn, Wise Turtle pointed to Green’s glow ahead. “The lights show the way,” he said, leaving the choice to Rabbit. Rabbit looked from Red behind them to Green in front. “This turn leads to the clearing.” He guided everyone onto that path. Turtle followed at the rear, keeping the group close."
+    },
+    {
+      "index": 28,
+      "markdown": "Rabbit tapped a gentle beat with one paw. “Tap, step. Tap, step.” The neighbors matched his rhythm along the final stretch. They stayed close beneath the trees as Green’s glow grew brighter. Wise Turtle walked at the rear, his steady steps joining the soft sound on the path."
+    },
+    {
+      "index": 29,
+      "markdown": "The neighbors reached the picnic clearing before moonrise. Green glowed on its post as the last baskets came through the trees. Behind them, Red, Blue, and Amber marked the path in their proper order. Everyone arrived safely. Rabbit stood beside Wise Turtle, watching the neighbors spread blankets on the soft grass."
+    },
+    {
+      "index": 30,
+      "markdown": "Blankets spread across the clearing, and baskets opened with happy rustles. Rabbit settled beside Wise Turtle, sharing a crisp apple slice. The neighbors laughed softly as moonrise silvered the grass. Behind them, the four lanterns still shone in their proper places. Their path had brought everyone safely to supper, and the picnic began."
+    }
+  ],
+  "recordedVerdict": {
+    "id": "brief-1",
+    "status": "fulfilled",
+    "reason": "Rabbit and Wise Turtle are the only named characters; the other woodland characters remain unnamed neighbors.",
+    "evidence": []
+  }
+}

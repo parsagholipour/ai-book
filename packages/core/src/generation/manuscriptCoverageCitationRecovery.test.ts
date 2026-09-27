@@ -26,13 +26,40 @@ it("batches a repeated bad quote once with all claims and only the affected page
   expect(payload.citations[0].claims.map((claim: { requirement: string }) => claim.requirement)).toEqual(requirements.map((item) => item.text));
 });
 
+it.each([100, 20_001])("recovers citations from stored pages without sending %i characters of unrelated metadata", async (metadataLength) => {
+  const storedPages = pages.map((page) => ({ ...page, id: `page-${page.index}`, projectId: "book-1",
+    qualityReport: { approved: true }, storyDelta: { factsAdded: ["A prior review's summary."] },
+    chapter: { productionBrief: "x".repeat(metadataLength) }, createdAt: "2026-09-25T00:00:00Z" }));
+  const originalPages = structuredClone(storedPages);
+  const { model, calls } = scriptedDevelopmentModel([{ corrections: [correction] }]);
+  const result = await recoverCoverageCitations({ requirements: [requirement], verdicts: [verdict], pages: storedPages, textModel: model });
+  expect(calls).toHaveLength(1);
+  const payload = JSON.parse(calls[0]!.messages[1]!.content);
+  expect(payload.pages).toEqual([pages[0]]);
+  expect(payload.citations[0].claims).toEqual([{ requirement: requirement.text, reason: verdict.reason }]);
+  expect(result).toEqual([{ ...verdict, evidence: [{ pageIndex: 12, quote: actual }] }]);
+  expect(storedPages).toEqual(originalPages);
+});
+
 it("recovers Balanced's capitalized clause without changing the manuscript's lowercase bytes", async () => {
   const quote = "the first three lights made a clear trail through the rain.";
-  const { model } = scriptedDevelopmentModel([{ corrections: [{ ...correction, quote }] }]);
+  const { model, calls } = scriptedDevelopmentModel([]);
   const result = await recoverCoverageCitations({ requirements: [requirement], textModel: model,
     pages: [{ index: 12, markdown: `Rabbit looked back, and ${quote}` }],
     verdicts: [{ ...verdict, evidence: [{ pageIndex: 12, quote: `T${quote.slice(1)}` }] }] });
   expect(result[0]?.evidence).toEqual([{ pageIndex: 12, quote }]);
+  expect(calls).toHaveLength(0);
+});
+
+it("keeps local transcription recovery when the remaining paid correction fails", async () => {
+  const source = "the neighbors huddled beneath the old stones.";
+  const { model, calls } = scriptedDevelopmentModel([new Error("provider unavailable")]);
+  const result = await recoverCoverageCitations({ requirements: [requirement], textModel: model,
+    pages: [{ index: 12, markdown: `At the stone arch, ${source} ${actual}` }],
+    verdicts: [{ ...verdict, evidence: [{ pageIndex: 12, quote: `T${source.slice(1)}` }, ...verdict.evidence] }] });
+  expect(result[0]?.evidence).toEqual([{ pageIndex: 12, quote: source }, ...verdict.evidence]);
+  expect(JSON.parse(calls[0]!.messages[1]!.content).citations).toHaveLength(1);
+  expect(calls).toHaveLength(1);
 });
 
 it("does not apply a shared quote correction to verdicts outside the reviewed claims", async () => {

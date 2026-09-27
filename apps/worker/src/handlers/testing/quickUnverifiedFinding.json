@@ -1,0 +1,18 @@
+{
+  "pageIndex": 13,
+  "score": 89,
+  "findings": [
+    {
+      "domain": "prose",
+      "basis": "page_prose",
+      "requirementQuote": null,
+      "category": "continuity",
+      "message": "The prose calls this an agreed signal, but no earlier scene establishes an agreement. The action remains clear, but the claimed shared history is unsupported.",
+      "guidance": "Either establish the signal before this moment or describe Turtle making a signal without implying they agreed on it earlier.",
+      "quote": "Rabbit paused when Wise Turtle gave their agreed hand signal.",
+      "relatedEvidence": []
+    }
+  ],
+  "storyExtract": "reuse",
+  "styleAudit": null
+}
